@@ -1,0 +1,20 @@
+[package]
+name = "rust-editor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+winit = "0.30.12"
+softbuffer = "0.4"
+ropey = "1.6"
+raw-window-handle = "0.6"
+
+# For font rendering
+fontdue = "0.9.3"
+
+# For better error handling
+anyhow = "1.0"
+
+# Optional: for debugging
+env_logger = "0.11"
+log = "0.4"
