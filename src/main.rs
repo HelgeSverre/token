@@ -17,6 +17,9 @@ use winit::window::Window;
 type GlyphCacheKey = (char, u32);
 type GlyphCache = HashMap<GlyphCacheKey, (Metrics, Vec<u8>)>;
 
+// Color constants for rendering
+const CURRENT_LINE_HIGHLIGHT: u32 = 0xFF2A2A2A;  // Current line highlight (subtle)
+
 // ============================================================================
 // MODEL - Application State (Elm's Model)
 // ============================================================================
@@ -30,6 +33,7 @@ struct Model {
     // View state
     viewport: Viewport,
     window_size: (u32, u32),
+    scroll_padding: usize,  // Rows of padding to maintain above/below cursor
 
     // UI state
     status_message: String,
@@ -98,6 +102,7 @@ impl Model {
                 visible_columns: (window_width as usize) / char_width,
             },
             window_size: (window_width, window_height),
+            scroll_padding: 1,  // Default 1 row padding (JetBrains-style)
             status_message: "Ready".to_string(),
             line_height,
             char_width,
@@ -168,6 +173,53 @@ impl Model {
     fn reset_cursor_blink(&mut self) {
         self.cursor_visible = true;
         self.last_cursor_blink = Instant::now();
+    }
+
+    fn ensure_cursor_visible(&mut self) {
+        let padding = self.scroll_padding;
+        let total_lines = self.buffer.len_lines();
+
+        // If all content fits in viewport, just reset to top
+        if total_lines <= self.viewport.visible_lines {
+            self.viewport.top_line = 0;
+            return;
+        }
+
+        // Check if cursor is outside visible area + padding
+        let top_boundary = self.viewport.top_line + padding;
+        let bottom_boundary = self.viewport.top_line + self.viewport.visible_lines - padding - 1;
+
+        let needs_scroll = self.cursor.line < self.viewport.top_line
+            || self.cursor.line > self.viewport.top_line + self.viewport.visible_lines - 1
+            || self.cursor.line < top_boundary
+            || self.cursor.line > bottom_boundary;
+
+        if !needs_scroll {
+            return;  // Cursor already visible with padding
+        }
+
+        // Snap viewport to show cursor with padding
+        if self.cursor.line < top_boundary {
+            self.viewport.top_line = self.cursor.line.saturating_sub(padding);
+        } else if self.cursor.line > bottom_boundary {
+            let desired_top = self.cursor.line + padding + 1;
+            self.viewport.top_line = desired_top.saturating_sub(self.viewport.visible_lines);
+        }
+
+        // Clamp to valid range
+        let max_top = total_lines.saturating_sub(self.viewport.visible_lines);
+        self.viewport.top_line = self.viewport.top_line.min(max_top);
+
+        // Horizontal scrolling (simple margin-based, not padding)
+        const HORIZONTAL_MARGIN: usize = 4;
+        let right_column = self.viewport.left_column + self.viewport.visible_columns;
+
+        if self.cursor.column < self.viewport.left_column {
+            self.viewport.left_column = self.cursor.column.saturating_sub(HORIZONTAL_MARGIN);
+        } else if self.cursor.column >= right_column {
+            let target = self.cursor.column.saturating_sub(self.viewport.visible_columns - 1 - HORIZONTAL_MARGIN);
+            self.viewport.left_column = target;
+        }
     }
 }
 
@@ -240,6 +292,9 @@ enum Msg {
     // Mouse
     SetCursorPosition(usize, usize), // (line, column)
 
+    // Viewport scrolling
+    ScrollViewport(i32),  // Positive = scroll down, negative = scroll up
+
     // Animation
     BlinkCursor,
 }
@@ -271,16 +326,19 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
         Msg::MoveCursorUp => {
             if model.cursor.line > 0 {
                 model.cursor.line -= 1;
-                
+
                 // Maintain desired column for vertical movement
                 let desired = model.cursor.desired_column.unwrap_or(model.cursor.column);
                 let line_len = model.current_line_length();
                 model.cursor.column = desired.min(line_len);
                 model.cursor.desired_column = Some(desired);
-                
-                // Scroll if needed
-                if model.cursor.line < model.viewport.top_line {
-                    model.viewport.top_line = model.cursor.line;
+
+                // Scroll only if cursor crosses top boundary (JetBrains-style)
+                let padding = model.scroll_padding;
+                let top_boundary = model.viewport.top_line + padding;
+
+                if model.cursor.line < top_boundary && model.viewport.top_line > 0 {
+                    model.viewport.top_line = model.cursor.line.saturating_sub(padding);
                 }
             }
             model.reset_cursor_blink();
@@ -290,16 +348,21 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
         Msg::MoveCursorDown => {
             if model.cursor.line < model.buffer.len_lines().saturating_sub(1) {
                 model.cursor.line += 1;
-                
+
                 // Maintain desired column for vertical movement
                 let desired = model.cursor.desired_column.unwrap_or(model.cursor.column);
                 let line_len = model.current_line_length();
                 model.cursor.column = desired.min(line_len);
                 model.cursor.desired_column = Some(desired);
-                
-                // Scroll if needed
-                if model.cursor.line >= model.viewport.top_line + model.viewport.visible_lines {
-                    model.viewport.top_line = model.cursor.line - model.viewport.visible_lines + 1;
+
+                // Scroll only if cursor crosses bottom boundary (JetBrains-style)
+                let padding = model.scroll_padding;
+                let bottom_boundary = model.viewport.top_line + model.viewport.visible_lines - padding - 1;
+                let max_top = model.buffer.len_lines().saturating_sub(model.viewport.visible_lines);
+
+                if model.cursor.line > bottom_boundary && model.viewport.top_line < max_top {
+                    let desired_top = model.cursor.line + padding + 1;
+                    model.viewport.top_line = desired_top.saturating_sub(model.viewport.visible_lines).min(max_top);
                 }
             }
             model.reset_cursor_blink();
@@ -315,6 +378,7 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
                 model.cursor.line -= 1;
                 model.cursor.column = model.current_line_length();
                 model.cursor.desired_column = None;
+                model.ensure_cursor_visible();
             }
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
@@ -330,6 +394,7 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
                 model.cursor.line += 1;
                 model.cursor.column = 0;
                 model.cursor.desired_column = None;
+                model.ensure_cursor_visible();
             }
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
@@ -338,6 +403,7 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
         Msg::MoveCursorLineStart => {
             model.cursor.column = 0;
             model.cursor.desired_column = None;
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -345,6 +411,7 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
         Msg::MoveCursorLineEnd => {
             model.cursor.column = model.current_line_length();
             model.cursor.desired_column = None;
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -357,6 +424,7 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
             // Use set_cursor_from_position to ensure cursor.column matches actual buffer position
             // This handles the case where cursor.column was clamped in cursor_buffer_position()
             model.set_cursor_from_position(pos + 1);
+            model.ensure_cursor_visible();
 
             model.redo_stack.clear();
             model.undo_stack.push(EditOperation::Insert {
@@ -378,6 +446,7 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
             model.cursor.line += 1;
             model.cursor.column = 0;
             model.cursor.desired_column = None;
+            model.ensure_cursor_visible();
 
             model.redo_stack.clear();
             model.undo_stack.push(EditOperation::Insert {
@@ -433,6 +502,7 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
                 });
             }
             model.cursor.desired_column = None;
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -452,6 +522,7 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
                     cursor_after: model.cursor,
                 });
             }
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -461,6 +532,7 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
             model.cursor.column = 0;
             model.cursor.desired_column = None;
             model.viewport.top_line = 0;
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -473,6 +545,7 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
             if model.cursor.line >= model.viewport.visible_lines {
                 model.viewport.top_line = model.cursor.line - model.viewport.visible_lines + 1;
             }
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -480,8 +553,15 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
         Msg::PageUp => {
             let jump = model.viewport.visible_lines.saturating_sub(2);
             model.cursor.line = model.cursor.line.saturating_sub(jump);
+
+            // Maintain desired column for vertical movement (same as MoveCursorUp)
+            let desired = model.cursor.desired_column.unwrap_or(model.cursor.column);
+            let line_len = model.current_line_length();
+            model.cursor.column = desired.min(line_len);
+            model.cursor.desired_column = Some(desired);
+
             model.viewport.top_line = model.viewport.top_line.saturating_sub(jump);
-            model.cursor.desired_column = None;
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -490,10 +570,17 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
             let jump = model.viewport.visible_lines.saturating_sub(2);
             let max_line = model.buffer.len_lines().saturating_sub(1);
             model.cursor.line = (model.cursor.line + jump).min(max_line);
+
+            // Maintain desired column for vertical movement (same as MoveCursorDown)
+            let desired = model.cursor.desired_column.unwrap_or(model.cursor.column);
+            let line_len = model.current_line_length();
+            model.cursor.column = desired.min(line_len);
+            model.cursor.desired_column = Some(desired);
+
             if model.cursor.line >= model.viewport.top_line + model.viewport.visible_lines {
                 model.viewport.top_line = model.cursor.line.saturating_sub(model.viewport.visible_lines - 1);
             }
-            model.cursor.desired_column = None;
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -511,6 +598,7 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
                     }
                 }
                 model.redo_stack.push(op);
+                model.ensure_cursor_visible();
                 model.reset_cursor_blink();
                 Some(Cmd::Redraw)
             } else {
@@ -531,6 +619,7 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
                     }
                 }
                 model.undo_stack.push(op);
+                model.ensure_cursor_visible();
                 model.reset_cursor_blink();
                 Some(Cmd::Redraw)
             } else {
@@ -560,6 +649,7 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
             }
 
             model.set_cursor_from_position(i);
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -586,6 +676,7 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
             }
 
             model.set_cursor_from_position(pos + i);
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -594,7 +685,27 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
             model.cursor.line = line;
             model.cursor.column = column;
             model.cursor.desired_column = None;
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
+            Some(Cmd::Redraw)
+        }
+
+        Msg::ScrollViewport(delta) => {
+            let total_lines = model.buffer.len_lines();
+            if total_lines <= model.viewport.visible_lines {
+                return None;  // No scrolling needed
+            }
+
+            let max_top = total_lines.saturating_sub(model.viewport.visible_lines);
+
+            if delta > 0 {
+                // Scroll down
+                model.viewport.top_line = (model.viewport.top_line + delta as usize).min(max_top);
+            } else if delta < 0 {
+                // Scroll up
+                model.viewport.top_line = model.viewport.top_line.saturating_sub(delta.abs() as usize);
+            }
+
             Some(Cmd::Redraw)
         }
     }
@@ -753,6 +864,20 @@ impl Renderer {
         // Render visible lines
         let visible_lines = (height as usize) / line_height;
         let end_line = (model.viewport.top_line + visible_lines).min(model.buffer.len_lines());
+
+        // Draw current line highlight (if cursor visible in viewport)
+        if model.cursor.line >= model.viewport.top_line && model.cursor.line < end_line {
+            let screen_line = model.cursor.line - model.viewport.top_line;
+            let highlight_y = screen_line * line_height;
+
+            for py in highlight_y..(highlight_y + line_height) {
+                for px in 0..(width as usize) {
+                    if py < height as usize {
+                        buffer[py * width as usize + px] = CURRENT_LINE_HIGHLIGHT;
+                    }
+                }
+            }
+        }
 
         for (screen_line, doc_line) in (model.viewport.top_line..end_line).enumerate() {
             if let Some(line_text) = model.get_line(doc_line) {
@@ -1004,6 +1129,26 @@ impl App {
                 }
                 None
             }
+            WindowEvent::MouseWheel { delta, .. } => {
+                use winit::event::MouseScrollDelta;
+                let scroll_delta = match delta {
+                    MouseScrollDelta::LineDelta(_x, y) => {
+                        // y is positive for scroll up, negative for scroll down
+                        // We want positive to mean scroll down, so negate
+                        (-y * 3.0) as i32
+                    }
+                    MouseScrollDelta::PixelDelta(pos) => {
+                        // Convert pixels to lines (approximate)
+                        let line_height = self.model.line_height as f64;
+                        (-pos.y / line_height) as i32
+                    }
+                };
+                if scroll_delta != 0 {
+                    update(&mut self.model, Msg::ScrollViewport(scroll_delta))
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -1059,10 +1204,9 @@ impl ApplicationHandler for App {
     }
     
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // Schedule next wake-up for cursor blink (every 500ms)
-        event_loop.set_control_flow(ControlFlow::WaitUntil(
-            Instant::now() + Duration::from_millis(500)
-        ));
+        // Use Poll to make event loop responsive to scrolling and user input
+        // This ensures immediate response to mouse wheel, touchpad, and keyboard events
+        event_loop.set_control_flow(ControlFlow::Poll);
 
         // Only tick for cursor blinking animation
         let now = Instant::now();
@@ -1116,6 +1260,7 @@ mod tests {
                 visible_columns: 80,
             },
             window_size: (800, 600),
+            scroll_padding: 1,  // Default padding for tests
             status_message: "Test".to_string(),
             line_height: 20,
             char_width: 10,
@@ -1779,5 +1924,336 @@ mod tests {
 
         update(&mut model, Msg::InsertChar('a'));
         assert_eq!(buffer_to_string(&model), "a\n");
+    }
+
+    // ========================================================================
+    // Scrolling tests - JetBrains-Style Boundary Scrolling
+    // ========================================================================
+
+    #[test]
+    fn test_scroll_no_scroll_when_content_fits() {
+        // Document with fewer lines than viewport
+        let mut model = test_model("line1\nline2\nline3\n", 0, 0);
+        model.viewport.visible_lines = 25;
+
+        // Move down multiple times - should not scroll
+        for _ in 0..3 {
+            update(&mut model, Msg::MoveCursorDown);
+        }
+
+        assert_eq!(model.viewport.top_line, 0);
+        assert_eq!(model.cursor.line, 3);
+    }
+
+    #[test]
+    fn test_scroll_down_boundary_crossing() {
+        // Create 30 lines of text
+        let text = (0..30).map(|i| format!("line{}", i)).collect::<Vec<_>>().join("\n") + "\n";
+        let mut model = test_model(&text, 0, 0);
+        model.viewport.visible_lines = 10;
+        model.scroll_padding = 1;
+
+        // Initially at top
+        assert_eq!(model.viewport.top_line, 0);
+        assert_eq!(model.cursor.line, 0);
+
+        // Move to line 8 (bottom_boundary = top_line + visible_lines - padding - 1 = 0 + 10 - 1 - 1 = 8)
+        for _ in 0..8 {
+            update(&mut model, Msg::MoveCursorDown);
+        }
+
+        // Should not have scrolled yet (cursor at boundary)
+        assert_eq!(model.viewport.top_line, 0);
+        assert_eq!(model.cursor.line, 8);
+
+        // Move one more line down - should trigger scroll
+        update(&mut model, Msg::MoveCursorDown);
+
+        // Viewport should scroll to maintain padding
+        // cursor is now at line 9, bottom_boundary was 8, so we need to scroll
+        // desired_top = cursor.line + padding + 1 = 9 + 1 + 1 = 11
+        // viewport.top_line = (11 - visible_lines) = (11 - 10) = 1
+        assert_eq!(model.cursor.line, 9);
+        assert_eq!(model.viewport.top_line, 1);
+    }
+
+    #[test]
+    fn test_scroll_up_boundary_crossing() {
+        // Create 30 lines of text
+        let text = (0..30).map(|i| format!("line{}", i)).collect::<Vec<_>>().join("\n") + "\n";
+        let mut model = test_model(&text, 15, 0);
+        model.viewport.visible_lines = 10;
+        model.viewport.top_line = 10;  // Start scrolled down
+        model.scroll_padding = 1;
+
+        // cursor at line 15, top_line at 10
+        // top_boundary = top_line + padding = 10 + 1 = 11
+
+        // Move up to line 11 (the boundary)
+        for _ in 0..4 {
+            update(&mut model, Msg::MoveCursorUp);
+        }
+
+        // Should not have scrolled yet (cursor at boundary)
+        assert_eq!(model.viewport.top_line, 10);
+        assert_eq!(model.cursor.line, 11);
+
+        // Move one more line up - should trigger scroll
+        update(&mut model, Msg::MoveCursorUp);
+
+        // Viewport should scroll to maintain padding
+        // cursor is now at line 10, should scroll up
+        // viewport.top_line = cursor.line - padding = 10 - 1 = 9
+        assert_eq!(model.cursor.line, 10);
+        assert_eq!(model.viewport.top_line, 9);
+    }
+
+    #[test]
+    fn test_scroll_mouse_wheel_independent() {
+        // Create 50 lines
+        let text = (0..50).map(|i| format!("line{}", i)).collect::<Vec<_>>().join("\n") + "\n";
+        let mut model = test_model(&text, 5, 0);
+        model.viewport.visible_lines = 10;
+        model.viewport.top_line = 0;
+
+        // Cursor at line 5, viewport at top
+        assert_eq!(model.cursor.line, 5);
+        assert_eq!(model.viewport.top_line, 0);
+
+        // Scroll down 10 lines with mouse wheel
+        update(&mut model, Msg::ScrollViewport(10));
+
+        // Viewport should move but cursor stays at line 5
+        assert_eq!(model.cursor.line, 5);
+        assert_eq!(model.viewport.top_line, 10);
+    }
+
+    #[test]
+    fn test_scroll_snap_back_on_insert() {
+        // Create 50 lines
+        let text = (0..50).map(|i| format!("line{}", i)).collect::<Vec<_>>().join("\n") + "\n";
+        let mut model = test_model(&text, 5, 0);
+        model.viewport.visible_lines = 10;
+        model.viewport.top_line = 0;
+
+        // Scroll viewport away from cursor using mouse wheel
+        update(&mut model, Msg::ScrollViewport(20));
+        assert_eq!(model.viewport.top_line, 20);
+        assert_eq!(model.cursor.line, 5);  // Cursor off-screen
+
+        // Insert a character - should snap back
+        update(&mut model, Msg::InsertChar('X'));
+
+        // Viewport should snap to show cursor with padding
+        // cursor at line 5, padding = 1
+        // Should scroll to show cursor in visible range with padding
+        assert_eq!(model.cursor.line, 5);
+        assert!(model.viewport.top_line <= 5 - model.scroll_padding);
+        assert!(model.viewport.top_line + model.viewport.visible_lines > 5 + model.scroll_padding);
+    }
+
+    #[test]
+    fn test_scroll_snap_back_on_newline() {
+        // Create 50 lines
+        let text = (0..50).map(|i| format!("line{}", i)).collect::<Vec<_>>().join("\n") + "\n";
+        let mut model = test_model(&text, 5, 4);
+        model.viewport.visible_lines = 10;
+
+        // Scroll viewport away
+        update(&mut model, Msg::ScrollViewport(20));
+        assert_eq!(model.viewport.top_line, 20);
+
+        // Insert newline - should snap back
+        update(&mut model, Msg::InsertNewline);
+
+        // Cursor should be at line 6 now
+        assert_eq!(model.cursor.line, 6);
+        // Viewport should show cursor with padding
+        assert!(model.viewport.top_line <= 6 - model.scroll_padding);
+        assert!(model.viewport.top_line + model.viewport.visible_lines > 6 + model.scroll_padding);
+    }
+
+    #[test]
+    fn test_scroll_padding_configurable() {
+        // Test with different padding values
+        let text = (0..50).map(|i| format!("line{}", i)).collect::<Vec<_>>().join("\n") + "\n";
+
+        // Test with padding = 3
+        let mut model = test_model(&text, 0, 0);
+        model.viewport.visible_lines = 10;
+        model.scroll_padding = 3;
+
+        // bottom_boundary = 0 + 10 - 3 - 1 = 6
+        // Move to line 6
+        for _ in 0..6 {
+            update(&mut model, Msg::MoveCursorDown);
+        }
+        assert_eq!(model.viewport.top_line, 0);
+
+        // Move one more - should scroll
+        update(&mut model, Msg::MoveCursorDown);
+        assert_eq!(model.cursor.line, 7);
+        assert!(model.viewport.top_line > 0);
+    }
+
+    #[test]
+    fn test_scroll_at_document_boundaries() {
+        // Test at start of document
+        let text = (0..30).map(|i| format!("line{}", i)).collect::<Vec<_>>().join("\n") + "\n";
+        let mut model = test_model(&text, 0, 0);
+        model.viewport.visible_lines = 10;
+
+        // Try to scroll up when already at top
+        update(&mut model, Msg::MoveCursorUp);
+        assert_eq!(model.cursor.line, 0);
+        assert_eq!(model.viewport.top_line, 0);
+
+        // Test at end of document
+        // Text has 31 lines total (line0 through line29, plus empty line 30 from trailing \n)
+        let last_line = model.buffer.len_lines().saturating_sub(1);
+        model.cursor.line = last_line;
+        model.viewport.top_line = 20;
+
+        // Try to scroll down when at bottom
+        update(&mut model, Msg::MoveCursorDown);
+        assert_eq!(model.cursor.line, last_line);  // Should stay at last line
+    }
+
+    #[test]
+    fn test_scroll_wheel_boundaries() {
+        // Test mouse wheel scrolling respects boundaries
+        let text = (0..30).map(|i| format!("line{}", i)).collect::<Vec<_>>().join("\n") + "\n";
+        let mut model = test_model(&text, 15, 0);
+        model.viewport.visible_lines = 10;
+        model.viewport.top_line = 5;
+
+        // Scroll up past the top
+        update(&mut model, Msg::ScrollViewport(-10));
+        assert_eq!(model.viewport.top_line, 0);
+
+        // Scroll down past the bottom
+        model.viewport.top_line = 15;
+        update(&mut model, Msg::ScrollViewport(10));
+        // Text has 31 lines (0-30), max_top = 31 - 10 = 21
+        let max_top = model.buffer.len_lines().saturating_sub(model.viewport.visible_lines);
+        assert_eq!(model.viewport.top_line, max_top);
+
+        // Try to scroll further down
+        update(&mut model, Msg::ScrollViewport(10));
+        assert_eq!(model.viewport.top_line, max_top);  // Should stay at max
+    }
+
+    // ========================================================================
+    // PageUp/PageDown tests - Column Preservation
+    // ========================================================================
+
+    #[test]
+    fn test_page_up_preserves_desired_column() {
+        // Create text with lines of varying lengths
+        let text = "short\nmedium line\nthis is a very long line\nshort\nmedium\n".to_string()
+            + &(0..30).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+
+        let mut model = test_model(&text, 20, 15);  // Start at line 20, column 15
+        model.viewport.visible_lines = 10;
+
+        // PageUp should jump ~8 lines (visible_lines - 2)
+        update(&mut model, Msg::PageUp);
+
+        // Should be at line 12 now (20 - 8)
+        assert_eq!(model.cursor.line, 12);
+
+        // desired_column should be preserved
+        assert_eq!(model.cursor.desired_column, Some(15));
+
+        // If line 12 is shorter than 15 chars, column should be clamped
+        let line_len = model.current_line_length();
+        assert_eq!(model.cursor.column, 15.min(line_len));
+    }
+
+    #[test]
+    fn test_page_down_preserves_desired_column() {
+        let text = (0..50).map(|i| {
+            if i % 3 == 0 {
+                "short".to_string()
+            } else {
+                format!("this is line number {}", i)
+            }
+        }).collect::<Vec<_>>().join("\n");
+
+        let mut model = test_model(&text, 10, 18);  // Start at line 10, column 18
+        model.viewport.visible_lines = 10;
+
+        // PageDown should jump ~8 lines
+        update(&mut model, Msg::PageDown);
+
+        // Should be at line 18 now (10 + 8)
+        assert_eq!(model.cursor.line, 18);
+
+        // desired_column should be preserved
+        assert_eq!(model.cursor.desired_column, Some(18));
+
+        // Column should be clamped if line is shorter
+        let line_len = model.current_line_length();
+        assert_eq!(model.cursor.column, 18.min(line_len));
+    }
+
+    #[test]
+    fn test_multiple_page_jumps_preserve_column() {
+        let text = (0..100).map(|i| {
+            if i % 5 == 0 {
+                "x".to_string()  // Very short lines
+            } else {
+                format!("this is a longer line number {}", i)
+            }
+        }).collect::<Vec<_>>().join("\n");
+
+        let mut model = test_model(&text, 51, 25);  // Start at line 51 (NOT a multiple of 5)
+        model.viewport.visible_lines = 10;
+
+        // PageUp twice
+        update(&mut model, Msg::PageUp);
+        update(&mut model, Msg::PageUp);
+
+        // PageDown twice (should return to original line)
+        update(&mut model, Msg::PageDown);
+        update(&mut model, Msg::PageDown);
+
+        // Should be back at line 51
+        assert_eq!(model.cursor.line, 51);
+
+        // Column should be restored to 25
+        assert_eq!(model.cursor.column, 25);
+        assert_eq!(model.cursor.desired_column, Some(25));
+    }
+
+    #[test]
+    fn test_page_up_to_short_line_clamps_column() {
+        let text = "x\ny\nz\n".to_string()  // Lines 0-2 are 1 char
+            + &(3..50).map(|i| format!("this is a very long line {}", i)).collect::<Vec<_>>().join("\n");
+
+        let mut model = test_model(&text, 20, 30);  // Start at line 20, column 30
+        model.viewport.visible_lines = 10;
+
+        // PageUp multiple times to reach short lines at top
+        update(&mut model, Msg::PageUp);  // Line 12
+        update(&mut model, Msg::PageUp);  // Line 4
+
+        assert_eq!(model.cursor.line, 4);
+        assert_eq!(model.cursor.desired_column, Some(30));  // Remembers 30
+
+        // PageUp once more to line 0 (very short)
+        update(&mut model, Msg::PageUp);
+
+        // Should be clamped to line length (1)
+        assert!(model.cursor.line <= 2);  // One of the short lines
+        assert_eq!(model.cursor.column, 1);  // Clamped to short line length
+        assert_eq!(model.cursor.desired_column, Some(30));  // Still remembers 30
+
+        // PageDown to long line
+        update(&mut model, Msg::PageDown);
+
+        // Column should restore toward 30
+        let line_len = model.current_line_length();
+        assert_eq!(model.cursor.column, 30.min(line_len));
     }
 }
