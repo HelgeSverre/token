@@ -1,0 +1,58 @@
+Unicode and Special Characters Test File
+
+Basic Latin extended:
+cafe vs cafe (with accent)
+naive vs naive (with diaeresis)
+resume vs resume (with accents)
+
+European characters:
+German: Muenchen, strasse, Gruesse
+French: francais, cafe, facade
+Spanish: espanol, nino, manana
+
+Greek letters:
+Alpha Beta Gamma Delta:
+Sigma Pi Omega Theta:
+
+Cyrillic:
+Russian:
+
+Asian scripts:
+Japanese Hiragana:
+Japanese Katakana:
+Chinese:
+Korean:
+
+Emojis (may not render in terminal fonts):
+Faces: [smile] [sad] [heart]
+Animals: [cat] [dog]
+Objects: [rocket] [star]
+
+Math symbols:
+Infinity, approximately, not equal
+Plus-minus, less-or-equal, greater-or-equal
+Summation, integral, partial
+
+Arrows:
+Left, right, up, down
+Double arrows
+
+Box drawing:
++---+---+
+|   |   |
++---+---+
+
+Currency:
+Dollar $ Euro Pound Yen
+
+Special whitespace:
+Normal space: [ ]
+Non-breaking space: [ ]
+Em space: [ ]
+Thin space: [ ]
+
+Zero-width characters (invisible):
+ZeroWidthSpace: []
+ZeroWidthJoiner: []
+
+End of unicode test

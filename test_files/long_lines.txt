@@ -1,0 +1,17 @@
+Short line
+Medium length line with some content here
+This is a longer line that contains more text and should extend further to the right side of the editor window
+
+This line is extremely long and should definitely require horizontal scrolling in most editor windows because it contains so much text that it cannot possibly fit within a standard 80 or even 120 column display width, making it perfect for testing horizontal scroll behavior and cursor movement at the far right edge of the document where things can get interesting especially when combined with word navigation and line-end detection algorithms that need to handle these edge cases gracefully without breaking or causing unexpected cursor jumps
+
+    Indented very long line: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.
+
+Short again
+x
+A single character line above
+
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+
+The line above is 300 A characters - good for testing very long single-word lines
+
+Normal line at the end

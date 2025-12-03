@@ -1,0 +1,42 @@
+// Test file for Smart Home/End navigation
+// Press Home to toggle between column 0 and first non-whitespace
+// Press End to toggle between line end and last non-whitespace
+
+No indentation here
+    4 spaces of indentation
+        8 spaces of indentation
+            12 spaces of indentation
+                16 spaces of indentation
+
+fn example_function() {
+    let x = 42;
+    if x > 0 {
+        println!("positive");
+        if x > 100 {
+            println!("large!");
+        }
+    }
+}
+
+class Example:
+    def __init__(self):
+        self.value = 0
+
+    def method(self):
+        if self.value:
+            return True
+        return False
+
+// Mixed content for testing
+    Leading spaces only
+	Single tab
+		Two tabs
+	Tab then spaces
+    Spaces then tab
+
+// Empty lines below for testing
+
+
+
+
+// End of file
