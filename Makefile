@@ -1,6 +1,6 @@
 # Makefile for token
 
-.PHONY: build release run dev test clean fmt format help sample-files
+.PHONY: build release run dev test clean fmt format help sample-files ci
 
 # Default target
 all: help
@@ -141,3 +141,12 @@ help:
 	@echo ""
 	@echo "Setup:"
 	@echo "  make sample-files - Generate large/binary test files"
+	@echo ""
+	@echo "CI targets:"
+	@echo "  make ci           - Test GitHub Actions locally with act"
+
+# === CI targets ===
+
+# Test GitHub Actions locally with act
+ci:
+	act push --job build --matrix os:ubuntu-latest --matrix target:x86_64-unknown-linux-gnu --container-architecture linux/amd64
