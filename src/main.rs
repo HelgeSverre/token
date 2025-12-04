@@ -44,7 +44,7 @@ struct Model {
 
     // Rendering cache
     line_height: usize,
-    char_width: usize,
+    char_width: f32,
 
     // For cursor blinking
     cursor_visible: bool,
@@ -94,7 +94,7 @@ enum EditOperation {
 impl Model {
     fn new(window_width: u32, window_height: u32, file_path: Option<PathBuf>) -> Self {
         let line_height = 20;
-        let char_width = 10;
+        let char_width: f32 = 10.0; // Will be corrected by renderer with actual font metrics
 
         // Load file if provided, otherwise use demo text
         let (buffer, file_path, status_message) = match file_path {
@@ -128,8 +128,10 @@ impl Model {
                 top_line: 0,
                 left_column: 0,
                 visible_lines: (window_height as usize) / line_height,
-                visible_columns: ((window_width as usize) / char_width)
-                    .saturating_sub(LINE_NUMBER_GUTTER_CHARS),
+                visible_columns: {
+                    let text_start_x = (char_width * LINE_NUMBER_GUTTER_CHARS as f32).round();
+                    ((window_width as f32 - text_start_x) / char_width).floor() as usize
+                },
             },
             window_size: (window_width, window_height),
             scroll_padding: 1, // Default 1 row padding (JetBrains-style)
@@ -406,8 +408,9 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
         Msg::Resize(width, height) => {
             model.window_size = (width, height);
             model.viewport.visible_lines = (height as usize) / model.line_height;
+            let text_start_x = (model.char_width * LINE_NUMBER_GUTTER_CHARS as f32).round();
             model.viewport.visible_columns =
-                ((width as usize) / model.char_width).saturating_sub(LINE_NUMBER_GUTTER_CHARS);
+                ((width as f32 - text_start_x) / model.char_width).floor() as usize;
             Some(Cmd::Redraw)
         }
 
@@ -1264,12 +1267,12 @@ impl Renderer {
         let line = model.viewport.top_line + visual_line;
         let line = line.min(model.buffer.len_lines().saturating_sub(1));
 
-        // Calculate column from x position
+        // Calculate column from x position (add left_column for horizontal scroll offset)
         let x_offset = x - text_start_x;
         let column = if x_offset > 0.0 {
-            (x_offset / char_width).round() as usize
+            model.viewport.left_column + (x_offset / char_width).round() as usize
         } else {
-            0
+            model.viewport.left_column
         };
 
         // Clamp column to line length
@@ -1389,13 +1392,13 @@ impl App {
         let renderer = Renderer::new(window, context)?;
 
         // Sync actual char_width from renderer to model for accurate viewport calculations
-        let actual_char_width = renderer.char_width().ceil() as usize;
-        self.model.char_width = actual_char_width;
+        self.model.char_width = renderer.char_width();
 
-        // Recalculate visible_columns with correct char_width
-        self.model.viewport.visible_columns = (self.model.window_size.0 as usize
-            / actual_char_width)
-            .saturating_sub(LINE_NUMBER_GUTTER_CHARS);
+        // Recalculate visible_columns using same formula as renderer
+        let text_start_x = (self.model.char_width * LINE_NUMBER_GUTTER_CHARS as f32).round();
+        self.model.viewport.visible_columns =
+            ((self.model.window_size.0 as f32 - text_start_x) / self.model.char_width).floor()
+                as usize;
 
         self.renderer = Some(renderer);
         Ok(())
@@ -1613,7 +1616,7 @@ mod tests {
             scroll_padding: 1, // Default padding for tests
             status_message: "Test".to_string(),
             line_height: 20,
-            char_width: 10,
+            char_width: 10.0,
             cursor_visible: true,
             last_cursor_blink: Instant::now(),
             undo_stack: Vec::new(),
