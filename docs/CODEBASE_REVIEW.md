@@ -12,12 +12,12 @@
 
 The Elm-style unidirectional data flow (`Msg → update → Model → view`) is fundamentally sound and used successfully by production editors. The current implementation needs **better factoring** (split Model into sub-models) and an **upgraded Cmd layer** for async operations—not a wholesale redesign.
 
-| Aspect | Current State | Recommendation |
-|--------|--------------|----------------|
-| Core pattern | ✅ Solid | Keep `Msg + update + Cmd` |
-| Model structure | ⚠️ Monolithic | Split into Document/EditorState/UiState |
-| Cmd system | ⚠️ Underpowered | Expand for async (LSP, file I/O) |
-| Performance | ✅ Fine for now | Address O(n) algorithms later |
+| Aspect          | Current State   | Recommendation                          |
+| --------------- | --------------- | --------------------------------------- |
+| Core pattern    | ✅ Solid        | Keep `Msg + update + Cmd`               |
+| Model structure | ⚠️ Monolithic   | Split into Document/EditorState/UiState |
+| Cmd system      | ⚠️ Underpowered | Expand for async (LSP, file I/O)        |
+| Performance     | ✅ Fine for now | Address O(n) algorithms later           |
 
 **Estimated refactor effort:** M–L (1–2 days for structure, incremental after)
 
@@ -87,6 +87,7 @@ helix-event    → Hook/event dispatch system
 ```
 
 **Key patterns:**
+
 - Selections stored per `(Document, View)` tuple
 - Async via job queue that returns callbacks
 - Immutable selection transformations (Kakoune-style)
@@ -103,18 +104,19 @@ gpui           → UI framework with actions
 ```
 
 **Key patterns:**
+
 - Anchors use Lamport timestamps for CRDT collaboration
 - Task-based async with `cx.spawn()` and `entity.update()`
 - Tighter coupling between buffer and view
 
 ### Relevance to Your Architecture
 
-| Pattern | Helix | Zed | Your Editor | Recommendation |
-|---------|-------|-----|-------------|----------------|
-| State mutation | Callbacks from jobs | Entity.update() | `&mut Model` | ✅ Keep current |
-| Document/View split | Separate crates | Multi-buffer abstraction | Monolithic | ⚠️ Split Model |
-| Async model | Job queue + channels | Task spawning | None | ⚠️ Add Cmd variants |
-| Selection storage | Per (Doc, View) | Anchor-based | Single cursor | ⚠️ Add multi-cursor |
+| Pattern             | Helix                | Zed                      | Your Editor   | Recommendation      |
+| ------------------- | -------------------- | ------------------------ | ------------- | ------------------- |
+| State mutation      | Callbacks from jobs  | Entity.update()          | `&mut Model`  | ✅ Keep current     |
+| Document/View split | Separate crates      | Multi-buffer abstraction | Monolithic    | ⚠️ Split Model      |
+| Async model         | Job queue + channels | Task spawning            | None          | ⚠️ Add Cmd variants |
+| Selection storage   | Per (Doc, View)      | Anchor-based             | Single cursor | ⚠️ Add multi-cursor |
 
 **Conclusion:** Both production editors use targeted mutability (not pure Elm), but they maintain clear separation of concerns. Your architecture is compatible with either approach.
 
@@ -360,18 +362,18 @@ Performance monitoring is a **cross-cutting concern** that fits cleanly as a sep
 struct DebugState {
     perf_enabled: bool,
     show_overlay: bool,
-    
+
     // Frame timing
     frame_times: RingBuffer<Duration, 120>,     // Last 120 frames (~2 sec at 60fps)
     last_frame_start: Instant,
-    
+
     // Per-message timing (which handlers are slow?)
     update_times: HashMap<String, MovingAverage>,
-    
+
     // System metrics from perf-monitor-rs
     cpu_usage: Option<f64>,
     memory_usage: Option<MemoryInfo>,
-    
+
     // Render stats
     lines_rendered: usize,
     glyphs_cached: usize,
@@ -412,7 +414,7 @@ enum Cmd {
     Redraw,
     SaveFile { document_id: DocumentId },
     LoadFile { path: PathBuf },
-    
+
     // Performance monitoring commands
     StartPerfSampler { interval_ms: u64 },
     StopPerfSampler,
@@ -430,14 +432,14 @@ fn process_cmd(cmd: Cmd, tx: Sender<Msg>, app: &AppModel) {
             std::thread::spawn(move || {
                 loop {
                     std::thread::sleep(Duration::from_millis(interval_ms));
-                    
+
                     // Collect system metrics
                     let snapshot = PerfSnapshot {
                         cpu: perf_monitor::cpu::processor_numbers().ok(),
                         memory: perf_monitor::mem::get_process_memory_info().ok(),
                         fd_count: perf_monitor::fd::fd_count_cur().ok(),
                     };
-                    
+
                     // Post back to main thread
                     if tx.send(Msg::Debug(DebugMsg::UpdatePerfStats(snapshot))).is_err() {
                         break; // Channel closed, exit sampler
@@ -453,7 +455,7 @@ fn process_cmd(cmd: Cmd, tx: Sender<Msg>, app: &AppModel) {
 fn update(app: &mut AppModel, msg: Msg) -> Option<Cmd> {
     let start = Instant::now();
     let msg_name = msg.variant_name(); // Debug representation
-    
+
     let result = match msg {
         Msg::Editor(id, emsg) => update_editor(app, id, emsg),
         Msg::Document(id, dmsg) => update_document(app, id, dmsg),
@@ -461,7 +463,7 @@ fn update(app: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::App(amsg) => update_app(app, amsg),
         Msg::Debug(dmsg) => update_debug(&mut app.debug, dmsg),
     };
-    
+
     // Record timing if perf monitoring enabled
     if app.debug.perf_enabled {
         let elapsed = start.elapsed();
@@ -470,35 +472,35 @@ fn update(app: &mut AppModel, msg: Msg) -> Option<Cmd> {
             .or_default()
             .record(elapsed);
     }
-    
+
     result
 }
 ```
 
 ### Display Options
 
-| Option | Description | Use Case |
-|--------|-------------|----------|
-| **Status bar** | FPS + memory in existing status line | Always-on lightweight |
-| **Overlay panel** | Detailed stats overlay (F12 toggle) | Debugging sessions |
-| **Log file** | Write metrics to stderr or file | CI / profiling |
-| **Headless export** | JSON stats dump | Automated benchmarks |
+| Option              | Description                          | Use Case              |
+| ------------------- | ------------------------------------ | --------------------- |
+| **Status bar**      | FPS + memory in existing status line | Always-on lightweight |
+| **Overlay panel**   | Detailed stats overlay (F12 toggle)  | Debugging sessions    |
+| **Log file**        | Write metrics to stderr or file      | CI / profiling        |
+| **Headless export** | JSON stats dump                      | Automated benchmarks  |
 
 ```rust
 // Overlay rendering (in render loop, after main content)
 fn render_perf_overlay(debug: &DebugState, ctx: &mut RenderContext) {
     if !debug.show_overlay { return; }
-    
+
     let avg_frame_time = debug.frame_times.average();
     let fps = 1.0 / avg_frame_time.as_secs_f64();
-    
+
     let lines = [
         format!("FPS: {:.1}", fps),
         format!("Frame: {:.2}ms", avg_frame_time.as_secs_f64() * 1000.0),
         format!("Memory: {:.1}MB", debug.memory_usage.map(|m| m.resident as f64 / 1_000_000.0).unwrap_or(0.0)),
         format!("Glyphs cached: {}", debug.glyphs_cached),
     ];
-    
+
     // Render semi-transparent overlay in corner
     render_debug_panel(&lines, ctx);
 }
@@ -506,13 +508,13 @@ fn render_perf_overlay(debug: &DebugState, ctx: &mut RenderContext) {
 
 ### Integration with Existing Features
 
-| Feature | Perf Metric | Why It Matters |
-|---------|-------------|----------------|
-| Soft wrapping | Visual index build time | O(n) on viewport resize |
-| Syntax highlighting | Token cache hit rate | Avoid re-tokenizing |
-| Large files | Memory growth over time | Detect leaks |
-| Undo/redo | Stack memory usage | Bound history size |
-| Scrolling | Frame drops during scroll | Smooth 60fps target |
+| Feature             | Perf Metric               | Why It Matters          |
+| ------------------- | ------------------------- | ----------------------- |
+| Soft wrapping       | Visual index build time   | O(n) on viewport resize |
+| Syntax highlighting | Token cache hit rate      | Avoid re-tokenizing     |
+| Large files         | Memory growth over time   | Detect leaks            |
+| Undo/redo           | Stack memory usage        | Bound history size      |
+| Scrolling           | Frame drops during scroll | Smooth 60fps target     |
 
 ### Compile-Time Gating
 
@@ -543,14 +545,14 @@ struct DebugState; // Zero-sized stub
 
 Performance monitoring fits naturally into the Elm architecture:
 
-| Aspect | Integration Point |
-|--------|-------------------|
-| **State** | `DebugState` in `AppModel` |
-| **Collection** | `Cmd::StartPerfSampler` spawns background thread |
-| **Updates** | `DebugMsg::UpdatePerfStats` posts samples to main loop |
-| **Instrumentation** | Wrap `update()` with timing |
-| **Display** | Overlay or status bar via `UiState` |
-| **Toggle** | `DebugMsg::TogglePerfOverlay` bound to F12 |
+| Aspect              | Integration Point                                      |
+| ------------------- | ------------------------------------------------------ |
+| **State**           | `DebugState` in `AppModel`                             |
+| **Collection**      | `Cmd::StartPerfSampler` spawns background thread       |
+| **Updates**         | `DebugMsg::UpdatePerfStats` posts samples to main loop |
+| **Instrumentation** | Wrap `update()` with timing                            |
+| **Display**         | Overlay or status bar via `UiState`                    |
+| **Toggle**          | `DebugMsg::TogglePerfOverlay` bound to F12             |
 
 The unidirectional flow makes this clean: metrics collection is a `Cmd`, metric updates are `Msg`, and display is just another part of `view`.
 
@@ -558,17 +560,17 @@ The unidirectional flow makes this clean: metrics collection is a `Cmd`, metric 
 
 ## 6. What's Missing vs Production Editors
 
-| Feature | Status | Priority | Effort |
-|---------|--------|----------|--------|
-| Multi-cursor | Missing | High | M |
-| Selections | Missing | High | M |
-| Visual line index | Missing | Medium | M |
-| Pixel-based scroll | Missing | Medium | S |
-| Syntax highlighting | Missing | Medium | L |
-| Performance monitoring | Planned | Medium | M |
-| LSP integration | Missing | Low | L |
-| Overlays (autocomplete) | Missing | Low | M |
-| Split views | Missing | Low | L |
+| Feature                 | Status  | Priority | Effort |
+| ----------------------- | ------- | -------- | ------ |
+| Multi-cursor            | Missing | High     | M      |
+| Selections              | Missing | High     | M      |
+| Visual line index       | Missing | Medium   | M      |
+| Pixel-based scroll      | Missing | Medium   | S      |
+| Syntax highlighting     | Missing | Medium   | L      |
+| Performance monitoring  | Planned | Medium   | M      |
+| LSP integration         | Missing | Low      | L      |
+| Overlays (autocomplete) | Missing | Low      | M      |
+| Split views             | Missing | Low      | L      |
 
 ---
 
@@ -591,6 +593,7 @@ Revisit the design if:
 - You need **real-time collaboration** (consider CRDT-based anchors like Zed)
 
 At that point, consider:
+
 - Command bus / event bus for decoupling
 - Reactive state (signals) for some subsystems
 - ECS for very dynamic editor components
@@ -614,11 +617,13 @@ This is incremental work, not a rewrite. The architecture will scale to a capabl
 ## Appendix: Quick Reference
 
 ### Current Architecture (keep)
+
 ```
 KeyEvent → Msg → update(&mut Model) → Cmd::Redraw → render()
 ```
 
 ### Target Architecture (evolve to)
+
 ```
 KeyEvent → Msg::Editor(id, EditorMsg) → update_editor() → Cmd::Redraw
                                                         → Cmd::SaveFile
@@ -633,10 +638,10 @@ KeyEvent → Msg::Editor(id, EditorMsg) → update_editor() → Cmd::Redraw
 
 ### Files to Create/Modify
 
-| File | Purpose |
-|------|---------|
-| `src/document.rs` | Document struct (buffer, undo, file metadata) |
-| `src/editor_state.rs` | EditorState (cursors, selections, viewport) |
-| `src/selection.rs` | Selection type and operations |
-| `src/messages.rs` | Nested Msg enums |
-| `src/commands.rs` | Expanded Cmd enum and processing |
+| File                  | Purpose                                       |
+| --------------------- | --------------------------------------------- |
+| `src/document.rs`     | Document struct (buffer, undo, file metadata) |
+| `src/editor_state.rs` | EditorState (cursors, selections, viewport)   |
+| `src/selection.rs`    | Selection type and operations                 |
+| `src/messages.rs`     | Nested Msg enums                              |
+| `src/commands.rs`     | Expanded Cmd enum and processing              |
