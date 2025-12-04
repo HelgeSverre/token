@@ -247,49 +247,39 @@ impl Model {
         let padding = self.scroll_padding;
         let total_lines = self.buffer.len_lines();
 
-        // If all content fits in viewport, just reset to top
-        if total_lines <= self.viewport.visible_lines {
+        // Vertical scrolling
+        if total_lines > self.viewport.visible_lines {
+            let top_boundary = self.viewport.top_line + padding;
+            let bottom_boundary =
+                self.viewport.top_line + self.viewport.visible_lines - padding - 1;
+
+            // Snap viewport to show cursor with padding
+            if self.cursor.line < top_boundary {
+                self.viewport.top_line = self.cursor.line.saturating_sub(padding);
+            } else if self.cursor.line > bottom_boundary {
+                let desired_top = self.cursor.line + padding + 1;
+                self.viewport.top_line = desired_top.saturating_sub(self.viewport.visible_lines);
+            }
+
+            // Clamp to valid range
+            let max_top = total_lines.saturating_sub(self.viewport.visible_lines);
+            self.viewport.top_line = self.viewport.top_line.min(max_top);
+        } else {
             self.viewport.top_line = 0;
-            return;
         }
 
-        // Check if cursor is outside visible area + padding
-        let top_boundary = self.viewport.top_line + padding;
-        let bottom_boundary = self.viewport.top_line + self.viewport.visible_lines - padding - 1;
-
-        let needs_scroll = self.cursor.line < self.viewport.top_line
-            || self.cursor.line > self.viewport.top_line + self.viewport.visible_lines - 1
-            || self.cursor.line < top_boundary
-            || self.cursor.line > bottom_boundary;
-
-        if !needs_scroll {
-            return; // Cursor already visible with padding
-        }
-
-        // Snap viewport to show cursor with padding
-        if self.cursor.line < top_boundary {
-            self.viewport.top_line = self.cursor.line.saturating_sub(padding);
-        } else if self.cursor.line > bottom_boundary {
-            let desired_top = self.cursor.line + padding + 1;
-            self.viewport.top_line = desired_top.saturating_sub(self.viewport.visible_lines);
-        }
-
-        // Clamp to valid range
-        let max_top = total_lines.saturating_sub(self.viewport.visible_lines);
-        self.viewport.top_line = self.viewport.top_line.min(max_top);
-
-        // Horizontal scrolling (simple margin-based, not padding)
+        // Horizontal scrolling (always check, independent of vertical)
         const HORIZONTAL_MARGIN: usize = 4;
-        let right_column = self.viewport.left_column + self.viewport.visible_columns;
+        let left_safe = self.viewport.left_column + HORIZONTAL_MARGIN;
+        let right_safe = self.viewport.left_column + self.viewport.visible_columns - HORIZONTAL_MARGIN;
 
-        if self.cursor.column < self.viewport.left_column {
+        if self.cursor.column < left_safe {
+            // Scroll left: put cursor exactly at left safe boundary
             self.viewport.left_column = self.cursor.column.saturating_sub(HORIZONTAL_MARGIN);
-        } else if self.cursor.column >= right_column {
-            let target = self
-                .cursor
-                .column
-                .saturating_sub(self.viewport.visible_columns - 1 - HORIZONTAL_MARGIN);
-            self.viewport.left_column = target;
+        } else if self.cursor.column >= right_safe {
+            // Scroll right: put cursor exactly at right safe boundary
+            self.viewport.left_column =
+                self.cursor.column + HORIZONTAL_MARGIN + 1 - self.viewport.visible_columns;
         }
     }
 }
@@ -493,8 +483,8 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
                 model.cursor.line -= 1;
                 model.cursor.column = model.current_line_length();
                 model.cursor.desired_column = None;
-                model.ensure_cursor_visible();
             }
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -509,8 +499,8 @@ fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
                 model.cursor.line += 1;
                 model.cursor.column = 0;
                 model.cursor.desired_column = None;
-                model.ensure_cursor_visible();
             }
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -1073,6 +1063,10 @@ impl Renderer {
         })
     }
 
+    fn char_width(&self) -> f32 {
+        self.char_width
+    }
+
     fn render(&mut self, model: &Model) -> Result<()> {
         // Resize surface if needed
         if self.width != model.window_size.0 || self.height != model.window_size.1 {
@@ -1175,9 +1169,11 @@ impl Renderer {
         if model.cursor_visible {
             let cursor_in_vertical_view = model.cursor.line >= model.viewport.top_line
                 && model.cursor.line < model.viewport.top_line + visible_lines;
+            // Calculate actual visible columns using renderer's char_width (not model's hardcoded value)
+            let actual_visible_columns =
+                ((width as f32 - text_start_x as f32) / char_width).floor() as usize;
             let cursor_in_horizontal_view = model.cursor.column >= model.viewport.left_column
-                && model.cursor.column
-                    < model.viewport.left_column + model.viewport.visible_columns;
+                && model.cursor.column < model.viewport.left_column + actual_visible_columns;
 
             if cursor_in_vertical_view && cursor_in_horizontal_view {
                 let screen_line = model.cursor.line - model.viewport.top_line;
@@ -1318,7 +1314,7 @@ fn draw_text(
 
         for bitmap_y in 0..metrics.height {
             for bitmap_x in 0..metrics.width {
-                let bitmap_idx = (bitmap_y * metrics.width + bitmap_x) as usize;
+                let bitmap_idx = bitmap_y * metrics.width + bitmap_x;
                 if bitmap_idx < bitmap.len() {
                     let alpha = bitmap[bitmap_idx];
                     if alpha > 0 {
@@ -1390,7 +1386,18 @@ impl App {
     }
 
     fn init_renderer(&mut self, window: Rc<Window>, context: &Context<Rc<Window>>) -> Result<()> {
-        self.renderer = Some(Renderer::new(window, context)?);
+        let renderer = Renderer::new(window, context)?;
+
+        // Sync actual char_width from renderer to model for accurate viewport calculations
+        let actual_char_width = renderer.char_width().ceil() as usize;
+        self.model.char_width = actual_char_width;
+
+        // Recalculate visible_columns with correct char_width
+        self.model.viewport.visible_columns = (self.model.window_size.0 as usize
+            / actual_char_width)
+            .saturating_sub(LINE_NUMBER_GUTTER_CHARS);
+
+        self.renderer = Some(renderer);
         Ok(())
     }
 
