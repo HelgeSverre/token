@@ -323,7 +323,240 @@ struct ScrollOffset {
 
 ---
 
-## 5. What's Missing vs Production Editors
+## 5. Performance Monitoring Integration
+
+> **Reference:** See `TODO.md` Feature 4 for the planned performance monitoring system using
+> [perf-monitor-rs](https://github.com/larksuite/perf-monitor-rs).
+
+### Why Performance Monitoring?
+
+As the editor grows, you need visibility into:
+
+1. **Frame times** — Is rendering staying under 16ms (60 FPS)?
+2. **Update latency** — Which `Msg` handlers are slow?
+3. **Memory usage** — Are we leaking memory on large files?
+4. **I/O performance** — How long do file operations take?
+
+Without instrumentation, performance regressions creep in unnoticed. The Elm architecture makes this easy because all state changes flow through `update`—a natural instrumentation point.
+
+### How It Fits the Architecture
+
+Performance monitoring is a **cross-cutting concern** that fits cleanly as a separate domain:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  AppModel                                                       │
+│  ┌────────────┐ ┌──────────────┐ ┌─────────┐ ┌───────────────┐  │
+│  │ documents  │ │ editors      │ │ ui      │ │ debug         │  │
+│  │            │ │              │ │         │ │ (perf stats)  │  │
+│  └────────────┘ └──────────────┘ └─────────┘ └───────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### State Structure
+
+```rust
+/// Debug/performance state - can be compile-gated with #[cfg(feature = "perf")]
+struct DebugState {
+    perf_enabled: bool,
+    show_overlay: bool,
+    
+    // Frame timing
+    frame_times: RingBuffer<Duration, 120>,     // Last 120 frames (~2 sec at 60fps)
+    last_frame_start: Instant,
+    
+    // Per-message timing (which handlers are slow?)
+    update_times: HashMap<String, MovingAverage>,
+    
+    // System metrics from perf-monitor-rs
+    cpu_usage: Option<f64>,
+    memory_usage: Option<MemoryInfo>,
+    
+    // Render stats
+    lines_rendered: usize,
+    glyphs_cached: usize,
+}
+
+struct MemoryInfo {
+    resident: usize,        // RSS in bytes
+    virtual_size: usize,
+    allocations: usize,     // If tracking with a custom allocator
+}
+```
+
+### Message Integration
+
+```rust
+enum Msg {
+    Editor(EditorId, EditorMsg),
+    Document(DocumentId, DocumentMsg),
+    Ui(UiMsg),
+    App(AppMsg),
+    Debug(DebugMsg),  // New domain for perf monitoring
+}
+
+enum DebugMsg {
+    TogglePerfOverlay,              // Keybinding: F12 or similar
+    UpdatePerfStats(PerfSnapshot),  // Posted from background sampler
+    RecordFrameTime(Duration),      // Posted after each render
+    ResetStats,                     // Clear accumulated data
+}
+```
+
+### Command Integration
+
+The expanded `Cmd` system handles background sampling:
+
+```rust
+enum Cmd {
+    Redraw,
+    SaveFile { document_id: DocumentId },
+    LoadFile { path: PathBuf },
+    
+    // Performance monitoring commands
+    StartPerfSampler { interval_ms: u64 },
+    StopPerfSampler,
+}
+```
+
+### Implementation Pattern
+
+```rust
+// In event loop - command processing
+fn process_cmd(cmd: Cmd, tx: Sender<Msg>, app: &AppModel) {
+    match cmd {
+        Cmd::StartPerfSampler { interval_ms } => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(Duration::from_millis(interval_ms));
+                    
+                    // Collect system metrics
+                    let snapshot = PerfSnapshot {
+                        cpu: perf_monitor::cpu::processor_numbers().ok(),
+                        memory: perf_monitor::mem::get_process_memory_info().ok(),
+                        fd_count: perf_monitor::fd::fd_count_cur().ok(),
+                    };
+                    
+                    // Post back to main thread
+                    if tx.send(Msg::Debug(DebugMsg::UpdatePerfStats(snapshot))).is_err() {
+                        break; // Channel closed, exit sampler
+                    }
+                }
+            });
+        }
+        // ... other commands
+    }
+}
+
+// Instrumented update loop
+fn update(app: &mut AppModel, msg: Msg) -> Option<Cmd> {
+    let start = Instant::now();
+    let msg_name = msg.variant_name(); // Debug representation
+    
+    let result = match msg {
+        Msg::Editor(id, emsg) => update_editor(app, id, emsg),
+        Msg::Document(id, dmsg) => update_document(app, id, dmsg),
+        Msg::Ui(umsg) => update_ui(&mut app.ui, umsg),
+        Msg::App(amsg) => update_app(app, amsg),
+        Msg::Debug(dmsg) => update_debug(&mut app.debug, dmsg),
+    };
+    
+    // Record timing if perf monitoring enabled
+    if app.debug.perf_enabled {
+        let elapsed = start.elapsed();
+        app.debug.update_times
+            .entry(msg_name)
+            .or_default()
+            .record(elapsed);
+    }
+    
+    result
+}
+```
+
+### Display Options
+
+| Option | Description | Use Case |
+|--------|-------------|----------|
+| **Status bar** | FPS + memory in existing status line | Always-on lightweight |
+| **Overlay panel** | Detailed stats overlay (F12 toggle) | Debugging sessions |
+| **Log file** | Write metrics to stderr or file | CI / profiling |
+| **Headless export** | JSON stats dump | Automated benchmarks |
+
+```rust
+// Overlay rendering (in render loop, after main content)
+fn render_perf_overlay(debug: &DebugState, ctx: &mut RenderContext) {
+    if !debug.show_overlay { return; }
+    
+    let avg_frame_time = debug.frame_times.average();
+    let fps = 1.0 / avg_frame_time.as_secs_f64();
+    
+    let lines = [
+        format!("FPS: {:.1}", fps),
+        format!("Frame: {:.2}ms", avg_frame_time.as_secs_f64() * 1000.0),
+        format!("Memory: {:.1}MB", debug.memory_usage.map(|m| m.resident as f64 / 1_000_000.0).unwrap_or(0.0)),
+        format!("Glyphs cached: {}", debug.glyphs_cached),
+    ];
+    
+    // Render semi-transparent overlay in corner
+    render_debug_panel(&lines, ctx);
+}
+```
+
+### Integration with Existing Features
+
+| Feature | Perf Metric | Why It Matters |
+|---------|-------------|----------------|
+| Soft wrapping | Visual index build time | O(n) on viewport resize |
+| Syntax highlighting | Token cache hit rate | Avoid re-tokenizing |
+| Large files | Memory growth over time | Detect leaks |
+| Undo/redo | Stack memory usage | Bound history size |
+| Scrolling | Frame drops during scroll | Smooth 60fps target |
+
+### Compile-Time Gating
+
+Keep perf monitoring optional to avoid overhead in release builds:
+
+```toml
+# Cargo.toml
+[features]
+default = []
+perf = ["perf-monitor"]
+
+[dependencies]
+perf-monitor = { version = "0.2", optional = true }
+```
+
+```rust
+#[cfg(feature = "perf")]
+mod debug;
+
+#[cfg(feature = "perf")]
+use debug::DebugState;
+
+#[cfg(not(feature = "perf"))]
+struct DebugState; // Zero-sized stub
+```
+
+### Summary
+
+Performance monitoring fits naturally into the Elm architecture:
+
+| Aspect | Integration Point |
+|--------|-------------------|
+| **State** | `DebugState` in `AppModel` |
+| **Collection** | `Cmd::StartPerfSampler` spawns background thread |
+| **Updates** | `DebugMsg::UpdatePerfStats` posts samples to main loop |
+| **Instrumentation** | Wrap `update()` with timing |
+| **Display** | Overlay or status bar via `UiState` |
+| **Toggle** | `DebugMsg::TogglePerfOverlay` bound to F12 |
+
+The unidirectional flow makes this clean: metrics collection is a `Cmd`, metric updates are `Msg`, and display is just another part of `view`.
+
+---
+
+## 6. What's Missing vs Production Editors
 
 | Feature | Status | Priority | Effort |
 |---------|--------|----------|--------|
@@ -332,13 +565,14 @@ struct ScrollOffset {
 | Visual line index | Missing | Medium | M |
 | Pixel-based scroll | Missing | Medium | S |
 | Syntax highlighting | Missing | Medium | L |
+| Performance monitoring | Planned | Medium | M |
 | LSP integration | Missing | Low | L |
 | Overlays (autocomplete) | Missing | Low | M |
 | Split views | Missing | Low | L |
 
 ---
 
-## 6. Risks of NOT Refactoring
+## 7. Risks of NOT Refactoring
 
 1. **Monolithic enums grow** — `Msg` and `Model` become 2000+ lines, hard to reason about
 2. **Hidden O(n²)** — Ad-hoc line calculations scattered through codebase
@@ -347,7 +581,7 @@ struct ScrollOffset {
 
 ---
 
-## 7. When to Consider Different Architecture
+## 8. When to Consider Different Architecture
 
 Revisit the design if:
 
@@ -363,7 +597,7 @@ At that point, consider:
 
 ---
 
-## 8. Conclusion
+## 9. Conclusion
 
 **The Elm-style architecture is a solid foundation.** Both Helix and Zed use variations of message-passing with targeted mutability. Your current implementation needs:
 
