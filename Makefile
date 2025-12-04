@@ -19,7 +19,7 @@ run: release
 
 # Run debug build (faster compile, slower runtime)
 dev: build
-	./target/debug/token test_files/indentation.txt
+	./target/debug/token test_files/sample_code.rs
 
 # Run all tests
 test:
