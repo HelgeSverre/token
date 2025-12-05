@@ -844,6 +844,11 @@ Each phase should be a separate commit (or PR) with passing tests.
 | 2025-12-04 | 6     | Perf overlay rendering         | Complete  | Semi-transparent panel with all metrics             |
 | 2025-12-04 | 6     | F12 toggle                     | Complete  | Toggles overlay visibility                          |
 | 2025-12-04 | 6     | Build verification             | Complete  | Debug + Release builds clean, 90 tests pass         |
+| 2025-12-06 | -     | Arrow key viewport snap-back   | Complete  | MoveCursor now calls ensure_cursor_visible()        |
+| 2025-12-06 | -     | Direction-aware scroll reveal  | Complete  | ScrollRevealMode enum: Minimal/Top/Bottom/Centered  |
+| 2025-12-06 | -     | ensure_cursor_visible refactor | Complete  | New ensure_cursor_visible_with_mode() primitive     |
+| 2025-12-06 | -     | Directional reveal integration | Complete  | Up→TopAligned, Down→BottomAligned for natural UX   |
+| 2025-12-06 | -     | Scroll reveal tests            | Complete  | 11 new tests for snap-back and direction-aware reveal |
 
 ---
 
@@ -891,7 +896,7 @@ src/
 ├── model/
 │   ├── mod.rs           # AppModel struct (includes Theme), re-exports
 │   ├── document.rs      # Document struct (buffer, undo/redo, file_path)
-│   ├── editor.rs        # EditorState, Cursor, Selection, Viewport
+│   ├── editor.rs        # EditorState, Cursor, Selection, Viewport, ScrollRevealMode
 │   └── ui.rs            # UiState (status, cursor blink, loading states)
 ├── messages.rs          # Msg, EditorMsg, DocumentMsg, UiMsg, AppMsg, Direction
 ├── commands.rs          # Cmd enum (Redraw, SaveFile, LoadFile, Batch)
@@ -905,15 +910,16 @@ tests/
 ├── cursor_movement.rs   # 38 tests - cursor position, movement, smart home/end, word nav
 ├── text_editing.rs      # 21 tests - insert/delete, undo/redo
 ├── selection.rs         # 11 tests - selection helpers, rectangle, multi-cursor
-├── scrolling.rs         # 22 tests - vertical, horizontal, page navigation
-└── edge_cases.rs        # 9 tests - regression tests, boundaries
+├── scrolling.rs         # 33 tests - vertical, horizontal, page nav, reveal modes
+├── edge_cases.rs        # 9 tests - regression tests, boundaries
+└── status_bar.rs        # 47 tests - status bar segments, sync, transient messages
 ```
 
 **Test distribution:**
-- `tests/` folder: 101 integration tests (library API)
-- `src/main.rs`: 8 keyboard handling tests (require handle_key)
+- `tests/` folder: 164 integration tests (38+21+16+33+9+47 = cursor, text, selection, scrolling, edge, status_bar)
+- `src/main.rs`: 11 keyboard handling tests (require handle_key)
 - `src/theme.rs`: 10 theme tests (inline, module-specific)
-- **Total: 119 tests**
+- **Total: 185 tests**
 
 ---
 
