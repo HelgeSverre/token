@@ -1,0 +1,199 @@
+//! Message types for the Elm-style architecture
+//!
+//! All state changes flow through these message types.
+
+use std::path::PathBuf;
+
+/// Direction for cursor movement
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+/// Editor-specific messages (cursor movement, viewport scrolling)
+#[derive(Debug, Clone)]
+pub enum EditorMsg {
+    // === Basic Movement ===
+    /// Move cursor in a direction
+    MoveCursor(Direction),
+    /// Move cursor to start of line (Home key)
+    MoveCursorLineStart,
+    /// Move cursor to end of line (End key)
+    MoveCursorLineEnd,
+    /// Move cursor to start of document (Ctrl+Home)
+    MoveCursorDocumentStart,
+    /// Move cursor to end of document (Ctrl+End)
+    MoveCursorDocumentEnd,
+    /// Move cursor by word (Option+Left/Right on Mac)
+    MoveCursorWord(Direction),
+    /// Page up
+    PageUp,
+    /// Page down
+    PageDown,
+    /// Set cursor to specific position (from mouse click)
+    SetCursorPosition { line: usize, column: usize },
+    /// Scroll viewport vertically (positive = down, negative = up)
+    Scroll(i32),
+    /// Scroll viewport horizontally (positive = right, negative = left)
+    ScrollHorizontal(i32),
+
+    // === Selection Movement (Shift+key) ===
+    /// Move cursor with selection (Shift+Arrow)
+    MoveCursorWithSelection(Direction),
+    /// Move to line start with selection (Shift+Home)
+    MoveCursorLineStartWithSelection,
+    /// Move to line end with selection (Shift+End)
+    MoveCursorLineEndWithSelection,
+    /// Move to document start with selection (Shift+Ctrl+Home)
+    MoveCursorDocumentStartWithSelection,
+    /// Move to document end with selection (Shift+Ctrl+End)
+    MoveCursorDocumentEndWithSelection,
+    /// Move word with selection (Shift+Option+Arrow)
+    MoveCursorWordWithSelection(Direction),
+    /// Page up with selection
+    PageUpWithSelection,
+    /// Page down with selection
+    PageDownWithSelection,
+
+    // === Selection Commands ===
+    /// Select all text (Cmd+A)
+    SelectAll,
+    /// Select word at cursor (double-click)
+    SelectWord,
+    /// Select entire line (triple-click)
+    SelectLine,
+    /// Extend selection to position (Shift+Click)
+    ExtendSelectionToPosition { line: usize, column: usize },
+    /// Clear all selections (collapse to cursors)
+    ClearSelection,
+
+    // === Multi-Cursor ===
+    /// Toggle cursor at position (Cmd+Click)
+    ToggleCursorAtPosition { line: usize, column: usize },
+    /// Add cursor above current (Option+Option+Up)
+    AddCursorAbove,
+    /// Add cursor below current (Option+Option+Down)
+    AddCursorBelow,
+    /// Collapse to single cursor (Escape with multiple cursors)
+    CollapseToSingleCursor,
+    /// Remove cursor by index
+    RemoveCursor(usize),
+
+    // === Find & Select ===
+    /// Select next occurrence of word/selection (Cmd+D)
+    SelectNextOccurrence,
+    /// Select all occurrences (Cmd+Shift+L)
+    SelectAllOccurrences,
+
+    // === Rectangle Selection (Middle mouse) ===
+    /// Start rectangle selection at position
+    StartRectangleSelection { line: usize, column: usize },
+    /// Update rectangle selection to position
+    UpdateRectangleSelection { line: usize, column: usize },
+    /// Finish rectangle selection
+    FinishRectangleSelection,
+    /// Cancel rectangle selection
+    CancelRectangleSelection,
+}
+
+/// Document-specific messages (text editing, undo/redo)
+#[derive(Debug, Clone)]
+pub enum DocumentMsg {
+    /// Insert a character at cursor
+    InsertChar(char),
+    /// Insert a newline at cursor
+    InsertNewline,
+    /// Delete character before cursor (Backspace)
+    DeleteBackward,
+    /// Delete character at cursor (Delete)
+    DeleteForward,
+    /// Undo last edit
+    Undo,
+    /// Redo last undone edit
+    Redo,
+    /// Copy selection to clipboard (Cmd+C)
+    Copy,
+    /// Cut selection to clipboard (Cmd+X)
+    Cut,
+    /// Paste from clipboard (Cmd+V)
+    Paste,
+}
+
+use crate::model::{SegmentContent, SegmentId};
+
+/// UI-specific messages (status bar, cursor blink)
+#[derive(Debug, Clone)]
+pub enum UiMsg {
+    /// Set status bar message (legacy, for backward compatibility)
+    SetStatus(String),
+    /// Toggle cursor blink state
+    BlinkCursor,
+    /// Update a specific status bar segment
+    UpdateSegment {
+        id: SegmentId,
+        content: SegmentContent,
+    },
+    /// Set a transient message that auto-expires
+    SetTransientMessage {
+        text: String,
+        duration_ms: u64,
+    },
+    /// Clear the transient message
+    ClearTransientMessage,
+}
+
+/// Application-level messages (file operations, window events)
+#[derive(Debug, Clone)]
+pub enum AppMsg {
+    /// Window resized
+    Resize(u32, u32),
+    /// Save current file
+    SaveFile,
+    /// Load a file
+    LoadFile(PathBuf),
+    /// Create a new file
+    NewFile,
+    /// File save completed (async result)
+    SaveCompleted(Result<(), String>),
+    /// File load completed (async result)
+    FileLoaded {
+        path: PathBuf,
+        result: Result<String, String>,
+    },
+    /// Quit the application
+    Quit,
+}
+
+/// Top-level message type
+#[derive(Debug, Clone)]
+pub enum Msg {
+    /// Editor messages (cursor, viewport)
+    Editor(EditorMsg),
+    /// Document messages (text editing)
+    Document(DocumentMsg),
+    /// UI messages (status, animation)
+    Ui(UiMsg),
+    /// App messages (file I/O, window)
+    App(AppMsg),
+}
+
+// Convenience constructors for common messages
+impl Msg {
+    /// Create a cursor movement message
+    pub fn move_cursor(direction: Direction) -> Self {
+        Msg::Editor(EditorMsg::MoveCursor(direction))
+    }
+
+    /// Create an insert character message
+    pub fn insert_char(ch: char) -> Self {
+        Msg::Document(DocumentMsg::InsertChar(ch))
+    }
+
+    /// Create a resize message
+    pub fn resize(width: u32, height: u32) -> Self {
+        Msg::App(AppMsg::Resize(width, height))
+    }
+}

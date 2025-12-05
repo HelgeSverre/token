@@ -1,0 +1,23 @@
+version: 1
+name: "GitHub Light"
+author: "Built-in"
+description: "GitHub's light theme"
+
+ui:
+  editor:
+    background: "#FFFFFF"
+    foreground: "#24292F"
+    current_line_background: "#F6F8FA"
+    cursor_color: "#0969DA"
+    selection_background: "#ADD6FF"
+    secondary_cursor_color: "#0969DA80"
+
+  gutter:
+    background: "#FFFFFF"
+    foreground: "#8C959F"
+    foreground_active: "#24292F"
+    border_color: "#D0D7DE"
+
+  status_bar:
+    background: "#F6F8FA"
+    foreground: "#57606A"

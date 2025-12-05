@@ -1,0 +1,23 @@
+version: 1
+name: "Default Dark"
+author: "Built-in"
+description: "VS Code-inspired dark theme"
+
+ui:
+  editor:
+    background: "#1E1E1E"
+    foreground: "#D4D4D4"
+    current_line_background: "#2A2A2A"
+    cursor_color: "#FFFFFF"
+    selection_background: "#264F78"
+    secondary_cursor_color: "#FFFFFF80"
+
+  gutter:
+    background: "#1E1E1E"
+    foreground: "#858585"
+    foreground_active: "#C6C6C6"
+    border_color: "#313438"
+
+  status_bar:
+    background: "#007ACC"
+    foreground: "#FFFFFF"

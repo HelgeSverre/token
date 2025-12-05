@@ -1,1013 +1,112 @@
 use anyhow::Result;
 use fontdue::{Font, FontSettings, LineMetrics, Metrics};
-use ropey::Rope;
 use softbuffer::{Context, Surface};
 use std::collections::HashMap;
+#[cfg(debug_assertions)]
+use std::collections::VecDeque;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{Key, ModifiersState, NamedKey};
+use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::Window;
+
+// Import from library modules
+use token::commands::Cmd;
+use token::messages::{AppMsg, Direction, DocumentMsg, EditorMsg, Msg, UiMsg};
+use token::model::{gutter_border_x, text_start_x, AppModel};
+use token::update::update;
 
 // Glyph cache key: (character, font_size as bits)
 type GlyphCacheKey = (char, u32);
 type GlyphCache = HashMap<GlyphCacheKey, (Metrics, Vec<u8>)>;
 
-// Color constants for rendering
-const CURRENT_LINE_HIGHLIGHT: u32 = 0xFF2A2A2A; // Current line highlight (subtle)
+// Performance monitoring (debug builds only)
+#[cfg(debug_assertions)]
+#[derive(Default)]
+#[allow(dead_code)] // Some fields reserved for future detailed timing
+struct PerfStats {
+    // Frame timing
+    frame_start: Option<Instant>,
+    last_frame_time: Duration,
+    frame_times: VecDeque<Duration>, // Rolling window for avg/histogram
 
-// Layout constant - width of line number gutter in characters
-const LINE_NUMBER_GUTTER_CHARS: usize = 6;
+    // Render breakdown
+    clear_time: Duration,
+    line_highlight_time: Duration,
+    gutter_time: Duration,
+    text_time: Duration,
+    cursor_time: Duration,
+    status_bar_time: Duration,
+    present_time: Duration,
 
-// ============================================================================
-// MODEL - Application State (Elm's Model)
-// ============================================================================
+    // Cache stats (reset per frame)
+    frame_cache_hits: usize,
+    frame_cache_misses: usize,
 
-#[derive(Debug, Clone)]
-struct Model {
-    // Document state
-    buffer: Rope,
-    cursor: Cursor,
+    // Cumulative cache stats
+    total_cache_hits: usize,
+    total_cache_misses: usize,
 
-    // View state
-    viewport: Viewport,
-    window_size: (u32, u32),
-    scroll_padding: usize, // Rows of padding to maintain above/below cursor
-
-    // UI state
-    status_message: String,
-
-    // Rendering cache
-    line_height: usize,
-    char_width: f32,
-
-    // For cursor blinking
-    cursor_visible: bool,
-    last_cursor_blink: Instant,
-
-    // Undo/Redo stacks
-    undo_stack: Vec<EditOperation>,
-    redo_stack: Vec<EditOperation>,
-
-    // File tracking
-    file_path: Option<PathBuf>, // Path to currently open file
-    is_modified: bool,          // Whether buffer has unsaved changes
+    // Display toggle
+    show_overlay: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct Cursor {
-    line: usize,
-    column: usize,
-    // Desired column for vertical movement
-    desired_column: Option<usize>,
-}
+#[cfg(debug_assertions)]
+#[allow(dead_code)] // Some methods reserved for future use
+impl PerfStats {
+    fn reset_frame_stats(&mut self) {
+        self.frame_cache_hits = 0;
+        self.frame_cache_misses = 0;
+    }
 
-#[derive(Debug, Clone)]
-struct Viewport {
-    top_line: usize,
-    left_column: usize,
-    visible_lines: usize,
-    visible_columns: usize,
-}
-
-#[derive(Debug, Clone)]
-enum EditOperation {
-    Insert {
-        position: usize,
-        text: String,
-        cursor_before: Cursor,
-        cursor_after: Cursor,
-    },
-    Delete {
-        position: usize,
-        text: String,
-        cursor_before: Cursor,
-        cursor_after: Cursor,
-    },
-}
-
-impl Model {
-    fn new(window_width: u32, window_height: u32, file_path: Option<PathBuf>) -> Self {
-        let line_height = 20;
-        let char_width: f32 = 10.0; // Will be corrected by renderer with actual font metrics
-
-        // Load file if provided, otherwise use demo text
-        let (buffer, file_path, status_message) = match file_path {
-            Some(path) => match std::fs::read_to_string(&path) {
-                Ok(content) => {
-                    let msg = format!("Loaded: {}", path.display());
-                    (Rope::from(content), Some(path), msg)
-                }
-                Err(e) => {
-                    let msg = format!("Error loading {}: {}", path.display(), e);
-                    (Rope::from(""), None, msg)
-                }
-            },
-            None => {
-                (
-                    Rope::from("Hello, World!\nThis is a text editor built in Rust.\nUsing Elm architecture!\n\nStart typing to edit.\n"),
-                    None,
-                    "New file".to_string()
-                )
+    fn record_frame_time(&mut self) {
+        if let Some(start) = self.frame_start.take() {
+            self.last_frame_time = start.elapsed();
+            self.frame_times.push_back(self.last_frame_time);
+            if self.frame_times.len() > 60 {
+                self.frame_times.pop_front();
             }
-        };
-
-        Self {
-            buffer,
-            cursor: Cursor {
-                line: 0,
-                column: 0,
-                desired_column: None,
-            },
-            viewport: Viewport {
-                top_line: 0,
-                left_column: 0,
-                visible_lines: (window_height as usize) / line_height,
-                visible_columns: {
-                    let text_start_x = (char_width * LINE_NUMBER_GUTTER_CHARS as f32).round();
-                    ((window_width as f32 - text_start_x) / char_width).floor() as usize
-                },
-            },
-            window_size: (window_width, window_height),
-            scroll_padding: 1, // Default 1 row padding (JetBrains-style)
-            status_message,
-            line_height,
-            char_width,
-            cursor_visible: true,
-            last_cursor_blink: Instant::now(),
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
-            file_path,
-            is_modified: false, // Fresh file starts unmodified
         }
     }
 
-    fn get_line(&self, line_idx: usize) -> Option<String> {
-        if line_idx < self.buffer.len_lines() {
-            let line = self.buffer.line(line_idx);
-            Some(line.to_string())
+    fn avg_frame_time(&self) -> Duration {
+        if self.frame_times.is_empty() {
+            return Duration::ZERO;
+        }
+        let total: Duration = self.frame_times.iter().sum();
+        total / self.frame_times.len() as u32
+    }
+
+    fn fps(&self) -> f64 {
+        let avg = self.avg_frame_time();
+        if avg.as_secs_f64() > 0.0 {
+            1.0 / avg.as_secs_f64()
         } else {
-            None
+            0.0
         }
     }
 
-    fn cursor_buffer_position(&self) -> usize {
-        let mut pos = 0;
-        for i in 0..self.cursor.line {
-            if i < self.buffer.len_lines() {
-                pos += self.buffer.line(i).len_chars();
-            }
-        }
-        pos + self.cursor.column.min(self.current_line_length())
-    }
-
-    fn current_line_length(&self) -> usize {
-        if self.cursor.line < self.buffer.len_lines() {
-            let line = self.buffer.line(self.cursor.line);
-            // Don't count the newline character
-            line.len_chars().saturating_sub(
-                if line.len_chars() > 0 && line.chars().last() == Some('\n') {
-                    1
-                } else {
-                    0
-                },
-            )
+    fn cache_hit_rate(&self) -> f64 {
+        let total = self.total_cache_hits + self.total_cache_misses;
+        if total > 0 {
+            self.total_cache_hits as f64 / total as f64 * 100.0
         } else {
-            0
-        }
-    }
-
-    /// Returns the column of the first non-whitespace character on the current line.
-    /// Returns 0 if the line is empty or contains only whitespace.
-    fn first_non_whitespace_column(&self) -> usize {
-        if self.cursor.line >= self.buffer.len_lines() {
-            return 0;
-        }
-        let line = self.buffer.line(self.cursor.line);
-        line.chars()
-            .take_while(|c| c.is_whitespace() && *c != '\n')
-            .count()
-    }
-
-    /// Returns the column after the last non-whitespace character on the current line.
-    /// Returns line length if line has no trailing whitespace, or 0 if line is empty/whitespace-only.
-    fn last_non_whitespace_column(&self) -> usize {
-        if self.cursor.line >= self.buffer.len_lines() {
-            return 0;
-        }
-        let line = self.buffer.line(self.cursor.line);
-        let line_str: String = line.chars().collect();
-        let trimmed = line_str.trim_end_matches(|c: char| c.is_whitespace());
-        trimmed.len()
-    }
-
-    fn line_length(&self, line_idx: usize) -> usize {
-        if line_idx < self.buffer.len_lines() {
-            let line = self.buffer.line(line_idx);
-            line.len_chars().saturating_sub(
-                if line.len_chars() > 0 && line.chars().last() == Some('\n') {
-                    1
-                } else {
-                    0
-                },
-            )
-        } else {
-            0
-        }
-    }
-
-    fn set_cursor_from_position(&mut self, pos: usize) {
-        let mut remaining = pos;
-        for line_idx in 0..self.buffer.len_lines() {
-            let line = self.buffer.line(line_idx);
-            let line_len = line.len_chars();
-            if remaining < line_len {
-                self.cursor.line = line_idx;
-                self.cursor.column = remaining;
-                self.cursor.desired_column = None;
-                return;
-            }
-            remaining -= line_len;
-        }
-        // Past end - go to end of buffer
-        self.cursor.line = self.buffer.len_lines().saturating_sub(1);
-        self.cursor.column = self.current_line_length();
-        self.cursor.desired_column = None;
-    }
-
-    fn reset_cursor_blink(&mut self) {
-        self.cursor_visible = true;
-        self.last_cursor_blink = Instant::now();
-    }
-
-    fn ensure_cursor_visible(&mut self) {
-        let padding = self.scroll_padding;
-        let total_lines = self.buffer.len_lines();
-
-        // Vertical scrolling
-        if total_lines > self.viewport.visible_lines {
-            let top_boundary = self.viewport.top_line + padding;
-            let bottom_boundary =
-                self.viewport.top_line + self.viewport.visible_lines - padding - 1;
-
-            // Snap viewport to show cursor with padding
-            if self.cursor.line < top_boundary {
-                self.viewport.top_line = self.cursor.line.saturating_sub(padding);
-            } else if self.cursor.line > bottom_boundary {
-                let desired_top = self.cursor.line + padding + 1;
-                self.viewport.top_line = desired_top.saturating_sub(self.viewport.visible_lines);
-            }
-
-            // Clamp to valid range
-            let max_top = total_lines.saturating_sub(self.viewport.visible_lines);
-            self.viewport.top_line = self.viewport.top_line.min(max_top);
-        } else {
-            self.viewport.top_line = 0;
-        }
-
-        // Horizontal scrolling (always check, independent of vertical)
-        const HORIZONTAL_MARGIN: usize = 4;
-        let left_safe = self.viewport.left_column + HORIZONTAL_MARGIN;
-        let right_safe = self.viewport.left_column + self.viewport.visible_columns - HORIZONTAL_MARGIN;
-
-        if self.cursor.column < left_safe {
-            // Scroll left: put cursor exactly at left safe boundary
-            self.viewport.left_column = self.cursor.column.saturating_sub(HORIZONTAL_MARGIN);
-        } else if self.cursor.column >= right_safe {
-            // Scroll right: put cursor exactly at right safe boundary
-            self.viewport.left_column =
-                self.cursor.column + HORIZONTAL_MARGIN + 1 - self.viewport.visible_columns;
+            0.0
         }
     }
 }
 
-/// Check if a character is a punctuation/symbol boundary (not whitespace)
-fn is_punctuation(ch: char) -> bool {
-    matches!(
-        ch,
-        '/' | ':'
-            | ','
-            | '.'
-            | '-'
-            | '('
-            | ')'
-            | '{'
-            | '}'
-            | '['
-            | ']'
-            | ';'
-            | '"'
-            | '\''
-            | '<'
-            | '>'
-            | '='
-            | '+'
-            | '*'
-            | '&'
-            | '|'
-            | '!'
-            | '@'
-            | '#'
-            | '$'
-            | '%'
-            | '^'
-            | '~'
-            | '`'
-            | '\\'
-            | '?'
-            | '_'
-    )
-}
+// All colors now come from model.theme
 
-/// Character type for word navigation (IntelliJ-style)
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum CharType {
-    Whitespace,
-    WordChar,    // Alphanumeric characters
-    Punctuation, // Symbols/boundaries
-}
+// Model, Cursor, Viewport, EditOperation, CharType, char_type all imported from token::
 
-fn char_type(ch: char) -> CharType {
-    if ch.is_whitespace() {
-        CharType::Whitespace
-    } else if is_punctuation(ch) {
-        CharType::Punctuation
-    } else {
-        CharType::WordChar
-    }
-}
-
-/// Check if a character is a word boundary (symbol or whitespace)
-#[allow(dead_code)]
-fn is_word_boundary(ch: char) -> bool {
-    ch.is_whitespace() || is_punctuation(ch)
-}
-
-// ============================================================================
-// MESSAGES - Events that can occur (Elm's Msg)
-// ============================================================================
-
-#[derive(Debug, Clone)]
-enum Msg {
-    // Window events
-    Resize(u32, u32),
-
-    // Cursor events
-    MoveCursorUp,
-    MoveCursorDown,
-    MoveCursorLeft,
-    MoveCursorRight,
-    MoveCursorLineStart,
-    MoveCursorLineEnd,
-
-    // Editing events
-    InsertChar(char),
-    InsertNewline,
-    DeleteBackward,
-    DeleteForward,
-
-    // Document navigation
-    MoveCursorDocumentStart,
-    MoveCursorDocumentEnd,
-    PageUp,
-    PageDown,
-
-    // Undo/Redo
-    Undo,
-    Redo,
-
-    // Word navigation
-    MoveCursorWordLeft,
-    MoveCursorWordRight,
-
-    // Mouse
-    SetCursorPosition(usize, usize), // (line, column)
-
-    // Viewport scrolling
-    ScrollViewport(i32),           // Positive = scroll down, negative = scroll up
-    ScrollViewportHorizontal(i32), // Positive = scroll right, negative = scroll left
-
-    // File operations
-    SaveFile, // Save current file (Ctrl+S / Cmd+S)
-
-    // Animation
-    BlinkCursor,
-}
-
-// ============================================================================
-// UPDATE - Pure state transformation (Elm's update)
-// ============================================================================
-
-fn update(model: &mut Model, msg: Msg) -> Option<Cmd> {
-    match msg {
-        Msg::Resize(width, height) => {
-            model.window_size = (width, height);
-            model.viewport.visible_lines = (height as usize) / model.line_height;
-            let text_start_x = (model.char_width * LINE_NUMBER_GUTTER_CHARS as f32).round();
-            model.viewport.visible_columns =
-                ((width as f32 - text_start_x) / model.char_width).floor() as usize;
-            Some(Cmd::Redraw)
-        }
-
-        Msg::BlinkCursor => {
-            let now = Instant::now();
-            if now.duration_since(model.last_cursor_blink) > Duration::from_millis(500) {
-                model.cursor_visible = !model.cursor_visible;
-                model.last_cursor_blink = now;
-                Some(Cmd::Redraw)
-            } else {
-                None
-            }
-        }
-
-        Msg::MoveCursorUp => {
-            if model.cursor.line > 0 {
-                model.cursor.line -= 1;
-
-                // Maintain desired column for vertical movement
-                let desired = model.cursor.desired_column.unwrap_or(model.cursor.column);
-                let line_len = model.current_line_length();
-                model.cursor.column = desired.min(line_len);
-                model.cursor.desired_column = Some(desired);
-
-                // Scroll only if cursor crosses top boundary (JetBrains-style)
-                let padding = model.scroll_padding;
-                let top_boundary = model.viewport.top_line + padding;
-
-                if model.cursor.line < top_boundary && model.viewport.top_line > 0 {
-                    model.viewport.top_line = model.cursor.line.saturating_sub(padding);
-                }
-            }
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::MoveCursorDown => {
-            if model.cursor.line < model.buffer.len_lines().saturating_sub(1) {
-                model.cursor.line += 1;
-
-                // Maintain desired column for vertical movement
-                let desired = model.cursor.desired_column.unwrap_or(model.cursor.column);
-                let line_len = model.current_line_length();
-                model.cursor.column = desired.min(line_len);
-                model.cursor.desired_column = Some(desired);
-
-                // Scroll only if cursor crosses bottom boundary (JetBrains-style)
-                let padding = model.scroll_padding;
-                let bottom_boundary =
-                    model.viewport.top_line + model.viewport.visible_lines - padding - 1;
-                let max_top = model
-                    .buffer
-                    .len_lines()
-                    .saturating_sub(model.viewport.visible_lines);
-
-                if model.cursor.line > bottom_boundary && model.viewport.top_line < max_top {
-                    let desired_top = model.cursor.line + padding + 1;
-                    model.viewport.top_line = desired_top
-                        .saturating_sub(model.viewport.visible_lines)
-                        .min(max_top);
-                }
-            }
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::MoveCursorLeft => {
-            if model.cursor.column > 0 {
-                model.cursor.column -= 1;
-                model.cursor.desired_column = None;
-            } else if model.cursor.line > 0 {
-                // Move to end of previous line
-                model.cursor.line -= 1;
-                model.cursor.column = model.current_line_length();
-                model.cursor.desired_column = None;
-            }
-            model.ensure_cursor_visible();
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::MoveCursorRight => {
-            let line_len = model.current_line_length();
-            if model.cursor.column < line_len {
-                model.cursor.column += 1;
-                model.cursor.desired_column = None;
-            } else if model.cursor.line < model.buffer.len_lines().saturating_sub(1) {
-                // Move to start of next line
-                model.cursor.line += 1;
-                model.cursor.column = 0;
-                model.cursor.desired_column = None;
-            }
-            model.ensure_cursor_visible();
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::MoveCursorLineStart => {
-            let first_non_ws = model.first_non_whitespace_column();
-            if model.cursor.column == first_non_ws {
-                // At first non-whitespace → go to column 0
-                model.cursor.column = 0;
-            } else {
-                // Anywhere else → go to first non-whitespace
-                model.cursor.column = first_non_ws;
-            }
-            model.cursor.desired_column = None;
-            model.ensure_cursor_visible();
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::MoveCursorLineEnd => {
-            let line_end = model.current_line_length();
-            let last_non_ws = model.last_non_whitespace_column();
-            if model.cursor.column == last_non_ws {
-                // At last non-whitespace → go to line end
-                model.cursor.column = line_end;
-            } else {
-                // Anywhere else → go to last non-whitespace
-                model.cursor.column = last_non_ws;
-            }
-            model.cursor.desired_column = None;
-            model.ensure_cursor_visible();
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::InsertChar(ch) => {
-            let cursor_before = model.cursor;
-            let pos = model.cursor_buffer_position();
-
-            model.buffer.insert_char(pos, ch);
-            model.is_modified = true;
-            // Use set_cursor_from_position to ensure cursor.column matches actual buffer position
-            // This handles the case where cursor.column was clamped in cursor_buffer_position()
-            model.set_cursor_from_position(pos + 1);
-            model.ensure_cursor_visible();
-
-            model.redo_stack.clear();
-            model.undo_stack.push(EditOperation::Insert {
-                position: pos,
-                text: ch.to_string(),
-                cursor_before,
-                cursor_after: model.cursor,
-            });
-
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::InsertNewline => {
-            let cursor_before = model.cursor;
-            let pos = model.cursor_buffer_position();
-
-            model.buffer.insert_char(pos, '\n');
-            model.is_modified = true;
-            model.cursor.line += 1;
-            model.cursor.column = 0;
-            model.cursor.desired_column = None;
-            model.ensure_cursor_visible();
-
-            model.redo_stack.clear();
-            model.undo_stack.push(EditOperation::Insert {
-                position: pos,
-                text: "\n".to_string(),
-                cursor_before,
-                cursor_after: model.cursor,
-            });
-
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::DeleteBackward => {
-            if model.cursor.column > 0 {
-                let cursor_before = model.cursor;
-                let pos = model.cursor_buffer_position();
-                let deleted_char = model.buffer.char(pos - 1).to_string();
-
-                model.buffer.remove(pos - 1..pos);
-                model.is_modified = true;
-                model.cursor.column -= 1;
-
-                model.redo_stack.clear();
-                model.undo_stack.push(EditOperation::Delete {
-                    position: pos - 1,
-                    text: deleted_char,
-                    cursor_before,
-                    cursor_after: model.cursor,
-                });
-            } else if model.cursor.line > 0 {
-                // Join with previous line
-                let cursor_before = model.cursor;
-                let pos = model.cursor_buffer_position();
-
-                // Get length of previous line BEFORE removing the newline
-                // This is where the cursor should end up after the join
-                let prev_line_idx = model.cursor.line - 1;
-                let prev_line = model.buffer.line(prev_line_idx);
-                let join_column = prev_line.len_chars().saturating_sub(
-                    if prev_line.chars().last() == Some('\n') {
-                        1
-                    } else {
-                        0
-                    },
-                );
-
-                model.buffer.remove(pos - 1..pos);
-                model.is_modified = true;
-                model.cursor.line -= 1;
-                model.cursor.column = join_column;
-
-                model.redo_stack.clear();
-                model.undo_stack.push(EditOperation::Delete {
-                    position: pos - 1,
-                    text: "\n".to_string(),
-                    cursor_before,
-                    cursor_after: model.cursor,
-                });
-            }
-            model.cursor.desired_column = None;
-            model.ensure_cursor_visible();
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::DeleteForward => {
-            let pos = model.cursor_buffer_position();
-            if pos < model.buffer.len_chars() {
-                let cursor_before = model.cursor;
-                let deleted_char = model.buffer.char(pos).to_string();
-                model.buffer.remove(pos..pos + 1);
-                model.is_modified = true;
-
-                model.redo_stack.clear();
-                model.undo_stack.push(EditOperation::Delete {
-                    position: pos,
-                    text: deleted_char,
-                    cursor_before,
-                    cursor_after: model.cursor,
-                });
-            }
-            model.ensure_cursor_visible();
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::MoveCursorDocumentStart => {
-            model.cursor.line = 0;
-            model.cursor.column = 0;
-            model.cursor.desired_column = None;
-            model.viewport.top_line = 0;
-            model.ensure_cursor_visible();
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::MoveCursorDocumentEnd => {
-            model.cursor.line = model.buffer.len_lines().saturating_sub(1);
-            model.cursor.column = model.current_line_length();
-            model.cursor.desired_column = None;
-            // Scroll to show cursor
-            if model.cursor.line >= model.viewport.visible_lines {
-                model.viewport.top_line = model.cursor.line - model.viewport.visible_lines + 1;
-            }
-            model.ensure_cursor_visible();
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::PageUp => {
-            let jump = model.viewport.visible_lines.saturating_sub(2);
-            model.cursor.line = model.cursor.line.saturating_sub(jump);
-
-            // Maintain desired column for vertical movement (same as MoveCursorUp)
-            let desired = model.cursor.desired_column.unwrap_or(model.cursor.column);
-            let line_len = model.current_line_length();
-            model.cursor.column = desired.min(line_len);
-            model.cursor.desired_column = Some(desired);
-
-            model.viewport.top_line = model.viewport.top_line.saturating_sub(jump);
-            model.ensure_cursor_visible();
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::PageDown => {
-            let jump = model.viewport.visible_lines.saturating_sub(2);
-            let max_line = model.buffer.len_lines().saturating_sub(1);
-            model.cursor.line = (model.cursor.line + jump).min(max_line);
-
-            // Maintain desired column for vertical movement (same as MoveCursorDown)
-            let desired = model.cursor.desired_column.unwrap_or(model.cursor.column);
-            let line_len = model.current_line_length();
-            model.cursor.column = desired.min(line_len);
-            model.cursor.desired_column = Some(desired);
-
-            if model.cursor.line >= model.viewport.top_line + model.viewport.visible_lines {
-                model.viewport.top_line = model
-                    .cursor
-                    .line
-                    .saturating_sub(model.viewport.visible_lines - 1);
-            }
-            model.ensure_cursor_visible();
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::Undo => {
-            if let Some(op) = model.undo_stack.pop() {
-                match &op {
-                    EditOperation::Insert {
-                        position,
-                        text,
-                        cursor_before,
-                        ..
-                    } => {
-                        model
-                            .buffer
-                            .remove(*position..*position + text.chars().count());
-                        model.cursor = *cursor_before;
-                    }
-                    EditOperation::Delete {
-                        position,
-                        text,
-                        cursor_before,
-                        ..
-                    } => {
-                        model.buffer.insert(*position, text);
-                        model.cursor = *cursor_before;
-                    }
-                }
-                model.is_modified = true;
-                model.redo_stack.push(op);
-                model.ensure_cursor_visible();
-                model.reset_cursor_blink();
-                Some(Cmd::Redraw)
-            } else {
-                None
-            }
-        }
-
-        Msg::Redo => {
-            if let Some(op) = model.redo_stack.pop() {
-                match &op {
-                    EditOperation::Insert {
-                        position,
-                        text,
-                        cursor_after,
-                        ..
-                    } => {
-                        model.buffer.insert(*position, text);
-                        model.cursor = *cursor_after;
-                    }
-                    EditOperation::Delete {
-                        position,
-                        text,
-                        cursor_after,
-                        ..
-                    } => {
-                        model
-                            .buffer
-                            .remove(*position..*position + text.chars().count());
-                        model.cursor = *cursor_after;
-                    }
-                }
-                model.is_modified = true;
-                model.undo_stack.push(op);
-                model.ensure_cursor_visible();
-                model.reset_cursor_blink();
-                Some(Cmd::Redraw)
-            } else {
-                None
-            }
-        }
-
-        Msg::MoveCursorWordLeft => {
-            // IntelliJ-style: treat whitespace as its own navigable unit
-            // Moving left: go to the START of the current character type group
-            let pos = model.cursor_buffer_position();
-            if pos == 0 {
-                return Some(Cmd::Redraw);
-            }
-
-            let text: String = model.buffer.slice(..pos).chars().collect();
-            let chars: Vec<char> = text.chars().collect();
-            let mut i = chars.len();
-
-            // Look at the character before the cursor
-            if i > 0 {
-                let current_type = char_type(chars[i - 1]);
-                // Skip all characters of the same type
-                while i > 0 && char_type(chars[i - 1]) == current_type {
-                    i -= 1;
-                }
-            }
-
-            model.set_cursor_from_position(i);
-            model.ensure_cursor_visible();
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::MoveCursorWordRight => {
-            // IntelliJ-style: treat whitespace as its own navigable unit
-            // Moving right: go to the END of the current character type group
-            let pos = model.cursor_buffer_position();
-            let total_chars = model.buffer.len_chars();
-            if pos >= total_chars {
-                return Some(Cmd::Redraw);
-            }
-
-            let text: String = model.buffer.slice(pos..).chars().collect();
-            let chars: Vec<char> = text.chars().collect();
-            let mut i = 0;
-
-            if !chars.is_empty() {
-                let current_type = char_type(chars[0]);
-                // Skip all characters of the same type
-                while i < chars.len() && char_type(chars[i]) == current_type {
-                    i += 1;
-                }
-            }
-
-            model.set_cursor_from_position(pos + i);
-            model.ensure_cursor_visible();
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::SetCursorPosition(line, column) => {
-            model.cursor.line = line;
-            model.cursor.column = column;
-            model.cursor.desired_column = None;
-            model.ensure_cursor_visible();
-            model.reset_cursor_blink();
-            Some(Cmd::Redraw)
-        }
-
-        Msg::ScrollViewport(delta) => {
-            let total_lines = model.buffer.len_lines();
-            if total_lines <= model.viewport.visible_lines {
-                return None; // No scrolling needed
-            }
-
-            let max_top = total_lines.saturating_sub(model.viewport.visible_lines);
-
-            if delta > 0 {
-                // Scroll down
-                model.viewport.top_line = (model.viewport.top_line + delta as usize).min(max_top);
-            } else if delta < 0 {
-                // Scroll up
-                model.viewport.top_line =
-                    model.viewport.top_line.saturating_sub(delta.abs() as usize);
-            }
-
-            Some(Cmd::Redraw)
-        }
-
-        Msg::ScrollViewportHorizontal(delta) => {
-            // Find maximum line length in visible area
-            let max_line_len = (model.viewport.top_line
-                ..model.viewport.top_line + model.viewport.visible_lines)
-                .filter_map(|i| {
-                    if i < model.buffer.len_lines() {
-                        Some(model.line_length(i))
-                    } else {
-                        None
-                    }
-                })
-                .max()
-                .unwrap_or(0);
-
-            // Only scroll if content is wider than viewport
-            if max_line_len <= model.viewport.visible_columns {
-                model.viewport.left_column = 0;
-                return None;
-            }
-
-            let max_left = max_line_len.saturating_sub(model.viewport.visible_columns);
-
-            if delta > 0 {
-                // Scroll right
-                model.viewport.left_column =
-                    (model.viewport.left_column + delta as usize).min(max_left);
-            } else if delta < 0 {
-                // Scroll left
-                model.viewport.left_column = model
-                    .viewport
-                    .left_column
-                    .saturating_sub(delta.abs() as usize);
-            }
-
-            Some(Cmd::Redraw)
-        }
-
-        Msg::SaveFile => {
-            match &model.file_path {
-                Some(path) => {
-                    // Write buffer to file
-                    match std::fs::write(path, model.buffer.to_string()) {
-                        Ok(_) => {
-                            model.is_modified = false;
-                            model.status_message = format!("Saved: {}", path.display());
-                        }
-                        Err(e) => {
-                            model.status_message = format!("Error saving: {}", e);
-                        }
-                    }
-                }
-                None => {
-                    model.status_message = "No file path - cannot save".to_string();
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-    }
-}
-
-fn handle_key(
-    model: &mut Model,
-    key: Key,
-    ctrl: bool,
-    shift: bool,
-    alt: bool,
-    logo: bool,
-) -> Option<Cmd> {
-    match key {
-        // Undo/Redo (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y)
-        Key::Character(ref s) if ctrl && s.eq_ignore_ascii_case("z") => {
-            if shift {
-                update(model, Msg::Redo)
-            } else {
-                update(model, Msg::Undo)
-            }
-        }
-        Key::Character(ref s) if ctrl && s.eq_ignore_ascii_case("y") => update(model, Msg::Redo),
-
-        // Save file (Ctrl+S on Windows/Linux, Cmd+S on macOS)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("s") && (ctrl || logo) => {
-            update(model, Msg::SaveFile)
-        }
-
-        // Document navigation (Ctrl+Home/End)
-        Key::Named(NamedKey::Home) if ctrl => update(model, Msg::MoveCursorDocumentStart),
-        Key::Named(NamedKey::End) if ctrl => update(model, Msg::MoveCursorDocumentEnd),
-
-        // Line navigation (Cmd+Arrow on macOS)
-        Key::Named(NamedKey::ArrowLeft) if logo => update(model, Msg::MoveCursorLineStart),
-        Key::Named(NamedKey::ArrowRight) if logo => update(model, Msg::MoveCursorLineEnd),
-
-        // Line navigation (Home/End keys)
-        Key::Named(NamedKey::Home) => update(model, Msg::MoveCursorLineStart),
-        Key::Named(NamedKey::End) => update(model, Msg::MoveCursorLineEnd),
-
-        // Page navigation
-        Key::Named(NamedKey::PageUp) => update(model, Msg::PageUp),
-        Key::Named(NamedKey::PageDown) => update(model, Msg::PageDown),
-
-        // Word navigation (Option/Alt + Arrow)
-        Key::Named(NamedKey::ArrowLeft) if alt => update(model, Msg::MoveCursorWordLeft),
-        Key::Named(NamedKey::ArrowRight) if alt => update(model, Msg::MoveCursorWordRight),
-
-        // Arrow keys
-        Key::Named(NamedKey::ArrowUp) => update(model, Msg::MoveCursorUp),
-        Key::Named(NamedKey::ArrowDown) => update(model, Msg::MoveCursorDown),
-        Key::Named(NamedKey::ArrowLeft) => update(model, Msg::MoveCursorLeft),
-        Key::Named(NamedKey::ArrowRight) => update(model, Msg::MoveCursorRight),
-
-        // Editing
-        Key::Named(NamedKey::Enter) => update(model, Msg::InsertNewline),
-        Key::Named(NamedKey::Backspace) => update(model, Msg::DeleteBackward),
-        Key::Named(NamedKey::Delete) => update(model, Msg::DeleteForward),
-        Key::Named(NamedKey::Space) if !ctrl => update(model, Msg::InsertChar(' ')),
-
-        // Character input (only when no Ctrl)
-        Key::Character(ref s) if !ctrl => {
-            let mut cmd = None;
-            for ch in s.chars() {
-                cmd = update(model, Msg::InsertChar(ch)).or(cmd);
-            }
-            cmd
-        }
-
-        _ => None,
-    }
-}
-
-// ============================================================================
-// COMMANDS - Side effects to perform (Elm's Cmd)
-// ============================================================================
-
-#[derive(Debug)]
-enum Cmd {
-    Redraw,
-}
+// Msg, update, and Cmd imported from token:: library
 
 // ============================================================================
 // VIEW - Render the model to screen
@@ -1070,7 +169,18 @@ impl Renderer {
         self.char_width
     }
 
-    fn render(&mut self, model: &Model) -> Result<()> {
+    #[cfg(not(debug_assertions))]
+    fn render(&mut self, model: &AppModel, _perf: ()) -> Result<()> {
+        self.render_impl(model)
+    }
+
+    #[cfg(debug_assertions)]
+    fn render(&mut self, model: &AppModel, perf: &PerfStats) -> Result<()> {
+        self.render_impl_with_perf(model, perf)
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn render_impl(&mut self, model: &AppModel) -> Result<()> {
         // Resize surface if needed
         if self.width != model.window_size.0 || self.height != model.window_size.1 {
             self.width = model.window_size.0;
@@ -1088,8 +198,8 @@ impl Renderer {
             .buffer_mut()
             .map_err(|e| anyhow::anyhow!("Failed to get surface buffer: {}", e))?;
 
-        // Clear screen (dark background)
-        let bg_color = 0xFF1E1E1E;
+        // Clear screen with theme background
+        let bg_color = model.theme.editor.background.to_argb_u32();
         buffer.fill(bg_color);
 
         // Calculate scaled metrics using proper font line metrics
@@ -1097,34 +207,169 @@ impl Renderer {
         let ascent = self.line_metrics.ascent;
         let line_height = self.line_metrics.new_line_size.ceil() as usize;
         let char_width = self.char_width; // Use actual font metrics
-        let text_start_x = (char_width * LINE_NUMBER_GUTTER_CHARS as f32).round() as usize;
+        let text_start_x = text_start_x(char_width).round() as usize;
         let width = self.width;
         let height = self.height;
 
         // Render visible lines
         let visible_lines = (height as usize) / line_height;
-        let end_line = (model.viewport.top_line + visible_lines).min(model.buffer.len_lines());
+        let end_line =
+            (model.editor.viewport.top_line + visible_lines).min(model.document.buffer.len_lines());
 
         // Draw current line highlight (if cursor visible in viewport)
-        if model.cursor.line >= model.viewport.top_line && model.cursor.line < end_line {
-            let screen_line = model.cursor.line - model.viewport.top_line;
+        let current_line_color = model.theme.editor.current_line_background.to_argb_u32();
+        if model.editor.cursor().line >= model.editor.viewport.top_line
+            && model.editor.cursor().line < end_line
+        {
+            let screen_line = model.editor.cursor().line - model.editor.viewport.top_line;
             let highlight_y = screen_line * line_height;
 
             for py in highlight_y..(highlight_y + line_height) {
                 for px in 0..(width as usize) {
                     if py < height as usize {
-                        buffer[py * width as usize + px] = CURRENT_LINE_HIGHLIGHT;
+                        buffer[py * width as usize + px] = current_line_color;
                     }
                 }
             }
         }
 
-        for (screen_line, doc_line) in (model.viewport.top_line..end_line).enumerate() {
-            if let Some(line_text) = model.get_line(doc_line) {
+        // Draw selection highlight (if selection is not empty)
+        let selection = model.editor.selection();
+        if !selection.is_empty() {
+            let selection_color = model.theme.editor.selection_background.to_argb_u32();
+            let sel_start = selection.start();
+            let sel_end = selection.end();
+
+            // Iterate through visible lines
+            for doc_line in model.editor.viewport.top_line..end_line {
+                // Check if this line is within the selection range
+                if doc_line < sel_start.line || doc_line > sel_end.line {
+                    continue;
+                }
+
+                let screen_line = doc_line - model.editor.viewport.top_line;
+                let y_start = screen_line * line_height;
+                let y_end = y_start + line_height;
+
+                // Get line length for this line
+                let line_len = model.document.line_length(doc_line);
+
+                // Determine selection start/end columns for this line
+                let start_col = if doc_line == sel_start.line {
+                    sel_start.column
+                } else {
+                    0
+                };
+                let end_col = if doc_line == sel_end.line {
+                    sel_end.column
+                } else {
+                    line_len
+                };
+
+                // Adjust for horizontal scroll
+                let visible_start_col =
+                    start_col.saturating_sub(model.editor.viewport.left_column);
+                let visible_end_col = end_col.saturating_sub(model.editor.viewport.left_column);
+
+                // Calculate pixel positions
+                let x_start =
+                    text_start_x + (visible_start_col as f32 * char_width).round() as usize;
+                let x_end = text_start_x + (visible_end_col as f32 * char_width).round() as usize;
+
+                // Draw the selection rectangle for this line
+                for py in y_start..y_end {
+                    for px in x_start..x_end {
+                        if py < height as usize && px < width as usize {
+                            buffer[py * width as usize + px] = selection_color;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Draw rectangle selection overlay (if active)
+        if model.editor.rectangle_selection.active {
+            let selection_color = model.theme.editor.selection_background.to_argb_u32();
+            let top_left = model.editor.rectangle_selection.top_left();
+            let bottom_right = model.editor.rectangle_selection.bottom_right();
+
+            for doc_line in top_left.line..=bottom_right.line {
+                if doc_line < model.editor.viewport.top_line || doc_line >= end_line {
+                    continue;
+                }
+
+                let screen_line = doc_line - model.editor.viewport.top_line;
+                let y_start = screen_line * line_height;
+                let y_end = y_start + line_height;
+
+                // Adjust for horizontal scroll
+                let visible_start_col =
+                    top_left.column.saturating_sub(model.editor.viewport.left_column);
+                let visible_end_col =
+                    bottom_right.column.saturating_sub(model.editor.viewport.left_column);
+
+                let x_start =
+                    text_start_x + (visible_start_col as f32 * char_width).round() as usize;
+                let x_end = text_start_x + (visible_end_col as f32 * char_width).round() as usize;
+
+                for py in y_start..y_end {
+                    for px in x_start..x_end {
+                        if py < height as usize && px < width as usize {
+                            buffer[py * width as usize + px] = selection_color;
+                        }
+                    }
+                }
+            }
+
+            // Draw preview cursors (ghost cursors showing where cursors will be placed)
+            let preview_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
+            let actual_visible_columns =
+                ((width as f32 - text_start_x as f32) / char_width).floor() as usize;
+
+            for preview_pos in &model.editor.rectangle_selection.preview_cursors {
+                let in_vertical_view = preview_pos.line >= model.editor.viewport.top_line
+                    && preview_pos.line < end_line;
+                let in_horizontal_view = preview_pos.column >= model.editor.viewport.left_column
+                    && preview_pos.column
+                        < model.editor.viewport.left_column + actual_visible_columns;
+
+                if in_vertical_view && in_horizontal_view {
+                    let screen_line = preview_pos.line - model.editor.viewport.top_line;
+                    let cursor_column = preview_pos.column - model.editor.viewport.left_column;
+                    let x = (text_start_x as f32 + cursor_column as f32 * char_width).round()
+                        as usize;
+                    let y = screen_line * line_height;
+
+                    // Same 2px wide cursor bar pattern as regular cursors
+                    for dy in 0..(line_height - 2) {
+                        for dx in 0..2 {
+                            let px = x + dx;
+                            let py = y + dy + 1;
+                            if px < width as usize && py < height as usize {
+                                buffer[py * width as usize + px] = preview_cursor_color;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Get theme colors for rendering
+        let line_num_color = model.theme.gutter.foreground.to_argb_u32();
+        let line_num_active_color = model.theme.gutter.foreground_active.to_argb_u32();
+        let text_color = model.theme.editor.foreground.to_argb_u32();
+
+        for (screen_line, doc_line) in (model.editor.viewport.top_line..end_line).enumerate() {
+            if let Some(line_text) = model.document.get_line(doc_line) {
                 let y = screen_line * line_height;
 
-                // Draw line number (gray)
+                // Draw line number (highlighted if on current line)
                 let line_num_str = format!("{:4} ", doc_line + 1);
+                let line_color = if doc_line == model.editor.cursor().line {
+                    line_num_active_color
+                } else {
+                    line_num_color
+                };
                 draw_text(
                     &mut buffer,
                     &self.font,
@@ -1136,7 +381,7 @@ impl Renderer {
                     0,
                     y,
                     &line_num_str,
-                    0xFF606060,
+                    line_color,
                 );
 
                 // Draw text content
@@ -1148,7 +393,7 @@ impl Renderer {
 
                 let display_text: String = visible_text
                     .chars()
-                    .skip(model.viewport.left_column)
+                    .skip(model.editor.viewport.left_column)
                     .take(((width as f32 - text_start_x as f32) / char_width).floor() as usize)
                     .collect();
 
@@ -1163,80 +408,478 @@ impl Renderer {
                     text_start_x,
                     y,
                     &display_text,
-                    0xFFE0E0E0,
+                    text_color,
                 );
             }
         }
 
-        // Draw cursor (only if within visible viewport)
-        if model.cursor_visible {
-            let cursor_in_vertical_view = model.cursor.line >= model.viewport.top_line
-                && model.cursor.line < model.viewport.top_line + visible_lines;
-            // Calculate actual visible columns using renderer's char_width (not model's hardcoded value)
+        // Draw all cursors (only if within visible viewport)
+        if model.ui.cursor_visible {
             let actual_visible_columns =
                 ((width as f32 - text_start_x as f32) / char_width).floor() as usize;
-            let cursor_in_horizontal_view = model.cursor.column >= model.viewport.left_column
-                && model.cursor.column < model.viewport.left_column + actual_visible_columns;
+            let primary_cursor_color = model.theme.editor.cursor_color.to_argb_u32();
+            let secondary_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
 
-            if cursor_in_vertical_view && cursor_in_horizontal_view {
-                let screen_line = model.cursor.line - model.viewport.top_line;
-                let cursor_column = model.cursor.column - model.viewport.left_column;
-                let x = (text_start_x as f32 + cursor_column as f32 * char_width).round() as usize;
-                let y = screen_line * line_height;
-                let cursor_color = 0xFFFFFF00; // Yellow
+            for (idx, cursor) in model.editor.cursors.iter().enumerate() {
+                let cursor_in_vertical_view = cursor.line >= model.editor.viewport.top_line
+                    && cursor.line < model.editor.viewport.top_line + visible_lines;
+                let cursor_in_horizontal_view = cursor.column >= model.editor.viewport.left_column
+                    && cursor.column < model.editor.viewport.left_column + actual_visible_columns;
 
-                for dy in 0..(line_height - 2) {
-                    for dx in 0..2 {
-                        let px = x + dx;
-                        let py = y + dy + 1;
-                        if px < width as usize && py < height as usize {
-                            buffer[py * width as usize + px] = cursor_color;
+                if cursor_in_vertical_view && cursor_in_horizontal_view {
+                    let screen_line = cursor.line - model.editor.viewport.top_line;
+                    let cursor_column = cursor.column - model.editor.viewport.left_column;
+                    let x = (text_start_x as f32 + cursor_column as f32 * char_width).round() as usize;
+                    let y = screen_line * line_height;
+                    // Primary cursor (index 0) uses primary color, others use secondary
+                    let cursor_color = if idx == 0 {
+                        primary_cursor_color
+                    } else {
+                        secondary_cursor_color
+                    };
+
+                    for dy in 0..(line_height - 2) {
+                        for dx in 0..2 {
+                            let px = x + dx;
+                            let py = y + dy + 1;
+                            if px < width as usize && py < height as usize {
+                                buffer[py * width as usize + px] = cursor_color;
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Draw status bar
+        // Draw gutter border (1px vertical line)
+        let gutter_border_color = model.theme.gutter.border_color.to_argb_u32();
+        let border_x = gutter_border_x(char_width).round() as usize;
+        let status_y_top = height as usize - line_height;
+        for py in 0..status_y_top {
+            if border_x < width as usize {
+                buffer[py * width as usize + border_x] = gutter_border_color;
+            }
+        }
+
+        // Draw status bar background
+        let status_bar_bg = model.theme.status_bar.background.to_argb_u32();
+        let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
         let status_y = height as usize - line_height;
         for py in status_y..height as usize {
             for px in 0..width as usize {
-                buffer[py * width as usize + px] = 0xFF303030;
+                buffer[py * width as usize + px] = status_bar_bg;
             }
         }
-        // File info with modified flag
-        let file_info = match &model.file_path {
-            Some(path) => {
-                let filename = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("untitled");
-                let modified = if model.is_modified { "*" } else { "" };
-                format!("{}{}", filename, modified)
-            }
-            None => "[No Name]".to_string(),
-        };
 
-        let status = format!(
-            " {} | Ln {}, Col {} | {} ",
-            file_info,
-            model.cursor.line + 1,
-            model.cursor.column + 1,
-            model.status_message
-        );
-        draw_text(
-            &mut buffer,
-            &self.font,
-            &mut self.glyph_cache,
-            font_size,
-            ascent,
-            width,
-            height,
-            5,
-            status_y + 2,
-            &status,
-            0xFFB0B0B0,
-        );
+        // Calculate status bar layout
+        let available_chars = (width as f32 / char_width).floor() as usize;
+        let layout = model.ui.status_bar.layout(available_chars);
+
+        // Render left segments
+        for seg in &layout.left {
+            let x_px = (seg.x as f32 * char_width).round() as usize;
+            draw_text(
+                &mut buffer,
+                &self.font,
+                &mut self.glyph_cache,
+                font_size,
+                ascent,
+                width,
+                height,
+                x_px,
+                status_y + 2,
+                &seg.text,
+                status_bar_fg,
+            );
+        }
+
+        // Render right segments
+        for seg in &layout.right {
+            let x_px = (seg.x as f32 * char_width).round() as usize;
+            draw_text(
+                &mut buffer,
+                &self.font,
+                &mut self.glyph_cache,
+                font_size,
+                ascent,
+                width,
+                height,
+                x_px,
+                status_y + 2,
+                &seg.text,
+                status_bar_fg,
+            );
+        }
+
+        // Render separator lines between right segments
+        let separator_color = model.theme.status_bar.foreground.with_alpha(100).to_argb_u32();
+        let sep_y_start = status_y + 4;
+        let sep_y_end = height as usize - 4;
+        for &sep_char_x in &layout.separator_positions {
+            let x_px = (sep_char_x as f32 * char_width).round() as usize;
+            if x_px < width as usize {
+                for py in sep_y_start..sep_y_end {
+                    buffer[py * width as usize + x_px] = separator_color;
+                }
+            }
+        }
+
+        buffer
+            .present()
+            .map_err(|e| anyhow::anyhow!("Failed to present buffer: {}", e))?;
+        Ok(())
+    }
+
+    #[cfg(debug_assertions)]
+    fn render_impl_with_perf(&mut self, model: &AppModel, perf: &PerfStats) -> Result<()> {
+        // Resize surface if needed
+        if self.width != model.window_size.0 || self.height != model.window_size.1 {
+            self.width = model.window_size.0;
+            self.height = model.window_size.1;
+            self.surface
+                .resize(
+                    NonZeroU32::new(self.width).unwrap(),
+                    NonZeroU32::new(self.height).unwrap(),
+                )
+                .map_err(|e| anyhow::anyhow!("Failed to resize surface: {}", e))?;
+        }
+
+        let mut buffer = self
+            .surface
+            .buffer_mut()
+            .map_err(|e| anyhow::anyhow!("Failed to get surface buffer: {}", e))?;
+
+        // Clear screen with theme background
+        let bg_color = model.theme.editor.background.to_argb_u32();
+        buffer.fill(bg_color);
+
+        // Calculate scaled metrics using proper font line metrics
+        let font_size = self.font_size;
+        let ascent = self.line_metrics.ascent;
+        let line_height = self.line_metrics.new_line_size.ceil() as usize;
+        let char_width = self.char_width;
+        let text_start_x = text_start_x(char_width).round() as usize;
+        let width = self.width;
+        let height = self.height;
+
+        // Render visible lines
+        let visible_lines = (height as usize) / line_height;
+        let end_line =
+            (model.editor.viewport.top_line + visible_lines).min(model.document.buffer.len_lines());
+
+        // Draw current line highlight
+        let current_line_color = model.theme.editor.current_line_background.to_argb_u32();
+        if model.editor.cursor().line >= model.editor.viewport.top_line
+            && model.editor.cursor().line < end_line
+        {
+            let screen_line = model.editor.cursor().line - model.editor.viewport.top_line;
+            let highlight_y = screen_line * line_height;
+            for py in highlight_y..(highlight_y + line_height) {
+                for px in 0..(width as usize) {
+                    if py < height as usize {
+                        buffer[py * width as usize + px] = current_line_color;
+                    }
+                }
+            }
+        }
+
+        // Draw selection highlight (if selection is not empty)
+        let selection = model.editor.selection();
+        if !selection.is_empty() {
+            let selection_color = model.theme.editor.selection_background.to_argb_u32();
+            let sel_start = selection.start();
+            let sel_end = selection.end();
+
+            for doc_line in model.editor.viewport.top_line..end_line {
+                if doc_line < sel_start.line || doc_line > sel_end.line {
+                    continue;
+                }
+
+                let screen_line = doc_line - model.editor.viewport.top_line;
+                let y_start = screen_line * line_height;
+                let y_end = y_start + line_height;
+                let line_len = model.document.line_length(doc_line);
+
+                let start_col = if doc_line == sel_start.line {
+                    sel_start.column
+                } else {
+                    0
+                };
+                let end_col = if doc_line == sel_end.line {
+                    sel_end.column
+                } else {
+                    line_len
+                };
+
+                let visible_start_col =
+                    start_col.saturating_sub(model.editor.viewport.left_column);
+                let visible_end_col = end_col.saturating_sub(model.editor.viewport.left_column);
+
+                let x_start =
+                    text_start_x + (visible_start_col as f32 * char_width).round() as usize;
+                let x_end = text_start_x + (visible_end_col as f32 * char_width).round() as usize;
+
+                for py in y_start..y_end {
+                    for px in x_start..x_end {
+                        if py < height as usize && px < width as usize {
+                            buffer[py * width as usize + px] = selection_color;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Draw rectangle selection overlay (if active)
+        if model.editor.rectangle_selection.active {
+            let selection_color = model.theme.editor.selection_background.to_argb_u32();
+            let top_left = model.editor.rectangle_selection.top_left();
+            let bottom_right = model.editor.rectangle_selection.bottom_right();
+
+            for doc_line in top_left.line..=bottom_right.line {
+                if doc_line < model.editor.viewport.top_line || doc_line >= end_line {
+                    continue;
+                }
+
+                let screen_line = doc_line - model.editor.viewport.top_line;
+                let y_start = screen_line * line_height;
+                let y_end = y_start + line_height;
+
+                let visible_start_col =
+                    top_left.column.saturating_sub(model.editor.viewport.left_column);
+                let visible_end_col =
+                    bottom_right.column.saturating_sub(model.editor.viewport.left_column);
+
+                let x_start =
+                    text_start_x + (visible_start_col as f32 * char_width).round() as usize;
+                let x_end = text_start_x + (visible_end_col as f32 * char_width).round() as usize;
+
+                for py in y_start..y_end {
+                    for px in x_start..x_end {
+                        if py < height as usize && px < width as usize {
+                            buffer[py * width as usize + px] = selection_color;
+                        }
+                    }
+                }
+            }
+
+            // Draw preview cursors (ghost cursors showing where cursors will be placed)
+            let preview_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
+            let actual_visible_columns =
+                ((width as f32 - text_start_x as f32) / char_width).floor() as usize;
+
+            for preview_pos in &model.editor.rectangle_selection.preview_cursors {
+                let in_vertical_view = preview_pos.line >= model.editor.viewport.top_line
+                    && preview_pos.line < end_line;
+                let in_horizontal_view = preview_pos.column >= model.editor.viewport.left_column
+                    && preview_pos.column
+                        < model.editor.viewport.left_column + actual_visible_columns;
+
+                if in_vertical_view && in_horizontal_view {
+                    let screen_line = preview_pos.line - model.editor.viewport.top_line;
+                    let cursor_column = preview_pos.column - model.editor.viewport.left_column;
+                    let x = (text_start_x as f32 + cursor_column as f32 * char_width).round()
+                        as usize;
+                    let y = screen_line * line_height;
+
+                    // Same 2px wide cursor bar pattern as regular cursors
+                    for dy in 0..(line_height - 2) {
+                        for dx in 0..2 {
+                            let px = x + dx;
+                            let py = y + dy + 1;
+                            if px < width as usize && py < height as usize {
+                                buffer[py * width as usize + px] = preview_cursor_color;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Get theme colors for rendering
+        let line_num_color = model.theme.gutter.foreground.to_argb_u32();
+        let line_num_active_color = model.theme.gutter.foreground_active.to_argb_u32();
+        let text_color = model.theme.editor.foreground.to_argb_u32();
+
+        for (screen_line, doc_line) in (model.editor.viewport.top_line..end_line).enumerate() {
+            if let Some(line_text) = model.document.get_line(doc_line) {
+                let y = screen_line * line_height;
+
+                // Draw line number
+                let line_num_str = format!("{:4} ", doc_line + 1);
+                let line_color = if doc_line == model.editor.cursor().line {
+                    line_num_active_color
+                } else {
+                    line_num_color
+                };
+                draw_text(
+                    &mut buffer,
+                    &self.font,
+                    &mut self.glyph_cache,
+                    font_size,
+                    ascent,
+                    width,
+                    height,
+                    0,
+                    y,
+                    &line_num_str,
+                    line_color,
+                );
+
+                // Draw text content
+                let visible_text = if line_text.ends_with('\n') {
+                    &line_text[..line_text.len() - 1]
+                } else {
+                    &line_text
+                };
+
+                let display_text: String = visible_text
+                    .chars()
+                    .skip(model.editor.viewport.left_column)
+                    .take(((width as f32 - text_start_x as f32) / char_width).floor() as usize)
+                    .collect();
+
+                draw_text(
+                    &mut buffer,
+                    &self.font,
+                    &mut self.glyph_cache,
+                    font_size,
+                    ascent,
+                    width,
+                    height,
+                    text_start_x,
+                    y,
+                    &display_text,
+                    text_color,
+                );
+            }
+        }
+
+        // Draw all cursors
+        if model.ui.cursor_visible {
+            let actual_visible_columns =
+                ((width as f32 - text_start_x as f32) / char_width).floor() as usize;
+            let primary_cursor_color = model.theme.editor.cursor_color.to_argb_u32();
+            let secondary_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
+
+            for (idx, cursor) in model.editor.cursors.iter().enumerate() {
+                let cursor_in_vertical_view = cursor.line >= model.editor.viewport.top_line
+                    && cursor.line < model.editor.viewport.top_line + visible_lines;
+                let cursor_in_horizontal_view = cursor.column >= model.editor.viewport.left_column
+                    && cursor.column < model.editor.viewport.left_column + actual_visible_columns;
+
+                if cursor_in_vertical_view && cursor_in_horizontal_view {
+                    let screen_line = cursor.line - model.editor.viewport.top_line;
+                    let cursor_column = cursor.column - model.editor.viewport.left_column;
+                    let x = (text_start_x as f32 + cursor_column as f32 * char_width).round() as usize;
+                    let y = screen_line * line_height;
+                    let cursor_color = if idx == 0 {
+                        primary_cursor_color
+                    } else {
+                        secondary_cursor_color
+                    };
+
+                    for dy in 0..(line_height - 2) {
+                        for dx in 0..2 {
+                            let px = x + dx;
+                            let py = y + dy + 1;
+                            if px < width as usize && py < height as usize {
+                                buffer[py * width as usize + px] = cursor_color;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Draw gutter border (1px vertical line)
+        let gutter_border_color = model.theme.gutter.border_color.to_argb_u32();
+        let border_x = gutter_border_x(char_width).round() as usize;
+        let status_y_top = (height as usize).saturating_sub(line_height);
+        for py in 0..status_y_top {
+            if border_x < width as usize {
+                buffer[py * width as usize + border_x] = gutter_border_color;
+            }
+        }
+
+        // Draw status bar background
+        let status_bar_bg = model.theme.status_bar.background.to_argb_u32();
+        let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
+        let status_height = line_height;
+        let status_y = (height as usize).saturating_sub(status_height);
+
+        for py in status_y..(height as usize) {
+            for px in 0..(width as usize) {
+                buffer[py * width as usize + px] = status_bar_bg;
+            }
+        }
+
+        // Calculate status bar layout
+        let available_chars = (width as f32 / char_width).floor() as usize;
+        let layout = model.ui.status_bar.layout(available_chars);
+
+        // Render left segments
+        for seg in &layout.left {
+            let x_px = (seg.x as f32 * char_width).round() as usize;
+            draw_text(
+                &mut buffer,
+                &self.font,
+                &mut self.glyph_cache,
+                font_size,
+                ascent,
+                width,
+                height,
+                x_px,
+                status_y + 2,
+                &seg.text,
+                status_bar_fg,
+            );
+        }
+
+        // Render right segments
+        for seg in &layout.right {
+            let x_px = (seg.x as f32 * char_width).round() as usize;
+            draw_text(
+                &mut buffer,
+                &self.font,
+                &mut self.glyph_cache,
+                font_size,
+                ascent,
+                width,
+                height,
+                x_px,
+                status_y + 2,
+                &seg.text,
+                status_bar_fg,
+            );
+        }
+
+        // Render separator lines between right segments
+        let separator_color = model.theme.status_bar.foreground.with_alpha(100).to_argb_u32();
+        let sep_y_start = status_y + 4;
+        let sep_y_end = height as usize - 4;
+        for &sep_char_x in &layout.separator_positions {
+            let x_px = (sep_char_x as f32 * char_width).round() as usize;
+            if x_px < width as usize {
+                for py in sep_y_start..sep_y_end {
+                    buffer[py * width as usize + x_px] = separator_color;
+                }
+            }
+        }
+
+        // Draw performance overlay if enabled
+        if perf.show_overlay {
+            render_perf_overlay(
+                &mut buffer,
+                &self.font,
+                &mut self.glyph_cache,
+                perf,
+                self.width,
+                self.height,
+                font_size,
+                line_height,
+                ascent,
+            );
+        }
 
         buffer
             .present()
@@ -1257,30 +900,153 @@ impl Renderer {
         }
     }
 
-    fn pixel_to_cursor(&mut self, x: f64, y: f64, model: &Model) -> (usize, usize) {
+    fn pixel_to_cursor(&mut self, x: f64, y: f64, model: &AppModel) -> (usize, usize) {
         let line_height = self.line_metrics.new_line_size.ceil() as f64;
-        let char_width = self.char_width as f64; // Use cached char_width for consistency
-        let text_start_x = (self.char_width * LINE_NUMBER_GUTTER_CHARS as f32).round() as f64;
+        let char_width = self.char_width as f64;
+        let text_x = text_start_x(self.char_width).round() as f64;
 
-        // Calculate line from y position
         let visual_line = (y / line_height).floor() as usize;
-        let line = model.viewport.top_line + visual_line;
-        let line = line.min(model.buffer.len_lines().saturating_sub(1));
+        let line = model.editor.viewport.top_line + visual_line;
+        let line = line.min(model.document.buffer.len_lines().saturating_sub(1));
 
-        // Calculate column from x position (add left_column for horizontal scroll offset)
-        let x_offset = x - text_start_x;
+        let x_offset = x - text_x;
         let column = if x_offset > 0.0 {
-            model.viewport.left_column + (x_offset / char_width).round() as usize
+            model.editor.viewport.left_column + (x_offset / char_width).round() as usize
         } else {
-            model.viewport.left_column
+            model.editor.viewport.left_column
         };
 
-        // Clamp column to line length
-        let line_len = model.line_length(line);
+        let line_len = model.document.line_length(line);
         let column = column.min(line_len);
 
         (line, column)
     }
+}
+
+#[cfg(debug_assertions)]
+fn render_perf_overlay(
+    buffer: &mut [u32],
+    font: &Font,
+    glyph_cache: &mut GlyphCache,
+    perf: &PerfStats,
+    width: u32,
+    height: u32,
+    font_size: f32,
+    line_height: usize,
+    ascent: f32,
+) {
+    let width_usize = width as usize;
+    let height_usize = height as usize;
+
+    // Overlay dimensions and position (top-right corner)
+    let overlay_width = 240_usize;
+    let overlay_height = 180_usize;
+    let margin = 10_usize;
+    let x_offset = width_usize.saturating_sub(overlay_width + margin);
+    let y_offset = margin;
+
+    // Semi-transparent dark background
+    let bg_color = 0xE0202020_u32;
+    for py in y_offset..(y_offset + overlay_height).min(height_usize) {
+        for px in x_offset..(x_offset + overlay_width).min(width_usize) {
+            let idx = py * width_usize + px;
+            if idx < buffer.len() {
+                let dst = buffer[idx];
+                let alpha = ((bg_color >> 24) & 0xFF) as u32;
+                let inv_alpha = 255 - alpha;
+                let r = ((((bg_color >> 16) & 0xFF) * alpha + ((dst >> 16) & 0xFF) * inv_alpha) / 255) & 0xFF;
+                let g = ((((bg_color >> 8) & 0xFF) * alpha + ((dst >> 8) & 0xFF) * inv_alpha) / 255) & 0xFF;
+                let b = (((bg_color & 0xFF) * alpha + (dst & 0xFF) * inv_alpha) / 255) & 0xFF;
+                buffer[idx] = 0xFF000000 | (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+
+    let text_color = 0xFFE0E0E0_u32;
+    let highlight_color = 0xFF80FF80_u32;
+    let warning_color = 0xFFFFFF80_u32;
+
+    let text_x = x_offset + 8;
+    let mut text_y = y_offset + 4;
+
+    // Title
+    draw_text(
+        buffer, font, glyph_cache, font_size, ascent, width, height,
+        text_x, text_y, "PERF (F2 to hide)", text_color,
+    );
+    text_y += line_height;
+
+    // Frame time
+    let frame_ms = perf.last_frame_time.as_secs_f64() * 1000.0;
+    let fps = perf.fps();
+    let budget_pct = (frame_ms / 16.67 * 100.0).min(999.0);
+    let frame_color = if budget_pct < 80.0 {
+        highlight_color
+    } else if budget_pct < 100.0 {
+        warning_color
+    } else {
+        0xFFFF8080_u32
+    };
+
+    let frame_text = format!("Frame: {:.1}ms ({:.0} fps)", frame_ms, fps);
+    draw_text(
+        buffer, font, glyph_cache, font_size, ascent, width, height,
+        text_x, text_y, &frame_text, frame_color,
+    );
+    text_y += line_height;
+
+    // Budget bar
+    let bar_chars = (budget_pct / 10.0).min(10.0) as usize;
+    let bar = format!(
+        "[{}{}] {:.0}%",
+        "█".repeat(bar_chars),
+        "░".repeat(10 - bar_chars),
+        budget_pct
+    );
+    draw_text(
+        buffer, font, glyph_cache, font_size, ascent, width, height,
+        text_x, text_y, &bar, frame_color,
+    );
+    text_y += line_height + 4;
+
+    // Average frame time
+    let avg_ms = perf.avg_frame_time().as_secs_f64() * 1000.0;
+    let avg_text = format!("Avg: {:.1}ms", avg_ms);
+    draw_text(
+        buffer, font, glyph_cache, font_size, ascent, width, height,
+        text_x, text_y, &avg_text, text_color,
+    );
+    text_y += line_height + 4;
+
+    // Cache stats
+    let cache_size = glyph_cache.len();
+    let hit_rate = perf.cache_hit_rate();
+    let cache_text = format!("Cache: {} glyphs", cache_size);
+    draw_text(
+        buffer, font, glyph_cache, font_size, ascent, width, height,
+        text_x, text_y, &cache_text, text_color,
+    );
+    text_y += line_height;
+
+    let hit_color = if hit_rate > 99.0 {
+        highlight_color
+    } else if hit_rate > 90.0 {
+        warning_color
+    } else {
+        0xFFFF8080_u32
+    };
+    let hits_text = format!("Hits: {} ({:.1}%)", perf.total_cache_hits, hit_rate);
+    draw_text(
+        buffer, font, glyph_cache, font_size, ascent, width, height,
+        text_x, text_y, &hits_text, hit_color,
+    );
+    text_y += line_height;
+
+    let miss_text = format!("Miss: {}", perf.total_cache_misses);
+    draw_text(
+        buffer, font, glyph_cache, font_size, ascent, width, height,
+        text_x, text_y, &miss_text, text_color,
+    );
 }
 
 fn draw_text(
@@ -1362,29 +1128,345 @@ fn draw_text(
 }
 
 // ============================================================================
+// INPUT HANDLING
+// ============================================================================
+
+fn handle_key(
+    model: &mut AppModel,
+    key: Key,
+    ctrl: bool,
+    shift: bool,
+    alt: bool,
+    logo: bool,
+    option_double_tapped: bool,
+) -> Option<Cmd> {
+    match key {
+        // Double-tap Option + Arrow for multi-cursor (must be before other alt combinations)
+        Key::Named(NamedKey::ArrowUp) if alt && option_double_tapped => {
+            update(model, Msg::Editor(EditorMsg::AddCursorAbove))
+        }
+        Key::Named(NamedKey::ArrowDown) if alt && option_double_tapped => {
+            update(model, Msg::Editor(EditorMsg::AddCursorBelow))
+        }
+        // Undo/Redo (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y)
+        Key::Character(ref s) if ctrl && s.eq_ignore_ascii_case("z") => {
+            if shift {
+                update(model, Msg::Document(DocumentMsg::Redo))
+            } else {
+                update(model, Msg::Document(DocumentMsg::Undo))
+            }
+        }
+        Key::Character(ref s) if ctrl && s.eq_ignore_ascii_case("y") => {
+            update(model, Msg::Document(DocumentMsg::Redo))
+        }
+
+        // Save file (Ctrl+S on Windows/Linux, Cmd+S on macOS)
+        Key::Character(ref s) if s.eq_ignore_ascii_case("s") && (ctrl || logo) => {
+            update(model, Msg::App(AppMsg::SaveFile))
+        }
+
+        // Select All (Cmd+A on macOS, Ctrl+A elsewhere)
+        Key::Character(ref s) if s.eq_ignore_ascii_case("a") && (ctrl || logo) => {
+            update(model, Msg::Editor(EditorMsg::SelectAll))
+        }
+
+        // Copy (Cmd+C on macOS, Ctrl+C elsewhere)
+        Key::Character(ref s) if s.eq_ignore_ascii_case("c") && (ctrl || logo) => {
+            update(model, Msg::Document(DocumentMsg::Copy))
+        }
+
+        // Cut (Cmd+X on macOS, Ctrl+X elsewhere)
+        Key::Character(ref s) if s.eq_ignore_ascii_case("x") && (ctrl || logo) => {
+            update(model, Msg::Document(DocumentMsg::Cut))
+        }
+
+        // Paste (Cmd+V on macOS, Ctrl+V elsewhere)
+        Key::Character(ref s) if s.eq_ignore_ascii_case("v") && (ctrl || logo) => {
+            update(model, Msg::Document(DocumentMsg::Paste))
+        }
+
+        // Escape: clear selection or collapse to single cursor
+        Key::Named(NamedKey::Escape) => {
+            if model.editor.has_multiple_cursors() {
+                update(model, Msg::Editor(EditorMsg::CollapseToSingleCursor))
+            } else if !model.editor.selection().is_empty() {
+                update(model, Msg::Editor(EditorMsg::ClearSelection))
+            } else {
+                None
+            }
+        }
+
+        // Document navigation with selection (Shift+Ctrl+Home/End)
+        Key::Named(NamedKey::Home) if ctrl && shift => {
+            update(
+                model,
+                Msg::Editor(EditorMsg::MoveCursorDocumentStartWithSelection),
+            )
+        }
+        Key::Named(NamedKey::End) if ctrl && shift => {
+            update(
+                model,
+                Msg::Editor(EditorMsg::MoveCursorDocumentEndWithSelection),
+            )
+        }
+
+        // Document navigation (Ctrl+Home/End)
+        Key::Named(NamedKey::Home) if ctrl => {
+            model.editor.clear_selection();
+            update(model, Msg::Editor(EditorMsg::MoveCursorDocumentStart))
+        }
+        Key::Named(NamedKey::End) if ctrl => {
+            model.editor.clear_selection();
+            update(model, Msg::Editor(EditorMsg::MoveCursorDocumentEnd))
+        }
+
+        // Line navigation with selection (Shift+Cmd+Arrow on macOS)
+        Key::Named(NamedKey::ArrowLeft) if logo && shift => {
+            update(
+                model,
+                Msg::Editor(EditorMsg::MoveCursorLineStartWithSelection),
+            )
+        }
+        Key::Named(NamedKey::ArrowRight) if logo && shift => {
+            update(
+                model,
+                Msg::Editor(EditorMsg::MoveCursorLineEndWithSelection),
+            )
+        }
+
+        // Line navigation (Cmd+Arrow on macOS)
+        Key::Named(NamedKey::ArrowLeft) if logo => {
+            model.editor.clear_selection();
+            update(model, Msg::Editor(EditorMsg::MoveCursorLineStart))
+        }
+        Key::Named(NamedKey::ArrowRight) if logo => {
+            model.editor.clear_selection();
+            update(model, Msg::Editor(EditorMsg::MoveCursorLineEnd))
+        }
+
+        // Line navigation with selection (Shift+Home/End)
+        Key::Named(NamedKey::Home) if shift => {
+            update(
+                model,
+                Msg::Editor(EditorMsg::MoveCursorLineStartWithSelection),
+            )
+        }
+        Key::Named(NamedKey::End) if shift => {
+            update(
+                model,
+                Msg::Editor(EditorMsg::MoveCursorLineEndWithSelection),
+            )
+        }
+
+        // Line navigation (Home/End keys)
+        Key::Named(NamedKey::Home) => {
+            model.editor.clear_selection();
+            update(model, Msg::Editor(EditorMsg::MoveCursorLineStart))
+        }
+        Key::Named(NamedKey::End) => {
+            model.editor.clear_selection();
+            update(model, Msg::Editor(EditorMsg::MoveCursorLineEnd))
+        }
+
+        // Page navigation with selection (Shift+PageUp/Down)
+        Key::Named(NamedKey::PageUp) if shift => {
+            update(model, Msg::Editor(EditorMsg::PageUpWithSelection))
+        }
+        Key::Named(NamedKey::PageDown) if shift => {
+            update(model, Msg::Editor(EditorMsg::PageDownWithSelection))
+        }
+
+        // Page navigation
+        Key::Named(NamedKey::PageUp) => {
+            if !model.editor.selection().is_empty() {
+                // Jump to selection START, then page up
+                let start = model.editor.selection().start();
+                model.editor.cursor_mut().line = start.line;
+                model.editor.cursor_mut().column = start.column;
+                model.editor.clear_selection();
+            }
+            update(model, Msg::Editor(EditorMsg::PageUp))
+        }
+        Key::Named(NamedKey::PageDown) => {
+            if !model.editor.selection().is_empty() {
+                // Jump to selection END, then page down
+                let end = model.editor.selection().end();
+                model.editor.cursor_mut().line = end.line;
+                model.editor.cursor_mut().column = end.column;
+                model.editor.clear_selection();
+            }
+            update(model, Msg::Editor(EditorMsg::PageDown))
+        }
+
+        // Word navigation with selection (Shift+Option/Alt + Arrow)
+        Key::Named(NamedKey::ArrowLeft) if alt && shift => update(
+            model,
+            Msg::Editor(EditorMsg::MoveCursorWordWithSelection(Direction::Left)),
+        ),
+        Key::Named(NamedKey::ArrowRight) if alt && shift => update(
+            model,
+            Msg::Editor(EditorMsg::MoveCursorWordWithSelection(Direction::Right)),
+        ),
+
+        // Word navigation (Option/Alt + Arrow)
+        Key::Named(NamedKey::ArrowLeft) if alt => {
+            model.editor.clear_selection();
+            update(
+                model,
+                Msg::Editor(EditorMsg::MoveCursorWord(Direction::Left)),
+            )
+        }
+        Key::Named(NamedKey::ArrowRight) if alt => {
+            model.editor.clear_selection();
+            update(
+                model,
+                Msg::Editor(EditorMsg::MoveCursorWord(Direction::Right)),
+            )
+        }
+
+        // Arrow keys with selection (Shift+Arrow)
+        Key::Named(NamedKey::ArrowUp) if shift => update(
+            model,
+            Msg::Editor(EditorMsg::MoveCursorWithSelection(Direction::Up)),
+        ),
+        Key::Named(NamedKey::ArrowDown) if shift => update(
+            model,
+            Msg::Editor(EditorMsg::MoveCursorWithSelection(Direction::Down)),
+        ),
+        Key::Named(NamedKey::ArrowLeft) if shift => update(
+            model,
+            Msg::Editor(EditorMsg::MoveCursorWithSelection(Direction::Left)),
+        ),
+        Key::Named(NamedKey::ArrowRight) if shift => update(
+            model,
+            Msg::Editor(EditorMsg::MoveCursorWithSelection(Direction::Right)),
+        ),
+
+        // Arrow keys (with selection: jump to start/end, then optionally move)
+        Key::Named(NamedKey::ArrowUp) => {
+            if !model.editor.selection().is_empty() {
+                // Jump to selection START, then move up
+                let start = model.editor.selection().start();
+                model.editor.cursor_mut().line = start.line;
+                model.editor.cursor_mut().column = start.column;
+                model.editor.clear_selection();
+                update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Up)))
+            } else {
+                update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Up)))
+            }
+        }
+        Key::Named(NamedKey::ArrowDown) => {
+            if !model.editor.selection().is_empty() {
+                // Jump to selection END, then move down
+                let end = model.editor.selection().end();
+                model.editor.cursor_mut().line = end.line;
+                model.editor.cursor_mut().column = end.column;
+                model.editor.clear_selection();
+                update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Down)))
+            } else {
+                update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Down)))
+            }
+        }
+        Key::Named(NamedKey::ArrowLeft) => {
+            if !model.editor.selection().is_empty() {
+                // Jump to selection START (no additional move)
+                let start = model.editor.selection().start();
+                model.editor.cursor_mut().line = start.line;
+                model.editor.cursor_mut().column = start.column;
+                model.editor.clear_selection();
+                model.ensure_cursor_visible();
+                model.reset_cursor_blink();
+                Some(Cmd::Redraw)
+            } else {
+                update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Left)))
+            }
+        }
+        Key::Named(NamedKey::ArrowRight) => {
+            if !model.editor.selection().is_empty() {
+                // Jump to selection END (no additional move)
+                let end = model.editor.selection().end();
+                model.editor.cursor_mut().line = end.line;
+                model.editor.cursor_mut().column = end.column;
+                model.editor.clear_selection();
+                model.ensure_cursor_visible();
+                model.reset_cursor_blink();
+                Some(Cmd::Redraw)
+            } else {
+                update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Right)))
+            }
+        }
+
+        // Editing
+        Key::Named(NamedKey::Enter) => update(model, Msg::Document(DocumentMsg::InsertNewline)),
+        Key::Named(NamedKey::Backspace) => {
+            update(model, Msg::Document(DocumentMsg::DeleteBackward))
+        }
+        Key::Named(NamedKey::Delete) => update(model, Msg::Document(DocumentMsg::DeleteForward)),
+        Key::Named(NamedKey::Space) if !ctrl => {
+            update(model, Msg::Document(DocumentMsg::InsertChar(' ')))
+        }
+
+        // Character input (only when no Ctrl)
+        Key::Character(ref s) if !ctrl => {
+            let mut cmd = None;
+            for ch in s.chars() {
+                cmd = update(model, Msg::Document(DocumentMsg::InsertChar(ch))).or(cmd);
+            }
+            cmd
+        }
+
+        _ => None,
+    }
+}
+
+// ============================================================================
 // APPLICATION - Main event loop
 // ============================================================================
 
 struct App {
-    model: Model,
+    model: AppModel,
     renderer: Option<Renderer>,
     window: Option<Rc<Window>>,
     context: Option<Context<Rc<Window>>>,
     last_tick: Instant,
     modifiers: ModifiersState,
     mouse_position: Option<(f64, f64)>,
+    /// For double/triple click detection
+    last_click_time: Instant,
+    last_click_position: Option<(usize, usize)>,
+    click_count: u32,
+    /// For double-tap Option key detection (AddCursorAbove/Below)
+    last_option_press: Option<Instant>,
+    option_double_tapped: bool,
+    /// Channel sender for async command results
+    msg_tx: Sender<Msg>,
+    /// Channel receiver for async command results
+    msg_rx: Receiver<Msg>,
+    /// Performance stats (debug builds only)
+    #[cfg(debug_assertions)]
+    perf: PerfStats,
 }
 
 impl App {
     fn new(window_width: u32, window_height: u32, file_path: Option<PathBuf>) -> Self {
+        let (msg_tx, msg_rx) = mpsc::channel();
         Self {
-            model: Model::new(window_width, window_height, file_path),
+            model: AppModel::new(window_width, window_height, file_path),
             renderer: None,
             window: None,
             context: None,
             last_tick: Instant::now(),
             modifiers: ModifiersState::empty(),
             mouse_position: None,
+            last_click_time: Instant::now(),
+            last_click_position: None,
+            click_count: 0,
+            last_option_press: None,
+            option_double_tapped: false,
+            msg_tx,
+            msg_rx,
+            #[cfg(debug_assertions)]
+            perf: PerfStats::default(),
         }
     }
 
@@ -1392,13 +1474,7 @@ impl App {
         let renderer = Renderer::new(window, context)?;
 
         // Sync actual char_width from renderer to model for accurate viewport calculations
-        self.model.char_width = renderer.char_width();
-
-        // Recalculate visible_columns using same formula as renderer
-        let text_start_x = (self.model.char_width * LINE_NUMBER_GUTTER_CHARS as f32).round();
-        self.model.viewport.visible_columns =
-            ((self.model.window_size.0 as f32 - text_start_x) / self.model.char_width).floor()
-                as usize;
+        self.model.set_char_width(renderer.char_width());
 
         self.renderer = Some(renderer);
         Ok(())
@@ -1406,15 +1482,45 @@ impl App {
 
     fn handle_event(&mut self, event: &WindowEvent) -> Option<Cmd> {
         match event {
-            WindowEvent::Resized(size) => {
-                update(&mut self.model, Msg::Resize(size.width, size.height))
-            }
+            WindowEvent::Resized(size) => update(
+                &mut self.model,
+                Msg::App(AppMsg::Resize(size.width, size.height)),
+            ),
             WindowEvent::ModifiersChanged(mods) => {
                 self.modifiers = mods.state();
                 None
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                // Detect Option key double-tap for AddCursorAbove/Below
+                let is_option_key = matches!(
+                    event.physical_key,
+                    PhysicalKey::Code(KeyCode::AltLeft) | PhysicalKey::Code(KeyCode::AltRight)
+                );
+
+                if is_option_key {
+                    if event.state == ElementState::Pressed && !event.repeat {
+                        let now = Instant::now();
+                        if let Some(last) = self.last_option_press {
+                            // Double-tap threshold: 300ms
+                            if now.duration_since(last) < Duration::from_millis(300) {
+                                self.option_double_tapped = true;
+                            }
+                        }
+                        self.last_option_press = Some(now);
+                    } else if event.state == ElementState::Released {
+                        // Reset double-tap state on Option release
+                        self.option_double_tapped = false;
+                    }
+                }
+
                 if event.state == ElementState::Pressed {
+                    // F2 toggles perf overlay (debug builds only)
+                    #[cfg(debug_assertions)]
+                    if event.logical_key == Key::Named(NamedKey::F2) {
+                        self.perf.show_overlay = !self.perf.show_overlay;
+                        return Some(Cmd::Redraw);
+                    }
+
                     let ctrl = self.modifiers.control_key();
                     let shift = self.modifiers.shift_key();
                     let alt = self.modifiers.alt_key();
@@ -1426,6 +1532,7 @@ impl App {
                         shift,
                         alt,
                         logo,
+                        self.option_double_tapped,
                     )
                 } else {
                     None
@@ -1440,6 +1547,17 @@ impl App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse_position = Some((position.x, position.y));
+
+                // Update rectangle selection if active
+                if self.model.editor.rectangle_selection.active {
+                    if let Some(renderer) = &mut self.renderer {
+                        let (line, column) = renderer.pixel_to_cursor(position.x, position.y, &self.model);
+                        return update(
+                            &mut self.model,
+                            Msg::Editor(EditorMsg::UpdateRectangleSelection { line, column }),
+                        );
+                    }
+                }
                 None
             }
             WindowEvent::MouseInput {
@@ -1450,8 +1568,106 @@ impl App {
                 if let Some((x, y)) = self.mouse_position {
                     if let Some(renderer) = &mut self.renderer {
                         let (line, column) = renderer.pixel_to_cursor(x, y, &self.model);
-                        return update(&mut self.model, Msg::SetCursorPosition(line, column));
+                        let now = Instant::now();
+                        let double_click_time = Duration::from_millis(300);
+
+                        // Detect double/triple click
+                        let is_rapid_click = now.duration_since(self.last_click_time) < double_click_time;
+                        let is_same_position = self.last_click_position == Some((line, column));
+
+                        if is_rapid_click && is_same_position {
+                            self.click_count += 1;
+                            if self.click_count > 3 {
+                                self.click_count = 1;
+                            }
+                        } else {
+                            self.click_count = 1;
+                        }
+
+                        self.last_click_time = now;
+                        self.last_click_position = Some((line, column));
+
+                        // Shift+Click extends selection (always single-click behavior)
+                        if self.modifiers.shift_key() {
+                            return update(
+                                &mut self.model,
+                                Msg::Editor(EditorMsg::ExtendSelectionToPosition { line, column }),
+                            );
+                        }
+
+                        // Cmd+Click (macOS) or Ctrl+Click toggles cursor at position
+                        if self.modifiers.super_key() {
+                            return update(
+                                &mut self.model,
+                                Msg::Editor(EditorMsg::ToggleCursorAtPosition { line, column }),
+                            );
+                        }
+
+                        // Handle click count
+                        match self.click_count {
+                            2 => {
+                                // Double-click: select word
+                                // First set cursor position, then select word
+                                update(
+                                    &mut self.model,
+                                    Msg::Editor(EditorMsg::SetCursorPosition { line, column }),
+                                );
+                                return update(
+                                    &mut self.model,
+                                    Msg::Editor(EditorMsg::SelectWord),
+                                );
+                            }
+                            3 => {
+                                // Triple-click: select line
+                                update(
+                                    &mut self.model,
+                                    Msg::Editor(EditorMsg::SetCursorPosition { line, column }),
+                                );
+                                return update(
+                                    &mut self.model,
+                                    Msg::Editor(EditorMsg::SelectLine),
+                                );
+                            }
+                            _ => {
+                                // Single click: clear selection and set cursor
+                                self.model.editor.clear_selection();
+                                return update(
+                                    &mut self.model,
+                                    Msg::Editor(EditorMsg::SetCursorPosition { line, column }),
+                                );
+                            }
+                        }
                     }
+                }
+                None
+            }
+            // Middle mouse button - rectangle selection
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Middle,
+                ..
+            } => {
+                if let Some((x, y)) = self.mouse_position {
+                    if let Some(renderer) = &mut self.renderer {
+                        let (line, column) = renderer.pixel_to_cursor(x, y, &self.model);
+                        return update(
+                            &mut self.model,
+                            Msg::Editor(EditorMsg::StartRectangleSelection { line, column }),
+                        );
+                    }
+                }
+                None
+            }
+            WindowEvent::MouseInput {
+                state: ElementState::Released,
+                button: MouseButton::Middle,
+                ..
+            } => {
+                if self.model.editor.rectangle_selection.active {
+                    return update(
+                        &mut self.model,
+                        Msg::Editor(EditorMsg::FinishRectangleSelection),
+                    );
                 }
                 None
             }
@@ -1474,14 +1690,17 @@ impl App {
 
                 // Handle vertical scroll
                 let v_cmd = if v_delta != 0 {
-                    update(&mut self.model, Msg::ScrollViewport(v_delta))
+                    update(&mut self.model, Msg::Editor(EditorMsg::Scroll(v_delta)))
                 } else {
                     None
                 };
 
                 // Handle horizontal scroll
                 let h_cmd = if h_delta != 0 {
-                    update(&mut self.model, Msg::ScrollViewportHorizontal(h_delta))
+                    update(
+                        &mut self.model,
+                        Msg::Editor(EditorMsg::ScrollHorizontal(h_delta)),
+                    )
                 } else {
                     None
                 };
@@ -1493,16 +1712,74 @@ impl App {
         }
     }
 
+    #[cfg(not(debug_assertions))]
     fn render(&mut self) -> Result<()> {
         if let Some(renderer) = &mut self.renderer {
-            renderer.render(&self.model)?;
+            renderer.render(&self.model, ())?;
         }
+        Ok(())
+    }
+
+    #[cfg(debug_assertions)]
+    fn render(&mut self) -> Result<()> {
+        // Start frame timing
+        self.perf.frame_start = Some(Instant::now());
+
+        if let Some(renderer) = &mut self.renderer {
+            renderer.render(&self.model, &self.perf)?;
+        }
+
+        // Record frame time
+        self.perf.record_frame_time();
         Ok(())
     }
 
     fn tick(&mut self) -> Option<Cmd> {
         // Handle animations
-        update(&mut self.model, Msg::BlinkCursor)
+        update(&mut self.model, Msg::Ui(UiMsg::BlinkCursor))
+    }
+
+    /// Process a command, potentially spawning async operations
+    fn process_cmd(&self, cmd: Cmd) {
+        match cmd {
+            Cmd::None => {}
+            Cmd::Redraw => {
+                // Handled by the caller requesting a window redraw
+            }
+            Cmd::SaveFile { path, content } => {
+                let tx = self.msg_tx.clone();
+                std::thread::spawn(move || {
+                    let result = std::fs::write(&path, content).map_err(|e| e.to_string());
+                    let _ = tx.send(Msg::App(AppMsg::SaveCompleted(result)));
+                });
+            }
+            Cmd::LoadFile { path } => {
+                let tx = self.msg_tx.clone();
+                std::thread::spawn(move || {
+                    let result = std::fs::read_to_string(&path).map_err(|e| e.to_string());
+                    let _ = tx.send(Msg::App(AppMsg::FileLoaded { path, result }));
+                });
+            }
+            Cmd::Batch(cmds) => {
+                for cmd in cmds {
+                    self.process_cmd(cmd);
+                }
+            }
+        }
+    }
+
+    /// Process pending async messages from the channel
+    fn process_async_messages(&mut self) -> bool {
+        let mut needs_redraw = false;
+        while let Ok(msg) = self.msg_rx.try_recv() {
+            if let Some(cmd) = update(&mut self.model, msg) {
+                if cmd.needs_redraw() {
+                    needs_redraw = true;
+                }
+                self.process_cmd(cmd);
+            }
+        }
+        needs_redraw
     }
 }
 
@@ -1531,7 +1808,13 @@ impl ApplicationHandler for App {
         let should_exit = matches!(event, WindowEvent::CloseRequested);
         let should_redraw = if let Some(window) = &self.window {
             if window_id == window.id() && !should_exit {
-                self.handle_event(&event).is_some()
+                if let Some(cmd) = self.handle_event(&event) {
+                    let needs_redraw = cmd.needs_redraw();
+                    self.process_cmd(cmd);
+                    needs_redraw
+                } else {
+                    false
+                }
             } else {
                 false
             }
@@ -1552,6 +1835,13 @@ impl ApplicationHandler for App {
         // Use Poll to make event loop responsive to scrolling and user input
         // This ensures immediate response to mouse wheel, touchpad, and keyboard events
         event_loop.set_control_flow(ControlFlow::Poll);
+
+        // Process any pending async messages
+        if self.process_async_messages() {
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+        }
 
         // Only tick for cursor blinking animation
         let now = Instant::now();
@@ -1590,1298 +1880,349 @@ fn main() -> Result<()> {
 }
 
 // ============================================================================
-// TESTS
+// TESTS - Keyboard handling tests that require handle_key()
 // ============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use token::model::{
+        Cursor, Document, EditorState, Position, RectangleSelectionState, Selection, UiState,
+        Viewport,
+    };
+    use token::theme::Theme;
 
-    /// Create a test model with given text and cursor position
-    fn test_model(text: &str, line: usize, column: usize) -> Model {
-        Model {
-            buffer: Rope::from(text),
-            cursor: Cursor {
-                line,
-                column,
-                desired_column: None,
+    /// Create a test model with given text and a selection (anchor to head)
+    /// The cursor will be at the head position
+    fn test_model_with_selection(
+        text: &str,
+        anchor_line: usize,
+        anchor_col: usize,
+        head_line: usize,
+        head_col: usize,
+    ) -> AppModel {
+        let cursor = Cursor {
+            line: head_line,
+            column: head_col,
+            desired_column: None,
+        };
+        let selection = Selection {
+            anchor: Position::new(anchor_line, anchor_col),
+            head: Position::new(head_line, head_col),
+        };
+        AppModel {
+            document: Document::with_text(text),
+            editor: EditorState {
+                cursors: vec![cursor],
+                selections: vec![selection],
+                viewport: Viewport {
+                    top_line: 0,
+                    left_column: 0,
+                    visible_lines: 25,
+                    visible_columns: 80,
+                },
+                scroll_padding: 1,
+                rectangle_selection: RectangleSelectionState::default(),
             },
-            viewport: Viewport {
-                top_line: 0,
-                left_column: 0,
-                visible_lines: 25,
-                visible_columns: 80,
-            },
+            ui: UiState::new(),
+            theme: Theme::default(),
             window_size: (800, 600),
-            scroll_padding: 1, // Default padding for tests
-            status_message: "Test".to_string(),
             line_height: 20,
             char_width: 10.0,
-            cursor_visible: true,
-            last_cursor_blink: Instant::now(),
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
-            file_path: None,    // Tests don't need file paths
-            is_modified: false, // Start unmodified
         }
     }
 
-    /// Helper to get buffer content as string
-    fn buffer_to_string(model: &Model) -> String {
-        model.buffer.to_string()
-    }
-
     // ========================================================================
-    // cursor_buffer_position() tests
+    // Arrow Keys with Selection Tests
+    // These tests require handle_key() which is in the binary, not the library
     // ========================================================================
 
     #[test]
-    fn test_cursor_buffer_position_start_of_file() {
-        let model = test_model("hello\nworld\n", 0, 0);
-        assert_eq!(model.cursor_buffer_position(), 0);
+    fn test_left_arrow_with_selection_jumps_to_start() {
+        // When text is selected and Left is pressed, cursor should go to selection START
+        // Text: "hello world" with "llo wo" selected (columns 2-8)
+        let mut model = test_model_with_selection("hello world\n", 0, 2, 0, 8);
+        // Selection: anchor at col 2, head/cursor at col 8
+
+        // Press Left (without shift)
+        handle_key(&mut model, Key::Named(NamedKey::ArrowLeft), false, false, false, false, false);
+
+        // Selection should be cleared
+        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        // Cursor should be at selection START (column 2), not moved left from 8
+        assert_eq!(
+            model.editor.cursor().column, 2,
+            "Cursor should jump to selection start (col 2), not stay at col 8 or move to col 7"
+        );
     }
 
     #[test]
-    fn test_cursor_buffer_position_middle_of_first_line() {
-        let model = test_model("hello\nworld\n", 0, 3);
-        assert_eq!(model.cursor_buffer_position(), 3); // "hel|lo"
+    fn test_right_arrow_with_selection_jumps_to_end() {
+        // When text is selected and Right is pressed, cursor should go to selection END
+        // Text: "hello world" with "llo wo" selected (columns 2-8)
+        let mut model = test_model_with_selection("hello world\n", 0, 2, 0, 8);
+
+        // Press Right (without shift)
+        handle_key(&mut model, Key::Named(NamedKey::ArrowRight), false, false, false, false, false);
+
+        // Selection should be cleared
+        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        // Cursor should be at selection END (column 8), not moved right from 8
+        assert_eq!(
+            model.editor.cursor().column, 8,
+            "Cursor should jump to selection end (col 8), not move to col 9"
+        );
     }
 
     #[test]
-    fn test_cursor_buffer_position_end_of_first_line() {
-        let model = test_model("hello\nworld\n", 0, 5);
-        assert_eq!(model.cursor_buffer_position(), 5); // "hello|"
+    fn test_up_arrow_with_selection_moves_from_start() {
+        // When text is selected and Up is pressed, cursor should:
+        // 1. Jump to selection START
+        // 2. Move up one line from there
+        // Selection spans line 1, cols 2-8
+        let mut model = test_model_with_selection("hello world\nfoo bar baz\nthird line\n", 1, 2, 1, 8);
+        // Cursor is at line 1, col 8 (head of selection)
+
+        // Press Up (without shift)
+        handle_key(&mut model, Key::Named(NamedKey::ArrowUp), false, false, false, false, false);
+
+        // Selection should be cleared
+        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        // Cursor should be on line 0 (moved up from line 1)
+        assert_eq!(model.editor.cursor().line, 0, "Cursor should move up to line 0");
+        // Cursor should be at column 2 (selection start column)
+        assert_eq!(
+            model.editor.cursor().column, 2,
+            "Cursor should be at column 2 (selection start column)"
+        );
     }
 
     #[test]
-    fn test_cursor_buffer_position_start_of_second_line() {
-        let model = test_model("hello\nworld\n", 1, 0);
-        // "hello\n" = 6 chars, so position 6 is start of "world"
-        assert_eq!(model.cursor_buffer_position(), 6);
-    }
+    fn test_down_arrow_with_selection_moves_from_end() {
+        // When text is selected and Down is pressed, cursor should:
+        // 1. Jump to selection END
+        // 2. Move down one line from there
+        // Selection spans line 1, cols 2-8
+        let mut model = test_model_with_selection("hello world\nfoo bar baz\nthird line\n", 1, 2, 1, 8);
+        // Cursor is at line 1, col 8 (head of selection)
 
-    #[test]
-    fn test_cursor_buffer_position_middle_of_second_line() {
-        let model = test_model("hello\nworld\n", 1, 3);
-        // "hello\n" = 6 chars, + 3 = 9
-        assert_eq!(model.cursor_buffer_position(), 9); // "wor|ld"
-    }
+        // Press Down (without shift)
+        handle_key(&mut model, Key::Named(NamedKey::ArrowDown), false, false, false, false, false);
 
-    #[test]
-    fn test_cursor_buffer_position_empty_line() {
-        let model = test_model("hello\n\nworld\n", 1, 0);
-        // "hello\n" = 6 chars, empty line at position 6
-        assert_eq!(model.cursor_buffer_position(), 6);
-    }
-
-    #[test]
-    fn test_cursor_buffer_position_after_empty_line() {
-        let model = test_model("hello\n\nworld\n", 2, 0);
-        // "hello\n" = 6, "\n" = 1, so "world" starts at 7
-        assert_eq!(model.cursor_buffer_position(), 7);
-    }
-
-    #[test]
-    fn test_cursor_buffer_position_clamped_column() {
-        // Column exceeds line length - should be clamped
-        let model = test_model("hi\nworld\n", 0, 10);
-        // Line "hi" has length 2, so column should clamp to 2
-        assert_eq!(model.cursor_buffer_position(), 2);
-    }
-
-    // ========================================================================
-    // current_line_length() tests
-    // ========================================================================
-
-    #[test]
-    fn test_current_line_length_with_newline() {
-        let model = test_model("hello\nworld\n", 0, 0);
-        // "hello\n" has 6 chars, but length should be 5 (excluding newline)
-        assert_eq!(model.current_line_length(), 5);
-    }
-
-    #[test]
-    fn test_current_line_length_without_newline() {
-        let model = test_model("hello", 0, 0);
-        // "hello" has no newline, length is 5
-        assert_eq!(model.current_line_length(), 5);
-    }
-
-    #[test]
-    fn test_current_line_length_empty_line() {
-        let model = test_model("hello\n\nworld\n", 1, 0);
-        // Empty line has length 0
-        assert_eq!(model.current_line_length(), 0);
-    }
-
-    #[test]
-    fn test_current_line_length_last_line_with_newline() {
-        let model = test_model("hello\nworld\n", 1, 0);
-        // "world\n" has 6 chars, length should be 5
-        assert_eq!(model.current_line_length(), 5);
+        // Selection should be cleared
+        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        // Cursor should be on line 2 (moved down from line 1)
+        assert_eq!(model.editor.cursor().line, 2, "Cursor should move down to line 2");
+        // Cursor should be at column 8 (selection end column)
+        assert_eq!(
+            model.editor.cursor().column, 8,
+            "Cursor should be at column 8 (selection end column)"
+        );
     }
 
     // ========================================================================
-    // InsertChar tests
+    // Home/End with Selection Tests
     // ========================================================================
 
     #[test]
-    fn test_insert_char_at_start() {
-        let mut model = test_model("hello", 0, 0);
-        update(&mut model, Msg::InsertChar('X'));
+    fn test_home_with_selection_uses_head_line() {
+        // Home should cancel selection and go to start of line where HEAD is
+        // Selection: anchor at (0, 5), head at (1, 8)
+        let mut model = test_model_with_selection("hello world\nfoo bar baz\nthird line\n", 0, 5, 1, 8);
+        // Head is on line 1
 
-        assert_eq!(buffer_to_string(&model), "Xhello");
-        assert_eq!(model.cursor.column, 1);
-        assert_eq!(model.cursor.line, 0);
+        // Press Home
+        handle_key(&mut model, Key::Named(NamedKey::Home), false, false, false, false, false);
+
+        // Selection should be cleared
+        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        // Cursor should stay on line 1 (where head was)
+        assert_eq!(model.editor.cursor().line, 1, "Cursor should stay on line 1 (head line)");
+        // Cursor should be at start of line (smart home: first non-ws char, but for "foo" that's 0)
+        assert_eq!(model.editor.cursor().column, 0, "Cursor should be at start of line");
     }
 
     #[test]
-    fn test_insert_char_at_middle() {
-        let mut model = test_model("hello", 0, 2);
-        update(&mut model, Msg::InsertChar('X'));
+    fn test_end_with_selection_uses_head_line() {
+        // End should cancel selection and go to end of line where HEAD is
+        // Selection: anchor at (0, 5), head at (1, 2)
+        let mut model = test_model_with_selection("hello world\nfoo bar baz\nthird line\n", 0, 5, 1, 2);
+        // Head is on line 1
 
-        assert_eq!(buffer_to_string(&model), "heXllo");
-        assert_eq!(model.cursor.column, 3);
-    }
+        // Press End
+        handle_key(&mut model, Key::Named(NamedKey::End), false, false, false, false, false);
 
-    #[test]
-    fn test_insert_char_at_end() {
-        let mut model = test_model("hello", 0, 5);
-        update(&mut model, Msg::InsertChar('X'));
-
-        assert_eq!(buffer_to_string(&model), "helloX");
-        assert_eq!(model.cursor.column, 6);
-    }
-
-    #[test]
-    fn test_insert_space_at_middle() {
-        let mut model = test_model("helloworld", 0, 5);
-        update(&mut model, Msg::InsertChar(' '));
-
-        assert_eq!(buffer_to_string(&model), "hello world");
-        assert_eq!(model.cursor.column, 6);
-    }
-
-    #[test]
-    fn test_insert_multiple_chars_consecutively() {
-        let mut model = test_model("hello", 0, 5);
-        update(&mut model, Msg::InsertChar(' '));
-        update(&mut model, Msg::InsertChar('w'));
-        update(&mut model, Msg::InsertChar('o'));
-        update(&mut model, Msg::InsertChar('r'));
-        update(&mut model, Msg::InsertChar('l'));
-        update(&mut model, Msg::InsertChar('d'));
-
-        assert_eq!(buffer_to_string(&model), "hello world");
-        assert_eq!(model.cursor.column, 11);
-    }
-
-    #[test]
-    fn test_insert_char_on_second_line() {
-        let mut model = test_model("hello\nworld", 1, 2);
-        update(&mut model, Msg::InsertChar('X'));
-
-        assert_eq!(buffer_to_string(&model), "hello\nwoXrld");
-        assert_eq!(model.cursor.line, 1);
-        assert_eq!(model.cursor.column, 3);
-    }
-
-    #[test]
-    fn test_insert_multiple_spaces_middle_of_line() {
-        let mut model = test_model("helloworld", 0, 5);
-
-        // Insert 3 spaces consecutively - this tests the "playing catchup" bug
-        update(&mut model, Msg::InsertChar(' '));
-        assert_eq!(buffer_to_string(&model), "hello world");
-        assert_eq!(model.cursor.column, 6);
-
-        update(&mut model, Msg::InsertChar(' '));
-        assert_eq!(buffer_to_string(&model), "hello  world");
-        assert_eq!(model.cursor.column, 7);
-
-        update(&mut model, Msg::InsertChar(' '));
-        assert_eq!(buffer_to_string(&model), "hello   world");
-        assert_eq!(model.cursor.column, 8);
-    }
-
-    #[test]
-    fn test_insert_after_cursor_position_clamped() {
-        // This tests the suspected bug: cursor.column > line length
-        let mut model = test_model("hi", 0, 10); // column 10 on 2-char line
-
-        // Position should be clamped to 2
-        let pos = model.cursor_buffer_position();
-        assert_eq!(pos, 2);
-
-        // Insert should happen at clamped position
-        update(&mut model, Msg::InsertChar('X'));
-        assert_eq!(buffer_to_string(&model), "hiX");
-
-        // After insert, cursor.column should be valid
-        assert!(model.cursor.column <= model.current_line_length());
+        // Selection should be cleared
+        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        // Cursor should stay on line 1 (where head was)
+        assert_eq!(model.editor.cursor().line, 1, "Cursor should stay on line 1 (head line)");
+        // Cursor should be at end of line 1 ("foo bar baz" has length 11)
+        assert_eq!(model.editor.cursor().column, 11, "Cursor should be at end of line (col 11)");
     }
 
     // ========================================================================
-    // InsertNewline tests
+    // PageUp/PageDown with Selection Tests
     // ========================================================================
 
     #[test]
-    fn test_insert_newline_at_end() {
-        let mut model = test_model("hello", 0, 5);
-        update(&mut model, Msg::InsertNewline);
+    fn test_pageup_with_selection_moves_from_start() {
+        // PageUp should cancel selection and move up from selection START
+        // Create text with many lines
+        let text = (0..30).map(|i| format!("line {}\n", i)).collect::<String>();
+        // Selection: anchor at (15, 2), head at (15, 5) - both on line 15
+        let mut model = test_model_with_selection(&text, 15, 2, 15, 5);
+        model.editor.viewport.visible_lines = 10;
 
-        assert_eq!(buffer_to_string(&model), "hello\n");
-        assert_eq!(model.cursor.line, 1);
-        assert_eq!(model.cursor.column, 0);
+        // Press PageUp
+        handle_key(&mut model, Key::Named(NamedKey::PageUp), false, false, false, false, false);
+
+        // Selection should be cleared
+        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        // Cursor should have moved up from selection start (line 15, col 2)
+        // PageUp moves ~8 lines (visible_lines - 2)
+        assert!(model.editor.cursor().line < 15, "Cursor should have moved up from line 15");
+        // Column should be from selection start (col 2)
+        assert_eq!(model.editor.cursor().column, 2, "Cursor column should be at selection start col (2)");
     }
 
     #[test]
-    fn test_insert_newline_at_middle() {
-        let mut model = test_model("hello", 0, 2);
-        update(&mut model, Msg::InsertNewline);
+    fn test_pagedown_with_selection_moves_from_end() {
+        // PageDown should cancel selection and move down from selection END
+        // Create text with many lines
+        let text = (0..30).map(|i| format!("line {}\n", i)).collect::<String>();
+        // Selection: anchor at (5, 2), head at (5, 5) - both on line 5
+        let mut model = test_model_with_selection(&text, 5, 2, 5, 5);
+        model.editor.viewport.visible_lines = 10;
 
-        assert_eq!(buffer_to_string(&model), "he\nllo");
-        assert_eq!(model.cursor.line, 1);
-        assert_eq!(model.cursor.column, 0);
-    }
+        // Press PageDown
+        handle_key(&mut model, Key::Named(NamedKey::PageDown), false, false, false, false, false);
 
-    #[test]
-    fn test_insert_newline_at_start() {
-        let mut model = test_model("hello", 0, 0);
-        update(&mut model, Msg::InsertNewline);
-
-        assert_eq!(buffer_to_string(&model), "\nhello");
-        assert_eq!(model.cursor.line, 1);
-        assert_eq!(model.cursor.column, 0);
-    }
-
-    // ========================================================================
-    // DeleteBackward tests
-    // ========================================================================
-
-    #[test]
-    fn test_delete_backward_middle_of_line() {
-        let mut model = test_model("hello", 0, 3);
-        update(&mut model, Msg::DeleteBackward);
-
-        assert_eq!(buffer_to_string(&model), "helo");
-        assert_eq!(model.cursor.column, 2);
-    }
-
-    #[test]
-    fn test_delete_backward_at_start_of_line() {
-        let mut model = test_model("hello", 0, 0);
-        update(&mut model, Msg::DeleteBackward);
-
-        // Nothing should happen
-        assert_eq!(buffer_to_string(&model), "hello");
-        assert_eq!(model.cursor.column, 0);
-    }
-
-    #[test]
-    fn test_delete_backward_joins_lines() {
-        let mut model = test_model("hello\nworld", 1, 0);
-        update(&mut model, Msg::DeleteBackward);
-
-        assert_eq!(buffer_to_string(&model), "helloworld");
-        assert_eq!(model.cursor.line, 0);
-        assert_eq!(model.cursor.column, 5); // End of "hello"
-    }
-
-    #[test]
-    fn test_delete_backward_after_empty_line() {
-        let mut model = test_model("hello\n\nworld", 2, 0);
-        update(&mut model, Msg::DeleteBackward);
-
-        assert_eq!(buffer_to_string(&model), "hello\nworld");
-        assert_eq!(model.cursor.line, 1);
-        assert_eq!(model.cursor.column, 0);
+        // Selection should be cleared
+        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        // Cursor should have moved down from selection end (line 5, col 5)
+        // PageDown moves ~8 lines (visible_lines - 2)
+        assert!(model.editor.cursor().line > 5, "Cursor should have moved down from line 5");
+        // Column should be from selection end (col 5)
+        assert_eq!(model.editor.cursor().column, 5, "Cursor column should be at selection end col (5)");
     }
 
     // ========================================================================
-    // DeleteForward tests
+    // Large Document Viewport Focus Tests
     // ========================================================================
 
     #[test]
-    fn test_delete_forward_middle_of_line() {
-        let mut model = test_model("hello", 0, 2);
-        update(&mut model, Msg::DeleteForward);
+    fn test_select_all_then_right_arrow_scrolls_to_end() {
+        // Create a 500-line document (each line has newline, so 500 lines total, last is empty)
+        let text = (0..500).map(|i| format!("line {}\n", i)).collect::<String>();
+        let mut model = test_model_with_selection(&text, 0, 0, 0, 0);
+        model.editor.viewport.visible_lines = 25;
+        model.editor.viewport.top_line = 0;
 
-        assert_eq!(buffer_to_string(&model), "helo");
-        assert_eq!(model.cursor.column, 2); // Unchanged
+        let total_lines = model.document.line_count();
+
+        // Select all (Cmd+A)
+        update(&mut model, Msg::Editor(EditorMsg::SelectAll));
+
+        // Verify selection spans entire document
+        assert_eq!(model.editor.selection().anchor, Position::new(0, 0));
+        let last_line = total_lines.saturating_sub(1);
+        assert_eq!(model.editor.cursor().line, last_line, "Cursor should be at last line");
+
+        // Press Right arrow - should clear selection and position cursor at end
+        handle_key(&mut model, Key::Named(NamedKey::ArrowRight), false, false, false, false, false);
+
+        // Selection should be cleared
+        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+
+        // Cursor should be at end of document
+        assert_eq!(model.editor.cursor().line, last_line, "Cursor should be at last line");
+
+        // Viewport should have scrolled to show the cursor
+        // The cursor should be visible within the viewport
+        let viewport_end = model.editor.viewport.top_line + model.editor.viewport.visible_lines;
+        assert!(
+            model.editor.cursor().line >= model.editor.viewport.top_line,
+            "Cursor (line {}) should be >= viewport top (line {})",
+            model.editor.cursor().line,
+            model.editor.viewport.top_line
+        );
+        assert!(
+            model.editor.cursor().line < viewport_end,
+            "Cursor (line {}) should be < viewport end (line {})",
+            model.editor.cursor().line,
+            viewport_end
+        );
     }
 
     #[test]
-    fn test_delete_forward_at_end_of_line() {
-        let mut model = test_model("hello\nworld", 0, 5);
-        update(&mut model, Msg::DeleteForward);
+    fn test_pageup_scrolls_cursor_to_viewport_top() {
+        // Create a 100-line document
+        let text = (0..100).map(|i| format!("line {}\n", i)).collect::<String>();
+        let mut model = test_model_with_selection(&text, 0, 0, 0, 0);
+        model.editor.viewport.visible_lines = 20;
+        model.editor.scroll_padding = 1;
 
-        // Should delete the newline, joining lines
-        assert_eq!(buffer_to_string(&model), "helloworld");
-        assert_eq!(model.cursor.column, 5);
+        // Position cursor at about half the viewport height (line 10)
+        // and set viewport to start at line 0
+        model.editor.cursor_mut().line = 10;
+        model.editor.viewport.top_line = 0;
+
+        // Press PageUp - cursor should jump above the viewport,
+        // and viewport should adjust to show cursor at top
+        handle_key(&mut model, Key::Named(NamedKey::PageUp), false, false, false, false, false);
+
+        // PageUp moves visible_lines - 2 = 18 lines up
+        // From line 10, that would be line 0 (clamped)
+        assert_eq!(model.editor.cursor().line, 0, "Cursor should be at line 0 after PageUp");
+
+        // Viewport should adjust to show cursor
+        // With cursor at line 0, viewport.top_line should be 0
+        assert_eq!(
+            model.editor.viewport.top_line, 0,
+            "Viewport should scroll to top to show cursor"
+        );
+
+        // Cursor should be visible
+        assert!(
+            model.editor.cursor().line >= model.editor.viewport.top_line,
+            "Cursor should be visible (>= viewport top)"
+        );
     }
 
     #[test]
-    fn test_delete_forward_at_end_of_buffer() {
-        let mut model = test_model("hello", 0, 5);
-        update(&mut model, Msg::DeleteForward);
-
-        // Nothing to delete
-        assert_eq!(buffer_to_string(&model), "hello");
-    }
-
-    // ========================================================================
-    // Cursor movement tests
-    // ========================================================================
-
-    #[test]
-    fn test_move_cursor_left() {
-        let mut model = test_model("hello", 0, 3);
-        update(&mut model, Msg::MoveCursorLeft);
-
-        assert_eq!(model.cursor.column, 2);
-    }
-
-    #[test]
-    fn test_move_cursor_left_at_start_of_line() {
-        let mut model = test_model("hello\nworld", 1, 0);
-        update(&mut model, Msg::MoveCursorLeft);
-
-        // Should move to end of previous line
-        assert_eq!(model.cursor.line, 0);
-        assert_eq!(model.cursor.column, 5);
-    }
-
-    #[test]
-    fn test_move_cursor_right() {
-        let mut model = test_model("hello", 0, 2);
-        update(&mut model, Msg::MoveCursorRight);
-
-        assert_eq!(model.cursor.column, 3);
-    }
-
-    #[test]
-    fn test_move_cursor_right_at_end_of_line() {
-        let mut model = test_model("hello\nworld", 0, 5);
-        update(&mut model, Msg::MoveCursorRight);
-
-        // Should move to start of next line
-        assert_eq!(model.cursor.line, 1);
-        assert_eq!(model.cursor.column, 0);
-    }
-
-    #[test]
-    fn test_move_cursor_up() {
-        let mut model = test_model("hello\nworld", 1, 3);
-        update(&mut model, Msg::MoveCursorUp);
-
-        assert_eq!(model.cursor.line, 0);
-        assert_eq!(model.cursor.column, 3);
-    }
-
-    #[test]
-    fn test_move_cursor_up_preserves_desired_column() {
-        let mut model = test_model("hello\nhi\nworld", 0, 4);
-
-        // Move down to short line "hi"
-        update(&mut model, Msg::MoveCursorDown);
-        assert_eq!(model.cursor.line, 1);
-        assert_eq!(model.cursor.column, 2); // Clamped to "hi" length
-
-        // Move down to "world"
-        update(&mut model, Msg::MoveCursorDown);
-        assert_eq!(model.cursor.line, 2);
-        assert_eq!(model.cursor.column, 4); // Restored to desired column
-    }
-
-    #[test]
-    fn test_move_cursor_down() {
-        let mut model = test_model("hello\nworld", 0, 3);
-        update(&mut model, Msg::MoveCursorDown);
-
-        assert_eq!(model.cursor.line, 1);
-        assert_eq!(model.cursor.column, 3);
-    }
-
-    // ========================================================================
-    // Smart Home/End tests (toggle between line edge and non-whitespace)
-    // ========================================================================
-
-    #[test]
-    fn test_smart_home_from_middle() {
-        // From middle of line → first non-whitespace
-        let mut model = test_model("    hello", 0, 6);
-        update(&mut model, Msg::MoveCursorLineStart);
-        assert_eq!(model.cursor.column, 4); // First non-ws is at column 4
-    }
-
-    #[test]
-    fn test_smart_home_from_column_zero() {
-        // From column 0 → first non-whitespace
-        let mut model = test_model("    hello", 0, 0);
-        update(&mut model, Msg::MoveCursorLineStart);
-        assert_eq!(model.cursor.column, 4); // First non-ws is at column 4
-    }
-
-    #[test]
-    fn test_smart_home_toggle() {
-        // From first non-ws → back to column 0
-        let mut model = test_model("    hello", 0, 4);
-        update(&mut model, Msg::MoveCursorLineStart);
-        assert_eq!(model.cursor.column, 0);
-    }
-
-    #[test]
-    fn test_smart_home_no_leading_whitespace() {
-        // Line with no leading whitespace: stays at 0
-        let mut model = test_model("hello", 0, 0);
-        update(&mut model, Msg::MoveCursorLineStart);
-        assert_eq!(model.cursor.column, 0); // first_non_ws is 0, so stays at 0
-    }
-
-    #[test]
-    fn test_smart_home_empty_line() {
-        // Empty line: stays at 0
-        let mut model = test_model("", 0, 0);
-        update(&mut model, Msg::MoveCursorLineStart);
-        assert_eq!(model.cursor.column, 0);
-    }
-
-    #[test]
-    fn test_smart_home_whitespace_only_line() {
-        // Whitespace-only line: 0 → end of whitespace
-        let mut model = test_model("    ", 0, 0);
-        update(&mut model, Msg::MoveCursorLineStart);
-        assert_eq!(model.cursor.column, 4); // All whitespace, so first_non_ws is line length
-    }
-
-    #[test]
-    fn test_smart_end_from_middle() {
-        // From middle of line → last non-whitespace
-        let mut model = test_model("hello    ", 0, 3);
-        update(&mut model, Msg::MoveCursorLineEnd);
-        assert_eq!(model.cursor.column, 5); // After 'o' in "hello"
-    }
-
-    #[test]
-    fn test_smart_end_from_line_end() {
-        // From end of line → last non-whitespace
-        let mut model = test_model("hello    ", 0, 9);
-        update(&mut model, Msg::MoveCursorLineEnd);
-        assert_eq!(model.cursor.column, 5); // After 'o' in "hello"
-    }
-
-    #[test]
-    fn test_smart_end_toggle() {
-        // From last non-ws → back to end
-        let mut model = test_model("hello    ", 0, 5);
-        update(&mut model, Msg::MoveCursorLineEnd);
-        assert_eq!(model.cursor.column, 9);
-    }
-
-    #[test]
-    fn test_smart_end_no_trailing_whitespace() {
-        // Line with no trailing whitespace: stays at end
-        let mut model = test_model("hello", 0, 5);
-        update(&mut model, Msg::MoveCursorLineEnd);
-        assert_eq!(model.cursor.column, 5); // last_non_ws = line_end, so stays
-    }
-
-    #[test]
-    fn test_smart_end_empty_line() {
-        // Empty line: stays at 0
-        let mut model = test_model("", 0, 0);
-        update(&mut model, Msg::MoveCursorLineEnd);
-        assert_eq!(model.cursor.column, 0);
-    }
-
-    #[test]
-    fn test_smart_end_whitespace_only_line() {
-        // Whitespace-only line: end → 0 (last_non_ws is 0)
-        let mut model = test_model("    ", 0, 4);
-        update(&mut model, Msg::MoveCursorLineEnd);
-        assert_eq!(model.cursor.column, 0); // No non-whitespace chars
-    }
-
-    // ========================================================================
-    // Word navigation tests (IntelliJ-style: whitespace is a navigable unit)
-    // ========================================================================
-
-    #[test]
-    fn test_word_left_from_end() {
-        let mut model = test_model("hello world", 0, 11);
-        update(&mut model, Msg::MoveCursorWordLeft);
-
-        // Should move to start of "world"
-        assert_eq!(model.cursor.column, 6);
-    }
-
-    #[test]
-    fn test_word_left_stops_at_whitespace_start() {
-        // IntelliJ-style: whitespace is its own navigable unit
-        // From middle of whitespace, go to start of whitespace (end of "hello")
-        let mut model = test_model("hello   world", 0, 8);
-        update(&mut model, Msg::MoveCursorWordLeft);
-
-        // Should stop at start of whitespace (end of "hello")
-        assert_eq!(model.cursor.column, 5);
-    }
-
-    #[test]
-    fn test_word_right_stops_at_word_end() {
-        // IntelliJ-style: from start of word, go to END of current word
-        let mut model = test_model("hello world", 0, 0);
-        update(&mut model, Msg::MoveCursorWordRight);
-
-        // Should move to end of "hello", not past the space
-        assert_eq!(model.cursor.column, 5);
-    }
-
-    #[test]
-    fn test_word_right_through_whitespace() {
-        // From end of "hello" (start of whitespace), go through whitespace to start of "world"
-        let mut model = test_model("hello   world", 0, 5);
-        update(&mut model, Msg::MoveCursorWordRight);
-
-        // Should stop at end of whitespace (start of "world")
-        assert_eq!(model.cursor.column, 8);
-    }
-
-    #[test]
-    fn test_word_left_through_word() {
-        // From start of "world", go to start of whitespace (end of "hello")
-        let mut model = test_model("hello   world", 0, 8);
-        update(&mut model, Msg::MoveCursorWordLeft);
-
-        // Should stop at start of whitespace
-        assert_eq!(model.cursor.column, 5);
-    }
-
-    #[test]
-    fn test_word_navigation_full_sequence() {
-        // Test full navigation through: "hello     world"
-        // Positions: h=0, e=1, l=2, l=3, o=4, ' '=5,6,7,8,9, w=10, o=11, r=12, l=13, d=14
-        let mut model = test_model("hello     world", 0, 0);
-
-        // From 0, word right should go to 5 (end of "hello")
-        update(&mut model, Msg::MoveCursorWordRight);
-        assert_eq!(model.cursor.column, 5);
-
-        // From 5, word right should go to 10 (end of whitespace = start of "world")
-        update(&mut model, Msg::MoveCursorWordRight);
-        assert_eq!(model.cursor.column, 10);
-
-        // From 10, word right should go to 15 (end of "world")
-        update(&mut model, Msg::MoveCursorWordRight);
-        assert_eq!(model.cursor.column, 15);
-
-        // From 15, word left should go to 10 (start of "world")
-        update(&mut model, Msg::MoveCursorWordLeft);
-        assert_eq!(model.cursor.column, 10);
-
-        // From 10, word left should go to 5 (start of whitespace = end of "hello")
-        update(&mut model, Msg::MoveCursorWordLeft);
-        assert_eq!(model.cursor.column, 5);
-
-        // From 5, word left should go to 0 (start of "hello")
-        update(&mut model, Msg::MoveCursorWordLeft);
-        assert_eq!(model.cursor.column, 0);
-    }
-
-    #[test]
-    fn test_word_navigation_with_punctuation() {
-        // Test: "hello, world"
-        // Positions: h=0, e=1, l=2, l=3, o=4, ,=5, ' '=6, w=7, o=8, r=9, l=10, d=11
-        let mut model = test_model("hello, world", 0, 0);
-
-        // From 0, word right should go to 5 (end of "hello")
-        update(&mut model, Msg::MoveCursorWordRight);
-        assert_eq!(model.cursor.column, 5);
-
-        // From 5, word right should go to 6 (end of punctuation ",")
-        update(&mut model, Msg::MoveCursorWordRight);
-        assert_eq!(model.cursor.column, 6);
-
-        // From 6, word right should go to 7 (end of space)
-        update(&mut model, Msg::MoveCursorWordRight);
-        assert_eq!(model.cursor.column, 7);
-
-        // From 7, word right should go to 12 (end of "world")
-        update(&mut model, Msg::MoveCursorWordRight);
-        assert_eq!(model.cursor.column, 12);
-    }
-
-    // ========================================================================
-    // Undo/Redo tests
-    // ========================================================================
-
-    #[test]
-    fn test_undo_insert() {
-        let mut model = test_model("hello", 0, 5);
-        update(&mut model, Msg::InsertChar('X'));
-
-        assert_eq!(buffer_to_string(&model), "helloX");
-
-        update(&mut model, Msg::Undo);
-
-        assert_eq!(buffer_to_string(&model), "hello");
-        assert_eq!(model.cursor.column, 5);
-    }
-
-    #[test]
-    fn test_redo_insert() {
-        let mut model = test_model("hello", 0, 5);
-        update(&mut model, Msg::InsertChar('X'));
-        update(&mut model, Msg::Undo);
-        update(&mut model, Msg::Redo);
-
-        assert_eq!(buffer_to_string(&model), "helloX");
-        assert_eq!(model.cursor.column, 6);
-    }
-
-    #[test]
-    fn test_undo_delete() {
-        let mut model = test_model("hello", 0, 5);
-        update(&mut model, Msg::DeleteBackward);
-
-        assert_eq!(buffer_to_string(&model), "hell");
-
-        update(&mut model, Msg::Undo);
-
-        assert_eq!(buffer_to_string(&model), "hello");
-        assert_eq!(model.cursor.column, 5);
-    }
-
-    // ========================================================================
-    // set_cursor_from_position tests
-    // ========================================================================
-
-    #[test]
-    fn test_set_cursor_from_position_first_line() {
-        let mut model = test_model("hello\nworld", 0, 0);
-        model.set_cursor_from_position(3);
-
-        assert_eq!(model.cursor.line, 0);
-        assert_eq!(model.cursor.column, 3);
-    }
-
-    #[test]
-    fn test_set_cursor_from_position_second_line() {
-        let mut model = test_model("hello\nworld", 0, 0);
-        model.set_cursor_from_position(8); // "hello\nwo|rld"
-
-        assert_eq!(model.cursor.line, 1);
-        assert_eq!(model.cursor.column, 2);
-    }
-
-    #[test]
-    fn test_set_cursor_from_position_at_newline() {
-        let mut model = test_model("hello\nworld", 0, 0);
-        model.set_cursor_from_position(5); // "hello|" just before newline
-
-        assert_eq!(model.cursor.line, 0);
-        assert_eq!(model.cursor.column, 5);
-    }
-
-    #[test]
-    fn test_set_cursor_from_position_past_end() {
-        let mut model = test_model("hello\nworld", 0, 0);
-        model.set_cursor_from_position(100);
-
-        // Should clamp to end of buffer
-        assert_eq!(model.cursor.line, 1);
-        assert_eq!(model.cursor.column, 5); // End of "world"
-    }
-
-    // ========================================================================
-    // Edge case / regression tests
-    // ========================================================================
-
-    #[test]
-    fn test_insert_preserves_cursor_buffer_position_consistency() {
-        let mut model = test_model("hello world", 0, 6); // "hello |world"
-
-        // After each insert, cursor position should match buffer position
-        for ch in "foo".chars() {
-            let before_pos = model.cursor_buffer_position();
-            update(&mut model, Msg::InsertChar(ch));
-            let after_pos = model.cursor_buffer_position();
-
-            // Buffer position should advance by 1
-            assert_eq!(after_pos, before_pos + 1);
-
-            // Cursor column should match
-            assert_eq!(model.cursor.column, after_pos - 0); // On line 0
-        }
-
-        assert_eq!(buffer_to_string(&model), "hello fooworld");
-    }
-
-    #[test]
-    fn test_multiple_inserts_middle_of_line_no_drift() {
-        // This specifically tests the "playing catchup" bug
-        let mut model = test_model("the quick brown fox", 0, 10); // "the quick |brown fox"
-
-        let initial_pos = model.cursor_buffer_position();
-        assert_eq!(initial_pos, 10);
-
-        // Insert multiple characters and verify no drift
-        let insertions = "very ";
-        for (i, ch) in insertions.chars().enumerate() {
-            update(&mut model, Msg::InsertChar(ch));
-
-            let expected_pos = initial_pos + i + 1;
-            let actual_pos = model.cursor_buffer_position();
-
-            assert_eq!(
-                actual_pos, expected_pos,
-                "After inserting '{}', expected pos {} but got {}",
-                ch, expected_pos, actual_pos
-            );
-        }
-
-        assert_eq!(buffer_to_string(&model), "the quick very brown fox");
-    }
-
-    #[test]
-    fn test_cursor_column_never_exceeds_line_length_after_operations() {
-        let mut model = test_model("hello\nworld", 0, 3);
-
-        // Various operations
-        update(&mut model, Msg::InsertChar('X'));
-        assert!(model.cursor.column <= model.current_line_length());
-
-        update(&mut model, Msg::DeleteBackward);
-        assert!(model.cursor.column <= model.current_line_length());
-
-        update(&mut model, Msg::MoveCursorRight);
-        assert!(model.cursor.column <= model.current_line_length());
-
-        update(&mut model, Msg::MoveCursorDown);
-        assert!(model.cursor.column <= model.current_line_length());
-    }
-
-    #[test]
-    fn test_empty_buffer() {
-        let mut model = test_model("", 0, 0);
-
-        assert_eq!(model.cursor_buffer_position(), 0);
-        assert_eq!(model.current_line_length(), 0);
-
-        update(&mut model, Msg::InsertChar('a'));
-        assert_eq!(buffer_to_string(&model), "a");
-        assert_eq!(model.cursor.column, 1);
-    }
-
-    #[test]
-    fn test_single_newline_buffer() {
-        let mut model = test_model("\n", 0, 0);
-
-        assert_eq!(model.current_line_length(), 0);
-
-        update(&mut model, Msg::InsertChar('a'));
-        assert_eq!(buffer_to_string(&model), "a\n");
-    }
-
-    // ========================================================================
-    // Scrolling tests - JetBrains-Style Boundary Scrolling
-    // ========================================================================
-
-    #[test]
-    fn test_scroll_no_scroll_when_content_fits() {
-        // Document with fewer lines than viewport
-        let mut model = test_model("line1\nline2\nline3\n", 0, 0);
-        model.viewport.visible_lines = 25;
-
-        // Move down multiple times - should not scroll
-        for _ in 0..3 {
-            update(&mut model, Msg::MoveCursorDown);
-        }
-
-        assert_eq!(model.viewport.top_line, 0);
-        assert_eq!(model.cursor.line, 3);
-    }
-
-    #[test]
-    fn test_scroll_down_boundary_crossing() {
-        // Create 30 lines of text
-        let text = (0..30)
-            .map(|i| format!("line{}", i))
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n";
-        let mut model = test_model(&text, 0, 0);
-        model.viewport.visible_lines = 10;
-        model.scroll_padding = 1;
-
-        // Initially at top
-        assert_eq!(model.viewport.top_line, 0);
-        assert_eq!(model.cursor.line, 0);
-
-        // Move to line 8 (bottom_boundary = top_line + visible_lines - padding - 1 = 0 + 10 - 1 - 1 = 8)
-        for _ in 0..8 {
-            update(&mut model, Msg::MoveCursorDown);
-        }
-
-        // Should not have scrolled yet (cursor at boundary)
-        assert_eq!(model.viewport.top_line, 0);
-        assert_eq!(model.cursor.line, 8);
-
-        // Move one more line down - should trigger scroll
-        update(&mut model, Msg::MoveCursorDown);
-
-        // Viewport should scroll to maintain padding
-        // cursor is now at line 9, bottom_boundary was 8, so we need to scroll
-        // desired_top = cursor.line + padding + 1 = 9 + 1 + 1 = 11
-        // viewport.top_line = (11 - visible_lines) = (11 - 10) = 1
-        assert_eq!(model.cursor.line, 9);
-        assert_eq!(model.viewport.top_line, 1);
-    }
-
-    #[test]
-    fn test_scroll_up_boundary_crossing() {
-        // Create 30 lines of text
-        let text = (0..30)
-            .map(|i| format!("line{}", i))
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n";
-        let mut model = test_model(&text, 15, 0);
-        model.viewport.visible_lines = 10;
-        model.viewport.top_line = 10; // Start scrolled down
-        model.scroll_padding = 1;
-
-        // cursor at line 15, top_line at 10
-        // top_boundary = top_line + padding = 10 + 1 = 11
-
-        // Move up to line 11 (the boundary)
-        for _ in 0..4 {
-            update(&mut model, Msg::MoveCursorUp);
-        }
-
-        // Should not have scrolled yet (cursor at boundary)
-        assert_eq!(model.viewport.top_line, 10);
-        assert_eq!(model.cursor.line, 11);
-
-        // Move one more line up - should trigger scroll
-        update(&mut model, Msg::MoveCursorUp);
-
-        // Viewport should scroll to maintain padding
-        // cursor is now at line 10, should scroll up
-        // viewport.top_line = cursor.line - padding = 10 - 1 = 9
-        assert_eq!(model.cursor.line, 10);
-        assert_eq!(model.viewport.top_line, 9);
-    }
-
-    #[test]
-    fn test_scroll_mouse_wheel_independent() {
-        // Create 50 lines
-        let text = (0..50)
-            .map(|i| format!("line{}", i))
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n";
-        let mut model = test_model(&text, 5, 0);
-        model.viewport.visible_lines = 10;
-        model.viewport.top_line = 0;
-
-        // Cursor at line 5, viewport at top
-        assert_eq!(model.cursor.line, 5);
-        assert_eq!(model.viewport.top_line, 0);
-
-        // Scroll down 10 lines with mouse wheel
-        update(&mut model, Msg::ScrollViewport(10));
-
-        // Viewport should move but cursor stays at line 5
-        assert_eq!(model.cursor.line, 5);
-        assert_eq!(model.viewport.top_line, 10);
-    }
-
-    #[test]
-    fn test_scroll_snap_back_on_insert() {
-        // Create 50 lines
-        let text = (0..50)
-            .map(|i| format!("line{}", i))
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n";
-        let mut model = test_model(&text, 5, 0);
-        model.viewport.visible_lines = 10;
-        model.viewport.top_line = 0;
-
-        // Scroll viewport away from cursor using mouse wheel
-        update(&mut model, Msg::ScrollViewport(20));
-        assert_eq!(model.viewport.top_line, 20);
-        assert_eq!(model.cursor.line, 5); // Cursor off-screen
-
-        // Insert a character - should snap back
-        update(&mut model, Msg::InsertChar('X'));
-
-        // Viewport should snap to show cursor with padding
-        // cursor at line 5, padding = 1
-        // Should scroll to show cursor in visible range with padding
-        assert_eq!(model.cursor.line, 5);
-        assert!(model.viewport.top_line <= 5 - model.scroll_padding);
-        assert!(model.viewport.top_line + model.viewport.visible_lines > 5 + model.scroll_padding);
-    }
-
-    #[test]
-    fn test_scroll_snap_back_on_newline() {
-        // Create 50 lines
-        let text = (0..50)
-            .map(|i| format!("line{}", i))
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n";
-        let mut model = test_model(&text, 5, 4);
-        model.viewport.visible_lines = 10;
-
-        // Scroll viewport away
-        update(&mut model, Msg::ScrollViewport(20));
-        assert_eq!(model.viewport.top_line, 20);
-
-        // Insert newline - should snap back
-        update(&mut model, Msg::InsertNewline);
-
-        // Cursor should be at line 6 now
-        assert_eq!(model.cursor.line, 6);
-        // Viewport should show cursor with padding
-        assert!(model.viewport.top_line <= 6 - model.scroll_padding);
-        assert!(model.viewport.top_line + model.viewport.visible_lines > 6 + model.scroll_padding);
-    }
-
-    #[test]
-    fn test_scroll_padding_configurable() {
-        // Test with different padding values
-        let text = (0..50)
-            .map(|i| format!("line{}", i))
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n";
-
-        // Test with padding = 3
-        let mut model = test_model(&text, 0, 0);
-        model.viewport.visible_lines = 10;
-        model.scroll_padding = 3;
-
-        // bottom_boundary = 0 + 10 - 3 - 1 = 6
-        // Move to line 6
-        for _ in 0..6 {
-            update(&mut model, Msg::MoveCursorDown);
-        }
-        assert_eq!(model.viewport.top_line, 0);
-
-        // Move one more - should scroll
-        update(&mut model, Msg::MoveCursorDown);
-        assert_eq!(model.cursor.line, 7);
-        assert!(model.viewport.top_line > 0);
-    }
-
-    #[test]
-    fn test_scroll_at_document_boundaries() {
-        // Test at start of document
-        let text = (0..30)
-            .map(|i| format!("line{}", i))
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n";
-        let mut model = test_model(&text, 0, 0);
-        model.viewport.visible_lines = 10;
-
-        // Try to scroll up when already at top
-        update(&mut model, Msg::MoveCursorUp);
-        assert_eq!(model.cursor.line, 0);
-        assert_eq!(model.viewport.top_line, 0);
-
-        // Test at end of document
-        // Text has 31 lines total (line0 through line29, plus empty line 30 from trailing \n)
-        let last_line = model.buffer.len_lines().saturating_sub(1);
-        model.cursor.line = last_line;
-        model.viewport.top_line = 20;
-
-        // Try to scroll down when at bottom
-        update(&mut model, Msg::MoveCursorDown);
-        assert_eq!(model.cursor.line, last_line); // Should stay at last line
-    }
-
-    #[test]
-    fn test_scroll_wheel_boundaries() {
-        // Test mouse wheel scrolling respects boundaries
-        let text = (0..30)
-            .map(|i| format!("line{}", i))
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n";
-        let mut model = test_model(&text, 15, 0);
-        model.viewport.visible_lines = 10;
-        model.viewport.top_line = 5;
-
-        // Scroll up past the top
-        update(&mut model, Msg::ScrollViewport(-10));
-        assert_eq!(model.viewport.top_line, 0);
-
-        // Scroll down past the bottom
-        model.viewport.top_line = 15;
-        update(&mut model, Msg::ScrollViewport(10));
-        // Text has 31 lines (0-30), max_top = 31 - 10 = 21
-        let max_top = model
-            .buffer
-            .len_lines()
-            .saturating_sub(model.viewport.visible_lines);
-        assert_eq!(model.viewport.top_line, max_top);
-
-        // Try to scroll further down
-        update(&mut model, Msg::ScrollViewport(10));
-        assert_eq!(model.viewport.top_line, max_top); // Should stay at max
-    }
-
-    // ========================================================================
-    // Cursor off-screen visibility tests
-    // ========================================================================
-
-    #[test]
-    fn test_cursor_position_unchanged_during_scroll() {
-        // Scrolling viewport should not change cursor position
-        let text = (0..30)
-            .map(|i| format!("line{}", i))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let mut model = test_model(&text, 5, 2);
-        model.viewport.visible_lines = 10;
-        model.viewport.top_line = 0;
-
-        // Scroll down - cursor should stay at line 5, column 2
-        update(&mut model, Msg::ScrollViewport(10));
-        assert_eq!(model.cursor.line, 5);
-        assert_eq!(model.cursor.column, 2);
-        assert!(model.viewport.top_line > 5); // Viewport moved past cursor
-    }
-
-    #[test]
-    fn test_cursor_off_screen_above_viewport() {
-        // When cursor is above viewport, it should be considered off-screen
-        let text = (0..30)
-            .map(|i| format!("line{}", i))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let mut model = test_model(&text, 5, 0);
-        model.viewport.visible_lines = 10;
-        model.viewport.top_line = 10; // Viewport starts at line 10, cursor at line 5
-
-        // Cursor is above viewport - verify positions
-        assert!(model.cursor.line < model.viewport.top_line);
-    }
-
-    #[test]
-    fn test_cursor_off_screen_below_viewport() {
-        // When cursor is below viewport, it should be considered off-screen
-        let text = (0..30)
-            .map(|i| format!("line{}", i))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let mut model = test_model(&text, 25, 0);
-        model.viewport.visible_lines = 10;
-        model.viewport.top_line = 0; // Viewport at top, cursor at line 25
-
-        // Cursor is below viewport
-        assert!(model.cursor.line >= model.viewport.top_line + model.viewport.visible_lines);
-    }
-
-    // ========================================================================
-    // Horizontal scroll tests
-    // ========================================================================
-
-    #[test]
-    fn test_horizontal_scroll_right() {
-        let text = "a".repeat(200); // 200 character line
-        let mut model = test_model(&text, 0, 0);
-        model.viewport.visible_columns = 80;
-        model.viewport.left_column = 0;
-
-        update(&mut model, Msg::ScrollViewportHorizontal(10));
-        assert_eq!(model.viewport.left_column, 10);
-    }
-
-    #[test]
-    fn test_horizontal_scroll_left() {
-        let text = "a".repeat(200);
-        let mut model = test_model(&text, 0, 0);
-        model.viewport.visible_columns = 80;
-        model.viewport.left_column = 50;
-
-        update(&mut model, Msg::ScrollViewportHorizontal(-10));
-        assert_eq!(model.viewport.left_column, 40);
-    }
-
-    #[test]
-    fn test_horizontal_scroll_left_boundary() {
-        let text = "a".repeat(200);
-        let mut model = test_model(&text, 0, 0);
-        model.viewport.visible_columns = 80;
-        model.viewport.left_column = 5;
-
-        // Try to scroll left past 0
-        update(&mut model, Msg::ScrollViewportHorizontal(-10));
-        assert_eq!(model.viewport.left_column, 0);
-    }
-
-    #[test]
-    fn test_horizontal_scroll_right_boundary() {
-        let text = "a".repeat(100); // 100 char line
-        let mut model = test_model(&text, 0, 0);
-        model.viewport.visible_columns = 80;
-        model.viewport.left_column = 0;
-
-        // Try to scroll right past max (100 - 80 = 20)
-        update(&mut model, Msg::ScrollViewportHorizontal(50));
-        assert_eq!(model.viewport.left_column, 20); // max_left = 100 - 80 = 20
-    }
-
-    #[test]
-    fn test_horizontal_scroll_no_scroll_when_content_fits() {
-        let text = "short line";
-        let mut model = test_model(text, 0, 0);
-        model.viewport.visible_columns = 80;
-        model.viewport.left_column = 0;
-
-        // Content fits, no scroll should happen
-        let result = update(&mut model, Msg::ScrollViewportHorizontal(10));
-        assert!(result.is_none());
-        assert_eq!(model.viewport.left_column, 0);
-    }
-
-    #[test]
-    fn test_horizontal_scroll_cursor_position_unchanged() {
-        let text = "a".repeat(200);
-        let mut model = test_model(&text, 0, 50);
-        model.viewport.visible_columns = 80;
-        model.viewport.left_column = 0;
-
-        // Scroll right - cursor should stay at column 50
-        update(&mut model, Msg::ScrollViewportHorizontal(100));
-        assert_eq!(model.cursor.column, 50);
-    }
-
-    // ========================================================================
-    // PageUp/PageDown tests - Column Preservation
-    // ========================================================================
-
-    #[test]
-    fn test_page_up_preserves_desired_column() {
-        // Create text with lines of varying lengths
-        let text = "short\nmedium line\nthis is a very long line\nshort\nmedium\n".to_string()
-            + &(0..30)
-                .map(|i| format!("line {}", i))
-                .collect::<Vec<_>>()
-                .join("\n");
-
-        let mut model = test_model(&text, 20, 15); // Start at line 20, column 15
-        model.viewport.visible_lines = 10;
-
-        // PageUp should jump ~8 lines (visible_lines - 2)
-        update(&mut model, Msg::PageUp);
-
-        // Should be at line 12 now (20 - 8)
-        assert_eq!(model.cursor.line, 12);
-
-        // desired_column should be preserved
-        assert_eq!(model.cursor.desired_column, Some(15));
-
-        // If line 12 is shorter than 15 chars, column should be clamped
-        let line_len = model.current_line_length();
-        assert_eq!(model.cursor.column, 15.min(line_len));
-    }
-
-    #[test]
-    fn test_page_down_preserves_desired_column() {
-        let text = (0..50)
-            .map(|i| {
-                if i % 3 == 0 {
-                    "short".to_string()
-                } else {
-                    format!("this is line number {}", i)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let mut model = test_model(&text, 10, 18); // Start at line 10, column 18
-        model.viewport.visible_lines = 10;
-
-        // PageDown should jump ~8 lines
-        update(&mut model, Msg::PageDown);
-
-        // Should be at line 18 now (10 + 8)
-        assert_eq!(model.cursor.line, 18);
-
-        // desired_column should be preserved
-        assert_eq!(model.cursor.desired_column, Some(18));
-
-        // Column should be clamped if line is shorter
-        let line_len = model.current_line_length();
-        assert_eq!(model.cursor.column, 18.min(line_len));
-    }
-
-    #[test]
-    fn test_multiple_page_jumps_preserve_column() {
-        let text = (0..100)
-            .map(|i| {
-                if i % 5 == 0 {
-                    "x".to_string() // Very short lines
-                } else {
-                    format!("this is a longer line number {}", i)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let mut model = test_model(&text, 51, 25); // Start at line 51 (NOT a multiple of 5)
-        model.viewport.visible_lines = 10;
-
-        // PageUp twice
-        update(&mut model, Msg::PageUp);
-        update(&mut model, Msg::PageUp);
-
-        // PageDown twice (should return to original line)
-        update(&mut model, Msg::PageDown);
-        update(&mut model, Msg::PageDown);
-
-        // Should be back at line 51
-        assert_eq!(model.cursor.line, 51);
-
-        // Column should be restored to 25
-        assert_eq!(model.cursor.column, 25);
-        assert_eq!(model.cursor.desired_column, Some(25));
-    }
-
-    #[test]
-    fn test_page_up_to_short_line_clamps_column() {
-        let text = "x\ny\nz\n".to_string()  // Lines 0-2 are 1 char
-            + &(3..50).map(|i| format!("this is a very long line {}", i)).collect::<Vec<_>>().join("\n");
-
-        let mut model = test_model(&text, 20, 30); // Start at line 20, column 30
-        model.viewport.visible_lines = 10;
-
-        // PageUp multiple times to reach short lines at top
-        update(&mut model, Msg::PageUp); // Line 12
-        update(&mut model, Msg::PageUp); // Line 4
-
-        assert_eq!(model.cursor.line, 4);
-        assert_eq!(model.cursor.desired_column, Some(30)); // Remembers 30
-
-        // PageUp once more to line 0 (very short)
-        update(&mut model, Msg::PageUp);
-
-        // Should be clamped to line length (1)
-        assert!(model.cursor.line <= 2); // One of the short lines
-        assert_eq!(model.cursor.column, 1); // Clamped to short line length
-        assert_eq!(model.cursor.desired_column, Some(30)); // Still remembers 30
-
-        // PageDown to long line
-        update(&mut model, Msg::PageDown);
-
-        // Column should restore toward 30
-        let line_len = model.current_line_length();
-        assert_eq!(model.cursor.column, 30.min(line_len));
+    fn test_pageup_from_middle_adjusts_viewport() {
+        // Create a 100-line document
+        let text = (0..100).map(|i| format!("line {}\n", i)).collect::<String>();
+        let mut model = test_model_with_selection(&text, 0, 0, 0, 0);
+        model.editor.viewport.visible_lines = 20;
+        model.editor.scroll_padding = 1;
+
+        // Position cursor at line 50 with viewport showing lines 40-60
+        model.editor.cursor_mut().line = 50;
+        model.editor.viewport.top_line = 40;
+
+        // Press PageUp - cursor should move up 18 lines (20 - 2)
+        // From line 50, cursor goes to line 32
+        handle_key(&mut model, Key::Named(NamedKey::PageUp), false, false, false, false, false);
+
+        // Cursor should be at line 32 (50 - 18)
+        assert_eq!(model.editor.cursor().line, 32, "Cursor should be at line 32");
+
+        // Line 32 was above the viewport (which was at 40-60)
+        // Viewport should have adjusted to show the cursor
+        // Cursor should be visible and near the top of viewport
+        assert!(
+            model.editor.viewport.top_line <= model.editor.cursor().line,
+            "Cursor (line {}) should be >= viewport top (line {})",
+            model.editor.cursor().line,
+            model.editor.viewport.top_line
+        );
+
+        // Cursor should be within visible range
+        let viewport_end = model.editor.viewport.top_line + model.editor.viewport.visible_lines;
+        assert!(
+            model.editor.cursor().line < viewport_end,
+            "Cursor should be visible within viewport"
+        );
     }
 }

@@ -1,0 +1,23 @@
+version: 1
+name: "Fleet Dark"
+author: "Built-in"
+description: "JetBrains Fleet-inspired dark theme"
+
+ui:
+  editor:
+    background: "#181818"
+    foreground: "#BCBEC4"
+    current_line_background: "#1E1E1E"
+    cursor_color: "#FFFEF8"
+    selection_background: "#214283"
+    secondary_cursor_color: "#FFFEF880"
+
+  gutter:
+    background: "#181818"
+    foreground: "#606366"
+    foreground_active: "#A1A3AB"
+    border_color: "#2B2B2B"
+
+  status_bar:
+    background: "#1E1E1E"
+    foreground: "#787A80"

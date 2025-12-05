@@ -1,0 +1,23 @@
+version: 1
+name: "GitHub Dark"
+author: "Built-in"
+description: "GitHub's dark theme"
+
+ui:
+  editor:
+    background: "#0D1117"
+    foreground: "#C9D1D9"
+    current_line_background: "#161B22"
+    cursor_color: "#58A6FF"
+    selection_background: "#264F78"
+    secondary_cursor_color: "#58A6FF80"
+
+  gutter:
+    background: "#0D1117"
+    foreground: "#484F58"
+    foreground_active: "#C9D1D9"
+    border_color: "#21262D"
+
+  status_bar:
+    background: "#161B22"
+    foreground: "#8B949E"
