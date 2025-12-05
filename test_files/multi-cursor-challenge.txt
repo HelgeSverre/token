@@ -1,0 +1,22 @@
+  Added 3 new test cases for large document viewport focus:                                                                                                                                                                                                   █
+                                                                                                                                                                                                                                                              █
+  1. test_select_all_then_right_arrow_scrolls_to_end - Creates a 500-line document, selects all, presses right arrow. Verifies cursor moves to end AND viewport scrolls to show the cursor.                                                                   █
+  2. test_pageup_scrolls_cursor_to_viewport_top - Tests that PageUp from half-viewport height properly scrolls viewport to show cursor.                                                                                                                       █
+  3. test_pageup_from_middle_adjusts_viewport - Tests that PageUp from line 50 (with viewport at 40-60) properly adjusts viewport when cursor jumps above visible area.                                                                                       █
+                                                                                                                                                                                                                                                              █
+  Bug fixed: The tests revealed that arrow keys with selection (ArrowLeft, ArrowRight) were NOT calling ensure_cursor_visible() after clearing selection and repositioning the cursor. This caused the viewport to stay in place while the cursor could jump  █
+  far off-screen. Fixed by adding model.ensure_cursor_visible() to both handlers.                                                                                                                                                                             █
+
+
+                                                   Challenge --- cut out the prompt from this TUI dump:                                                                                                                                                                                                            █
+╭─95% of 168k───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────smart─╮
+│ hmm when focusing on the cursor/adjuting the viewprot the "directionality" of where the cursor is moving and where the        │ TODOs                                                                                                                        │
+│ viewport is in relation to the cursor matters as if we have scrolled below viewport, and press up, this will not focus        │ ✓ Add padding constants to model/mod.rs                                                                                      │
+│ cursor since it only looks for down, however this should trigger the ensure cursor visible as well, same with if you move     │ ✓ Update text_start_x calculations in model/mod.rs (3 places)                                                                │
+│ cursor to near end, scroll far up and press up, i belive there is a referenc eto how cursor behaves in these scenarios etc    │ ✓ Update text_start_x and border_x calculations in main.rs (3+2 places)                                                      │
+│ in @docs/EDITOR_UI_REFERENCE.md  5.1 Scroll Margins / Keep-in-View Zone and 5.5 Scroll Reveal Strategies which is relevant    │ ✓ Test and verify                                                                                                            │
+│ here,                                                                                                                         │                                                                                                                              │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────~/code/rust-editor (master)─╯
+ High context usage. Ctrl+O to handoff or Ctrl+N for fresh start
+
+
