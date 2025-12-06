@@ -1,6 +1,7 @@
 //! Editor state - cursor, viewport, selections, and view-specific state
 
 use super::document::Document;
+use super::editor_area::{DocumentId, EditorId};
 
 /// Strategy for revealing the cursor when it's outside the viewport
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -227,6 +228,10 @@ impl RectangleSelectionState {
 /// Currently, most operations work on the primary cursor (index 0).
 #[derive(Debug, Clone)]
 pub struct EditorState {
+    /// Unique identifier (set when added to EditorArea)
+    pub id: Option<EditorId>,
+    /// The document this editor is viewing (set when added to EditorArea)
+    pub document_id: Option<DocumentId>,
     /// All cursors (primary cursor is at index 0)
     pub cursors: Vec<Cursor>,
     /// Selections corresponding to each cursor (parallel to cursors)
@@ -245,6 +250,8 @@ impl EditorState {
         let cursor = Cursor::new();
         let selection = Selection::new(cursor.to_position());
         Self {
+            id: None,
+            document_id: None,
             cursors: vec![cursor],
             selections: vec![selection],
             viewport: Viewport::default(),
@@ -258,6 +265,8 @@ impl EditorState {
         let cursor = Cursor::new();
         let selection = Selection::new(cursor.to_position());
         Self {
+            id: None,
+            document_id: None,
             cursors: vec![cursor],
             selections: vec![selection],
             viewport: Viewport::new(visible_lines, visible_columns),

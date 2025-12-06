@@ -19,6 +19,8 @@ pub enum SegmentId {
     Selection,
     /// Transient status messages (e.g., "Saved")
     StatusMessage,
+    /// Caret count for multi-cursor (e.g., "4 carets")
+    CaretCount,
 }
 
 /// Position of a segment in the status bar
@@ -87,9 +89,10 @@ impl StatusSegment {
             SegmentId::FileName | SegmentId::ModifiedIndicator | SegmentId::StatusMessage => {
                 SegmentPosition::Left
             }
-            SegmentId::Selection | SegmentId::CursorPosition | SegmentId::LineCount => {
-                SegmentPosition::Right
-            }
+            SegmentId::Selection
+            | SegmentId::CursorPosition
+            | SegmentId::LineCount
+            | SegmentId::CaretCount => SegmentPosition::Right,
         };
 
         Self {
@@ -141,6 +144,7 @@ impl StatusBar {
                 StatusSegment::new(SegmentId::StatusMessage, SegmentContent::Empty)
                     .with_priority(50),
                 // Right segments
+                StatusSegment::new(SegmentId::CaretCount, SegmentContent::Empty).with_priority(45),
                 StatusSegment::new(SegmentId::Selection, SegmentContent::Empty).with_priority(40),
                 StatusSegment::new(
                     SegmentId::CursorPosition,
@@ -357,7 +361,7 @@ use super::AppModel;
 pub fn sync_status_bar(model: &mut AppModel) {
     // FileName segment
     let filename = model
-        .document
+        .document()
         .file_path
         .as_ref()
         .and_then(|p| p.file_name())
@@ -370,7 +374,7 @@ pub fn sync_status_bar(model: &mut AppModel) {
         .update_segment(SegmentId::FileName, SegmentContent::Text(filename));
 
     // ModifiedIndicator segment
-    let modified = if model.document.is_modified {
+    let modified = if model.document().is_modified {
         SegmentContent::Text("*".to_string())
     } else {
         SegmentContent::Empty
@@ -381,7 +385,7 @@ pub fn sync_status_bar(model: &mut AppModel) {
         .update_segment(SegmentId::ModifiedIndicator, modified);
 
     // CursorPosition segment
-    let cursor = model.editor.cursor();
+    let cursor = model.editor().cursor();
     let cursor_text = format!("Ln {}, Col {}", cursor.line + 1, cursor.column + 1);
     model
         .ui
@@ -389,7 +393,7 @@ pub fn sync_status_bar(model: &mut AppModel) {
         .update_segment(SegmentId::CursorPosition, SegmentContent::Text(cursor_text));
 
     // LineCount segment
-    let line_count = model.document.line_count();
+    let line_count = model.document().line_count();
     let line_text = format!("{} Ln", line_count);
     model
         .ui
@@ -402,12 +406,23 @@ pub fn sync_status_bar(model: &mut AppModel) {
         .ui
         .status_bar
         .update_segment(SegmentId::Selection, selection_content);
+
+    // CaretCount segment (only visible with multiple cursors)
+    let caret_content = if model.editor().cursor_count() > 1 {
+        SegmentContent::Text(format!("{} carets", model.editor().cursor_count()))
+    } else {
+        SegmentContent::Empty
+    };
+    model
+        .ui
+        .status_bar
+        .update_segment(SegmentId::CaretCount, caret_content);
 }
 
 /// Calculate selection info for the Selection segment
 fn calculate_selection_info(model: &AppModel) -> SegmentContent {
     // Get the first selection (primary)
-    if let Some(selection) = model.editor.selections.first() {
+    if let Some(selection) = model.editor().selections.first() {
         // Check if there's an actual selection (anchor != head)
         if selection.is_empty() {
             return SegmentContent::Empty;
@@ -416,8 +431,8 @@ fn calculate_selection_info(model: &AppModel) -> SegmentContent {
         // Calculate character count in selection
         let start = selection.start();
         let end = selection.end();
-        let start_offset = model.document.cursor_to_offset(start.line, start.column);
-        let end_offset = model.document.cursor_to_offset(end.line, end.column);
+        let start_offset = model.document().cursor_to_offset(start.line, start.column);
+        let end_offset = model.document().cursor_to_offset(end.line, end.column);
         let char_count = end_offset.saturating_sub(start_offset);
 
         if char_count > 0 {

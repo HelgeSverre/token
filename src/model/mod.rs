@@ -4,12 +4,17 @@
 
 pub mod document;
 pub mod editor;
+pub mod editor_area;
 pub mod status_bar;
 pub mod ui;
 
 pub use document::{Document, EditOperation};
 pub use editor::{
     Cursor, EditorState, Position, RectangleSelectionState, ScrollRevealMode, Selection, Viewport,
+};
+pub use editor_area::{
+    DocumentId, EditorArea, EditorGroup, EditorId, GroupId, LayoutNode, Rect, SplitContainer,
+    SplitDirection, SplitterBar, Tab, TabId, SPLITTER_WIDTH,
 };
 pub use status_bar::{
     sync_status_bar, RenderedSegment, SegmentContent, SegmentId, SegmentPosition, StatusBar,
@@ -44,10 +49,8 @@ pub fn gutter_border_x(char_width: f32) -> f32 {
 /// The complete application model
 #[derive(Debug, Clone)]
 pub struct AppModel {
-    /// Document state (text buffer, file, undo/redo)
-    pub document: Document,
-    /// Editor state (cursor, viewport, scroll settings)
-    pub editor: EditorState,
+    /// Editor area containing all documents, editors, groups, and layout
+    pub editor_area: EditorArea,
     /// UI state (status bar, cursor blink)
     pub ui: UiState,
     /// Theme for colors and styling
@@ -91,15 +94,57 @@ impl AppModel {
         let visible_columns = ((window_width as f32 - text_x) / char_width).floor() as usize;
         let visible_lines = (window_height as usize) / line_height;
 
+        // Create editor state with viewport
+        let editor = EditorState::with_viewport(visible_lines, visible_columns);
+
+        // Create editor area with single document (migration path)
+        let editor_area = EditorArea::single_document(document, editor);
+
         Self {
-            document,
-            editor: EditorState::with_viewport(visible_lines, visible_columns),
+            editor_area,
             ui: UiState::with_status(status_message),
             theme: Theme::default(),
             window_size: (window_width, window_height),
             line_height,
             char_width,
         }
+    }
+
+    // =========================================================================
+    // Accessor methods for backward compatibility
+    // These delegate to editor_area's focused document/editor
+    // =========================================================================
+
+    /// Get the focused document (read-only)
+    #[inline]
+    pub fn document(&self) -> &Document {
+        self.editor_area
+            .focused_document()
+            .expect("EditorArea must have at least one document")
+    }
+
+    /// Get the focused document (mutable)
+    #[inline]
+    pub fn document_mut(&mut self) -> &mut Document {
+        self.editor_area
+            .focused_document_mut()
+            .expect("EditorArea must have at least one document")
+    }
+
+    /// Get the focused editor state (read-only)
+    #[inline]
+    pub fn editor(&self) -> &EditorState {
+        self.editor_area
+            .focused_editor()
+            .expect("EditorArea must have at least one editor")
+    }
+
+    /// Get the focused editor state (mutable)
+    #[inline]
+    pub fn editor_mut(&mut self) -> &mut EditorState {
+        self.editor_area
+            .focused_editor_mut()
+            .expect("EditorArea must have at least one editor")
     }
 
     /// Update viewport dimensions after window resize
@@ -110,7 +155,8 @@ impl AppModel {
         let visible_columns = ((width as f32 - text_x) / self.char_width).floor() as usize;
         let visible_lines = (height as usize) / self.line_height;
 
-        self.editor.resize_viewport(visible_lines, visible_columns);
+        self.editor_mut()
+            .resize_viewport(visible_lines, visible_columns);
     }
 
     /// Update char_width from actual font metrics
@@ -121,34 +167,56 @@ impl AppModel {
         let text_x = text_start_x(char_width).round();
         let visible_columns = ((self.window_size.0 as f32 - text_x) / char_width).floor() as usize;
 
-        self.editor.viewport.visible_columns = visible_columns;
+        self.editor_mut().viewport.visible_columns = visible_columns;
     }
 
     // Convenience methods that delegate to sub-models
 
     /// Get the buffer offset for the current cursor position
     pub fn cursor_buffer_position(&self) -> usize {
-        self.editor.cursor_offset(&self.document)
+        self.editor().cursor_offset(self.document())
     }
 
     /// Set cursor position from buffer offset (clears selection)
     pub fn set_cursor_from_position(&mut self, pos: usize) {
-        self.editor.set_cursor_from_offset(&self.document, pos);
+        let doc = self
+            .editor_area
+            .focused_document()
+            .expect("must have document");
+        let (line, column) = doc.offset_to_cursor(pos);
+        let editor = self.editor_mut();
+        editor.cursors[0].line = line;
+        editor.cursors[0].column = column;
+        editor.cursors[0].desired_column = None;
+        editor.clear_selection();
     }
 
     /// Move cursor to buffer offset without clearing selection
     pub fn move_cursor_to_position(&mut self, pos: usize) {
-        self.editor.move_cursor_to_offset(&self.document, pos);
+        let doc = self
+            .editor_area
+            .focused_document()
+            .expect("must have document");
+        let (line, column) = doc.offset_to_cursor(pos);
+        let editor = self.editor_mut();
+        editor.cursors[0].line = line;
+        editor.cursors[0].column = column;
+        editor.cursors[0].desired_column = None;
     }
 
     /// Get the current line length
     pub fn current_line_length(&self) -> usize {
-        self.editor.current_line_length(&self.document)
+        self.editor().current_line_length(self.document())
     }
 
     /// Ensure cursor is visible in viewport (minimal scroll)
     pub fn ensure_cursor_visible(&mut self) {
-        self.editor.ensure_cursor_visible(&self.document);
+        let doc = self
+            .editor_area
+            .focused_document()
+            .expect("must have document")
+            .clone();
+        self.editor_mut().ensure_cursor_visible(&doc);
     }
 
     /// Ensure cursor is visible with direction-aware alignment
@@ -162,8 +230,13 @@ impl AppModel {
             Some(false) => ScrollRevealMode::BottomAligned,
             None => ScrollRevealMode::Minimal,
         };
-        self.editor
-            .ensure_cursor_visible_with_mode(&self.document, mode);
+        let doc = self
+            .editor_area
+            .focused_document()
+            .expect("must have document")
+            .clone();
+        self.editor_mut()
+            .ensure_cursor_visible_with_mode(&doc, mode);
     }
 
     /// Reset cursor blink timer
@@ -173,23 +246,23 @@ impl AppModel {
 
     /// Get a line from the document
     pub fn get_line(&self, line_idx: usize) -> Option<String> {
-        self.document.get_line(line_idx)
+        self.document().get_line(line_idx)
     }
 
     /// Get line length
     pub fn line_length(&self, line_idx: usize) -> usize {
-        self.document.line_length(line_idx)
+        self.document().line_length(line_idx)
     }
 
     /// Get first non-whitespace column on current line
     pub fn first_non_whitespace_column(&self) -> usize {
-        self.document
-            .first_non_whitespace_column(self.editor.cursor().line)
+        self.document()
+            .first_non_whitespace_column(self.editor().cursor().line)
     }
 
     /// Get last non-whitespace column on current line
     pub fn last_non_whitespace_column(&self) -> usize {
-        self.document
-            .last_non_whitespace_column(self.editor.cursor().line)
+        self.document()
+            .last_non_whitespace_column(self.editor().cursor().line)
     }
 }
