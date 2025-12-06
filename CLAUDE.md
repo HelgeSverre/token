@@ -5,10 +5,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build Commands
 
 ```bash
-cargo build --release    # Build optimized binary
-cargo run --release      # Run the editor
-cargo test               # Run all 56 unit tests
-cargo test test_name     # Run a specific test
+make build               # Build debug binary
+make release             # Build optimized release binary
+make run                 # Run with default sample file
+make test                # Run all tests
+make test-one TEST=name  # Run a specific test
+make fmt                 # Format code
+```
+
+### Test Files
+
+```bash
+make run-large           # 10k lines - performance testing
+make run-long            # Long lines - horizontal scroll
+make run-unicode         # Unicode/emoji content
+make run-zalgo           # Zalgo text corruption
+
+# See `Makefile` for the rest of the commands...
 ```
 
 ## Architecture
@@ -19,16 +32,17 @@ This is a minimal text editor implementing the **Elm Architecture** in Rust:
 Message → Update → Command → Render
 ```
 
-### Core Components (all in `src/main.rs`)
+### Core Modules
 
-| Component        | Lines    | Purpose                                                              |
-| ---------------- | -------- | -------------------------------------------------------------------- |
-| **Model**        | 24-172   | Application state: buffer (Rope), cursor, viewport, undo/redo stacks |
-| **Msg**          | 207-245  | All possible user events (movement, editing, navigation)             |
-| **update()**     | 251-601  | Pure state transformation: `Msg → Model mutation → Option<Cmd>`      |
-| **handle_key()** | 603-660  | Maps keyboard input to Msg                                           |
-| **Renderer**     | 675-860  | CPU rendering with fontdue + softbuffer                              |
-| **App**          | 939-1078 | winit event loop integration                                         |
+| Module       | File              | Purpose                                                 |
+| ------------ | ----------------- | ------------------------------------------------------- |
+| **Model**    | `src/model/`      | AppModel, Document, EditorState, UiState                |
+| **Messages** | `src/messages.rs` | Msg, EditorMsg, DocumentMsg, UiMsg, AppMsg              |
+| **Update**   | `src/update.rs`   | Pure state transformation: `Msg → Model mutation → Cmd` |
+| **Commands** | `src/commands.rs` | Cmd enum (Redraw, SaveFile, LoadFile, Batch)            |
+| **Theme**    | `src/theme.rs`    | YAML theme loading, Color types                         |
+| **Renderer** | `src/main.rs`     | CPU rendering with fontdue + softbuffer                 |
+| **App**      | `src/main.rs`     | winit event loop, handle_key()                          |
 
 ### Key Data Structures
 
@@ -57,9 +71,61 @@ Font: JetBrains Mono embedded in `assets/JetBrainsMono.ttf`
 
 ## Key Bindings
 
-| Action          | Mac                 | Standard        |
-| --------------- | ------------------- | --------------- |
-| Line start/end  | Cmd+←/→             | Home/End        |
-| Word left/right | Option+←/→          | -               |
-| Doc start/end   | Ctrl+Home/End       | -               |
-| Undo/Redo       | Cmd+Z / Cmd+Shift+Z | Ctrl+Z / Ctrl+Y |
+### Navigation
+
+| Action          | Mac           | Standard |
+| --------------- | ------------- | -------- |
+| Line start/end  | Cmd+←/→       | Home/End |
+| Word left/right | Option+←/→    | -        |
+| Doc start/end   | Ctrl+Home/End | -        |
+
+### Selection
+
+| Action           | Mac                      |
+| ---------------- | ------------------------ |
+| Extend selection | Shift + any movement key |
+| Select word      | Double-click             |
+| Select line      | Triple-click             |
+| Select all       | Cmd+A                    |
+
+### Multi-Cursor
+
+| Action            | Mac               |
+| ----------------- | ----------------- |
+| Add/remove cursor | Cmd+Click         |
+| Add cursor above  | Option+Option+↑   |
+| Add cursor below  | Option+Option+↓   |
+| Rectangle select  | Middle mouse drag |
+
+### Editing
+
+| Action    | Mac                 |
+| --------- | ------------------- |
+| Undo/Redo | Cmd+Z / Cmd+Shift+Z |
+| Copy      | Cmd+C               |
+| Cut       | Cmd+X               |
+| Paste     | Cmd+V               |
+
+### Debug
+
+| Action       | Key | Notes             |
+| ------------ | --- | ----------------- |
+| Perf overlay | F2  | Debug builds only |
+
+## Documentation & Design Workflow
+
+Design docs live in `docs/feature/*.md`. Before implementing a feature:
+
+1. Check `docs/ROADMAP.md` for planned work and priorities
+2. Read the feature's design doc (e.g., `feature/STATUS_BAR.md`)
+3. Implement following the design
+4. Update `docs/CHANGELOG.md` when complete
+
+### Key Docs
+
+| Doc                 | Purpose                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
+| `docs/ROADMAP.md`   | Planned features, implementation gaps, module structure                                                 |
+| `docs/CHANGELOG.md` | Completed work by date                                                                                  |
+| `docs/FEEDBACK.md`  | Implementation review and priorities                                                                    |
+| `docs/feature/*.md` | Detailed designs (THEMING, SELECTION_MULTICURSOR, STATUS_BAR, SPLIT_VIEW, TEXT-SHRINK-EXPAND-SELECTION) |
