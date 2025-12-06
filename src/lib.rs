@@ -6,6 +6,7 @@
 pub mod commands;
 pub mod messages;
 pub mod model;
+pub mod overlay;
 pub mod theme;
 pub mod update;
 pub mod util;
