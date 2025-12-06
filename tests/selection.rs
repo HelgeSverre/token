@@ -134,8 +134,14 @@ fn test_add_cursor_above() {
     // Should now have 2 cursors: one on line 1, one on line 2
     assert_eq!(model.editor.cursor_count(), 2, "Should have 2 cursors");
     // Cursors should be sorted by position, so line 1 first
-    assert_eq!(model.editor.cursors[0].line, 1, "First cursor should be on line 1");
-    assert_eq!(model.editor.cursors[1].line, 2, "Second cursor should be on line 2");
+    assert_eq!(
+        model.editor.cursors[0].line, 1,
+        "First cursor should be on line 1"
+    );
+    assert_eq!(
+        model.editor.cursors[1].line, 2,
+        "Second cursor should be on line 2"
+    );
 }
 
 #[test]
@@ -148,8 +154,14 @@ fn test_add_cursor_below() {
 
     // Should now have 2 cursors: one on line 1, one on line 2
     assert_eq!(model.editor.cursor_count(), 2, "Should have 2 cursors");
-    assert_eq!(model.editor.cursors[0].line, 1, "First cursor should be on line 1");
-    assert_eq!(model.editor.cursors[1].line, 2, "Second cursor should be on line 2");
+    assert_eq!(
+        model.editor.cursors[0].line, 1,
+        "First cursor should be on line 1"
+    );
+    assert_eq!(
+        model.editor.cursors[1].line, 2,
+        "Second cursor should be on line 2"
+    );
 }
 
 #[test]
@@ -161,7 +173,11 @@ fn test_add_cursor_above_at_top() {
     update(&mut model, Msg::Editor(EditorMsg::AddCursorAbove));
 
     // Should still have just 1 cursor
-    assert_eq!(model.editor.cursor_count(), 1, "Should still have 1 cursor at top");
+    assert_eq!(
+        model.editor.cursor_count(),
+        1,
+        "Should still have 1 cursor at top"
+    );
 }
 
 #[test]
@@ -173,7 +189,11 @@ fn test_add_cursor_below_at_bottom() {
     update(&mut model, Msg::Editor(EditorMsg::AddCursorBelow));
 
     // Should still have just 1 cursor
-    assert_eq!(model.editor.cursor_count(), 1, "Should still have 1 cursor at bottom");
+    assert_eq!(
+        model.editor.cursor_count(),
+        1,
+        "Should still have 1 cursor at bottom"
+    );
 }
 
 #[test]
@@ -183,7 +203,10 @@ fn test_deduplicate_cursors() {
 
     // Add another cursor at the same position
     model.editor.cursors.push(Cursor::at(1, 3));
-    model.editor.selections.push(Selection::new(Position::new(1, 3)));
+    model
+        .editor
+        .selections
+        .push(Selection::new(Position::new(1, 3)));
 
     // Now we have 2 cursors at the same position
     assert_eq!(model.editor.cursor_count(), 2);
@@ -192,7 +215,11 @@ fn test_deduplicate_cursors() {
     model.editor.deduplicate_cursors();
 
     // Should now have just 1 cursor
-    assert_eq!(model.editor.cursor_count(), 1, "Duplicates should be removed");
+    assert_eq!(
+        model.editor.cursor_count(),
+        1,
+        "Duplicates should be removed"
+    );
 }
 
 // Note: Tests for arrow keys with selection (that require clearing selection before movement)
@@ -217,7 +244,11 @@ fn test_word_selection_right_from_start() {
     let selection = model.editor.selection();
     assert!(!selection.is_empty(), "Selection should not be empty");
     assert_eq!(selection.anchor, Position::new(0, 0), "Anchor at start");
-    assert_eq!(selection.head, Position::new(0, 5), "Head at end of 'hello'");
+    assert_eq!(
+        selection.head,
+        Position::new(0, 5),
+        "Head at end of 'hello'"
+    );
 }
 
 #[test]
@@ -247,7 +278,11 @@ fn test_word_selection_right_multiple() {
     );
 
     let selection = model.editor.selection();
-    assert_eq!(selection.anchor, Position::new(0, 0), "Anchor stays at start");
+    assert_eq!(
+        selection.anchor,
+        Position::new(0, 0),
+        "Anchor stays at start"
+    );
     assert_eq!(selection.head.column, 11, "Head at end of 'world'");
 }
 
@@ -264,7 +299,11 @@ fn test_word_selection_left_from_end() {
     let selection = model.editor.selection();
     assert!(!selection.is_empty(), "Selection should not be empty");
     assert_eq!(selection.anchor, Position::new(0, 11), "Anchor at end");
-    assert_eq!(selection.head, Position::new(0, 6), "Head at start of 'world'");
+    assert_eq!(
+        selection.head,
+        Position::new(0, 6),
+        "Head at start of 'world'"
+    );
 }
 
 #[test]
@@ -278,7 +317,11 @@ fn test_word_selection_left_multiple() {
         &mut model,
         Msg::Editor(EditorMsg::MoveCursorWordWithSelection(Direction::Left)),
     );
-    assert_eq!(model.editor.selection().head.column, 6, "At start of 'world'");
+    assert_eq!(
+        model.editor.selection().head.column,
+        6,
+        "At start of 'world'"
+    );
 
     // Move 2: Skip space backwards (6->5)
     update(
@@ -294,7 +337,11 @@ fn test_word_selection_left_multiple() {
     );
 
     let selection = model.editor.selection();
-    assert_eq!(selection.anchor, Position::new(0, 11), "Anchor stays at end");
+    assert_eq!(
+        selection.anchor,
+        Position::new(0, 11),
+        "Anchor stays at end"
+    );
     assert_eq!(selection.head, Position::new(0, 0), "Head at start of line");
 }
 

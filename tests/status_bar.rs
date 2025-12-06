@@ -107,7 +107,10 @@ fn test_status_bar_get_segment_mut() {
 #[test]
 fn test_status_bar_update_segment() {
     let mut bar = StatusBar::new();
-    bar.update_segment(SegmentId::FileName, SegmentContent::Text("new.rs".to_string()));
+    bar.update_segment(
+        SegmentId::FileName,
+        SegmentContent::Text("new.rs".to_string()),
+    );
 
     let segment = bar.get_segment(SegmentId::FileName).unwrap();
     assert_eq!(segment.content.display_text(), "new.rs");
@@ -204,7 +207,11 @@ fn test_sync_filename_from_path() {
 
     sync_status_bar(&mut model);
 
-    let segment = model.ui.status_bar.get_segment(SegmentId::FileName).unwrap();
+    let segment = model
+        .ui
+        .status_bar
+        .get_segment(SegmentId::FileName)
+        .unwrap();
     assert_eq!(segment.content.display_text(), "test.rs");
 }
 
@@ -215,7 +222,11 @@ fn test_sync_filename_no_path() {
 
     sync_status_bar(&mut model);
 
-    let segment = model.ui.status_bar.get_segment(SegmentId::FileName).unwrap();
+    let segment = model
+        .ui
+        .status_bar
+        .get_segment(SegmentId::FileName)
+        .unwrap();
     assert_eq!(segment.content.display_text(), "[No Name]");
 }
 
@@ -335,7 +346,11 @@ fn test_sync_selection_multiline() {
         .unwrap();
     // Should show character count for multi-line selection
     let text = segment.content.display_text();
-    assert!(text.contains("chars"), "Expected chars count, got: {}", text);
+    assert!(
+        text.contains("chars"),
+        "Expected chars count, got: {}",
+        text
+    );
 }
 
 // =============================================================================
@@ -605,7 +620,10 @@ fn test_set_status_backward_compatibility() {
     let mut model = test_model("hello", 0, 0);
 
     // Use old API
-    let _ = update(&mut model, Msg::Ui(UiMsg::SetStatus("Hello World".to_string())));
+    let _ = update(
+        &mut model,
+        Msg::Ui(UiMsg::SetStatus("Hello World".to_string())),
+    );
 
     // Should update both legacy field and segment
     assert_eq!(model.ui.status_message, "Hello World");

@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{test_model, buffer_to_string};
+use common::{buffer_to_string, test_model, test_model_with_selection};
 use token::messages::{DocumentMsg, Msg};
 use token::update::update;
 
@@ -105,9 +105,7 @@ fn test_insert_after_cursor_position_clamped() {
     assert_eq!(buffer_to_string(&model), "hiX");
 
     // After insert, cursor.column should be valid
-    assert!(
-        model.editor.cursor().column <= model.document.line_length(model.editor.cursor().line)
-    );
+    assert!(model.editor.cursor().column <= model.document.line_length(model.editor.cursor().line));
 }
 
 // ========================================================================
@@ -257,5 +255,279 @@ fn test_undo_delete() {
     update(&mut model, Msg::Document(DocumentMsg::Undo));
 
     assert_eq!(buffer_to_string(&model), "hello");
+    assert_eq!(model.editor.cursor().column, 5);
+}
+
+// ========================================================================
+// Undo/Redo with selection tests
+// ========================================================================
+
+#[test]
+fn test_undo_insert_char_over_selection_restores_original_text() {
+    // Text: "hello world", select "llo w" (cols 2..7)
+    let mut model = test_model_with_selection("hello world", 0, 2, 0, 7);
+    // Cursor is at head (line 0, col 7) before typing
+
+    // Type 'X' to replace selection
+    update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
+
+    // Net effect should be "heXorld"
+    assert_eq!(buffer_to_string(&model), "heXorld");
+    assert_eq!(model.editor.cursor().column, 3);
+
+    // Undo should fully restore original text in ONE undo operation
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(
+        buffer_to_string(&model),
+        "hello world",
+        "Undo should restore the full original text including deleted selection"
+    );
+}
+
+#[test]
+fn test_redo_insert_char_over_selection_reapplies_replacement() {
+    // Text: "hello world", select "llo w" (cols 2..7)
+    let mut model = test_model_with_selection("hello world", 0, 2, 0, 7);
+
+    // Type 'X' to replace selection
+    update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
+    assert_eq!(buffer_to_string(&model), "heXorld");
+
+    // Undo
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(buffer_to_string(&model), "hello world");
+
+    // Redo should re-apply the replacement
+    update(&mut model, Msg::Document(DocumentMsg::Redo));
+    assert_eq!(
+        buffer_to_string(&model),
+        "heXorld",
+        "Redo should re-apply the replacement"
+    );
+    assert_eq!(model.editor.cursor().column, 3);
+}
+
+#[test]
+fn test_undo_delete_backward_with_selection() {
+    // Text: "hello world", select "llo w" (cols 2..7)
+    let mut model = test_model_with_selection("hello world", 0, 2, 0, 7);
+
+    // DeleteBackward with selection should delete the selection
+    update(&mut model, Msg::Document(DocumentMsg::DeleteBackward));
+    assert_eq!(buffer_to_string(&model), "heorld");
+
+    // Undo should restore the deleted selection
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(
+        buffer_to_string(&model),
+        "hello world",
+        "Undo should restore deleted selection"
+    );
+}
+
+#[test]
+fn test_undo_insert_newline_over_selection() {
+    // Text: "hello world", select "llo wo" (cols 2..8)
+    let mut model = test_model_with_selection("hello world", 0, 2, 0, 8);
+
+    // Insert newline to replace selection
+    update(&mut model, Msg::Document(DocumentMsg::InsertNewline));
+
+    // Net effect: "he\nrld"
+    assert_eq!(buffer_to_string(&model), "he\nrld");
+    assert_eq!(model.editor.cursor().line, 1);
+    assert_eq!(model.editor.cursor().column, 0);
+
+    // Undo should fully restore original text in ONE undo operation
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(
+        buffer_to_string(&model),
+        "hello world",
+        "Undo should restore the full original text"
+    );
+}
+
+// ========================================================================
+// Duplicate Line/Selection tests (Cmd+D)
+// ========================================================================
+
+#[test]
+fn test_duplicate_line_no_selection() {
+    // When no selection, Cmd+D should duplicate the current line
+    let mut model = test_model("hello\nworld\n", 0, 2);
+
+    update(&mut model, Msg::Document(DocumentMsg::Duplicate));
+
+    assert_eq!(
+        buffer_to_string(&model),
+        "hello\nhello\nworld\n",
+        "Current line should be duplicated below"
+    );
+    // Cursor should be on the duplicated line at same column
+    assert_eq!(model.editor.cursor().line, 1);
+    assert_eq!(model.editor.cursor().column, 2);
+}
+
+#[test]
+fn test_duplicate_line_last_line_no_newline() {
+    // Duplicate a line that doesn't end with newline
+    let mut model = test_model("hello\nworld", 1, 3);
+
+    update(&mut model, Msg::Document(DocumentMsg::Duplicate));
+
+    assert_eq!(
+        buffer_to_string(&model),
+        "hello\nworld\nworld",
+        "Last line without newline should be duplicated"
+    );
+    assert_eq!(model.editor.cursor().line, 2);
+    assert_eq!(model.editor.cursor().column, 3);
+}
+
+#[test]
+fn test_duplicate_selection_single_line() {
+    // When there's a selection, duplicate the selected text after it
+    let mut model = test_model_with_selection("hello world", 0, 0, 0, 5);
+
+    update(&mut model, Msg::Document(DocumentMsg::Duplicate));
+
+    assert_eq!(
+        buffer_to_string(&model),
+        "hellohello world",
+        "Selection 'hello' should be duplicated after itself"
+    );
+    // Cursor should be at end of duplicated text
+    assert_eq!(model.editor.cursor().column, 10);
+}
+
+#[test]
+fn test_duplicate_selection_multiline() {
+    // Duplicate a multi-line selection
+    let mut model = test_model_with_selection("line1\nline2\nline3\n", 0, 0, 1, 5);
+
+    update(&mut model, Msg::Document(DocumentMsg::Duplicate));
+
+    // Selection is "line1\nline2", should be inserted after "line2"
+    assert_eq!(
+        buffer_to_string(&model),
+        "line1\nline2line1\nline2\nline3\n",
+        "Multi-line selection should be duplicated"
+    );
+}
+
+#[test]
+fn test_duplicate_can_be_undone() {
+    let mut model = test_model("hello\nworld\n", 0, 2);
+
+    update(&mut model, Msg::Document(DocumentMsg::Duplicate));
+    assert_eq!(buffer_to_string(&model), "hello\nhello\nworld\n");
+
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(
+        buffer_to_string(&model),
+        "hello\nworld\n",
+        "Duplicate should be undoable"
+    );
+}
+
+// ========================================================================
+// Delete Line tests (Cmd+Backspace)
+// ========================================================================
+
+#[test]
+fn test_delete_line_first_line() {
+    let mut model = test_model("hello\nworld\nfoo\n", 0, 2);
+
+    update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
+
+    assert_eq!(buffer_to_string(&model), "world\nfoo\n");
+    assert_eq!(model.editor.cursor().line, 0);
+    assert_eq!(model.editor.cursor().column, 2);
+}
+
+#[test]
+fn test_delete_line_middle_line() {
+    let mut model = test_model("hello\nworld\nfoo\n", 1, 3);
+
+    update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
+
+    assert_eq!(buffer_to_string(&model), "hello\nfoo\n");
+    assert_eq!(model.editor.cursor().line, 1);
+    assert_eq!(model.editor.cursor().column, 3);
+}
+
+#[test]
+fn test_delete_line_last_line_with_newline() {
+    let mut model = test_model("hello\nworld\n", 1, 2);
+
+    update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
+
+    // Should delete "world\n" and move cursor to end of previous line
+    assert_eq!(buffer_to_string(&model), "hello\n");
+    assert_eq!(model.editor.cursor().line, 0);
+    assert_eq!(model.editor.cursor().column, 5);
+}
+
+#[test]
+fn test_delete_line_last_line_no_newline() {
+    let mut model = test_model("hello\nworld", 1, 2);
+
+    update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
+
+    // Should delete "\nworld" (the newline before and the content)
+    assert_eq!(buffer_to_string(&model), "hello");
+    assert_eq!(model.editor.cursor().line, 0);
+    assert_eq!(model.editor.cursor().column, 5);
+}
+
+#[test]
+fn test_delete_line_only_line() {
+    let mut model = test_model("hello", 0, 2);
+
+    update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
+
+    assert_eq!(buffer_to_string(&model), "");
+    assert_eq!(model.editor.cursor().line, 0);
+    assert_eq!(model.editor.cursor().column, 0);
+}
+
+#[test]
+fn test_delete_line_empty_line() {
+    let mut model = test_model("hello\n\nworld", 1, 0);
+
+    update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
+
+    assert_eq!(buffer_to_string(&model), "hello\nworld");
+    assert_eq!(model.editor.cursor().line, 1);
+}
+
+#[test]
+fn test_delete_line_can_be_undone() {
+    let mut model = test_model("hello\nworld\nfoo\n", 1, 3);
+
+    update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
+    assert_eq!(buffer_to_string(&model), "hello\nfoo\n");
+
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(
+        buffer_to_string(&model),
+        "hello\nworld\nfoo\n",
+        "Delete line should be undoable"
+    );
+    assert_eq!(model.editor.cursor().line, 1);
+    assert_eq!(model.editor.cursor().column, 3);
+}
+
+#[test]
+fn test_delete_line_cursor_column_clamped() {
+    // Cursor column 10 on line with only 5 chars should clamp after delete
+    let mut model = test_model("short\nlongerline\n", 1, 9);
+
+    update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
+
+    // "longerline\n" deleted, now on "short" line
+    assert_eq!(buffer_to_string(&model), "short\n");
+    assert_eq!(model.editor.cursor().line, 0);
+    // Column should be clamped to line length (5)
     assert_eq!(model.editor.cursor().column, 5);
 }

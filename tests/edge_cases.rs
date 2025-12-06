@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{test_model, buffer_to_string};
+use common::{buffer_to_string, test_model};
 use token::messages::{Direction, DocumentMsg, EditorMsg, Msg};
 use token::update::update;
 
@@ -111,30 +111,22 @@ fn test_cursor_column_never_exceeds_line_length_after_operations() {
 
     // Various operations
     update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
-    assert!(
-        model.editor.cursor().column <= model.document.line_length(model.editor.cursor().line)
-    );
+    assert!(model.editor.cursor().column <= model.document.line_length(model.editor.cursor().line));
 
     update(&mut model, Msg::Document(DocumentMsg::DeleteBackward));
-    assert!(
-        model.editor.cursor().column <= model.document.line_length(model.editor.cursor().line)
-    );
+    assert!(model.editor.cursor().column <= model.document.line_length(model.editor.cursor().line));
 
     update(
         &mut model,
         Msg::Editor(EditorMsg::MoveCursor(Direction::Right)),
     );
-    assert!(
-        model.editor.cursor().column <= model.document.line_length(model.editor.cursor().line)
-    );
+    assert!(model.editor.cursor().column <= model.document.line_length(model.editor.cursor().line));
 
     update(
         &mut model,
         Msg::Editor(EditorMsg::MoveCursor(Direction::Down)),
     );
-    assert!(
-        model.editor.cursor().column <= model.document.line_length(model.editor.cursor().line)
-    );
+    assert!(model.editor.cursor().column <= model.document.line_length(model.editor.cursor().line));
 }
 
 #[test]
