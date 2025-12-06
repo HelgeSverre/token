@@ -334,10 +334,8 @@ impl EditorArea {
             }
 
             if let Some(editor) = self.editors.get_mut(&editor_id) {
-                for (cursor, selection) in editor
-                    .cursors
-                    .iter_mut()
-                    .zip(editor.selections.iter_mut())
+                for (cursor, selection) in
+                    editor.cursors.iter_mut().zip(editor.selections.iter_mut())
                 {
                     // Adjust cursor
                     adjust_position_for_edit(
