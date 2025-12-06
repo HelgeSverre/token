@@ -24,6 +24,7 @@ autocomplete overlays, and all the coordinate transformations in between.
 11. [Naming Conventions and Terminology](#chapter-11-naming-conventions-and-terminology)
 12. [Cursor Styles: Pipe, Block, and Underline](#chapter-12-cursor-styles-pipe-block-and-underline)
 13. [Keyboard Mapping and Command Dispatch](#chapter-13-keyboard-mapping-and-command-dispatch)
+14. [Mouse Interaction and Drag Selection](#chapter-14-mouse-interaction-and-drag-selection)
 
 **Appendices:**
 
@@ -3176,6 +3177,312 @@ function handleKeyDown(event) {
     result = keymap.handle(keystroke, context)
     // ...
 }
+```
+
+---
+
+## Chapter 14: Mouse Interaction and Drag Selection
+
+Mouse-based text selection involves coordinating drag detection, selection state management, and viewport scrolling when the
+drag extends beyond visible boundaries.
+
+### 14.1 Core State Machine
+
+Mouse selection follows a three-state model:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│   ┌─────────┐  mouse down   ┌─────────────┐  threshold   ┌─────────────┐    │
+│   │  IDLE   │──────────────▶│  POTENTIAL  │─────────────▶│  DRAGGING   │    │
+│   │         │               │    DRAG     │   exceeded   │             │    │
+│   └─────────┘               └─────────────┘              └─────────────┘    │
+│        ▲                           │                           │            │
+│        │                           │ mouse up                  │ mouse up   │
+│        │                           │ (no threshold)            │            │
+│        │                           ▼                           │            │
+│        │                    ┌─────────────┐                    │            │
+│        └────────────────────│   CLICK     │◀───────────────────┘            │
+│                             │  (position  │                                 │
+│                             │   cursor)   │                                 │
+│                             └─────────────┘                                 │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+```
+MouseDragState {
+    phase: 'idle' | 'potential_drag' | 'dragging'
+
+    // Recorded on mouse down
+    startPosition: { x: Number, y: Number }    // Pixels (viewport coordinates)
+    startDocumentPos: { line: Number, column: Number }
+
+    // Updated during drag
+    currentPosition: { x: Number, y: Number }
+}
+```
+
+### 14.2 Drag Distance Threshold (Hysteresis)
+
+A critical UX detail: clicks should not accidentally trigger selection. Standard practice requires the mouse to move
+beyond a **drag threshold** before selection begins.
+
+```
+const DRAG_THRESHOLD_PIXELS = 4  // Standard: 3-5 pixels
+
+function checkDragThreshold(startPos, currentPos) {
+    const dx = currentPos.x - startPos.x
+    const dy = currentPos.y - startPos.y
+    const distance = sqrt(dx * dx + dy * dy)
+
+    return distance >= DRAG_THRESHOLD_PIXELS
+}
+```
+
+**Why this matters:**
+
+- Prevents accidental selection from minor mouse movement during clicks
+- Matches user expectations from native OS controls
+- VS Code, macOS TextEdit, IntelliJ all use ~4-5 pixel thresholds
+
+**Behavior differences:**
+
+| Scenario                     | Without Threshold          | With Threshold         |
+| ---------------------------- | -------------------------- | ---------------------- |
+| Click to position cursor     | May create tiny selection  | Clean cursor placement |
+| Accidental 1-2px movement    | Triggers selection         | No effect              |
+| Intentional drag (5+ px)     | Works                      | Works                  |
+
+### 14.3 Selection Anchor Initialization
+
+When drag threshold is exceeded, the selection anchor must be set from the **original mouse-down position**, not the
+current position:
+
+```
+function onDragThresholdExceeded(state, selection) {
+    // Initialize anchor at where the mouse was PRESSED, not where it is NOW
+    selection.anchor = state.startDocumentPos
+    selection.head = currentDocumentPos
+}
+```
+
+**Common bug:** Setting anchor to (0,0) or current position when drag starts, causing selection to start from wrong
+location.
+
+### 14.4 Selection Update During Drag
+
+While dragging (after threshold exceeded):
+
+```
+function onMouseMove(currentPos, state, selection, cursor) {
+    if (state.phase != 'dragging') {
+        // Check threshold
+        if (checkDragThreshold(state.startPosition, currentPos)) {
+            state.phase = 'dragging'
+            initializeSelectionAnchor(state, selection)
+        } else {
+            return  // Still in potential_drag, don't update selection
+        }
+    }
+
+    // Convert pixel position to document position
+    const docPos = viewportToDocument(currentPos.x, currentPos.y, ...)
+
+    // Update selection head (anchor stays fixed)
+    selection.head = docPos
+
+    // Cursor follows head
+    cursor.line = docPos.line
+    cursor.column = docPos.column
+
+    // Check for auto-scroll (see 14.5)
+    checkAutoScroll(currentPos)
+}
+```
+
+### 14.5 Auto-Scroll During Drag
+
+When the mouse moves outside the viewport during drag, the editor should scroll to reveal more content. However,
+instant scrolling creates a jarring UX—**throttling** is essential.
+
+#### Edge Detection
+
+```
+function detectScrollDirection(mouseY, viewport, lineHeight) {
+    const statusBarTop = viewport.height - lineHeight  // If status bar exists
+
+    if (mouseY < 0) {
+        return 'up'      // Mouse above viewport
+    } else if (mouseY >= statusBarTop) {
+        return 'down'    // Mouse below viewport (or in status bar)
+    }
+    return null          // Mouse within viewport
+}
+```
+
+#### Time-Based Throttling
+
+```
+AutoScrollState {
+    lastScrollTime: Option<Timestamp>
+    scrollIntervalMs: Number = 80      // ~12 lines per second
+}
+
+function tryAutoScroll(mouseY, state, viewport, lineHeight) {
+    const direction = detectScrollDirection(mouseY, viewport, lineHeight)
+
+    if (direction == null) {
+        return  // No scroll needed
+    }
+
+    const now = currentTime()
+
+    // Throttle: only scroll if enough time has passed
+    if (state.lastScrollTime != null) {
+        const elapsed = now - state.lastScrollTime
+        if (elapsed < state.scrollIntervalMs) {
+            return  // Too soon, skip this scroll
+        }
+    }
+
+    // Perform scroll
+    state.lastScrollTime = now
+    scrollByLines(direction == 'up' ? -1 : 1)
+}
+```
+
+#### Scroll Speed Considerations
+
+| Approach                     | Behavior                                    | UX                          |
+| ---------------------------- | ------------------------------------------- | --------------------------- |
+| Instant (no throttle)        | Scrolls as fast as mouse events             | Jarring, overshoots easily  |
+| Fixed interval (80-100ms)    | Consistent ~10-12 lines/sec                 | Predictable, controllable   |
+| Distance-based acceleration  | Faster scroll when mouse further from edge  | Natural but complex         |
+| Progressive acceleration     | Speed increases over time                   | Good for long selections    |
+
+**Recommendation:** Start with fixed interval throttling (~80ms). Add distance-based acceleration only if users request
+it.
+
+### 14.6 State Reset on Mouse Up
+
+```
+function onMouseUp(state, selection) {
+    if (state.phase == 'potential_drag') {
+        // Threshold never exceeded - this was a click
+        // Cursor is already positioned from mouse down
+        // Clear any accidental selection
+        selection.clear()
+    }
+    // else: 'dragging' - keep the selection
+
+    // Reset all drag state
+    state.phase = 'idle'
+    state.startPosition = null
+    state.startDocumentPos = null
+    state.lastScrollTime = null
+}
+```
+
+### 14.7 Interaction with Other Selection Modes
+
+#### Shift+Click (Extend Selection)
+
+Shift+Click extends existing selection to clicked position. The anchor stays where it was; head moves to click:
+
+```
+function onShiftClick(clickPos, selection) {
+    // Don't change anchor, just move head
+    selection.head = clickPos
+    cursor.position = clickPos
+}
+```
+
+#### Cmd/Ctrl+Click (Toggle Cursor)
+
+For multi-cursor: adds or removes a cursor at clicked position. Not related to drag selection.
+
+#### Middle Mouse (Rectangle Selection)
+
+Separate mode entirely. Uses same drag mechanics but creates multiple cursors/selections based on rectangular region.
+
+### 14.8 Common Implementation Pitfalls
+
+| Pitfall                                    | Symptom                          | Fix                                         |
+| ------------------------------------------ | -------------------------------- | ------------------------------------------- |
+| No drag threshold                          | Clicks create tiny selections    | Add 4px threshold check                     |
+| Anchor at (0,0)                            | Selection starts from top-left   | Initialize anchor from mouse-down position  |
+| No throttle on auto-scroll                 | Viewport jumps wildly            | Add 80ms minimum interval                   |
+| Clearing selection on mouse down           | Can't see selection while drag   | Only clear on click (threshold not exceeded)|
+| Using ensure_cursor_visible() during drag  | Instant scroll jumps             | Use throttled auto-scroll instead           |
+| Not updating cursor during drag            | Cursor stays at start            | Set cursor.position = selection.head        |
+
+### 14.9 Data Structures Summary
+
+```
+// Minimal state for drag selection
+DragState {
+    isMouseDown: Boolean
+    isDragging: Boolean                     // Threshold exceeded
+    startPosition: Option<(f64, f64)>       // Pixels
+    lastAutoScrollTime: Option<Timestamp>
+}
+
+// Selection (from Chapter 2)
+Selection {
+    anchor: Position    // Fixed point (set when drag starts)
+    head: Position      // Moving point (follows cursor during drag)
+}
+
+// Constants
+DRAG_THRESHOLD_PIXELS = 4.0
+AUTO_SCROLL_INTERVAL_MS = 80
+```
+
+### 14.10 Event Flow Example
+
+User clicks at line 10, drags down to line 50:
+
+```
+1.  MouseDown at (120, 200)
+    - Record startPosition = (120, 200)
+    - Convert to document: line=10, column=15
+    - Record startDocumentPos = {10, 15}
+    - Set phase = 'potential_drag'
+    - Position cursor at {10, 15}
+    - Clear any existing selection
+
+2.  MouseMove to (122, 204)  -- 5px movement
+    - Calculate distance: sqrt(2² + 4²) = 4.47
+    - Distance >= 4.0 → threshold exceeded
+    - Set phase = 'dragging'
+    - Initialize selection.anchor = {10, 15}
+    - Set selection.head = current document position
+    - Cursor follows head
+
+3.  MouseMove to (125, 400)
+    - phase == 'dragging', continue updating
+    - Convert to document position
+    - Update selection.head and cursor
+    - Check auto-scroll: y=400 within viewport → no scroll
+
+4.  MouseMove to (130, 850)  -- below viewport
+    - Update selection.head
+    - detectScrollDirection → 'down'
+    - First scroll: set lastAutoScrollTime, scroll down 1 line
+
+5.  MouseMove to (130, 855)  -- still below, 20ms later
+    - Throttle check: 20ms < 80ms → skip scroll
+    - Still update selection.head
+
+6.  MouseMove to (130, 860)  -- still below, 100ms total
+    - Throttle check: 100ms >= 80ms → scroll down 1 line
+    - Update lastAutoScrollTime
+
+7.  MouseUp at (130, 900)
+    - phase == 'dragging' → keep selection
+    - Reset: phase='idle', startPosition=null, lastAutoScrollTime=null
+    - Selection from {10, 15} to {50, column} preserved
 ```
 
 ---
