@@ -217,10 +217,30 @@ flamegraph: build-prof
 profile-samply: build-prof
 	samply record ./target/profiling/token test_files/large.txt
 
-# Memory profiling with dhat (generates dhat-heap.json)
+# Memory profiling with dhat (generates dhat-heap.json, auto-opens viewer)
 profile-memory:
 	cargo run --features dhat-heap --release -- test_files/large.txt
-	@echo "Open dhat-heap.json with https://nnethercote.github.io/dh_view/dh_view.html"
+ifeq ($(shell uname -s),Darwin)
+	@echo "Opening DHAT viewer and loading dhat-heap.json..."
+	@osascript -e 'open location "https://nnethercote.github.io/dh_view/dh_view.html"' \
+		-e 'delay 2' \
+		-e 'tell application "System Events"' \
+		-e '  keystroke tab' \
+		-e '  keystroke return' \
+		-e '  delay 1' \
+		-e '  keystroke "g" using {command down, shift down}' \
+		-e '  delay 0.5' \
+		-e '  keystroke "$(PWD)/dhat-heap.json"' \
+		-e '  delay 0.3' \
+		-e '  keystroke return' \
+		-e '  delay 0.3' \
+		-e '  keystroke return' \
+		-e 'end tell'
+else
+	@echo "Generated: dhat-heap.json"
+	@echo "Open https://nnethercote.github.io/dh_view/dh_view.html"
+	@echo "Click 'Load...' and select $(PWD)/dhat-heap.json"
+endif
 
 # === Benchmarking targets ===
 
