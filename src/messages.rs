@@ -71,7 +71,7 @@ pub enum EditorMsg {
     ClearSelection,
 
     // === Multi-Cursor ===
-    /// Toggle cursor at position (Cmd+Click)
+    /// Toggle cursor at position (Option+Click)
     ToggleCursorAtPosition { line: usize, column: usize },
     /// Add cursor above current (Option+Option+Up)
     AddCursorAbove,
@@ -126,7 +126,7 @@ pub enum DocumentMsg {
     Duplicate,
 }
 
-use crate::model::{SegmentContent, SegmentId};
+use crate::model::{GroupId, SegmentContent, SegmentId, SplitDirection, TabId};
 
 /// UI-specific messages (status bar, cursor blink)
 #[derive(Debug, Clone)]
@@ -144,6 +144,57 @@ pub enum UiMsg {
     SetTransientMessage { text: String, duration_ms: u64 },
     /// Clear the transient message
     ClearTransientMessage,
+}
+
+/// Layout messages (split views, tabs, groups)
+#[derive(Debug, Clone)]
+pub enum LayoutMsg {
+    /// Split the focused group in the given direction
+    /// Creates a new group with a copy of the current editor view
+    SplitFocused(SplitDirection),
+
+    /// Split a specific group in the given direction
+    SplitGroup {
+        group_id: GroupId,
+        direction: SplitDirection,
+    },
+
+    /// Close a group (and all its tabs)
+    /// If this is the last group, does nothing
+    CloseGroup(GroupId),
+
+    /// Close the focused group
+    CloseFocusedGroup,
+
+    /// Focus a specific group
+    FocusGroup(GroupId),
+
+    /// Focus the next group (cycle through groups)
+    FocusNextGroup,
+
+    /// Focus the previous group (cycle through groups)
+    FocusPrevGroup,
+
+    /// Focus group by index (1-indexed for keyboard shortcuts)
+    FocusGroupByIndex(usize),
+
+    /// Move a tab to a different group
+    MoveTab { tab_id: TabId, to_group: GroupId },
+
+    /// Close a specific tab
+    CloseTab(TabId),
+
+    /// Close the active tab in the focused group
+    CloseFocusedTab,
+
+    /// Switch to next tab in focused group
+    NextTab,
+
+    /// Switch to previous tab in focused group
+    PrevTab,
+
+    /// Switch to tab by index in focused group (0-indexed)
+    SwitchToTab(usize),
 }
 
 /// Application-level messages (file operations, window events)
@@ -177,6 +228,8 @@ pub enum Msg {
     Document(DocumentMsg),
     /// UI messages (status, animation)
     Ui(UiMsg),
+    /// Layout messages (splits, tabs, groups)
+    Layout(LayoutMsg),
     /// App messages (file I/O, window)
     App(AppMsg),
 }
