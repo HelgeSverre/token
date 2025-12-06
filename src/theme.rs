@@ -112,6 +112,8 @@ pub struct UiThemeData {
     pub editor: EditorThemeData,
     pub gutter: GutterThemeData,
     pub status_bar: StatusBarThemeData,
+    #[serde(default)]
+    pub overlay: OverlayThemeData,
 }
 
 /// Editor area colors
@@ -143,6 +145,23 @@ pub struct StatusBarThemeData {
     pub foreground: String,
 }
 
+/// Overlay colors (all optional for backward compatibility)
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct OverlayThemeData {
+    #[serde(default)]
+    pub border: Option<String>,
+    #[serde(default)]
+    pub background: Option<String>,
+    #[serde(default)]
+    pub foreground: Option<String>,
+    #[serde(default)]
+    pub highlight: Option<String>,
+    #[serde(default)]
+    pub warning: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
 /// Resolved theme with parsed colors
 #[derive(Debug, Clone)]
 pub struct Theme {
@@ -150,6 +169,7 @@ pub struct Theme {
     pub editor: EditorTheme,
     pub gutter: GutterTheme,
     pub status_bar: StatusBarTheme,
+    pub overlay: OverlayTheme,
 }
 
 /// Editor colors (resolved)
@@ -179,6 +199,37 @@ pub struct GutterTheme {
 pub struct StatusBarTheme {
     pub background: Color,
     pub foreground: Color,
+}
+
+/// Overlay colors (resolved)
+#[derive(Debug, Clone)]
+pub struct OverlayTheme {
+    /// Optional border color (None = no border)
+    pub border: Option<Color>,
+    /// Semi-transparent background color
+    pub background: Color,
+    /// Default text color
+    pub foreground: Color,
+    /// Success/good indicator color (green)
+    pub highlight: Color,
+    /// Caution/warning indicator color (yellow)
+    pub warning: Color,
+    /// Error/bad indicator color (red)
+    pub error: Color,
+}
+
+impl OverlayTheme {
+    /// Default overlay theme (dark)
+    pub fn default_dark() -> Self {
+        Self {
+            border: None,
+            background: Color::rgba(0x20, 0x20, 0x20, 0xE0),
+            foreground: Color::rgb(0xE0, 0xE0, 0xE0),
+            highlight: Color::rgb(0x80, 0xFF, 0x80),
+            warning: Color::rgb(0xFF, 0xFF, 0x80),
+            error: Color::rgb(0xFF, 0x80, 0x80),
+        }
+    }
 }
 
 impl Theme {
@@ -244,6 +295,58 @@ impl Theme {
                 background: Color::from_hex(&data.ui.status_bar.background)?,
                 foreground: Color::from_hex(&data.ui.status_bar.foreground)?,
             },
+            overlay: {
+                let defaults = OverlayTheme::default_dark();
+                OverlayTheme {
+                    border: data
+                        .ui
+                        .overlay
+                        .border
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?,
+                    background: data
+                        .ui
+                        .overlay
+                        .background
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.background),
+                    foreground: data
+                        .ui
+                        .overlay
+                        .foreground
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.foreground),
+                    highlight: data
+                        .ui
+                        .overlay
+                        .highlight
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.highlight),
+                    warning: data
+                        .ui
+                        .overlay
+                        .warning
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.warning),
+                    error: data
+                        .ui
+                        .overlay
+                        .error
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.error),
+                }
+            },
         })
     }
 
@@ -273,6 +376,7 @@ impl Theme {
                         background: Color::rgb(0x00, 0x7A, 0xCC),
                         foreground: Color::rgb(0xFF, 0xFF, 0xFF),
                     },
+                    overlay: OverlayTheme::default_dark(),
                 }
             }
         }
@@ -361,7 +465,11 @@ mod tests {
         for builtin in BUILTIN_THEMES {
             let theme = Theme::from_yaml(builtin.yaml)
                 .unwrap_or_else(|e| panic!("Failed to parse theme '{}': {}", builtin.id, e));
-            assert!(!theme.name.is_empty(), "Theme '{}' has empty name", builtin.id);
+            assert!(
+                !theme.name.is_empty(),
+                "Theme '{}' has empty name",
+                builtin.id
+            );
         }
     }
 }

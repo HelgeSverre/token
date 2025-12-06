@@ -21,3 +21,11 @@ ui:
   status_bar:
     background: "#007ACC"
     foreground: "#FFFFFF"
+
+  overlay:
+    border: "#43454A"
+    background: "#2B2D30"
+    foreground: "#E0E0E0"
+    highlight: "#80FF80"
+    warning: "#FFFF80"
+    error: "#FF8080"
