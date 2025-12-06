@@ -299,6 +299,80 @@ impl EditorArea {
         id
     }
 
+    /// Get all editor IDs that are viewing a specific document
+    pub fn editors_for_document(&self, doc_id: DocumentId) -> Vec<EditorId> {
+        self.editors
+            .iter()
+            .filter(|(_, editor)| editor.document_id == Some(doc_id))
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    /// Adjust cursors in all editors (except the specified one) viewing the same document
+    /// after an edit operation.
+    ///
+    /// - `exclude_editor`: The editor that performed the edit (already has correct cursors)
+    /// - `doc_id`: The document that was edited
+    /// - `edit_line`: The line where the edit occurred
+    /// - `edit_column`: The column where the edit occurred
+    /// - `lines_delta`: Change in line count (positive = lines added, negative = lines removed)
+    /// - `column_delta`: Change in column on the edit line (for same-line edits)
+    pub fn adjust_other_editors_cursors(
+        &mut self,
+        exclude_editor: EditorId,
+        doc_id: DocumentId,
+        edit_line: usize,
+        edit_column: usize,
+        lines_delta: isize,
+        column_delta: isize,
+    ) {
+        let editor_ids = self.editors_for_document(doc_id);
+
+        for editor_id in editor_ids {
+            if editor_id == exclude_editor {
+                continue;
+            }
+
+            if let Some(editor) = self.editors.get_mut(&editor_id) {
+                for (cursor, selection) in editor
+                    .cursors
+                    .iter_mut()
+                    .zip(editor.selections.iter_mut())
+                {
+                    // Adjust cursor
+                    adjust_position_for_edit(
+                        &mut cursor.line,
+                        &mut cursor.column,
+                        edit_line,
+                        edit_column,
+                        lines_delta,
+                        column_delta,
+                    );
+
+                    // Adjust selection anchor
+                    adjust_position_for_edit(
+                        &mut selection.anchor.line,
+                        &mut selection.anchor.column,
+                        edit_line,
+                        edit_column,
+                        lines_delta,
+                        column_delta,
+                    );
+
+                    // Adjust selection head
+                    adjust_position_for_edit(
+                        &mut selection.head.line,
+                        &mut selection.head.column,
+                        edit_line,
+                        edit_column,
+                        lines_delta,
+                        column_delta,
+                    );
+                }
+            }
+        }
+    }
+
     /// Sync all editor viewports based on their group's rect.
     /// Should be called after compute_layout() or after split/close operations.
     pub fn sync_all_viewports(&mut self, line_height: usize, char_width: f32) {
@@ -472,6 +546,57 @@ impl EditorArea {
 
 /// Width of splitter bars in pixels
 pub const SPLITTER_WIDTH: f32 = 6.0;
+
+/// Adjust a cursor/selection position based on an edit that occurred.
+///
+/// This is used to synchronize cursors across multiple views of the same document.
+/// When an edit happens at (edit_line, edit_column):
+/// - If the cursor is before the edit point: no change
+/// - If the cursor is on the same line, at or after the edit column: adjust column
+/// - If the cursor is on a later line: adjust line number
+fn adjust_position_for_edit(
+    pos_line: &mut usize,
+    pos_column: &mut usize,
+    edit_line: usize,
+    edit_column: usize,
+    lines_delta: isize,
+    column_delta: isize,
+) {
+    if *pos_line < edit_line {
+        // Position is before the edit line - no adjustment needed
+        return;
+    }
+
+    if *pos_line == edit_line {
+        // Same line as edit
+        if *pos_column >= edit_column {
+            // At or after edit column - adjust column
+            if column_delta >= 0 {
+                *pos_column = pos_column.saturating_add(column_delta as usize);
+            } else {
+                *pos_column = pos_column.saturating_sub((-column_delta) as usize);
+            }
+
+            // If lines were added/removed, we might need to adjust both
+            if lines_delta > 0 {
+                // Newline was inserted - cursor moves to new line
+                // Column becomes: pos_column - edit_column (position on new line)
+                *pos_line = pos_line.saturating_add(lines_delta as usize);
+                *pos_column = pos_column.saturating_sub(edit_column);
+            } else if lines_delta < 0 {
+                // Lines were joined - no line adjustment for same-line positions
+            }
+        }
+        // Before edit column on same line - no adjustment
+    } else {
+        // Position is on a line after the edit line
+        if lines_delta >= 0 {
+            *pos_line = pos_line.saturating_add(lines_delta as usize);
+        } else {
+            *pos_line = pos_line.saturating_sub((-lines_delta) as usize);
+        }
+    }
+}
 
 /// Represents a draggable splitter bar between editor groups
 #[derive(Debug, Clone, Copy)]
