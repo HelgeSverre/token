@@ -6,6 +6,34 @@ All notable changes to rust-editor are documented in this file.
 
 ## 2025-12-06 (Latest)
 
+### Added - Multi-Cursor Selection Gaps
+
+Fixed remaining selection operations to work with multiple cursors:
+
+- **`merge_overlapping_selections()`**: New method in `EditorState` that merges overlapping or touching selections into single selections, maintaining cursor/selection invariants
+- **`SelectWord`**: Now operates on ALL cursors, selecting word at each position, then merging overlaps
+- **`SelectLine`**: Now operates on ALL cursors, selecting line at each position, then merging overlaps
+- **`SelectAll`**: Properly collapses to single cursor + single full-document selection
+- **`ExtendSelectionToPosition`**: Collapses multi-cursor first, then extends from primary cursor
+- **`word_under_cursor_at(doc, idx)`**: New helper refactored from `word_under_cursor()` for per-cursor word detection
+
+#### Tests Added
+
+- 6 tests for `merge_overlapping_selections()` (non-overlapping, overlapping, touching, multiline, duplicates, invariants)
+- 4 tests for `SelectWord` (single cursor, whitespace, multi-cursor different words, same word merges)
+- 4 tests for `SelectLine` (single cursor, last line, multi-cursor different lines, same line merges)
+- 2 tests for `SelectAll` (single cursor, collapses multi-cursor)
+- 2 tests for `ExtendSelectionToPosition` (single cursor, collapses multi-cursor)
+
+### Changed
+
+- Test count: 401 (was 383)
+- Added 18 new selection tests
+
+---
+
+## 2025-12-06
+
 ### Added - Expand/Shrink Selection (Already Implemented)
 
 Progressive selection expansion with history stack:
@@ -15,7 +43,7 @@ Progressive selection expansion with history stack:
 - Selection history stack in `EditorState.selection_history`
 - 18 tests in `tests/expand_shrink_selection.rs`
 
-*(Feature was already implemented, roadmap updated to reflect completion)*
+_(Feature was already implemented, roadmap updated to reflect completion)_
 
 ### Added - Multi-Cursor Movement
 
@@ -32,7 +60,7 @@ All cursor movement operations now work with multiple cursors:
 #### Implementation Details
 
 - Per-cursor primitives in `EditorState`: `move_cursor_*_at(doc, idx)`
-- All-cursors wrappers: `move_all_cursors_*(doc)` 
+- All-cursors wrappers: `move_all_cursors_*(doc)`
 - Selection variants: `move_all_cursors_*_with_selection(doc)`
 - Removed legacy single-cursor movement functions from `update.rs`
 - 10 new multi-cursor movement tests in `tests/cursor_movement.rs`
@@ -51,6 +79,7 @@ All cursor movement operations now work with multiple cursors:
 Complete multi-pane editor with split views, tabs, and shared documents.
 
 #### Phase 1: Core Data Structures
+
 - `DocumentId`, `EditorId`, `GroupId`, `TabId` - typed identifiers
 - `Tab` struct with editor reference, pinned/preview flags
 - `EditorGroup` with tabs, active tab index, layout rect
@@ -59,6 +88,7 @@ Complete multi-pane editor with split views, tabs, and shared documents.
 - `EditorArea` managing documents, editors, groups, and layout tree
 
 #### Phase 2: Layout System
+
 - `Rect` type for layout calculations with `contains()` hit testing
 - `compute_layout()` recursive algorithm for layout tree
 - `group_at_point()` for mouse hit testing
@@ -67,12 +97,14 @@ Complete multi-pane editor with split views, tabs, and shared documents.
 - `SPLITTER_WIDTH` constant (4px)
 
 #### Phase 3: AppModel Migration
+
 - Replaced single `Document`/`EditorState` with `EditorArea`
 - Backward-compatible accessor methods: `document()`, `editor()`, etc.
 - `ensure_focused_cursor_visible()` helper avoiding document cloning
 - `resize()` now updates ALL editors (fixes multi-pane viewport bug)
 
 #### Phase 4: LayoutMsg Handlers
+
 - `SplitFocused(SplitDirection)` - split current group
 - `SplitGroup { group_id, direction }` - split specific group
 - `CloseGroup`, `CloseFocusedGroup` - close with layout cleanup
@@ -82,6 +114,7 @@ Complete multi-pane editor with split views, tabs, and shared documents.
 - `NextTab`, `PrevTab`, `SwitchToTab` - tab navigation
 
 #### Phase 5: Multi-Group Rendering
+
 - `render_all_groups_static()` iterates over layout
 - `render_editor_group_static()` renders single pane
 - Tab bar rendering with active/inactive styling
@@ -89,11 +122,13 @@ Complete multi-pane editor with split views, tabs, and shared documents.
 - Focus indicator (border) on focused group
 
 #### Phase 6: Document Synchronization
+
 - Documents shared across views (same `DocumentId`)
 - Independent cursor/viewport per `EditorState`
 - Edits reflect immediately in all views of same document
 
 #### Phase 7: Keyboard Shortcuts
+
 - Numpad 1-4: Focus group by index
 - Numpad -/+: Split horizontal/vertical
 - Cmd+W: Close tab

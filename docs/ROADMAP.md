@@ -7,23 +7,20 @@ For archived phases, see [archived/old-roadmap-file.md](archived/old-roadmap-fil
 
 ---
 
-## In Progress
+## Recently Completed
 
-### Multi-Cursor Selection Gaps 🚧
+### Multi-Cursor Selection Gaps ✅
 
-**Design:** [feature/MULTI_CURSOR_SELECTION_GAPS.md](feature/MULTI_CURSOR_SELECTION_GAPS.md) | **Started:** 2025-12-06
+**Design:** [feature/MULTI_CURSOR_SELECTION_GAPS.md](feature/MULTI_CURSOR_SELECTION_GAPS.md) | **Completed:** 2025-12-06
 
-Fix remaining selection operations to work with multiple cursors:
+Fixed remaining selection operations to work with multiple cursors:
 
 - `merge_overlapping_selections()` - merge overlapping/touching selections
-- `SelectWord` - select word at each cursor (currently single-cursor only)
-- `SelectLine` - select line at each cursor (currently single-cursor only)
-- `SelectAll` - properly collapse to single full-document selection
-- `ExtendSelectionToPosition` - collapse multi-cursor first, then extend
-
----
-
-## Recently Completed
+- `SelectWord` - select word at each cursor with automatic merge
+- `SelectLine` - select line at each cursor with automatic merge
+- `SelectAll` - properly collapses to single full-document selection
+- `ExtendSelectionToPosition` - collapses multi-cursor first, then extends
+- 18 new tests, total now 401
 
 ### Expand/Shrink Selection ✅
 
@@ -97,18 +94,18 @@ Group rapid consecutive edits into single undo entries:
 
 ## Feature Design Documents
 
-| Feature | Status | Design Doc |
-|---------|--------|------------|
-| Multi-Cursor Selection Gaps | 🚧 In Progress | [feature/MULTI_CURSOR_SELECTION_GAPS.md](feature/MULTI_CURSOR_SELECTION_GAPS.md) |
-| Theming System | ✅ Complete | [feature/THEMING.md](feature/THEMING.md) |
-| Status Bar | ✅ Complete | [feature/STATUS_BAR.md](feature/STATUS_BAR.md) |
-| Split View | ✅ Complete | [feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md) |
-| Selection & Multi-Cursor | ✅ Complete | [archived/SELECTION_MULTICURSOR.md](archived/SELECTION_MULTICURSOR.md) |
-| Multi-Cursor Movement | ✅ Complete | [archived/MULTI_CURSOR_MOVEMENT.md](archived/MULTI_CURSOR_MOVEMENT.md) |
-| Expand/Shrink Selection | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md) |
-| File Dropping | Planned | [feature/handle-file-dropping.md](feature/handle-file-dropping.md) |
-| Workspace Management | Planned | [feature/workspace-management.md](feature/workspace-management.md) |
-| Codebase Organization | Planned | [ORGANIZATION-CODEBASE.md](ORGANIZATION-CODEBASE.md) |
+| Feature                     | Status      | Design Doc                                                                           |
+| --------------------------- | ----------- | ------------------------------------------------------------------------------------ |
+| Multi-Cursor Selection Gaps | ✅ Complete | [feature/MULTI_CURSOR_SELECTION_GAPS.md](feature/MULTI_CURSOR_SELECTION_GAPS.md)     |
+| Theming System              | ✅ Complete | [feature/THEMING.md](feature/THEMING.md)                                             |
+| Status Bar                  | ✅ Complete | [feature/STATUS_BAR.md](feature/STATUS_BAR.md)                                       |
+| Split View                  | ✅ Complete | [feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md)                                       |
+| Selection & Multi-Cursor    | ✅ Complete | [archived/SELECTION_MULTICURSOR.md](archived/SELECTION_MULTICURSOR.md)               |
+| Multi-Cursor Movement       | ✅ Complete | [archived/MULTI_CURSOR_MOVEMENT.md](archived/MULTI_CURSOR_MOVEMENT.md)               |
+| Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md) |
+| File Dropping               | Planned     | [feature/handle-file-dropping.md](feature/handle-file-dropping.md)                   |
+| Workspace Management        | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                   |
+| Codebase Organization       | Planned     | [ORGANIZATION-CODEBASE.md](ORGANIZATION-CODEBASE.md)                                 |
 
 ---
 
@@ -150,7 +147,7 @@ tests/                   # Integration tests (~5800 lines total)
 ├── common/mod.rs        # Shared test helpers (test_model, etc.)
 ├── cursor_movement.rs   # 38 tests
 ├── text_editing.rs      # 44 tests (includes multi-cursor undo)
-├── selection.rs         # 29 tests
+├── selection.rs         # 47 tests
 ├── document_cursor.rs   # 32 tests
 ├── scrolling.rs         # 33 tests
 ├── edge_cases.rs        # 9 tests
@@ -159,4 +156,4 @@ tests/                   # Integration tests (~5800 lines total)
 └── status_bar.rs        # 47 tests
 ```
 
-**Test count:** 383 total (24 lib + 14 main + 345 integration)
+**Test count:** 401 total (24 lib + 14 main + 363 integration)
