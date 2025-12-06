@@ -472,6 +472,59 @@ impl EditorState {
         }
     }
 
+    /// Merge overlapping or touching selections into single selections.
+    ///
+    /// After operations like SelectWord or SelectLine with multiple cursors,
+    /// some selections may overlap. This method merges them and removes
+    /// the corresponding duplicate cursors.
+    ///
+    /// Invariants maintained:
+    /// - `cursors.len() == selections.len()`
+    /// - `cursors[i].to_position() == selections[i].head`
+    /// - All selections are canonical (forward: anchor <= head)
+    pub fn merge_overlapping_selections(&mut self) {
+        if self.selections.len() <= 1 {
+            return;
+        }
+
+        // 1) Collect (start, end, original_index) for all selections
+        let mut indexed: Vec<(Position, Position, usize)> = self
+            .selections
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.start(), s.end(), i))
+            .collect();
+
+        // 2) Sort by start position, then by end position
+        indexed.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+
+        // 3) Sweep through and merge overlapping/touching selections
+        let mut merged: Vec<(Position, Position)> = Vec::new();
+        for (start, end, _) in indexed {
+            if let Some((_, last_end)) = merged.last_mut() {
+                // Overlapping or touching: next.start <= current.end
+                if start <= *last_end {
+                    // Extend the current merged range if this one goes further
+                    if end > *last_end {
+                        *last_end = end;
+                    }
+                    continue;
+                }
+            }
+            merged.push((start, end));
+        }
+
+        // 4) Rebuild cursors and selections from merged ranges
+        // Create canonical forward selections with cursor at end
+        self.cursors.clear();
+        self.selections.clear();
+
+        for (start, end) in merged {
+            self.cursors.push(Cursor::from_position(end));
+            self.selections.push(Selection::from_positions(start, end));
+        }
+    }
+
     /// Update viewport dimensions (e.g., on window resize)
     pub fn resize_viewport(&mut self, visible_lines: usize, visible_columns: usize) {
         self.viewport.visible_lines = visible_lines;
@@ -591,7 +644,17 @@ impl EditorState {
     /// Get word under primary cursor (using char_type for boundaries)
     /// Returns (word, start_position, end_position) or None if cursor not on a word
     pub fn word_under_cursor(&self, document: &Document) -> Option<(String, Position, Position)> {
-        let cursor = self.cursor();
+        self.word_under_cursor_at(document, 0)
+    }
+
+    /// Get word under cursor at specified index (using char_type for boundaries)
+    /// Returns (word, start_position, end_position) or None if cursor not on a word
+    pub fn word_under_cursor_at(
+        &self,
+        document: &Document,
+        idx: usize,
+    ) -> Option<(String, Position, Position)> {
+        let cursor = &self.cursors[idx];
         let line_content = document.get_line(cursor.line)?;
 
         if line_content.is_empty() {
