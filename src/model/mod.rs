@@ -11,7 +11,10 @@ pub use document::{Document, EditOperation};
 pub use editor::{
     Cursor, EditorState, Position, RectangleSelectionState, ScrollRevealMode, Selection, Viewport,
 };
-pub use status_bar::{sync_status_bar, RenderedSegment, SegmentContent, SegmentId, SegmentPosition, StatusBar, StatusBarLayout, StatusSegment, TransientMessage};
+pub use status_bar::{
+    sync_status_bar, RenderedSegment, SegmentContent, SegmentId, SegmentPosition, StatusBar,
+    StatusBarLayout, StatusSegment, TransientMessage,
+};
 pub use ui::UiState;
 
 use crate::theme::Theme;
@@ -116,8 +119,7 @@ impl AppModel {
 
         // Recalculate visible columns with new char width
         let text_x = text_start_x(char_width).round();
-        let visible_columns =
-            ((self.window_size.0 as f32 - text_x) / char_width).floor() as usize;
+        let visible_columns = ((self.window_size.0 as f32 - text_x) / char_width).floor() as usize;
 
         self.editor.viewport.visible_columns = visible_columns;
     }

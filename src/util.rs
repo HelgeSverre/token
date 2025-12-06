@@ -34,7 +34,6 @@ pub fn is_punctuation(ch: char) -> bool {
             | '`'
             | '\\'
             | '?'
-            | '_'
     )
 }
 

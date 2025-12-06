@@ -318,7 +318,10 @@ impl EditorState {
     /// Returns true if a cursor was added, false if removed
     pub fn toggle_cursor_at(&mut self, line: usize, column: usize) -> bool {
         // Check if there's already a cursor at this position
-        let existing_idx = self.cursors.iter().position(|c| c.line == line && c.column == column);
+        let existing_idx = self
+            .cursors
+            .iter()
+            .position(|c| c.line == line && c.column == column);
 
         if let Some(idx) = existing_idx {
             // Cursor exists - remove it if not the only one
@@ -346,7 +349,10 @@ impl EditorState {
     /// Add a cursor at the given position (without toggle behavior)
     pub fn add_cursor_at(&mut self, line: usize, column: usize) {
         // Check if cursor already exists
-        let exists = self.cursors.iter().any(|c| c.line == line && c.column == column);
+        let exists = self
+            .cursors
+            .iter()
+            .any(|c| c.line == line && c.column == column);
         if exists {
             return;
         }
@@ -362,13 +368,14 @@ impl EditorState {
     /// Sort cursors by position (line, then column)
     fn sort_cursors(&mut self) {
         // Create pairs of (cursor, selection), sort by cursor position, then unzip
-        let mut pairs: Vec<_> = self.cursors.iter().cloned()
+        let mut pairs: Vec<_> = self
+            .cursors
+            .iter()
+            .cloned()
             .zip(self.selections.iter().cloned())
             .collect();
 
-        pairs.sort_by(|(a, _), (b, _)| {
-            a.line.cmp(&b.line).then_with(|| a.column.cmp(&b.column))
-        });
+        pairs.sort_by(|(a, _), (b, _)| a.line.cmp(&b.line).then_with(|| a.column.cmp(&b.column)));
 
         self.cursors = pairs.iter().map(|(c, _)| c.clone()).collect();
         self.selections = pairs.iter().map(|(_, s)| s.clone()).collect();
@@ -389,8 +396,14 @@ impl EditorState {
 
         // Only rebuild if we removed duplicates
         if keep_indices.len() < self.cursors.len() {
-            self.cursors = keep_indices.iter().map(|&i| self.cursors[i].clone()).collect();
-            self.selections = keep_indices.iter().map(|&i| self.selections[i].clone()).collect();
+            self.cursors = keep_indices
+                .iter()
+                .map(|&i| self.cursors[i].clone())
+                .collect();
+            self.selections = keep_indices
+                .iter()
+                .map(|&i| self.selections[i].clone())
+                .collect();
         }
     }
 
@@ -411,22 +424,23 @@ impl EditorState {
     /// - `TopAligned`: place cursor at top of safe zone (good for upward movement)
     /// - `BottomAligned`: place cursor at bottom of safe zone (good for downward movement)
     /// - `Centered`: place cursor in center of viewport (good for jumps/search)
-    pub fn ensure_cursor_visible_with_mode(
-        &mut self,
-        document: &Document,
-        mode: ScrollRevealMode,
-    ) {
+    pub fn ensure_cursor_visible_with_mode(&mut self, document: &Document, mode: ScrollRevealMode) {
         let cursor = &self.cursors[0];
         let padding = self.scroll_padding;
         let total_lines = document.line_count();
 
         // Vertical scrolling
-        if total_lines > self.viewport.visible_lines {
+        if total_lines > self.viewport.visible_lines && self.viewport.visible_lines > 0 {
             let max_top = total_lines.saturating_sub(self.viewport.visible_lines);
 
-            // Current safe-zone boundaries
+            // Current safe-zone boundaries (use saturating_sub to avoid overflow)
             let safe_top = self.viewport.top_line + padding;
-            let safe_bottom = self.viewport.top_line + self.viewport.visible_lines - padding - 1;
+            let safe_bottom = self.viewport.top_line
+                + self
+                    .viewport
+                    .visible_lines
+                    .saturating_sub(padding)
+                    .saturating_sub(1);
 
             let line = cursor.line;
             let off_above = line < safe_top;
@@ -465,17 +479,23 @@ impl EditorState {
 
         // Horizontal scrolling (always check, independent of vertical)
         const HORIZONTAL_MARGIN: usize = 4;
-        let left_safe = self.viewport.left_column + HORIZONTAL_MARGIN;
-        let right_safe =
-            self.viewport.left_column + self.viewport.visible_columns - HORIZONTAL_MARGIN;
+        let left_safe = self.viewport.left_column.saturating_add(HORIZONTAL_MARGIN);
+        let right_safe = self
+            .viewport
+            .left_column
+            .saturating_add(self.viewport.visible_columns)
+            .saturating_sub(HORIZONTAL_MARGIN);
 
         if cursor.column < left_safe {
             // Scroll left: put cursor exactly at left safe boundary
             self.viewport.left_column = cursor.column.saturating_sub(HORIZONTAL_MARGIN);
         } else if cursor.column >= right_safe {
             // Scroll right: put cursor exactly at right safe boundary
-            self.viewport.left_column =
-                cursor.column + HORIZONTAL_MARGIN + 1 - self.viewport.visible_columns;
+            self.viewport.left_column = cursor
+                .column
+                .saturating_add(HORIZONTAL_MARGIN)
+                .saturating_add(1)
+                .saturating_sub(self.viewport.visible_columns);
         }
     }
 

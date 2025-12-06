@@ -87,9 +87,9 @@ impl StatusSegment {
             SegmentId::FileName | SegmentId::ModifiedIndicator | SegmentId::StatusMessage => {
                 SegmentPosition::Left
             }
-            SegmentId::Selection
-            | SegmentId::CursorPosition
-            | SegmentId::LineCount => SegmentPosition::Right,
+            SegmentId::Selection | SegmentId::CursorPosition | SegmentId::LineCount => {
+                SegmentPosition::Right
+            }
         };
 
         Self {
@@ -131,8 +131,11 @@ impl StatusBar {
         Self {
             segments: vec![
                 // Left segments
-                StatusSegment::new(SegmentId::FileName, SegmentContent::Text("[No Name]".into()))
-                    .with_priority(100),
+                StatusSegment::new(
+                    SegmentId::FileName,
+                    SegmentContent::Text("[No Name]".into()),
+                )
+                .with_priority(100),
                 StatusSegment::new(SegmentId::ModifiedIndicator, SegmentContent::Empty)
                     .with_priority(90),
                 StatusSegment::new(SegmentId::StatusMessage, SegmentContent::Empty)
@@ -177,7 +180,10 @@ impl StatusBar {
     }
 
     /// Iterate over segments at a specific position
-    pub fn segments_by_position(&self, position: SegmentPosition) -> impl Iterator<Item = &StatusSegment> {
+    pub fn segments_by_position(
+        &self,
+        position: SegmentPosition,
+    ) -> impl Iterator<Item = &StatusSegment> {
         self.segments.iter().filter(move |s| s.position == position)
     }
 
@@ -265,7 +271,11 @@ impl StatusBar {
         let mut left_x = self.padding;
         let mut prev_segment_end: Option<usize> = None;
 
-        for seg in self.segments.iter().filter(|s| s.position == SegmentPosition::Left) {
+        for seg in self
+            .segments
+            .iter()
+            .filter(|s| s.position == SegmentPosition::Left)
+        {
             if seg.content.is_empty() {
                 continue;
             }
@@ -307,9 +317,9 @@ impl StatusBar {
             // Add separator if not first (rightmost) segment
             if let Some(prev_start) = prev_segment_start {
                 // Record separator position (center of spacing)
-                let sep_center = prev_start - self.separator_spacing / 2;
+                let sep_center = prev_start.saturating_sub(self.separator_spacing / 2);
                 separator_positions.push(sep_center);
-                right_x = prev_start - self.separator_spacing;
+                right_x = prev_start.saturating_sub(self.separator_spacing);
             }
 
             right_x = right_x.saturating_sub(width);
