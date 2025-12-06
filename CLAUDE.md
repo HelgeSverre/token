@@ -99,12 +99,14 @@ Font: JetBrains Mono embedded in `assets/JetBrainsMono.ttf`
 
 ### Editing
 
-| Action    | Mac                 |
-| --------- | ------------------- |
-| Undo/Redo | Cmd+Z / Cmd+Shift+Z |
-| Copy      | Cmd+C               |
-| Cut       | Cmd+X               |
-| Paste     | Cmd+V               |
+| Action      | Mac                 |
+| ----------- | ------------------- |
+| Undo/Redo   | Cmd+Z / Cmd+Shift+Z |
+| Copy        | Cmd+C               |
+| Cut         | Cmd+X               |
+| Paste       | Cmd+V               |
+| Duplicate   | Cmd+D               |
+| Delete line | Cmd+Backspace       |
 
 ### Debug
 
