@@ -387,56 +387,46 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
         // === Selection Commands ===
         EditorMsg::SelectAll => {
             use crate::model::editor::Position;
+            use crate::model::Cursor;
 
-            model.editor_mut().selection_mut().anchor = Position::new(0, 0);
-            model.editor_mut().cursor_mut().line = model.document().line_count().saturating_sub(1);
-            model.editor_mut().cursor_mut().column = model.current_line_length();
-            model.editor_mut().selection_mut().head = model.editor().cursor().to_position();
+            let last_line = model.document().line_count().saturating_sub(1);
+            let last_col = model.document().line_length(last_line);
+            let start = Position::new(0, 0);
+            let end = Position::new(last_line, last_col);
+
+            // Collapse to single cursor + single full-document selection
+            let editor = model.editor_mut();
+            editor.cursors.clear();
+            editor.selections.clear();
+            editor.cursors.push(Cursor::from_position(end));
+            editor
+                .selections
+                .push(Selection::from_positions(start, end));
+
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
         EditorMsg::SelectWord => {
-            use crate::model::editor::Position;
+            let doc = model.document().clone();
+            {
+                let editor = model.editor_mut();
 
-            let line = model.editor().cursor().line;
-            let column = model.editor().cursor().column;
-
-            // Get the current line text
-            if let Some(line_text) = model.document().get_line(line) {
-                let chars: Vec<char> = line_text.chars().collect();
-
-                if column >= chars.len() || chars.is_empty() {
-                    return Some(Cmd::Redraw);
+                for i in 0..editor.cursors.len() {
+                    if let Some((_word, start, end)) = editor.word_under_cursor_at(&doc, i) {
+                        editor.selections[i].anchor = start;
+                        editor.selections[i].head = end;
+                        editor.cursors[i].line = end.line;
+                        editor.cursors[i].column = end.column;
+                        editor.cursors[i].desired_column = None;
+                    }
+                    // If no word under cursor (whitespace), leave selection unchanged
                 }
 
-                let current_char = chars[column];
-                let current_type = char_type(current_char);
-
-                // Find word start - scan backwards
-                let mut start_col = column;
-                while start_col > 0 && char_type(chars[start_col - 1]) == current_type {
-                    start_col -= 1;
-                }
-
-                // Find word end - scan forwards
-                let mut end_col = column;
-                while end_col < chars.len() && char_type(chars[end_col]) == current_type {
-                    end_col += 1;
-                }
-
-                // Don't include trailing newline
-                if end_col > 0 && chars.get(end_col - 1) == Some(&'\n') {
-                    end_col -= 1;
-                }
-
-                // Set selection from start to end
-                model.editor_mut().selection_mut().anchor = Position::new(line, start_col);
-                model.editor_mut().selection_mut().head = Position::new(line, end_col);
-                model.editor_mut().cursor_mut().column = end_col;
-                model.editor_mut().cursor_mut().desired_column = None;
+                editor.merge_overlapping_selections();
             }
 
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -444,25 +434,35 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
         EditorMsg::SelectLine => {
             use crate::model::editor::Position;
 
-            let line = model.editor().cursor().line;
-            let line_len = model.document().line_length(line);
             let total_lines = model.document().line_count();
+            let doc = model.document().clone();
+            {
+                let editor = model.editor_mut();
 
-            // Select from start of current line to start of next line (or end of document)
-            model.editor_mut().selection_mut().anchor = Position::new(line, 0);
+                for i in 0..editor.cursors.len() {
+                    let line = editor.cursors[i].line;
+                    let line_len = doc.line_length(line);
 
-            if line + 1 < total_lines {
-                // Select to start of next line (includes the newline)
-                model.editor_mut().selection_mut().head = Position::new(line + 1, 0);
-                model.editor_mut().cursor_mut().line = line + 1;
-                model.editor_mut().cursor_mut().column = 0;
-            } else {
-                // Last line - select to end of line
-                model.editor_mut().selection_mut().head = Position::new(line, line_len);
-                model.editor_mut().cursor_mut().column = line_len;
+                    let start = Position::new(line, 0);
+                    let end = if line + 1 < total_lines {
+                        // Include newline by selecting to start of next line
+                        Position::new(line + 1, 0)
+                    } else {
+                        // Last line - select to end of line
+                        Position::new(line, line_len)
+                    };
+
+                    editor.selections[i].anchor = start;
+                    editor.selections[i].head = end;
+                    editor.cursors[i].line = end.line;
+                    editor.cursors[i].column = end.column;
+                    editor.cursors[i].desired_column = None;
+                }
+
+                editor.merge_overlapping_selections();
             }
-            model.editor_mut().cursor_mut().desired_column = None;
 
+            model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -470,19 +470,30 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
         EditorMsg::ExtendSelectionToPosition { line, column } => {
             use crate::model::editor::Position;
 
-            // If selection is empty, anchor at current cursor
-            if model.editor().selection().is_empty() {
-                let pos = model.editor().cursor().to_position();
-                model.editor_mut().selection_mut().anchor = pos;
+            let new_pos = Position::new(line, column);
+            {
+                let editor = model.editor_mut();
+
+                // If multiple cursors, collapse to primary first
+                if editor.cursors.len() > 1 {
+                    editor.cursors.truncate(1);
+                    editor.selections.truncate(1);
+                }
+
+                // Single selection semantics
+                let sel = &mut editor.selections[0];
+                let cur = &mut editor.cursors[0];
+
+                if sel.is_empty() {
+                    sel.anchor = cur.to_position();
+                }
+                sel.head = new_pos;
+
+                cur.line = new_pos.line;
+                cur.column = new_pos.column;
+                cur.desired_column = None;
             }
 
-            // Move cursor to target position
-            model.editor_mut().cursor_mut().line = line;
-            model.editor_mut().cursor_mut().column = column;
-            model.editor_mut().cursor_mut().desired_column = None;
-
-            // Update head
-            model.editor_mut().selection_mut().head = Position::new(line, column);
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
@@ -1663,27 +1674,18 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     model.editor_mut().cursor_mut().line = 0;
                     model.editor_mut().cursor_mut().column = 0;
                 } else if was_last_line {
-                    // Deleted last line: cursor goes to end of previous line
+                    // Deleted last line: cursor goes to previous line, retain column (clamped)
                     model.editor_mut().cursor_mut().line = line_idx.saturating_sub(1);
                     let line_len = model.document().line_length(model.editor().cursor().line);
-                    model.editor_mut().cursor_mut().column = line_len;
+                    model.editor_mut().cursor_mut().column =
+                        model.editor().cursor().column.min(line_len);
                 } else {
-                    // Deleted non-last line: cursor stays at same line index, clamped to valid range
+                    // Deleted non-last line: stay at same line index, clamp column
                     let new_line = line_idx.min(new_line_count.saturating_sub(1));
                     let new_line_len = model.document().line_length(new_line);
-
-                    // If the new line is empty (e.g., trailing empty line after \n),
-                    // move cursor to end of previous line instead
-                    if new_line_len == 0 && new_line > 0 {
-                        model.editor_mut().cursor_mut().line = new_line.saturating_sub(1);
-                        let prev_line_len =
-                            model.document().line_length(model.editor().cursor().line);
-                        model.editor_mut().cursor_mut().column = prev_line_len;
-                    } else {
-                        model.editor_mut().cursor_mut().line = new_line;
-                        model.editor_mut().cursor_mut().column =
-                            model.editor().cursor().column.min(new_line_len);
-                    }
+                    model.editor_mut().cursor_mut().line = new_line;
+                    model.editor_mut().cursor_mut().column =
+                        model.editor().cursor().column.min(new_line_len);
                 }
 
                 let cursor_after = *model.editor().cursor();
@@ -1695,6 +1697,11 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 });
 
                 model.document_mut().is_modified = true;
+
+                // Scroll viewport up by 1 to keep cursor at same screen position
+                if model.editor().viewport.top_line > 0 {
+                    model.editor_mut().viewport.top_line -= 1;
+                }
             }
 
             model.ensure_cursor_visible();

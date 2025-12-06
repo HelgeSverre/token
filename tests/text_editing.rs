@@ -465,10 +465,10 @@ fn test_delete_line_last_line_with_newline() {
 
     update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
 
-    // Should delete "world\n" and move cursor to end of previous line
+    // Should delete "world\n", cursor stays at line 1 (now empty trailing line)
     assert_eq!(buffer_to_string(&model), "hello\n");
-    assert_eq!(model.editor().cursor().line, 0);
-    assert_eq!(model.editor().cursor().column, 5);
+    assert_eq!(model.editor().cursor().line, 1);
+    assert_eq!(model.editor().cursor().column, 0);
 }
 
 #[test]
@@ -477,10 +477,10 @@ fn test_delete_line_last_line_no_newline() {
 
     update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
 
-    // Should delete "\nworld" (the newline before and the content)
+    // Should delete "\nworld", cursor retains column (clamped to prev line length)
     assert_eq!(buffer_to_string(&model), "hello");
     assert_eq!(model.editor().cursor().line, 0);
-    assert_eq!(model.editor().cursor().column, 5);
+    assert_eq!(model.editor().cursor().column, 2); // retained from original position
 }
 
 #[test]
@@ -528,11 +528,11 @@ fn test_delete_line_cursor_column_clamped() {
 
     update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
 
-    // "longerline\n" deleted, now on "short" line
+    // "longerline\n" deleted, cursor stays at line 1 (now empty trailing line)
     assert_eq!(buffer_to_string(&model), "short\n");
-    assert_eq!(model.editor().cursor().line, 0);
-    // Column should be clamped to line length (5)
-    assert_eq!(model.editor().cursor().column, 5);
+    assert_eq!(model.editor().cursor().line, 1);
+    // Column clamped to 0 (empty line)
+    assert_eq!(model.editor().cursor().column, 0);
 }
 
 // ========================================================================
