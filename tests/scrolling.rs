@@ -14,7 +14,7 @@ use token::update::update;
 fn test_scroll_no_scroll_when_content_fits() {
     // Document with fewer lines than viewport
     let mut model = test_model("line1\nline2\nline3\n", 0, 0);
-    model.editor.viewport.visible_lines = 25;
+    model.editor_mut().viewport.visible_lines = 25;
 
     // Move down multiple times - should not scroll
     for _ in 0..3 {
@@ -24,8 +24,8 @@ fn test_scroll_no_scroll_when_content_fits() {
         );
     }
 
-    assert_eq!(model.editor.viewport.top_line, 0);
-    assert_eq!(model.editor.cursor().line, 3);
+    assert_eq!(model.editor().viewport.top_line, 0);
+    assert_eq!(model.editor().cursor().line, 3);
 }
 
 #[test]
@@ -37,12 +37,12 @@ fn test_scroll_down_boundary_crossing() {
         .join("\n")
         + "\n";
     let mut model = test_model(&text, 0, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.scroll_padding = 1;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().scroll_padding = 1;
 
     // Initially at top
-    assert_eq!(model.editor.viewport.top_line, 0);
-    assert_eq!(model.editor.cursor().line, 0);
+    assert_eq!(model.editor().viewport.top_line, 0);
+    assert_eq!(model.editor().cursor().line, 0);
 
     // Move to line 8 (bottom_boundary = top_line + visible_lines - padding - 1 = 0 + 10 - 1 - 1 = 8)
     for _ in 0..8 {
@@ -53,8 +53,8 @@ fn test_scroll_down_boundary_crossing() {
     }
 
     // Should not have scrolled yet (cursor at boundary)
-    assert_eq!(model.editor.viewport.top_line, 0);
-    assert_eq!(model.editor.cursor().line, 8);
+    assert_eq!(model.editor().viewport.top_line, 0);
+    assert_eq!(model.editor().cursor().line, 8);
 
     // Move one more line down - should trigger scroll
     update(
@@ -66,8 +66,8 @@ fn test_scroll_down_boundary_crossing() {
     // cursor is now at line 9, bottom_boundary was 8, so we need to scroll
     // desired_top = cursor.line + padding + 1 = 9 + 1 + 1 = 11
     // viewport.top_line = (11 - visible_lines) = (11 - 10) = 1
-    assert_eq!(model.editor.cursor().line, 9);
-    assert_eq!(model.editor.viewport.top_line, 1);
+    assert_eq!(model.editor().cursor().line, 9);
+    assert_eq!(model.editor().viewport.top_line, 1);
 }
 
 #[test]
@@ -79,9 +79,9 @@ fn test_scroll_up_boundary_crossing() {
         .join("\n")
         + "\n";
     let mut model = test_model(&text, 15, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 10; // Start scrolled down
-    model.editor.scroll_padding = 1;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 10; // Start scrolled down
+    model.editor_mut().scroll_padding = 1;
 
     // cursor at line 15, top_line at 10
     // top_boundary = top_line + padding = 10 + 1 = 11
@@ -95,8 +95,8 @@ fn test_scroll_up_boundary_crossing() {
     }
 
     // Should not have scrolled yet (cursor at boundary)
-    assert_eq!(model.editor.viewport.top_line, 10);
-    assert_eq!(model.editor.cursor().line, 11);
+    assert_eq!(model.editor().viewport.top_line, 10);
+    assert_eq!(model.editor().cursor().line, 11);
 
     // Move one more line up - should trigger scroll
     update(
@@ -107,8 +107,8 @@ fn test_scroll_up_boundary_crossing() {
     // Viewport should scroll to maintain padding
     // cursor is now at line 10, should scroll up
     // viewport.top_line = cursor.line - padding = 10 - 1 = 9
-    assert_eq!(model.editor.cursor().line, 10);
-    assert_eq!(model.editor.viewport.top_line, 9);
+    assert_eq!(model.editor().cursor().line, 10);
+    assert_eq!(model.editor().viewport.top_line, 9);
 }
 
 #[test]
@@ -120,19 +120,19 @@ fn test_scroll_mouse_wheel_independent() {
         .join("\n")
         + "\n";
     let mut model = test_model(&text, 5, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 0;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 0;
 
     // Cursor at line 5, viewport at top
-    assert_eq!(model.editor.cursor().line, 5);
-    assert_eq!(model.editor.viewport.top_line, 0);
+    assert_eq!(model.editor().cursor().line, 5);
+    assert_eq!(model.editor().viewport.top_line, 0);
 
     // Scroll down 10 lines with mouse wheel
     update(&mut model, Msg::Editor(EditorMsg::Scroll(10)));
 
     // Viewport should move but cursor stays at line 5
-    assert_eq!(model.editor.cursor().line, 5);
-    assert_eq!(model.editor.viewport.top_line, 10);
+    assert_eq!(model.editor().cursor().line, 5);
+    assert_eq!(model.editor().viewport.top_line, 10);
 }
 
 #[test]
@@ -144,13 +144,13 @@ fn test_scroll_snap_back_on_insert() {
         .join("\n")
         + "\n";
     let mut model = test_model(&text, 5, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 0;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 0;
 
     // Scroll viewport away from cursor using mouse wheel
     update(&mut model, Msg::Editor(EditorMsg::Scroll(20)));
-    assert_eq!(model.editor.viewport.top_line, 20);
-    assert_eq!(model.editor.cursor().line, 5); // Cursor off-screen
+    assert_eq!(model.editor().viewport.top_line, 20);
+    assert_eq!(model.editor().cursor().line, 5); // Cursor off-screen
 
     // Insert a character - should snap back
     update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
@@ -158,11 +158,11 @@ fn test_scroll_snap_back_on_insert() {
     // Viewport should snap to show cursor with padding
     // cursor at line 5, padding = 1
     // Should scroll to show cursor in visible range with padding
-    assert_eq!(model.editor.cursor().line, 5);
-    assert!(model.editor.viewport.top_line <= 5 - model.editor.scroll_padding);
+    assert_eq!(model.editor().cursor().line, 5);
+    assert!(model.editor().viewport.top_line <= 5 - model.editor().scroll_padding);
     assert!(
-        model.editor.viewport.top_line + model.editor.viewport.visible_lines
-            > 5 + model.editor.scroll_padding
+        model.editor().viewport.top_line + model.editor().viewport.visible_lines
+            > 5 + model.editor().scroll_padding
     );
 }
 
@@ -175,22 +175,22 @@ fn test_scroll_snap_back_on_newline() {
         .join("\n")
         + "\n";
     let mut model = test_model(&text, 5, 4);
-    model.editor.viewport.visible_lines = 10;
+    model.editor_mut().viewport.visible_lines = 10;
 
     // Scroll viewport away
     update(&mut model, Msg::Editor(EditorMsg::Scroll(20)));
-    assert_eq!(model.editor.viewport.top_line, 20);
+    assert_eq!(model.editor().viewport.top_line, 20);
 
     // Insert newline - should snap back
     update(&mut model, Msg::Document(DocumentMsg::InsertNewline));
 
     // Cursor should be at line 6 now
-    assert_eq!(model.editor.cursor().line, 6);
+    assert_eq!(model.editor().cursor().line, 6);
     // Viewport should show cursor with padding
-    assert!(model.editor.viewport.top_line <= 6 - model.editor.scroll_padding);
+    assert!(model.editor().viewport.top_line <= 6 - model.editor().scroll_padding);
     assert!(
-        model.editor.viewport.top_line + model.editor.viewport.visible_lines
-            > 6 + model.editor.scroll_padding
+        model.editor().viewport.top_line + model.editor().viewport.visible_lines
+            > 6 + model.editor().scroll_padding
     );
 }
 
@@ -205,8 +205,8 @@ fn test_scroll_padding_configurable() {
 
     // Test with padding = 3
     let mut model = test_model(&text, 0, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.scroll_padding = 3;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().scroll_padding = 3;
 
     // bottom_boundary = 0 + 10 - 3 - 1 = 6
     // Move to line 6
@@ -216,15 +216,15 @@ fn test_scroll_padding_configurable() {
             Msg::Editor(EditorMsg::MoveCursor(Direction::Down)),
         );
     }
-    assert_eq!(model.editor.viewport.top_line, 0);
+    assert_eq!(model.editor().viewport.top_line, 0);
 
     // Move one more - should scroll
     update(
         &mut model,
         Msg::Editor(EditorMsg::MoveCursor(Direction::Down)),
     );
-    assert_eq!(model.editor.cursor().line, 7);
-    assert!(model.editor.viewport.top_line > 0);
+    assert_eq!(model.editor().cursor().line, 7);
+    assert!(model.editor().viewport.top_line > 0);
 }
 
 #[test]
@@ -236,28 +236,28 @@ fn test_scroll_at_document_boundaries() {
         .join("\n")
         + "\n";
     let mut model = test_model(&text, 0, 0);
-    model.editor.viewport.visible_lines = 10;
+    model.editor_mut().viewport.visible_lines = 10;
 
     // Try to scroll up when already at top
     update(
         &mut model,
         Msg::Editor(EditorMsg::MoveCursor(Direction::Up)),
     );
-    assert_eq!(model.editor.cursor().line, 0);
-    assert_eq!(model.editor.viewport.top_line, 0);
+    assert_eq!(model.editor().cursor().line, 0);
+    assert_eq!(model.editor().viewport.top_line, 0);
 
     // Test at end of document
     // Text has 31 lines total (line0 through line29, plus empty line 30 from trailing \n)
-    let last_line = model.document.buffer.len_lines().saturating_sub(1);
-    model.editor.cursor_mut().line = last_line;
-    model.editor.viewport.top_line = 20;
+    let last_line = model.document().buffer.len_lines().saturating_sub(1);
+    model.editor_mut().cursor_mut().line = last_line;
+    model.editor_mut().viewport.top_line = 20;
 
     // Try to scroll down when at bottom
     update(
         &mut model,
         Msg::Editor(EditorMsg::MoveCursor(Direction::Down)),
     );
-    assert_eq!(model.editor.cursor().line, last_line); // Should stay at last line
+    assert_eq!(model.editor().cursor().line, last_line); // Should stay at last line
 }
 
 #[test]
@@ -269,27 +269,27 @@ fn test_scroll_wheel_boundaries() {
         .join("\n")
         + "\n";
     let mut model = test_model(&text, 15, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 5;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 5;
 
     // Scroll up past the top
     update(&mut model, Msg::Editor(EditorMsg::Scroll(-10)));
-    assert_eq!(model.editor.viewport.top_line, 0);
+    assert_eq!(model.editor().viewport.top_line, 0);
 
     // Scroll down past the bottom
-    model.editor.viewport.top_line = 15;
+    model.editor_mut().viewport.top_line = 15;
     update(&mut model, Msg::Editor(EditorMsg::Scroll(10)));
     // Text has 31 lines (0-30), max_top = 31 - 10 = 21
     let max_top = model
-        .document
+        .document()
         .buffer
         .len_lines()
-        .saturating_sub(model.editor.viewport.visible_lines);
-    assert_eq!(model.editor.viewport.top_line, max_top);
+        .saturating_sub(model.editor().viewport.visible_lines);
+    assert_eq!(model.editor().viewport.top_line, max_top);
 
     // Try to scroll further down
     update(&mut model, Msg::Editor(EditorMsg::Scroll(10)));
-    assert_eq!(model.editor.viewport.top_line, max_top); // Should stay at max
+    assert_eq!(model.editor().viewport.top_line, max_top); // Should stay at max
 }
 
 // ========================================================================
@@ -305,12 +305,12 @@ fn test_arrow_up_snaps_viewport_when_cursor_above() {
         .collect::<Vec<_>>()
         .join("\n");
     let mut model = test_model(&text, 5, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 20; // Scrolled far below cursor
-    model.editor.scroll_padding = 1;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 20; // Scrolled far below cursor
+    model.editor_mut().scroll_padding = 1;
 
     // Cursor is way above viewport
-    assert!(model.editor.cursor().line < model.editor.viewport.top_line);
+    assert!(model.editor().cursor().line < model.editor().viewport.top_line);
 
     // Press Up - cursor moves to line 4
     update(
@@ -318,16 +318,16 @@ fn test_arrow_up_snaps_viewport_when_cursor_above() {
         Msg::Editor(EditorMsg::MoveCursor(Direction::Up)),
     );
 
-    assert_eq!(model.editor.cursor().line, 4);
+    assert_eq!(model.editor().cursor().line, 4);
     // Viewport MUST snap back to show cursor with padding
     // Cursor is at line 4, so viewport should show it
     assert!(
-        model.editor.viewport.top_line <= 4,
+        model.editor().viewport.top_line <= 4,
         "Viewport top_line {} should be <= cursor line 4",
-        model.editor.viewport.top_line
+        model.editor().viewport.top_line
     );
     assert!(
-        model.editor.viewport.top_line + model.editor.viewport.visible_lines > 4,
+        model.editor().viewport.top_line + model.editor().viewport.visible_lines > 4,
         "Cursor line 4 should be within visible range"
     );
 }
@@ -341,12 +341,12 @@ fn test_arrow_down_snaps_viewport_when_cursor_above() {
         .collect::<Vec<_>>()
         .join("\n");
     let mut model = test_model(&text, 5, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 20; // Scrolled far below cursor
-    model.editor.scroll_padding = 1;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 20; // Scrolled far below cursor
+    model.editor_mut().scroll_padding = 1;
 
     // Cursor is above viewport
-    assert!(model.editor.cursor().line < model.editor.viewport.top_line);
+    assert!(model.editor().cursor().line < model.editor().viewport.top_line);
 
     // Press Down - cursor moves to line 6
     update(
@@ -354,15 +354,15 @@ fn test_arrow_down_snaps_viewport_when_cursor_above() {
         Msg::Editor(EditorMsg::MoveCursor(Direction::Down)),
     );
 
-    assert_eq!(model.editor.cursor().line, 6);
+    assert_eq!(model.editor().cursor().line, 6);
     // Viewport MUST snap back to show cursor
     assert!(
-        model.editor.viewport.top_line <= 6,
+        model.editor().viewport.top_line <= 6,
         "Viewport top_line {} should be <= cursor line 6",
-        model.editor.viewport.top_line
+        model.editor().viewport.top_line
     );
     assert!(
-        model.editor.viewport.top_line + model.editor.viewport.visible_lines > 6,
+        model.editor().viewport.top_line + model.editor().viewport.visible_lines > 6,
         "Cursor line 6 should be within visible range"
     );
 }
@@ -376,14 +376,14 @@ fn test_arrow_down_snaps_viewport_when_cursor_below() {
         .collect::<Vec<_>>()
         .join("\n");
     let mut model = test_model(&text, 40, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 0; // Viewport at top
-    model.editor.scroll_padding = 1;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 0; // Viewport at top
+    model.editor_mut().scroll_padding = 1;
 
     // Cursor is below viewport
     assert!(
-        model.editor.cursor().line
-            >= model.editor.viewport.top_line + model.editor.viewport.visible_lines
+        model.editor().cursor().line
+            >= model.editor().viewport.top_line + model.editor().viewport.visible_lines
     );
 
     // Press Down - cursor moves to line 41
@@ -392,10 +392,10 @@ fn test_arrow_down_snaps_viewport_when_cursor_below() {
         Msg::Editor(EditorMsg::MoveCursor(Direction::Down)),
     );
 
-    assert_eq!(model.editor.cursor().line, 41);
+    assert_eq!(model.editor().cursor().line, 41);
     // Viewport MUST snap to show cursor
     assert!(
-        model.editor.viewport.top_line + model.editor.viewport.visible_lines > 41,
+        model.editor().viewport.top_line + model.editor().viewport.visible_lines > 41,
         "Cursor line 41 should be within visible range"
     );
 }
@@ -409,14 +409,14 @@ fn test_arrow_up_snaps_viewport_when_cursor_below() {
         .collect::<Vec<_>>()
         .join("\n");
     let mut model = test_model(&text, 40, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 0; // Viewport at top
-    model.editor.scroll_padding = 1;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 0; // Viewport at top
+    model.editor_mut().scroll_padding = 1;
 
     // Cursor is below viewport
     assert!(
-        model.editor.cursor().line
-            >= model.editor.viewport.top_line + model.editor.viewport.visible_lines
+        model.editor().cursor().line
+            >= model.editor().viewport.top_line + model.editor().viewport.visible_lines
     );
 
     // Press Up - cursor moves to line 39
@@ -425,10 +425,10 @@ fn test_arrow_up_snaps_viewport_when_cursor_below() {
         Msg::Editor(EditorMsg::MoveCursor(Direction::Up)),
     );
 
-    assert_eq!(model.editor.cursor().line, 39);
+    assert_eq!(model.editor().cursor().line, 39);
     // Viewport MUST snap to show cursor
     assert!(
-        model.editor.viewport.top_line + model.editor.viewport.visible_lines > 39,
+        model.editor().viewport.top_line + model.editor().viewport.visible_lines > 39,
         "Cursor line 39 should be within visible range"
     );
 }
@@ -442,9 +442,9 @@ fn test_arrow_left_snaps_viewport_when_cursor_offscreen() {
         .collect::<Vec<_>>()
         .join("\n");
     let mut model = test_model(&text, 5, 10);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 20;
-    model.editor.scroll_padding = 1;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 20;
+    model.editor_mut().scroll_padding = 1;
 
     // Press Left
     update(
@@ -452,11 +452,11 @@ fn test_arrow_left_snaps_viewport_when_cursor_offscreen() {
         Msg::Editor(EditorMsg::MoveCursor(Direction::Left)),
     );
 
-    assert_eq!(model.editor.cursor().line, 5);
-    assert_eq!(model.editor.cursor().column, 9);
+    assert_eq!(model.editor().cursor().line, 5);
+    assert_eq!(model.editor().cursor().column, 9);
     // Viewport MUST snap back
     assert!(
-        model.editor.viewport.top_line <= 5,
+        model.editor().viewport.top_line <= 5,
         "Viewport should snap back to show cursor"
     );
 }
@@ -470,9 +470,9 @@ fn test_arrow_right_snaps_viewport_when_cursor_offscreen() {
         .collect::<Vec<_>>()
         .join("\n");
     let mut model = test_model(&text, 5, 10);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 20;
-    model.editor.scroll_padding = 1;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 20;
+    model.editor_mut().scroll_padding = 1;
 
     // Press Right
     update(
@@ -480,11 +480,11 @@ fn test_arrow_right_snaps_viewport_when_cursor_offscreen() {
         Msg::Editor(EditorMsg::MoveCursor(Direction::Right)),
     );
 
-    assert_eq!(model.editor.cursor().line, 5);
-    assert_eq!(model.editor.cursor().column, 11);
+    assert_eq!(model.editor().cursor().line, 5);
+    assert_eq!(model.editor().cursor().column, 11);
     // Viewport MUST snap back
     assert!(
-        model.editor.viewport.top_line <= 5,
+        model.editor().viewport.top_line <= 5,
         "Viewport should snap back to show cursor"
     );
 }
@@ -502,26 +502,26 @@ fn test_page_up_reveals_cursor_at_top_of_safe_zone() {
         .collect::<Vec<_>>()
         .join("\n");
     let mut model = test_model(&text, 80, 0); // Cursor at line 80
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 0; // Viewport way above cursor
-    model.editor.scroll_padding = 1;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 0; // Viewport way above cursor
+    model.editor_mut().scroll_padding = 1;
 
     // Cursor is below viewport
     assert!(
-        model.editor.cursor().line
-            >= model.editor.viewport.top_line + model.editor.viewport.visible_lines
+        model.editor().cursor().line
+            >= model.editor().viewport.top_line + model.editor().viewport.visible_lines
     );
 
     // PageUp - cursor moves up and viewport should reveal with cursor at TOP
     update(&mut model, Msg::Editor(EditorMsg::PageUp));
 
     // Cursor should be near top of visible area (within top padding)
-    let cursor_screen_pos = model.editor.cursor().line - model.editor.viewport.top_line;
+    let cursor_screen_pos = model.editor().cursor().line - model.editor().viewport.top_line;
     assert!(
-        cursor_screen_pos <= model.editor.scroll_padding + 1,
+        cursor_screen_pos <= model.editor().scroll_padding + 1,
         "Cursor at screen position {} should be at top of safe zone (padding={})",
         cursor_screen_pos,
-        model.editor.scroll_padding
+        model.editor().scroll_padding
     );
 }
 
@@ -534,19 +534,19 @@ fn test_page_down_reveals_cursor_at_bottom_of_safe_zone() {
         .collect::<Vec<_>>()
         .join("\n");
     let mut model = test_model(&text, 5, 0); // Cursor at line 5
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 50; // Viewport way below cursor
-    model.editor.scroll_padding = 1;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 50; // Viewport way below cursor
+    model.editor_mut().scroll_padding = 1;
 
     // Cursor is above viewport
-    assert!(model.editor.cursor().line < model.editor.viewport.top_line);
+    assert!(model.editor().cursor().line < model.editor().viewport.top_line);
 
     // PageDown - cursor moves down and viewport should reveal with cursor at BOTTOM
     update(&mut model, Msg::Editor(EditorMsg::PageDown));
 
     // Cursor should be near bottom of visible area
-    let cursor_screen_pos = model.editor.cursor().line - model.editor.viewport.top_line;
-    let bottom_safe = model.editor.viewport.visible_lines - model.editor.scroll_padding - 1;
+    let cursor_screen_pos = model.editor().cursor().line - model.editor().viewport.top_line;
+    let bottom_safe = model.editor().viewport.visible_lines - model.editor().scroll_padding - 1;
     assert!(
         cursor_screen_pos >= bottom_safe.saturating_sub(1),
         "Cursor at screen position {} should be at bottom of safe zone (bottom_safe={})",
@@ -563,9 +563,9 @@ fn test_arrow_up_reveals_at_top_when_offscreen() {
         .collect::<Vec<_>>()
         .join("\n");
     let mut model = test_model(&text, 5, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 30; // Viewport far below cursor
-    model.editor.scroll_padding = 1;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 30; // Viewport far below cursor
+    model.editor_mut().scroll_padding = 1;
 
     // Press Up
     update(
@@ -574,12 +574,12 @@ fn test_arrow_up_reveals_at_top_when_offscreen() {
     );
 
     // Cursor should be at top of safe zone
-    let cursor_screen_pos = model.editor.cursor().line - model.editor.viewport.top_line;
+    let cursor_screen_pos = model.editor().cursor().line - model.editor().viewport.top_line;
     assert!(
-        cursor_screen_pos <= model.editor.scroll_padding,
+        cursor_screen_pos <= model.editor().scroll_padding,
         "Cursor at screen position {} should be at top (padding={})",
         cursor_screen_pos,
-        model.editor.scroll_padding
+        model.editor().scroll_padding
     );
 }
 
@@ -591,9 +591,9 @@ fn test_arrow_down_reveals_at_bottom_when_offscreen() {
         .collect::<Vec<_>>()
         .join("\n");
     let mut model = test_model(&text, 40, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 0; // Viewport far above cursor
-    model.editor.scroll_padding = 1;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 0; // Viewport far above cursor
+    model.editor_mut().scroll_padding = 1;
 
     // Press Down
     update(
@@ -602,8 +602,8 @@ fn test_arrow_down_reveals_at_bottom_when_offscreen() {
     );
 
     // Cursor should be at bottom of safe zone
-    let cursor_screen_pos = model.editor.cursor().line - model.editor.viewport.top_line;
-    let bottom_safe = model.editor.viewport.visible_lines - model.editor.scroll_padding - 1;
+    let cursor_screen_pos = model.editor().cursor().line - model.editor().viewport.top_line;
+    let bottom_safe = model.editor().viewport.visible_lines - model.editor().scroll_padding - 1;
     assert!(
         cursor_screen_pos >= bottom_safe,
         "Cursor at screen position {} should be at bottom (bottom_safe={})",
@@ -620,20 +620,21 @@ fn test_arrow_within_safe_zone_no_scroll() {
         .collect::<Vec<_>>()
         .join("\n");
     let mut model = test_model(&text, 15, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 12; // Cursor at 15 is visible (12-21)
-    model.editor.scroll_padding = 1;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 12; // Cursor at 15 is visible (12-21)
+    model.editor_mut().scroll_padding = 1;
 
-    let initial_top = model.editor.viewport.top_line;
+    let initial_top = model.editor().viewport.top_line;
 
     // Press Up - cursor moves but viewport shouldn't change
     update(
         &mut model,
         Msg::Editor(EditorMsg::MoveCursor(Direction::Up)),
     );
-    assert_eq!(model.editor.cursor().line, 14);
+    assert_eq!(model.editor().cursor().line, 14);
     assert_eq!(
-        model.editor.viewport.top_line, initial_top,
+        model.editor().viewport.top_line,
+        initial_top,
         "Viewport should not change when cursor stays in safe zone"
     );
 
@@ -642,8 +643,8 @@ fn test_arrow_within_safe_zone_no_scroll() {
         &mut model,
         Msg::Editor(EditorMsg::MoveCursor(Direction::Down)),
     );
-    assert_eq!(model.editor.cursor().line, 15);
-    assert_eq!(model.editor.viewport.top_line, initial_top);
+    assert_eq!(model.editor().cursor().line, 15);
+    assert_eq!(model.editor().viewport.top_line, initial_top);
 }
 
 // ========================================================================
@@ -658,14 +659,14 @@ fn test_cursor_position_unchanged_during_scroll() {
         .collect::<Vec<_>>()
         .join("\n");
     let mut model = test_model(&text, 5, 2);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 0;
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 0;
 
     // Scroll down - cursor should stay at line 5, column 2
     update(&mut model, Msg::Editor(EditorMsg::Scroll(10)));
-    assert_eq!(model.editor.cursor().line, 5);
-    assert_eq!(model.editor.cursor().column, 2);
-    assert!(model.editor.viewport.top_line > 5); // Viewport moved past cursor
+    assert_eq!(model.editor().cursor().line, 5);
+    assert_eq!(model.editor().cursor().column, 2);
+    assert!(model.editor().viewport.top_line > 5); // Viewport moved past cursor
 }
 
 #[test]
@@ -676,11 +677,11 @@ fn test_cursor_off_screen_above_viewport() {
         .collect::<Vec<_>>()
         .join("\n");
     let mut model = test_model(&text, 5, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 10; // Viewport starts at line 10, cursor at line 5
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 10; // Viewport starts at line 10, cursor at line 5
 
     // Cursor is above viewport - verify positions
-    assert!(model.editor.cursor().line < model.editor.viewport.top_line);
+    assert!(model.editor().cursor().line < model.editor().viewport.top_line);
 }
 
 #[test]
@@ -691,13 +692,13 @@ fn test_cursor_off_screen_below_viewport() {
         .collect::<Vec<_>>()
         .join("\n");
     let mut model = test_model(&text, 25, 0);
-    model.editor.viewport.visible_lines = 10;
-    model.editor.viewport.top_line = 0; // Viewport at top, cursor at line 25
+    model.editor_mut().viewport.visible_lines = 10;
+    model.editor_mut().viewport.top_line = 0; // Viewport at top, cursor at line 25
 
     // Cursor is below viewport
     assert!(
-        model.editor.cursor().line
-            >= model.editor.viewport.top_line + model.editor.viewport.visible_lines
+        model.editor().cursor().line
+            >= model.editor().viewport.top_line + model.editor().viewport.visible_lines
     );
 }
 
@@ -709,71 +710,71 @@ fn test_cursor_off_screen_below_viewport() {
 fn test_horizontal_scroll_right() {
     let text = "a".repeat(200); // 200 character line
     let mut model = test_model(&text, 0, 0);
-    model.editor.viewport.visible_columns = 80;
-    model.editor.viewport.left_column = 0;
+    model.editor_mut().viewport.visible_columns = 80;
+    model.editor_mut().viewport.left_column = 0;
 
     update(&mut model, Msg::Editor(EditorMsg::ScrollHorizontal(10)));
-    assert_eq!(model.editor.viewport.left_column, 10);
+    assert_eq!(model.editor().viewport.left_column, 10);
 }
 
 #[test]
 fn test_horizontal_scroll_left() {
     let text = "a".repeat(200);
     let mut model = test_model(&text, 0, 0);
-    model.editor.viewport.visible_columns = 80;
-    model.editor.viewport.left_column = 50;
+    model.editor_mut().viewport.visible_columns = 80;
+    model.editor_mut().viewport.left_column = 50;
 
     update(&mut model, Msg::Editor(EditorMsg::ScrollHorizontal(-10)));
-    assert_eq!(model.editor.viewport.left_column, 40);
+    assert_eq!(model.editor().viewport.left_column, 40);
 }
 
 #[test]
 fn test_horizontal_scroll_left_boundary() {
     let text = "a".repeat(200);
     let mut model = test_model(&text, 0, 0);
-    model.editor.viewport.visible_columns = 80;
-    model.editor.viewport.left_column = 5;
+    model.editor_mut().viewport.visible_columns = 80;
+    model.editor_mut().viewport.left_column = 5;
 
     // Try to scroll left past 0
     update(&mut model, Msg::Editor(EditorMsg::ScrollHorizontal(-10)));
-    assert_eq!(model.editor.viewport.left_column, 0);
+    assert_eq!(model.editor().viewport.left_column, 0);
 }
 
 #[test]
 fn test_horizontal_scroll_right_boundary() {
     let text = "a".repeat(100); // 100 char line
     let mut model = test_model(&text, 0, 0);
-    model.editor.viewport.visible_columns = 80;
-    model.editor.viewport.left_column = 0;
+    model.editor_mut().viewport.visible_columns = 80;
+    model.editor_mut().viewport.left_column = 0;
 
     // Try to scroll right past max (100 - 80 = 20)
     update(&mut model, Msg::Editor(EditorMsg::ScrollHorizontal(50)));
-    assert_eq!(model.editor.viewport.left_column, 20); // max_left = 100 - 80 = 20
+    assert_eq!(model.editor().viewport.left_column, 20); // max_left = 100 - 80 = 20
 }
 
 #[test]
 fn test_horizontal_scroll_no_scroll_when_content_fits() {
     let text = "short line";
     let mut model = test_model(text, 0, 0);
-    model.editor.viewport.visible_columns = 80;
-    model.editor.viewport.left_column = 0;
+    model.editor_mut().viewport.visible_columns = 80;
+    model.editor_mut().viewport.left_column = 0;
 
     // Content fits, no scroll should happen
     let result = update(&mut model, Msg::Editor(EditorMsg::ScrollHorizontal(10)));
     assert!(result.is_none());
-    assert_eq!(model.editor.viewport.left_column, 0);
+    assert_eq!(model.editor().viewport.left_column, 0);
 }
 
 #[test]
 fn test_horizontal_scroll_cursor_position_unchanged() {
     let text = "a".repeat(200);
     let mut model = test_model(&text, 0, 50);
-    model.editor.viewport.visible_columns = 80;
-    model.editor.viewport.left_column = 0;
+    model.editor_mut().viewport.visible_columns = 80;
+    model.editor_mut().viewport.left_column = 0;
 
     // Scroll right - cursor should stay at column 50
     update(&mut model, Msg::Editor(EditorMsg::ScrollHorizontal(100)));
-    assert_eq!(model.editor.cursor().column, 50);
+    assert_eq!(model.editor().cursor().column, 50);
 }
 
 // ========================================================================
@@ -790,20 +791,20 @@ fn test_page_up_preserves_desired_column() {
             .join("\n");
 
     let mut model = test_model(&text, 20, 15); // Start at line 20, column 15
-    model.editor.viewport.visible_lines = 10;
+    model.editor_mut().viewport.visible_lines = 10;
 
     // PageUp should jump ~8 lines (visible_lines - 2)
     update(&mut model, Msg::Editor(EditorMsg::PageUp));
 
     // Should be at line 12 now (20 - 8)
-    assert_eq!(model.editor.cursor().line, 12);
+    assert_eq!(model.editor().cursor().line, 12);
 
     // desired_column should be preserved
-    assert_eq!(model.editor.cursor().desired_column, Some(15));
+    assert_eq!(model.editor().cursor().desired_column, Some(15));
 
     // If line 12 is shorter than 15 chars, column should be clamped
-    let line_len = model.document.line_length(model.editor.cursor().line);
-    assert_eq!(model.editor.cursor().column, 15.min(line_len));
+    let line_len = model.document().line_length(model.editor().cursor().line);
+    assert_eq!(model.editor().cursor().column, 15.min(line_len));
 }
 
 #[test]
@@ -820,20 +821,20 @@ fn test_page_down_preserves_desired_column() {
         .join("\n");
 
     let mut model = test_model(&text, 10, 18); // Start at line 10, column 18
-    model.editor.viewport.visible_lines = 10;
+    model.editor_mut().viewport.visible_lines = 10;
 
     // PageDown should jump ~8 lines
     update(&mut model, Msg::Editor(EditorMsg::PageDown));
 
     // Should be at line 18 now (10 + 8)
-    assert_eq!(model.editor.cursor().line, 18);
+    assert_eq!(model.editor().cursor().line, 18);
 
     // desired_column should be preserved
-    assert_eq!(model.editor.cursor().desired_column, Some(18));
+    assert_eq!(model.editor().cursor().desired_column, Some(18));
 
     // Column should be clamped if line is shorter
-    let line_len = model.document.line_length(model.editor.cursor().line);
-    assert_eq!(model.editor.cursor().column, 18.min(line_len));
+    let line_len = model.document().line_length(model.editor().cursor().line);
+    assert_eq!(model.editor().cursor().column, 18.min(line_len));
 }
 
 #[test]
@@ -850,7 +851,7 @@ fn test_multiple_page_jumps_preserve_column() {
         .join("\n");
 
     let mut model = test_model(&text, 51, 25); // Start at line 51 (NOT a multiple of 5)
-    model.editor.viewport.visible_lines = 10;
+    model.editor_mut().viewport.visible_lines = 10;
 
     // PageUp twice
     update(&mut model, Msg::Editor(EditorMsg::PageUp));
@@ -861,11 +862,11 @@ fn test_multiple_page_jumps_preserve_column() {
     update(&mut model, Msg::Editor(EditorMsg::PageDown));
 
     // Should be back at line 51
-    assert_eq!(model.editor.cursor().line, 51);
+    assert_eq!(model.editor().cursor().line, 51);
 
     // Column should be restored to 25
-    assert_eq!(model.editor.cursor().column, 25);
-    assert_eq!(model.editor.cursor().desired_column, Some(25));
+    assert_eq!(model.editor().cursor().column, 25);
+    assert_eq!(model.editor().cursor().desired_column, Some(25));
 }
 
 #[test]
@@ -874,27 +875,27 @@ fn test_page_up_to_short_line_clamps_column() {
         + &(3..50).map(|i| format!("this is a very long line {}", i)).collect::<Vec<_>>().join("\n");
 
     let mut model = test_model(&text, 20, 30); // Start at line 20, column 30
-    model.editor.viewport.visible_lines = 10;
+    model.editor_mut().viewport.visible_lines = 10;
 
     // PageUp multiple times to reach short lines at top
     update(&mut model, Msg::Editor(EditorMsg::PageUp)); // Line 12
     update(&mut model, Msg::Editor(EditorMsg::PageUp)); // Line 4
 
-    assert_eq!(model.editor.cursor().line, 4);
-    assert_eq!(model.editor.cursor().desired_column, Some(30)); // Remembers 30
+    assert_eq!(model.editor().cursor().line, 4);
+    assert_eq!(model.editor().cursor().desired_column, Some(30)); // Remembers 30
 
     // PageUp once more to line 0 (very short)
     update(&mut model, Msg::Editor(EditorMsg::PageUp));
 
     // Should be clamped to line length (1)
-    assert!(model.editor.cursor().line <= 2); // One of the short lines
-    assert_eq!(model.editor.cursor().column, 1); // Clamped to short line length
-    assert_eq!(model.editor.cursor().desired_column, Some(30)); // Still remembers 30
+    assert!(model.editor().cursor().line <= 2); // One of the short lines
+    assert_eq!(model.editor().cursor().column, 1); // Clamped to short line length
+    assert_eq!(model.editor().cursor().desired_column, Some(30)); // Still remembers 30
 
     // PageDown to long line
     update(&mut model, Msg::Editor(EditorMsg::PageDown));
 
     // Column should restore toward 30
-    let line_len = model.document.line_length(model.editor.cursor().line);
-    assert_eq!(model.editor.cursor().column, 30.min(line_len));
+    let line_len = model.document().line_length(model.editor().cursor().line);
+    assert_eq!(model.editor().cursor().column, 30.min(line_len));
 }

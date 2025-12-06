@@ -188,8 +188,8 @@ fn test_all_segments_iteration() {
     let bar = StatusBar::new();
     let all: Vec<_> = bar.all_segments().collect();
 
-    // Should have 6 segments total
-    assert_eq!(all.len(), 6);
+    // Should have 7 segments total (including CaretCount)
+    assert_eq!(all.len(), 7);
 }
 
 // =============================================================================
@@ -203,7 +203,7 @@ use token::model::status_bar::sync_status_bar;
 #[test]
 fn test_sync_filename_from_path() {
     let mut model = test_model("hello", 0, 0);
-    model.document.file_path = Some(PathBuf::from("/path/to/test.rs"));
+    model.document_mut().file_path = Some(PathBuf::from("/path/to/test.rs"));
 
     sync_status_bar(&mut model);
 
@@ -218,7 +218,7 @@ fn test_sync_filename_from_path() {
 #[test]
 fn test_sync_filename_no_path() {
     let mut model = test_model("hello", 0, 0);
-    model.document.file_path = None;
+    model.document_mut().file_path = None;
 
     sync_status_bar(&mut model);
 
@@ -233,7 +233,7 @@ fn test_sync_filename_no_path() {
 #[test]
 fn test_sync_modified_indicator_clean() {
     let mut model = test_model("hello", 0, 0);
-    model.document.is_modified = false;
+    model.document_mut().is_modified = false;
 
     sync_status_bar(&mut model);
 
@@ -248,7 +248,7 @@ fn test_sync_modified_indicator_clean() {
 #[test]
 fn test_sync_modified_indicator_dirty() {
     let mut model = test_model("hello", 0, 0);
-    model.document.is_modified = true;
+    model.document_mut().is_modified = true;
 
     sync_status_bar(&mut model);
 
@@ -664,7 +664,7 @@ fn test_status_bar_syncs_after_cursor_movement() {
 #[test]
 fn test_status_bar_syncs_after_edit() {
     let mut model = test_model("hello", 0, 5);
-    model.document.is_modified = false;
+    model.document_mut().is_modified = false;
 
     // Make an edit
     let _ = update(
