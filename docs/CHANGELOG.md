@@ -6,6 +6,35 @@ All notable changes to rust-editor are documented in this file.
 
 ## 2025-12-06 (Latest)
 
+### Added - Multi-Cursor Movement
+
+All cursor movement operations now work with multiple cursors:
+
+- **Arrow keys** (Up/Down/Left/Right) move ALL cursors simultaneously
+- **Home/End** moves all cursors to their respective line starts/ends (smart behavior preserved)
+- **Word navigation** (Option+Arrow) moves all cursors by word
+- **Page Up/Down** moves all cursors
+- **Shift+movement** extends selection for ALL cursors
+- **Cursor deduplication** when cursors collide after movement
+- Each cursor preserves its own `desired_column` for vertical movement through ragged lines
+
+#### Implementation Details
+
+- Per-cursor primitives in `EditorState`: `move_cursor_*_at(doc, idx)`
+- All-cursors wrappers: `move_all_cursors_*(doc)` 
+- Selection variants: `move_all_cursors_*_with_selection(doc)`
+- Removed legacy single-cursor movement functions from `update.rs`
+- 10 new multi-cursor movement tests in `tests/cursor_movement.rs`
+
+### Changed
+
+- Test count: 383 (was 351)
+- Added 10 multi-cursor movement tests, 22 other improvements
+
+---
+
+## 2025-12-06
+
 ### Added - Split View Implementation (All 7 Phases)
 
 Complete multi-pane editor with split views, tabs, and shared documents.
