@@ -21,7 +21,7 @@ fn cache_lookup_contains_then_get() {
     for ch in 'a'..='z' {
         cache.insert((ch, 16), vec![0u8; 256]);
     }
-    
+
     for _ in 0..1000 {
         let key = ('m', 16);
         if cache.contains_key(&key) {
@@ -36,7 +36,7 @@ fn cache_lookup_get_only() {
     for ch in 'a'..='z' {
         cache.insert((ch, 16), vec![0u8; 256]);
     }
-    
+
     for _ in 0..1000 {
         let key = ('m', 16);
         divan::black_box(cache.get(&key));
@@ -49,7 +49,7 @@ fn cache_lookup_entry_api() {
     for ch in 'a'..='z' {
         cache.insert((ch, 16), vec![0u8; 256]);
     }
-    
+
     for _ in 0..1000 {
         let key = ('m', 16);
         divan::black_box(cache.entry(key).or_insert_with(|| vec![0u8; 256]));
@@ -67,7 +67,7 @@ fn cache_lookup_varying_size(cache_size: usize) {
         let ch = char::from_u32((i % 65536) as u32).unwrap_or('?');
         cache.insert((ch, 16), vec![0u8; 256]);
     }
-    
+
     for _ in 0..1000 {
         let key = ('a', 16);
         divan::black_box(cache.get(&key));

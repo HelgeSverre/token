@@ -102,7 +102,7 @@ fn get_line_length_middle() {
 fn visible_lines_iteration(visible_count: usize) {
     let rope = Rope::from_str(&"test line with some content for display\n".repeat(10_000));
     let start_line = 5000;
-    
+
     for i in 0..visible_count {
         let line = rope.line(start_line + i);
         divan::black_box(line);
