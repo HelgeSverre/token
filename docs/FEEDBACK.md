@@ -1,14 +1,14 @@
 # Implementation Progress Feedback
 
-**Date:** December 2025 (Updated)
+**Date:** December 2025 (Updated: 2025-12-06)
 **Reviewed by:** Oracle analysis
-**Test Status:** 185 passing (10 theme + 11 keyboard + 164 integration)
+**Test Status:** 227 passing (17 lib + 14 main + 196 integration)
 
 ---
 
 ## Executive Summary
 
-The Elm-style architecture refactor (Phases 1-6) is complete. Selection and multi-cursor editing are largely implemented but need solidification around invariants and undo/redo. Status bar and split view remain at design-only stage.
+The Elm-style architecture refactor (Phases 1-6) is complete. Selection and multi-cursor editing are largely implemented. **Status bar system is now complete** with segment-based rendering and auto-sync. **Overlay system** is implemented with theme integration. Split view remains at design-only stage.
 
 ---
 
@@ -73,12 +73,18 @@ All Phase 7.1-7.8 features are now complete:
 | `SelectNextOccurrence` (Phase 9) | Medium | Cmd+J - stubbed but not implemented |
 | `SelectAllOccurrences` (Phase 9) | Low | Stubbed but not implemented |
 
+### ✅ Recently Completed (2025-12-06)
+
+| Feature | Design Doc | Status |
+|---------|------------|--------|
+| Structured Status Bar | [STATUS_BAR.md](feature/STATUS_BAR.md) | ✅ Complete (47 tests) |
+| Overlay System | (inline) | ✅ Complete with theme integration |
+
 ### ❌ Not Yet Implemented
 
 | Feature | Design Doc | Status |
 |---------|------------|--------|
 | Occurrence Selection (Phase 9) | [SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) | Messages exist, no logic |
-| Structured Status Bar | [STATUS_BAR.md](feature/STATUS_BAR.md) | Design only |
 | Split View / Multi-Pane | [SPLIT_VIEW.md](feature/SPLIT_VIEW.md) | Design only |
 | Expand/Shrink Selection | [TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) | Design only |
 
@@ -90,10 +96,12 @@ All Phase 7.1-7.8 features are now complete:
 
 1. **Clean Elm architecture** - Message dispatch is well-organized
 2. **Consistent patterns** - Multi-cursor editing follows reverse-order pattern correctly
-3. **Good test coverage** - 119 tests passing (organized in `tests/` folder)
-4. **Theme integration** - Selection colors properly wired
+3. **Excellent test coverage** - 227 tests passing (organized in `tests/` folder)
+4. **Theme integration** - Selection colors, overlay colors, status bar all themed
 5. **Selection helpers implemented** - `extend_to`, `collapse_to_start/end`, `contains`
 6. **Invariant checking** - `assert_invariants()` in debug builds
+7. **Reusable overlay system** - Anchored positioning, alpha blending, optional borders
+8. **Structured status bar** - Segment-based with auto-sync from model
 
 ### Issues to Address
 
@@ -133,18 +141,11 @@ All Phase 7.1-7.8 features are now complete:
 | Update multi-cursor edits to use Batch | M | InsertChar, Delete, etc. |
 | `merge_overlapping_selections()` | S | Edge case after operations |
 
-### Priority 3: Structured Status Bar
+### ~~Priority 3: Structured Status Bar~~ ✅ COMPLETE
 
-See [STATUS_BAR.md](feature/STATUS_BAR.md) for full design.
+Implemented 2025-12-06. See [STATUS_BAR.md](feature/STATUS_BAR.md).
 
-| Task | Effort |
-|------|--------|
-| Add StatusBar data structures | S |
-| Add segment-based messages | S |
-| Update renderer | M |
-| Add `sync_status_bar()` helper | S |
-
-### Priority 4: Expand/Shrink Selection
+### Priority 3: Expand/Shrink Selection
 
 See [TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) for full design.
 
@@ -155,7 +156,7 @@ See [TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) f
 | Implement ShrinkSelection | S |
 | Add keyboard handling | S |
 
-### Priority 5: Split View Foundation
+### Priority 4: Split View Foundation
 
 See [SPLIT_VIEW.md](feature/SPLIT_VIEW.md) for full design. Large effort - defer until other priorities complete.
 
@@ -167,5 +168,6 @@ See [SPLIT_VIEW.md](feature/SPLIT_VIEW.md) for full design. Large effort - defer
 |----------|-----------------|---------|
 | Phase 9 | `editor.rs`, `update.rs` | `get_text()`, occurrence search logic |
 | Undo/Redo | `document.rs`, `update.rs` | `EditOperation::Batch` |
-| Status Bar | `ui.rs`, `messages.rs`, `main.rs` | Segment types, renderer |
 | Expand/Shrink | `editor.rs`, `update.rs`, `main.rs` | History stack, handlers |
+| ~~Status Bar~~ | ~~`ui.rs`, `messages.rs`, `main.rs`~~ | ✅ Complete |
+| ~~Overlay System~~ | ~~`overlay.rs`, `theme.rs`~~ | ✅ Complete |
