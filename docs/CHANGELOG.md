@@ -6,6 +6,21 @@ All notable changes to rust-editor are documented in this file.
 
 ## 2025-12-06
 
+### Added - Caret Count in Status Bar
+- Shows "X carets" segment when multiple cursors are active
+- New `SegmentId::CaretCount` variant
+- Auto-syncs via `sync_status_bar()` when cursor count changes
+
+### Fixed - Multi-Cursor Click Modifier
+- Changed from Cmd+Click to Option+Click for adding/removing cursors
+- Matches standard macOS editor conventions
+
+### Added - Click+Drag Selection
+- Standard click-and-drag text selection with left mouse button
+- `left_mouse_down` state tracking in App struct
+- CursorMoved handler extends selection while dragging
+- Reuses existing `ExtendSelectionToPosition` message
+
 ### Added - Delete Line Command
 - `DocumentMsg::DeleteLine` for deleting entire current line
 - Cmd+Backspace keybinding (Ctrl+Backspace on non-Mac)

@@ -9,6 +9,16 @@ For archived phases, see [archived/old-roadmap-file.md](archived/old-roadmap-fil
 
 ## Recently Completed
 
+### Click+Drag Selection ✅
+
+**Completed:** 2025-12-06
+
+Standard mouse drag selection:
+- Left mouse button down starts drag mode
+- CursorMoved extends selection while dragging
+- Button release ends drag
+- Reuses `ExtendSelectionToPosition` message
+
 ### Structured Status Bar ✅
 
 **Design:** [feature/STATUS_BAR.md](feature/STATUS_BAR.md) | **Completed:** 2025-12-06
@@ -33,6 +43,24 @@ Reusable overlay rendering (`src/overlay.rs`):
 
 ## In Progress
 
+### Split View Implementation
+
+**Design:** [feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md) | **Started:** 2025-12-06
+
+| Phase | Status | Description |
+|-------|--------|-------------|
+| Phase 1: Core Data Structures | ✅ Complete | ID types, EditorArea, Tab, EditorGroup, LayoutNode |
+| Phase 2: Layout System | ✅ Complete | compute_layout(), group_at_point(), splitter hit testing |
+| Phase 3: Update AppModel | ✅ Complete | Replace Document/EditorState with EditorArea, accessor methods |
+| Phase 4: Messages | ✅ Complete | LayoutMsg enum, split/close/focus operations, 17 tests |
+| Phase 5: Rendering | Not started | Multi-group rendering, tab bars, splitters |
+| Phase 6: Document Sync | Not started | Multi-view edits, cursor adjustment |
+| Phase 7: Keyboard Shortcuts | Not started | Cmd+\, Cmd+W, Cmd+1/2/3, etc. |
+
+---
+
+## Planned Features
+
 ### Phase 9: Occurrence Selection (JetBrains-style)
 
 **Status:** Not started
@@ -43,10 +71,6 @@ Reusable overlay rendering (`src/overlay.rs`):
 | `UnselectOccurrence` | Shift+Cmd+J | Remove last added occurrence |
 | Occurrence history | - | Track additions for unselect |
 | Word detection | - | Reuse `char_type()` for word boundaries |
-
----
-
-## Planned Features
 
 ### Expand/Shrink Selection
 
@@ -67,6 +91,27 @@ Multi-pane editing:
 - Shared documents with independent views
 - Layout tree for flexible arrangement
 
+### File Dropping
+
+**Design:** [feature/handle-file-dropping.md](feature/handle-file-dropping.md)
+
+Drag-and-drop file handling:
+- Handle `WindowEvent::DroppedFile` and `HoveredFile` from winit
+- Visual overlay during drag hover
+- Open files in tabs, switch to existing if already open
+- Binary file detection and size limits
+
+### Workspace Management
+
+**Design:** [feature/workspace-management.md](feature/workspace-management.md)
+
+CLI arguments and file tree sidebar:
+- Support `red file1 file2` for multiple files
+- Support `red ./src` to open directory as workspace
+- File tree sidebar with expand/collapse
+- File system watching for external changes
+- Dependencies: `clap` for CLI, `notify` for FS watching
+
 ---
 
 ## Feature Design Documents
@@ -77,8 +122,10 @@ Multi-pane editing:
 | Selection & Multi-Cursor | ✅ 8/9 phases complete | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) |
 | Status Bar | ✅ Complete | [feature/STATUS_BAR.md](feature/STATUS_BAR.md) |
 | Overlay System | ✅ Complete | (inline in CHANGELOG) |
-| Split View | Planned | [feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md) |
+| Split View | In Progress | [feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md) |
 | Expand/Shrink Selection | Planned | [feature/TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) |
+| File Dropping | Planned | [feature/handle-file-dropping.md](feature/handle-file-dropping.md) |
+| Workspace Management | Planned | [feature/workspace-management.md](feature/workspace-management.md) |
 
 ---
 
@@ -104,6 +151,7 @@ src/
 │   ├── mod.rs           # AppModel struct (includes Theme), re-exports
 │   ├── document.rs      # Document struct (buffer, undo/redo, file_path)
 │   ├── editor.rs        # EditorState, Cursor, Selection, Viewport, ScrollRevealMode
+│   ├── editor_area.rs   # EditorArea, layout tree, splitters (split view foundation)
 │   ├── ui.rs            # UiState (status, cursor blink, loading states)
 │   └── status_bar.rs    # StatusBar, StatusSegment, sync_status_bar(), layout
 ├── messages.rs          # Msg, EditorMsg, DocumentMsg, UiMsg, AppMsg, Direction
@@ -130,4 +178,4 @@ tests/
 └── status_bar.rs        # 47 tests
 ```
 
-**Test count:** 246 (17 lib + 14 main + 215 integration)
+**Test count:** 270 (24 lib + 14 main + 232 integration)
