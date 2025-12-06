@@ -36,3 +36,6 @@ perf.data.old
 # Generated test files (keep human-readable ones)
 test_files/large.txt
 test_files/binary.bin
+
+
+dhat-heap.json
