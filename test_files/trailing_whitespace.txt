@@ -1,22 +1,22 @@
 Lines with trailing whitespace for testing Smart End
 
 This line has no trailing whitespace
-This line has 4 trailing spaces
-This line has 8 trailing spaces
-This line has a trailing tab
-Mixed: leading and trailing
-    Both leading and trailing spaces
+This line has 4 trailing spaces    
+This line has 8 trailing spaces        
+This line has a trailing tab	
+Mixed: leading and trailing    
+    Both leading and trailing spaces    
 
 Code example with trailing whitespace:
-fn main() {
-    let x = 42;
-    println!("{}", x);
+fn main() {    
+    let x = 42;    
+    println!("{}", x);    
 }
 
 // Test toggling End between line-end and last-non-whitespace
 normal line
-line with spaces
-line with tabs
-line with mixed
+line with spaces   
+line with tabs		
+line with mixed 	 
 
-End of file with trailing space
+End of file with trailing space 
