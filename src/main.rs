@@ -33,6 +33,9 @@ type GlyphCache = HashMap<GlyphCacheKey, (Metrics, Vec<u8>)>;
 
 // Performance monitoring (debug builds only)
 #[cfg(debug_assertions)]
+const PERF_HISTORY_SIZE: usize = 60;
+
+#[cfg(debug_assertions)]
 #[derive(Default)]
 #[allow(dead_code)] // Some fields reserved for future detailed timing
 struct PerfStats {
@@ -41,7 +44,7 @@ struct PerfStats {
     last_frame_time: Duration,
     frame_times: VecDeque<Duration>, // Rolling window for avg/histogram
 
-    // Render breakdown
+    // Render breakdown (current frame)
     clear_time: Duration,
     line_highlight_time: Duration,
     gutter_time: Duration,
@@ -49,6 +52,15 @@ struct PerfStats {
     cursor_time: Duration,
     status_bar_time: Duration,
     present_time: Duration,
+
+    // Render breakdown history (for sparklines)
+    clear_history: VecDeque<Duration>,
+    highlight_history: VecDeque<Duration>,
+    gutter_history: VecDeque<Duration>,
+    text_history: VecDeque<Duration>,
+    cursor_history: VecDeque<Duration>,
+    status_history: VecDeque<Duration>,
+    present_history: VecDeque<Duration>,
 
     // Cache stats (reset per frame)
     frame_cache_hits: usize,
@@ -104,6 +116,23 @@ impl PerfStats {
         } else {
             0.0
         }
+    }
+
+    fn record_render_history(&mut self) {
+        fn push_history(history: &mut VecDeque<Duration>, value: Duration) {
+            history.push_back(value);
+            if history.len() > PERF_HISTORY_SIZE {
+                history.pop_front();
+            }
+        }
+
+        push_history(&mut self.clear_history, self.clear_time);
+        push_history(&mut self.highlight_history, self.line_highlight_time);
+        push_history(&mut self.gutter_history, self.gutter_time);
+        push_history(&mut self.text_history, self.text_time);
+        push_history(&mut self.cursor_history, self.cursor_time);
+        push_history(&mut self.status_history, self.status_bar_time);
+        push_history(&mut self.present_history, self.present_time);
     }
 }
 
@@ -180,7 +209,7 @@ impl Renderer {
     }
 
     #[cfg(debug_assertions)]
-    fn render(&mut self, model: &AppModel, perf: &PerfStats) -> Result<()> {
+    fn render(&mut self, model: &AppModel, perf: &mut PerfStats) -> Result<()> {
         self.render_impl_with_perf(model, perf)
     }
 
@@ -543,7 +572,10 @@ impl Renderer {
     }
 
     #[cfg(debug_assertions)]
-    fn render_impl_with_perf(&mut self, model: &AppModel, perf: &PerfStats) -> Result<()> {
+    fn render_impl_with_perf(&mut self, model: &AppModel, perf: &mut PerfStats) -> Result<()> {
+        // Reset per-frame stats
+        perf.reset_frame_stats();
+
         // Resize surface if needed
         if self.width != model.window_size.0 || self.height != model.window_size.1 {
             self.width = model.window_size.0;
@@ -562,8 +594,10 @@ impl Renderer {
             .map_err(|e| anyhow::anyhow!("Failed to get surface buffer: {}", e))?;
 
         // Clear screen with theme background
+        let t_clear = Instant::now();
         let bg_color = model.theme.editor.background.to_argb_u32();
         buffer.fill(bg_color);
+        perf.clear_time = t_clear.elapsed();
 
         // Calculate scaled metrics using proper font line metrics
         let font_size = self.font_size;
@@ -580,6 +614,7 @@ impl Renderer {
             .min(model.document().buffer.len_lines());
 
         // Draw current line highlight
+        let t_line_highlight = Instant::now();
         let current_line_color = model.theme.editor.current_line_background.to_argb_u32();
         if model.editor().cursor().line >= model.editor().viewport.top_line
             && model.editor().cursor().line < end_line
@@ -708,8 +743,10 @@ impl Renderer {
                 }
             }
         }
+        perf.line_highlight_time = t_line_highlight.elapsed();
 
-        // Get theme colors for rendering
+        // Draw gutter (line numbers) and text content
+        let t_text = Instant::now();
         let line_num_color = model.theme.gutter.foreground.to_argb_u32();
         let line_num_active_color = model.theme.gutter.foreground_active.to_argb_u32();
         let text_color = model.theme.editor.foreground.to_argb_u32();
@@ -767,8 +804,10 @@ impl Renderer {
                 );
             }
         }
+        perf.text_time = t_text.elapsed();
 
         // Draw all cursors
+        let t_cursor = Instant::now();
         if model.ui.cursor_visible {
             let actual_visible_columns =
                 ((width as f32 - text_start_x as f32) / char_width).floor() as usize;
@@ -806,8 +845,10 @@ impl Renderer {
                 }
             }
         }
+        perf.cursor_time = t_cursor.elapsed();
 
         // Draw gutter border (1px vertical line)
+        let t_gutter = Instant::now();
         let gutter_border_color = model.theme.gutter.border_color.to_argb_u32();
         let border_x = gutter_border_x(char_width).round() as usize;
         let status_y_top = (height as usize).saturating_sub(line_height);
@@ -816,8 +857,10 @@ impl Renderer {
                 buffer[py * width as usize + border_x] = gutter_border_color;
             }
         }
+        perf.gutter_time = t_gutter.elapsed();
 
         // Draw status bar background
+        let t_status = Instant::now();
         let status_bar_bg = model.theme.status_bar.background.to_argb_u32();
         let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
         let status_height = line_height;
@@ -885,6 +928,8 @@ impl Renderer {
             }
         }
 
+        perf.status_bar_time = t_status.elapsed();
+
         // Draw performance overlay if enabled
         if perf.show_overlay {
             render_perf_overlay(
@@ -901,9 +946,11 @@ impl Renderer {
             );
         }
 
+        let t_present = Instant::now();
         buffer
             .present()
             .map_err(|e| anyhow::anyhow!("Failed to present buffer: {}", e))?;
+        perf.present_time = t_present.elapsed();
         Ok(())
     }
 
@@ -971,7 +1018,7 @@ fn render_perf_overlay(
     let height_usize = height as usize;
 
     // Configure and render overlay background using theme colors
-    let config = OverlayConfig::new(OverlayAnchor::TopRight, 240, 180)
+    let config = OverlayConfig::new(OverlayAnchor::TopRight, 380, 480)
         .with_margin(10)
         .with_background(theme.overlay.background.to_argb_u32());
 
@@ -1014,7 +1061,7 @@ fn render_perf_overlay(
         height,
         text_x,
         text_y,
-        "PERF (F2 to hide)",
+        "Performance",
         text_color,
     );
     text_y += line_height;
@@ -1144,6 +1191,105 @@ fn render_perf_overlay(
         &miss_text,
         text_color,
     );
+    text_y += line_height + 4;
+
+    // Render breakdown with sparklines
+    draw_text(
+        buffer,
+        font,
+        glyph_cache,
+        font_size,
+        ascent,
+        width,
+        height,
+        text_x,
+        text_y,
+        "Render breakdown:",
+        text_color,
+    );
+    text_y += line_height;
+
+    // Chart dimensions
+    let chart_width = 180;
+    let chart_height = 20;
+    let chart_x = text_x + 80;
+    let chart_bg = theme.overlay.background.with_alpha(200).to_argb_u32();
+
+    let breakdown_with_history: [(&str, Duration, &VecDeque<Duration>, u32); 7] = [
+        ("Clear", perf.clear_time, &perf.clear_history, 0xFF7AA2F7), // Blue
+        (
+            "Highlight",
+            perf.line_highlight_time,
+            &perf.highlight_history,
+            0xFF9ECE6A,
+        ), // Green
+        ("Text", perf.text_time, &perf.text_history, 0xFFE0AF68),    // Yellow/Orange
+        ("Cursor", perf.cursor_time, &perf.cursor_history, 0xFFBB9AF7), // Purple
+        ("Gutter", perf.gutter_time, &perf.gutter_history, 0xFF7DCFFF), // Cyan
+        (
+            "Status",
+            perf.status_bar_time,
+            &perf.status_history,
+            0xFFF7768E,
+        ), // Pink
+        (
+            "Present",
+            perf.present_time,
+            &perf.present_history,
+            0xFFFF9E64,
+        ), // Orange
+    ];
+
+    for (name, duration, history, color) in breakdown_with_history {
+        let us = duration.as_micros();
+        let breakdown_text = format!("{:>7}:", name);
+        draw_text(
+            buffer,
+            font,
+            glyph_cache,
+            font_size,
+            ascent,
+            width,
+            height,
+            text_x,
+            text_y,
+            &breakdown_text,
+            text_color,
+        );
+
+        // Draw sparkline next to label
+        draw_sparkline(
+            buffer,
+            width,
+            height,
+            chart_x,
+            text_y + 2,
+            chart_width,
+            chart_height,
+            history,
+            color,
+            chart_bg,
+        );
+
+        // Draw current value at end
+        let value_text = format!("{} µs", us);
+        let value_x = chart_x + chart_width + 6;
+        draw_text(
+            buffer,
+            font,
+            glyph_cache,
+            font_size,
+            ascent,
+            width,
+            height,
+            value_x,
+            text_y,
+            &value_text,
+            color,
+        );
+
+        text_y += chart_height + 4;
+    }
 }
 
 fn draw_text(
@@ -1221,6 +1367,57 @@ fn draw_text(
 
         // Advance to the next character position
         current_x += metrics.advance_width;
+    }
+}
+
+/// Draw a sparkline (bar chart) showing duration history
+#[cfg(debug_assertions)]
+fn draw_sparkline(
+    buffer: &mut [u32],
+    buffer_width: u32,
+    buffer_height: u32,
+    x: usize,
+    y: usize,
+    chart_width: usize,
+    chart_height: usize,
+    data: &VecDeque<Duration>,
+    bar_color: u32,
+    bg_color: u32,
+) {
+    if data.is_empty() {
+        return;
+    }
+
+    // Draw background
+    for py in y..(y + chart_height) {
+        for px in x..(x + chart_width) {
+            if px < buffer_width as usize && py < buffer_height as usize {
+                buffer[py * buffer_width as usize + px] = bg_color;
+            }
+        }
+    }
+
+    // Find max value for scaling
+    let max_val = data.iter().map(|d| d.as_micros()).max().unwrap_or(1).max(1) as f32;
+
+    let bar_width = (chart_width as f32 / data.len() as f32).max(1.0) as usize;
+    let gap = if bar_width > 2 { 1 } else { 0 };
+
+    for (i, duration) in data.iter().enumerate() {
+        let normalized = duration.as_micros() as f32 / max_val;
+        let bar_height = ((normalized * chart_height as f32) as usize).max(1);
+        let bar_x = x + i * bar_width;
+
+        // Draw vertical bar from bottom up
+        for dy in 0..bar_height {
+            let py = y + chart_height - dy - 1;
+            for dx in 0..(bar_width - gap) {
+                let px = bar_x + dx;
+                if px < buffer_width as usize && py < buffer_height as usize {
+                    buffer[py * buffer_width as usize + px] = bar_color;
+                }
+            }
+        }
     }
 }
 
@@ -1927,11 +2124,12 @@ impl App {
         self.perf.frame_start = Some(Instant::now());
 
         if let Some(renderer) = &mut self.renderer {
-            renderer.render(&self.model, &self.perf)?;
+            renderer.render(&self.model, &mut self.perf)?;
         }
 
-        // Record frame time
+        // Record frame time and render history
         self.perf.record_frame_time();
+        self.perf.record_render_history();
         Ok(())
     }
 
