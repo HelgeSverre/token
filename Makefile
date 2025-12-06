@@ -1,6 +1,6 @@
 # Makefile for token
 
-.PHONY: build release run dev test clean fmt format help sample-files ci
+.PHONY: build release run dev test clean fmt format lint help sample-files ci
 
 # Default target
 all: help
@@ -41,6 +41,10 @@ clean:
 fmt format:
 	cargo fmt
 	npx prettier --write "*.md"
+
+# Run clippy lints (mirrors CI)
+lint:
+	cargo clippy --all-targets --all-features -- -D warnings
 
 # === Sample file runners ===
 
@@ -117,6 +121,7 @@ help:
 	@echo "  make release      - Build optimized release binary"
 	@echo "  make clean        - Remove build artifacts"
 	@echo "  make fmt          - Format Rust code and markdown files"
+	@echo "  make lint         - Run clippy lints (mirrors CI)"
 	@echo ""
 	@echo "Run targets:"
 	@echo "  make run          - Run with default sample file (indentation.txt)"
