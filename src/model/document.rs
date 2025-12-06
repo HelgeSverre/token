@@ -20,6 +20,14 @@ pub enum EditOperation {
         cursor_before: Cursor,
         cursor_after: Cursor,
     },
+    /// Replace operation - used when typing over a selection to make undo atomic
+    Replace {
+        position: usize,
+        deleted_text: String,
+        inserted_text: String,
+        cursor_before: Cursor,
+        cursor_after: Cursor,
+    },
 }
 
 /// Document state - the text buffer and associated file metadata
