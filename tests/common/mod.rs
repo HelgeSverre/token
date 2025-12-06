@@ -34,6 +34,7 @@ pub fn test_model(text: &str, line: usize, column: usize) -> AppModel {
         scroll_padding: 1, // Default padding for tests
         rectangle_selection: RectangleSelectionState::default(),
         occurrence_state: None,
+        selection_history: Vec::new(),
     };
 
     let editor_area = EditorArea::single_document(document, editor);
@@ -87,6 +88,7 @@ pub fn test_model_with_selection(
         scroll_padding: 1,
         rectangle_selection: RectangleSelectionState::default(),
         occurrence_state: None,
+        selection_history: Vec::new(),
     };
 
     let editor_area = EditorArea::single_document(document, editor);
@@ -137,6 +139,7 @@ pub fn test_model_multi_cursor(text: &str, positions: &[(usize, usize)]) -> AppM
         scroll_padding: 1,
         rectangle_selection: RectangleSelectionState::default(),
         occurrence_state: None,
+        selection_history: Vec::new(),
     };
 
     let editor_area = EditorArea::single_document(document, editor);

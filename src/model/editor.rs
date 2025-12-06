@@ -276,6 +276,9 @@ pub struct EditorState {
     pub rectangle_selection: RectangleSelectionState,
     /// Occurrence selection state (for Cmd+J "select next occurrence")
     pub occurrence_state: Option<OccurrenceState>,
+    /// Selection history stack for expand/shrink selection (Option+Up/Down)
+    /// Push before expanding, pop when shrinking
+    pub selection_history: Vec<Selection>,
 }
 
 impl EditorState {
@@ -292,6 +295,7 @@ impl EditorState {
             scroll_padding: 1, // JetBrains-style default
             rectangle_selection: RectangleSelectionState::default(),
             occurrence_state: None,
+            selection_history: Vec::new(),
         }
     }
 
@@ -308,7 +312,13 @@ impl EditorState {
             scroll_padding: 1,
             rectangle_selection: RectangleSelectionState::default(),
             occurrence_state: None,
+            selection_history: Vec::new(),
         }
+    }
+
+    /// Clear selection history (called when selection is changed by other means)
+    pub fn clear_selection_history(&mut self) {
+        self.selection_history.clear();
     }
 
     /// Get the primary cursor (read-only)
