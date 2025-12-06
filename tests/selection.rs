@@ -613,3 +613,578 @@ fn test_select_all_occurrences_unicode() {
         "Should find all 3 café occurrences"
     );
 }
+
+// ========================================================================
+// merge_overlapping_selections() Tests
+// ========================================================================
+
+#[test]
+fn test_merge_non_overlapping_unchanged() {
+    let mut model = test_model("hello world test", 0, 0);
+
+    // Manually set up two non-overlapping selections: [0,0..0,3] and [0,6..0,9]
+    model.editor_mut().cursors.clear();
+    model.editor_mut().selections.clear();
+    model.editor_mut().cursors.push(Cursor::at(0, 3));
+    model.editor_mut().cursors.push(Cursor::at(0, 9));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::from_positions(
+            Position::new(0, 0),
+            Position::new(0, 3),
+        ));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::from_positions(
+            Position::new(0, 6),
+            Position::new(0, 9),
+        ));
+
+    model.editor_mut().merge_overlapping_selections();
+
+    assert_eq!(
+        model.editor().cursors.len(),
+        2,
+        "Should still have 2 cursors"
+    );
+    assert_eq!(
+        model.editor().selections.len(),
+        2,
+        "Should still have 2 selections"
+    );
+}
+
+#[test]
+fn test_merge_overlapping_same_line() {
+    let mut model = test_model("hello world test", 0, 0);
+
+    // Set up two overlapping selections: [0,0..0,5] and [0,3..0,8]
+    model.editor_mut().cursors.clear();
+    model.editor_mut().selections.clear();
+    model.editor_mut().cursors.push(Cursor::at(0, 5));
+    model.editor_mut().cursors.push(Cursor::at(0, 8));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::from_positions(
+            Position::new(0, 0),
+            Position::new(0, 5),
+        ));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::from_positions(
+            Position::new(0, 3),
+            Position::new(0, 8),
+        ));
+
+    model.editor_mut().merge_overlapping_selections();
+
+    assert_eq!(model.editor().cursors.len(), 1, "Should merge to 1 cursor");
+    assert_eq!(
+        model.editor().selections.len(),
+        1,
+        "Should merge to 1 selection"
+    );
+
+    let sel = &model.editor().selections[0];
+    assert_eq!(
+        sel.start(),
+        Position::new(0, 0),
+        "Merged start should be 0,0"
+    );
+    assert_eq!(sel.end(), Position::new(0, 8), "Merged end should be 0,8");
+}
+
+#[test]
+fn test_merge_touching_adjacent() {
+    let mut model = test_model("hello world", 0, 0);
+
+    // Set up two touching (adjacent) selections: [0,0..0,5] and [0,5..0,10]
+    model.editor_mut().cursors.clear();
+    model.editor_mut().selections.clear();
+    model.editor_mut().cursors.push(Cursor::at(0, 5));
+    model.editor_mut().cursors.push(Cursor::at(0, 10));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::from_positions(
+            Position::new(0, 0),
+            Position::new(0, 5),
+        ));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::from_positions(
+            Position::new(0, 5),
+            Position::new(0, 10),
+        ));
+
+    model.editor_mut().merge_overlapping_selections();
+
+    assert_eq!(
+        model.editor().cursors.len(),
+        1,
+        "Should merge touching to 1 cursor"
+    );
+
+    let sel = &model.editor().selections[0];
+    assert_eq!(sel.start(), Position::new(0, 0));
+    assert_eq!(sel.end(), Position::new(0, 10));
+}
+
+#[test]
+fn test_merge_multiline_overlap() {
+    let mut model = test_model("line one\nline two\nline three", 0, 0);
+
+    // Set up two multiline overlapping selections:
+    // [0,5..1,4] and [0,7..2,3]
+    model.editor_mut().cursors.clear();
+    model.editor_mut().selections.clear();
+    model.editor_mut().cursors.push(Cursor::at(1, 4));
+    model.editor_mut().cursors.push(Cursor::at(2, 3));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::from_positions(
+            Position::new(0, 5),
+            Position::new(1, 4),
+        ));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::from_positions(
+            Position::new(0, 7),
+            Position::new(2, 3),
+        ));
+
+    model.editor_mut().merge_overlapping_selections();
+
+    assert_eq!(model.editor().cursors.len(), 1, "Should merge to 1 cursor");
+
+    let sel = &model.editor().selections[0];
+    assert_eq!(sel.start(), Position::new(0, 5), "Merged start");
+    assert_eq!(sel.end(), Position::new(2, 3), "Merged end");
+}
+
+#[test]
+fn test_merge_duplicates() {
+    let mut model = test_model("hello world", 0, 0);
+
+    // Set up two identical selections
+    model.editor_mut().cursors.clear();
+    model.editor_mut().selections.clear();
+    model.editor_mut().cursors.push(Cursor::at(0, 5));
+    model.editor_mut().cursors.push(Cursor::at(0, 5));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::from_positions(
+            Position::new(0, 0),
+            Position::new(0, 5),
+        ));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::from_positions(
+            Position::new(0, 0),
+            Position::new(0, 5),
+        ));
+
+    model.editor_mut().merge_overlapping_selections();
+
+    assert_eq!(
+        model.editor().cursors.len(),
+        1,
+        "Duplicates should merge to 1"
+    );
+    assert_eq!(model.editor().selections.len(), 1);
+}
+
+#[test]
+fn test_merge_preserves_invariants() {
+    let mut model = test_model("hello world test", 0, 0);
+
+    // Set up overlapping selections
+    model.editor_mut().cursors.clear();
+    model.editor_mut().selections.clear();
+    model.editor_mut().cursors.push(Cursor::at(0, 5));
+    model.editor_mut().cursors.push(Cursor::at(0, 8));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::from_positions(
+            Position::new(0, 0),
+            Position::new(0, 5),
+        ));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::from_positions(
+            Position::new(0, 3),
+            Position::new(0, 8),
+        ));
+
+    model.editor_mut().merge_overlapping_selections();
+
+    // Check invariants
+    assert_eq!(
+        model.editor().cursors.len(),
+        model.editor().selections.len(),
+        "cursors.len() == selections.len()"
+    );
+
+    for (i, (cursor, sel)) in model
+        .editor()
+        .cursors
+        .iter()
+        .zip(model.editor().selections.iter())
+        .enumerate()
+    {
+        assert_eq!(
+            cursor.to_position(),
+            sel.head,
+            "Cursor {} position should equal selection head",
+            i
+        );
+    }
+}
+
+// ========================================================================
+// SelectAll Tests
+// ========================================================================
+
+#[test]
+fn test_select_all_single_cursor() {
+    let mut model = test_model("hello\nworld\ntest", 0, 3);
+
+    update(&mut model, Msg::Editor(EditorMsg::SelectAll));
+
+    assert_eq!(model.editor().cursors.len(), 1, "Should have 1 cursor");
+    assert_eq!(
+        model.editor().selections.len(),
+        1,
+        "Should have 1 selection"
+    );
+
+    let sel = &model.editor().selections[0];
+    assert_eq!(
+        sel.start(),
+        Position::new(0, 0),
+        "Selection should start at 0,0"
+    );
+    // Last line is "test" (line 2), length 4
+    assert_eq!(
+        sel.end(),
+        Position::new(2, 4),
+        "Selection should end at document end"
+    );
+}
+
+#[test]
+fn test_select_all_collapses_multi_cursor() {
+    let mut model = test_model("hello\nworld\ntest", 0, 0);
+
+    // Add multiple cursors
+    model.editor_mut().cursors.push(Cursor::at(1, 2));
+    model.editor_mut().cursors.push(Cursor::at(2, 3));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::new(Position::new(1, 2)));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::new(Position::new(2, 3)));
+
+    assert_eq!(
+        model.editor().cursors.len(),
+        3,
+        "Should have 3 cursors before SelectAll"
+    );
+
+    update(&mut model, Msg::Editor(EditorMsg::SelectAll));
+
+    assert_eq!(
+        model.editor().cursors.len(),
+        1,
+        "Should collapse to 1 cursor"
+    );
+    assert_eq!(
+        model.editor().selections.len(),
+        1,
+        "Should have 1 selection"
+    );
+
+    let sel = &model.editor().selections[0];
+    assert_eq!(sel.start(), Position::new(0, 0));
+    assert_eq!(sel.end(), Position::new(2, 4));
+}
+
+// ========================================================================
+// SelectWord Tests
+// ========================================================================
+
+#[test]
+fn test_select_word_single_cursor() {
+    let mut model = test_model("hello world", 0, 2);
+
+    update(&mut model, Msg::Editor(EditorMsg::SelectWord));
+
+    let sel = &model.editor().selections[0];
+    assert_eq!(
+        sel.start(),
+        Position::new(0, 0),
+        "Should select from start of 'hello'"
+    );
+    assert_eq!(
+        sel.end(),
+        Position::new(0, 5),
+        "Should select to end of 'hello'"
+    );
+}
+
+#[test]
+fn test_select_word_on_whitespace() {
+    let mut model = test_model("hello world", 0, 5);
+
+    // Clear existing selection and set cursor on whitespace
+    model.editor_mut().cursors[0].column = 5;
+    model.editor_mut().selections[0] = Selection::new(Position::new(0, 5));
+
+    update(&mut model, Msg::Editor(EditorMsg::SelectWord));
+
+    // Cursor on space - no word selection should happen
+    // Selection should remain empty or unchanged
+    let sel = &model.editor().selections[0];
+    // The word_under_cursor_at returns None for whitespace, so selection stays as-is
+    assert!(
+        sel.is_empty() || sel.start() == sel.end(),
+        "Should not select whitespace"
+    );
+}
+
+#[test]
+fn test_select_word_multi_cursor_different_words() {
+    let mut model = test_model("hello world test", 0, 2);
+
+    // Add second cursor on "world"
+    model.editor_mut().cursors.push(Cursor::at(0, 8));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::new(Position::new(0, 8)));
+
+    update(&mut model, Msg::Editor(EditorMsg::SelectWord));
+
+    assert_eq!(
+        model.editor().cursors.len(),
+        2,
+        "Should still have 2 cursors"
+    );
+    assert_eq!(
+        model.editor().selections.len(),
+        2,
+        "Should have 2 selections"
+    );
+
+    // First selection: "hello" (0-5)
+    assert_eq!(model.editor().selections[0].start(), Position::new(0, 0));
+    assert_eq!(model.editor().selections[0].end(), Position::new(0, 5));
+
+    // Second selection: "world" (6-11)
+    assert_eq!(model.editor().selections[1].start(), Position::new(0, 6));
+    assert_eq!(model.editor().selections[1].end(), Position::new(0, 11));
+}
+
+#[test]
+fn test_select_word_multi_cursor_same_word_merges() {
+    let mut model = test_model("hello world", 0, 1);
+
+    // Add second cursor also in "hello"
+    model.editor_mut().cursors.push(Cursor::at(0, 3));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::new(Position::new(0, 3)));
+
+    update(&mut model, Msg::Editor(EditorMsg::SelectWord));
+
+    // Both cursors selected "hello", should merge to 1
+    assert_eq!(model.editor().cursors.len(), 1, "Should merge to 1 cursor");
+    assert_eq!(
+        model.editor().selections.len(),
+        1,
+        "Should have 1 selection"
+    );
+
+    let sel = &model.editor().selections[0];
+    assert_eq!(sel.start(), Position::new(0, 0));
+    assert_eq!(sel.end(), Position::new(0, 5));
+}
+
+// ========================================================================
+// SelectLine Tests
+// ========================================================================
+
+#[test]
+fn test_select_line_single_cursor() {
+    let mut model = test_model("hello\nworld\ntest", 1, 2);
+
+    update(&mut model, Msg::Editor(EditorMsg::SelectLine));
+
+    let sel = &model.editor().selections[0];
+    assert_eq!(
+        sel.start(),
+        Position::new(1, 0),
+        "Should start at line 1, column 0"
+    );
+    // Line 1 "world" + newline, so selection ends at line 2, column 0
+    assert_eq!(
+        sel.end(),
+        Position::new(2, 0),
+        "Should end at start of next line"
+    );
+}
+
+#[test]
+fn test_select_line_last_line() {
+    let mut model = test_model("hello\nworld\ntest", 2, 2);
+
+    update(&mut model, Msg::Editor(EditorMsg::SelectLine));
+
+    let sel = &model.editor().selections[0];
+    assert_eq!(sel.start(), Position::new(2, 0));
+    // Last line has no trailing newline, so end is at end of line
+    assert_eq!(sel.end(), Position::new(2, 4), "Should end at line length");
+}
+
+#[test]
+fn test_select_line_multi_cursor_different_lines() {
+    let mut model = test_model("hello\nworld\ntest", 0, 2);
+
+    // Add cursor on line 2
+    model.editor_mut().cursors.push(Cursor::at(2, 1));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::new(Position::new(2, 1)));
+
+    update(&mut model, Msg::Editor(EditorMsg::SelectLine));
+
+    assert_eq!(
+        model.editor().cursors.len(),
+        2,
+        "Should still have 2 cursors"
+    );
+
+    // First selection: line 0
+    assert_eq!(model.editor().selections[0].start(), Position::new(0, 0));
+    assert_eq!(model.editor().selections[0].end(), Position::new(1, 0));
+
+    // Second selection: line 2 (last line)
+    assert_eq!(model.editor().selections[1].start(), Position::new(2, 0));
+    assert_eq!(model.editor().selections[1].end(), Position::new(2, 4));
+}
+
+#[test]
+fn test_select_line_multi_cursor_same_line_merges() {
+    let mut model = test_model("hello\nworld\ntest", 0, 1);
+
+    // Add second cursor also on line 0
+    model.editor_mut().cursors.push(Cursor::at(0, 4));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::new(Position::new(0, 4)));
+
+    update(&mut model, Msg::Editor(EditorMsg::SelectLine));
+
+    // Both cursors on same line, should merge to 1
+    assert_eq!(model.editor().cursors.len(), 1, "Should merge to 1 cursor");
+    assert_eq!(model.editor().selections.len(), 1);
+
+    let sel = &model.editor().selections[0];
+    assert_eq!(sel.start(), Position::new(0, 0));
+    assert_eq!(sel.end(), Position::new(1, 0));
+}
+
+// ========================================================================
+// ExtendSelectionToPosition Tests
+// ========================================================================
+
+#[test]
+fn test_extend_selection_single_cursor() {
+    let mut model = test_model("hello world", 0, 0);
+
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::ExtendSelectionToPosition { line: 0, column: 5 }),
+    );
+
+    let sel = &model.editor().selections[0];
+    assert_eq!(
+        sel.anchor,
+        Position::new(0, 0),
+        "Anchor should be at original position"
+    );
+    assert_eq!(
+        sel.head,
+        Position::new(0, 5),
+        "Head should be at target position"
+    );
+    assert_eq!(
+        model.editor().cursor().column,
+        5,
+        "Cursor should be at target"
+    );
+}
+
+#[test]
+fn test_extend_selection_collapses_multi_cursor() {
+    let mut model = test_model("hello\nworld\ntest", 0, 0);
+
+    // Add multiple cursors
+    model.editor_mut().cursors.push(Cursor::at(1, 2));
+    model.editor_mut().cursors.push(Cursor::at(2, 3));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::new(Position::new(1, 2)));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::new(Position::new(2, 3)));
+
+    assert_eq!(
+        model.editor().cursors.len(),
+        3,
+        "Should have 3 cursors before"
+    );
+
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::ExtendSelectionToPosition { line: 1, column: 4 }),
+    );
+
+    assert_eq!(
+        model.editor().cursors.len(),
+        1,
+        "Should collapse to 1 cursor"
+    );
+    assert_eq!(
+        model.editor().selections.len(),
+        1,
+        "Should have 1 selection"
+    );
+
+    let sel = &model.editor().selections[0];
+    assert_eq!(
+        sel.anchor,
+        Position::new(0, 0),
+        "Anchor from primary cursor"
+    );
+    assert_eq!(sel.head, Position::new(1, 4), "Head at target position");
+}
