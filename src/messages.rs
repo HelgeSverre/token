@@ -110,6 +110,8 @@ pub enum DocumentMsg {
     DeleteBackward,
     /// Delete character at cursor (Delete)
     DeleteForward,
+    /// Delete entire current line (Cmd+Backspace)
+    DeleteLine,
     /// Undo last edit
     Undo,
     /// Redo last undone edit
@@ -120,6 +122,8 @@ pub enum DocumentMsg {
     Cut,
     /// Paste from clipboard (Cmd+V)
     Paste,
+    /// Duplicate current line or selection (Cmd+D)
+    Duplicate,
 }
 
 use crate::model::{SegmentContent, SegmentId};
@@ -137,10 +141,7 @@ pub enum UiMsg {
         content: SegmentContent,
     },
     /// Set a transient message that auto-expires
-    SetTransientMessage {
-        text: String,
-        duration_ms: u64,
-    },
+    SetTransientMessage { text: String, duration_ms: u64 },
     /// Clear the transient message
     ClearTransientMessage,
 }
