@@ -72,15 +72,17 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 
     match msg {
         EditorMsg::MoveCursor(direction) => {
-            match direction {
-                Direction::Up => move_cursor_up(model),
-                Direction::Down => move_cursor_down(model),
-                Direction::Left => move_cursor_left(model),
-                Direction::Right => move_cursor_right(model),
+            {
+                let doc = model.document().clone();
+                let editor = model.editor_mut();
+                match direction {
+                    Direction::Up => editor.move_all_cursors_up(&doc),
+                    Direction::Down => editor.move_all_cursors_down(&doc),
+                    Direction::Left => editor.move_all_cursors_left(&doc),
+                    Direction::Right => editor.move_all_cursors_right(&doc),
+                }
+                editor.collapse_selections_to_cursors();
             }
-            // Collapse selections after non-shift movement
-            model.editor_mut().collapse_selections_to_cursors();
-            // Use direction-aware reveal: up reveals at top, down at bottom
             let vertical_hint = match direction {
                 Direction::Up => Some(true),
                 Direction::Down => Some(false),
@@ -92,67 +94,69 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
         }
 
         EditorMsg::MoveCursorLineStart => {
-            let first_non_ws = model.first_non_whitespace_column();
-            if model.editor_mut().cursor_mut().column == first_non_ws {
-                model.editor_mut().cursor_mut().column = 0;
-            } else {
-                model.editor_mut().cursor_mut().column = first_non_ws;
+            {
+                let doc = model.document().clone();
+                let editor = model.editor_mut();
+                editor.move_all_cursors_line_start(&doc);
+                editor.collapse_selections_to_cursors();
             }
-            model.editor_mut().cursor_mut().desired_column = None;
-            model.editor_mut().collapse_selections_to_cursors();
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
         EditorMsg::MoveCursorLineEnd => {
-            let line_end = model.current_line_length();
-            let last_non_ws = model.last_non_whitespace_column();
-            if model.editor_mut().cursor_mut().column == last_non_ws {
-                model.editor_mut().cursor_mut().column = line_end;
-            } else {
-                model.editor_mut().cursor_mut().column = last_non_ws;
+            {
+                let doc = model.document().clone();
+                let editor = model.editor_mut();
+                editor.move_all_cursors_line_end(&doc);
+                editor.collapse_selections_to_cursors();
             }
-            model.editor_mut().cursor_mut().desired_column = None;
-            model.editor_mut().collapse_selections_to_cursors();
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
         EditorMsg::MoveCursorDocumentStart => {
-            model.editor_mut().cursor_mut().line = 0;
-            model.editor_mut().cursor_mut().column = 0;
-            model.editor_mut().cursor_mut().desired_column = None;
-            model.editor_mut().viewport.top_line = 0;
-            model.editor_mut().collapse_selections_to_cursors();
+            {
+                let editor = model.editor_mut();
+                editor.move_all_cursors_document_start();
+                editor.viewport.top_line = 0;
+                editor.collapse_selections_to_cursors();
+            }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
         EditorMsg::MoveCursorDocumentEnd => {
-            model.editor_mut().cursor_mut().line = model.document().line_count().saturating_sub(1);
-            model.editor_mut().cursor_mut().column = model.current_line_length();
-            model.editor_mut().cursor_mut().desired_column = None;
-            let cursor_line = model.editor().cursor().line;
-            let visible_lines = model.editor().viewport.visible_lines;
-            if cursor_line >= visible_lines {
-                model.editor_mut().viewport.top_line = cursor_line - visible_lines + 1;
+            {
+                let doc = model.document().clone();
+                let editor = model.editor_mut();
+                editor.move_all_cursors_document_end(&doc);
+                let cursor_line = editor.cursor().line;
+                let visible_lines = editor.viewport.visible_lines;
+                if cursor_line >= visible_lines {
+                    editor.viewport.top_line = cursor_line - visible_lines + 1;
+                }
+                editor.collapse_selections_to_cursors();
             }
-            model.editor_mut().collapse_selections_to_cursors();
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
         EditorMsg::MoveCursorWord(direction) => {
-            match direction {
-                Direction::Left => move_cursor_word_left(model),
-                Direction::Right => move_cursor_word_right(model),
-                _ => {} // Up/Down not used for word movement
+            {
+                let doc = model.document().clone();
+                let editor = model.editor_mut();
+                match direction {
+                    Direction::Left => editor.move_all_cursors_word_left(&doc),
+                    Direction::Right => editor.move_all_cursors_word_right(&doc),
+                    _ => {}
+                }
+                editor.collapse_selections_to_cursors();
             }
-            model.editor_mut().collapse_selections_to_cursors();
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
@@ -160,22 +164,13 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 
         EditorMsg::PageUp => {
             let jump = model.editor().viewport.visible_lines.saturating_sub(2);
-            model.editor_mut().cursor_mut().line =
-                model.editor().cursor().line.saturating_sub(jump);
-
-            let desired = model
-                .editor()
-                .cursor()
-                .desired_column
-                .unwrap_or(model.editor().cursor().column);
-            let line_len = model.current_line_length();
-            model.editor_mut().cursor_mut().column = desired.min(line_len);
-            model.editor_mut().cursor_mut().desired_column = Some(desired);
-
-            model.editor_mut().viewport.top_line =
-                model.editor().viewport.top_line.saturating_sub(jump);
-            model.editor_mut().collapse_selections_to_cursors();
-            // Use top-aligned reveal for upward page movement
+            {
+                let doc = model.document().clone();
+                let editor = model.editor_mut();
+                editor.page_up_all_cursors(&doc, jump);
+                editor.viewport.top_line = editor.viewport.top_line.saturating_sub(jump);
+                editor.collapse_selections_to_cursors();
+            }
             model.ensure_cursor_visible_directional(Some(true));
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
@@ -183,28 +178,19 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 
         EditorMsg::PageDown => {
             let jump = model.editor().viewport.visible_lines.saturating_sub(2);
-            let max_line = model.document().line_count().saturating_sub(1);
-            model.editor_mut().cursor_mut().line =
-                (model.editor().cursor().line + jump).min(max_line);
-
-            let desired = model
-                .editor()
-                .cursor()
-                .desired_column
-                .unwrap_or(model.editor().cursor().column);
-            let line_len = model.current_line_length();
-            model.editor_mut().cursor_mut().column = desired.min(line_len);
-            model.editor_mut().cursor_mut().desired_column = Some(desired);
-
-            let cursor_line = model.editor().cursor().line;
-            let top_line = model.editor().viewport.top_line;
-            let visible_lines = model.editor().viewport.visible_lines;
-            if cursor_line >= top_line + visible_lines {
-                model.editor_mut().viewport.top_line =
-                    cursor_line.saturating_sub(visible_lines.saturating_sub(1));
+            {
+                let doc = model.document().clone();
+                let editor = model.editor_mut();
+                editor.page_down_all_cursors(&doc, jump);
+                let cursor_line = editor.cursor().line;
+                let top_line = editor.viewport.top_line;
+                let visible_lines = editor.viewport.visible_lines;
+                if cursor_line >= top_line + visible_lines {
+                    editor.viewport.top_line =
+                        cursor_line.saturating_sub(visible_lines.saturating_sub(1));
+                }
+                editor.collapse_selections_to_cursors();
             }
-            model.editor_mut().collapse_selections_to_cursors();
-            // Use bottom-aligned reveal for downward page movement
             model.ensure_cursor_visible_directional(Some(false));
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
@@ -282,23 +268,16 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 
         // === Selection Movement (Shift+key) ===
         EditorMsg::MoveCursorWithSelection(direction) => {
-            // If selection is empty, anchor starts at current cursor
-            if model.editor().selection().is_empty() {
-                let pos = model.editor().cursor().to_position();
-                model.editor_mut().selection_mut().anchor = pos;
+            {
+                let doc = model.document().clone();
+                let editor = model.editor_mut();
+                match direction {
+                    Direction::Up => editor.move_all_cursors_up_with_selection(&doc),
+                    Direction::Down => editor.move_all_cursors_down_with_selection(&doc),
+                    Direction::Left => editor.move_all_cursors_left_with_selection(&doc),
+                    Direction::Right => editor.move_all_cursors_right_with_selection(&doc),
+                }
             }
-
-            // Move the cursor
-            match direction {
-                Direction::Up => move_cursor_up(model),
-                Direction::Down => move_cursor_down(model),
-                Direction::Left => move_cursor_left(model),
-                Direction::Right => move_cursor_right(model),
-            }
-
-            // Update head to new cursor position
-            model.editor_mut().selection_mut().head = model.editor().cursor().to_position();
-            // Use direction-aware reveal for consistency with regular movement
             let vertical_hint = match direction {
                 Direction::Up => Some(true),
                 Direction::Down => Some(false),
@@ -310,160 +289,97 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
         }
 
         EditorMsg::MoveCursorLineStartWithSelection => {
-            if model.editor().selection().is_empty() {
-                let pos = model.editor().cursor().to_position();
-                model.editor_mut().selection_mut().anchor = pos;
+            {
+                let doc = model.document().clone();
+                let editor = model.editor_mut();
+                editor.move_all_cursors_line_start_with_selection(&doc);
             }
-
-            let first_non_ws = model.first_non_whitespace_column();
-            if model.editor().cursor().column == first_non_ws {
-                model.editor_mut().cursor_mut().column = 0;
-            } else {
-                model.editor_mut().cursor_mut().column = first_non_ws;
-            }
-            model.editor_mut().cursor_mut().desired_column = None;
             model.ensure_cursor_visible();
-
-            model.editor_mut().selection_mut().head = model.editor().cursor().to_position();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
         EditorMsg::MoveCursorLineEndWithSelection => {
-            if model.editor().selection().is_empty() {
-                let pos = model.editor().cursor().to_position();
-                model.editor_mut().selection_mut().anchor = pos;
+            {
+                let doc = model.document().clone();
+                let editor = model.editor_mut();
+                editor.move_all_cursors_line_end_with_selection(&doc);
             }
-
-            let line_end = model.current_line_length();
-            let last_non_ws = model.last_non_whitespace_column();
-            if model.editor().cursor().column == last_non_ws {
-                model.editor_mut().cursor_mut().column = line_end;
-            } else {
-                model.editor_mut().cursor_mut().column = last_non_ws;
-            }
-            model.editor_mut().cursor_mut().desired_column = None;
             model.ensure_cursor_visible();
-
-            model.editor_mut().selection_mut().head = model.editor().cursor().to_position();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
         EditorMsg::MoveCursorDocumentStartWithSelection => {
-            if model.editor().selection().is_empty() {
-                let pos = model.editor().cursor().to_position();
-                model.editor_mut().selection_mut().anchor = pos;
+            {
+                let editor = model.editor_mut();
+                editor.move_all_cursors_document_start_with_selection();
+                editor.viewport.top_line = 0;
             }
-
-            model.editor_mut().cursor_mut().line = 0;
-            model.editor_mut().cursor_mut().column = 0;
-            model.editor_mut().cursor_mut().desired_column = None;
-            model.editor_mut().viewport.top_line = 0;
             model.ensure_cursor_visible();
-
-            model.editor_mut().selection_mut().head = model.editor().cursor().to_position();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
         EditorMsg::MoveCursorDocumentEndWithSelection => {
-            if model.editor().selection().is_empty() {
-                let pos = model.editor().cursor().to_position();
-                model.editor_mut().selection_mut().anchor = pos;
-            }
-
-            model.editor_mut().cursor_mut().line = model.document().line_count().saturating_sub(1);
-            model.editor_mut().cursor_mut().column = model.current_line_length();
-            model.editor_mut().cursor_mut().desired_column = None;
-            let cursor_line = model.editor().cursor().line;
-            let visible_lines = model.editor().viewport.visible_lines;
-            if cursor_line >= visible_lines {
-                model.editor_mut().viewport.top_line = cursor_line - visible_lines + 1;
+            {
+                let doc = model.document().clone();
+                let editor = model.editor_mut();
+                editor.move_all_cursors_document_end_with_selection(&doc);
+                let cursor_line = editor.cursor().line;
+                let visible_lines = editor.viewport.visible_lines;
+                if cursor_line >= visible_lines {
+                    editor.viewport.top_line = cursor_line - visible_lines + 1;
+                }
             }
             model.ensure_cursor_visible();
-
-            model.editor_mut().selection_mut().head = model.editor().cursor().to_position();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
         EditorMsg::MoveCursorWordWithSelection(direction) => {
-            if model.editor().selection().is_empty() {
-                let pos = model.editor().cursor().to_position();
-                model.editor_mut().selection_mut().anchor = pos;
-            }
-
-            match direction {
-                Direction::Left => move_cursor_word_left(model),
-                Direction::Right => move_cursor_word_right(model),
-                _ => {} // Up/Down not used for word movement
+            {
+                let doc = model.document().clone();
+                let editor = model.editor_mut();
+                match direction {
+                    Direction::Left => editor.move_all_cursors_word_left_with_selection(&doc),
+                    Direction::Right => editor.move_all_cursors_word_right_with_selection(&doc),
+                    _ => {}
+                }
             }
             model.ensure_cursor_visible();
-
-            model.editor_mut().selection_mut().head = model.editor().cursor().to_position();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
         EditorMsg::PageUpWithSelection => {
-            if model.editor().selection().is_empty() {
-                let pos = model.editor().cursor().to_position();
-                model.editor_mut().selection_mut().anchor = pos;
-            }
-
             let jump = model.editor().viewport.visible_lines.saturating_sub(2);
-            model.editor_mut().cursor_mut().line =
-                model.editor().cursor().line.saturating_sub(jump);
-
-            let desired = model
-                .editor()
-                .cursor()
-                .desired_column
-                .unwrap_or(model.editor().cursor().column);
-            let line_len = model.current_line_length();
-            model.editor_mut().cursor_mut().column = desired.min(line_len);
-            model.editor_mut().cursor_mut().desired_column = Some(desired);
-
-            model.editor_mut().viewport.top_line =
-                model.editor().viewport.top_line.saturating_sub(jump);
+            {
+                let doc = model.document().clone();
+                let editor = model.editor_mut();
+                editor.page_up_all_cursors_with_selection(&doc, jump);
+                editor.viewport.top_line = editor.viewport.top_line.saturating_sub(jump);
+            }
             model.ensure_cursor_visible();
-
-            model.editor_mut().selection_mut().head = model.editor().cursor().to_position();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
         EditorMsg::PageDownWithSelection => {
-            if model.editor().selection().is_empty() {
-                let pos = model.editor().cursor().to_position();
-                model.editor_mut().selection_mut().anchor = pos;
-            }
-
             let jump = model.editor().viewport.visible_lines.saturating_sub(2);
-            let max_line = model.document().line_count().saturating_sub(1);
-            model.editor_mut().cursor_mut().line =
-                (model.editor().cursor().line + jump).min(max_line);
-
-            let desired = model
-                .editor()
-                .cursor()
-                .desired_column
-                .unwrap_or(model.editor().cursor().column);
-            let line_len = model.current_line_length();
-            model.editor_mut().cursor_mut().column = desired.min(line_len);
-            model.editor_mut().cursor_mut().desired_column = Some(desired);
-
-            let cursor_line = model.editor().cursor().line;
-            let top_line = model.editor().viewport.top_line;
-            let visible_lines = model.editor().viewport.visible_lines;
-            if cursor_line >= top_line + visible_lines {
-                model.editor_mut().viewport.top_line =
-                    cursor_line.saturating_sub(visible_lines.saturating_sub(1));
+            {
+                let doc = model.document().clone();
+                let editor = model.editor_mut();
+                editor.page_down_all_cursors_with_selection(&doc, jump);
+                let cursor_line = editor.cursor().line;
+                let top_line = editor.viewport.top_line;
+                let visible_lines = editor.viewport.visible_lines;
+                if cursor_line >= top_line + visible_lines {
+                    editor.viewport.top_line =
+                        cursor_line.saturating_sub(visible_lines.saturating_sub(1));
+                }
             }
             model.ensure_cursor_visible();
-
-            model.editor_mut().selection_mut().head = model.editor().cursor().to_position();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
@@ -1192,9 +1108,9 @@ fn select_all(model: &AppModel) -> Option<Selection> {
 }
 
 /// Synchronize cursors in other editors viewing the same document after an edit.
-/// 
+///
 /// Call this after any document modification to update cursor positions in other views.
-/// 
+///
 /// - `edit_line`: The line where the edit started
 /// - `edit_column`: The column where the edit started
 /// - `lines_delta`: Change in line count (positive = lines added, negative = lines removed)
@@ -1534,12 +1450,12 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     .slice(pos - 1..pos)
                     .chars()
                     .collect();
-                
+
                 // Calculate edit info for cursor sync
                 let is_newline = deleted_char == "\n";
                 let edit_line = cursor_before.line;
                 let edit_column = cursor_before.column;
-                
+
                 model.document_mut().buffer.remove(pos - 1..pos);
                 model.set_cursor_from_position(pos - 1);
                 model.ensure_cursor_visible();
@@ -1558,7 +1474,13 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     sync_other_editor_cursors(model, edit_line.saturating_sub(1), 0, -1, 0);
                 } else {
                     // Deleted character: cursors after shift left
-                    sync_other_editor_cursors(model, edit_line, edit_column.saturating_sub(1), 0, -1);
+                    sync_other_editor_cursors(
+                        model,
+                        edit_line,
+                        edit_column.saturating_sub(1),
+                        0,
+                        -1,
+                    );
                 }
             }
 
@@ -1662,12 +1584,12 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     .slice(pos..pos + 1)
                     .chars()
                     .collect();
-                
+
                 // Calculate edit info for cursor sync
                 let is_newline = deleted_char == "\n";
                 let edit_line = cursor_before.line;
                 let edit_column = cursor_before.column;
-                
+
                 model.document_mut().buffer.remove(pos..pos + 1);
 
                 let cursor_after = *model.editor().cursor();
@@ -2870,130 +2792,6 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             None
         }
     }
-}
-
-// Helper functions for cursor movement
-
-fn move_cursor_up(model: &mut AppModel) {
-    if model.editor().cursor().line > 0 {
-        model.editor_mut().cursor_mut().line -= 1;
-
-        let desired = model
-            .editor()
-            .cursor()
-            .desired_column
-            .unwrap_or(model.editor().cursor().column);
-        let line_len = model.current_line_length();
-        model.editor_mut().cursor_mut().column = desired.min(line_len);
-        model.editor_mut().cursor_mut().desired_column = Some(desired);
-
-        let padding = model.editor().scroll_padding;
-        let top_boundary = model.editor().viewport.top_line + padding;
-        let cursor_line = model.editor().cursor().line;
-
-        if cursor_line < top_boundary && model.editor().viewport.top_line > 0 {
-            model.editor_mut().viewport.top_line = cursor_line.saturating_sub(padding);
-        }
-    }
-}
-
-fn move_cursor_down(model: &mut AppModel) {
-    if model.editor().cursor().line < model.document().line_count().saturating_sub(1) {
-        model.editor_mut().cursor_mut().line += 1;
-
-        let desired = model
-            .editor()
-            .cursor()
-            .desired_column
-            .unwrap_or(model.editor().cursor().column);
-        let line_len = model.current_line_length();
-        model.editor_mut().cursor_mut().column = desired.min(line_len);
-        model.editor_mut().cursor_mut().desired_column = Some(desired);
-
-        let padding = model.editor().scroll_padding;
-        let top_line = model.editor().viewport.top_line;
-        let visible_lines = model.editor().viewport.visible_lines;
-        let bottom_boundary = top_line
-            .saturating_add(visible_lines)
-            .saturating_sub(padding)
-            .saturating_sub(1);
-        let max_top = model.document().line_count().saturating_sub(visible_lines);
-        let cursor_line = model.editor().cursor().line;
-
-        if cursor_line > bottom_boundary && model.editor().viewport.top_line < max_top {
-            let desired_top = cursor_line + padding + 1;
-            model.editor_mut().viewport.top_line =
-                desired_top.saturating_sub(visible_lines).min(max_top);
-        }
-    }
-}
-
-fn move_cursor_left(model: &mut AppModel) {
-    if model.editor().cursor().column > 0 {
-        model.editor_mut().cursor_mut().column -= 1;
-        model.editor_mut().cursor_mut().desired_column = None;
-    } else if model.editor().cursor().line > 0 {
-        model.editor_mut().cursor_mut().line -= 1;
-        model.editor_mut().cursor_mut().column = model.current_line_length();
-        model.editor_mut().cursor_mut().desired_column = None;
-    }
-    model.ensure_cursor_visible();
-}
-
-fn move_cursor_right(model: &mut AppModel) {
-    let line_len = model.current_line_length();
-    if model.editor().cursor().column < line_len {
-        model.editor_mut().cursor_mut().column += 1;
-        model.editor_mut().cursor_mut().desired_column = None;
-    } else if model.editor().cursor().line < model.document().line_count().saturating_sub(1) {
-        model.editor_mut().cursor_mut().line += 1;
-        model.editor_mut().cursor_mut().column = 0;
-        model.editor_mut().cursor_mut().desired_column = None;
-    }
-    model.ensure_cursor_visible();
-}
-
-fn move_cursor_word_left(model: &mut AppModel) {
-    let pos = model.cursor_buffer_position();
-    if pos == 0 {
-        return;
-    }
-
-    let text: String = model.document().buffer.slice(..pos).chars().collect();
-    let chars: Vec<char> = text.chars().collect();
-    let mut i = chars.len();
-
-    if i > 0 {
-        let current_type = char_type(chars[i - 1]);
-        while i > 0 && char_type(chars[i - 1]) == current_type {
-            i -= 1;
-        }
-    }
-
-    // Use move_cursor_to_position to preserve selection
-    model.move_cursor_to_position(i);
-}
-
-fn move_cursor_word_right(model: &mut AppModel) {
-    let pos = model.cursor_buffer_position();
-    let total_chars = model.document().buffer.len_chars();
-    if pos >= total_chars {
-        return;
-    }
-
-    let text: String = model.document().buffer.slice(pos..).chars().collect();
-    let chars: Vec<char> = text.chars().collect();
-    let mut i = 0;
-
-    if !chars.is_empty() {
-        let current_type = char_type(chars[0]);
-        while i < chars.len() && char_type(chars[i]) == current_type {
-            i += 1;
-        }
-    }
-
-    // Use move_cursor_to_position to preserve selection
-    model.move_cursor_to_position(pos + i);
 }
 
 /// Apply an undo operation to the model (reverses the edit)
