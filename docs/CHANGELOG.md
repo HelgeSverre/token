@@ -6,15 +6,99 @@ All notable changes to rust-editor are documented in this file.
 
 ## 2025-12-06
 
-### Added
+### Added - Delete Line Command
+- `DocumentMsg::DeleteLine` for deleting entire current line
+- Cmd+Backspace keybinding (Ctrl+Backspace on non-Mac)
+- Smart cursor positioning after delete:
+  - First/middle line: stays on same line number
+  - Last line: moves to end of previous line
+  - Empty line after trailing newline: moves up
+- Full undo/redo support
+- 8 new tests in `tests/text_editing.rs`
+
+### Added - Duplicate Line/Selection (Cmd+D)
+- `DocumentMsg::Duplicate` for duplicating current line or selection
+- No selection: duplicates entire line below cursor
+- With selection: duplicates selected text in place
+- Full undo/redo support
+- 4 new tests in `tests/text_editing.rs`
+
+### Added - Atomic Replace for Selection Editing
+- `EditOperation::Replace` variant for atomic undo of selection replacement
+- When typing over selection, undo restores both deleted text and removes inserted text in one operation
+- Prevents "two-step undo" bug where user had to undo twice
+
+### Fixed - Undo/Redo Keybindings on macOS
+- Cmd+Z now properly triggers Undo (was inserting 'z')
+- Cmd+Shift+Z now properly triggers Redo
+- Fixed by adding `logo` modifier support alongside `ctrl`
+
+### Fixed - Overflow Panics in Edge Cases
+- `move_cursor_down()`: Fixed overflow when `visible_lines` is 0
+- `ensure_cursor_visible_with_mode()`: Fixed horizontal scroll overflow
+- `StatusBarLayout`: Fixed separator position overflow
+- All arithmetic now uses `saturating_add`/`saturating_sub`
+
+### Added - Expanded Monkey Tests
+- 12 new window resize edge case tests in `tests/monkey_tests.rs`:
+  - Maximum u32 dimensions
+  - Very wide/narrow and very tall/narrow
+  - Resize then cursor movement/scrolling
+  - Oscillating zero/non-zero sizes
+  - Resize with active selection
+  - Cursor beyond viewport after resize
+  - Powers of two dimensions
+  - Interleaved resize and text operations
+  - Status bar edge (height = line_height)
+
+### Added - Status Bar Click Capture
+- Clicks on status bar no longer propagate to editor
+- `Renderer::is_in_status_bar(y)` method for hit testing
+
+### Changed
+- Test count: 246 (was 227)
+- Added 8 delete line tests, 4 duplicate tests, 12 resize tests
+
+---
+
+## 2025-12-06
+
+### Added - Status Bar System
+- Structured, segment-based status bar per `docs/feature/STATUS_BAR.md`
+- `StatusBar`, `StatusSegment`, `SegmentId`, `SegmentContent` types
+- `sync_status_bar()` auto-updates segments from model state
+- `StatusBarLayout` for rendering with separator positions
+- Transient messages with auto-expiry (`TransientMessage`)
+- Left/right segment alignment with separators
+- 47 new status bar tests (`tests/status_bar.rs`)
+
+### Added - Overlay System
+- Reusable overlay rendering module (`src/overlay.rs`)
+- `OverlayAnchor` enum (TopLeft, TopRight, BottomLeft, BottomRight, Center)
+- `OverlayConfig` with builder pattern for configuration
+- `render_overlay_background()` with alpha blending
+- `render_overlay_border()` for optional 1px borders
+- `blend_pixel()` for ARGB alpha compositing
+- 7 overlay unit tests
+
+### Added - Overlay Theme Integration
+- `OverlayTheme` with themed colors: background, foreground, highlight, warning, error, border
+- `OverlayThemeData` for YAML parsing (all fields optional for backward compatibility)
+- Perf overlay now uses theme colors instead of hardcoded values
+- Optional border rendering when theme specifies border color
+- Added overlay sections to all 4 theme files
+
+### Fixed
+- Status bar separator lines now span full height (was inset 4px)
 - Direction-aware scroll reveal with `ScrollRevealMode` enum
 - `ensure_cursor_visible_with_mode()` primitive for scroll behavior
 - Arrow key viewport snap-back behavior
-- 11 new tests for scroll reveal modes
-
-### Fixed
 - MoveCursor now properly calls ensure_cursor_visible()
 - Directional reveal: Up→TopAligned, Down→BottomAligned for natural UX
+
+### Changed
+- Test count: 227 (was 185)
+- Added 11 scroll reveal tests, 47 status bar tests, 7 overlay tests
 
 ---
 
