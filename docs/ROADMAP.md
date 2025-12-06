@@ -79,6 +79,11 @@ Reusable overlay rendering (`src/overlay.rs`):
 | Phase 6: Document Sync        | ✅ Complete | Shared document architecture (cursor adjustment deferred)      |
 | Phase 7: Keyboard Shortcuts   | ✅ Complete | Cmd+\\, Cmd+W, Cmd+1/2/3/4, Ctrl+Tab                           |
 
+**Deferred items:**
+- Cursor adjustment when other views edit same document
+- Splitter drag resize (splitters render but not draggable)
+- Tab drag-and-drop between groups
+
 ---
 
 ## Planned Features
@@ -116,6 +121,25 @@ CLI arguments and file tree sidebar:
 - File system watching for external changes
 - Dependencies: `clap` for CLI, `notify` for FS watching
 
+### Codebase Organization
+
+**Design:** [ORGANIZATION-CODEBASE.md](ORGANIZATION-CODEBASE.md)
+
+Restructure large files for maintainability:
+
+- Convert `update.rs` to `update/` module directory
+- Extract from `main.rs`: `view.rs`, `app.rs`, `input.rs`, `perf.rs`
+- Target: `main.rs` ~100-200 lines, update submodules ~400-600 lines each
+
+### Undo Coalescing (Future)
+
+Group rapid consecutive edits into single undo entries:
+
+- Time-based grouping (e.g., 300ms threshold)
+- Coalesce consecutive character insertions
+- Break on cursor movement or pause
+- Improves undo ergonomics for normal typing
+
 ---
 
 ## Feature Design Documents
@@ -130,6 +154,7 @@ CLI arguments and file tree sidebar:
 | Expand/Shrink Selection  | Planned     | [feature/TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) |
 | File Dropping            | Planned     | [feature/handle-file-dropping.md](feature/handle-file-dropping.md)                 |
 | Workspace Management     | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                 |
+| Codebase Organization    | Planned     | [ORGANIZATION-CODEBASE.md](ORGANIZATION-CODEBASE.md)                               |
 
 ---
 
@@ -137,21 +162,21 @@ CLI arguments and file tree sidebar:
 
 ```
 src/
-├── main.rs              # Entry point, event loop, App struct, Renderer
+├── main.rs              # Entry point, event loop, App, Renderer, handle_key (~3100 lines)
 ├── lib.rs               # Library root with module exports
 ├── model/
-│   ├── mod.rs           # AppModel struct (includes Theme), re-exports
-│   ├── document.rs      # Document struct (buffer, undo/redo, file_path)
-│   ├── editor.rs        # EditorState, Cursor, Selection, Viewport, ScrollRevealMode
-│   ├── editor_area.rs   # EditorArea, layout tree, splitters (split view foundation)
-│   ├── ui.rs            # UiState (status, cursor blink, loading states)
-│   └── status_bar.rs    # StatusBar, StatusSegment, sync_status_bar(), layout
-├── messages.rs          # Msg, EditorMsg, DocumentMsg, UiMsg, AppMsg, Direction
-├── commands.rs          # Cmd enum (Redraw, SaveFile, LoadFile, Batch)
-├── update.rs            # update() dispatcher + update_editor/document/ui/app
-├── theme.rs             # Theme, Color, OverlayTheme, YAML theme loading
-├── overlay.rs           # OverlayConfig, OverlayBounds, render functions
-└── util.rs              # CharType enum, is_punctuation, char_type
+│   ├── mod.rs           # AppModel struct, layout constants, accessors (~275 lines)
+│   ├── document.rs      # Document struct (buffer, undo/redo, file_path) (~245 lines)
+│   ├── editor.rs        # EditorState, Cursor, Selection, Viewport (~660 lines)
+│   ├── editor_area.rs   # EditorArea, groups, tabs, layout tree (~770 lines)
+│   ├── ui.rs            # UiState (cursor blink, transient messages) (~85 lines)
+│   └── status_bar.rs    # StatusBar, StatusSegment, sync_status_bar() (~450 lines)
+├── messages.rs          # Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg, AppMsg (~260 lines)
+├── commands.rs          # Cmd enum (Redraw, SaveFile, LoadFile, Batch) (~55 lines)
+├── update.rs            # update() dispatcher + all handlers (~2900 lines)
+├── theme.rs             # Theme, Color, TabBarTheme, SplitterTheme (~540 lines)
+├── overlay.rs           # OverlayConfig, OverlayBounds, render functions (~285 lines)
+└── util.rs              # CharType enum, is_punctuation, char_type (~65 lines)
 
 themes/
 ├── dark.yaml            # Default dark theme (VS Code-inspired)
@@ -159,17 +184,17 @@ themes/
 ├── github-dark.yaml     # GitHub dark theme
 └── github-light.yaml    # GitHub light theme
 
-tests/
-├── common/mod.rs        # Shared test helpers
+tests/                   # Integration tests (~5800 lines total)
+├── common/mod.rs        # Shared test helpers (test_model, etc.)
 ├── cursor_movement.rs   # 38 tests
 ├── text_editing.rs      # 44 tests (includes multi-cursor undo)
 ├── selection.rs         # 29 tests
 ├── document_cursor.rs   # 32 tests
 ├── scrolling.rs         # 33 tests
 ├── edge_cases.rs        # 9 tests
-├── monkey_tests.rs      # 34 tests (expanded resize edge cases)
-├── layout.rs            # 47 tests
+├── monkey_tests.rs      # 34 tests (resize edge cases)
+├── layout.rs            # 47 tests (split view)
 └── status_bar.rs        # 47 tests
 ```
 
-**Test count:** 351 (24 lib + 14 main + 313 integration)
+**Test count:** 351 total (24 lib + 14 main + 313 integration)
