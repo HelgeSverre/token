@@ -23,6 +23,7 @@ autocomplete overlays, and all the coordinate transformations in between.
 10. [Edge Cases and Special Considerations](#chapter-10-edge-cases-and-special-considerations)
 11. [Naming Conventions and Terminology](#chapter-11-naming-conventions-and-terminology)
 12. [Cursor Styles: Pipe, Block, and Underline](#chapter-12-cursor-styles-pipe-block-and-underline)
+13. [Keyboard Mapping and Command Dispatch](#chapter-13-keyboard-mapping-and-command-dispatch)
 
 **Appendices:**
 
@@ -2728,6 +2729,452 @@ CursorAnimator {
 
         return true  // needs repaint
     }
+}
+```
+
+---
+
+## Chapter 13: Keyboard Mapping and Command Dispatch
+
+A configurable keymapping system is fundamental to any serious text editor. This chapter covers the architecture for
+translating raw keyboard input into editor commands.
+
+### 13.1 Core Entities
+
+#### Keystroke
+
+A normalized representation of a single key press with modifiers:
+
+```
+Keystroke {
+    key: KeyCode           // The primary key (character, function key, named key)
+    modifiers: Modifiers   // Bitmask: Ctrl | Shift | Alt | Meta
+}
+
+Modifiers {
+    ctrl: Boolean          // Control key
+    shift: Boolean         // Shift key
+    alt: Boolean           // Alt/Option key
+    meta: Boolean          // Cmd (macOS) / Win (Windows) / Super (Linux)
+}
+
+enum KeyCode {
+    Char(char)             // Normalized to lowercase for matching
+    Named(NamedKey)        // Enter, Escape, Tab, Backspace, etc.
+    Function(u8)           // F1-F24
+    Navigation             // Arrow keys, Home, End, PageUp, PageDown
+}
+```
+
+#### Keybinding
+
+Maps a keystroke sequence to a command with optional context conditions:
+
+```
+Keybinding {
+    sequence: Array<Keystroke>   // Single key or chord sequence (e.g., Ctrl+K, Ctrl+C)
+    command: Command             // Action to execute
+    when: Option<Condition>      // Context predicate for activation
+    source: BindingSource        // Default | User (for precedence)
+}
+
+enum BindingSource {
+    Default,    // Built-in bindings
+    User        // User-defined overrides
+}
+```
+
+### 13.2 Key Representation Formats
+
+Different editors use different string formats for key representation:
+
+| Editor       | Format                      | Example                         |
+| ------------ | --------------------------- | ------------------------------- |
+| VS Code      | `modifier+key` (lowercase)  | `ctrl+shift+k`, `cmd+k cmd+c`   |
+| Helix        | `modifier-key` (uppercase)  | `C-S-k`, `g a`                  |
+| Sublime      | `modifier+key` (mixed)      | `ctrl+shift+k`                  |
+| Zed          | `modifier-key` (lowercase)  | `cmd-k cmd-s`                   |
+
+#### Recommended Canonical Format
+
+```
+// Single keystroke
+"ctrl+s"        // Ctrl + S
+"cmd+shift+p"   // Cmd + Shift + P
+"alt+enter"     // Alt + Enter
+"f5"            // F5
+
+// Multi-key sequence (chords)
+"ctrl+k ctrl+c" // Ctrl+K followed by Ctrl+C
+
+// Platform-agnostic modifier
+"mod+s"         // Cmd+S on macOS, Ctrl+S elsewhere
+```
+
+Parsing algorithm:
+
+```
+function parseKeystroke(input, isMacOS) {
+    parts = input.split('+')
+    keyPart = parts.last().toLowerCase()
+    
+    mods = { ctrl: false, shift: false, alt: false, meta: false }
+    
+    for (modifier in parts[0..parts.length-1]) {
+        switch (modifier.toLowerCase()) {
+            case 'ctrl', 'control': mods.ctrl = true
+            case 'shift': mods.shift = true
+            case 'alt', 'option': mods.alt = true
+            case 'cmd', 'command', 'meta': mods.meta = true
+            case 'mod': 
+                if (isMacOS) mods.meta = true
+                else mods.ctrl = true
+        }
+    }
+    
+    key = parseKeyCode(keyPart)  // 'a' → Char('a'), 'enter' → Named(Enter)
+    return Keystroke { key, mods }
+}
+
+function parseSequence(input, isMacOS) {
+    return input.split(' ').map(s => parseKeystroke(s, isMacOS))
+}
+```
+
+### 13.3 Storage Strategies
+
+#### Flat Vector (Recommended for Most Editors)
+
+Store bindings in precedence order; iterate for matches:
+
+```
+Keymap {
+    bindings: Array<Keybinding>       // Sorted by precedence (user > default)
+    bindingsByAction: Map<Command, Array<Index>>  // For reverse lookup (UI hints)
+}
+```
+
+**Pros:** Simple, sufficient for ~500 bindings, easy precedence control.
+
+**Cons:** O(n) lookup per keystroke (acceptable for editor-scale n).
+
+#### Trie (For Modal Editors)
+
+Tree structure where each node is a keystroke:
+
+```
+KeyTrieNode {
+    binding: Option<Keybinding>           // Command at this node
+    children: Map<Keystroke, KeyTrieNode> // Subtrees for longer sequences
+    isSticky: Boolean                     // For vim-like "leader" modes
+}
+```
+
+**Pros:** Natural for prefix matching, efficient for deep sequences.
+
+**Cons:** More complex merging/precedence, harder to visualize.
+
+### 13.4 Context System (When Clauses)
+
+Bindings can be conditional on editor state:
+
+```
+KeyContext {
+    editorFocus: Boolean           // Is text editor focused?
+    hasSelection: Boolean          // Is there an active selection?
+    hasMultipleCursors: Boolean    // Multi-cursor mode active?
+    isReadOnly: Boolean            // Read-only buffer?
+    mode: EditorMode               // For modal editors: Normal, Insert, Visual
+    panelFocus: PanelType          // Editor, StatusBar, FileTree, etc.
+}
+
+enum Condition {
+    True                           // Always active
+    Key(ContextKey)                // Single context check
+    Not(Condition)                 // Negation
+    And(Array<Condition>)          // All must be true
+    Or(Array<Condition>)           // Any must be true
+}
+```
+
+Example condition expressions:
+
+```
+"editor_focus"                      // Simple flag
+"editor_focus && has_selection"     // Conjunction
+"editor_focus && !is_readonly"      // With negation
+"mode == insert"                    // Equality comparison (advanced)
+```
+
+Condition evaluation:
+
+```
+function evalCondition(condition, context) {
+    switch (condition) {
+        case True: return true
+        case Key(k): return context.get(k)
+        case Not(c): return !evalCondition(c, context)
+        case And(cs): return cs.every(c => evalCondition(c, context))
+        case Or(cs): return cs.some(c => evalCondition(c, context))
+    }
+}
+```
+
+### 13.5 Command Dispatch Architecture
+
+#### Dispatch Flow
+
+```
+┌──────────────┐     ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│  Raw Input   │────▶│  Normalize  │────▶│   Keymap     │────▶│   Execute   │
+│  (winit)     │     │  Keystroke  │     │   Lookup     │     │   Command   │
+└──────────────┘     └─────────────┘     └──────────────┘     └─────────────┘
+                                               │
+                                               ▼
+                                         ┌──────────────┐
+                                         │  Pending?    │
+                                         │  (sequence)  │
+                                         └──────────────┘
+```
+
+#### State Machine for Sequences
+
+```
+KeymapState {
+    pendingKeystrokes: Array<Keystroke>   // Buffer for chord sequences
+    timeout: Option<Timer>                 // Reset after inactivity
+}
+
+enum KeyAction {
+    Execute(Command)   // Full match: execute command
+    AwaitMore          // Partial match: wait for next key
+    NoMatch            // No binding: pass through to text input
+}
+```
+
+Resolution algorithm:
+
+```
+function handleKeystroke(keystroke, context, keymap, state) {
+    state.pendingKeystrokes.push(keystroke)
+    state.resetTimeout()
+    
+    exactMatch = null
+    hasPrefix = false
+    
+    for (binding in keymap.bindings) {
+        // Check context condition
+        if (binding.when && !evalCondition(binding.when, context)) {
+            continue
+        }
+        
+        // Check if sequence matches
+        if (!binding.sequence.startsWith(state.pendingKeystrokes)) {
+            continue
+        }
+        
+        if (binding.sequence.length == state.pendingKeystrokes.length) {
+            exactMatch = binding  // Found exact match
+            break                 // First match wins (precedence order)
+        } else {
+            hasPrefix = true      // Potential longer match exists
+        }
+    }
+    
+    if (exactMatch) {
+        state.pendingKeystrokes.clear()
+        return KeyAction.Execute(exactMatch.command)
+    }
+    
+    if (hasPrefix) {
+        return KeyAction.AwaitMore
+    }
+    
+    state.pendingKeystrokes.clear()
+    return KeyAction.NoMatch
+}
+```
+
+### 13.6 Conflict Resolution
+
+#### Precedence Rules
+
+1. **Source order:** User bindings override default bindings
+2. **Context specificity:** More specific context wins (e.g., `editor_focus && mode == insert` > `editor_focus`)
+3. **Sequence length:** For overlapping prefixes, longer sequences are checked first
+
+```
+// Precedence calculation (higher = more specific)
+function bindingPrecedence(binding) {
+    score = 0
+    if (binding.source == User) score += 1000
+    if (binding.when) score += countConditions(binding.when) * 10
+    score += binding.sequence.length
+    return score
+}
+```
+
+#### Disabling Bindings
+
+Allow users to unbind default bindings:
+
+```toml
+# User keymap.toml
+[[binding]]
+key = "ctrl+k"
+command = "unbound"  # Disables any default Ctrl+K binding
+```
+
+### 13.7 Configuration Format
+
+#### Recommended: TOML (Hierarchical)
+
+```toml
+# Default bindings (embedded or in defaults.toml)
+[[binding]]
+key = "mod+s"
+command = "file.save"
+when = "editor_focus"
+
+[[binding]]
+key = "mod+shift+p"
+command = "command_palette.open"
+
+[[binding]]
+key = "ctrl+k ctrl+c"
+command = "editor.comment_line"
+when = "editor_focus && has_selection"
+
+# Mode-specific (for modal editors)
+[keys.normal]
+"g" = { "a" = "code_action", "d" = "goto_definition" }
+"d" = "delete_line"
+
+[keys.insert]
+"jk" = "normal_mode"  # Escape to normal mode
+```
+
+#### Alternative: JSON (VS Code Style)
+
+```json
+[
+  {
+    "key": "ctrl+shift+k",
+    "command": "editor.deleteLines",
+    "when": "editorTextFocus && !editorReadonly"
+  },
+  {
+    "key": "ctrl+k ctrl+c",
+    "command": "editor.commentLine"
+  }
+]
+```
+
+### 13.8 Platform Considerations
+
+#### Modifier Mapping
+
+| Modifier | macOS      | Windows/Linux |
+| -------- | ---------- | ------------- |
+| `mod`    | ⌘ Command  | Ctrl          |
+| `ctrl`   | Control    | Ctrl          |
+| `alt`    | ⌥ Option   | Alt           |
+| `shift`  | ⇧ Shift    | Shift         |
+| `meta`   | ⌘ Command  | Win key       |
+
+#### Display Format
+
+```
+function formatKeystroke(keystroke, platform) {
+    parts = []
+    if (keystroke.mods.ctrl)  parts.push(platform == macOS ? "⌃" : "Ctrl")
+    if (keystroke.mods.alt)   parts.push(platform == macOS ? "⌥" : "Alt")
+    if (keystroke.mods.shift) parts.push(platform == macOS ? "⇧" : "Shift")
+    if (keystroke.mods.meta)  parts.push(platform == macOS ? "⌘" : "Win")
+    parts.push(formatKeyCode(keystroke.key))
+    return parts.join(platform == macOS ? "" : "+")
+}
+
+// Examples:
+// macOS:   "⌘S", "⌃⌥⇧K", "⌘K ⌘C"
+// Windows: "Ctrl+S", "Ctrl+Alt+Shift+K", "Ctrl+K Ctrl+C"
+```
+
+### 13.9 Reverse Lookup (Action → Bindings)
+
+For displaying shortcuts in menus, tooltips, and command palette:
+
+```
+function bindingsForAction(action, keymap, context) {
+    matches = []
+    for (binding in keymap.bindings) {
+        if (binding.command != action) continue
+        if (binding.when && !evalCondition(binding.when, context)) continue
+        matches.push(binding)
+    }
+    // Return highest precedence binding (user > default)
+    return matches.sortByPrecedence().first()
+}
+
+// Usage in menu rendering:
+function renderMenuItem(action, label) {
+    binding = bindingsForAction(action, keymap, context)
+    shortcutText = binding ? formatKeystroke(binding.sequence) : ""
+    return MenuItem { label, shortcutText, action }
+}
+```
+
+### 13.10 Edge Cases
+
+#### Sequence Timeouts
+
+```
+// Reset pending sequence after inactivity (e.g., 2 seconds)
+function onKeystroke(keystroke) {
+    state.cancelTimeout()
+    result = handleKeystroke(keystroke, ...)
+    
+    if (result == AwaitMore) {
+        state.setTimeout(2000, () => {
+            state.pendingKeystrokes.clear()
+            showMessage("Key sequence cancelled")
+        })
+    }
+}
+```
+
+#### Escape to Cancel
+
+```
+// Escape always cancels pending sequences
+if (keystroke == Escape && state.pendingKeystrokes.length > 0) {
+    state.pendingKeystrokes.clear()
+    return KeyAction.Cancelled
+}
+```
+
+#### Text Input vs Shortcuts
+
+```
+// Key events with just Shift are usually text input
+function isTextInput(keystroke) {
+    if (keystroke.key is Char) {
+        // Only Shift modifier → text input (uppercase)
+        return keystroke.mods == { shift: true } || keystroke.mods.isEmpty()
+    }
+    return false
+}
+
+// Handle text via ReceivedCharacter event, not KeyDown
+function handleKeyDown(event) {
+    keystroke = normalizeKeystroke(event)
+    
+    if (!hasModifiers(keystroke) || isTextInput(keystroke)) {
+        return  // Let ReceivedCharacter handle it
+    }
+    
+    result = keymap.handle(keystroke, context)
+    // ...
 }
 ```
 
