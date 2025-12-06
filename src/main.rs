@@ -1534,6 +1534,14 @@ fn handle_key(
         Key::Named(NamedKey::ArrowDown) if alt && option_double_tapped => {
             update(model, Msg::Editor(EditorMsg::AddCursorBelow))
         }
+
+        // Expand/Shrink Selection (Option+Up/Down without double-tap)
+        Key::Named(NamedKey::ArrowUp) if alt && !shift => {
+            update(model, Msg::Editor(EditorMsg::ExpandSelection))
+        }
+        Key::Named(NamedKey::ArrowDown) if alt && !shift => {
+            update(model, Msg::Editor(EditorMsg::ShrinkSelection))
+        }
         // Undo/Redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Y)
         Key::Character(ref s) if (ctrl || logo) && s.eq_ignore_ascii_case("z") => {
             if shift {
@@ -2501,6 +2509,7 @@ mod tests {
             scroll_padding: 1,
             rectangle_selection: RectangleSelectionState::default(),
             occurrence_state: None,
+            selection_history: Vec::new(),
         };
         let editor_area = EditorArea::single_document(document, editor);
         AppModel {

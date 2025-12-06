@@ -11,7 +11,7 @@ use crate::model::{
     OccurrenceState, Position, SegmentContent, SegmentId, Selection, SplitContainer,
     SplitDirection, Tab, TransientMessage,
 };
-use crate::util::char_type;
+use crate::util::{char_type, CharType};
 
 use crate::model::sync_status_bar;
 
@@ -33,8 +33,8 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
 
 /// Handle editor messages (cursor movement, viewport scrolling)
 pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
-    // Clear occurrence selection state on non-selection cursor movements
-    // and selection-clearing operations
+    // Clear occurrence selection state and selection history on non-selection cursor movements
+    // and selection-clearing operations (but NOT on ExpandSelection/ShrinkSelection)
     match &msg {
         EditorMsg::MoveCursor(_)
         | EditorMsg::MoveCursorLineStart
@@ -48,6 +48,24 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
         | EditorMsg::ClearSelection
         | EditorMsg::CollapseToSingleCursor => {
             model.editor_mut().occurrence_state = None;
+            model.editor_mut().clear_selection_history();
+        }
+        // Also clear on selection-modifying operations (except Expand/Shrink)
+        EditorMsg::MoveCursorWithSelection(_)
+        | EditorMsg::MoveCursorLineStartWithSelection
+        | EditorMsg::MoveCursorLineEndWithSelection
+        | EditorMsg::MoveCursorDocumentStartWithSelection
+        | EditorMsg::MoveCursorDocumentEndWithSelection
+        | EditorMsg::MoveCursorWordWithSelection(_)
+        | EditorMsg::PageUpWithSelection
+        | EditorMsg::PageDownWithSelection
+        | EditorMsg::SelectAll
+        | EditorMsg::SelectWord
+        | EditorMsg::SelectLine
+        | EditorMsg::ExtendSelectionToPosition { .. }
+        | EditorMsg::SelectNextOccurrence
+        | EditorMsg::SelectAllOccurrences => {
+            model.editor_mut().clear_selection_history();
         }
         _ => {}
     }
@@ -618,8 +636,15 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
 
-        EditorMsg::RemoveCursor(_index) => {
-            // TODO: Implement remove specific cursor (Phase 4)
+        EditorMsg::RemoveCursor(index) => {
+            // Remove cursor at specified index if it exists and there are multiple cursors
+            let cursor_count = model.editor().cursors.len();
+            if cursor_count > 1 && index < cursor_count {
+                model.editor_mut().cursors.remove(index);
+                model.editor_mut().selections.remove(index);
+            }
+            // If only one cursor, do nothing (can't remove the last cursor)
+            model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
@@ -840,6 +865,21 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
 
+        // === Expand/Shrink Selection ===
+        EditorMsg::ExpandSelection => {
+            expand_selection(model);
+            model.ensure_cursor_visible();
+            model.reset_cursor_blink();
+            Some(Cmd::Redraw)
+        }
+
+        EditorMsg::ShrinkSelection => {
+            shrink_selection(model);
+            model.ensure_cursor_visible();
+            model.reset_cursor_blink();
+            Some(Cmd::Redraw)
+        }
+
         // === Rectangle Selection ===
         EditorMsg::StartRectangleSelection { line, column } => {
             model.editor_mut().rectangle_selection.active = true;
@@ -985,6 +1025,207 @@ fn delete_selection(model: &mut AppModel) -> Option<(usize, String)> {
     Some((start_offset, deleted_text))
 }
 
+// ============================================================================
+// Expand/Shrink Selection
+// ============================================================================
+
+/// Expand selection to next semantic level: cursor → word → line → all
+fn expand_selection(model: &mut AppModel) {
+    let current = model.editor().selection().clone();
+
+    // Push current selection to history before expanding
+    model.editor_mut().selection_history.push(current.clone());
+
+    let new_selection = if current.is_empty() {
+        // Level 0 → 1: Select word under cursor
+        if let Some((_word, start, end)) = model.editor().word_under_cursor(model.document()) {
+            Some(Selection::from_positions(start, end))
+        } else {
+            // No word under cursor, try to select line
+            select_current_line(model)
+        }
+    } else if is_word_selection(&current, model) {
+        // Level 1 → 2: Select line
+        select_current_line(model)
+    } else if is_line_selection(&current, model) {
+        // Level 2 → 3: Select all
+        select_all(model)
+    } else {
+        // Arbitrary selection: expand to line if within single line, else to all
+        if is_within_single_line(&current) {
+            select_current_line(model)
+        } else {
+            select_all(model)
+        }
+    };
+
+    if let Some(sel) = new_selection {
+        model.editor_mut().selection_mut().anchor = sel.anchor;
+        model.editor_mut().selection_mut().head = sel.head;
+        model.editor_mut().cursor_mut().line = sel.head.line;
+        model.editor_mut().cursor_mut().column = sel.head.column;
+        model.editor_mut().cursor_mut().desired_column = None;
+    }
+}
+
+/// Shrink selection to previous level (restore from history)
+fn shrink_selection(model: &mut AppModel) {
+    if let Some(previous) = model.editor_mut().selection_history.pop() {
+        // Restore previous selection
+        model.editor_mut().selection_mut().anchor = previous.anchor;
+        model.editor_mut().selection_mut().head = previous.head;
+
+        // Update cursor to match selection head
+        model.editor_mut().cursor_mut().line = previous.head.line;
+        model.editor_mut().cursor_mut().column = previous.head.column;
+        model.editor_mut().cursor_mut().desired_column = None;
+    } else {
+        // No history - collapse selection to cursor position
+        model.editor_mut().clear_selection();
+    }
+}
+
+/// Check if selection exactly covers a word boundary
+fn is_word_selection(selection: &Selection, model: &AppModel) -> bool {
+    if selection.start().line != selection.end().line {
+        return false; // Multi-line is not a word
+    }
+
+    let line = selection.start().line;
+    if let Some(line_text) = model.document().get_line(line) {
+        let line_text = line_text.trim_end_matches('\n');
+        let chars: Vec<char> = line_text.chars().collect();
+        let start_col = selection.start().column;
+        let end_col = selection.end().column;
+
+        if start_col >= chars.len() || end_col > chars.len() || start_col >= end_col {
+            return false;
+        }
+
+        // Check all chars in selection are same type (word chars)
+        let first_type = char_type(chars[start_col]);
+        if first_type != CharType::WordChar {
+            return false;
+        }
+
+        let all_same = (start_col..end_col).all(|i| char_type(chars[i]) == first_type);
+        if !all_same {
+            return false;
+        }
+
+        // Check boundaries are at type transitions
+        let at_word_start =
+            start_col == 0 || char_type(chars[start_col.saturating_sub(1)]) != first_type;
+        let at_word_end = end_col >= chars.len() || char_type(chars[end_col]) != first_type;
+
+        at_word_start && at_word_end
+    } else {
+        false
+    }
+}
+
+/// Check if selection covers exactly one line (including trailing newline)
+fn is_line_selection(selection: &Selection, model: &AppModel) -> bool {
+    let start = selection.start();
+    let end = selection.end();
+
+    // Must start at column 0
+    if start.column != 0 {
+        return false;
+    }
+
+    // Single line: must end at line length or at start of next line
+    if start.line == end.line {
+        if let Some(line_text) = model.document().get_line(start.line) {
+            let line_len = line_text.trim_end_matches('\n').chars().count();
+            return end.column == line_len || end.column == line_text.chars().count();
+        }
+    } else if end.line == start.line + 1 && end.column == 0 {
+        // Selection ends at start of next line (includes newline)
+        return true;
+    }
+
+    false
+}
+
+/// Check if selection is entirely within a single line
+fn is_within_single_line(selection: &Selection) -> bool {
+    selection.start().line == selection.end().line
+}
+
+/// Create selection covering the current line (including newline if present)
+fn select_current_line(model: &AppModel) -> Option<Selection> {
+    let cursor_line = model.editor().cursor().line;
+    let total_lines = model.document().line_count();
+
+    if cursor_line >= total_lines {
+        return None;
+    }
+
+    let start = Position::new(cursor_line, 0);
+
+    // End at start of next line if exists, else at end of this line
+    let end = if cursor_line + 1 < total_lines {
+        Position::new(cursor_line + 1, 0)
+    } else {
+        let line_len = model.document().line_length(cursor_line);
+        Position::new(cursor_line, line_len)
+    };
+
+    Some(Selection::from_positions(start, end))
+}
+
+/// Create selection covering the entire document
+fn select_all(model: &AppModel) -> Option<Selection> {
+    let total_lines = model.document().line_count();
+    if total_lines == 0 {
+        return Some(Selection::new(Position::new(0, 0)));
+    }
+
+    let last_line = total_lines.saturating_sub(1);
+    let last_col = model.document().line_length(last_line);
+
+    Some(Selection::from_positions(
+        Position::new(0, 0),
+        Position::new(last_line, last_col),
+    ))
+}
+
+/// Synchronize cursors in other editors viewing the same document after an edit.
+/// 
+/// Call this after any document modification to update cursor positions in other views.
+/// 
+/// - `edit_line`: The line where the edit started
+/// - `edit_column`: The column where the edit started
+/// - `lines_delta`: Change in line count (positive = lines added, negative = lines removed)
+/// - `column_delta`: Change in column on the edit line (for same-line character inserts/deletes)
+fn sync_other_editor_cursors(
+    model: &mut AppModel,
+    edit_line: usize,
+    edit_column: usize,
+    lines_delta: isize,
+    column_delta: isize,
+) {
+    // Get the current editor and document IDs
+    let editor_id = match model.editor_area.focused_editor_id() {
+        Some(id) => id,
+        None => return,
+    };
+    let doc_id = match model.editor_area.focused_document_id() {
+        Some(id) => id,
+        None => return,
+    };
+
+    model.editor_area.adjust_other_editors_cursors(
+        editor_id,
+        doc_id,
+        edit_line,
+        edit_column,
+        lines_delta,
+        column_delta,
+    );
+}
+
 /// Get cursor indices sorted by position in reverse document order (last first)
 fn cursors_in_reverse_order(model: &AppModel) -> Vec<usize> {
     let mut indices: Vec<usize> = (0..model.editor().cursors.len()).collect();
@@ -1079,6 +1320,8 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 });
             } else {
                 // No selection - normal insert
+                let edit_line = cursor_before.line;
+                let edit_column = cursor_before.column;
                 let pos = model.cursor_buffer_position();
                 model.document_mut().buffer.insert_char(pos, ch);
                 model.set_cursor_from_position(pos + 1);
@@ -1091,6 +1334,9 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     cursor_before,
                     cursor_after,
                 });
+
+                // Sync cursors in other views
+                sync_other_editor_cursors(model, edit_line, edit_column, 0, 1);
             }
 
             model.reset_cursor_blink();
@@ -1160,6 +1406,8 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     cursor_after,
                 });
             } else {
+                let edit_line = cursor_before.line;
+                let edit_column = cursor_before.column;
                 let pos = model.cursor_buffer_position();
                 model.document_mut().buffer.insert_char(pos, '\n');
                 model.set_cursor_from_position(pos + 1);
@@ -1172,6 +1420,9 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     cursor_before,
                     cursor_after,
                 });
+
+                // Sync cursors in other views: newline adds 1 line
+                sync_other_editor_cursors(model, edit_line, edit_column, 1, 0);
             }
 
             model.reset_cursor_blink();
@@ -1283,6 +1534,12 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     .slice(pos - 1..pos)
                     .chars()
                     .collect();
+                
+                // Calculate edit info for cursor sync
+                let is_newline = deleted_char == "\n";
+                let edit_line = cursor_before.line;
+                let edit_column = cursor_before.column;
+                
                 model.document_mut().buffer.remove(pos - 1..pos);
                 model.set_cursor_from_position(pos - 1);
                 model.ensure_cursor_visible();
@@ -1294,6 +1551,15 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     cursor_before,
                     cursor_after,
                 });
+
+                // Sync cursors in other views
+                if is_newline {
+                    // Deleted newline: removes a line, cursors on later lines shift up
+                    sync_other_editor_cursors(model, edit_line.saturating_sub(1), 0, -1, 0);
+                } else {
+                    // Deleted character: cursors after shift left
+                    sync_other_editor_cursors(model, edit_line, edit_column.saturating_sub(1), 0, -1);
+                }
             }
 
             model.reset_cursor_blink();
@@ -1396,6 +1662,12 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     .slice(pos..pos + 1)
                     .chars()
                     .collect();
+                
+                // Calculate edit info for cursor sync
+                let is_newline = deleted_char == "\n";
+                let edit_line = cursor_before.line;
+                let edit_column = cursor_before.column;
+                
                 model.document_mut().buffer.remove(pos..pos + 1);
 
                 let cursor_after = *model.editor().cursor();
@@ -1405,6 +1677,15 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     cursor_before,
                     cursor_after,
                 });
+
+                // Sync cursors in other views
+                if is_newline {
+                    // Deleted newline: removes a line
+                    sync_other_editor_cursors(model, edit_line, edit_column, -1, 0);
+                } else {
+                    // Deleted character: cursors after shift left
+                    sync_other_editor_cursors(model, edit_line, edit_column, 0, -1);
+                }
             }
 
             model.reset_cursor_blink();

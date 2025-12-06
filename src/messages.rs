@@ -90,6 +90,14 @@ pub enum EditorMsg {
     /// Select all occurrences (Cmd+Shift+L)
     SelectAllOccurrences,
 
+    // === Expand/Shrink Selection ===
+    /// Expand selection to next semantic level (Option+Up)
+    /// Progression: cursor → word → line → all
+    ExpandSelection,
+    /// Shrink selection to previous level (Option+Down)
+    /// Restores previous selection from history stack
+    ShrinkSelection,
+
     // === Rectangle Selection (Middle mouse) ===
     /// Start rectangle selection at position
     StartRectangleSelection { line: usize, column: usize },
