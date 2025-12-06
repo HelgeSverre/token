@@ -2,6 +2,7 @@
 
 use super::document::Document;
 use super::editor_area::{DocumentId, EditorId};
+use crate::util::{char_type, CharType};
 
 /// Strategy for revealing the cursor when it's outside the viewport
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -108,6 +109,26 @@ impl Selection {
         let start = self.start();
         let end = self.end();
         pos >= start && pos < end
+    }
+
+    /// Extract selected text from document
+    pub fn get_text(&self, document: &Document) -> String {
+        if self.is_empty() {
+            return String::new();
+        }
+        let start = self.start();
+        let end = self.end();
+        let start_offset = document.cursor_to_offset(start.line, start.column);
+        let end_offset = document.cursor_to_offset(end.line, end.column);
+        document.buffer.slice(start_offset..end_offset).to_string()
+    }
+
+    /// Create a selection spanning from start to end positions
+    pub fn from_positions(start: Position, end: Position) -> Self {
+        Self {
+            anchor: start,
+            head: end,
+        }
     }
 }
 
@@ -222,6 +243,17 @@ impl RectangleSelectionState {
     }
 }
 
+/// Tracks occurrence selection state for Cmd+J (select next occurrence)
+#[derive(Debug, Clone, Default)]
+pub struct OccurrenceState {
+    /// The text being searched for
+    pub search_text: String,
+    /// Stack of cursor indices added via Cmd+J (for undo with Shift+Cmd+J)
+    pub added_cursor_indices: Vec<usize>,
+    /// Last search position (byte offset) for finding "next"
+    pub last_search_offset: usize,
+}
+
 /// Editor state - view-specific state for editing a document
 ///
 /// Supports multiple cursors and selections for future multi-cursor editing.
@@ -242,6 +274,8 @@ pub struct EditorState {
     pub scroll_padding: usize,
     /// Rectangle selection state (for middle mouse drag)
     pub rectangle_selection: RectangleSelectionState,
+    /// Occurrence selection state (for Cmd+J "select next occurrence")
+    pub occurrence_state: Option<OccurrenceState>,
 }
 
 impl EditorState {
@@ -257,6 +291,7 @@ impl EditorState {
             viewport: Viewport::default(),
             scroll_padding: 1, // JetBrains-style default
             rectangle_selection: RectangleSelectionState::default(),
+            occurrence_state: None,
         }
     }
 
@@ -272,6 +307,7 @@ impl EditorState {
             viewport: Viewport::new(visible_lines, visible_columns),
             scroll_padding: 1,
             rectangle_selection: RectangleSelectionState::default(),
+            occurrence_state: None,
         }
     }
 
@@ -319,6 +355,16 @@ impl EditorState {
     pub fn clear_selection(&mut self) {
         let pos = self.cursors[0].to_position();
         self.selections[0] = Selection::new(pos);
+    }
+
+    /// Collapse all selections so that anchor == head == cursor position for each cursor.
+    /// This should be called after all non-shift cursor movements to maintain invariants.
+    pub fn collapse_selections_to_cursors(&mut self) {
+        for (cursor, selection) in self.cursors.iter().zip(self.selections.iter_mut()) {
+            let pos = cursor.to_position();
+            selection.anchor = pos;
+            selection.head = pos;
+        }
     }
 
     /// Toggle a cursor at the given position
@@ -530,6 +576,59 @@ impl EditorState {
     /// Get the length of the current line (based on primary cursor)
     pub fn current_line_length(&self, document: &Document) -> usize {
         document.line_length(self.cursors[0].line)
+    }
+
+    /// Get word under primary cursor (using char_type for boundaries)
+    /// Returns (word, start_position, end_position) or None if cursor not on a word
+    pub fn word_under_cursor(&self, document: &Document) -> Option<(String, Position, Position)> {
+        let cursor = self.cursor();
+        let line_content = document.get_line(cursor.line)?;
+
+        if line_content.is_empty() {
+            return None;
+        }
+
+        // Remove trailing newline for character processing
+        let line_content = line_content.trim_end_matches('\n');
+        if line_content.is_empty() {
+            return None;
+        }
+
+        // Convert to chars first, then clamp column to char count (not byte length!)
+        let chars: Vec<char> = line_content.chars().collect();
+        if chars.is_empty() {
+            return None;
+        }
+
+        // FIX: clamp to chars.len(), not line_content.len() (which is bytes)
+        let col = cursor.column.min(chars.len().saturating_sub(1));
+
+        // Check if cursor is on a word character
+        if char_type(chars[col]) != CharType::WordChar {
+            return None;
+        }
+
+        // Find word boundaries using char_type
+        let mut start = col;
+        while start > 0 && char_type(chars[start - 1]) == CharType::WordChar {
+            start -= 1;
+        }
+
+        let mut end = col;
+        while end < chars.len() && char_type(chars[end]) == CharType::WordChar {
+            end += 1;
+        }
+
+        if start == end {
+            return None; // Cursor not on a word
+        }
+
+        let word: String = chars[start..end].iter().collect();
+        Some((
+            word,
+            Position::new(cursor.line, start),
+            Position::new(cursor.line, end),
+        ))
     }
 
     /// Assert cursor/selection invariants (debug builds only)

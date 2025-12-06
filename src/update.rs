@@ -7,8 +7,9 @@ use std::time::Duration;
 use crate::commands::Cmd;
 use crate::messages::{AppMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, Msg, UiMsg};
 use crate::model::{
-    AppModel, Cursor, EditOperation, EditorGroup, EditorState, GroupId, LayoutNode, Position,
-    Selection, SplitContainer, SplitDirection, Tab,
+    AppModel, Cursor, EditOperation, EditorGroup, EditorState, GroupId, LayoutNode,
+    OccurrenceState, Position, SegmentContent, SegmentId, Selection, SplitContainer,
+    SplitDirection, Tab, TransientMessage,
 };
 use crate::util::char_type;
 
@@ -32,6 +33,25 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
 
 /// Handle editor messages (cursor movement, viewport scrolling)
 pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
+    // Clear occurrence selection state on non-selection cursor movements
+    // and selection-clearing operations
+    match &msg {
+        EditorMsg::MoveCursor(_)
+        | EditorMsg::MoveCursorLineStart
+        | EditorMsg::MoveCursorLineEnd
+        | EditorMsg::MoveCursorDocumentStart
+        | EditorMsg::MoveCursorDocumentEnd
+        | EditorMsg::MoveCursorWord(_)
+        | EditorMsg::PageUp
+        | EditorMsg::PageDown
+        | EditorMsg::SetCursorPosition { .. }
+        | EditorMsg::ClearSelection
+        | EditorMsg::CollapseToSingleCursor => {
+            model.editor_mut().occurrence_state = None;
+        }
+        _ => {}
+    }
+
     match msg {
         EditorMsg::MoveCursor(direction) => {
             match direction {
@@ -40,6 +60,8 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 Direction::Left => move_cursor_left(model),
                 Direction::Right => move_cursor_right(model),
             }
+            // Collapse selections after non-shift movement
+            model.editor_mut().collapse_selections_to_cursors();
             // Use direction-aware reveal: up reveals at top, down at bottom
             let vertical_hint = match direction {
                 Direction::Up => Some(true),
@@ -59,6 +81,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 model.editor_mut().cursor_mut().column = first_non_ws;
             }
             model.editor_mut().cursor_mut().desired_column = None;
+            model.editor_mut().collapse_selections_to_cursors();
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
@@ -73,6 +96,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 model.editor_mut().cursor_mut().column = last_non_ws;
             }
             model.editor_mut().cursor_mut().desired_column = None;
+            model.editor_mut().collapse_selections_to_cursors();
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
@@ -83,6 +107,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             model.editor_mut().cursor_mut().column = 0;
             model.editor_mut().cursor_mut().desired_column = None;
             model.editor_mut().viewport.top_line = 0;
+            model.editor_mut().collapse_selections_to_cursors();
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
@@ -97,6 +122,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             if cursor_line >= visible_lines {
                 model.editor_mut().viewport.top_line = cursor_line - visible_lines + 1;
             }
+            model.editor_mut().collapse_selections_to_cursors();
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
@@ -108,6 +134,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 Direction::Right => move_cursor_word_right(model),
                 _ => {} // Up/Down not used for word movement
             }
+            model.editor_mut().collapse_selections_to_cursors();
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
@@ -129,6 +156,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 
             model.editor_mut().viewport.top_line =
                 model.editor().viewport.top_line.saturating_sub(jump);
+            model.editor_mut().collapse_selections_to_cursors();
             // Use top-aligned reveal for upward page movement
             model.ensure_cursor_visible_directional(Some(true));
             model.reset_cursor_blink();
@@ -157,6 +185,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 model.editor_mut().viewport.top_line =
                     cursor_line.saturating_sub(visible_lines.saturating_sub(1));
             }
+            model.editor_mut().collapse_selections_to_cursors();
             // Use bottom-aligned reveal for downward page movement
             model.ensure_cursor_visible_directional(Some(false));
             model.reset_cursor_blink();
@@ -167,6 +196,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             model.editor_mut().cursor_mut().line = line;
             model.editor_mut().cursor_mut().column = column;
             model.editor_mut().cursor_mut().desired_column = None;
+            model.editor_mut().collapse_selections_to_cursors();
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
@@ -595,12 +625,218 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 
         // === Find & Select ===
         EditorMsg::SelectNextOccurrence => {
-            // TODO: Implement select next occurrence (Phase 9)
+            let selection = model.editor().selection().clone();
+
+            // Step 1: Determine search text
+            let search_text = if selection.is_empty() {
+                // No selection: get word under cursor
+                if let Some((word, start, end)) = model.editor().word_under_cursor(model.document())
+                {
+                    // Select the word first
+                    model.editor_mut().selection_mut().anchor = start;
+                    model.editor_mut().selection_mut().head = end;
+                    model.editor_mut().cursor_mut().line = end.line;
+                    model.editor_mut().cursor_mut().column = end.column;
+                    word
+                } else {
+                    return Some(Cmd::Redraw); // No word under cursor
+                }
+            } else {
+                selection.get_text(model.document())
+            };
+
+            if search_text.is_empty() {
+                return Some(Cmd::Redraw);
+            }
+
+            // Step 2: Get offset to search from
+            // FIX: Use last_search_offset if we have occurrence state, otherwise use selection end
+            let search_from_offset = if let Some(state) = &model.editor().occurrence_state {
+                // Continue from where we left off
+                state.last_search_offset
+            } else {
+                // First call: search from end of current selection
+                let sel = model.editor().selection();
+                let end = sel.end();
+                model.document().cursor_to_offset(end.line, end.column)
+            };
+
+            // Step 3: Find next occurrence
+            if let Some((start_off, end_off)) = model
+                .document()
+                .find_next_occurrence(&search_text, search_from_offset)
+            {
+                let (start_line, start_col) = model.document().offset_to_cursor(start_off);
+                let (end_line, end_col) = model.document().offset_to_cursor(end_off);
+                let start_pos = Position::new(start_line, start_col);
+                let end_pos = Position::new(end_line, end_col);
+
+                // Check if this occurrence is already selected
+                let already_selected = model
+                    .editor()
+                    .cursors
+                    .iter()
+                    .any(|c| c.line == end_pos.line && c.column == end_pos.column);
+
+                if already_selected {
+                    // All occurrences already selected, or we've wrapped around
+                    let msg = "No more occurrences".to_string();
+                    model.ui.transient_message = Some(TransientMessage::new(
+                        msg.clone(),
+                        Duration::from_millis(1500),
+                    ));
+                    model
+                        .ui
+                        .status_bar
+                        .update_segment(SegmentId::StatusMessage, SegmentContent::Text(msg));
+                    return Some(Cmd::Redraw);
+                }
+
+                // Step 4: Add new cursor and selection
+                let new_cursor = Cursor::at(end_pos.line, end_pos.column);
+                let new_selection = Selection::from_positions(start_pos, end_pos);
+
+                model.editor_mut().cursors.push(new_cursor);
+                model.editor_mut().selections.push(new_selection);
+
+                // Track for Shift+Cmd+J undo
+                let idx = model.editor().cursors.len() - 1;
+                let search_text_clone = search_text.clone();
+                let state =
+                    model
+                        .editor_mut()
+                        .occurrence_state
+                        .get_or_insert_with(|| OccurrenceState {
+                            search_text: search_text_clone,
+                            added_cursor_indices: Vec::new(),
+                            last_search_offset: 0,
+                        });
+                state.added_cursor_indices.push(idx);
+                state.last_search_offset = end_off;
+
+                // Ensure new cursor is visible
+                let doc = model.document().clone();
+                model.editor_mut().ensure_cursor_visible(&doc);
+            } else {
+                let msg = "No occurrences found".to_string();
+                model.ui.transient_message = Some(TransientMessage::new(
+                    msg.clone(),
+                    Duration::from_millis(1500),
+                ));
+                model
+                    .ui
+                    .status_bar
+                    .update_segment(SegmentId::StatusMessage, SegmentContent::Text(msg));
+            }
+
+            model.reset_cursor_blink();
+            Some(Cmd::Redraw)
+        }
+
+        EditorMsg::UnselectOccurrence => {
+            // Extract the index to remove (if any) and whether to clear state
+            let (idx_to_remove, should_clear_state) = {
+                let editor = model.editor_mut();
+                if let Some(ref mut state) = editor.occurrence_state {
+                    let idx = state.added_cursor_indices.pop();
+                    let should_clear = state.added_cursor_indices.is_empty();
+                    (idx, should_clear)
+                } else {
+                    (None, false)
+                }
+            };
+
+            // Now remove the cursor/selection if we have an index
+            if let Some(idx) = idx_to_remove {
+                let editor = model.editor_mut();
+                if idx < editor.cursors.len() && editor.cursors.len() > 1 {
+                    editor.cursors.remove(idx);
+                    editor.selections.remove(idx);
+                }
+            }
+
+            // Clear occurrence state if needed
+            if should_clear_state {
+                model.editor_mut().occurrence_state = None;
+            }
+
+            model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
         EditorMsg::SelectAllOccurrences => {
-            // TODO: Implement select all occurrences (Phase 9)
+            // Get search text from current selection or word under cursor
+            let search_text = {
+                let selection = model.editor().selection().clone();
+                if !selection.is_empty() {
+                    selection.get_text(model.document())
+                } else if let Some((word, start, end)) =
+                    model.editor().word_under_cursor(model.document())
+                {
+                    // Select the word first (for visual feedback)
+                    model.editor_mut().selection_mut().anchor = start;
+                    model.editor_mut().selection_mut().head = end;
+                    model.editor_mut().cursor_mut().line = end.line;
+                    model.editor_mut().cursor_mut().column = end.column;
+                    word
+                } else {
+                    return Some(Cmd::Redraw); // No word under cursor
+                }
+            };
+
+            if search_text.is_empty() {
+                return Some(Cmd::Redraw);
+            }
+
+            // Find all occurrences
+            let occurrences = model.document().find_all_occurrences(&search_text);
+
+            if occurrences.is_empty() {
+                return Some(Cmd::Redraw);
+            }
+
+            // Build cursors and selections for all occurrences
+            let mut new_cursors = Vec::new();
+            let mut new_selections = Vec::new();
+
+            for (start_off, end_off) in &occurrences {
+                let (start_line, start_col) = model.document().offset_to_cursor(*start_off);
+                let (end_line, end_col) = model.document().offset_to_cursor(*end_off);
+
+                let start_pos = Position::new(start_line, start_col);
+                let end_pos = Position::new(end_line, end_col);
+
+                new_cursors.push(Cursor::at(end_line, end_col));
+                new_selections.push(Selection::from_anchor_head(start_pos, end_pos));
+            }
+
+            // Replace editor state with all occurrences selected
+            let editor = model.editor_mut();
+            editor.cursors = new_cursors;
+            editor.selections = new_selections;
+            editor.deduplicate_cursors();
+
+            // Set up occurrence state
+            let cursor_count = editor.cursors.len();
+            editor.occurrence_state = Some(OccurrenceState {
+                search_text,
+                added_cursor_indices: (0..cursor_count).collect(),
+                last_search_offset: occurrences.last().map(|(_, e)| *e).unwrap_or(0),
+            });
+
+            // Show feedback
+            let msg = format!("{} occurrences selected", cursor_count);
+            model.ui.transient_message = Some(TransientMessage::new(
+                msg.clone(),
+                Duration::from_millis(1500),
+            ));
+            model
+                .ui
+                .status_bar
+                .update_segment(SegmentId::StatusMessage, SegmentContent::Text(msg));
+
+            model.ensure_cursor_visible();
+            model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
@@ -765,13 +1001,21 @@ fn cursors_in_reverse_order(model: &AppModel) -> Vec<usize> {
 
 /// Handle document messages (text editing, undo/redo)
 pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
+    // Clear occurrence selection state on any editing operation
+    // (except Copy which doesn't modify the document)
+    if !matches!(msg, DocumentMsg::Copy) {
+        model.editor_mut().occurrence_state = None;
+    }
+
     match msg {
         DocumentMsg::InsertChar(ch) => {
             let cursor_before = *model.editor().cursor();
 
             // Multi-cursor: process all cursors in reverse document order
             if model.editor().has_multiple_cursors() {
+                let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
                 let indices = cursors_in_reverse_order(model);
+                let mut operations = Vec::new();
 
                 for idx in indices {
                     // Get cursor position and convert to buffer offset
@@ -783,6 +1027,14 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     // Insert character
                     model.document_mut().buffer.insert_char(pos, ch);
 
+                    // Record individual operation (positions are at time of insert)
+                    operations.push(EditOperation::Insert {
+                        position: pos,
+                        text: ch.to_string(),
+                        cursor_before: cursor.clone(),
+                        cursor_after: Cursor::at(cursor.line, cursor.column + 1),
+                    });
+
                     // Update this cursor's position (move right by 1)
                     model.editor_mut().cursors[idx].column += 1;
                     model.editor_mut().cursors[idx].desired_column = None;
@@ -792,14 +1044,14 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     model.editor_mut().selections[idx] = Selection::new(new_pos);
                 }
 
-                // Record single edit for undo (simplified - full undo would need batch)
-                let position = model.cursor_buffer_position().saturating_sub(1);
-                let cursor_after = *model.editor().cursor();
-                model.document_mut().push_edit(EditOperation::Insert {
-                    position,
-                    text: ch.to_string(),
-                    cursor_before,
-                    cursor_after,
+                // Record batch for proper multi-cursor undo
+                // Operations are stored in application order (reverse document order)
+                // Undo will iterate .rev() to process in forward document order
+                let cursors_after: Vec<Cursor> = model.editor().cursors.clone();
+                model.document_mut().push_edit(EditOperation::Batch {
+                    operations,
+                    cursors_before,
+                    cursors_after,
                 });
 
                 model.document_mut().is_modified = true;
@@ -850,7 +1102,9 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
             // Multi-cursor: process all cursors in reverse document order
             if model.editor().has_multiple_cursors() {
+                let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
                 let indices = cursors_in_reverse_order(model);
+                let mut operations = Vec::new();
 
                 for idx in indices {
                     let cursor = model.editor().cursors[idx].clone();
@@ -858,6 +1112,14 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         .document()
                         .cursor_to_offset(cursor.line, cursor.column);
                     model.document_mut().buffer.insert_char(pos, '\n');
+
+                    // Record individual operation
+                    operations.push(EditOperation::Insert {
+                        position: pos,
+                        text: "\n".to_string(),
+                        cursor_before: cursor.clone(),
+                        cursor_after: Cursor::at(cursor.line + 1, 0),
+                    });
 
                     // Move cursor to beginning of next line
                     model.editor_mut().cursors[idx].line += 1;
@@ -868,13 +1130,13 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     model.editor_mut().selections[idx] = Selection::new(new_pos);
                 }
 
-                let position = model.cursor_buffer_position().saturating_sub(1);
-                let cursor_after = *model.editor().cursor();
-                model.document_mut().push_edit(EditOperation::Insert {
-                    position,
-                    text: "\n".to_string(),
-                    cursor_before,
-                    cursor_after,
+                // Record batch for proper multi-cursor undo
+                // Operations stored in application order; undo iterates .rev()
+                let cursors_after: Vec<Cursor> = model.editor().cursors.clone();
+                model.document_mut().push_edit(EditOperation::Batch {
+                    operations,
+                    cursors_before,
+                    cursors_after,
                 });
 
                 model.document_mut().is_modified = true;
@@ -921,7 +1183,9 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
             // Multi-cursor: process all cursors in reverse document order
             if model.editor().has_multiple_cursors() {
+                let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
                 let indices = cursors_in_reverse_order(model);
+                let mut operations = Vec::new();
 
                 for idx in indices {
                     let selection = model.editor().selections[idx].clone();
@@ -932,7 +1196,21 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         let start_offset =
                             model.document().cursor_to_offset(start.line, start.column);
                         let end_offset = model.document().cursor_to_offset(end.line, end.column);
+                        let deleted_text: String = model
+                            .document()
+                            .buffer
+                            .slice(start_offset..end_offset)
+                            .to_string();
                         model.document_mut().buffer.remove(start_offset..end_offset);
+
+                        // Record operation
+                        operations.push(EditOperation::Delete {
+                            position: start_offset,
+                            text: deleted_text,
+                            cursor_before: model.editor().cursors[idx].clone(),
+                            cursor_after: Cursor::at(start.line, start.column),
+                        });
+
                         model.editor_mut().cursors[idx].line = start.line;
                         model.editor_mut().cursors[idx].column = start.column;
                         model.editor_mut().selections[idx] = Selection::new(start);
@@ -942,8 +1220,23 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                             .document()
                             .cursor_to_offset(cursor.line, cursor.column);
                         if pos > 0 {
+                            let deleted_char: String = model
+                                .document()
+                                .buffer
+                                .slice(pos - 1..pos)
+                                .chars()
+                                .collect();
                             model.document_mut().buffer.remove(pos - 1..pos);
                             let (new_line, new_col) = model.document().offset_to_cursor(pos - 1);
+
+                            // Record operation
+                            operations.push(EditOperation::Delete {
+                                position: pos - 1,
+                                text: deleted_char,
+                                cursor_before: cursor.clone(),
+                                cursor_after: Cursor::at(new_line, new_col),
+                            });
+
                             model.editor_mut().cursors[idx].line = new_line;
                             model.editor_mut().cursors[idx].column = new_col;
                             let new_pos = model.editor().cursors[idx].to_position();
@@ -951,6 +1244,15 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         }
                     }
                 }
+
+                // Record batch for proper multi-cursor undo
+                // Operations stored in application order; undo iterates .rev()
+                let cursors_after: Vec<Cursor> = model.editor().cursors.clone();
+                model.document_mut().push_edit(EditOperation::Batch {
+                    operations,
+                    cursors_before,
+                    cursors_after,
+                });
 
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
@@ -1003,7 +1305,9 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
             // Multi-cursor: process all cursors in reverse document order
             if model.editor().has_multiple_cursors() {
+                let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
                 let indices = cursors_in_reverse_order(model);
+                let mut operations = Vec::new();
 
                 for idx in indices {
                     let selection = model.editor().selections[idx].clone();
@@ -1013,7 +1317,21 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         let start_offset =
                             model.document().cursor_to_offset(start.line, start.column);
                         let end_offset = model.document().cursor_to_offset(end.line, end.column);
+                        let deleted_text: String = model
+                            .document()
+                            .buffer
+                            .slice(start_offset..end_offset)
+                            .to_string();
                         model.document_mut().buffer.remove(start_offset..end_offset);
+
+                        // Record operation
+                        operations.push(EditOperation::Delete {
+                            position: start_offset,
+                            text: deleted_text,
+                            cursor_before: model.editor().cursors[idx].clone(),
+                            cursor_after: Cursor::at(start.line, start.column),
+                        });
+
                         model.editor_mut().cursors[idx].line = start.line;
                         model.editor_mut().cursors[idx].column = start.column;
                         model.editor_mut().selections[idx] = Selection::new(start);
@@ -1023,10 +1341,33 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                             .document()
                             .cursor_to_offset(cursor.line, cursor.column);
                         if pos < model.document().buffer.len_chars() {
+                            let deleted_char: String = model
+                                .document()
+                                .buffer
+                                .slice(pos..pos + 1)
+                                .chars()
+                                .collect();
                             model.document_mut().buffer.remove(pos..pos + 1);
+
+                            // Record operation (cursor doesn't move for delete forward)
+                            operations.push(EditOperation::Delete {
+                                position: pos,
+                                text: deleted_char,
+                                cursor_before: cursor.clone(),
+                                cursor_after: cursor.clone(),
+                            });
                         }
                     }
                 }
+
+                // Record batch for proper multi-cursor undo
+                // Operations stored in application order; undo iterates .rev()
+                let cursors_after: Vec<Cursor> = model.editor().cursors.clone();
+                model.document_mut().push_edit(EditOperation::Batch {
+                    operations,
+                    cursors_before,
+                    cursors_after,
+                });
 
                 model.document_mut().is_modified = true;
                 model.reset_cursor_blink();
@@ -1160,46 +1501,10 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
         DocumentMsg::Undo => {
             if let Some(edit) = model.document_mut().undo_stack.pop() {
-                match &edit {
-                    EditOperation::Insert {
-                        position,
-                        text,
-                        cursor_before,
-                        ..
-                    } => {
-                        model
-                            .document_mut()
-                            .buffer
-                            .remove(*position..*position + text.chars().count());
-                        *model.editor_mut().cursor_mut() = *cursor_before;
-                    }
-                    EditOperation::Delete {
-                        position,
-                        text,
-                        cursor_before,
-                        ..
-                    } => {
-                        model.document_mut().buffer.insert(*position, text);
-                        *model.editor_mut().cursor_mut() = *cursor_before;
-                    }
-                    EditOperation::Replace {
-                        position,
-                        deleted_text,
-                        inserted_text,
-                        cursor_before,
-                        ..
-                    } => {
-                        model
-                            .document_mut()
-                            .buffer
-                            .remove(*position..*position + inserted_text.chars().count());
-                        model.document_mut().buffer.insert(*position, deleted_text);
-                        *model.editor_mut().cursor_mut() = *cursor_before;
-                    }
-                }
+                apply_undo_operation(model, &edit);
                 model.document_mut().redo_stack.push(edit);
                 model.document_mut().is_modified = true;
-                model.editor_mut().clear_selection();
+                model.editor_mut().collapse_selections_to_cursors();
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
             }
@@ -1208,46 +1513,10 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
         DocumentMsg::Redo => {
             if let Some(edit) = model.document_mut().redo_stack.pop() {
-                match &edit {
-                    EditOperation::Insert {
-                        position,
-                        text,
-                        cursor_after,
-                        ..
-                    } => {
-                        model.document_mut().buffer.insert(*position, text);
-                        *model.editor_mut().cursor_mut() = *cursor_after;
-                    }
-                    EditOperation::Delete {
-                        position,
-                        text,
-                        cursor_after,
-                        ..
-                    } => {
-                        model
-                            .document_mut()
-                            .buffer
-                            .remove(*position..*position + text.chars().count());
-                        *model.editor_mut().cursor_mut() = *cursor_after;
-                    }
-                    EditOperation::Replace {
-                        position,
-                        deleted_text,
-                        inserted_text,
-                        cursor_after,
-                        ..
-                    } => {
-                        model
-                            .document_mut()
-                            .buffer
-                            .remove(*position..*position + deleted_text.chars().count());
-                        model.document_mut().buffer.insert(*position, inserted_text);
-                        *model.editor_mut().cursor_mut() = *cursor_after;
-                    }
-                }
+                apply_redo_operation(model, &edit);
                 model.document_mut().undo_stack.push(edit);
                 model.document_mut().is_modified = true;
-                model.editor_mut().clear_selection();
+                model.editor_mut().collapse_selections_to_cursors();
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
             }
@@ -1586,6 +1855,143 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
             }
 
             model.document_mut().is_modified = true;
+            model.ensure_cursor_visible();
+            model.reset_cursor_blink();
+            Some(Cmd::Redraw)
+        }
+
+        DocumentMsg::IndentLines => {
+            let cursor_before = *model.editor().cursor();
+            let selection = model.editor().selection().clone();
+
+            let start_line = selection.start().line;
+            let end_line = selection.end().line;
+
+            // Skip last line if selection ends at column 0
+            let effective_end = if selection.end().column == 0 && end_line > start_line {
+                end_line - 1
+            } else {
+                end_line
+            };
+
+            let mut inserted_text = String::new();
+
+            // Insert tabs in reverse order (to preserve offsets)
+            for line in (start_line..=effective_end).rev() {
+                let offset = model.document().cursor_to_offset(line, 0);
+                model.document_mut().buffer.insert_char(offset, '\t');
+                inserted_text.push('\t');
+            }
+
+            // Adjust cursor column +1
+            model.editor_mut().cursor_mut().column += 1;
+
+            // Adjust selection: bump both anchor and head columns +1
+            model.editor_mut().selection_mut().anchor.column += 1;
+            model.editor_mut().selection_mut().head.column += 1;
+
+            let cursor_after = *model.editor().cursor();
+            // Record single Insert for undo (position = first line start)
+            let first_offset = model.document().cursor_to_offset(start_line, 0);
+            model.document_mut().push_edit(EditOperation::Insert {
+                position: first_offset,
+                text: inserted_text,
+                cursor_before,
+                cursor_after,
+            });
+
+            model.document_mut().is_modified = true;
+            model.ensure_cursor_visible();
+            model.reset_cursor_blink();
+            Some(Cmd::Redraw)
+        }
+
+        DocumentMsg::UnindentLines => {
+            let cursor_before = *model.editor().cursor();
+            let selection = model.editor().selection().clone();
+
+            let (start_line, end_line) = if selection.is_empty() {
+                let line = model.editor().cursor().line;
+                (line, line)
+            } else {
+                let end = if selection.end().column == 0
+                    && selection.end().line > selection.start().line
+                {
+                    selection.end().line - 1
+                } else {
+                    selection.end().line
+                };
+                (selection.start().line, end)
+            };
+
+            let mut total_removed = 0;
+            let mut removed_from_cursor_line = 0;
+            let mut removed_from_anchor_line = 0;
+            let mut removed_from_head_line = 0;
+
+            // Process in reverse order
+            for line in (start_line..=end_line).rev() {
+                let line_start = model.document().cursor_to_offset(line, 0);
+                let line_text: String = model.document().buffer.line(line).chars().collect();
+
+                let chars_to_remove = if line_text.starts_with('\t') {
+                    1
+                } else {
+                    // Count leading spaces (up to 4)
+                    line_text.chars().take_while(|c| *c == ' ').count().min(4)
+                };
+
+                if chars_to_remove > 0 {
+                    model
+                        .document_mut()
+                        .buffer
+                        .remove(line_start..line_start + chars_to_remove);
+                    total_removed += chars_to_remove;
+
+                    if line == model.editor().cursor().line {
+                        removed_from_cursor_line = chars_to_remove;
+                    }
+                    if line == selection.anchor.line {
+                        removed_from_anchor_line = chars_to_remove;
+                    }
+                    if line == selection.head.line {
+                        removed_from_head_line = chars_to_remove;
+                    }
+                }
+            }
+
+            if total_removed > 0 {
+                // Calculate position before mutable borrows
+                let edit_position = model.document().cursor_to_offset(start_line, 0);
+
+                // Adjust cursor
+                model.editor_mut().cursor_mut().column = model
+                    .editor()
+                    .cursor()
+                    .column
+                    .saturating_sub(removed_from_cursor_line);
+
+                // Adjust selection if not empty
+                if !selection.is_empty() {
+                    model.editor_mut().selection_mut().anchor.column = selection
+                        .anchor
+                        .column
+                        .saturating_sub(removed_from_anchor_line);
+                    model.editor_mut().selection_mut().head.column =
+                        selection.head.column.saturating_sub(removed_from_head_line);
+                }
+
+                let cursor_after = *model.editor().cursor();
+                model.document_mut().push_edit(EditOperation::Delete {
+                    position: edit_position,
+                    text: "\t".repeat(total_removed),
+                    cursor_before,
+                    cursor_after,
+                });
+
+                model.document_mut().is_modified = true;
+            }
+
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
@@ -1988,27 +2394,67 @@ fn focus_adjacent_group(model: &mut AppModel, next: bool) {
 
 /// Move a tab to a different group
 fn move_tab(model: &mut AppModel, tab_id: crate::model::TabId, to_group: GroupId) {
-    // Find and remove the tab from its current group
-    let mut tab_to_move = None;
-    let mut source_group_id = None;
+    // Verify target group exists before proceeding
+    if !model.editor_area.groups.contains_key(&to_group) {
+        return;
+    }
 
-    for (gid, group) in &mut model.editor_area.groups {
+    // Find the tab and its source group
+    let mut found = None;
+    for (gid, group) in &model.editor_area.groups {
         if let Some(idx) = group.tabs.iter().position(|t| t.id == tab_id) {
-            tab_to_move = Some(group.tabs.remove(idx));
-            source_group_id = Some(*gid);
-            // Adjust active tab index if needed
-            if group.active_tab_index >= group.tabs.len() && !group.tabs.is_empty() {
-                group.active_tab_index = group.tabs.len() - 1;
-            }
+            found = Some((*gid, idx));
             break;
         }
     }
 
+    let (source_group_id, tab_idx) = match found {
+        Some(f) => f,
+        None => return,
+    };
+
+    // Don't allow moving if it would leave the last group empty
+    let source_group = match model.editor_area.groups.get(&source_group_id) {
+        Some(g) => g,
+        None => return,
+    };
+
+    if source_group.tabs.len() == 1 && model.editor_area.groups.len() == 1 {
+        // Can't move the last tab from the last group
+        return;
+    }
+
+    // Remove the tab from source group
+    let tab = model
+        .editor_area
+        .groups
+        .get_mut(&source_group_id)
+        .unwrap()
+        .tabs
+        .remove(tab_idx);
+
+    // Adjust active tab index in source group
+    if let Some(source) = model.editor_area.groups.get_mut(&source_group_id) {
+        if source.active_tab_index >= source.tabs.len() && !source.tabs.is_empty() {
+            source.active_tab_index = source.tabs.len() - 1;
+        }
+    }
+
     // Add the tab to the target group
-    if let (Some(tab), Some(_source)) = (tab_to_move, source_group_id) {
-        if let Some(target_group) = model.editor_area.groups.get_mut(&to_group) {
-            target_group.tabs.push(tab);
-            target_group.active_tab_index = target_group.tabs.len() - 1;
+    if let Some(target_group) = model.editor_area.groups.get_mut(&to_group) {
+        target_group.tabs.push(tab);
+        target_group.active_tab_index = target_group.tabs.len() - 1;
+    }
+
+    // If source group is now empty, close it (unless it's the last group)
+    if model
+        .editor_area
+        .groups
+        .get(&source_group_id)
+        .map_or(false, |g| g.tabs.is_empty())
+    {
+        if model.editor_area.groups.len() > 1 {
+            close_group(model, source_group_id);
         }
     }
 }
@@ -2028,6 +2474,17 @@ fn close_tab(model: &mut AppModel, tab_id: crate::model::TabId) {
         Some(f) => f,
         None => return,
     };
+
+    // Check if this is the last tab in the last group - don't allow closing it
+    let group = match model.editor_area.groups.get(&group_id) {
+        Some(g) => g,
+        None => return,
+    };
+
+    if group.tabs.len() == 1 && model.editor_area.groups.len() == 1 {
+        // Can't close the last tab in the last group
+        return;
+    }
 
     // Get editor_id before removing
     let editor_id = model.editor_area.groups[&group_id].tabs[tab_idx].editor_id;
@@ -2256,4 +2713,186 @@ fn move_cursor_word_right(model: &mut AppModel) {
 
     // Use move_cursor_to_position to preserve selection
     model.move_cursor_to_position(pos + i);
+}
+
+/// Apply an undo operation to the model (reverses the edit)
+fn apply_undo_operation(model: &mut AppModel, edit: &EditOperation) {
+    match edit {
+        EditOperation::Insert {
+            position,
+            text,
+            cursor_before,
+            ..
+        } => {
+            model
+                .document_mut()
+                .buffer
+                .remove(*position..*position + text.chars().count());
+            *model.editor_mut().cursor_mut() = *cursor_before;
+        }
+        EditOperation::Delete {
+            position,
+            text,
+            cursor_before,
+            ..
+        } => {
+            model.document_mut().buffer.insert(*position, text);
+            *model.editor_mut().cursor_mut() = *cursor_before;
+        }
+        EditOperation::Replace {
+            position,
+            deleted_text,
+            inserted_text,
+            cursor_before,
+            ..
+        } => {
+            model
+                .document_mut()
+                .buffer
+                .remove(*position..*position + inserted_text.chars().count());
+            model.document_mut().buffer.insert(*position, deleted_text);
+            *model.editor_mut().cursor_mut() = *cursor_before;
+        }
+        EditOperation::Batch {
+            operations,
+            cursors_before,
+            ..
+        } => {
+            // Undo in reverse order
+            for op in operations.iter().rev() {
+                apply_undo_operation_buffer_only(model, op);
+            }
+            // Restore all cursors
+            let editor = model.editor_mut();
+            editor.cursors = cursors_before.clone();
+            // Ensure selections array matches
+            while editor.selections.len() < editor.cursors.len() {
+                editor.selections.push(Selection::new(Position::new(0, 0)));
+            }
+            editor.selections.truncate(editor.cursors.len());
+        }
+    }
+}
+
+/// Apply undo to buffer only (for batch operations - cursor handled separately)
+fn apply_undo_operation_buffer_only(model: &mut AppModel, edit: &EditOperation) {
+    match edit {
+        EditOperation::Insert { position, text, .. } => {
+            model
+                .document_mut()
+                .buffer
+                .remove(*position..*position + text.chars().count());
+        }
+        EditOperation::Delete { position, text, .. } => {
+            model.document_mut().buffer.insert(*position, text);
+        }
+        EditOperation::Replace {
+            position,
+            deleted_text,
+            inserted_text,
+            ..
+        } => {
+            model
+                .document_mut()
+                .buffer
+                .remove(*position..*position + inserted_text.chars().count());
+            model.document_mut().buffer.insert(*position, deleted_text);
+        }
+        EditOperation::Batch { operations, .. } => {
+            for op in operations.iter().rev() {
+                apply_undo_operation_buffer_only(model, op);
+            }
+        }
+    }
+}
+
+/// Apply a redo operation to the model (re-applies the edit)
+fn apply_redo_operation(model: &mut AppModel, edit: &EditOperation) {
+    match edit {
+        EditOperation::Insert {
+            position,
+            text,
+            cursor_after,
+            ..
+        } => {
+            model.document_mut().buffer.insert(*position, text);
+            *model.editor_mut().cursor_mut() = *cursor_after;
+        }
+        EditOperation::Delete {
+            position,
+            text,
+            cursor_after,
+            ..
+        } => {
+            model
+                .document_mut()
+                .buffer
+                .remove(*position..*position + text.chars().count());
+            *model.editor_mut().cursor_mut() = *cursor_after;
+        }
+        EditOperation::Replace {
+            position,
+            deleted_text,
+            inserted_text,
+            cursor_after,
+            ..
+        } => {
+            model
+                .document_mut()
+                .buffer
+                .remove(*position..*position + deleted_text.chars().count());
+            model.document_mut().buffer.insert(*position, inserted_text);
+            *model.editor_mut().cursor_mut() = *cursor_after;
+        }
+        EditOperation::Batch {
+            operations,
+            cursors_after,
+            ..
+        } => {
+            // Redo in forward order
+            for op in operations.iter() {
+                apply_redo_operation_buffer_only(model, op);
+            }
+            // Restore all cursors
+            let editor = model.editor_mut();
+            editor.cursors = cursors_after.clone();
+            // Ensure selections array matches
+            while editor.selections.len() < editor.cursors.len() {
+                editor.selections.push(Selection::new(Position::new(0, 0)));
+            }
+            editor.selections.truncate(editor.cursors.len());
+        }
+    }
+}
+
+/// Apply redo to buffer only (for batch operations - cursor handled separately)
+fn apply_redo_operation_buffer_only(model: &mut AppModel, edit: &EditOperation) {
+    match edit {
+        EditOperation::Insert { position, text, .. } => {
+            model.document_mut().buffer.insert(*position, text);
+        }
+        EditOperation::Delete { position, text, .. } => {
+            model
+                .document_mut()
+                .buffer
+                .remove(*position..*position + text.chars().count());
+        }
+        EditOperation::Replace {
+            position,
+            deleted_text,
+            inserted_text,
+            ..
+        } => {
+            model
+                .document_mut()
+                .buffer
+                .remove(*position..*position + deleted_text.chars().count());
+            model.document_mut().buffer.insert(*position, inserted_text);
+        }
+        EditOperation::Batch { operations, .. } => {
+            for op in operations.iter() {
+                apply_redo_operation_buffer_only(model, op);
+            }
+        }
+    }
 }

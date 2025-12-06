@@ -22,14 +22,82 @@ use winit::window::Window;
 
 // Import from library modules
 use token::commands::Cmd;
-use token::messages::{AppMsg, Direction, DocumentMsg, EditorMsg, Msg, UiMsg};
+use token::messages::{AppMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, Msg, UiMsg};
 use token::model::editor::Position;
+use token::model::editor_area::{GroupId, Rect, SplitDirection, SplitterBar};
 use token::model::{gutter_border_x, text_start_x, AppModel};
 use token::update::update;
+
+const TAB_BAR_HEIGHT: usize = 28;
 
 // Glyph cache key: (character, font_size as bits)
 type GlyphCacheKey = (char, u32);
 type GlyphCache = HashMap<GlyphCacheKey, (Metrics, Vec<u8>)>;
+
+/// Tab width in spaces for visual rendering
+const TAB_WIDTH: usize = 4;
+
+/// Expand tabs to spaces for display rendering
+fn expand_tabs_for_display(text: &str) -> String {
+    let mut result = String::with_capacity(text.len() * 2);
+    let mut visual_col = 0;
+
+    for ch in text.chars() {
+        if ch == '\t' {
+            let spaces = TAB_WIDTH - (visual_col % TAB_WIDTH);
+            for _ in 0..spaces {
+                result.push(' ');
+            }
+            visual_col += spaces;
+        } else {
+            result.push(ch);
+            visual_col += 1;
+        }
+    }
+
+    result
+}
+
+/// Convert character column to visual column (accounting for tab expansion)
+fn char_col_to_visual_col(text: &str, char_col: usize) -> usize {
+    let mut visual_col = 0;
+    for (i, ch) in text.chars().enumerate() {
+        if i >= char_col {
+            break;
+        }
+        if ch == '\t' {
+            visual_col += TAB_WIDTH - (visual_col % TAB_WIDTH);
+        } else {
+            visual_col += 1;
+        }
+    }
+    visual_col
+}
+
+/// Convert visual column to character column (accounting for tab expansion)
+/// Returns the character column that corresponds to the given visual column.
+/// If the visual column falls within a tab's expanded space, returns the tab's position.
+fn visual_col_to_char_col(text: &str, visual_col: usize) -> usize {
+    let mut current_visual = 0;
+    let mut char_col = 0;
+
+    for ch in text.chars() {
+        if current_visual >= visual_col {
+            return char_col;
+        }
+
+        if ch == '\t' {
+            let tab_width = TAB_WIDTH - (current_visual % TAB_WIDTH);
+            current_visual += tab_width;
+        } else {
+            current_visual += 1;
+        }
+        char_col += 1;
+    }
+
+    // Visual column is past end of text - return text length
+    char_col
+}
 
 // Performance monitoring (debug builds only)
 #[cfg(debug_assertions)]
@@ -203,63 +271,120 @@ impl Renderer {
         self.char_width
     }
 
-    #[cfg(not(debug_assertions))]
-    fn render(&mut self, model: &AppModel, _perf: ()) -> Result<()> {
-        self.render_impl(model)
-    }
-
-    #[cfg(debug_assertions)]
-    fn render(&mut self, model: &AppModel, perf: &mut PerfStats) -> Result<()> {
-        self.render_impl_with_perf(model, perf)
-    }
-
-    #[cfg(not(debug_assertions))]
-    fn render_impl(&mut self, model: &AppModel) -> Result<()> {
-        // Resize surface if needed
-        if self.width != model.window_size.0 || self.height != model.window_size.1 {
-            self.width = model.window_size.0;
-            self.height = model.window_size.1;
-            self.surface
-                .resize(
-                    NonZeroU32::new(self.width).unwrap(),
-                    NonZeroU32::new(self.height).unwrap(),
-                )
-                .map_err(|e| anyhow::anyhow!("Failed to resize surface: {}", e))?;
+    #[allow(clippy::too_many_arguments)]
+    fn render_all_groups_static(
+        buffer: &mut [u32],
+        model: &AppModel,
+        splitters: &[SplitterBar],
+        font: &Font,
+        glyph_cache: &mut GlyphCache,
+        line_height: usize,
+        font_size: f32,
+        ascent: f32,
+        char_width: f32,
+        width: u32,
+        height: u32,
+    ) {
+        for (&group_id, group) in &model.editor_area.groups {
+            let is_focused = group_id == model.editor_area.focused_group_id;
+            Self::render_editor_group_static(
+                buffer,
+                model,
+                group_id,
+                group.rect,
+                is_focused,
+                font,
+                glyph_cache,
+                font_size,
+                ascent,
+                line_height,
+                char_width,
+                width,
+                height,
+            );
         }
 
-        let mut buffer = self
-            .surface
-            .buffer_mut()
-            .map_err(|e| anyhow::anyhow!("Failed to get surface buffer: {}", e))?;
+        Self::render_splitters_static(buffer, splitters, model, width, height);
+    }
 
-        // Clear screen with theme background
-        let bg_color = model.theme.editor.background.to_argb_u32();
-        buffer.fill(bg_color);
+    #[allow(clippy::too_many_arguments)]
+    fn render_editor_group_static(
+        buffer: &mut [u32],
+        model: &AppModel,
+        group_id: GroupId,
+        group_rect: Rect,
+        is_focused: bool,
+        font: &Font,
+        glyph_cache: &mut GlyphCache,
+        font_size: f32,
+        ascent: f32,
+        line_height: usize,
+        char_width: f32,
+        width: u32,
+        height: u32,
+    ) {
+        let group = match model.editor_area.groups.get(&group_id) {
+            Some(g) => g,
+            None => return,
+        };
 
-        // Calculate scaled metrics using proper font line metrics
-        let font_size = self.font_size;
-        let ascent = self.line_metrics.ascent;
-        let line_height = self.line_metrics.new_line_size.ceil() as usize;
-        let char_width = self.char_width; // Use actual font metrics
-        let text_start_x = text_start_x(char_width).round() as usize;
-        let width = self.width;
-        let height = self.height;
+        let editor_id = match group.active_editor_id() {
+            Some(id) => id,
+            None => return,
+        };
 
-        // Render visible lines
-        let visible_lines = (height as usize) / line_height;
-        let end_line = (model.editor().viewport.top_line + visible_lines)
-            .min(model.document().buffer.len_lines());
+        let editor = match model.editor_area.editors.get(&editor_id) {
+            Some(e) => e,
+            None => return,
+        };
 
-        // Draw current line highlight (if cursor visible in viewport)
+        let doc_id = match editor.document_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        let document = match model.editor_area.documents.get(&doc_id) {
+            Some(d) => d,
+            None => return,
+        };
+
+        let rect_x = group_rect.x as usize;
+        let rect_y = group_rect.y as usize;
+        let rect_w = group_rect.width as usize;
+        let rect_h = group_rect.height as usize;
+
+        Self::render_tab_bar_static(
+            buffer,
+            model,
+            group,
+            rect_x,
+            rect_y,
+            rect_w,
+            font,
+            glyph_cache,
+            font_size,
+            ascent,
+            char_width,
+            width,
+            height,
+        );
+
+        let content_y = rect_y + TAB_BAR_HEIGHT;
+        let content_h = rect_h.saturating_sub(TAB_BAR_HEIGHT);
+
+        let text_start_x_offset = text_start_x(char_width).round() as usize;
+        let group_text_start_x = rect_x + text_start_x_offset;
+
+        let visible_lines = content_h / line_height;
+        let end_line = (editor.viewport.top_line + visible_lines).min(document.buffer.len_lines());
+
         let current_line_color = model.theme.editor.current_line_background.to_argb_u32();
-        if model.editor().cursor().line >= model.editor().viewport.top_line
-            && model.editor().cursor().line < end_line
-        {
-            let screen_line = model.editor().cursor().line - model.editor().viewport.top_line;
-            let highlight_y = screen_line * line_height;
+        if editor.cursor().line >= editor.viewport.top_line && editor.cursor().line < end_line {
+            let screen_line = editor.cursor().line - editor.viewport.top_line;
+            let highlight_y = content_y + screen_line * line_height;
 
-            for py in highlight_y..(highlight_y + line_height) {
-                for px in 0..(width as usize) {
+            for py in highlight_y..(highlight_y + line_height).min(content_y + content_h) {
+                for px in rect_x..(rect_x + rect_w).min(width as usize) {
                     if py < height as usize {
                         buffer[py * width as usize + px] = current_line_color;
                     }
@@ -267,28 +392,31 @@ impl Renderer {
             }
         }
 
-        // Draw selection highlight (if selection is not empty)
-        let selection = model.editor().selection();
+        let selection = editor.selection();
         if !selection.is_empty() {
             let selection_color = model.theme.editor.selection_background.to_argb_u32();
             let sel_start = selection.start();
             let sel_end = selection.end();
 
-            // Iterate through visible lines
-            for doc_line in model.editor().viewport.top_line..end_line {
-                // Check if this line is within the selection range
+            for doc_line in editor.viewport.top_line..end_line {
                 if doc_line < sel_start.line || doc_line > sel_end.line {
                     continue;
                 }
 
-                let screen_line = doc_line - model.editor().viewport.top_line;
-                let y_start = screen_line * line_height;
-                let y_end = y_start + line_height;
+                let screen_line = doc_line - editor.viewport.top_line;
+                let y_start = content_y + screen_line * line_height;
+                let y_end = (y_start + line_height).min(content_y + content_h);
 
-                // Get line length for this line
-                let line_len = model.document().line_length(doc_line);
+                let line_len = document.line_length(doc_line);
 
-                // Determine selection start/end columns for this line
+                // Get line text for tab expansion calculation
+                let line_text = document.get_line(doc_line).unwrap_or_default();
+                let line_text_trimmed = if line_text.ends_with('\n') {
+                    &line_text[..line_text.len() - 1]
+                } else {
+                    &line_text
+                };
+
                 let start_col = if doc_line == sel_start.line {
                     sel_start.column
                 } else {
@@ -300,17 +428,20 @@ impl Renderer {
                     line_len
                 };
 
-                // Adjust for horizontal scroll
+                // Convert character columns to visual columns (accounting for tabs)
+                let visual_start_col = char_col_to_visual_col(line_text_trimmed, start_col);
+                let visual_end_col = char_col_to_visual_col(line_text_trimmed, end_col);
+
                 let visible_start_col =
-                    start_col.saturating_sub(model.editor().viewport.left_column);
-                let visible_end_col = end_col.saturating_sub(model.editor().viewport.left_column);
+                    visual_start_col.saturating_sub(editor.viewport.left_column);
+                let visible_end_col = visual_end_col.saturating_sub(editor.viewport.left_column);
 
-                // Calculate pixel positions
                 let x_start =
-                    text_start_x + (visible_start_col as f32 * char_width).round() as usize;
-                let x_end = text_start_x + (visible_end_col as f32 * char_width).round() as usize;
+                    group_text_start_x + (visible_start_col as f32 * char_width).round() as usize;
+                let x_end = (group_text_start_x
+                    + (visible_end_col as f32 * char_width).round() as usize)
+                    .min(rect_x + rect_w);
 
-                // Draw the selection rectangle for this line
                 for py in y_start..y_end {
                     for px in x_start..x_end {
                         if py < height as usize && px < width as usize {
@@ -321,127 +452,63 @@ impl Renderer {
             }
         }
 
-        // Draw rectangle selection overlay (if active)
-        if model.editor().rectangle_selection.active {
-            let selection_color = model.theme.editor.selection_background.to_argb_u32();
-            let top_left = model.editor().rectangle_selection.top_left();
-            let bottom_right = model.editor().rectangle_selection.bottom_right();
-
-            for doc_line in top_left.line..=bottom_right.line {
-                if doc_line < model.editor().viewport.top_line || doc_line >= end_line {
-                    continue;
-                }
-
-                let screen_line = doc_line - model.editor().viewport.top_line;
-                let y_start = screen_line * line_height;
-                let y_end = y_start + line_height;
-
-                // Adjust for horizontal scroll
-                let visible_start_col = top_left
-                    .column
-                    .saturating_sub(model.editor().viewport.left_column);
-                let visible_end_col = bottom_right
-                    .column
-                    .saturating_sub(model.editor().viewport.left_column);
-
-                let x_start =
-                    text_start_x + (visible_start_col as f32 * char_width).round() as usize;
-                let x_end = text_start_x + (visible_end_col as f32 * char_width).round() as usize;
-
-                for py in y_start..y_end {
-                    for px in x_start..x_end {
-                        if py < height as usize && px < width as usize {
-                            buffer[py * width as usize + px] = selection_color;
-                        }
-                    }
-                }
-            }
-
-            // Draw preview cursors (ghost cursors showing where cursors will be placed)
-            let preview_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
-            let actual_visible_columns =
-                ((width as f32 - text_start_x as f32) / char_width).floor() as usize;
-
-            for preview_pos in &model.editor().rectangle_selection.preview_cursors {
-                let in_vertical_view = preview_pos.line >= model.editor().viewport.top_line
-                    && preview_pos.line < end_line;
-                let in_horizontal_view = preview_pos.column >= model.editor().viewport.left_column
-                    && preview_pos.column
-                        < model.editor().viewport.left_column + actual_visible_columns;
-
-                if in_vertical_view && in_horizontal_view {
-                    let screen_line = preview_pos.line - model.editor().viewport.top_line;
-                    let cursor_column = preview_pos.column - model.editor().viewport.left_column;
-                    let x =
-                        (text_start_x as f32 + cursor_column as f32 * char_width).round() as usize;
-                    let y = screen_line * line_height;
-
-                    // Same 2px wide cursor bar pattern as regular cursors
-                    for dy in 0..(line_height - 2) {
-                        for dx in 0..2 {
-                            let px = x + dx;
-                            let py = y + dy + 1;
-                            if px < width as usize && py < height as usize {
-                                buffer[py * width as usize + px] = preview_cursor_color;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Get theme colors for rendering
         let line_num_color = model.theme.gutter.foreground.to_argb_u32();
         let line_num_active_color = model.theme.gutter.foreground_active.to_argb_u32();
         let text_color = model.theme.editor.foreground.to_argb_u32();
 
-        for (screen_line, doc_line) in (model.editor().viewport.top_line..end_line).enumerate() {
-            if let Some(line_text) = model.document().get_line(doc_line) {
-                let y = screen_line * line_height;
+        for (screen_line, doc_line) in (editor.viewport.top_line..end_line).enumerate() {
+            if let Some(line_text) = document.get_line(doc_line) {
+                let y = content_y + screen_line * line_height;
+                if y >= content_y + content_h {
+                    break;
+                }
 
-                // Draw line number (highlighted if on current line)
                 let line_num_str = format!("{:4} ", doc_line + 1);
-                let line_color = if doc_line == model.editor().cursor().line {
+                let line_color = if doc_line == editor.cursor().line {
                     line_num_active_color
                 } else {
                     line_num_color
                 };
                 draw_text(
-                    &mut buffer,
-                    &self.font,
-                    &mut self.glyph_cache,
+                    buffer,
+                    font,
+                    glyph_cache,
                     font_size,
                     ascent,
                     width,
                     height,
-                    0,
+                    rect_x,
                     y,
                     &line_num_str,
                     line_color,
                 );
 
-                // Draw text content
                 let visible_text = if line_text.ends_with('\n') {
                     &line_text[..line_text.len() - 1]
                 } else {
                     &line_text
                 };
 
-                let display_text: String = visible_text
+                // Expand tabs to spaces for rendering
+                let expanded_text = expand_tabs_for_display(visible_text);
+
+                let max_chars =
+                    ((rect_w as f32 - text_start_x_offset as f32) / char_width).floor() as usize;
+                let display_text: String = expanded_text
                     .chars()
-                    .skip(model.editor().viewport.left_column)
-                    .take(((width as f32 - text_start_x as f32) / char_width).floor() as usize)
+                    .skip(editor.viewport.left_column)
+                    .take(max_chars)
                     .collect();
 
                 draw_text(
-                    &mut buffer,
-                    &self.font,
-                    &mut self.glyph_cache,
+                    buffer,
+                    font,
+                    glyph_cache,
                     font_size,
                     ascent,
                     width,
                     height,
-                    text_start_x,
+                    group_text_start_x,
                     y,
                     &display_text,
                     text_color,
@@ -449,27 +516,35 @@ impl Renderer {
             }
         }
 
-        // Draw all cursors (only if within visible viewport)
         if model.ui.cursor_visible {
             let actual_visible_columns =
-                ((width as f32 - text_start_x as f32) / char_width).floor() as usize;
+                ((rect_w as f32 - text_start_x_offset as f32) / char_width).floor() as usize;
             let primary_cursor_color = model.theme.editor.cursor_color.to_argb_u32();
             let secondary_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
 
-            for (idx, cursor) in model.editor().cursors.iter().enumerate() {
-                let cursor_in_vertical_view = cursor.line >= model.editor().viewport.top_line
-                    && cursor.line < model.editor().viewport.top_line + visible_lines;
-                let cursor_in_horizontal_view = cursor.column
-                    >= model.editor().viewport.left_column
-                    && cursor.column < model.editor().viewport.left_column + actual_visible_columns;
+            for (idx, cursor) in editor.cursors.iter().enumerate() {
+                let cursor_in_vertical_view = cursor.line >= editor.viewport.top_line
+                    && cursor.line < editor.viewport.top_line + visible_lines;
+
+                // Convert character column to visual column (accounting for tabs)
+                let line_text = document.get_line(cursor.line).unwrap_or_default();
+                let line_text_trimmed = if line_text.ends_with('\n') {
+                    &line_text[..line_text.len() - 1]
+                } else {
+                    &line_text
+                };
+                let visual_cursor_col = char_col_to_visual_col(line_text_trimmed, cursor.column);
+
+                let cursor_in_horizontal_view = visual_cursor_col >= editor.viewport.left_column
+                    && visual_cursor_col < editor.viewport.left_column + actual_visible_columns;
 
                 if cursor_in_vertical_view && cursor_in_horizontal_view {
-                    let screen_line = cursor.line - model.editor().viewport.top_line;
-                    let cursor_column = cursor.column - model.editor().viewport.left_column;
-                    let x =
-                        (text_start_x as f32 + cursor_column as f32 * char_width).round() as usize;
-                    let y = screen_line * line_height;
-                    // Primary cursor (index 0) uses primary color, others use secondary
+                    let screen_line = cursor.line - editor.viewport.top_line;
+                    let cursor_visual_column = visual_cursor_col - editor.viewport.left_column;
+                    let x = (group_text_start_x as f32 + cursor_visual_column as f32 * char_width)
+                        .round() as usize;
+                    let y = content_y + screen_line * line_height;
+
                     let cursor_color = if idx == 0 {
                         primary_cursor_color
                     } else {
@@ -480,7 +555,9 @@ impl Renderer {
                         for dx in 0..2 {
                             let px = x + dx;
                             let py = y + dy + 1;
-                            if px < width as usize && py < height as usize {
+                            if px < (rect_x + rect_w).min(width as usize)
+                                && py < (content_y + content_h).min(height as usize)
+                            {
                                 buffer[py * width as usize + px] = cursor_color;
                             }
                         }
@@ -489,31 +566,240 @@ impl Renderer {
             }
         }
 
-        // Draw gutter border (1px vertical line)
         let gutter_border_color = model.theme.gutter.border_color.to_argb_u32();
-        let border_x = gutter_border_x(char_width).round() as usize;
-        let status_y_top = height as usize - line_height;
-        for py in 0..status_y_top {
-            if border_x < width as usize {
+        let border_x = rect_x + gutter_border_x(char_width).round() as usize;
+        if border_x < (rect_x + rect_w).min(width as usize) {
+            for py in content_y..(content_y + content_h).min(height as usize) {
                 buffer[py * width as usize + border_x] = gutter_border_color;
             }
         }
 
-        // Draw status bar background
+        if is_focused && model.editor_area.groups.len() > 1 {
+            let focus_color = model.theme.editor.cursor_color.to_argb_u32();
+            let border_width = 2;
+            for dy in 0..border_width {
+                for px in rect_x..(rect_x + rect_w).min(width as usize) {
+                    let py = rect_y + dy;
+                    if py < height as usize {
+                        buffer[py * width as usize + px] = focus_color;
+                    }
+                }
+                for px in rect_x..(rect_x + rect_w).min(width as usize) {
+                    let py = (rect_y + rect_h).saturating_sub(border_width) + dy;
+                    if py < height as usize {
+                        buffer[py * width as usize + px] = focus_color;
+                    }
+                }
+            }
+            for dy in rect_y..(rect_y + rect_h).min(height as usize) {
+                for dx in 0..border_width {
+                    let px = rect_x + dx;
+                    if px < width as usize {
+                        buffer[dy * width as usize + px] = focus_color;
+                    }
+                    let px = (rect_x + rect_w).saturating_sub(border_width) + dx;
+                    if px < width as usize {
+                        buffer[dy * width as usize + px] = focus_color;
+                    }
+                }
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_tab_bar_static(
+        buffer: &mut [u32],
+        model: &AppModel,
+        group: &token::model::editor_area::EditorGroup,
+        rect_x: usize,
+        rect_y: usize,
+        rect_w: usize,
+        font: &Font,
+        glyph_cache: &mut GlyphCache,
+        font_size: f32,
+        ascent: f32,
+        char_width: f32,
+        width: u32,
+        height: u32,
+    ) {
+        let tab_bar_bg = model.theme.tab_bar.background.to_argb_u32();
+        for py in rect_y..(rect_y + TAB_BAR_HEIGHT).min(height as usize) {
+            for px in rect_x..(rect_x + rect_w).min(width as usize) {
+                buffer[py * width as usize + px] = tab_bar_bg;
+            }
+        }
+
+        let border_color = model.theme.tab_bar.border.to_argb_u32();
+        let border_y = (rect_y + TAB_BAR_HEIGHT).saturating_sub(1);
+        if border_y < height as usize {
+            for px in rect_x..(rect_x + rect_w).min(width as usize) {
+                buffer[border_y * width as usize + px] = border_color;
+            }
+        }
+
+        let mut tab_x = rect_x + 4;
+        let tab_height = TAB_BAR_HEIGHT - 4;
+        let tab_y = rect_y + 2;
+
+        for (idx, tab) in group.tabs.iter().enumerate() {
+            let is_active = idx == group.active_tab_index;
+
+            let editor = model.editor_area.editors.get(&tab.editor_id);
+            let doc_id = editor.and_then(|e| e.document_id);
+            let document = doc_id.and_then(|id| model.editor_area.documents.get(&id));
+
+            let filename = document
+                .and_then(|d| d.file_path.as_ref())
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Untitled".to_string());
+
+            let is_modified = document.map(|d| d.is_modified).unwrap_or(false);
+            let display_name = if is_modified {
+                format!("● {}", filename)
+            } else {
+                filename
+            };
+
+            let tab_width = (display_name.len() as f32 * char_width).round() as usize + 16;
+
+            let (bg_color, fg_color) = if is_active {
+                (
+                    model.theme.tab_bar.active_background.to_argb_u32(),
+                    model.theme.tab_bar.active_foreground.to_argb_u32(),
+                )
+            } else {
+                (
+                    model.theme.tab_bar.inactive_background.to_argb_u32(),
+                    model.theme.tab_bar.inactive_foreground.to_argb_u32(),
+                )
+            };
+
+            for py in tab_y..(tab_y + tab_height).min(height as usize) {
+                for px in tab_x..(tab_x + tab_width).min(rect_x + rect_w).min(width as usize) {
+                    buffer[py * width as usize + px] = bg_color;
+                }
+            }
+
+            let text_x = tab_x + 8;
+            let text_y = tab_y + 4;
+            draw_text(
+                buffer,
+                font,
+                glyph_cache,
+                font_size,
+                ascent,
+                width,
+                height,
+                text_x,
+                text_y,
+                &display_name,
+                fg_color,
+            );
+
+            tab_x += tab_width + 2;
+            if tab_x >= rect_x + rect_w {
+                break;
+            }
+        }
+    }
+
+    fn render_splitters_static(
+        buffer: &mut [u32],
+        splitters: &[SplitterBar],
+        model: &AppModel,
+        width: u32,
+        height: u32,
+    ) {
+        let splitter_color = model.theme.splitter.background.to_argb_u32();
+
+        for splitter in splitters {
+            let sx = splitter.rect.x as usize;
+            let sy = splitter.rect.y as usize;
+            let sw = splitter.rect.width as usize;
+            let sh = splitter.rect.height as usize;
+
+            for py in sy..(sy + sh).min(height as usize) {
+                for px in sx..(sx + sw).min(width as usize) {
+                    buffer[py * width as usize + px] = splitter_color;
+                }
+            }
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn render(&mut self, model: &mut AppModel, _perf: ()) -> Result<()> {
+        self.render_impl(model)
+    }
+
+    #[cfg(debug_assertions)]
+    fn render(&mut self, model: &mut AppModel, perf: &mut PerfStats) -> Result<()> {
+        self.render_impl_with_perf(model, perf)
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn render_impl(&mut self, model: &mut AppModel) -> Result<()> {
+        if self.width != model.window_size.0 || self.height != model.window_size.1 {
+            self.width = model.window_size.0;
+            self.height = model.window_size.1;
+            self.surface
+                .resize(
+                    NonZeroU32::new(self.width).unwrap(),
+                    NonZeroU32::new(self.height).unwrap(),
+                )
+                .map_err(|e| anyhow::anyhow!("Failed to resize surface: {}", e))?;
+        }
+
+        let line_height = self.line_metrics.new_line_size.ceil() as usize;
+        let font_size = self.font_size;
+        let ascent = self.line_metrics.ascent;
+        let char_width = self.char_width;
+        let width = self.width;
+        let height = self.height;
+
+        let status_bar_height = line_height;
+        let available_rect = Rect::new(
+            0.0,
+            0.0,
+            width as f32,
+            (height as usize).saturating_sub(status_bar_height) as f32,
+        );
+        let splitters = model.editor_area.compute_layout(available_rect);
+
+        let mut buffer = self
+            .surface
+            .buffer_mut()
+            .map_err(|e| anyhow::anyhow!("Failed to get surface buffer: {}", e))?;
+
+        let bg_color = model.theme.editor.background.to_argb_u32();
+        buffer.fill(bg_color);
+
+        Self::render_all_groups_static(
+            &mut buffer,
+            model,
+            &splitters,
+            &self.font,
+            &mut self.glyph_cache,
+            line_height,
+            font_size,
+            ascent,
+            char_width,
+            width,
+            height,
+        );
+
         let status_bar_bg = model.theme.status_bar.background.to_argb_u32();
         let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
-        let status_y = height as usize - line_height;
+        let status_y = (height as usize).saturating_sub(status_bar_height);
         for py in status_y..height as usize {
             for px in 0..width as usize {
                 buffer[py * width as usize + px] = status_bar_bg;
             }
         }
 
-        // Calculate status bar layout
         let available_chars = (width as f32 / char_width).floor() as usize;
         let layout = model.ui.status_bar.layout(available_chars);
 
-        // Render left segments
         for seg in &layout.left {
             let x_px = (seg.x as f32 * char_width).round() as usize;
             draw_text(
@@ -531,7 +817,6 @@ impl Renderer {
             );
         }
 
-        // Render right segments
         for seg in &layout.right {
             let x_px = (seg.x as f32 * char_width).round() as usize;
             draw_text(
@@ -549,7 +834,6 @@ impl Renderer {
             );
         }
 
-        // Render separator lines between right segments (full height of status bar)
         let separator_color = model
             .theme
             .status_bar
@@ -572,11 +856,9 @@ impl Renderer {
     }
 
     #[cfg(debug_assertions)]
-    fn render_impl_with_perf(&mut self, model: &AppModel, perf: &mut PerfStats) -> Result<()> {
-        // Reset per-frame stats
+    fn render_impl_with_perf(&mut self, model: &mut AppModel, perf: &mut PerfStats) -> Result<()> {
         perf.reset_frame_stats();
 
-        // Resize surface if needed
         if self.width != model.window_size.0 || self.height != model.window_size.1 {
             self.width = model.window_size.0;
             self.height = model.window_size.1;
@@ -588,295 +870,62 @@ impl Renderer {
                 .map_err(|e| anyhow::anyhow!("Failed to resize surface: {}", e))?;
         }
 
+        let line_height = self.line_metrics.new_line_size.ceil() as usize;
+        let font_size = self.font_size;
+        let ascent = self.line_metrics.ascent;
+        let char_width = self.char_width;
+        let width = self.width;
+        let height = self.height;
+
+        let status_bar_height = line_height;
+        let available_rect = Rect::new(
+            0.0,
+            0.0,
+            width as f32,
+            (height as usize).saturating_sub(status_bar_height) as f32,
+        );
+        let splitters = model.editor_area.compute_layout(available_rect);
+
         let mut buffer = self
             .surface
             .buffer_mut()
             .map_err(|e| anyhow::anyhow!("Failed to get surface buffer: {}", e))?;
 
-        // Clear screen with theme background
         let t_clear = Instant::now();
         let bg_color = model.theme.editor.background.to_argb_u32();
         buffer.fill(bg_color);
         perf.clear_time = t_clear.elapsed();
 
-        // Calculate scaled metrics using proper font line metrics
-        let font_size = self.font_size;
-        let ascent = self.line_metrics.ascent;
-        let line_height = self.line_metrics.new_line_size.ceil() as usize;
-        let char_width = self.char_width;
-        let text_start_x = text_start_x(char_width).round() as usize;
-        let width = self.width;
-        let height = self.height;
-
-        // Render visible lines
-        let visible_lines = (height as usize) / line_height;
-        let end_line = (model.editor().viewport.top_line + visible_lines)
-            .min(model.document().buffer.len_lines());
-
-        // Draw current line highlight
-        let t_line_highlight = Instant::now();
-        let current_line_color = model.theme.editor.current_line_background.to_argb_u32();
-        if model.editor().cursor().line >= model.editor().viewport.top_line
-            && model.editor().cursor().line < end_line
-        {
-            let screen_line = model.editor().cursor().line - model.editor().viewport.top_line;
-            let highlight_y = screen_line * line_height;
-            for py in highlight_y..(highlight_y + line_height) {
-                for px in 0..(width as usize) {
-                    if py < height as usize {
-                        buffer[py * width as usize + px] = current_line_color;
-                    }
-                }
-            }
-        }
-
-        // Draw selection highlight (if selection is not empty)
-        let selection = model.editor().selection();
-        if !selection.is_empty() {
-            let selection_color = model.theme.editor.selection_background.to_argb_u32();
-            let sel_start = selection.start();
-            let sel_end = selection.end();
-
-            for doc_line in model.editor().viewport.top_line..end_line {
-                if doc_line < sel_start.line || doc_line > sel_end.line {
-                    continue;
-                }
-
-                let screen_line = doc_line - model.editor().viewport.top_line;
-                let y_start = screen_line * line_height;
-                let y_end = y_start + line_height;
-                let line_len = model.document().line_length(doc_line);
-
-                let start_col = if doc_line == sel_start.line {
-                    sel_start.column
-                } else {
-                    0
-                };
-                let end_col = if doc_line == sel_end.line {
-                    sel_end.column
-                } else {
-                    line_len
-                };
-
-                let visible_start_col =
-                    start_col.saturating_sub(model.editor().viewport.left_column);
-                let visible_end_col = end_col.saturating_sub(model.editor().viewport.left_column);
-
-                let x_start =
-                    text_start_x + (visible_start_col as f32 * char_width).round() as usize;
-                let x_end = text_start_x + (visible_end_col as f32 * char_width).round() as usize;
-
-                for py in y_start..y_end {
-                    for px in x_start..x_end {
-                        if py < height as usize && px < width as usize {
-                            buffer[py * width as usize + px] = selection_color;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Draw rectangle selection overlay (if active)
-        if model.editor().rectangle_selection.active {
-            let selection_color = model.theme.editor.selection_background.to_argb_u32();
-            let top_left = model.editor().rectangle_selection.top_left();
-            let bottom_right = model.editor().rectangle_selection.bottom_right();
-
-            for doc_line in top_left.line..=bottom_right.line {
-                if doc_line < model.editor().viewport.top_line || doc_line >= end_line {
-                    continue;
-                }
-
-                let screen_line = doc_line - model.editor().viewport.top_line;
-                let y_start = screen_line * line_height;
-                let y_end = y_start + line_height;
-
-                let visible_start_col = top_left
-                    .column
-                    .saturating_sub(model.editor().viewport.left_column);
-                let visible_end_col = bottom_right
-                    .column
-                    .saturating_sub(model.editor().viewport.left_column);
-
-                let x_start =
-                    text_start_x + (visible_start_col as f32 * char_width).round() as usize;
-                let x_end = text_start_x + (visible_end_col as f32 * char_width).round() as usize;
-
-                for py in y_start..y_end {
-                    for px in x_start..x_end {
-                        if py < height as usize && px < width as usize {
-                            buffer[py * width as usize + px] = selection_color;
-                        }
-                    }
-                }
-            }
-
-            // Draw preview cursors (ghost cursors showing where cursors will be placed)
-            let preview_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
-            let actual_visible_columns =
-                ((width as f32 - text_start_x as f32) / char_width).floor() as usize;
-
-            for preview_pos in &model.editor().rectangle_selection.preview_cursors {
-                let in_vertical_view = preview_pos.line >= model.editor().viewport.top_line
-                    && preview_pos.line < end_line;
-                let in_horizontal_view = preview_pos.column >= model.editor().viewport.left_column
-                    && preview_pos.column
-                        < model.editor().viewport.left_column + actual_visible_columns;
-
-                if in_vertical_view && in_horizontal_view {
-                    let screen_line = preview_pos.line - model.editor().viewport.top_line;
-                    let cursor_column = preview_pos.column - model.editor().viewport.left_column;
-                    let x =
-                        (text_start_x as f32 + cursor_column as f32 * char_width).round() as usize;
-                    let y = screen_line * line_height;
-
-                    // Same 2px wide cursor bar pattern as regular cursors
-                    for dy in 0..(line_height - 2) {
-                        for dx in 0..2 {
-                            let px = x + dx;
-                            let py = y + dy + 1;
-                            if px < width as usize && py < height as usize {
-                                buffer[py * width as usize + px] = preview_cursor_color;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        perf.line_highlight_time = t_line_highlight.elapsed();
-
-        // Draw gutter (line numbers) and text content
         let t_text = Instant::now();
-        let line_num_color = model.theme.gutter.foreground.to_argb_u32();
-        let line_num_active_color = model.theme.gutter.foreground_active.to_argb_u32();
-        let text_color = model.theme.editor.foreground.to_argb_u32();
-
-        for (screen_line, doc_line) in (model.editor().viewport.top_line..end_line).enumerate() {
-            if let Some(line_text) = model.document().get_line(doc_line) {
-                let y = screen_line * line_height;
-
-                // Draw line number
-                let line_num_str = format!("{:4} ", doc_line + 1);
-                let line_color = if doc_line == model.editor().cursor().line {
-                    line_num_active_color
-                } else {
-                    line_num_color
-                };
-                draw_text(
-                    &mut buffer,
-                    &self.font,
-                    &mut self.glyph_cache,
-                    font_size,
-                    ascent,
-                    width,
-                    height,
-                    0,
-                    y,
-                    &line_num_str,
-                    line_color,
-                );
-
-                // Draw text content
-                let visible_text = if line_text.ends_with('\n') {
-                    &line_text[..line_text.len() - 1]
-                } else {
-                    &line_text
-                };
-
-                let display_text: String = visible_text
-                    .chars()
-                    .skip(model.editor().viewport.left_column)
-                    .take(((width as f32 - text_start_x as f32) / char_width).floor() as usize)
-                    .collect();
-
-                draw_text(
-                    &mut buffer,
-                    &self.font,
-                    &mut self.glyph_cache,
-                    font_size,
-                    ascent,
-                    width,
-                    height,
-                    text_start_x,
-                    y,
-                    &display_text,
-                    text_color,
-                );
-            }
-        }
+        Self::render_all_groups_static(
+            &mut buffer,
+            model,
+            &splitters,
+            &self.font,
+            &mut self.glyph_cache,
+            line_height,
+            font_size,
+            ascent,
+            char_width,
+            width,
+            height,
+        );
         perf.text_time = t_text.elapsed();
 
-        // Draw all cursors
-        let t_cursor = Instant::now();
-        if model.ui.cursor_visible {
-            let actual_visible_columns =
-                ((width as f32 - text_start_x as f32) / char_width).floor() as usize;
-            let primary_cursor_color = model.theme.editor.cursor_color.to_argb_u32();
-            let secondary_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
-
-            for (idx, cursor) in model.editor().cursors.iter().enumerate() {
-                let cursor_in_vertical_view = cursor.line >= model.editor().viewport.top_line
-                    && cursor.line < model.editor().viewport.top_line + visible_lines;
-                let cursor_in_horizontal_view = cursor.column
-                    >= model.editor().viewport.left_column
-                    && cursor.column < model.editor().viewport.left_column + actual_visible_columns;
-
-                if cursor_in_vertical_view && cursor_in_horizontal_view {
-                    let screen_line = cursor.line - model.editor().viewport.top_line;
-                    let cursor_column = cursor.column - model.editor().viewport.left_column;
-                    let x =
-                        (text_start_x as f32 + cursor_column as f32 * char_width).round() as usize;
-                    let y = screen_line * line_height;
-                    let cursor_color = if idx == 0 {
-                        primary_cursor_color
-                    } else {
-                        secondary_cursor_color
-                    };
-
-                    for dy in 0..(line_height - 2) {
-                        for dx in 0..2 {
-                            let px = x + dx;
-                            let py = y + dy + 1;
-                            if px < width as usize && py < height as usize {
-                                buffer[py * width as usize + px] = cursor_color;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        perf.cursor_time = t_cursor.elapsed();
-
-        // Draw gutter border (1px vertical line)
-        let t_gutter = Instant::now();
-        let gutter_border_color = model.theme.gutter.border_color.to_argb_u32();
-        let border_x = gutter_border_x(char_width).round() as usize;
-        let status_y_top = (height as usize).saturating_sub(line_height);
-        for py in 0..status_y_top {
-            if border_x < width as usize {
-                buffer[py * width as usize + border_x] = gutter_border_color;
-            }
-        }
-        perf.gutter_time = t_gutter.elapsed();
-
-        // Draw status bar background
         let t_status = Instant::now();
         let status_bar_bg = model.theme.status_bar.background.to_argb_u32();
         let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
-        let status_height = line_height;
-        let status_y = (height as usize).saturating_sub(status_height);
+        let status_y = (height as usize).saturating_sub(status_bar_height);
 
-        for py in status_y..(height as usize) {
-            for px in 0..(width as usize) {
+        for py in status_y..height as usize {
+            for px in 0..width as usize {
                 buffer[py * width as usize + px] = status_bar_bg;
             }
         }
 
-        // Calculate status bar layout
         let available_chars = (width as f32 / char_width).floor() as usize;
         let layout = model.ui.status_bar.layout(available_chars);
 
-        // Render left segments
         for seg in &layout.left {
             let x_px = (seg.x as f32 * char_width).round() as usize;
             draw_text(
@@ -894,7 +943,6 @@ impl Renderer {
             );
         }
 
-        // Render right segments
         for seg in &layout.right {
             let x_px = (seg.x as f32 * char_width).round() as usize;
             draw_text(
@@ -912,7 +960,6 @@ impl Renderer {
             );
         }
 
-        // Render separator lines between right segments (full height of status bar)
         let separator_color = model
             .theme
             .status_bar
@@ -927,10 +974,8 @@ impl Renderer {
                 }
             }
         }
-
         perf.status_bar_time = t_status.elapsed();
 
-        // Draw performance overlay if enabled
         if perf.show_overlay {
             render_perf_overlay(
                 &mut buffer,
@@ -972,16 +1017,28 @@ impl Renderer {
         let char_width = self.char_width as f64;
         let text_x = text_start_x(self.char_width).round() as f64;
 
-        let visual_line = (y / line_height).floor() as usize;
+        // Account for tab bar height - text starts below the tab bar
+        let text_start_y = TAB_BAR_HEIGHT as f64;
+        let adjusted_y = (y - text_start_y).max(0.0);
+        let visual_line = (adjusted_y / line_height).floor() as usize;
         let line = model.editor().viewport.top_line + visual_line;
         let line = line.min(model.document().buffer.len_lines().saturating_sub(1));
 
         let x_offset = x - text_x;
-        let column = if x_offset > 0.0 {
+        let visual_column = if x_offset > 0.0 {
             model.editor().viewport.left_column + (x_offset / char_width).round() as usize
         } else {
             model.editor().viewport.left_column
         };
+
+        // Convert visual column to character column (accounting for tabs)
+        let line_text = model.document().get_line(line).unwrap_or_default();
+        let line_text_trimmed = if line_text.ends_with('\n') {
+            &line_text[..line_text.len() - 1]
+        } else {
+            &line_text
+        };
+        let column = visual_col_to_char_col(line_text_trimmed, visual_column);
 
         let line_len = model.document().line_length(line);
         let column = column.min(line_len);
@@ -994,6 +1051,11 @@ impl Renderer {
         let line_height = self.line_metrics.new_line_size.ceil() as f64;
         let status_bar_top = self.height as f64 - line_height;
         y >= status_bar_top
+    }
+
+    /// Check if a y pixel position is within the tab bar area
+    fn is_in_tab_bar(&self, y: f64) -> bool {
+        y < TAB_BAR_HEIGHT as f64
     }
 }
 
@@ -1428,12 +1490,42 @@ fn draw_sparkline(
 fn handle_key(
     model: &mut AppModel,
     key: Key,
+    physical_key: PhysicalKey,
     ctrl: bool,
     shift: bool,
     alt: bool,
     logo: bool,
     option_double_tapped: bool,
 ) -> Option<Cmd> {
+    // === Numpad Shortcuts (no modifiers needed) ===
+    match physical_key {
+        PhysicalKey::Code(KeyCode::Numpad1) => {
+            return update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(1)));
+        }
+        PhysicalKey::Code(KeyCode::Numpad2) => {
+            return update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(2)));
+        }
+        PhysicalKey::Code(KeyCode::Numpad3) => {
+            return update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(3)));
+        }
+        PhysicalKey::Code(KeyCode::Numpad4) => {
+            return update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(4)));
+        }
+        PhysicalKey::Code(KeyCode::NumpadSubtract) => {
+            return update(
+                model,
+                Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
+            );
+        }
+        PhysicalKey::Code(KeyCode::NumpadAdd) => {
+            return update(
+                model,
+                Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Vertical)),
+            );
+        }
+        _ => {}
+    }
+
     match key {
         // Double-tap Option + Arrow for multi-cursor (must be before other alt combinations)
         Key::Named(NamedKey::ArrowUp) if alt && option_double_tapped => {
@@ -1482,6 +1574,79 @@ fn handle_key(
         // Duplicate line/selection (Cmd+D on macOS, Ctrl+D elsewhere)
         Key::Character(ref s) if s.eq_ignore_ascii_case("d") && (ctrl || logo) => {
             update(model, Msg::Document(DocumentMsg::Duplicate))
+        }
+
+        // Select next occurrence (Cmd+J on macOS, Ctrl+J elsewhere)
+        Key::Character(ref s) if s.eq_ignore_ascii_case("j") && (ctrl || logo) && !shift => {
+            update(model, Msg::Editor(EditorMsg::SelectNextOccurrence))
+        }
+
+        // Unselect last occurrence (Shift+Cmd+J on macOS, Shift+Ctrl+J elsewhere)
+        Key::Character(ref s) if s.eq_ignore_ascii_case("j") && (ctrl || logo) && shift => {
+            update(model, Msg::Editor(EditorMsg::UnselectOccurrence))
+        }
+
+        // === Split View Shortcuts ===
+
+        // Split horizontal (Shift+Option+Cmd+H)
+        Key::Character(ref s) if s.eq_ignore_ascii_case("h") && logo && shift && alt => update(
+            model,
+            Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
+        ),
+
+        // Split vertical (Shift+Option+Cmd+V)
+        Key::Character(ref s) if s.eq_ignore_ascii_case("v") && logo && shift && alt => update(
+            model,
+            Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Vertical)),
+        ),
+
+        // Close tab (Cmd+W)
+        Key::Character(ref s) if s.eq_ignore_ascii_case("w") && logo && !shift && !alt => {
+            update(model, Msg::Layout(LayoutMsg::CloseFocusedTab))
+        }
+
+        // Next tab (Option+Cmd+Right)
+        Key::Named(NamedKey::ArrowRight) if logo && alt && !shift => {
+            update(model, Msg::Layout(LayoutMsg::NextTab))
+        }
+
+        // Previous tab (Option+Cmd+Left)
+        Key::Named(NamedKey::ArrowLeft) if logo && alt && !shift => {
+            update(model, Msg::Layout(LayoutMsg::PrevTab))
+        }
+
+        // Focus group by index (Shift+Cmd+1/2/3/4)
+        Key::Character(ref s) if s == "1" && logo && shift && !alt => {
+            update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(1)))
+        }
+        Key::Character(ref s) if s == "2" && logo && shift && !alt => {
+            update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(2)))
+        }
+        Key::Character(ref s) if s == "3" && logo && shift && !alt => {
+            update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(3)))
+        }
+        Key::Character(ref s) if s == "4" && logo && shift && !alt => {
+            update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(4)))
+        }
+
+        // Focus next/previous group (Ctrl+Tab / Ctrl+Shift+Tab)
+        Key::Named(NamedKey::Tab) if ctrl && !shift => {
+            update(model, Msg::Layout(LayoutMsg::FocusNextGroup))
+        }
+        Key::Named(NamedKey::Tab) if ctrl && shift => {
+            update(model, Msg::Layout(LayoutMsg::FocusPrevGroup))
+        }
+
+        // Indent/Unindent (Tab / Shift+Tab)
+        Key::Named(NamedKey::Tab) if shift && !(ctrl || logo) => {
+            update(model, Msg::Document(DocumentMsg::UnindentLines))
+        }
+        Key::Named(NamedKey::Tab) if !(ctrl || logo) => {
+            if model.editor().selection().is_empty() {
+                update(model, Msg::Document(DocumentMsg::InsertChar('\t')))
+            } else {
+                update(model, Msg::Document(DocumentMsg::IndentLines))
+            }
         }
 
         // Escape: clear selection or collapse to single cursor
@@ -1863,6 +2028,7 @@ impl App {
                     handle_key(
                         &mut self.model,
                         event.logical_key.clone(),
+                        event.physical_key,
                         ctrl,
                         shift,
                         alt,
@@ -1946,6 +2112,11 @@ impl App {
                     if let Some(renderer) = &mut self.renderer {
                         // Ignore clicks on the status bar
                         if renderer.is_in_status_bar(y) {
+                            return None;
+                        }
+
+                        // Ignore clicks on the tab bar
+                        if renderer.is_in_tab_bar(y) {
                             return None;
                         }
 
@@ -2047,6 +2218,11 @@ impl App {
                             return None;
                         }
 
+                        // Ignore clicks on the tab bar
+                        if renderer.is_in_tab_bar(y) {
+                            return None;
+                        }
+
                         let (line, column) = renderer.pixel_to_cursor(x, y, &self.model);
                         return update(
                             &mut self.model,
@@ -2113,21 +2289,19 @@ impl App {
     #[cfg(not(debug_assertions))]
     fn render(&mut self) -> Result<()> {
         if let Some(renderer) = &mut self.renderer {
-            renderer.render(&self.model, ())?;
+            renderer.render(&mut self.model, ())?;
         }
         Ok(())
     }
 
     #[cfg(debug_assertions)]
     fn render(&mut self) -> Result<()> {
-        // Start frame timing
         self.perf.frame_start = Some(Instant::now());
 
         if let Some(renderer) = &mut self.renderer {
-            renderer.render(&self.model, &mut self.perf)?;
+            renderer.render(&mut self.model, &mut self.perf)?;
         }
 
-        // Record frame time and render history
         self.perf.record_frame_time();
         self.perf.record_render_history();
         Ok(())
@@ -2326,6 +2500,7 @@ mod tests {
             },
             scroll_padding: 1,
             rectangle_selection: RectangleSelectionState::default(),
+            occurrence_state: None,
         };
         let editor_area = EditorArea::single_document(document, editor);
         AppModel {
@@ -2354,6 +2529,7 @@ mod tests {
         handle_key(
             &mut model,
             Key::Named(NamedKey::ArrowLeft),
+            PhysicalKey::Code(KeyCode::ArrowLeft),
             false,
             false,
             false,
@@ -2384,6 +2560,7 @@ mod tests {
         handle_key(
             &mut model,
             Key::Named(NamedKey::ArrowRight),
+            PhysicalKey::Code(KeyCode::ArrowRight),
             false,
             false,
             false,
@@ -2418,6 +2595,7 @@ mod tests {
         handle_key(
             &mut model,
             Key::Named(NamedKey::ArrowUp),
+            PhysicalKey::Code(KeyCode::ArrowUp),
             false,
             false,
             false,
@@ -2458,6 +2636,7 @@ mod tests {
         handle_key(
             &mut model,
             Key::Named(NamedKey::ArrowDown),
+            PhysicalKey::Code(KeyCode::ArrowDown),
             false,
             false,
             false,
@@ -2500,6 +2679,7 @@ mod tests {
         handle_key(
             &mut model,
             Key::Named(NamedKey::Home),
+            PhysicalKey::Code(KeyCode::Home),
             false,
             false,
             false,
@@ -2538,6 +2718,7 @@ mod tests {
         handle_key(
             &mut model,
             Key::Named(NamedKey::End),
+            PhysicalKey::Code(KeyCode::End),
             false,
             false,
             false,
@@ -2581,6 +2762,7 @@ mod tests {
         handle_key(
             &mut model,
             Key::Named(NamedKey::PageUp),
+            PhysicalKey::Code(KeyCode::PageUp),
             false,
             false,
             false,
@@ -2620,6 +2802,7 @@ mod tests {
         handle_key(
             &mut model,
             Key::Named(NamedKey::PageDown),
+            PhysicalKey::Code(KeyCode::PageDown),
             false,
             false,
             false,
@@ -2678,6 +2861,7 @@ mod tests {
         handle_key(
             &mut model,
             Key::Named(NamedKey::ArrowRight),
+            PhysicalKey::Code(KeyCode::ArrowRight),
             false,
             false,
             false,
@@ -2735,6 +2919,7 @@ mod tests {
         handle_key(
             &mut model,
             Key::Named(NamedKey::PageUp),
+            PhysicalKey::Code(KeyCode::PageUp),
             false,
             false,
             false,
@@ -2784,6 +2969,7 @@ mod tests {
         handle_key(
             &mut model,
             Key::Named(NamedKey::PageUp),
+            PhysicalKey::Code(KeyCode::PageUp),
             false,
             false,
             false,
@@ -2834,6 +3020,7 @@ mod tests {
         handle_key(
             &mut model,
             Key::Character("z".into()),
+            PhysicalKey::Code(KeyCode::KeyZ),
             false, // ctrl
             false, // shift
             false, // alt
@@ -2866,6 +3053,7 @@ mod tests {
         handle_key(
             &mut model,
             Key::Character("z".into()),
+            PhysicalKey::Code(KeyCode::KeyZ),
             false, // ctrl
             true,  // shift
             false, // alt
@@ -2894,6 +3082,7 @@ mod tests {
         handle_key(
             &mut model,
             Key::Character("z".into()),
+            PhysicalKey::Code(KeyCode::KeyZ),
             true,  // ctrl
             false, // shift
             false, // alt

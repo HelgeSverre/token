@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use super::document::Document;
-use super::editor::EditorState;
+use super::editor::{EditorState, ScrollRevealMode};
 
 // ============================================================================
 // Identifiers
@@ -250,6 +250,27 @@ impl EditorArea {
         self.documents.get_mut(&doc_id)
     }
 
+    /// Ensure the focused editor's cursor is visible.
+    /// This method works around borrow checker issues by getting both doc and editor
+    /// within the same scope.
+    pub fn ensure_focused_cursor_visible(&mut self, mode: ScrollRevealMode) {
+        let doc_id = match self.focused_document_id() {
+            Some(id) => id,
+            None => return,
+        };
+        let editor_id = match self.focused_editor_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        // Get raw pointers to work around borrow checker
+        // Safety: We only read from doc while mutating editor, and they don't overlap
+        let doc_ptr = self.documents.get(&doc_id).unwrap() as *const Document;
+        let editor = self.editors.get_mut(&editor_id).unwrap();
+        let doc = unsafe { &*doc_ptr };
+        editor.ensure_cursor_visible_with_mode(doc, mode);
+    }
+
     /// Generate a new document ID
     pub fn next_document_id(&mut self) -> DocumentId {
         let id = DocumentId(self.next_document_id);
@@ -276,6 +297,46 @@ impl EditorArea {
         let id = TabId(self.next_tab_id);
         self.next_tab_id += 1;
         id
+    }
+
+    /// Sync all editor viewports based on their group's rect.
+    /// Should be called after compute_layout() or after split/close operations.
+    pub fn sync_all_viewports(&mut self, line_height: usize, char_width: f32) {
+        // Collect group rects and their editor IDs
+        let group_info: Vec<(Vec<EditorId>, f32, f32)> = self
+            .groups
+            .values()
+            .map(|group| {
+                let editor_ids: Vec<EditorId> = group.tabs.iter().map(|t| t.editor_id).collect();
+                (editor_ids, group.rect.width, group.rect.height)
+            })
+            .collect();
+
+        // Update each editor's viewport based on its group's dimensions
+        for (editor_ids, width, height) in group_info {
+            // Calculate visible lines from group height
+            let visible_lines = if line_height > 0 {
+                (height as usize) / line_height
+            } else {
+                25 // fallback
+            };
+
+            // Calculate visible columns from group width
+            // Account for gutter/line numbers (estimate ~50px)
+            let gutter_width = 50.0;
+            let available_width = (width - gutter_width).max(0.0);
+            let visible_columns = if char_width > 0.0 {
+                (available_width / char_width).floor() as usize
+            } else {
+                80 // fallback
+            };
+
+            for editor_id in editor_ids {
+                if let Some(editor) = self.editors.get_mut(&editor_id) {
+                    editor.resize_viewport(visible_lines, visible_columns);
+                }
+            }
+        }
     }
 
     /// Compute layout for all groups given the available rectangle.

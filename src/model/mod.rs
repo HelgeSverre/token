@@ -10,7 +10,8 @@ pub mod ui;
 
 pub use document::{Document, EditOperation};
 pub use editor::{
-    Cursor, EditorState, Position, RectangleSelectionState, ScrollRevealMode, Selection, Viewport,
+    Cursor, EditorState, OccurrenceState, Position, RectangleSelectionState, ScrollRevealMode,
+    Selection, Viewport,
 };
 pub use editor_area::{
     DocumentId, EditorArea, EditorGroup, EditorId, GroupId, LayoutNode, Rect, SplitContainer,
@@ -92,7 +93,10 @@ impl AppModel {
         // Calculate viewport dimensions
         let text_x = text_start_x(char_width).round();
         let visible_columns = ((window_width as f32 - text_x) / char_width).floor() as usize;
-        let visible_lines = (window_height as usize) / line_height;
+        // Subtract status bar height (1 line) from available height
+        let status_bar_height = line_height;
+        let visible_lines =
+            (window_height as usize).saturating_sub(status_bar_height) / line_height;
 
         // Create editor state with viewport
         let editor = EditorState::with_viewport(visible_lines, visible_columns);
@@ -148,18 +152,24 @@ impl AppModel {
     }
 
     /// Update viewport dimensions after window resize
+    /// Updates ALL editors, not just the focused one (for split view support)
     pub fn resize(&mut self, width: u32, height: u32) {
         self.window_size = (width, height);
 
         let text_x = text_start_x(self.char_width).round();
         let visible_columns = ((width as f32 - text_x) / self.char_width).floor() as usize;
-        let visible_lines = (height as usize) / self.line_height;
+        // Subtract status bar height (1 line) from available height
+        let status_bar_height = self.line_height;
+        let visible_lines = (height as usize).saturating_sub(status_bar_height) / self.line_height;
 
-        self.editor_mut()
-            .resize_viewport(visible_lines, visible_columns);
+        // FIX: Update ALL editors, not just the focused one
+        for editor in self.editor_area.editors.values_mut() {
+            editor.resize_viewport(visible_lines, visible_columns);
+        }
     }
 
     /// Update char_width from actual font metrics
+    /// Updates ALL editors for split view support
     pub fn set_char_width(&mut self, char_width: f32) {
         self.char_width = char_width;
 
@@ -167,7 +177,10 @@ impl AppModel {
         let text_x = text_start_x(char_width).round();
         let visible_columns = ((self.window_size.0 as f32 - text_x) / char_width).floor() as usize;
 
-        self.editor_mut().viewport.visible_columns = visible_columns;
+        // FIX: Update ALL editors, not just the focused one
+        for editor in self.editor_area.editors.values_mut() {
+            editor.viewport.visible_columns = visible_columns;
+        }
     }
 
     // Convenience methods that delegate to sub-models
@@ -210,13 +223,10 @@ impl AppModel {
     }
 
     /// Ensure cursor is visible in viewport (minimal scroll)
+    /// Uses EditorArea helper to avoid cloning the document
     pub fn ensure_cursor_visible(&mut self) {
-        let doc = self
-            .editor_area
-            .focused_document()
-            .expect("must have document")
-            .clone();
-        self.editor_mut().ensure_cursor_visible(&doc);
+        self.editor_area
+            .ensure_focused_cursor_visible(ScrollRevealMode::Minimal);
     }
 
     /// Ensure cursor is visible with direction-aware alignment
@@ -224,19 +234,14 @@ impl AppModel {
     /// When moving up, cursor is revealed at the top of the safe zone.
     /// When moving down, cursor is revealed at the bottom of the safe zone.
     /// For horizontal movement or no hint, uses minimal scroll.
+    /// Uses EditorArea helper to avoid cloning the document
     pub fn ensure_cursor_visible_directional(&mut self, vertical_up: Option<bool>) {
         let mode = match vertical_up {
             Some(true) => ScrollRevealMode::TopAligned,
             Some(false) => ScrollRevealMode::BottomAligned,
             None => ScrollRevealMode::Minimal,
         };
-        let doc = self
-            .editor_area
-            .focused_document()
-            .expect("must have document")
-            .clone();
-        self.editor_mut()
-            .ensure_cursor_visible_with_mode(&doc, mode);
+        self.editor_area.ensure_focused_cursor_visible(mode);
     }
 
     /// Reset cursor blink timer

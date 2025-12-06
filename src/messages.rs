@@ -83,8 +83,10 @@ pub enum EditorMsg {
     RemoveCursor(usize),
 
     // === Find & Select ===
-    /// Select next occurrence of word/selection (Cmd+D)
+    /// Select next occurrence of word/selection (Cmd+J)
     SelectNextOccurrence,
+    /// Unselect last added occurrence (Shift+Cmd+J)
+    UnselectOccurrence,
     /// Select all occurrences (Cmd+Shift+L)
     SelectAllOccurrences,
 
@@ -124,6 +126,10 @@ pub enum DocumentMsg {
     Paste,
     /// Duplicate current line or selection (Cmd+D)
     Duplicate,
+    /// Indent selected lines (Tab with selection)
+    IndentLines,
+    /// Unindent current line or selected lines (Shift+Tab)
+    UnindentLines,
 }
 
 use crate::model::{GroupId, SegmentContent, SegmentId, SplitDirection, TabId};

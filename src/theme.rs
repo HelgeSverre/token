@@ -170,6 +170,8 @@ pub struct Theme {
     pub gutter: GutterTheme,
     pub status_bar: StatusBarTheme,
     pub overlay: OverlayTheme,
+    pub tab_bar: TabBarTheme,
+    pub splitter: SplitterTheme,
 }
 
 /// Editor colors (resolved)
@@ -228,6 +230,62 @@ impl OverlayTheme {
             highlight: Color::rgb(0x80, 0xFF, 0x80),
             warning: Color::rgb(0xFF, 0xFF, 0x80),
             error: Color::rgb(0xFF, 0x80, 0x80),
+        }
+    }
+}
+
+/// Tab bar colors (resolved)
+#[derive(Debug, Clone)]
+pub struct TabBarTheme {
+    /// Background of the tab bar strip
+    pub background: Color,
+    /// Background of the active tab
+    pub active_background: Color,
+    /// Foreground (text) of the active tab
+    pub active_foreground: Color,
+    /// Background of inactive tabs
+    pub inactive_background: Color,
+    /// Foreground (text) of inactive tabs
+    pub inactive_foreground: Color,
+    /// Border between tabs and editor
+    pub border: Color,
+    /// Modified indicator dot color
+    pub modified_indicator: Color,
+}
+
+impl TabBarTheme {
+    /// Default dark tab bar theme
+    pub fn default_dark() -> Self {
+        Self {
+            background: Color::rgb(0x25, 0x25, 0x25),
+            active_background: Color::rgb(0x1E, 0x1E, 0x1E),
+            active_foreground: Color::rgb(0xFF, 0xFF, 0xFF),
+            inactive_background: Color::rgb(0x2D, 0x2D, 0x2D),
+            inactive_foreground: Color::rgb(0x80, 0x80, 0x80),
+            border: Color::rgb(0x3C, 0x3C, 0x3C),
+            modified_indicator: Color::rgb(0xFF, 0xFF, 0xFF),
+        }
+    }
+}
+
+/// Splitter bar colors (resolved)
+#[derive(Debug, Clone)]
+pub struct SplitterTheme {
+    /// Default background color
+    pub background: Color,
+    /// Color when hovered
+    pub hover: Color,
+    /// Color when actively being dragged
+    pub active: Color,
+}
+
+impl SplitterTheme {
+    /// Default dark splitter theme
+    pub fn default_dark() -> Self {
+        Self {
+            background: Color::rgb(0x25, 0x25, 0x25),
+            hover: Color::rgb(0x00, 0x7A, 0xCC),
+            active: Color::rgb(0x00, 0x7A, 0xCC),
         }
     }
 }
@@ -347,6 +405,9 @@ impl Theme {
                         .unwrap_or(defaults.error),
                 }
             },
+            // Use defaults for tab_bar and splitter (not in YAML yet)
+            tab_bar: TabBarTheme::default_dark(),
+            splitter: SplitterTheme::default_dark(),
         })
     }
 
@@ -377,6 +438,8 @@ impl Theme {
                         foreground: Color::rgb(0xFF, 0xFF, 0xFF),
                     },
                     overlay: OverlayTheme::default_dark(),
+                    tab_bar: TabBarTheme::default_dark(),
+                    splitter: SplitterTheme::default_dark(),
                 }
             }
         }

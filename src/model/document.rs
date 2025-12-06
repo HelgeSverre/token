@@ -29,6 +29,15 @@ pub enum EditOperation {
         cursor_before: Cursor,
         cursor_after: Cursor,
     },
+    /// Batch operation - groups multiple edits for atomic multi-cursor undo/redo
+    Batch {
+        /// Individual operations (applied in order for redo, reverse order for undo)
+        operations: Vec<EditOperation>,
+        /// All cursor positions before the batch
+        cursors_before: Vec<Cursor>,
+        /// All cursor positions after the batch
+        cursors_after: Vec<Cursor>,
+    },
 }
 
 /// Document state - the text buffer and associated file metadata
@@ -163,6 +172,69 @@ impl Document {
         self.undo_stack.push(op);
         self.redo_stack.clear();
         self.is_modified = true;
+    }
+
+    /// Find all occurrences of text in the document
+    /// Returns Vec of (start_char_offset, end_char_offset) in character indices
+    pub fn find_all_occurrences(&self, needle: &str) -> Vec<(usize, usize)> {
+        if needle.is_empty() {
+            return Vec::new();
+        }
+
+        let haystack = self.buffer.to_string();
+        let needle_char_len = needle.chars().count();
+        let needle_byte_len = needle.len();
+
+        // Build byte offset → char index mapping (only for char boundaries)
+        let byte_to_char: std::collections::HashMap<usize, usize> = haystack
+            .char_indices()
+            .enumerate()
+            .map(|(char_idx, (byte_idx, _))| (byte_idx, char_idx))
+            .collect();
+
+        let mut results = Vec::new();
+        let mut start_byte = 0;
+
+        while start_byte <= haystack.len().saturating_sub(needle_byte_len) {
+            if let Some(rel_byte) = haystack[start_byte..].find(needle) {
+                let match_start_byte = start_byte + rel_byte;
+
+                // Convert byte offset to char offset
+                if let Some(&start_char) = byte_to_char.get(&match_start_byte) {
+                    let end_char = start_char + needle_char_len;
+                    results.push((start_char, end_char));
+                }
+
+                // Advance by the byte length of the first character of the match
+                // to allow overlapping matches while staying on char boundaries
+                let first_char_byte_len = haystack[match_start_byte..]
+                    .chars()
+                    .next()
+                    .map(|c| c.len_utf8())
+                    .unwrap_or(1);
+                start_byte = match_start_byte + first_char_byte_len;
+            } else {
+                break;
+            }
+        }
+        results
+    }
+
+    /// Find next occurrence after given offset (wraps around)
+    pub fn find_next_occurrence(
+        &self,
+        needle: &str,
+        after_offset: usize,
+    ) -> Option<(usize, usize)> {
+        let occurrences = self.find_all_occurrences(needle);
+
+        // Find first occurrence after current position
+        if let Some(&occ) = occurrences.iter().find(|(start, _)| *start > after_offset) {
+            return Some(occ);
+        }
+
+        // Wrap around to first occurrence
+        occurrences.first().copied()
     }
 }
 
