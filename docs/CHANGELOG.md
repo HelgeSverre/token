@@ -4,6 +4,104 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
+## 2025-12-06 (Latest)
+
+### Added - Split View Implementation (All 7 Phases)
+
+Complete multi-pane editor with split views, tabs, and shared documents.
+
+#### Phase 1: Core Data Structures
+- `DocumentId`, `EditorId`, `GroupId`, `TabId` - typed identifiers
+- `Tab` struct with editor reference, pinned/preview flags
+- `EditorGroup` with tabs, active tab index, layout rect
+- `LayoutNode` enum: `Group(GroupId)` or `Split(SplitContainer)`
+- `SplitContainer` with direction, children, ratios, min_sizes
+- `EditorArea` managing documents, editors, groups, and layout tree
+
+#### Phase 2: Layout System
+- `Rect` type for layout calculations with `contains()` hit testing
+- `compute_layout()` recursive algorithm for layout tree
+- `group_at_point()` for mouse hit testing
+- `SplitterBar` struct for splitter positions
+- `splitter_at_point()` for resize handle detection
+- `SPLITTER_WIDTH` constant (4px)
+
+#### Phase 3: AppModel Migration
+- Replaced single `Document`/`EditorState` with `EditorArea`
+- Backward-compatible accessor methods: `document()`, `editor()`, etc.
+- `ensure_focused_cursor_visible()` helper avoiding document cloning
+- `resize()` now updates ALL editors (fixes multi-pane viewport bug)
+
+#### Phase 4: LayoutMsg Handlers
+- `SplitFocused(SplitDirection)` - split current group
+- `SplitGroup { group_id, direction }` - split specific group
+- `CloseGroup`, `CloseFocusedGroup` - close with layout cleanup
+- `FocusGroup`, `FocusNextGroup`, `FocusPrevGroup` - navigation
+- `FocusGroupByIndex(usize)` - keyboard shortcuts (1-indexed)
+- `CloseTab`, `CloseFocusedTab`, `MoveTab` - tab operations
+- `NextTab`, `PrevTab`, `SwitchToTab` - tab navigation
+
+#### Phase 5: Multi-Group Rendering
+- `render_all_groups_static()` iterates over layout
+- `render_editor_group_static()` renders single pane
+- Tab bar rendering with active/inactive styling
+- Splitter bar rendering between groups
+- Focus indicator (border) on focused group
+
+#### Phase 6: Document Synchronization
+- Documents shared across views (same `DocumentId`)
+- Independent cursor/viewport per `EditorState`
+- Edits reflect immediately in all views of same document
+
+#### Phase 7: Keyboard Shortcuts
+- Numpad 1-4: Focus group by index
+- Numpad -/+: Split horizontal/vertical
+- Cmd+W: Close tab
+- Option+Cmd+Left/Right: Previous/Next tab
+- Ctrl+Tab: Focus next group
+- `physical_key` support in `handle_key()` for numpad detection
+
+### Fixed - Split View Bugs
+
+- `close_tab` on last group's only tab now prevented (was leaving invalid state)
+- `move_tab` to invalid group now no-op (was losing tabs)
+- Viewport resize updates all editors, not just focused one
+
+### Added - Performance Overlay Sparklines
+
+- Historical sparkline charts for render timing breakdown
+- 60-frame rolling history per metric (clear, highlight, gutter, text, cursor, status, present)
+- `draw_sparkline()` function with 1px bar visualization
+- `record_render_history()` pushes timing to VecDeque histories
+
+### Added - Multi-Cursor Batch Undo/Redo
+
+- `EditOperation::Batch` for atomic multi-cursor operations
+- InsertChar, InsertNewline, DeleteBackward, DeleteForward now batch
+- Proper cursor restoration on undo/redo
+- 6 new tests for multi-cursor undo behavior
+
+### Added - SelectAllOccurrences (Cmd+Shift+L)
+
+- Finds all occurrences of word/selection in document
+- Creates cursor+selection for each occurrence
+- Status message shows count: "Selected N occurrences"
+
+### Added - Layout Tests
+
+- 47 new tests in `tests/layout.rs`
+- Split operations, close operations, focus navigation
+- Tab operations (close, move, switch)
+- Independent viewport/cursor per editor
+- Edge cases (nested splits, invalid IDs)
+
+### Changed
+
+- Test count: 351 (was 246)
+- Added 47 layout tests, 6 multi-cursor undo tests, selection tests
+
+---
+
 ## 2025-12-06
 
 ### Added - Caret Count in Status Bar
