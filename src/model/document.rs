@@ -4,6 +4,7 @@ use ropey::Rope;
 use std::path::PathBuf;
 
 use super::editor::Cursor;
+use super::editor_area::DocumentId;
 
 /// Represents an edit operation for undo/redo functionality
 #[derive(Debug, Clone)]
@@ -33,6 +34,8 @@ pub enum EditOperation {
 /// Document state - the text buffer and associated file metadata
 #[derive(Debug, Clone)]
 pub struct Document {
+    /// Unique identifier (set when added to EditorArea)
+    pub id: Option<DocumentId>,
     /// The text buffer
     pub buffer: Rope,
     /// Path to the file on disk (None for new/unsaved files)
@@ -49,6 +52,7 @@ impl Document {
     /// Create a new empty document
     pub fn new() -> Self {
         Self {
+            id: None,
             buffer: Rope::from(""),
             file_path: None,
             is_modified: false,
@@ -60,6 +64,7 @@ impl Document {
     /// Create a document with initial text
     pub fn with_text(text: &str) -> Self {
         Self {
+            id: None,
             buffer: Rope::from(text),
             file_path: None,
             is_modified: false,
@@ -72,6 +77,7 @@ impl Document {
     pub fn from_file(path: PathBuf) -> Result<Self, std::io::Error> {
         let content = std::fs::read_to_string(&path)?;
         Ok(Self {
+            id: None,
             buffer: Rope::from(content),
             file_path: Some(path),
             is_modified: false,
@@ -112,30 +118,22 @@ impl Document {
     }
 
     /// Convert a (line, column) position to a buffer offset
+    /// Uses ropey's O(log n) line_to_char method instead of O(n) iteration
     pub fn cursor_to_offset(&self, line: usize, column: usize) -> usize {
-        let mut pos = 0;
-        for i in 0..line {
-            if i < self.buffer.len_lines() {
-                pos += self.buffer.line(i).len_chars();
-            }
+        if line >= self.buffer.len_lines() {
+            return self.buffer.len_chars();
         }
-        pos + column.min(self.line_length(line))
+        let line_start = self.buffer.line_to_char(line);
+        line_start + column.min(self.line_length(line))
     }
 
     /// Convert a buffer offset to (line, column) position
+    /// Uses ropey's O(log n) char_to_line method instead of O(n) iteration
     pub fn offset_to_cursor(&self, offset: usize) -> (usize, usize) {
-        let mut remaining = offset;
-        for line_idx in 0..self.buffer.len_lines() {
-            let line = self.buffer.line(line_idx);
-            let line_len = line.len_chars();
-            if remaining < line_len {
-                return (line_idx, remaining);
-            }
-            remaining -= line_len;
-        }
-        // Past end - return end of document
-        let last_line = self.buffer.len_lines().saturating_sub(1);
-        (last_line, self.line_length(last_line))
+        let clamped = offset.min(self.buffer.len_chars());
+        let line = self.buffer.char_to_line(clamped);
+        let line_start = self.buffer.line_to_char(line);
+        (line, clamped - line_start)
     }
 
     /// Get the column of the first non-whitespace character on a line

@@ -3,6 +3,10 @@ name = "token"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+dhat-heap = ["dhat"]
+
 [dependencies]
 winit = "0.30.12"
 softbuffer = "0.4"
@@ -25,3 +29,28 @@ log = "0.4"
 
 # For clipboard support
 arboard = "3.4"
+
+# Optional: heap profiling
+dhat = { version = "0.3", optional = true }
+
+[dev-dependencies]
+divan = "0.1"
+
+[[bench]]
+name = "rope_operations"
+harness = false
+
+[[bench]]
+name = "glyph_cache"
+harness = false
+
+[[bench]]
+name = "rendering"
+harness = false
+
+# Profiling profile: release speed with debug symbols
+[profile.profiling]
+inherits = "release"
+debug = true
+lto = false
+codegen-units = 1
