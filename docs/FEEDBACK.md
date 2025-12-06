@@ -1,8 +1,8 @@
 # Implementation Progress Feedback
 
-**Date:** December 2024 (Updated)
+**Date:** December 2025 (Updated)
 **Reviewed by:** Oracle analysis
-**Test Status:** 119 passing (10 theme + 8 keyboard + 101 integration)
+**Test Status:** 185 passing (10 theme + 11 keyboard + 164 integration)
 
 ---
 
@@ -49,36 +49,38 @@ The Elm-style architecture refactor (Phases 1-6) is complete. Selection and mult
 | Multi-cursor `DeleteForward` | `update.rs:655-682` | ✅ Reverse-order processing |
 | Selection-aware delete | `delete_selection()` helper | ✅ Used by edit operations |
 
-### ✅ Recently Implemented (from Design)
+### ✅ Recently Implemented
 
-| Feature | Design Location | Status |
-|---------|-----------------|--------|
-| `Selection::extend_to()` | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) Part 1 | ✅ Implemented |
-| `Selection::collapse_to_start()` | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) Part 1 | ✅ Implemented |
-| `Selection::collapse_to_end()` | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) Part 1 | ✅ Implemented |
-| `Selection::contains()` | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) Part 1 | ✅ Implemented |
-| `deduplicate_cursors()` | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) Part 4 | ✅ Implemented |
-| `assert_invariants()` | Design recommendation | ✅ Implemented (debug only) |
-| Rectangle Selection | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) Part 5 | ✅ Implemented |
-| `AddCursorAbove`/`Below` | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) Part 6 | ✅ Implemented |
+All Phase 7.1-7.8 features are now complete:
 
-### ❌ Still Missing from Design
+| Feature | Status |
+|---------|--------|
+| Selection helpers (`extend_to`, `collapse_to_start/end`, `contains`) | Complete |
+| `deduplicate_cursors()` | Complete |
+| `assert_invariants()` (debug only) | Complete |
+| Rectangle Selection (middle mouse) | Complete |
+| AddCursorAbove/Below (Option+Option+Arrow) | Complete |
+| Clipboard operations (Copy/Cut/Paste) | Complete |
+| Multi-cursor editing (reverse-order processing) | Complete |
 
-| Feature | Design Location | Gap |
-|---------|-----------------|-----|
-| `Selection::get_text()` | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) Part 1 | Not implemented |
-| `EditOperation::Batch` | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) Part 10 | Not implemented |
-| `merge_overlapping_selections()` | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) Part 4 | Not implemented |
+### ❌ Still Missing
+
+| Feature | Priority | Notes |
+|---------|----------|-------|
+| `Selection::get_text()` | Medium | Needed for occurrence search |
+| `EditOperation::Batch` | Medium | Proper multi-cursor undo/redo |
+| `merge_overlapping_selections()` | Low | Edge case handling |
+| `SelectNextOccurrence` (Phase 9) | Medium | Cmd+J - stubbed but not implemented |
+| `SelectAllOccurrences` (Phase 9) | Low | Stubbed but not implemented |
 
 ### ❌ Not Yet Implemented
 
-| Feature | Messages Exist | Logic Implemented |
-|---------|----------------|-------------------|
-| `SelectNextOccurrence` | ✅ | ❌ No search logic |
-| `SelectAllOccurrences` | ✅ | ❌ No search logic |
-| `RemoveCursor(usize)` | ✅ | ❌ Not wired |
-| Structured Status Bar | ❌ | ❌ Design only ([feature/STATUS_BAR.md](feature/STATUS_BAR.md)) |
-| Split View / Multi-Pane | ❌ | ❌ Design only ([feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md)) |
+| Feature | Design Doc | Status |
+|---------|------------|--------|
+| Occurrence Selection (Phase 9) | [SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) | Messages exist, no logic |
+| Structured Status Bar | [STATUS_BAR.md](feature/STATUS_BAR.md) | Design only |
+| Split View / Multi-Pane | [SPLIT_VIEW.md](feature/SPLIT_VIEW.md) | Design only |
+| Expand/Shrink Selection | [TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) | Design only |
 
 ---
 
@@ -97,158 +99,73 @@ The Elm-style architecture refactor (Phases 1-6) is complete. Selection and mult
 
 1. **Public fields on EditorState**
    - `cursors`, `selections`, `viewport` are all `pub`
-   - Makes it easy to violate invariants outside `editor.rs`
    - Consider gradually adding accessor methods
 
-2. **Stale documentation**
-   - `EditorState` doc comment says "most operations work on primary cursor"
-   - But multi-cursor editing is now implemented for several operations
-   - Update to reflect current state
-
-3. **Open-coded selection manipulation**
-   - Selection anchor/head manipulations are inline in `update.rs`
-   - Design recommends helper methods on `Selection` struct
-   - Increases risk of inconsistent behavior
-
-4. **Simplified undo/redo for multi-cursor**
+2. **Simplified undo/redo for multi-cursor**
    - Current code has comments: "simplified - full undo would need batch"
    - Single `EditOperation` recorded for multi-cursor edits
-   - Will cause incorrect undo behavior with multiple cursors
+   - Need `EditOperation::Batch` for proper multi-cursor undo
 
-5. **No invariant enforcement**
-   - `cursors.len() == selections.len()` should always be true
-   - `cursors[i].to_position() == selections[i].head` should always be true
-   - No debug assertions to catch violations
+### Recently Resolved
+
+- ~~Selection helper methods~~ - Now have `extend_to`, `collapse_to_start/end`, `contains`
+- ~~No invariant enforcement~~ - `assert_invariants()` now in debug builds
+- ~~Open-coded selection manipulation~~ - Helper methods now used
 
 ---
 
 ## Priority Recommendations
 
-### Priority 1: Solidify Multi-Cursor Core (M effort)
+### Priority 1: Finish Selection (Phase 9)
 
-1. **Add Selection helper methods** to `editor.rs`:
-   ```rust
-   impl Selection {
-       pub fn extend_to(&mut self, pos: Position) { self.head = pos; }
-       pub fn collapse_to_head(&mut self) { self.anchor = self.head; }
-       pub fn collapse_to_start(&mut self) { let s = self.start(); self.anchor = s; self.head = s; }
-       pub fn collapse_to_end(&mut self) { let e = self.end(); self.anchor = e; self.head = e; }
-       pub fn get_text(&self, doc: &Document) -> String { /* ... */ }
-   }
-   ```
+| Task | Effort | Notes |
+|------|--------|-------|
+| `Selection::get_text()` | S | Needed for occurrence search |
+| `SelectNextOccurrence` (Cmd+J) | M | Search forward for word/selection |
+| `UnselectOccurrence` (Shift+Cmd+J) | S | Track history, pop last |
+| `SelectAllOccurrences` | M | Find all, create cursors |
 
-2. **Add invariant assertions**:
-   ```rust
-   impl EditorState {
-       #[cfg(debug_assertions)]
-       pub fn assert_invariants(&self) {
-           debug_assert_eq!(self.cursors.len(), self.selections.len());
-           for (c, s) in self.cursors.iter().zip(&self.selections) {
-               debug_assert_eq!(c.to_position(), s.head);
-           }
-       }
-   }
-   ```
+### Priority 2: Multi-Cursor Undo/Redo
 
-3. **Add `deduplicate_cursors()`**:
-   ```rust
-   impl EditorState {
-       pub fn deduplicate_cursors(&mut self) {
-           // Remove duplicate cursor positions, keeping primary (index 0)
-       }
-   }
-   ```
+| Task | Effort | Notes |
+|------|--------|-------|
+| `EditOperation::Batch` variant | M | Group operations for undo |
+| Update multi-cursor edits to use Batch | M | InsertChar, Delete, etc. |
+| `merge_overlapping_selections()` | S | Edge case after operations |
 
-4. **Implement `EditOperation::Batch`** in `document.rs`:
-   ```rust
-   pub enum EditOperation {
-       Insert { ... },
-       Delete { ... },
-       Batch {
-           operations: Vec<EditOperation>,
-           cursors_before: Vec<Cursor>,
-           selections_before: Vec<Selection>,
-           cursors_after: Vec<Cursor>,
-           selections_after: Vec<Selection>,
-       },
-   }
-   ```
+### Priority 3: Structured Status Bar
 
-### Priority 2: Finish Selection Phases (M-L effort)
+See [STATUS_BAR.md](feature/STATUS_BAR.md) for full design.
 
-5. **Rectangle Selection** (Phase 7)
-   - Add `RectangleSelectionState` to `EditorState`
-   - Implement handlers for Start/Update/Finish/Cancel messages
-   - Create cursors on each line within rectangle bounds
+| Task | Effort |
+|------|--------|
+| Add StatusBar data structures | S |
+| Add segment-based messages | S |
+| Update renderer | M |
+| Add `sync_status_bar()` helper | S |
 
-6. **AddCursorAbove/Below** (Phase 8)
-   - Simple version: add cursor on line above/below each existing cursor
-   - Preserve column (clamped to line length)
-   - Call `deduplicate_cursors()` after
+### Priority 4: Expand/Shrink Selection
 
-7. **Find & Select** (Phase 9)
-   - `SelectNextOccurrence`: search forward for word/selection text 
-   - `SelectAllOccurrences`: find all matches, create cursor at each each each
-   
+See [TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) for full design.
 
-### Priority 3: Structured Status Bar (M effort)
+| Task | Effort |
+|------|--------|
+| Add `selection_history` to EditorState | S |
+| Implement ExpandSelection | M |
+| Implement ShrinkSelection | S |
+| Add keyboard handling | S |
 
-8. **Add data structures** to `model/ui.rs`:
-   - `StatusSegment`, `SegmentId`, `SegmentContent`, `StatusBar`
-   - Replace `status_message: String` with `status_bar: StatusBar`
+### Priority 5: Split View Foundation
 
-9. **Add messages** to `messages.rs`:
-   - `UiMsg::UpdateSegment { id, content }`
-   - `UiMsg::SetTransientMessage { text, duration_ms, style }`
-
-10. **Add `sync_status_bar()`** helper called after document/cursor changes
-
-### Priority 4: Split View Foundation (L effort)
-
-11. **Add ID types**: `DocumentId`, `EditorId`, `GroupId`, `TabId`
-
-12. **Add `EditorArea`** with `single_document()` constructor
-
-13. **Replace** `AppModel { document, editor }` with `AppModel { editor_area }`
-
-14. **Add convenience methods**: `focused_document()`, `focused_editor()`
+See [SPLIT_VIEW.md](feature/SPLIT_VIEW.md) for full design. Large effort - defer until other priorities complete.
 
 ---
 
-## File Change Summary
+## Next Steps
 
-| File | Recommended Changes |
-|------|---------------------|
-| `src/model/editor.rs` | Add Selection helpers, invariant assertions, deduplicate_cursors() |
-| `src/model/document.rs` | Add `EditOperation::Batch` variant |
-| `src/update.rs` | Use Selection helpers, record Batch for multi-cursor, call deduplicate |
-| `src/model/ui.rs` | Add StatusBar, StatusSegment, SegmentId types |
-| `src/messages.rs` | Add UpdateSegment, SetTransientMessage messages |
-| `src/main.rs` | Wire rectangle selection mouse handling, AddCursor keyboard handling |
-
----
-
-## Test Recommendations
-
-Add tests for:
-
-1. **Selection invariants** - Extend then collapse, crossing anchor/head
-2. **Multi-cursor editing** - Same text inserted at all cursors
-3. **Multi-cursor undo** - Undo restores all cursor positions
-4. **Cursor deduplication** - Overlapping cursors merged after edit
-5. **Rectangle selection** - Creates correct cursors on each line
-
----
-
-## When to Consider Advanced Features
-
-Move beyond the simple path if:
-
-- Frequent UX complaints about selection/multi-cursor behavior
-- Need full status bar interactivity (clickable encoding, git status)
-- Want IDE-like multi-pane workflows (side-by-side editing)
-
-At that point, implement:
-- Full `EditorArea`/layout tree for split view
-- Per-segment status bar theming with hover states
-- Expand selection hierarchy (word → quotes → brackets → block)
+| Priority | Files to Modify | Changes |
+|----------|-----------------|---------|
+| Phase 9 | `editor.rs`, `update.rs` | `get_text()`, occurrence search logic |
+| Undo/Redo | `document.rs`, `update.rs` | `EditOperation::Batch` |
+| Status Bar | `ui.rs`, `messages.rs`, `main.rs` | Segment types, renderer |
+| Expand/Shrink | `editor.rs`, `update.rs`, `main.rs` | History stack, handlers |
