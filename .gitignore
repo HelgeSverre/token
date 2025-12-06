@@ -37,5 +37,6 @@ perf.data.old
 test_files/large.txt
 test_files/binary.bin
 
-
+# Profiling / tracing artifacts
 dhat-heap.json
+cargo-flamegraph.trace/*
