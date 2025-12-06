@@ -228,3 +228,78 @@ fn roundtrip_large_document_various_positions() {
         }
     }
 }
+
+// ============================================================================
+// find_all_occurrences tests (Unicode-safe)
+// ============================================================================
+
+#[test]
+fn find_all_occurrences_ascii() {
+    let doc = Document::with_text("abc abc abc");
+    let results = doc.find_all_occurrences("abc");
+    assert_eq!(results, vec![(0, 3), (4, 7), (8, 11)]);
+}
+
+#[test]
+fn find_all_occurrences_unicode_needle() {
+    // "äbc" is 3 chars but 4 bytes (ä is 2 bytes in UTF-8)
+    let doc = Document::with_text("äbc äbc");
+    let results = doc.find_all_occurrences("äbc");
+    // Should return char offsets, not byte offsets
+    assert_eq!(results, vec![(0, 3), (4, 7)]);
+}
+
+#[test]
+fn find_all_occurrences_unicode_haystack() {
+    // Test with emoji (4 bytes each in UTF-8)
+    let doc = Document::with_text("🎉abc🎉abc🎉");
+    let results = doc.find_all_occurrences("abc");
+    // 🎉=1 char, so offsets are: abc at 1-4, abc at 5-8
+    assert_eq!(results, vec![(1, 4), (5, 8)]);
+}
+
+#[test]
+fn find_all_occurrences_mixed_unicode() {
+    let doc = Document::with_text("café café café");
+    let results = doc.find_all_occurrences("café");
+    // "café " is 5 chars, so: (0,4), (5,9), (10,14)
+    assert_eq!(results, vec![(0, 4), (5, 9), (10, 14)]);
+}
+
+#[test]
+fn find_all_occurrences_empty_needle() {
+    let doc = Document::with_text("hello");
+    let results = doc.find_all_occurrences("");
+    assert!(results.is_empty());
+}
+
+#[test]
+fn find_all_occurrences_no_match() {
+    let doc = Document::with_text("hello world");
+    let results = doc.find_all_occurrences("xyz");
+    assert!(results.is_empty());
+}
+
+#[test]
+fn find_all_occurrences_overlapping() {
+    let doc = Document::with_text("aaa");
+    let results = doc.find_all_occurrences("aa");
+    // Overlapping allowed: "aa" at 0-2, "aa" at 1-3
+    assert_eq!(results, vec![(0, 2), (1, 3)]);
+}
+
+#[test]
+fn find_next_occurrence_wraps_around() {
+    let doc = Document::with_text("abc def abc");
+    // After offset 5, find next "abc" at 8
+    assert_eq!(doc.find_next_occurrence("abc", 5), Some((8, 11)));
+    // After offset 10, wrap to first occurrence at 0
+    assert_eq!(doc.find_next_occurrence("abc", 10), Some((0, 3)));
+}
+
+#[test]
+fn find_next_occurrence_unicode() {
+    let doc = Document::with_text("äbc xyz äbc");
+    // After offset 5, find next "äbc" at 8
+    assert_eq!(doc.find_next_occurrence("äbc", 5), Some((8, 11)));
+}

@@ -534,3 +534,168 @@ fn test_delete_line_cursor_column_clamped() {
     // Column should be clamped to line length (5)
     assert_eq!(model.editor().cursor().column, 5);
 }
+
+// ========================================================================
+// Multi-Cursor Undo/Redo Tests (Batch Operations)
+// ========================================================================
+
+#[test]
+fn test_multi_cursor_insert_char_undo() {
+    use common::test_model_multi_cursor;
+    // Three cursors on three lines
+    let mut model = test_model_multi_cursor("abc\ndef\nghi", &[(0, 0), (1, 0), (2, 0)]);
+
+    assert_eq!(model.editor().cursor_count(), 3);
+
+    // Insert 'X' at all cursors
+    update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
+
+    assert_eq!(buffer_to_string(&model), "Xabc\nXdef\nXghi");
+
+    // All cursors should be at column 1 now
+    for cursor in &model.editor().cursors {
+        assert_eq!(
+            cursor.column, 1,
+            "Cursor should be at column 1 after insert"
+        );
+    }
+
+    // Undo should restore ALL insertions at once
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+
+    assert_eq!(
+        buffer_to_string(&model),
+        "abc\ndef\nghi",
+        "Undo should restore all"
+    );
+    assert_eq!(
+        model.editor().cursor_count(),
+        3,
+        "Should still have 3 cursors"
+    );
+
+    // All cursors should be back at column 0
+    for cursor in &model.editor().cursors {
+        assert_eq!(cursor.column, 0, "Cursor should be at column 0 after undo");
+    }
+}
+
+#[test]
+fn test_multi_cursor_insert_char_redo() {
+    use common::test_model_multi_cursor;
+    let mut model = test_model_multi_cursor("abc\ndef\nghi", &[(0, 0), (1, 0), (2, 0)]);
+
+    // Insert, undo, then redo
+    update(&mut model, Msg::Document(DocumentMsg::InsertChar('Y')));
+    assert_eq!(buffer_to_string(&model), "Yabc\nYdef\nYghi");
+
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(buffer_to_string(&model), "abc\ndef\nghi");
+
+    update(&mut model, Msg::Document(DocumentMsg::Redo));
+    assert_eq!(
+        buffer_to_string(&model),
+        "Yabc\nYdef\nYghi",
+        "Redo should reapply all"
+    );
+
+    // Cursors should be at column 1
+    for cursor in &model.editor().cursors {
+        assert_eq!(cursor.column, 1);
+    }
+}
+
+#[test]
+fn test_multi_cursor_delete_backward_undo() {
+    use common::test_model_multi_cursor;
+    // Cursors at column 1 on each line
+    let mut model = test_model_multi_cursor("abc\ndef\nghi", &[(0, 1), (1, 1), (2, 1)]);
+
+    // Delete backward at all cursors (deletes 'a', 'd', 'g')
+    update(&mut model, Msg::Document(DocumentMsg::DeleteBackward));
+
+    assert_eq!(buffer_to_string(&model), "bc\nef\nhi");
+
+    // Undo should restore all deleted characters
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+
+    assert_eq!(
+        buffer_to_string(&model),
+        "abc\ndef\nghi",
+        "Undo should restore all"
+    );
+}
+
+#[test]
+fn test_multi_cursor_delete_forward_undo() {
+    use common::test_model_multi_cursor;
+    // Cursors at column 0 on each line
+    let mut model = test_model_multi_cursor("abc\ndef\nghi", &[(0, 0), (1, 0), (2, 0)]);
+
+    // Delete forward at all cursors (deletes 'a', 'd', 'g')
+    update(&mut model, Msg::Document(DocumentMsg::DeleteForward));
+
+    assert_eq!(buffer_to_string(&model), "bc\nef\nhi");
+
+    // Undo should restore all deleted characters
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+
+    assert_eq!(
+        buffer_to_string(&model),
+        "abc\ndef\nghi",
+        "Undo should restore all"
+    );
+}
+
+#[test]
+fn test_multi_cursor_insert_newline_undo() {
+    use common::test_model_multi_cursor;
+    // Cursors at the end of each line
+    let mut model = test_model_multi_cursor("abc\ndef\nghi", &[(0, 3), (1, 3), (2, 3)]);
+
+    // Insert newline at all cursors
+    update(&mut model, Msg::Document(DocumentMsg::InsertNewline));
+
+    // Each line should now be followed by a newline
+    assert_eq!(buffer_to_string(&model), "abc\n\ndef\n\nghi\n");
+
+    // Undo should remove all newlines
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+
+    assert_eq!(
+        buffer_to_string(&model),
+        "abc\ndef\nghi",
+        "Undo should restore all"
+    );
+}
+
+#[test]
+fn test_multi_cursor_consecutive_edits_undo() {
+    use common::test_model_multi_cursor;
+    // Test that consecutive multi-cursor edits create separate undo entries
+    let mut model = test_model_multi_cursor("aaa\nbbb\nccc", &[(0, 0), (1, 0), (2, 0)]);
+
+    // First edit: insert 'X'
+    update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
+    assert_eq!(buffer_to_string(&model), "Xaaa\nXbbb\nXccc");
+
+    // Second edit: insert 'Y'
+    update(&mut model, Msg::Document(DocumentMsg::InsertChar('Y')));
+    assert_eq!(buffer_to_string(&model), "XYaaa\nXYbbb\nXYccc");
+
+    // First undo should only undo the 'Y' insertions
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(
+        buffer_to_string(&model),
+        "Xaaa\nXbbb\nXccc",
+        "First undo undoes Y"
+    );
+
+    // Second undo should undo the 'X' insertions
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(
+        buffer_to_string(&model),
+        "aaa\nbbb\nccc",
+        "Second undo undoes X"
+    );
+}

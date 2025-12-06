@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::test_model;
+use common::{test_model, test_model_with_selection};
 use token::messages::{Direction, EditorMsg, Msg};
 use token::model::{Cursor, Position, Selection};
 use token::update::update;
@@ -378,4 +378,238 @@ fn test_word_selection_extends_existing_selection() {
     let selection = model.editor().selection();
     assert_eq!(selection.anchor, Position::new(0, 0), "Anchor unchanged");
     assert_eq!(selection.head.column, 11, "Head extended to end of 'world'");
+}
+
+// ========================================================================
+// word_under_cursor Unicode tests
+// ========================================================================
+
+#[test]
+fn test_word_under_cursor_ascii() {
+    let model = test_model("hello world", 0, 0);
+    let result = model.editor().word_under_cursor(model.document());
+    assert_eq!(
+        result,
+        Some((
+            "hello".to_string(),
+            Position::new(0, 0),
+            Position::new(0, 5)
+        ))
+    );
+}
+
+#[test]
+fn test_word_under_cursor_unicode() {
+    // "café" has 4 chars but 5 bytes (é is 2 bytes)
+    let mut model = test_model("café latte", 0, 2);
+    let result = model.editor().word_under_cursor(model.document());
+    assert_eq!(
+        result,
+        Some(("café".to_string(), Position::new(0, 0), Position::new(0, 4)))
+    );
+}
+
+#[test]
+fn test_word_under_cursor_unicode_end_of_line() {
+    // Cursor at end of line with multi-byte char at end
+    let mut model = test_model("café", 0, 10);
+    // Put cursor past end - should clamp to last char
+    let result = model.editor().word_under_cursor(model.document());
+    // Should still find "café" since cursor clamps to valid position
+    assert_eq!(
+        result,
+        Some(("café".to_string(), Position::new(0, 0), Position::new(0, 4)))
+    );
+}
+
+#[test]
+fn test_word_under_cursor_emoji() {
+    // Emoji are single chars but 4 bytes in UTF-8
+    // Emoji are treated as word characters (not whitespace, not punctuation)
+    // so "hello🎉world" is one word
+    let model = test_model("hello🎉world", 0, 6);
+    // Cursor on 'w' at position 6 (h=0, e=1, l=2, l=3, o=4, 🎉=5, w=6)
+    let result = model.editor().word_under_cursor(model.document());
+    // The whole thing is treated as one word since emoji is a word char
+    assert_eq!(
+        result,
+        Some((
+            "hello🎉world".to_string(),
+            Position::new(0, 0),
+            Position::new(0, 11)
+        ))
+    );
+}
+
+#[test]
+fn test_word_under_cursor_emoji_separated() {
+    // Test with space separation
+    let model = test_model("hello 🎉 world", 0, 9);
+    // Cursor on 'w' at position 9 (h=0..5, space=5, 🎉=6, space=7, w=8)
+    // Wait, let's recalculate: "hello " = 6 chars, "🎉" = 1 char, " " = 1 char, "world" starts at 8
+    let result = model.editor().word_under_cursor(model.document());
+    assert_eq!(
+        result,
+        Some((
+            "world".to_string(),
+            Position::new(0, 8),
+            Position::new(0, 13)
+        ))
+    );
+}
+
+#[test]
+fn test_word_under_cursor_on_whitespace() {
+    let model = test_model("hello world", 0, 5); // On space
+    let result = model.editor().word_under_cursor(model.document());
+    assert_eq!(result, None);
+}
+
+// ========================================================================
+// SelectNextOccurrence tests
+// ========================================================================
+
+#[test]
+fn test_select_next_occurrence_finds_all() {
+    // Text with 3 occurrences of "abc"
+    let mut model = test_model("abc def abc ghi abc", 0, 0);
+
+    // First call: selects word under cursor AND finds next occurrence
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    assert!(
+        !model.editor().selection().is_empty(),
+        "Word should be selected"
+    );
+    assert_eq!(
+        model.editor().cursors.len(),
+        2,
+        "First call selects word and adds cursor at next occurrence"
+    );
+
+    // Second call: should find the third "abc" at position 16
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    assert_eq!(model.editor().cursors.len(), 3, "Should have 3 cursors now");
+
+    // Third call: should wrap around and find the first one is already selected
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    // Should still be 3 cursors (no new ones added since all are selected)
+    assert_eq!(
+        model.editor().cursors.len(),
+        3,
+        "Should still have 3 cursors"
+    );
+}
+
+#[test]
+fn test_select_next_occurrence_unicode() {
+    // Text with 2 occurrences of "café"
+    let mut model = test_model("café latte café mocha", 0, 0);
+
+    // First call: selects "café" under cursor AND adds cursor at next occurrence
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    assert_eq!(model.editor().cursors.len(), 2, "Should find both cafés");
+
+    // Third call: should wrap and see all are selected
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    assert_eq!(
+        model.editor().cursors.len(),
+        2,
+        "Still 2 cursors - all occurrences selected"
+    );
+}
+
+// ========================================================================
+// Cursor/Selection Invariant Tests
+// ========================================================================
+
+#[test]
+fn test_move_cursor_clears_selection() {
+    // Start with a selection
+    let mut model = test_model_with_selection("hello world", 0, 0, 0, 5);
+    assert!(
+        !model.editor().selection().is_empty(),
+        "Should have selection"
+    );
+
+    // Move cursor right (non-shift) - should clear selection
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Right)),
+    );
+
+    assert!(
+        model.editor().selection().is_empty(),
+        "Selection should be cleared after non-shift move"
+    );
+    // Verify invariant: cursor position == selection head
+    assert_eq!(
+        model.editor().cursor().to_position(),
+        model.editor().selection().head,
+        "Cursor position should equal selection head"
+    );
+}
+
+#[test]
+fn test_set_cursor_position_clears_selection() {
+    let mut model = test_model_with_selection("hello world", 0, 0, 0, 5);
+    assert!(!model.editor().selection().is_empty());
+
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::SetCursorPosition { line: 0, column: 8 }),
+    );
+
+    assert!(
+        model.editor().selection().is_empty(),
+        "Selection should be cleared"
+    );
+    assert_eq!(model.editor().cursor().column, 8);
+}
+
+#[test]
+fn test_page_down_clears_selection() {
+    // Create multi-line doc
+    let mut model = test_model_with_selection("line1\nline2\nline3\nline4\nline5", 0, 0, 0, 3);
+    assert!(!model.editor().selection().is_empty());
+
+    update(&mut model, Msg::Editor(EditorMsg::PageDown));
+
+    assert!(
+        model.editor().selection().is_empty(),
+        "Selection should be cleared after PageDown"
+    );
+}
+
+#[test]
+fn test_select_all_occurrences() {
+    // Text with 3 occurrences of "abc"
+    let mut model = test_model("abc def abc ghi abc", 0, 0);
+
+    // Select all occurrences
+    update(&mut model, Msg::Editor(EditorMsg::SelectAllOccurrences));
+
+    // Should have 3 cursors, one for each occurrence
+    assert_eq!(
+        model.editor().cursors.len(),
+        3,
+        "Should have 3 cursors for 3 occurrences"
+    );
+
+    // All selections should be non-empty and selecting "abc"
+    for selection in &model.editor().selections {
+        assert!(!selection.is_empty(), "Each selection should be non-empty");
+    }
+}
+
+#[test]
+fn test_select_all_occurrences_unicode() {
+    let mut model = test_model("café latte café mocha café", 0, 0);
+
+    update(&mut model, Msg::Editor(EditorMsg::SelectAllOccurrences));
+
+    assert_eq!(
+        model.editor().cursors.len(),
+        3,
+        "Should find all 3 café occurrences"
+    );
 }

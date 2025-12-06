@@ -33,6 +33,7 @@ pub fn test_model(text: &str, line: usize, column: usize) -> AppModel {
         },
         scroll_padding: 1, // Default padding for tests
         rectangle_selection: RectangleSelectionState::default(),
+        occurrence_state: None,
     };
 
     let editor_area = EditorArea::single_document(document, editor);
@@ -85,6 +86,57 @@ pub fn test_model_with_selection(
         },
         scroll_padding: 1,
         rectangle_selection: RectangleSelectionState::default(),
+        occurrence_state: None,
+    };
+
+    let editor_area = EditorArea::single_document(document, editor);
+
+    AppModel {
+        editor_area,
+        ui: UiState::new(),
+        theme: Theme::default(),
+        window_size: (800, 600),
+        line_height: 20,
+        char_width: 10.0,
+    }
+}
+
+/// Create a test model with multiple cursors at the given positions
+pub fn test_model_multi_cursor(text: &str, positions: &[(usize, usize)]) -> AppModel {
+    assert!(
+        !positions.is_empty(),
+        "Must have at least one cursor position"
+    );
+
+    let cursors: Vec<Cursor> = positions
+        .iter()
+        .map(|&(line, column)| Cursor {
+            line,
+            column,
+            desired_column: None,
+        })
+        .collect();
+
+    let selections: Vec<Selection> = positions
+        .iter()
+        .map(|&(line, column)| Selection::new(Position::new(line, column)))
+        .collect();
+
+    let document = Document::with_text(text);
+    let editor = EditorState {
+        id: None,
+        document_id: None,
+        cursors,
+        selections,
+        viewport: Viewport {
+            top_line: 0,
+            left_column: 0,
+            visible_lines: 25,
+            visible_columns: 80,
+        },
+        scroll_padding: 1,
+        rectangle_selection: RectangleSelectionState::default(),
+        occurrence_state: None,
     };
 
     let editor_area = EditorArea::single_document(document, editor);
