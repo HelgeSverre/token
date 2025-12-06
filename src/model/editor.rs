@@ -664,6 +664,401 @@ impl EditorState {
     #[cfg(not(debug_assertions))]
     #[inline]
     pub fn assert_invariants(&self) {}
+
+    // =========================================================================
+    // Per-cursor movement primitives (Phase 0)
+    // =========================================================================
+
+    /// Move a single cursor left by one character
+    pub fn move_cursor_left_at(&mut self, doc: &Document, idx: usize) {
+        let cursor = &mut self.cursors[idx];
+        if cursor.column > 0 {
+            cursor.column -= 1;
+            cursor.desired_column = None;
+        } else if cursor.line > 0 {
+            cursor.line -= 1;
+            cursor.column = doc.line_length(cursor.line);
+            cursor.desired_column = None;
+        }
+    }
+
+    /// Move a single cursor right by one character
+    pub fn move_cursor_right_at(&mut self, doc: &Document, idx: usize) {
+        let cursor = &mut self.cursors[idx];
+        let line_len = doc.line_length(cursor.line);
+        if cursor.column < line_len {
+            cursor.column += 1;
+            cursor.desired_column = None;
+        } else if cursor.line < doc.line_count().saturating_sub(1) {
+            cursor.line += 1;
+            cursor.column = 0;
+            cursor.desired_column = None;
+        }
+    }
+
+    /// Move a single cursor up by one line
+    pub fn move_cursor_up_at(&mut self, doc: &Document, idx: usize) {
+        let cursor = &mut self.cursors[idx];
+        if cursor.line > 0 {
+            cursor.line -= 1;
+            let desired = cursor.desired_column.unwrap_or(cursor.column);
+            let line_len = doc.line_length(cursor.line);
+            cursor.column = desired.min(line_len);
+            cursor.desired_column = Some(desired);
+        }
+    }
+
+    /// Move a single cursor down by one line
+    pub fn move_cursor_down_at(&mut self, doc: &Document, idx: usize) {
+        let cursor = &mut self.cursors[idx];
+        if cursor.line < doc.line_count().saturating_sub(1) {
+            cursor.line += 1;
+            let desired = cursor.desired_column.unwrap_or(cursor.column);
+            let line_len = doc.line_length(cursor.line);
+            cursor.column = desired.min(line_len);
+            cursor.desired_column = Some(desired);
+        }
+    }
+
+    /// Move a single cursor to line start (smart: first non-ws or column 0)
+    pub fn move_cursor_line_start_at(&mut self, doc: &Document, idx: usize) {
+        let cursor = &mut self.cursors[idx];
+        let first_non_ws = doc.first_non_whitespace_column(cursor.line);
+        if cursor.column == first_non_ws {
+            cursor.column = 0;
+        } else {
+            cursor.column = first_non_ws;
+        }
+        cursor.desired_column = None;
+    }
+
+    /// Move a single cursor to line end (smart: last non-ws or line end)
+    pub fn move_cursor_line_end_at(&mut self, doc: &Document, idx: usize) {
+        let cursor = &mut self.cursors[idx];
+        let line_len = doc.line_length(cursor.line);
+        let last_non_ws = doc.last_non_whitespace_column(cursor.line);
+        if cursor.column == last_non_ws {
+            cursor.column = line_len;
+        } else {
+            cursor.column = last_non_ws;
+        }
+        cursor.desired_column = None;
+    }
+
+    /// Move a single cursor to document start
+    pub fn move_cursor_document_start_at(&mut self, idx: usize) {
+        let cursor = &mut self.cursors[idx];
+        cursor.line = 0;
+        cursor.column = 0;
+        cursor.desired_column = None;
+    }
+
+    /// Move a single cursor to document end
+    pub fn move_cursor_document_end_at(&mut self, doc: &Document, idx: usize) {
+        let cursor = &mut self.cursors[idx];
+        cursor.line = doc.line_count().saturating_sub(1);
+        cursor.column = doc.line_length(cursor.line);
+        cursor.desired_column = None;
+    }
+
+    /// Move a single cursor up by `jump` lines (for page up)
+    pub fn page_up_at(&mut self, doc: &Document, jump: usize, idx: usize) {
+        let cursor = &mut self.cursors[idx];
+        cursor.line = cursor.line.saturating_sub(jump);
+        let desired = cursor.desired_column.unwrap_or(cursor.column);
+        let line_len = doc.line_length(cursor.line);
+        cursor.column = desired.min(line_len);
+        cursor.desired_column = Some(desired);
+    }
+
+    /// Move a single cursor down by `jump` lines (for page down)
+    pub fn page_down_at(&mut self, doc: &Document, jump: usize, idx: usize) {
+        let cursor = &mut self.cursors[idx];
+        let max_line = doc.line_count().saturating_sub(1);
+        cursor.line = (cursor.line + jump).min(max_line);
+        let desired = cursor.desired_column.unwrap_or(cursor.column);
+        let line_len = doc.line_length(cursor.line);
+        cursor.column = desired.min(line_len);
+        cursor.desired_column = Some(desired);
+    }
+
+    /// Move a single cursor one word left
+    pub fn move_cursor_word_left_at(&mut self, doc: &Document, idx: usize) {
+        let cursor = &self.cursors[idx];
+        let pos = doc.cursor_to_offset(cursor.line, cursor.column);
+        if pos == 0 {
+            return;
+        }
+
+        let text: String = doc.buffer.slice(..pos).chars().collect();
+        let chars: Vec<char> = text.chars().collect();
+        let mut i = chars.len();
+
+        if i > 0 {
+            let current_type = char_type(chars[i - 1]);
+            while i > 0 && char_type(chars[i - 1]) == current_type {
+                i -= 1;
+            }
+        }
+
+        let (line, column) = doc.offset_to_cursor(i);
+        let cursor = &mut self.cursors[idx];
+        cursor.line = line;
+        cursor.column = column;
+        cursor.desired_column = None;
+    }
+
+    /// Move a single cursor one word right
+    pub fn move_cursor_word_right_at(&mut self, doc: &Document, idx: usize) {
+        let cursor = &self.cursors[idx];
+        let pos = doc.cursor_to_offset(cursor.line, cursor.column);
+        let total_chars = doc.buffer.len_chars();
+        if pos >= total_chars {
+            return;
+        }
+
+        let text: String = doc.buffer.slice(pos..).chars().collect();
+        let chars: Vec<char> = text.chars().collect();
+        let mut i = 0;
+
+        if !chars.is_empty() {
+            let current_type = char_type(chars[0]);
+            while i < chars.len() && char_type(chars[i]) == current_type {
+                i += 1;
+            }
+        }
+
+        let new_pos = pos + i;
+        let (line, column) = doc.offset_to_cursor(new_pos);
+        let cursor = &mut self.cursors[idx];
+        cursor.line = line;
+        cursor.column = column;
+        cursor.desired_column = None;
+    }
+
+    // =========================================================================
+    // All-cursors movement wrappers (Phase 1)
+    // =========================================================================
+
+    /// Move all cursors left
+    pub fn move_all_cursors_left(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_left_at(doc, i);
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors right
+    pub fn move_all_cursors_right(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_right_at(doc, i);
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors up
+    pub fn move_all_cursors_up(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_up_at(doc, i);
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors down
+    pub fn move_all_cursors_down(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_down_at(doc, i);
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors to line start
+    pub fn move_all_cursors_line_start(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_line_start_at(doc, i);
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors to line end
+    pub fn move_all_cursors_line_end(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_line_end_at(doc, i);
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors to document start
+    pub fn move_all_cursors_document_start(&mut self) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_document_start_at(i);
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors to document end
+    pub fn move_all_cursors_document_end(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_document_end_at(doc, i);
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors word left
+    pub fn move_all_cursors_word_left(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_word_left_at(doc, i);
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors word right
+    pub fn move_all_cursors_word_right(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_word_right_at(doc, i);
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Page up all cursors
+    pub fn page_up_all_cursors(&mut self, doc: &Document, jump: usize) {
+        for i in 0..self.cursors.len() {
+            self.page_up_at(doc, jump, i);
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Page down all cursors
+    pub fn page_down_all_cursors(&mut self, doc: &Document, jump: usize) {
+        for i in 0..self.cursors.len() {
+            self.page_down_at(doc, jump, i);
+        }
+        self.deduplicate_cursors();
+    }
+
+    // =========================================================================
+    // Selection movement helpers (Phase 3)
+    // =========================================================================
+
+    /// Move all cursors left and extend selections
+    pub fn move_all_cursors_left_with_selection(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_left_at(doc, i);
+            let pos = self.cursors[i].to_position();
+            self.selections[i].head = pos;
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors right and extend selections
+    pub fn move_all_cursors_right_with_selection(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_right_at(doc, i);
+            let pos = self.cursors[i].to_position();
+            self.selections[i].head = pos;
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors up and extend selections
+    pub fn move_all_cursors_up_with_selection(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_up_at(doc, i);
+            let pos = self.cursors[i].to_position();
+            self.selections[i].head = pos;
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors down and extend selections
+    pub fn move_all_cursors_down_with_selection(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_down_at(doc, i);
+            let pos = self.cursors[i].to_position();
+            self.selections[i].head = pos;
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors to line start and extend selections
+    pub fn move_all_cursors_line_start_with_selection(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_line_start_at(doc, i);
+            let pos = self.cursors[i].to_position();
+            self.selections[i].head = pos;
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors to line end and extend selections
+    pub fn move_all_cursors_line_end_with_selection(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_line_end_at(doc, i);
+            let pos = self.cursors[i].to_position();
+            self.selections[i].head = pos;
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors to document start and extend selections
+    pub fn move_all_cursors_document_start_with_selection(&mut self) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_document_start_at(i);
+            let pos = self.cursors[i].to_position();
+            self.selections[i].head = pos;
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors to document end and extend selections
+    pub fn move_all_cursors_document_end_with_selection(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_document_end_at(doc, i);
+            let pos = self.cursors[i].to_position();
+            self.selections[i].head = pos;
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors word left and extend selections
+    pub fn move_all_cursors_word_left_with_selection(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_word_left_at(doc, i);
+            let pos = self.cursors[i].to_position();
+            self.selections[i].head = pos;
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Move all cursors word right and extend selections
+    pub fn move_all_cursors_word_right_with_selection(&mut self, doc: &Document) {
+        for i in 0..self.cursors.len() {
+            self.move_cursor_word_right_at(doc, i);
+            let pos = self.cursors[i].to_position();
+            self.selections[i].head = pos;
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Page up all cursors and extend selections
+    pub fn page_up_all_cursors_with_selection(&mut self, doc: &Document, jump: usize) {
+        for i in 0..self.cursors.len() {
+            self.page_up_at(doc, jump, i);
+            let pos = self.cursors[i].to_position();
+            self.selections[i].head = pos;
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Page down all cursors and extend selections
+    pub fn page_down_all_cursors_with_selection(&mut self, doc: &Document, jump: usize) {
+        for i in 0..self.cursors.len() {
+            self.page_down_at(doc, jump, i);
+            let pos = self.cursors[i].to_position();
+            self.selections[i].head = pos;
+        }
+        self.deduplicate_cursors();
+    }
 }
 
 impl Default for EditorState {
