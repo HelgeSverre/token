@@ -13,7 +13,7 @@ A comprehensive analysis of the current rendering architecture, comparison with 
 3. [Rust GUI Framework Comparison](#rust-gui-framework-comparison)
 4. [Recommended Approach](#recommended-approach)
 5. [Proposed Abstractions](#proposed-abstractions)
-6. [Command Palette & Modal Overlay System](#command-palette--modal-overlay-system) *(NEW)*
+6. [Command Palette & Modal Overlay System](#command-palette--modal-overlay-system) _(NEW)_
 7. [Honest Critique](#honest-critique)
 8. [Migration Path](#migration-path)
 9. [When to Consider Advanced Paths](#when-to-consider-advanced-paths)
@@ -22,15 +22,17 @@ A comprehensive analysis of the current rendering architecture, comparison with 
 
 ## Executive Summary
 
-**Recommendation:** Keep your existing Elm-style core + winit/softbuffer/fontdue stack, and build a *thin, editor-focused view layer* on top rather than adopting egui/iced.
+**Recommendation:** Keep your existing Elm-style core + winit/softbuffer/fontdue stack, and build a _thin, editor-focused view layer_ on top rather than adopting egui/iced.
 
 **Why:**
+
 - Editors have "weird" requirements (huge documents, partial painting, custom cursor/selection) that are awkward in general GUI frameworks
 - You already have a solid Elm Architecture foundation
 - Migration to egui/iced is not incremental—it would require rewriting view and input layers
 - Your direct control over text rendering is an advantage for a code editor
 
 **Effort Estimate:**
+
 - Initial file split (as planned): 1-3 hours
 - Basic Frame/Painter abstraction: 1-2 hours
 - Widget extraction per region: 3-8 hours total (done incrementally)
@@ -61,14 +63,14 @@ A comprehensive analysis of the current rendering architecture, comparison with 
 
 ### File Size Analysis
 
-| File | Lines | Contents |
-|------|-------|----------|
-| `main.rs` | ~3000 | Renderer, PerfStats, App, ApplicationHandler, handle_key, draw_text, main() |
-| `update.rs` | ~2600 | update dispatcher, cursor helpers, layout helpers |
-| `model/` | ~2300 | Well-organized: document.rs, editor.rs, editor_area.rs, status_bar.rs, ui.rs |
-| `theme.rs` | ~540 | Theme loading and color types |
-| `overlay.rs` | ~285 | Overlay rendering utilities |
-| `messages.rs` | ~260 | Msg enums |
+| File          | Lines | Contents                                                                     |
+| ------------- | ----- | ---------------------------------------------------------------------------- |
+| `main.rs`     | ~3000 | Renderer, PerfStats, App, ApplicationHandler, handle_key, draw_text, main()  |
+| `update.rs`   | ~2600 | update dispatcher, cursor helpers, layout helpers                            |
+| `model/`      | ~2300 | Well-organized: document.rs, editor.rs, editor_area.rs, status_bar.rs, ui.rs |
+| `theme.rs`    | ~540  | Theme loading and color types                                                |
+| `overlay.rs`  | ~285  | Overlay rendering utilities                                                  |
+| `messages.rs` | ~260  | Msg enums                                                                    |
 
 ### Strengths
 
@@ -95,7 +97,7 @@ A comprehensive analysis of the current rendering architecture, comparison with 
 
 1. **`main.rs` is a "god file"** mixing:
    - Winit integration
-   - Input handling  
+   - Input handling
    - Rendering logic (low-level pixel loops)
    - Performance overlay
    - Tests
@@ -123,18 +125,18 @@ A comprehensive analysis of the current rendering architecture, comparison with 
 
 ### Framework Overview
 
-| Feature | egui | iced | slint | GPUI (Zed) | Custom |
-|---------|------|------|-------|------------|--------|
-| **Syntax Highlighting** | Via plugin | Built-in | Not designed | Built-in | Manual |
-| **Text Rendering Quality** | Good | Good | Fair* | Excellent | Custom |
-| **Large Document Perf** | ⚠️ Full layout/frame | Good | Fair | Excellent | Depends |
-| **Accessibility** | ✓ AccessKit | ✗ Broken | Unknown | ✗ Poor | Custom |
-| **Code Editor Examples** | Few | Some | None | Production (Zed) | Many |
-| **Immediate Mode** | ✓ Yes | ✗ No (Elm) | ✗ No (Decl) | Hybrid | - |
-| **winit Integration** | eframe | iced_winit | Direct | Custom | Direct |
-| **Maturity** | Stable | Experimental | Stable | Production | - |
+| Feature                    | egui                 | iced         | slint        | GPUI (Zed)       | Custom  |
+| -------------------------- | -------------------- | ------------ | ------------ | ---------------- | ------- |
+| **Syntax Highlighting**    | Via plugin           | Built-in     | Not designed | Built-in         | Manual  |
+| **Text Rendering Quality** | Good                 | Good         | Fair\*       | Excellent        | Custom  |
+| **Large Document Perf**    | ⚠️ Full layout/frame | Good         | Fair         | Excellent        | Depends |
+| **Accessibility**          | ✓ AccessKit          | ✗ Broken     | Unknown      | ✗ Poor           | Custom  |
+| **Code Editor Examples**   | Few                  | Some         | None         | Production (Zed) | Many    |
+| **Immediate Mode**         | ✓ Yes                | ✗ No (Elm)   | ✗ No (Decl)  | Hybrid           | -       |
+| **winit Integration**      | eframe               | iced_winit   | Direct       | Custom           | Direct  |
+| **Maturity**               | Stable               | Experimental | Stable       | Production       | -       |
 
-*slint femtovg backend has known text rendering issues
+\*slint femtovg backend has known text rendering issues
 
 ### Why Not egui/iced?
 
@@ -154,16 +156,16 @@ A comprehensive analysis of the current rendering architecture, comparison with 
 
 ### What to Learn From Them
 
-| Pattern | Framework | Apply To Token |
-|---------|-----------|----------------|
-| Separate layout from painting | All | Yes - extend `compute_layout` pattern |
-| Single "painter" context | egui, Druid | Yes - introduce `Frame` abstraction |
-| Widget-per-concern functions | iced, Druid | Yes - extract render functions |
-| Consistent coordinate spaces | All | Yes - centralize conversion helpers |
-| Theming via struct | All | Already done ✓ |
-| Memoized text caching | egui | Already have glyph cache ✓ |
-| PickerDelegate pattern | Zed | Yes - for command palette |
-| Modal focus capture | Zed, VS Code | Yes - for overlays |
+| Pattern                       | Framework    | Apply To Token                        |
+| ----------------------------- | ------------ | ------------------------------------- |
+| Separate layout from painting | All          | Yes - extend `compute_layout` pattern |
+| Single "painter" context      | egui, Druid  | Yes - introduce `Frame` abstraction   |
+| Widget-per-concern functions  | iced, Druid  | Yes - extract render functions        |
+| Consistent coordinate spaces  | All          | Yes - centralize conversion helpers   |
+| Theming via struct            | All          | Already done ✓                        |
+| Memoized text caching         | egui         | Already have glyph cache ✓            |
+| PickerDelegate pattern        | Zed          | Yes - for command palette             |
+| Modal focus capture           | Zed, VS Code | Yes - for overlays                    |
 
 ---
 
@@ -249,7 +251,7 @@ impl<'a> Frame<'a> {
 
     pub fn draw_hline(&mut self, y: usize, x0: usize, x1: usize, color: u32) { /* ... */ }
     pub fn draw_vline(&mut self, x: usize, y0: usize, y1: usize, color: u32) { /* ... */ }
-    
+
     // Alpha blending for overlays
     pub fn fill_rect_blend(&mut self, rect: Rect, color: u32) { /* ... */ }
 }
@@ -352,12 +354,12 @@ pub fn render_editor_group(
     theme: &Theme,
 ) {
     let (tab_bar_rect, content_rect) = rect.split_top(TAB_BAR_HEIGHT as f32);
-    
+
     render_tab_bar(frame, text, group, tab_bar_rect, theme);
-    
+
     let text_start = text_start_x(text.char_width);
     let (gutter_rect, text_area_rect) = content_rect.split_left(text_start);
-    
+
     render_gutter(frame, text, editor, document, gutter_rect, theme);
     render_text_area(frame, text, editor, document, text_area_rect, is_focused, theme);
 }
@@ -381,10 +383,10 @@ impl GroupLayout {
     pub fn compute(group_rect: Rect, group: &EditorGroup, char_width: f32) -> Self {
         let (tab_bar_rect, content_rect) = group_rect.split_top(TAB_BAR_HEIGHT as f32);
         let tab_rects = compute_tab_rects(group, tab_bar_rect, char_width);
-        
+
         let text_start = text_start_x(char_width);
         let (gutter_rect, text_area_rect) = content_rect.split_left(text_start);
-        
+
         Self { tab_bar_rect, tab_rects, content_rect, gutter_rect, text_area_rect }
     }
 
@@ -506,9 +508,9 @@ impl CommandPaletteState {
 
     pub fn recompute_matches(&mut self) {
         use crate::commands::COMMANDS;
-        
+
         self.matches.clear();
-        
+
         if self.query.is_empty() {
             // Show all commands in declaration order
             self.matches.extend(0..COMMANDS.len());
@@ -523,12 +525,12 @@ impl CommandPaletteState {
                         .map(|score| (idx, score))
                 })
                 .collect();
-            
+
             // Sort by score descending
             scored.sort_by(|a, b| b.1.cmp(&a.1));
             self.matches = scored.into_iter().map(|(idx, _)| idx).collect();
         }
-        
+
         // Clamp selection
         self.selected_index = self.selected_index
             .min(self.matches.len().saturating_sub(1));
@@ -539,7 +541,7 @@ impl CommandPaletteState {
 fn fuzzy_score(text: &str, query: &str) -> Option<i32> {
     let mut score = 0;
     let mut text_chars = text.chars().peekable();
-    
+
     for qc in query.chars() {
         loop {
             match text_chars.next() {
@@ -552,7 +554,7 @@ fn fuzzy_score(text: &str, query: &str) -> Option<i32> {
             }
         }
     }
-    
+
     Some(score)
 }
 ```
@@ -569,13 +571,13 @@ pub enum CommandId {
     ShowCommandPalette,
     GotoLine,
     FindInFile,
-    
+
     // File operations
     NewFile,
     OpenFile,
     SaveFile,
     CloseFile,
-    
+
     // Layout
     SplitRight,
     SplitDown,
@@ -585,13 +587,13 @@ pub enum CommandId {
     PrevTab,
     FocusNextGroup,
     FocusPrevGroup,
-    
+
     // Editor
     Undo,
     Redo,
     SelectAll,
     ToggleComment,
-    
+
     // View
     TogglePerfOverlay,
 }
@@ -707,7 +709,7 @@ pub enum UiMsg {
     // ... existing variants ...
     SetStatus(String),
     BlinkCursor,
-    
+
     // Modal management
     OpenCommandPalette,
     OpenGotoLine,
@@ -723,7 +725,7 @@ pub enum AppMsg {
     Resize(u32, u32),
     SaveFile,
     Quit,
-    
+
     /// Execute a command from the palette or keybinding
     ExecuteCommand(CommandId),
 }
@@ -737,28 +739,28 @@ pub enum AppMsg {
 fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     match msg {
         // ... existing matches ...
-        
+
         Msg::Ui(UiMsg::OpenCommandPalette) => {
             model.ui.active_modal = Some(ModalState::CommandPalette(
                 CommandPaletteState::new()
             ));
             Some(Cmd::Redraw)
         }
-        
+
         Msg::Ui(UiMsg::CloseModal) => {
             model.ui.active_modal = None;
             Some(Cmd::Redraw)
         }
-        
+
         Msg::Ui(UiMsg::Modal(modal_msg)) => {
             update_modal(model, modal_msg);
             Some(Cmd::Redraw)
         }
-        
+
         Msg::App(AppMsg::ExecuteCommand(cmd_id)) => {
             execute_command(model, cmd_id)
         }
-        
+
         // ... rest ...
     }
 }
@@ -777,7 +779,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) {
 
 fn update_command_palette(model: &mut AppModel, state: &mut CommandPaletteState, msg: CommandPaletteMsg) {
     use CommandPaletteMsg::*;
-    
+
     match msg {
         InsertChar(ch) => {
             state.query.push(ch);
@@ -811,7 +813,7 @@ fn update_command_palette(model: &mut AppModel, state: &mut CommandPaletteState,
 
 fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
     use CommandId::*;
-    
+
     match cmd_id {
         ShowCommandPalette => {
             model.ui.active_modal = Some(ModalState::CommandPalette(
@@ -851,18 +853,18 @@ pub fn handle_key(model: &AppModel, event: &KeyEvent) -> Option<Msg> {
     if model.ui.active_modal.is_some() {
         return handle_modal_key(model, event);
     }
-    
+
     // 2. Otherwise, normal editor key handling
     handle_editor_key(model, event)
 }
 
 fn handle_modal_key(model: &AppModel, event: &KeyEvent) -> Option<Msg> {
     use winit::keyboard::{Key, NamedKey};
-    
+
     if event.state != ElementState::Pressed {
         return None;
     }
-    
+
     // Common modal keys
     match &event.logical_key {
         Key::Named(NamedKey::Escape) => {
@@ -899,7 +901,7 @@ fn handle_modal_key(model: &AppModel, event: &KeyEvent) -> Option<Msg> {
         }
         _ => {}
     }
-    
+
     None
 }
 ```
@@ -925,13 +927,13 @@ pub fn render_modals(
     theme: &Theme,
 ) {
     let Some(modal) = &ui.active_modal else { return };
-    
+
     // 1. Dim the background
     let dim_color = 0x80000000; // 50% black
     for pixel in frame.buffer.iter_mut() {
         *pixel = blend_pixel(dim_color, *pixel);
     }
-    
+
     // 2. Render the specific modal
     match modal {
         ModalState::CommandPalette(state) => {
@@ -954,51 +956,51 @@ fn render_command_palette(
 ) {
     let vw = frame.width;
     let vh = frame.height;
-    
+
     // Palette dimensions
     let width = (vw as f32 * 0.5).max(400.0).min(600.0) as usize;
     let line_h = text.line_height() as usize;
     let max_visible_items = 12;
     let height = line_h * 2 + line_h * max_visible_items.min(state.matches.len().max(1));
-    
+
     // Center horizontally, near top vertically
     let x = (vw - width) / 2;
     let y = vh / 6;
-    
+
     let bounds = OverlayBounds { x, y, width, height };
-    
+
     // Background + border
     render_overlay_background(frame.buffer, &bounds, theme.overlay.background.to_argb_u32(), vw, vh);
     render_overlay_border(frame.buffer, &bounds, theme.overlay.border.to_argb_u32(), vw, vh);
-    
+
     let padding = 8.0;
     let mut cursor_y = y as f32 + padding;
-    
+
     // Input field
     let input_bg = theme.overlay.input_background.to_argb_u32();
     let input_rect = Rect::new(x as f32 + padding, cursor_y, width as f32 - 2.0 * padding, line_h as f32);
     frame.fill_rect(input_rect, input_bg);
-    
+
     let prompt = format!("> {}", state.query);
     text.draw_text(frame, (x as f32 + padding + 4.0) as usize, cursor_y as usize, &prompt, theme.overlay.text.to_argb_u32());
-    
+
     cursor_y += line_h as f32 + padding;
-    
+
     // Separator line
     frame.draw_hline(cursor_y as usize, x + padding as usize, x + width - padding as usize, theme.overlay.border.to_argb_u32());
     cursor_y += 1.0;
-    
+
     // Command list
     for (visible_idx, &cmd_idx) in state.matches.iter().take(max_visible_items).enumerate() {
         let cmd = &COMMANDS[cmd_idx];
         let is_selected = visible_idx == state.selected_index;
-        
+
         let row_rect = Rect::new(x as f32, cursor_y, width as f32, line_h as f32);
-        
+
         if is_selected {
             frame.fill_rect(row_rect, theme.overlay.selection_background.to_argb_u32());
         }
-        
+
         // Command title (left)
         text.draw_text(
             frame,
@@ -1007,7 +1009,7 @@ fn render_command_palette(
             cmd.title,
             theme.overlay.text.to_argb_u32(),
         );
-        
+
         // Shortcut hint (right-aligned)
         if let Some(shortcut) = cmd.shortcut_hint {
             let shortcut_width = text.measure_text(shortcut);
@@ -1019,7 +1021,7 @@ fn render_command_palette(
                 theme.overlay.hint.to_argb_u32(),
             );
         }
-        
+
         cursor_y += line_h as f32;
     }
 }
@@ -1064,14 +1066,14 @@ ui:
 fn render_impl(&mut self, model: &AppModel) {
     let mut frame = Frame::new(&mut self.buffer, self.width, self.height);
     let mut text = TextPainter::new(&self.font, &mut self.glyph_cache, self.font_size);
-    
+
     // 1. Render main editor UI
     render_editor_area(&mut frame, &mut text, model);
     render_status_bar(&mut frame, &mut text, model);
-    
+
     // 2. Render modal overlays on top (if any)
     render_modals(&mut frame, &mut text, &model.ui, &model.theme);
-    
+
     // 3. Debug overlay last
     #[cfg(debug_assertions)]
     if self.show_perf_overlay {
@@ -1131,24 +1133,24 @@ The system scales linearly—each modal is self-contained.
 
 ### What's Working Well
 
-| Aspect | Assessment |
-|--------|------------|
-| Model layer (`model/*`) | ✓ Clean, well-factored, good encapsulation |
-| Elm Architecture | ✓ Great fit for an editor, predictable state flow |
-| EditorArea layout tree | ✓ Solid foundation for splits and groups |
-| Overlay system | ✓ Good reusable pattern, worth expanding |
-| Theme system | ✓ Centralized, YAML-based, extensible |
+| Aspect                  | Assessment                                        |
+| ----------------------- | ------------------------------------------------- |
+| Model layer (`model/*`) | ✓ Clean, well-factored, good encapsulation        |
+| Elm Architecture        | ✓ Great fit for an editor, predictable state flow |
+| EditorArea layout tree  | ✓ Solid foundation for splits and groups          |
+| Overlay system          | ✓ Good reusable pattern, worth expanding          |
+| Theme system            | ✓ Centralized, YAML-based, extensible             |
 
 ### What Needs Improvement
 
-| Issue | Impact | Severity |
-|-------|--------|----------|
-| `main.rs` as god file (~3000 lines) | Hard to reason about, hard to test | High |
-| Raw buffer indexing everywhere | Error-prone, discourages reuse | Medium |
-| No widget/view layer | Adding UI elements is risky | Medium |
-| Layout logic scattered | Same calculations in render and input | Medium |
-| Coupled input/render coordinates | Changes need multiple updates | Medium |
-| No modal/focus system | Can't implement command palette | Medium |
+| Issue                               | Impact                                | Severity |
+| ----------------------------------- | ------------------------------------- | -------- |
+| `main.rs` as god file (~3000 lines) | Hard to reason about, hard to test    | High     |
+| Raw buffer indexing everywhere      | Error-prone, discourages reuse        | Medium   |
+| No widget/view layer                | Adding UI elements is risky           | Medium   |
+| Layout logic scattered              | Same calculations in render and input | Medium   |
+| Coupled input/render coordinates    | Changes need multiple updates         | Medium   |
+| No modal/focus system               | Can't implement command palette       | Medium   |
 
 ### Patterns to Avoid Going Forward
 
@@ -1193,29 +1195,29 @@ src/
 
 ### Phase 3: Extract Widget Functions (3-8 hours, piecemeal)
 
-| Order | Widget | Effort | Dependencies |
-|-------|--------|--------|--------------|
-| 1 | Status bar | S | Already self-contained |
-| 2 | Splitters | S | Uses existing `SplitterBar` |
-| 3 | Tab bar | M | Need `compute_tab_rects` |
-| 4 | Single editor group | M | Composes tab bar, gutter, text area |
-| 5 | Gutter | M | Line number rendering |
-| 6 | Text area | L | Largest, most complex |
-| 7 | All groups | S | Generalize single group |
+| Order | Widget              | Effort | Dependencies                        |
+| ----- | ------------------- | ------ | ----------------------------------- |
+| 1     | Status bar          | S      | Already self-contained              |
+| 2     | Splitters           | S      | Uses existing `SplitterBar`         |
+| 3     | Tab bar             | M      | Need `compute_tab_rects`            |
+| 4     | Single editor group | M      | Composes tab bar, gutter, text area |
+| 5     | Gutter              | M      | Line number rendering               |
+| 6     | Text area           | L      | Largest, most complex               |
+| 7     | All groups          | S      | Generalize single group             |
 
 ### Phase 4: Add Modal System (1-2 days)
 
-| Order | Task | Effort |
-|-------|------|--------|
-| 1 | Add `ModalState` to `UiState` | S |
-| 2 | Add modal message types | S |
-| 3 | Add input routing for modals | M |
-| 4 | Implement command registry | S |
-| 5 | Implement `CommandPaletteState` | M |
-| 6 | Add `render_modals()` function | M |
-| 7 | Add theme extensions for overlays | S |
-| 8 | Wire up Cmd+Shift+P keybinding | S |
-| 9 | Add fuzzy search | M |
+| Order | Task                              | Effort |
+| ----- | --------------------------------- | ------ |
+| 1     | Add `ModalState` to `UiState`     | S      |
+| 2     | Add modal message types           | S      |
+| 3     | Add input routing for modals      | M      |
+| 4     | Implement command registry        | S      |
+| 5     | Implement `CommandPaletteState`   | M      |
+| 6     | Add `render_modals()` function    | M      |
+| 7     | Add theme extensions for overlays | S      |
+| 8     | Wire up Cmd+Shift+P keybinding    | S      |
+| 9     | Add fuzzy search                  | M      |
 
 ### Phase 5: Consolidate Layout (2-4 hours)
 
@@ -1236,12 +1238,14 @@ src/
 ## When to Consider Advanced Paths
 
 ### Stay with Current Approach If:
+
 - Building a focused code editor
 - Don't need plugin-defined arbitrary UI
 - Single frontend (winit/softbuffer)
 - Handful of predefined modals
 
 ### Consider Full Widget System If:
+
 - Want plugin-injected UI panels
 - Need docking, complex panels, tree views
 - Want to support multiple frontends (TUI, web)
@@ -1253,7 +1257,7 @@ src/
 // Trait-based modal system
 pub trait ModalWidget {
     type Msg;
-    
+
     fn update(&mut self, msg: Self::Msg, model: &mut AppModel) -> ModalResult;
     fn render(&self, frame: &mut Frame, text: &mut TextPainter, theme: &Theme);
     fn overlay_config(&self, viewport: (usize, usize)) -> OverlayConfig;

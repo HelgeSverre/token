@@ -11,6 +11,7 @@
 The Elm-style architecture refactor (Phases 1-6) is complete. Selection and multi-cursor editing are now fully functional. **All critical bugs have been fixed.** Status bar, overlay system, and split view are complete. Batch undo/redo is now fully implemented and wired to multi-cursor edits.
 
 **✅ Fixed in this session:**
+
 1. Unicode bugs in search/occurrence functions
 2. SelectNextOccurrence logic bug
 3. Viewport resize now updates all editors
@@ -25,55 +26,56 @@ The Elm-style architecture refactor (Phases 1-6) is complete. Selection and mult
 
 ### ✅ Priority 0: Critical Bugs (ALL FIXED)
 
-| Bug | Location | Status |
-|-----|----------|--------|
-| Unicode byte/char mismatch in `find_all_occurrences` | `document.rs` | ✅ Fixed - uses char indices |
-| Unicode in `word_under_cursor` | `editor.rs` | ✅ Fixed - clamps to `chars.len()` |
-| `SelectNextOccurrence` offset | `update.rs` | ✅ Fixed - uses `last_search_offset` |
-| Cursor/selection invariant violations | `update.rs`, `editor.rs` | ✅ Fixed - `collapse_selections_to_cursors()` |
+| Bug                                                  | Location                 | Status                                        |
+| ---------------------------------------------------- | ------------------------ | --------------------------------------------- |
+| Unicode byte/char mismatch in `find_all_occurrences` | `document.rs`            | ✅ Fixed - uses char indices                  |
+| Unicode in `word_under_cursor`                       | `editor.rs`              | ✅ Fixed - clamps to `chars.len()`            |
+| `SelectNextOccurrence` offset                        | `update.rs`              | ✅ Fixed - uses `last_search_offset`          |
+| Cursor/selection invariant violations                | `update.rs`, `editor.rs` | ✅ Fixed - `collapse_selections_to_cursors()` |
 
 ### ✅ Priority 1: Multi-Pane Correctness (ALL COMPLETE)
 
-| Task | Location | Status |
-|------|----------|--------|
-| Resize all editor viewports | `model/mod.rs` | ✅ Iterates all editors |
-| Sync viewports after layout | `editor_area.rs` | ✅ `sync_all_viewports()` added |
-| Avoid document cloning | `model/mod.rs`, `editor_area.rs` | ✅ `ensure_focused_cursor_visible()` |
+| Task                        | Location                         | Status                               |
+| --------------------------- | -------------------------------- | ------------------------------------ |
+| Resize all editor viewports | `model/mod.rs`                   | ✅ Iterates all editors              |
+| Sync viewports after layout | `editor_area.rs`                 | ✅ `sync_all_viewports()` added      |
+| Avoid document cloning      | `model/mod.rs`, `editor_area.rs` | ✅ `ensure_focused_cursor_visible()` |
 
 ### ✅ Priority 2: Multi-Cursor Undo/Redo (ALL COMPLETE)
 
-| Task | Location | Status |
-|------|----------|--------|
-| `EditOperation::Batch` variant | `document.rs` | ✅ Added with cursors_before/after |
-| Batch undo/redo handling | `update.rs` | ✅ `apply_undo/redo_operation()` helpers |
-| Multi-cursor edits use batch | `update.rs` | ✅ InsertChar, InsertNewline, DeleteBackward, DeleteForward |
+| Task                           | Location      | Status                                                      |
+| ------------------------------ | ------------- | ----------------------------------------------------------- |
+| `EditOperation::Batch` variant | `document.rs` | ✅ Added with cursors_before/after                          |
+| Batch undo/redo handling       | `update.rs`   | ✅ `apply_undo/redo_operation()` helpers                    |
+| Multi-cursor edits use batch   | `update.rs`   | ✅ InsertChar, InsertNewline, DeleteBackward, DeleteForward |
 
 ### ✅ Priority 3: Selection Phase 9 (ALL COMPLETE)
 
-| Task | Location | Status |
-|------|----------|--------|
+| Task                    | Location    | Status                 |
+| ----------------------- | ----------- | ---------------------- |
 | `Selection::get_text()` | `editor.rs` | ✅ Already implemented |
-| `SelectAllOccurrences` | `update.rs` | ✅ Fully implemented |
-| `UnselectOccurrence` | `update.rs` | ✅ Already implemented |
-| `SelectNextOccurrence` | `update.rs` | ✅ Fixed and working |
+| `SelectAllOccurrences`  | `update.rs` | ✅ Fully implemented   |
+| `UnselectOccurrence`    | `update.rs` | ✅ Already implemented |
+| `SelectNextOccurrence`  | `update.rs` | ✅ Fixed and working   |
 
 ### ✅ Priority 4: Rectangle Selection (COMPLETE)
 
-| Task | Location | Status |
-|------|----------|--------|
-| `FinishRectangleSelection` | `update.rs` | ✅ Already fully implemented |
-| Clamp columns per line | `update.rs` | ✅ Done |
-| Handle zero-width rectangles | `update.rs` | ✅ Done |
+| Task                         | Location    | Status                       |
+| ---------------------------- | ----------- | ---------------------------- |
+| `FinishRectangleSelection`   | `update.rs` | ✅ Already fully implemented |
+| Clamp columns per line       | `update.rs` | ✅ Done                      |
+| Handle zero-width rectangles | `update.rs` | ✅ Done                      |
 
 ---
 
 ## Test Coverage
 
 | Before | After | New Tests Added |
-|--------|-------|-----------------|
-| 293 | 351 | 58 |
+| ------ | ----- | --------------- |
+| 293    | 351   | 58              |
 
 ### New Tests Added:
+
 - `find_all_occurrences_*` (9 tests) - Unicode-safe search
 - `find_next_occurrence_*` (2 tests) - Wrap-around behavior
 - `test_word_under_cursor_*` (6 tests) - Unicode word detection
@@ -87,6 +89,7 @@ The Elm-style architecture refactor (Phases 1-6) is complete. Selection and mult
 ## Code Changes Summary
 
 ### Files Modified:
+
 1. **`src/model/document.rs`**
    - `find_all_occurrences()` - Unicode-safe byte→char mapping
    - `EditOperation::Batch` - New variant for multi-cursor undo
@@ -123,6 +126,7 @@ The Elm-style architecture refactor (Phases 1-6) is complete. Selection and mult
 ## Remaining Work
 
 ### Not Addressed:
+
 1. **Expand/Shrink Selection** - Design only
 2. **Typing coalescing** - Time-based undo grouping
 
@@ -141,8 +145,9 @@ The Elm-style architecture refactor (Phases 1-6) is complete. Selection and mult
 ## Summary
 
 All bugs and features from the BUGFIX_PLAN.md are now complete. The codebase is:
+
 - Unicode-safe for search and word detection
-- Multi-pane aware for viewport management  
+- Multi-pane aware for viewport management
 - Fully supporting multi-cursor undo/redo with batch operations
 - Fully functional for occurrence selection (Cmd+J, Cmd+Shift+L)
 - Maintaining cursor/selection invariants correctly

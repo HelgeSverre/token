@@ -6,22 +6,22 @@ A pragmatic restructuring of the codebase to improve maintainability as it grows
 
 ## Current State (Post Split View Implementation)
 
-| File                       | Lines | Contents                                                                      |
-| -------------------------- | ----- | ----------------------------------------------------------------------------- |
-| `src/main.rs`              | ~3100 | Renderer, PerfStats, App, ApplicationHandler, handle_key, draw_text, main()  |
+| File                       | Lines | Contents                                                                       |
+| -------------------------- | ----- | ------------------------------------------------------------------------------ |
+| `src/main.rs`              | ~3100 | Renderer, PerfStats, App, ApplicationHandler, handle_key, draw_text, main()    |
 | `src/update.rs`            | ~2900 | update dispatcher, update_editor/document/layout/ui/app, cursor/layout helpers |
-| `src/model/editor_area.rs` | ~770  | EditorArea, EditorGroup, LayoutNode, SplitContainer, Tab, IDs, layout compute |
-| `src/model/editor.rs`      | ~660  | EditorState, Cursor, Selection, Viewport, OccurrenceState                     |
-| `src/theme.rs`             | ~540  | Theme loading, Color, TabBarTheme, SplitterTheme                              |
-| `src/model/status_bar.rs`  | ~450  | StatusBar, StatusSegment, sync_status_bar, TransientMessage                   |
-| `src/overlay.rs`           | ~285  | Overlay rendering utilities                                                   |
-| `src/model/mod.rs`         | ~275  | AppModel, layout constants, accessor methods                                  |
-| `src/messages.rs`          | ~260  | Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg, AppMsg                         |
-| `src/model/document.rs`    | ~245  | Document, EditOperation, Rope buffer                                          |
-| `src/model/ui.rs`          | ~85   | UiState (cursor blink, transient messages)                                    |
-| `src/util.rs`              | ~65   | CharType enum, is_punctuation, char_type                                      |
-| `src/commands.rs`          | ~55   | Cmd enum (Redraw, SaveFile, LoadFile, Batch)                                  |
-| `src/lib.rs`               | ~18   | Library root, module exports                                                  |
+| `src/model/editor_area.rs` | ~770  | EditorArea, EditorGroup, LayoutNode, SplitContainer, Tab, IDs, layout compute  |
+| `src/model/editor.rs`      | ~660  | EditorState, Cursor, Selection, Viewport, OccurrenceState                      |
+| `src/theme.rs`             | ~540  | Theme loading, Color, TabBarTheme, SplitterTheme                               |
+| `src/model/status_bar.rs`  | ~450  | StatusBar, StatusSegment, sync_status_bar, TransientMessage                    |
+| `src/overlay.rs`           | ~285  | Overlay rendering utilities                                                    |
+| `src/model/mod.rs`         | ~275  | AppModel, layout constants, accessor methods                                   |
+| `src/messages.rs`          | ~260  | Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg, AppMsg                          |
+| `src/model/document.rs`    | ~245  | Document, EditOperation, Rope buffer                                           |
+| `src/model/ui.rs`          | ~85   | UiState (cursor blink, transient messages)                                     |
+| `src/util.rs`              | ~65   | CharType enum, is_punctuation, char_type                                       |
+| `src/commands.rs`          | ~55   | Cmd enum (Redraw, SaveFile, LoadFile, Batch)                                   |
+| `src/lib.rs`               | ~18   | Library root, module exports                                                   |
 
 **Test Coverage:** 351+ tests across 9 test files (~5800 lines)
 
@@ -272,6 +272,7 @@ For planned features, follow these patterns:
 ### Expand/Shrink Selection (docs/feature/TEXT-SHRINK-EXPAND-SELECTION.md)
 
 Files to modify:
+
 ```
 src/model/editor.rs          # Add selection_history: Vec<Selection>
 src/messages.rs              # Add ExpandSelection, ShrinkSelection to EditorMsg
@@ -284,11 +285,13 @@ src/input.rs                 # Add Option+Up/Down keybindings (after migration)
 ### File Dropping (docs/feature/handle-file-dropping.md)
 
 New files:
+
 ```
 src/model/drop.rs            # DropState struct
 ```
 
 Files to modify:
+
 ```
 src/model/mod.rs             # Add mod drop, extend UiState
 src/model/ui.rs              # Add drop_state: DropState field
@@ -306,6 +309,7 @@ themes/*.yaml                # Add drop_zone colors
 ### Workspace Management (docs/feature/workspace-management.md)
 
 New files:
+
 ```
 src/cli.rs                   # CliArgs, StartupConfig, clap integration
 src/model/workspace.rs       # Workspace, FileTree, FileNode structs
@@ -313,6 +317,7 @@ src/fs_watcher.rs            # FileSystemWatcher using notify crate
 ```
 
 Files to modify:
+
 ```
 src/model/mod.rs             # Add mod workspace, extend AppModel
 src/messages.rs              # Add WorkspaceMsg enum
@@ -354,19 +359,19 @@ Cargo.toml                   # Add clap, notify dependencies
 
 ## File Ownership Summary
 
-| Concern               | Files                                       |
-| --------------------- | ------------------------------------------- |
-| **State/Model**       | `model/*.rs`                                |
-| **Messages**          | `messages.rs`                               |
-| **State Updates**     | `update/*.rs`                               |
-| **Rendering**         | `view.rs`, `perf.rs`, `overlay.rs`          |
-| **Input Handling**    | `input.rs`                                  |
-| **Winit Integration** | `app.rs` (binary), `main.rs`                |
-| **Theming**           | `theme.rs`                                  |
-| **Commands**          | `commands.rs`                               |
-| **Utilities**         | `util.rs`                                   |
-| **CLI/Startup**       | `cli.rs` (future)                           |
-| **File Watching**     | `fs_watcher.rs` (future)                    |
+| Concern               | Files                              |
+| --------------------- | ---------------------------------- |
+| **State/Model**       | `model/*.rs`                       |
+| **Messages**          | `messages.rs`                      |
+| **State Updates**     | `update/*.rs`                      |
+| **Rendering**         | `view.rs`, `perf.rs`, `overlay.rs` |
+| **Input Handling**    | `input.rs`                         |
+| **Winit Integration** | `app.rs` (binary), `main.rs`       |
+| **Theming**           | `theme.rs`                         |
+| **Commands**          | `commands.rs`                      |
+| **Utilities**         | `util.rs`                          |
+| **CLI/Startup**       | `cli.rs` (future)                  |
+| **File Watching**     | `fs_watcher.rs` (future)           |
 
 ---
 
@@ -393,12 +398,12 @@ These items were identified during split view implementation but deferred:
 
 ## Current Keybindings (Split View)
 
-| Shortcut               | Action                  |
-| ---------------------- | ----------------------- |
-| Numpad 1-4             | Focus group 1-4         |
-| Numpad -               | Split horizontal        |
-| Numpad +               | Split vertical          |
-| Cmd+W                  | Close tab               |
-| Option+Cmd+Left/Right  | Previous/Next tab       |
-| Shift+Cmd+1-4          | Focus group by index    |
-| Ctrl+Tab               | Focus next group        |
+| Shortcut              | Action               |
+| --------------------- | -------------------- |
+| Numpad 1-4            | Focus group 1-4      |
+| Numpad -              | Split horizontal     |
+| Numpad +              | Split vertical       |
+| Cmd+W                 | Close tab            |
+| Option+Cmd+Left/Right | Previous/Next tab    |
+| Shift+Cmd+1-4         | Focus group by index |
+| Ctrl+Tab              | Focus next group     |

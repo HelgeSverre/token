@@ -64,6 +64,7 @@ impl EditorState {
 ```
 
 **Key changes:**
+
 - Replace `cursor_mut()` with `self.cursors[idx]`
 - Use per-line whitespace helpers (see below)
 - Preserve `desired_column` for vertical movement
@@ -121,6 +122,7 @@ EditorMsg::MoveCursor(direction) => {
 ```
 
 **Handlers to update:**
+
 - `MoveCursor(Direction)` - arrow keys
 - `MoveCursorLineStart` - Home
 - `MoveCursorLineEnd` - End
@@ -173,6 +175,7 @@ EditorMsg::MoveCursorWithSelection(direction) => {
 ```
 
 **Handlers to update:**
+
 - `MoveCursorWithSelection(Direction)` - Shift+Arrow
 - `MoveCursorLineStartWithSelection` - Shift+Home
 - `MoveCursorLineEndWithSelection` - Shift+End
@@ -202,6 +205,7 @@ These replace `model.first_non_whitespace_column()` which only works for primary
 ### Single-Cursor Regression Tests
 
 Ensure all existing single-cursor tests pass:
+
 - `tests/cursor_movement.rs` - 38 tests
 - Movement with/without selection
 - Word movement
@@ -216,9 +220,9 @@ fn multi_cursor_arrow_left_moves_all() {
     // Add cursors at positions 3 and 8
     model.editor_mut().cursors.push(Cursor::at(0, 3));
     model.editor_mut().cursors.push(Cursor::at(0, 8));
-    
+
     update(&mut model, Msg::Editor(EditorMsg::MoveCursor(Direction::Left)));
-    
+
     assert_eq!(model.editor().cursors[0].column, 2);
     assert_eq!(model.editor().cursors[1].column, 7);
 }
@@ -228,11 +232,11 @@ fn multi_cursor_movement_deduplicates_collisions() {
     let mut model = test_model_with_content("abc");
     model.editor_mut().cursors.push(Cursor::at(0, 1));
     model.editor_mut().cursors.push(Cursor::at(0, 2));
-    
+
     // Move left twice - cursors should collide and dedupe
     update(&mut model, Msg::Editor(EditorMsg::MoveCursor(Direction::Left)));
     update(&mut model, Msg::Editor(EditorMsg::MoveCursor(Direction::Left)));
-    
+
     // Only one cursor should remain at position 0
     assert_eq!(model.editor().cursors.len(), 1);
 }
@@ -252,12 +256,12 @@ fn multi_cursor_shift_arrow_extends_all_selections() {
 
 ## Files to Modify
 
-| File | Changes |
-|------|---------|
-| `src/model/editor.rs` | Add per-cursor and all-cursor movement methods |
-| `src/model/document.rs` | Add per-line helper functions |
-| `src/update.rs` | Update all movement handlers to use new methods |
-| `tests/cursor_movement.rs` | Add multi-cursor movement tests |
+| File                       | Changes                                         |
+| -------------------------- | ----------------------------------------------- |
+| `src/model/editor.rs`      | Add per-cursor and all-cursor movement methods  |
+| `src/model/document.rs`    | Add per-line helper functions                   |
+| `src/update.rs`            | Update all movement handlers to use new methods |
+| `tests/cursor_movement.rs` | Add multi-cursor movement tests                 |
 
 ---
 
