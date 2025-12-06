@@ -7,6 +7,30 @@ For archived phases, see [archived/old-roadmap-file.md](archived/old-roadmap-fil
 
 ---
 
+## Recently Completed
+
+### Structured Status Bar ✅
+
+**Design:** [feature/STATUS_BAR.md](feature/STATUS_BAR.md) | **Completed:** 2025-12-06
+
+Segment-based status bar system:
+- Left/right alignment with separators
+- `sync_status_bar()` auto-updates from model
+- Transient messages with auto-expiry
+- 47 tests in `tests/status_bar.rs`
+
+### Overlay System ✅
+
+**Completed:** 2025-12-06
+
+Reusable overlay rendering (`src/overlay.rs`):
+- Anchor positioning (TopLeft, TopRight, etc.)
+- Alpha-blended backgrounds
+- Optional themed borders
+- Theme integration (background, foreground, highlight, warning, error, border)
+
+---
+
 ## In Progress
 
 ### Phase 9: Occurrence Selection (JetBrains-style)
@@ -23,16 +47,6 @@ For archived phases, see [archived/old-roadmap-file.md](archived/old-roadmap-fil
 ---
 
 ## Planned Features
-
-### Structured Status Bar
-
-**Design:** [feature/STATUS_BAR.md](feature/STATUS_BAR.md)
-
-Replace pipe-delimited string with segment-based system:
-- Left/center/right alignment
-- Per-segment theming
-- Transient messages with expiry
-- Click actions (future)
 
 ### Expand/Shrink Selection
 
@@ -59,9 +73,10 @@ Multi-pane editing:
 
 | Feature | Status | Design Doc |
 |---------|--------|------------|
-| Theming System | Complete | [feature/THEMING.md](feature/THEMING.md) |
-| Selection & Multi-Cursor | 8/9 phases complete | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) |
-| Status Bar | Planned | [feature/STATUS_BAR.md](feature/STATUS_BAR.md) |
+| Theming System | ✅ Complete | [feature/THEMING.md](feature/THEMING.md) |
+| Selection & Multi-Cursor | ✅ 8/9 phases complete | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) |
+| Status Bar | ✅ Complete | [feature/STATUS_BAR.md](feature/STATUS_BAR.md) |
+| Overlay System | ✅ Complete | (inline in CHANGELOG) |
 | Split View | Planned | [feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md) |
 | Expand/Shrink Selection | Planned | [feature/TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) |
 
@@ -89,21 +104,30 @@ src/
 │   ├── mod.rs           # AppModel struct (includes Theme), re-exports
 │   ├── document.rs      # Document struct (buffer, undo/redo, file_path)
 │   ├── editor.rs        # EditorState, Cursor, Selection, Viewport, ScrollRevealMode
-│   └── ui.rs            # UiState (status, cursor blink, loading states)
+│   ├── ui.rs            # UiState (status, cursor blink, loading states)
+│   └── status_bar.rs    # StatusBar, StatusSegment, sync_status_bar(), layout
 ├── messages.rs          # Msg, EditorMsg, DocumentMsg, UiMsg, AppMsg, Direction
 ├── commands.rs          # Cmd enum (Redraw, SaveFile, LoadFile, Batch)
 ├── update.rs            # update() dispatcher + update_editor/document/ui/app
-├── theme.rs             # Theme, Color, YAML theme loading
+├── theme.rs             # Theme, Color, OverlayTheme, YAML theme loading
+├── overlay.rs           # OverlayConfig, OverlayBounds, render functions
 └── util.rs              # CharType enum, is_punctuation, char_type
+
+themes/
+├── dark.yaml            # Default dark theme (VS Code-inspired)
+├── fleet-dark.yaml      # JetBrains Fleet dark theme
+├── github-dark.yaml     # GitHub dark theme
+└── github-light.yaml    # GitHub light theme
 
 tests/
 ├── common/mod.rs        # Shared test helpers
 ├── cursor_movement.rs   # 38 tests
-├── text_editing.rs      # 21 tests
+├── text_editing.rs      # 38 tests (includes delete line, duplicate)
 ├── selection.rs         # 16 tests
 ├── scrolling.rs         # 33 tests
 ├── edge_cases.rs        # 9 tests
+├── monkey_tests.rs      # 34 tests (expanded resize edge cases)
 └── status_bar.rs        # 47 tests
 ```
 
-**Test count:** 185 (10 theme + 11 keyboard + 164 integration)
+**Test count:** 246 (17 lib + 14 main + 215 integration)
