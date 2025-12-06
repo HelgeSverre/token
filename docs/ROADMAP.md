@@ -7,11 +7,27 @@ For archived phases, see [archived/old-roadmap-file.md](archived/old-roadmap-fil
 
 ---
 
+## In Progress
+
+### Multi-Cursor Selection Gaps 🚧
+
+**Design:** [feature/MULTI_CURSOR_SELECTION_GAPS.md](feature/MULTI_CURSOR_SELECTION_GAPS.md) | **Started:** 2025-12-06
+
+Fix remaining selection operations to work with multiple cursors:
+
+- `merge_overlapping_selections()` - merge overlapping/touching selections
+- `SelectWord` - select word at each cursor (currently single-cursor only)
+- `SelectLine` - select line at each cursor (currently single-cursor only)
+- `SelectAll` - properly collapse to single full-document selection
+- `ExtendSelectionToPosition` - collapse multi-cursor first, then extend
+
+---
+
 ## Recently Completed
 
 ### Expand/Shrink Selection ✅
 
-**Design:** [feature/TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) | **Completed:** 2025-12-06
+**Design:** [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md) | **Completed:** 2025-12-06
 
 Progressive selection expansion with history stack:
 
@@ -21,7 +37,7 @@ Progressive selection expansion with history stack:
 
 ### Multi-Cursor Movement ✅
 
-**Design:** [feature/MULTI_CURSOR_MOVEMENT.md](feature/MULTI_CURSOR_MOVEMENT.md) | **Completed:** 2025-12-06
+**Design:** [archived/MULTI_CURSOR_MOVEMENT.md](archived/MULTI_CURSOR_MOVEMENT.md) | **Completed:** 2025-12-06
 
 All cursor movement operations now work with multiple cursors:
 
@@ -83,12 +99,13 @@ Group rapid consecutive edits into single undo entries:
 
 | Feature | Status | Design Doc |
 |---------|--------|------------|
+| Multi-Cursor Selection Gaps | 🚧 In Progress | [feature/MULTI_CURSOR_SELECTION_GAPS.md](feature/MULTI_CURSOR_SELECTION_GAPS.md) |
 | Theming System | ✅ Complete | [feature/THEMING.md](feature/THEMING.md) |
-| Selection & Multi-Cursor | ✅ Complete | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) |
 | Status Bar | ✅ Complete | [feature/STATUS_BAR.md](feature/STATUS_BAR.md) |
 | Split View | ✅ Complete | [feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md) |
-| Multi-Cursor Movement | ✅ Complete | [feature/MULTI_CURSOR_MOVEMENT.md](feature/MULTI_CURSOR_MOVEMENT.md) |
-| Expand/Shrink Selection | ✅ Complete | [feature/TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) |
+| Selection & Multi-Cursor | ✅ Complete | [archived/SELECTION_MULTICURSOR.md](archived/SELECTION_MULTICURSOR.md) |
+| Multi-Cursor Movement | ✅ Complete | [archived/MULTI_CURSOR_MOVEMENT.md](archived/MULTI_CURSOR_MOVEMENT.md) |
+| Expand/Shrink Selection | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md) |
 | File Dropping | Planned | [feature/handle-file-dropping.md](feature/handle-file-dropping.md) |
 | Workspace Management | Planned | [feature/workspace-management.md](feature/workspace-management.md) |
 | Codebase Organization | Planned | [ORGANIZATION-CODEBASE.md](ORGANIZATION-CODEBASE.md) |
