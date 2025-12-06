@@ -2789,12 +2789,12 @@ enum BindingSource {
 
 Different editors use different string formats for key representation:
 
-| Editor       | Format                      | Example                         |
-| ------------ | --------------------------- | ------------------------------- |
-| VS Code      | `modifier+key` (lowercase)  | `ctrl+shift+k`, `cmd+k cmd+c`   |
-| Helix        | `modifier-key` (uppercase)  | `C-S-k`, `g a`                  |
-| Sublime      | `modifier+key` (mixed)      | `ctrl+shift+k`                  |
-| Zed          | `modifier-key` (lowercase)  | `cmd-k cmd-s`                   |
+| Editor  | Format                     | Example                       |
+| ------- | -------------------------- | ----------------------------- |
+| VS Code | `modifier+key` (lowercase) | `ctrl+shift+k`, `cmd+k cmd+c` |
+| Helix   | `modifier-key` (uppercase) | `C-S-k`, `g a`                |
+| Sublime | `modifier+key` (mixed)     | `ctrl+shift+k`                |
+| Zed     | `modifier-key` (lowercase) | `cmd-k cmd-s`                 |
 
 #### Recommended Canonical Format
 
@@ -2818,21 +2818,21 @@ Parsing algorithm:
 function parseKeystroke(input, isMacOS) {
     parts = input.split('+')
     keyPart = parts.last().toLowerCase()
-    
+
     mods = { ctrl: false, shift: false, alt: false, meta: false }
-    
+
     for (modifier in parts[0..parts.length-1]) {
         switch (modifier.toLowerCase()) {
             case 'ctrl', 'control': mods.ctrl = true
             case 'shift': mods.shift = true
             case 'alt', 'option': mods.alt = true
             case 'cmd', 'command', 'meta': mods.meta = true
-            case 'mod': 
+            case 'mod':
                 if (isMacOS) mods.meta = true
                 else mods.ctrl = true
         }
     }
-    
+
     key = parseKeyCode(keyPart)  // 'a' → Char('a'), 'enter' → Named(Enter)
     return Keystroke { key, mods }
 }
@@ -2959,21 +2959,21 @@ Resolution algorithm:
 function handleKeystroke(keystroke, context, keymap, state) {
     state.pendingKeystrokes.push(keystroke)
     state.resetTimeout()
-    
+
     exactMatch = null
     hasPrefix = false
-    
+
     for (binding in keymap.bindings) {
         // Check context condition
         if (binding.when && !evalCondition(binding.when, context)) {
             continue
         }
-        
+
         // Check if sequence matches
         if (!binding.sequence.startsWith(state.pendingKeystrokes)) {
             continue
         }
-        
+
         if (binding.sequence.length == state.pendingKeystrokes.length) {
             exactMatch = binding  // Found exact match
             break                 // First match wins (precedence order)
@@ -2981,16 +2981,16 @@ function handleKeystroke(keystroke, context, keymap, state) {
             hasPrefix = true      // Potential longer match exists
         }
     }
-    
+
     if (exactMatch) {
         state.pendingKeystrokes.clear()
         return KeyAction.Execute(exactMatch.command)
     }
-    
+
     if (hasPrefix) {
         return KeyAction.AwaitMore
     }
-    
+
     state.pendingKeystrokes.clear()
     return KeyAction.NoMatch
 }
@@ -3075,13 +3075,13 @@ when = "editor_focus && has_selection"
 
 #### Modifier Mapping
 
-| Modifier | macOS      | Windows/Linux |
-| -------- | ---------- | ------------- |
-| `mod`    | ⌘ Command  | Ctrl          |
-| `ctrl`   | Control    | Ctrl          |
-| `alt`    | ⌥ Option   | Alt           |
-| `shift`  | ⇧ Shift    | Shift         |
-| `meta`   | ⌘ Command  | Win key       |
+| Modifier | macOS     | Windows/Linux |
+| -------- | --------- | ------------- |
+| `mod`    | ⌘ Command | Ctrl          |
+| `ctrl`   | Control   | Ctrl          |
+| `alt`    | ⌥ Option  | Alt           |
+| `shift`  | ⇧ Shift   | Shift         |
+| `meta`   | ⌘ Command | Win key       |
 
 #### Display Format
 
@@ -3134,7 +3134,7 @@ function renderMenuItem(action, label) {
 function onKeystroke(keystroke) {
     state.cancelTimeout()
     result = handleKeystroke(keystroke, ...)
-    
+
     if (result == AwaitMore) {
         state.setTimeout(2000, () => {
             state.pendingKeystrokes.clear()
@@ -3169,11 +3169,11 @@ function isTextInput(keystroke) {
 // Handle text via ReceivedCharacter event, not KeyDown
 function handleKeyDown(event) {
     keystroke = normalizeKeystroke(event)
-    
+
     if (!hasModifiers(keystroke) || isTextInput(keystroke)) {
         return  // Let ReceivedCharacter handle it
     }
-    
+
     result = keymap.handle(keystroke, context)
     // ...
 }
@@ -3248,11 +3248,11 @@ function checkDragThreshold(startPos, currentPos) {
 
 **Behavior differences:**
 
-| Scenario                     | Without Threshold          | With Threshold         |
-| ---------------------------- | -------------------------- | ---------------------- |
-| Click to position cursor     | May create tiny selection  | Clean cursor placement |
-| Accidental 1-2px movement    | Triggers selection         | No effect              |
-| Intentional drag (5+ px)     | Works                      | Works                  |
+| Scenario                  | Without Threshold         | With Threshold         |
+| ------------------------- | ------------------------- | ---------------------- |
+| Click to position cursor  | May create tiny selection | Clean cursor placement |
+| Accidental 1-2px movement | Triggers selection        | No effect              |
+| Intentional drag (5+ px)  | Works                     | Works                  |
 
 ### 14.3 Selection Anchor Initialization
 
@@ -3354,12 +3354,12 @@ function tryAutoScroll(mouseY, state, viewport, lineHeight) {
 
 #### Scroll Speed Considerations
 
-| Approach                     | Behavior                                    | UX                          |
-| ---------------------------- | ------------------------------------------- | --------------------------- |
-| Instant (no throttle)        | Scrolls as fast as mouse events             | Jarring, overshoots easily  |
-| Fixed interval (80-100ms)    | Consistent ~10-12 lines/sec                 | Predictable, controllable   |
-| Distance-based acceleration  | Faster scroll when mouse further from edge  | Natural but complex         |
-| Progressive acceleration     | Speed increases over time                   | Good for long selections    |
+| Approach                    | Behavior                                   | UX                         |
+| --------------------------- | ------------------------------------------ | -------------------------- |
+| Instant (no throttle)       | Scrolls as fast as mouse events            | Jarring, overshoots easily |
+| Fixed interval (80-100ms)   | Consistent ~10-12 lines/sec                | Predictable, controllable  |
+| Distance-based acceleration | Faster scroll when mouse further from edge | Natural but complex        |
+| Progressive acceleration    | Speed increases over time                  | Good for long selections   |
 
 **Recommendation:** Start with fixed interval throttling (~80ms). Add distance-based acceleration only if users request
 it.
@@ -3408,14 +3408,14 @@ Separate mode entirely. Uses same drag mechanics but creates multiple cursors/se
 
 ### 14.8 Common Implementation Pitfalls
 
-| Pitfall                                    | Symptom                          | Fix                                         |
-| ------------------------------------------ | -------------------------------- | ------------------------------------------- |
-| No drag threshold                          | Clicks create tiny selections    | Add 4px threshold check                     |
-| Anchor at (0,0)                            | Selection starts from top-left   | Initialize anchor from mouse-down position  |
-| No throttle on auto-scroll                 | Viewport jumps wildly            | Add 80ms minimum interval                   |
-| Clearing selection on mouse down           | Can't see selection while drag   | Only clear on click (threshold not exceeded)|
-| Using ensure_cursor_visible() during drag  | Instant scroll jumps             | Use throttled auto-scroll instead           |
-| Not updating cursor during drag            | Cursor stays at start            | Set cursor.position = selection.head        |
+| Pitfall                                   | Symptom                        | Fix                                          |
+| ----------------------------------------- | ------------------------------ | -------------------------------------------- |
+| No drag threshold                         | Clicks create tiny selections  | Add 4px threshold check                      |
+| Anchor at (0,0)                           | Selection starts from top-left | Initialize anchor from mouse-down position   |
+| No throttle on auto-scroll                | Viewport jumps wildly          | Add 80ms minimum interval                    |
+| Clearing selection on mouse down          | Can't see selection while drag | Only clear on click (threshold not exceeded) |
+| Using ensure_cursor_visible() during drag | Instant scroll jumps           | Use throttled auto-scroll instead            |
+| Not updating cursor during drag           | Cursor stays at start          | Set cursor.position = selection.head         |
 
 ### 14.9 Data Structures Summary
 

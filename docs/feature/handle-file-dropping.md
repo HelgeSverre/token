@@ -9,11 +9,13 @@ Handle drag-and-drop file operations for opening files in the editor.
 ### Current State
 
 The editor uses winit for windowing with an `ApplicationHandler` implementation in `src/main.rs`. The event handling in `App::handle_event()` processes `WindowEvent` variants. Currently, there is no handling for:
+
 - `WindowEvent::DroppedFile` - File dropped onto the window
 - `WindowEvent::HoveredFile` - File being dragged over the window
 - `WindowEvent::HoveredFileCancelled` - Drag operation cancelled
 
 File loading currently uses:
+
 - `Document::from_file(path)` in `src/model/document.rs` - Synchronous file loading
 - `AppMsg::LoadFile(PathBuf)` / `AppMsg::FileLoaded` - Async message pattern
 - `Cmd::LoadFile { path }` - Command to trigger async file loading
@@ -397,24 +399,25 @@ impl EditorArea {
 
 ## Edge Cases
 
-| Case | Handling |
-|------|----------|
+| Case               | Handling                                             |
+| ------------------ | ---------------------------------------------------- |
 | File doesn't exist | Show error in status bar: "File not found: filename" |
-| Permission denied | Show error: "Permission denied: filename" |
-| Binary file | Detect via null bytes, show "Binary file: filename" |
-| File too large | Check size before loading (50MB limit) |
-| Directory dropped | Show "Cannot open directory: dirname" |
-| File already open | Switch to existing tab, show "Switched to: filename" |
-| Multiple files | Each opens in a new tab; last file becomes active |
-| Symlinks | `fs::metadata()` follows symlinks; regular handling |
-| Drag cancelled | `HoveredFileCancelled` clears the drop state |
-| Rapid drops | Each event processed independently |
+| Permission denied  | Show error: "Permission denied: filename"            |
+| Binary file        | Detect via null bytes, show "Binary file: filename"  |
+| File too large     | Check size before loading (50MB limit)               |
+| Directory dropped  | Show "Cannot open directory: dirname"                |
+| File already open  | Switch to existing tab, show "Switched to: filename" |
+| Multiple files     | Each opens in a new tab; last file becomes active    |
+| Symlinks           | `fs::metadata()` follows symlinks; regular handling  |
+| Drag cancelled     | `HoveredFileCancelled` clears the drop state         |
+| Rapid drops        | Each event processed independently                   |
 
 ---
 
 ## Implementation Plan
 
 ### Phase 1: Basic Drop Handling (No Tabs)
+
 - [ ] Add `DropState` to `UiState`
 - [ ] Add `DropMsg` message type
 - [ ] Handle `WindowEvent::DroppedFile` and `HoveredFile` in event handler
@@ -425,6 +428,7 @@ impl EditorArea {
 **Test:** Drop a file onto the editor window; file content replaces current buffer.
 
 ### Phase 2: Visual Feedback
+
 - [ ] Add `DropZoneTheme` to theme
 - [ ] Implement `render_drop_overlay()` in renderer
 - [ ] Show file name(s) during hover
@@ -434,6 +438,7 @@ impl EditorArea {
 **Test:** Drag file over window; semi-transparent overlay with border appears.
 
 ### Phase 3: File Validation
+
 - [ ] Add `FileOpenError` enum
 - [ ] Implement `validate_file_for_opening()`
 - [ ] Add binary file detection
@@ -443,6 +448,7 @@ impl EditorArea {
 **Test:** Drop binary file; shows error message. Drop large file; shows size error.
 
 ### Phase 4: Tab Integration
+
 - [ ] Add `find_document_by_path()` to EditorArea
 - [ ] Add `activate_document()` to EditorArea
 - [ ] Detect already-open files and switch to existing tab
@@ -451,6 +457,7 @@ impl EditorArea {
 **Test:** Drop file that's already open; tab switches instead of duplicating.
 
 ### Phase 5: Multiple File Support
+
 - [ ] Handle multiple `DroppedFile` events
 - [ ] Open each in separate tab
 - [ ] Activate last dropped file's tab

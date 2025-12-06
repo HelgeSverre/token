@@ -195,10 +195,10 @@ impl StatusBar {
 pub struct UiState {
     /// Status bar with structured segments
     pub status_bar: StatusBar,
-    
+
     /// Transient message with auto-clear timer
     pub transient_message: Option<TransientMessage>,
-    
+
     // ... existing fields
     pub cursor_visible: bool,
     pub last_cursor_blink: Instant,
@@ -228,7 +228,7 @@ pub enum UiMsg {
     // ... existing
     SetStatus(String),
     BlinkCursor,
-    
+
     // New segment-based updates
     UpdateSegment { id: SegmentId, content: SegmentContent },
     SetTransientMessage { text: String, duration_ms: u64, style: MessageStyle },
@@ -247,7 +247,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             model.ui.status_bar.update_segment(id, content);
             Some(Cmd::Redraw)
         }
-        
+
         UiMsg::SetTransientMessage { text, duration_ms, style } => {
             model.ui.transient_message = Some(TransientMessage {
                 text,
@@ -261,7 +261,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             );
             Some(Cmd::Redraw)
         }
-        
+
         UiMsg::ClearTransientMessage => {
             model.ui.transient_message = None;
             model.ui.status_bar.update_segment(
@@ -270,7 +270,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             );
             Some(Cmd::Redraw)
         }
-        
+
         // ... other handlers
     }
 }
@@ -278,19 +278,19 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
 // Auto-update segments after document/cursor changes
 pub fn sync_status_bar(model: &mut AppModel) {
     let cursor = model.editor.cursor();
-    
+
     // Cursor position
     model.ui.status_bar.update_segment(
         SegmentId::CursorPosition,
         SegmentContent::Text(format!("Ln {}, Col {}", cursor.line + 1, cursor.column + 1)),
     );
-    
+
     // Line count
     model.ui.status_bar.update_segment(
         SegmentId::LineCount,
         SegmentContent::Text(format!("{} Ln", model.document.line_count())),
     );
-    
+
     // File name
     let file_name = model.document.file_path
         .as_ref()
@@ -301,7 +301,7 @@ pub fn sync_status_bar(model: &mut AppModel) {
         SegmentId::FileName,
         SegmentContent::Text(file_name.into()),
     );
-    
+
     // Modified indicator
     model.ui.status_bar.update_segment(
         SegmentId::ModifiedIndicator,
@@ -328,22 +328,22 @@ impl StatusBar {
         let mut left_x = self.padding;
         let mut left_segments = Vec::new();
         let mut separator_positions = Vec::new();
-        
+
         // Track previous segment end for separator placement
         let mut prev_segment_end: Option<usize> = None;
-        
+
         for seg in self.left.iter() {
             if let SegmentContent::Empty = seg.content {
                 continue;
             }
-            
+
             if let Some(prev_end) = prev_segment_end {
                 // Add separator spacing and record separator center position
                 left_x = prev_end + self.separator_spacing;
                 let sep_center = prev_end + self.separator_spacing / 2;
                 separator_positions.push(sep_center);
             }
-            
+
             let width = seg.content.char_width();
             left_segments.push(RenderedSegment {
                 id: seg.id,
@@ -353,27 +353,27 @@ impl StatusBar {
             });
             prev_segment_end = Some(left_x + width);
         }
-        
+
         // Render right segments (from right edge, backwards)
         let mut right_x = available_width - self.padding;
         let mut right_segments = Vec::new();
         let mut right_separators = Vec::new();
         let mut prev_segment_start: Option<usize> = None;
-        
+
         for seg in self.right.iter().rev() {
             if let SegmentContent::Empty = seg.content {
                 continue;
             }
-            
+
             let width = seg.content.char_width();
-            
+
             if let Some(prev_start) = prev_segment_start {
                 // Add separator spacing and record separator center position
                 right_x = prev_start - self.separator_spacing;
                 let sep_center = prev_start - self.separator_spacing / 2;
                 right_separators.push(sep_center);
             }
-            
+
             right_x -= width;
             right_segments.push(RenderedSegment {
                 id: seg.id,
@@ -385,7 +385,7 @@ impl StatusBar {
         }
         right_segments.reverse();
         separator_positions.extend(right_separators);
-        
+
         StatusBarLayout {
             left: left_segments,
             center: vec![],  // TODO: center alignment
@@ -420,7 +420,7 @@ pub struct StatusBarTheme {
     pub foreground: Color,
     /// Color for the 1px vertical separator lines between segments
     pub separator_color: Color,
-    
+
     // Per-segment type colors
     pub file_name: SegmentStyle,
     pub modified_indicator: SegmentStyle,
@@ -451,14 +451,14 @@ The separator is rendered as a 1px vertical line, similar to the gutter border:
 fn render_separators(&self, layout: &StatusBarLayout, buffer: &mut [u32], width: usize, status_y: usize, status_height: usize) {
     let sep_color = self.theme.status_bar.separator_color.to_argb_u32();
     let char_width = self.char_width;
-    
+
     // Vertical inset for aesthetics (don't span full height)
     let y_start = status_y + 4;
     let y_end = status_y + status_height - 4;
-    
+
     for &sep_char_x in &layout.separator_positions {
         let x_px = (sep_char_x as f32 * char_width).round() as usize;
-        
+
         // Draw 1px vertical line
         for py in y_start..y_end {
             if x_px < width {
@@ -470,6 +470,7 @@ fn render_separators(&self, layout: &StatusBarLayout, buffer: &mut [u32], width:
 ```
 
 This approach:
+
 - Uses character-unit spacing (`separator_spacing: 2` = 1 char margin on each side)
 - Draws a single pixel-wide line at the center of the spacing
 - Matches the existing gutter border rendering pattern
@@ -480,27 +481,32 @@ This approach:
 ## Implementation Plan
 
 ### Phase 1: Core Data Structures
+
 - [ ] Add `StatusSegment`, `SegmentId`, `SegmentContent` to `model/ui.rs`
 - [ ] Add `StatusBar` struct with `left`/`center`/`right` segments
-- [ ] Add `StatusBar::default_layout()` 
+- [ ] Add `StatusBar::default_layout()`
 - [ ] Replace `status_message: String` with `status_bar: StatusBar`
 
 ### Phase 2: Update Integration
+
 - [ ] Add `UiMsg::UpdateSegment` message
 - [ ] Add `sync_status_bar()` function called after document/cursor changes
 - [ ] Add transient message support with expiry
 
 ### Phase 3: Rendering
-- [ ] Implement `StatusBar::layout()` 
+
+- [ ] Implement `StatusBar::layout()`
 - [ ] Update `Renderer::render()` to use layout
 - [ ] Add separator rendering between segments
 
 ### Phase 4: Theming
+
 - [ ] Extend `StatusBarTheme` with per-segment colors
 - [ ] Update default themes with segment colors
 - [ ] Add hover state support (future: mouse tracking)
 
 ### Phase 5: Interactivity (Future)
+
 - [ ] Track mouse position over status bar
 - [ ] Emit `SegmentClicked` messages
 - [ ] Implement click handlers (file picker, encoding menu, etc.)
@@ -510,11 +516,13 @@ This approach:
 ## Example Rendering
 
 Before (current):
+
 ```
  main.rs [+]  |  Ln 42, Col 15  |  1234 lines  |  Saved
 ```
 
 After (structured with 1px separator lines):
+
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │  main.rs [+]  Saved                          Ln 42, Col 15 │ 1,234 Ln      │
@@ -528,11 +536,13 @@ Legend: │ = 1px rendered line (not a pipe character)
 ```
 
 With selection active:
+
 ```
 │  main.rs [+]                        (42 chars) │ Ln 42, Col 15 │ 1,234 Ln  │
 ```
 
 With error message:
+
 ```
 │  main.rs [+]  ⚠ Error: file not found               Ln 1, Col 1 │ 0 Ln     │
 │               └─ styled red ─────────┘                                     │

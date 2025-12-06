@@ -9,6 +9,7 @@ A hierarchical layout system for multiple editor panes, tabs, and split views.
 ### Current Limitations
 
 The editor currently has:
+
 - Single `Document` in `AppModel`
 - Single `EditorState` (cursor, viewport, selections)
 - No concept of tabs or panes
@@ -92,7 +93,7 @@ pub struct Document {
     pub is_modified: bool,
     pub undo_stack: Vec<EditOperation>,
     pub redo_stack: Vec<EditOperation>,
-    
+
     // Metadata
     pub language: Option<String>,  // "rust", "python", etc.
     pub encoding: Encoding,
@@ -126,13 +127,13 @@ pub enum LineEnding {
 pub struct EditorState {
     pub id: EditorId,
     pub document_id: DocumentId,
-    
+
     // View state (independent per editor)
     pub cursors: Vec<Cursor>,
     pub selections: Vec<Selection>,
     pub viewport: Viewport,
     pub scroll_padding: usize,
-    
+
     // View-specific settings
     pub soft_wrap: bool,
     pub show_line_numbers: bool,
@@ -161,7 +162,7 @@ pub struct EditorGroup {
     pub id: GroupId,
     pub tabs: Vec<Tab>,
     pub active_tab_index: usize,
-    
+
     // Layout info (set by parent)
     pub rect: Rect,
 }
@@ -170,7 +171,7 @@ impl EditorGroup {
     pub fn active_tab(&self) -> Option<&Tab> {
         self.tabs.get(self.active_tab_index)
     }
-    
+
     pub fn active_editor_id(&self) -> Option<EditorId> {
         self.active_tab().map(|t| t.editor_id)
     }
@@ -217,7 +218,7 @@ impl Rect {
     pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self { x, y, width, height }
     }
-    
+
     pub fn contains(&self, px: f32, py: f32) -> bool {
         px >= self.x && px < self.x + self.width &&
         py >= self.y && py < self.y + self.height
@@ -233,19 +234,19 @@ impl Rect {
 pub struct EditorArea {
     /// All open documents (shared across editors)
     pub documents: HashMap<DocumentId, Document>,
-    
+
     /// All editor states (each references a document)
     pub editors: HashMap<EditorId, EditorState>,
-    
+
     /// All editor groups (each contains tabs)
     pub groups: HashMap<GroupId, EditorGroup>,
-    
+
     /// The layout tree root
     pub layout: LayoutNode,
-    
+
     /// Currently focused group
     pub focused_group_id: GroupId,
-    
+
     /// ID generators
     next_document_id: u64,
     next_editor_id: u64,
@@ -262,16 +263,16 @@ pub struct EditorArea {
 pub struct AppModel {
     /// Editor area with all documents, editors, groups, and layout
     pub editor_area: EditorArea,
-    
+
     /// UI state (status bar, cursor blink, etc.)
     pub ui: UiState,
-    
+
     /// Theme
     pub theme: Theme,
-    
+
     /// Window dimensions
     pub window_size: (u32, u32),
-    
+
     /// Font metrics
     pub line_height: usize,
     pub char_width: f32,
@@ -285,14 +286,14 @@ impl AppModel {
         let editor = self.editor_area.editors.get(&editor_id)?;
         self.editor_area.documents.get(&editor.document_id)
     }
-    
+
     /// Get the currently focused editor state
     pub fn focused_editor(&self) -> Option<&EditorState> {
         let group = self.editor_area.groups.get(&self.editor_area.focused_group_id)?;
         let editor_id = group.active_editor_id()?;
         self.editor_area.editors.get(&editor_id)
     }
-    
+
     /// Get mutable focused editor
     pub fn focused_editor_mut(&mut self) -> Option<&mut EditorState> {
         let group = self.editor_area.groups.get(&self.editor_area.focused_group_id)?;
@@ -314,7 +315,7 @@ impl EditorArea {
     pub fn compute_layout(&mut self, available_rect: Rect) {
         self.compute_layout_node(&self.layout.clone(), available_rect);
     }
-    
+
     fn compute_layout_node(&mut self, node: &LayoutNode, rect: Rect) {
         match node {
             LayoutNode::Group(group_id) => {
@@ -327,23 +328,23 @@ impl EditorArea {
             }
         }
     }
-    
+
     fn compute_split_layout(&mut self, split: &SplitContainer, rect: Rect) {
         let total_size = match split.direction {
             SplitDirection::Horizontal => rect.width,
             SplitDirection::Vertical => rect.height,
         };
-        
+
         // Splitter bar width
         const SPLITTER_SIZE: f32 = 4.0;
         let total_splitters = (split.children.len().saturating_sub(1)) as f32 * SPLITTER_SIZE;
         let available = total_size - total_splitters;
-        
+
         let mut offset = 0.0;
-        
+
         for (i, (child, ratio)) in split.children.iter().zip(&split.ratios).enumerate() {
             let child_size = available * ratio;
-            
+
             let child_rect = match split.direction {
                 SplitDirection::Horizontal => Rect {
                     x: rect.x + offset,
@@ -358,9 +359,9 @@ impl EditorArea {
                     height: child_size,
                 },
             };
-            
+
             self.compute_layout_node(child, child_rect);
-            
+
             offset += child_size;
             if i < split.children.len() - 1 {
                 offset += SPLITTER_SIZE;
@@ -378,7 +379,7 @@ impl EditorArea {
     pub fn group_at_point(&self, x: f32, y: f32) -> Option<GroupId> {
         self.group_at_point_in_node(&self.layout, x, y)
     }
-    
+
     fn group_at_point_in_node(&self, node: &LayoutNode, x: f32, y: f32) -> Option<GroupId> {
         match node {
             LayoutNode::Group(group_id) => {
@@ -414,7 +415,7 @@ pub enum LayoutMsg {
     FocusGroup(GroupId),
     FocusNextGroup,
     FocusPreviousGroup,
-    
+
     // Tabs
     OpenFile { path: PathBuf, group_id: Option<GroupId> },
     CloseTab { group_id: GroupId, tab_id: TabId },
@@ -423,13 +424,13 @@ pub enum LayoutMsg {
     PreviousTab,
     ActivateTab { group_id: GroupId, tab_index: usize },
     MoveTabToGroup { tab_id: TabId, target_group_id: GroupId },
-    
+
     // Splits
     SplitHorizontal,  // Split focused group horizontally
     SplitVertical,    // Split focused group vertically
     CloseGroup(GroupId),
     ResizeSplit { direction: SplitDirection, delta: f32 },
-    
+
     // Layout
     ResetLayout,  // Back to single pane
 }
@@ -454,8 +455,8 @@ When the same document is open in multiple editors:
 ```rust
 impl EditorArea {
     /// Apply an edit to a document and notify all editors viewing it
-    pub fn apply_edit(&mut self, document_id: DocumentId, edit: EditOperation) 
-        -> Vec<EditorId> 
+    pub fn apply_edit(&mut self, document_id: DocumentId, edit: EditOperation)
+        -> Vec<EditorId>
     {
         // Apply to document
         if let Some(doc) = self.documents.get_mut(&document_id) {
@@ -469,14 +470,14 @@ impl EditorArea {
             }
             doc.push_edit(edit.clone());
         }
-        
+
         // Find all editors viewing this document
         let affected_editors: Vec<EditorId> = self.editors
             .iter()
             .filter(|(_, e)| e.document_id == document_id)
             .map(|(id, _)| *id)
             .collect();
-        
+
         // Each affected editor may need cursor/scroll adjustment
         for editor_id in &affected_editors {
             if let Some(editor) = self.editors.get_mut(editor_id) {
@@ -484,10 +485,10 @@ impl EditorArea {
                 self.adjust_cursors_for_edit(editor, &edit);
             }
         }
-        
+
         affected_editors
     }
-    
+
     fn adjust_cursors_for_edit(&self, editor: &mut EditorState, edit: &EditOperation) {
         // TODO: Implement cursor adjustment logic
         // - If edit is before cursor, shift cursor
@@ -509,27 +510,27 @@ impl Renderer {
         // Clear background
         let bg_color = model.theme.editor.background.to_argb_u32();
         self.buffer.fill(bg_color);
-        
+
         // Compute layout
         let editor_rect = Rect::new(
-            0.0, 
-            0.0, 
-            model.window_size.0 as f32, 
+            0.0,
+            0.0,
+            model.window_size.0 as f32,
             model.window_size.1 as f32 - STATUS_BAR_HEIGHT,
         );
-        
+
         // Render each group
         self.render_layout_node(&model.editor_area.layout, model)?;
-        
+
         // Render splitter bars
         self.render_splitters(&model.editor_area.layout, model)?;
-        
+
         // Render status bar
         self.render_status_bar(model)?;
-        
+
         Ok(())
     }
-    
+
     fn render_layout_node(&mut self, node: &LayoutNode, model: &AppModel) -> Result<()> {
         match node {
             LayoutNode::Group(group_id) => {
@@ -545,18 +546,18 @@ impl Renderer {
         }
         Ok(())
     }
-    
+
     fn render_editor_group(&mut self, group: &EditorGroup, model: &AppModel) -> Result<()> {
         let rect = group.rect;
         let is_focused = group.id == model.editor_area.focused_group_id;
-        
+
         // Tab bar height
         const TAB_BAR_HEIGHT: f32 = 28.0;
-        
+
         // Render tab bar
         let tab_rect = Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT);
         self.render_tab_bar(group, &tab_rect, model)?;
-        
+
         // Render editor content
         if let Some(editor_id) = group.active_editor_id() {
             if let Some(editor) = model.editor_area.editors.get(&editor_id) {
@@ -571,12 +572,12 @@ impl Renderer {
                 }
             }
         }
-        
+
         // Focus indicator border
         if is_focused {
             self.render_focus_border(&rect, model)?;
         }
-        
+
         Ok(())
     }
 }
@@ -589,50 +590,50 @@ fn render_tab_bar(&mut self, group: &EditorGroup, rect: &Rect, model: &AppModel)
     // Background
     let bg_color = model.theme.tab_bar.background.to_argb_u32();
     self.fill_rect(rect, bg_color);
-    
+
     let mut x = rect.x + 4.0;
-    
+
     for (i, tab) in group.tabs.iter().enumerate() {
         let is_active = i == group.active_tab_index;
         let editor = model.editor_area.editors.get(&tab.editor_id);
         let document = editor.and_then(|e| model.editor_area.documents.get(&e.document_id));
-        
+
         let label = document
             .and_then(|d| d.file_path.as_ref())
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
             .unwrap_or("Untitled");
-        
+
         let modified = document.map(|d| d.is_modified).unwrap_or(false);
         let display = if modified {
             format!("{} •", label)
         } else {
             label.to_string()
         };
-        
+
         // Tab background
         let tab_bg = if is_active {
             model.theme.tab_bar.active_background.to_argb_u32()
         } else {
             model.theme.tab_bar.inactive_background.to_argb_u32()
         };
-        
+
         let tab_width = (display.len() as f32 * self.char_width) + 16.0;
         let tab_rect = Rect::new(x, rect.y, tab_width, rect.height);
         self.fill_rect(&tab_rect, tab_bg);
-        
+
         // Tab text
         let text_color = if is_active {
             model.theme.tab_bar.active_foreground.to_argb_u32()
         } else {
             model.theme.tab_bar.inactive_foreground.to_argb_u32()
         };
-        
+
         self.draw_text(x + 8.0, rect.y + 6.0, &display, text_color)?;
-        
+
         x += tab_width + 2.0;
     }
-    
+
     Ok(())
 }
 ```
@@ -676,6 +677,7 @@ pub struct SplitterTheme {
 ## Implementation Plan
 
 ### Phase 1: Core Data Structures
+
 - [ ] Add ID types (`DocumentId`, `EditorId`, `GroupId`, `TabId`)
 - [ ] Update `Document` to include `id: DocumentId`
 - [ ] Update `EditorState` to include `id: EditorId` and `document_id: DocumentId`
@@ -683,22 +685,26 @@ pub struct SplitterTheme {
 - [ ] Add `EditorArea` with HashMaps and layout tree
 
 ### Phase 2: Layout System
+
 - [ ] Add `Rect` type
 - [ ] Implement `compute_layout()` for the layout tree
 - [ ] Implement `group_at_point()` for hit testing
 - [ ] Add splitter drag handling
 
 ### Phase 3: Update AppModel
+
 - [ ] Replace single `Document`/`EditorState` with `EditorArea`
 - [ ] Add convenience methods (`focused_document()`, `focused_editor()`)
 - [ ] Update all `update_*` functions to work with focused editor
 
 ### Phase 4: Messages
+
 - [ ] Add `LayoutMsg` enum
 - [ ] Add `update_layout()` function
 - [ ] Implement split/close/focus operations
 
 ### Phase 5: Rendering
+
 - [ ] Update `Renderer` to iterate over groups
 - [ ] Implement `render_editor_group()`
 - [ ] Implement `render_tab_bar()`
@@ -706,11 +712,13 @@ pub struct SplitterTheme {
 - [ ] Add focus indicator
 
 ### Phase 6: Document Synchronization
+
 - [ ] Implement `apply_edit()` with multi-editor notification
 - [ ] Implement cursor adjustment for edits in other views
 - [ ] Handle undo/redo across shared documents
 
 ### Phase 7: Keyboard Shortcuts
+
 - [ ] `Cmd+\` - Split horizontal
 - [ ] `Cmd+Shift+\` - Split vertical
 - [ ] `Cmd+W` - Close tab
@@ -738,32 +746,32 @@ impl EditorArea {
         let editor_id = EditorId(1);
         let group_id = GroupId(1);
         let tab_id = TabId(1);
-        
+
         let mut documents = HashMap::new();
         let mut editors = HashMap::new();
         let mut groups = HashMap::new();
-        
+
         documents.insert(doc_id, Document { id: doc_id, ..document });
-        editors.insert(editor_id, EditorState { 
-            id: editor_id, 
-            document_id: doc_id, 
-            ..editor 
+        editors.insert(editor_id, EditorState {
+            id: editor_id,
+            document_id: doc_id,
+            ..editor
         });
-        
+
         let tab = Tab {
             id: tab_id,
             editor_id,
             is_pinned: false,
             is_preview: false,
         };
-        
+
         groups.insert(group_id, EditorGroup {
             id: group_id,
             tabs: vec![tab],
             active_tab_index: 0,
             rect: Rect::default(),
         });
-        
+
         Self {
             documents,
             editors,
@@ -816,7 +824,7 @@ User: Cmd+\ then opens lib.rs
 ```
 ┌───────────┬────────────┐
 │ [main.rs] │ [main.rs]  │   Both views show same Document
-│           │            │   
+│           │            │
 │ fn foo()▌ │ fn foo()   │   Left view: cursor at line 1
 │           │            │   Right view: scrolled to line 50
 │           │            │

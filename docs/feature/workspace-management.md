@@ -9,6 +9,7 @@ A comprehensive workspace management system including CLI argument handling, fil
 ### Current State
 
 The editor currently has:
+
 - Single file argument handling: `args[1]` in `main()`
 - `AppModel` with single `Document` and `EditorState`
 - `EditorArea` structure for future split-view support
@@ -867,16 +868,16 @@ impl App {
 
 ## Part 8: Keyboard Shortcuts
 
-| Action | Shortcut | Message |
-|--------|----------|---------|
-| Toggle sidebar | Cmd+B | `WorkspaceMsg::ToggleSidebar` |
-| Focus file tree | Cmd+Shift+E | (Focus management) |
-| Navigate up | Arrow Up (in tree) | `WorkspaceMsg::SelectPrevious` |
-| Navigate down | Arrow Down (in tree) | `WorkspaceMsg::SelectNext` |
-| Expand folder | Right Arrow / Enter | `WorkspaceMsg::ToggleFolder` |
-| Collapse folder | Left Arrow | `WorkspaceMsg::ToggleFolder` |
-| Open file | Enter | `WorkspaceMsg::OpenFile { preview: false }` |
-| Reveal in tree | Cmd+Shift+R | `WorkspaceMsg::RevealActiveFile` |
+| Action          | Shortcut             | Message                                     |
+| --------------- | -------------------- | ------------------------------------------- |
+| Toggle sidebar  | Cmd+B                | `WorkspaceMsg::ToggleSidebar`               |
+| Focus file tree | Cmd+Shift+E          | (Focus management)                          |
+| Navigate up     | Arrow Up (in tree)   | `WorkspaceMsg::SelectPrevious`              |
+| Navigate down   | Arrow Down (in tree) | `WorkspaceMsg::SelectNext`                  |
+| Expand folder   | Right Arrow / Enter  | `WorkspaceMsg::ToggleFolder`                |
+| Collapse folder | Left Arrow           | `WorkspaceMsg::ToggleFolder`                |
+| Open file       | Enter                | `WorkspaceMsg::OpenFile { preview: false }` |
+| Reveal in tree  | Cmd+Shift+R          | `WorkspaceMsg::RevealActiveFile`            |
 
 ---
 
@@ -893,6 +894,7 @@ notify = "6.1"
 ## Implementation Plan
 
 ### Phase 1: CLI Argument Parsing
+
 - [ ] Add `clap` dependency to `Cargo.toml`
 - [ ] Create `src/cli.rs` module
 - [ ] Implement `CliArgs` struct with derive macros
@@ -904,6 +906,7 @@ notify = "6.1"
 **Test:** `red --help` shows usage; `red file.rs` opens file; `red ./src` opens workspace.
 
 ### Phase 2: Workspace Data Structures
+
 - [ ] Create `src/model/workspace.rs` module
 - [ ] Implement `Workspace`, `FileTree`, `FileNode` structs
 - [ ] Implement `FileExtension` classification
@@ -914,6 +917,7 @@ notify = "6.1"
 **Test:** Opening directory creates valid `FileTree` with sorted entries.
 
 ### Phase 3: Messages and Update Logic
+
 - [ ] Add `WorkspaceMsg` enum to `messages.rs`
 - [ ] Add `update_workspace()` function
 - [ ] Implement folder expand/collapse
@@ -924,6 +928,7 @@ notify = "6.1"
 **Test:** Cmd+B toggles sidebar; clicking folders expands/collapses.
 
 ### Phase 4: Sidebar Rendering
+
 - [ ] Add `SidebarTheme` and `FileTreeTheme` to theme
 - [ ] Add sidebar colors to `dark.yaml` theme
 - [ ] Implement `render_sidebar()` in Renderer
@@ -935,6 +940,7 @@ notify = "6.1"
 **Test:** Sidebar renders with file tree; selection is highlighted.
 
 ### Phase 5: Mouse Interaction
+
 - [ ] Implement sidebar hit testing
 - [ ] Implement file tree row hit testing
 - [ ] Handle single-click (select/preview)
@@ -945,6 +951,7 @@ notify = "6.1"
 **Test:** Clicking file opens it; double-click makes tab permanent.
 
 ### Phase 6: Keyboard Navigation
+
 - [ ] Add keyboard shortcuts for sidebar (Cmd+B)
 - [ ] Implement arrow key navigation in tree
 - [ ] Implement expand/collapse with Enter/arrows
@@ -953,6 +960,7 @@ notify = "6.1"
 **Test:** Arrow keys navigate tree; Enter opens selected file.
 
 ### Phase 7: File System Watching
+
 - [ ] Add `notify` dependency
 - [ ] Create `src/fs_watcher.rs` module
 - [ ] Integrate watcher into event loop
@@ -962,6 +970,7 @@ notify = "6.1"
 **Test:** Create file externally; it appears in tree automatically.
 
 ### Phase 8: Tab Integration
+
 - [ ] Wire `OpenFile` to `EditorArea.open_document()`
 - [ ] Support preview tabs (single-click opens preview)
 - [ ] Support opening in new split pane

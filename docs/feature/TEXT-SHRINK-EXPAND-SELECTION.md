@@ -8,14 +8,15 @@ Progressively expand or contract the selection scope around the cursor position.
 
 ### Keyboard Shortcuts
 
-| Platform | Expand Selection | Shrink Selection |
-|----------|------------------|------------------|
-| **macOS** | ⌥↑ (Option+Up) | ⌥↓ (Option+Down) |
-| **Windows/Linux** | Ctrl+W | Ctrl+Shift+W |
+| Platform          | Expand Selection | Shrink Selection |
+| ----------------- | ---------------- | ---------------- |
+| **macOS**         | ⌥↑ (Option+Up)   | ⌥↓ (Option+Down) |
+| **Windows/Linux** | Ctrl+W           | Ctrl+Shift+W     |
 
 ### Behavior Summary
 
 **Expand Selection** progressively widens the selection in semantic scope:
+
 - From cursor → word → line → entire document
 
 **Shrink Selection** reverses the expansion by restoring the previous selection state.
@@ -44,12 +45,12 @@ Level 3: All (entire document)
 
 ### Level Definitions
 
-| Level | Name | Selection Scope |
-|-------|------|-----------------|
-| 0 | Cursor | Empty selection (anchor == head) |
-| 1 | Word | Contiguous characters of same `CharType` around cursor |
-| 2 | Line | Entire line including trailing newline |
-| 3 | All | From document start (0,0) to document end |
+| Level | Name   | Selection Scope                                        |
+| ----- | ------ | ------------------------------------------------------ |
+| 0     | Cursor | Empty selection (anchor == head)                       |
+| 1     | Word   | Contiguous characters of same `CharType` around cursor |
+| 2     | Line   | Entire line including trailing newline                 |
+| 3     | All    | From document start (0,0) to document end              |
 
 ### Shrink Path
 
@@ -241,16 +242,16 @@ fn is_within_single_line(selection: &Selection) -> bool {
 
 ## Part 4: Edge Cases
 
-| Scenario | Behavior |
-|----------|----------|
-| **Cursor at word boundary** | Expand to the word the cursor is "inside" (prefer right/forward) |
-| **Cursor on whitespace** | Select whitespace run as a "word", then line |
-| **Empty line** | Level 1 (word) selects nothing, skip to line |
-| **Cursor at end of line** | Select previous word if at boundary |
-| **Last line without newline** | Line selection extends to end of content |
-| **Empty document** | All levels result in empty selection at (0,0) |
-| **Shrink with empty history** | Collapse selection to cursor position |
-| **Manual selection then expand** | Push manual selection to history, expand to next level |
+| Scenario                         | Behavior                                                         |
+| -------------------------------- | ---------------------------------------------------------------- |
+| **Cursor at word boundary**      | Expand to the word the cursor is "inside" (prefer right/forward) |
+| **Cursor on whitespace**         | Select whitespace run as a "word", then line                     |
+| **Empty line**                   | Level 1 (word) selects nothing, skip to line                     |
+| **Cursor at end of line**        | Select previous word if at boundary                              |
+| **Last line without newline**    | Line selection extends to end of content                         |
+| **Empty document**               | All levels result in empty selection at (0,0)                    |
+| **Shrink with empty history**    | Collapse selection to cursor position                            |
+| **Manual selection then expand** | Push manual selection to history, expand to next level           |
 
 ### Word Boundary Special Cases
 
@@ -404,6 +405,7 @@ fn process(data: &[u8]) {
 ```
 
 Expand sequence from cursor on `x`:
+
 1. `x` (identifier)
 2. `x + 1` (expression)
 3. `|x| x + 1` (closure)
@@ -447,6 +449,7 @@ fn expand_semantic(model: &mut AppModel, syntax: &impl SyntaxExpander) {
 ## Part 7: Implementation Checklist
 
 ### Phase 1: Core Feature
+
 - [ ] Add `selection_history: Vec<Selection>` to `EditorState`
 - [ ] Add `ExpandSelection` and `ShrinkSelection` to `EditorMsg`
 - [ ] Implement `expand_selection()` in `src/update.rs`
@@ -454,17 +457,20 @@ fn expand_semantic(model: &mut AppModel, syntax: &impl SyntaxExpander) {
 - [ ] Add keyboard handling for ⌥↑/⌥↓ (macOS) and Ctrl+W/Ctrl+Shift+W
 
 ### Phase 2: History Management
+
 - [ ] Clear history on cursor movement
 - [ ] Clear history on text edits
 - [ ] Clear history on explicit selection changes
 - [ ] Clear history on ClearSelection (Escape)
 
 ### Phase 3: Detection Functions
+
 - [ ] Implement `is_word_selection()`
 - [ ] Implement `is_line_selection()`
 - [ ] Handle boundary edge cases
 
 ### Phase 4: Testing
+
 - [ ] Unit tests for expand/shrink logic
 - [ ] Unit tests for detection helpers
 - [ ] Integration tests for keyboard shortcuts
@@ -474,13 +480,13 @@ fn expand_semantic(model: &mut AppModel, syntax: &impl SyntaxExpander) {
 
 ## Files to Modify
 
-| File | Changes |
-|------|---------|
-| `src/util.rs` | Remove `_` from punctuation list in `is_punctuation()` |
+| File                  | Changes                                                  |
+| --------------------- | -------------------------------------------------------- |
+| `src/util.rs`         | Remove `_` from punctuation list in `is_punctuation()`   |
 | `src/model/editor.rs` | Add `selection_history: Vec<Selection>` to `EditorState` |
-| `src/messages.rs` | Add `ExpandSelection`, `ShrinkSelection` variants |
-| `src/update.rs` | Implement expand/shrink logic and detection helpers |
-| `src/main.rs` | Add keyboard handling for ⌥↑/⌥↓ and Ctrl+W/Ctrl+Shift+W |
+| `src/messages.rs`     | Add `ExpandSelection`, `ShrinkSelection` variants        |
+| `src/update.rs`       | Implement expand/shrink logic and detection helpers      |
+| `src/main.rs`         | Add keyboard handling for ⌥↑/⌥↓ and Ctrl+W/Ctrl+Shift+W  |
 
 ---
 

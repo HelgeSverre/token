@@ -184,7 +184,7 @@ pub enum Command {
 
     // Application
     Quit,
-    
+
     // Special
     Unbound,  // Explicitly unbind a key
 }
@@ -231,7 +231,7 @@ impl Command {
             CloseFile => vec![Msg::App(AppMsg::CloseFile)],
 
             Quit => vec![Msg::App(AppMsg::Quit)],
-            
+
             Unbound => vec![], // No action
         }
     }
@@ -435,7 +435,7 @@ impl Keymap {
             b.source.cmp(&a.source)
                 .then_with(|| b.sequence.len().cmp(&a.sequence.len()))
         });
-        
+
         Self {
             bindings,
             pending: SmallVec::new(),
@@ -445,11 +445,11 @@ impl Keymap {
     /// Load default + user keymap
     pub fn load() -> Self {
         let mut bindings = defaults::default_bindings();
-        
+
         if let Some(user_bindings) = config::load_user_keymap() {
             bindings.extend(user_bindings);
         }
-        
+
         Self::new(bindings)
     }
 
@@ -574,9 +574,9 @@ pub fn load_user_keymap() -> Option<Vec<Keybinding>> {
     let path = user_keymap_path()?;
     let content = std::fs::read_to_string(&path).ok()?;
     let config: KeymapConfig = toml::from_str(&content).ok()?;
-    
+
     let is_macos = cfg!(target_os = "macos");
-    
+
     Some(config.binding.iter()
         .filter_map(|bc| parse_binding_config(bc, is_macos))
         .map(|mut b| { b.source = BindingSource::User; b })
@@ -588,7 +588,7 @@ fn parse_binding_config(config: &BindingConfig, is_macos: bool) -> Option<Keybin
     let command = command_from_str(&config.command)?;
     let when = config.when.as_ref()
         .and_then(|w| context::parse_condition(w));
-    
+
     Some(Keybinding {
         sequence,
         command,
@@ -700,7 +700,7 @@ impl App {
 
     fn handle_key_event(&mut self, event: &winit::event::KeyEvent) {
         use winit::event::ElementState;
-        
+
         if event.state != ElementState::Pressed {
             return;
         }
@@ -754,41 +754,49 @@ impl App {
 ## Implementation Plan
 
 ### Phase 1: Core Types (2h)
+
 - [ ] Create `src/keymap/` module structure
 - [ ] Implement `Keystroke`, `Modifiers`, `KeyCode` types
 - [ ] Implement winit adapter
 
 ### Phase 2: Command Mapping (2h)
+
 - [ ] Define `Command` enum with all editor actions
 - [ ] Implement `Command::to_msgs()` mapping
 - [ ] Ensure all existing keybinding behaviors are covered
 
 ### Phase 3: Keymap Dispatch (3h)
+
 - [ ] Implement `Keybinding` struct
 - [ ] Implement `Keymap` with sequence handling
 - [ ] Add `KeyAction` result type
 - [ ] Add sequence timeout handling
 
 ### Phase 4: Default Bindings (1h)
+
 - [ ] Create `defaults.rs` with standard bindings
 - [ ] Test platform-specific modifier mapping (mod → Cmd/Ctrl)
 
 ### Phase 5: User Configuration (2h)
+
 - [ ] Implement TOML config parsing
 - [ ] Implement config file loading from `~/.config/token-editor/`
 - [ ] Merge user bindings with defaults
 
 ### Phase 6: Context System (2h)
+
 - [ ] Implement `KeyContext` from `AppModel`
 - [ ] Implement `Condition` enum and evaluation
 - [ ] Parse simple when expressions
 
 ### Phase 7: Integration (2h)
+
 - [ ] Integrate `Keymap` into event loop
 - [ ] Remove hardcoded key handling from current code
 - [ ] Add sequence state display to status bar (optional)
 
 ### Phase 8: Testing (1h)
+
 - [ ] Unit tests for keystroke parsing
 - [ ] Unit tests for sequence matching
 - [ ] Unit tests for condition evaluation
@@ -797,34 +805,34 @@ impl App {
 
 ## Command Reference
 
-| Command Name             | Description                      | Default Binding (macOS) |
-| ------------------------ | -------------------------------- | ----------------------- |
-| `file.save`              | Save current file                | `⌘S`                    |
-| `file.save_as`           | Save as new file                 | `⌘⇧S`                   |
-| `file.new`               | Create new file                  | `⌘N`                    |
-| `file.open`              | Open file                        | `⌘O`                    |
-| `file.close`             | Close current file               | `⌘W`                    |
-| `app.quit`               | Quit application                 | `⌘Q`                    |
-| `edit.undo`              | Undo last change                 | `⌘Z`                    |
-| `edit.redo`              | Redo last change                 | `⌘⇧Z`                   |
-| `edit.copy`              | Copy selection                   | `⌘C`                    |
-| `edit.cut`               | Cut selection                    | `⌘X`                    |
-| `edit.paste`             | Paste from clipboard             | `⌘V`                    |
-| `edit.select_all`        | Select all text                  | `⌘A`                    |
-| `edit.delete_line`       | Delete current line              | `⌘⇧K`                   |
-| `edit.duplicate_line`    | Duplicate current line           | `⌘⇧D`                   |
-| `cursor.up`              | Move cursor up                   | `↑`                     |
-| `cursor.down`            | Move cursor down                 | `↓`                     |
-| `cursor.left`            | Move cursor left                 | `←`                     |
-| `cursor.right`           | Move cursor right                | `→`                     |
-| `cursor.line_start`      | Move to line start               | `Home`                  |
-| `cursor.line_end`        | Move to line end                 | `End`                   |
-| `cursor.document_start`  | Move to document start           | `⌘Home`                 |
-| `cursor.document_end`    | Move to document end             | `⌘End`                  |
-| `cursor.word_left`       | Move cursor word left            | `⌥←`                    |
-| `cursor.word_right`      | Move cursor word right           | `⌥→`                    |
-| `cursor.page_up`         | Page up                          | `PageUp`                |
-| `cursor.page_down`       | Page down                        | `PageDown`              |
+| Command Name            | Description            | Default Binding (macOS) |
+| ----------------------- | ---------------------- | ----------------------- |
+| `file.save`             | Save current file      | `⌘S`                    |
+| `file.save_as`          | Save as new file       | `⌘⇧S`                   |
+| `file.new`              | Create new file        | `⌘N`                    |
+| `file.open`             | Open file              | `⌘O`                    |
+| `file.close`            | Close current file     | `⌘W`                    |
+| `app.quit`              | Quit application       | `⌘Q`                    |
+| `edit.undo`             | Undo last change       | `⌘Z`                    |
+| `edit.redo`             | Redo last change       | `⌘⇧Z`                   |
+| `edit.copy`             | Copy selection         | `⌘C`                    |
+| `edit.cut`              | Cut selection          | `⌘X`                    |
+| `edit.paste`            | Paste from clipboard   | `⌘V`                    |
+| `edit.select_all`       | Select all text        | `⌘A`                    |
+| `edit.delete_line`      | Delete current line    | `⌘⇧K`                   |
+| `edit.duplicate_line`   | Duplicate current line | `⌘⇧D`                   |
+| `cursor.up`             | Move cursor up         | `↑`                     |
+| `cursor.down`           | Move cursor down       | `↓`                     |
+| `cursor.left`           | Move cursor left       | `←`                     |
+| `cursor.right`          | Move cursor right      | `→`                     |
+| `cursor.line_start`     | Move to line start     | `Home`                  |
+| `cursor.line_end`       | Move to line end       | `End`                   |
+| `cursor.document_start` | Move to document start | `⌘Home`                 |
+| `cursor.document_end`   | Move to document end   | `⌘End`                  |
+| `cursor.word_left`      | Move cursor word left  | `⌥←`                    |
+| `cursor.word_right`     | Move cursor word right | `⌥→`                    |
+| `cursor.page_up`        | Page up                | `PageUp`                |
+| `cursor.page_down`      | Page down              | `PageDown`              |
 
 ---
 

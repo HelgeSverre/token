@@ -208,11 +208,11 @@ Used `#[cfg(debug_assertions)]` for zero overhead in release builds.
 
 ## Risk Mitigation Applied
 
-| Risk                          | Mitigation                                   |
-| ----------------------------- | -------------------------------------------- |
-| Breaking existing tests       | Run `cargo test` after each major change     |
-| Render performance regression | Profile before/after with large files        |
-| Undo/redo corruption          | Comprehensive undo/redo test coverage        |
-| Thread safety issues          | Use channels, avoid shared mutable state     |
-| Theme parsing errors          | Provide default fallback, validate on load   |
-| Feature flag complexity       | Keep `#[cfg]` blocks minimal and isolated    |
+| Risk                          | Mitigation                                 |
+| ----------------------------- | ------------------------------------------ |
+| Breaking existing tests       | Run `cargo test` after each major change   |
+| Render performance regression | Profile before/after with large files      |
+| Undo/redo corruption          | Comprehensive undo/redo test coverage      |
+| Thread safety issues          | Use channels, avoid shared mutable state   |
+| Theme parsing errors          | Provide default fallback, validate on load |
+| Feature flag complexity       | Keep `#[cfg]` blocks minimal and isolated  |

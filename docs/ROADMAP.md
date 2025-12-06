@@ -9,11 +9,35 @@ For archived phases, see [archived/old-roadmap-file.md](archived/old-roadmap-fil
 
 ## Recently Completed
 
+### Multi-Cursor Batch Undo/Redo ✅
+
+**Completed:** 2025-12-06
+
+All multi-cursor edits now use `EditOperation::Batch` for atomic undo/redo:
+
+- `InsertChar`, `InsertNewline`, `DeleteBackward`, `DeleteForward` batch operations
+- Proper cursor restoration on undo/redo
+- 6 new tests for multi-cursor undo behavior
+
+### Bugfix & Stabilization Pass ✅
+
+**Completed:** 2025-12-06 | **Archived:** [archived/BUGFIX_PLAN.md](archived/BUGFIX_PLAN.md)
+
+Critical bug fixes from deep codebase analysis:
+
+- Unicode-safe `find_all_occurrences()` - uses char indices not bytes
+- Unicode-safe `word_under_cursor()` - clamps to char count
+- `SelectNextOccurrence` uses `last_search_offset` for proper cycling
+- Cursor/selection invariants enforced via `collapse_selections_to_cursors()`
+- Multi-pane viewport resize updates all editors
+- `SelectAllOccurrences` fully implemented
+
 ### Click+Drag Selection ✅
 
 **Completed:** 2025-12-06
 
 Standard mouse drag selection:
+
 - Left mouse button down starts drag mode
 - CursorMoved extends selection while dragging
 - Button release ends drag
@@ -24,6 +48,7 @@ Standard mouse drag selection:
 **Design:** [feature/STATUS_BAR.md](feature/STATUS_BAR.md) | **Completed:** 2025-12-06
 
 Segment-based status bar system:
+
 - Left/right alignment with separators
 - `sync_status_bar()` auto-updates from model
 - Transient messages with auto-expiry
@@ -34,68 +59,46 @@ Segment-based status bar system:
 **Completed:** 2025-12-06
 
 Reusable overlay rendering (`src/overlay.rs`):
+
 - Anchor positioning (TopLeft, TopRight, etc.)
 - Alpha-blended backgrounds
 - Optional themed borders
 - Theme integration (background, foreground, highlight, warning, error, border)
 
----
+### Split View Implementation ✅
 
-## In Progress
+**Design:** [feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md) | **Completed:** 2025-12-06
 
-### Split View Implementation
-
-**Design:** [feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md) | **Started:** 2025-12-06
-
-| Phase | Status | Description |
-|-------|--------|-------------|
-| Phase 1: Core Data Structures | ✅ Complete | ID types, EditorArea, Tab, EditorGroup, LayoutNode |
-| Phase 2: Layout System | ✅ Complete | compute_layout(), group_at_point(), splitter hit testing |
-| Phase 3: Update AppModel | ✅ Complete | Replace Document/EditorState with EditorArea, accessor methods |
-| Phase 4: Messages | ✅ Complete | LayoutMsg enum, split/close/focus operations, 17 tests |
-| Phase 5: Rendering | Not started | Multi-group rendering, tab bars, splitters |
-| Phase 6: Document Sync | Not started | Multi-view edits, cursor adjustment |
-| Phase 7: Keyboard Shortcuts | Not started | Cmd+\, Cmd+W, Cmd+1/2/3, etc. |
+| Phase                         | Status      | Description                                                    |
+| ----------------------------- | ----------- | -------------------------------------------------------------- |
+| Phase 1: Core Data Structures | ✅ Complete | ID types, EditorArea, Tab, EditorGroup, LayoutNode             |
+| Phase 2: Layout System        | ✅ Complete | compute_layout(), group_at_point(), splitter hit testing       |
+| Phase 3: Update AppModel      | ✅ Complete | Replace Document/EditorState with EditorArea, accessor methods |
+| Phase 4: Messages             | ✅ Complete | LayoutMsg enum, split/close/focus operations, 17 tests         |
+| Phase 5: Rendering            | ✅ Complete | Multi-group rendering, tab bars, splitters, focus indicators   |
+| Phase 6: Document Sync        | ✅ Complete | Shared document architecture (cursor adjustment deferred)      |
+| Phase 7: Keyboard Shortcuts   | ✅ Complete | Cmd+\\, Cmd+W, Cmd+1/2/3/4, Ctrl+Tab                           |
 
 ---
 
 ## Planned Features
-
-### Phase 9: Occurrence Selection (JetBrains-style)
-
-**Status:** Not started
-
-| Task | Shortcut | Description |
-|------|----------|-------------|
-| `SelectNextOccurrence` | Cmd+J | Add selection at next match of current word/selection |
-| `UnselectOccurrence` | Shift+Cmd+J | Remove last added occurrence |
-| Occurrence history | - | Track additions for unselect |
-| Word detection | - | Reuse `char_type()` for word boundaries |
 
 ### Expand/Shrink Selection
 
 **Design:** [feature/TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md)
 
 Progressive selection expansion:
+
 - Option+Up: Expand (word → line → all)
 - Option+Down: Shrink (restore previous)
 - Selection history stack
-
-### Split View
-
-**Design:** [feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md)
-
-Multi-pane editing:
-- Horizontal/vertical splits
-- Tabs within panes
-- Shared documents with independent views
-- Layout tree for flexible arrangement
 
 ### File Dropping
 
 **Design:** [feature/handle-file-dropping.md](feature/handle-file-dropping.md)
 
 Drag-and-drop file handling:
+
 - Handle `WindowEvent::DroppedFile` and `HoveredFile` from winit
 - Visual overlay during drag hover
 - Open files in tabs, switch to existing if already open
@@ -106,6 +109,7 @@ Drag-and-drop file handling:
 **Design:** [feature/workspace-management.md](feature/workspace-management.md)
 
 CLI arguments and file tree sidebar:
+
 - Support `red file1 file2` for multiple files
 - Support `red ./src` to open directory as workspace
 - File tree sidebar with expand/collapse
@@ -116,28 +120,16 @@ CLI arguments and file tree sidebar:
 
 ## Feature Design Documents
 
-| Feature | Status | Design Doc |
-|---------|--------|------------|
-| Theming System | ✅ Complete | [feature/THEMING.md](feature/THEMING.md) |
-| Selection & Multi-Cursor | ✅ 8/9 phases complete | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) |
-| Status Bar | ✅ Complete | [feature/STATUS_BAR.md](feature/STATUS_BAR.md) |
-| Overlay System | ✅ Complete | (inline in CHANGELOG) |
-| Split View | In Progress | [feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md) |
-| Expand/Shrink Selection | Planned | [feature/TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) |
-| File Dropping | Planned | [feature/handle-file-dropping.md](feature/handle-file-dropping.md) |
-| Workspace Management | Planned | [feature/workspace-management.md](feature/workspace-management.md) |
-
----
-
-## Implementation Gaps
-
-Core functionality that needs attention:
-
-| Gap | Priority | Notes |
-|-----|----------|-------|
-| `Selection::get_text()` | Medium | Needed for clipboard, occurrence search |
-| `EditOperation::Batch` | Medium | Proper multi-cursor undo/redo |
-| `merge_overlapping_selections()` | Low | Edge case handling |
+| Feature                  | Status      | Design Doc                                                                         |
+| ------------------------ | ----------- | ---------------------------------------------------------------------------------- |
+| Theming System           | ✅ Complete | [feature/THEMING.md](feature/THEMING.md)                                           |
+| Selection & Multi-Cursor | ✅ Complete | [feature/SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md)               |
+| Status Bar               | ✅ Complete | [feature/STATUS_BAR.md](feature/STATUS_BAR.md)                                     |
+| Overlay System           | ✅ Complete | (inline in CHANGELOG)                                                              |
+| Split View               | ✅ Complete | [feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md)                                     |
+| Expand/Shrink Selection  | Planned     | [feature/TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) |
+| File Dropping            | Planned     | [feature/handle-file-dropping.md](feature/handle-file-dropping.md)                 |
+| Workspace Management     | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                 |
 
 ---
 
@@ -170,12 +162,14 @@ themes/
 tests/
 ├── common/mod.rs        # Shared test helpers
 ├── cursor_movement.rs   # 38 tests
-├── text_editing.rs      # 38 tests (includes delete line, duplicate)
-├── selection.rs         # 16 tests
+├── text_editing.rs      # 44 tests (includes multi-cursor undo)
+├── selection.rs         # 29 tests
+├── document_cursor.rs   # 32 tests
 ├── scrolling.rs         # 33 tests
 ├── edge_cases.rs        # 9 tests
 ├── monkey_tests.rs      # 34 tests (expanded resize edge cases)
+├── layout.rs            # 47 tests
 └── status_bar.rs        # 47 tests
 ```
 
-**Test count:** 270 (24 lib + 14 main + 232 integration)
+**Test count:** 351 (24 lib + 14 main + 313 integration)

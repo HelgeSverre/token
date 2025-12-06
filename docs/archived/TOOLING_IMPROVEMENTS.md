@@ -20,15 +20,15 @@ This document consolidates findings from Oracle analysis, Librarian research, an
 
 ### Key Findings
 
-| Area | Current State | Recommendation |
-|------|---------------|----------------|
-| **Benchmarking** | None | Add Divan or Criterion benchmarks |
-| **CPU Profiling** | None | Add `cargo-flamegraph` + `samply` |
-| **Memory Profiling** | None | Add `dhat-rs` + `heaptrack` integration |
-| **Code Coverage** | None | Add `cargo-llvm-cov` |
-| **CI Performance** | None | Add benchmark regression tracking |
-| **Dev Workflow** | `make` only | Add `bacon` for watch mode |
-| **Frame Timing** | PerfStats exists but unused | Wire up existing infrastructure |
+| Area                 | Current State               | Recommendation                          |
+| -------------------- | --------------------------- | --------------------------------------- |
+| **Benchmarking**     | None                        | Add Divan or Criterion benchmarks       |
+| **CPU Profiling**    | None                        | Add `cargo-flamegraph` + `samply`       |
+| **Memory Profiling** | None                        | Add `dhat-rs` + `heaptrack` integration |
+| **Code Coverage**    | None                        | Add `cargo-llvm-cov`                    |
+| **CI Performance**   | None                        | Add benchmark regression tracking       |
+| **Dev Workflow**     | `make` only                 | Add `bacon` for watch mode              |
+| **Frame Timing**     | PerfStats exists but unused | Wire up existing infrastructure         |
 
 ---
 
@@ -85,6 +85,7 @@ profile-samply: build-prof
 ```
 
 **Key benefits for Token:**
+
 - Off-CPU analysis reveals UI thread blocking
 - Source code view alongside CPU samples
 - Timeline view for frame-by-frame analysis
@@ -92,6 +93,7 @@ profile-samply: build-prof
 #### 3. Instruments (macOS - Deep Dives)
 
 For detailed macOS analysis:
+
 1. Build with `profiling` profile
 2. Open Instruments → Time Profiler
 3. Target the `token` process
@@ -123,7 +125,7 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 fn main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
-    
+
     // ... rest of main
 }
 ```
@@ -153,6 +155,7 @@ profile-heap: build-prof
 ```
 
 **What to look for:**
+
 - Glyph cache unbounded growth
 - Rope allocations during editing
 - Undo stack memory usage
@@ -163,13 +166,13 @@ profile-heap: build-prof
 
 ### Framework Comparison
 
-| Feature | Criterion | Divan |
-|---------|-----------|-------|
-| API Style | Verbose closures | `#[divan::bench]` attribute |
-| Memory Tracking | External only | Built-in `AllocProfiler` |
-| Thread Contention | Manual | Built-in support |
-| Maturity | Established | Newer, modern |
-| Recommendation | ✓ Good | ✓✓ Preferred for GUI apps |
+| Feature           | Criterion        | Divan                       |
+| ----------------- | ---------------- | --------------------------- |
+| API Style         | Verbose closures | `#[divan::bench]` attribute |
+| Memory Tracking   | External only    | Built-in `AllocProfiler`    |
+| Thread Contention | Manual           | Built-in support            |
+| Maturity          | Established      | Newer, modern               |
+| Recommendation    | ✓ Good           | ✓✓ Preferred for GUI apps   |
 
 ### Recommended: Divan
 
@@ -273,7 +276,7 @@ static FONT_BYTES: &[u8] = include_bytes!("../assets/JetBrainsMono-Regular.ttf")
 fn glyph_rasterize_cold_cache() {
     let font = Font::from_bytes(FONT_BYTES, FontSettings::default()).unwrap();
     let chars: Vec<char> = "The quick brown fox jumps over the lazy dog".chars().collect();
-    
+
     for &ch in &chars {
         divan::black_box(font.rasterize(ch, 16.0));
     }
@@ -285,7 +288,7 @@ fn glyph_cache_lookup_double() {
     let mut cache: HashMap<(char, u32), Vec<u8>> = HashMap::new();
     let key = ('a', 16);
     cache.insert(key, vec![0u8; 256]);
-    
+
     for _ in 0..1000 {
         if cache.contains_key(&key) {
             divan::black_box(cache.get(&key));
@@ -299,7 +302,7 @@ fn glyph_cache_lookup_entry() {
     let mut cache: HashMap<(char, u32), Vec<u8>> = HashMap::new();
     let key = ('a', 16);
     cache.insert(key, vec![0u8; 256]);
-    
+
     for _ in 0..1000 {
         divan::black_box(cache.entry(key).or_insert_with(|| vec![0u8; 256]));
     }
@@ -323,7 +326,7 @@ fn clear_buffer(width: usize) {
     let height = width; // Square for simplicity
     let mut buffer: Vec<u32> = vec![0; width * height];
     let bg_color = 0xFF1E1E2E_u32;
-    
+
     buffer.fill(bg_color);
     divan::black_box(&buffer);
 }
@@ -333,12 +336,12 @@ fn alpha_blend_text() {
     let mut buffer: Vec<u32> = vec![0xFF1E1E2E; 1920 * 1080];
     let glyph = vec![128u8; 16 * 16]; // 16x16 glyph
     let fg_color = 0xFFCDD6F4_u32;
-    
+
     // Simulate blending 1000 glyphs
     for i in 0..1000 {
         let base_x = (i % 100) * 10;
         let base_y = (i / 100) * 20;
-        
+
         for (gy, row) in glyph.chunks(16).enumerate() {
             for (gx, &alpha) in row.iter().enumerate() {
                 let px = base_x + gx;
@@ -441,20 +444,20 @@ REGRESSION_THRESHOLD = 1.20  # 20% slower = regression
 def main():
     baseline = json.load(open("bench-baseline.json"))
     current = json.load(open("bench-current.json"))
-    
+
     regressions = []
     for name, base_time in baseline.items():
         if name in current:
             ratio = current[name] / base_time
             if ratio > REGRESSION_THRESHOLD:
                 regressions.append(f"{name}: {ratio:.1%} slower")
-    
+
     if regressions:
         print("PERFORMANCE REGRESSIONS DETECTED:")
         for r in regressions:
             print(f"  - {r}")
         sys.exit(1)
-    
+
     print("No significant regressions detected")
 
 if __name__ == "__main__":
@@ -473,36 +476,36 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    - cron: '0 0 * * *'  # Nightly
+    - cron: "0 0 * * *" # Nightly
 
 jobs:
   bench:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: dtolnay/rust-toolchain@stable
-      
+
       - name: Run benchmarks
         run: cargo bench -- --output-format bencher > bench.txt
-      
+
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:
           name: bench-results
           path: bench.txt
-      
+
       # Optional: GitHub Action Benchmark for trend tracking
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          tool: 'cargo'
+          tool: "cargo"
           output-file-path: bench.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
-          alert-threshold: '150%'
+          alert-threshold: "150%"
           comment-on-alert: true
-          fail-on-alert: false  # Start non-blocking
+          fail-on-alert: false # Start non-blocking
 ```
 
 #### Advanced: Bencher.dev
@@ -625,7 +628,7 @@ impl FrameProfiler {
             frame_times: Vec::with_capacity(120),
         }
     }
-    
+
     pub fn begin_frame(&mut self) {
         let now = Instant::now();
         if self.frame_times.len() >= 120 {
@@ -634,7 +637,7 @@ impl FrameProfiler {
         self.frame_times.push(now.duration_since(self.frame_start));
         self.frame_start = now;
     }
-    
+
     pub fn avg_fps(&self) -> f64 {
         if self.frame_times.is_empty() { return 0.0; }
         let avg = self.frame_times.iter().sum::<Duration>() / self.frame_times.len() as u32;

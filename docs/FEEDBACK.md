@@ -1,173 +1,150 @@
 # Implementation Progress Feedback
 
 **Date:** December 2025 (Updated: 2025-12-06)
-**Reviewed by:** Oracle analysis
-**Test Status:** 227 passing (17 lib + 14 main + 196 integration)
+**Reviewed by:** Oracle + Librarian deep analysis
+**Test Status:** 351 passing (up from 345)
 
 ---
 
 ## Executive Summary
 
-The Elm-style architecture refactor (Phases 1-6) is complete. Selection and multi-cursor editing are largely implemented. **Status bar system is now complete** with segment-based rendering and auto-sync. **Overlay system** is implemented with theme integration. Split view remains at design-only stage.
+The Elm-style architecture refactor (Phases 1-6) is complete. Selection and multi-cursor editing are now fully functional. **All critical bugs have been fixed.** Status bar, overlay system, and split view are complete. Batch undo/redo is now fully implemented and wired to multi-cursor edits.
+
+**✅ Fixed in this session:**
+1. Unicode bugs in search/occurrence functions
+2. SelectNextOccurrence logic bug
+3. Viewport resize now updates all editors
+4. Cursor/selection invariants maintained after all movements
+5. SelectAllOccurrences implemented
+6. EditOperation::Batch for multi-cursor undo/redo infrastructure
+7. **Multi-cursor edits (InsertChar, InsertNewline, DeleteBackward, DeleteForward) now use Batch operations**
 
 ---
 
 ## Implementation Status
 
-### ✅ Fully Implemented
+### ✅ Priority 0: Critical Bugs (ALL FIXED)
 
-| Phase | Component | Notes |
-|-------|-----------|-------|
-| 1 | Model Split | `Document`, `EditorState`, `UiState`, `AppModel` |
-| 2 | Nested Messages | `EditorMsg`, `DocumentMsg`, `UiMsg`, `AppMsg` |
-| 3 | Async Cmd | `SaveFile`/`LoadFile` with channel integration |
-| 4 | Theming | YAML parsing, `selection_background`, `secondary_cursor_color` |
-| 5 | Multi-Cursor Prep | `Vec<Cursor>`, `Vec<Selection>`, accessor methods |
-| 6 | Perf Monitoring | `PerfStats` struct, F2 overlay toggle |
+| Bug | Location | Status |
+|-----|----------|--------|
+| Unicode byte/char mismatch in `find_all_occurrences` | `document.rs` | ✅ Fixed - uses char indices |
+| Unicode in `word_under_cursor` | `editor.rs` | ✅ Fixed - clamps to `chars.len()` |
+| `SelectNextOccurrence` offset | `update.rs` | ✅ Fixed - uses `last_search_offset` |
+| Cursor/selection invariant violations | `update.rs`, `editor.rs` | ✅ Fixed - `collapse_selections_to_cursors()` |
 
-### 🔶 Partially Implemented (Selection/Multi-Cursor)
+### ✅ Priority 1: Multi-Pane Correctness (ALL COMPLETE)
 
-| Feature | File | Status |
-|---------|------|--------|
-| Selection movement (Shift+Arrow) | `update.rs` | ✅ Working |
-| `MoveCursorWithSelection(Direction)` | `update.rs:210-229` | ✅ Implemented |
-| `MoveCursorLineStartWithSelection` | `update.rs:231-249` | ✅ Implemented |
-| `MoveCursorLineEndWithSelection` | `update.rs:251-270` | ✅ Implemented |
-| `MoveCursorDocumentStart/EndWithSelection` | `update.rs:272-307` | ✅ Implemented |
-| `MoveCursorWordWithSelection` | `update.rs:309-325` | ✅ Implemented |
-| `PageUp/DownWithSelection` | `update.rs:327-386` | ✅ Implemented |
-| `SelectAll` | `update.rs:389-398` | ✅ Implemented |
-| `SelectWord` | `update.rs:400-443` | ✅ Implemented |
-| `SelectLine` | `update.rs:445-469` | ✅ Implemented |
-| `ExtendSelectionToPosition` | `update.rs:471-490` | ✅ Implemented |
-| `ClearSelection` | `update.rs:492-495` | ✅ Implemented |
-| `ToggleCursorAtPosition` | `editor.rs:244-269` | ✅ Implemented |
-| `add_cursor_at()` | `editor.rs:272-285` | ✅ Implemented |
-| `sort_cursors()` | `editor.rs:288-300` | ✅ Implemented |
-| Multi-cursor `InsertChar` | `update.rs` | ✅ Reverse-order processing |
-| Multi-cursor `DeleteBackward` | `update.rs:560-599` | ✅ Reverse-order processing |
-| Multi-cursor `DeleteForward` | `update.rs:655-682` | ✅ Reverse-order processing |
-| Selection-aware delete | `delete_selection()` helper | ✅ Used by edit operations |
+| Task | Location | Status |
+|------|----------|--------|
+| Resize all editor viewports | `model/mod.rs` | ✅ Iterates all editors |
+| Sync viewports after layout | `editor_area.rs` | ✅ `sync_all_viewports()` added |
+| Avoid document cloning | `model/mod.rs`, `editor_area.rs` | ✅ `ensure_focused_cursor_visible()` |
 
-### ✅ Recently Implemented
+### ✅ Priority 2: Multi-Cursor Undo/Redo (ALL COMPLETE)
 
-All Phase 7.1-7.8 features are now complete:
+| Task | Location | Status |
+|------|----------|--------|
+| `EditOperation::Batch` variant | `document.rs` | ✅ Added with cursors_before/after |
+| Batch undo/redo handling | `update.rs` | ✅ `apply_undo/redo_operation()` helpers |
+| Multi-cursor edits use batch | `update.rs` | ✅ InsertChar, InsertNewline, DeleteBackward, DeleteForward |
 
-| Feature | Status |
-|---------|--------|
-| Selection helpers (`extend_to`, `collapse_to_start/end`, `contains`) | Complete |
-| `deduplicate_cursors()` | Complete |
-| `assert_invariants()` (debug only) | Complete |
-| Rectangle Selection (middle mouse) | Complete |
-| AddCursorAbove/Below (Option+Option+Arrow) | Complete |
-| Clipboard operations (Copy/Cut/Paste) | Complete |
-| Multi-cursor editing (reverse-order processing) | Complete |
+### ✅ Priority 3: Selection Phase 9 (ALL COMPLETE)
 
-### ❌ Still Missing
+| Task | Location | Status |
+|------|----------|--------|
+| `Selection::get_text()` | `editor.rs` | ✅ Already implemented |
+| `SelectAllOccurrences` | `update.rs` | ✅ Fully implemented |
+| `UnselectOccurrence` | `update.rs` | ✅ Already implemented |
+| `SelectNextOccurrence` | `update.rs` | ✅ Fixed and working |
 
-| Feature | Priority | Notes |
-|---------|----------|-------|
-| `Selection::get_text()` | Medium | Needed for occurrence search |
-| `EditOperation::Batch` | Medium | Proper multi-cursor undo/redo |
-| `merge_overlapping_selections()` | Low | Edge case handling |
-| `SelectNextOccurrence` (Phase 9) | Medium | Cmd+J - stubbed but not implemented |
-| `SelectAllOccurrences` (Phase 9) | Low | Stubbed but not implemented |
+### ✅ Priority 4: Rectangle Selection (COMPLETE)
 
-### ✅ Recently Completed (2025-12-06)
-
-| Feature | Design Doc | Status |
-|---------|------------|--------|
-| Structured Status Bar | [STATUS_BAR.md](feature/STATUS_BAR.md) | ✅ Complete (47 tests) |
-| Overlay System | (inline) | ✅ Complete with theme integration |
-
-### ❌ Not Yet Implemented
-
-| Feature | Design Doc | Status |
-|---------|------------|--------|
-| Occurrence Selection (Phase 9) | [SELECTION_MULTICURSOR.md](feature/SELECTION_MULTICURSOR.md) | Messages exist, no logic |
-| Split View / Multi-Pane | [SPLIT_VIEW.md](feature/SPLIT_VIEW.md) | Design only |
-| Expand/Shrink Selection | [TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) | Design only |
+| Task | Location | Status |
+|------|----------|--------|
+| `FinishRectangleSelection` | `update.rs` | ✅ Already fully implemented |
+| Clamp columns per line | `update.rs` | ✅ Done |
+| Handle zero-width rectangles | `update.rs` | ✅ Done |
 
 ---
 
-## Code Quality Observations
+## Test Coverage
 
-### Strengths
+| Before | After | New Tests Added |
+|--------|-------|-----------------|
+| 293 | 351 | 58 |
 
-1. **Clean Elm architecture** - Message dispatch is well-organized
-2. **Consistent patterns** - Multi-cursor editing follows reverse-order pattern correctly
-3. **Excellent test coverage** - 227 tests passing (organized in `tests/` folder)
-4. **Theme integration** - Selection colors, overlay colors, status bar all themed
-5. **Selection helpers implemented** - `extend_to`, `collapse_to_start/end`, `contains`
-6. **Invariant checking** - `assert_invariants()` in debug builds
-7. **Reusable overlay system** - Anchored positioning, alpha blending, optional borders
-8. **Structured status bar** - Segment-based with auto-sync from model
-
-### Issues to Address
-
-1. **Public fields on EditorState**
-   - `cursors`, `selections`, `viewport` are all `pub`
-   - Consider gradually adding accessor methods
-
-2. **Simplified undo/redo for multi-cursor**
-   - Current code has comments: "simplified - full undo would need batch"
-   - Single `EditOperation` recorded for multi-cursor edits
-   - Need `EditOperation::Batch` for proper multi-cursor undo
-
-### Recently Resolved
-
-- ~~Selection helper methods~~ - Now have `extend_to`, `collapse_to_start/end`, `contains`
-- ~~No invariant enforcement~~ - `assert_invariants()` now in debug builds
-- ~~Open-coded selection manipulation~~ - Helper methods now used
+### New Tests Added:
+- `find_all_occurrences_*` (9 tests) - Unicode-safe search
+- `find_next_occurrence_*` (2 tests) - Wrap-around behavior
+- `test_word_under_cursor_*` (6 tests) - Unicode word detection
+- `test_select_next_occurrence_*` (2 tests) - Multi-cursor occurrence selection
+- `test_select_all_occurrences_*` (2 tests) - Select all matching words
+- `test_*_clears_selection` (3 tests) - Cursor/selection invariant tests
+- `test_multi_cursor_*_undo` (6 tests) - Multi-cursor batch undo/redo
 
 ---
 
-## Priority Recommendations
+## Code Changes Summary
 
-### Priority 1: Finish Selection (Phase 9)
+### Files Modified:
+1. **`src/model/document.rs`**
+   - `find_all_occurrences()` - Unicode-safe byte→char mapping
+   - `EditOperation::Batch` - New variant for multi-cursor undo
 
-| Task | Effort | Notes |
-|------|--------|-------|
-| `Selection::get_text()` | S | Needed for occurrence search |
-| `SelectNextOccurrence` (Cmd+J) | M | Search forward for word/selection |
-| `UnselectOccurrence` (Shift+Cmd+J) | S | Track history, pop last |
-| `SelectAllOccurrences` | M | Find all, create cursors |
+2. **`src/model/editor.rs`**
+   - `word_under_cursor()` - Fixed Unicode column handling
+   - `collapse_selections_to_cursors()` - New helper method
 
-### Priority 2: Multi-Cursor Undo/Redo
+3. **`src/model/editor_area.rs`**
+   - `sync_all_viewports()` - Sync viewports from group rects
+   - `ensure_focused_cursor_visible()` - Avoid document cloning
 
-| Task | Effort | Notes |
-|------|--------|-------|
-| `EditOperation::Batch` variant | M | Group operations for undo |
-| Update multi-cursor edits to use Batch | M | InsertChar, Delete, etc. |
-| `merge_overlapping_selections()` | S | Edge case after operations |
+4. **`src/model/mod.rs`**
+   - `resize()` - Updates ALL editors now
+   - `set_char_width()` - Updates ALL editors now
+   - `ensure_cursor_visible*()` - Delegates to EditorArea
 
-### ~~Priority 3: Structured Status Bar~~ ✅ COMPLETE
+5. **`src/update.rs`**
+   - All non-shift movement handlers call `collapse_selections_to_cursors()`
+   - `SelectNextOccurrence` - Uses `last_search_offset`
+   - `SelectAllOccurrences` - Fully implemented
+   - `Undo/Redo` - Handles `EditOperation::Batch`
+   - `apply_undo/redo_operation*()` - New helper functions
+   - Multi-cursor `InsertChar`, `InsertNewline`, `DeleteBackward`, `DeleteForward` - Now use Batch
 
-Implemented 2025-12-06. See [STATUS_BAR.md](feature/STATUS_BAR.md).
+6. **`tests/common/mod.rs`**
+   - `test_model_multi_cursor()` - New helper for multi-cursor tests
 
-### Priority 3: Expand/Shrink Selection
-
-See [TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) for full design.
-
-| Task | Effort |
-|------|--------|
-| Add `selection_history` to EditorState | S |
-| Implement ExpandSelection | M |
-| Implement ShrinkSelection | S |
-| Add keyboard handling | S |
-
-### Priority 4: Split View Foundation
-
-See [SPLIT_VIEW.md](feature/SPLIT_VIEW.md) for full design. Large effort - defer until other priorities complete.
+7. **`tests/text_editing.rs`**
+   - Added 6 multi-cursor undo/redo tests
 
 ---
 
-## Next Steps
+## Remaining Work
 
-| Priority | Files to Modify | Changes |
-|----------|-----------------|---------|
-| Phase 9 | `editor.rs`, `update.rs` | `get_text()`, occurrence search logic |
-| Undo/Redo | `document.rs`, `update.rs` | `EditOperation::Batch` |
-| Expand/Shrink | `editor.rs`, `update.rs`, `main.rs` | History stack, handlers |
-| ~~Status Bar~~ | ~~`ui.rs`, `messages.rs`, `main.rs`~~ | ✅ Complete |
-| ~~Overlay System~~ | ~~`overlay.rs`, `theme.rs`~~ | ✅ Complete |
+### Not Addressed:
+1. **Expand/Shrink Selection** - Design only
+2. **Typing coalescing** - Time-based undo grouping
+
+---
+
+## Architecture Improvements Made
+
+1. **Unicode-safe everywhere** - All search/selection uses char indices
+2. **Multi-pane ready** - Viewport sync, all-editor updates
+3. **No document cloning** - Uses raw pointer trick in EditorArea
+4. **Invariant enforcement** - `collapse_selections_to_cursors()` after all moves
+5. **Batch undo complete** - Multi-cursor edits properly batch for atomic undo/redo
+
+---
+
+## Summary
+
+All bugs and features from the BUGFIX_PLAN.md are now complete. The codebase is:
+- Unicode-safe for search and word detection
+- Multi-pane aware for viewport management  
+- Fully supporting multi-cursor undo/redo with batch operations
+- Fully functional for occurrence selection (Cmd+J, Cmd+Shift+L)
+- Maintaining cursor/selection invariants correctly
+
+Test count increased from 293 → 351 (+58 tests).
