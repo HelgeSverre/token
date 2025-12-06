@@ -1,5 +1,8 @@
 # Expand / Shrink Selection
 
+**Status:** ✅ Complete  
+**Completed:** 2025-12-06
+
 Progressively expand or contract the selection scope around the cursor position.
 
 ---

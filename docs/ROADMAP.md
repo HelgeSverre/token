@@ -9,6 +9,16 @@ For archived phases, see [archived/old-roadmap-file.md](archived/old-roadmap-fil
 
 ## Recently Completed
 
+### Expand/Shrink Selection ✅
+
+**Design:** [feature/TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) | **Completed:** 2025-12-06
+
+Progressive selection expansion with history stack:
+
+- Option+Up: Expand (cursor → word → line → all)
+- Option+Down: Shrink (restore previous from history)
+- 18 tests in `tests/expand_shrink_selection.rs`
+
 ### Multi-Cursor Movement ✅
 
 **Design:** [feature/MULTI_CURSOR_MOVEMENT.md](feature/MULTI_CURSOR_MOVEMENT.md) | **Completed:** 2025-12-06
@@ -24,16 +34,6 @@ All cursor movement operations now work with multiple cursors:
 ---
 
 ## Planned Features
-
-### Expand/Shrink Selection
-
-**Design:** [feature/TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md)
-
-Progressive selection expansion:
-
-- Option+Up: Expand (word → line → all)
-- Option+Down: Shrink (restore previous)
-- Selection history stack
 
 ### File Dropping
 
@@ -88,7 +88,7 @@ Group rapid consecutive edits into single undo entries:
 | Status Bar | ✅ Complete | [feature/STATUS_BAR.md](feature/STATUS_BAR.md) |
 | Split View | ✅ Complete | [feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md) |
 | Multi-Cursor Movement | ✅ Complete | [feature/MULTI_CURSOR_MOVEMENT.md](feature/MULTI_CURSOR_MOVEMENT.md) |
-| Expand/Shrink Selection | Planned | [feature/TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) |
+| Expand/Shrink Selection | ✅ Complete | [feature/TEXT-SHRINK-EXPAND-SELECTION.md](feature/TEXT-SHRINK-EXPAND-SELECTION.md) |
 | File Dropping | Planned | [feature/handle-file-dropping.md](feature/handle-file-dropping.md) |
 | Workspace Management | Planned | [feature/workspace-management.md](feature/workspace-management.md) |
 | Codebase Organization | Planned | [ORGANIZATION-CODEBASE.md](ORGANIZATION-CODEBASE.md) |

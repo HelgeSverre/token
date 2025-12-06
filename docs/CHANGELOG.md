@@ -6,6 +6,17 @@ All notable changes to rust-editor are documented in this file.
 
 ## 2025-12-06 (Latest)
 
+### Added - Expand/Shrink Selection (Already Implemented)
+
+Progressive selection expansion with history stack:
+
+- **Option+Up**: Expand selection (cursor → word → line → all)
+- **Option+Down**: Shrink selection (restore previous from history)
+- Selection history stack in `EditorState.selection_history`
+- 18 tests in `tests/expand_shrink_selection.rs`
+
+*(Feature was already implemented, roadmap updated to reflect completion)*
+
 ### Added - Multi-Cursor Movement
 
 All cursor movement operations now work with multiple cursors:
