@@ -497,3 +497,251 @@ fn test_word_navigation_with_punctuation() {
     );
     assert_eq!(model.editor().cursor().column, 12);
 }
+
+// ========================================================================
+// Multi-cursor movement tests
+// ========================================================================
+
+use token::model::Cursor;
+
+#[test]
+fn test_multi_cursor_arrow_left_moves_all() {
+    let mut model = test_model("hello world", 0, 5);
+    // Add a second cursor at column 10
+    model.editor_mut().cursors.push(Cursor::at(0, 10));
+    model
+        .editor_mut()
+        .selections
+        .push(token::model::Selection::new(token::model::Position::new(
+            0, 10,
+        )));
+
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Left)),
+    );
+
+    assert_eq!(model.editor().cursors.len(), 2);
+    assert_eq!(model.editor().cursors[0].column, 4);
+    assert_eq!(model.editor().cursors[1].column, 9);
+}
+
+#[test]
+fn test_multi_cursor_arrow_right_moves_all() {
+    let mut model = test_model("hello world", 0, 0);
+    model.editor_mut().cursors.push(Cursor::at(0, 5));
+    model
+        .editor_mut()
+        .selections
+        .push(token::model::Selection::new(token::model::Position::new(
+            0, 5,
+        )));
+
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Right)),
+    );
+
+    assert_eq!(model.editor().cursors.len(), 2);
+    assert_eq!(model.editor().cursors[0].column, 1);
+    assert_eq!(model.editor().cursors[1].column, 6);
+}
+
+#[test]
+fn test_multi_cursor_arrow_up_moves_all() {
+    let mut model = test_model("line one\nline two\nline three", 2, 5);
+    model.editor_mut().cursors.push(Cursor::at(1, 3));
+    model
+        .editor_mut()
+        .selections
+        .push(token::model::Selection::new(token::model::Position::new(
+            1, 3,
+        )));
+
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Up)),
+    );
+
+    assert_eq!(model.editor().cursors.len(), 2);
+    assert_eq!(model.editor().cursors[0].line, 1);
+    assert_eq!(model.editor().cursors[1].line, 0);
+}
+
+#[test]
+fn test_multi_cursor_arrow_down_moves_all() {
+    let mut model = test_model("line one\nline two\nline three", 0, 3);
+    model.editor_mut().cursors.push(Cursor::at(1, 5));
+    model
+        .editor_mut()
+        .selections
+        .push(token::model::Selection::new(token::model::Position::new(
+            1, 5,
+        )));
+
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Down)),
+    );
+
+    assert_eq!(model.editor().cursors.len(), 2);
+    assert_eq!(model.editor().cursors[0].line, 1);
+    assert_eq!(model.editor().cursors[1].line, 2);
+}
+
+#[test]
+fn test_multi_cursor_movement_deduplicates_on_collision() {
+    let mut model = test_model("abc", 0, 1);
+    model.editor_mut().cursors.push(Cursor::at(0, 2));
+    model
+        .editor_mut()
+        .selections
+        .push(token::model::Selection::new(token::model::Position::new(
+            0, 2,
+        )));
+
+    // Move left - both cursors move, cursor at 2 becomes 1, cursor at 1 becomes 0
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Left)),
+    );
+
+    // Should still have 2 cursors (at 0 and 1)
+    assert_eq!(model.editor().cursors.len(), 2);
+
+    // Move left again - cursor at 1 becomes 0, cursor at 0 stays at 0 → collision
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Left)),
+    );
+
+    // Should deduplicate to 1 cursor
+    assert_eq!(model.editor().cursors.len(), 1);
+    assert_eq!(model.editor().cursors[0].column, 0);
+}
+
+#[test]
+fn test_multi_cursor_home_moves_all() {
+    let mut model = test_model("  hello\n  world", 0, 5);
+    model.editor_mut().cursors.push(Cursor::at(1, 5));
+    model
+        .editor_mut()
+        .selections
+        .push(token::model::Selection::new(token::model::Position::new(
+            1, 5,
+        )));
+
+    update(&mut model, Msg::Editor(EditorMsg::MoveCursorLineStart));
+
+    assert_eq!(model.editor().cursors.len(), 2);
+    // Both should move to first non-whitespace (column 2)
+    assert_eq!(model.editor().cursors[0].column, 2);
+    assert_eq!(model.editor().cursors[1].column, 2);
+}
+
+#[test]
+fn test_multi_cursor_end_moves_all() {
+    let mut model = test_model("hello  \nworld  ", 0, 0);
+    model.editor_mut().cursors.push(Cursor::at(1, 0));
+    model
+        .editor_mut()
+        .selections
+        .push(token::model::Selection::new(token::model::Position::new(
+            1, 0,
+        )));
+
+    update(&mut model, Msg::Editor(EditorMsg::MoveCursorLineEnd));
+
+    assert_eq!(model.editor().cursors.len(), 2);
+    // Both should move to last non-whitespace (column 5 for "hello" and "world")
+    assert_eq!(model.editor().cursors[0].column, 5);
+    assert_eq!(model.editor().cursors[1].column, 5);
+}
+
+#[test]
+fn test_multi_cursor_word_right_moves_all() {
+    let mut model = test_model("hello world test", 0, 0);
+    model.editor_mut().cursors.push(Cursor::at(0, 6));
+    model
+        .editor_mut()
+        .selections
+        .push(token::model::Selection::new(token::model::Position::new(
+            0, 6,
+        )));
+
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursorWord(Direction::Right)),
+    );
+
+    assert_eq!(model.editor().cursors.len(), 2);
+    // First cursor: 0 → 5 (end of "hello")
+    assert_eq!(model.editor().cursors[0].column, 5);
+    // Second cursor: 6 → 11 (end of "world")
+    assert_eq!(model.editor().cursors[1].column, 11);
+}
+
+#[test]
+fn test_multi_cursor_selection_extends_all() {
+    let mut model = test_model("hello world", 0, 0);
+    model.editor_mut().cursors.push(Cursor::at(0, 6));
+    model
+        .editor_mut()
+        .selections
+        .push(token::model::Selection::new(token::model::Position::new(
+            0, 6,
+        )));
+
+    // Shift+Right to extend selection
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursorWithSelection(Direction::Right)),
+    );
+
+    assert_eq!(model.editor().cursors.len(), 2);
+    // Both cursors moved
+    assert_eq!(model.editor().cursors[0].column, 1);
+    assert_eq!(model.editor().cursors[1].column, 7);
+    // Both selections extended (anchor at original, head at new)
+    assert_eq!(model.editor().selections[0].anchor.column, 0);
+    assert_eq!(model.editor().selections[0].head.column, 1);
+    assert_eq!(model.editor().selections[1].anchor.column, 6);
+    assert_eq!(model.editor().selections[1].head.column, 7);
+}
+
+#[test]
+fn test_multi_cursor_vertical_preserves_desired_column() {
+    // Test that each cursor maintains its own desired_column through ragged lines
+    let mut model = test_model("long line here\nshort\nanother long line", 0, 12);
+    model.editor_mut().cursors.push(Cursor::at(2, 15));
+    model
+        .editor_mut()
+        .selections
+        .push(token::model::Selection::new(token::model::Position::new(
+            2, 15,
+        )));
+
+    // Move down - first cursor goes from line 0 col 12 to line 1, col should clamp to 5
+    // Second cursor at line 2 can't go down (already at last line)
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Down)),
+    );
+
+    // First cursor moved down, clamped to line length
+    assert_eq!(model.editor().cursors[0].line, 1);
+    assert_eq!(model.editor().cursors[0].column, 5); // "short" has length 5
+    assert_eq!(model.editor().cursors[0].desired_column, Some(12));
+
+    // Second cursor stayed at line 2 (can't go past last line)
+    assert_eq!(model.editor().cursors[1].line, 2);
+
+    // Move down again - first cursor goes to line 2, should restore to column 12
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Down)),
+    );
+
+    assert_eq!(model.editor().cursors[0].line, 2);
+    assert_eq!(model.editor().cursors[0].column, 12); // restored from desired_column
+}

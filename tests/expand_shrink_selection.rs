@@ -202,7 +202,10 @@ fn test_history_cleared_on_cursor_movement() {
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
     // Move cursor (clears history)
-    update(&mut model, Msg::Editor(EditorMsg::MoveCursor(Direction::Right)));
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Right)),
+    );
 
     // Shrink should now just clear selection (no history to restore)
     update(&mut model, Msg::Editor(EditorMsg::ShrinkSelection));
