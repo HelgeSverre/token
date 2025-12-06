@@ -267,8 +267,7 @@ impl Renderer {
                 };
 
                 // Adjust for horizontal scroll
-                let visible_start_col =
-                    start_col.saturating_sub(model.editor.viewport.left_column);
+                let visible_start_col = start_col.saturating_sub(model.editor.viewport.left_column);
                 let visible_end_col = end_col.saturating_sub(model.editor.viewport.left_column);
 
                 // Calculate pixel positions
@@ -303,10 +302,12 @@ impl Renderer {
                 let y_end = y_start + line_height;
 
                 // Adjust for horizontal scroll
-                let visible_start_col =
-                    top_left.column.saturating_sub(model.editor.viewport.left_column);
-                let visible_end_col =
-                    bottom_right.column.saturating_sub(model.editor.viewport.left_column);
+                let visible_start_col = top_left
+                    .column
+                    .saturating_sub(model.editor.viewport.left_column);
+                let visible_end_col = bottom_right
+                    .column
+                    .saturating_sub(model.editor.viewport.left_column);
 
                 let x_start =
                     text_start_x + (visible_start_col as f32 * char_width).round() as usize;
@@ -336,8 +337,8 @@ impl Renderer {
                 if in_vertical_view && in_horizontal_view {
                     let screen_line = preview_pos.line - model.editor.viewport.top_line;
                     let cursor_column = preview_pos.column - model.editor.viewport.left_column;
-                    let x = (text_start_x as f32 + cursor_column as f32 * char_width).round()
-                        as usize;
+                    let x =
+                        (text_start_x as f32 + cursor_column as f32 * char_width).round() as usize;
                     let y = screen_line * line_height;
 
                     // Same 2px wide cursor bar pattern as regular cursors
@@ -429,7 +430,8 @@ impl Renderer {
                 if cursor_in_vertical_view && cursor_in_horizontal_view {
                     let screen_line = cursor.line - model.editor.viewport.top_line;
                     let cursor_column = cursor.column - model.editor.viewport.left_column;
-                    let x = (text_start_x as f32 + cursor_column as f32 * char_width).round() as usize;
+                    let x =
+                        (text_start_x as f32 + cursor_column as f32 * char_width).round() as usize;
                     let y = screen_line * line_height;
                     // Primary cursor (index 0) uses primary color, others use secondary
                     let cursor_color = if idx == 0 {
@@ -511,14 +513,17 @@ impl Renderer {
             );
         }
 
-        // Render separator lines between right segments
-        let separator_color = model.theme.status_bar.foreground.with_alpha(100).to_argb_u32();
-        let sep_y_start = status_y + 4;
-        let sep_y_end = height as usize - 4;
+        // Render separator lines between right segments (full height of status bar)
+        let separator_color = model
+            .theme
+            .status_bar
+            .foreground
+            .with_alpha(100)
+            .to_argb_u32();
         for &sep_char_x in &layout.separator_positions {
             let x_px = (sep_char_x as f32 * char_width).round() as usize;
             if x_px < width as usize {
-                for py in sep_y_start..sep_y_end {
+                for py in status_y..height as usize {
                     buffer[py * width as usize + x_px] = separator_color;
                 }
             }
@@ -611,8 +616,7 @@ impl Renderer {
                     line_len
                 };
 
-                let visible_start_col =
-                    start_col.saturating_sub(model.editor.viewport.left_column);
+                let visible_start_col = start_col.saturating_sub(model.editor.viewport.left_column);
                 let visible_end_col = end_col.saturating_sub(model.editor.viewport.left_column);
 
                 let x_start =
@@ -644,10 +648,12 @@ impl Renderer {
                 let y_start = screen_line * line_height;
                 let y_end = y_start + line_height;
 
-                let visible_start_col =
-                    top_left.column.saturating_sub(model.editor.viewport.left_column);
-                let visible_end_col =
-                    bottom_right.column.saturating_sub(model.editor.viewport.left_column);
+                let visible_start_col = top_left
+                    .column
+                    .saturating_sub(model.editor.viewport.left_column);
+                let visible_end_col = bottom_right
+                    .column
+                    .saturating_sub(model.editor.viewport.left_column);
 
                 let x_start =
                     text_start_x + (visible_start_col as f32 * char_width).round() as usize;
@@ -677,8 +683,8 @@ impl Renderer {
                 if in_vertical_view && in_horizontal_view {
                     let screen_line = preview_pos.line - model.editor.viewport.top_line;
                     let cursor_column = preview_pos.column - model.editor.viewport.left_column;
-                    let x = (text_start_x as f32 + cursor_column as f32 * char_width).round()
-                        as usize;
+                    let x =
+                        (text_start_x as f32 + cursor_column as f32 * char_width).round() as usize;
                     let y = screen_line * line_height;
 
                     // Same 2px wide cursor bar pattern as regular cursors
@@ -770,7 +776,8 @@ impl Renderer {
                 if cursor_in_vertical_view && cursor_in_horizontal_view {
                     let screen_line = cursor.line - model.editor.viewport.top_line;
                     let cursor_column = cursor.column - model.editor.viewport.left_column;
-                    let x = (text_start_x as f32 + cursor_column as f32 * char_width).round() as usize;
+                    let x =
+                        (text_start_x as f32 + cursor_column as f32 * char_width).round() as usize;
                     let y = screen_line * line_height;
                     let cursor_color = if idx == 0 {
                         primary_cursor_color
@@ -853,14 +860,17 @@ impl Renderer {
             );
         }
 
-        // Render separator lines between right segments
-        let separator_color = model.theme.status_bar.foreground.with_alpha(100).to_argb_u32();
-        let sep_y_start = status_y + 4;
-        let sep_y_end = height as usize - 4;
+        // Render separator lines between right segments (full height of status bar)
+        let separator_color = model
+            .theme
+            .status_bar
+            .foreground
+            .with_alpha(100)
+            .to_argb_u32();
         for &sep_char_x in &layout.separator_positions {
             let x_px = (sep_char_x as f32 * char_width).round() as usize;
             if x_px < width as usize {
-                for py in sep_y_start..sep_y_end {
+                for py in status_y..height as usize {
                     buffer[py * width as usize + x_px] = separator_color;
                 }
             }
@@ -873,6 +883,7 @@ impl Renderer {
                 &self.font,
                 &mut self.glyph_cache,
                 perf,
+                &model.theme,
                 self.width,
                 self.height,
                 font_size,
@@ -921,6 +932,13 @@ impl Renderer {
 
         (line, column)
     }
+
+    /// Check if a y pixel position is within the status bar area
+    fn is_in_status_bar(&self, y: f64) -> bool {
+        let line_height = self.line_metrics.new_line_size.ceil() as f64;
+        let status_bar_top = self.height as f64 - line_height;
+        y >= status_bar_top
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -929,50 +947,66 @@ fn render_perf_overlay(
     font: &Font,
     glyph_cache: &mut GlyphCache,
     perf: &PerfStats,
+    theme: &token::theme::Theme,
     width: u32,
     height: u32,
     font_size: f32,
     line_height: usize,
     ascent: f32,
 ) {
+    use token::overlay::{
+        render_overlay_background, render_overlay_border, OverlayAnchor, OverlayConfig,
+    };
+
     let width_usize = width as usize;
     let height_usize = height as usize;
 
-    // Overlay dimensions and position (top-right corner)
-    let overlay_width = 240_usize;
-    let overlay_height = 180_usize;
-    let margin = 10_usize;
-    let x_offset = width_usize.saturating_sub(overlay_width + margin);
-    let y_offset = margin;
+    // Configure and render overlay background using theme colors
+    let config = OverlayConfig::new(OverlayAnchor::TopRight, 240, 180)
+        .with_margin(10)
+        .with_background(theme.overlay.background.to_argb_u32());
 
-    // Semi-transparent dark background
-    let bg_color = 0xE0202020_u32;
-    for py in y_offset..(y_offset + overlay_height).min(height_usize) {
-        for px in x_offset..(x_offset + overlay_width).min(width_usize) {
-            let idx = py * width_usize + px;
-            if idx < buffer.len() {
-                let dst = buffer[idx];
-                let alpha = ((bg_color >> 24) & 0xFF) as u32;
-                let inv_alpha = 255 - alpha;
-                let r = ((((bg_color >> 16) & 0xFF) * alpha + ((dst >> 16) & 0xFF) * inv_alpha) / 255) & 0xFF;
-                let g = ((((bg_color >> 8) & 0xFF) * alpha + ((dst >> 8) & 0xFF) * inv_alpha) / 255) & 0xFF;
-                let b = (((bg_color & 0xFF) * alpha + (dst & 0xFF) * inv_alpha) / 255) & 0xFF;
-                buffer[idx] = 0xFF000000 | (r << 16) | (g << 8) | b;
-            }
-        }
+    let bounds = config.compute_bounds(width_usize, height_usize);
+    render_overlay_background(
+        buffer,
+        &bounds,
+        config.background,
+        width_usize,
+        height_usize,
+    );
+
+    // Render border if theme specifies one
+    if let Some(border_color) = &theme.overlay.border {
+        render_overlay_border(
+            buffer,
+            &bounds,
+            border_color.to_argb_u32(),
+            width_usize,
+            height_usize,
+        );
     }
 
-    let text_color = 0xFFE0E0E0_u32;
-    let highlight_color = 0xFF80FF80_u32;
-    let warning_color = 0xFFFFFF80_u32;
+    let text_color = theme.overlay.foreground.to_argb_u32();
+    let highlight_color = theme.overlay.highlight.to_argb_u32();
+    let warning_color = theme.overlay.warning.to_argb_u32();
+    let error_color = theme.overlay.error.to_argb_u32();
 
-    let text_x = x_offset + 8;
-    let mut text_y = y_offset + 4;
+    let text_x = bounds.x + 8;
+    let mut text_y = bounds.y + 4;
 
     // Title
     draw_text(
-        buffer, font, glyph_cache, font_size, ascent, width, height,
-        text_x, text_y, "PERF (F2 to hide)", text_color,
+        buffer,
+        font,
+        glyph_cache,
+        font_size,
+        ascent,
+        width,
+        height,
+        text_x,
+        text_y,
+        "PERF (F2 to hide)",
+        text_color,
     );
     text_y += line_height;
 
@@ -985,13 +1019,22 @@ fn render_perf_overlay(
     } else if budget_pct < 100.0 {
         warning_color
     } else {
-        0xFFFF8080_u32
+        error_color
     };
 
     let frame_text = format!("Frame: {:.1}ms ({:.0} fps)", frame_ms, fps);
     draw_text(
-        buffer, font, glyph_cache, font_size, ascent, width, height,
-        text_x, text_y, &frame_text, frame_color,
+        buffer,
+        font,
+        glyph_cache,
+        font_size,
+        ascent,
+        width,
+        height,
+        text_x,
+        text_y,
+        &frame_text,
+        frame_color,
     );
     text_y += line_height;
 
@@ -1004,8 +1047,17 @@ fn render_perf_overlay(
         budget_pct
     );
     draw_text(
-        buffer, font, glyph_cache, font_size, ascent, width, height,
-        text_x, text_y, &bar, frame_color,
+        buffer,
+        font,
+        glyph_cache,
+        font_size,
+        ascent,
+        width,
+        height,
+        text_x,
+        text_y,
+        &bar,
+        frame_color,
     );
     text_y += line_height + 4;
 
@@ -1013,8 +1065,17 @@ fn render_perf_overlay(
     let avg_ms = perf.avg_frame_time().as_secs_f64() * 1000.0;
     let avg_text = format!("Avg: {:.1}ms", avg_ms);
     draw_text(
-        buffer, font, glyph_cache, font_size, ascent, width, height,
-        text_x, text_y, &avg_text, text_color,
+        buffer,
+        font,
+        glyph_cache,
+        font_size,
+        ascent,
+        width,
+        height,
+        text_x,
+        text_y,
+        &avg_text,
+        text_color,
     );
     text_y += line_height + 4;
 
@@ -1023,8 +1084,17 @@ fn render_perf_overlay(
     let hit_rate = perf.cache_hit_rate();
     let cache_text = format!("Cache: {} glyphs", cache_size);
     draw_text(
-        buffer, font, glyph_cache, font_size, ascent, width, height,
-        text_x, text_y, &cache_text, text_color,
+        buffer,
+        font,
+        glyph_cache,
+        font_size,
+        ascent,
+        width,
+        height,
+        text_x,
+        text_y,
+        &cache_text,
+        text_color,
     );
     text_y += line_height;
 
@@ -1033,19 +1103,37 @@ fn render_perf_overlay(
     } else if hit_rate > 90.0 {
         warning_color
     } else {
-        0xFFFF8080_u32
+        error_color
     };
     let hits_text = format!("Hits: {} ({:.1}%)", perf.total_cache_hits, hit_rate);
     draw_text(
-        buffer, font, glyph_cache, font_size, ascent, width, height,
-        text_x, text_y, &hits_text, hit_color,
+        buffer,
+        font,
+        glyph_cache,
+        font_size,
+        ascent,
+        width,
+        height,
+        text_x,
+        text_y,
+        &hits_text,
+        hit_color,
     );
     text_y += line_height;
 
     let miss_text = format!("Miss: {}", perf.total_cache_misses);
     draw_text(
-        buffer, font, glyph_cache, font_size, ascent, width, height,
-        text_x, text_y, &miss_text, text_color,
+        buffer,
+        font,
+        glyph_cache,
+        font_size,
+        ascent,
+        width,
+        height,
+        text_x,
+        text_y,
+        &miss_text,
+        text_color,
     );
 }
 
@@ -1148,15 +1236,15 @@ fn handle_key(
         Key::Named(NamedKey::ArrowDown) if alt && option_double_tapped => {
             update(model, Msg::Editor(EditorMsg::AddCursorBelow))
         }
-        // Undo/Redo (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y)
-        Key::Character(ref s) if ctrl && s.eq_ignore_ascii_case("z") => {
+        // Undo/Redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Y)
+        Key::Character(ref s) if (ctrl || logo) && s.eq_ignore_ascii_case("z") => {
             if shift {
                 update(model, Msg::Document(DocumentMsg::Redo))
             } else {
                 update(model, Msg::Document(DocumentMsg::Undo))
             }
         }
-        Key::Character(ref s) if ctrl && s.eq_ignore_ascii_case("y") => {
+        Key::Character(ref s) if (ctrl || logo) && s.eq_ignore_ascii_case("y") => {
             update(model, Msg::Document(DocumentMsg::Redo))
         }
 
@@ -1185,6 +1273,11 @@ fn handle_key(
             update(model, Msg::Document(DocumentMsg::Paste))
         }
 
+        // Duplicate line/selection (Cmd+D on macOS, Ctrl+D elsewhere)
+        Key::Character(ref s) if s.eq_ignore_ascii_case("d") && (ctrl || logo) => {
+            update(model, Msg::Document(DocumentMsg::Duplicate))
+        }
+
         // Escape: clear selection or collapse to single cursor
         Key::Named(NamedKey::Escape) => {
             if model.editor.has_multiple_cursors() {
@@ -1197,18 +1290,14 @@ fn handle_key(
         }
 
         // Document navigation with selection (Shift+Ctrl+Home/End)
-        Key::Named(NamedKey::Home) if ctrl && shift => {
-            update(
-                model,
-                Msg::Editor(EditorMsg::MoveCursorDocumentStartWithSelection),
-            )
-        }
-        Key::Named(NamedKey::End) if ctrl && shift => {
-            update(
-                model,
-                Msg::Editor(EditorMsg::MoveCursorDocumentEndWithSelection),
-            )
-        }
+        Key::Named(NamedKey::Home) if ctrl && shift => update(
+            model,
+            Msg::Editor(EditorMsg::MoveCursorDocumentStartWithSelection),
+        ),
+        Key::Named(NamedKey::End) if ctrl && shift => update(
+            model,
+            Msg::Editor(EditorMsg::MoveCursorDocumentEndWithSelection),
+        ),
 
         // Document navigation (Ctrl+Home/End)
         Key::Named(NamedKey::Home) if ctrl => {
@@ -1221,18 +1310,14 @@ fn handle_key(
         }
 
         // Line navigation with selection (Shift+Cmd+Arrow on macOS)
-        Key::Named(NamedKey::ArrowLeft) if logo && shift => {
-            update(
-                model,
-                Msg::Editor(EditorMsg::MoveCursorLineStartWithSelection),
-            )
-        }
-        Key::Named(NamedKey::ArrowRight) if logo && shift => {
-            update(
-                model,
-                Msg::Editor(EditorMsg::MoveCursorLineEndWithSelection),
-            )
-        }
+        Key::Named(NamedKey::ArrowLeft) if logo && shift => update(
+            model,
+            Msg::Editor(EditorMsg::MoveCursorLineStartWithSelection),
+        ),
+        Key::Named(NamedKey::ArrowRight) if logo && shift => update(
+            model,
+            Msg::Editor(EditorMsg::MoveCursorLineEndWithSelection),
+        ),
 
         // Line navigation (Cmd+Arrow on macOS)
         Key::Named(NamedKey::ArrowLeft) if logo => {
@@ -1245,18 +1330,14 @@ fn handle_key(
         }
 
         // Line navigation with selection (Shift+Home/End)
-        Key::Named(NamedKey::Home) if shift => {
-            update(
-                model,
-                Msg::Editor(EditorMsg::MoveCursorLineStartWithSelection),
-            )
-        }
-        Key::Named(NamedKey::End) if shift => {
-            update(
-                model,
-                Msg::Editor(EditorMsg::MoveCursorLineEndWithSelection),
-            )
-        }
+        Key::Named(NamedKey::Home) if shift => update(
+            model,
+            Msg::Editor(EditorMsg::MoveCursorLineStartWithSelection),
+        ),
+        Key::Named(NamedKey::End) if shift => update(
+            model,
+            Msg::Editor(EditorMsg::MoveCursorLineEndWithSelection),
+        ),
 
         // Line navigation (Home/End keys)
         Key::Named(NamedKey::Home) => {
@@ -1398,16 +1479,19 @@ fn handle_key(
 
         // Editing
         Key::Named(NamedKey::Enter) => update(model, Msg::Document(DocumentMsg::InsertNewline)),
+        Key::Named(NamedKey::Backspace) if ctrl || logo => {
+            update(model, Msg::Document(DocumentMsg::DeleteLine))
+        }
         Key::Named(NamedKey::Backspace) => {
             update(model, Msg::Document(DocumentMsg::DeleteBackward))
         }
         Key::Named(NamedKey::Delete) => update(model, Msg::Document(DocumentMsg::DeleteForward)),
-        Key::Named(NamedKey::Space) if !ctrl => {
+        Key::Named(NamedKey::Space) if !(ctrl || logo) => {
             update(model, Msg::Document(DocumentMsg::InsertChar(' ')))
         }
 
-        // Character input (only when no Ctrl)
-        Key::Character(ref s) if !ctrl => {
+        // Character input (only when no Ctrl/Cmd)
+        Key::Character(ref s) if !(ctrl || logo) => {
             let mut cmd = None;
             for ch in s.chars() {
                 cmd = update(model, Msg::Document(DocumentMsg::InsertChar(ch))).or(cmd);
@@ -1551,7 +1635,8 @@ impl App {
                 // Update rectangle selection if active
                 if self.model.editor.rectangle_selection.active {
                     if let Some(renderer) = &mut self.renderer {
-                        let (line, column) = renderer.pixel_to_cursor(position.x, position.y, &self.model);
+                        let (line, column) =
+                            renderer.pixel_to_cursor(position.x, position.y, &self.model);
                         return update(
                             &mut self.model,
                             Msg::Editor(EditorMsg::UpdateRectangleSelection { line, column }),
@@ -1567,12 +1652,18 @@ impl App {
             } => {
                 if let Some((x, y)) = self.mouse_position {
                     if let Some(renderer) = &mut self.renderer {
+                        // Ignore clicks on the status bar
+                        if renderer.is_in_status_bar(y) {
+                            return None;
+                        }
+
                         let (line, column) = renderer.pixel_to_cursor(x, y, &self.model);
                         let now = Instant::now();
                         let double_click_time = Duration::from_millis(300);
 
                         // Detect double/triple click
-                        let is_rapid_click = now.duration_since(self.last_click_time) < double_click_time;
+                        let is_rapid_click =
+                            now.duration_since(self.last_click_time) < double_click_time;
                         let is_same_position = self.last_click_position == Some((line, column));
 
                         if is_rapid_click && is_same_position {
@@ -1612,10 +1703,7 @@ impl App {
                                     &mut self.model,
                                     Msg::Editor(EditorMsg::SetCursorPosition { line, column }),
                                 );
-                                return update(
-                                    &mut self.model,
-                                    Msg::Editor(EditorMsg::SelectWord),
-                                );
+                                return update(&mut self.model, Msg::Editor(EditorMsg::SelectWord));
                             }
                             3 => {
                                 // Triple-click: select line
@@ -1623,10 +1711,7 @@ impl App {
                                     &mut self.model,
                                     Msg::Editor(EditorMsg::SetCursorPosition { line, column }),
                                 );
-                                return update(
-                                    &mut self.model,
-                                    Msg::Editor(EditorMsg::SelectLine),
-                                );
+                                return update(&mut self.model, Msg::Editor(EditorMsg::SelectLine));
                             }
                             _ => {
                                 // Single click: clear selection and set cursor
@@ -1649,6 +1734,11 @@ impl App {
             } => {
                 if let Some((x, y)) = self.mouse_position {
                     if let Some(renderer) = &mut self.renderer {
+                        // Ignore clicks on the status bar
+                        if renderer.is_in_status_bar(y) {
+                            return None;
+                        }
+
                         let (line, column) = renderer.pixel_to_cursor(x, y, &self.model);
                         return update(
                             &mut self.model,
@@ -1945,13 +2035,25 @@ mod tests {
         // Selection: anchor at col 2, head/cursor at col 8
 
         // Press Left (without shift)
-        handle_key(&mut model, Key::Named(NamedKey::ArrowLeft), false, false, false, false, false);
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::ArrowLeft),
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
 
         // Selection should be cleared
-        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        assert!(
+            model.editor.selection().is_empty(),
+            "Selection should be cleared"
+        );
         // Cursor should be at selection START (column 2), not moved left from 8
         assert_eq!(
-            model.editor.cursor().column, 2,
+            model.editor.cursor().column,
+            2,
             "Cursor should jump to selection start (col 2), not stay at col 8 or move to col 7"
         );
     }
@@ -1963,13 +2065,25 @@ mod tests {
         let mut model = test_model_with_selection("hello world\n", 0, 2, 0, 8);
 
         // Press Right (without shift)
-        handle_key(&mut model, Key::Named(NamedKey::ArrowRight), false, false, false, false, false);
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::ArrowRight),
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
 
         // Selection should be cleared
-        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        assert!(
+            model.editor.selection().is_empty(),
+            "Selection should be cleared"
+        );
         // Cursor should be at selection END (column 8), not moved right from 8
         assert_eq!(
-            model.editor.cursor().column, 8,
+            model.editor.cursor().column,
+            8,
             "Cursor should jump to selection end (col 8), not move to col 9"
         );
     }
@@ -1980,19 +2094,36 @@ mod tests {
         // 1. Jump to selection START
         // 2. Move up one line from there
         // Selection spans line 1, cols 2-8
-        let mut model = test_model_with_selection("hello world\nfoo bar baz\nthird line\n", 1, 2, 1, 8);
+        let mut model =
+            test_model_with_selection("hello world\nfoo bar baz\nthird line\n", 1, 2, 1, 8);
         // Cursor is at line 1, col 8 (head of selection)
 
         // Press Up (without shift)
-        handle_key(&mut model, Key::Named(NamedKey::ArrowUp), false, false, false, false, false);
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::ArrowUp),
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
 
         // Selection should be cleared
-        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        assert!(
+            model.editor.selection().is_empty(),
+            "Selection should be cleared"
+        );
         // Cursor should be on line 0 (moved up from line 1)
-        assert_eq!(model.editor.cursor().line, 0, "Cursor should move up to line 0");
+        assert_eq!(
+            model.editor.cursor().line,
+            0,
+            "Cursor should move up to line 0"
+        );
         // Cursor should be at column 2 (selection start column)
         assert_eq!(
-            model.editor.cursor().column, 2,
+            model.editor.cursor().column,
+            2,
             "Cursor should be at column 2 (selection start column)"
         );
     }
@@ -2003,19 +2134,36 @@ mod tests {
         // 1. Jump to selection END
         // 2. Move down one line from there
         // Selection spans line 1, cols 2-8
-        let mut model = test_model_with_selection("hello world\nfoo bar baz\nthird line\n", 1, 2, 1, 8);
+        let mut model =
+            test_model_with_selection("hello world\nfoo bar baz\nthird line\n", 1, 2, 1, 8);
         // Cursor is at line 1, col 8 (head of selection)
 
         // Press Down (without shift)
-        handle_key(&mut model, Key::Named(NamedKey::ArrowDown), false, false, false, false, false);
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::ArrowDown),
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
 
         // Selection should be cleared
-        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        assert!(
+            model.editor.selection().is_empty(),
+            "Selection should be cleared"
+        );
         // Cursor should be on line 2 (moved down from line 1)
-        assert_eq!(model.editor.cursor().line, 2, "Cursor should move down to line 2");
+        assert_eq!(
+            model.editor.cursor().line,
+            2,
+            "Cursor should move down to line 2"
+        );
         // Cursor should be at column 8 (selection end column)
         assert_eq!(
-            model.editor.cursor().column, 8,
+            model.editor.cursor().column,
+            8,
             "Cursor should be at column 8 (selection end column)"
         );
     }
@@ -2028,36 +2176,76 @@ mod tests {
     fn test_home_with_selection_uses_head_line() {
         // Home should cancel selection and go to start of line where HEAD is
         // Selection: anchor at (0, 5), head at (1, 8)
-        let mut model = test_model_with_selection("hello world\nfoo bar baz\nthird line\n", 0, 5, 1, 8);
+        let mut model =
+            test_model_with_selection("hello world\nfoo bar baz\nthird line\n", 0, 5, 1, 8);
         // Head is on line 1
 
         // Press Home
-        handle_key(&mut model, Key::Named(NamedKey::Home), false, false, false, false, false);
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::Home),
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
 
         // Selection should be cleared
-        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        assert!(
+            model.editor.selection().is_empty(),
+            "Selection should be cleared"
+        );
         // Cursor should stay on line 1 (where head was)
-        assert_eq!(model.editor.cursor().line, 1, "Cursor should stay on line 1 (head line)");
+        assert_eq!(
+            model.editor.cursor().line,
+            1,
+            "Cursor should stay on line 1 (head line)"
+        );
         // Cursor should be at start of line (smart home: first non-ws char, but for "foo" that's 0)
-        assert_eq!(model.editor.cursor().column, 0, "Cursor should be at start of line");
+        assert_eq!(
+            model.editor.cursor().column,
+            0,
+            "Cursor should be at start of line"
+        );
     }
 
     #[test]
     fn test_end_with_selection_uses_head_line() {
         // End should cancel selection and go to end of line where HEAD is
         // Selection: anchor at (0, 5), head at (1, 2)
-        let mut model = test_model_with_selection("hello world\nfoo bar baz\nthird line\n", 0, 5, 1, 2);
+        let mut model =
+            test_model_with_selection("hello world\nfoo bar baz\nthird line\n", 0, 5, 1, 2);
         // Head is on line 1
 
         // Press End
-        handle_key(&mut model, Key::Named(NamedKey::End), false, false, false, false, false);
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::End),
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
 
         // Selection should be cleared
-        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        assert!(
+            model.editor.selection().is_empty(),
+            "Selection should be cleared"
+        );
         // Cursor should stay on line 1 (where head was)
-        assert_eq!(model.editor.cursor().line, 1, "Cursor should stay on line 1 (head line)");
+        assert_eq!(
+            model.editor.cursor().line,
+            1,
+            "Cursor should stay on line 1 (head line)"
+        );
         // Cursor should be at end of line 1 ("foo bar baz" has length 11)
-        assert_eq!(model.editor.cursor().column, 11, "Cursor should be at end of line (col 11)");
+        assert_eq!(
+            model.editor.cursor().column,
+            11,
+            "Cursor should be at end of line (col 11)"
+        );
     }
 
     // ========================================================================
@@ -2074,15 +2262,33 @@ mod tests {
         model.editor.viewport.visible_lines = 10;
 
         // Press PageUp
-        handle_key(&mut model, Key::Named(NamedKey::PageUp), false, false, false, false, false);
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::PageUp),
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
 
         // Selection should be cleared
-        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        assert!(
+            model.editor.selection().is_empty(),
+            "Selection should be cleared"
+        );
         // Cursor should have moved up from selection start (line 15, col 2)
         // PageUp moves ~8 lines (visible_lines - 2)
-        assert!(model.editor.cursor().line < 15, "Cursor should have moved up from line 15");
+        assert!(
+            model.editor.cursor().line < 15,
+            "Cursor should have moved up from line 15"
+        );
         // Column should be from selection start (col 2)
-        assert_eq!(model.editor.cursor().column, 2, "Cursor column should be at selection start col (2)");
+        assert_eq!(
+            model.editor.cursor().column,
+            2,
+            "Cursor column should be at selection start col (2)"
+        );
     }
 
     #[test]
@@ -2095,15 +2301,33 @@ mod tests {
         model.editor.viewport.visible_lines = 10;
 
         // Press PageDown
-        handle_key(&mut model, Key::Named(NamedKey::PageDown), false, false, false, false, false);
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::PageDown),
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
 
         // Selection should be cleared
-        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        assert!(
+            model.editor.selection().is_empty(),
+            "Selection should be cleared"
+        );
         // Cursor should have moved down from selection end (line 5, col 5)
         // PageDown moves ~8 lines (visible_lines - 2)
-        assert!(model.editor.cursor().line > 5, "Cursor should have moved down from line 5");
+        assert!(
+            model.editor.cursor().line > 5,
+            "Cursor should have moved down from line 5"
+        );
         // Column should be from selection end (col 5)
-        assert_eq!(model.editor.cursor().column, 5, "Cursor column should be at selection end col (5)");
+        assert_eq!(
+            model.editor.cursor().column,
+            5,
+            "Cursor column should be at selection end col (5)"
+        );
     }
 
     // ========================================================================
@@ -2113,7 +2337,9 @@ mod tests {
     #[test]
     fn test_select_all_then_right_arrow_scrolls_to_end() {
         // Create a 500-line document (each line has newline, so 500 lines total, last is empty)
-        let text = (0..500).map(|i| format!("line {}\n", i)).collect::<String>();
+        let text = (0..500)
+            .map(|i| format!("line {}\n", i))
+            .collect::<String>();
         let mut model = test_model_with_selection(&text, 0, 0, 0, 0);
         model.editor.viewport.visible_lines = 25;
         model.editor.viewport.top_line = 0;
@@ -2126,16 +2352,35 @@ mod tests {
         // Verify selection spans entire document
         assert_eq!(model.editor.selection().anchor, Position::new(0, 0));
         let last_line = total_lines.saturating_sub(1);
-        assert_eq!(model.editor.cursor().line, last_line, "Cursor should be at last line");
+        assert_eq!(
+            model.editor.cursor().line,
+            last_line,
+            "Cursor should be at last line"
+        );
 
         // Press Right arrow - should clear selection and position cursor at end
-        handle_key(&mut model, Key::Named(NamedKey::ArrowRight), false, false, false, false, false);
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::ArrowRight),
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
 
         // Selection should be cleared
-        assert!(model.editor.selection().is_empty(), "Selection should be cleared");
+        assert!(
+            model.editor.selection().is_empty(),
+            "Selection should be cleared"
+        );
 
         // Cursor should be at end of document
-        assert_eq!(model.editor.cursor().line, last_line, "Cursor should be at last line");
+        assert_eq!(
+            model.editor.cursor().line,
+            last_line,
+            "Cursor should be at last line"
+        );
 
         // Viewport should have scrolled to show the cursor
         // The cursor should be visible within the viewport
@@ -2157,7 +2402,9 @@ mod tests {
     #[test]
     fn test_pageup_scrolls_cursor_to_viewport_top() {
         // Create a 100-line document
-        let text = (0..100).map(|i| format!("line {}\n", i)).collect::<String>();
+        let text = (0..100)
+            .map(|i| format!("line {}\n", i))
+            .collect::<String>();
         let mut model = test_model_with_selection(&text, 0, 0, 0, 0);
         model.editor.viewport.visible_lines = 20;
         model.editor.scroll_padding = 1;
@@ -2169,11 +2416,23 @@ mod tests {
 
         // Press PageUp - cursor should jump above the viewport,
         // and viewport should adjust to show cursor at top
-        handle_key(&mut model, Key::Named(NamedKey::PageUp), false, false, false, false, false);
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::PageUp),
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
 
         // PageUp moves visible_lines - 2 = 18 lines up
         // From line 10, that would be line 0 (clamped)
-        assert_eq!(model.editor.cursor().line, 0, "Cursor should be at line 0 after PageUp");
+        assert_eq!(
+            model.editor.cursor().line,
+            0,
+            "Cursor should be at line 0 after PageUp"
+        );
 
         // Viewport should adjust to show cursor
         // With cursor at line 0, viewport.top_line should be 0
@@ -2192,7 +2451,9 @@ mod tests {
     #[test]
     fn test_pageup_from_middle_adjusts_viewport() {
         // Create a 100-line document
-        let text = (0..100).map(|i| format!("line {}\n", i)).collect::<String>();
+        let text = (0..100)
+            .map(|i| format!("line {}\n", i))
+            .collect::<String>();
         let mut model = test_model_with_selection(&text, 0, 0, 0, 0);
         model.editor.viewport.visible_lines = 20;
         model.editor.scroll_padding = 1;
@@ -2203,10 +2464,22 @@ mod tests {
 
         // Press PageUp - cursor should move up 18 lines (20 - 2)
         // From line 50, cursor goes to line 32
-        handle_key(&mut model, Key::Named(NamedKey::PageUp), false, false, false, false, false);
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::PageUp),
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
 
         // Cursor should be at line 32 (50 - 18)
-        assert_eq!(model.editor.cursor().line, 32, "Cursor should be at line 32");
+        assert_eq!(
+            model.editor.cursor().line,
+            32,
+            "Cursor should be at line 32"
+        );
 
         // Line 32 was above the viewport (which was at 40-60)
         // Viewport should have adjusted to show the cursor
@@ -2223,6 +2496,98 @@ mod tests {
         assert!(
             model.editor.cursor().line < viewport_end,
             "Cursor should be visible within viewport"
+        );
+    }
+
+    // ========================================================================
+    // Cmd+Z / Cmd+Shift+Z Keybinding Tests (macOS)
+    // ========================================================================
+
+    #[test]
+    fn test_cmd_z_triggers_undo_not_insert_z() {
+        // Test that Cmd+Z (logo=true) triggers undo and doesn't insert 'z'
+        let mut model = test_model_with_selection("hello", 0, 5, 0, 5);
+
+        // Make a change: insert 'X'
+        update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
+        assert_eq!(model.document.buffer.to_string(), "helloX");
+        assert_eq!(model.editor.cursor().column, 6);
+
+        // Simulate Cmd+Z: logo=true, ctrl=false
+        handle_key(
+            &mut model,
+            Key::Character("z".into()),
+            false, // ctrl
+            false, // shift
+            false, // alt
+            true,  // logo (Cmd on macOS)
+            false, // option_double_tapped
+        );
+
+        // Undo should have run, and no 'z' should be typed
+        assert_eq!(
+            model.document.buffer.to_string(),
+            "hello",
+            "Cmd+Z should undo the insert, not type 'z'"
+        );
+        assert_eq!(model.editor.cursor().column, 5);
+    }
+
+    #[test]
+    fn test_cmd_shift_z_triggers_redo_not_insert_z() {
+        // Test that Cmd+Shift+Z (logo=true, shift=true) triggers redo
+        let mut model = test_model_with_selection("hello", 0, 5, 0, 5);
+
+        // Make a change and undo it
+        update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
+        assert_eq!(model.document.buffer.to_string(), "helloX");
+
+        update(&mut model, Msg::Document(DocumentMsg::Undo));
+        assert_eq!(model.document.buffer.to_string(), "hello");
+
+        // Simulate Cmd+Shift+Z: logo=true, shift=true
+        handle_key(
+            &mut model,
+            Key::Character("z".into()),
+            false, // ctrl
+            true,  // shift
+            false, // alt
+            true,  // logo (Cmd on macOS)
+            false, // option_double_tapped
+        );
+
+        // Redo should have run
+        assert_eq!(
+            model.document.buffer.to_string(),
+            "helloX",
+            "Cmd+Shift+Z should redo the insert"
+        );
+        assert_eq!(model.editor.cursor().column, 6);
+    }
+
+    #[test]
+    fn test_ctrl_z_still_works_for_undo() {
+        // Ensure Ctrl+Z still works (for non-macOS)
+        let mut model = test_model_with_selection("hello", 0, 5, 0, 5);
+
+        update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
+        assert_eq!(model.document.buffer.to_string(), "helloX");
+
+        // Simulate Ctrl+Z
+        handle_key(
+            &mut model,
+            Key::Character("z".into()),
+            true,  // ctrl
+            false, // shift
+            false, // alt
+            false, // logo
+            false,
+        );
+
+        assert_eq!(
+            model.document.buffer.to_string(),
+            "hello",
+            "Ctrl+Z should undo"
         );
     }
 }
