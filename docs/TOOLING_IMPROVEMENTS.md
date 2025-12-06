@@ -712,29 +712,29 @@ run-trace:
 
 ### Phase 1: Foundation (1 day)
 
-- [ ] Add `[profile.profiling]` to Cargo.toml
-- [ ] Add `divan` dev-dependency and benchmark stubs
-- [ ] Add `cargo-llvm-cov` coverage targets to Makefile
-- [ ] Install `bacon` and create `bacon.toml`
+- [x] Add `[profile.profiling]` to Cargo.toml
+- [x] Add `divan` dev-dependency and benchmark stubs
+- [x] Add `cargo-llvm-cov` coverage targets to Makefile
+- [x] Install `bacon` and create `bacon.toml`
 
 ### Phase 2: Benchmarks (1 day)
 
-- [ ] Create `benches/rope_operations.rs`
-- [ ] Create `benches/glyph_cache.rs`
-- [ ] Create `benches/rendering.rs`
-- [ ] Add `make bench` targets
+- [x] Create `benches/rope_operations.rs`
+- [x] Create `benches/glyph_cache.rs`
+- [x] Create `benches/rendering.rs`
+- [x] Add `make bench` targets
 
 ### Phase 3: Profiling (0.5 day)
 
-- [ ] Add `dhat-rs` optional dependency
-- [ ] Add flamegraph/samply Makefile targets
-- [ ] Wire up `PerfStats` for in-app timing
+- [x] Add `dhat-rs` optional dependency
+- [x] Add flamegraph/samply Makefile targets
+- [x] Wire up `PerfStats` for in-app timing
 
 ### Phase 4: CI Integration (0.5 day)
 
-- [ ] Add `.github/workflows/bench.yml`
-- [ ] Add coverage reporting to CI
-- [ ] Set up benchmark artifact storage
+- [x] Add `.github/workflows/bench.yml`
+- [x] Add coverage reporting to CI
+- [x] Set up benchmark artifact storage
 
 ---
 
