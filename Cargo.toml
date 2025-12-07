@@ -49,6 +49,10 @@ harness = false
 name = "rendering"
 harness = false
 
+[[bench]]
+name = "main_loop"
+harness = false
+
 # Profiling profile: release speed with debug symbols
 [profile.profiling]
 inherits = "release"
