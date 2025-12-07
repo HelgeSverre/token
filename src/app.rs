@@ -511,7 +511,7 @@ impl ApplicationHandler for App {
         if self.window.is_none() {
             let window_attributes = Window::default_attributes()
                 .with_title("Token")
-                .with_inner_size(LogicalSize::new(800, 600));
+                .with_inner_size(LogicalSize::new(800, 600)); // TODO: Persist window size/position/monitor on exit/boot
 
             let window = Rc::new(event_loop.create_window(window_attributes).unwrap());
             let context = Context::new(Rc::clone(&window)).unwrap();

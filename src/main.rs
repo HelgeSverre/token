@@ -25,6 +25,7 @@ fn main() -> Result<()> {
 
     env_logger::init();
 
+    // TODO: accept multiple files and open tabs for each in the first editorgroup
     // Parse command-line arguments
     let args: Vec<String> = std::env::args().collect();
     let file_path = if args.len() > 1 {
@@ -43,6 +44,7 @@ fn main() -> Result<()> {
 
 // ============================================================================
 // TESTS - Keyboard handling tests that require handle_key()
+// TODO: Find a way to move it into test module instead of main.rs
 // ============================================================================
 
 #[cfg(test)]

@@ -440,6 +440,7 @@ impl Renderer {
                         .round() as usize;
                     let y = content_y + screen_line * line_height;
 
+                    // TODO: check if this will "always" be the primary cursor, we also have "active_cursor", which is unclear the difference  between them
                     let cursor_color = if idx == 0 {
                         primary_cursor_color
                     } else {
