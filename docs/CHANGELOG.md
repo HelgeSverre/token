@@ -6,6 +6,46 @@ All notable changes to rust-editor are documented in this file.
 
 ## 2025-12-06 (Latest)
 
+### Changed - Codebase Organization
+
+Major restructuring of large files for improved maintainability:
+
+#### Update Module (`update/`)
+
+Converted monolithic `update.rs` (2900 lines) into a module directory:
+
+| File | Lines | Contents |
+|------|-------|----------|
+| `mod.rs` | 36 | Pure dispatcher only |
+| `editor.rs` | 1123 | Cursor movement, selection, expand/shrink |
+| `document.rs` | 1231 | Text editing, undo/redo helpers |
+| `layout.rs` | 472 | Split views, tabs, groups |
+| `app.rs` | 83 | File operations, window resize |
+| `ui.rs` | 55 | Status bar, cursor blink |
+
+#### Binary Modules
+
+Extracted from `main.rs` (was 3100 lines, now ~20 lines entry + 669 tests):
+
+| File | Lines | Contents |
+|------|-------|----------|
+| `app.rs` | 520 | App struct, ApplicationHandler impl |
+| `input.rs` | 402 | handle_key, keyboard→Msg mapping |
+| `view.rs` | 1072 | Renderer, drawing functions, tab helpers |
+| `perf.rs` | 406 | PerfStats, debug overlay (debug only) |
+
+#### Benefits
+
+- `main.rs` is now a clean ~20 line entry point
+- `update/mod.rs` is a pure 36-line dispatcher
+- Clear separation: Model → Messages → Update → View
+- Prepared for future Frame/TextPainter abstraction
+- All 401 tests pass
+
+---
+
+## 2025-12-06
+
 ### Added - Multi-Cursor Selection Gaps
 
 Fixed remaining selection operations to work with multiple cursors:

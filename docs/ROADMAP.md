@@ -9,6 +9,18 @@ For archived phases, see [archived/old-roadmap-file.md](archived/old-roadmap-fil
 
 ## Recently Completed
 
+### Codebase Organization ✅
+
+**Design:** [archived/ORGANIZATION-CODEBASE.md](archived/ORGANIZATION-CODEBASE.md) | **Completed:** 2025-12-06
+
+Restructured large files for maintainability:
+
+- Converted `update.rs` (2900 lines) → `update/` module directory with 5 submodules
+- Extracted from `main.rs`: `view.rs`, `app.rs`, `input.rs`, `perf.rs`
+- `main.rs` now ~20 lines (entry point) + 669 lines tests
+- `update/mod.rs` is a pure 36-line dispatcher
+- All 401 tests pass
+
 ### Multi-Cursor Selection Gaps ✅
 
 **Design:** [feature/MULTI_CURSOR_SELECTION_GAPS.md](feature/MULTI_CURSOR_SELECTION_GAPS.md) | **Completed:** 2025-12-06
@@ -71,16 +83,6 @@ CLI arguments and file tree sidebar:
 - File system watching for external changes
 - Dependencies: `clap` for CLI, `notify` for FS watching
 
-### Codebase Organization
-
-**Design:** [ORGANIZATION-CODEBASE.md](ORGANIZATION-CODEBASE.md)
-
-Restructure large files for maintainability:
-
-- Convert `update.rs` to `update/` module directory
-- Extract from `main.rs`: `view.rs`, `app.rs`, `input.rs`, `perf.rs`
-- Target: `main.rs` ~100-200 lines, update submodules ~400-600 lines each
-
 ### Undo Coalescing (Future)
 
 Group rapid consecutive edits into single undo entries:
@@ -96,6 +98,7 @@ Group rapid consecutive edits into single undo entries:
 
 | Feature                     | Status      | Design Doc                                                                           |
 | --------------------------- | ----------- | ------------------------------------------------------------------------------------ |
+| Codebase Organization       | ✅ Complete | [archived/ORGANIZATION-CODEBASE.md](archived/ORGANIZATION-CODEBASE.md)               |
 | Multi-Cursor Selection Gaps | ✅ Complete | [feature/MULTI_CURSOR_SELECTION_GAPS.md](feature/MULTI_CURSOR_SELECTION_GAPS.md)     |
 | Theming System              | ✅ Complete | [feature/THEMING.md](feature/THEMING.md)                                             |
 | Status Bar                  | ✅ Complete | [feature/STATUS_BAR.md](feature/STATUS_BAR.md)                                       |
@@ -105,7 +108,6 @@ Group rapid consecutive edits into single undo entries:
 | Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md) |
 | File Dropping               | Planned     | [feature/handle-file-dropping.md](feature/handle-file-dropping.md)                   |
 | Workspace Management        | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                   |
-| Codebase Organization       | Planned     | [ORGANIZATION-CODEBASE.md](ORGANIZATION-CODEBASE.md)                                 |
 
 ---
 
@@ -121,18 +123,28 @@ Group rapid consecutive edits into single undo entries:
 
 ```
 src/
-├── main.rs              # Entry point, event loop, App, Renderer, handle_key (~3100 lines)
+├── main.rs              # Entry point (~20 lines) + tests (~669 lines)
 ├── lib.rs               # Library root with module exports
+├── app.rs               # App struct, ApplicationHandler impl (~520 lines)
+├── input.rs             # handle_key, keyboard→Msg mapping (~402 lines)
+├── view.rs              # Renderer, drawing functions (~1072 lines)
+├── perf.rs              # PerfStats, debug overlay (debug only, ~406 lines)
 ├── model/
-│   ├── mod.rs           # AppModel struct, layout constants, accessors (~275 lines)
+│   ├── mod.rs           # AppModel struct, layout constants, accessors (~273 lines)
 │   ├── document.rs      # Document struct (buffer, undo/redo, file_path) (~245 lines)
-│   ├── editor.rs        # EditorState, Cursor, Selection, Viewport (~660 lines)
-│   ├── editor_area.rs   # EditorArea, groups, tabs, layout tree (~770 lines)
+│   ├── editor.rs        # EditorState, Cursor, Selection, Viewport (~1131 lines)
+│   ├── editor_area.rs   # EditorArea, groups, tabs, layout tree (~895 lines)
 │   ├── ui.rs            # UiState (cursor blink, transient messages) (~85 lines)
-│   └── status_bar.rs    # StatusBar, StatusSegment, sync_status_bar() (~450 lines)
+│   └── status_bar.rs    # StatusBar, StatusSegment, sync_status_bar() (~446 lines)
+├── update/              # Update module directory
+│   ├── mod.rs           # Pure dispatcher (~36 lines)
+│   ├── editor.rs        # Cursor, selection, expand/shrink (~1123 lines)
+│   ├── document.rs      # Text editing, undo/redo (~1231 lines)
+│   ├── layout.rs        # Split views, tabs, groups (~472 lines)
+│   ├── app.rs           # File operations, window resize (~83 lines)
+│   └── ui.rs            # Status bar, cursor blink (~55 lines)
 ├── messages.rs          # Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg, AppMsg (~260 lines)
 ├── commands.rs          # Cmd enum (Redraw, SaveFile, LoadFile, Batch) (~55 lines)
-├── update.rs            # update() dispatcher + all handlers (~2900 lines)
 ├── theme.rs             # Theme, Color, TabBarTheme, SplitterTheme (~540 lines)
 ├── overlay.rs           # OverlayConfig, OverlayBounds, render functions (~285 lines)
 └── util.rs              # CharType enum, is_punctuation, char_type (~65 lines)
