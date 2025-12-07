@@ -25,6 +25,7 @@ pub fn test_model(text: &str, line: usize, column: usize) -> AppModel {
         document_id: None,
         cursors: vec![cursor],
         selections: vec![selection],
+        active_cursor_index: 0,
         viewport: Viewport {
             top_line: 0,
             left_column: 0,
@@ -79,6 +80,7 @@ pub fn test_model_with_selection(
         document_id: None,
         cursors: vec![cursor],
         selections: vec![selection],
+        active_cursor_index: 0,
         viewport: Viewport {
             top_line: 0,
             left_column: 0,
@@ -130,6 +132,7 @@ pub fn test_model_multi_cursor(text: &str, positions: &[(usize, usize)]) -> AppM
         document_id: None,
         cursors,
         selections,
+        active_cursor_index: 0,
         viewport: Viewport {
             top_line: 0,
             left_column: 0,

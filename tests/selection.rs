@@ -226,6 +226,176 @@ fn test_deduplicate_cursors() {
     );
 }
 
+// ========================================================================
+// Active Cursor Tracking Tests
+// ========================================================================
+
+#[test]
+fn test_add_cursor_below_sets_active() {
+    // When adding a cursor below, the new cursor should become the active cursor
+    let mut model = test_model("line 0\nline 1\nline 2\nline 3\n", 1, 0);
+
+    // Add cursor below (from line 1 to line 2)
+    update(&mut model, Msg::Editor(EditorMsg::AddCursorBelow));
+
+    assert_eq!(model.editor().cursor_count(), 2, "Should have 2 cursors");
+
+    // The new cursor (at line 2) should be the active cursor
+    let active = model.editor().active_cursor();
+    assert_eq!(
+        active.line, 2,
+        "Active cursor should be on the new line (line 2)"
+    );
+
+    // Verify cursors are sorted: line 1, line 2
+    assert_eq!(model.editor().cursors[0].line, 1);
+    assert_eq!(model.editor().cursors[1].line, 2);
+
+    // Active cursor index should point to the cursor at line 2 (index 1 after sorting)
+    assert_eq!(model.editor().active_cursor_index, 1);
+}
+
+#[test]
+fn test_add_cursor_above_sets_active() {
+    // When adding a cursor above, the new cursor should become the active cursor
+    let mut model = test_model("line 0\nline 1\nline 2\nline 3\n", 2, 0);
+
+    // Add cursor above (from line 2 to line 1)
+    update(&mut model, Msg::Editor(EditorMsg::AddCursorAbove));
+
+    assert_eq!(model.editor().cursor_count(), 2, "Should have 2 cursors");
+
+    // The new cursor (at line 1) should be the active cursor
+    let active = model.editor().active_cursor();
+    assert_eq!(
+        active.line, 1,
+        "Active cursor should be on the new line (line 1)"
+    );
+
+    // Verify cursors are sorted: line 1, line 2
+    assert_eq!(model.editor().cursors[0].line, 1);
+    assert_eq!(model.editor().cursors[1].line, 2);
+
+    // Active cursor index should point to the cursor at line 1 (index 0 after sorting)
+    assert_eq!(model.editor().active_cursor_index, 0);
+}
+
+#[test]
+fn test_active_cursor_survives_sort() {
+    // Active cursor should be tracked through sorting operations
+    // We'll use toggle_cursor_at to add cursors in non-sorted order
+    let mut model = test_model("line 0\nline 1\nline 2\nline 3\n", 2, 0);
+
+    // Start with cursor at line 2 (active)
+    // Add cursor at line 0 - this becomes active
+    model.editor_mut().toggle_cursor_at(0, 0);
+    assert_eq!(
+        model.editor().active_cursor().line,
+        0,
+        "New cursor at line 0 should be active"
+    );
+
+    // Add cursor at line 3 - this becomes active
+    model.editor_mut().toggle_cursor_at(3, 0);
+    assert_eq!(
+        model.editor().active_cursor().line,
+        3,
+        "New cursor at line 3 should be active"
+    );
+
+    // Now we have cursors at lines 0, 2, 3 (sorted), with line 3 being active
+    assert_eq!(model.editor().cursor_count(), 3);
+    assert_eq!(model.editor().cursors[0].line, 0);
+    assert_eq!(model.editor().cursors[1].line, 2);
+    assert_eq!(model.editor().cursors[2].line, 3);
+
+    // Active cursor should still be the one at line 3
+    assert_eq!(model.editor().active_cursor().line, 3);
+}
+
+#[test]
+fn test_active_cursor_handles_dedup() {
+    // When active cursor is deduplicated away, the surviving cursor at that position becomes active
+    let mut model = test_model("line 0\nline 1\n", 0, 0);
+
+    // Add another cursor at the same position (clone values first to avoid borrow issues)
+    let cursor_clone = model.editor().cursors[0].clone();
+    let selection_clone = model.editor().selections[0].clone();
+    {
+        let editor = model.editor_mut();
+        editor.cursors.push(cursor_clone);
+        editor.selections.push(selection_clone);
+        editor.active_cursor_index = 1; // Make the second (duplicate) cursor active
+    }
+
+    assert_eq!(model.editor().cursor_count(), 2);
+
+    // Deduplicate
+    model.editor_mut().deduplicate_cursors();
+
+    // Should have 1 cursor remaining
+    assert_eq!(model.editor().cursor_count(), 1);
+    // Active cursor index should be valid (pointing to the surviving cursor)
+    assert_eq!(model.editor().active_cursor_index, 0);
+    assert_eq!(model.editor().active_cursor().line, 0);
+}
+
+// ========================================================================
+// Multi-Cursor Operation Tests (require additional implementation)
+// ========================================================================
+
+#[test]
+#[ignore = "Requires undo/redo to be updated for multi-cursor support"]
+fn test_multi_cursor_undo_redo_preserves_all_cursors() {
+    // Undo/redo should preserve all cursor positions, not just primary
+    // Setup: 3 cursors at different positions
+    // Action: Type a character (creates edit at each cursor), then undo
+    // Expected: All 3 cursors restored to original positions
+    // TODO: Implement after undo/redo stores full cursor state
+}
+
+#[test]
+#[ignore = "Requires indent to be updated for multi-cursor support"]
+fn test_multi_cursor_indent() {
+    // Indent should work on all selections, not just primary
+    // Setup: 2 cursors selecting different line ranges
+    // Action: IndentLines
+    // Expected: All selected lines are indented
+    // TODO: Implement after indent iterates over all selections
+}
+
+#[test]
+#[ignore = "Requires duplicate to be updated for multi-cursor support"]
+fn test_multi_cursor_duplicate() {
+    // Duplicate should work at each cursor position
+    // Setup: 2 cursors on different lines
+    // Action: Duplicate
+    // Expected: Both lines are duplicated
+    // TODO: Implement after duplicate iterates over all cursors
+}
+
+// ========================================================================
+// View Rendering Tests
+// ========================================================================
+
+#[test]
+fn test_all_cursor_lines_should_be_highlighted() {
+    // Verify that we can access all cursor lines (view highlighting is done in view.rs)
+    let mut model = test_model("line 0\nline 1\nline 2\nline 3\nline 4\nline 5\n", 1, 0);
+
+    // Add cursors at lines 3 and 5
+    model.editor_mut().toggle_cursor_at(3, 0);
+    model.editor_mut().toggle_cursor_at(5, 0);
+
+    assert_eq!(model.editor().cursor_count(), 3);
+
+    // Verify all cursor lines are accessible
+    let cursor_lines: Vec<usize> = model.editor().cursors.iter().map(|c| c.line).collect();
+    assert!(cursor_lines.contains(&1), "Should have cursor at line 1");
+    assert!(cursor_lines.contains(&3), "Should have cursor at line 3");
+    assert!(cursor_lines.contains(&5), "Should have cursor at line 5");
+}
+
 // Note: Tests for arrow keys with selection (that require clearing selection before movement)
 // are in src/main.rs since they need access to the handle_key() function which is
 // in the binary, not the library.
@@ -474,7 +644,7 @@ fn test_select_next_occurrence_finds_all() {
     // Text with 3 occurrences of "abc"
     let mut model = test_model("abc def abc ghi abc", 0, 0);
 
-    // First call: selects word under cursor AND finds next occurrence
+    // First call: should ONLY select word under cursor (not find next)
     update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
     assert!(
         !model.editor().selection().is_empty(),
@@ -482,17 +652,29 @@ fn test_select_next_occurrence_finds_all() {
     );
     assert_eq!(
         model.editor().cursors.len(),
-        2,
-        "First call selects word and adds cursor at next occurrence"
+        1,
+        "First call only selects word, no additional cursors"
     );
 
-    // Second call: should find the third "abc" at position 16
+    // Verify the selection is correct
+    let sel = model.editor().selection();
+    assert_eq!(sel.anchor, Position::new(0, 0));
+    assert_eq!(sel.head, Position::new(0, 3));
+
+    // Second call: should find and add cursor at next occurrence
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    assert_eq!(
+        model.editor().cursors.len(),
+        2,
+        "Second call adds cursor at next occurrence"
+    );
+
+    // Third call: should find the third "abc"
     update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
     assert_eq!(model.editor().cursors.len(), 3, "Should have 3 cursors now");
 
-    // Third call: should wrap around and find the first one is already selected
+    // Fourth call: should wrap around, all already selected
     update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
-    // Should still be 3 cursors (no new ones added since all are selected)
     assert_eq!(
         model.editor().cursors.len(),
         3,
@@ -505,7 +687,15 @@ fn test_select_next_occurrence_unicode() {
     // Text with 2 occurrences of "café"
     let mut model = test_model("café latte café mocha", 0, 0);
 
-    // First call: selects "café" under cursor AND adds cursor at next occurrence
+    // First call: only selects "café" under cursor
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    assert_eq!(
+        model.editor().cursors.len(),
+        1,
+        "First call only selects word"
+    );
+
+    // Second call: adds cursor at next occurrence
     update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
     assert_eq!(model.editor().cursors.len(), 2, "Should find both cafés");
 
@@ -516,6 +706,88 @@ fn test_select_next_occurrence_unicode() {
         2,
         "Still 2 cursors - all occurrences selected"
     );
+}
+
+#[test]
+fn test_select_next_occurrence_cursor_mid_word() {
+    // Cursor in middle of word: "he|llo hello hello"
+    let mut model = test_model("hello hello hello", 0, 2);
+
+    // First call: selects "hello" (the word cursor is on)
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    assert_eq!(model.editor().cursors.len(), 1);
+    let sel = model.editor().selection();
+    assert_eq!(sel.anchor, Position::new(0, 0));
+    assert_eq!(sel.head, Position::new(0, 5));
+
+    // Second call: adds second "hello"
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    assert_eq!(model.editor().cursors.len(), 2);
+
+    // Third call: adds third "hello"
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    assert_eq!(model.editor().cursors.len(), 3);
+}
+
+#[test]
+fn test_select_next_occurrence_with_existing_selection() {
+    // If selection already exists, should immediately find next
+    let mut model = test_model("foo bar foo baz foo", 0, 0);
+
+    // Manually create a selection of "foo"
+    model.editor_mut().selection_mut().anchor = Position::new(0, 0);
+    model.editor_mut().selection_mut().head = Position::new(0, 3);
+
+    // First call with existing selection: should find next occurrence
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    assert_eq!(
+        model.editor().cursors.len(),
+        2,
+        "Should add cursor at next occurrence"
+    );
+}
+
+#[test]
+fn test_select_next_occurrence_single_occurrence() {
+    // Only one occurrence of the word
+    let mut model = test_model("unique word here", 0, 0);
+
+    // First call: selects "unique"
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    assert_eq!(model.editor().cursors.len(), 1);
+    assert!(!model.editor().selection().is_empty());
+
+    // Second call: no more occurrences, should stay at 1 cursor
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    assert_eq!(model.editor().cursors.len(), 1);
+}
+
+#[test]
+fn test_select_next_occurrence_cursor_at_word_end() {
+    // Cursor at last char of word: "hell|o hello" (column 4)
+    let mut model = test_model("hello hello", 0, 4);
+
+    // First call: should select "hello" (word cursor is on)
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    assert_eq!(model.editor().cursors.len(), 1);
+    let sel = model.editor().selection();
+    assert_eq!(sel.anchor, Position::new(0, 0));
+    assert_eq!(sel.head, Position::new(0, 5));
+
+    // Second call: adds next occurrence
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    assert_eq!(model.editor().cursors.len(), 2);
+}
+
+#[test]
+fn test_select_next_occurrence_on_whitespace() {
+    // Cursor on whitespace between words should do nothing
+    let mut model = test_model("foo bar", 0, 3); // cursor on space
+
+    update(&mut model, Msg::Editor(EditorMsg::SelectNextOccurrence));
+    // Should still have empty selection (no word under cursor)
+    assert!(model.editor().selection().is_empty());
+    assert_eq!(model.editor().cursors.len(), 1);
 }
 
 // ========================================================================

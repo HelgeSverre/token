@@ -842,6 +842,7 @@ mod tests {
         assert_eq!(area.group_at_point(600.0, 300.0), Some(group2_id));
     }
 
+    // todo: move tests into their own folder.
     #[test]
     fn test_splitter_at_point() {
         let mut area = create_test_editor_area();
