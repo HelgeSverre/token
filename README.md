@@ -1,8 +1,15 @@
+<center>
+
 # Token
 
-A minimal text editor for editing code, inspired by Jetbrains behaviour, built with Rust.
+**A minimal text editor for editing code, inspired by Jetbrains, built with Rust**
 
-<!-- Placeholder for Logo/Screenshot -->
+![License: MIT](https://img.shields.io/badge/License-MIT-teal.svg?style=flat-square)
+[![Powered by (accent)](https://img.shields.io/badge/Powered%20by-Amp-F34E3F.svg?style=flat-square&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgdmlld0JveD0iMCAwIDI4IDI4IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cGF0aCBkPSJNMTMuOTE5NyAxMy42MUwxNy4zODE2IDI2LjU2NkwxNC4yNDIgMjcuNDA0OUwxMS4yNjQ1IDE2LjI2NDNMMC4xMTk5MjYgMTMuMjkwNkwwLjk1NzgxNyAxMC4xNUwxMy45MTk3IDEzLjYxWiIgZmlsbD0iI0ZGRkZGRiIvPgo8cGF0aCBkPSJNMTMuNzM5MSAxNi4wODkyTDQuODgxNjkgMjQuOTA1NkwyLjU4ODcyIDIyLjYwMTlMMTEuNDQ2MSAxMy43ODY1TDEzLjczOTEgMTYuMDg5MloiIGZpbGw9IiNGRkZGRkYiLz4KPHBhdGggZD0iTTE4LjkzODYgOC41ODMxNUwyMi40MDA1IDIxLjUzOTJMMTkuMjYwOSAyMi4zNzgxTDE2LjI4MzMgMTEuMjM3NEw1LjEzODc5IDguMjYzODFMNS45NzY2OCA1LjEyMzE4TDE4LjkzODYgOC41ODMxNVoiIGZpbGw9IiNGRkZGRkYiLz4KPHBhdGggZD0iTTIzLjk4MDMgMy41NTYzMkwyNy40NDIyIDE2LjUxMjRMMjQuMzAyNSAxNy4zNTEyTDIxLjMyNSA2LjIxMDYyTDEwLjE4MDUgMy4yMzY5OEwxMS4wMTgzIDAuMDk2MzU5M0wyMy45ODAzIDMuNTU2MzJaIiBmaWxsPSIjRkZGRkZGIi8%2BCjwvc3ZnPgo%3D)](https://ampcode.com/@helgesverre)
+
+</center>
+
+---
 
 ## About
 
@@ -16,7 +23,17 @@ To build Token from source, you will need the Rust toolchain installed.
 ```bash
 git clone https://github.com/HelgeSverre/token
 cd token
+
+# --- Makefile for convenience ---
+# Install dependencies
+make setup
+
+
+make setup
+
+# Or build and run manually with cargo
 cargo build --release
+cargo run
 ```
 
 ## Commands

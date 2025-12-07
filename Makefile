@@ -20,7 +20,7 @@ release:
 
 # Run release build with default sample file
 run: release
-	./target/release/token test_files/indentation.txt
+	./target/release/token test_files/sample_code.rs
 
 # Run debug build (faster compile, slower runtime)
 dev: build
@@ -211,7 +211,7 @@ build-prof:
 
 # CPU flamegraph (requires: cargo install flamegraph)
 flamegraph: build-prof
-	cargo flamegraph --profile profiling -- ./target/profiling/token test_files/large.txt
+	cargo flamegraph --profile profiling -- ./target/profiling/token test_files/sample_code.rs
 
 # Interactive profiling with samply (requires: cargo install samply)
 profile-samply: build-prof
