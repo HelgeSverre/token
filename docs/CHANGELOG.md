@@ -29,6 +29,13 @@ Open multiple files from command line or by drag-and-drop:
 - Added `Renderer::tab_at_position()` for tab hit-testing
 - Tab bar click handler now detects tab index and dispatches `SwitchToTab`
 
+### Refactored - Document Display Name
+
+- Added `Document::display_name()` method centralizing naming logic
+- Added `tab_title()` helper in view.rs to avoid duplication
+- Tab bar rendering and hit-testing now use the same helper
+- Keeps numbered untitled names (Untitled, Untitled-2, etc.) for UX
+
 ---
 
 ## 2025-12-07
