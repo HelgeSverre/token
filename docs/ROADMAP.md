@@ -9,6 +9,30 @@ For archived phases, see [archived/old-roadmap-file.md](archived/old-roadmap-fil
 
 ## Recently Completed
 
+### Multi-Cursor Line Operations ✅
+
+**Completed:** 2025-12-07
+
+Fixed line-based operations to work with all cursors:
+
+- **IndentLines** - now indents lines at all cursor positions
+- **UnindentLines** - now unindents lines at all cursor positions  
+- **DeleteLine** - now deletes lines at all cursor positions
+- **AddCursorAbove/Below** - now expands from edge cursors, not primary
+- Uses `lines_covered_by_all_cursors()` helper for unique line collection
+- 10 new tests in `tests/multi_cursor.rs`
+
+### Test Extraction ✅
+
+**Completed:** 2025-12-07
+
+Extracted inline tests from production code to `tests/` folder:
+
+- `tests/editor_area.rs` - 7 tests (Rect, layout, hit testing)
+- `tests/overlay.rs` - 7 tests (anchor positioning, alpha blending)
+- `tests/theme.rs` - 10 tests (Color parsing, YAML themes, builtins)
+- Tests in `src/main.rs` (14) remain - they test binary-only `handle_key()`
+
 ### Codebase Organization ✅
 
 **Design:** [archived/ORGANIZATION-CODEBASE.md](archived/ORGANIZATION-CODEBASE.md) | **Completed:** 2025-12-06
@@ -17,9 +41,8 @@ Restructured large files for maintainability:
 
 - Converted `update.rs` (2900 lines) → `update/` module directory with 5 submodules
 - Extracted from `main.rs`: `view.rs`, `app.rs`, `input.rs`, `perf.rs`
-- `main.rs` now ~20 lines (entry point) + 669 lines tests
+- `main.rs` now ~20 lines (entry point) + 14 tests
 - `update/mod.rs` is a pure 36-line dispatcher
-- All 401 tests pass
 
 ### Multi-Cursor Selection Gaps ✅
 
@@ -156,17 +179,22 @@ themes/
 ├── github-dark.yaml     # GitHub dark theme
 └── github-light.yaml    # GitHub light theme
 
-tests/                   # Integration tests (~5800 lines total)
+tests/                   # Integration tests
 ├── common/mod.rs        # Shared test helpers (test_model, etc.)
-├── cursor_movement.rs   # 38 tests
-├── text_editing.rs      # 44 tests (includes multi-cursor undo)
-├── selection.rs         # 47 tests
+├── cursor_movement.rs   # 48 tests
 ├── document_cursor.rs   # 32 tests
-├── scrolling.rs         # 33 tests
 ├── edge_cases.rs        # 9 tests
+├── editor_area.rs       # 7 tests (layout, hit testing)
+├── expand_shrink_selection.rs # 18 tests
+├── layout.rs            # 51 tests (split view)
 ├── monkey_tests.rs      # 34 tests (resize edge cases)
-├── layout.rs            # 47 tests (split view)
-└── status_bar.rs        # 47 tests
+├── multi_cursor.rs      # 25 tests (2 ignored)
+├── overlay.rs           # 7 tests (anchor, blending)
+├── scrolling.rs         # 33 tests
+├── selection.rs         # 47 tests
+├── status_bar.rs        # 47 tests
+├── text_editing.rs      # 44 tests (includes multi-cursor undo)
+└── theme.rs             # 10 tests (Color, YAML parsing)
 ```
 
-**Test count:** 401 total (24 lib + 14 main + 363 integration)
+**Test count:** 426 total (14 main + 412 integration, 2 ignored)
