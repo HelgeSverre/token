@@ -1,31 +1,69 @@
-# Codebase Organization Plan
+# Codebase Organization
+
+**Status:** ✅ Complete  
+**Completed:** 2025-12-06
 
 A pragmatic restructuring of the codebase to improve maintainability as it grows.
 
 ---
 
-## Current State (Post Split View Implementation)
+## Current State (Post Reorganization)
 
-| File                       | Lines | Contents                                                                       |
-| -------------------------- | ----- | ------------------------------------------------------------------------------ |
-| `src/main.rs`              | ~3100 | Renderer, PerfStats, App, ApplicationHandler, handle_key, draw_text, main()    |
-| `src/update.rs`            | ~2900 | update dispatcher, update_editor/document/layout/ui/app, cursor/layout helpers |
-| `src/model/editor_area.rs` | ~770  | EditorArea, EditorGroup, LayoutNode, SplitContainer, Tab, IDs, layout compute  |
-| `src/model/editor.rs`      | ~660  | EditorState, Cursor, Selection, Viewport, OccurrenceState                      |
-| `src/theme.rs`             | ~540  | Theme loading, Color, TabBarTheme, SplitterTheme                               |
-| `src/model/status_bar.rs`  | ~450  | StatusBar, StatusSegment, sync_status_bar, TransientMessage                    |
-| `src/overlay.rs`           | ~285  | Overlay rendering utilities                                                    |
-| `src/model/mod.rs`         | ~275  | AppModel, layout constants, accessor methods                                   |
-| `src/messages.rs`          | ~260  | Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg, AppMsg                          |
-| `src/model/document.rs`    | ~245  | Document, EditOperation, Rope buffer                                           |
-| `src/model/ui.rs`          | ~85   | UiState (cursor blink, transient messages)                                     |
-| `src/util.rs`              | ~65   | CharType enum, is_punctuation, char_type                                       |
-| `src/commands.rs`          | ~55   | Cmd enum (Redraw, SaveFile, LoadFile, Batch)                                   |
-| `src/lib.rs`               | ~18   | Library root, module exports                                                   |
+### Update Module (`update/`)
 
-**Test Coverage:** 351+ tests across 9 test files (~5800 lines)
+| File | Lines | Contents |
+|------|-------|----------|
+| `mod.rs` | 36 | Pure dispatcher only |
+| `editor.rs` | 1123 | Cursor movement, selection, expand/shrink |
+| `document.rs` | 1231 | Text editing, undo/redo helpers |
+| `layout.rs` | 472 | Split views, tabs, groups |
+| `app.rs` | 83 | File operations, window resize |
+| `ui.rs` | 55 | Status bar, cursor blink |
 
-**Problem**: `main.rs` and `update.rs` are too large and mix concerns.
+### Binary Modules
+
+| File | Lines | Contents |
+|------|-------|----------|
+| `main.rs` | 689 | Entry point (~20 lines) + tests (~669 lines) |
+| `app.rs` | 520 | App struct, ApplicationHandler impl |
+| `input.rs` | 402 | handle_key, keyboard→Msg mapping |
+| `view.rs` | 1072 | Renderer, drawing functions, tab helpers |
+| `perf.rs` | 406 | PerfStats, debug overlay (debug only) |
+
+### Model Module
+
+| File | Lines | Contents |
+|------|-------|----------|
+| `mod.rs` | 273 | AppModel, layout constants, accessors |
+| `editor.rs` | 1131 | EditorState, Cursor, Selection, Viewport |
+| `editor_area.rs` | 895 | EditorArea, groups, tabs, layout tree |
+| `status_bar.rs` | 446 | StatusBar, StatusSegment, sync_status_bar |
+| `document.rs` | 245 | Document, EditOperation, Rope buffer |
+| `ui.rs` | 85 | UiState (cursor blink, transient messages) |
+
+### Other Modules
+
+| File | Lines | Contents |
+|------|-------|----------|
+| `theme.rs` | 540 | Theme loading, Color, TabBarTheme, SplitterTheme |
+| `overlay.rs` | 285 | Overlay rendering utilities |
+| `messages.rs` | 260 | Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg, AppMsg |
+| `commands.rs` | 55 | Cmd enum (Redraw, SaveFile, LoadFile, Batch) |
+| `util.rs` | 65 | CharType enum, is_punctuation, char_type |
+| `lib.rs` | 18 | Library root, module exports |
+
+**Test Coverage:** 401 tests across 9 test files (~5800 lines)
+
+---
+
+## Previous State (Before Reorganization)
+
+| File | Lines | Contents |
+|------|-------|----------|
+| `src/main.rs` | ~3100 | Renderer, PerfStats, App, ApplicationHandler, handle_key, draw_text, main() |
+| `src/update.rs` | ~2900 | update dispatcher, all handlers, cursor/layout helpers |
+
+**Problem (solved)**: `main.rs` and `update.rs` were too large and mixed concerns.
 
 ---
 
