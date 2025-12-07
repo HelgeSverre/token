@@ -5,7 +5,8 @@
         bench bench-rope bench-render bench-glyph \
         coverage coverage-html coverage-ci \
         watch watch-lint test-fast test-retry \
-        setup setup-tools
+        setup setup-tools \
+        compile-all compile-macos-x86 compile-macos-arm compile-linux compile-windows
 
 # Default target
 all: help
@@ -111,6 +112,13 @@ help:
 	@echo ""
 	@echo "CI targets:"
 	@echo "  make ci           - Test GitHub Actions locally with act"
+	@echo ""
+	@echo "Cross-compilation:"
+	@echo "  make compile-all      - Build for all platforms"
+	@echo "  make compile-macos-x86 - macOS Intel"
+	@echo "  make compile-macos-arm - macOS Apple Silicon"
+	@echo "  make compile-linux    - Linux x86_64 (requires cross + Docker)"
+	@echo "  make compile-windows  - Windows x86_64 (requires cargo-xwin)"
 
 # === Setup targets ===
 
@@ -230,3 +238,26 @@ test-retry:
 # Test GitHub Actions locally with act
 ci:
 	act push --job build --matrix os:ubuntu-latest --matrix target:x86_64-unknown-linux-gnu --container-architecture linux/amd64
+
+# === Cross-compilation targets ===
+
+# Build for all platforms
+compile-all: compile-macos-x86 compile-macos-arm compile-linux compile-windows
+	@echo "All cross-compilation builds complete!"
+	@ls -la target/*/release/token* 2>/dev/null || true
+
+# macOS x86_64 (Intel)
+compile-macos-x86:
+	cargo build --release --target x86_64-apple-darwin
+
+# macOS aarch64 (Apple Silicon)
+compile-macos-arm:
+	cargo build --release --target aarch64-apple-darwin
+
+# Linux x86_64 (requires: cargo install cross, Docker running)
+compile-linux:
+	cross build --release --target x86_64-unknown-linux-gnu
+
+# Windows x86_64 (requires: cargo install cargo-xwin)
+compile-windows:
+	cargo xwin build --release --target x86_64-pc-windows-msvc
