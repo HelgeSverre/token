@@ -20,7 +20,6 @@ use token::update::update;
 use crate::input::handle_key;
 use crate::view::Renderer;
 
-#[cfg(debug_assertions)]
 use crate::perf::PerfStats;
 
 use std::path::PathBuf;
@@ -45,7 +44,6 @@ pub struct App {
     drag_active: bool,
     msg_tx: Sender<Msg>,
     msg_rx: Receiver<Msg>,
-    #[cfg(debug_assertions)]
     perf: PerfStats,
 }
 
@@ -71,7 +69,6 @@ impl App {
             drag_active: false,
             msg_tx,
             msg_rx,
-            #[cfg(debug_assertions)]
             perf: PerfStats::default(),
         }
     }
@@ -404,17 +401,8 @@ impl App {
         }
     }
 
-    #[cfg(not(debug_assertions))]
     fn render(&mut self) -> Result<()> {
-        if let Some(renderer) = &mut self.renderer {
-            renderer.render(&mut self.model, ())?;
-        }
-        Ok(())
-    }
-
-    #[cfg(debug_assertions)]
-    fn render(&mut self) -> Result<()> {
-        self.perf.frame_start = Some(Instant::now());
+        self.perf.start_frame();
 
         if let Some(renderer) = &mut self.renderer {
             renderer.render(&mut self.model, &mut self.perf)?;

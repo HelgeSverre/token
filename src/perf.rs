@@ -1,30 +1,34 @@
-//! Performance monitoring module (debug builds only)
+//! Performance monitoring module
 //!
-//! Contains PerfStats struct for tracking frame timing and render breakdown,
-//! plus the render_perf_overlay function for displaying performance metrics.
+//! Contains PerfStats struct for tracking frame timing and render breakdown.
+//! In release builds, all timing methods compile to no-ops for zero overhead.
 
+#[cfg(debug_assertions)]
 use std::collections::VecDeque;
+#[cfg(debug_assertions)]
 use std::time::{Duration, Instant};
 
+#[cfg(debug_assertions)]
 use fontdue::Font;
+#[cfg(debug_assertions)]
 use token::overlay::{
     render_overlay_background, render_overlay_border, OverlayAnchor, OverlayConfig,
 };
+#[cfg(debug_assertions)]
 use token::theme::Theme;
 
+#[cfg(debug_assertions)]
 use crate::view::{draw_sparkline, draw_text, GlyphCache};
 
+#[cfg(debug_assertions)]
 pub const PERF_HISTORY_SIZE: usize = 60;
 
-#[derive(Default)]
-#[allow(dead_code)]
+#[cfg(debug_assertions)]
 pub struct PerfStats {
-    // Frame timing
     pub frame_start: Option<Instant>,
     pub last_frame_time: Duration,
     pub frame_times: VecDeque<Duration>,
 
-    // Render breakdown (current frame)
     pub clear_time: Duration,
     pub line_highlight_time: Duration,
     pub gutter_time: Duration,
@@ -33,7 +37,6 @@ pub struct PerfStats {
     pub status_bar_time: Duration,
     pub present_time: Duration,
 
-    // Render breakdown history (for sparklines)
     pub clear_history: VecDeque<Duration>,
     pub highlight_history: VecDeque<Duration>,
     pub gutter_history: VecDeque<Duration>,
@@ -42,25 +45,90 @@ pub struct PerfStats {
     pub status_history: VecDeque<Duration>,
     pub present_history: VecDeque<Duration>,
 
-    // Cache stats (reset per frame)
     pub frame_cache_hits: usize,
     pub frame_cache_misses: usize,
 
-    // Cumulative cache stats
     pub total_cache_hits: usize,
     pub total_cache_misses: usize,
 
-    // Display toggle
     pub show_overlay: bool,
 }
 
-#[allow(dead_code)]
+#[cfg(not(debug_assertions))]
+#[derive(Default)]
+pub struct PerfStats;
+
+#[cfg(debug_assertions)]
+impl Default for PerfStats {
+    fn default() -> Self {
+        Self {
+            frame_start: None,
+            last_frame_time: Duration::ZERO,
+            frame_times: VecDeque::new(),
+            clear_time: Duration::ZERO,
+            line_highlight_time: Duration::ZERO,
+            gutter_time: Duration::ZERO,
+            text_time: Duration::ZERO,
+            cursor_time: Duration::ZERO,
+            status_bar_time: Duration::ZERO,
+            present_time: Duration::ZERO,
+            clear_history: VecDeque::new(),
+            highlight_history: VecDeque::new(),
+            gutter_history: VecDeque::new(),
+            text_history: VecDeque::new(),
+            cursor_history: VecDeque::new(),
+            status_history: VecDeque::new(),
+            present_history: VecDeque::new(),
+            frame_cache_hits: 0,
+            frame_cache_misses: 0,
+            total_cache_hits: 0,
+            total_cache_misses: 0,
+            show_overlay: false,
+        }
+    }
+}
+
+/// Timer guard that records elapsed time when dropped (debug only)
+#[cfg(debug_assertions)]
+pub struct TimerGuard<'a> {
+    start: Instant,
+    target: &'a mut Duration,
+}
+
+#[cfg(not(debug_assertions))]
+pub struct TimerGuard;
+
+#[cfg(debug_assertions)]
+impl<'a> TimerGuard<'a> {
+    fn new(target: &'a mut Duration) -> Self {
+        Self {
+            start: Instant::now(),
+            target,
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+impl Drop for TimerGuard<'_> {
+    fn drop(&mut self) {
+        *self.target = self.start.elapsed();
+    }
+}
+
+#[cfg(debug_assertions)]
 impl PerfStats {
+    #[inline(always)]
     pub fn reset_frame_stats(&mut self) {
         self.frame_cache_hits = 0;
         self.frame_cache_misses = 0;
     }
 
+    #[inline(always)]
+    pub fn start_frame(&mut self) {
+        self.frame_start = Some(Instant::now());
+    }
+
+    #[inline(always)]
     pub fn record_frame_time(&mut self) {
         if let Some(start) = self.frame_start.take() {
             self.last_frame_time = start.elapsed();
@@ -69,6 +137,49 @@ impl PerfStats {
                 self.frame_times.pop_front();
             }
         }
+    }
+
+    #[inline(always)]
+    pub fn record_render_history(&mut self) {
+        fn push_history(history: &mut VecDeque<Duration>, value: Duration) {
+            history.push_back(value);
+            if history.len() > PERF_HISTORY_SIZE {
+                history.pop_front();
+            }
+        }
+
+        push_history(&mut self.clear_history, self.clear_time);
+        push_history(&mut self.highlight_history, self.line_highlight_time);
+        push_history(&mut self.gutter_history, self.gutter_time);
+        push_history(&mut self.text_history, self.text_time);
+        push_history(&mut self.cursor_history, self.cursor_time);
+        push_history(&mut self.status_history, self.status_bar_time);
+        push_history(&mut self.present_history, self.present_time);
+    }
+
+    #[inline(always)]
+    pub fn time_clear(&mut self) -> TimerGuard<'_> {
+        TimerGuard::new(&mut self.clear_time)
+    }
+
+    #[inline(always)]
+    pub fn time_text(&mut self) -> TimerGuard<'_> {
+        TimerGuard::new(&mut self.text_time)
+    }
+
+    #[inline(always)]
+    pub fn time_status_bar(&mut self) -> TimerGuard<'_> {
+        TimerGuard::new(&mut self.status_bar_time)
+    }
+
+    #[inline(always)]
+    pub fn time_present(&mut self) -> TimerGuard<'_> {
+        TimerGuard::new(&mut self.present_time)
+    }
+
+    #[inline(always)]
+    pub fn should_show_overlay(&self) -> bool {
+        self.show_overlay
     }
 
     pub fn avg_frame_time(&self) -> Duration {
@@ -96,25 +207,44 @@ impl PerfStats {
             0.0
         }
     }
+}
 
-    pub fn record_render_history(&mut self) {
-        fn push_history(history: &mut VecDeque<Duration>, value: Duration) {
-            history.push_back(value);
-            if history.len() > PERF_HISTORY_SIZE {
-                history.pop_front();
-            }
-        }
+#[cfg(not(debug_assertions))]
+impl PerfStats {
+    #[inline(always)]
+    pub fn reset_frame_stats(&mut self) {}
 
-        push_history(&mut self.clear_history, self.clear_time);
-        push_history(&mut self.highlight_history, self.line_highlight_time);
-        push_history(&mut self.gutter_history, self.gutter_time);
-        push_history(&mut self.text_history, self.text_time);
-        push_history(&mut self.cursor_history, self.cursor_time);
-        push_history(&mut self.status_history, self.status_bar_time);
-        push_history(&mut self.present_history, self.present_time);
+    #[inline(always)]
+    pub fn start_frame(&mut self) {}
+
+    #[inline(always)]
+    pub fn record_frame_time(&mut self) {}
+
+    #[inline(always)]
+    pub fn record_render_history(&mut self) {}
+
+    #[inline(always)]
+    pub fn time_clear(&mut self) -> TimerGuard {
+        TimerGuard
+    }
+
+    #[inline(always)]
+    pub fn time_text(&mut self) -> TimerGuard {
+        TimerGuard
+    }
+
+    #[inline(always)]
+    pub fn time_status_bar(&mut self) -> TimerGuard {
+        TimerGuard
+    }
+
+    #[inline(always)]
+    pub fn time_present(&mut self) -> TimerGuard {
+        TimerGuard
     }
 }
 
+#[cfg(debug_assertions)]
 pub fn render_perf_overlay(
     buffer: &mut [u32],
     font: &Font,
@@ -127,10 +257,11 @@ pub fn render_perf_overlay(
     line_height: usize,
     ascent: f32,
 ) {
+    use std::time::Duration;
+
     let width_usize = width as usize;
     let height_usize = height as usize;
 
-    // Configure and render overlay background using theme colors
     let config = OverlayConfig::new(OverlayAnchor::TopRight, 380, 480)
         .with_margin(10)
         .with_background(theme.overlay.background.to_argb_u32());
@@ -144,7 +275,6 @@ pub fn render_perf_overlay(
         height_usize,
     );
 
-    // Render border if theme specifies one
     if let Some(border_color) = &theme.overlay.border {
         render_overlay_border(
             buffer,
@@ -163,7 +293,6 @@ pub fn render_perf_overlay(
     let text_x = bounds.x + 8;
     let mut text_y = bounds.y + 4;
 
-    // Title
     draw_text(
         buffer,
         font,
@@ -179,7 +308,6 @@ pub fn render_perf_overlay(
     );
     text_y += line_height;
 
-    // Frame time
     let frame_ms = perf.last_frame_time.as_secs_f64() * 1000.0;
     let fps = perf.fps();
     let budget_pct = (frame_ms / 16.67 * 100.0).min(999.0);
@@ -207,14 +335,63 @@ pub fn render_perf_overlay(
     );
     text_y += line_height;
 
-    // Budget bar
-    let bar_chars = (budget_pct / 10.0).min(10.0) as usize;
-    let bar = format!(
-        "[{}{}] {:.0}%",
-        "█".repeat(bar_chars),
-        "░".repeat(10 - bar_chars),
-        budget_pct
-    );
+    let phases: [(&str, Duration, u32); 7] = [
+        ("Clear", perf.clear_time, 0xFF7AA2F7),
+        ("Highl", perf.line_highlight_time, 0xFF9ECE6A),
+        ("Text", perf.text_time, 0xFFE0AF68),
+        ("Cursor", perf.cursor_time, 0xFFBB9AF7),
+        ("Gutter", perf.gutter_time, 0xFF7DCFFF),
+        ("Status", perf.status_bar_time, 0xFFF7768E),
+        ("Present", perf.present_time, 0xFFFF9E64),
+    ];
+
+    let total_render: Duration = phases.iter().map(|(_, d, _)| *d).sum();
+    let total_render_us = total_render.as_micros().max(1) as f32;
+    let frame_us = perf.last_frame_time.as_micros().max(1) as f32;
+
+    let bar_total_width: usize = 300;
+    let bar_height: usize = 14;
+    let bar_y = text_y + 2;
+
+    let unaccounted_color = 0xFF404040_u32;
+    for py in bar_y..(bar_y + bar_height) {
+        for px in text_x..(text_x + bar_total_width) {
+            if px < width as usize && py < height as usize {
+                buffer[py * width as usize + px] = unaccounted_color;
+            }
+        }
+    }
+
+    let mut bar_x = text_x;
+    for (_name, duration, color) in &phases {
+        let phase_us = duration.as_micros() as f32;
+        let segment_width = ((phase_us / frame_us) * bar_total_width as f32) as usize;
+        if segment_width > 0 {
+            for py in bar_y..(bar_y + bar_height) {
+                for px in bar_x..(bar_x + segment_width).min(text_x + bar_total_width) {
+                    if px < width as usize && py < height as usize {
+                        buffer[py * width as usize + px] = *color;
+                    }
+                }
+            }
+            bar_x += segment_width;
+        }
+    }
+    text_y += bar_height + 6;
+
+    let mut sorted_phases: Vec<_> = phases.iter().collect();
+    sorted_phases.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let legend: String = sorted_phases
+        .iter()
+        .take(3)
+        .map(|(name, dur, _)| {
+            let pct = (dur.as_micros() as f32 / total_render_us * 100.0) as u32;
+            format!("{} {}%", name, pct)
+        })
+        .collect::<Vec<_>>()
+        .join(" │ ");
+
     draw_text(
         buffer,
         font,
@@ -225,12 +402,11 @@ pub fn render_perf_overlay(
         height,
         text_x,
         text_y,
-        &bar,
-        frame_color,
+        &legend,
+        text_color,
     );
     text_y += line_height + 4;
 
-    // Average frame time
     let avg_ms = perf.avg_frame_time().as_secs_f64() * 1000.0;
     let avg_text = format!("Avg: {:.1}ms", avg_ms);
     draw_text(
@@ -248,7 +424,6 @@ pub fn render_perf_overlay(
     );
     text_y += line_height + 4;
 
-    // Cache stats
     let cache_size = glyph_cache.len();
     let hit_rate = perf.cache_hit_rate();
     let cache_text = format!("Cache: {} glyphs", cache_size);
@@ -306,7 +481,6 @@ pub fn render_perf_overlay(
     );
     text_y += line_height + 4;
 
-    // Render breakdown with sparklines
     draw_text(
         buffer,
         font,
@@ -322,35 +496,34 @@ pub fn render_perf_overlay(
     );
     text_y += line_height;
 
-    // Chart dimensions
     let chart_width = 180;
     let chart_height = 20;
     let chart_x = text_x + 80;
     let chart_bg = theme.overlay.background.with_alpha(200).to_argb_u32();
 
     let breakdown_with_history: [(&str, Duration, &VecDeque<Duration>, u32); 7] = [
-        ("Clear", perf.clear_time, &perf.clear_history, 0xFF7AA2F7), // Blue
+        ("Clear", perf.clear_time, &perf.clear_history, 0xFF7AA2F7),
         (
             "Highlight",
             perf.line_highlight_time,
             &perf.highlight_history,
             0xFF9ECE6A,
-        ), // Green
-        ("Text", perf.text_time, &perf.text_history, 0xFFE0AF68),    // Yellow/Orange
-        ("Cursor", perf.cursor_time, &perf.cursor_history, 0xFFBB9AF7), // Purple
-        ("Gutter", perf.gutter_time, &perf.gutter_history, 0xFF7DCFFF), // Cyan
+        ),
+        ("Text", perf.text_time, &perf.text_history, 0xFFE0AF68),
+        ("Cursor", perf.cursor_time, &perf.cursor_history, 0xFFBB9AF7),
+        ("Gutter", perf.gutter_time, &perf.gutter_history, 0xFF7DCFFF),
         (
             "Status",
             perf.status_bar_time,
             &perf.status_history,
             0xFFF7768E,
-        ), // Pink
+        ),
         (
             "Present",
             perf.present_time,
             &perf.present_history,
             0xFFFF9E64,
-        ), // Orange
+        ),
     ];
 
     for (name, duration, history, color) in breakdown_with_history {
@@ -370,7 +543,6 @@ pub fn render_perf_overlay(
             text_color,
         );
 
-        // Draw sparkline next to label
         draw_sparkline(
             buffer,
             width,
@@ -384,7 +556,6 @@ pub fn render_perf_overlay(
             chart_bg,
         );
 
-        // Draw current value at end
         let value_text = format!("{} µs", us);
         let value_x = chart_x + chart_width + 6;
         draw_text(

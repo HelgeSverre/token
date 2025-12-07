@@ -10,7 +10,6 @@ mod app;
 #[cfg(debug_assertions)]
 mod debug_dump;
 mod input;
-#[cfg(debug_assertions)]
 mod perf;
 mod view;
 

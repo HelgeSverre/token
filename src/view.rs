@@ -622,149 +622,13 @@ impl Renderer {
         }
     }
 
-    #[cfg(not(debug_assertions))]
-    pub fn render(&mut self, model: &mut AppModel, _perf: ()) -> Result<()> {
-        self.render_impl(model)
-    }
-
-    #[cfg(debug_assertions)]
     pub fn render(
         &mut self,
         model: &mut AppModel,
         perf: &mut super::perf::PerfStats,
     ) -> Result<()> {
-        self.render_impl_with_perf(model, perf)
-    }
-
-    #[cfg(not(debug_assertions))]
-    fn render_impl(&mut self, model: &mut AppModel) -> Result<()> {
-        if self.width != model.window_size.0 || self.height != model.window_size.1 {
-            self.width = model.window_size.0;
-            self.height = model.window_size.1;
-            self.surface
-                .resize(
-                    NonZeroU32::new(self.width).unwrap(),
-                    NonZeroU32::new(self.height).unwrap(),
-                )
-                .map_err(|e| anyhow::anyhow!("Failed to resize surface: {}", e))?;
-        }
-
-        let line_height = self.line_metrics.new_line_size.ceil() as usize;
-        let font_size = self.font_size;
-        let ascent = self.line_metrics.ascent;
-        let char_width = self.char_width;
-        let width = self.width;
-        let height = self.height;
-
-        let status_bar_height = line_height;
-        let available_rect = Rect::new(
-            0.0,
-            0.0,
-            width as f32,
-            (height as usize).saturating_sub(status_bar_height) as f32,
-        );
-        let splitters = model.editor_area.compute_layout(available_rect);
-
-        let mut buffer = self
-            .surface
-            .buffer_mut()
-            .map_err(|e| anyhow::anyhow!("Failed to get surface buffer: {}", e))?;
-
-        let bg_color = model.theme.editor.background.to_argb_u32();
-        buffer.fill(bg_color);
-
-        Self::render_all_groups_static(
-            &mut buffer,
-            model,
-            &splitters,
-            &self.font,
-            &mut self.glyph_cache,
-            line_height,
-            font_size,
-            ascent,
-            char_width,
-            width,
-            height,
-        );
-
-        let status_bar_bg = model.theme.status_bar.background.to_argb_u32();
-        let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
-        let status_y = (height as usize).saturating_sub(status_bar_height);
-        for py in status_y..height as usize {
-            for px in 0..width as usize {
-                buffer[py * width as usize + px] = status_bar_bg;
-            }
-        }
-
-        let available_chars = (width as f32 / char_width).floor() as usize;
-        let layout = model.ui.status_bar.layout(available_chars);
-
-        for seg in &layout.left {
-            let x_px = (seg.x as f32 * char_width).round() as usize;
-            draw_text(
-                &mut buffer,
-                &self.font,
-                &mut self.glyph_cache,
-                font_size,
-                ascent,
-                width,
-                height,
-                x_px,
-                status_y + 2,
-                &seg.text,
-                status_bar_fg,
-            );
-        }
-
-        for seg in &layout.right {
-            let x_px = (seg.x as f32 * char_width).round() as usize;
-            draw_text(
-                &mut buffer,
-                &self.font,
-                &mut self.glyph_cache,
-                font_size,
-                ascent,
-                width,
-                height,
-                x_px,
-                status_y + 2,
-                &seg.text,
-                status_bar_fg,
-            );
-        }
-
-        let separator_color = model
-            .theme
-            .status_bar
-            .foreground
-            .with_alpha(100)
-            .to_argb_u32();
-        for &sep_char_x in &layout.separator_positions {
-            let x_px = (sep_char_x as f32 * char_width).round() as usize;
-            if x_px < width as usize {
-                for py in status_y..height as usize {
-                    buffer[py * width as usize + x_px] = separator_color;
-                }
-            }
-        }
-
-        buffer
-            .present()
-            .map_err(|e| anyhow::anyhow!("Failed to present buffer: {}", e))?;
-        Ok(())
-    }
-
-    #[cfg(debug_assertions)]
-    fn render_impl_with_perf(
-        &mut self,
-        model: &mut AppModel,
-        perf: &mut super::perf::PerfStats,
-    ) -> Result<()> {
-        use std::time::Instant;
-
         perf.reset_frame_stats();
 
-        // Resize surface if needed
         if self.width != model.window_size.0 || self.height != model.window_size.1 {
             self.width = model.window_size.0;
             self.height = model.window_size.1;
@@ -797,92 +661,96 @@ impl Renderer {
             .buffer_mut()
             .map_err(|e| anyhow::anyhow!("Failed to get surface buffer: {}", e))?;
 
-        let t_clear = Instant::now();
-        let bg_color = model.theme.editor.background.to_argb_u32();
-        buffer.fill(bg_color);
-        perf.clear_time = t_clear.elapsed();
+        {
+            let _timer = perf.time_clear();
+            let bg_color = model.theme.editor.background.to_argb_u32();
+            buffer.fill(bg_color);
+        }
 
-        let t_text = Instant::now();
-        Self::render_all_groups_static(
-            &mut buffer,
-            model,
-            &splitters,
-            &self.font,
-            &mut self.glyph_cache,
-            line_height,
-            font_size,
-            ascent,
-            char_width,
-            width,
-            height,
-        );
-        perf.text_time = t_text.elapsed();
+        {
+            let _timer = perf.time_text();
+            Self::render_all_groups_static(
+                &mut buffer,
+                model,
+                &splitters,
+                &self.font,
+                &mut self.glyph_cache,
+                line_height,
+                font_size,
+                ascent,
+                char_width,
+                width,
+                height,
+            );
+        }
 
-        let t_status = Instant::now();
-        let status_bar_bg = model.theme.status_bar.background.to_argb_u32();
-        let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
-        let status_y = (height as usize).saturating_sub(status_bar_height);
+        {
+            let _timer = perf.time_status_bar();
+            let status_bar_bg = model.theme.status_bar.background.to_argb_u32();
+            let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
+            let status_y = (height as usize).saturating_sub(status_bar_height);
 
-        for py in status_y..height as usize {
-            for px in 0..width as usize {
-                buffer[py * width as usize + px] = status_bar_bg;
+            for py in status_y..height as usize {
+                for px in 0..width as usize {
+                    buffer[py * width as usize + px] = status_bar_bg;
+                }
             }
-        }
 
-        let available_chars = (width as f32 / char_width).floor() as usize;
-        let layout = model.ui.status_bar.layout(available_chars);
+            let available_chars = (width as f32 / char_width).floor() as usize;
+            let layout = model.ui.status_bar.layout(available_chars);
 
-        for seg in &layout.left {
-            let x_px = (seg.x as f32 * char_width).round() as usize;
-            draw_text(
-                &mut buffer,
-                &self.font,
-                &mut self.glyph_cache,
-                font_size,
-                ascent,
-                width,
-                height,
-                x_px,
-                status_y + 2,
-                &seg.text,
-                status_bar_fg,
-            );
-        }
+            for seg in &layout.left {
+                let x_px = (seg.x as f32 * char_width).round() as usize;
+                draw_text(
+                    &mut buffer,
+                    &self.font,
+                    &mut self.glyph_cache,
+                    font_size,
+                    ascent,
+                    width,
+                    height,
+                    x_px,
+                    status_y + 2,
+                    &seg.text,
+                    status_bar_fg,
+                );
+            }
 
-        for seg in &layout.right {
-            let x_px = (seg.x as f32 * char_width).round() as usize;
-            draw_text(
-                &mut buffer,
-                &self.font,
-                &mut self.glyph_cache,
-                font_size,
-                ascent,
-                width,
-                height,
-                x_px,
-                status_y + 2,
-                &seg.text,
-                status_bar_fg,
-            );
-        }
+            for seg in &layout.right {
+                let x_px = (seg.x as f32 * char_width).round() as usize;
+                draw_text(
+                    &mut buffer,
+                    &self.font,
+                    &mut self.glyph_cache,
+                    font_size,
+                    ascent,
+                    width,
+                    height,
+                    x_px,
+                    status_y + 2,
+                    &seg.text,
+                    status_bar_fg,
+                );
+            }
 
-        let separator_color = model
-            .theme
-            .status_bar
-            .foreground
-            .with_alpha(100)
-            .to_argb_u32();
-        for &sep_char_x in &layout.separator_positions {
-            let x_px = (sep_char_x as f32 * char_width).round() as usize;
-            if x_px < width as usize {
-                for py in status_y..height as usize {
-                    buffer[py * width as usize + x_px] = separator_color;
+            let separator_color = model
+                .theme
+                .status_bar
+                .foreground
+                .with_alpha(100)
+                .to_argb_u32();
+            for &sep_char_x in &layout.separator_positions {
+                let x_px = (sep_char_x as f32 * char_width).round() as usize;
+                if x_px < width as usize {
+                    for py in status_y..height as usize {
+                        buffer[py * width as usize + x_px] = separator_color;
+                    }
                 }
             }
         }
-        perf.status_bar_time = t_status.elapsed();
 
-        if perf.show_overlay {
+        #[cfg(debug_assertions)]
+        if perf.should_show_overlay() {
             super::perf::render_perf_overlay(
                 &mut buffer,
                 &self.font,
@@ -897,11 +765,13 @@ impl Renderer {
             );
         }
 
-        let t_present = Instant::now();
-        buffer
-            .present()
-            .map_err(|e| anyhow::anyhow!("Failed to present buffer: {}", e))?;
-        perf.present_time = t_present.elapsed();
+        {
+            let _timer = perf.time_present();
+            buffer
+                .present()
+                .map_err(|e| anyhow::anyhow!("Failed to present buffer: {}", e))?;
+        }
+
         Ok(())
     }
 
