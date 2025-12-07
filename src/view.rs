@@ -13,12 +13,11 @@ use winit::window::Window;
 use token::model::editor_area::{EditorGroup, GroupId, Rect, SplitterBar};
 use token::model::{gutter_border_x, text_start_x, AppModel};
 
-pub const TAB_BAR_HEIGHT: usize = 28;
-
 pub type GlyphCacheKey = (char, u32);
 pub type GlyphCache = HashMap<GlyphCacheKey, (Metrics, Vec<u8>)>;
 
-pub const TAB_WIDTH: usize = 4;
+pub const TAB_BAR_HEIGHT: usize = 28;
+pub const TABULATOR_WIDTH: usize = 4;
 
 pub fn expand_tabs_for_display(text: &str) -> String {
     let mut result = String::with_capacity(text.len() * 2);
@@ -26,7 +25,7 @@ pub fn expand_tabs_for_display(text: &str) -> String {
 
     for ch in text.chars() {
         if ch == '\t' {
-            let spaces = TAB_WIDTH - (visual_col % TAB_WIDTH);
+            let spaces = TABULATOR_WIDTH - (visual_col % TABULATOR_WIDTH);
             for _ in 0..spaces {
                 result.push(' ');
             }
@@ -47,7 +46,7 @@ pub fn char_col_to_visual_col(text: &str, char_col: usize) -> usize {
             break;
         }
         if ch == '\t' {
-            visual_col += TAB_WIDTH - (visual_col % TAB_WIDTH);
+            visual_col += TABULATOR_WIDTH - (visual_col % TABULATOR_WIDTH);
         } else {
             visual_col += 1;
         }
@@ -65,7 +64,7 @@ pub fn visual_col_to_char_col(text: &str, visual_col: usize) -> usize {
         }
 
         if ch == '\t' {
-            let tab_width = TAB_WIDTH - (current_visual % TAB_WIDTH);
+            let tab_width = TABULATOR_WIDTH - (current_visual % TABULATOR_WIDTH);
             current_visual += tab_width;
         } else {
             current_visual += 1;
