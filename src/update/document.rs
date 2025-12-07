@@ -288,6 +288,9 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                                 .slice(pos - 1..pos)
                                 .chars()
                                 .collect();
+                            let is_newline = deleted_char == "\n";
+                            let deleted_from_line = cursor.line;
+
                             model.document_mut().buffer.remove(pos - 1..pos);
                             let (new_line, new_col) = model.document().offset_to_cursor(pos - 1);
 
@@ -303,6 +306,54 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                             model.editor_mut().cursors[idx].column = new_col;
                             let new_pos = model.editor().cursors[idx].to_position();
                             model.editor_mut().selections[idx] = Selection::new(new_pos);
+
+                            // If we deleted a newline, adjust all other cursors below this point
+                            // new_col is the column where the merge point is (end of previous line)
+                            if is_newline {
+                                for other_idx in 0..model.editor().cursors.len() {
+                                    if other_idx != idx
+                                        && model.editor().cursors[other_idx].line
+                                            >= deleted_from_line
+                                    {
+                                        // If cursor was on the deleted line, it merges with previous line
+                                        // and needs column adjustment
+                                        if model.editor().cursors[other_idx].line
+                                            == deleted_from_line
+                                        {
+                                            model.editor_mut().cursors[other_idx].column += new_col;
+                                        }
+                                        model.editor_mut().cursors[other_idx].line -= 1;
+
+                                        // Adjust selection anchor
+                                        if model.editor().selections[other_idx].anchor.line
+                                            == deleted_from_line
+                                        {
+                                            model.editor_mut().selections[other_idx]
+                                                .anchor
+                                                .column += new_col;
+                                        }
+                                        if model.editor().selections[other_idx].anchor.line
+                                            >= deleted_from_line
+                                        {
+                                            model.editor_mut().selections[other_idx].anchor.line -=
+                                                1;
+                                        }
+
+                                        // Adjust selection head
+                                        if model.editor().selections[other_idx].head.line
+                                            == deleted_from_line
+                                        {
+                                            model.editor_mut().selections[other_idx].head.column +=
+                                                new_col;
+                                        }
+                                        if model.editor().selections[other_idx].head.line
+                                            >= deleted_from_line
+                                        {
+                                            model.editor_mut().selections[other_idx].head.line -= 1;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -659,8 +710,8 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 let mut operations = Vec::new();
 
                 // Check if deleted lines are contiguous
-                let is_contiguous = covered_lines.len() <= 1
-                    || covered_lines.windows(2).all(|w| w[1] == w[0] + 1);
+                let is_contiguous =
+                    covered_lines.len() <= 1 || covered_lines.windows(2).all(|w| w[1] == w[0] + 1);
 
                 // Delete lines in reverse order to preserve indices
                 for line_idx in covered_lines.iter().rev().copied() {
@@ -1061,8 +1112,11 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     } else {
                         // Paste full text at each cursor
                         let indices = cursors_in_reverse_order(model);
+                        let lines_added = text.chars().filter(|&c| c == '\n').count();
+
                         for idx in indices {
                             let cursor = model.editor().cursors[idx].clone();
+                            let insert_line = cursor.line;
                             let pos = model
                                 .document()
                                 .cursor_to_offset(cursor.line, cursor.column);
@@ -1075,6 +1129,29 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                             model.editor_mut().cursors[idx].column = new_col;
                             let new_pos = model.editor().cursors[idx].to_position();
                             model.editor_mut().selections[idx] = Selection::new(new_pos);
+
+                            // Adjust other cursors for lines added
+                            if lines_added > 0 {
+                                for other_idx in 0..model.editor().cursors.len() {
+                                    if other_idx != idx
+                                        && model.editor().cursors[other_idx].line > insert_line
+                                    {
+                                        model.editor_mut().cursors[other_idx].line += lines_added;
+                                        if model.editor().selections[other_idx].anchor.line
+                                            > insert_line
+                                        {
+                                            model.editor_mut().selections[other_idx].anchor.line +=
+                                                lines_added;
+                                        }
+                                        if model.editor().selections[other_idx].head.line
+                                            > insert_line
+                                        {
+                                            model.editor_mut().selections[other_idx].head.line +=
+                                                lines_added;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 } else {

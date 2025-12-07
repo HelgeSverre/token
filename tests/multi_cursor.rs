@@ -918,8 +918,7 @@ fn test_delete_word_backward_multi_cursor() {
 
     let content: String = model.document().buffer.chars().collect();
     assert_eq!(
-        content,
-        "/// This is \n/// This is \n/// This is \n",
+        content, "/// This is \n/// This is \n/// This is \n",
         "Each word should be deleted"
     );
 }
@@ -1017,13 +1016,100 @@ fn test_insert_newline_multi_cursor_adjusts_positions() {
 
     let content: String = model.document().buffer.chars().collect();
     // "hello\n" + newline + "world\n" + newline = "hello\n\nworld\n\n"
-    assert_eq!(content, "hello\n\nworld\n\n", "Two newlines should be inserted");
+    assert_eq!(
+        content, "hello\n\nworld\n\n",
+        "Two newlines should be inserted"
+    );
 
     // Cursor 0 was at (0, 5), after newline should be at (1, 0)
     // Cursor 1 was at (1, 5), after its newline should be at (3, 0)
     // (Because cursor 0's newline shifted line 1 to line 2, then cursor 1's newline at old line 2 makes it line 3)
-    assert_eq!(model.editor().cursors[0].line, 1, "Cursor 0 should be on line 1");
+    assert_eq!(
+        model.editor().cursors[0].line,
+        1,
+        "Cursor 0 should be on line 1"
+    );
     assert_eq!(model.editor().cursors[0].column, 0);
-    assert_eq!(model.editor().cursors[1].line, 3, "Cursor 1 should be on line 3");
+    assert_eq!(
+        model.editor().cursors[1].line,
+        3,
+        "Cursor 1 should be on line 3"
+    );
     assert_eq!(model.editor().cursors[1].column, 0);
+}
+
+// ========================================================================
+// Bug #31: DeleteBackward should adjust other cursors after deleting newline
+// ========================================================================
+
+#[test]
+fn test_delete_backward_newline_multi_cursor_adjusts_positions() {
+    use token::messages::{DocumentMsg, Msg};
+
+    // Setup: 4 lines with cursors at the start of each (column 0)
+    // "Text1\nText2\nText3\nText4\n"
+    // Cursors at lines 1, 2, 3, 4 (start of each line after Text1)
+    let mut model = test_model("Text1\nText2\nText3\nText4\n", 1, 0);
+    model.editor_mut().add_cursor_at(2, 0);
+    model.editor_mut().add_cursor_at(3, 0);
+    model.editor_mut().add_cursor_at(4, 0);
+
+    assert_eq!(model.editor().cursor_count(), 4);
+    assert_eq!(model.editor().cursors[0].line, 1);
+    assert_eq!(model.editor().cursors[1].line, 2);
+    assert_eq!(model.editor().cursors[2].line, 3);
+    assert_eq!(model.editor().cursors[3].line, 4);
+
+    // Delete backward at each cursor (should delete the newline before each cursor)
+    update(&mut model, Msg::Document(DocumentMsg::DeleteBackward));
+
+    let content: String = model.document().buffer.chars().collect();
+    // Each backspace deletes the newline before it, joining all lines
+    assert_eq!(
+        content, "Text1Text2Text3Text4",
+        "All newlines should be deleted"
+    );
+
+    // All cursors should now be on line 0 at appropriate columns
+    // After deleting newlines in reverse order (bottom to top):
+    // - Cursor 3 (was line 4, col 0) deletes \n after Text4, becomes (line 3, col 5)
+    // - Cursor 2 (was line 3, col 0) deletes \n after Text3, becomes (line 2, col 5)
+    //   But cursor 3 is adjusted down to line 2
+    // - And so on...
+    // Final result: all on line 0
+    assert_eq!(model.editor().cursor_count(), 4);
+    for (i, cursor) in model.editor().cursors.iter().enumerate() {
+        assert_eq!(cursor.line, 0, "Cursor {} should be on line 0", i);
+    }
+}
+
+#[test]
+fn test_delete_backward_newline_multi_cursor_column_positions() {
+    use token::messages::{DocumentMsg, Msg};
+
+    // Simpler test: 2 cursors at start of lines 1 and 2
+    let mut model = test_model("AAA\nBBB\nCCC\n", 1, 0);
+    model.editor_mut().add_cursor_at(2, 0);
+
+    assert_eq!(model.editor().cursor_count(), 2);
+
+    update(&mut model, Msg::Document(DocumentMsg::DeleteBackward));
+
+    let content: String = model.document().buffer.chars().collect();
+    assert_eq!(content, "AAABBBCCC\n", "Both newlines should be deleted");
+
+    // Cursor 0: was at (1, 0), deleted \n before it, now at (0, 3) - after "AAA"
+    // Cursor 1: was at (2, 0), deleted \n before it, now at (0, 6) - after "AAABBB"
+    assert_eq!(model.editor().cursors[0].line, 0);
+    assert_eq!(
+        model.editor().cursors[0].column,
+        3,
+        "Cursor 0 should be at column 3"
+    );
+    assert_eq!(model.editor().cursors[1].line, 0);
+    assert_eq!(
+        model.editor().cursors[1].column,
+        6,
+        "Cursor 1 should be at column 6"
+    );
 }
