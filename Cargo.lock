@@ -1978,6 +1978,7 @@ dependencies = [
  "raw-window-handle",
  "ropey",
  "serde",
+ "serde_json",
  "serde_yaml",
  "softbuffer",
  "winit",
