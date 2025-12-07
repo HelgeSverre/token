@@ -12,6 +12,7 @@ use winit::window::Window;
 
 use token::model::editor_area::{EditorGroup, GroupId, Rect, SplitterBar};
 use token::model::{gutter_border_x, text_start_x, AppModel};
+use token::overlay::blend_pixel;
 
 pub type GlyphCacheKey = (char, u32);
 pub type GlyphCache = HashMap<GlyphCacheKey, (Metrics, Vec<u8>)>;
@@ -412,12 +413,14 @@ impl Renderer {
             }
         }
 
+        // Draw cursors
         if model.ui.cursor_visible {
             let actual_visible_columns =
                 ((rect_w as f32 - text_start_x_offset as f32) / char_width).floor() as usize;
             let primary_cursor_color = model.theme.editor.cursor_color.to_argb_u32();
             let secondary_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
 
+            // Render individual cursor
             for (idx, cursor) in editor.cursors.iter().enumerate() {
                 let cursor_in_vertical_view = cursor.line >= editor.viewport.top_line
                     && cursor.line < editor.viewport.top_line + visible_lines;
@@ -470,32 +473,14 @@ impl Renderer {
             }
         }
 
-        if is_focused && model.editor_area.groups.len() > 1 {
-            let focus_color = model.theme.editor.cursor_color.to_argb_u32();
-            let border_width = 2;
-            for dy in 0..border_width {
+        // Dim non-focused groups when multiple groups exist (4% black overlay)
+        if !is_focused && model.editor_area.groups.len() > 1 {
+            let dim_color = 0x0A000000_u32; // 4% opacity black (alpha = 10/255 ≈ 4%)
+            for py in rect_y..(rect_y + rect_h).min(height as usize) {
                 for px in rect_x..(rect_x + rect_w).min(width as usize) {
-                    let py = rect_y + dy;
-                    if py < height as usize {
-                        buffer[py * width as usize + px] = focus_color;
-                    }
-                }
-                for px in rect_x..(rect_x + rect_w).min(width as usize) {
-                    let py = (rect_y + rect_h).saturating_sub(border_width) + dy;
-                    if py < height as usize {
-                        buffer[py * width as usize + px] = focus_color;
-                    }
-                }
-            }
-            for dy in rect_y..(rect_y + rect_h).min(height as usize) {
-                for dx in 0..border_width {
-                    let px = rect_x + dx;
-                    if px < width as usize {
-                        buffer[dy * width as usize + px] = focus_color;
-                    }
-                    let px = (rect_x + rect_w).saturating_sub(border_width) + dx;
-                    if px < width as usize {
-                        buffer[dy * width as usize + px] = focus_color;
+                    let idx = py * width as usize + px;
+                    if idx < buffer.len() {
+                        buffer[idx] = blend_pixel(dim_color, buffer[idx]);
                     }
                 }
             }
@@ -545,14 +530,19 @@ impl Renderer {
             let document = doc_id.and_then(|id| model.editor_area.documents.get(&id));
 
             let filename = document
-                .and_then(|d| d.file_path.as_ref())
-                .and_then(|p| p.file_name())
-                .map(|n| n.to_string_lossy().to_string())
+                .and_then(|d| {
+                    // Prefer file_path, fall back to untitled_name
+                    d.file_path
+                        .as_ref()
+                        .and_then(|p| p.file_name())
+                        .map(|n| n.to_string_lossy().to_string())
+                        .or_else(|| d.untitled_name.clone())
+                })
                 .unwrap_or_else(|| "Untitled".to_string());
 
             let is_modified = document.map(|d| d.is_modified).unwrap_or(false);
             let display_name = if is_modified {
-                format!("{}", filename)
+                filename.to_string()
             } else {
                 filename
             };
@@ -830,8 +820,41 @@ impl Renderer {
     pub fn is_in_tab_bar(&self, y: f64) -> bool {
         y < TAB_BAR_HEIGHT as f64
     }
+
+    /// Returns the tab index at the given x position within a group's tab bar.
+    /// Returns None if the click is not on a tab.
+    pub fn tab_at_position(&self, x: f64, model: &AppModel, group: &EditorGroup) -> Option<usize> {
+        let mut tab_x = 4.0; // Initial padding
+
+        for (idx, tab) in group.tabs.iter().enumerate() {
+            let editor = model.editor_area.editors.get(&tab.editor_id);
+            let doc_id = editor.and_then(|e| e.document_id);
+            let document = doc_id.and_then(|id| model.editor_area.documents.get(&id));
+
+            let filename = document
+                .and_then(|d| {
+                    d.file_path
+                        .as_ref()
+                        .and_then(|p| p.file_name())
+                        .map(|n| n.to_string_lossy().to_string())
+                        .or_else(|| d.untitled_name.clone())
+                })
+                .unwrap_or_else(|| "Untitled".to_string());
+
+            let tab_width = (filename.len() as f32 * self.char_width).round() as f64 + 16.0;
+
+            if x >= tab_x && x < tab_x + tab_width {
+                return Some(idx);
+            }
+
+            tab_x += tab_width + 2.0; // tab width + gap
+        }
+
+        None
+    }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn draw_text(
     buffer: &mut [u32],
     font: &Font,
@@ -851,11 +874,9 @@ pub fn draw_text(
 
     for ch in text.chars() {
         let key = (ch, font_size.to_bits());
-        if !glyph_cache.contains_key(&key) {
-            let (metrics, bitmap) = font.rasterize(ch, font_size);
-            glyph_cache.insert(key, (metrics, bitmap));
-        }
-        let (metrics, bitmap) = glyph_cache.get(&key).unwrap();
+        let (metrics, bitmap) = glyph_cache
+            .entry(key)
+            .or_insert_with(|| font.rasterize(ch, font_size));
 
         let glyph_top = baseline - metrics.height as f32 - metrics.ymin as f32;
 
@@ -904,6 +925,7 @@ pub fn draw_text(
 }
 
 #[cfg(debug_assertions)]
+#[allow(clippy::too_many_arguments)]
 pub fn draw_sparkline(
     buffer: &mut [u32],
     buffer_width: u32,
