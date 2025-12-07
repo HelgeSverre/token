@@ -136,32 +136,32 @@ render()
 
 ### Finding Specific Rendering
 
-| What | File | Line/Function |
-|------|------|---------------|
+| What                               | File          | Line/Function                            |
+| ---------------------------------- | ------------- | ---------------------------------------- |
 | **Focus border (group highlight)** | `src/view.rs` | `render_editor_group_static()` ~L471-500 |
-| Tab bar | `src/view.rs` | `render_tab_bar_static()` L504 |
-| Line numbers/gutter | `src/view.rs` | `render_editor_group_static()` ~L360-400 |
-| Current line highlight | `src/view.rs` | `render_editor_group_static()` ~L310-330 |
-| Selection highlight | `src/view.rs` | `render_editor_group_static()` ~L335-360 |
-| Cursor drawing | `src/view.rs` | `render_editor_group_static()` ~L420-450 |
-| Splitter bars | `src/view.rs` | `render_splitters_static()` L601 |
-| Status bar | `src/view.rs` | `render_impl()` ~L689-720 |
-| Text/glyphs | `src/view.rs` | `draw_text()` L862 |
+| Tab bar                            | `src/view.rs` | `render_tab_bar_static()` L504           |
+| Line numbers/gutter                | `src/view.rs` | `render_editor_group_static()` ~L360-400 |
+| Current line highlight             | `src/view.rs` | `render_editor_group_static()` ~L310-330 |
+| Selection highlight                | `src/view.rs` | `render_editor_group_static()` ~L335-360 |
+| Cursor drawing                     | `src/view.rs` | `render_editor_group_static()` ~L420-450 |
+| Splitter bars                      | `src/view.rs` | `render_splitters_static()` L601         |
+| Status bar                         | `src/view.rs` | `render_impl()` ~L689-720                |
+| Text/glyphs                        | `src/view.rs` | `draw_text()` L862                       |
 
 ### Finding Specific Logic
 
-| What | File | Function |
-|------|------|----------|
-| Keyboard shortcuts | `src/input.rs` | `handle_key()` |
-| Mouse click handling | `src/app.rs` | `handle_event()` ~L225-300 |
-| Click to focus group | `src/app.rs` | `handle_event()` ~L244-254 |
-| Cursor movement | `src/update/editor.rs` | `update_editor()` |
-| Text insertion | `src/update/document.rs` | `update_document()` |
-| Split/tab operations | `src/update/layout.rs` | `update_layout()` |
-| Undo/redo | `src/update/document.rs` | `handle_undo()`, `handle_redo()` |
-| Multi-cursor logic | `src/update/editor.rs` | various `add_cursor_*`, `merge_*` |
-| Viewport scrolling | `src/update/editor.rs` | `handle_scroll()`, `ensure_cursor_visible()` |
-| Status bar sync | `src/model/status_bar.rs` | `sync_status_bar()` |
+| What                 | File                      | Function                                     |
+| -------------------- | ------------------------- | -------------------------------------------- |
+| Keyboard shortcuts   | `src/input.rs`            | `handle_key()`                               |
+| Mouse click handling | `src/app.rs`              | `handle_event()` ~L225-300                   |
+| Click to focus group | `src/app.rs`              | `handle_event()` ~L244-254                   |
+| Cursor movement      | `src/update/editor.rs`    | `update_editor()`                            |
+| Text insertion       | `src/update/document.rs`  | `update_document()`                          |
+| Split/tab operations | `src/update/layout.rs`    | `update_layout()`                            |
+| Undo/redo            | `src/update/document.rs`  | `handle_undo()`, `handle_redo()`             |
+| Multi-cursor logic   | `src/update/editor.rs`    | various `add_cursor_*`, `merge_*`            |
+| Viewport scrolling   | `src/update/editor.rs`    | `handle_scroll()`, `ensure_cursor_visible()` |
+| Status bar sync      | `src/model/status_bar.rs` | `sync_status_bar()`                          |
 
 ## Data Flow Example: Typing a Character
 
@@ -242,23 +242,23 @@ EditorArea
 
 ## Debug Tools
 
-| Key | Action | File |
-|-----|--------|------|
-| F2 | Toggle performance overlay | `src/perf.rs` |
-| F7 | Dump state to JSON | `src/debug_dump.rs` |
+| Key | Action                     | File                |
+| --- | -------------------------- | ------------------- |
+| F2  | Toggle performance overlay | `src/perf.rs`       |
+| F7  | Dump state to JSON         | `src/debug_dump.rs` |
 
 ## Theme Colors (where used)
 
-| Color | Usage | View.rs location |
-|-------|-------|------------------|
-| `theme.editor.background` | Main background | `buffer.fill()` |
-| `theme.editor.foreground` | Text color | `draw_text()` calls |
-| `theme.editor.line_number` | Gutter numbers | ~L380 |
-| `theme.editor.current_line` | Line highlight | ~L320 |
-| `theme.editor.selection` | Selection bg | ~L340 |
-| `theme.editor.cursor_color` | Cursor + focus border | ~L440, ~L472 |
-| `theme.editor.gutter_border` | Gutter separator | ~L465 |
-| `theme.status_bar.background` | Status bar bg | ~L689 |
-| `theme.status_bar.foreground` | Status bar text | ~L690 |
-| `theme.tab_bar.background` | Tab bar bg | `render_tab_bar_static()` |
-| `theme.tab_bar.active_tab` | Active tab color | `render_tab_bar_static()` |
+| Color                         | Usage                 | View.rs location          |
+| ----------------------------- | --------------------- | ------------------------- |
+| `theme.editor.background`     | Main background       | `buffer.fill()`           |
+| `theme.editor.foreground`     | Text color            | `draw_text()` calls       |
+| `theme.editor.line_number`    | Gutter numbers        | ~L380                     |
+| `theme.editor.current_line`   | Line highlight        | ~L320                     |
+| `theme.editor.selection`      | Selection bg          | ~L340                     |
+| `theme.editor.cursor_color`   | Cursor + focus border | ~L440, ~L472              |
+| `theme.editor.gutter_border`  | Gutter separator      | ~L465                     |
+| `theme.status_bar.background` | Status bar bg         | ~L689                     |
+| `theme.status_bar.foreground` | Status bar text       | ~L690                     |
+| `theme.tab_bar.background`    | Tab bar bg            | `render_tab_bar_static()` |
+| `theme.tab_bar.active_tab`    | Active tab color      | `render_tab_bar_static()` |
