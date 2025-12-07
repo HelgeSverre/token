@@ -6,6 +6,7 @@ use token::model::editor_area::SplitDirection;
 use token::model::AppModel;
 use token::update::update;
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_key(
     model: &mut AppModel,
     key: Key,
@@ -45,30 +46,12 @@ pub fn handle_key(
         _ => {}
     }
 
-    // DEBUG: Print when arrow keys are pressed with alt
-    #[cfg(debug_assertions)]
-    if alt
-        && matches!(
-            key,
-            Key::Named(NamedKey::ArrowUp) | Key::Named(NamedKey::ArrowDown)
-        )
-    {
-        eprintln!(
-            "[DEBUG] Arrow key with alt: key={:?}, option_double_tapped={}",
-            key, option_double_tapped
-        );
-    }
-
     match key {
         // Double-tap Option + Arrow for multi-cursor (must be before other alt combinations)
-        Key::Named(NamedKey::ArrowUp) if alt && option_double_tapped =>
-        {
-            #[cfg(debug_assertions)]
+        Key::Named(NamedKey::ArrowUp) if alt && option_double_tapped => {
             update(model, Msg::Editor(EditorMsg::AddCursorAbove))
         }
-        Key::Named(NamedKey::ArrowDown) if alt && option_double_tapped =>
-        {
-            #[cfg(debug_assertions)]
+        Key::Named(NamedKey::ArrowDown) if alt && option_double_tapped => {
             update(model, Msg::Editor(EditorMsg::AddCursorBelow))
         }
 
@@ -144,6 +127,11 @@ pub fn handle_key(
             model,
             Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Vertical)),
         ),
+
+        // New tab (Shift+Cmd+N)
+        Key::Character(ref s) if s.eq_ignore_ascii_case("n") && logo && shift && !alt => {
+            update(model, Msg::Layout(LayoutMsg::NewTab))
+        }
 
         // Close tab (Cmd+W)
         Key::Character(ref s) if s.eq_ignore_ascii_case("w") && logo && !shift && !alt => {
