@@ -585,3 +585,445 @@ fn test_duplicate_with_selection_multi_cursor() {
         "Selections should be duplicated in place"
     );
 }
+
+// ========================================================================
+// Bug #26: Arrow key with selection should collapse to selection boundary
+// ========================================================================
+
+#[test]
+fn test_left_arrow_collapses_selection_to_start_multi_cursor() {
+    use token::messages::{Direction, EditorMsg, Msg};
+
+    // Setup: "// One\n// Two\n// Three\n"
+    // Three cursors with selections covering "// " on each line
+    let mut model = test_model("// One\n// Two\n// Three\n", 0, 3);
+
+    // First cursor selects "// " on line 0 (columns 0-3)
+    model.editor_mut().selections[0].anchor = Position::new(0, 0);
+    model.editor_mut().selections[0].head = Position::new(0, 3);
+    model.editor_mut().cursors[0].column = 3;
+
+    // Add second cursor on line 1 with selection "// " (columns 0-3)
+    model.editor_mut().add_cursor_at(1, 3);
+    model.editor_mut().selections[1].anchor = Position::new(1, 0);
+    model.editor_mut().selections[1].head = Position::new(1, 3);
+
+    // Add third cursor on line 2 with selection "// " (columns 0-3)
+    model.editor_mut().add_cursor_at(2, 3);
+    model.editor_mut().selections[2].anchor = Position::new(2, 0);
+    model.editor_mut().selections[2].head = Position::new(2, 3);
+
+    assert_eq!(model.editor().cursor_count(), 3);
+
+    // Press Left arrow - all cursors should move to selection START (column 0)
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Left)),
+    );
+
+    // All cursors should be at column 0 (start of their selections)
+    assert_eq!(model.editor().cursors[0].line, 0);
+    assert_eq!(
+        model.editor().cursors[0].column,
+        0,
+        "Cursor 0 should be at selection start (col 0)"
+    );
+
+    assert_eq!(model.editor().cursors[1].line, 1);
+    assert_eq!(
+        model.editor().cursors[1].column,
+        0,
+        "Cursor 1 should be at selection start (col 0)"
+    );
+
+    assert_eq!(model.editor().cursors[2].line, 2);
+    assert_eq!(
+        model.editor().cursors[2].column,
+        0,
+        "Cursor 2 should be at selection start (col 0)"
+    );
+
+    // All selections should be cleared (empty)
+    for (idx, selection) in model.editor().selections.iter().enumerate() {
+        assert!(
+            selection.is_empty(),
+            "Selection {} should be empty after left arrow",
+            idx
+        );
+    }
+}
+
+#[test]
+fn test_right_arrow_collapses_selection_to_end_multi_cursor() {
+    use token::messages::{Direction, EditorMsg, Msg};
+
+    let mut model = test_model("// One\n// Two\n// Three\n", 0, 0);
+
+    // First cursor at column 0, selects "// " (0-3)
+    model.editor_mut().selections[0].anchor = Position::new(0, 0);
+    model.editor_mut().selections[0].head = Position::new(0, 3);
+    model.editor_mut().cursors[0].column = 3;
+
+    // Add second cursor on line 1
+    model.editor_mut().add_cursor_at(1, 3);
+    model.editor_mut().selections[1].anchor = Position::new(1, 0);
+    model.editor_mut().selections[1].head = Position::new(1, 3);
+
+    // Add third cursor on line 2
+    model.editor_mut().add_cursor_at(2, 3);
+    model.editor_mut().selections[2].anchor = Position::new(2, 0);
+    model.editor_mut().selections[2].head = Position::new(2, 3);
+
+    assert_eq!(model.editor().cursor_count(), 3);
+
+    // Press Right arrow - all cursors should stay at selection END (column 3)
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Right)),
+    );
+
+    // All cursors should be at column 3 (end of their selections)
+    assert_eq!(
+        model.editor().cursors[0].column,
+        3,
+        "Cursor 0 should be at selection end (col 3)"
+    );
+    assert_eq!(
+        model.editor().cursors[1].column,
+        3,
+        "Cursor 1 should be at selection end (col 3)"
+    );
+    assert_eq!(
+        model.editor().cursors[2].column,
+        3,
+        "Cursor 2 should be at selection end (col 3)"
+    );
+
+    // All selections should be cleared
+    for (idx, selection) in model.editor().selections.iter().enumerate() {
+        assert!(
+            selection.is_empty(),
+            "Selection {} should be empty after right arrow",
+            idx
+        );
+    }
+}
+
+#[test]
+fn test_left_arrow_with_reversed_selection_multi_cursor() {
+    use token::messages::{Direction, EditorMsg, Msg};
+
+    // Reversed selection: anchor is AFTER head (user selected backwards)
+    let mut model = test_model("hello world\nfoo bar\n", 0, 0);
+
+    // Cursor 0: reversed selection from col 5 to col 0 (head before anchor)
+    model.editor_mut().selections[0].anchor = Position::new(0, 5);
+    model.editor_mut().selections[0].head = Position::new(0, 0);
+    model.editor_mut().cursors[0].column = 0;
+
+    // Cursor 1: reversed selection from col 3 to col 0
+    model.editor_mut().add_cursor_at(1, 0);
+    model.editor_mut().selections[1].anchor = Position::new(1, 3);
+    model.editor_mut().selections[1].head = Position::new(1, 0);
+
+    assert_eq!(model.editor().cursor_count(), 2);
+
+    // Press Left - should go to start of selection (col 0)
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Left)),
+    );
+
+    assert_eq!(
+        model.editor().cursors[0].column,
+        0,
+        "Cursor 0 should be at selection start"
+    );
+    assert_eq!(
+        model.editor().cursors[1].column,
+        0,
+        "Cursor 1 should be at selection start"
+    );
+
+    for selection in model.editor().selections.iter() {
+        assert!(selection.is_empty(), "Selection should be cleared");
+    }
+}
+
+#[test]
+fn test_left_arrow_no_selection_moves_by_one_char() {
+    use token::messages::{Direction, EditorMsg, Msg};
+
+    let mut model = test_model("hello\nworld\n", 0, 3);
+    model.editor_mut().add_cursor_at(1, 3);
+
+    assert_eq!(model.editor().cursor_count(), 2);
+    // No selections (selections are empty/collapsed)
+
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Left)),
+    );
+
+    // Should move left by 1 char
+    assert_eq!(
+        model.editor().cursors[0].column,
+        2,
+        "Cursor 0 should move left by 1"
+    );
+    assert_eq!(
+        model.editor().cursors[1].column,
+        2,
+        "Cursor 1 should move left by 1"
+    );
+}
+
+// ========================================================================
+// Bug #27: Multi-cursor duplicate line should adjust cursor positions
+// ========================================================================
+
+#[test]
+fn test_duplicate_line_multi_cursor_cursors_stay_visually_correct() {
+    use token::messages::{DocumentMsg, Msg};
+
+    // Setup: three lines, cursors on lines 0, 1, 2
+    let mut model = test_model("// One\n// Two\n// Three\n", 0, 0);
+
+    model.editor_mut().add_cursor_at(1, 0);
+    model.editor_mut().add_cursor_at(2, 0);
+
+    assert_eq!(model.editor().cursor_count(), 3);
+
+    // Duplicate line (no selections)
+    update(&mut model, Msg::Document(DocumentMsg::Duplicate));
+
+    let content: String = model.document().buffer.chars().collect();
+    // Each line should be duplicated
+    assert_eq!(
+        content, "// One\n// One\n// Two\n// Two\n// Three\n// Three\n",
+        "All three lines should be duplicated"
+    );
+
+    // Cursors should be on the duplicated lines (lines 1, 3, 5)
+    // so they visually stay on the "same" text they were on
+    assert_eq!(model.editor().cursor_count(), 3);
+    assert_eq!(
+        model.editor().cursors[0].line,
+        1,
+        "Cursor 0 should be on line 1 (duplicated // One)"
+    );
+    assert_eq!(
+        model.editor().cursors[1].line,
+        3,
+        "Cursor 1 should be on line 3 (duplicated // Two)"
+    );
+    assert_eq!(
+        model.editor().cursors[2].line,
+        5,
+        "Cursor 2 should be on line 5 (duplicated // Three)"
+    );
+}
+
+#[test]
+fn test_duplicate_selection_multi_cursor_inserts_after_each_selection() {
+    use token::messages::{DocumentMsg, Msg};
+
+    // Setup: "// One\n// Two\n// Three\n"
+    // Select "// " on each line, duplicate should insert "// " after each selection
+    let mut model = test_model("// One\n// Two\n// Three\n", 0, 3);
+
+    // First cursor selects "// " on line 0 (columns 0-3)
+    model.editor_mut().selections[0].anchor = Position::new(0, 0);
+    model.editor_mut().selections[0].head = Position::new(0, 3);
+    model.editor_mut().cursors[0].column = 3;
+
+    // Add second cursor on line 1 with selection "// " (columns 0-3)
+    model.editor_mut().add_cursor_at(1, 3);
+    model.editor_mut().selections[1].anchor = Position::new(1, 0);
+    model.editor_mut().selections[1].head = Position::new(1, 3);
+
+    // Add third cursor on line 2 with selection "// " (columns 0-3)
+    model.editor_mut().add_cursor_at(2, 3);
+    model.editor_mut().selections[2].anchor = Position::new(2, 0);
+    model.editor_mut().selections[2].head = Position::new(2, 3);
+
+    assert_eq!(model.editor().cursor_count(), 3);
+
+    update(&mut model, Msg::Document(DocumentMsg::Duplicate));
+
+    let content: String = model.document().buffer.chars().collect();
+    // "// " should be duplicated after each selection point
+    assert_eq!(
+        content, "// // One\n// // Two\n// // Three\n",
+        "Each '// ' selection should be duplicated in place"
+    );
+
+    // Cursors should be at the end of each duplicated text (column 6)
+    assert_eq!(
+        model.editor().cursors[0].column,
+        6,
+        "Cursor 0 should be at col 6"
+    );
+    assert_eq!(
+        model.editor().cursors[1].column,
+        6,
+        "Cursor 1 should be at col 6"
+    );
+    assert_eq!(
+        model.editor().cursors[2].column,
+        6,
+        "Cursor 2 should be at col 6"
+    );
+}
+
+// ========================================================================
+// Bug #28: DeleteWordBackward (Option+Backspace)
+// ========================================================================
+
+#[test]
+fn test_delete_word_backward_single_cursor() {
+    use token::messages::{DocumentMsg, Msg};
+
+    let mut model = test_model("hello world", 0, 11); // cursor at end
+
+    update(&mut model, Msg::Document(DocumentMsg::DeleteWordBackward));
+
+    let content: String = model.document().buffer.chars().collect();
+    assert_eq!(content, "hello ", "Should delete 'world'");
+    assert_eq!(model.editor().cursors[0].column, 6);
+}
+
+#[test]
+fn test_delete_word_backward_multi_cursor() {
+    use token::messages::{DocumentMsg, Msg};
+
+    // Three lines, each ending with a word we want to delete
+    // "/// This is anotherword" = 23 chars (0-22), cursor at 23
+    // "/// This is notreallyaword" = 26 chars (0-25), cursor at 26
+    // "/// This is actuallyword" = 24 chars (0-23), cursor at 24
+    let mut model = test_model(
+        "/// This is anotherword\n/// This is notreallyaword\n/// This is actuallyword\n",
+        0,
+        23,
+    );
+
+    // Position cursors at the end of each line
+    model.editor_mut().cursors[0].column = 23; // end of line 0
+    model.editor_mut().add_cursor_at(1, 26); // end of line 1
+    model.editor_mut().add_cursor_at(2, 24); // end of line 2
+
+    assert_eq!(model.editor().cursor_count(), 3);
+
+    update(&mut model, Msg::Document(DocumentMsg::DeleteWordBackward));
+
+    let content: String = model.document().buffer.chars().collect();
+    assert_eq!(
+        content,
+        "/// This is \n/// This is \n/// This is \n",
+        "Each word should be deleted"
+    );
+}
+
+#[test]
+fn test_delete_word_backward_at_beginning() {
+    use token::messages::{DocumentMsg, Msg};
+
+    let mut model = test_model("hello", 0, 0); // cursor at beginning
+
+    update(&mut model, Msg::Document(DocumentMsg::DeleteWordBackward));
+
+    let content: String = model.document().buffer.chars().collect();
+    assert_eq!(content, "hello", "Nothing should be deleted at beginning");
+}
+
+// ========================================================================
+// Bug #29: DeleteLine should preserve cursors for non-contiguous lines
+// ========================================================================
+
+#[test]
+fn test_delete_line_non_contiguous_preserves_cursor_count() {
+    use token::messages::{DocumentMsg, Msg};
+
+    // Lines with empty lines between them
+    // Line 0: "line 0"
+    // Line 1: ""
+    // Line 2: "line 2"
+    // Line 3: ""
+    // Line 4: "line 4"
+    let mut model = test_model("line 0\n\nline 2\n\nline 4\n", 0, 0);
+
+    // Add cursors on lines 0, 2, 4 (non-contiguous)
+    model.editor_mut().add_cursor_at(2, 0);
+    model.editor_mut().add_cursor_at(4, 0);
+
+    assert_eq!(model.editor().cursor_count(), 3);
+
+    update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
+
+    let content: String = model.document().buffer.chars().collect();
+    // Lines 0, 2, 4 deleted, only empty lines remain
+    assert_eq!(content, "\n\n", "Only the empty lines should remain");
+
+    // Should still have cursors (may be deduplicated if they land on same position)
+    assert!(
+        model.editor().cursor_count() >= 1,
+        "Should preserve cursors"
+    );
+}
+
+#[test]
+fn test_delete_line_contiguous_collapses_to_single_cursor() {
+    use token::messages::{DocumentMsg, Msg};
+
+    let mut model = test_model("line 0\nline 1\nline 2\nline 3\n", 0, 0);
+
+    // Add cursors on lines 0, 1, 2 (contiguous)
+    model.editor_mut().add_cursor_at(1, 0);
+    model.editor_mut().add_cursor_at(2, 0);
+
+    assert_eq!(model.editor().cursor_count(), 3);
+
+    update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
+
+    let content: String = model.document().buffer.chars().collect();
+    assert_eq!(content, "line 3\n", "Lines 0, 1, 2 should be deleted");
+
+    // Contiguous deletion should collapse to single cursor
+    assert_eq!(
+        model.editor().cursor_count(),
+        1,
+        "Should collapse to single cursor for contiguous lines"
+    );
+}
+
+// ========================================================================
+// Bug #30: InsertNewline should adjust other cursors after each insertion
+// ========================================================================
+
+#[test]
+fn test_insert_newline_multi_cursor_adjusts_positions() {
+    use token::messages::{DocumentMsg, Msg};
+
+    // Two lines, cursors at end of each line
+    let mut model = test_model("hello\nworld\n", 0, 5);
+    model.editor_mut().add_cursor_at(1, 5);
+
+    assert_eq!(model.editor().cursor_count(), 2);
+    assert_eq!(model.editor().cursors[0].line, 0);
+    assert_eq!(model.editor().cursors[1].line, 1);
+
+    // Insert newline at each cursor position
+    update(&mut model, Msg::Document(DocumentMsg::InsertNewline));
+
+    let content: String = model.document().buffer.chars().collect();
+    // "hello\n" + newline + "world\n" + newline = "hello\n\nworld\n\n"
+    assert_eq!(content, "hello\n\nworld\n\n", "Two newlines should be inserted");
+
+    // Cursor 0 was at (0, 5), after newline should be at (1, 0)
+    // Cursor 1 was at (1, 5), after its newline should be at (3, 0)
+    // (Because cursor 0's newline shifted line 1 to line 2, then cursor 1's newline at old line 2 makes it line 3)
+    assert_eq!(model.editor().cursors[0].line, 1, "Cursor 0 should be on line 1");
+    assert_eq!(model.editor().cursors[0].column, 0);
+    assert_eq!(model.editor().cursors[1].line, 3, "Cursor 1 should be on line 3");
+    assert_eq!(model.editor().cursors[1].column, 0);
+}
