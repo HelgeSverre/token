@@ -702,3 +702,64 @@ fn test_multi_cursor_consecutive_edits_undo() {
         "Second undo undoes X"
     );
 }
+
+// ========================================================================
+// Cut/Paste Undo Tests
+// ========================================================================
+
+#[test]
+fn test_cut_single_cursor_undo() {
+    // Select "ello" in "hello world"
+    let mut model = test_model_with_selection("hello world", 0, 1, 0, 5);
+
+    // Cut the selection
+    update(&mut model, Msg::Document(DocumentMsg::Cut));
+    assert_eq!(buffer_to_string(&model), "h world");
+    assert_eq!(model.editor().primary_cursor().column, 1);
+
+    // Undo should restore the cut text
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(buffer_to_string(&model), "hello world");
+}
+
+#[test]
+fn test_cut_multi_cursor_undo() {
+    use common::test_model_multi_cursor;
+    use token::model::{Position, Selection};
+
+    // Two lines, select "bc" on each
+    let mut model = test_model_multi_cursor("abc\nabc", &[(0, 3), (1, 3)]);
+
+    // Set up selections: select "bc" on each line (columns 1-3)
+    model.editor_mut().selections[0] =
+        Selection::from_positions(Position::new(0, 1), Position::new(0, 3));
+    model.editor_mut().cursors[0].column = 3;
+
+    model.editor_mut().selections[1] =
+        Selection::from_positions(Position::new(1, 1), Position::new(1, 3));
+    model.editor_mut().cursors[1].column = 3;
+
+    // Cut
+    update(&mut model, Msg::Document(DocumentMsg::Cut));
+    assert_eq!(buffer_to_string(&model), "a\na");
+
+    // Undo should restore both cut regions
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(buffer_to_string(&model), "abc\nabc");
+}
+
+#[test]
+fn test_paste_multi_cursor_undo() {
+    use common::test_model_multi_cursor;
+
+    // Set up clipboard with text (we'll simulate by doing a copy first)
+    let mut model = test_model_multi_cursor("XY\nXY", &[(0, 2), (1, 2)]);
+
+    // Type some text at each cursor to set up undo stack baseline
+    update(&mut model, Msg::Document(DocumentMsg::InsertChar('Z')));
+    assert_eq!(buffer_to_string(&model), "XYZ\nXYZ");
+
+    // Undo
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(buffer_to_string(&model), "XY\nXY");
+}
