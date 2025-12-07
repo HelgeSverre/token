@@ -10,11 +10,29 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use winit::window::Window;
 
-use token::model::editor_area::{EditorGroup, GroupId, Rect, SplitterBar};
+use token::model::editor_area::{EditorGroup, GroupId, Rect, SplitterBar, Tab};
 use token::model::{gutter_border_x, text_start_x, AppModel};
 use token::overlay::blend_pixel;
 
 pub type GlyphCacheKey = (char, u32);
+
+/// Get the display title for a tab.
+/// Centralizes the logic for determining what text to show in the tab bar.
+fn tab_title(model: &AppModel, tab: &Tab) -> String {
+    let editor = match model.editor_area.editors.get(&tab.editor_id) {
+        Some(e) => e,
+        None => return "Untitled".to_string(),
+    };
+    let doc_id = match editor.document_id {
+        Some(id) => id,
+        None => return "Untitled".to_string(),
+    };
+    let document = match model.editor_area.documents.get(&doc_id) {
+        Some(d) => d,
+        None => return "Untitled".to_string(),
+    };
+    document.display_name()
+}
 pub type GlyphCache = HashMap<GlyphCacheKey, (Metrics, Vec<u8>)>;
 
 pub const TAB_BAR_HEIGHT: usize = 28;
@@ -524,29 +542,7 @@ impl Renderer {
 
         for (idx, tab) in group.tabs.iter().enumerate() {
             let is_active = idx == group.active_tab_index;
-
-            let editor = model.editor_area.editors.get(&tab.editor_id);
-            let doc_id = editor.and_then(|e| e.document_id);
-            let document = doc_id.and_then(|id| model.editor_area.documents.get(&id));
-
-            let filename = document
-                .and_then(|d| {
-                    // Prefer file_path, fall back to untitled_name
-                    d.file_path
-                        .as_ref()
-                        .and_then(|p| p.file_name())
-                        .map(|n| n.to_string_lossy().to_string())
-                        .or_else(|| d.untitled_name.clone())
-                })
-                .unwrap_or_else(|| "Untitled".to_string());
-
-            let is_modified = document.map(|d| d.is_modified).unwrap_or(false);
-            let display_name = if is_modified {
-                filename.to_string()
-            } else {
-                filename
-            };
-
+            let display_name = tab_title(model, tab);
             let tab_width = (display_name.len() as f32 * char_width).round() as usize + 16;
 
             let (bg_color, fg_color) = if is_active {
@@ -827,21 +823,8 @@ impl Renderer {
         let mut tab_x = 4.0; // Initial padding
 
         for (idx, tab) in group.tabs.iter().enumerate() {
-            let editor = model.editor_area.editors.get(&tab.editor_id);
-            let doc_id = editor.and_then(|e| e.document_id);
-            let document = doc_id.and_then(|id| model.editor_area.documents.get(&id));
-
-            let filename = document
-                .and_then(|d| {
-                    d.file_path
-                        .as_ref()
-                        .and_then(|p| p.file_name())
-                        .map(|n| n.to_string_lossy().to_string())
-                        .or_else(|| d.untitled_name.clone())
-                })
-                .unwrap_or_else(|| "Untitled".to_string());
-
-            let tab_width = (filename.len() as f32 * self.char_width).round() as f64 + 16.0;
+            let title = tab_title(model, tab);
+            let tab_width = (title.len() as f32 * self.char_width).round() as f64 + 16.0;
 
             if x >= tab_x && x < tab_x + tab_width {
                 return Some(idx);

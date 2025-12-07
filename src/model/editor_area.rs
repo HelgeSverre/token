@@ -153,6 +153,9 @@ pub struct EditorArea {
     next_editor_id: u64,
     next_group_id: u64,
     next_tab_id: u64,
+
+    /// Counter for generating unique untitled document names
+    next_untitled_number: u32,
 }
 
 impl EditorArea {
@@ -203,6 +206,7 @@ impl EditorArea {
             next_editor_id: 2,
             next_group_id: 2,
             next_tab_id: 2,
+            next_untitled_number: 1,
         }
     }
 
@@ -297,6 +301,17 @@ impl EditorArea {
         let id = TabId(self.next_tab_id);
         self.next_tab_id += 1;
         id
+    }
+
+    /// Generate the next untitled document name (e.g., "Untitled", "Untitled-2", etc.)
+    pub fn next_untitled_name(&mut self) -> String {
+        let n = self.next_untitled_number;
+        self.next_untitled_number += 1;
+        if n == 1 {
+            "Untitled".to_string()
+        } else {
+            format!("Untitled-{}", n)
+        }
     }
 
     /// Get all editor IDs that are viewing a specific document

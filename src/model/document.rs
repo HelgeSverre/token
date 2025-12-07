@@ -49,6 +49,8 @@ pub struct Document {
     pub buffer: Rope,
     /// Path to the file on disk (None for new/unsaved files)
     pub file_path: Option<PathBuf>,
+    /// Display name for untitled documents (e.g., "Untitled", "Untitled-2")
+    pub untitled_name: Option<String>,
     /// Whether the buffer has unsaved changes
     pub is_modified: bool,
     /// Undo stack
@@ -64,6 +66,7 @@ impl Document {
             id: None,
             buffer: Rope::from(""),
             file_path: None,
+            untitled_name: None,
             is_modified: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -76,6 +79,7 @@ impl Document {
             id: None,
             buffer: Rope::from(text),
             file_path: None,
+            untitled_name: None,
             is_modified: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -89,10 +93,25 @@ impl Document {
             id: None,
             buffer: Rope::from(content),
             file_path: Some(path),
+            untitled_name: None,
             is_modified: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
         })
+    }
+
+    /// Get the display name for this document.
+    /// Returns the filename if saved, the untitled name if set, or "Untitled" as fallback.
+    pub fn display_name(&self) -> String {
+        if let Some(path) = &self.file_path {
+            if let Some(name) = path.file_name() {
+                return name.to_string_lossy().to_string();
+            }
+        }
+        if let Some(name) = &self.untitled_name {
+            return name.clone();
+        }
+        "Untitled".to_string()
     }
 
     /// Get the number of lines in the document
