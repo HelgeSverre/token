@@ -1022,17 +1022,41 @@ impl EditorState {
     // =========================================================================
 
     /// Move all cursors left
+    /// If a cursor has a selection, collapse to selection start instead of moving by 1 char
     pub fn move_all_cursors_left(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_left_at(doc, i);
+        let len = self.cursors.len();
+        for i in 0..len {
+            if self.selections[i].is_empty() {
+                self.move_cursor_left_at(doc, i);
+            } else {
+                let start = self.selections[i].start();
+                let cursor = &mut self.cursors[i];
+                cursor.line = start.line;
+                cursor.column = start.column;
+                cursor.desired_column = None;
+                self.selections[i].anchor = start;
+                self.selections[i].head = start;
+            }
         }
         self.deduplicate_cursors();
     }
 
     /// Move all cursors right
+    /// If a cursor has a selection, collapse to selection end instead of moving by 1 char
     pub fn move_all_cursors_right(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_right_at(doc, i);
+        let len = self.cursors.len();
+        for i in 0..len {
+            if self.selections[i].is_empty() {
+                self.move_cursor_right_at(doc, i);
+            } else {
+                let end = self.selections[i].end();
+                let cursor = &mut self.cursors[i];
+                cursor.line = end.line;
+                cursor.column = end.column;
+                cursor.desired_column = None;
+                self.selections[i].anchor = end;
+                self.selections[i].head = end;
+            }
         }
         self.deduplicate_cursors();
     }

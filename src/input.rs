@@ -61,14 +61,14 @@ pub fn handle_key(
 
     match key {
         // Double-tap Option + Arrow for multi-cursor (must be before other alt combinations)
-        Key::Named(NamedKey::ArrowUp) if alt && option_double_tapped => {
+        Key::Named(NamedKey::ArrowUp) if alt && option_double_tapped =>
+        {
             #[cfg(debug_assertions)]
-            eprintln!("[DEBUG] AddCursorAbove triggered");
             update(model, Msg::Editor(EditorMsg::AddCursorAbove))
         }
-        Key::Named(NamedKey::ArrowDown) if alt && option_double_tapped => {
+        Key::Named(NamedKey::ArrowDown) if alt && option_double_tapped =>
+        {
             #[cfg(debug_assertions)]
-            eprintln!("[DEBUG] AddCursorBelow triggered");
             update(model, Msg::Editor(EditorMsg::AddCursorBelow))
         }
 
@@ -365,38 +365,21 @@ pub fn handle_key(
             }
         }
         Key::Named(NamedKey::ArrowLeft) => {
-            if !model.editor().active_selection().is_empty() {
-                // Jump to selection START (no additional move)
-                let start = model.editor().active_selection().start();
-                model.editor_mut().active_cursor_mut().line = start.line;
-                model.editor_mut().active_cursor_mut().column = start.column;
-                model.editor_mut().clear_selection();
-                model.ensure_cursor_visible();
-                model.reset_cursor_blink();
-                Some(Cmd::Redraw)
-            } else {
-                update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Left)))
-            }
+            // move_all_cursors_left handles selection collapse for all cursors
+            update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Left)))
         }
         Key::Named(NamedKey::ArrowRight) => {
-            if !model.editor().active_selection().is_empty() {
-                // Jump to selection END (no additional move)
-                let end = model.editor().active_selection().end();
-                model.editor_mut().active_cursor_mut().line = end.line;
-                model.editor_mut().active_cursor_mut().column = end.column;
-                model.editor_mut().clear_selection();
-                model.ensure_cursor_visible();
-                model.reset_cursor_blink();
-                Some(Cmd::Redraw)
-            } else {
-                update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Right)))
-            }
+            // move_all_cursors_right handles selection collapse for all cursors
+            update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Right)))
         }
 
         // Editing
         Key::Named(NamedKey::Enter) => update(model, Msg::Document(DocumentMsg::InsertNewline)),
         Key::Named(NamedKey::Backspace) if ctrl || logo => {
             update(model, Msg::Document(DocumentMsg::DeleteLine))
+        }
+        Key::Named(NamedKey::Backspace) if alt => {
+            update(model, Msg::Document(DocumentMsg::DeleteWordBackward))
         }
         Key::Named(NamedKey::Backspace) => {
             update(model, Msg::Document(DocumentMsg::DeleteBackward))
