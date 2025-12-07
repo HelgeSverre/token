@@ -1,17 +1,19 @@
-# Token
-
-**A minimal text editor for editing code, inspired by Jetbrains, built with Rust**
-
 <div style="text-align: center;">
 
-[![Amp](https://img.shields.io/badge/Amp-191C19.svg?logo=data:image/svg%2bxml;base64,PHN2ZyB3aWR0aD0iMjEiIGhlaWdodD0iMjEiIHZpZXdCb3g9IjAgMCAyMSAyMSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTMuNzY4NzkgMTguMzAxNUw4LjQ5ODM5IDEzLjUwNUwxMC4yMTk2IDIwLjAzOTlMMTIuNzIgMTkuMzU2MUwxMC4yMjg4IDkuODY3NDlMMC44OTA4NzYgNy4zMzg0NEwwLjIyNTk0IDkuODkzMzFMNi42NTEzNCAxMS42Mzg4TDEuOTQxMzggMTYuNDI4MkwzLjc2ODc5IDE4LjMwMTVaIiBmaWxsPSIjRjM0RTNGIi8+CjxwYXRoIGQ9Ik0xNy40MDc0IDEyLjc0MTRMMTkuOTA3OCAxMi4wNTc1TDE3LjQxNjcgMi41Njg5N0w4LjA3ODczIDAuMDM5OTI0Nkw3LjQxMzggMi41OTQ4TDE1LjI5OTIgNC43MzY4NUwxNy40MDc0IDEyLjc0MTRaIiBmaWxsPSIjRjM0RTNGIi8+CjxwYXRoIGQ9Ik0xMy44MTg0IDE2LjM4ODNMMTYuMzE4OCAxNS43MDQ0TDEzLjgyNzYgNi4yMTU4OEw0LjQ4OTcxIDMuNjg2ODNMMy44MjQ3NyA2LjI0MTcxTDExLjcxMDEgOC4zODM3NkwxMy44MTg0IDE2LjM4ODNaIiBmaWxsPSIjRjM0RTNGIi8+Cjwvc3ZnPg==)](https://ampcode.com/@helgesverre)
-![License: MIT](https://img.shields.io/badge/License-MIT-teal.svg?style=flat-square)
+# Token - A Multi-Cursor Text Editor
+
+
+**Multi-cursor, code editor inspired by JetBrains IDEs, Vibe-coded in Rust, using Amp Code.**
+<br>
+Most(ish) of the threads, prompts and conversations with the agent is available to view on
+my [AmpCode](https://ampcode.com/@helgesverre).
 
 <img src="art/screenshot.png" alt="Token Screenshot" width="868"/>
 
-**Multi-cursor, code editor inspired by JetBrains IDEs, Vibe-coded in Rust, using Amp Code. <br>
-Most(ish) of the threads, prompts and conversations with the agent is available to view on
-my [Amp profile](https://ampcode.com/@helgesverre).**
+[![Amp](https://img.shields.io/badge/Amp-191C19.svg?logo=data:image/svg%2bxml;base64,PHN2ZyB3aWR0aD0iMjEiIGhlaWdodD0iMjEiIHZpZXdCb3g9IjAgMCAyMSAyMSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTMuNzY4NzkgMTguMzAxNUw4LjQ5ODM5IDEzLjUwNUwxMC4yMTk2IDIwLjAzOTlMMTIuNzIgMTkuMzU2MUwxMC4yMjg4IDkuODY3NDlMMC44OTA4NzYgNy4zMzg0NEwwLjIyNTk0IDkuODkzMzFMNi42NTEzNCAxMS42Mzg4TDEuOTQxMzggMTYuNDI4MkwzLjc2ODc5IDE4LjMwMTVaIiBmaWxsPSIjRjM0RTNGIi8+CjxwYXRoIGQ9Ik0xNy40MDc0IDEyLjc0MTRMMTkuOTA3OCAxMi4wNTc1TDE3LjQxNjcgMi41Njg5N0w4LjA3ODczIDAuMDM5OTI0Nkw3LjQxMzggMi41OTQ4TDE1LjI5OTIgNC43MzY4NUwxNy40MDc0IDEyLjc0MTRaIiBmaWxsPSIjRjM0RTNGIi8+CjxwYXRoIGQ9Ik0xMy44MTg0IDE2LjM4ODNMMTYuMzE4OCAxNS43MDQ0TDEzLjgyNzYgNi4yMTU4OEw0LjQ4OTcxIDMuNjg2ODNMMy44MjQ3NyA2LjI0MTcxTDExLjcxMDEgOC4zODM3NkwxMy44MTg0IDE2LjM4ODNaIiBmaWxsPSIjRjM0RTNGIi8+Cjwvc3ZnPg==&style=flat)](https://ampcode.com/@helgesverre) 
+![License: MIT](https://img.shields.io/badge/License-MIT-007ACC.svg?style=flat)
+
+
 
 </div>
 
@@ -49,7 +51,7 @@ List them with `make help`
 ### Build & Run
 
 | Command        | Description                                      |
-| -------------- | ------------------------------------------------ |
+|----------------|--------------------------------------------------|
 | `make build`   | Build debug binary                               |
 | `make release` | Build optimized release binary                   |
 | `make run`     | Run with default sample file (indentation.txt)   |
@@ -60,56 +62,188 @@ List them with `make help`
 ### Testing
 
 | Command                   | Description           |
-| ------------------------- | --------------------- |
+|---------------------------|-----------------------|
 | `make test`               | Run all tests         |
 | `make test-one TEST=name` | Run a specific test   |
 | `make test-verbose`       | Run tests with output |
 
 ---
 
-## Project Structure
+## The Hidden Complexity of Text Editors
 
-### Root Configuration
+You use a text editor every day. But do you actually understand what it's doing?
 
-| File        | Purpose                                             |
-| ----------- | --------------------------------------------------- |
-| `AGENTS.md` | Agent roles, capabilities, and decision guidelines  |
-| `CLAUDE.md` | Build commands, architecture overview, key bindings |
+On the surface, an editor is "just" text on a screen with a blinking cursor. Underneath, it's a small physics engine for
+glyphs, pixels, and input events—quietly solving dozens of problems every time you press a key.
 
-### Documentation (`docs/`)
+Consider a few things you rely on constantly but probably don't think about:
 
-| File/Folder                  | Purpose                                                        |
-| ---------------------------- | -------------------------------------------------------------- |
-| `CHANGELOG.md`               | Timeline of completed features and changes                     |
-| `ROADMAP.md`                 | Planned features and priorities                                |
-| `EDITOR_UI_REFERENCE.md`     | **"Document of Truth"** - comprehensive UI component reference |
-| `feature/`                   | Design specifications for planned features                     |
-| `archived/`                  | Legacy documentation kept for reference                        |
-| `multi-cursor-bugtracker.md` | Tracked bugs for batch fixing                                  |
+- **Cursor + selection choreography** — Hold Shift and press arrow keys: the cursor moves, the selection grows or
+  shrinks, and the viewport sometimes nudges just enough to keep everything visible. Double-click a word, then
+  Shift+Click somewhere else. The rules feel obvious—until you try to implement them.
 
-### Agent Workflow Tips
+- **Keyboard modifier edge cases** — What's the "right" behavior for Ctrl+Left on a line with emoji, snake_case, and
+  camelCase? What happens to your selection when you hit Cmd+Z, then Cmd+Shift+Z, then type? When should Alt extend
+  selection, Cmd jump by word, or Option+Option+Arrow add a new cursor?
 
-**Creating Reference Docs**: Use Amp's **librarian** to research how VSCode/Helix/Zed implement features, then **consult
-the oracle** to synthesize findings into detailed design docs.
+- **Glyphs that don't behave like characters** — A single "character" on screen might be multiple codepoints: combining
+  accents, zero-width joiners, ligatures. The cursor should snap to visually sensible positions, not halfway through a
+  grapheme cluster. Column count, byte offset, and rendered width all disagree—and the editor must reconcile them.
+
+- **Viewport scrolling that feels "natural"** — Page Down doesn't simply add `viewportHeight` to `scrollY`. It decides
+  which line becomes the new top, keeps the cursor in a "safe zone," and handles partial lines at edges. Mouse wheel,
+  scrollbar drag, and "Go to Line" all produce subtly different scroll behavior—but never feel inconsistent when done
+  right.
+
+All of this hides behind a UI that's supposed to feel invisible. That's exactly why it's easy to underestimate the
+complexity.
+
+**Why this matters for AI-assisted development:** If you want AI agents to help design, debug, or extend an editor, they
+need more than "there's a cursor and some lines." They need a precise, shared vocabulary for scroll offsets, viewports,
+cursor modes, selection semantics, and edge cases. The same is true for humans: explicit documentation is how you
+sanity-check your own assumptions and avoid rediscovering tricky behaviors through trial and error.
+
+Token is built around that idea: make geometry, behavior, and edge cases **fully explicit**—for both humans and
+machines. See [EDITOR_UI_REFERENCE.md](docs/EDITOR_UI_REFERENCE.md) for our attempt to turn "obvious" editor behavior
+into a concrete, testable spec.
 
 ---
 
-## Development Timeline - Building Token with AI
+## AI-Assisted Development: A Framework for Complex Projects
 
-This section tells the story of building Token through AI-assisted development
-with [Amp Code](https://ampcode.com/@helgesverre). Each thread represents a focused conversation where features were
-designed, bugs were fixed, and architectural decisions were made.
+Token was built primarily through conversations with [Amp Code](https://ampcode.com/@helgesverre). This section
+documents the methodology that made it work—applicable to any non-trivial project where you're collaborating with AI
+agents.
 
-**Key patterns**:
+### The Core Principle
 
-- **Oracle**: Deep reasoning for complex design decisions
-- **Librarian**: Research how other editors (VSCode, Zed, Helix) solve problems
-- **TDD**: Write failing tests first, then implement
+AI agents excel at focused, well-defined tasks. The human's job is to provide **structure**: clear phases, written
+specifications, and explicit invariants. The more complex your project, the more this structure pays off.
 
-### Phase Summary
+---
+
+### Three Modes of Work
+
+Before each session, explicitly state which mode you're in:
+
+| Mode        | Purpose                                       | Inputs                       | Example                          |
+|-------------|-----------------------------------------------|------------------------------|----------------------------------|
+| **Build**   | New behavior that didn't exist                | Feature spec, reference docs | "Implement split view (Phase 3)" |
+| **Improve** | Better architecture without changing behavior | Organization docs, roadmap   | "Extract modules from main.rs"   |
+| **Sweep**   | Fix a cluster of related bugs                 | Bug tracker, gap doc         | "Multi-cursor selection bugs"    |
+
+This prevents scope creep and keeps AI contributions coherent across sessions.
+
+---
+
+### Design Before Code
+
+For complex features, invest in upfront documentation:
+
+**1. Reference Documentation**  
+Create a "document of truth" for cross-cutting concerns. [EDITOR_UI_REFERENCE.md](docs/EDITOR_UI_REFERENCE.md) defines
+viewport math, coordinate systems, and scrolling behavior—used across split view, selection, and overlay
+implementations.
+
+**2. Feature Specifications**  
+Before implementing multi-cursor, we wrote [SELECTION_MULTICURSOR.md](docs/archived/SELECTION_MULTICURSOR.md):
+
+- Data structures and invariants
+- Keyboard shortcuts table
+- Message enums and expected behavior
+- Multi-phase implementation plan
+
+**3. Gap Documents**  
+When a feature is 60-90% complete, create a gap
+doc. [MULTI_CURSOR_SELECTION_GAPS.md](docs/feature/MULTI_CURSOR_SELECTION_GAPS.md) lists:
+
+- What's implemented vs. missing
+- Design decisions for each gap
+- Tests and success criteria
+
+This turns "vague incompleteness" into concrete, actionable tasks.
+
+---
+
+### The Multi-Cursor Migration: A Case Study
+
+Adding multi-cursor to a single-cursor editor touched nearly every file. Here's how we avoided chaos:
+
+**1. Wrote invariants upfront:**
+
+```rust
+// MUST maintain: cursors.len() == selections.len()
+// MUST maintain: cursors[i].to_position() == selections[i].head
+```
+
+**2. Created migration helpers:**
+
+```rust
+// Old code still works via accessor
+impl AppModel {
+    pub fn cursor(&self) -> &Cursor { &self.editor.cursors[0] }
+}
+```
+
+**3. Implemented in phases:**
+
+- Phase 0: Per-cursor primitives (`move_cursor_left_at(idx)`)
+- Phase 1: All-cursor wrappers (`move_all_cursors_left()`)
+- Phase 2-4: Update handlers, add tests
+- Phase 5: Bug sweep for edge cases
+
+**4. Ran targeted sweeps:**
+When bugs emerged, we created a focused tracker and fixed them systematically—not one-off. This leverages AI's strength
+at "apply this pattern everywhere."
+
+---
+
+### Agent Configuration
+
+Tell agents how to work in your codebase:
+
+| File        | Purpose                                         |
+|-------------|-------------------------------------------------|
+| `AGENTS.md` | Build commands, architecture, conventions       |
+| `CLAUDE.md` | Same (symlink or duplicate for different tools) |
+
+Key: specify your Makefile/scripts so agents use `make test` instead of inventing
+`cargo test --all-features --no-fail-fast`.
+
+---
+
+### Documentation Structure
+
+| Path                                                       | Purpose                                             |
+|------------------------------------------------------------|-----------------------------------------------------|
+| [docs/ROADMAP.md](docs/ROADMAP.md)                         | Planned features with design doc links              |
+| [docs/CHANGELOG.md](docs/CHANGELOG.md)                     | Completed work (reference when things break)        |
+| [docs/EDITOR_UI_REFERENCE.md](docs/EDITOR_UI_REFERENCE.md) | Domain reference (geometry, coordinates, scrolling) |
+| `docs/feature/`                                            | Design specs for planned features                   |
+| `docs/archived/`                                           | Completed feature specs (kept for reference)        |
+
+---
+
+### Agent Workflow Patterns
+
+**Research → Synthesize → Implement:**
+
+1. Use **Librarian** to research how VSCode/Zed/Helix solve a problem
+2. Use **Oracle** to review findings and produce a design doc
+3. Implement in phases with tests
+
+**Review Before Implementation:**
+Having Oracle review [EDITOR_UI_REFERENCE.md](docs/EDITOR_UI_REFERENCE.md) caught 15+ issues (off-by-one errors,
+division-by-zero edge cases) before they became bugs in code.
+
+---
+
+## Development Timeline
+
+Token's development followed distinct phases, each with focused objectives:
 
 | Phase               | Dates          | Focus                                           |
-| ------------------- | -------------- | ----------------------------------------------- |
+|---------------------|----------------|-------------------------------------------------|
 | Foundation          | Sep 26 - Dec 5 | Setup, reference docs, architecture             |
 | Research Sprint     | Dec 6          | Performance, keymaps, testing infrastructure    |
 | Feature Development | Dec 5-6        | Split view, undo/redo, multi-cursor selection   |
@@ -119,7 +253,7 @@ designed, bugs were fixed, and architectural decisions were made.
 
 ---
 
-### Development Story
+### Notable Threads
 
 <details>
 <summary><strong>🔮 Oracle: UI Reference Deep Review</strong> | <a href="https://ampcode.com/threads/T-7b92a860-a2f7-4397-985c-73b2fa3e9582">T-7b92a860</a></summary>
@@ -141,7 +275,8 @@ The Oracle performed a comprehensive technical review of EDITOR_UI_REFERENCE.md 
 
 **Impact**: Created systematic AMP_REPORT.md with prioritized fixes. Prevented 1-3h of debugging per issue.
 
-**Lesson Learned**: Always have oracle review reference docs before implementation - catches subtle algorithmic bugs that tests miss.
+**Lesson Learned**: Always have oracle review reference docs before implementation - catches subtle algorithmic bugs
+that tests miss.
 
 </details>
 
@@ -160,9 +295,11 @@ The Oracle performed a comprehensive technical review of EDITOR_UI_REFERENCE.md 
 | Zed | Flat with depth indexing | Context depth + insertion order for precedence |
 | Neovim | Lua-based | Full scripting for complex mappings |
 
-**Key Finding**: Two dominant patterns - **trie-based** for modal editors (Helix) vs **flat vector with indexing** for context-rich editors (Zed, VSCode).
+**Key Finding**: Two dominant patterns - **trie-based** for modal editors (Helix) vs **flat vector with indexing** for
+context-rich editors (Zed, VSCode).
 
-**Outcome**: Created [docs/feature/KEYMAPPING.md](docs/feature/KEYMAPPING.md) design doc with data structures, TOML config format, and phased implementation plan.
+**Outcome**: Created [docs/feature/KEYMAPPING.md](docs/feature/KEYMAPPING.md) design doc with data structures, TOML
+config format, and phased implementation plan.
 
 </details>
 
@@ -171,7 +308,8 @@ The Oracle performed a comprehensive technical review of EDITOR_UI_REFERENCE.md 
 
 **Date**: 2025-12-06
 
-**The Bug**: Undo/redo keyboard shortcuts were completely broken on macOS. Pressing Cmd+Z inserted the letter 'z' into the document instead of undoing!
+**The Bug**: Undo/redo keyboard shortcuts were completely broken on macOS. Pressing Cmd+Z inserted the letter 'z' into
+the document instead of undoing!
 
 **Root Cause**: Key handler only checked `control_key()` modifier, not `super_key()` (macOS Command key).
 
@@ -179,13 +317,14 @@ The Oracle performed a comprehensive technical review of EDITOR_UI_REFERENCE.md 
 
 ```rust
 // Before (broken on macOS)
-if modifiers.control_key() && key == "z" { ... }
+if modifiers.control_key() & & key == "z" { ... }
 
 // After (cross-platform)
-if (modifiers.control_key() || modifiers.super_key()) && key == "z" { ... }
+if (modifiers.control_key() | | modifiers.super_key()) & & key == "z" { ... }
 ```
 
-**Lesson Learned**: Always handle both `control_key()` AND `super_key()` for cross-platform keyboard shortcuts. The macOS Command key is a completely different modifier than Ctrl.
+**Lesson Learned**: Always handle both `control_key()` AND `super_key()` for cross-platform keyboard shortcuts. The
+macOS Command key is a completely different modifier than Ctrl.
 
 </details>
 
@@ -198,9 +337,11 @@ if (modifiers.control_key() || modifiers.super_key()) && key == "z" { ... }
 
 **Architectural Decisions**:
 
-1. **Shared documents, independent editors**: Documents stored in `HashMap<DocumentId, Document>`, editors in `HashMap<EditorId, EditorState>`. Multiple editors can view the same document with independent cursors/viewports.
+1. **Shared documents, independent editors**: Documents stored in `HashMap<DocumentId, Document>`, editors in
+   `HashMap<EditorId, EditorState>`. Multiple editors can view the same document with independent cursors/viewports.
 
-2. **Layout tree structure**: `LayoutNode` is either `Group(GroupId)` or `Split(SplitContainer)`. Recursive structure allows arbitrary nesting.
+2. **Layout tree structure**: `LayoutNode` is either `Group(GroupId)` or `Split(SplitContainer)`. Recursive structure
+   allows arbitrary nesting.
 
 3. **Migration helper**: `EditorArea::single_document()` provides backward compatibility:
 
@@ -212,7 +353,8 @@ impl AppModel {
 }
 ```
 
-**Lesson Learned**: Migration helpers like `single_document()` are crucial for phased refactoring. The pattern of "replace two fields with one complex struct + accessors" worked smoothly.
+**Lesson Learned**: Migration helpers like `single_document()` are crucial for phased refactoring. The pattern of "
+replace two fields with one complex struct + accessors" worked smoothly.
 
 </details>
 
@@ -223,7 +365,8 @@ impl AppModel {
 
 **The Bug**: Arrow keys and all movement operations only affected the primary cursor. Secondary cursors were frozen!
 
-**Root Cause**: All movement handlers assumed single cursor - `move_cursor_up()` operated on `cursor_mut()` which only returned `cursors[0]`.
+**Root Cause**: All movement handlers assumed single cursor - `move_cursor_up()` operated on `cursor_mut()` which only
+returned `cursors[0]`.
 
 **The Fix - Per-Cursor Primitives Pattern**:
 
@@ -246,7 +389,8 @@ fn move_all_cursors_left(&mut self, doc: &Document) {
 // MUST maintain: cursors[i].to_position() == selections[i].head
 ```
 
-**Lesson Learned**: Always question single-item assumptions when adding multi-item support. The "per-item primitive + all-items wrapper" pattern scales well.
+**Lesson Learned**: Always question single-item assumptions when adding multi-item support. The "per-item primitive +
+all-items wrapper" pattern scales well.
 
 </details>
 
@@ -255,7 +399,8 @@ fn move_all_cursors_left(&mut self, doc: &Document) {
 
 **Date**: 2025-12-06
 
-**The Problem**: After SelectWord with multiple cursors on adjacent words, selections would overlap and cause rendering bugs.
+**The Problem**: After SelectWord with multiple cursors on adjacent words, selections would overlap and cause rendering
+bugs.
 
 **The Solution**: `merge_overlapping_selections()` maintains the parallel array invariant:
 
@@ -267,7 +412,8 @@ pub fn merge_overlapping_selections(&mut self) {
 }
 ```
 
-**Key Insight**: "Touching" selections like `[0,5)` and `[5,10)` should merge into `[0,10)` - matches user expectations for continuous selections.
+**Key Insight**: "Touching" selections like `[0,5)` and `[5,10)` should merge into `[0,10)` - matches user expectations
+for continuous selections.
 
 </details>
 
@@ -279,7 +425,7 @@ pub fn merge_overlapping_selections(&mut self) {
 Systematic extraction from monolithic files:
 
 | Before      | After                                      | Lines            |
-| ----------- | ------------------------------------------ | ---------------- |
+|-------------|--------------------------------------------|------------------|
 | `main.rs`   | `app.rs`, `input.rs`, `view.rs`, `perf.rs` | 3100 → 20        |
 | `update.rs` | `update/` module directory (5 submodules)  | 2900 → organized |
 
@@ -287,7 +433,8 @@ Systematic extraction from monolithic files:
 
 **Result**: 669 tests passing, cleaner architecture, easier navigation.
 
-**Commits**: [`f602368`](https://github.com/HelgeSverre/token/commit/f602368), [`71a3b87`](https://github.com/HelgeSverre/token/commit/71a3b87)
+**Commits**: [`f602368`](https://github.com/HelgeSverre/token/commit/f602368), [
+`71a3b87`](https://github.com/HelgeSverre/token/commit/71a3b87)
 
 </details>
 
@@ -321,7 +468,7 @@ Systematic extraction from monolithic files:
 All conversations are public. Sorted by timestamp (oldest first).
 
 | Date/Time        | Thread                                                                                          | Type     | Summary                                                                                                |
-| ---------------- |-------------------------------------------------------------------------------------------------| -------- | ------------------------------------------------------------------------------------------------------ |
+|------------------|-------------------------------------------------------------------------------------------------|----------|--------------------------------------------------------------------------------------------------------|
 | 2025-12-03 21:26 | [UI Reference Review](https://ampcode.com/threads/T-7b92a860-a2f7-4397-985c-73b2fa3e9582)       | Research | Generated [Technical Reference Document](docs/EDITOR_UI_REFERENCE.md) based on research from Librarian |
 | 2025-12-04 09:56 | [Reference Doc Polish](https://ampcode.com/threads/T-750a0e44-2302-4b5e-8cdc-70b14c3f7930)      | Research | Continuing reference doc review and rewrite                                                            |
 | 2025-12-05 23:01 | [Status Bar Separators](https://ampcode.com/threads/T-ce8edd72-f084-4fba-8c86-276df333de96)     | Feature  | Design 1px separator segment for status bar                                                            |
