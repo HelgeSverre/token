@@ -135,7 +135,13 @@ impl StateDump {
     }
 
     pub fn save_to_file(&self) -> std::io::Result<String> {
-        let filename = format!("{}-state-dump.json", self.timestamp);
+        let filename = format!("dumps/{}-state-dump.json", self.timestamp);
+
+        // Ensure the dumps directory exists
+        if let Some(parent) = std::path::Path::new(&filename).parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
         std::fs::write(&filename, self.to_json())?;
         Ok(filename)
     }
