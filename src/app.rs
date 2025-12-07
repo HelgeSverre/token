@@ -9,11 +9,12 @@ use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
-use winit::window::Window;
+use winit::window::{CursorIcon, Window};
 
 use token::commands::Cmd;
 use token::messages::{AppMsg, EditorMsg, LayoutMsg, Msg, UiMsg};
 use token::model::editor::Position;
+use token::model::editor_area::{Rect, SplitDirection};
 use token::model::AppModel;
 use token::update::update;
 
@@ -110,6 +111,53 @@ impl App {
         update(&mut self.model, Msg::Editor(EditorMsg::Scroll(direction)))
     }
 
+    fn update_cursor_icon(&mut self, x: f64, y: f64) {
+        let Some(window) = &self.window else { return };
+        let Some(renderer) = &self.renderer else {
+            return;
+        };
+
+        // Compute layout to get splitters
+        let status_bar_height = renderer.line_height();
+        let (width, height) = renderer.dimensions();
+        let available_rect = Rect::new(
+            0.0,
+            0.0,
+            width as f32,
+            (height as usize).saturating_sub(status_bar_height) as f32,
+        );
+        let splitters = self.model.editor_area.compute_layout(available_rect);
+
+        // Check splitter bars first
+        if let Some(idx) = self
+            .model
+            .editor_area
+            .splitter_at_point(&splitters, x as f32, y as f32)
+        {
+            let icon = match splitters[idx].direction {
+                SplitDirection::Horizontal => CursorIcon::ColResize,
+                SplitDirection::Vertical => CursorIcon::RowResize,
+            };
+            window.set_cursor(icon);
+            return;
+        }
+
+        // Status bar → Default
+        if renderer.is_in_status_bar(y) {
+            window.set_cursor(CursorIcon::Default);
+            return;
+        }
+
+        // Tab bar → Default
+        if renderer.is_in_tab_bar(y) {
+            window.set_cursor(CursorIcon::Default);
+            return;
+        }
+
+        // Editor area → Text (I-beam)
+        window.set_cursor(CursorIcon::Text);
+    }
+
     fn handle_event(&mut self, event: &WindowEvent) -> Option<Cmd> {
         match event {
             WindowEvent::Resized(size) => update(
@@ -183,6 +231,7 @@ impl App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse_position = Some((position.x, position.y));
+                self.update_cursor_icon(position.x, position.y);
 
                 if self.model.editor().rectangle_selection.active {
                     if let Some(renderer) = &mut self.renderer {
