@@ -4,8 +4,17 @@ mod common;
 
 use common::test_model;
 use token::messages::{LayoutMsg, Msg};
-use token::model::{GroupId, LayoutNode, SplitDirection};
+use token::model::{GroupId, LayoutNode, Position, Selection, SplitDirection};
 use token::update::update;
+
+/// Helper to set cursor position and sync selection (maintains invariants)
+fn set_cursor_at(model: &mut token::model::AppModel, line: usize, column: usize) {
+    let pos = Position::new(line, column);
+    model.editor_mut().primary_cursor_mut().line = line;
+    model.editor_mut().primary_cursor_mut().column = column;
+    model.editor_mut().primary_cursor_mut().desired_column = None;
+    *model.editor_mut().primary_selection_mut() = Selection::new(pos);
+}
 
 // ============================================================================
 // Split Operations
@@ -1347,15 +1356,13 @@ fn test_cursor_sync_insert_char() {
     let group2 = model.editor_area.focused_group_id;
 
     // Set cursor in group2 at line 0, column 5 (end of "hello")
-    model.editor_mut().primary_cursor_mut().line = 0;
-    model.editor_mut().primary_cursor_mut().column = 5;
+    set_cursor_at(&mut model, 0, 5);
 
     // Focus group1
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
 
     // Set cursor at line 0, column 0
-    model.editor_mut().primary_cursor_mut().line = 0;
-    model.editor_mut().primary_cursor_mut().column = 0;
+    set_cursor_at(&mut model, 0, 0);
 
     // Insert a character in group1
     update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
@@ -1383,14 +1390,13 @@ fn test_cursor_sync_insert_newline() {
     let group2 = model.editor_area.focused_group_id;
 
     // Set cursor in group2 at line 0, column 8 (in "world")
-    model.editor_mut().primary_cursor_mut().line = 0;
-    model.editor_mut().primary_cursor_mut().column = 8;
+    set_cursor_at(&mut model, 0, 8);
 
     // Focus group1
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
 
     // Set cursor at column 5 (after "hello")
-    model.editor_mut().primary_cursor_mut().column = 5;
+    set_cursor_at(&mut model, 0, 5);
 
     // Insert newline in group1
     update(&mut model, Msg::Document(DocumentMsg::InsertNewline));
@@ -1417,14 +1423,13 @@ fn test_cursor_sync_cursor_before_edit_unchanged() {
     let group2 = model.editor_area.focused_group_id;
 
     // Set cursor in group2 at line 0, column 0 (before edit point)
-    model.editor_mut().primary_cursor_mut().line = 0;
-    model.editor_mut().primary_cursor_mut().column = 0;
+    set_cursor_at(&mut model, 0, 0);
 
     // Focus group1
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
 
     // Set cursor at column 3 and insert character
-    model.editor_mut().primary_cursor_mut().column = 3;
+    set_cursor_at(&mut model, 0, 3);
     update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
 
     // Focus group2 and check cursor was NOT adjusted (it was before edit point)
@@ -1450,14 +1455,13 @@ fn test_cursor_sync_delete_backward() {
     let group2 = model.editor_area.focused_group_id;
 
     // Set cursor in group2 at line 0, column 5 (end of "hello")
-    model.editor_mut().primary_cursor_mut().line = 0;
-    model.editor_mut().primary_cursor_mut().column = 5;
+    set_cursor_at(&mut model, 0, 5);
 
     // Focus group1
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
 
     // Set cursor at column 3 and delete backward
-    model.editor_mut().primary_cursor_mut().column = 3;
+    set_cursor_at(&mut model, 0, 3);
     update(&mut model, Msg::Document(DocumentMsg::DeleteBackward));
 
     // Focus group2 and check cursor was adjusted (shifted left by 1)

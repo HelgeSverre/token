@@ -24,6 +24,8 @@ pub use status_bar::{
 pub use ui::UiState;
 
 use crate::theme::Theme;
+#[cfg(debug_assertions)]
+use crate::debug_overlay::DebugOverlay;
 use std::path::PathBuf;
 
 /// Layout constant - width of line number gutter in characters (e.g., " 123 ")
@@ -48,7 +50,7 @@ pub fn gutter_border_x(char_width: f32) -> f32 {
 }
 
 /// The complete application model
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct AppModel {
     /// Editor area containing all documents, editors, groups, and layout
     pub editor_area: EditorArea,
@@ -62,6 +64,9 @@ pub struct AppModel {
     pub line_height: usize,
     /// Character width in pixels (monospace)
     pub char_width: f32,
+    /// Debug overlay state (debug builds only)
+    #[cfg(debug_assertions)]
+    pub debug_overlay: Option<DebugOverlay>,
 }
 
 impl AppModel {
@@ -135,7 +140,7 @@ impl AppModel {
                     }
                 }
                 Err(e) => {
-                    log::warn!("Failed to open {}: {}", path.display(), e);
+                    tracing::warn!("Failed to open {}: {}", path.display(), e);
                 }
             }
         }
@@ -147,7 +152,15 @@ impl AppModel {
             window_size: (window_width, window_height),
             line_height,
             char_width,
+            #[cfg(debug_assertions)]
+            debug_overlay: Some(DebugOverlay::new()),
         }
+    }
+
+    /// Get the focused editor (read-only), or None if no editor is focused
+    /// Used for debug instrumentation
+    pub fn focused_editor(&self) -> Option<&EditorState> {
+        self.editor_area.focused_editor()
     }
 
     // =========================================================================

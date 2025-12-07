@@ -1,8 +1,9 @@
 # Debug Tracing & Instrumentation
 
-> **Status**: Design  
+> **Status**: 🚧 Partially Implemented  
 > **Priority**: High (debugging multi-cursor issues)  
 > **Related**: Multi-cursor system, Elm architecture
+> **TODO**: Add structured log file output for post-mortem analysis
 
 ## Problem Statement
 

@@ -1,6 +1,6 @@
 # Makefile for token
 
-.PHONY: build release run dev test clean fmt format lint help samples-files ci \
+.PHONY: build release run dev trace test clean fmt format lint help samples-files ci \
         build-prof flamegraph profile-samply profile-memory \
         bench bench-rope bench-render bench-glyph \
         coverage coverage-html coverage-ci \
@@ -26,6 +26,10 @@ run: release
 # Run debug build (faster compile, slower runtime)
 dev: build
 	./target/debug/token samples/sample_code.rs
+
+# Run with full debug tracing enabled
+trace: build
+	RUST_LOG=debug ./target/debug/token samples/sample_code.rs
 
 # Run all tests
 test:
@@ -207,9 +211,12 @@ bench-glyph:
 # Generate HTML coverage report
 coverage coverage-html:
 	cargo llvm-cov --html
-	@echo "Open target/llvm-cov/html/index.html"
-	# todo: if no file, show error message in red
-	open target/llvm-cov/html/index.html
+	@if [ -f target/llvm-cov/html/index.html ]; then \
+		open target/llvm-cov/html/index.html; \
+	else \
+		echo "\033[0;31mError: Coverage report not found at target/llvm-cov/html/index.html\033[0m"; \
+		exit 1; \
+	fi
 
 # Generate coverage for CI (codecov format)
 coverage-ci:

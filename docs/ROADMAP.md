@@ -9,6 +9,21 @@ For archived phases, see [archived/old-roadmap-file.md](archived/old-roadmap-fil
 
 ## Recently Completed
 
+### Debug Tracing & Instrumentation 🚧
+
+**Design:** [feature/tracing-instrumentation.md](feature/tracing-instrumentation.md) | **Partially Completed:** 2025-12-07
+
+Debug instrumentation for multi-cursor state transitions:
+
+- `tracing` crate replaces `log`/`env_logger`
+- `CursorSnapshot` captures before/after state with diffing
+- `update_traced()` wrapper logs message flow and cursor changes
+- `assert_invariants_with_context()` for contextual assertion failures
+- F8 toggle for in-editor debug overlay
+- `make trace` runs with `RUST_LOG=debug`
+
+**TODO:** Add structured log file output for post-mortem analysis
+
 ### Multi-Cursor Line Operations ✅
 
 **Completed:** 2025-12-07
@@ -157,6 +172,7 @@ Group rapid consecutive edits into single undo entries:
 
 | Feature                     | Status      | Design Doc                                                                           |
 | --------------------------- | ----------- | ------------------------------------------------------------------------------------ |
+| Debug Tracing               | 🚧 Partial  | [feature/tracing-instrumentation.md](feature/tracing-instrumentation.md)             |
 | Codebase Organization       | ✅ Complete | [archived/ORGANIZATION-CODEBASE.md](archived/ORGANIZATION-CODEBASE.md)               |
 | Multi-Cursor Selection Gaps | ✅ Complete | [feature/MULTI_CURSOR_SELECTION_GAPS.md](archived/MULTI_CURSOR_SELECTION_GAPS.md)     |
 | Theming System              | ✅ Complete | [feature/THEMING.md](feature/THEMING.md)                                             |

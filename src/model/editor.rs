@@ -822,26 +822,56 @@ impl EditorState {
     /// Assert cursor/selection invariants (debug builds only)
     #[cfg(debug_assertions)]
     pub fn assert_invariants(&self) {
-        debug_assert!(!self.cursors.is_empty(), "Must have at least one cursor");
+        self.assert_invariants_with_context("unknown");
+    }
+
+    /// Assert invariants with context about what triggered the check
+    #[cfg(debug_assertions)]
+    pub fn assert_invariants_with_context(&self, context: &str) {
+        debug_assert!(
+            !self.cursors.is_empty(),
+            "[{}] Must have at least one cursor",
+            context
+        );
         debug_assert_eq!(
             self.cursors.len(),
             self.selections.len(),
-            "Cursor and selection counts must match"
+            "[{}] Cursor and selection counts must match: {} cursors, {} selections",
+            context,
+            self.cursors.len(),
+            self.selections.len()
         );
         for (i, (cursor, selection)) in self.cursors.iter().zip(&self.selections).enumerate() {
             debug_assert_eq!(
                 cursor.to_position(),
                 selection.head,
-                "Cursor {} position must match selection head",
-                i
+                "[{}] Cursor {} position ({},{}) must match selection head ({},{})",
+                context,
+                i,
+                cursor.line,
+                cursor.column,
+                selection.head.line,
+                selection.head.column
             );
         }
+        debug_assert!(
+            self.active_cursor_index < self.cursors.len(),
+            "[{}] Active cursor index {} out of bounds (have {} cursors)",
+            context,
+            self.active_cursor_index,
+            self.cursors.len()
+        );
     }
 
     /// No-op in release builds
     #[cfg(not(debug_assertions))]
     #[inline]
     pub fn assert_invariants(&self) {}
+
+    /// No-op in release builds
+    #[cfg(not(debug_assertions))]
+    #[inline]
+    pub fn assert_invariants_with_context(&self, _context: &str) {}
 
     // =========================================================================
     // Per-cursor movement primitives (Phase 0)

@@ -892,6 +892,9 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         model.editor().primary_cursor().column.min(new_line_len);
                 }
 
+                let new_pos = model.editor().primary_cursor().to_position();
+                *model.editor_mut().primary_selection_mut() = Selection::new(new_pos);
+
                 let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Delete {
                     position: start_offset,
@@ -1466,6 +1469,9 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 let new_line = model.editor().primary_cursor().line;
                 model.editor_mut().primary_cursor_mut().column =
                     column.min(model.document().line_length(new_line));
+
+                let new_pos = model.editor().primary_cursor().to_position();
+                *model.editor_mut().primary_selection_mut() = Selection::new(new_pos);
 
                 let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Insert {

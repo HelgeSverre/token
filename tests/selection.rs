@@ -467,7 +467,9 @@ fn test_select_next_occurrence_with_existing_selection() {
     // If selection already exists, should immediately find next
     let mut model = test_model("foo bar foo baz foo", 0, 0);
 
-    // Manually create a selection of "foo"
+    // Manually create a selection of "foo" (cursor must match selection head)
+    model.editor_mut().primary_cursor_mut().line = 0;
+    model.editor_mut().primary_cursor_mut().column = 3;
     model.editor_mut().primary_selection_mut().anchor = Position::new(0, 0);
     model.editor_mut().primary_selection_mut().head = Position::new(0, 3);
 

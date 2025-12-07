@@ -207,6 +207,14 @@ impl App {
                         return Some(Cmd::Redraw);
                     }
 
+                    #[cfg(debug_assertions)]
+                    if event.logical_key == Key::Named(NamedKey::F8) {
+                        if let Some(ref mut overlay) = self.model.debug_overlay {
+                            overlay.toggle();
+                        }
+                        return Some(Cmd::Redraw);
+                    }
+
                     let ctrl = self.modifiers.control_key();
                     let shift = self.modifiers.shift_key();
                     let alt = self.modifiers.alt_key();

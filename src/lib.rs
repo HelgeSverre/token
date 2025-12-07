@@ -4,10 +4,13 @@
 //! implementing the Elm Architecture pattern.
 
 pub mod commands;
+#[cfg(debug_assertions)]
+pub mod debug_overlay;
 pub mod messages;
 pub mod model;
 pub mod overlay;
 pub mod theme;
+pub mod tracing;
 pub mod update;
 pub mod util;
 

@@ -23,7 +23,7 @@ fn main() -> Result<()> {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
-    env_logger::init();
+    token::tracing::init();
 
     // Parse command-line arguments - collect all file paths
     let args: Vec<String> = std::env::args().collect();
@@ -98,6 +98,8 @@ mod tests {
             window_size: (800, 600),
             line_height: 20,
             char_width: 10.0,
+            #[cfg(debug_assertions)]
+            debug_overlay: None,
         }
     }
 
