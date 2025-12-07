@@ -228,5 +228,48 @@ The following bugs were fixed by switching to `active_cursor()`/`active_selectio
 ### Remaining Work
 These bugs require additional logic beyond the API refactor:
 - Bug #3: Undo loses multi-cursor state (needs Batch cursor restoration)
+
+---
+
+## Recently Fixed (December 2024)
+
+### Bug #26: Arrow Key with Selection Doesn't Collapse to Boundary (Multi-Cursor)
+- **Status:** 🟢 Fixed
+- **File:** `src/model/editor.rs`
+- **Lines:** 1024-1062
+- **Description:** When pressing Left/Right arrow with selections active on multiple cursors, only the primary cursor's selection was handled correctly. Secondary cursors would just move by 1 character instead of collapsing to selection boundary.
+- **Expected Behavior:** Left arrow collapses all cursors to their selection START, Right arrow collapses to selection END
+- **Resolution:** Updated `move_all_cursors_left()` and `move_all_cursors_right()` to check `selection.is_empty()` for each cursor. If selection exists, jump to boundary instead of moving by 1 char.
+- **Tests:** `tests/multi_cursor.rs::test_left_arrow_collapses_selection_to_start_multi_cursor`, `test_right_arrow_collapses_selection_to_end_multi_cursor`, `test_left_arrow_with_reversed_selection_multi_cursor`, `test_left_arrow_no_selection_moves_by_one_char`
+
+### Bug #27: Multi-Cursor Duplicate Doesn't Adjust Other Cursor Positions
+- **Status:** 🟢 Fixed
+- **File:** `src/update/document.rs`
+- **Lines:** 895-1042
+- **Description:** When duplicating lines with multiple cursors, the cursor position adjustments only affected the current cursor. Other cursors below the duplication point were not shifted down by the added lines, causing them to end up on wrong lines.
+- **Expected Behavior:** After duplicating lines 0, 1, 2, cursors should be on lines 1, 3, 5 (the duplicated copies)
+- **Resolution:** After each duplication, now iterate through all other cursors and adjust line numbers for those that are after the insertion point. Also adjusts selection anchor/head positions.
+- **Tests:** `tests/multi_cursor.rs::test_duplicate_line_multi_cursor_cursors_stay_visually_correct`, `test_duplicate_selection_multi_cursor_inserts_after_each_selection`
+
+### Bug #28: Option+Backspace (Delete Word Backward) Was Missing
+- **Status:** 🟢 Fixed
+- **File:** `src/update/document.rs`, `src/messages.rs`, `src/input.rs`
+- **Description:** Option+Backspace (delete word backward) was not implemented. This is a standard macOS text editing feature that deletes the word to the left of the cursor.
+- **Resolution:** Added `DocumentMsg::DeleteWordBackward` message, wired Option+Backspace to it in input.rs, and implemented the handler with full multi-cursor support. Uses `char_type()` for word boundary detection (same as word movement).
+- **Tests:** `tests/multi_cursor.rs::test_delete_word_backward_*`
+
+### Bug #29: DeleteLine Collapses Cursors for Non-Contiguous Lines
+- **Status:** 🟢 Fixed
+- **File:** `src/update/document.rs`
+- **Lines:** 631-777
+- **Description:** When deleting lines with multiple cursors on non-contiguous lines (e.g., lines 0, 2, 4 with empty lines between), all cursors were collapsed to a single cursor. Cursors should only collapse when they "touch" after deletion.
+- **Expected Behavior:** If 3 cursors on non-adjacent lines delete those lines, there should still be 3 cursors (unless they land on the same position after deletion).
+- **Resolution:** Added `is_contiguous` check for deleted lines. Contiguous deletions collapse to single cursor (existing behavior). Non-contiguous deletions preserve cursor count by remapping each cursor to its new position, then deduplicating.
+- **Tests:** `tests/multi_cursor.rs::test_delete_line_non_contiguous_preserves_cursor_count`, `test_delete_line_contiguous_collapses_to_single_cursor`
+
+---
+
+## Remaining Open Issues
+- Bug #3: Undo loses multi-cursor state (needs Batch cursor restoration)
 - Bug #11: delete_selection helper (needs audit of call sites)
 - Bug #22: Status bar selection info (enhancement)
