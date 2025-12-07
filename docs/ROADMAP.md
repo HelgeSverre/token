@@ -46,7 +46,7 @@ Restructured large files for maintainability:
 
 ### Multi-Cursor Selection Gaps ✅
 
-**Design:** [feature/MULTI_CURSOR_SELECTION_GAPS.md](feature/MULTI_CURSOR_SELECTION_GAPS.md) | **Completed:** 2025-12-06
+**Design:** [feature/MULTI_CURSOR_SELECTION_GAPS.md](archived/MULTI_CURSOR_SELECTION_GAPS.md) | **Completed:** 2025-12-06
 
 Fixed remaining selection operations to work with multiple cursors:
 
@@ -158,10 +158,10 @@ Group rapid consecutive edits into single undo entries:
 | Feature                     | Status      | Design Doc                                                                           |
 | --------------------------- | ----------- | ------------------------------------------------------------------------------------ |
 | Codebase Organization       | ✅ Complete | [archived/ORGANIZATION-CODEBASE.md](archived/ORGANIZATION-CODEBASE.md)               |
-| Multi-Cursor Selection Gaps | ✅ Complete | [feature/MULTI_CURSOR_SELECTION_GAPS.md](feature/MULTI_CURSOR_SELECTION_GAPS.md)     |
+| Multi-Cursor Selection Gaps | ✅ Complete | [feature/MULTI_CURSOR_SELECTION_GAPS.md](archived/MULTI_CURSOR_SELECTION_GAPS.md)     |
 | Theming System              | ✅ Complete | [feature/THEMING.md](feature/THEMING.md)                                             |
-| Status Bar                  | ✅ Complete | [feature/STATUS_BAR.md](feature/STATUS_BAR.md)                                       |
-| Split View                  | ✅ Complete | [feature/SPLIT_VIEW.md](feature/SPLIT_VIEW.md)                                       |
+| Status Bar                  | ✅ Complete | [feature/STATUS_BAR.md](archived/STATUS_BAR.md)                                       |
+| Split View                  | ✅ Complete | [feature/SPLIT_VIEW.md](archived/SPLIT_VIEW.md)                                       |
 | Selection & Multi-Cursor    | ✅ Complete | [archived/SELECTION_MULTICURSOR.md](archived/SELECTION_MULTICURSOR.md)               |
 | Multi-Cursor Movement       | ✅ Complete | [archived/MULTI_CURSOR_MOVEMENT.md](archived/MULTI_CURSOR_MOVEMENT.md)               |
 | Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md) |
