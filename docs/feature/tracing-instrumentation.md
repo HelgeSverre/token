@@ -7,6 +7,7 @@
 ## Problem Statement
 
 Debugging multi-cursor positioning and selection state is difficult because:
+
 1. State changes happen rapidly across multiple cursors
 2. Invariant violations may occur several messages after the root cause
 3. No visibility into message flow and state transitions
@@ -16,7 +17,7 @@ Debugging multi-cursor positioning and selection state is difficult because:
 
 1. **Trace message flow** through the Elm architecture (Message → Update → Command)
 2. **Capture before/after state** for cursor and selection operations
-3. **Scoped filtering** to focus on specific subsystems (cursor.*, selection.*, etc.)
+3. **Scoped filtering** to focus on specific subsystems (cursor._, selection._, etc.)
 4. **In-editor debug overlay** for real-time state visibility
 5. **Enhanced invariant assertions** with context about what triggered the failure
 
@@ -72,6 +73,7 @@ Debugging multi-cursor positioning and selection state is difficult because:
 ### Phase 1: Replace `log` with `tracing`
 
 **Dependencies to add:**
+
 ```toml
 # Cargo.toml
 tracing = "0.1"
@@ -79,6 +81,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 ```
 
 **New file: `src/tracing.rs`**
+
 ```rust
 //! Debug tracing infrastructure for development diagnostics
 //!
@@ -88,7 +91,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 /// Initialize tracing subscriber
-/// 
+///
 /// Configure via RUST_LOG env var:
 /// - `RUST_LOG=debug` - all debug logs
 /// - `RUST_LOG=cursor=trace,selection=debug` - scoped filtering
@@ -96,7 +99,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 pub fn init() {
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("warn"));
-    
+
     tracing_subscriber::registry()
         .with(fmt::layer().with_target(true).with_line_number(true))
         .with(filter)
@@ -111,6 +114,7 @@ pub fn init() {
 ### Phase 2: State Snapshots
 
 **Add to `src/tracing.rs`:**
+
 ```rust
 use crate::model::EditorState;
 
@@ -148,7 +152,7 @@ impl CursorSnapshot {
                 .collect(),
         }
     }
-    
+
     /// Generate a diff description between two snapshots
     pub fn diff(&self, other: &CursorSnapshot) -> Option<String> {
         if self.cursor_count != other.cursor_count {
@@ -157,7 +161,7 @@ impl CursorSnapshot {
                 self.cursor_count, other.cursor_count
             ));
         }
-        
+
         let mut changes = Vec::new();
         for (i, (before, after)) in self.cursors.iter().zip(&other.cursors).enumerate() {
             if before.line != after.line || before.column != after.column {
@@ -167,7 +171,7 @@ impl CursorSnapshot {
                 ));
             }
         }
-        
+
         if changes.is_empty() {
             None
         } else {
@@ -182,6 +186,7 @@ impl CursorSnapshot {
 ### Phase 3: Instrumented Update Wrapper
 
 **Modify `src/update/mod.rs`:**
+
 ```rust
 use tracing::{debug, span, Level};
 use crate::tracing::CursorSnapshot;
@@ -193,15 +198,15 @@ pub fn update_traced(model: &mut AppModel, msg: Msg) -> Cmd {
         "update",
         msg_type = ?std::mem::discriminant(&msg)
     ).entered();
-    
+
     // Capture before state
     let before = model.focused_editor().map(CursorSnapshot::from_editor);
-    
+
     debug!(target: "message", ?msg, "processing");
-    
+
     // Actual update
     let cmd = update(model, msg.clone());
-    
+
     // Capture after state and diff
     if let (Some(before), Some(editor)) = (before, model.focused_editor()) {
         let after = CursorSnapshot::from_editor(editor);
@@ -209,13 +214,13 @@ pub fn update_traced(model: &mut AppModel, msg: Msg) -> Cmd {
             debug!(target: "cursor", %diff, "state changed");
         }
     }
-    
+
     // Assert invariants after update
     #[cfg(debug_assertions)]
     if let Some(editor) = model.focused_editor() {
         editor.assert_invariants_with_context(&format!("{:?}", msg));
     }
-    
+
     cmd
 }
 ```
@@ -225,22 +230,23 @@ pub fn update_traced(model: &mut AppModel, msg: Msg) -> Cmd {
 ### Phase 4: Scoped Tracing Helpers
 
 **Add to update functions:**
+
 ```rust
 // src/update/editor.rs
 use tracing::{debug, span, Level};
 
 fn handle_move_cursor(editor: &mut EditorState, doc: &Document, dir: Direction) {
     let _span = span!(Level::DEBUG, "cursor.move", ?dir).entered();
-    
+
     let before = (editor.active_cursor().line, editor.active_cursor().column);
-    
+
     match dir {
         Direction::Up => editor.move_all_cursors_up(doc),
         Direction::Down => editor.move_all_cursors_down(doc),
         Direction::Left => editor.move_all_cursors_left(doc),
         Direction::Right => editor.move_all_cursors_right(doc),
     }
-    
+
     let after = editor.active_cursor();
     debug!(
         target: "cursor",
@@ -255,11 +261,11 @@ fn handle_move_cursor(editor: &mut EditorState, doc: &Document, dir: Direction) 
 
 fn handle_add_cursor(editor: &mut EditorState, line: usize, column: usize) {
     let _span = span!(Level::DEBUG, "cursor.add", line, column).entered();
-    
+
     let before_count = editor.cursor_count();
     editor.add_cursor_at(line, column);
     let after_count = editor.cursor_count();
-    
+
     debug!(
         target: "cursor",
         before_count,
@@ -271,6 +277,7 @@ fn handle_add_cursor(editor: &mut EditorState, line: usize, column: usize) {
 ```
 
 **Target naming convention:**
+
 - `cursor` - cursor position changes
 - `cursor.add` / `cursor.remove` - multi-cursor operations
 - `selection` - selection state changes
@@ -284,6 +291,7 @@ fn handle_add_cursor(editor: &mut EditorState, line: usize, column: usize) {
 ### Phase 5: Enhanced Invariant Assertions
 
 **Modify `src/model/editor.rs`:**
+
 ```rust
 impl EditorState {
     /// Assert cursor/selection invariants with detailed context
@@ -294,7 +302,7 @@ impl EditorState {
             !self.cursors.is_empty(),
             "[{context}] Editor must have at least one cursor"
         );
-        
+
         // Cursor and selection counts must match
         assert_eq!(
             self.cursors.len(),
@@ -303,7 +311,7 @@ impl EditorState {
             self.cursors.len(),
             self.selections.len()
         );
-        
+
         // Active cursor index must be valid
         assert!(
             self.active_cursor_index < self.cursors.len(),
@@ -311,7 +319,7 @@ impl EditorState {
             self.active_cursor_index,
             self.cursors.len()
         );
-        
+
         // Each cursor position must match its selection head
         for (i, (cursor, selection)) in self.cursors.iter().zip(&self.selections).enumerate() {
             let cursor_pos = cursor.to_position();
@@ -322,7 +330,7 @@ impl EditorState {
                 selection.head
             );
         }
-        
+
         // Cursors must be sorted by position (no duplicates)
         for (i, window) in self.cursors.windows(2).enumerate() {
             let prev = (window[0].line, window[0].column);
@@ -333,7 +341,7 @@ impl EditorState {
             );
         }
     }
-    
+
     #[cfg(not(debug_assertions))]
     #[inline]
     pub fn assert_invariants_with_context(&self, _context: &str) {}
@@ -345,6 +353,7 @@ impl EditorState {
 ### Phase 6: Debug Overlay Panel
 
 **New file: `src/debug_overlay.rs`:**
+
 ```rust
 //! In-editor debug overlay for real-time state visibility
 //!
@@ -388,12 +397,12 @@ impl DebugOverlay {
             message_history: VecDeque::with_capacity(MESSAGE_HISTORY_SIZE),
         }
     }
-    
+
     /// Toggle overlay visibility
     pub fn toggle(&mut self) {
         self.visible = !self.visible;
     }
-    
+
     /// Record a message in history
     pub fn record_message(&mut self, msg_type: String, cursor_diff: Option<String>) {
         if self.message_history.len() >= MESSAGE_HISTORY_SIZE {
@@ -405,27 +414,27 @@ impl DebugOverlay {
             cursor_diff,
         });
     }
-    
+
     /// Generate overlay text lines for rendering
     pub fn render_lines(&self, model: &AppModel) -> Vec<String> {
         if !self.visible {
             return Vec::new();
         }
-        
+
         let mut lines = vec!["─── DEBUG OVERLAY (F8 to hide) ───".to_string()];
-        
+
         if let Some(editor) = model.focused_editor() {
             if self.show_cursors {
                 lines.push(String::new());
                 lines.extend(self.render_cursor_info(editor));
             }
-            
+
             if self.show_selections {
                 lines.push(String::new());
                 lines.extend(self.render_selection_info(editor));
             }
         }
-        
+
         if self.show_messages && !self.message_history.is_empty() {
             lines.push(String::new());
             lines.push("Recent Messages:".to_string());
@@ -435,15 +444,15 @@ impl DebugOverlay {
                 lines.push(format!("  [{:>4}ms] {} → {}", age_ms, entry.msg_type, diff_str));
             }
         }
-        
+
         lines
     }
-    
+
     fn render_cursor_info(&self, editor: &EditorState) -> Vec<String> {
         let mut lines = vec![
             format!("Cursors: {} (active: #{})", editor.cursor_count(), editor.active_cursor_index)
         ];
-        
+
         for (i, cursor) in editor.cursors.iter().enumerate() {
             let marker = if i == editor.active_cursor_index { "→" } else { " " };
             let desired = cursor.desired_column
@@ -454,13 +463,13 @@ impl DebugOverlay {
                 marker, i, cursor.line, cursor.column, desired
             ));
         }
-        
+
         lines
     }
-    
+
     fn render_selection_info(&self, editor: &EditorState) -> Vec<String> {
         let mut lines = vec!["Selections:".to_string()];
-        
+
         for (i, sel) in editor.selections.iter().enumerate() {
             let status = if sel.is_empty() { "empty" } else { "active" };
             let reversed = if sel.is_reversed() { " [rev]" } else { "" };
@@ -472,7 +481,7 @@ impl DebugOverlay {
                 status, reversed
             ));
         }
-        
+
         lines
     }
 }
@@ -483,22 +492,24 @@ impl DebugOverlay {
 ### Phase 7: Integration
 
 **Modify `src/main.rs`:**
+
 ```rust
 mod tracing;
 
 fn main() -> anyhow::Result<()> {
     // Initialize tracing (respects RUST_LOG env var)
     tracing::init();
-    
+
     // ... rest of main
 }
 ```
 
 **Add to `AppModel`:**
+
 ```rust
 pub struct AppModel {
     // ... existing fields
-    
+
     /// Debug overlay state (debug builds only)
     #[cfg(debug_assertions)]
     pub debug_overlay: DebugOverlay,
@@ -506,6 +517,7 @@ pub struct AppModel {
 ```
 
 **Add hotkey handling in input.rs:**
+
 ```rust
 // F8 - Toggle debug overlay
 KeyCode::F8 if cfg!(debug_assertions) => {
@@ -557,11 +569,11 @@ RUST_LOG=token::update::editor=debug cargo run
 
 ### Debug Hotkeys
 
-| Key | Action |
-|-----|--------|
+| Key | Action                                  |
+| --- | --------------------------------------- |
 | F7  | Dump full state to JSON file (existing) |
-| F8  | Toggle debug overlay panel |
-| F9  | (future) Toggle message history only |
+| F8  | Toggle debug overlay panel              |
+| F9  | (future) Toggle message history only    |
 
 ---
 

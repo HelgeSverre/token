@@ -3,6 +3,7 @@
 This document tracks known issues where the editor assumes single-cursor behavior or has incomplete multi-cursor support.
 
 ## Status Legend
+
 - 🔴 **Open** - Not yet addressed
 - 🟡 **In Progress** - Being worked on
 - 🟢 **Fixed** - Completed and tested
@@ -12,18 +13,21 @@ This document tracks known issues where the editor assumes single-cursor behavio
 ## Critical Priority
 
 ### Bug #1: AddCursorBelow Not Visible
+
 - **Status:** 🟢 Fixed
 - **File:** `src/model/editor.rs`
 - **Description:** When adding a cursor below with Option+Option+↓, the new cursor is added but not set as the "active" cursor. After sorting, the original cursor remains at index 0 (primary), so the viewport doesn't scroll to show the new cursor.
 - **Resolution:** Added `active_cursor_index` field to EditorState. `add_cursor_at()` and `toggle_cursor_at()` now set the new cursor as active. `sort_cursors()` tracks the active cursor through sorting.
 
 ### Bug #2: Viewport Only Follows Primary Cursor
+
 - **Status:** 🟢 Fixed
 - **File:** `src/model/editor.rs`
 - **Description:** `ensure_cursor_visible()` always uses `cursors[0]`, ignoring which cursor the user is actually working with.
 - **Resolution:** `ensure_cursor_visible_with_mode()` now uses `cursors[active_cursor_index]` instead of `cursors[0]`.
 
 ### Bug #3: Undo Loses Multi-Cursor State
+
 - **Status:** 🔴 Open
 - **File:** `src/update/document.rs`
 - **Lines:** 1064-1178
@@ -33,6 +37,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Fix:** Store full cursor/selection vectors in EditOperation, restore all cursors on undo
 
 ### Bug #23: CollapseToSingleCursor Doesn't Reset active_cursor_index (CRASH)
+
 - **Status:** 🟢 Fixed
 - **File:** `src/update/editor.rs`
 - **Lines:** 486-494
@@ -42,6 +47,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Tests:** `tests/multi_cursor.rs::test_collapse_to_single_cursor_*`
 
 ### Bug #24: AddCursorBelow Uses Primary Instead of Edge Cursor
+
 - **Status:** 🟢 Fixed
 - **File:** `src/update/editor.rs`
 - **Lines:** 493-519
@@ -51,6 +57,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Tests:** `tests/multi_cursor.rs::test_add_cursor_*_expands_from_*_edge`
 
 ### Bug #25: DeleteLine Only Works on Primary Cursor
+
 - **Status:** 🟢 Fixed
 - **File:** `src/update/document.rs`
 - **Lines:** 470-632
@@ -64,6 +71,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 ## High Priority
 
 ### Bug #4: Duplicate Only Works on Primary Cursor
+
 - **Status:** 🟢 Fixed
 - **File:** `src/update/document.rs`
 - **Lines:** 895-1020
@@ -72,6 +80,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Tests:** `tests/multi_cursor.rs::test_duplicate_*_multi_cursor*`
 
 ### Bug #5: Indent Only Works on Primary Selection
+
 - **Status:** 🟢 Fixed
 - **File:** `src/update/document.rs`
 - **Lines:** 995-1050
@@ -80,6 +89,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Tests:** `tests/multi_cursor.rs::test_indent_multi_cursor_*`
 
 ### Bug #6: Unindent Only Works on Primary Selection
+
 - **Status:** 🟢 Fixed
 - **File:** `src/update/document.rs`
 - **Lines:** 1052-1127
@@ -88,6 +98,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Tests:** `tests/multi_cursor.rs::test_unindent_multi_cursor_*`
 
 ### Bug #7: Expand/Shrink Selection Only Works on Primary
+
 - **Status:** 🟢 Fixed
 - **File:** `src/update/editor.rs`
 - **Lines:** 963-1016
@@ -98,19 +109,22 @@ This document tracks known issues where the editor assumes single-cursor behavio
 
 ## Medium Priority
 
-### NOT-ACTUALLY-A Bug #8: Line Highlighting Only for Primary Cursor 
+### NOT-ACTUALLY-A Bug #8: Line Highlighting Only for Primary Cursor
+
 - **Status:** 🔴 Open (by design)
 - **File:** `src/view.rs`
 - **Description:** Only the primary cursor's line gets the current-line background highlight.
 - **Note:** User confirmed this is the desired behavior - only primary cursor line should be highlighted.
 
 ### Bug #9: Line Number Coloring Only for Primary Cursor
+
 - **Status:** 🔴 Open (by design)
 - **File:** `src/view.rs`
 - **Description:** Line numbers are only colored differently for the primary cursor's line.
 - **Note:** User confirmed this is the desired behavior - only primary cursor line number should be colored.
 
 ### Bug #10: Arrow Key Navigation Ignores Secondary Selections
+
 - **Status:** 🟢 Fixed
 - **File:** `src/input.rs`
 - **Lines:** 260-376
@@ -118,6 +132,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Resolution:** API refactor now uses `active_selection()` and `active_cursor_mut()` for arrow key navigation.
 
 ### Bug #11: delete_selection Helper is Single-Cursor
+
 - **Status:** 🔴 Open
 - **File:** `src/update/editor.rs`
 - **Lines:** 919-956
@@ -126,6 +141,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Fix:** Either document as single-cursor helper or make multi-cursor aware
 
 ### Bug #12-14: Helper Functions Use Index 0
+
 - **Status:** 🟢 Fixed
 - **File:** `src/model/editor.rs`
 - **Lines:** 628-641
@@ -133,6 +149,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Resolution:** API refactor - call sites now use appropriate `active_cursor()` or `primary_cursor()` based on intent.
 
 ### Bug #19: Model-Level Cursor Helpers Use Index 0
+
 - **Status:** 🟢 Fixed
 - **File:** `src/model/mod.rs`
 - **Lines:** 201-217
@@ -140,6 +157,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Resolution:** Call sites now use `active_cursor()` for UI operations.
 
 ### Bug #20: Find Next/Previous Only Uses Primary Cursor
+
 - **Status:** 🟢 Fixed
 - **File:** `src/update/editor.rs`
 - **Lines:** 460-474
@@ -147,6 +165,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Resolution:** API refactor now uses `active_cursor()` for find operations.
 
 ### Bug #21: Page Up/Down Ignores Secondary Selections
+
 - **Status:** 🟢 Fixed
 - **File:** `src/input.rs`
 - **Lines:** 273-289
@@ -154,6 +173,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Resolution:** API refactor now uses `active_selection()` and `active_cursor_mut()` for page navigation.
 
 ### Bug #22: Status Bar Only Shows Primary Selection Info
+
 - **Status:** 🔴 Open
 - **File:** `src/model/status_bar.rs`
 - **Lines:** 425-440
@@ -167,6 +187,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 ## Low Priority (Enhancements)
 
 ### Enhancement #15: ExtendSelectionToPosition Collapses Multi-Cursor
+
 - **Status:** 🔴 Open
 - **File:** `src/update/editor.rs`
 - **Lines:** 449-478
@@ -175,16 +196,19 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Fix:** Consider if this should extend from active cursor only
 
 ### Enhancement #16: Status Bar Cursor Count
+
 - **Status:** 🔴 Open
 - **Description:** Status bar could show cursor count when multiple cursors exist (e.g., "3 cursors")
 - **Fix:** Add cursor count display to status bar
 
 ### Enhancement #17: Cycle Active Cursor Keybinding
+
 - **Status:** 🔴 Open
 - **Description:** Could add a keybinding to cycle through cursors, making each one "active" in turn.
 - **Fix:** Add new EditorMsg and keybinding
 
 ### Enhancement #18: Per-Cursor Selection History
+
 - **Status:** 🔴 Open
 - **File:** `src/model/editor.rs`
 - **Line:** 279
@@ -196,6 +220,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
 ## Architecture Notes
 
 ### Current State (after refactor)
+
 - Cursors stored in `Vec<Cursor>` sorted by document position (line, column)
 - Primary cursor is always `cursors[0]` (top-most in document)
 - `active_cursor_index` tracks which cursor the user is focused on
@@ -208,6 +233,7 @@ This document tracks known issues where the editor assumes single-cursor behavio
   - Direct `cursors[idx]` access - for multi-cursor iteration
 
 ### Completed Refactor (2024-12)
+
 - ✅ Renamed `cursor()` → `primary_cursor()`, `selection()` → `primary_selection()`
 - ✅ Renamed `cursor_mut()` → `primary_cursor_mut()`, `selection_mut()` → `primary_selection_mut()`
 - ✅ All ~116 call sites classified and updated:
@@ -217,7 +243,9 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - ✅ Compiler now forces explicit choice at every call site
 
 ### Bugs Fixed by Refactor
+
 The following bugs were fixed by switching to `active_cursor()`/`active_selection()`:
+
 - Bug #7: Expand/Shrink Selection - now uses active selection
 - Bug #10: Arrow Key Navigation - now uses active selection for jump-to-boundary
 - Bug #12-14: Helper functions - now use active cursor index
@@ -226,7 +254,9 @@ The following bugs were fixed by switching to `active_cursor()`/`active_selectio
 - Bug #21: Page Up/Down - now uses active selection
 
 ### Remaining Work
+
 These bugs require additional logic beyond the API refactor:
+
 - Bug #3: Undo loses multi-cursor state (needs Batch cursor restoration)
 
 ---
@@ -234,6 +264,7 @@ These bugs require additional logic beyond the API refactor:
 ## Recently Fixed (December 2024)
 
 ### Bug #26: Arrow Key with Selection Doesn't Collapse to Boundary (Multi-Cursor)
+
 - **Status:** 🟢 Fixed
 - **File:** `src/model/editor.rs`
 - **Lines:** 1024-1062
@@ -243,6 +274,7 @@ These bugs require additional logic beyond the API refactor:
 - **Tests:** `tests/multi_cursor.rs::test_left_arrow_collapses_selection_to_start_multi_cursor`, `test_right_arrow_collapses_selection_to_end_multi_cursor`, `test_left_arrow_with_reversed_selection_multi_cursor`, `test_left_arrow_no_selection_moves_by_one_char`
 
 ### Bug #27: Multi-Cursor Duplicate Doesn't Adjust Other Cursor Positions
+
 - **Status:** 🟢 Fixed
 - **File:** `src/update/document.rs`
 - **Lines:** 895-1042
@@ -252,6 +284,7 @@ These bugs require additional logic beyond the API refactor:
 - **Tests:** `tests/multi_cursor.rs::test_duplicate_line_multi_cursor_cursors_stay_visually_correct`, `test_duplicate_selection_multi_cursor_inserts_after_each_selection`
 
 ### Bug #28: Option+Backspace (Delete Word Backward) Was Missing
+
 - **Status:** 🟢 Fixed
 - **File:** `src/update/document.rs`, `src/messages.rs`, `src/input.rs`
 - **Description:** Option+Backspace (delete word backward) was not implemented. This is a standard macOS text editing feature that deletes the word to the left of the cursor.
@@ -259,6 +292,7 @@ These bugs require additional logic beyond the API refactor:
 - **Tests:** `tests/multi_cursor.rs::test_delete_word_backward_*`
 
 ### Bug #29: DeleteLine Collapses Cursors for Non-Contiguous Lines
+
 - **Status:** 🟢 Fixed
 - **File:** `src/update/document.rs`
 - **Lines:** 631-777
@@ -267,9 +301,28 @@ These bugs require additional logic beyond the API refactor:
 - **Resolution:** Added `is_contiguous` check for deleted lines. Contiguous deletions collapse to single cursor (existing behavior). Non-contiguous deletions preserve cursor count by remapping each cursor to its new position, then deduplicating.
 - **Tests:** `tests/multi_cursor.rs::test_delete_line_non_contiguous_preserves_cursor_count`, `test_delete_line_contiguous_collapses_to_single_cursor`
 
+### Bug #30: InsertNewline/Paste Doesn't Adjust Other Cursors After Insertion
+
+- **Status:** 🟢 Fixed
+- **File:** `src/update/document.rs`
+- **Description:** When inserting newlines or pasting multi-line text with multiple cursors, each insertion adds lines but other cursors weren't adjusted. This caused cursors to be off-by-N where N is the number of lines added by previous insertions.
+- **Resolution:** After each newline insertion or multi-line paste, now iterate through all other cursors and adjust line numbers for those that are after the insertion point.
+- **Tests:** `tests/multi_cursor.rs::test_insert_newline_multi_cursor_adjusts_positions`
+
+### Bug #31: DeleteBackward Doesn't Adjust Other Cursors After Deleting Newline
+
+- **Status:** 🟢 Fixed
+- **File:** `src/update/document.rs`
+- **Lines:** 279-353
+- **Description:** When deleting newlines with multiple cursors (backspace at start of line), other cursors weren't adjusted. This caused cursors to be on wrong lines/columns after the operation. Example: pressing Enter to add newlines then Backspace to remove them would leave cursors scattered incorrectly.
+- **Expected Behavior:** Cursors below deleted newline should shift up by 1 line; cursors that merge onto the same line need column adjustment.
+- **Resolution:** After deleting a newline, iterate through all other cursors. Those on lines >= deleted line shift up by 1. Those that were on the same line as the deletion get their column increased by the merge point (previous line's length).
+- **Tests:** `tests/multi_cursor.rs::test_delete_backward_newline_multi_cursor_adjusts_positions`, `test_delete_backward_newline_multi_cursor_column_positions`
+
 ---
 
 ## Remaining Open Issues
+
 - Bug #3: Undo loses multi-cursor state (needs Batch cursor restoration)
 - Bug #11: delete_selection helper (needs audit of call sites)
 - Bug #22: Status bar selection info (enhancement)

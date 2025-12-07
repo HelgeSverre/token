@@ -16,7 +16,7 @@ For archived phases, see [archived/old-roadmap-file.md](archived/old-roadmap-fil
 Fixed line-based operations to work with all cursors:
 
 - **IndentLines** - now indents lines at all cursor positions
-- **UnindentLines** - now unindents lines at all cursor positions  
+- **UnindentLines** - now unindents lines at all cursor positions
 - **DeleteLine** - now deletes lines at all cursor positions
 - **AddCursorAbove/Below** - now expands from edge cursors, not primary
 - Uses `lines_covered_by_all_cursors()` helper for unique line collection

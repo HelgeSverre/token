@@ -1352,12 +1352,12 @@ Based on research from Zed (GPUI), Helix, Alacritty, and Wezterm, here is the pr
 
 ### Research Summary
 
-| Project | Key Patterns Adopted | Patterns Skipped |
-|---------|---------------------|------------------|
-| **Zed (GPUI)** | Modal focus capture, FocusHandle concept, hitbox blocking for overlays | Full 3-phase render, entity system, DispatchTree complexity |
-| **Helix** | Compositor with layer stack, overlay wrapper, EventResult::Consumed/Ignored | Full trait-based Component system, callback pattern |
-| **Alacritty** | Line-level damage tracking, frame damage accumulation, double-buffered damage | Platform-specific Wayland optimizations |
-| **Wezterm** | Layer-based z-ordering concept | Quad-based GPU rendering, triple-buffered vertices |
+| Project        | Key Patterns Adopted                                                          | Patterns Skipped                                            |
+| -------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| **Zed (GPUI)** | Modal focus capture, FocusHandle concept, hitbox blocking for overlays        | Full 3-phase render, entity system, DispatchTree complexity |
+| **Helix**      | Compositor with layer stack, overlay wrapper, EventResult::Consumed/Ignored   | Full trait-based Component system, callback pattern         |
+| **Alacritty**  | Line-level damage tracking, frame damage accumulation, double-buffered damage | Platform-specific Wayland optimizations                     |
+| **Wezterm**    | Layer-based z-ordering concept                                                | Quad-based GPU rendering, triple-buffered vertices          |
 
 ### Phase 1 – Frame/Painter Abstraction
 
@@ -1366,10 +1366,12 @@ Based on research from Zed (GPUI), Helix, Alacritty, and Wezterm, here is the pr
 **User Impact:** None (internal refactor, unblocks everything else)
 
 **Files to modify:**
+
 - `src/view.rs` – Add `Frame` and `TextPainter` structs
 - `src/overlay.rs` – Migrate to use `Frame` helpers
 
 **Steps:**
+
 1. Add `Frame` struct with `clear()`, `fill_rect()`, `blend_pixel()` methods
 2. Add `TextPainter` wrapper for fontdue + glyph cache
 3. Wrap `Renderer::render_impl()` to create `Frame` from softbuffer
@@ -1404,10 +1406,12 @@ pub struct TextPainter<'a> {
 **User Impact:** Invisible, improves maintainability
 
 **Files to modify:**
+
 - `src/view.rs` – Extract widget functions
 - `src/model/editor_area.rs` or new `src/view/geometry.rs` – Centralize geometry helpers
 
 **Steps:**
+
 1. Extract high-level widget renderers:
    - `render_root()` – orchestrates all rendering
    - `render_editor_area()` – groups + splitters
@@ -1424,6 +1428,7 @@ pub struct TextPainter<'a> {
    - Single source of truth for tab bar rect, text area rect, gutter rect per group
 
 **Structure (when view.rs > 1200 LOC):**
+
 ```
 src/view/
   mod.rs          # Exports Renderer, Frame, TextPainter
@@ -1442,6 +1447,7 @@ src/view/
 **User Impact:** Foundation only (add placeholder modal to test)
 
 **Files to modify:**
+
 - `src/model/ui.rs` – Add `ModalState` enum, extend `UiState`
 - `src/messages.rs` – Add `ModalMsg`, extend `UiMsg`
 - `src/update/ui.rs` – Handle modal state changes
@@ -1449,6 +1455,7 @@ src/view/
 - `src/view.rs` – Add `render_modals()` with dim background
 
 **Model changes:**
+
 ```rust
 pub enum ModalState {
     CommandPalette(CommandPaletteState),
@@ -1463,6 +1470,7 @@ pub struct UiState {
 ```
 
 **Input routing (focus capture):**
+
 ```rust
 pub fn handle_key(model: &AppModel, event: &KeyEvent) -> Option<Msg> {
     if model.ui.active_modal.is_some() {
@@ -1473,16 +1481,17 @@ pub fn handle_key(model: &AppModel, event: &KeyEvent) -> Option<Msg> {
 ```
 
 **Rendering (layer 2):**
+
 ```rust
 fn render_modals(frame: &mut Frame, text: &mut TextPainter, ui: &UiState, theme: &Theme) {
     let Some(modal) = &ui.active_modal else { return };
-    
+
     // 1. Dim background (Zed-style BlockMouse)
     let dim_color = 0x80000000;
     for pixel in frame.buffer.iter_mut() {
         *pixel = blend_pixel(dim_color, *pixel);
     }
-    
+
     // 2. Render modal content
     match modal { /* ... */ }
 }
@@ -1497,6 +1506,7 @@ fn render_modals(frame: &mut Frame, text: &mut TextPainter, ui: &UiState, theme:
 **User Impact:** HIGH – visible feature, anchors modal system
 
 **Files to create/modify:**
+
 - `src/commands.rs` – Add `CommandId` enum, `COMMANDS` registry
 - `src/messages.rs` – Add `AppMsg::ExecuteCommand`
 - `src/model/ui.rs` – Add `CommandPaletteState`, `CommandPaletteMsg`
@@ -1506,6 +1516,7 @@ fn render_modals(frame: &mut Frame, text: &mut TextPainter, ui: &UiState, theme:
 - `src/view.rs` – Add `render_command_palette()`
 
 **Command registry:**
+
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CommandId {
@@ -1530,6 +1541,7 @@ pub static COMMANDS: &[Command] = &[/* ... */];
 ```
 
 **Execute command flow:**
+
 ```rust
 fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
     match cmd_id {
@@ -1551,11 +1563,13 @@ fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
 **User Impact:** Subtle – clicks don't leak through modals
 
 **Files to modify:**
+
 - `src/view.rs` – Formalize layer ordering
 - `src/model/ui.rs` – Add `ModalRuntimeGeometry` for hit-testing
 - `src/input.rs` – Add mouse blocking for active modal
 
 **Layer stack (conceptual):**
+
 ```rust
 pub fn render_root(...) {
     render_editor_area(...);    // layer 0
@@ -1566,6 +1580,7 @@ pub fn render_root(...) {
 ```
 
 **Mouse blocking:**
+
 ```rust
 pub fn handle_mouse(model: &AppModel, event: &MouseEvent) -> Option<Msg> {
     if let Some(geom) = &model.ui.active_modal_geometry {
@@ -1590,17 +1605,20 @@ pub fn handle_mouse(model: &AppModel, event: &MouseEvent) -> Option<Msg> {
 **User Impact:** HIGH – complete basic modal feature set
 
 **Goto Line:**
+
 - Add `GotoLineState` with `input: String`
 - Add `GotoLineMsg` variants
 - Parse input, move cursor, adjust scroll using EDITOR_UI_REFERENCE helpers
 - Render centered smaller modal with single input line
 
 **Find/Replace:**
+
 - Add `FindReplaceState` with `query`, `replacement`, `mode`, `case_sensitive`
 - Wire into existing occurrence selection in `update/editor.rs`
 - Render as bar at top or modal dialog
 
 **Keyboard shortcuts:**
+
 - `Cmd+G` or `Ctrl+G` → `GotoLine`
 - `Cmd+F` → `Find`
 - `Cmd+Shift+F` or `Cmd+H` → `Replace`
@@ -1614,11 +1632,13 @@ pub fn handle_mouse(model: &AppModel, event: &MouseEvent) -> Option<Msg> {
 **User Impact:** Better performance on large files / high-DPI
 
 **Files to modify:**
+
 - `src/view.rs` – Add `FrameDamage` type
 - `src/commands.rs` – Extend `Cmd` with damage hints
 - `src/app.rs` (binary) – Store damage in `Renderer`
 
 **Damage types:**
+
 ```rust
 #[derive(Default, Clone)]
 pub struct FrameDamage {
@@ -1635,6 +1655,7 @@ impl FrameDamage {
 ```
 
 **Extended Cmd (optional):**
+
 ```rust
 pub enum Cmd {
     Redraw,
@@ -1650,15 +1671,15 @@ pub enum Cmd {
 
 ### Summary Timeline
 
-| Phase | Effort | Dependencies | Priority |
-|-------|--------|--------------|----------|
-| 1. Frame/Painter | M (1–3h) | None | **P0** (foundation) |
-| 2. Widget Extraction | M–L (3–8h) | Phase 1 | **P0** (foundation) |
-| 3. Modal/Focus System | M (1–3h) | Phase 1 | **P0** (unblocks features) |
-| 4. Command Palette | L (1–2d) | Phase 3 | **P1** (high user value) |
-| 5. Compositor/Mouse | M (1–3h) | Phase 3 | **P2** (polish) |
-| 6. Goto/Find Modals | L (1d) | Phase 4 | **P1** (high user value) |
-| 7. Damage Tracking | L–XL (1–3d) | Phase 2 | **P3** (optimization) |
+| Phase                 | Effort      | Dependencies | Priority                   |
+| --------------------- | ----------- | ------------ | -------------------------- |
+| 1. Frame/Painter      | M (1–3h)    | None         | **P0** (foundation)        |
+| 2. Widget Extraction  | M–L (3–8h)  | Phase 1      | **P0** (foundation)        |
+| 3. Modal/Focus System | M (1–3h)    | Phase 1      | **P0** (unblocks features) |
+| 4. Command Palette    | L (1–2d)    | Phase 3      | **P1** (high user value)   |
+| 5. Compositor/Mouse   | M (1–3h)    | Phase 3      | **P2** (polish)            |
+| 6. Goto/Find Modals   | L (1d)      | Phase 4      | **P1** (high user value)   |
+| 7. Damage Tracking    | L–XL (1–3d) | Phase 2      | **P3** (optimization)      |
 
 **Total estimated effort:** 2–3 weeks of focused work
 

@@ -218,7 +218,7 @@ pub enum Cmd {
     SaveFile { path: PathBuf, content: String },
     LoadFile { path: PathBuf },
     Batch(Vec<Cmd>),
-    
+
     // NEW: Syntax highlighting commands
     ParseSyntax {
         document_id: DocumentId,
@@ -259,7 +259,7 @@ pub struct Document {
     pub redo_stack: Vec<EditOperation>,
     pub file_path: Option<PathBuf>,
     pub is_modified: bool,
-    
+
     // NEW: Syntax highlighting state
     pub language: LanguageId,
     pub syntax_highlights: Option<SyntaxHighlights>,
@@ -291,15 +291,15 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
     match msg {
         SyntaxMsg::RequestParse { document_id, version } => {
             let doc = model.editor_area.documents.get(&document_id)?;
-            
+
             // Only parse if version matches (avoid stale requests)
             if doc.version != version {
                 return None;
             }
-            
+
             let source = doc.buffer.to_string();
             let language = doc.language;
-            
+
             Some(Cmd::ParseSyntax {
                 document_id,
                 source,
@@ -308,7 +308,7 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
                 edit: None, // Full parse on first request
             })
         }
-        
+
         SyntaxMsg::ParseCompleted { document_id, version, highlights } => {
             if let Some(doc) = model.editor_area.documents.get_mut(&document_id) {
                 // Only apply if version still matches (not stale)
@@ -318,7 +318,7 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
             }
             Some(Cmd::Redraw)
         }
-        
+
         SyntaxMsg::LanguageChanged { document_id, language } => {
             if let Some(doc) = model.editor_area.documents.get_mut(&document_id) {
                 doc.language = language;
@@ -351,11 +351,11 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
 
 Cmd::ParseSyntax { document_id, source, version, language, edit } => {
     let tx = self.msg_tx.clone();
-    
+
     std::thread::spawn(move || {
         // Create parser for language (or use cached)
         let highlights = parse_and_highlight(&source, language, edit);
-        
+
         let _ = tx.send(Msg::Syntax(SyntaxMsg::ParseCompleted {
             document_id,
             version,
@@ -391,15 +391,15 @@ impl ParserState {
             trees: HashMap::new(),
             queries: HashMap::new(),
         };
-        
+
         // Pre-initialize common languages
         state.init_language(LanguageId::Php);
         state.init_language(LanguageId::Html);
         state.init_language(LanguageId::Css);
-        
+
         state
     }
-    
+
     fn init_language(&mut self, lang: LanguageId) {
         let (ts_lang, highlights_scm) = match lang {
             LanguageId::Php => (
@@ -416,16 +416,16 @@ impl ParserState {
             ),
             _ => return,
         };
-        
+
         let mut parser = Parser::new();
         parser.set_language(&ts_lang).expect("Language setup failed");
         self.parsers.insert(lang, parser);
-        
+
         if let Ok(query) = Query::new(&ts_lang, highlights_scm) {
             self.queries.insert(lang, query);
         }
     }
-    
+
     /// Parse document and extract highlights
     pub fn parse_and_highlight(
         &mut self,
@@ -438,7 +438,7 @@ impl ParserState {
             Some(p) => p,
             None => return SyntaxHighlights::default(),
         };
-        
+
         // Get or create tree
         let old_tree = if let Some(edit_info) = edit {
             self.trees.get_mut(&doc_id).map(|tree| {
@@ -448,22 +448,22 @@ impl ParserState {
         } else {
             None
         };
-        
+
         // Parse (incremental if old_tree provided)
         let tree = match parser.parse(source.as_bytes(), old_tree.as_ref()) {
             Some(t) => t,
             None => return SyntaxHighlights::default(),
         };
-        
+
         // Extract highlights using query
         let highlights = self.extract_highlights(source, &tree, language);
-        
+
         // Cache tree for incremental parsing
         self.trees.insert(doc_id, tree);
-        
+
         highlights
     }
-    
+
     fn extract_highlights(
         &self,
         source: &str,
@@ -474,30 +474,30 @@ impl ParserState {
             Some(q) => q,
             None => return SyntaxHighlights::default(),
         };
-        
+
         let mut highlights = SyntaxHighlights {
             lines: HashMap::new(),
             version: 0,
             language,
         };
-        
+
         let mut cursor = QueryCursor::new();
         let source_bytes = source.as_bytes();
-        
+
         for (match_, capture_idx) in cursor.captures(query, tree.root_node(), source_bytes) {
             let capture = match_.captures[capture_idx];
             let capture_name = &query.capture_names()[capture.index as usize];
-            
+
             // Map capture name to highlight ID
             let highlight_id = HIGHLIGHT_NAMES
                 .iter()
                 .position(|&name| name == *capture_name)
                 .unwrap_or(0) as HighlightId;
-            
+
             let node = capture.node;
             let start = node.start_position();
             let end = node.end_position();
-            
+
             // Handle multi-line nodes (split into per-line tokens)
             for line in start.row..=end.row {
                 let start_col = if line == start.row { start.column } else { 0 };
@@ -507,7 +507,7 @@ impl ParserState {
                     // Get line length from source
                     source.lines().nth(line).map(|l| l.len()).unwrap_or(0)
                 };
-                
+
                 highlights
                     .lines
                     .entry(line)
@@ -520,12 +520,12 @@ impl ParserState {
                     });
             }
         }
-        
+
         // Sort tokens within each line by start position
         for line_highlights in highlights.lines.values_mut() {
             line_highlights.tokens.sort_by_key(|t| t.start_col);
         }
-        
+
         highlights
     }
 }
@@ -545,7 +545,7 @@ impl EditInfo {
             new_end_position: Point::new(self.new_end_line, self.new_end_col),
         }
     }
-    
+
     /// Create EditInfo from a ropey edit
     pub fn from_rope_edit(
         rope: &Rope,
@@ -556,20 +556,20 @@ impl EditInfo {
         let start_byte = rope.char_to_byte(char_start);
         let old_end_byte = rope.char_to_byte(char_old_end);
         let new_end_byte = start_byte + new_text_len;
-        
+
         let start_line = rope.char_to_line(char_start);
         let start_col = char_start - rope.line_to_char(start_line);
-        
+
         let old_end_line = rope.char_to_line(char_old_end.min(rope.len_chars()));
         let old_end_col = char_old_end.saturating_sub(
             rope.line_to_char(old_end_line)
         );
-        
+
         // For new_end, we need to calculate based on new content
         // This is approximate; proper impl would track actual new lines
         let new_end_line = start_line; // Simplified
         let new_end_col = start_col + new_text_len;
-        
+
         Self {
             start_byte,
             old_end_byte,
@@ -600,7 +600,7 @@ pub struct EditorTheme {
     pub cursor_color: Color,
     pub selection_background: Color,
     // ... existing fields ...
-    
+
     // NEW: Syntax highlighting colors
     pub syntax: SyntaxTheme,
 }
@@ -629,37 +629,37 @@ pub struct SyntaxTheme {
 impl SyntaxTheme {
     pub fn get_color(&self, highlight_id: HighlightId) -> Color {
         match HIGHLIGHT_NAMES.get(highlight_id as usize) {
-            Some(&"keyword") | Some(&"keyword.function") | Some(&"keyword.return") 
+            Some(&"keyword") | Some(&"keyword.function") | Some(&"keyword.return")
                 => self.keyword,
-            Some(&"function") | Some(&"function.method") 
+            Some(&"function") | Some(&"function.method")
                 => self.function,
-            Some(&"function.builtin") 
+            Some(&"function.builtin")
                 => self.function_builtin,
-            Some(&"string") | Some(&"string.special") 
+            Some(&"string") | Some(&"string.special")
                 => self.string,
-            Some(&"number") 
+            Some(&"number")
                 => self.number,
-            Some(&"comment") 
+            Some(&"comment")
                 => self.comment,
-            Some(&"type") | Some(&"type.builtin") 
+            Some(&"type") | Some(&"type.builtin")
                 => self.type_name,
-            Some(&"variable") | Some(&"variable.parameter") 
+            Some(&"variable") | Some(&"variable.parameter")
                 => self.variable,
-            Some(&"variable.builtin") 
+            Some(&"variable.builtin")
                 => self.variable_builtin,
-            Some(&"property") | Some(&"tag.attribute") 
+            Some(&"property") | Some(&"tag.attribute")
                 => self.property,
-            Some(&"operator") | Some(&"keyword.operator") 
+            Some(&"operator") | Some(&"keyword.operator")
                 => self.operator,
-            Some(&"punctuation.bracket") | Some(&"punctuation.delimiter") 
+            Some(&"punctuation.bracket") | Some(&"punctuation.delimiter")
                 => self.punctuation,
-            Some(&"tag") 
+            Some(&"tag")
                 => self.tag,
-            Some(&"attribute") 
+            Some(&"attribute")
                 => self.attribute,
-            Some(&"constant") | Some(&"constant.builtin") | Some(&"boolean") 
+            Some(&"constant") | Some(&"constant.builtin") | Some(&"boolean")
                 => self.constant,
-            Some(&"escape") 
+            Some(&"escape")
                 => self.escape,
             _ => self.variable, // Default fallback
         }
@@ -689,30 +689,30 @@ fn render_line_with_highlights(
 ) {
     if tokens.is_empty() {
         // No highlighting, use default color
-        draw_text(buffer, font, glyph_cache, font_size, ascent, 
+        draw_text(buffer, font, glyph_cache, font_size, ascent,
                   width, height, x, y, line_text, default_color);
         return;
     }
-    
+
     let char_width = // ... get from renderer
     let mut current_col = 0;
     let mut token_idx = 0;
-    
+
     for (col, ch) in line_text.char_indices() {
         // Find applicable token
         while token_idx < tokens.len() && tokens[token_idx].end_col <= col {
             token_idx += 1;
         }
-        
-        let color = if token_idx < tokens.len() 
-            && col >= tokens[token_idx].start_col 
-            && col < tokens[token_idx].end_col 
+
+        let color = if token_idx < tokens.len()
+            && col >= tokens[token_idx].start_col
+            && col < tokens[token_idx].end_col
         {
             theme.editor.syntax.get_color(tokens[token_idx].highlight).to_argb_u32()
         } else {
             default_color
         };
-        
+
         // Draw single character with color
         let char_x = x + (col as f32 * char_width) as usize;
         draw_char(buffer, font, glyph_cache, font_size, ascent,
@@ -771,7 +771,7 @@ impl MultiLanguageDocument {
         self.layers
             .iter()
             .filter(|layer| {
-                layer.ranges.iter().any(|r| 
+                layer.ranges.iter().any(|r|
                     byte >= r.start_byte && byte < r.end_byte
                 )
             })
@@ -797,7 +797,7 @@ const PARSE_DEBOUNCE_MS: u64 = 50;
 fn schedule_parse(&mut self, document_id: DocumentId) {
     let now = Instant::now();
     self.pending_parse = Some((document_id, now));
-    
+
     // In tick() or about_to_wait(), check if debounce elapsed
 }
 
@@ -830,14 +830,14 @@ fn extract_visible_highlights(
 ) -> SyntaxHighlights {
     let buffer_start = visible_start_line.saturating_sub(HIGHLIGHT_BUFFER_LINES);
     let buffer_end = visible_end_line + HIGHLIGHT_BUFFER_LINES;
-    
+
     // Convert line range to byte range
     let start_byte = line_to_byte(source, buffer_start);
     let end_byte = line_to_byte(source, buffer_end);
-    
+
     let mut cursor = QueryCursor::new();
     cursor.set_byte_range(start_byte..end_byte);
-    
+
     // ... rest of extraction
 }
 ```
@@ -947,11 +947,11 @@ LSP message flow would be similar:
 Document Changed → Cmd::RequestSemanticTokens { uri, version }
                       │
                       ▼ (background LSP request)
-                      
+
 Msg::SemanticTokensReceived { uri, version, tokens }
                       │
                       ▼ (update handler)
-                      
+
 Merge with syntactic → Store in document → Cmd::Redraw
 ```
 
@@ -1008,7 +1008,7 @@ Merge with syntactic → Store in document → Cmd::Redraw
 fn test_php_keyword_highlighting() {
     let source = "<?php function foo() { return 42; }";
     let highlights = parse_and_highlight(source, LanguageId::Php, None);
-    
+
     // "function" should be highlighted as keyword
     let line0 = &highlights.lines[&0];
     let keyword_token = line0.tokens.iter()
@@ -1022,12 +1022,12 @@ fn test_incremental_parse() {
     let mut state = ParserState::new();
     let source1 = "<?php $x = 1;";
     state.parse_and_highlight(source1, LanguageId::Php, doc_id, None);
-    
+
     // Insert " + 2" after "1"
     let edit = EditInfo { start_byte: 12, old_end_byte: 12, new_end_byte: 16, ... };
     let source2 = "<?php $x = 1 + 2;";
     let highlights = state.parse_and_highlight(source2, LanguageId::Php, doc_id, Some(&edit));
-    
+
     // Should have operator "+" highlighted
     assert!(highlights.lines[&0].tokens.iter()
         .any(|t| HIGHLIGHT_NAMES[t.highlight as usize] == "operator"));
@@ -1040,10 +1040,10 @@ fn test_incremental_parse() {
 #[test]
 fn test_edit_triggers_reparse() {
     let mut model = test_model_with_php();
-    
+
     // Type a character
     update(&mut model, Msg::Document(DocumentMsg::InsertChar('$')));
-    
+
     // Check that ParseSyntax command was generated
     // (after debounce in real app)
 }

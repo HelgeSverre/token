@@ -79,25 +79,25 @@ Major restructuring of large files for improved maintainability:
 
 Converted monolithic `update.rs` (2900 lines) into a module directory:
 
-| File | Lines | Contents |
-|------|-------|----------|
-| `mod.rs` | 36 | Pure dispatcher only |
-| `editor.rs` | 1123 | Cursor movement, selection, expand/shrink |
-| `document.rs` | 1231 | Text editing, undo/redo helpers |
-| `layout.rs` | 472 | Split views, tabs, groups |
-| `app.rs` | 83 | File operations, window resize |
-| `ui.rs` | 55 | Status bar, cursor blink |
+| File          | Lines | Contents                                  |
+| ------------- | ----- | ----------------------------------------- |
+| `mod.rs`      | 36    | Pure dispatcher only                      |
+| `editor.rs`   | 1123  | Cursor movement, selection, expand/shrink |
+| `document.rs` | 1231  | Text editing, undo/redo helpers           |
+| `layout.rs`   | 472   | Split views, tabs, groups                 |
+| `app.rs`      | 83    | File operations, window resize            |
+| `ui.rs`       | 55    | Status bar, cursor blink                  |
 
 #### Binary Modules
 
 Extracted from `main.rs` (was 3100 lines, now ~20 lines entry + 669 tests):
 
-| File | Lines | Contents |
-|------|-------|----------|
-| `app.rs` | 520 | App struct, ApplicationHandler impl |
-| `input.rs` | 402 | handle_key, keyboard→Msg mapping |
-| `view.rs` | 1072 | Renderer, drawing functions, tab helpers |
-| `perf.rs` | 406 | PerfStats, debug overlay (debug only) |
+| File       | Lines | Contents                                 |
+| ---------- | ----- | ---------------------------------------- |
+| `app.rs`   | 520   | App struct, ApplicationHandler impl      |
+| `input.rs` | 402   | handle_key, keyboard→Msg mapping         |
+| `view.rs`  | 1072  | Renderer, drawing functions, tab helpers |
+| `perf.rs`  | 406   | PerfStats, debug overlay (debug only)    |
 
 #### Benefits
 
