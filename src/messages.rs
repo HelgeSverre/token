@@ -165,6 +165,12 @@ pub enum UiMsg {
 /// Layout messages (split views, tabs, groups)
 #[derive(Debug, Clone)]
 pub enum LayoutMsg {
+    /// Create a new untitled document in the focused group
+    NewTab,
+
+    /// Open a file in a new tab in the focused group
+    OpenFileInNewTab(PathBuf),
+
     /// Split the focused group in the given direction
     /// Creates a new group with a copy of the current editor view
     SplitFocused(SplitDirection),

@@ -1,15 +1,27 @@
 //! Layout message handlers (split views, tabs, groups)
 
+use std::path::PathBuf;
+
 use crate::commands::Cmd;
 use crate::messages::LayoutMsg;
 use crate::model::{
-    AppModel, EditorGroup, EditorState, GroupId, LayoutNode, SplitContainer, SplitDirection, Tab,
-    TabId,
+    AppModel, Document, EditorGroup, EditorState, GroupId, LayoutNode, SplitContainer,
+    SplitDirection, Tab, TabId,
 };
 
 /// Handle layout messages (split views, tabs, groups)
 pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
     match msg {
+        LayoutMsg::NewTab => {
+            new_tab_in_focused_group(model);
+            Some(Cmd::Redraw)
+        }
+
+        LayoutMsg::OpenFileInNewTab(path) => {
+            open_file_in_new_tab(model, path);
+            Some(Cmd::Redraw)
+        }
+
         LayoutMsg::SplitFocused(direction) => {
             split_focused_group(model, direction);
             Some(Cmd::Redraw)
@@ -118,6 +130,83 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
 // ============================================================================
 // Layout Helper Functions
 // ============================================================================
+
+/// Create a new untitled document in the focused group
+fn new_tab_in_focused_group(model: &mut AppModel) {
+    let group_id = model.editor_area.focused_group_id;
+
+    // 1. Create new untitled document
+    let doc_id = model.editor_area.next_document_id();
+    let untitled_name = model.editor_area.next_untitled_name();
+    let mut document = Document::new();
+    document.id = Some(doc_id);
+    document.untitled_name = Some(untitled_name);
+    model.editor_area.documents.insert(doc_id, document);
+
+    // 2. Create new editor state for this document
+    let editor_id = model.editor_area.next_editor_id();
+    let mut editor = EditorState::new();
+    editor.id = Some(editor_id);
+    editor.document_id = Some(doc_id);
+    model.editor_area.editors.insert(editor_id, editor);
+
+    // 3. Create tab in focused group
+    let tab_id = model.editor_area.next_tab_id();
+    let tab = Tab {
+        id: tab_id,
+        editor_id,
+        is_pinned: false,
+        is_preview: false,
+    };
+
+    if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
+        group.tabs.push(tab);
+        group.active_tab_index = group.tabs.len() - 1;
+    }
+}
+
+/// Open a file in a new tab in the focused group
+fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) {
+    let group_id = model.editor_area.focused_group_id;
+
+    // 1. Load the document from file
+    let doc_id = model.editor_area.next_document_id();
+    let document = match Document::from_file(path.clone()) {
+        Ok(mut doc) => {
+            doc.id = Some(doc_id);
+            model.ui.set_status(format!("Opened: {}", path.display()));
+            doc
+        }
+        Err(e) => {
+            model
+                .ui
+                .set_status(format!("Error opening {}: {}", path.display(), e));
+            return;
+        }
+    };
+    model.editor_area.documents.insert(doc_id, document);
+
+    // 2. Create new editor state for this document
+    let editor_id = model.editor_area.next_editor_id();
+    let mut editor = EditorState::new();
+    editor.id = Some(editor_id);
+    editor.document_id = Some(doc_id);
+    model.editor_area.editors.insert(editor_id, editor);
+
+    // 3. Create tab in focused group
+    let tab_id = model.editor_area.next_tab_id();
+    let tab = Tab {
+        id: tab_id,
+        editor_id,
+        is_pinned: false,
+        is_preview: false,
+    };
+
+    if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
+        group.tabs.push(tab);
+        group.active_tab_index = group.tabs.len() - 1;
+    }
+}
 
 /// Split the focused group in the given direction
 fn split_focused_group(model: &mut AppModel, direction: SplitDirection) {
@@ -339,12 +428,10 @@ fn focus_adjacent_group(model: &mut AppModel, next: bool) {
 
     let new_idx = if next {
         (current_idx + 1) % group_ids.len()
+    } else if current_idx == 0 {
+        group_ids.len() - 1
     } else {
-        if current_idx == 0 {
-            group_ids.len() - 1
-        } else {
-            current_idx - 1
-        }
+        current_idx - 1
     };
 
     model.editor_area.focused_group_id = group_ids[new_idx];
@@ -409,11 +496,10 @@ fn move_tab(model: &mut AppModel, tab_id: TabId, to_group: GroupId) {
         .editor_area
         .groups
         .get(&source_group_id)
-        .map_or(false, |g| g.tabs.is_empty())
+        .is_some_and(|g| g.tabs.is_empty())
+        && model.editor_area.groups.len() > 1
     {
-        if model.editor_area.groups.len() > 1 {
-            close_group(model, source_group_id);
-        }
+        close_group(model, source_group_id);
     }
 }
 
@@ -463,10 +549,9 @@ fn close_tab(model: &mut AppModel, tab_id: TabId) {
         .editor_area
         .groups
         .get(&group_id)
-        .map_or(false, |g| g.tabs.is_empty())
+        .is_some_and(|g| g.tabs.is_empty())
+        && model.editor_area.groups.len() > 1
     {
-        if model.editor_area.groups.len() > 1 {
-            close_group(model, group_id);
-        }
+        close_group(model, group_id);
     }
 }
