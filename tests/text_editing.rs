@@ -16,8 +16,8 @@ fn test_insert_char_at_start() {
     update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
 
     assert_eq!(buffer_to_string(&model), "Xhello");
-    assert_eq!(model.editor().cursor().column, 1);
-    assert_eq!(model.editor().cursor().line, 0);
+    assert_eq!(model.editor().primary_cursor().column, 1);
+    assert_eq!(model.editor().primary_cursor().line, 0);
 }
 
 #[test]
@@ -26,7 +26,7 @@ fn test_insert_char_at_middle() {
     update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
 
     assert_eq!(buffer_to_string(&model), "heXllo");
-    assert_eq!(model.editor().cursor().column, 3);
+    assert_eq!(model.editor().primary_cursor().column, 3);
 }
 
 #[test]
@@ -35,7 +35,7 @@ fn test_insert_char_at_end() {
     update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
 
     assert_eq!(buffer_to_string(&model), "helloX");
-    assert_eq!(model.editor().cursor().column, 6);
+    assert_eq!(model.editor().primary_cursor().column, 6);
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn test_insert_space_at_middle() {
     update(&mut model, Msg::Document(DocumentMsg::InsertChar(' ')));
 
     assert_eq!(buffer_to_string(&model), "hello world");
-    assert_eq!(model.editor().cursor().column, 6);
+    assert_eq!(model.editor().primary_cursor().column, 6);
 }
 
 #[test]
@@ -58,7 +58,7 @@ fn test_insert_multiple_chars_consecutively() {
     update(&mut model, Msg::Document(DocumentMsg::InsertChar('d')));
 
     assert_eq!(buffer_to_string(&model), "hello world");
-    assert_eq!(model.editor().cursor().column, 11);
+    assert_eq!(model.editor().primary_cursor().column, 11);
 }
 
 #[test]
@@ -67,8 +67,8 @@ fn test_insert_char_on_second_line() {
     update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
 
     assert_eq!(buffer_to_string(&model), "hello\nwoXrld");
-    assert_eq!(model.editor().cursor().line, 1);
-    assert_eq!(model.editor().cursor().column, 3);
+    assert_eq!(model.editor().primary_cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().column, 3);
 }
 
 #[test]
@@ -78,15 +78,15 @@ fn test_insert_multiple_spaces_middle_of_line() {
     // Insert 3 spaces consecutively - this tests the "playing catchup" bug
     update(&mut model, Msg::Document(DocumentMsg::InsertChar(' ')));
     assert_eq!(buffer_to_string(&model), "hello world");
-    assert_eq!(model.editor().cursor().column, 6);
+    assert_eq!(model.editor().primary_cursor().column, 6);
 
     update(&mut model, Msg::Document(DocumentMsg::InsertChar(' ')));
     assert_eq!(buffer_to_string(&model), "hello  world");
-    assert_eq!(model.editor().cursor().column, 7);
+    assert_eq!(model.editor().primary_cursor().column, 7);
 
     update(&mut model, Msg::Document(DocumentMsg::InsertChar(' ')));
     assert_eq!(buffer_to_string(&model), "hello   world");
-    assert_eq!(model.editor().cursor().column, 8);
+    assert_eq!(model.editor().primary_cursor().column, 8);
 }
 
 #[test]
@@ -95,9 +95,10 @@ fn test_insert_after_cursor_position_clamped() {
     let mut model = test_model("hi", 0, 10); // column 10 on 2-char line
 
     // Position should be clamped to 2
-    let pos = model
-        .document()
-        .cursor_to_offset(model.editor().cursor().line, model.editor().cursor().column);
+    let pos = model.document().cursor_to_offset(
+        model.editor().primary_cursor().line,
+        model.editor().primary_cursor().column,
+    );
     assert_eq!(pos, 2);
 
     // Insert should happen at clamped position
@@ -106,8 +107,10 @@ fn test_insert_after_cursor_position_clamped() {
 
     // After insert, cursor.column should be valid
     assert!(
-        model.editor().cursor().column
-            <= model.document().line_length(model.editor().cursor().line)
+        model.editor().primary_cursor().column
+            <= model
+                .document()
+                .line_length(model.editor().primary_cursor().line)
     );
 }
 
@@ -121,8 +124,8 @@ fn test_insert_newline_at_end() {
     update(&mut model, Msg::Document(DocumentMsg::InsertNewline));
 
     assert_eq!(buffer_to_string(&model), "hello\n");
-    assert_eq!(model.editor().cursor().line, 1);
-    assert_eq!(model.editor().cursor().column, 0);
+    assert_eq!(model.editor().primary_cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().column, 0);
 }
 
 #[test]
@@ -131,8 +134,8 @@ fn test_insert_newline_at_middle() {
     update(&mut model, Msg::Document(DocumentMsg::InsertNewline));
 
     assert_eq!(buffer_to_string(&model), "he\nllo");
-    assert_eq!(model.editor().cursor().line, 1);
-    assert_eq!(model.editor().cursor().column, 0);
+    assert_eq!(model.editor().primary_cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().column, 0);
 }
 
 #[test]
@@ -141,8 +144,8 @@ fn test_insert_newline_at_start() {
     update(&mut model, Msg::Document(DocumentMsg::InsertNewline));
 
     assert_eq!(buffer_to_string(&model), "\nhello");
-    assert_eq!(model.editor().cursor().line, 1);
-    assert_eq!(model.editor().cursor().column, 0);
+    assert_eq!(model.editor().primary_cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().column, 0);
 }
 
 // ========================================================================
@@ -155,7 +158,7 @@ fn test_delete_backward_middle_of_line() {
     update(&mut model, Msg::Document(DocumentMsg::DeleteBackward));
 
     assert_eq!(buffer_to_string(&model), "helo");
-    assert_eq!(model.editor().cursor().column, 2);
+    assert_eq!(model.editor().primary_cursor().column, 2);
 }
 
 #[test]
@@ -165,7 +168,7 @@ fn test_delete_backward_at_start_of_line() {
 
     // Nothing should happen
     assert_eq!(buffer_to_string(&model), "hello");
-    assert_eq!(model.editor().cursor().column, 0);
+    assert_eq!(model.editor().primary_cursor().column, 0);
 }
 
 #[test]
@@ -174,8 +177,8 @@ fn test_delete_backward_joins_lines() {
     update(&mut model, Msg::Document(DocumentMsg::DeleteBackward));
 
     assert_eq!(buffer_to_string(&model), "helloworld");
-    assert_eq!(model.editor().cursor().line, 0);
-    assert_eq!(model.editor().cursor().column, 5); // End of "hello"
+    assert_eq!(model.editor().primary_cursor().line, 0);
+    assert_eq!(model.editor().primary_cursor().column, 5); // End of "hello"
 }
 
 #[test]
@@ -184,8 +187,8 @@ fn test_delete_backward_after_empty_line() {
     update(&mut model, Msg::Document(DocumentMsg::DeleteBackward));
 
     assert_eq!(buffer_to_string(&model), "hello\nworld");
-    assert_eq!(model.editor().cursor().line, 1);
-    assert_eq!(model.editor().cursor().column, 0);
+    assert_eq!(model.editor().primary_cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().column, 0);
 }
 
 // ========================================================================
@@ -198,7 +201,7 @@ fn test_delete_forward_middle_of_line() {
     update(&mut model, Msg::Document(DocumentMsg::DeleteForward));
 
     assert_eq!(buffer_to_string(&model), "helo");
-    assert_eq!(model.editor().cursor().column, 2); // Unchanged
+    assert_eq!(model.editor().primary_cursor().column, 2); // Unchanged
 }
 
 #[test]
@@ -208,7 +211,7 @@ fn test_delete_forward_at_end_of_line() {
 
     // Should delete the newline, joining lines
     assert_eq!(buffer_to_string(&model), "helloworld");
-    assert_eq!(model.editor().cursor().column, 5);
+    assert_eq!(model.editor().primary_cursor().column, 5);
 }
 
 #[test]
@@ -234,7 +237,7 @@ fn test_undo_insert() {
     update(&mut model, Msg::Document(DocumentMsg::Undo));
 
     assert_eq!(buffer_to_string(&model), "hello");
-    assert_eq!(model.editor().cursor().column, 5);
+    assert_eq!(model.editor().primary_cursor().column, 5);
 }
 
 #[test]
@@ -245,7 +248,7 @@ fn test_redo_insert() {
     update(&mut model, Msg::Document(DocumentMsg::Redo));
 
     assert_eq!(buffer_to_string(&model), "helloX");
-    assert_eq!(model.editor().cursor().column, 6);
+    assert_eq!(model.editor().primary_cursor().column, 6);
 }
 
 #[test]
@@ -258,7 +261,7 @@ fn test_undo_delete() {
     update(&mut model, Msg::Document(DocumentMsg::Undo));
 
     assert_eq!(buffer_to_string(&model), "hello");
-    assert_eq!(model.editor().cursor().column, 5);
+    assert_eq!(model.editor().primary_cursor().column, 5);
 }
 
 // ========================================================================
@@ -276,7 +279,7 @@ fn test_undo_insert_char_over_selection_restores_original_text() {
 
     // Net effect should be "heXorld"
     assert_eq!(buffer_to_string(&model), "heXorld");
-    assert_eq!(model.editor().cursor().column, 3);
+    assert_eq!(model.editor().primary_cursor().column, 3);
 
     // Undo should fully restore original text in ONE undo operation
     update(&mut model, Msg::Document(DocumentMsg::Undo));
@@ -307,7 +310,7 @@ fn test_redo_insert_char_over_selection_reapplies_replacement() {
         "heXorld",
         "Redo should re-apply the replacement"
     );
-    assert_eq!(model.editor().cursor().column, 3);
+    assert_eq!(model.editor().primary_cursor().column, 3);
 }
 
 #[test]
@@ -338,8 +341,8 @@ fn test_undo_insert_newline_over_selection() {
 
     // Net effect: "he\nrld"
     assert_eq!(buffer_to_string(&model), "he\nrld");
-    assert_eq!(model.editor().cursor().line, 1);
-    assert_eq!(model.editor().cursor().column, 0);
+    assert_eq!(model.editor().primary_cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().column, 0);
 
     // Undo should fully restore original text in ONE undo operation
     update(&mut model, Msg::Document(DocumentMsg::Undo));
@@ -367,8 +370,8 @@ fn test_duplicate_line_no_selection() {
         "Current line should be duplicated below"
     );
     // Cursor should be on the duplicated line at same column
-    assert_eq!(model.editor().cursor().line, 1);
-    assert_eq!(model.editor().cursor().column, 2);
+    assert_eq!(model.editor().primary_cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().column, 2);
 }
 
 #[test]
@@ -383,8 +386,8 @@ fn test_duplicate_line_last_line_no_newline() {
         "hello\nworld\nworld",
         "Last line without newline should be duplicated"
     );
-    assert_eq!(model.editor().cursor().line, 2);
-    assert_eq!(model.editor().cursor().column, 3);
+    assert_eq!(model.editor().primary_cursor().line, 2);
+    assert_eq!(model.editor().primary_cursor().column, 3);
 }
 
 #[test]
@@ -400,7 +403,7 @@ fn test_duplicate_selection_single_line() {
         "Selection 'hello' should be duplicated after itself"
     );
     // Cursor should be at end of duplicated text
-    assert_eq!(model.editor().cursor().column, 10);
+    assert_eq!(model.editor().primary_cursor().column, 10);
 }
 
 #[test]
@@ -444,8 +447,8 @@ fn test_delete_line_first_line() {
     update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
 
     assert_eq!(buffer_to_string(&model), "world\nfoo\n");
-    assert_eq!(model.editor().cursor().line, 0);
-    assert_eq!(model.editor().cursor().column, 2);
+    assert_eq!(model.editor().primary_cursor().line, 0);
+    assert_eq!(model.editor().primary_cursor().column, 2);
 }
 
 #[test]
@@ -455,8 +458,8 @@ fn test_delete_line_middle_line() {
     update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
 
     assert_eq!(buffer_to_string(&model), "hello\nfoo\n");
-    assert_eq!(model.editor().cursor().line, 1);
-    assert_eq!(model.editor().cursor().column, 3);
+    assert_eq!(model.editor().primary_cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().column, 3);
 }
 
 #[test]
@@ -467,8 +470,8 @@ fn test_delete_line_last_line_with_newline() {
 
     // Should delete "world\n", cursor stays at line 1 (now empty trailing line)
     assert_eq!(buffer_to_string(&model), "hello\n");
-    assert_eq!(model.editor().cursor().line, 1);
-    assert_eq!(model.editor().cursor().column, 0);
+    assert_eq!(model.editor().primary_cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().column, 0);
 }
 
 #[test]
@@ -479,8 +482,8 @@ fn test_delete_line_last_line_no_newline() {
 
     // Should delete "\nworld", cursor retains column (clamped to prev line length)
     assert_eq!(buffer_to_string(&model), "hello");
-    assert_eq!(model.editor().cursor().line, 0);
-    assert_eq!(model.editor().cursor().column, 2); // retained from original position
+    assert_eq!(model.editor().primary_cursor().line, 0);
+    assert_eq!(model.editor().primary_cursor().column, 2); // retained from original position
 }
 
 #[test]
@@ -490,8 +493,8 @@ fn test_delete_line_only_line() {
     update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
 
     assert_eq!(buffer_to_string(&model), "");
-    assert_eq!(model.editor().cursor().line, 0);
-    assert_eq!(model.editor().cursor().column, 0);
+    assert_eq!(model.editor().primary_cursor().line, 0);
+    assert_eq!(model.editor().primary_cursor().column, 0);
 }
 
 #[test]
@@ -501,7 +504,7 @@ fn test_delete_line_empty_line() {
     update(&mut model, Msg::Document(DocumentMsg::DeleteLine));
 
     assert_eq!(buffer_to_string(&model), "hello\nworld");
-    assert_eq!(model.editor().cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().line, 1);
 }
 
 #[test]
@@ -517,8 +520,8 @@ fn test_delete_line_can_be_undone() {
         "hello\nworld\nfoo\n",
         "Delete line should be undoable"
     );
-    assert_eq!(model.editor().cursor().line, 1);
-    assert_eq!(model.editor().cursor().column, 3);
+    assert_eq!(model.editor().primary_cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().column, 3);
 }
 
 #[test]
@@ -530,9 +533,9 @@ fn test_delete_line_cursor_column_clamped() {
 
     // "longerline\n" deleted, cursor stays at line 1 (now empty trailing line)
     assert_eq!(buffer_to_string(&model), "short\n");
-    assert_eq!(model.editor().cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().line, 1);
     // Column clamped to 0 (empty line)
-    assert_eq!(model.editor().cursor().column, 0);
+    assert_eq!(model.editor().primary_cursor().column, 0);
 }
 
 // ========================================================================

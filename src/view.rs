@@ -273,7 +273,9 @@ impl Renderer {
 
         // Highlight primary cursor line only
         let current_line_color = model.theme.editor.current_line_background.to_argb_u32();
-        if editor.active_cursor().line >= editor.viewport.top_line && editor.active_cursor().line < end_line {
+        if editor.active_cursor().line >= editor.viewport.top_line
+            && editor.active_cursor().line < end_line
+        {
             let screen_line = editor.active_cursor().line - editor.viewport.top_line;
             let highlight_y = content_y + screen_line * line_height;
 
@@ -763,6 +765,7 @@ impl Renderer {
 
         perf.reset_frame_stats();
 
+        // Resize surface if needed
         if self.width != model.window_size.0 || self.height != model.window_size.1 {
             self.width = model.window_size.0;
             self.height = model.window_size.1;

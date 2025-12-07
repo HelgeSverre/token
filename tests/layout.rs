@@ -902,14 +902,14 @@ fn test_independent_cursor_positions() {
     );
 
     // Get cursor position for group2's editor
-    let editor2_cursor = model.editor().cursor().line;
+    let editor2_cursor = model.editor().primary_cursor().line;
     assert_eq!(editor2_cursor, 2);
 
     // Focus group1
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
 
     // Cursor in group1 should still be at line 0
-    let editor1_cursor = model.editor().cursor().line;
+    let editor1_cursor = model.editor().primary_cursor().line;
     assert_eq!(editor1_cursor, 0);
 
     // Move cursor in group1
@@ -917,11 +917,11 @@ fn test_independent_cursor_positions() {
         &mut model,
         Msg::Editor(EditorMsg::MoveCursor(Direction::Down)),
     );
-    assert_eq!(model.editor().cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().line, 1);
 
     // Switch back to group2 - cursor should still be at line 2
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group2)));
-    assert_eq!(model.editor().cursor().line, 2);
+    assert_eq!(model.editor().primary_cursor().line, 2);
 }
 
 #[test]
@@ -1259,7 +1259,7 @@ fn test_selections_preserved_per_editor() {
 
     // Create a selection in the first editor
     update(&mut model, Msg::Editor(EditorMsg::SelectAll));
-    assert!(!model.editor().selection().is_empty());
+    assert!(!model.editor().primary_selection().is_empty());
 
     // Split
     update(
@@ -1268,11 +1268,11 @@ fn test_selections_preserved_per_editor() {
     );
 
     // New editor should have empty selection
-    assert!(model.editor().selection().is_empty());
+    assert!(model.editor().primary_selection().is_empty());
 
     // Go back to group1 - selection should still be there
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
-    assert!(!model.editor().selection().is_empty());
+    assert!(!model.editor().primary_selection().is_empty());
 }
 
 #[test]
@@ -1347,15 +1347,15 @@ fn test_cursor_sync_insert_char() {
     let group2 = model.editor_area.focused_group_id;
 
     // Set cursor in group2 at line 0, column 5 (end of "hello")
-    model.editor_mut().cursor_mut().line = 0;
-    model.editor_mut().cursor_mut().column = 5;
+    model.editor_mut().primary_cursor_mut().line = 0;
+    model.editor_mut().primary_cursor_mut().column = 5;
 
     // Focus group1
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
 
     // Set cursor at line 0, column 0
-    model.editor_mut().cursor_mut().line = 0;
-    model.editor_mut().cursor_mut().column = 0;
+    model.editor_mut().primary_cursor_mut().line = 0;
+    model.editor_mut().primary_cursor_mut().column = 0;
 
     // Insert a character in group1
     update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
@@ -1364,8 +1364,8 @@ fn test_cursor_sync_insert_char() {
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group2)));
 
     // Cursor in group2 should have shifted right by 1 (was at col 5, now at col 6)
-    assert_eq!(model.editor().cursor().line, 0);
-    assert_eq!(model.editor().cursor().column, 6);
+    assert_eq!(model.editor().primary_cursor().line, 0);
+    assert_eq!(model.editor().primary_cursor().column, 6);
 }
 
 #[test]
@@ -1383,14 +1383,14 @@ fn test_cursor_sync_insert_newline() {
     let group2 = model.editor_area.focused_group_id;
 
     // Set cursor in group2 at line 0, column 8 (in "world")
-    model.editor_mut().cursor_mut().line = 0;
-    model.editor_mut().cursor_mut().column = 8;
+    model.editor_mut().primary_cursor_mut().line = 0;
+    model.editor_mut().primary_cursor_mut().column = 8;
 
     // Focus group1
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
 
     // Set cursor at column 5 (after "hello")
-    model.editor_mut().cursor_mut().column = 5;
+    model.editor_mut().primary_cursor_mut().column = 5;
 
     // Insert newline in group1
     update(&mut model, Msg::Document(DocumentMsg::InsertNewline));
@@ -1399,7 +1399,7 @@ fn test_cursor_sync_insert_newline() {
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group2)));
 
     // Cursor in group2 should have moved to line 1, column adjusted
-    assert_eq!(model.editor().cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().line, 1);
 }
 
 #[test]
@@ -1417,22 +1417,22 @@ fn test_cursor_sync_cursor_before_edit_unchanged() {
     let group2 = model.editor_area.focused_group_id;
 
     // Set cursor in group2 at line 0, column 0 (before edit point)
-    model.editor_mut().cursor_mut().line = 0;
-    model.editor_mut().cursor_mut().column = 0;
+    model.editor_mut().primary_cursor_mut().line = 0;
+    model.editor_mut().primary_cursor_mut().column = 0;
 
     // Focus group1
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
 
     // Set cursor at column 3 and insert character
-    model.editor_mut().cursor_mut().column = 3;
+    model.editor_mut().primary_cursor_mut().column = 3;
     update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
 
     // Focus group2 and check cursor was NOT adjusted (it was before edit point)
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group2)));
 
     // Cursor should still be at column 0
-    assert_eq!(model.editor().cursor().line, 0);
-    assert_eq!(model.editor().cursor().column, 0);
+    assert_eq!(model.editor().primary_cursor().line, 0);
+    assert_eq!(model.editor().primary_cursor().column, 0);
 }
 
 #[test]
@@ -1450,20 +1450,20 @@ fn test_cursor_sync_delete_backward() {
     let group2 = model.editor_area.focused_group_id;
 
     // Set cursor in group2 at line 0, column 5 (end of "hello")
-    model.editor_mut().cursor_mut().line = 0;
-    model.editor_mut().cursor_mut().column = 5;
+    model.editor_mut().primary_cursor_mut().line = 0;
+    model.editor_mut().primary_cursor_mut().column = 5;
 
     // Focus group1
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
 
     // Set cursor at column 3 and delete backward
-    model.editor_mut().cursor_mut().column = 3;
+    model.editor_mut().primary_cursor_mut().column = 3;
     update(&mut model, Msg::Document(DocumentMsg::DeleteBackward));
 
     // Focus group2 and check cursor was adjusted (shifted left by 1)
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group2)));
 
     // Cursor should have shifted left by 1 (was at col 5, now at col 4)
-    assert_eq!(model.editor().cursor().line, 0);
-    assert_eq!(model.editor().cursor().column, 4);
+    assert_eq!(model.editor().primary_cursor().line, 0);
+    assert_eq!(model.editor().primary_cursor().column, 4);
 }

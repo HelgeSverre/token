@@ -441,7 +441,10 @@ mod tests {
         update(&mut model, Msg::Editor(EditorMsg::SelectAll));
 
         // Verify selection spans entire document
-        assert_eq!(model.editor().selection().anchor, Position::new(0, 0));
+        assert_eq!(
+            model.editor().primary_selection().anchor,
+            Position::new(0, 0)
+        );
         let last_line = total_lines.saturating_sub(1);
         assert_eq!(
             model.editor().active_cursor().line,
@@ -503,7 +506,7 @@ mod tests {
 
         // Position cursor at about half the viewport height (line 10)
         // and set viewport to start at line 0
-        model.editor_mut().cursor_mut().line = 10;
+        model.editor_mut().primary_cursor_mut().line = 10;
         model.editor_mut().viewport.top_line = 0;
 
         // Press PageUp - cursor should jump above the viewport,
@@ -553,7 +556,7 @@ mod tests {
         model.editor_mut().scroll_padding = 1;
 
         // Position cursor at line 50 with viewport showing lines 40-60
-        model.editor_mut().cursor_mut().line = 50;
+        model.editor_mut().primary_cursor_mut().line = 50;
         model.editor_mut().viewport.top_line = 40;
 
         // Press PageUp - cursor should move up 18 lines (20 - 2)

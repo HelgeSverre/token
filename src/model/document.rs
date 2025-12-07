@@ -220,7 +220,7 @@ impl Document {
         results
     }
 
-    /// Find next occurrence after given offset (wraps around)
+    /// Find next occurrence after given offset (wraps back to start, on
     pub fn find_next_occurrence(
         &self,
         needle: &str,

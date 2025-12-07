@@ -169,7 +169,7 @@ fn test_resize_with_selection_active() {
     update(&mut model, Msg::App(AppMsg::Resize(10000, 10000)));
 
     // Selection should still be valid
-    assert!(!model.editor().selection().is_empty());
+    assert!(!model.editor().primary_selection().is_empty());
 }
 
 #[test]
@@ -181,7 +181,7 @@ fn test_resize_with_cursor_beyond_viewport() {
     update(&mut model, Msg::App(AppMsg::Resize(100, 20)));
 
     // Cursor should still be valid
-    assert_eq!(model.editor().cursor().line, 500);
+    assert_eq!(model.editor().primary_cursor().line, 500);
 }
 
 #[test]
@@ -316,7 +316,7 @@ fn test_cursor_at_extreme_positions() {
     let mut model = test_model("short\n", 0, 0);
 
     // Try to set cursor way beyond line length
-    model.editor_mut().cursor_mut().column = 999999;
+    model.editor_mut().primary_cursor_mut().column = 999999;
     update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
 
     // Should handle gracefully (insert at clamped position)
@@ -329,8 +329,8 @@ fn test_cursor_at_extreme_line() {
     let mut model = test_model("line1\nline2\n", 0, 0);
 
     // Try to set cursor way beyond document
-    model.editor_mut().cursor_mut().line = 999999;
-    model.editor_mut().cursor_mut().column = 0;
+    model.editor_mut().primary_cursor_mut().line = 999999;
+    model.editor_mut().primary_cursor_mut().column = 0;
 
     // Operations should handle gracefully
     update(
@@ -367,8 +367,8 @@ fn test_selection_spanning_beyond_document() {
     let mut model = test_model("hi", 0, 0);
 
     // Manually set selection beyond document bounds
-    model.editor_mut().selection_mut().anchor = token::model::Position::new(0, 0);
-    model.editor_mut().selection_mut().head = token::model::Position::new(999, 999);
+    model.editor_mut().primary_selection_mut().anchor = token::model::Position::new(0, 0);
+    model.editor_mut().primary_selection_mut().head = token::model::Position::new(999, 999);
 
     // Delete selection - should handle gracefully
     update(&mut model, Msg::Document(DocumentMsg::DeleteBackward));
@@ -462,7 +462,7 @@ fn test_operations_on_large_document() {
     update(&mut model, Msg::Editor(EditorMsg::SelectAll));
 
     // Cursor should be at end after select all
-    assert!(model.editor().cursor().line > 9000);
+    assert!(model.editor().primary_cursor().line > 9000);
 }
 
 #[test]

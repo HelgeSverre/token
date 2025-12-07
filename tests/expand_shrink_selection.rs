@@ -18,7 +18,7 @@ fn test_expand_from_cursor_selects_word() {
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
     // Should select "hello" (columns 0-5)
-    let sel = model.editor().selection();
+    let sel = model.editor().primary_selection();
     assert_eq!(sel.start().line, 0);
     assert_eq!(sel.start().column, 0);
     assert_eq!(sel.end().line, 0);
@@ -36,7 +36,7 @@ fn test_expand_from_word_selects_line() {
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
     // Should select entire line (including newline)
-    let sel = model.editor().selection();
+    let sel = model.editor().primary_selection();
     assert_eq!(sel.start().line, 0);
     assert_eq!(sel.start().column, 0);
     assert_eq!(sel.end().line, 1);
@@ -55,7 +55,7 @@ fn test_expand_from_line_selects_all() {
     // Should select entire document
     // Document: "hello\nworld\n" = 2 lines + trailing newline creates empty line 2
     // Last line is line 2 (empty), so end should be at (2, 0) or the actual last content
-    let sel = model.editor().selection();
+    let sel = model.editor().primary_selection();
     assert_eq!(sel.start().line, 0);
     assert_eq!(sel.start().column, 0);
     // The document has "hello\nworld\n" which is 12 chars
@@ -78,12 +78,12 @@ fn test_expand_already_all_does_nothing() {
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
-    let sel_before = model.editor().selection().clone();
+    let sel_before = model.editor().primary_selection().clone();
 
     // Expand again - should not change
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
-    let sel_after = model.editor().selection();
+    let sel_after = model.editor().primary_selection();
     assert_eq!(sel_before.start(), sel_after.start());
     assert_eq!(sel_before.end(), sel_after.end());
 }
@@ -97,7 +97,7 @@ fn test_expand_on_whitespace() {
 
     // Cursor is at end of "hello", so word_under_cursor may not find a word
     // Should expand to line instead
-    let sel = model.editor().selection();
+    let sel = model.editor().primary_selection();
     assert_eq!(sel.start().line, 0);
     assert_eq!(sel.start().column, 0);
 }
@@ -109,7 +109,7 @@ fn test_expand_on_empty_line() {
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
     // Should select the empty line (just the newline)
-    let sel = model.editor().selection();
+    let sel = model.editor().primary_selection();
     assert_eq!(sel.start().line, 1);
     assert_eq!(sel.start().column, 0);
     assert_eq!(sel.end().line, 2);
@@ -131,10 +131,10 @@ fn test_shrink_restores_previous_selection() {
     update(&mut model, Msg::Editor(EditorMsg::ShrinkSelection));
 
     // Should be back to empty selection at original position
-    let sel = model.editor().selection();
+    let sel = model.editor().primary_selection();
     assert!(sel.is_empty());
-    assert_eq!(model.editor().cursor().line, 0);
-    assert_eq!(model.editor().cursor().column, 2);
+    assert_eq!(model.editor().primary_cursor().line, 0);
+    assert_eq!(model.editor().primary_cursor().column, 2);
 }
 
 #[test]
@@ -147,7 +147,7 @@ fn test_shrink_from_word_to_cursor() {
     // Shrink to cursor
     update(&mut model, Msg::Editor(EditorMsg::ShrinkSelection));
 
-    let sel = model.editor().selection();
+    let sel = model.editor().primary_selection();
     assert!(sel.is_empty());
 }
 
@@ -156,14 +156,14 @@ fn test_shrink_with_empty_history_clears_selection() {
     let mut model = test_model("hello world\n", 0, 0);
 
     // Manually set a selection (simulating user made selection some other way)
-    model.editor_mut().selection_mut().anchor = token::model::Position::new(0, 0);
-    model.editor_mut().selection_mut().head = token::model::Position::new(0, 5);
-    model.editor_mut().cursor_mut().column = 5;
+    model.editor_mut().primary_selection_mut().anchor = token::model::Position::new(0, 0);
+    model.editor_mut().primary_selection_mut().head = token::model::Position::new(0, 5);
+    model.editor_mut().primary_cursor_mut().column = 5;
 
     // History is empty, so shrink should collapse to cursor
     update(&mut model, Msg::Editor(EditorMsg::ShrinkSelection));
 
-    let sel = model.editor().selection();
+    let sel = model.editor().primary_selection();
     assert!(sel.is_empty());
 }
 
@@ -182,10 +182,10 @@ fn test_expand_then_shrink_round_trip() {
     update(&mut model, Msg::Editor(EditorMsg::ShrinkSelection));
 
     // Should be back to original cursor position with no selection
-    let sel = model.editor().selection();
+    let sel = model.editor().primary_selection();
     assert!(sel.is_empty());
-    assert_eq!(model.editor().cursor().line, 0);
-    assert_eq!(model.editor().cursor().column, 2);
+    assert_eq!(model.editor().primary_cursor().line, 0);
+    assert_eq!(model.editor().primary_cursor().column, 2);
 }
 
 // ============================================================================
@@ -211,7 +211,7 @@ fn test_history_cleared_on_cursor_movement() {
     update(&mut model, Msg::Editor(EditorMsg::ShrinkSelection));
 
     // Selection should be empty, cursor at moved position
-    assert!(model.editor().selection().is_empty());
+    assert!(model.editor().primary_selection().is_empty());
 }
 
 #[test]
@@ -259,7 +259,7 @@ fn test_expand_at_word_boundary() {
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
     // At position 5 (the space), there's no word, so should expand to line
-    let sel = model.editor().selection();
+    let sel = model.editor().primary_selection();
     assert!(!sel.is_empty());
 }
 
@@ -270,7 +270,7 @@ fn test_expand_on_single_char_word() {
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
     // Should select just "a"
-    let sel = model.editor().selection();
+    let sel = model.editor().primary_selection();
     assert_eq!(sel.start().column, 0);
     assert_eq!(sel.end().column, 1);
 }
@@ -283,7 +283,7 @@ fn test_expand_on_underscore_word() {
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
     // Should select "hello_world" (columns 0-11)
-    let sel = model.editor().selection();
+    let sel = model.editor().primary_selection();
     assert_eq!(sel.start().column, 0);
     assert_eq!(sel.end().column, 11);
 }
@@ -295,7 +295,7 @@ fn test_expand_empty_document() {
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
     // Should handle gracefully - selection at (0,0)
-    let sel = model.editor().selection();
+    let sel = model.editor().primary_selection();
     assert_eq!(sel.start().line, 0);
     assert_eq!(sel.start().column, 0);
 }
@@ -310,5 +310,5 @@ fn test_shrink_empty_history_no_crash() {
     update(&mut model, Msg::Editor(EditorMsg::ShrinkSelection));
 
     // Should just have empty selection at cursor
-    assert!(model.editor().selection().is_empty());
+    assert!(model.editor().primary_selection().is_empty());
 }
