@@ -484,19 +484,14 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
         }
 
         EditorMsg::CollapseToSingleCursor => {
-            let primary_cursor = model.editor().primary_cursor().clone();
-            model.editor_mut().cursors = vec![primary_cursor];
-            model.editor_mut().selections = vec![Selection::new(Position::new(
-                model.editor().primary_cursor().line,
-                model.editor().primary_cursor().column,
-            ))];
+            model.editor_mut().collapse_to_primary();
             model.reset_cursor_blink();
             Some(Cmd::Redraw)
         }
 
         // === Multi-Cursor Operations ===
         EditorMsg::AddCursorAbove => {
-            let current = model.editor().primary_cursor().clone();
+            let current = model.editor().top_cursor().clone();
             if current.line > 0 {
                 let new_line = current.line - 1;
                 let line_len = model.document().line_length(new_line);
@@ -509,32 +504,14 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
         }
 
         EditorMsg::AddCursorBelow => {
-            let current = model.editor().primary_cursor().clone();
+            let current = model.editor().bottom_cursor().clone();
             let total_lines = model.document().line_count();
-            #[cfg(debug_assertions)]
-            eprintln!(
-                "[DEBUG] AddCursorBelow: current.line={}, total_lines={}, condition={}",
-                current.line,
-                total_lines,
-                current.line + 1 < total_lines
-            );
+
             if current.line + 1 < total_lines {
                 let new_line = current.line + 1;
                 let line_len = model.document().line_length(new_line);
                 let new_col = current.column.min(line_len);
-                #[cfg(debug_assertions)]
-                eprintln!(
-                    "[DEBUG] Adding cursor at line={}, col={}, cursor_count_before={}",
-                    new_line,
-                    new_col,
-                    model.editor().cursor_count()
-                );
                 model.editor_mut().add_cursor_at(new_line, new_col);
-                #[cfg(debug_assertions)]
-                eprintln!(
-                    "[DEBUG] cursor_count_after={}",
-                    model.editor().cursor_count()
-                );
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
@@ -1182,9 +1159,34 @@ pub(crate) fn cursors_in_reverse_order(model: &AppModel) -> Vec<usize> {
         let ca = &model.editor().cursors[a];
         let cb = &model.editor().cursors[b];
         // Sort descending: higher line first, then higher column
+
         cb.line
             .cmp(&ca.line)
             .then_with(|| cb.column.cmp(&ca.column))
     });
     indices
+}
+
+/// Get unique line indices covered by all cursors/selections, sorted in reverse document order.
+/// For line-based operations (DeleteLine, Indent, etc.) that should act on each line only once.
+pub(crate) fn lines_covered_by_all_cursors(model: &AppModel) -> Vec<usize> {
+    use std::collections::BTreeSet;
+
+    let editor = model.editor();
+    let mut lines = BTreeSet::new();
+
+    for (cursor, selection) in editor.cursors.iter().zip(editor.selections.iter()) {
+        if selection.is_empty() {
+            lines.insert(cursor.line);
+        } else {
+            let start = selection.start();
+            let end = selection.end();
+            for line in start.line..=end.line {
+                lines.insert(line);
+            }
+        }
+    }
+
+    // Return in reverse document order (highest line first) for safe deletion
+    lines.into_iter().rev().collect()
 }
