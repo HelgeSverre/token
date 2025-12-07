@@ -8,7 +8,9 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
-use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
+#[cfg(debug_assertions)]
+use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorIcon, Window};
 
 use token::commands::Cmd;
@@ -49,10 +51,10 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(window_width: u32, window_height: u32, file_path: Option<PathBuf>) -> Self {
+    pub fn new(window_width: u32, window_height: u32, file_paths: Vec<PathBuf>) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
         Self {
-            model: AppModel::new(window_width, window_height, file_path),
+            model: AppModel::new(window_width, window_height, file_paths),
             renderer: None,
             window: None,
             context: None,
@@ -291,6 +293,35 @@ impl App {
                         }
 
                         if renderer.is_in_tab_bar(y) {
+                            // Find which group this tab bar belongs to
+                            // Use y + 50 to hit the editor area below the tab bar
+                            if let Some(group_id) = self
+                                .model
+                                .editor_area
+                                .group_at_point(x as f32, y as f32 + 50.0)
+                            {
+                                // Focus the group if not already focused
+                                if group_id != self.model.editor_area.focused_group_id {
+                                    update(
+                                        &mut self.model,
+                                        Msg::Layout(LayoutMsg::FocusGroup(group_id)),
+                                    );
+                                }
+
+                                // Find which tab was clicked
+                                if let Some(group) = self.model.editor_area.groups.get(&group_id) {
+                                    // Adjust x for the group's rect offset
+                                    let local_x = x - group.rect.x as f64;
+                                    if let Some(tab_index) =
+                                        renderer.tab_at_position(local_x, &self.model, group)
+                                    {
+                                        return update(
+                                            &mut self.model,
+                                            Msg::Layout(LayoutMsg::SwitchToTab(tab_index)),
+                                        );
+                                    }
+                                }
+                            }
                             return None;
                         }
 
@@ -446,6 +477,10 @@ impl App {
 
                 v_cmd.or(h_cmd)
             }
+            WindowEvent::DroppedFile(path) => update(
+                &mut self.model,
+                Msg::Layout(LayoutMsg::OpenFileInNewTab(path.clone())),
+            ),
             _ => None,
         }
     }
