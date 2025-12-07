@@ -397,6 +397,32 @@ impl EditorState {
         self.cursors.len()
     }
 
+    /// Get the top-most cursor (smallest document position, same as primary)
+    #[inline]
+    pub fn top_cursor(&self) -> &Cursor {
+        &self.cursors[0]
+    }
+
+    /// Get the bottom-most cursor (largest document position)
+    #[inline]
+    pub fn bottom_cursor(&self) -> &Cursor {
+        self.cursors
+            .last()
+            .expect("EditorState must always have at least one cursor")
+    }
+
+    /// Get the vertical edge cursor in the given direction
+    /// - `up = true` → top-most cursor (for AddCursorAbove)
+    /// - `up = false` → bottom-most cursor (for AddCursorBelow)
+    #[inline]
+    pub fn edge_cursor_vertical(&self, up: bool) -> &Cursor {
+        if up {
+            self.top_cursor()
+        } else {
+            self.bottom_cursor()
+        }
+    }
+
     /// Collapse all cursors to just the primary cursor
     pub fn collapse_to_primary(&mut self) {
         self.cursors.truncate(1);
