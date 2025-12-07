@@ -171,8 +171,8 @@ fn test_active_cursor_survives_sort() {
 fn test_active_cursor_handles_dedup() {
     let mut model = test_model("line 0\nline 1\n", 0, 0);
 
-    let cursor_clone = model.editor().cursors[0].clone();
-    let selection_clone = model.editor().selections[0].clone();
+    let cursor_clone = model.editor().cursors[0];
+    let selection_clone = model.editor().selections[0];
     {
         let editor = model.editor_mut();
         editor.cursors.push(cursor_clone);

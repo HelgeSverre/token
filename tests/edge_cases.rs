@@ -71,7 +71,7 @@ fn test_insert_preserves_cursor_buffer_position_consistency() {
         assert_eq!(after_pos, before_pos + 1);
 
         // Cursor column should match
-        assert_eq!(model.editor().primary_cursor().column, after_pos - 0); // On line 0
+        assert_eq!(model.editor().primary_cursor().column, after_pos); // On line 0
     }
 
     assert_eq!(buffer_to_string(&model), "hello fooworld");

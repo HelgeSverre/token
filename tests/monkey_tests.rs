@@ -392,7 +392,7 @@ fn test_rapid_insert_delete_cycle() {
     }
 
     // Should not crash
-    assert!(buffer_to_string(&model).len() > 0);
+    assert!(!buffer_to_string(&model).is_empty());
 }
 
 #[test]
@@ -402,9 +402,7 @@ fn test_rapid_undo_during_typing() {
     for i in 0..50 {
         update(
             &mut model,
-            Msg::Document(DocumentMsg::InsertChar(
-                ('a' as u8 + (i % 26) as u8) as char,
-            )),
+            Msg::Document(DocumentMsg::InsertChar((b'a' + (i % 26) as u8) as char)),
         );
         if i % 2 == 0 {
             update(&mut model, Msg::Document(DocumentMsg::Undo));

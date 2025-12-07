@@ -524,7 +524,7 @@ fn test_multiple_splitters_hit_testing() {
     let splitters = model.editor_area.compute_layout(available);
 
     // Should have multiple splitters in the layout
-    assert!(splitters.len() >= 1);
+    assert!(!splitters.is_empty());
 }
 
 // ============================================================================
