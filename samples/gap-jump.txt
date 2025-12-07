@@ -1,0 +1,88 @@
+----------------------------------------------------------------------
+This is a test file to check if you can "jump word gaps" with varying
+amounts of indentation and text on the sides. and word boundaries.
+----------------------------------------------------------------------
+
+assert !(store.insert    ----- can you jump the gap?
+assert  !(store.insert    ----- can you jump the gap?
+assert   !(store.insert    ----- can you jump the gap?
+assert    !(store.insert    ----- can you jump the gap?
+assert     !(store.insert    ----- can you jump the gap?
+assert      !(store.insert    ----- can you jump the gap?
+assert       !(store.insert    ----- can you jump the gap?
+assert        !(store.insert    ----- can you jump the gap?
+assert         !(store.insert    ----- can you jump the gap?
+assert          !(store.insert    ----- can you jump the gap?
+assert           !(store.insert    ----- can you jump the gap?
+assert            !(store.insert    ----- can you jump the gap?
+assert             !(store.insert    ----- can you jump the gap?
+
+
+------- 3 tabbers -------
+
+            assert !(store.insert    ----- can you jump the gap?
+            assert  !(store.insert    ----- can you jump the gap?
+            assert   !(store.insert    ----- can you jump the gap?
+            assert    !(store.insert    ----- can you jump the gap?
+            assert     !(store.insert    ----- can you jump the gap?
+            assert      !(store.insert    ----- can you jump the gap?
+            assert       !(store.insert    ----- can you jump the gap?
+            assert        !(store.insert    ----- can you jump the gap?
+            assert         !(store.insert    ----- can you jump the gap?
+            assert          !(store.insert    ----- can you jump the gap?
+            assert           !(store.insert    ----- can you jump the gap?
+            assert            !(store.insert    ----- can you jump the gap?
+            assert             !(store.insert    ----- can you jump the gap?
+
+
+------- 2 words on the side  -------
+
+   assert  assert !(store.insert    ----- can you jump the gap?
+   assert  assert  !(store.insert    ----- can you jump the gap?
+   assert  assert   !(store.insert    ----- can you jump the gap?
+   assert  assert    !(store.insert    ----- can you jump the gap?
+   assert  assert     !(store.insert    ----- can you jump the gap?
+   assert  assert      !(store.insert    ----- can you jump the gap?
+   assert  assert       !(store.insert    ----- can you jump the gap?
+   assert  assert        !(store.insert    ----- can you jump the gap?
+   assert  assert         !(store.insert    ----- can you jump the gap?
+   assert  assert          !(store.insert    ----- can you jump the gap?
+   assert  assert           !(store.insert    ----- can you jump the gap?
+   assert  assert            !(store.insert    ----- can you jump the gap?
+   assert  assert             !(store.insert    ----- can you jump the gap?
+
+------- 2 words on the side  -------
+
+   	assert  assert !(store.insert    ----- can you jump the gap?
+	assert  assert  store_insert    ----- can you jump the gap?
+	assert  assert   store_insert    ----- can you jump the gap?
+	assert  assert    store_insert    ----- can you jump the gap?
+	assert  assert     store_insert    ----- can you jump the gap?
+	assert  assert      store_insert    ----- can you jump the gap?
+	assert  assert       store_insert    ----- can you jump the gap?
+	assert  assert        store_insert    ----- can you jump the gap?
+	assert  assert         store_insert    ----- can you jump the gap?
+	assert  assert          store_insert    ----- can you jump the gap?
+	assert  assert           store_insert    ----- can you jump the gap?
+	assert  assert            store_insert    ----- can you jump the gap?
+	assert  assert             store_insert    ----- can you jump the gap?
+
+
+
+------- 2 words on the side  -------
+        ------- and that side --->
+                      here
+
+	assert  assert two words               can you jump the gap?
+	assert  assert  two words               can you jump the gap?
+	assert  assert   two words               can you jump the gap?
+	assert  assert    two words               can you jump the gap?
+	assert  assert     two words               can you jump the gap?
+	assert  assert      two words               can you jump the gap?
+	assert  assert       two words               can you jump the gap?
+	assert  assert        two words               can you jump the gap?
+	assert  assert         two words               can you jump the gap?
+	assert  assert          two words               can you jump the gap?
+	assert  assert           two words               can you jump the gap?
+	assert  assert            two words               can you jump the gap?
+	assert  assert             two words               can you jump the gap?

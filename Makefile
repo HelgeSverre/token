@@ -1,6 +1,6 @@
 # Makefile for token
 
-.PHONY: build release run dev test clean fmt format lint help sample-files ci \
+.PHONY: build release run dev test clean fmt format lint help samples-files ci \
         build-prof flamegraph profile-samply profile-memory \
         bench bench-rope bench-render bench-glyph \
         coverage coverage-html coverage-ci \
@@ -19,13 +19,13 @@ build:
 release:
 	cargo build --release
 
-# Run release build with default sample file
+# Run release build with default samples file
 run: release
-	./target/release/token test_files/sample_code.rs
+	./target/release/token samples/sample_code.rs
 
 # Run debug build (faster compile, slower runtime)
 dev: build
-	./target/debug/token test_files/sample_code.rs
+	./target/debug/token samples/sample_code.rs
 
 # Run all tests
 test:
@@ -50,19 +50,19 @@ lint:
 	cargo clippy --all-targets --all-features -- -D warnings
 
 
-sample-files: test_files/large.txt test_files/binary.bin
+samples-files: samples/large.txt samples/binary.bin
 
-test_files/large.txt:
-	@mkdir -p test_files
+samples/large.txt:
+	@mkdir -p samples
 	@echo "Generating large test file (10000 lines)..."
 	@for i in $$(seq 1 10000); do \
 		echo "Line $$i: The quick brown fox jumps over the lazy dog. Lorem ipsum dolor sit amet."; \
-	done > test_files/large.txt
+	done > samples/large.txt
 
-test_files/binary.bin:
-	@mkdir -p test_files
+samples/binary.bin:
+	@mkdir -p samples
 	@echo "Generating binary test file..."
-	@head -c 1024 /dev/urandom > test_files/binary.bin
+	@head -c 1024 /dev/urandom > samples/binary.bin
 
 # Help
 help:
@@ -77,7 +77,7 @@ help:
 	@echo "  make lint         - Run clippy lints (mirrors CI)"
 	@echo ""
 	@echo "Run targets:"
-	@echo "  make run          - Run with default sample file (indentation.txt)"
+	@echo "  make run          - Run with default samples file (indentation.txt)"
 	@echo "  make dev          - Run debug build (faster compile)"
 	@echo ""
 	@echo "Test targets:"
@@ -108,7 +108,7 @@ help:
 	@echo ""
 	@echo "Setup:"
 	@echo "  make setup        - Install all dev tools (flamegraph, bacon, etc.)"
-	@echo "  make sample-files - Generate large/binary test files"
+	@echo "  make samples-files - Generate large/binary test files"
 	@echo ""
 	@echo "CI targets:"
 	@echo "  make ci           - Test GitHub Actions locally with act"
@@ -153,15 +153,15 @@ build-prof:
 
 # CPU flamegraph (requires: cargo install flamegraph)
 flamegraph: build-prof
-	cargo flamegraph --profile profiling -- ./target/profiling/token test_files/sample_code.rs
+	cargo flamegraph --profile profiling -- ./target/profiling/token samples/sample_code.rs
 
 # Interactive profiling with samply (requires: cargo install samply)
 profile-samply: build-prof
-	samply record ./target/profiling/token test_files/large.txt
+	samply record ./target/profiling/token samples/large.txt
 
 # Memory profiling with dhat (generates dhat-heap.json, auto-opens viewer)
 profile-memory:
-	cargo run --features dhat-heap --release -- test_files/large.txt
+	cargo run --features dhat-heap --release -- samples/large.txt
 ifeq ($(shell uname -s),Darwin)
 	@echo "Opening DHAT viewer and loading dhat-heap.json..."
 	@osascript -e 'open location "https://nnethercote.github.io/dh_view/dh_view.html"' \
