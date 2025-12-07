@@ -45,3 +45,4 @@ cargo-flamegraph.trace/*
 wip/*
 dumps/*
 threads/
+draft.README.md
