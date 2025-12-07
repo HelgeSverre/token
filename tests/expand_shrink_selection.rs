@@ -78,7 +78,7 @@ fn test_expand_already_all_does_nothing() {
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
-    let sel_before = model.editor().primary_selection().clone();
+    let sel_before = *model.editor().primary_selection();
 
     // Expand again - should not change
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
@@ -311,4 +311,104 @@ fn test_shrink_empty_history_no_crash() {
 
     // Should just have empty selection at cursor
     assert!(model.editor().primary_selection().is_empty());
+}
+
+// ============================================================================
+// Multi-Cursor Expand Selection Tests
+// ============================================================================
+
+#[test]
+fn test_expand_multi_cursor_selects_words() {
+    // Two cursors on different lines, both inside words
+    // Line 0: "THIS IS A LINE OF EXAMPLE TEXT"
+    // Line 1: "some arbitrary example text here"
+    let mut model = test_model(
+        "THIS IS A LINE OF EXAMPLE TEXT\nsome arbitrary example text here\n",
+        0,
+        20, // cursor in "EXAMPLE"
+    );
+
+    // Add second cursor on line 1 in "example"
+    model.editor_mut().add_cursor_at(1, 17); // in "example"
+
+    assert_eq!(model.editor().cursor_count(), 2);
+
+    // Expand selection on all cursors
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+
+    // Both cursors should now have word selections
+    assert_eq!(model.editor().cursor_count(), 2);
+
+    // First cursor should have "EXAMPLE" selected (columns 18-25)
+    let sel0 = &model.editor().selections[0];
+    assert!(!sel0.is_empty(), "First selection should not be empty");
+    assert_eq!(sel0.start().line, 0);
+
+    // Second cursor should have "example" selected
+    let sel1 = &model.editor().selections[1];
+    assert!(!sel1.is_empty(), "Second selection should not be empty");
+    assert_eq!(sel1.start().line, 1);
+}
+
+#[test]
+fn test_expand_multi_cursor_word_to_line() {
+    let mut model = test_model("hello world\nfoo bar\n", 0, 2);
+
+    // Add second cursor on line 1
+    model.editor_mut().add_cursor_at(1, 1);
+
+    assert_eq!(model.editor().cursor_count(), 2);
+
+    // First expand: cursor → word
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+
+    // Check both have word selections
+    assert!(!model.editor().selections[0].is_empty());
+    assert!(!model.editor().selections[1].is_empty());
+
+    // Second expand: word → line
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+
+    // First cursor's selection should cover line 0
+    let sel0 = &model.editor().selections[0];
+    assert_eq!(
+        sel0.start().column,
+        0,
+        "Line selection should start at column 0"
+    );
+
+    // Second cursor's selection should cover line 1
+    let sel1 = &model.editor().selections[1];
+    assert_eq!(sel1.start().line, 1);
+    assert_eq!(
+        sel1.start().column,
+        0,
+        "Line selection should start at column 0"
+    );
+}
+
+#[test]
+fn test_expand_multi_cursor_line_collapses_to_select_all() {
+    let mut model = test_model("hello\nworld\n", 0, 2);
+
+    // Add second cursor on line 1
+    model.editor_mut().add_cursor_at(1, 2);
+
+    assert_eq!(model.editor().cursor_count(), 2);
+
+    // Expand three times: cursor → word → line → all
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+
+    // Should collapse to single cursor with full document selection
+    assert_eq!(
+        model.editor().cursor_count(),
+        1,
+        "Should collapse to single cursor on select all"
+    );
+
+    let sel = model.editor().primary_selection();
+    assert_eq!(sel.start().line, 0);
+    assert_eq!(sel.start().column, 0);
 }
