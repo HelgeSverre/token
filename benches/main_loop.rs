@@ -166,7 +166,7 @@ fn full_loop_cursor_move_and_render(iterations: usize) {
             &mut model,
             Msg::Editor(EditorMsg::MoveCursor(Direction::Right)),
         );
-        if cmd.as_ref().map_or(false, |c| c.needs_redraw()) {
+        if cmd.as_ref().is_some_and(|c| c.needs_redraw()) {
             renderer.render_frame(&model);
         }
     }
@@ -182,7 +182,7 @@ fn full_loop_insert_char_and_render(iterations: usize) {
     for i in 0..iterations {
         let ch = (b'a' + (i % 26) as u8) as char;
         let cmd = update(&mut model, Msg::Document(DocumentMsg::InsertChar(ch)));
-        if cmd.as_ref().map_or(false, |c| c.needs_redraw()) {
+        if cmd.as_ref().is_some_and(|c| c.needs_redraw()) {
             renderer.render_frame(&model);
         }
     }
@@ -197,7 +197,7 @@ fn full_loop_scroll_and_render(iterations: usize) {
 
     for _ in 0..iterations {
         let cmd = update(&mut model, Msg::Editor(EditorMsg::PageDown));
-        if cmd.as_ref().map_or(false, |c| c.needs_redraw()) {
+        if cmd.as_ref().is_some_and(|c| c.needs_redraw()) {
             renderer.render_frame(&model);
         }
     }
@@ -212,7 +212,7 @@ fn full_loop_resize_and_render(size: (u32, u32)) {
     let mut renderer = BenchRenderer::new(w as usize, h as usize, model.line_height);
 
     let cmd = update(&mut model, Msg::App(AppMsg::Resize(w, h)));
-    if cmd.as_ref().map_or(false, |c| c.needs_redraw()) {
+    if cmd.as_ref().is_some_and(|c| c.needs_redraw()) {
         renderer.render_frame(&model);
     }
 
@@ -281,7 +281,7 @@ fn realistic_typing_paragraph() {
             update(&mut model, Msg::Document(DocumentMsg::InsertChar(ch)))
         };
 
-        if cmd.as_ref().map_or(false, |c| c.needs_redraw()) {
+        if cmd.as_ref().is_some_and(|c| c.needs_redraw()) {
             renderer.render_frame(&model);
         }
     }
@@ -304,7 +304,7 @@ fn realistic_typing_with_newlines() {
                 update(&mut model, Msg::Document(DocumentMsg::InsertChar(ch)))
             };
 
-            if cmd.as_ref().map_or(false, |c| c.needs_redraw()) {
+            if cmd.as_ref().is_some_and(|c| c.needs_redraw()) {
                 renderer.render_frame(&model);
             }
         }

@@ -113,7 +113,7 @@ fn render_visible_lines(line_count: usize) {
     let line_height = 20;
     let height = line_count * line_height;
     let mut buffer: Vec<u32> = vec![0xFF1E1E2E; width * height];
-    let glyph = vec![128u8; 10 * 16]; // ~10 wide, 16 tall
+    let glyph = [128u8; 10 * 16]; // ~10 wide, 16 tall
     let fg_color = 0xFFCDD6F4_u32;
     let chars_per_line = 80;
 
@@ -150,7 +150,7 @@ fn render_line_numbers(line_count: usize) {
     let line_height = 20;
     let height = line_count * line_height;
     let mut buffer: Vec<u32> = vec![0xFF1E1E2E; gutter_width * height];
-    let digit_glyph = vec![128u8; 8 * 16];
+    let digit_glyph = [128u8; 8 * 16];
     let fg_color = 0xFF6C7086_u32;
 
     for line in 0..line_count {
