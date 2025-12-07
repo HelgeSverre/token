@@ -54,7 +54,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
                 for idx in indices {
                     // Get cursor position and convert to buffer offset
-                    let cursor = model.editor().cursors[idx].clone();
+                    let cursor = model.editor().cursors[idx];
                     let pos = model
                         .document()
                         .cursor_to_offset(cursor.line, cursor.column);
@@ -66,7 +66,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     operations.push(EditOperation::Insert {
                         position: pos,
                         text: ch.to_string(),
-                        cursor_before: cursor.clone(),
+                        cursor_before: cursor,
                         cursor_after: Cursor::at(cursor.line, cursor.column + 1),
                     });
 
@@ -147,7 +147,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 let mut operations = Vec::new();
 
                 for idx in indices {
-                    let cursor = model.editor().cursors[idx].clone();
+                    let cursor = model.editor().cursors[idx];
                     let insert_line = cursor.line;
                     let pos = model
                         .document()
@@ -158,7 +158,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     operations.push(EditOperation::Insert {
                         position: pos,
                         text: "\n".to_string(),
-                        cursor_before: cursor.clone(),
+                        cursor_before: cursor,
                         cursor_after: Cursor::at(cursor.line + 1, 0),
                     });
 
@@ -250,7 +250,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 let mut operations = Vec::new();
 
                 for idx in indices {
-                    let selection = model.editor().selections[idx].clone();
+                    let selection = model.editor().selections[idx];
                     if !selection.is_empty() {
                         // Delete selection
                         let start = selection.start();
@@ -269,7 +269,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         operations.push(EditOperation::Delete {
                             position: start_offset,
                             text: deleted_text,
-                            cursor_before: model.editor().cursors[idx].clone(),
+                            cursor_before: model.editor().cursors[idx],
                             cursor_after: Cursor::at(start.line, start.column),
                         });
 
@@ -277,7 +277,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         model.editor_mut().cursors[idx].column = start.column;
                         model.editor_mut().selections[idx] = Selection::new(start);
                     } else {
-                        let cursor = model.editor().cursors[idx].clone();
+                        let cursor = model.editor().cursors[idx];
                         let pos = model
                             .document()
                             .cursor_to_offset(cursor.line, cursor.column);
@@ -298,7 +298,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                             operations.push(EditOperation::Delete {
                                 position: pos - 1,
                                 text: deleted_char,
-                                cursor_before: cursor.clone(),
+                                cursor_before: cursor,
                                 cursor_after: Cursor::at(new_line, new_col),
                             });
 
@@ -444,7 +444,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 let mut operations = Vec::new();
 
                 for idx in indices {
-                    let selection = model.editor().selections[idx].clone();
+                    let selection = model.editor().selections[idx];
                     if !selection.is_empty() {
                         // Delete selection (same as DeleteBackward)
                         let start = selection.start();
@@ -464,7 +464,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                             operations.push(EditOperation::Delete {
                                 position: start_offset,
                                 text: deleted_text,
-                                cursor_before: model.editor().cursors[idx].clone(),
+                                cursor_before: model.editor().cursors[idx],
                                 cursor_after: Cursor::at(start.line, start.column),
                             });
 
@@ -474,7 +474,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         }
                     } else {
                         // No selection: delete word to the left
-                        let cursor = model.editor().cursors[idx].clone();
+                        let cursor = model.editor().cursors[idx];
                         let end_offset = model
                             .document()
                             .cursor_to_offset(cursor.line, cursor.column);
@@ -580,7 +580,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 let mut operations = Vec::new();
 
                 for idx in indices {
-                    let selection = model.editor().selections[idx].clone();
+                    let selection = model.editor().selections[idx];
                     if !selection.is_empty() {
                         let start = selection.start();
                         let end = selection.end();
@@ -598,7 +598,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         operations.push(EditOperation::Delete {
                             position: start_offset,
                             text: deleted_text,
-                            cursor_before: model.editor().cursors[idx].clone(),
+                            cursor_before: model.editor().cursors[idx],
                             cursor_after: Cursor::at(start.line, start.column),
                         });
 
@@ -606,7 +606,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         model.editor_mut().cursors[idx].column = start.column;
                         model.editor_mut().selections[idx] = Selection::new(start);
                     } else {
-                        let cursor = model.editor().cursors[idx].clone();
+                        let cursor = model.editor().cursors[idx];
                         let pos = model
                             .document()
                             .cursor_to_offset(cursor.line, cursor.column);
@@ -623,8 +623,8 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                             operations.push(EditOperation::Delete {
                                 position: pos,
                                 text: deleted_char,
-                                cursor_before: cursor.clone(),
-                                cursor_after: cursor.clone(),
+                                cursor_before: cursor,
+                                cursor_after: cursor,
                             });
                         }
                     }
@@ -965,7 +965,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     .collect::<Vec<_>>()
                     .join("\n");
             } else {
-                let selection = model.editor().primary_selection().clone();
+                let selection = *model.editor().primary_selection();
                 if !selection.is_empty() {
                     let start = selection.start();
                     let end = selection.end();
@@ -1018,7 +1018,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 text_to_copy = parts.join("\n");
                 has_selection = !text_to_copy.is_empty();
             } else {
-                let selection = model.editor().primary_selection().clone();
+                let selection = *model.editor().primary_selection();
                 has_selection = !selection.is_empty();
                 if has_selection {
                     let start = selection.start();
@@ -1041,13 +1041,16 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 }
             }
 
-            // Delete selections
+            // Delete selections with proper undo support
             if has_selection {
                 if model.editor().has_multiple_cursors() {
-                    // Delete each selection in reverse order
+                    // Multi-cursor cut: delete each selection and record as Batch
+                    let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
                     let indices = cursors_in_reverse_order(model);
+                    let mut operations = Vec::new();
+
                     for idx in indices {
-                        let selection = model.editor().selections[idx].clone();
+                        let selection = model.editor().selections[idx];
                         if !selection.is_empty() {
                             let start = selection.start();
                             let end = selection.end();
@@ -1055,14 +1058,49 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                                 model.document().cursor_to_offset(start.line, start.column);
                             let end_offset =
                                 model.document().cursor_to_offset(end.line, end.column);
+
+                            let deleted_text: String = model
+                                .document()
+                                .buffer
+                                .slice(start_offset..end_offset)
+                                .chars()
+                                .collect();
+
                             model.document_mut().buffer.remove(start_offset..end_offset);
+
+                            operations.push(EditOperation::Delete {
+                                position: start_offset,
+                                text: deleted_text,
+                                cursor_before: model.editor().cursors[idx],
+                                cursor_after: Cursor::at(start.line, start.column),
+                            });
+
                             model.editor_mut().cursors[idx].line = start.line;
                             model.editor_mut().cursors[idx].column = start.column;
                             model.editor_mut().selections[idx] = Selection::new(start);
                         }
                     }
+
+                    if !operations.is_empty() {
+                        let cursors_after: Vec<Cursor> = model.editor().cursors.clone();
+                        model.document_mut().push_edit(EditOperation::Batch {
+                            operations,
+                            cursors_before,
+                            cursors_after,
+                        });
+                    }
                 } else {
-                    delete_selection(model);
+                    // Single-cursor cut: delete selection and record as Delete
+                    let cursor_before = *model.editor().primary_cursor();
+                    if let Some((pos, deleted_text)) = delete_selection(model) {
+                        let cursor_after = *model.editor().primary_cursor();
+                        model.document_mut().push_edit(EditOperation::Delete {
+                            position: pos,
+                            text: deleted_text,
+                            cursor_before,
+                            cursor_after,
+                        });
+                    }
                 }
                 model.document_mut().is_modified = true;
                 model
@@ -1091,6 +1129,9 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 let cursor_before = *model.editor().primary_cursor();
 
                 if model.editor().has_multiple_cursors() {
+                    let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
+                    let mut operations = Vec::new();
+
                     let lines: Vec<&str> = text.lines().collect();
                     let cursor_count = model.editor().cursors.len();
 
@@ -1099,15 +1140,26 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         let indices = cursors_in_reverse_order(model);
                         for (i, idx) in indices.iter().enumerate() {
                             let line_to_paste = lines[cursor_count - 1 - i]; // Reverse order
-                            let cursor = model.editor().cursors[*idx].clone();
+                            let cursor = model.editor().cursors[*idx];
                             let pos = model
                                 .document()
                                 .cursor_to_offset(cursor.line, cursor.column);
                             model.document_mut().buffer.insert(pos, line_to_paste);
-                            model.editor_mut().cursors[*idx].column +=
-                                line_to_paste.chars().count();
+
+                            let char_count = line_to_paste.chars().count();
+                            model.editor_mut().cursors[*idx].column += char_count;
                             let new_pos = model.editor().cursors[*idx].to_position();
                             model.editor_mut().selections[*idx] = Selection::new(new_pos);
+
+                            operations.push(EditOperation::Insert {
+                                position: pos,
+                                text: line_to_paste.to_string(),
+                                cursor_before: cursor,
+                                cursor_after: Cursor::at(
+                                    model.editor().cursors[*idx].line,
+                                    model.editor().cursors[*idx].column,
+                                ),
+                            });
                         }
                     } else {
                         // Paste full text at each cursor
@@ -1115,7 +1167,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         let lines_added = text.chars().filter(|&c| c == '\n').count();
 
                         for idx in indices {
-                            let cursor = model.editor().cursors[idx].clone();
+                            let cursor = model.editor().cursors[idx];
                             let insert_line = cursor.line;
                             let pos = model
                                 .document()
@@ -1129,6 +1181,13 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                             model.editor_mut().cursors[idx].column = new_col;
                             let new_pos = model.editor().cursors[idx].to_position();
                             model.editor_mut().selections[idx] = Selection::new(new_pos);
+
+                            operations.push(EditOperation::Insert {
+                                position: pos,
+                                text: text.clone(),
+                                cursor_before: cursor,
+                                cursor_after: Cursor::at(new_line, new_col),
+                            });
 
                             // Adjust other cursors for lines added
                             if lines_added > 0 {
@@ -1153,6 +1212,16 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                                 }
                             }
                         }
+                    }
+
+                    // Record batch for proper multi-cursor undo
+                    if !operations.is_empty() {
+                        let cursors_after: Vec<Cursor> = model.editor().cursors.clone();
+                        model.document_mut().push_edit(EditOperation::Batch {
+                            operations,
+                            cursors_before,
+                            cursors_after,
+                        });
                     }
                 } else {
                     // Single cursor: use Replace if selection exists for atomic undo
@@ -1209,8 +1278,8 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 let mut operations = Vec::new();
 
                 for idx in indices {
-                    let selection = model.editor().selections[idx].clone();
-                    let cursor = model.editor().cursors[idx].clone();
+                    let selection = model.editor().selections[idx];
+                    let cursor = model.editor().cursors[idx];
 
                     if selection.is_empty() {
                         // No selection: duplicate the current line
@@ -1246,7 +1315,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         operations.push(EditOperation::Insert {
                             position: line_end_offset,
                             text: text_to_insert,
-                            cursor_before: cursor.clone(),
+                            cursor_before: cursor,
                             cursor_after: Cursor::at(
                                 line_idx + 1,
                                 column.min(model.document().line_length(line_idx + 1)),
@@ -1313,7 +1382,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         operations.push(EditOperation::Insert {
                             position: end_offset,
                             text: selected_text,
-                            cursor_before: cursor.clone(),
+                            cursor_before: cursor,
                             cursor_after: Cursor::at(new_line, new_col),
                         });
 
@@ -1364,7 +1433,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
             // Single cursor: existing behavior
             let cursor_before = *model.editor().primary_cursor();
-            let selection = model.editor().primary_selection().clone();
+            let selection = *model.editor().primary_selection();
 
             if selection.is_empty() {
                 // No selection: duplicate the current line
