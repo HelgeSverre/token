@@ -385,7 +385,7 @@ pub fn sync_status_bar(model: &mut AppModel) {
         .update_segment(SegmentId::ModifiedIndicator, modified);
 
     // CursorPosition segment
-    let cursor = model.editor().cursor();
+    let cursor = model.editor().active_cursor();
     let cursor_text = format!("Ln {}, Col {}", cursor.line + 1, cursor.column + 1);
     model
         .ui

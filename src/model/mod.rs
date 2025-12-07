@@ -262,12 +262,12 @@ impl AppModel {
     /// Get first non-whitespace column on current line
     pub fn first_non_whitespace_column(&self) -> usize {
         self.document()
-            .first_non_whitespace_column(self.editor().cursor().line)
+            .first_non_whitespace_column(self.editor().active_cursor().line)
     }
 
     /// Get last non-whitespace column on current line
     pub fn last_non_whitespace_column(&self) -> usize {
         self.document()
-            .last_non_whitespace_column(self.editor().cursor().line)
+            .last_non_whitespace_column(self.editor().active_cursor().line)
     }
 }

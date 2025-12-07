@@ -16,7 +16,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
     match msg {
         DocumentMsg::InsertChar(ch) => {
-            let cursor_before = *model.editor().cursor();
+            let cursor_before = *model.editor().primary_cursor();
 
             // Multi-cursor: process all cursors in reverse document order
             if model.editor().has_multiple_cursors() {
@@ -76,7 +76,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.ensure_cursor_visible();
 
                 // Record as a single Replace operation for atomic undo
-                let cursor_after = *model.editor().cursor();
+                let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Replace {
                     position: pos,
                     deleted_text,
@@ -93,7 +93,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.set_cursor_from_position(pos + 1);
                 model.ensure_cursor_visible();
 
-                let cursor_after = *model.editor().cursor();
+                let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Insert {
                     position: pos,
                     text: ch.to_string(),
@@ -110,7 +110,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
         }
 
         DocumentMsg::InsertNewline => {
-            let cursor_before = *model.editor().cursor();
+            let cursor_before = *model.editor().primary_cursor();
 
             // Multi-cursor: process all cursors in reverse document order
             if model.editor().has_multiple_cursors() {
@@ -163,7 +163,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.set_cursor_from_position(pos + 1);
                 model.ensure_cursor_visible();
 
-                let cursor_after = *model.editor().cursor();
+                let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Replace {
                     position: pos,
                     deleted_text,
@@ -179,7 +179,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.set_cursor_from_position(pos + 1);
                 model.ensure_cursor_visible();
 
-                let cursor_after = *model.editor().cursor();
+                let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Insert {
                     position: pos,
                     text: "\n".to_string(),
@@ -196,7 +196,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
         }
 
         DocumentMsg::DeleteBackward => {
-            let cursor_before = *model.editor().cursor();
+            let cursor_before = *model.editor().primary_cursor();
 
             // Multi-cursor: process all cursors in reverse document order
             if model.editor().has_multiple_cursors() {
@@ -279,7 +279,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
             // Single cursor: check for selection
             if let Some((pos, deleted_text)) = delete_selection(model) {
-                let cursor_after = *model.editor().cursor();
+                let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Delete {
                     position: pos,
                     text: deleted_text,
@@ -310,7 +310,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.set_cursor_from_position(pos - 1);
                 model.ensure_cursor_visible();
 
-                let cursor_after = *model.editor().cursor();
+                let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Delete {
                     position: pos - 1,
                     text: deleted_char,
@@ -339,7 +339,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
         }
 
         DocumentMsg::DeleteForward => {
-            let cursor_before = *model.editor().cursor();
+            let cursor_before = *model.editor().primary_cursor();
 
             // Multi-cursor: process all cursors in reverse document order
             if model.editor().has_multiple_cursors() {
@@ -414,7 +414,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
             // Single cursor: check for selection
             if let Some((pos, deleted_text)) = delete_selection(model) {
-                let cursor_after = *model.editor().cursor();
+                let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Delete {
                     position: pos,
                     text: deleted_text,
@@ -442,7 +442,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
                 model.document_mut().buffer.remove(pos..pos + 1);
 
-                let cursor_after = *model.editor().cursor();
+                let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Delete {
                     position: pos,
                     text: deleted_char,
@@ -465,8 +465,8 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
         }
 
         DocumentMsg::DeleteLine => {
-            let cursor_before = *model.editor().cursor();
-            let line_idx = model.editor().cursor().line;
+            let cursor_before = *model.editor().primary_cursor();
+            let line_idx = model.editor().primary_cursor().line;
             let total_lines = model.document().line_count();
 
             if total_lines == 0 {
@@ -514,20 +514,20 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     model.editor_mut().cursor_mut().column = 0;
                 } else if was_last_line {
                     // Deleted last line: cursor goes to previous line, retain column (clamped)
-                    model.editor_mut().cursor_mut().line = line_idx.saturating_sub(1);
-                    let line_len = model.document().line_length(model.editor().cursor().line);
-                    model.editor_mut().cursor_mut().column =
-                        model.editor().cursor().column.min(line_len);
+                    model.editor_mut().primary_cursor_mut().line = line_idx.saturating_sub(1);
+                    let line_len = model.document().line_length(model.editor().primary_cursor().line);
+                    model.editor_mut().primary_cursor_mut().column =
+                        model.editor().primary_cursor().column.min(line_len);
                 } else {
                     // Deleted non-last line: stay at same line index, clamp column
                     let new_line = line_idx.min(new_line_count.saturating_sub(1));
                     let new_line_len = model.document().line_length(new_line);
-                    model.editor_mut().cursor_mut().line = new_line;
-                    model.editor_mut().cursor_mut().column =
-                        model.editor().cursor().column.min(new_line_len);
+                    model.editor_mut().primary_cursor_mut().line = new_line;
+                    model.editor_mut().primary_cursor_mut().column =
+                        model.editor().primary_cursor().column.min(new_line_len);
                 }
 
-                let cursor_after = *model.editor().cursor();
+                let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Delete {
                     position: start_offset,
                     text: deleted,
@@ -724,7 +724,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     return Some(Cmd::Redraw);
                 }
 
-                let cursor_before = *model.editor().cursor();
+                let cursor_before = *model.editor().primary_cursor();
 
                 if model.editor().has_multiple_cursors() {
                     let lines: Vec<&str> = text.lines().collect();
@@ -766,7 +766,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     }
                 } else {
                     // Single cursor: use Replace if selection exists for atomic undo
-                    if !model.editor().selection().is_empty() {
+                    if !model.editor().primary_selection().is_empty() {
                         let (pos, deleted_text) = delete_selection(model).unwrap();
 
                         model.document_mut().buffer.insert(pos, &text);
@@ -775,7 +775,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         let new_offset = pos + text.chars().count();
                         model.set_cursor_from_position(new_offset);
 
-                        let cursor_after = *model.editor().cursor();
+                        let cursor_after = *model.editor().primary_cursor();
                         model.document_mut().push_edit(EditOperation::Replace {
                             position: pos,
                             deleted_text,
@@ -792,7 +792,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         let new_offset = pos + text.chars().count();
                         model.set_cursor_from_position(new_offset);
 
-                        let cursor_after = *model.editor().cursor();
+                        let cursor_after = *model.editor().primary_cursor();
                         model.document_mut().push_edit(EditOperation::Insert {
                             position: pos,
                             text: text.clone(),
@@ -812,13 +812,13 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
         }
 
         DocumentMsg::Duplicate => {
-            let cursor_before = *model.editor().cursor();
-            let selection = model.editor().selection().clone();
+            let cursor_before = *model.editor().primary_cursor();
+            let selection = model.editor().primary_selection().clone();
 
             if selection.is_empty() {
                 // No selection: duplicate the current line
-                let line_idx = model.editor().cursor().line;
-                let column = model.editor().cursor().column;
+                let line_idx = model.editor().primary_cursor().line;
+                let column = model.editor().primary_cursor().column;
 
                 // Get the current line content
                 let line_text = model.document().get_line(line_idx).unwrap_or_default();
@@ -849,12 +849,12 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     .insert(line_end_offset, &text_to_insert);
 
                 // Move cursor to duplicated line at same column
-                model.editor_mut().cursor_mut().line += 1;
-                let new_line = model.editor().cursor().line;
-                model.editor_mut().cursor_mut().column =
+                model.editor_mut().primary_cursor_mut().line += 1;
+                let new_line = model.editor().primary_cursor().line;
+                model.editor_mut().primary_cursor_mut().column =
                     column.min(model.document().line_length(new_line));
 
-                let cursor_after = *model.editor().cursor();
+                let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Insert {
                     position: line_end_offset,
                     text: text_to_insert,
@@ -894,7 +894,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 // Clear selection
                 model.editor_mut().clear_selection();
 
-                let cursor_after = *model.editor().cursor();
+                let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Insert {
                     position: end_offset,
                     text: selected_text,
@@ -910,8 +910,8 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
         }
 
         DocumentMsg::IndentLines => {
-            let cursor_before = *model.editor().cursor();
-            let selection = model.editor().selection().clone();
+            let cursor_before = *model.editor().primary_cursor();
+            let selection = model.editor().primary_selection().clone();
 
             let start_line = selection.start().line;
             let end_line = selection.end().line;
@@ -933,13 +933,13 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
             }
 
             // Adjust cursor column +1
-            model.editor_mut().cursor_mut().column += 1;
+            model.editor_mut().primary_cursor_mut().column += 1;
 
             // Adjust selection: bump both anchor and head columns +1
-            model.editor_mut().selection_mut().anchor.column += 1;
-            model.editor_mut().selection_mut().head.column += 1;
+            model.editor_mut().primary_selection_mut().anchor.column += 1;
+            model.editor_mut().primary_selection_mut().head.column += 1;
 
-            let cursor_after = *model.editor().cursor();
+            let cursor_after = *model.editor().primary_cursor();
             // Record single Insert for undo (position = first line start)
             let first_offset = model.document().cursor_to_offset(start_line, 0);
             model.document_mut().push_edit(EditOperation::Insert {
@@ -956,11 +956,11 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
         }
 
         DocumentMsg::UnindentLines => {
-            let cursor_before = *model.editor().cursor();
-            let selection = model.editor().selection().clone();
+            let cursor_before = *model.editor().primary_cursor();
+            let selection = model.editor().primary_selection().clone();
 
             let (start_line, end_line) = if selection.is_empty() {
-                let line = model.editor().cursor().line;
+                let line = model.editor().primary_cursor().line;
                 (line, line)
             } else {
                 let end = if selection.end().column == 0

@@ -65,7 +65,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                     model.document_mut().is_modified = false;
                     model.document_mut().undo_stack.clear();
                     model.document_mut().redo_stack.clear();
-                    *model.editor_mut().cursor_mut() = Default::default();
+                    *model.editor_mut().primary_cursor_mut() = Default::default();
                     model.ui.set_status(format!("Loaded: {}", path.display()));
                 }
                 Err(e) => {
