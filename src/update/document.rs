@@ -893,6 +893,138 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
         }
 
         DocumentMsg::Duplicate => {
+            // Multi-cursor: process all cursors in reverse document order
+            if model.editor().has_multiple_cursors() {
+                let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
+                let indices = cursors_in_reverse_order(model);
+                let mut operations = Vec::new();
+
+                // Track line offset adjustments for cursors processed later
+                // (earlier in document, which we process last)
+                let mut line_adjustments: Vec<(usize, usize)> = Vec::new(); // (after_line, lines_added)
+
+                for idx in indices {
+                    let selection = model.editor().selections[idx].clone();
+                    let cursor = model.editor().cursors[idx].clone();
+
+                    if selection.is_empty() {
+                        // No selection: duplicate the current line
+                        let line_idx = cursor.line;
+                        let column = cursor.column;
+
+                        let line_text = model.document().get_line(line_idx).unwrap_or_default();
+                        let has_newline = line_text.ends_with('\n');
+
+                        let line_end_offset = if has_newline {
+                            model.document().cursor_to_offset(line_idx + 1, 0)
+                        } else {
+                            model
+                                .document()
+                                .cursor_to_offset(line_idx, model.document().line_length(line_idx))
+                        };
+
+                        let text_to_insert = if has_newline {
+                            line_text.clone()
+                        } else {
+                            format!("\n{}", line_text)
+                        };
+
+                        model
+                            .document_mut()
+                            .buffer
+                            .insert(line_end_offset, &text_to_insert);
+
+                        // Count lines added
+                        let lines_added = text_to_insert.chars().filter(|&c| c == '\n').count();
+                        if !has_newline {
+                            line_adjustments.push((line_idx, 1));
+                        } else {
+                            line_adjustments.push((line_idx, lines_added));
+                        }
+
+                        operations.push(EditOperation::Insert {
+                            position: line_end_offset,
+                            text: text_to_insert,
+                            cursor_before: cursor.clone(),
+                            cursor_after: Cursor::at(
+                                line_idx + 1,
+                                column.min(model.document().line_length(line_idx + 1)),
+                            ),
+                        });
+
+                        // Move cursor to duplicated line
+                        model.editor_mut().cursors[idx].line += 1;
+                        let new_line_len = model.document().line_length(line_idx + 1);
+                        model.editor_mut().cursors[idx].column = column.min(new_line_len);
+                        model.editor_mut().cursors[idx].desired_column = None;
+
+                        // Update selection to match cursor
+                        let new_pos = model.editor().cursors[idx].to_position();
+                        model.editor_mut().selections[idx] = Selection::new(new_pos);
+                    } else {
+                        // With selection: duplicate selected text after selection end
+                        let sel_start = selection.start();
+                        let sel_end = selection.end();
+
+                        let start_offset = model
+                            .document()
+                            .cursor_to_offset(sel_start.line, sel_start.column);
+                        let end_offset = model
+                            .document()
+                            .cursor_to_offset(sel_end.line, sel_end.column);
+
+                        let selected_text: String = model
+                            .document()
+                            .buffer
+                            .slice(start_offset..end_offset)
+                            .chars()
+                            .collect();
+
+                        model
+                            .document_mut()
+                            .buffer
+                            .insert(end_offset, &selected_text);
+
+                        // Count lines added
+                        let lines_added = selected_text.chars().filter(|&c| c == '\n').count();
+                        if lines_added > 0 {
+                            line_adjustments.push((sel_end.line, lines_added));
+                        }
+
+                        let new_offset = end_offset + selected_text.chars().count();
+                        let (new_line, new_col) = model.document().offset_to_cursor(new_offset);
+
+                        operations.push(EditOperation::Insert {
+                            position: end_offset,
+                            text: selected_text,
+                            cursor_before: cursor.clone(),
+                            cursor_after: Cursor::at(new_line, new_col),
+                        });
+
+                        // Move cursor to end of duplicated text, clear selection
+                        model.editor_mut().cursors[idx].line = new_line;
+                        model.editor_mut().cursors[idx].column = new_col;
+                        model.editor_mut().cursors[idx].desired_column = None;
+
+                        let new_pos = Position::new(new_line, new_col);
+                        model.editor_mut().selections[idx] = Selection::new(new_pos);
+                    }
+                }
+
+                let cursors_after: Vec<Cursor> = model.editor().cursors.clone();
+                model.document_mut().push_edit(EditOperation::Batch {
+                    operations,
+                    cursors_before,
+                    cursors_after,
+                });
+
+                model.document_mut().is_modified = true;
+                model.ensure_cursor_visible();
+                model.reset_cursor_blink();
+                return Some(Cmd::Redraw);
+            }
+
+            // Single cursor: existing behavior
             let cursor_before = *model.editor().primary_cursor();
             let selection = model.editor().primary_selection().clone();
 
@@ -901,23 +1033,17 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 let line_idx = model.editor().primary_cursor().line;
                 let column = model.editor().primary_cursor().column;
 
-                // Get the current line content
                 let line_text = model.document().get_line(line_idx).unwrap_or_default();
                 let has_newline = line_text.ends_with('\n');
 
-                // Calculate insert position (end of current line)
                 let line_end_offset = if has_newline {
-                    // Insert after the newline
                     model.document().cursor_to_offset(line_idx + 1, 0)
                 } else {
-                    // No newline - insert at end with a newline prefix
                     model
                         .document()
                         .cursor_to_offset(line_idx, model.document().line_length(line_idx))
                 };
 
-                // Text to insert: for lines with newline, just the line content
-                // For lines without, prefix with newline
                 let text_to_insert = if has_newline {
                     line_text.clone()
                 } else {
@@ -929,7 +1055,6 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     .buffer
                     .insert(line_end_offset, &text_to_insert);
 
-                // Move cursor to duplicated line at same column
                 model.editor_mut().primary_cursor_mut().line += 1;
                 let new_line = model.editor().primary_cursor().line;
                 model.editor_mut().primary_cursor_mut().column =
@@ -954,7 +1079,6 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     .document()
                     .cursor_to_offset(sel_end.line, sel_end.column);
 
-                // Get selected text
                 let selected_text: String = model
                     .document()
                     .buffer
@@ -962,17 +1086,14 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     .chars()
                     .collect();
 
-                // Insert at end of selection
                 model
                     .document_mut()
                     .buffer
                     .insert(end_offset, &selected_text);
 
-                // Move cursor to end of duplicated text
                 let new_offset = end_offset + selected_text.chars().count();
                 model.set_cursor_from_position(new_offset);
 
-                // Clear selection
                 model.editor_mut().clear_selection();
 
                 let cursor_after = *model.editor().primary_cursor();

@@ -512,8 +512,76 @@ fn test_unindent_spaces_multi_cursor() {
     );
 }
 
+// ========================================================================
+// Multi-Cursor Duplicate Tests
+// ========================================================================
+
 #[test]
-#[ignore = "Requires duplicate to be updated for multi-cursor support"]
-fn test_multi_cursor_duplicate() {
-    // Duplicate should work at each cursor position
+fn test_duplicate_line_multi_cursor() {
+    use token::messages::{DocumentMsg, Msg};
+
+    let mut model = test_model("line 0\nline 1\nline 2\nline 3\n", 1, 0);
+
+    // Add cursor on line 2
+    model.editor_mut().add_cursor_at(2, 0);
+
+    assert_eq!(model.editor().cursor_count(), 2);
+
+    update(&mut model, Msg::Document(DocumentMsg::Duplicate));
+
+    let content: String = model.document().buffer.chars().collect();
+    assert_eq!(
+        content, "line 0\nline 1\nline 1\nline 2\nline 2\nline 3\n",
+        "Lines 1 and 2 should be duplicated"
+    );
+
+    // Cursors should move to duplicated lines
+    assert_eq!(model.editor().cursor_count(), 2);
+}
+
+#[test]
+fn test_duplicate_line_multi_cursor_non_adjacent() {
+    use token::messages::{DocumentMsg, Msg};
+
+    let mut model = test_model("line 0\nline 1\nline 2\nline 3\nline 4\n", 1, 0);
+
+    // Add cursor on line 3 (non-adjacent)
+    model.editor_mut().add_cursor_at(3, 0);
+
+    assert_eq!(model.editor().cursor_count(), 2);
+
+    update(&mut model, Msg::Document(DocumentMsg::Duplicate));
+
+    let content: String = model.document().buffer.chars().collect();
+    assert_eq!(
+        content, "line 0\nline 1\nline 1\nline 2\nline 3\nline 3\nline 4\n",
+        "Lines 1 and 3 should be duplicated"
+    );
+}
+
+#[test]
+fn test_duplicate_with_selection_multi_cursor() {
+    use token::messages::{DocumentMsg, Msg};
+
+    let mut model = test_model("hello world\nfoo bar\n", 0, 0);
+
+    // Select "hello" on line 0
+    model.editor_mut().selections[0].anchor = Position::new(0, 0);
+    model.editor_mut().selections[0].head = Position::new(0, 5);
+    model.editor_mut().cursors[0].column = 5;
+
+    // Add cursor with selection "foo" on line 1
+    model.editor_mut().add_cursor_at(1, 3);
+    model.editor_mut().selections[1].anchor = Position::new(1, 0);
+    model.editor_mut().selections[1].head = Position::new(1, 3);
+
+    assert_eq!(model.editor().cursor_count(), 2);
+
+    update(&mut model, Msg::Document(DocumentMsg::Duplicate));
+
+    let content: String = model.document().buffer.chars().collect();
+    assert_eq!(
+        content, "hellohello world\nfoofoo bar\n",
+        "Selections should be duplicated in place"
+    );
 }
