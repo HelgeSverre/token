@@ -66,43 +66,79 @@ pub struct AppModel {
 
 impl AppModel {
     /// Create a new application model with the given window size
-    pub fn new(window_width: u32, window_height: u32, file_path: Option<PathBuf>) -> Self {
+    pub fn new(window_width: u32, window_height: u32, file_paths: Vec<PathBuf>) -> Self {
         let line_height = 20;
         let char_width: f32 = 10.0; // Will be corrected by renderer with actual font metrics
-
-        // Load file if provided, otherwise use demo text
-        let (document, status_message) = match file_path {
-            Some(path) => match Document::from_file(path.clone()) {
-                Ok(doc) => {
-                    let msg = format!("Loaded: {}", path.display());
-                    (doc, msg)
-                }
-                Err(e) => {
-                    let msg = format!("Error loading {}: {}", path.display(), e);
-                    (Document::new(), msg)
-                }
-            },
-            None => {
-                let doc = Document::with_text(
-                    "Hello, World!\nThis is a text editor built in Rust.\nUsing Elm architecture!\n\nStart typing to edit.\n"
-                );
-                (doc, "New file".to_string())
-            }
-        };
 
         // Calculate viewport dimensions
         let text_x = text_start_x(char_width).round();
         let visible_columns = ((window_width as f32 - text_x) / char_width).floor() as usize;
-        // Subtract status bar height (1 line) from available height
         let status_bar_height = line_height;
         let visible_lines =
             (window_height as usize).saturating_sub(status_bar_height) / line_height;
 
+        // Load first file or create demo document
+        let (first_document, status_message) = if let Some(first_path) = file_paths.first() {
+            match Document::from_file(first_path.clone()) {
+                Ok(doc) => {
+                    let msg = if file_paths.len() > 1 {
+                        format!("Opened {} files", file_paths.len())
+                    } else {
+                        format!("Loaded: {}", first_path.display())
+                    };
+                    (doc, msg)
+                }
+                Err(e) => {
+                    let msg = format!("Error loading {}: {}", first_path.display(), e);
+                    (Document::new(), msg)
+                }
+            }
+        } else {
+            let doc = Document::with_text(
+                "Hello, World!\nThis is a text editor built in Rust.\nUsing Elm architecture!\n\nStart typing to edit.\n"
+            );
+            (doc, "New file".to_string())
+        };
+
         // Create editor state with viewport
         let editor = EditorState::with_viewport(visible_lines, visible_columns);
 
-        // Create editor area with single document (migration path)
-        let editor_area = EditorArea::single_document(document, editor);
+        // Create editor area with first document
+        let mut editor_area = EditorArea::single_document(first_document, editor);
+
+        // Open additional files as tabs
+        for path in file_paths.into_iter().skip(1) {
+            let doc_id = editor_area.next_document_id();
+            match Document::from_file(path.clone()) {
+                Ok(mut doc) => {
+                    doc.id = Some(doc_id);
+                    editor_area.documents.insert(doc_id, doc);
+
+                    // Create editor for this document
+                    let editor_id = editor_area.next_editor_id();
+                    let mut editor = EditorState::with_viewport(visible_lines, visible_columns);
+                    editor.id = Some(editor_id);
+                    editor.document_id = Some(doc_id);
+                    editor_area.editors.insert(editor_id, editor);
+
+                    // Create tab in focused group
+                    let tab_id = editor_area.next_tab_id();
+                    let tab = Tab {
+                        id: tab_id,
+                        editor_id,
+                        is_pinned: false,
+                        is_preview: false,
+                    };
+
+                    if let Some(group) = editor_area.groups.get_mut(&editor_area.focused_group_id) {
+                        group.tabs.push(tab);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to open {}: {}", path.display(), e);
+                }
+            }
+        }
 
         Self {
             editor_area,

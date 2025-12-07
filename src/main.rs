@@ -25,17 +25,12 @@ fn main() -> Result<()> {
 
     env_logger::init();
 
-    // TODO: accept multiple files and open tabs for each in the first editorgroup
-    // Parse command-line arguments
+    // Parse command-line arguments - collect all file paths
     let args: Vec<String> = std::env::args().collect();
-    let file_path = if args.len() > 1 {
-        Some(PathBuf::from(&args[1]))
-    } else {
-        None
-    };
+    let file_paths: Vec<PathBuf> = args.iter().skip(1).map(PathBuf::from).collect();
 
     let event_loop = EventLoop::new()?;
-    let mut app = App::new(800, 600, file_path);
+    let mut app = App::new(800, 600, file_paths);
 
     event_loop.run_app(&mut app)?;
 
