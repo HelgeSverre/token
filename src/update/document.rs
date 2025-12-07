@@ -4,7 +4,10 @@ use crate::commands::Cmd;
 use crate::messages::DocumentMsg;
 use crate::model::{AppModel, Cursor, EditOperation, Position, Selection};
 
-use super::editor::{cursors_in_reverse_order, delete_selection, sync_other_editor_cursors};
+use super::editor::{
+    cursors_in_reverse_order, delete_selection, lines_covered_by_all_cursors,
+    sync_other_editor_cursors,
+};
 
 /// Handle document messages (text editing, undo/redo)
 pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
@@ -465,23 +468,107 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
         }
 
         DocumentMsg::DeleteLine => {
-            let cursor_before = *model.editor().primary_cursor();
-            let line_idx = model.editor().primary_cursor().line;
             let total_lines = model.document().line_count();
-
             if total_lines == 0 {
                 return Some(Cmd::Redraw);
             }
 
-            // Calculate the range to delete
+            if model.editor().has_multiple_cursors() {
+                let cursors_before = model.editor().cursors.clone();
+                let covered_lines = lines_covered_by_all_cursors(model);
+                let mut operations = Vec::new();
+                let _lines_to_delete_count = covered_lines.len();
+
+                for line_idx in covered_lines.iter().copied() {
+                    let current_total = model.document().line_count();
+                    if current_total == 0 || line_idx >= current_total {
+                        continue;
+                    }
+
+                    let (start_offset, end_offset) = if line_idx + 1 < current_total {
+                        let start = model.document().cursor_to_offset(line_idx, 0);
+                        let end = model.document().cursor_to_offset(line_idx + 1, 0);
+                        (start, end)
+                    } else if line_idx > 0 {
+                        let prev_line_len = model.document().line_length(line_idx - 1);
+                        let start = model
+                            .document()
+                            .cursor_to_offset(line_idx - 1, prev_line_len);
+                        let end = model.document().buffer.len_chars();
+                        (start, end)
+                    } else {
+                        (0, model.document().buffer.len_chars())
+                    };
+
+                    if start_offset < end_offset {
+                        let deleted: String = model
+                            .document()
+                            .buffer
+                            .slice(start_offset..end_offset)
+                            .chars()
+                            .collect();
+                        model.document_mut().buffer.remove(start_offset..end_offset);
+
+                        operations.push(EditOperation::Delete {
+                            position: start_offset,
+                            text: deleted,
+                            cursor_before: Cursor::at(line_idx, 0),
+                            cursor_after: Cursor::at(line_idx.saturating_sub(1), 0),
+                        });
+                    }
+                }
+
+                let new_line_count = model.document().line_count();
+                let min_deleted_line = covered_lines.iter().copied().min().unwrap_or(0);
+                let target_line = min_deleted_line.min(new_line_count.saturating_sub(1));
+                let target_col = if new_line_count > 0 {
+                    model
+                        .document()
+                        .line_length(target_line)
+                        .min(cursors_before.first().map(|c| c.column).unwrap_or(0))
+                } else {
+                    0
+                };
+
+                model.editor_mut().cursors = vec![Cursor::at(target_line, target_col)];
+                model.editor_mut().selections =
+                    vec![Selection::new(Position::new(target_line, target_col))];
+                model.editor_mut().active_cursor_index = 0;
+
+                let cursors_after = model.editor().cursors.clone();
+                model.document_mut().push_edit(EditOperation::Batch {
+                    operations,
+                    cursors_before,
+                    cursors_after,
+                });
+
+                model.document_mut().is_modified = true;
+
+                let deleted_above_viewport = covered_lines
+                    .iter()
+                    .filter(|&&l| l < model.editor().viewport.top_line)
+                    .count();
+                if deleted_above_viewport > 0 {
+                    model.editor_mut().viewport.top_line = model
+                        .editor()
+                        .viewport
+                        .top_line
+                        .saturating_sub(deleted_above_viewport);
+                }
+
+                model.ensure_cursor_visible();
+                model.reset_cursor_blink();
+                return Some(Cmd::Redraw);
+            }
+
+            let cursor_before = *model.editor().primary_cursor();
+            let line_idx = model.editor().primary_cursor().line;
+
             let (start_offset, end_offset) = if line_idx + 1 < total_lines {
-                // Not the last line: delete from start of line to start of next line
                 let start = model.document().cursor_to_offset(line_idx, 0);
                 let end = model.document().cursor_to_offset(line_idx + 1, 0);
                 (start, end)
             } else if line_idx > 0 {
-                // Last line but not the only line: delete preceding newline + content
-                // The newline is at the end of the previous line
                 let prev_line_len = model.document().line_length(line_idx - 1);
                 let start = model
                     .document()
@@ -489,14 +576,10 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 let end = model.document().buffer.len_chars();
                 (start, end)
             } else {
-                // Only line: delete everything
-                let start = 0;
-                let end = model.document().buffer.len_chars();
-                (start, end)
+                (0, model.document().buffer.len_chars())
             };
 
             if start_offset < end_offset {
-                // Determine if we're deleting the last line (which means cursor goes to prev line end)
                 let was_last_line = line_idx + 1 >= total_lines && line_idx > 0;
 
                 let deleted: String = model
@@ -507,19 +590,18 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     .collect();
                 model.document_mut().buffer.remove(start_offset..end_offset);
 
-                // Adjust cursor position
                 let new_line_count = model.document().line_count();
                 if new_line_count == 0 {
-                    model.editor_mut().cursor_mut().line = 0;
-                    model.editor_mut().cursor_mut().column = 0;
+                    model.editor_mut().primary_cursor_mut().line = 0;
+                    model.editor_mut().primary_cursor_mut().column = 0;
                 } else if was_last_line {
-                    // Deleted last line: cursor goes to previous line, retain column (clamped)
                     model.editor_mut().primary_cursor_mut().line = line_idx.saturating_sub(1);
-                    let line_len = model.document().line_length(model.editor().primary_cursor().line);
+                    let line_len = model
+                        .document()
+                        .line_length(model.editor().primary_cursor().line);
                     model.editor_mut().primary_cursor_mut().column =
                         model.editor().primary_cursor().column.min(line_len);
                 } else {
-                    // Deleted non-last line: stay at same line index, clamp column
                     let new_line = line_idx.min(new_line_count.saturating_sub(1));
                     let new_line_len = model.document().line_length(new_line);
                     model.editor_mut().primary_cursor_mut().line = new_line;
@@ -537,7 +619,6 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
                 model.document_mut().is_modified = true;
 
-                // Scroll viewport up by 1 to keep cursor at same screen position
                 if model.editor().viewport.top_line > 0 {
                     model.editor_mut().viewport.top_line -= 1;
                 }
@@ -601,7 +682,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     .collect::<Vec<_>>()
                     .join("\n");
             } else {
-                let selection = model.editor().selection().clone();
+                let selection = model.editor().primary_selection().clone();
                 if !selection.is_empty() {
                     let start = selection.start();
                     let end = selection.end();
@@ -654,7 +735,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 text_to_copy = parts.join("\n");
                 has_selection = !text_to_copy.is_empty();
             } else {
-                let selection = model.editor().selection().clone();
+                let selection = model.editor().primary_selection().clone();
                 has_selection = !selection.is_empty();
                 if has_selection {
                     let start = selection.start();
@@ -910,43 +991,50 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
         }
 
         DocumentMsg::IndentLines => {
-            let cursor_before = *model.editor().primary_cursor();
-            let selection = model.editor().primary_selection().clone();
+            // Multi-cursor: collect unique lines from all cursors/selections
+            let covered_lines = lines_covered_by_all_cursors(model);
 
-            let start_line = selection.start().line;
-            let end_line = selection.end().line;
-
-            // Skip last line if selection ends at column 0
-            let effective_end = if selection.end().column == 0 && end_line > start_line {
-                end_line - 1
-            } else {
-                end_line
-            };
-
-            let mut inserted_text = String::new();
-
-            // Insert tabs in reverse order (to preserve offsets)
-            for line in (start_line..=effective_end).rev() {
-                let offset = model.document().cursor_to_offset(line, 0);
-                model.document_mut().buffer.insert_char(offset, '\t');
-                inserted_text.push('\t');
+            if covered_lines.is_empty() {
+                return Some(Cmd::Redraw);
             }
 
-            // Adjust cursor column +1
-            model.editor_mut().primary_cursor_mut().column += 1;
+            let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
+            let mut operations = Vec::new();
 
-            // Adjust selection: bump both anchor and head columns +1
-            model.editor_mut().primary_selection_mut().anchor.column += 1;
-            model.editor_mut().primary_selection_mut().head.column += 1;
+            // Insert tabs in reverse document order (highest line first) to preserve offsets
+            for &line in &covered_lines {
+                let offset = model.document().cursor_to_offset(line, 0);
+                model.document_mut().buffer.insert_char(offset, '\t');
 
-            let cursor_after = *model.editor().primary_cursor();
-            // Record single Insert for undo (position = first line start)
-            let first_offset = model.document().cursor_to_offset(start_line, 0);
-            model.document_mut().push_edit(EditOperation::Insert {
-                position: first_offset,
-                text: inserted_text,
-                cursor_before,
-                cursor_after,
+                operations.push(EditOperation::Insert {
+                    position: offset,
+                    text: "\t".to_string(),
+                    cursor_before: Cursor::at(line, 0),
+                    cursor_after: Cursor::at(line, 1),
+                });
+            }
+
+            // Adjust all cursors and selections: bump column +1 for each that's on an indented line
+            let indented_lines: std::collections::HashSet<usize> =
+                covered_lines.iter().copied().collect();
+            let editor = model.editor_mut();
+            for (cursor, selection) in editor.cursors.iter_mut().zip(editor.selections.iter_mut()) {
+                if indented_lines.contains(&cursor.line) {
+                    cursor.column += 1;
+                }
+                if indented_lines.contains(&selection.anchor.line) {
+                    selection.anchor.column += 1;
+                }
+                if indented_lines.contains(&selection.head.line) {
+                    selection.head.column += 1;
+                }
+            }
+
+            let cursors_after: Vec<Cursor> = model.editor().cursors.clone();
+            model.document_mut().push_edit(EditOperation::Batch {
+                operations,
+                cursors_before,
+                cursors_after,
             });
 
             model.document_mut().is_modified = true;
@@ -956,30 +1044,20 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
         }
 
         DocumentMsg::UnindentLines => {
-            let cursor_before = *model.editor().primary_cursor();
-            let selection = model.editor().primary_selection().clone();
+            // Multi-cursor: collect unique lines from all cursors/selections
+            let covered_lines = lines_covered_by_all_cursors(model);
 
-            let (start_line, end_line) = if selection.is_empty() {
-                let line = model.editor().primary_cursor().line;
-                (line, line)
-            } else {
-                let end = if selection.end().column == 0
-                    && selection.end().line > selection.start().line
-                {
-                    selection.end().line - 1
-                } else {
-                    selection.end().line
-                };
-                (selection.start().line, end)
-            };
+            if covered_lines.is_empty() {
+                return Some(Cmd::Redraw);
+            }
 
-            let mut total_removed = 0;
-            let mut removed_from_cursor_line = 0;
-            let mut removed_from_anchor_line = 0;
-            let mut removed_from_head_line = 0;
+            let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
+            let mut operations = Vec::new();
+            let mut removed_per_line: std::collections::HashMap<usize, usize> =
+                std::collections::HashMap::new();
 
-            // Process in reverse order
-            for line in (start_line..=end_line).rev() {
+            // Process in reverse document order (highest line first) to preserve offsets
+            for &line in &covered_lines {
                 let line_start = model.document().cursor_to_offset(line, 0);
                 let line_text: String = model.document().buffer.line(line).chars().collect();
 
@@ -991,53 +1069,44 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 };
 
                 if chars_to_remove > 0 {
+                    let removed_text: String = line_text.chars().take(chars_to_remove).collect();
                     model
                         .document_mut()
                         .buffer
                         .remove(line_start..line_start + chars_to_remove);
-                    total_removed += chars_to_remove;
 
-                    if line == model.editor().cursor().line {
-                        removed_from_cursor_line = chars_to_remove;
-                    }
-                    if line == selection.anchor.line {
-                        removed_from_anchor_line = chars_to_remove;
-                    }
-                    if line == selection.head.line {
-                        removed_from_head_line = chars_to_remove;
-                    }
+                    removed_per_line.insert(line, chars_to_remove);
+
+                    operations.push(EditOperation::Delete {
+                        position: line_start,
+                        text: removed_text,
+                        cursor_before: Cursor::at(line, chars_to_remove),
+                        cursor_after: Cursor::at(line, 0),
+                    });
                 }
             }
 
-            if total_removed > 0 {
-                // Calculate position before mutable borrows
-                let edit_position = model.document().cursor_to_offset(start_line, 0);
-
-                // Adjust cursor
-                model.editor_mut().cursor_mut().column = model
-                    .editor()
-                    .cursor()
-                    .column
-                    .saturating_sub(removed_from_cursor_line);
-
-                // Adjust selection if not empty
-                if !selection.is_empty() {
-                    model.editor_mut().selection_mut().anchor.column = selection
-                        .anchor
-                        .column
-                        .saturating_sub(removed_from_anchor_line);
-                    model.editor_mut().selection_mut().head.column =
-                        selection.head.column.saturating_sub(removed_from_head_line);
+            // Adjust all cursors and selections based on what was removed from their lines
+            let editor = model.editor_mut();
+            for (cursor, selection) in editor.cursors.iter_mut().zip(editor.selections.iter_mut()) {
+                if let Some(&removed) = removed_per_line.get(&cursor.line) {
+                    cursor.column = cursor.column.saturating_sub(removed);
                 }
+                if let Some(&removed) = removed_per_line.get(&selection.anchor.line) {
+                    selection.anchor.column = selection.anchor.column.saturating_sub(removed);
+                }
+                if let Some(&removed) = removed_per_line.get(&selection.head.line) {
+                    selection.head.column = selection.head.column.saturating_sub(removed);
+                }
+            }
 
-                let cursor_after = *model.editor().cursor();
-                model.document_mut().push_edit(EditOperation::Delete {
-                    position: edit_position,
-                    text: "\t".repeat(total_removed),
-                    cursor_before,
-                    cursor_after,
+            if !operations.is_empty() {
+                let cursors_after: Vec<Cursor> = model.editor().cursors.clone();
+                model.document_mut().push_edit(EditOperation::Batch {
+                    operations,
+                    cursors_before,
+                    cursors_after,
                 });
-
                 model.document_mut().is_modified = true;
             }
 
@@ -1061,7 +1130,7 @@ fn apply_undo_operation(model: &mut AppModel, edit: &EditOperation) {
                 .document_mut()
                 .buffer
                 .remove(*position..*position + text.chars().count());
-            *model.editor_mut().cursor_mut() = *cursor_before;
+            *model.editor_mut().primary_cursor_mut() = *cursor_before;
         }
         EditOperation::Delete {
             position,
@@ -1070,7 +1139,7 @@ fn apply_undo_operation(model: &mut AppModel, edit: &EditOperation) {
             ..
         } => {
             model.document_mut().buffer.insert(*position, text);
-            *model.editor_mut().cursor_mut() = *cursor_before;
+            *model.editor_mut().primary_cursor_mut() = *cursor_before;
         }
         EditOperation::Replace {
             position,
@@ -1084,7 +1153,7 @@ fn apply_undo_operation(model: &mut AppModel, edit: &EditOperation) {
                 .buffer
                 .remove(*position..*position + inserted_text.chars().count());
             model.document_mut().buffer.insert(*position, deleted_text);
-            *model.editor_mut().cursor_mut() = *cursor_before;
+            *model.editor_mut().primary_cursor_mut() = *cursor_before;
         }
         EditOperation::Batch {
             operations,
@@ -1149,7 +1218,7 @@ fn apply_redo_operation(model: &mut AppModel, edit: &EditOperation) {
             ..
         } => {
             model.document_mut().buffer.insert(*position, text);
-            *model.editor_mut().cursor_mut() = *cursor_after;
+            *model.editor_mut().primary_cursor_mut() = *cursor_after;
         }
         EditOperation::Delete {
             position,
@@ -1161,7 +1230,7 @@ fn apply_redo_operation(model: &mut AppModel, edit: &EditOperation) {
                 .document_mut()
                 .buffer
                 .remove(*position..*position + text.chars().count());
-            *model.editor_mut().cursor_mut() = *cursor_after;
+            *model.editor_mut().primary_cursor_mut() = *cursor_after;
         }
         EditOperation::Replace {
             position,
@@ -1175,7 +1244,7 @@ fn apply_redo_operation(model: &mut AppModel, edit: &EditOperation) {
                 .buffer
                 .remove(*position..*position + deleted_text.chars().count());
             model.document_mut().buffer.insert(*position, inserted_text);
-            *model.editor_mut().cursor_mut() = *cursor_after;
+            *model.editor_mut().primary_cursor_mut() = *cursor_after;
         }
         EditOperation::Batch {
             operations,
