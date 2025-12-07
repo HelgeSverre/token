@@ -8,7 +8,7 @@ ui:
     background: "#1E1E1E"
     foreground: "#D4D4D4"
     current_line_background: "#2A2A2A"
-    cursor_color: "#FFFFFF"
+    cursor_color: "#FCE146"
     selection_background: "#264F78"
     secondary_cursor_color: "#FFFFFF80"
 
