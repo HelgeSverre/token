@@ -133,11 +133,11 @@ Font: JetBrains Mono embedded in `assets/JetBrainsMono.ttf`
 
 ### Navigation
 
-| Action          | Mac           | Standard      |
-| --------------- | ------------- | ------------- |
-| Line start/end  | Cmd+←/→       | Home/End      |
-| Word left/right | Option+←/→    | -             |
-| Doc start/end   | Ctrl+Home/End | -             |
+| Action          | Mac           | Standard |
+| --------------- | ------------- | -------- |
+| Line start/end  | Cmd+←/→       | Home/End |
+| Word left/right | Option+←/→    | -        |
+| Doc start/end   | Ctrl+Home/End | -        |
 
 ### Selection
 
@@ -187,10 +187,10 @@ Design docs live in `docs/feature/*.md`. Before implementing a feature:
 
 ### Key Docs
 
-| Doc                         | Purpose                                    |
-| --------------------------- | ------------------------------------------ |
-| `docs/ROADMAP.md`           | Planned features, module structure         |
-| `docs/CHANGELOG.md`         | Completed work by date                     |
-| `docs/EDITOR_UI_REFERENCE.md` | Comprehensive UI component reference     |
-| `docs/GUI-REVIEW-FINDINGS.md` | GUI architecture improvements plan       |
-| `docs/feature/*.md`         | Design specs (KEYMAPPING, SPLIT_VIEW, etc) |
+| Doc                           | Purpose                                    |
+| ----------------------------- | ------------------------------------------ |
+| `docs/ROADMAP.md`             | Planned features, module structure         |
+| `docs/CHANGELOG.md`           | Completed work by date                     |
+| `docs/EDITOR_UI_REFERENCE.md` | Comprehensive UI component reference       |
+| `docs/GUI-REVIEW-FINDINGS.md` | GUI architecture improvements plan         |
+| `docs/feature/*.md`           | Design specs (KEYMAPPING, SPLIT_VIEW, etc) |

@@ -34,14 +34,14 @@ perf.data
 perf.data.old
 
 # Generated test files (keep human-readable ones)
-test_files/large.txt
-test_files/binary.bin
+samples/large.txt
+samples/binary.bin
 
 # Profiling / tracing artifacts
 dhat-heap.json
 cargo-flamegraph.trace/*
 
-# misc
+# Misc temporary files
 wip/*
 dumps/*
 threads/

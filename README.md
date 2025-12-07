@@ -11,7 +11,6 @@ my [Amp profile](https://ampcode.com/@helgesverre).
 
 <img src="art/screenshot.png" alt="Token Screenshot" width="868"/>
 
-
 ---
 
 ## Building from source
@@ -46,7 +45,7 @@ List them with `make help`
 ### Build & Run
 
 | Command        | Description                                      |
-|----------------|--------------------------------------------------|
+| -------------- | ------------------------------------------------ |
 | `make build`   | Build debug binary                               |
 | `make release` | Build optimized release binary                   |
 | `make run`     | Run with default sample file (indentation.txt)   |
@@ -57,7 +56,7 @@ List them with `make help`
 ### Testing
 
 | Command                   | Description           |
-|---------------------------|-----------------------|
+| ------------------------- | --------------------- |
 | `make test`               | Run all tests         |
 | `make test-one TEST=name` | Run a specific test   |
 | `make test-verbose`       | Run tests with output |
@@ -122,7 +121,7 @@ specifications, and explicit invariants. The more complex your project, the more
 Before each session, explicitly state which mode you're in:
 
 | Mode        | Purpose                                       | Inputs                       | Example                          |
-|-------------|-----------------------------------------------|------------------------------|----------------------------------|
+| ----------- | --------------------------------------------- | ---------------------------- | -------------------------------- |
 | **Build**   | New behavior that didn't exist                | Feature spec, reference docs | "Implement split view (Phase 3)" |
 | **Improve** | Better architecture without changing behavior | Organization docs, roadmap   | "Extract modules from main.rs"   |
 | **Sweep**   | Fix a cluster of related bugs                 | Bug tracker, gap doc         | "Multi-cursor selection bugs"    |
@@ -198,7 +197,7 @@ at "apply this pattern everywhere."
 Tell agents how to work in your codebase:
 
 | File        | Purpose                                         |
-|-------------|-------------------------------------------------|
+| ----------- | ----------------------------------------------- |
 | `AGENTS.md` | Build commands, architecture, conventions       |
 | `CLAUDE.md` | Same (symlink or duplicate for different tools) |
 
@@ -210,7 +209,7 @@ Key: specify your Makefile/scripts so agents use `make test` instead of inventin
 ### Documentation Structure
 
 | Path                                                       | Purpose                                             |
-|------------------------------------------------------------|-----------------------------------------------------|
+| ---------------------------------------------------------- | --------------------------------------------------- |
 | [docs/ROADMAP.md](docs/ROADMAP.md)                         | Planned features with design doc links              |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md)                     | Completed work (reference when things break)        |
 | [docs/EDITOR_UI_REFERENCE.md](docs/EDITOR_UI_REFERENCE.md) | Domain reference (geometry, coordinates, scrolling) |
@@ -238,7 +237,7 @@ division-by-zero edge cases) before they became bugs in code.
 Token's development followed distinct phases, each with focused objectives:
 
 | Phase               | Dates          | Focus                                           |
-|---------------------|----------------|-------------------------------------------------|
+| ------------------- | -------------- | ----------------------------------------------- |
 | Foundation          | Sep 26 - Dec 5 | Setup, reference docs, architecture             |
 | Research Sprint     | Dec 6          | Performance, keymaps, testing infrastructure    |
 | Feature Development | Dec 5-6        | Split view, undo/redo, multi-cursor selection   |
@@ -420,7 +419,7 @@ for continuous selections.
 Systematic extraction from monolithic files:
 
 | Before      | After                                      | Lines            |
-|-------------|--------------------------------------------|------------------|
+| ----------- | ------------------------------------------ | ---------------- |
 | `main.rs`   | `app.rs`, `input.rs`, `view.rs`, `perf.rs` | 3100 → 20        |
 | `update.rs` | `update/` module directory (5 submodules)  | 2900 → organized |
 
@@ -463,7 +462,7 @@ Systematic extraction from monolithic files:
 All conversations are public. Sorted by timestamp (oldest first).
 
 | Date/Time        | Thread                                                                                          | Type     | Summary                                                                                                |
-|------------------|-------------------------------------------------------------------------------------------------|----------|--------------------------------------------------------------------------------------------------------|
+| ---------------- | ----------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
 | 2025-12-03 21:26 | [UI Reference Review](https://ampcode.com/threads/T-7b92a860-a2f7-4397-985c-73b2fa3e9582)       | Research | Generated [Technical Reference Document](docs/EDITOR_UI_REFERENCE.md) based on research from Librarian |
 | 2025-12-04 09:56 | [Reference Doc Polish](https://ampcode.com/threads/T-750a0e44-2302-4b5e-8cdc-70b14c3f7930)      | Research | Continuing reference doc review and rewrite                                                            |
 | 2025-12-05 23:01 | [Status Bar Separators](https://ampcode.com/threads/T-ce8edd72-f084-4fba-8c86-276df333de96)     | Feature  | Design 1px separator segment for status bar                                                            |
