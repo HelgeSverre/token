@@ -23,6 +23,12 @@ Open multiple files from command line or by drag-and-drop:
 - `src/main.rs`: Parse all CLI args as file paths (removed TODO)
 - `src/model/mod.rs`: `AppModel::new()` now accepts `Vec<PathBuf>`
 
+### Fixed - Tab Click to Switch
+
+- Clicking on tabs now switches to the clicked tab
+- Added `Renderer::tab_at_position()` for tab hit-testing
+- Tab bar click handler now detects tab index and dispatches `SwitchToTab`
+
 ---
 
 ## 2025-12-07
