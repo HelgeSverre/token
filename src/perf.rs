@@ -245,6 +245,7 @@ impl PerfStats {
 }
 
 #[cfg(debug_assertions)]
+#[allow(clippy::too_many_arguments)]
 pub fn render_perf_overlay(
     buffer: &mut [u32],
     font: &Font,

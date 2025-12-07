@@ -541,8 +541,8 @@ impl EditorState {
             .position(|(c, _, _)| c.to_position() == active_cursor_pos)
             .unwrap_or(0);
 
-        self.cursors = pairs.iter().map(|(c, _, _)| c.clone()).collect();
-        self.selections = pairs.iter().map(|(_, s, _)| s.clone()).collect();
+        self.cursors = pairs.iter().map(|(c, _, _)| *c).collect();
+        self.selections = pairs.iter().map(|(_, s, _)| *s).collect();
         self.active_cursor_index = new_active_index;
     }
 
@@ -570,14 +570,8 @@ impl EditorState {
                 .position(|&i| self.cursors[i].to_position() == active_pos)
                 .unwrap_or(0);
 
-            self.cursors = keep_indices
-                .iter()
-                .map(|&i| self.cursors[i].clone())
-                .collect();
-            self.selections = keep_indices
-                .iter()
-                .map(|&i| self.selections[i].clone())
-                .collect();
+            self.cursors = keep_indices.iter().map(|&i| self.cursors[i]).collect();
+            self.selections = keep_indices.iter().map(|&i| self.selections[i]).collect();
             self.active_cursor_index = new_active_index;
         }
     }

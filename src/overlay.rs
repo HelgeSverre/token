@@ -110,7 +110,7 @@ impl OverlayBounds {
 /// the blend ratio.
 #[inline]
 pub fn blend_pixel(src: u32, dst: u32) -> u32 {
-    let alpha = ((src >> 24) & 0xFF) as u32;
+    let alpha = (src >> 24) & 0xFF;
     if alpha == 0 {
         return dst;
     }

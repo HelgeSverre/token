@@ -5,9 +5,10 @@
 use std::path::PathBuf;
 
 /// Commands returned by update functions
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum Cmd {
     /// No command - do nothing
+    #[default]
     None,
     /// Request a redraw of the UI
     Redraw,
@@ -39,12 +40,6 @@ impl Cmd {
     /// Convert Option<Cmd> with None to Cmd::None
     pub fn from_option(opt: Option<Cmd>) -> Self {
         opt.unwrap_or(Cmd::None)
-    }
-}
-
-impl Default for Cmd {
-    fn default() -> Self {
-        Cmd::None
     }
 }
 
