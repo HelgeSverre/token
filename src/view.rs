@@ -271,9 +271,10 @@ impl Renderer {
         let visible_lines = content_h / line_height;
         let end_line = (editor.viewport.top_line + visible_lines).min(document.buffer.len_lines());
 
+        // Highlight primary cursor line only
         let current_line_color = model.theme.editor.current_line_background.to_argb_u32();
-        if editor.cursor().line >= editor.viewport.top_line && editor.cursor().line < end_line {
-            let screen_line = editor.cursor().line - editor.viewport.top_line;
+        if editor.active_cursor().line >= editor.viewport.top_line && editor.active_cursor().line < end_line {
+            let screen_line = editor.active_cursor().line - editor.viewport.top_line;
             let highlight_y = content_y + screen_line * line_height;
 
             for py in highlight_y..(highlight_y + line_height).min(content_y + content_h) {
@@ -285,9 +286,13 @@ impl Renderer {
             }
         }
 
-        let selection = editor.selection();
-        if !selection.is_empty() {
-            let selection_color = model.theme.editor.selection_background.to_argb_u32();
+        // Render ALL selections (primary + secondary cursors)
+        let selection_color = model.theme.editor.selection_background.to_argb_u32();
+        for selection in &editor.selections {
+            if selection.is_empty() {
+                continue;
+            }
+
             let sel_start = selection.start();
             let sel_end = selection.end();
 
@@ -355,7 +360,7 @@ impl Renderer {
                 }
 
                 let line_num_str = format!("{:4} ", doc_line + 1);
-                let line_color = if doc_line == editor.cursor().line {
+                let line_color = if doc_line == editor.active_cursor().line {
                     line_num_active_color
                 } else {
                     line_num_color
@@ -545,7 +550,7 @@ impl Renderer {
 
             let is_modified = document.map(|d| d.is_modified).unwrap_or(false);
             let display_name = if is_modified {
-                format!("● {}", filename)
+                format!("{}", filename)
             } else {
                 filename
             };
