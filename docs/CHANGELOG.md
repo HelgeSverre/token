@@ -6,6 +6,42 @@ All notable changes to rust-editor are documented in this file.
 
 ## 2025-12-07 (Latest)
 
+### Changed - Test Extraction
+
+Extracted inline tests from production code to `tests/` folder:
+
+- `tests/editor_area.rs` - 7 tests (Rect, layout, hit testing)
+- `tests/overlay.rs` - 7 tests (anchor positioning, alpha blending)
+- `tests/theme.rs` - 10 tests (Color parsing, YAML themes, builtins)
+
+Tests remaining in `src/main.rs` (14 tests) cannot be moved - they test `handle_key()` which is binary-only code.
+
+### Fixed - Multi-Cursor Indent/Unindent
+
+- **IndentLines** now works on all cursors/selections, not just primary
+- **UnindentLines** now works on all cursors/selections, not just primary
+- Both use `lines_covered_by_all_cursors()` helper for unique line collection
+- Proper Batch undo/redo with cursor state restoration
+- 5 new tests in `tests/multi_cursor.rs`
+
+### Fixed - Multi-Cursor DeleteLine
+
+- **DeleteLine** (Cmd+Backspace) now deletes lines at all cursor positions
+- Uses same `lines_covered_by_all_cursors()` pattern
+- Collapses to single cursor after deletion
+- 3 new tests in `tests/multi_cursor.rs`
+
+### Fixed - Multi-Cursor Edge Expansion
+
+- **AddCursorAbove** now expands from top-most cursor, not primary
+- **AddCursorBelow** now expands from bottom-most cursor, not primary
+- Added `top_cursor()`, `bottom_cursor()`, `edge_cursor_vertical()` helpers
+- 2 new tests in `tests/multi_cursor.rs`
+
+---
+
+## 2025-12-07
+
 ### Fixed - Multi-Cursor Selection Rendering & Cmd+J
 
 Fixed three bugs in multi-cursor functionality:

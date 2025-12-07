@@ -32,6 +32,33 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Expected Behavior:** All cursor positions should be preserved and restored
 - **Fix:** Store full cursor/selection vectors in EditOperation, restore all cursors on undo
 
+### Bug #23: CollapseToSingleCursor Doesn't Reset active_cursor_index (CRASH)
+- **Status:** 🟢 Fixed
+- **File:** `src/update/editor.rs`
+- **Lines:** 486-494
+- **Description:** `CollapseToSingleCursor` (Escape key) manually reset cursors/selections vectors but forgot to reset `active_cursor_index`. If active_cursor_index > 0, subsequent calls to `active_cursor()` would panic with index out of bounds.
+- **Symptoms:** Crash (SIGABRT) when pressing Escape after having multiple cursors
+- **Resolution:** Changed to use `collapse_to_primary()` method which properly resets `active_cursor_index` to 0.
+- **Tests:** `tests/multi_cursor.rs::test_collapse_to_single_cursor_*`
+
+### Bug #24: AddCursorBelow Uses Primary Instead of Edge Cursor
+- **Status:** 🟢 Fixed
+- **File:** `src/update/editor.rs`
+- **Lines:** 493-519
+- **Description:** `AddCursorAbove/Below` used `primary_cursor()` (top-most) to determine where to add new cursor. When expanding downward, it kept trying to add below the top cursor which already had a cursor, so nothing happened.
+- **Symptoms:** Repeated Option+Down adds cursor once then stops working
+- **Resolution:** Added `top_cursor()`, `bottom_cursor()`, and `edge_cursor_vertical(up)` helpers. `AddCursorAbove` now uses top edge, `AddCursorBelow` uses bottom edge.
+- **Tests:** `tests/multi_cursor.rs::test_add_cursor_*_expands_from_*_edge`
+
+### Bug #25: DeleteLine Only Works on Primary Cursor
+- **Status:** 🟢 Fixed
+- **File:** `src/update/document.rs`
+- **Lines:** 470-632
+- **Description:** `DeleteLine` only deleted the line at `primary_cursor()`. With 3 cursors on lines 1, 2, 3, only line 1 was deleted.
+- **Symptoms:** Multi-cursor DeleteLine only deletes one line
+- **Resolution:** Added `lines_covered_by_all_cursors()` helper. DeleteLine now collects unique lines from all cursors, deletes them in reverse order, and collapses to single cursor.
+- **Tests:** `tests/multi_cursor.rs::test_delete_line_multi_cursor_*`
+
 ---
 
 ## High Priority
@@ -46,29 +73,27 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Fix:** Iterate over all cursors in reverse document order
 
 ### Bug #5: Indent Only Works on Primary Selection
-- **Status:** 🔴 Open
+- **Status:** 🟢 Fixed
 - **File:** `src/update/document.rs`
-- **Lines:** 912-1000
-- **Description:** IndentLines only processes the line range from the primary selection.
-- **Current Behavior:** Only indents lines covered by primary selection
-- **Expected Behavior:** Should indent lines covered by all selections
-- **Fix:** Collect all unique lines from all selections, process in reverse order
+- **Lines:** 995-1050
+- **Description:** IndentLines only processed the line range from the primary selection.
+- **Resolution:** Now uses `lines_covered_by_all_cursors()` to collect unique lines from all cursors/selections. Processes in reverse document order, adjusts all cursor/selection columns, records as Batch for proper undo.
+- **Tests:** `tests/multi_cursor.rs::test_indent_multi_cursor_*`
 
 ### Bug #6: Unindent Only Works on Primary Selection
-- **Status:** 🔴 Open
+- **Status:** 🟢 Fixed
 - **File:** `src/update/document.rs`
-- **Lines:** 1001-1047
-- **Description:** Same as Bug #5 but for unindent operation.
-- **Fix:** Same approach as Bug #5
+- **Lines:** 1052-1127
+- **Description:** UnindentLines only processed the line range from the primary selection.
+- **Resolution:** Same approach as Bug #5 - uses `lines_covered_by_all_cursors()`, tracks per-line removal amounts, adjusts all cursor/selection columns accordingly.
+- **Tests:** `tests/multi_cursor.rs::test_unindent_multi_cursor_*`
 
 ### Bug #7: Expand/Shrink Selection Only Works on Primary
-- **Status:** 🔴 Open
+- **Status:** 🟢 Fixed
 - **File:** `src/update/editor.rs`
 - **Lines:** 963-1016
 - **Description:** Selection expansion/shrinkage (Option+Up/Down) only operates on the primary cursor's selection.
-- **Current Behavior:** Only primary selection expands/shrinks
-- **Expected Behavior:** Should expand/shrink the active cursor's selection
-- **Fix:** Use `active_selection()` instead of `selection()`
+- **Resolution:** API refactor now uses `active_selection()` for these operations.
 
 ---
 
@@ -87,13 +112,11 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Note:** User confirmed this is the desired behavior - only primary cursor line number should be colored.
 
 ### Bug #10: Arrow Key Navigation Ignores Secondary Selections
-- **Status:** 🔴 Open
+- **Status:** 🟢 Fixed
 - **File:** `src/input.rs`
 - **Lines:** 260-376
 - **Description:** When pressing arrow keys with selections, only the primary selection's start/end is used for cursor positioning.
-- **Current Behavior:** Secondary cursors don't move correctly relative to their selections
-- **Expected Behavior:** Each cursor should move to its selection's start/end
-- **Fix:** Handle all cursor/selection pairs in movement logic
+- **Resolution:** API refactor now uses `active_selection()` and `active_cursor_mut()` for arrow key navigation.
 
 ### Bug #11: delete_selection Helper is Single-Cursor
 - **Status:** 🔴 Open
@@ -104,38 +127,32 @@ This document tracks known issues where the editor assumes single-cursor behavio
 - **Fix:** Either document as single-cursor helper or make multi-cursor aware
 
 ### Bug #12-14: Helper Functions Use Index 0
-- **Status:** 🔴 Open
+- **Status:** 🟢 Fixed
 - **File:** `src/model/editor.rs`
 - **Lines:** 628-641
 - **Description:** `move_cursor_to_offset()`, `cursor_offset()`, and `current_line_length()` all hardcode index 0.
-- **Fix:** Add `_at(idx)` variants or use active cursor index
+- **Resolution:** API refactor - call sites now use appropriate `active_cursor()` or `primary_cursor()` based on intent.
 
 ### Bug #19: Model-Level Cursor Helpers Use Index 0
-- **Status:** 🔴 Open
+- **Status:** 🟢 Fixed
 - **File:** `src/model/mod.rs`
 - **Lines:** 201-217
 - **Description:** `set_cursor_position()` and `move_cursor_to_position()` directly modify `cursors[0]`.
-- **Current Behavior:** Only moves/sets primary cursor position
-- **Expected Behavior:** Should operate on active cursor or take index parameter
-- **Fix:** Use `active_cursor_index` or add `_at(idx)` variants
+- **Resolution:** Call sites now use `active_cursor()` for UI operations.
 
 ### Bug #20: Find Next/Previous Only Uses Primary Cursor
-- **Status:** 🔴 Open
+- **Status:** 🟢 Fixed
 - **File:** `src/update/editor.rs`
 - **Lines:** 460-474
 - **Description:** Find operations use `selections[0]` and `cursors[0]` directly with comment "Single selection semantics".
-- **Current Behavior:** Search starts from primary cursor only
-- **Expected Behavior:** Should search from active cursor position
-- **Fix:** Use `active_cursor_index` for find operations
+- **Resolution:** API refactor now uses `active_cursor()` for find operations.
 
 ### Bug #21: Page Up/Down Ignores Secondary Selections
-- **Status:** 🔴 Open
+- **Status:** 🟢 Fixed
 - **File:** `src/input.rs`
 - **Lines:** 273-289
 - **Description:** Page Up/Down uses `selection()` and `cursor_mut()` which only affect primary cursor.
-- **Current Behavior:** Only primary cursor jumps to selection boundary before page movement
-- **Expected Behavior:** Each cursor should handle its selection appropriately
-- **Fix:** Guard with `has_multiple_cursors()` check like arrow key fix
+- **Resolution:** API refactor now uses `active_selection()` and `active_cursor_mut()` for page navigation.
 
 ### Bug #22: Status Bar Only Shows Primary Selection Info
 - **Status:** 🔴 Open
@@ -179,13 +196,39 @@ This document tracks known issues where the editor assumes single-cursor behavio
 
 ## Architecture Notes
 
-### Current State
+### Current State (after refactor)
 - Cursors stored in `Vec<Cursor>` sorted by document position (line, column)
 - Primary cursor is always `cursors[0]` (top-most in document)
-- `cursor()` and `selection()` methods return index 0
+- `active_cursor_index` tracks which cursor the user is focused on
+- API explicitly distinguishes:
+  - `primary_cursor()` / `primary_selection()` - index 0, for undo metadata
+  - `active_cursor()` / `active_selection()` - user's focus, for UI/viewport
+  - `top_cursor()` / `bottom_cursor()` - edge cursors for directional expansion
+  - `edge_cursor_vertical(up)` - generic edge accessor
+  - `lines_covered_by_all_cursors()` - unique lines for line-based ops (DeleteLine, Indent)
+  - Direct `cursors[idx]` access - for multi-cursor iteration
 
-### Planned Changes
-- Add `active_cursor_index: usize` field to `EditorState`
-- Add `active_cursor()` and `active_selection()` methods
-- Update `sort_cursors()` to track active cursor through reordering
-- Update `deduplicate_cursors()` to handle active cursor removal
+### Completed Refactor (2024-12)
+- ✅ Renamed `cursor()` → `primary_cursor()`, `selection()` → `primary_selection()`
+- ✅ Renamed `cursor_mut()` → `primary_cursor_mut()`, `selection_mut()` → `primary_selection_mut()`
+- ✅ All ~116 call sites classified and updated:
+  - UI/viewport code → `active_cursor()` / `active_selection()`
+  - Undo/redo metadata → `primary_cursor()` / `primary_selection()`
+  - Multi-cursor operations → iterate all cursors
+- ✅ Compiler now forces explicit choice at every call site
+
+### Bugs Fixed by Refactor
+The following bugs were fixed by switching to `active_cursor()`/`active_selection()`:
+- Bug #7: Expand/Shrink Selection - now uses active selection
+- Bug #10: Arrow Key Navigation - now uses active selection for jump-to-boundary
+- Bug #12-14: Helper functions - now use active cursor index
+- Bug #19: Model-level helpers - now use active cursor
+- Bug #20: Find Next/Previous - now uses active cursor position
+- Bug #21: Page Up/Down - now uses active selection
+
+### Remaining Work
+These bugs require additional logic beyond the API refactor:
+- Bug #3: Undo loses multi-cursor state (needs Batch cursor restoration)
+- Bug #4: Duplicate only works on primary (needs multi-cursor iteration)
+- Bug #11: delete_selection helper (needs audit of call sites)
+- Bug #22: Status bar selection info (enhancement)
