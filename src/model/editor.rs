@@ -256,18 +256,24 @@ pub struct OccurrenceState {
 
 /// Editor state - view-specific state for editing a document
 ///
-/// Supports multiple cursors and selections for future multi-cursor editing.
-/// Currently, most operations work on the primary cursor (index 0).
+/// Supports multiple cursors and selections. The "active" cursor is the one
+/// the user is currently focused on (for viewport scrolling, line highlighting, etc.).
+/// Cursors are stored sorted by document position, but active_cursor_index
+/// tracks which one is the user's focus.
 #[derive(Debug, Clone)]
 pub struct EditorState {
     /// Unique identifier (set when added to EditorArea)
     pub id: Option<EditorId>,
     /// The document this editor is viewing (set when added to EditorArea)
     pub document_id: Option<DocumentId>,
-    /// All cursors (primary cursor is at index 0)
+    /// All cursors sorted by document position (line, then column)
     pub cursors: Vec<Cursor>,
     /// Selections corresponding to each cursor (parallel to cursors)
     pub selections: Vec<Selection>,
+    /// Index of the "active" cursor - the one user is focused on.
+    /// This cursor drives viewport scrolling and gets primary highlighting.
+    /// Valid range: 0..cursors.len()
+    pub active_cursor_index: usize,
     /// Viewport showing which portion of the document is visible
     pub viewport: Viewport,
     /// Number of lines of padding to maintain above/below cursor when scrolling
@@ -291,8 +297,9 @@ impl EditorState {
             document_id: None,
             cursors: vec![cursor],
             selections: vec![selection],
+            active_cursor_index: 0,
             viewport: Viewport::default(),
-            scroll_padding: 1, // JetBrains-style default
+            scroll_padding: 1,
             rectangle_selection: RectangleSelectionState::default(),
             occurrence_state: None,
             selection_history: Vec::new(),
@@ -308,6 +315,7 @@ impl EditorState {
             document_id: None,
             cursors: vec![cursor],
             selections: vec![selection],
+            active_cursor_index: 0,
             viewport: Viewport::new(visible_lines, visible_columns),
             scroll_padding: 1,
             rectangle_selection: RectangleSelectionState::default(),
@@ -321,28 +329,62 @@ impl EditorState {
         self.selection_history.clear();
     }
 
-    /// Get the primary cursor (read-only)
+    /// Get the primary cursor (index 0, top-most in document)
     #[inline]
-    pub fn cursor(&self) -> &Cursor {
+    pub fn primary_cursor(&self) -> &Cursor {
         &self.cursors[0]
     }
 
     /// Get the primary cursor (mutable)
     #[inline]
-    pub fn cursor_mut(&mut self) -> &mut Cursor {
+    pub fn primary_cursor_mut(&mut self) -> &mut Cursor {
         &mut self.cursors[0]
     }
 
-    /// Get the primary selection (read-only)
+    /// Get the primary selection (index 0)
     #[inline]
-    pub fn selection(&self) -> &Selection {
+    pub fn primary_selection(&self) -> &Selection {
         &self.selections[0]
     }
 
     /// Get the primary selection (mutable)
     #[inline]
-    pub fn selection_mut(&mut self) -> &mut Selection {
+    pub fn primary_selection_mut(&mut self) -> &mut Selection {
         &mut self.selections[0]
+    }
+
+    /// Get the active cursor (the one user is focused on)
+    #[inline]
+    pub fn active_cursor(&self) -> &Cursor {
+        &self.cursors[self.active_cursor_index]
+    }
+
+    /// Get the active cursor (mutable)
+    #[inline]
+    pub fn active_cursor_mut(&mut self) -> &mut Cursor {
+        &mut self.cursors[self.active_cursor_index]
+    }
+
+    /// Get the active selection (corresponding to active cursor)
+    #[inline]
+    pub fn active_selection(&self) -> &Selection {
+        &self.selections[self.active_cursor_index]
+    }
+
+    /// Get the active selection (mutable)
+    #[inline]
+    pub fn active_selection_mut(&mut self) -> &mut Selection {
+        &mut self.selections[self.active_cursor_index]
+    }
+
+    /// Set which cursor is active by index
+    /// Panics if index is out of bounds
+    pub fn set_active_cursor(&mut self, index: usize) {
+        assert!(
+            index < self.cursors.len(),
+            "active cursor index out of bounds"
+        );
+        self.active_cursor_index = index;
     }
 
     /// Check if there are multiple cursors
@@ -359,6 +401,7 @@ impl EditorState {
     pub fn collapse_to_primary(&mut self) {
         self.cursors.truncate(1);
         self.selections.truncate(1);
+        self.active_cursor_index = 0;
     }
 
     /// Update the primary selection to match the primary cursor (for non-selection moves)
@@ -379,7 +422,7 @@ impl EditorState {
 
     /// Toggle a cursor at the given position
     /// If a cursor exists at that position, remove it (unless it's the only one)
-    /// If no cursor exists there, add one
+    /// If no cursor exists there, add one and make it active
     /// Returns true if a cursor was added, false if removed
     pub fn toggle_cursor_at(&mut self, line: usize, column: usize) -> bool {
         // Check if there's already a cursor at this position
@@ -393,17 +436,27 @@ impl EditorState {
             if self.cursors.len() > 1 {
                 self.cursors.remove(idx);
                 self.selections.remove(idx);
+                // Update active cursor index if we removed a cursor before it
+                if idx < self.active_cursor_index {
+                    self.active_cursor_index -= 1;
+                } else if idx == self.active_cursor_index {
+                    // Removed the active cursor - fall back to 0
+                    self.active_cursor_index = 0;
+                }
                 return false;
             }
             // Can't remove the only cursor
             return false;
         }
 
-        // No cursor at this position - add one
+        // No cursor at this position - add one and make it active
         let new_cursor = Cursor::at(line, column);
         let new_selection = Selection::new(Position::new(line, column));
         self.cursors.push(new_cursor);
         self.selections.push(new_selection);
+
+        // Set new cursor as active before sorting (sort_cursors will track it)
+        self.active_cursor_index = self.cursors.len() - 1;
 
         // Sort cursors by position (line, then column) to maintain order
         self.sort_cursors();
@@ -412,6 +465,7 @@ impl EditorState {
     }
 
     /// Add a cursor at the given position (without toggle behavior)
+    /// The new cursor becomes the active cursor
     pub fn add_cursor_at(&mut self, line: usize, column: usize) {
         // Check if cursor already exists
         let exists = self
@@ -427,23 +481,40 @@ impl EditorState {
         self.cursors.push(new_cursor);
         self.selections.push(new_selection);
 
+        // Set new cursor as active before sorting (sort_cursors will track it)
+        self.active_cursor_index = self.cursors.len() - 1;
+
         self.sort_cursors();
     }
 
     /// Sort cursors by position (line, then column)
     fn sort_cursors(&mut self) {
-        // Create pairs of (cursor, selection), sort by cursor position, then unzip
+        // Remember the active cursor's position before sorting
+        let active_cursor_pos = self.cursors[self.active_cursor_index].to_position();
+
+        // Create pairs of (cursor, selection, original_index), sort by cursor position
         let mut pairs: Vec<_> = self
             .cursors
             .iter()
             .cloned()
             .zip(self.selections.iter().cloned())
+            .enumerate()
+            .map(|(i, (c, s))| (c, s, i))
             .collect();
 
-        pairs.sort_by(|(a, _), (b, _)| a.line.cmp(&b.line).then_with(|| a.column.cmp(&b.column)));
+        pairs.sort_by(|(a, _, _), (b, _, _)| {
+            a.line.cmp(&b.line).then_with(|| a.column.cmp(&b.column))
+        });
 
-        self.cursors = pairs.iter().map(|(c, _)| c.clone()).collect();
-        self.selections = pairs.iter().map(|(_, s)| s.clone()).collect();
+        // Find the new index of the previously active cursor
+        let new_active_index = pairs
+            .iter()
+            .position(|(c, _, _)| c.to_position() == active_cursor_pos)
+            .unwrap_or(0);
+
+        self.cursors = pairs.iter().map(|(c, _, _)| c.clone()).collect();
+        self.selections = pairs.iter().map(|(_, s, _)| s.clone()).collect();
+        self.active_cursor_index = new_active_index;
     }
 
     /// Remove duplicate cursor positions, keeping the first occurrence
@@ -461,6 +532,15 @@ impl EditorState {
 
         // Only rebuild if we removed duplicates
         if keep_indices.len() < self.cursors.len() {
+            // Find the new active cursor index:
+            // If the active cursor is kept, find its new position
+            // If the active cursor was removed (duplicate), find the surviving cursor at same position
+            let active_pos = self.cursors[self.active_cursor_index].to_position();
+            let new_active_index = keep_indices
+                .iter()
+                .position(|&i| self.cursors[i].to_position() == active_pos)
+                .unwrap_or(0);
+
             self.cursors = keep_indices
                 .iter()
                 .map(|&i| self.cursors[i].clone())
@@ -469,6 +549,7 @@ impl EditorState {
                 .iter()
                 .map(|&i| self.selections[i].clone())
                 .collect();
+            self.active_cursor_index = new_active_index;
         }
     }
 
@@ -482,6 +563,7 @@ impl EditorState {
     /// - `cursors.len() == selections.len()`
     /// - `cursors[i].to_position() == selections[i].head`
     /// - All selections are canonical (forward: anchor <= head)
+    /// - `active_cursor_index` points to the merged selection containing the original active cursor
     pub fn merge_overlapping_selections(&mut self) {
         if self.selections.len() <= 1 {
             return;
@@ -499,30 +581,40 @@ impl EditorState {
         indexed.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
 
         // 3) Sweep through and merge overlapping/touching selections
-        let mut merged: Vec<(Position, Position)> = Vec::new();
-        for (start, end, _) in indexed {
-            if let Some((_, last_end)) = merged.last_mut() {
+        // Track which original indices get merged into each result
+        let mut merged: Vec<(Position, Position, Vec<usize>)> = Vec::new();
+        for (start, end, orig_idx) in indexed {
+            if let Some((_, last_end, orig_indices)) = merged.last_mut() {
                 // Overlapping or touching: next.start <= current.end
                 if start <= *last_end {
                     // Extend the current merged range if this one goes further
                     if end > *last_end {
                         *last_end = end;
                     }
+                    orig_indices.push(orig_idx);
                     continue;
                 }
             }
-            merged.push((start, end));
+            merged.push((start, end, vec![orig_idx]));
         }
 
-        // 4) Rebuild cursors and selections from merged ranges
+        // 4) Find which merged selection contains the original active cursor
+        let new_active_index = merged
+            .iter()
+            .position(|(_, _, orig_indices)| orig_indices.contains(&self.active_cursor_index))
+            .unwrap_or(0);
+
+        // 5) Rebuild cursors and selections from merged ranges
         // Create canonical forward selections with cursor at end
         self.cursors.clear();
         self.selections.clear();
 
-        for (start, end) in merged {
+        for (start, end, _) in merged {
             self.cursors.push(Cursor::from_position(end));
             self.selections.push(Selection::from_positions(start, end));
         }
+
+        self.active_cursor_index = new_active_index;
     }
 
     /// Update viewport dimensions (e.g., on window resize)
@@ -531,19 +623,19 @@ impl EditorState {
         self.viewport.visible_columns = visible_columns;
     }
 
-    /// Ensure the primary cursor is visible within the viewport with padding (minimal scroll)
+    /// Ensure the active cursor is visible within the viewport with padding (minimal scroll)
     pub fn ensure_cursor_visible(&mut self, document: &Document) {
         self.ensure_cursor_visible_with_mode(document, ScrollRevealMode::Minimal);
     }
 
-    /// Ensure the primary cursor is visible using the specified reveal strategy
+    /// Ensure the active cursor is visible using the specified reveal strategy
     ///
     /// - `Minimal`: scroll just enough to bring cursor into safe zone
     /// - `TopAligned`: place cursor at top of safe zone (good for upward movement)
     /// - `BottomAligned`: place cursor at bottom of safe zone (good for downward movement)
     /// - `Centered`: place cursor in center of viewport (good for jumps/search)
     pub fn ensure_cursor_visible_with_mode(&mut self, document: &Document, mode: ScrollRevealMode) {
-        let cursor = &self.cursors[0];
+        let cursor = &self.cursors[self.active_cursor_index];
         let padding = self.scroll_padding;
         let total_lines = document.line_count();
 
