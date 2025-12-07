@@ -423,11 +423,14 @@ impl EditorState {
         }
     }
 
-    /// Collapse all cursors to just the primary cursor
+    /// Collapse all cursors to just the primary cursor, clearing any selection
     pub fn collapse_to_primary(&mut self) {
         self.cursors.truncate(1);
         self.selections.truncate(1);
         self.active_cursor_index = 0;
+        // Also clear the selection on the remaining cursor
+        let pos = self.cursors[0].to_position();
+        self.selections[0] = Selection::new(pos);
     }
 
     /// Update the primary selection to match the primary cursor (for non-selection moves)
