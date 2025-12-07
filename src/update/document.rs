@@ -3,11 +3,36 @@
 use crate::commands::Cmd;
 use crate::messages::DocumentMsg;
 use crate::model::{AppModel, Cursor, EditOperation, Position, Selection};
+use crate::util::char_type;
 
 use super::editor::{
     cursors_in_reverse_order, delete_selection, lines_covered_by_all_cursors,
     sync_other_editor_cursors,
 };
+
+/// Find the start of the word before the given offset
+fn word_start_before(buffer: &ropey::Rope, offset: usize) -> usize {
+    if offset == 0 {
+        return 0;
+    }
+
+    // Collect chars before offset
+    let text: String = buffer.slice(..offset).chars().collect();
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = chars.len();
+
+    if i == 0 {
+        return 0;
+    }
+
+    // Move through current word type until we hit a different type or BOF
+    let current_type = char_type(chars[i - 1]);
+    while i > 0 && char_type(chars[i - 1]) == current_type {
+        i -= 1;
+    }
+
+    i
+}
 
 /// Handle document messages (text editing, undo/redo)
 pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
@@ -123,6 +148,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
                 for idx in indices {
                     let cursor = model.editor().cursors[idx].clone();
+                    let insert_line = cursor.line;
                     let pos = model
                         .document()
                         .cursor_to_offset(cursor.line, cursor.column);
@@ -143,6 +169,22 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
                     let new_pos = model.editor().cursors[idx].to_position();
                     model.editor_mut().selections[idx] = Selection::new(new_pos);
+
+                    // Adjust all OTHER cursors that are AFTER this insertion point
+                    // (they need to shift down by 1 line)
+                    for other_idx in 0..model.editor().cursors.len() {
+                        if other_idx != idx && model.editor().cursors[other_idx].line > insert_line
+                        {
+                            model.editor_mut().cursors[other_idx].line += 1;
+                            // Also adjust selection positions
+                            if model.editor().selections[other_idx].anchor.line > insert_line {
+                                model.editor_mut().selections[other_idx].anchor.line += 1;
+                            }
+                            if model.editor().selections[other_idx].head.line > insert_line {
+                                model.editor_mut().selections[other_idx].head.line += 1;
+                            }
+                        }
+                    }
                 }
 
                 // Record batch for proper multi-cursor undo
@@ -341,6 +383,142 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
 
+        DocumentMsg::DeleteWordBackward => {
+            let cursor_before = *model.editor().primary_cursor();
+
+            // Multi-cursor: process all cursors in reverse document order
+            if model.editor().has_multiple_cursors() {
+                let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
+                let indices = cursors_in_reverse_order(model);
+                let mut operations = Vec::new();
+
+                for idx in indices {
+                    let selection = model.editor().selections[idx].clone();
+                    if !selection.is_empty() {
+                        // Delete selection (same as DeleteBackward)
+                        let start = selection.start();
+                        let end = selection.end();
+                        let start_offset =
+                            model.document().cursor_to_offset(start.line, start.column);
+                        let end_offset = model.document().cursor_to_offset(end.line, end.column);
+
+                        if start_offset < end_offset {
+                            let deleted_text: String = model
+                                .document()
+                                .buffer
+                                .slice(start_offset..end_offset)
+                                .to_string();
+                            model.document_mut().buffer.remove(start_offset..end_offset);
+
+                            operations.push(EditOperation::Delete {
+                                position: start_offset,
+                                text: deleted_text,
+                                cursor_before: model.editor().cursors[idx].clone(),
+                                cursor_after: Cursor::at(start.line, start.column),
+                            });
+
+                            model.editor_mut().cursors[idx].line = start.line;
+                            model.editor_mut().cursors[idx].column = start.column;
+                            model.editor_mut().selections[idx] = Selection::new(start);
+                        }
+                    } else {
+                        // No selection: delete word to the left
+                        let cursor = model.editor().cursors[idx].clone();
+                        let end_offset = model
+                            .document()
+                            .cursor_to_offset(cursor.line, cursor.column);
+
+                        if end_offset == 0 {
+                            continue;
+                        }
+
+                        let start_offset = word_start_before(&model.document().buffer, end_offset);
+                        if start_offset >= end_offset {
+                            continue;
+                        }
+
+                        let deleted_text: String = model
+                            .document()
+                            .buffer
+                            .slice(start_offset..end_offset)
+                            .to_string();
+                        model.document_mut().buffer.remove(start_offset..end_offset);
+
+                        let (new_line, new_col) = model.document().offset_to_cursor(start_offset);
+
+                        operations.push(EditOperation::Delete {
+                            position: start_offset,
+                            text: deleted_text,
+                            cursor_before: cursor,
+                            cursor_after: Cursor::at(new_line, new_col),
+                        });
+
+                        model.editor_mut().cursors[idx].line = new_line;
+                        model.editor_mut().cursors[idx].column = new_col;
+                        let new_pos = model.editor().cursors[idx].to_position();
+                        model.editor_mut().selections[idx] = Selection::new(new_pos);
+                    }
+                }
+
+                let cursors_after: Vec<Cursor> = model.editor().cursors.clone();
+                model.document_mut().push_edit(EditOperation::Batch {
+                    operations,
+                    cursors_before,
+                    cursors_after,
+                });
+
+                model.document_mut().is_modified = true;
+                model.ensure_cursor_visible();
+                model.reset_cursor_blink();
+                return Some(Cmd::Redraw);
+            }
+
+            // Single cursor: check for selection
+            if let Some((pos, deleted_text)) = delete_selection(model) {
+                let cursor_after = *model.editor().primary_cursor();
+                model.document_mut().push_edit(EditOperation::Delete {
+                    position: pos,
+                    text: deleted_text,
+                    cursor_before,
+                    cursor_after,
+                });
+                model.document_mut().is_modified = true;
+                model.ensure_cursor_visible();
+                model.reset_cursor_blink();
+                return Some(Cmd::Redraw);
+            }
+
+            // No selection: delete word to the left
+            let end_offset = model.cursor_buffer_position();
+            if end_offset > 0 {
+                let start_offset = word_start_before(&model.document().buffer, end_offset);
+                if start_offset < end_offset {
+                    let deleted_text: String = model
+                        .document()
+                        .buffer
+                        .slice(start_offset..end_offset)
+                        .to_string();
+                    model.document_mut().buffer.remove(start_offset..end_offset);
+
+                    model.set_cursor_from_position(start_offset);
+                    model.ensure_cursor_visible();
+
+                    let cursor_after = *model.editor().primary_cursor();
+                    model.document_mut().push_edit(EditOperation::Delete {
+                        position: start_offset,
+                        text: deleted_text,
+                        cursor_before,
+                        cursor_after,
+                    });
+
+                    model.document_mut().is_modified = true;
+                }
+            }
+
+            model.reset_cursor_blink();
+            Some(Cmd::Redraw)
+        }
+
         DocumentMsg::DeleteForward => {
             let cursor_before = *model.editor().primary_cursor();
 
@@ -475,11 +653,17 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
             if model.editor().has_multiple_cursors() {
                 let cursors_before = model.editor().cursors.clone();
-                let covered_lines = lines_covered_by_all_cursors(model);
+                let mut covered_lines = lines_covered_by_all_cursors(model);
+                covered_lines.sort_unstable();
+                covered_lines.dedup();
                 let mut operations = Vec::new();
-                let _lines_to_delete_count = covered_lines.len();
 
-                for line_idx in covered_lines.iter().copied() {
+                // Check if deleted lines are contiguous
+                let is_contiguous = covered_lines.len() <= 1
+                    || covered_lines.windows(2).all(|w| w[1] == w[0] + 1);
+
+                // Delete lines in reverse order to preserve indices
+                for line_idx in covered_lines.iter().rev().copied() {
                     let current_total = model.document().line_count();
                     if current_total == 0 || line_idx >= current_total {
                         continue;
@@ -519,21 +703,69 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 }
 
                 let new_line_count = model.document().line_count();
-                let min_deleted_line = covered_lines.iter().copied().min().unwrap_or(0);
-                let target_line = min_deleted_line.min(new_line_count.saturating_sub(1));
-                let target_col = if new_line_count > 0 {
-                    model
-                        .document()
-                        .line_length(target_line)
-                        .min(cursors_before.first().map(|c| c.column).unwrap_or(0))
-                } else {
-                    0
-                };
 
-                model.editor_mut().cursors = vec![Cursor::at(target_line, target_col)];
-                model.editor_mut().selections =
-                    vec![Selection::new(Position::new(target_line, target_col))];
-                model.editor_mut().active_cursor_index = 0;
+                if is_contiguous {
+                    // Contiguous lines deleted: collapse to single cursor (existing behavior)
+                    let min_deleted_line = covered_lines.iter().copied().min().unwrap_or(0);
+                    let target_line = min_deleted_line.min(new_line_count.saturating_sub(1));
+                    let target_col = if new_line_count > 0 {
+                        model
+                            .document()
+                            .line_length(target_line)
+                            .min(cursors_before.first().map(|c| c.column).unwrap_or(0))
+                    } else {
+                        0
+                    };
+
+                    model.editor_mut().cursors = vec![Cursor::at(target_line, target_col)];
+                    model.editor_mut().selections =
+                        vec![Selection::new(Position::new(target_line, target_col))];
+                    model.editor_mut().active_cursor_index = 0;
+                } else {
+                    // Non-contiguous lines deleted: preserve cursor count
+                    // Map each cursor to its new position after deletions
+                    use std::collections::HashSet;
+                    let deleted_set: HashSet<usize> = covered_lines.iter().copied().collect();
+
+                    let mut new_cursors = Vec::with_capacity(cursors_before.len());
+                    let mut new_selections = Vec::with_capacity(cursors_before.len());
+
+                    for c in &cursors_before {
+                        if new_line_count == 0 {
+                            // Whole document gone
+                            new_cursors.push(Cursor::at(0, 0));
+                            new_selections.push(Selection::new(Position::new(0, 0)));
+                            continue;
+                        }
+
+                        // Count how many deleted lines are above this cursor's original line
+                        let deleted_above = covered_lines.iter().filter(|&&l| l < c.line).count();
+
+                        if !deleted_set.contains(&c.line) {
+                            // Line wasn't deleted: just shift up by deleted_above
+                            let new_line = c.line.saturating_sub(deleted_above);
+                            let line_len = model.document().line_length(new_line);
+                            let new_col = c.column.min(line_len);
+                            new_cursors.push(Cursor::at(new_line, new_col));
+                            new_selections.push(Selection::new(Position::new(new_line, new_col)));
+                        } else {
+                            // Line was deleted: find the closest non-deleted line
+                            // First try to go to the line that slid into this position
+                            let new_line = c.line.saturating_sub(deleted_above);
+                            let target_line = new_line.min(new_line_count.saturating_sub(1));
+                            let line_len = model.document().line_length(target_line);
+                            let new_col = c.column.min(line_len);
+                            new_cursors.push(Cursor::at(target_line, new_col));
+                            new_selections
+                                .push(Selection::new(Position::new(target_line, new_col)));
+                        }
+                    }
+
+                    model.editor_mut().cursors = new_cursors;
+                    model.editor_mut().selections = new_selections;
+                    model.editor_mut().active_cursor_index = 0;
+                    model.editor_mut().deduplicate_cursors();
+                }
 
                 let cursors_after = model.editor().cursors.clone();
                 model.document_mut().push_edit(EditOperation::Batch {
@@ -899,10 +1131,6 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 let indices = cursors_in_reverse_order(model);
                 let mut operations = Vec::new();
 
-                // Track line offset adjustments for cursors processed later
-                // (earlier in document, which we process last)
-                let mut line_adjustments: Vec<(usize, usize)> = Vec::new(); // (after_line, lines_added)
-
                 for idx in indices {
                     let selection = model.editor().selections[idx].clone();
                     let cursor = model.editor().cursors[idx].clone();
@@ -934,13 +1162,9 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                             .buffer
                             .insert(line_end_offset, &text_to_insert);
 
-                        // Count lines added
+                        // Count lines added by this duplication
                         let lines_added = text_to_insert.chars().filter(|&c| c == '\n').count();
-                        if !has_newline {
-                            line_adjustments.push((line_idx, 1));
-                        } else {
-                            line_adjustments.push((line_idx, lines_added));
-                        }
+                        let effective_lines_added = if !has_newline { 1 } else { lines_added };
 
                         operations.push(EditOperation::Insert {
                             position: line_end_offset,
@@ -952,7 +1176,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                             ),
                         });
 
-                        // Move cursor to duplicated line
+                        // Move THIS cursor to duplicated line
                         model.editor_mut().cursors[idx].line += 1;
                         let new_line_len = model.document().line_length(line_idx + 1);
                         model.editor_mut().cursors[idx].column = column.min(new_line_len);
@@ -961,6 +1185,24 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                         // Update selection to match cursor
                         let new_pos = model.editor().cursors[idx].to_position();
                         model.editor_mut().selections[idx] = Selection::new(new_pos);
+
+                        // Adjust ALL OTHER cursors that are AFTER this insertion point
+                        // (they need to shift down by the number of lines added)
+                        for other_idx in 0..model.editor().cursors.len() {
+                            if other_idx != idx && model.editor().cursors[other_idx].line > line_idx
+                            {
+                                model.editor_mut().cursors[other_idx].line += effective_lines_added;
+                                // Also adjust selection positions
+                                if model.editor().selections[other_idx].anchor.line > line_idx {
+                                    model.editor_mut().selections[other_idx].anchor.line +=
+                                        effective_lines_added;
+                                }
+                                if model.editor().selections[other_idx].head.line > line_idx {
+                                    model.editor_mut().selections[other_idx].head.line +=
+                                        effective_lines_added;
+                                }
+                            }
+                        }
                     } else {
                         // With selection: duplicate selected text after selection end
                         let sel_start = selection.start();
@@ -987,9 +1229,6 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
                         // Count lines added
                         let lines_added = selected_text.chars().filter(|&c| c == '\n').count();
-                        if lines_added > 0 {
-                            line_adjustments.push((sel_end.line, lines_added));
-                        }
 
                         let new_offset = end_offset + selected_text.chars().count();
                         let (new_line, new_col) = model.document().offset_to_cursor(new_offset);
@@ -1008,6 +1247,28 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
                         let new_pos = Position::new(new_line, new_col);
                         model.editor_mut().selections[idx] = Selection::new(new_pos);
+
+                        // Adjust cursors after this insertion if lines were added
+                        if lines_added > 0 {
+                            for other_idx in 0..model.editor().cursors.len() {
+                                if other_idx != idx
+                                    && model.editor().cursors[other_idx].line > sel_end.line
+                                {
+                                    model.editor_mut().cursors[other_idx].line += lines_added;
+                                    if model.editor().selections[other_idx].anchor.line
+                                        > sel_end.line
+                                    {
+                                        model.editor_mut().selections[other_idx].anchor.line +=
+                                            lines_added;
+                                    }
+                                    if model.editor().selections[other_idx].head.line > sel_end.line
+                                    {
+                                        model.editor_mut().selections[other_idx].head.line +=
+                                            lines_added;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 

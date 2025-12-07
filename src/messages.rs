@@ -118,6 +118,8 @@ pub enum DocumentMsg {
     InsertNewline,
     /// Delete character before cursor (Backspace)
     DeleteBackward,
+    /// Delete word before cursor (Option+Backspace)
+    DeleteWordBackward,
     /// Delete character at cursor (Delete)
     DeleteForward,
     /// Delete entire current line (Cmd+Backspace)
