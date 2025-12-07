@@ -4,7 +4,28 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## 2025-12-06 (Latest)
+## 2025-12-07 (Latest)
+
+### Fixed - Multi-Cursor Selection Rendering & Cmd+J
+
+Fixed three bugs in multi-cursor functionality:
+
+#### Selection Rendering
+
+- **Fixed**: All selections now render, not just the primary selection
+- Previously only `editor.selection()` (primary) was rendered
+- Now iterates over `editor.selections` to render all multi-cursor selections
+
+#### Cmd+J (SelectNextOccurrence)
+
+- **Fixed**: First invocation now searches from current selection position, not offset 0
+- **Fixed**: Loop now skips already-selected occurrences instead of doing nothing
+- Shows "All occurrences selected" message when all are already selected
+- Proper wrap-around detection to avoid infinite loops
+
+---
+
+## 2025-12-06
 
 ### Changed - Codebase Organization
 

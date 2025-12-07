@@ -108,6 +108,7 @@ Group rapid consecutive edits into single undo entries:
 | Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md) |
 | File Dropping               | Planned     | [feature/handle-file-dropping.md](feature/handle-file-dropping.md)                   |
 | Workspace Management        | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                   |
+| Syntax Highlighting         | Planned     | [feature/syntax-highlighting.md](feature/syntax-highlighting.md)                     |
 
 ---
 
