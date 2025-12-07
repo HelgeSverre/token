@@ -64,13 +64,12 @@ This document tracks known issues where the editor assumes single-cursor behavio
 ## High Priority
 
 ### Bug #4: Duplicate Only Works on Primary Cursor
-- **Status:** 🔴 Open
+- **Status:** 🟢 Fixed
 - **File:** `src/update/document.rs`
-- **Lines:** 814-903
-- **Description:** The Duplicate operation (Cmd+D) only reads and duplicates based on the primary cursor's position/selection.
-- **Current Behavior:** Only duplicates content at/around primary cursor
-- **Expected Behavior:** Should duplicate at each cursor position
-- **Fix:** Iterate over all cursors in reverse document order
+- **Lines:** 895-1020
+- **Description:** The Duplicate operation (Cmd+D) only read and duplicated based on the primary cursor's position/selection.
+- **Resolution:** Now processes all cursors in reverse document order. Handles both line duplication (no selection) and selection duplication at each cursor. Records as Batch for proper undo.
+- **Tests:** `tests/multi_cursor.rs::test_duplicate_*_multi_cursor*`
 
 ### Bug #5: Indent Only Works on Primary Selection
 - **Status:** 🟢 Fixed
@@ -229,6 +228,5 @@ The following bugs were fixed by switching to `active_cursor()`/`active_selectio
 ### Remaining Work
 These bugs require additional logic beyond the API refactor:
 - Bug #3: Undo loses multi-cursor state (needs Batch cursor restoration)
-- Bug #4: Duplicate only works on primary (needs multi-cursor iteration)
 - Bug #11: delete_selection helper (needs audit of call sites)
 - Bug #22: Status bar selection info (enhancement)

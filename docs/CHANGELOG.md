@@ -16,6 +16,14 @@ Extracted inline tests from production code to `tests/` folder:
 
 Tests remaining in `src/main.rs` (14 tests) cannot be moved - they test `handle_key()` which is binary-only code.
 
+### Fixed - Multi-Cursor Duplicate
+
+- **Duplicate** (Cmd+D) now works on all cursors, not just primary
+- Line duplication: duplicates line at each cursor position
+- Selection duplication: duplicates selected text at each cursor
+- Processes in reverse document order, records as Batch for proper undo
+- 3 new tests in `tests/multi_cursor.rs`
+
 ### Fixed - Multi-Cursor Indent/Unindent
 
 - **IndentLines** now works on all cursors/selections, not just primary
