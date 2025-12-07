@@ -106,6 +106,42 @@ CLI arguments and file tree sidebar:
 - File system watching for external changes
 - Dependencies: `clap` for CLI, `notify` for FS watching
 
+### Configurable Keymapping
+
+**Design:** [feature/KEYMAPPING.md](feature/KEYMAPPING.md)
+
+User-configurable keyboard mapping system:
+
+- TOML config files (`~/.config/token-editor/keymap.toml`)
+- Platform-agnostic modifiers (`mod+s` = Cmd on macOS, Ctrl elsewhere)
+- Multi-key chord sequences (`Ctrl+K Ctrl+C`)
+- Context-aware bindings (editor focus, selection active, etc.)
+- Maps to existing Msg enum for Elm-style dispatch
+
+### Command Palette & Modal System
+
+**Design:** [GUI-REVIEW-FINDINGS.md](GUI-REVIEW-FINDINGS.md) (Section 6)
+
+VS Code-style command palette and modal overlays:
+
+- `Cmd+Shift+P` opens command palette
+- Fuzzy search over all available commands
+- Go to Line, Find/Replace as modal dialogs
+- Focus capture for modal key routing
+- Builds on existing overlay system
+
+### GUI Architecture Improvements
+
+**Design:** [GUI-REVIEW-FINDINGS.md](GUI-REVIEW-FINDINGS.md)
+
+Thin, editor-focused view layer abstractions:
+
+- Frame/Painter abstraction for drawing primitives
+- TextPainter for text rendering
+- Widget extraction (tab bar, gutter, text area, status bar)
+- Centralized coordinate space conversions
+- Keep existing winit/softbuffer/fontdue stack
+
 ### Undo Coalescing (Future)
 
 Group rapid consecutive edits into single undo entries:
@@ -129,6 +165,8 @@ Group rapid consecutive edits into single undo entries:
 | Selection & Multi-Cursor    | ✅ Complete | [archived/SELECTION_MULTICURSOR.md](archived/SELECTION_MULTICURSOR.md)               |
 | Multi-Cursor Movement       | ✅ Complete | [archived/MULTI_CURSOR_MOVEMENT.md](archived/MULTI_CURSOR_MOVEMENT.md)               |
 | Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md) |
+| GUI Architecture            | Planned     | [GUI-REVIEW-FINDINGS.md](GUI-REVIEW-FINDINGS.md)                                     |
+| Configurable Keymapping     | Planned     | [feature/KEYMAPPING.md](feature/KEYMAPPING.md)                                       |
 | File Dropping               | Planned     | [feature/handle-file-dropping.md](feature/handle-file-dropping.md)                   |
 | Workspace Management        | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                   |
 | Syntax Highlighting         | Planned     | [feature/syntax-highlighting.md](feature/syntax-highlighting.md)                     |
