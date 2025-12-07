@@ -45,12 +45,30 @@ pub fn handle_key(
         _ => {}
     }
 
+    // DEBUG: Print when arrow keys are pressed with alt
+    #[cfg(debug_assertions)]
+    if alt
+        && matches!(
+            key,
+            Key::Named(NamedKey::ArrowUp) | Key::Named(NamedKey::ArrowDown)
+        )
+    {
+        eprintln!(
+            "[DEBUG] Arrow key with alt: key={:?}, option_double_tapped={}",
+            key, option_double_tapped
+        );
+    }
+
     match key {
         // Double-tap Option + Arrow for multi-cursor (must be before other alt combinations)
         Key::Named(NamedKey::ArrowUp) if alt && option_double_tapped => {
+            #[cfg(debug_assertions)]
+            eprintln!("[DEBUG] AddCursorAbove triggered");
             update(model, Msg::Editor(EditorMsg::AddCursorAbove))
         }
         Key::Named(NamedKey::ArrowDown) if alt && option_double_tapped => {
+            #[cfg(debug_assertions)]
+            eprintln!("[DEBUG] AddCursorBelow triggered");
             update(model, Msg::Editor(EditorMsg::AddCursorBelow))
         }
 
@@ -169,7 +187,7 @@ pub fn handle_key(
             update(model, Msg::Document(DocumentMsg::UnindentLines))
         }
         Key::Named(NamedKey::Tab) if !(ctrl || logo) => {
-            if model.editor().selection().is_empty() {
+            if model.editor().active_selection().is_empty() {
                 update(model, Msg::Document(DocumentMsg::InsertChar('\t')))
             } else {
                 update(model, Msg::Document(DocumentMsg::IndentLines))
@@ -180,7 +198,7 @@ pub fn handle_key(
         Key::Named(NamedKey::Escape) => {
             if model.editor().has_multiple_cursors() {
                 update(model, Msg::Editor(EditorMsg::CollapseToSingleCursor))
-            } else if !model.editor().selection().is_empty() {
+            } else if !model.editor().active_selection().is_empty() {
                 update(model, Msg::Editor(EditorMsg::ClearSelection))
             } else {
                 None
@@ -257,21 +275,21 @@ pub fn handle_key(
 
         // Page navigation
         Key::Named(NamedKey::PageUp) => {
-            if !model.editor().selection().is_empty() {
+            if !model.editor().active_selection().is_empty() {
                 // Jump to selection START, then page up
-                let start = model.editor().selection().start();
-                model.editor_mut().cursor_mut().line = start.line;
-                model.editor_mut().cursor_mut().column = start.column;
+                let start = model.editor().active_selection().start();
+                model.editor_mut().active_cursor_mut().line = start.line;
+                model.editor_mut().active_cursor_mut().column = start.column;
                 model.editor_mut().clear_selection();
             }
             update(model, Msg::Editor(EditorMsg::PageUp))
         }
         Key::Named(NamedKey::PageDown) => {
-            if !model.editor().selection().is_empty() {
+            if !model.editor().active_selection().is_empty() {
                 // Jump to selection END, then page down
-                let end = model.editor().selection().end();
-                model.editor_mut().cursor_mut().line = end.line;
-                model.editor_mut().cursor_mut().column = end.column;
+                let end = model.editor().active_selection().end();
+                model.editor_mut().active_cursor_mut().line = end.line;
+                model.editor_mut().active_cursor_mut().column = end.column;
                 model.editor_mut().clear_selection();
             }
             update(model, Msg::Editor(EditorMsg::PageDown))
@@ -323,11 +341,11 @@ pub fn handle_key(
 
         // Arrow keys (with selection: jump to start/end, then optionally move)
         Key::Named(NamedKey::ArrowUp) => {
-            if !model.editor().selection().is_empty() {
+            if !model.editor().active_selection().is_empty() {
                 // Jump to selection START, then move up
-                let start = model.editor().selection().start();
-                model.editor_mut().cursor_mut().line = start.line;
-                model.editor_mut().cursor_mut().column = start.column;
+                let start = model.editor().active_selection().start();
+                model.editor_mut().active_cursor_mut().line = start.line;
+                model.editor_mut().active_cursor_mut().column = start.column;
                 model.editor_mut().clear_selection();
                 update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Up)))
             } else {
@@ -335,11 +353,11 @@ pub fn handle_key(
             }
         }
         Key::Named(NamedKey::ArrowDown) => {
-            if !model.editor().selection().is_empty() {
+            if !model.editor().active_selection().is_empty() {
                 // Jump to selection END, then move down
-                let end = model.editor().selection().end();
-                model.editor_mut().cursor_mut().line = end.line;
-                model.editor_mut().cursor_mut().column = end.column;
+                let end = model.editor().active_selection().end();
+                model.editor_mut().active_cursor_mut().line = end.line;
+                model.editor_mut().active_cursor_mut().column = end.column;
                 model.editor_mut().clear_selection();
                 update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Down)))
             } else {
@@ -347,11 +365,11 @@ pub fn handle_key(
             }
         }
         Key::Named(NamedKey::ArrowLeft) => {
-            if !model.editor().selection().is_empty() {
+            if !model.editor().active_selection().is_empty() {
                 // Jump to selection START (no additional move)
-                let start = model.editor().selection().start();
-                model.editor_mut().cursor_mut().line = start.line;
-                model.editor_mut().cursor_mut().column = start.column;
+                let start = model.editor().active_selection().start();
+                model.editor_mut().active_cursor_mut().line = start.line;
+                model.editor_mut().active_cursor_mut().column = start.column;
                 model.editor_mut().clear_selection();
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
@@ -361,11 +379,11 @@ pub fn handle_key(
             }
         }
         Key::Named(NamedKey::ArrowRight) => {
-            if !model.editor().selection().is_empty() {
+            if !model.editor().active_selection().is_empty() {
                 // Jump to selection END (no additional move)
-                let end = model.editor().selection().end();
-                model.editor_mut().cursor_mut().line = end.line;
-                model.editor_mut().cursor_mut().column = end.column;
+                let end = model.editor().active_selection().end();
+                model.editor_mut().active_cursor_mut().line = end.line;
+                model.editor_mut().active_cursor_mut().column = end.column;
                 model.editor_mut().clear_selection();
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
