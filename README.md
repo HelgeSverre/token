@@ -4,9 +4,8 @@
 
 **A minimal text editor for editing code, inspired by Jetbrains, built with Rust**
 
+[![Amp](https://img.shields.io/badge/Amp-191C19.svg?logo=data:image/svg%2bxml;base64,PHN2ZyB3aWR0aD0iMjEiIGhlaWdodD0iMjEiIHZpZXdCb3g9IjAgMCAyMSAyMSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTMuNzY4NzkgMTguMzAxNUw4LjQ5ODM5IDEzLjUwNUwxMC4yMTk2IDIwLjAzOTlMMTIuNzIgMTkuMzU2MUwxMC4yMjg4IDkuODY3NDlMMC44OTA4NzYgNy4zMzg0NEwwLjIyNTk0IDkuODkzMzFMNi42NTEzNCAxMS42Mzg4TDEuOTQxMzggMTYuNDI4MkwzLjc2ODc5IDE4LjMwMTVaIiBmaWxsPSIjRjM0RTNGIi8+CjxwYXRoIGQ9Ik0xNy40MDc0IDEyLjc0MTRMMTkuOTA3OCAxMi4wNTc1TDE3LjQxNjcgMi41Njg5N0w4LjA3ODczIDAuMDM5OTI0Nkw3LjQxMzggMi41OTQ4TDE1LjI5OTIgNC43MzY4NUwxNy40MDc0IDEyLjc0MTRaIiBmaWxsPSIjRjM0RTNGIi8+CjxwYXRoIGQ9Ik0xMy44MTg0IDE2LjM4ODNMMTYuMzE4OCAxNS43MDQ0TDEzLjgyNzYgNi4yMTU4OEw0LjQ4OTcxIDMuNjg2ODNMMy44MjQ3NyA2LjI0MTcxTDExLjcxMDEgOC4zODM3NkwxMy44MTg0IDE2LjM4ODNaIiBmaWxsPSIjRjM0RTNGIi8+Cjwvc3ZnPg==)](https://ampcode.com/@helgesverre)
 ![License: MIT](https://img.shields.io/badge/License-MIT-teal.svg?style=flat-square)
-[![Powered by (accent)](https://img.shields.io/badge/Powered%20by-Amp-F34E3F.svg?style=flat-square&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgdmlld0JveD0iMCAwIDI4IDI4IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cGF0aCBkPSJNMTMuOTE5NyAxMy42MUwxNy4zODE2IDI2LjU2NkwxNC4yNDIgMjcuNDA0OUwxMS4yNjQ1IDE2LjI2NDNMMC4xMTk5MjYgMTMuMjkwNkwwLjk1NzgxNyAxMC4xNUwxMy45MTk3IDEzLjYxWiIgZmlsbD0iI0ZGRkZGRiIvPgo8cGF0aCBkPSJNMTMuNzM5MSAxNi4wODkyTDQuODgxNjkgMjQuOTA1NkwyLjU4ODcyIDIyLjYwMTlMMTEuNDQ2MSAxMy43ODY1TDEzLjczOTEgMTYuMDg5MloiIGZpbGw9IiNGRkZGRkYiLz4KPHBhdGggZD0iTTE4LjkzODYgOC41ODMxNUwyMi40MDA1IDIxLjUzOTJMMTkuMjYwOSAyMi4zNzgxTDE2LjI4MzMgMTEuMjM3NEw1LjEzODc5IDguMjYzODFMNS45NzY2OCA1LjEyMzE4TDE4LjkzODYgOC41ODMxNVoiIGZpbGw9IiNGRkZGRkYiLz4KPHBhdGggZD0iTTIzLjk4MDMgMy41NTYzMkwyNy40NDIyIDE2LjUxMjRMMjQuMzAyNSAxNy4zNTEyTDIxLjMyNSA2LjIxMDYyTDEwLjE4MDUgMy4yMzY5OEwxMS4wMTgzIDAuMDk2MzU5M0wyMy45ODAzIDMuNTU2MzJaIiBmaWxsPSIjRkZGRkZGIi8%2BCjwvc3ZnPgo%3D)](https://ampcode.com/@helgesverre)
-
 </center>
 
 ---
@@ -41,7 +40,7 @@ cargo run
 ### Build & Run
 
 | Command        | Description                                      |
-| -------------- | ------------------------------------------------ |
+|----------------|--------------------------------------------------|
 | `make build`   | Build debug binary                               |
 | `make release` | Build optimized release binary                   |
 | `make run`     | Run with default sample file (indentation.txt)   |
@@ -52,7 +51,7 @@ cargo run
 ### Testing
 
 | Command                   | Description           |
-| ------------------------- | --------------------- |
+|---------------------------|-----------------------|
 | `make test`               | Run all tests         |
 | `make test-one TEST=name` | Run a specific test   |
 | `make test-verbose`       | Run tests with output |
@@ -60,7 +59,7 @@ cargo run
 ### Sample File Runners
 
 | Command             | Description                                    |
-| ------------------- | ---------------------------------------------- |
+|---------------------|------------------------------------------------|
 | `make run-indent`   | Test smart home/end with indented code         |
 | `make run-large`    | Test with large file (10k lines)               |
 | `make run-mixed`    | Test mixed tabs/spaces                         |
@@ -77,7 +76,7 @@ cargo run
 ### Setup
 
 | Command             | Description                      |
-| ------------------- | -------------------------------- |
+|---------------------|----------------------------------|
 | `make sample-files` | Generate large/binary test files |
 
 ## License
