@@ -44,3 +44,4 @@ cargo-flamegraph.trace/*
 # misc
 wip/*
 dumps/*
+threads/
