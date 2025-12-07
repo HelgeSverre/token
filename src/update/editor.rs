@@ -511,11 +511,30 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
         EditorMsg::AddCursorBelow => {
             let current = model.editor().cursor().clone();
             let total_lines = model.document().line_count();
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "[DEBUG] AddCursorBelow: current.line={}, total_lines={}, condition={}",
+                current.line,
+                total_lines,
+                current.line + 1 < total_lines
+            );
             if current.line + 1 < total_lines {
                 let new_line = current.line + 1;
                 let line_len = model.document().line_length(new_line);
                 let new_col = current.column.min(line_len);
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "[DEBUG] Adding cursor at line={}, col={}, cursor_count_before={}",
+                    new_line,
+                    new_col,
+                    model.editor().cursor_count()
+                );
                 model.editor_mut().add_cursor_at(new_line, new_col);
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "[DEBUG] cursor_count_after={}",
+                    model.editor().cursor_count()
+                );
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
@@ -541,10 +560,10 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 
         EditorMsg::SelectNextOccurrence => {
             // Get the search text from current selection or word under cursor
-            let search_text = {
+            let (search_text, just_selected_word) = {
                 let selection = model.editor().selection().clone();
                 if !selection.is_empty() {
-                    selection.get_text(model.document())
+                    (selection.get_text(model.document()), false)
                 } else if let Some((word, start, end)) =
                     model.editor().word_under_cursor(model.document())
                 {
@@ -553,15 +572,35 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                     model.editor_mut().selection_mut().head = end;
                     model.editor_mut().cursor_mut().line = end.line;
                     model.editor_mut().cursor_mut().column = end.column;
-                    word
+                    (word, true) // Mark that we just selected the word
                 } else {
                     return Some(Cmd::Redraw); // No word under cursor
                 }
             };
 
+            // If we just selected a word, stop here - don't find next occurrence yet
+            // This matches standard IDE behavior (VS Code, IntelliJ)
+            if just_selected_word {
+                model.reset_cursor_blink();
+                return Some(Cmd::Redraw);
+            }
+
             if search_text.is_empty() {
                 return Some(Cmd::Redraw);
             }
+
+            // Compute the end offset of the current primary selection/cursor
+            // This is where we start searching from on first invocation
+            let primary_end_offset = {
+                let sel = model.editor().selection();
+                if !sel.is_empty() {
+                    let end = sel.end();
+                    model.document().cursor_to_offset(end.line, end.column)
+                } else {
+                    let cur = model.editor().cursor();
+                    model.document().cursor_to_offset(cur.line, cur.column)
+                }
+            };
 
             // Initialize or update occurrence state
             let search_start = {
@@ -569,20 +608,33 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                     if state.search_text == search_text {
                         state.last_search_offset
                     } else {
-                        // Different search text, start fresh
+                        // Different search text, start from current selection
                         model.editor_mut().occurrence_state = None;
-                        0
+                        primary_end_offset
                     }
                 } else {
-                    0
+                    // First invocation: start from end of current selection
+                    primary_end_offset
                 }
             };
 
-            // Find the next occurrence
-            if let Some((start_off, end_off)) = model
-                .document()
-                .find_next_occurrence(&search_text, search_start)
-            {
+            // Find the next unselected occurrence, looping to skip already-selected ones
+            let mut search_offset = search_start;
+            let mut found_new = false;
+            let mut iterations = 0;
+            let max_iterations = model.document().buffer.len_chars() + 1; // Safety limit
+
+            while iterations < max_iterations {
+                iterations += 1;
+
+                let Some((start_off, end_off)) = model
+                    .document()
+                    .find_next_occurrence(&search_text, search_offset)
+                else {
+                    // No occurrences at all
+                    break;
+                };
+
                 let (start_line, start_col) = model.document().offset_to_cursor(start_off);
                 let (end_line, end_col) = model.document().offset_to_cursor(end_off);
 
@@ -616,18 +668,31 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                             last_search_offset: end_off,
                         });
                     }
+
+                    found_new = true;
+                    break;
                 } else {
-                    // Skip this occurrence and continue searching
-                    if let Some(ref mut state) = model.editor_mut().occurrence_state {
-                        state.last_search_offset = end_off;
+                    // Skip this occurrence and continue searching from its end
+                    search_offset = end_off;
+
+                    // Detect wrap-around: if we've come back to or past our starting point
+                    if search_offset >= search_start && iterations > 1 {
+                        // We've wrapped around and all occurrences are selected
+                        break;
                     }
                 }
+            }
 
+            if found_new {
                 // Ensure new cursor is visible
                 let doc = model.document().clone();
                 model.editor_mut().ensure_cursor_visible(&doc);
             } else {
-                let msg = "No occurrences found".to_string();
+                let msg = if iterations > 1 {
+                    "All occurrences selected".to_string()
+                } else {
+                    "No occurrences found".to_string()
+                };
                 model.ui.transient_message = Some(TransientMessage::new(
                     msg.clone(),
                     Duration::from_millis(1500),
