@@ -72,7 +72,7 @@ A comprehensive analysis of the current rendering architecture, comparison with 
 | `overlay.rs`  | ~285  | Overlay rendering utilities                                                  |
 | `messages.rs` | ~260  | Msg enums                                                                    |
 
-### Strengths
+### Strengths 
 
 1. **Model layer is clean and well factored**
    - Clear separation: `Document`, `EditorState`, `EditorArea`

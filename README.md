@@ -149,7 +149,7 @@ Before implementing multi-cursor, we wrote [SELECTION_MULTICURSOR.md](docs/archi
 
 **3. Gap Documents**  
 When a feature is 60-90% complete, create a gap
-doc. [MULTI_CURSOR_SELECTION_GAPS.md](docs/feature/MULTI_CURSOR_SELECTION_GAPS.md) lists:
+doc. [MULTI_CURSOR_SELECTION_GAPS.md](docs/archived/MULTI_CURSOR_SELECTION_GAPS.md) lists:
 
 - What's implemented vs. missing
 - Design decisions for each gap

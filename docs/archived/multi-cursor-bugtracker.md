@@ -319,10 +319,48 @@ These bugs require additional logic beyond the API refactor:
 - **Resolution:** After deleting a newline, iterate through all other cursors. Those on lines >= deleted line shift up by 1. Those that were on the same line as the deletion get their column increased by the merge point (previous line's length).
 - **Tests:** `tests/multi_cursor.rs::test_delete_backward_newline_multi_cursor_adjusts_positions`, `test_delete_backward_newline_multi_cursor_column_positions`
 
+### Bug #32: Cut Operation Has No Undo Support
+
+- **Status:** 🟢 Fixed
+- **File:** `src/update/document.rs`
+- **Lines:** 995-1114
+- **Description:** Cut (Cmd+X) operation deleted text but never pushed an `EditOperation` to the undo stack. This meant cut operations could not be undone.
+- **Expected Behavior:** Undo after Cut should restore the deleted text.
+- **Resolution:** Single-cursor cut now pushes `EditOperation::Delete`. Multi-cursor cut collects delete operations and wraps in `EditOperation::Batch` with `cursors_before`/`cursors_after`.
+- **Tests:** `tests/text_editing.rs::test_cut_single_cursor_undo`, `test_cut_multi_cursor_undo`
+
+### Bug #33: Multi-Cursor Paste Has No Undo Support
+
+- **Status:** 🟢 Fixed
+- **File:** `src/update/document.rs`
+- **Lines:** 1131-1230
+- **Description:** Multi-cursor paste inserted text but never pushed an `EditOperation` to the undo stack. Single-cursor paste worked correctly.
+- **Expected Behavior:** Undo after multi-cursor paste should remove all pasted text and restore cursor positions.
+- **Resolution:** Multi-cursor paste now collects `EditOperation::Insert` for each cursor and wraps in `EditOperation::Batch`.
+- **Tests:** `tests/text_editing.rs::test_paste_multi_cursor_undo`
+
+### Bug #34: Expand Selection Only Worked on Active Cursor
+
+- **Status:** 🟢 Fixed
+- **File:** `src/update/editor.rs`
+- **Lines:** 958-1044
+- **Description:** Expand Selection (Option+Up) only expanded the active cursor's selection. With multiple cursors, secondary cursors were ignored.
+- **Expected Behavior:** All cursors should have their selections expanded independently (cursor → word → line → all).
+- **Resolution:** Rewrote `expand_selection()` to iterate all cursors, using `word_under_cursor_at(idx)` and `select_line_at(line)`. When any cursor would expand to "select all", all cursors collapse to a single full-document selection.
+- **Tests:** `tests/expand_shrink_selection.rs::test_expand_multi_cursor_*`
+
+### Bug #35: AddCursorAbove/Below Disabled in Release Builds
+
+- **Status:** 🟢 Fixed
+- **File:** `src/input.rs`
+- **Lines:** 64-73
+- **Description:** The keybindings for AddCursorAbove/Below were wrapped in `#[cfg(debug_assertions)]`, which meant multi-cursor keyboard shortcuts (Option+Option+Arrow) only worked in debug builds.
+- **Resolution:** Removed the debug-only attribute so the feature works in all builds.
+
 ---
 
 ## Remaining Open Issues
 
-- Bug #3: Undo loses multi-cursor state (needs Batch cursor restoration)
+- Bug #3: Undo loses multi-cursor state (needs Batch cursor restoration) - Note: Individual operations now correctly use Batch, but non-Batch operations still only store single cursor
 - Bug #11: delete_selection helper (needs audit of call sites)
 - Bug #22: Status bar selection info (enhancement)

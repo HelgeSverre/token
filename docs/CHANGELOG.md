@@ -6,6 +6,27 @@ All notable changes to rust-editor are documented in this file.
 
 ## 2025-12-07 (Latest)
 
+### Added - File Dropping & Multi-File Arguments
+
+Open multiple files from command line or by drag-and-drop:
+
+- **Multi-file CLI**: `cargo run -- file1.rs file2.rs file3.rs` opens all files as tabs
+- **Drag-and-drop**: Drop files onto the window to open them in new tabs
+- **LayoutMsg::OpenFileInNewTab(PathBuf)**: New message for opening files as tabs
+- First file becomes active tab, additional files added to same group
+
+#### Implementation
+
+- `src/messages.rs`: Added `LayoutMsg::OpenFileInNewTab(PathBuf)`
+- `src/update/layout.rs`: Added `open_file_in_new_tab()` handler
+- `src/app.rs`: Handle `WindowEvent::DroppedFile` events
+- `src/main.rs`: Parse all CLI args as file paths (removed TODO)
+- `src/model/mod.rs`: `AppModel::new()` now accepts `Vec<PathBuf>`
+
+---
+
+## 2025-12-07
+
 ### Changed - Test Extraction
 
 Extracted inline tests from production code to `tests/` folder:
