@@ -12,7 +12,7 @@ use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 use winit::window::Window;
 
 use token::commands::Cmd;
-use token::messages::{AppMsg, EditorMsg, Msg, UiMsg};
+use token::messages::{AppMsg, EditorMsg, LayoutMsg, Msg, UiMsg};
 use token::model::editor::Position;
 use token::model::AppModel;
 use token::update::update;
@@ -150,6 +150,16 @@ impl App {
                         return Some(Cmd::Redraw);
                     }
 
+                    #[cfg(debug_assertions)]
+                    if event.logical_key == Key::Named(NamedKey::F7) {
+                        let dump = crate::debug_dump::StateDump::from_model(&self.model);
+                        match dump.save_to_file() {
+                            Ok(filename) => eprintln!("[DEBUG] State dumped to: {}", filename),
+                            Err(e) => eprintln!("[DEBUG] Failed to dump state: {}", e),
+                        }
+                        return Some(Cmd::Redraw);
+                    }
+
                     let ctrl = self.modifiers.control_key();
                     let shift = self.modifiers.shift_key();
                     let alt = self.modifiers.alt_key();
@@ -200,7 +210,7 @@ impl App {
                                     self.drag_active = true;
                                     let (start_line, start_col) =
                                         renderer.pixel_to_cursor(start_x, start_y, &self.model);
-                                    self.model.editor_mut().selection_mut().anchor =
+                                    self.model.editor_mut().primary_selection_mut().anchor =
                                         Position::new(start_line, start_col);
                                 }
                             }
@@ -210,9 +220,9 @@ impl App {
                             let (line, column) =
                                 renderer.pixel_to_cursor(position.x, position.y, &self.model);
 
-                            self.model.editor_mut().cursor_mut().line = line;
-                            self.model.editor_mut().cursor_mut().column = column;
-                            self.model.editor_mut().selection_mut().head =
+                            self.model.editor_mut().primary_cursor_mut().line = line;
+                            self.model.editor_mut().primary_cursor_mut().column = column;
+                            self.model.editor_mut().primary_selection_mut().head =
                                 Position::new(line, column);
 
                             self.try_auto_scroll_for_drag(position.y);
@@ -241,6 +251,17 @@ impl App {
                         self.left_mouse_down = true;
                         self.drag_start_position = Some((x, y));
                         self.drag_active = false;
+
+                        if let Some(group_id) =
+                            self.model.editor_area.group_at_point(x as f32, y as f32)
+                        {
+                            if group_id != self.model.editor_area.focused_group_id {
+                                update(
+                                    &mut self.model,
+                                    Msg::Layout(LayoutMsg::FocusGroup(group_id)),
+                                );
+                            }
+                        }
 
                         let (line, column) = renderer.pixel_to_cursor(x, y, &self.model);
                         let now = Instant::now();

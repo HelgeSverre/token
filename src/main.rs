@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use winit::event_loop::EventLoop;
 
 mod app;
+#[cfg(debug_assertions)]
+mod debug_dump;
 mod input;
 #[cfg(debug_assertions)]
 mod perf;
@@ -54,8 +56,7 @@ mod tests {
     };
     use token::theme::Theme;
     use token::update::update;
-    use winit::event::KeyEvent;
-    use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
+    use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 
     /// Create a test model with given text and a selection (anchor to head)
     /// The cursor will be at the head position
@@ -81,6 +82,7 @@ mod tests {
             document_id: None,
             cursors: vec![cursor],
             selections: vec![selection],
+            active_cursor_index: 0,
             viewport: Viewport {
                 top_line: 0,
                 left_column: 0,
@@ -129,12 +131,12 @@ mod tests {
 
         // Selection should be cleared
         assert!(
-            model.editor().selection().is_empty(),
+            model.editor().active_selection().is_empty(),
             "Selection should be cleared"
         );
         // Cursor should be at selection START (column 2), not moved left from 8
         assert_eq!(
-            model.editor().cursor().column,
+            model.editor().active_cursor().column,
             2,
             "Cursor should jump to selection start (col 2), not stay at col 8 or move to col 7"
         );
@@ -160,12 +162,12 @@ mod tests {
 
         // Selection should be cleared
         assert!(
-            model.editor().selection().is_empty(),
+            model.editor().active_selection().is_empty(),
             "Selection should be cleared"
         );
         // Cursor should be at selection END (column 8), not moved right from 8
         assert_eq!(
-            model.editor().cursor().column,
+            model.editor().active_cursor().column,
             8,
             "Cursor should jump to selection end (col 8), not move to col 9"
         );
@@ -195,18 +197,18 @@ mod tests {
 
         // Selection should be cleared
         assert!(
-            model.editor().selection().is_empty(),
+            model.editor().active_selection().is_empty(),
             "Selection should be cleared"
         );
         // Cursor should be on line 0 (moved up from line 1)
         assert_eq!(
-            model.editor().cursor().line,
+            model.editor().active_cursor().line,
             0,
             "Cursor should move up to line 0"
         );
         // Cursor should be at column 2 (selection start column)
         assert_eq!(
-            model.editor().cursor().column,
+            model.editor().active_cursor().column,
             2,
             "Cursor should be at column 2 (selection start column)"
         );
@@ -236,18 +238,18 @@ mod tests {
 
         // Selection should be cleared
         assert!(
-            model.editor().selection().is_empty(),
+            model.editor().active_selection().is_empty(),
             "Selection should be cleared"
         );
         // Cursor should be on line 2 (moved down from line 1)
         assert_eq!(
-            model.editor().cursor().line,
+            model.editor().active_cursor().line,
             2,
             "Cursor should move down to line 2"
         );
         // Cursor should be at column 8 (selection end column)
         assert_eq!(
-            model.editor().cursor().column,
+            model.editor().active_cursor().column,
             8,
             "Cursor should be at column 8 (selection end column)"
         );
@@ -279,18 +281,18 @@ mod tests {
 
         // Selection should be cleared
         assert!(
-            model.editor().selection().is_empty(),
+            model.editor().active_selection().is_empty(),
             "Selection should be cleared"
         );
         // Cursor should stay on line 1 (where head was)
         assert_eq!(
-            model.editor().cursor().line,
+            model.editor().active_cursor().line,
             1,
             "Cursor should stay on line 1 (head line)"
         );
         // Cursor should be at start of line (smart home: first non-ws char, but for "foo" that's 0)
         assert_eq!(
-            model.editor().cursor().column,
+            model.editor().active_cursor().column,
             0,
             "Cursor should be at start of line"
         );
@@ -318,18 +320,18 @@ mod tests {
 
         // Selection should be cleared
         assert!(
-            model.editor().selection().is_empty(),
+            model.editor().active_selection().is_empty(),
             "Selection should be cleared"
         );
         // Cursor should stay on line 1 (where head was)
         assert_eq!(
-            model.editor().cursor().line,
+            model.editor().active_cursor().line,
             1,
             "Cursor should stay on line 1 (head line)"
         );
         // Cursor should be at end of line 1 ("foo bar baz" has length 11)
         assert_eq!(
-            model.editor().cursor().column,
+            model.editor().active_cursor().column,
             11,
             "Cursor should be at end of line (col 11)"
         );
@@ -362,18 +364,18 @@ mod tests {
 
         // Selection should be cleared
         assert!(
-            model.editor().selection().is_empty(),
+            model.editor().active_selection().is_empty(),
             "Selection should be cleared"
         );
         // Cursor should have moved up from selection start (line 15, col 2)
         // PageUp moves ~8 lines (visible_lines - 2)
         assert!(
-            model.editor().cursor().line < 15,
+            model.editor().active_cursor().line < 15,
             "Cursor should have moved up from line 15"
         );
         // Column should be from selection start (col 2)
         assert_eq!(
-            model.editor().cursor().column,
+            model.editor().active_cursor().column,
             2,
             "Cursor column should be at selection start col (2)"
         );
@@ -402,18 +404,18 @@ mod tests {
 
         // Selection should be cleared
         assert!(
-            model.editor().selection().is_empty(),
+            model.editor().active_selection().is_empty(),
             "Selection should be cleared"
         );
         // Cursor should have moved down from selection end (line 5, col 5)
         // PageDown moves ~8 lines (visible_lines - 2)
         assert!(
-            model.editor().cursor().line > 5,
+            model.editor().active_cursor().line > 5,
             "Cursor should have moved down from line 5"
         );
         // Column should be from selection end (col 5)
         assert_eq!(
-            model.editor().cursor().column,
+            model.editor().active_cursor().column,
             5,
             "Cursor column should be at selection end col (5)"
         );
@@ -442,7 +444,7 @@ mod tests {
         assert_eq!(model.editor().selection().anchor, Position::new(0, 0));
         let last_line = total_lines.saturating_sub(1);
         assert_eq!(
-            model.editor().cursor().line,
+            model.editor().active_cursor().line,
             last_line,
             "Cursor should be at last line"
         );
@@ -461,13 +463,13 @@ mod tests {
 
         // Selection should be cleared
         assert!(
-            model.editor().selection().is_empty(),
+            model.editor().active_selection().is_empty(),
             "Selection should be cleared"
         );
 
         // Cursor should be at end of document
         assert_eq!(
-            model.editor().cursor().line,
+            model.editor().active_cursor().line,
             last_line,
             "Cursor should be at last line"
         );
@@ -476,15 +478,15 @@ mod tests {
         // The cursor should be visible within the viewport
         let viewport_end = model.editor().viewport.top_line + model.editor().viewport.visible_lines;
         assert!(
-            model.editor().cursor().line >= model.editor().viewport.top_line,
+            model.editor().active_cursor().line >= model.editor().viewport.top_line,
             "Cursor (line {}) should be >= viewport top (line {})",
-            model.editor().cursor().line,
+            model.editor().active_cursor().line,
             model.editor().viewport.top_line
         );
         assert!(
-            model.editor().cursor().line < viewport_end,
+            model.editor().active_cursor().line < viewport_end,
             "Cursor (line {}) should be < viewport end (line {})",
-            model.editor().cursor().line,
+            model.editor().active_cursor().line,
             viewport_end
         );
     }
@@ -520,7 +522,7 @@ mod tests {
         // PageUp moves visible_lines - 2 = 18 lines up
         // From line 10, that would be line 0 (clamped)
         assert_eq!(
-            model.editor().cursor().line,
+            model.editor().active_cursor().line,
             0,
             "Cursor should be at line 0 after PageUp"
         );
@@ -535,7 +537,7 @@ mod tests {
 
         // Cursor should be visible
         assert!(
-            model.editor().cursor().line >= model.editor().viewport.top_line,
+            model.editor().active_cursor().line >= model.editor().viewport.top_line,
             "Cursor should be visible (>= viewport top)"
         );
     }
@@ -569,7 +571,7 @@ mod tests {
 
         // Cursor should be at line 32 (50 - 18)
         assert_eq!(
-            model.editor().cursor().line,
+            model.editor().active_cursor().line,
             32,
             "Cursor should be at line 32"
         );
@@ -578,16 +580,16 @@ mod tests {
         // Viewport should have adjusted to show the cursor
         // Cursor should be visible and near the top of viewport
         assert!(
-            model.editor().viewport.top_line <= model.editor().cursor().line,
+            model.editor().viewport.top_line <= model.editor().active_cursor().line,
             "Cursor (line {}) should be >= viewport top (line {})",
-            model.editor().cursor().line,
+            model.editor().active_cursor().line,
             model.editor().viewport.top_line
         );
 
         // Cursor should be within visible range
         let viewport_end = model.editor().viewport.top_line + model.editor().viewport.visible_lines;
         assert!(
-            model.editor().cursor().line < viewport_end,
+            model.editor().active_cursor().line < viewport_end,
             "Cursor should be visible within viewport"
         );
     }
@@ -604,7 +606,7 @@ mod tests {
         // Make a change: insert 'X'
         update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
         assert_eq!(model.document().buffer.to_string(), "helloX");
-        assert_eq!(model.editor().cursor().column, 6);
+        assert_eq!(model.editor().active_cursor().column, 6);
 
         // Simulate Cmd+Z: logo=true, ctrl=false
         handle_key(
@@ -624,7 +626,7 @@ mod tests {
             "hello",
             "Cmd+Z should undo the insert, not type 'z'"
         );
-        assert_eq!(model.editor().cursor().column, 5);
+        assert_eq!(model.editor().active_cursor().column, 5);
     }
 
     #[test]
@@ -657,7 +659,7 @@ mod tests {
             "helloX",
             "Cmd+Shift+Z should redo the insert"
         );
-        assert_eq!(model.editor().cursor().column, 6);
+        assert_eq!(model.editor().active_cursor().column, 6);
     }
 
     #[test]
