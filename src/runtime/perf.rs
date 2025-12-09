@@ -9,8 +9,6 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 #[cfg(debug_assertions)]
-use fontdue::Font;
-#[cfg(debug_assertions)]
 use token::overlay::{
     render_overlay_background, render_overlay_border, OverlayAnchor, OverlayConfig,
 };
@@ -18,7 +16,7 @@ use token::overlay::{
 use token::theme::Theme;
 
 #[cfg(debug_assertions)]
-use crate::view::{draw_sparkline, draw_text, GlyphCache};
+use crate::view::{Frame, TextPainter};
 
 #[cfg(debug_assertions)]
 pub const PERF_HISTORY_SIZE: usize = 60;
@@ -245,23 +243,15 @@ impl PerfStats {
 }
 
 #[cfg(debug_assertions)]
-#[allow(clippy::too_many_arguments)]
 pub fn render_perf_overlay(
-    buffer: &mut [u32],
-    font: &Font,
-    glyph_cache: &mut GlyphCache,
+    frame: &mut Frame,
+    painter: &mut TextPainter,
     perf: &PerfStats,
     theme: &Theme,
-    width: u32,
-    height: u32,
-    font_size: f32,
     line_height: usize,
-    ascent: f32,
 ) {
-    use std::time::Duration;
-
-    let width_usize = width as usize;
-    let height_usize = height as usize;
+    let width_usize = frame.width;
+    let height_usize = frame.height;
 
     let config = OverlayConfig::new(OverlayAnchor::TopRight, 380, 480)
         .with_margin(10)
@@ -269,7 +259,7 @@ pub fn render_perf_overlay(
 
     let bounds = config.compute_bounds(width_usize, height_usize);
     render_overlay_background(
-        buffer,
+        frame.buffer,
         &bounds,
         config.background,
         width_usize,
@@ -278,7 +268,7 @@ pub fn render_perf_overlay(
 
     if let Some(border_color) = &theme.overlay.border {
         render_overlay_border(
-            buffer,
+            frame.buffer,
             &bounds,
             border_color.to_argb_u32(),
             width_usize,
@@ -294,19 +284,7 @@ pub fn render_perf_overlay(
     let text_x = bounds.x + 8;
     let mut text_y = bounds.y + 4;
 
-    draw_text(
-        buffer,
-        font,
-        glyph_cache,
-        font_size,
-        ascent,
-        width,
-        height,
-        text_x,
-        text_y,
-        "Performance",
-        text_color,
-    );
+    painter.draw(frame, text_x, text_y, "Performance", text_color);
     text_y += line_height;
 
     let frame_ms = perf.last_frame_time.as_secs_f64() * 1000.0;
@@ -321,19 +299,7 @@ pub fn render_perf_overlay(
     };
 
     let frame_text = format!("Frame: {:.1}ms ({:.0} fps)", frame_ms, fps);
-    draw_text(
-        buffer,
-        font,
-        glyph_cache,
-        font_size,
-        ascent,
-        width,
-        height,
-        text_x,
-        text_y,
-        &frame_text,
-        frame_color,
-    );
+    painter.draw(frame, text_x, text_y, &frame_text, frame_color);
     text_y += line_height;
 
     let phases: [(&str, Duration, u32); 7] = [
@@ -355,26 +321,21 @@ pub fn render_perf_overlay(
     let bar_y = text_y + 2;
 
     let unaccounted_color = 0xFF404040_u32;
-    for py in bar_y..(bar_y + bar_height) {
-        for px in text_x..(text_x + bar_total_width) {
-            if px < width as usize && py < height as usize {
-                buffer[py * width as usize + px] = unaccounted_color;
-            }
-        }
-    }
+    frame.fill_rect_px(
+        text_x,
+        bar_y,
+        bar_total_width,
+        bar_height,
+        unaccounted_color,
+    );
 
     let mut bar_x = text_x;
     for (_name, duration, color) in &phases {
         let phase_us = duration.as_micros() as f32;
         let segment_width = ((phase_us / frame_us) * bar_total_width as f32) as usize;
         if segment_width > 0 {
-            for py in bar_y..(bar_y + bar_height) {
-                for px in bar_x..(bar_x + segment_width).min(text_x + bar_total_width) {
-                    if px < width as usize && py < height as usize {
-                        buffer[py * width as usize + px] = *color;
-                    }
-                }
-            }
+            let actual_width = segment_width.min(text_x + bar_total_width - bar_x);
+            frame.fill_rect_px(bar_x, bar_y, actual_width, bar_height, *color);
             bar_x += segment_width;
         }
     }
@@ -393,54 +354,18 @@ pub fn render_perf_overlay(
         .collect::<Vec<_>>()
         .join(" │ ");
 
-    draw_text(
-        buffer,
-        font,
-        glyph_cache,
-        font_size,
-        ascent,
-        width,
-        height,
-        text_x,
-        text_y,
-        &legend,
-        text_color,
-    );
+    painter.draw(frame, text_x, text_y, &legend, text_color);
     text_y += line_height + 4;
 
     let avg_ms = perf.avg_frame_time().as_secs_f64() * 1000.0;
     let avg_text = format!("Avg: {:.1}ms", avg_ms);
-    draw_text(
-        buffer,
-        font,
-        glyph_cache,
-        font_size,
-        ascent,
-        width,
-        height,
-        text_x,
-        text_y,
-        &avg_text,
-        text_color,
-    );
+    painter.draw(frame, text_x, text_y, &avg_text, text_color);
     text_y += line_height + 4;
 
-    let cache_size = glyph_cache.len();
+    let cache_size = painter.glyph_cache.len();
     let hit_rate = perf.cache_hit_rate();
     let cache_text = format!("Cache: {} glyphs", cache_size);
-    draw_text(
-        buffer,
-        font,
-        glyph_cache,
-        font_size,
-        ascent,
-        width,
-        height,
-        text_x,
-        text_y,
-        &cache_text,
-        text_color,
-    );
+    painter.draw(frame, text_x, text_y, &cache_text, text_color);
     text_y += line_height;
 
     let hit_color = if hit_rate > 99.0 {
@@ -451,50 +376,14 @@ pub fn render_perf_overlay(
         error_color
     };
     let hits_text = format!("Hits: {} ({:.1}%)", perf.total_cache_hits, hit_rate);
-    draw_text(
-        buffer,
-        font,
-        glyph_cache,
-        font_size,
-        ascent,
-        width,
-        height,
-        text_x,
-        text_y,
-        &hits_text,
-        hit_color,
-    );
+    painter.draw(frame, text_x, text_y, &hits_text, hit_color);
     text_y += line_height;
 
     let miss_text = format!("Miss: {}", perf.total_cache_misses);
-    draw_text(
-        buffer,
-        font,
-        glyph_cache,
-        font_size,
-        ascent,
-        width,
-        height,
-        text_x,
-        text_y,
-        &miss_text,
-        text_color,
-    );
+    painter.draw(frame, text_x, text_y, &miss_text, text_color);
     text_y += line_height + 4;
 
-    draw_text(
-        buffer,
-        font,
-        glyph_cache,
-        font_size,
-        ascent,
-        width,
-        height,
-        text_x,
-        text_y,
-        "Render breakdown:",
-        text_color,
-    );
+    painter.draw(frame, text_x, text_y, "Render breakdown:", text_color);
     text_y += line_height;
 
     let chart_width = 180;
@@ -530,24 +419,9 @@ pub fn render_perf_overlay(
     for (name, duration, history, color) in breakdown_with_history {
         let us = duration.as_micros();
         let breakdown_text = format!("{:>7}:", name);
-        draw_text(
-            buffer,
-            font,
-            glyph_cache,
-            font_size,
-            ascent,
-            width,
-            height,
-            text_x,
-            text_y,
-            &breakdown_text,
-            text_color,
-        );
+        painter.draw(frame, text_x, text_y, &breakdown_text, text_color);
 
-        draw_sparkline(
-            buffer,
-            width,
-            height,
+        frame.draw_sparkline(
             chart_x,
             text_y + 2,
             chart_width,
@@ -559,19 +433,7 @@ pub fn render_perf_overlay(
 
         let value_text = format!("{} µs", us);
         let value_x = chart_x + chart_width + 6;
-        draw_text(
-            buffer,
-            font,
-            glyph_cache,
-            font_size,
-            ascent,
-            width,
-            height,
-            value_x,
-            text_y,
-            &value_text,
-            color,
-        );
+        painter.draw(frame, value_x, text_y, &value_text, color);
 
         text_y += chart_height + 4;
     }

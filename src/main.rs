@@ -6,14 +6,12 @@ use anyhow::Result;
 use std::path::PathBuf;
 use winit::event_loop::EventLoop;
 
-mod app;
 #[cfg(debug_assertions)]
 mod debug_dump;
-mod input;
-mod perf;
+mod runtime;
 mod view;
 
-use app::App;
+use runtime::App;
 
 // ============================================================================
 // MAIN - Entry point
@@ -44,7 +42,7 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::input::handle_key;
+    use crate::runtime::input::handle_key;
     use token::messages::{DocumentMsg, EditorMsg, Msg};
     use token::model::{
         AppModel, Cursor, Document, EditorArea, EditorState, Position, RectangleSelectionState,

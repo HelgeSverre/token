@@ -20,10 +20,10 @@ use token::model::editor_area::{Rect, SplitDirection};
 use token::model::AppModel;
 use token::update::update;
 
-use crate::input::handle_key;
+use super::input::handle_key;
 use crate::view::Renderer;
 
-use crate::perf::PerfStats;
+use super::perf::PerfStats;
 
 use std::path::PathBuf;
 use winit::keyboard::ModifiersState;

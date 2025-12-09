@@ -23,9 +23,9 @@ pub use status_bar::{
 };
 pub use ui::UiState;
 
-use crate::theme::Theme;
 #[cfg(debug_assertions)]
 use crate::debug_overlay::DebugOverlay;
+use crate::theme::Theme;
 use std::path::PathBuf;
 
 /// Layout constant - width of line number gutter in characters (e.g., " 123 ")

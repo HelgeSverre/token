@@ -45,6 +45,7 @@ pub enum EditOperation {
 pub struct Document {
     /// Unique identifier (set when added to EditorArea)
     pub id: Option<DocumentId>,
+
     /// The text buffer
     pub buffer: Rope,
     /// Path to the file on disk (None for new/unsaved files)

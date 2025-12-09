@@ -2,6 +2,10 @@
 //!
 //! Contains the Renderer struct and all rendering-related functionality.
 
+pub mod frame;
+
+pub use frame::{Frame, TextPainter};
+
 use anyhow::Result;
 use fontdue::{Font, FontSettings, LineMetrics, Metrics};
 use softbuffer::Surface;
@@ -12,7 +16,6 @@ use winit::window::Window;
 
 use token::model::editor_area::{EditorGroup, GroupId, Rect, SplitterBar, Tab};
 use token::model::{gutter_border_x, text_start_x, AppModel};
-use token::overlay::blend_pixel;
 
 pub type GlyphCacheKey = (char, u32);
 
@@ -117,7 +120,7 @@ impl Renderer {
             .map_err(|e| anyhow::anyhow!("Failed to create surface: {}", e))?;
 
         let font = Font::from_bytes(
-            include_bytes!("../assets/JetBrainsMono.ttf") as &[u8],
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
             FontSettings::default(),
         )
         .map_err(|e| anyhow::anyhow!("Failed to load font: {}", e))?;
@@ -182,57 +185,40 @@ impl Renderer {
         (self.width, self.height)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_all_groups_static(
-        buffer: &mut [u32],
+        frame: &mut Frame,
+        painter: &mut TextPainter,
         model: &AppModel,
         splitters: &[SplitterBar],
-        font: &Font,
-        glyph_cache: &mut GlyphCache,
         line_height: usize,
-        font_size: f32,
-        ascent: f32,
         char_width: f32,
-        width: u32,
-        height: u32,
     ) {
         for (&group_id, group) in &model.editor_area.groups {
             let is_focused = group_id == model.editor_area.focused_group_id;
             Self::render_editor_group_static(
-                buffer,
+                frame,
+                painter,
                 model,
                 group_id,
                 group.rect,
                 is_focused,
-                font,
-                glyph_cache,
-                font_size,
-                ascent,
                 line_height,
                 char_width,
-                width,
-                height,
             );
         }
 
-        Self::render_splitters_static(buffer, splitters, model, width, height);
+        Self::render_splitters_static(frame, splitters, model);
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_editor_group_static(
-        buffer: &mut [u32],
+        frame: &mut Frame,
+        painter: &mut TextPainter,
         model: &AppModel,
         group_id: GroupId,
         group_rect: Rect,
         is_focused: bool,
-        font: &Font,
-        glyph_cache: &mut GlyphCache,
-        font_size: f32,
-        ascent: f32,
         line_height: usize,
         char_width: f32,
-        width: u32,
-        height: u32,
     ) {
         let group = match model.editor_area.groups.get(&group_id) {
             Some(g) => g,
@@ -265,19 +251,7 @@ impl Renderer {
         let rect_h = group_rect.height as usize;
 
         Self::render_tab_bar_static(
-            buffer,
-            model,
-            group,
-            rect_x,
-            rect_y,
-            rect_w,
-            font,
-            glyph_cache,
-            font_size,
-            ascent,
-            char_width,
-            width,
-            height,
+            frame, painter, model, group, rect_x, rect_y, rect_w, char_width,
         );
 
         let content_y = rect_y + TAB_BAR_HEIGHT;
@@ -296,14 +270,8 @@ impl Renderer {
         {
             let screen_line = editor.active_cursor().line - editor.viewport.top_line;
             let highlight_y = content_y + screen_line * line_height;
-
-            for py in highlight_y..(highlight_y + line_height).min(content_y + content_h) {
-                for px in rect_x..(rect_x + rect_w).min(width as usize) {
-                    if py < height as usize {
-                        buffer[py * width as usize + px] = current_line_color;
-                    }
-                }
-            }
+            let highlight_h = line_height.min(content_y + content_h - highlight_y);
+            frame.fill_rect_px(rect_x, highlight_y, rect_w, highlight_h, current_line_color);
         }
 
         // Render ALL selections (primary + secondary cursors)
@@ -358,13 +326,13 @@ impl Renderer {
                     + (visible_end_col as f32 * char_width).round() as usize)
                     .min(rect_x + rect_w);
 
-                for py in y_start..y_end {
-                    for px in x_start..x_end {
-                        if py < height as usize && px < width as usize {
-                            buffer[py * width as usize + px] = selection_color;
-                        }
-                    }
-                }
+                frame.fill_rect_px(
+                    x_start,
+                    y_start,
+                    x_end.saturating_sub(x_start),
+                    y_end.saturating_sub(y_start),
+                    selection_color,
+                );
             }
         }
 
@@ -385,19 +353,7 @@ impl Renderer {
                 } else {
                     line_num_color
                 };
-                draw_text(
-                    buffer,
-                    font,
-                    glyph_cache,
-                    font_size,
-                    ascent,
-                    width,
-                    height,
-                    rect_x,
-                    y,
-                    &line_num_str,
-                    line_color,
-                );
+                painter.draw(frame, rect_x, y, &line_num_str, line_color);
 
                 let visible_text = if line_text.ends_with('\n') {
                     &line_text[..line_text.len() - 1]
@@ -415,19 +371,7 @@ impl Renderer {
                     .take(max_chars)
                     .collect();
 
-                draw_text(
-                    buffer,
-                    font,
-                    glyph_cache,
-                    font_size,
-                    ascent,
-                    width,
-                    height,
-                    group_text_start_x,
-                    y,
-                    &display_text,
-                    text_color,
-                );
+                painter.draw(frame, group_text_start_x, y, &display_text, text_color);
             }
         }
 
@@ -438,7 +382,6 @@ impl Renderer {
             let primary_cursor_color = model.theme.editor.cursor_color.to_argb_u32();
             let secondary_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
 
-            // Render individual cursor
             for (idx, cursor) in editor.cursors.iter().enumerate() {
                 let cursor_in_vertical_view = cursor.line >= editor.viewport.top_line
                     && cursor.line < editor.viewport.top_line + visible_lines;
@@ -468,73 +411,40 @@ impl Renderer {
                         secondary_cursor_color
                     };
 
-                    for dy in 0..(line_height - 2) {
-                        for dx in 0..2 {
-                            let px = x + dx;
-                            let py = y + dy + 1;
-                            if px < (rect_x + rect_w).min(width as usize)
-                                && py < (content_y + content_h).min(height as usize)
-                            {
-                                buffer[py * width as usize + px] = cursor_color;
-                            }
-                        }
-                    }
+                    // Cursor: 2px wide, line_height - 2 tall, offset by 1px from top
+                    frame.fill_rect_px(x, y + 1, 2, line_height.saturating_sub(2), cursor_color);
                 }
             }
         }
 
+        // Gutter border
         let gutter_border_color = model.theme.gutter.border_color.to_argb_u32();
         let border_x = rect_x + gutter_border_x(char_width).round() as usize;
-        if border_x < (rect_x + rect_w).min(width as usize) {
-            for py in content_y..(content_y + content_h).min(height as usize) {
-                buffer[py * width as usize + border_x] = gutter_border_color;
-            }
-        }
+        frame.fill_rect_px(border_x, content_y, 1, content_h, gutter_border_color);
 
         // Dim non-focused groups when multiple groups exist (4% black overlay)
         if !is_focused && model.editor_area.groups.len() > 1 {
             let dim_color = 0x0A000000_u32; // 4% opacity black (alpha = 10/255 ≈ 4%)
-            for py in rect_y..(rect_y + rect_h).min(height as usize) {
-                for px in rect_x..(rect_x + rect_w).min(width as usize) {
-                    let idx = py * width as usize + px;
-                    if idx < buffer.len() {
-                        buffer[idx] = blend_pixel(dim_color, buffer[idx]);
-                    }
-                }
-            }
+            frame.blend_rect(group_rect, dim_color);
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_tab_bar_static(
-        buffer: &mut [u32],
+        frame: &mut Frame,
+        painter: &mut TextPainter,
         model: &AppModel,
         group: &EditorGroup,
         rect_x: usize,
         rect_y: usize,
         rect_w: usize,
-        font: &Font,
-        glyph_cache: &mut GlyphCache,
-        font_size: f32,
-        ascent: f32,
         char_width: f32,
-        width: u32,
-        height: u32,
     ) {
         let tab_bar_bg = model.theme.tab_bar.background.to_argb_u32();
-        for py in rect_y..(rect_y + TAB_BAR_HEIGHT).min(height as usize) {
-            for px in rect_x..(rect_x + rect_w).min(width as usize) {
-                buffer[py * width as usize + px] = tab_bar_bg;
-            }
-        }
+        frame.fill_rect_px(rect_x, rect_y, rect_w, TAB_BAR_HEIGHT, tab_bar_bg);
 
         let border_color = model.theme.tab_bar.border.to_argb_u32();
         let border_y = (rect_y + TAB_BAR_HEIGHT).saturating_sub(1);
-        if border_y < height as usize {
-            for px in rect_x..(rect_x + rect_w).min(width as usize) {
-                buffer[border_y * width as usize + px] = border_color;
-            }
-        }
+        frame.fill_rect_px(rect_x, border_y, rect_w, 1, border_color);
 
         let mut tab_x = rect_x + 4;
         let tab_height = TAB_BAR_HEIGHT - 4;
@@ -557,27 +467,12 @@ impl Renderer {
                 )
             };
 
-            for py in tab_y..(tab_y + tab_height).min(height as usize) {
-                for px in tab_x..(tab_x + tab_width).min(rect_x + rect_w).min(width as usize) {
-                    buffer[py * width as usize + px] = bg_color;
-                }
-            }
+            let actual_tab_width = tab_width.min(rect_x + rect_w - tab_x);
+            frame.fill_rect_px(tab_x, tab_y, actual_tab_width, tab_height, bg_color);
 
             let text_x = tab_x + 8;
             let text_y = tab_y + 4;
-            draw_text(
-                buffer,
-                font,
-                glyph_cache,
-                font_size,
-                ascent,
-                width,
-                height,
-                text_x,
-                text_y,
-                &display_name,
-                fg_color,
-            );
+            painter.draw(frame, text_x, text_y, &display_name, fg_color);
 
             tab_x += tab_width + 2;
             if tab_x >= rect_x + rect_w {
@@ -586,33 +481,18 @@ impl Renderer {
         }
     }
 
-    fn render_splitters_static(
-        buffer: &mut [u32],
-        splitters: &[SplitterBar],
-        model: &AppModel,
-        width: u32,
-        height: u32,
-    ) {
+    fn render_splitters_static(frame: &mut Frame, splitters: &[SplitterBar], model: &AppModel) {
         let splitter_color = model.theme.splitter.background.to_argb_u32();
 
         for splitter in splitters {
-            let sx = splitter.rect.x as usize;
-            let sy = splitter.rect.y as usize;
-            let sw = splitter.rect.width as usize;
-            let sh = splitter.rect.height as usize;
-
-            for py in sy..(sy + sh).min(height as usize) {
-                for px in sx..(sx + sw).min(width as usize) {
-                    buffer[py * width as usize + px] = splitter_color;
-                }
-            }
+            frame.fill_rect(splitter.rect, splitter_color);
         }
     }
 
     pub fn render(
         &mut self,
         model: &mut AppModel,
-        perf: &mut super::perf::PerfStats,
+        perf: &mut crate::runtime::perf::PerfStats,
     ) -> Result<()> {
         perf.reset_frame_stats();
 
@@ -648,26 +528,30 @@ impl Renderer {
             .buffer_mut()
             .map_err(|e| anyhow::anyhow!("Failed to get surface buffer: {}", e))?;
 
+        // Create Frame wrapper for cleaner drawing API
+        // Note: We use Frame for new code; legacy code still uses raw buffer slices
+        let width_usize = width as usize;
+        let height_usize = height as usize;
+
         {
             let _timer = perf.time_clear();
             let bg_color = model.theme.editor.background.to_argb_u32();
-            buffer.fill(bg_color);
+            let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
+            frame.clear(bg_color);
         }
 
         {
             let _timer = perf.time_text();
+            let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
+            let mut painter =
+                TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
             Self::render_all_groups_static(
-                &mut buffer,
+                &mut frame,
+                &mut painter,
                 model,
                 &splitters,
-                &self.font,
-                &mut self.glyph_cache,
                 line_height,
-                font_size,
-                ascent,
                 char_width,
-                width,
-                height,
             );
         }
 
@@ -677,79 +561,95 @@ impl Renderer {
             let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
             let status_y = (height as usize).saturating_sub(status_bar_height);
 
-            for py in status_y..height as usize {
-                for px in 0..width as usize {
-                    buffer[py * width as usize + px] = status_bar_bg;
-                }
+            // Use Frame for status bar background
+            {
+                let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
+                frame.fill_rect_px(0, status_y, width_usize, status_bar_height, status_bar_bg);
             }
 
             let available_chars = (width as f32 / char_width).floor() as usize;
             let layout = model.ui.status_bar.layout(available_chars);
 
-            for seg in &layout.left {
-                let x_px = (seg.x as f32 * char_width).round() as usize;
-                draw_text(
-                    &mut buffer,
-                    &self.font,
-                    &mut self.glyph_cache,
-                    font_size,
-                    ascent,
-                    width,
-                    height,
-                    x_px,
-                    status_y + 2,
-                    &seg.text,
-                    status_bar_fg,
-                );
-            }
+            // Use TextPainter for status bar text
+            {
+                let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
+                let mut painter =
+                    TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
 
-            for seg in &layout.right {
-                let x_px = (seg.x as f32 * char_width).round() as usize;
-                draw_text(
-                    &mut buffer,
-                    &self.font,
-                    &mut self.glyph_cache,
-                    font_size,
-                    ascent,
-                    width,
-                    height,
-                    x_px,
-                    status_y + 2,
-                    &seg.text,
-                    status_bar_fg,
-                );
-            }
+                for seg in &layout.left {
+                    let x_px = (seg.x as f32 * char_width).round() as usize;
+                    painter.draw(&mut frame, x_px, status_y + 2, &seg.text, status_bar_fg);
+                }
 
-            let separator_color = model
-                .theme
-                .status_bar
-                .foreground
-                .with_alpha(100)
-                .to_argb_u32();
-            for &sep_char_x in &layout.separator_positions {
-                let x_px = (sep_char_x as f32 * char_width).round() as usize;
-                if x_px < width as usize {
-                    for py in status_y..height as usize {
-                        buffer[py * width as usize + x_px] = separator_color;
-                    }
+                for seg in &layout.right {
+                    let x_px = (seg.x as f32 * char_width).round() as usize;
+                    painter.draw(&mut frame, x_px, status_y + 2, &seg.text, status_bar_fg);
+                }
+
+                // Draw separators
+                let separator_color = model
+                    .theme
+                    .status_bar
+                    .foreground
+                    .with_alpha(100)
+                    .to_argb_u32();
+                for &sep_char_x in &layout.separator_positions {
+                    let x_px = (sep_char_x as f32 * char_width).round() as usize;
+                    frame.fill_rect_px(x_px, status_y, 1, status_bar_height, separator_color);
                 }
             }
         }
 
         #[cfg(debug_assertions)]
         if perf.should_show_overlay() {
-            super::perf::render_perf_overlay(
-                &mut buffer,
-                &self.font,
-                &mut self.glyph_cache,
+            let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
+            let mut painter =
+                TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
+            crate::runtime::perf::render_perf_overlay(
+                &mut frame,
+                &mut painter,
                 perf,
                 &model.theme,
-                self.width,
-                self.height,
-                font_size,
                 line_height,
-                ascent,
             );
+        }
+
+        #[cfg(debug_assertions)]
+        if let Some(ref overlay) = model.debug_overlay {
+            if overlay.visible {
+                let lines = overlay.render_lines(model);
+                if !lines.is_empty() {
+                    let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
+                    let mut painter =
+                        TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
+
+                    // Calculate dimensions
+                    let max_line_len = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+                    let overlay_width = (max_line_len as f32 * char_width).ceil() as usize + 20;
+                    let overlay_height = lines.len() * line_height + 10;
+
+                    // Position in top-right corner (perf overlay is top-left)
+                    let overlay_x = width_usize.saturating_sub(overlay_width + 10);
+                    let overlay_y = 10;
+
+                    // Render semi-transparent background
+                    let bg_color = model.theme.overlay.background.to_argb_u32();
+                    let fg_color = model.theme.overlay.foreground.to_argb_u32();
+
+                    for py in overlay_y..(overlay_y + overlay_height).min(height_usize) {
+                        for px in overlay_x..(overlay_x + overlay_width).min(width_usize) {
+                            frame.blend_pixel(px, py, bg_color);
+                        }
+                    }
+
+                    // Render text lines
+                    for (i, line) in lines.iter().enumerate() {
+                        let text_x = overlay_x + 10;
+                        let text_y = overlay_y + 5 + i * line_height;
+                        painter.draw(&mut frame, text_x, text_y, line, fg_color);
+                    }
+                }
+            }
         }
 
         {
@@ -834,123 +734,5 @@ impl Renderer {
         }
 
         None
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn draw_text(
-    buffer: &mut [u32],
-    font: &Font,
-    glyph_cache: &mut GlyphCache,
-    font_size: f32,
-    ascent: f32,
-    width: u32,
-    height: u32,
-    x: usize,
-    y: usize,
-    text: &str,
-    color: u32,
-) {
-    let mut current_x = x as f32;
-
-    let baseline = y as f32 + ascent;
-
-    for ch in text.chars() {
-        let key = (ch, font_size.to_bits());
-        let (metrics, bitmap) = glyph_cache
-            .entry(key)
-            .or_insert_with(|| font.rasterize(ch, font_size));
-
-        let glyph_top = baseline - metrics.height as f32 - metrics.ymin as f32;
-
-        for bitmap_y in 0..metrics.height {
-            for bitmap_x in 0..metrics.width {
-                let bitmap_idx = bitmap_y * metrics.width + bitmap_x;
-                if bitmap_idx < bitmap.len() {
-                    let alpha = bitmap[bitmap_idx];
-                    if alpha > 0 {
-                        let px = current_x as isize + bitmap_x as isize + metrics.xmin as isize;
-                        let py = (glyph_top + bitmap_y as f32) as isize;
-
-                        if px >= 0
-                            && py >= 0
-                            && (px as usize) < width as usize
-                            && (py as usize) < height as usize
-                        {
-                            let px = px as usize;
-                            let py = py as usize;
-
-                            let alpha_f = alpha as f32 / 255.0;
-                            let bg_pixel = buffer[py * width as usize + px];
-
-                            let bg_r = ((bg_pixel >> 16) & 0xFF) as f32;
-                            let bg_g = ((bg_pixel >> 8) & 0xFF) as f32;
-                            let bg_b = (bg_pixel & 0xFF) as f32;
-
-                            let fg_r = ((color >> 16) & 0xFF) as f32;
-                            let fg_g = ((color >> 8) & 0xFF) as f32;
-                            let fg_b = (color & 0xFF) as f32;
-
-                            let final_r = (bg_r * (1.0 - alpha_f) + fg_r * alpha_f) as u32;
-                            let final_g = (bg_g * (1.0 - alpha_f) + fg_g * alpha_f) as u32;
-                            let final_b = (bg_b * (1.0 - alpha_f) + fg_b * alpha_f) as u32;
-
-                            buffer[py * width as usize + px] =
-                                0xFF000000 | (final_r << 16) | (final_g << 8) | final_b;
-                        }
-                    }
-                }
-            }
-        }
-
-        current_x += metrics.advance_width;
-    }
-}
-
-#[cfg(debug_assertions)]
-#[allow(clippy::too_many_arguments)]
-pub fn draw_sparkline(
-    buffer: &mut [u32],
-    buffer_width: u32,
-    buffer_height: u32,
-    x: usize,
-    y: usize,
-    chart_width: usize,
-    chart_height: usize,
-    data: &std::collections::VecDeque<std::time::Duration>,
-    bar_color: u32,
-    bg_color: u32,
-) {
-    if data.is_empty() {
-        return;
-    }
-
-    for py in y..(y + chart_height) {
-        for px in x..(x + chart_width) {
-            if px < buffer_width as usize && py < buffer_height as usize {
-                buffer[py * buffer_width as usize + px] = bg_color;
-            }
-        }
-    }
-
-    let max_val = data.iter().map(|d| d.as_micros()).max().unwrap_or(1).max(1) as f32;
-
-    let bar_width = (chart_width as f32 / data.len() as f32).max(1.0) as usize;
-    let gap = if bar_width > 2 { 1 } else { 0 };
-
-    for (i, duration) in data.iter().enumerate() {
-        let normalized = duration.as_micros() as f32 / max_val;
-        let bar_height = ((normalized * chart_height as f32) as usize).max(1);
-        let bar_x = x + i * bar_width;
-
-        for dy in 0..bar_height {
-            let py = y + chart_height - dy - 1;
-            for dx in 0..(bar_width - gap) {
-                let px = bar_x + dx;
-                if px < buffer_width as usize && py < buffer_height as usize {
-                    buffer[py * buffer_width as usize + px] = bar_color;
-                }
-            }
-        }
     }
 }

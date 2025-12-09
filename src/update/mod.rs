@@ -57,14 +57,26 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
 /// Traced update wrapper (debug builds only)
 ///
 /// Captures before/after cursor state and logs diffs for debugging.
+/// Filters out noisy messages like BlinkCursor from logging.
 #[cfg(debug_assertions)]
 fn update_traced(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
+    use crate::messages::UiMsg;
+
+    // Skip logging for noisy periodic messages
+    let is_noisy = matches!(&msg, Msg::Ui(UiMsg::BlinkCursor));
+
     let msg_name = msg_type_name(&msg);
-    let _span = span!(Level::DEBUG, "update", msg = %msg_name).entered();
+    let _span = if is_noisy {
+        None
+    } else {
+        Some(span!(Level::DEBUG, "update", msg = %msg_name).entered())
+    };
 
     let before = model.focused_editor().map(CursorSnapshot::from_editor);
 
-    debug!(target: "message", msg = %msg_name, "processing");
+    if !is_noisy {
+        debug!(target: "message", msg = %msg_name, "processing");
+    }
 
     let result = update_inner(model, msg.clone());
 
@@ -91,13 +103,19 @@ fn update_traced(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
 }
 
 /// Get a display name for a message type
+///
+/// Uses Debug formatting to include variant names and arguments.
+/// Example outputs:
+/// - `Editor::MoveCursor(Up)`
+/// - `Document::InsertChar('x')`
+/// - `App::Resize(1920, 1080)`
 #[cfg(debug_assertions)]
 fn msg_type_name(msg: &Msg) -> String {
     match msg {
-        Msg::Editor(m) => format!("Editor::{:?}", std::mem::discriminant(m)),
-        Msg::Document(m) => format!("Document::{:?}", std::mem::discriminant(m)),
-        Msg::Ui(m) => format!("Ui::{:?}", std::mem::discriminant(m)),
-        Msg::Layout(m) => format!("Layout::{:?}", std::mem::discriminant(m)),
-        Msg::App(m) => format!("App::{:?}", std::mem::discriminant(m)),
+        Msg::Editor(m) => format!("Editor::{:?}", m),
+        Msg::Document(m) => format!("Document::{:?}", m),
+        Msg::Ui(m) => format!("Ui::{:?}", m),
+        Msg::Layout(m) => format!("Layout::{:?}", m),
+        Msg::App(m) => format!("App::{:?}", m),
     }
 }
