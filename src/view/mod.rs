@@ -163,6 +163,7 @@ impl Renderer {
     /// Render an entire editor group: tab bar, gutter, text area, and focus dimming.
     ///
     /// This is the main orchestrator that calls individual widget functions.
+    #[allow(clippy::too_many_arguments)]
     fn render_editor_group(
         frame: &mut Frame,
         painter: &mut TextPainter,
@@ -248,6 +249,7 @@ impl Renderer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_tab_bar(
         frame: &mut Frame,
         painter: &mut TextPainter,
