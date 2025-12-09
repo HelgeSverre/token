@@ -221,6 +221,7 @@ pub fn pixel_to_cursor(
 /// Convert pixel coordinates to document line and column for a specific group.
 ///
 /// Accounts for the group's rect position within the window.
+#[allow(clippy::too_many_arguments)]
 pub fn pixel_to_cursor_in_group(
     x: f64,
     y: f64,
