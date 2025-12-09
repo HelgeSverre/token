@@ -337,6 +337,19 @@ ui:
       border: "#8B949E"
 
   # ─────────────────────────────────────────────────────────────
+  # Overlay (Command Palette, Go to Line, Find/Replace modals)
+  # ─────────────────────────────────────────────────────────────
+  overlay:
+    background: "#2B2D30"          # Modal background
+    foreground: "#E0E0E0"          # Default text color
+    border: "#43454A"              # Modal border
+    input_background: "#1E1E1E"    # Input field background
+    selection_background: "#264F78" # Selected item in list
+    highlight: "#80FF80"           # Success/cursor color
+    warning: "#FFFF80"             # Warning indicator
+    error: "#FF8080"               # Error indicator
+
+  # ─────────────────────────────────────────────────────────────
   # Tabs (if you add tab bar)
   # ─────────────────────────────────────────────────────────────
   tab:

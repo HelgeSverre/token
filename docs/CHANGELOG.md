@@ -4,7 +4,135 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## 2025-12-08 (Latest)
+## 2025-12-09 (Latest)
+
+### Added - Command Palette (GUI Phase 4)
+
+Fully functional command palette with searchable command list:
+
+**Command Registry** (`src/commands.rs`):
+- `CommandId` enum with 17 commands (file, edit, navigation, view operations)
+- `CommandDef` struct with id, label, keybinding
+- `COMMANDS` static registry with all available commands
+- `filter_commands(query)` for fuzzy substring matching
+
+**Command Execution** (`src/update/app.rs`):
+- `execute_command(model, cmd_id)` dispatches to appropriate update functions
+- Commands routed through existing message handlers (DocumentMsg, LayoutMsg, etc.)
+
+**Command Palette UI** (`src/view/mod.rs`):
+- Filtered command list displayed below input field
+- Selected item highlighted with selection background
+- Keybindings shown right-aligned (dimmed)
+- Up/Down arrows navigate list
+- Enter executes selected command
+- Shows "... and N more" when list is truncated
+
+**Available Commands**:
+New File, Save File, Undo, Redo, Cut, Copy, Paste, Select All, Go to Line, Split Editor Right/Down, Close Editor Group, Next/Prev Tab, Close Tab, Find, Show Command Palette
+
+---
+
+### Added - Mouse Blocking & Compositor (GUI Phase 5)
+
+Modal overlays now properly capture mouse events:
+
+**Mouse Blocking** (`src/runtime/app.rs`):
+- Click outside modal closes it
+- Click inside modal is consumed (doesn't leak to editor)
+- Uses centralized `geometry::point_in_modal()` for hit-testing
+
+**Modal Geometry** (`src/view/geometry.rs`):
+- `modal_bounds()` - calculates modal position and size
+- `point_in_modal()` - hit-test for modal area
+- Shared between rendering and input handling
+
+---
+
+### Added - Frame Helpers
+
+New drawing primitives for cleaner rendering:
+
+- `Frame::draw_bordered_rect()` - fill with 1px border in single call
+- Reduces code duplication in modal rendering
+
+---
+
+### Added - Basic Modal/Focus System (GUI Phase 3)
+
+Added minimal modal overlay infrastructure with focus capture:
+
+**Modal State Types** (`src/model/ui.rs`):
+- `ModalId` enum: `CommandPalette`, `GotoLine`, `FindReplace`
+- `ModalState` enum with per-modal state structs
+- `CommandPaletteState`, `GotoLineState`, `FindReplaceState`
+- `UiState::active_modal: Option<ModalState>` field
+- Helper methods: `has_modal()`, `open_modal()`, `close_modal()`
+
+**Modal Messages** (`src/messages.rs`):
+- `ModalMsg` enum with variants: `Open*`, `Close`, `SetInput`, `InsertChar`, `DeleteBackward`, `SelectPrevious`, `SelectNext`, `Confirm`
+- `UiMsg::Modal(ModalMsg)` and `UiMsg::ToggleModal(ModalId)`
+
+**Focus Capture** (`src/runtime/input.rs`):
+- `handle_modal_key()` routes all keyboard input to modal when active
+- Modal consumes Escape, Enter, arrows, backspace, and character input
+- Editor key handling bypassed when modal is open
+
+**Modal Rendering** (`src/view/mod.rs`):
+- `render_modals()` draws modal overlay layer
+- 40% dimmed background over entire window
+- Centered modal dialog with title, input field, and blinking cursor
+- Rendered after status bar, before debug overlays
+
+**Keyboard Shortcuts**:
+- `Cmd+P` / `Ctrl+P` - Toggle Command Palette
+- `Cmd+G` / `Ctrl+G` - Toggle Go to Line
+- `Cmd+F` / `Ctrl+F` - Toggle Find/Replace
+- `Escape` - Close modal
+- `Enter` - Confirm (Go to Line jumps to entered line number)
+
+#### Benefits
+
+- Foundation for Command Palette (Phase 4) and other overlays
+- Focus capture prevents editor input while modal is open
+- Modals are first-class layers with proper z-ordering
+- Clean separation of modal state, messages, and rendering
+
+---
+
+### Added - Widget Extraction & Geometry Centralization (GUI Phase 2)
+
+Transformed monolithic render function into composable widget functions:
+
+**New `src/view/geometry.rs` module** - centralized geometry helpers:
+- Constants: `TAB_BAR_HEIGHT`, `TABULATOR_WIDTH`
+- Viewport sizing: `compute_visible_lines()`, `compute_visible_columns()`
+- Tab handling: `expand_tabs_for_display()`, `char_col_to_visual_col()`, `visual_col_to_char_col()`
+- Hit-testing: `is_in_status_bar()`, `is_in_tab_bar()`, `tab_at_position()`, `pixel_to_cursor()`
+- Layout helpers: `group_content_rect()`, `group_gutter_rect()`, `group_text_area_rect()`
+
+**Extracted widget renderers:**
+- `render_editor_area_static()` - top-level: all groups + splitters
+- `render_editor_group_static()` - orchestrates tab bar, gutter, text area
+- `render_tab_bar_static()` - tab bar background, tabs, active highlight
+- `render_gutter_static()` - line numbers, gutter border
+- `render_text_area_static()` - current line highlight, selections, text, cursors
+- `render_splitters_static()` - splitter bars between groups
+- `render_status_bar_static()` - status bar with segments and separators
+
+**Updated hit-testing** to delegate to `view::geometry`:
+- `Renderer::is_in_status_bar()`, `is_in_tab_bar()`, `tab_at_position()`, `pixel_to_cursor()`
+
+#### Benefits
+
+- Clear widget hierarchy with single responsibility per function
+- Centralized geometry calculations - single source of truth
+- Hit-testing and rendering share the same geometry logic
+- Prepared for future modal system (Phase 3)
+
+---
+
+## 2025-12-08
 
 ### Fixed - Debug Tracing Message Names
 

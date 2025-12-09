@@ -193,51 +193,94 @@ impl<'a> TextPainter<'a> {
 
 ## Phase 2 – Widget Extraction & Geometry Centralization
 
+**Status:** ✅ Complete (2025-12-09)  
 **Goal:** Transform monolithic render function into composable widget functions.  
 **Effort:** M–L (3–8h, incremental)  
 **User Impact:** Invisible, improves maintainability
 
-**Files to modify:**
+**Completed:**
 
-- `src/view/mod.rs` – Extract widget functions
-- `src/view/editor.rs` – Editor area widgets
-- `src/view/chrome.rs` – Tab bar, status bar
-- `src/model/editor_area.rs` or new `src/view/geometry.rs` – Centralize geometry helpers
+1. Created `src/view/geometry.rs` with centralized geometry helpers:
+   - `TAB_BAR_HEIGHT`, `TABULATOR_WIDTH` constants
+   - `compute_visible_lines()`, `compute_visible_columns()`
+   - `expand_tabs_for_display()`, `char_col_to_visual_col()`, `visual_col_to_char_col()`
+   - `is_in_status_bar()`, `is_in_tab_bar()`, `is_in_group_tab_bar()`
+   - `tab_at_position()`, `pixel_to_cursor()`, `pixel_to_cursor_in_group()`
+   - `group_content_rect()`, `group_gutter_rect()`, `group_text_area_rect()`
+   - Re-exports `text_start_x`, `gutter_border_x` from model
 
-**Steps:**
+2. Extracted widget renderers in `src/view/mod.rs`:
+   - `render_editor_area_static()` – top-level: all groups + splitters
+   - `render_editor_group_static()` – orchestrates tab bar, gutter, text area
+   - `render_tab_bar_static()` – tab bar background, tabs, active highlight
+   - `render_gutter_static()` – line numbers, gutter border
+   - `render_text_area_static()` – current line highlight, selections, text, cursors
+   - `render_splitters_static()` – splitter bars between groups
+   - `render_status_bar_static()` – status bar with segments and separators
 
-1. Extract high-level widget renderers:
-   - `render_root()` – orchestrates all rendering
-   - `render_editor_area()` – groups + splitters
-   - `render_editor_group()` – tab bar + editor pane
-   - `render_tab_bar()`, `render_gutter()`, `render_text_area()`
-   - `render_splitters()`, `render_status_bar()`
+3. Updated `Renderer` hit-testing methods to delegate to `view::geometry`:
+   - `is_in_status_bar()`, `is_in_tab_bar()`, `tab_at_position()`, `pixel_to_cursor()`
 
-2. Centralize geometry helpers (from EDITOR_UI_REFERENCE.md):
-   - `compute_visible_lines()`
-   - Line/column ↔ pixel conversions
-   - Gutter width computation
+**Widget Hierarchy:**
 
-3. Unify hit-testing geometry between `runtime/input.rs` and `view/`
-   - Single source of truth for tab bar rect, text area rect, gutter rect per group
+```
+render() (Renderer entry point)
+├── render_editor_area_static()
+│   ├── render_editor_group_static() (per group)
+│   │   ├── render_tab_bar_static()
+│   │   ├── render_text_area_static()
+│   │   └── render_gutter_static()
+│   └── render_splitters_static()
+├── render_status_bar_static()
+├── render_perf_overlay() (debug only)
+└── render_debug_overlay() (debug only)
+```
 
 ---
 
 ## Phase 3 – Basic Modal/Focus System
 
+**Status:** ✅ Complete (2025-12-09)  
 **Goal:** Add minimal modal overlay + focus capture mechanism.  
 **Effort:** M (1–3h)  
 **User Impact:** Foundation only (add placeholder modal to test)
 
-**Files to modify:**
+**Completed:**
 
-- `src/model/ui.rs` – Add `ModalState` enum, extend `UiState`
-- `src/msg.rs` – Add `ModalMsg`, extend `UiMsg`
-- `src/update/ui.rs` – Handle modal state changes
-- `src/runtime/input.rs` – Implement keyboard focus capture
-- `src/view/mod.rs` – Add `render_modals()` with dim background
+1. Added modal state types to `src/model/ui.rs`:
+   - `ModalId` enum: `CommandPalette`, `GotoLine`, `FindReplace`
+   - `ModalState` enum with per-modal state structs
+   - `CommandPaletteState`, `GotoLineState`, `FindReplaceState`
+   - `UiState::active_modal: Option<ModalState>` field
+   - Helper methods: `has_modal()`, `open_modal()`, `close_modal()`
 
-**Model changes:**
+2. Added modal messages to `src/messages.rs`:
+   - `ModalMsg` enum with variants: `Open*`, `Close`, `SetInput`, `InsertChar`, `DeleteBackward`, `SelectPrevious`, `SelectNext`, `Confirm`
+   - `UiMsg::Modal(ModalMsg)` and `UiMsg::ToggleModal(ModalId)`
+
+3. Added modal update handler in `src/update/ui.rs`:
+   - `update_modal()` handles all modal message variants
+   - Goto Line `Confirm` parses input and jumps to line
+
+4. Added focus capture in `src/runtime/input.rs`:
+   - `handle_modal_key()` routes keyboard input to modal when active
+   - Modal consumes Escape, Enter, arrows, backspace, character input
+   - Editor key handling bypassed when modal is open
+
+5. Added modal rendering in `src/view/mod.rs`:
+   - `render_modals()` draws modal overlay layer
+   - 40% dimmed background via `frame.dim()`
+   - Centered modal dialog with title, input field, blinking cursor
+   - Rendered after status bar, before debug overlays
+
+6. Added keyboard shortcuts:
+   - `Cmd+P` / `Ctrl+P` - Toggle Command Palette
+   - `Cmd+G` / `Ctrl+G` - Toggle Go to Line
+   - `Cmd+F` / `Ctrl+F` - Toggle Find/Replace
+   - `Escape` - Close modal
+   - `Enter` - Confirm action
+
+**API (as implemented):**
 
 ```rust
 pub enum ModalState {
@@ -256,27 +299,24 @@ pub struct UiState {
 
 ```rust
 pub fn handle_key(model: &AppModel, event: &KeyEvent) -> Option<Msg> {
-    if model.ui.active_modal.is_some() {
+    if model.ui.has_modal() {
         return handle_modal_key(model, event);
     }
-    handle_editor_key(model, event)
+    // Normal editor key handling...
 }
 ```
 
 **Rendering (layer 2):**
 
 ```rust
-fn render_modals(frame: &mut Frame, text: &mut TextPainter, ui: &UiState, theme: &Theme) {
-    let Some(modal) = &ui.active_modal else { return };
+fn render_modals(frame: &mut Frame, painter: &mut TextPainter, model: &AppModel, ...) {
+    let Some(modal) = &model.ui.active_modal else { return };
 
-    // 1. Dim background (Zed-style BlockMouse)
-    let dim_color = 0x80000000;
-    for pixel in frame.buffer.iter_mut() {
-        *pixel = blend_pixel(dim_color, *pixel);
-    }
+    // 1. Dim background (40% black overlay)
+    frame.dim(0x66);
 
-    // 2. Render modal content
-    match modal { /* ... */ }
+    // 2. Draw modal dialog with title, input field, cursor
+    // 3. Modal content varies by type (command list, line number, search results)
 }
 ```
 
@@ -284,98 +324,72 @@ fn render_modals(frame: &mut Frame, text: &mut TextPainter, ui: &UiState, theme:
 
 ## Phase 4 – Command Palette (Full Vertical Slice)
 
+**Status:** ✅ Complete (2025-12-09)  
 **Goal:** Ship real, useful command palette on modal system.  
 **Effort:** L (1–2d)  
 **User Impact:** HIGH – visible feature, anchors modal system
 
-**Files to create/modify:**
+**Completed:**
 
-- `src/cmd.rs` – Add `CommandId` enum, `COMMANDS` registry
-- `src/msg.rs` – Add `AppMsg::ExecuteCommand`
-- `src/model/ui.rs` – Add `CommandPaletteState`, `CommandPaletteMsg`
-- `src/update/app.rs` – Add `execute_command()` dispatcher
-- `src/update/ui.rs` – Add `update_command_palette()`
-- `src/runtime/input.rs` – Extend modal key routing, add Cmd+P binding
-- `src/view/mod.rs` – Add `render_command_palette()`
+1. Added command registry to `src/commands.rs`:
+   - `CommandId` enum with 17 commands
+   - `CommandDef` struct with id, label, keybinding
+   - `COMMANDS` static registry
+   - `filter_commands(query)` for substring matching
 
-**Command registry:**
+2. Added `execute_command()` dispatcher to `src/update/app.rs`:
+   - Routes CommandId to appropriate update functions
+   - Supports all file, edit, navigation, view commands
 
-```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CommandId {
-    ShowCommandPalette,
-    GotoLine,
-    SaveFile,
-    SplitRight,
-    SplitDown,
-    Undo,
-    Redo,
-    // ...
-}
+3. Updated `render_modals()` in `src/view/mod.rs`:
+   - Shows filtered command list below input
+   - Highlights selected item
+   - Displays keybindings right-aligned
+   - Shows "... and N more" for truncated lists
 
-pub struct Command {
-    pub id: CommandId,
-    pub label: &'static str,
-    pub description: &'static str,
-    pub default_keybinding: Option<&'static str>,
-}
+4. Wired Confirm handler in `src/update/ui.rs`:
+   - Gets selected command from filtered list
+   - Executes via `execute_command()`
 
-pub static COMMANDS: &[Command] = &[/* ... */];
-```
-
-**Execute command flow:**
-
-```rust
-fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
-    match cmd_id {
-        CommandId::ShowCommandPalette => { /* open palette */ }
-        CommandId::SaveFile => update_app(model, AppMsg::SaveFile),
-        CommandId::SplitRight => update_layout(model, LayoutMsg::SplitFocusedHorizontal),
-        CommandId::Undo => update_document(model, DocumentMsg::Undo),
-        // ...
-    }
-}
-```
+**Available Commands:**
+NewFile, SaveFile, Undo, Redo, Cut, Copy, Paste, SelectAll, GotoLine, SplitHorizontal, SplitVertical, CloseGroup, NextTab, PrevTab, CloseTab, Find, ShowCommandPalette
 
 ---
 
 ## Phase 5 – General Overlay/Compositor & Mouse Blocking
 
+**Status:** ✅ Complete (2025-12-09)  
 **Goal:** Make overlays first-class layers with predictable z-order and event behavior.  
 **Effort:** M (1–3h)  
 **User Impact:** Subtle – clicks don't leak through modals
 
-**Files to modify:**
+**Completed:**
 
-- `src/view/mod.rs` – Formalize layer ordering
-- `src/model/ui.rs` – Add `ModalRuntimeGeometry` for hit-testing
-- `src/runtime/input.rs` – Add mouse blocking for active modal
+1. Added modal geometry helpers to `src/view/geometry.rs`:
+   - `modal_bounds()` - calculates modal position/size
+   - `point_in_modal()` - hit-test for modal area
 
-**Layer stack (conceptual):**
+2. Added mouse blocking to `src/runtime/app.rs`:
+   - Click outside modal closes it
+   - Click inside modal is consumed (doesn't leak to editor)
+   - Uses centralized `point_in_modal()` for hit-testing
+
+3. Refactored `render_modals()` to use `geometry::modal_bounds()`:
+   - Single source of truth for modal sizing
+   - Consistent between rendering and hit-testing
+
+4. Added `Frame::draw_bordered_rect()` helper:
+   - Reduces code duplication for bordered rectangles
+
+**Layer Stack (as implemented):**
 
 ```rust
-pub fn render_root(...) {
+pub fn render(...) {
     render_editor_area(...);    // layer 0
     render_status_bar(...);     // layer 1
     render_modals(...);         // layer 2
     render_perf_overlay(...);   // layer 3 (debug)
-}
-```
-
-**Mouse blocking:**
-
-```rust
-pub fn handle_mouse(model: &AppModel, event: &MouseEvent) -> Option<Msg> {
-    if let Some(geom) = &model.ui.active_modal_geometry {
-        if point_in_rect(event.position, geom.rect) {
-            // Route to modal (future: clicking in search results)
-            return Some(Msg::Ui(UiMsg::Modal(/* ... */)));
-        } else {
-            // Click outside modal → close
-            return Some(Msg::Ui(UiMsg::CloseModal));
-        }
-    }
-    handle_editor_mouse(model, event)
+    render_debug_overlay(...);  // layer 4 (debug)
 }
 ```
 
@@ -383,16 +397,42 @@ pub fn handle_mouse(model: &AppModel, event: &MouseEvent) -> Option<Msg> {
 
 ## Phase 6 – Goto Line & Find/Replace Modals
 
+**Status:** ✅ Goto Line Complete (2025-12-09), Find/Replace Pending  
 **Goal:** Reuse modal infrastructure for high-value overlays.  
 **Effort:** L (1–3h each, ~1d total)  
 **User Impact:** HIGH – complete basic modal feature set
 
-**Goto Line:**
+**Goto Line (✅ Complete):**
 
-- Add `GotoLineState` with `input: String`
-- Add `GotoLineMsg` variants
-- Parse input, move cursor, adjust scroll using EDITOR_UI_REFERENCE helpers
-- Render centered smaller modal with single input line
+- `GotoLineState` with `input: String` (already existed)
+- Supports `line:col` format parsing (e.g., "42:10" goes to line 42, column 10)
+- Keyboard shortcut: `Cmd+L` / `Ctrl+L`
+- Allows digits and colon in input
+
+**Modal Input Improvements (✅ Complete):**
+
+- Word deletion: `Option+Backspace` deletes word backward
+- Word navigation: `Option+Left/Right` (placeholder, full cursor tracking TBD)
+- Command palette selection resets to 0 when input changes
+
+**Keyboard Shortcut Updates:**
+
+- Command Palette: `Shift+Cmd+A` (was `Cmd+P`)
+- Go to Line: `Cmd+L` (was `Cmd+G`)
+- Find/Replace: `Cmd+F` (unchanged)
+
+**Theme System Integration (✅ Complete):**
+
+- Added `input_background` and `selection_background` to `OverlayTheme`
+- Modal rendering uses themed colors for all UI elements
+- All theme YAML files updated with new overlay properties
+
+**Theme Picker (✅ Complete):**
+
+- `ThemePickerState` with `selected_index`
+- Lists all built-in themes with current theme checkmark
+- Accessible via Command Palette → "Switch Theme..."
+- Live theme switching on confirm
 
 **Find/Replace:**
 
@@ -458,15 +498,15 @@ pub enum Cmd {
 | ---------------------------- | ----------- | ------------ | -------------------------- | ---------------- |
 | 0. Elm-Style Restructure     | M (1.5–2h)  | None         | **P0** (do first)          | ✅ Mostly Done   |
 | 1. Frame/Painter             | M (1–3h)    | Phase 0      | **P0** (foundation)        | ✅ Complete      |
-| 2. Widget Extraction         | M–L (3–8h)  | Phase 1      | **P0** (foundation)        | 🔜 Next          |
-| 3. Modal/Focus System        | M (1–3h)    | Phase 1      | **P0** (unblocks features) | Planned          |
-| 4. Command Palette           | L (1–2d)    | Phase 3      | **P1** (high user value)   | Planned          |
-| 5. Compositor/Mouse          | M (1–3h)    | Phase 3      | **P2** (polish)            | Planned          |
-| 6. Goto/Find Modals          | L (1d)      | Phase 4      | **P1** (high user value)   | Planned          |
+| 2. Widget Extraction         | M–L (3–8h)  | Phase 1      | **P0** (foundation)        | ✅ Complete      |
+| 3. Modal/Focus System        | M (1–3h)    | Phase 2      | **P0** (unblocks features) | ✅ Complete      |
+| 4. Command Palette           | L (1–2d)    | Phase 3      | **P1** (high user value)   | ✅ Complete      |
+| 5. Compositor/Mouse          | M (1–3h)    | Phase 3      | **P2** (polish)            | ✅ Complete      |
+| 6. Goto/Find Modals          | L (1d)      | Phase 4      | **P1** (high user value)   | 🔶 Goto Done     |
 | 7. Damage Tracking           | L–XL (1–3d) | Phase 2      | **P3** (optimization)      | Planned          |
 
 **Total estimated effort:** 2–3 weeks of focused work  
-**Progress:** Phase 0–1 complete (~3h), Phase 2–7 remaining (~1.5–2.5 weeks)
+**Progress:** Phase 0–5 complete, Phase 6 (Goto Line) complete (~12h total), Find/Replace + Phase 7 remaining
 
 ---
 
