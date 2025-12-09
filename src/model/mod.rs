@@ -21,7 +21,10 @@ pub use status_bar::{
     sync_status_bar, RenderedSegment, SegmentContent, SegmentId, SegmentPosition, StatusBar,
     StatusBarLayout, StatusSegment, TransientMessage,
 };
-pub use ui::UiState;
+pub use ui::{
+    CommandPaletteState, FindReplaceState, GotoLineState, ModalId, ModalState, ThemePickerState,
+    UiState,
+};
 
 #[cfg(debug_assertions)]
 use crate::debug_overlay::DebugOverlay;

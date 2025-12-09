@@ -140,6 +140,30 @@ impl<'a> Frame<'a> {
         }
     }
 
+    /// Draw a rectangle with a 1px border
+    pub fn draw_bordered_rect(
+        &mut self,
+        x: usize,
+        y: usize,
+        w: usize,
+        h: usize,
+        fill_color: u32,
+        border_color: u32,
+    ) {
+        // Fill background
+        self.fill_rect_px(x, y, w, h, fill_color);
+
+        // Draw border (1px on each edge)
+        // Top
+        self.fill_rect_px(x, y, w, 1, border_color);
+        // Bottom
+        self.fill_rect_px(x, y + h.saturating_sub(1), w, 1, border_color);
+        // Left
+        self.fill_rect_px(x, y, 1, h, border_color);
+        // Right
+        self.fill_rect_px(x + w.saturating_sub(1), y, 1, h, border_color);
+    }
+
     /// Draw a sparkline chart (used by perf overlay)
     #[cfg(debug_assertions)]
     pub fn draw_sparkline(
