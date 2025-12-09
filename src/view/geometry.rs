@@ -314,7 +314,7 @@ pub fn modal_bounds(
     let max_visible_items = 8;
     let visible_items = list_items.min(max_visible_items);
 
-    let modal_width = (window_width as f32 * 0.5).min(500.0).max(300.0) as usize;
+    let modal_width = (window_width as f32 * 0.5).clamp(300.0, 500.0) as usize;
     let base_height = line_height * 3 + 20;
     let list_height = if has_list {
         visible_items * line_height + 8
@@ -338,7 +338,13 @@ pub fn point_in_modal(
     has_list: bool,
     list_items: usize,
 ) -> bool {
-    let (mx, my, mw, mh) = modal_bounds(window_width, window_height, line_height, has_list, list_items);
+    let (mx, my, mw, mh) = modal_bounds(
+        window_width,
+        window_height,
+        line_height,
+        has_list,
+        list_items,
+    );
     let px = x as usize;
     let py = y as usize;
     px >= mx && px < mx + mw && py >= my && py < my + mh

@@ -155,6 +155,10 @@ pub struct OverlayThemeData {
     #[serde(default)]
     pub foreground: Option<String>,
     #[serde(default)]
+    pub input_background: Option<String>,
+    #[serde(default)]
+    pub selection_background: Option<String>,
+    #[serde(default)]
     pub highlight: Option<String>,
     #[serde(default)]
     pub warning: Option<String>,
@@ -212,6 +216,10 @@ pub struct OverlayTheme {
     pub background: Color,
     /// Default text color
     pub foreground: Color,
+    /// Input field background color
+    pub input_background: Color,
+    /// Selection/highlight background color in overlay lists
+    pub selection_background: Color,
     /// Success/good indicator color (green)
     pub highlight: Color,
     /// Caution/warning indicator color (yellow)
@@ -225,8 +233,10 @@ impl OverlayTheme {
     pub fn default_dark() -> Self {
         Self {
             border: None,
-            background: Color::rgba(0x20, 0x20, 0x20, 0xE0),
+            background: Color::rgba(0x2B, 0x2D, 0x30, 0xFF),
             foreground: Color::rgb(0xE0, 0xE0, 0xE0),
+            input_background: Color::rgb(0x1E, 0x1E, 0x1E),
+            selection_background: Color::rgba(0x26, 0x4F, 0x78, 0xFF),
             highlight: Color::rgb(0x80, 0xFF, 0x80),
             warning: Color::rgb(0xFF, 0xFF, 0x80),
             error: Color::rgb(0xFF, 0x80, 0x80),
@@ -379,6 +389,22 @@ impl Theme {
                         .map(|s| Color::from_hex(s))
                         .transpose()?
                         .unwrap_or(defaults.foreground),
+                    input_background: data
+                        .ui
+                        .overlay
+                        .input_background
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.input_background),
+                    selection_background: data
+                        .ui
+                        .overlay
+                        .selection_background
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.selection_background),
                     highlight: data
                         .ui
                         .overlay
