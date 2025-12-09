@@ -1,9 +1,9 @@
 use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 
 use token::commands::Cmd;
-use token::messages::{AppMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, Msg};
+use token::messages::{AppMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, UiMsg};
 use token::model::editor_area::SplitDirection;
-use token::model::AppModel;
+use token::model::{AppModel, ModalId};
 use token::update::update;
 
 #[allow(clippy::too_many_arguments)]
@@ -17,6 +17,10 @@ pub fn handle_key(
     logo: bool,
     option_double_tapped: bool,
 ) -> Option<Cmd> {
+    // Focus capture: route keys to modal when active
+    if model.ui.has_modal() {
+        return handle_modal_key(model, key, ctrl, shift, alt, logo);
+    }
     // === Numpad Shortcuts (no modifiers needed) ===
     match physical_key {
         PhysicalKey::Code(KeyCode::Numpad1) => {
@@ -79,8 +83,17 @@ pub fn handle_key(
             update(model, Msg::App(AppMsg::SaveFile))
         }
 
+        // Command Palette (Shift+Cmd+A on macOS, Shift+Ctrl+A elsewhere)
+        // Must be before Select All to take precedence
+        Key::Character(ref s) if s.eq_ignore_ascii_case("a") && (ctrl || logo) && shift => {
+            update(
+                model,
+                Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)),
+            )
+        }
+
         // Select All (Cmd+A on macOS, Ctrl+A elsewhere)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("a") && (ctrl || logo) => {
+        Key::Character(ref s) if s.eq_ignore_ascii_case("a") && (ctrl || logo) && !shift => {
             update(model, Msg::Editor(EditorMsg::SelectAll))
         }
 
@@ -112,6 +125,18 @@ pub fn handle_key(
         // Unselect last occurrence (Shift+Cmd+J on macOS, Shift+Ctrl+J elsewhere)
         Key::Character(ref s) if s.eq_ignore_ascii_case("j") && (ctrl || logo) && shift => {
             update(model, Msg::Editor(EditorMsg::UnselectOccurrence))
+        }
+
+        // === Modal Shortcuts ===
+
+        // Goto Line (Cmd+L on macOS, Ctrl+L elsewhere)
+        Key::Character(ref s) if s.eq_ignore_ascii_case("l") && (ctrl || logo) && !shift => {
+            update(model, Msg::Ui(UiMsg::ToggleModal(ModalId::GotoLine)))
+        }
+
+        // Find (Cmd+F on macOS, Ctrl+F elsewhere)
+        Key::Character(ref s) if s.eq_ignore_ascii_case("f") && (ctrl || logo) && !shift => {
+            update(model, Msg::Ui(UiMsg::ToggleModal(ModalId::FindReplace)))
         }
 
         // === Split View Shortcuts ===
@@ -387,5 +412,69 @@ pub fn handle_key(
         }
 
         _ => None,
+    }
+}
+
+/// Handle keyboard input when a modal is active.
+///
+/// This captures focus and routes keys to the modal instead of the editor.
+#[allow(clippy::too_many_arguments)]
+fn handle_modal_key(
+    model: &mut AppModel,
+    key: Key,
+    ctrl: bool,
+    _shift: bool,
+    alt: bool,
+    logo: bool,
+) -> Option<Cmd> {
+    match key {
+        // Escape: close modal
+        Key::Named(NamedKey::Escape) => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Close))),
+
+        // Enter: confirm modal action
+        Key::Named(NamedKey::Enter) => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Confirm))),
+
+        // Arrow keys for navigation in modal lists
+        Key::Named(NamedKey::ArrowUp) => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectPrevious)))
+        }
+        Key::Named(NamedKey::ArrowDown) => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)))
+        }
+
+        // Word navigation (Option/Alt + Arrow)
+        Key::Named(NamedKey::ArrowLeft) if alt => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorWordLeft)))
+        }
+        Key::Named(NamedKey::ArrowRight) if alt => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorWordRight)))
+        }
+
+        // Word deletion (Option/Alt + Backspace)
+        Key::Named(NamedKey::Backspace) if alt => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteWordBackward)))
+        }
+
+        // Backspace: delete character
+        Key::Named(NamedKey::Backspace) => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteBackward)))
+        }
+
+        // Character input (only when no Ctrl/Cmd modifiers)
+        Key::Character(ref s) if !(ctrl || logo) => {
+            let mut cmd = None;
+            for ch in s.chars() {
+                cmd = update(model, Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar(ch)))).or(cmd);
+            }
+            cmd
+        }
+
+        // Space (without modifiers)
+        Key::Named(NamedKey::Space) if !(ctrl || logo) => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar(' '))))
+        }
+
+        // Block all other keys when modal is active (consume but don't act)
+        _ => Some(Cmd::Redraw),
     }
 }
