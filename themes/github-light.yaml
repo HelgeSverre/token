@@ -26,6 +26,8 @@ ui:
     border: "#D0D7DE"
     background: "#F0F0F0E0"
     foreground: "#24292F"
+    input_background: "#FFFFFF"
+    selection_background: "#ADD6FF"
     highlight: "#1A7F37"
     warning: "#9A6700"
     error: "#CF222E"
