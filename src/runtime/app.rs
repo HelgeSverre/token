@@ -13,12 +13,14 @@ use winit::keyboard::{Key, NamedKey};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorIcon, Window};
 
-use token::commands::Cmd;
-use token::messages::{AppMsg, EditorMsg, LayoutMsg, Msg, UiMsg};
+use token::commands::{filter_commands, Cmd};
+use token::messages::{AppMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, UiMsg};
 use token::model::editor::Position;
 use token::model::editor_area::{Rect, SplitDirection};
-use token::model::AppModel;
+use token::model::{AppModel, ModalState};
 use token::update::update;
+
+use crate::view::geometry::point_in_modal;
 
 use super::input::handle_key;
 use crate::view::Renderer;
@@ -295,6 +297,36 @@ impl App {
                 ..
             } => {
                 if let Some((x, y)) = self.mouse_position {
+                    // Modal mouse blocking - click outside closes, click inside is consumed
+                    if self.model.ui.has_modal() {
+                        let (has_list, list_items) = match &self.model.ui.active_modal {
+                            Some(ModalState::CommandPalette(state)) => {
+                                (true, filter_commands(&state.input).len())
+                            }
+                            _ => (false, 0),
+                        };
+                        let in_modal = point_in_modal(
+                            x,
+                            y,
+                            self.model.window_size.0 as usize,
+                            self.model.window_size.1 as usize,
+                            self.model.line_height,
+                            has_list,
+                            list_items,
+                        );
+
+                        if in_modal {
+                            // Future: could handle clicking on list items here
+                            return Some(Cmd::Redraw);
+                        } else {
+                            // Click outside modal closes it
+                            return update(
+                                &mut self.model,
+                                Msg::Ui(UiMsg::Modal(ModalMsg::Close)),
+                            );
+                        }
+                    }
+
                     if let Some(renderer) = &mut self.renderer {
                         if renderer.is_in_status_bar(y) {
                             return None;
