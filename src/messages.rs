@@ -142,9 +142,40 @@ pub enum DocumentMsg {
     UnindentLines,
 }
 
-use crate::model::{GroupId, SegmentContent, SegmentId, SplitDirection, TabId};
+use crate::model::{GroupId, ModalId, SegmentContent, SegmentId, SplitDirection, TabId};
 
-/// UI-specific messages (status bar, cursor blink)
+/// Modal-specific messages (command palette, goto line, find/replace)
+#[derive(Debug, Clone)]
+pub enum ModalMsg {
+    /// Open command palette
+    OpenCommandPalette,
+    /// Open goto line dialog
+    OpenGotoLine,
+    /// Open find/replace dialog
+    OpenFindReplace,
+    /// Close the currently active modal
+    Close,
+    /// Update modal input text
+    SetInput(String),
+    /// Insert character into modal input
+    InsertChar(char),
+    /// Delete character from modal input (backspace)
+    DeleteBackward,
+    /// Delete word backward from modal input (Option+Backspace)
+    DeleteWordBackward,
+    /// Move cursor word left in modal input (Option+Left)
+    MoveCursorWordLeft,
+    /// Move cursor word right in modal input (Option+Right)
+    MoveCursorWordRight,
+    /// Move selection up in list (e.g., command palette results)
+    SelectPrevious,
+    /// Move selection down in list
+    SelectNext,
+    /// Confirm/execute the modal action (Enter)
+    Confirm,
+}
+
+/// UI-specific messages (status bar, cursor blink, modals)
 #[derive(Debug, Clone)]
 pub enum UiMsg {
     /// Set status bar message (legacy, for backward compatibility)
@@ -160,6 +191,10 @@ pub enum UiMsg {
     SetTransientMessage { text: String, duration_ms: u64 },
     /// Clear the transient message
     ClearTransientMessage,
+    /// Modal messages
+    Modal(ModalMsg),
+    /// Toggle a modal (open if closed, close if open)
+    ToggleModal(ModalId),
 }
 
 /// Layout messages (split views, tabs, groups)
