@@ -1,8 +1,10 @@
 //! App message handlers (file operations, window events)
 
-use crate::commands::Cmd;
-use crate::messages::AppMsg;
-use crate::model::AppModel;
+use crate::commands::{Cmd, CommandId};
+use crate::messages::{AppMsg, DocumentMsg, LayoutMsg, UiMsg};
+use crate::model::{AppModel, ModalId, SplitDirection};
+
+use super::{update_document, update_layout, update_ui};
 
 /// Handle app messages (file operations, window events)
 pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
@@ -79,5 +81,38 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             // Handled by the event loop
             None
         }
+    }
+}
+
+/// Execute a command from the command palette
+pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
+    match cmd_id {
+        CommandId::NewFile => update_layout(model, LayoutMsg::NewTab),
+        CommandId::SaveFile => update_app(model, AppMsg::SaveFile),
+        CommandId::Undo => update_document(model, DocumentMsg::Undo),
+        CommandId::Redo => update_document(model, DocumentMsg::Redo),
+        CommandId::Cut => update_document(model, DocumentMsg::Cut),
+        CommandId::Copy => update_document(model, DocumentMsg::Copy),
+        CommandId::Paste => update_document(model, DocumentMsg::Paste),
+        CommandId::SelectAll => {
+            // SelectAll is an EditorMsg, so we need to dispatch through update
+            crate::update::update_editor(model, crate::messages::EditorMsg::SelectAll)
+        }
+        CommandId::GotoLine => update_ui(model, UiMsg::ToggleModal(ModalId::GotoLine)),
+        CommandId::SplitHorizontal => {
+            update_layout(model, LayoutMsg::SplitFocused(SplitDirection::Horizontal))
+        }
+        CommandId::SplitVertical => {
+            update_layout(model, LayoutMsg::SplitFocused(SplitDirection::Vertical))
+        }
+        CommandId::CloseGroup => update_layout(model, LayoutMsg::CloseFocusedGroup),
+        CommandId::NextTab => update_layout(model, LayoutMsg::NextTab),
+        CommandId::PrevTab => update_layout(model, LayoutMsg::PrevTab),
+        CommandId::CloseTab => update_layout(model, LayoutMsg::CloseFocusedTab),
+        CommandId::Find => update_ui(model, UiMsg::ToggleModal(ModalId::FindReplace)),
+        CommandId::ShowCommandPalette => {
+            update_ui(model, UiMsg::ToggleModal(ModalId::CommandPalette))
+        }
+        CommandId::SwitchTheme => update_ui(model, UiMsg::ToggleModal(ModalId::ThemePicker)),
     }
 }
