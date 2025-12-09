@@ -320,10 +320,7 @@ impl App {
                             return Some(Cmd::Redraw);
                         } else {
                             // Click outside modal closes it
-                            return update(
-                                &mut self.model,
-                                Msg::Ui(UiMsg::Modal(ModalMsg::Close)),
-                            );
+                            return update(&mut self.model, Msg::Ui(UiMsg::Modal(ModalMsg::Close)));
                         }
                     }
 

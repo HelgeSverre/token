@@ -640,7 +640,14 @@ impl Renderer {
                 let modal_x = (window_width.saturating_sub(modal_width)) / 2;
                 let modal_y = window_height / 4;
 
-                frame.draw_bordered_rect(modal_x, modal_y, modal_width, modal_height, bg_color, border_color);
+                frame.draw_bordered_rect(
+                    modal_x,
+                    modal_y,
+                    modal_width,
+                    modal_height,
+                    bg_color,
+                    border_color,
+                );
 
                 // Title
                 let title_x = modal_x + 12;
@@ -649,7 +656,9 @@ impl Renderer {
 
                 // Theme list
                 let list_y = title_y + line_height + 8;
-                let clamped_selected = state.selected_index.min(BUILTIN_THEMES.len().saturating_sub(1));
+                let clamped_selected = state
+                    .selected_index
+                    .min(BUILTIN_THEMES.len().saturating_sub(1));
 
                 for (i, theme_entry) in BUILTIN_THEMES.iter().enumerate() {
                     let item_y = list_y + i * line_height;
@@ -690,7 +699,14 @@ impl Renderer {
                     filtered_commands.len(),
                 );
 
-                frame.draw_bordered_rect(modal_x, modal_y, modal_width, modal_height, bg_color, border_color);
+                frame.draw_bordered_rect(
+                    modal_x,
+                    modal_y,
+                    modal_width,
+                    modal_height,
+                    bg_color,
+                    border_color,
+                );
 
                 // Title
                 let title_x = modal_x + 12;
@@ -710,27 +726,37 @@ impl Renderer {
 
                 // Cursor
                 if model.ui.cursor_visible {
-                    let cursor_x = text_x + (state.input.len() as f32 * char_width).round() as usize;
+                    let cursor_x =
+                        text_x + (state.input.len() as f32 * char_width).round() as usize;
                     frame.fill_rect_px(cursor_x, text_y, 2, line_height, highlight_color);
                 }
 
                 // Command list
                 if !filtered_commands.is_empty() {
                     let list_y = input_y + input_height + 8;
-                    let clamped_selected = state.selected_index.min(filtered_commands.len().saturating_sub(1));
+                    let clamped_selected = state
+                        .selected_index
+                        .min(filtered_commands.len().saturating_sub(1));
 
                     for (i, cmd) in filtered_commands.iter().take(max_visible_items).enumerate() {
                         let item_y = list_y + i * line_height;
                         let is_selected = i == clamped_selected;
 
                         if is_selected {
-                            frame.fill_rect_px(modal_x + 4, item_y, modal_width - 8, line_height, selection_bg);
+                            frame.fill_rect_px(
+                                modal_x + 4,
+                                item_y,
+                                modal_width - 8,
+                                line_height,
+                                selection_bg,
+                            );
                         }
 
                         painter.draw(frame, modal_x + 16, item_y, cmd.label, fg_color);
 
                         if let Some(kb) = cmd.keybinding {
-                            let kb_width = (kb.chars().count() as f32 * char_width).round() as usize;
+                            let kb_width =
+                                (kb.chars().count() as f32 * char_width).round() as usize;
                             let kb_x = modal_x + modal_width - kb_width - 16;
                             painter.draw(frame, kb_x, item_y, kb, dim_color);
                         }
@@ -738,7 +764,10 @@ impl Renderer {
 
                     if filtered_commands.len() > max_visible_items {
                         let more_y = list_y + max_visible_items * line_height;
-                        let more_text = format!("... and {} more", filtered_commands.len() - max_visible_items);
+                        let more_text = format!(
+                            "... and {} more",
+                            filtered_commands.len() - max_visible_items
+                        );
                         painter.draw(frame, modal_x + 16, more_y, &more_text, dim_color);
                     }
                 }
@@ -751,15 +780,17 @@ impl Renderer {
                     _ => unreachable!(),
                 };
 
-                let (modal_x, modal_y, modal_width, modal_height) = geometry::modal_bounds(
-                    window_width,
-                    window_height,
-                    line_height,
-                    false,
-                    0,
-                );
+                let (modal_x, modal_y, modal_width, modal_height) =
+                    geometry::modal_bounds(window_width, window_height, line_height, false, 0);
 
-                frame.draw_bordered_rect(modal_x, modal_y, modal_width, modal_height, bg_color, border_color);
+                frame.draw_bordered_rect(
+                    modal_x,
+                    modal_y,
+                    modal_width,
+                    modal_height,
+                    bg_color,
+                    border_color,
+                );
 
                 // Title
                 let title_x = modal_x + 12;

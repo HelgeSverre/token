@@ -86,10 +86,7 @@ pub fn handle_key(
         // Command Palette (Shift+Cmd+A on macOS, Shift+Ctrl+A elsewhere)
         // Must be before Select All to take precedence
         Key::Character(ref s) if s.eq_ignore_ascii_case("a") && (ctrl || logo) && shift => {
-            update(
-                model,
-                Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)),
-            )
+            update(model, Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)))
         }
 
         // Select All (Cmd+A on macOS, Ctrl+A elsewhere)
