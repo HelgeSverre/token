@@ -166,6 +166,7 @@ impl<'a> Frame<'a> {
 
     /// Draw a sparkline chart (used by perf overlay)
     #[cfg(debug_assertions)]
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_sparkline(
         &mut self,
         x: usize,
