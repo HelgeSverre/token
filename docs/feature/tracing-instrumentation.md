@@ -1,9 +1,9 @@
 # Debug Tracing & Instrumentation
 
-> **Status**: 🚧 Partially Implemented  
+> **Status**: ✅ Complete  
 > **Priority**: High (debugging multi-cursor issues)  
-> **Related**: Multi-cursor system, Elm architecture
-> **TODO**: Add structured log file output for post-mortem analysis
+> **Related**: Multi-cursor system, Elm architecture  
+> **Last Updated**: 2025-12-08
 
 ## Problem Statement
 
@@ -585,6 +585,49 @@ RUST_LOG=token::update::editor=debug cargo run
 3. ✅ Invariant violations include context about triggering message
 4. ✅ Real-time cursor/selection state visible in overlay
 5. ✅ Zero runtime cost in release builds
+
+---
+
+## Resolved Issues
+
+### ~~Message Type Names Show Discriminant Instead of Variant Name~~
+
+**Status**: ✅ Resolved (2025-12-08)  
+**Location**: `src/update/mod.rs:93-109` (`msg_type_name()` function)  
+**Solution**: Option A (Debug format)
+
+**Problem** (was): The implementation used `std::mem::discriminant()` which output opaque values like `Ui::Discriminant(1)`.
+
+**Solution implemented**: Changed to use `{:?}` Debug formatting on the inner enum directly.
+
+```rust
+#[cfg(debug_assertions)]
+fn msg_type_name(msg: &Msg) -> String {
+    match msg {
+        Msg::Editor(m) => format!("Editor::{:?}", m),
+        Msg::Document(m) => format!("Document::{:?}", m),
+        Msg::Ui(m) => format!("Ui::{:?}", m),
+        Msg::Layout(m) => format!("Layout::{:?}", m),
+        Msg::App(m) => format!("App::{:?}", m),
+    }
+}
+```
+
+**Output examples:**
+```
+msg=App::Resize(800, 600)
+msg=Document::InsertChar('a')
+msg=Editor::MoveCursor(Up)
+msg=Layout::SplitFocused(Horizontal)
+```
+
+Note: Noisy periodic messages like `Ui::BlinkCursor` are automatically filtered from logs.
+
+**Why Option A over alternatives:**
+- Zero dependencies (vs strum crate)
+- Zero maintenance (vs ~85 manual match arms)
+- Includes variant arguments which are helpful for debugging multi-cursor/selection issues
+- Greppable: `rg "Editor::MoveCursor"` works regardless of argument values
 
 ---
 

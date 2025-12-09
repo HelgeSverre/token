@@ -4,7 +4,54 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## 2025-12-07 (Latest)
+## 2025-12-08 (Latest)
+
+### Fixed - Debug Tracing Message Names
+
+Fixed `msg_type_name()` to show human-readable variant names instead of opaque discriminants:
+
+**Before:** `msg=Ui::Discriminant(1)`, `msg=Document::Discriminant(0)`  
+**After:** `msg=Ui::BlinkCursor`, `msg=Document::InsertChar('a')`
+
+- Changed from `std::mem::discriminant()` to Debug formatting (`{:?}`)
+- Includes variant arguments which helps debug multi-cursor/selection issues
+- Zero dependencies, zero maintenance overhead
+
+### Added - Frame/Painter Abstraction (GUI Phase 1)
+
+Centralized drawing primitives for cleaner, more maintainable rendering code:
+
+- **`Frame` struct** (`src/view/frame.rs`) - wraps pixel buffer with safe drawing methods:
+  - `clear()`, `fill_rect()`, `fill_rect_px()` - solid color fills
+  - `set_pixel()`, `get_pixel()` - single pixel operations
+  - `blend_pixel()`, `blend_rect()` - alpha blending
+  - `dim()` - modal background dimming
+  - `draw_sparkline()` - debug chart rendering
+
+- **`TextPainter` struct** - wraps fontdue + glyph cache:
+  - `draw()` - render text at position with color
+  - `measure_width()` - calculate text width in pixels
+
+- **Migrated all rendering functions** to use Frame/TextPainter:
+  - `render_all_groups_static()` - takes Frame + TextPainter
+  - `render_editor_group_static()` - all pixel ops use Frame
+  - `render_tab_bar_static()` - uses Frame/TextPainter
+  - `render_splitters_static()` - simplified from ~15 lines to 4 lines
+  - `render_perf_overlay()` - fully migrated
+  - Status bar rendering - uses Frame/TextPainter
+
+- **Removed legacy functions**: `draw_text()`, `draw_sparkline()` standalone functions
+
+#### Benefits
+
+- Simpler APIs with automatic bounds checking
+- Fewer parameters passed through render functions
+- Consistent abstraction for all pixel operations
+- Prepared for future widget extraction (Phase 2)
+
+---
+
+## 2025-12-07
 
 ### Added - File Dropping & Multi-File Arguments
 

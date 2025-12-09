@@ -9,9 +9,21 @@ For archived phases, see [archived/old-roadmap-file.md](archived/old-roadmap-fil
 
 ## Recently Completed
 
-### Debug Tracing & Instrumentation 🚧
+### GUI Phase 1 – Frame/Painter Abstraction ✅
 
-**Design:** [feature/tracing-instrumentation.md](feature/tracing-instrumentation.md) | **Partially Completed:** 2025-12-07
+**Design:** [GUI-CLEANUP.md](GUI-CLEANUP.md) | **Completed:** 2025-12-08
+
+Centralized drawing primitives for cleaner rendering code:
+
+- `Frame` struct wraps pixel buffer with safe drawing methods
+- `TextPainter` struct wraps fontdue + glyph cache for text
+- All render functions migrated (`render_*_static`, `render_perf_overlay`)
+- Removed legacy `draw_text()` and `draw_sparkline()` functions
+- Next: Phase 2 (Widget Extraction) or Phase 3 (Modal/Focus System)
+
+### Debug Tracing & Instrumentation ✅
+
+**Design:** [feature/tracing-instrumentation.md](feature/tracing-instrumentation.md) | **Completed:** 2025-12-08
 
 Debug instrumentation for multi-cursor state transitions:
 
@@ -21,8 +33,7 @@ Debug instrumentation for multi-cursor state transitions:
 - `assert_invariants_with_context()` for contextual assertion failures
 - F8 toggle for in-editor debug overlay
 - `make trace` runs with `RUST_LOG=debug`
-
-**TODO:** Add structured log file output for post-mortem analysis
+- Human-readable message names (e.g., `Editor::MoveCursor(Up)` instead of discriminants)
 
 ### Multi-Cursor Line Operations ✅
 
@@ -172,7 +183,8 @@ Group rapid consecutive edits into single undo entries:
 
 | Feature                     | Status      | Design Doc                                                                           |
 | --------------------------- | ----------- | ------------------------------------------------------------------------------------ |
-| Debug Tracing               | 🚧 Partial  | [feature/tracing-instrumentation.md](feature/tracing-instrumentation.md)             |
+| GUI Cleanup (Frame/Painter) | ✅ Phase 1  | [GUI-CLEANUP.md](GUI-CLEANUP.md)                                                     |
+| Debug Tracing               | ✅ Complete | [feature/tracing-instrumentation.md](feature/tracing-instrumentation.md)             |
 | Codebase Organization       | ✅ Complete | [archived/ORGANIZATION-CODEBASE.md](archived/ORGANIZATION-CODEBASE.md)               |
 | Multi-Cursor Selection Gaps | ✅ Complete | [feature/MULTI_CURSOR_SELECTION_GAPS.md](archived/MULTI_CURSOR_SELECTION_GAPS.md)     |
 | Theming System              | ✅ Complete | [feature/THEMING.md](feature/THEMING.md)                                             |
@@ -181,7 +193,6 @@ Group rapid consecutive edits into single undo entries:
 | Selection & Multi-Cursor    | ✅ Complete | [archived/SELECTION_MULTICURSOR.md](archived/SELECTION_MULTICURSOR.md)               |
 | Multi-Cursor Movement       | ✅ Complete | [archived/MULTI_CURSOR_MOVEMENT.md](archived/MULTI_CURSOR_MOVEMENT.md)               |
 | Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md) |
-| GUI Architecture            | Planned     | [GUI-REVIEW-FINDINGS.md](GUI-REVIEW-FINDINGS.md)                                     |
 | Configurable Keymapping     | Planned     | [feature/KEYMAPPING.md](feature/KEYMAPPING.md)                                       |
 | File Dropping               | Planned     | [feature/handle-file-dropping.md](feature/handle-file-dropping.md)                   |
 | Workspace Management        | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                   |
@@ -203,29 +214,33 @@ Group rapid consecutive edits into single undo entries:
 src/
 ├── main.rs              # Entry point (~20 lines) + tests (~669 lines)
 ├── lib.rs               # Library root with module exports
-├── app.rs               # App struct, ApplicationHandler impl (~520 lines)
-├── input.rs             # handle_key, keyboard→Msg mapping (~402 lines)
-├── view.rs              # Renderer, drawing functions (~1072 lines)
-├── perf.rs              # PerfStats, debug overlay (debug only, ~406 lines)
 ├── model/
-│   ├── mod.rs           # AppModel struct, layout constants, accessors (~273 lines)
-│   ├── document.rs      # Document struct (buffer, undo/redo, file_path) (~245 lines)
-│   ├── editor.rs        # EditorState, Cursor, Selection, Viewport (~1131 lines)
-│   ├── editor_area.rs   # EditorArea, groups, tabs, layout tree (~895 lines)
-│   ├── ui.rs            # UiState (cursor blink, transient messages) (~85 lines)
-│   └── status_bar.rs    # StatusBar, StatusSegment, sync_status_bar() (~446 lines)
-├── update/              # Update module directory
-│   ├── mod.rs           # Pure dispatcher (~36 lines)
-│   ├── editor.rs        # Cursor, selection, expand/shrink (~1123 lines)
-│   ├── document.rs      # Text editing, undo/redo (~1231 lines)
-│   ├── layout.rs        # Split views, tabs, groups (~472 lines)
-│   ├── app.rs           # File operations, window resize (~83 lines)
-│   └── ui.rs            # Status bar, cursor blink (~55 lines)
-├── messages.rs          # Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg, AppMsg (~260 lines)
-├── commands.rs          # Cmd enum (Redraw, SaveFile, LoadFile, Batch) (~55 lines)
-├── theme.rs             # Theme, Color, TabBarTheme, SplitterTheme (~540 lines)
-├── overlay.rs           # OverlayConfig, OverlayBounds, render functions (~285 lines)
-└── util.rs              # CharType enum, is_punctuation, char_type (~65 lines)
+│   ├── mod.rs           # AppModel struct, layout constants, accessors
+│   ├── document.rs      # Document struct (buffer, undo/redo, file_path)
+│   ├── editor.rs        # EditorState, Cursor, Selection, Viewport
+│   ├── editor_area.rs   # EditorArea, groups, tabs, layout tree
+│   ├── ui.rs            # UiState (cursor blink, transient messages)
+│   └── status_bar.rs    # StatusBar, StatusSegment, sync_status_bar()
+├── update/
+│   ├── mod.rs           # Pure dispatcher
+│   ├── editor.rs        # Cursor, selection, expand/shrink
+│   ├── document.rs      # Text editing, undo/redo
+│   ├── layout.rs        # Split views, tabs, groups
+│   ├── app.rs           # File operations, window resize
+│   └── ui.rs            # Status bar, cursor blink
+├── view/                # NEW: Rendering module
+│   ├── mod.rs           # Renderer struct, render functions
+│   └── frame.rs         # Frame (pixel buffer) + TextPainter abstractions
+├── runtime/             # NEW: Platform/winit glue
+│   ├── mod.rs           # Module exports
+│   ├── app.rs           # App struct, ApplicationHandler impl
+│   ├── input.rs         # handle_key, keyboard→Msg mapping
+│   └── perf.rs          # PerfStats, debug overlay (debug only)
+├── messages.rs          # Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg, AppMsg
+├── commands.rs          # Cmd enum (Redraw, SaveFile, LoadFile, Batch)
+├── theme.rs             # Theme, Color, TabBarTheme, SplitterTheme
+├── overlay.rs           # OverlayConfig, OverlayBounds, render functions
+└── util.rs              # CharType enum, is_punctuation, char_type
 
 themes/
 ├── dark.yaml            # Default dark theme (VS Code-inspired)

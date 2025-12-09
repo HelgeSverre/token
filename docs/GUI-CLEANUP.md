@@ -1,7 +1,8 @@
 # GUI Cleanup & Architecture Improvement Plan
 
 **Status:** 🚧 In Progress  
-**Created:** 2025-12-07
+**Created:** 2025-12-07  
+**Last Updated:** 2025-12-08
 
 This document consolidates the GUI improvement roadmap, including Elm-style directory restructuring and the phased rendering/modal system improvements.
 
@@ -24,9 +25,20 @@ This document consolidates the GUI improvement roadmap, including Elm-style dire
 
 ## Phase 0 – Elm-Style Directory Restructure
 
+**Status:** ✅ Mostly Complete (2025-12-07)  
 **Goal:** Reorganize codebase to clearly reflect Elm's Model-Update-View architecture; move all tests to `tests/`.  
 **Effort:** M (1.5–2h)  
 **User Impact:** None (internal restructure)
+
+**Completed:**
+- Created `view/` module with `mod.rs` (Renderer) and `frame.rs` (Frame/TextPainter)
+- Created `runtime/` module with `app.rs`, `input.rs`, `perf.rs`
+- `model/` and `update/` already existed
+
+**Remaining (optional, low priority):**
+- Rename `messages.rs` → `msg.rs`
+- Rename `commands.rs` → `cmd.rs`  
+- Move `overlay.rs` → `view/overlay.rs`
 
 ### Current Structure
 
@@ -127,22 +139,27 @@ tests/                  # All tests here
 
 ## Phase 1 – Frame/Painter Abstraction
 
+**Status:** ✅ Complete (2025-12-08)  
 **Goal:** Centralize drawing primitives; stop indexing pixel buffer directly everywhere.  
 **Effort:** M (1–3h)  
 **User Impact:** None (internal refactor, unblocks everything else)
 
-**Files to modify:**
+**Completed:**
 
-- `src/view/mod.rs` – Add `Frame` and `TextPainter` structs
-- `src/view/overlay.rs` – Migrate to use `Frame` helpers
+1. Created `src/view/frame.rs` with `Frame` and `TextPainter` structs
+2. `Frame` provides: `clear()`, `fill_rect()`, `fill_rect_px()`, `set_pixel()`, `get_pixel()`, `blend_pixel()`, `blend_rect()`, `dim()`, `draw_sparkline()`
+3. `TextPainter` provides: `draw()`, `measure_width()`
+4. Migrated all rendering functions to use Frame/TextPainter:
+   - `render_all_groups_static()` - now takes `Frame` + `TextPainter`
+   - `render_editor_group_static()` - all pixel ops use Frame methods
+   - `render_tab_bar_static()` - uses Frame/TextPainter
+   - `render_splitters_static()` - simplified from ~15 lines to 4 lines
+   - `render_perf_overlay()` - fully migrated to Frame/TextPainter
+   - Status bar rendering - uses Frame/TextPainter
+5. Removed standalone `draw_text()` and `draw_sparkline()` functions
+6. All 451 tests pass
 
-**Steps:**
-
-1. Add `Frame` struct with `clear()`, `fill_rect()`, `blend_pixel()` methods
-2. Add `TextPainter` wrapper for fontdue + glyph cache
-3. Wrap `Renderer::render_impl()` to create `Frame` from softbuffer
-4. Migrate existing pixel loops to `Frame` methods (status bar → tab bar → gutter → text area)
-5. Migrate overlay to take `&mut Frame` instead of raw buffer
+**API:**
 
 ```rust
 pub struct Frame<'a> {
@@ -154,12 +171,21 @@ pub struct Frame<'a> {
 impl<'a> Frame<'a> {
     pub fn clear(&mut self, color: u32);
     pub fn fill_rect(&mut self, rect: Rect, color: u32);
+    pub fn fill_rect_px(&mut self, x: usize, y: usize, w: usize, h: usize, color: u32);
     pub fn blend_pixel(&mut self, x: usize, y: usize, color: u32);
+    pub fn blend_rect(&mut self, rect: Rect, color: u32);
 }
 
 pub struct TextPainter<'a> {
     font: &'a Font,
     glyph_cache: &'a mut GlyphCache,
+    font_size: f32,
+    ascent: f32,
+}
+
+impl<'a> TextPainter<'a> {
+    pub fn draw(&mut self, frame: &mut Frame, x: usize, y: usize, text: &str, color: u32);
+    pub fn measure_width(&mut self, text: &str) -> f32;
 }
 ```
 
@@ -428,18 +454,19 @@ pub enum Cmd {
 
 ## Summary Timeline
 
-| Phase                        | Effort      | Dependencies | Priority                   |
-| ---------------------------- | ----------- | ------------ | -------------------------- |
-| 0. Elm-Style Restructure     | M (1.5–2h)  | None         | **P0** (do first)          |
-| 1. Frame/Painter             | M (1–3h)    | Phase 0      | **P0** (foundation)        |
-| 2. Widget Extraction         | M–L (3–8h)  | Phase 1      | **P0** (foundation)        |
-| 3. Modal/Focus System        | M (1–3h)    | Phase 1      | **P0** (unblocks features) |
-| 4. Command Palette           | L (1–2d)    | Phase 3      | **P1** (high user value)   |
-| 5. Compositor/Mouse          | M (1–3h)    | Phase 3      | **P2** (polish)            |
-| 6. Goto/Find Modals          | L (1d)      | Phase 4      | **P1** (high user value)   |
-| 7. Damage Tracking           | L–XL (1–3d) | Phase 2      | **P3** (optimization)      |
+| Phase                        | Effort      | Dependencies | Priority                   | Status           |
+| ---------------------------- | ----------- | ------------ | -------------------------- | ---------------- |
+| 0. Elm-Style Restructure     | M (1.5–2h)  | None         | **P0** (do first)          | ✅ Mostly Done   |
+| 1. Frame/Painter             | M (1–3h)    | Phase 0      | **P0** (foundation)        | ✅ Complete      |
+| 2. Widget Extraction         | M–L (3–8h)  | Phase 1      | **P0** (foundation)        | 🔜 Next          |
+| 3. Modal/Focus System        | M (1–3h)    | Phase 1      | **P0** (unblocks features) | Planned          |
+| 4. Command Palette           | L (1–2d)    | Phase 3      | **P1** (high user value)   | Planned          |
+| 5. Compositor/Mouse          | M (1–3h)    | Phase 3      | **P2** (polish)            | Planned          |
+| 6. Goto/Find Modals          | L (1d)      | Phase 4      | **P1** (high user value)   | Planned          |
+| 7. Damage Tracking           | L–XL (1–3d) | Phase 2      | **P3** (optimization)      | Planned          |
 
-**Total estimated effort:** 2–3 weeks of focused work
+**Total estimated effort:** 2–3 weeks of focused work  
+**Progress:** Phase 0–1 complete (~3h), Phase 2–7 remaining (~1.5–2.5 weeks)
 
 ---
 
