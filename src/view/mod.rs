@@ -3,8 +3,12 @@
 //! Contains the Renderer struct and all rendering-related functionality.
 
 pub mod frame;
+pub mod geometry;
 
 pub use frame::{Frame, TextPainter};
+
+// Re-export geometry helpers for backward compatibility
+pub use geometry::{char_col_to_visual_col, expand_tabs_for_display, TAB_BAR_HEIGHT};
 
 use anyhow::Result;
 use fontdue::{Font, FontSettings, LineMetrics, Metrics};
@@ -37,65 +41,6 @@ fn tab_title(model: &AppModel, tab: &Tab) -> String {
     document.display_name()
 }
 pub type GlyphCache = HashMap<GlyphCacheKey, (Metrics, Vec<u8>)>;
-
-pub const TAB_BAR_HEIGHT: usize = 28;
-pub const TABULATOR_WIDTH: usize = 4;
-
-pub fn expand_tabs_for_display(text: &str) -> String {
-    let mut result = String::with_capacity(text.len() * 2);
-    let mut visual_col = 0;
-
-    for ch in text.chars() {
-        if ch == '\t' {
-            let spaces = TABULATOR_WIDTH - (visual_col % TABULATOR_WIDTH);
-            for _ in 0..spaces {
-                result.push(' ');
-            }
-            visual_col += spaces;
-        } else {
-            result.push(ch);
-            visual_col += 1;
-        }
-    }
-
-    result
-}
-
-pub fn char_col_to_visual_col(text: &str, char_col: usize) -> usize {
-    let mut visual_col = 0;
-    for (i, ch) in text.chars().enumerate() {
-        if i >= char_col {
-            break;
-        }
-        if ch == '\t' {
-            visual_col += TABULATOR_WIDTH - (visual_col % TABULATOR_WIDTH);
-        } else {
-            visual_col += 1;
-        }
-    }
-    visual_col
-}
-
-pub fn visual_col_to_char_col(text: &str, visual_col: usize) -> usize {
-    let mut current_visual = 0;
-    let mut char_col = 0;
-
-    for ch in text.chars() {
-        if current_visual >= visual_col {
-            return char_col;
-        }
-
-        if ch == '\t' {
-            let tab_width = TABULATOR_WIDTH - (current_visual % TABULATOR_WIDTH);
-            current_visual += tab_width;
-        } else {
-            current_visual += 1;
-        }
-        char_col += 1;
-    }
-
-    char_col
-}
 
 pub struct Renderer {
     font: Font,
@@ -185,7 +130,12 @@ impl Renderer {
         (self.width, self.height)
     }
 
-    fn render_all_groups_static(
+    /// Render the entire editor area: all groups and splitters.
+    ///
+    /// This is the top-level widget that orchestrates rendering of:
+    /// - All editor groups (each with tab bar, gutter, text area)
+    /// - Splitter bars between groups
+    fn render_editor_area(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
@@ -195,7 +145,7 @@ impl Renderer {
     ) {
         for (&group_id, group) in &model.editor_area.groups {
             let is_focused = group_id == model.editor_area.focused_group_id;
-            Self::render_editor_group_static(
+            Self::render_editor_group(
                 frame,
                 painter,
                 model,
@@ -207,10 +157,13 @@ impl Renderer {
             );
         }
 
-        Self::render_splitters_static(frame, splitters, model);
+        Self::render_splitters(frame, splitters, model);
     }
 
-    fn render_editor_group_static(
+    /// Render an entire editor group: tab bar, gutter, text area, and focus dimming.
+    ///
+    /// This is the main orchestrator that calls individual widget functions.
+    fn render_editor_group(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
@@ -248,22 +201,197 @@ impl Renderer {
         let rect_x = group_rect.x as usize;
         let rect_y = group_rect.y as usize;
         let rect_w = group_rect.width as usize;
-        let rect_h = group_rect.height as usize;
 
-        Self::render_tab_bar_static(
+        // Tab bar
+        Self::render_tab_bar(
             frame, painter, model, group, rect_x, rect_y, rect_w, char_width,
         );
 
-        let content_y = rect_y + TAB_BAR_HEIGHT;
-        let content_h = rect_h.saturating_sub(TAB_BAR_HEIGHT);
+        // Content area (below tab bar)
+        let content_rect = geometry::group_content_rect(&group_rect);
+        let content_y = content_rect.y as usize;
+        let content_h = content_rect.height as usize;
 
+        // Text area (background highlights, text, cursors)
+        Self::render_text_area(
+            frame,
+            painter,
+            model,
+            editor,
+            document,
+            rect_x,
+            rect_w,
+            content_y,
+            content_h,
+            line_height,
+            char_width,
+        );
+
+        // Gutter (line numbers, border) - drawn on top of text area background
+        Self::render_gutter(
+            frame,
+            painter,
+            model,
+            editor,
+            document,
+            rect_x,
+            content_y,
+            content_h,
+            line_height,
+            char_width,
+        );
+
+        // Dim non-focused groups when multiple groups exist (4% black overlay)
+        if !is_focused && model.editor_area.groups.len() > 1 {
+            let dim_color = 0x0A000000_u32; // 4% opacity black (alpha = 10/255 ≈ 4%)
+            frame.blend_rect(group_rect, dim_color);
+        }
+    }
+
+    fn render_tab_bar(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        group: &EditorGroup,
+        rect_x: usize,
+        rect_y: usize,
+        rect_w: usize,
+        char_width: f32,
+    ) {
+        let tab_bar_bg = model.theme.tab_bar.background.to_argb_u32();
+        frame.fill_rect_px(rect_x, rect_y, rect_w, TAB_BAR_HEIGHT, tab_bar_bg);
+
+        let border_color = model.theme.tab_bar.border.to_argb_u32();
+        let border_y = (rect_y + TAB_BAR_HEIGHT).saturating_sub(1);
+        frame.fill_rect_px(rect_x, border_y, rect_w, 1, border_color);
+
+        let mut tab_x = rect_x + 4;
+        let tab_height = TAB_BAR_HEIGHT - 4;
+        let tab_y = rect_y + 2;
+
+        for (idx, tab) in group.tabs.iter().enumerate() {
+            let is_active = idx == group.active_tab_index;
+            let display_name = tab_title(model, tab);
+            let tab_width = (display_name.len() as f32 * char_width).round() as usize + 16;
+
+            let (bg_color, fg_color) = if is_active {
+                (
+                    model.theme.tab_bar.active_background.to_argb_u32(),
+                    model.theme.tab_bar.active_foreground.to_argb_u32(),
+                )
+            } else {
+                (
+                    model.theme.tab_bar.inactive_background.to_argb_u32(),
+                    model.theme.tab_bar.inactive_foreground.to_argb_u32(),
+                )
+            };
+
+            let actual_tab_width = tab_width.min(rect_x + rect_w - tab_x);
+            frame.fill_rect_px(tab_x, tab_y, actual_tab_width, tab_height, bg_color);
+
+            let text_x = tab_x + 8;
+            let text_y = tab_y + 4;
+            painter.draw(frame, text_x, text_y, &display_name, fg_color);
+
+            tab_x += tab_width + 2;
+            if tab_x >= rect_x + rect_w {
+                break;
+            }
+        }
+    }
+
+    fn render_splitters(frame: &mut Frame, splitters: &[SplitterBar], model: &AppModel) {
+        let splitter_color = model.theme.splitter.background.to_argb_u32();
+
+        for splitter in splitters {
+            frame.fill_rect(splitter.rect, splitter_color);
+        }
+    }
+
+    /// Render the gutter (line numbers and border) for an editor group.
+    ///
+    /// Draws:
+    /// - Line numbers (highlighted for current line)
+    /// - Gutter border line
+    #[allow(clippy::too_many_arguments)]
+    fn render_gutter(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        editor: &token::model::EditorState,
+        document: &token::model::Document,
+        rect_x: usize,
+        content_y: usize,
+        content_h: usize,
+        line_height: usize,
+        char_width: f32,
+    ) {
+        let gutter_bg_color = model.theme.gutter.background.to_argb_u32();
+        let line_num_color = model.theme.gutter.foreground.to_argb_u32();
+        let line_num_active_color = model.theme.gutter.foreground_active.to_argb_u32();
+
+        let visible_lines = content_h / line_height;
+        let end_line = (editor.viewport.top_line + visible_lines).min(document.buffer.len_lines());
+
+        let gutter_border_color = model.theme.gutter.border_color.to_argb_u32();
+        let gutter_right_x = rect_x + gutter_border_x(char_width).round() as usize;
+        let gutter_width = gutter_right_x - rect_x;
+
+        // Draw gutter background
+        frame.fill_rect_px(rect_x, content_y, gutter_width, content_h, gutter_bg_color);
+
+        for (screen_line, doc_line) in (editor.viewport.top_line..end_line).enumerate() {
+            let y = content_y + screen_line * line_height;
+            if y >= content_y + content_h {
+                break;
+            }
+
+            // Right-align line numbers so they sit just left of the gutter border.
+            let line_num_str = format!("{}", doc_line + 1);
+            let text_width_px = (line_num_str.len() as f32 * char_width).round() as usize;
+            // 4px padding from the border
+            let text_x = gutter_right_x.saturating_sub(4 + text_width_px);
+
+            let line_color = if doc_line == editor.active_cursor().line {
+                line_num_active_color
+            } else {
+                line_num_color
+            };
+            painter.draw(frame, text_x, y, &line_num_str, line_color);
+        }
+
+        // Gutter border
+        frame.fill_rect_px(gutter_right_x, content_y, 1, content_h, gutter_border_color);
+    }
+
+    /// Render text content (lines, selections, cursors) for an editor group.
+    ///
+    /// Draws:
+    /// - Current line highlight
+    /// - Selection highlights
+    /// - Text content
+    /// - Cursors
+    #[allow(clippy::too_many_arguments)]
+    fn render_text_area(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        editor: &token::model::EditorState,
+        document: &token::model::Document,
+        rect_x: usize,
+        rect_w: usize,
+        content_y: usize,
+        content_h: usize,
+        line_height: usize,
+        char_width: f32,
+    ) {
         let text_start_x_offset = text_start_x(char_width).round() as usize;
         let group_text_start_x = rect_x + text_start_x_offset;
 
         let visible_lines = content_h / line_height;
         let end_line = (editor.viewport.top_line + visible_lines).min(document.buffer.len_lines());
 
-        // Highlight primary cursor line only
+        // Current line highlight
         let current_line_color = model.theme.editor.current_line_background.to_argb_u32();
         if editor.active_cursor().line >= editor.viewport.top_line
             && editor.active_cursor().line < end_line
@@ -274,7 +402,7 @@ impl Renderer {
             frame.fill_rect_px(rect_x, highlight_y, rect_w, highlight_h, current_line_color);
         }
 
-        // Render ALL selections (primary + secondary cursors)
+        // Selection highlights
         let selection_color = model.theme.editor.selection_background.to_argb_u32();
         for selection in &editor.selections {
             if selection.is_empty() {
@@ -336,24 +464,14 @@ impl Renderer {
             }
         }
 
-        let line_num_color = model.theme.gutter.foreground.to_argb_u32();
-        let line_num_active_color = model.theme.gutter.foreground_active.to_argb_u32();
+        // Text content
         let text_color = model.theme.editor.foreground.to_argb_u32();
-
         for (screen_line, doc_line) in (editor.viewport.top_line..end_line).enumerate() {
             if let Some(line_text) = document.get_line(doc_line) {
                 let y = content_y + screen_line * line_height;
                 if y >= content_y + content_h {
                     break;
                 }
-
-                let line_num_str = format!("{:4} ", doc_line + 1);
-                let line_color = if doc_line == editor.active_cursor().line {
-                    line_num_active_color
-                } else {
-                    line_num_color
-                };
-                painter.draw(frame, rect_x, y, &line_num_str, line_color);
 
                 let visible_text = if line_text.ends_with('\n') {
                     &line_text[..line_text.len() - 1]
@@ -375,7 +493,7 @@ impl Renderer {
             }
         }
 
-        // Draw cursors
+        // Cursors
         if model.ui.cursor_visible {
             let actual_visible_columns =
                 ((rect_w as f32 - text_start_x_offset as f32) / char_width).floor() as usize;
@@ -404,7 +522,6 @@ impl Renderer {
                         .round() as usize;
                     let y = content_y + screen_line * line_height;
 
-                    // TODO: check if this will "always" be the primary cursor, we also have "active_cursor", which is unclear the difference  between them
                     let cursor_color = if idx == 0 {
                         primary_cursor_color
                     } else {
@@ -416,76 +533,256 @@ impl Renderer {
                 }
             }
         }
-
-        // Gutter border
-        let gutter_border_color = model.theme.gutter.border_color.to_argb_u32();
-        let border_x = rect_x + gutter_border_x(char_width).round() as usize;
-        frame.fill_rect_px(border_x, content_y, 1, content_h, gutter_border_color);
-
-        // Dim non-focused groups when multiple groups exist (4% black overlay)
-        if !is_focused && model.editor_area.groups.len() > 1 {
-            let dim_color = 0x0A000000_u32; // 4% opacity black (alpha = 10/255 ≈ 4%)
-            frame.blend_rect(group_rect, dim_color);
-        }
     }
 
-    fn render_tab_bar_static(
+    /// Render the status bar at the bottom of the window.
+    ///
+    /// This is a standalone widget function that draws:
+    /// - Status bar background
+    /// - Left-aligned segments (mode, filename, position, etc.)
+    /// - Right-aligned segments
+    /// - Separators between segments
+    fn render_status_bar(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
-        group: &EditorGroup,
-        rect_x: usize,
-        rect_y: usize,
-        rect_w: usize,
+        window_width: usize,
+        window_height: usize,
+        line_height: usize,
         char_width: f32,
     ) {
-        let tab_bar_bg = model.theme.tab_bar.background.to_argb_u32();
-        frame.fill_rect_px(rect_x, rect_y, rect_w, TAB_BAR_HEIGHT, tab_bar_bg);
+        let status_bar_bg = model.theme.status_bar.background.to_argb_u32();
+        let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
+        let status_bar_h = geometry::status_bar_height(line_height);
+        let status_y = window_height.saturating_sub(status_bar_h);
 
-        let border_color = model.theme.tab_bar.border.to_argb_u32();
-        let border_y = (rect_y + TAB_BAR_HEIGHT).saturating_sub(1);
-        frame.fill_rect_px(rect_x, border_y, rect_w, 1, border_color);
+        // Background
+        frame.fill_rect_px(0, status_y, window_width, status_bar_h, status_bar_bg);
 
-        let mut tab_x = rect_x + 4;
-        let tab_height = TAB_BAR_HEIGHT - 4;
-        let tab_y = rect_y + 2;
+        // Layout calculation
+        let available_chars = (window_width as f32 / char_width).floor() as usize;
+        let layout = model.ui.status_bar.layout(available_chars);
 
-        for (idx, tab) in group.tabs.iter().enumerate() {
-            let is_active = idx == group.active_tab_index;
-            let display_name = tab_title(model, tab);
-            let tab_width = (display_name.len() as f32 * char_width).round() as usize + 16;
+        // Left segments
+        for seg in &layout.left {
+            let x_px = (seg.x as f32 * char_width).round() as usize;
+            painter.draw(frame, x_px, status_y + 2, &seg.text, status_bar_fg);
+        }
 
-            let (bg_color, fg_color) = if is_active {
-                (
-                    model.theme.tab_bar.active_background.to_argb_u32(),
-                    model.theme.tab_bar.active_foreground.to_argb_u32(),
-                )
-            } else {
-                (
-                    model.theme.tab_bar.inactive_background.to_argb_u32(),
-                    model.theme.tab_bar.inactive_foreground.to_argb_u32(),
-                )
-            };
+        // Right segments
+        for seg in &layout.right {
+            let x_px = (seg.x as f32 * char_width).round() as usize;
+            painter.draw(frame, x_px, status_y + 2, &seg.text, status_bar_fg);
+        }
 
-            let actual_tab_width = tab_width.min(rect_x + rect_w - tab_x);
-            frame.fill_rect_px(tab_x, tab_y, actual_tab_width, tab_height, bg_color);
-
-            let text_x = tab_x + 8;
-            let text_y = tab_y + 4;
-            painter.draw(frame, text_x, text_y, &display_name, fg_color);
-
-            tab_x += tab_width + 2;
-            if tab_x >= rect_x + rect_w {
-                break;
-            }
+        // Separators
+        let separator_color = model
+            .theme
+            .status_bar
+            .foreground
+            .with_alpha(100)
+            .to_argb_u32();
+        for &sep_char_x in &layout.separator_positions {
+            let x_px = (sep_char_x as f32 * char_width).round() as usize;
+            frame.fill_rect_px(x_px, status_y, 1, status_bar_h, separator_color);
         }
     }
 
-    fn render_splitters_static(frame: &mut Frame, splitters: &[SplitterBar], model: &AppModel) {
-        let splitter_color = model.theme.splitter.background.to_argb_u32();
+    /// Render the active modal overlay.
+    ///
+    /// Draws:
+    /// - Dimmed background over entire window
+    /// - Modal dialog box (centered)
+    /// - Modal content (title, input field, command list for palette)
+    #[allow(clippy::too_many_arguments)]
+    fn render_modals(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        window_width: usize,
+        window_height: usize,
+        line_height: usize,
+        char_width: f32,
+    ) {
+        use token::commands::filter_commands;
+        use token::model::ModalState;
+        use token::theme::BUILTIN_THEMES;
 
-        for splitter in splitters {
-            frame.fill_rect(splitter.rect, splitter_color);
+        let Some(ref modal) = model.ui.active_modal else {
+            return;
+        };
+
+        // 1. Dim background (40% black overlay)
+        frame.dim(0x66); // 102/255 ≈ 40% opacity
+
+        // Theme colors
+        let bg_color = model.theme.overlay.background.to_argb_u32();
+        let fg_color = model.theme.overlay.foreground.to_argb_u32();
+        let highlight_color = model.theme.overlay.highlight.to_argb_u32();
+        let dim_color = model.theme.overlay.foreground.with_alpha(128).to_argb_u32();
+        let selection_bg = model.theme.overlay.selection_background.to_argb_u32();
+        let input_bg = model.theme.overlay.input_background.to_argb_u32();
+        let border_color = model
+            .theme
+            .overlay
+            .border
+            .map(|c| c.to_argb_u32())
+            .unwrap_or(0xFF444444);
+
+        // Handle different modal types
+        match modal {
+            ModalState::ThemePicker(state) => {
+                // Theme picker: list only, no input field
+                let max_visible_items = BUILTIN_THEMES.len();
+                let list_height = max_visible_items * line_height;
+                let modal_height = 8 + line_height + 8 + list_height + 8; // title + gap + list + padding
+                let modal_width = 400;
+                let modal_x = (window_width.saturating_sub(modal_width)) / 2;
+                let modal_y = window_height / 4;
+
+                frame.draw_bordered_rect(modal_x, modal_y, modal_width, modal_height, bg_color, border_color);
+
+                // Title
+                let title_x = modal_x + 12;
+                let title_y = modal_y + 8;
+                painter.draw(frame, title_x, title_y, "Switch Theme", fg_color);
+
+                // Theme list
+                let list_y = title_y + line_height + 8;
+                let clamped_selected = state.selected_index.min(BUILTIN_THEMES.len().saturating_sub(1));
+
+                for (i, theme_entry) in BUILTIN_THEMES.iter().enumerate() {
+                    let item_y = list_y + i * line_height;
+                    let is_selected = i == clamped_selected;
+
+                    if is_selected {
+                        frame.fill_rect_px(
+                            modal_x + 4,
+                            item_y,
+                            modal_width - 8,
+                            line_height,
+                            selection_bg,
+                        );
+                    }
+
+                    // Draw theme name (capitalize and format ID)
+                    let label = theme_entry.id.replace('-', " ");
+                    let label_x = modal_x + 16;
+                    painter.draw(frame, label_x, item_y, &label, fg_color);
+
+                    // Show checkmark for current theme
+                    if model.theme.name.to_lowercase().replace(' ', "-") == theme_entry.id {
+                        let check_x = modal_x + modal_width - 30;
+                        painter.draw(frame, check_x, item_y, "✓", highlight_color);
+                    }
+                }
+            }
+
+            ModalState::CommandPalette(state) => {
+                let filtered_commands = filter_commands(&state.input);
+                let max_visible_items = 8;
+
+                let (modal_x, modal_y, modal_width, modal_height) = geometry::modal_bounds(
+                    window_width,
+                    window_height,
+                    line_height,
+                    true,
+                    filtered_commands.len(),
+                );
+
+                frame.draw_bordered_rect(modal_x, modal_y, modal_width, modal_height, bg_color, border_color);
+
+                // Title
+                let title_x = modal_x + 12;
+                let title_y = modal_y + 8;
+                painter.draw(frame, title_x, title_y, "Command Palette", fg_color);
+
+                // Input field
+                let input_x = modal_x + 12;
+                let input_y = title_y + line_height + 4;
+                let input_width = modal_width - 24;
+                let input_height = line_height + 8;
+                frame.fill_rect_px(input_x, input_y, input_width, input_height, input_bg);
+
+                let text_x = input_x + 8;
+                let text_y = input_y + 4;
+                painter.draw(frame, text_x, text_y, &state.input, fg_color);
+
+                // Cursor
+                if model.ui.cursor_visible {
+                    let cursor_x = text_x + (state.input.len() as f32 * char_width).round() as usize;
+                    frame.fill_rect_px(cursor_x, text_y, 2, line_height, highlight_color);
+                }
+
+                // Command list
+                if !filtered_commands.is_empty() {
+                    let list_y = input_y + input_height + 8;
+                    let clamped_selected = state.selected_index.min(filtered_commands.len().saturating_sub(1));
+
+                    for (i, cmd) in filtered_commands.iter().take(max_visible_items).enumerate() {
+                        let item_y = list_y + i * line_height;
+                        let is_selected = i == clamped_selected;
+
+                        if is_selected {
+                            frame.fill_rect_px(modal_x + 4, item_y, modal_width - 8, line_height, selection_bg);
+                        }
+
+                        painter.draw(frame, modal_x + 16, item_y, cmd.label, fg_color);
+
+                        if let Some(kb) = cmd.keybinding {
+                            let kb_width = (kb.chars().count() as f32 * char_width).round() as usize;
+                            let kb_x = modal_x + modal_width - kb_width - 16;
+                            painter.draw(frame, kb_x, item_y, kb, dim_color);
+                        }
+                    }
+
+                    if filtered_commands.len() > max_visible_items {
+                        let more_y = list_y + max_visible_items * line_height;
+                        let more_text = format!("... and {} more", filtered_commands.len() - max_visible_items);
+                        painter.draw(frame, modal_x + 16, more_y, &more_text, dim_color);
+                    }
+                }
+            }
+
+            ModalState::GotoLine(_) | ModalState::FindReplace(_) => {
+                let (title, input_text) = match modal {
+                    ModalState::GotoLine(s) => ("Go to Line", s.input.as_str()),
+                    ModalState::FindReplace(s) => ("Find", s.query.as_str()),
+                    _ => unreachable!(),
+                };
+
+                let (modal_x, modal_y, modal_width, modal_height) = geometry::modal_bounds(
+                    window_width,
+                    window_height,
+                    line_height,
+                    false,
+                    0,
+                );
+
+                frame.draw_bordered_rect(modal_x, modal_y, modal_width, modal_height, bg_color, border_color);
+
+                // Title
+                let title_x = modal_x + 12;
+                let title_y = modal_y + 8;
+                painter.draw(frame, title_x, title_y, title, fg_color);
+
+                // Input field
+                let input_x = modal_x + 12;
+                let input_y = title_y + line_height + 4;
+                let input_width = modal_width - 24;
+                let input_height = line_height + 8;
+                frame.fill_rect_px(input_x, input_y, input_width, input_height, input_bg);
+
+                let text_x = input_x + 8;
+                let text_y = input_y + 4;
+                painter.draw(frame, text_x, text_y, input_text, fg_color);
+
+                // Cursor
+                if model.ui.cursor_visible {
+                    let cursor_x = text_x + (input_text.len() as f32 * char_width).round() as usize;
+                    frame.fill_rect_px(cursor_x, text_y, 2, line_height, highlight_color);
+                }
+            }
         }
     }
 
@@ -545,7 +842,7 @@ impl Renderer {
             let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
             let mut painter =
                 TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
-            Self::render_all_groups_static(
+            Self::render_editor_area(
                 &mut frame,
                 &mut painter,
                 model,
@@ -557,47 +854,34 @@ impl Renderer {
 
         {
             let _timer = perf.time_status_bar();
-            let status_bar_bg = model.theme.status_bar.background.to_argb_u32();
-            let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
-            let status_y = (height as usize).saturating_sub(status_bar_height);
+            let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
+            let mut painter =
+                TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
+            Self::render_status_bar(
+                &mut frame,
+                &mut painter,
+                model,
+                width_usize,
+                height_usize,
+                line_height,
+                char_width,
+            );
+        }
 
-            // Use Frame for status bar background
-            {
-                let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
-                frame.fill_rect_px(0, status_y, width_usize, status_bar_height, status_bar_bg);
-            }
-
-            let available_chars = (width as f32 / char_width).floor() as usize;
-            let layout = model.ui.status_bar.layout(available_chars);
-
-            // Use TextPainter for status bar text
-            {
-                let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
-                let mut painter =
-                    TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
-
-                for seg in &layout.left {
-                    let x_px = (seg.x as f32 * char_width).round() as usize;
-                    painter.draw(&mut frame, x_px, status_y + 2, &seg.text, status_bar_fg);
-                }
-
-                for seg in &layout.right {
-                    let x_px = (seg.x as f32 * char_width).round() as usize;
-                    painter.draw(&mut frame, x_px, status_y + 2, &seg.text, status_bar_fg);
-                }
-
-                // Draw separators
-                let separator_color = model
-                    .theme
-                    .status_bar
-                    .foreground
-                    .with_alpha(100)
-                    .to_argb_u32();
-                for &sep_char_x in &layout.separator_positions {
-                    let x_px = (sep_char_x as f32 * char_width).round() as usize;
-                    frame.fill_rect_px(x_px, status_y, 1, status_bar_height, separator_color);
-                }
-            }
+        // Render modals (layer 2 - on top of editor and status bar)
+        if model.ui.active_modal.is_some() {
+            let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
+            let mut painter =
+                TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
+            Self::render_modals(
+                &mut frame,
+                &mut painter,
+                model,
+                width_usize,
+                height_usize,
+                line_height,
+                char_width,
+            );
         }
 
         #[cfg(debug_assertions)]
@@ -675,64 +959,30 @@ impl Renderer {
         }
     }
 
+    /// Convert pixel coordinates to document line and column.
+    /// Delegates to geometry module for the actual calculation.
     pub fn pixel_to_cursor(&mut self, x: f64, y: f64, model: &AppModel) -> (usize, usize) {
         let line_height = self.line_metrics.new_line_size.ceil() as f64;
-        let char_width = self.char_width as f64;
-        let text_x = text_start_x(self.char_width).round() as f64;
-
-        let text_start_y = TAB_BAR_HEIGHT as f64;
-        let adjusted_y = (y - text_start_y).max(0.0);
-        let visual_line = (adjusted_y / line_height).floor() as usize;
-        let line = model.editor().viewport.top_line + visual_line;
-        let line = line.min(model.document().buffer.len_lines().saturating_sub(1));
-
-        let x_offset = x - text_x;
-        let visual_column = if x_offset > 0.0 {
-            model.editor().viewport.left_column + (x_offset / char_width).round() as usize
-        } else {
-            model.editor().viewport.left_column
-        };
-
-        let line_text = model.document().get_line(line).unwrap_or_default();
-        let line_text_trimmed = if line_text.ends_with('\n') {
-            &line_text[..line_text.len() - 1]
-        } else {
-            &line_text
-        };
-        let column = visual_col_to_char_col(line_text_trimmed, visual_column);
-
-        let line_len = model.document().line_length(line);
-        let column = column.min(line_len);
-
-        (line, column)
+        geometry::pixel_to_cursor(x, y, self.char_width, line_height, model)
     }
 
+    /// Check if a y-coordinate is within the status bar region.
+    /// Delegates to geometry module for the actual calculation.
     pub fn is_in_status_bar(&self, y: f64) -> bool {
-        let line_height = self.line_metrics.new_line_size.ceil() as f64;
-        let status_bar_top = self.height as f64 - line_height;
-        y >= status_bar_top
+        let line_height = self.line_metrics.new_line_size.ceil() as usize;
+        geometry::is_in_status_bar(y, self.height, line_height)
     }
 
+    /// Check if a y-coordinate is within the tab bar region.
+    /// Delegates to geometry module for the actual calculation.
     pub fn is_in_tab_bar(&self, y: f64) -> bool {
-        y < TAB_BAR_HEIGHT as f64
+        geometry::is_in_tab_bar(y)
     }
 
     /// Returns the tab index at the given x position within a group's tab bar.
     /// Returns None if the click is not on a tab.
+    /// Delegates to geometry module for the actual calculation.
     pub fn tab_at_position(&self, x: f64, model: &AppModel, group: &EditorGroup) -> Option<usize> {
-        let mut tab_x = 4.0; // Initial padding
-
-        for (idx, tab) in group.tabs.iter().enumerate() {
-            let title = tab_title(model, tab);
-            let tab_width = (title.len() as f32 * self.char_width).round() as f64 + 16.0;
-
-            if x >= tab_x && x < tab_x + tab_width {
-                return Some(idx);
-            }
-
-            tab_x += tab_width + 2.0; // tab width + gap
-        }
-
-        None
+        geometry::tab_at_position(x, self.char_width, model, group)
     }
 }
