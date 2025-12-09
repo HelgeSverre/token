@@ -73,6 +73,7 @@ impl<'a> Frame<'a> {
 
     /// Get a single pixel (bounds-checked, returns 0 if out of bounds)
     #[inline]
+    #[allow(dead_code)]
     pub fn get_pixel(&self, x: usize, y: usize) -> u32 {
         if x < self.width && y < self.height {
             self.buffer[y * self.width + x]
@@ -285,6 +286,7 @@ impl<'a> TextPainter<'a> {
     }
 
     /// Measure text width in pixels
+    #[allow(dead_code)]
     pub fn measure_width(&mut self, text: &str) -> f32 {
         let mut width = 0.0;
         for ch in text.chars() {

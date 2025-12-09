@@ -34,6 +34,7 @@ pub fn status_bar_height(line_height: usize) -> usize {
 }
 
 /// Compute number of visible text lines given window height
+#[allow(dead_code)]
 pub fn compute_visible_lines(window_height: u32, line_height: usize, status_bar_h: usize) -> usize {
     if line_height == 0 {
         return 25; // fallback
@@ -43,6 +44,7 @@ pub fn compute_visible_lines(window_height: u32, line_height: usize, status_bar_
 }
 
 /// Compute number of visible columns given window width
+#[allow(dead_code)]
 pub fn compute_visible_columns(window_width: u32, char_width: f32) -> usize {
     if char_width <= 0.0 {
         return 80; // fallback
@@ -133,6 +135,7 @@ pub fn is_in_tab_bar(y: f64) -> bool {
 
 /// Check if a point is within a group's tab bar region
 #[inline]
+#[allow(dead_code)]
 pub fn is_in_group_tab_bar(y: f64, group_rect: &Rect) -> bool {
     let local_y = y - group_rect.y as f64;
     local_y >= 0.0 && local_y < TAB_BAR_HEIGHT as f64
@@ -222,6 +225,7 @@ pub fn pixel_to_cursor(
 ///
 /// Accounts for the group's rect position within the window.
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub fn pixel_to_cursor_in_group(
     x: f64,
     y: f64,
@@ -280,6 +284,7 @@ pub fn group_content_rect(group_rect: &Rect) -> Rect {
 
 /// Compute the gutter rect for an editor group
 #[inline]
+#[allow(dead_code)]
 pub fn group_gutter_rect(group_rect: &Rect, char_width: f32) -> Rect {
     let content = group_content_rect(group_rect);
     let gutter_width = gutter_border_x(char_width);
@@ -288,6 +293,7 @@ pub fn group_gutter_rect(group_rect: &Rect, char_width: f32) -> Rect {
 
 /// Compute the text area rect for an editor group
 #[inline]
+#[allow(dead_code)]
 pub fn group_text_area_rect(group_rect: &Rect, char_width: f32) -> Rect {
     let content = group_content_rect(group_rect);
     let text_x = text_start_x(char_width);
