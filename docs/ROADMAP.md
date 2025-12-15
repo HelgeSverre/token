@@ -147,7 +147,7 @@ All cursor movement operations now work with multiple cursors:
 
 ### File Dropping
 
-**Design:** [feature/handle-file-dropping.md](feature/handle-file-dropping.md)
+**Design:** [feature/handle-file-dropping.md](archived/handle-file-dropping.md)
 
 Drag-and-drop file handling:
 
@@ -212,23 +212,23 @@ Group rapid consecutive edits into single undo entries:
 
 ## Feature Design Documents
 
-| Feature                     | Status      | Design Doc                                                                           |
-| --------------------------- | ----------- | ------------------------------------------------------------------------------------ |
-| GUI Cleanup (Frame/Painter) | ✅ Phase 1  | [GUI-CLEANUP.md](GUI-CLEANUP.md)                                                     |
-| Debug Tracing               | ✅ Complete | [feature/tracing-instrumentation.md](feature/tracing-instrumentation.md)             |
-| Codebase Organization       | ✅ Complete | [archived/ORGANIZATION-CODEBASE.md](archived/ORGANIZATION-CODEBASE.md)               |
-| Multi-Cursor Selection Gaps | ✅ Complete | [archived/MULTI_CURSOR_SELECTION_GAPS.md](archived/MULTI_CURSOR_SELECTION_GAPS.md)   |
-| Theming System              | ✅ Complete | [feature/THEMING.md](feature/THEMING.md)                                             |
-| Status Bar                  | ✅ Complete | [archived/STATUS_BAR.md](archived/STATUS_BAR.md)                                     |
-| Split View                  | ✅ Complete | [archived/SPLIT_VIEW.md](archived/SPLIT_VIEW.md)                                     |
-| Selection & Multi-Cursor    | ✅ Complete | [archived/SELECTION_MULTICURSOR.md](archived/SELECTION_MULTICURSOR.md)               |
-| Multi-Cursor Movement       | ✅ Complete | [archived/MULTI_CURSOR_MOVEMENT.md](archived/MULTI_CURSOR_MOVEMENT.md)               |
-| Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md) |
+| Feature                     | Status      | Design Doc                                                                               |
+| --------------------------- | ----------- |------------------------------------------------------------------------------------------|
+| GUI Cleanup (Frame/Painter) | ✅ Phase 1  | [GUI-CLEANUP.md](GUI-CLEANUP.md)                                                         |
+| Debug Tracing               | ✅ Complete | [feature/tracing-instrumentation.md](feature/tracing-instrumentation.md)                 |
+| Codebase Organization       | ✅ Complete | [archived/ORGANIZATION-CODEBASE.md](archived/ORGANIZATION-CODEBASE.md)                   |
+| Multi-Cursor Selection Gaps | ✅ Complete | [archived/MULTI_CURSOR_SELECTION_GAPS.md](archived/MULTI_CURSOR_SELECTION_GAPS.md)       |
+| Theming System              | ✅ Complete | [archived/THEMING.md](archived/THEMING.md)                                               |
+| Status Bar                  | ✅ Complete | [archived/STATUS_BAR.md](archived/STATUS_BAR.md)                                         |
+| Split View                  | ✅ Complete | [archived/SPLIT_VIEW.md](archived/SPLIT_VIEW.md)                                         |
+| Selection & Multi-Cursor    | ✅ Complete | [archived/SELECTION_MULTICURSOR.md](archived/SELECTION_MULTICURSOR.md)                   |
+| Multi-Cursor Movement       | ✅ Complete | [archived/MULTI_CURSOR_MOVEMENT.md](archived/MULTI_CURSOR_MOVEMENT.md)                   |
+| Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md)     |
 | Configurable Keymapping     | ✅ Complete | [archived/KEYMAPPING_IMPLEMENTATION_PLAN.md](archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) |
-| Keymap Enhancements         | Future      | [future/keymap-enhancements.md](future/keymap-enhancements.md)                       |
-| File Dropping               | Planned     | [feature/handle-file-dropping.md](feature/handle-file-dropping.md)                   |
-| Workspace Management        | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                   |
-| Syntax Highlighting         | Planned     | [feature/syntax-highlighting.md](feature/syntax-highlighting.md)                     |
+| Keymap Enhancements         | Future      | [future/keymap-enhancements.md](future/keymap-enhancements.md)                           |
+| File Dropping               | Planned     | [feature/handle-file-dropping.md](archived/handle-file-dropping.md)                       |
+| Workspace Management        | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                       |
+| Syntax Highlighting         | Planned     | [feature/syntax-highlighting.md](feature/syntax-highlighting.md)                         |
 
 ---
 
