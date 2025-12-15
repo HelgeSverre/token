@@ -1,6 +1,6 @@
 # Makefile for token
 
-.PHONY: build release run dev trace test clean fmt format lint help samples-files ci \
+.PHONY: build release run dev test-syntax trace test clean fmt format lint help samples-files ci \
         build-prof flamegraph profile-samply profile-memory \
         bench bench-rope bench-render bench-glyph \
         coverage coverage-html coverage-ci \
@@ -46,6 +46,27 @@ run: release
 # Run debug build (faster compile, slower runtime)
 dev: build
 	./target/debug/token samples/sample_code.rs README.md keymap.yaml samples/sample.html
+
+# Test syntax highlighting with all 17 supported language samples
+test-syntax: release
+	./target/release/token \
+		samples/syntax/sample.rs \
+		samples/syntax/sample.js \
+		samples/syntax/sample.ts \
+		samples/syntax/sample.tsx \
+		samples/syntax/sample.html \
+		samples/syntax/sample.css \
+		samples/syntax/sample.json \
+		samples/syntax/sample.yaml \
+		samples/syntax/sample.toml \
+		samples/syntax/sample.md \
+		samples/syntax/sample.py \
+		samples/syntax/sample.go \
+		samples/syntax/sample.php \
+		samples/syntax/sample.c \
+		samples/syntax/sample.cpp \
+		samples/syntax/sample.java \
+		samples/syntax/sample.sh
 
 # Run with full debug tracing enabled
 trace: build
@@ -105,6 +126,7 @@ help:
 	@echo "Run targets:"
 	@echo "  make run          - Run with default samples file (indentation.txt)"
 	@echo "  make dev          - Run debug build (faster compile)"
+	@echo "  make test-syntax  - Open all 17 syntax sample files for manual testing"
 	@echo ""
 	@echo "Test targets:"
 	@echo "  make test         - Run all tests"
@@ -121,6 +143,7 @@ help:
 	@echo "  make bench-loop   - Main loop benchmarks"
 	@echo "  make bench-search - Search operation benchmarks"
 	@echo "  make bench-layout - Text layout benchmarks"
+	@echo "  make bench-syntax - Syntax highlighting benchmarks"
 	@echo "  make bench-multicursor - Multi-cursor benchmarks"
 	@echo "  make bench-large  - Large file (500k+) benchmarks"
 	@echo ""
@@ -244,6 +267,10 @@ bench-search:
 # Run text layout benchmarks (line measurement, viewport)
 bench-layout:
 	cargo bench --bench layout
+
+# Run syntax highlighting benchmarks
+bench-syntax:
+	cargo bench --bench syntax
 
 # Run multi-cursor specific benchmarks
 bench-multicursor:

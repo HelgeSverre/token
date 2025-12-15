@@ -1,0 +1,86 @@
+# YAML Syntax Highlighting Test
+# This file tests various YAML constructs
+
+---
+# Document metadata
+version: "1.0"
+name: syntax-test
+enabled: true
+count: 42
+
+# Nested structures
+server:
+  host: localhost
+  port: 8080
+  ssl: false
+  timeout: 30.5
+
+# Lists
+languages:
+  - rust
+  - python
+  - javascript
+  - go
+
+# Inline list
+tags: [syntax, highlighting, test]
+
+# Multi-line string (literal block)
+description: |
+  This is a multi-line string
+  that preserves newlines exactly
+  as they are written.
+
+# Folded block (collapses newlines)
+summary: >
+  This is a folded string
+  that will be collapsed
+  into a single line.
+
+# Complex nested structure
+database:
+  primary:
+    host: db.example.com
+    port: 5432
+    credentials:
+      username: admin
+      password: secret123
+  replicas:
+    - host: replica1.example.com
+      port: 5432
+    - host: replica2.example.com
+      port: 5432
+
+# Anchors and aliases
+defaults: &defaults
+  adapter: postgres
+  pool: 5
+
+development:
+  <<: *defaults
+  database: dev_db
+
+production:
+  <<: *defaults
+  database: prod_db
+  pool: 25
+
+# Different data types
+null_value: null
+null_tilde: ~
+boolean_true: true
+boolean_false: false
+integer: 123
+float: 3.14159
+scientific: 1.0e-5
+hex: 0xFF
+octal: 0o77
+
+# Quoted strings
+single_quoted: 'Hello, World!'
+double_quoted: "Hello, World!"
+with_escapes: "Line1\nLine2\tTabbed"
+
+# Date/time
+date: 2025-12-15
+datetime: 2025-12-15T10:30:00Z

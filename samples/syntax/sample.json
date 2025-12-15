@@ -1,0 +1,139 @@
+{
+    "name": "syntax-highlighting-test",
+    "version": "1.0.0",
+    "description": "JSON Syntax Highlighting Test",
+    "private": true,
+    "main": "src/index.js",
+    "scripts": {
+        "start": "node src/index.js",
+        "dev": "nodemon src/index.js",
+        "build": "webpack --mode production",
+        "test": "jest --coverage",
+        "lint": "eslint src/**/*.js"
+    },
+    "dependencies": {
+        "express": "^4.18.2",
+        "lodash": "^4.17.21",
+        "axios": "^1.6.0"
+    },
+    "devDependencies": {
+        "jest": "^29.7.0",
+        "eslint": "^8.55.0",
+        "prettier": "^3.1.0"
+    },
+    "keywords": [
+        "json",
+        "syntax",
+        "highlighting",
+        "test"
+    ],
+    "author": {
+        "name": "Test Author",
+        "email": "author@example.com",
+        "url": "https://example.com"
+    },
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/example/repo.git"
+    },
+    "bugs": {
+        "url": "https://github.com/example/repo/issues"
+    },
+    "homepage": "https://example.com",
+    "engines": {
+        "node": ">=18.0.0",
+        "npm": ">=9.0.0"
+    },
+    "config": {
+        "port": 3000,
+        "host": "localhost",
+        "debug": true
+    },
+    "database": {
+        "host": "localhost",
+        "port": 5432,
+        "name": "testdb",
+        "credentials": {
+            "username": "admin",
+            "password": "secret"
+        },
+        "options": {
+            "ssl": true,
+            "poolSize": 10,
+            "timeout": 30000
+        }
+    },
+    "features": {
+        "authentication": true,
+        "caching": true,
+        "rateLimit": {
+            "enabled": true,
+            "maxRequests": 100,
+            "windowMs": 60000
+        }
+    },
+    "types": {
+        "string": "Hello, World!",
+        "integer": 42,
+        "float": 3.14159,
+        "negative": -273.15,
+        "scientific": 1.0e-10,
+        "boolean_true": true,
+        "boolean_false": false,
+        "null_value": null,
+        "empty_string": "",
+        "empty_array": [],
+        "empty_object": {}
+    },
+    "nested": {
+        "level1": {
+            "level2": {
+                "level3": {
+                    "level4": {
+                        "value": "deeply nested"
+                    }
+                }
+            }
+        }
+    },
+    "array_of_objects": [
+        {
+            "id": 1,
+            "name": "First Item",
+            "active": true
+        },
+        {
+            "id": 2,
+            "name": "Second Item",
+            "active": false
+        },
+        {
+            "id": 3,
+            "name": "Third Item",
+            "active": true
+        }
+    ],
+    "mixed_array": [
+        "string",
+        123,
+        45.67,
+        true,
+        false,
+        null,
+        {
+            "nested": "object"
+        },
+        [
+            "nested",
+            "array"
+        ]
+    ],
+    "special_characters": {
+        "unicode": "Hello, 世界! 🌍",
+        "escapes": "Line1\nLine2\tTabbed",
+        "quotes": "He said \"Hello\"",
+        "backslash": "C:\\Users\\test",
+        "url": "https://example.com/path?query=value&other=123"
+    }
+}

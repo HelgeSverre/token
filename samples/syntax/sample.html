@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="HTML Syntax Highlighting Test">
+    <title>HTML Syntax Test</title>
+    
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    
+    <style>
+        /* Embedded CSS */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        #header {
+            background: linear-gradient(to right, #667eea, #764ba2);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <!-- Main Navigation -->
+    <nav class="navbar" id="main-nav" role="navigation">
+        <ul class="nav-list">
+            <li><a href="/" class="nav-link active">Home</a></li>
+            <li><a href="/about" class="nav-link">About</a></li>
+            <li><a href="/contact" class="nav-link">Contact</a></li>
+        </ul>
+    </nav>
+
+    <!-- Header Section -->
+    <header id="header" class="header">
+        <h1>Welcome to the Syntax Test</h1>
+        <p>Testing various HTML elements and attributes.</p>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container">
+        <article>
+            <h2>Article Title</h2>
+            <p class="intro">This is an <strong>introduction</strong> paragraph with <em>emphasized</em> text.</p>
+            
+            <section>
+                <h3>Section with Form</h3>
+                <form action="/submit" method="POST" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="name">Name:</label>
+                        <input type="text" id="name" name="name" placeholder="Enter your name" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="email">Email:</label>
+                        <input type="email" id="email" name="email" pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="message">Message:</label>
+                        <textarea id="message" name="message" rows="5" cols="40"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="category">Category:</label>
+                        <select id="category" name="category">
+                            <option value="" disabled selected>Choose one</option>
+                            <option value="general">General</option>
+                            <option value="support">Support</option>
+                            <option value="feedback">Feedback</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <input type="checkbox" id="subscribe" name="subscribe" checked>
+                        <label for="subscribe">Subscribe to newsletter</label>
+                    </div>
+                    
+                    <div class="form-group">
+                        <input type="radio" id="priority-low" name="priority" value="low">
+                        <label for="priority-low">Low</label>
+                        <input type="radio" id="priority-high" name="priority" value="high">
+                        <label for="priority-high">High</label>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Submit</button>
+                    <button type="reset" class="btn btn-secondary">Reset</button>
+                </form>
+            </section>
+            
+            <section>
+                <h3>Data Table</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Name</th>
+                            <th scope="col">Age</th>
+                            <th scope="col">Role</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Alice</td>
+                            <td>30</td>
+                            <td>Developer</td>
+                        </tr>
+                        <tr>
+                            <td>Bob</td>
+                            <td>25</td>
+                            <td>Designer</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+            
+            <section>
+                <h3>Media Elements</h3>
+                <figure>
+                    <img src="/images/photo.jpg" alt="A beautiful photo" width="800" height="600" loading="lazy">
+                    <figcaption>Caption for the image</figcaption>
+                </figure>
+                
+                <video controls width="640" height="360" poster="/video-poster.jpg">
+                    <source src="/video.mp4" type="video/mp4">
+                    <source src="/video.webm" type="video/webm">
+                    Your browser doesn't support video.
+                </video>
+                
+                <audio controls>
+                    <source src="/audio.mp3" type="audio/mpeg">
+                    <source src="/audio.ogg" type="audio/ogg">
+                </audio>
+            </section>
+        </article>
+        
+        <aside>
+            <h4>Related Links</h4>
+            <ul>
+                <li><a href="#" target="_blank" rel="noopener">External Link</a></li>
+                <li><a href="#section1">Internal Anchor</a></li>
+            </ul>
+        </aside>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <p>&copy; 2025 Syntax Test. All rights reserved.</p>
+        <address>
+            Contact: <a href="mailto:test@example.com">test@example.com</a>
+        </address>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="/js/app.js" defer></script>
+    <script>
+        // Embedded JavaScript
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Page loaded!');
+            const form = document.querySelector('form');
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                alert('Form submitted!');
+            });
+        });
+    </script>
+    
+    <!-- HTML Entities -->
+    <p>Special characters: &amp; &lt; &gt; &quot; &apos; &nbsp; &copy; &reg; &trade;</p>
+    
+    <!-- Data Attributes -->
+    <div data-id="123" data-user-name="John" data-active="true">
+        Custom data attributes
+    </div>
+    
+    <!-- SVG Inline -->
+    <svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="50" cy="50" r="40" stroke="black" stroke-width="3" fill="red" />
+    </svg>
+</body>
+</html>

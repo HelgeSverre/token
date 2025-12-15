@@ -10,6 +10,7 @@ use token::theme::Theme;
 use token::rendering::blend_pixel_u8;
 
 /// Create an AppModel with the specified number of lines
+#[allow(dead_code)]
 pub fn make_model(lines: usize) -> AppModel {
     let window_width = 1920u32;
     let window_height = 1080u32;

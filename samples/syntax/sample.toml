@@ -1,0 +1,176 @@
+# TOML Syntax Highlighting Test
+# This file demonstrates various TOML constructs
+
+# Basic key-value pairs
+title = "TOML Syntax Test"
+enabled = true
+count = 42
+version = 1.0
+
+# String types
+basic_string = "Hello, World!"
+literal_string = 'No \n escaping here'
+multiline_basic = """
+This is a
+multiline string
+with "quotes" inside"""
+multiline_literal = '''
+This is a multiline
+literal string
+no escaping'''
+
+# Numbers
+integer = 42
+signed = -17
+hex = 0xDEADBEEF
+octal = 0o755
+binary = 0b11010110
+float = 3.14159
+negative_float = -0.001
+scientific = 5.0e+22
+inf = inf
+nan = nan
+underscored = 1_000_000
+
+# Boolean
+bool_true = true
+bool_false = false
+
+# Dates and times
+date = 2025-12-15
+time = 10:30:00
+datetime = 2025-12-15T10:30:00Z
+datetime_offset = 2025-12-15T10:30:00+01:00
+local_datetime = 2025-12-15T10:30:00
+
+# Arrays
+simple_array = [1, 2, 3, 4, 5]
+string_array = ["apple", "banana", "cherry"]
+mixed_array = [1, "two", 3.0, true]
+nested_array = [[1, 2], [3, 4], [5, 6]]
+
+multiline_array = [
+    "first",
+    "second",
+    "third",
+]
+
+# Inline tables
+inline_point = { x = 1, y = 2 }
+inline_person = { name = "John", age = 30, active = true }
+
+# Tables (sections)
+[server]
+host = "localhost"
+port = 8080
+ssl = false
+timeout = 30.5
+
+[server.advanced]
+max_connections = 100
+keep_alive = true
+buffer_size = 4096
+
+[database]
+host = "db.example.com"
+port = 5432
+name = "production"
+
+[database.credentials]
+username = "admin"
+password = "secret123"
+
+[database.pool]
+min = 5
+max = 20
+timeout = 10000
+
+# Dotted keys
+physical.color = "orange"
+physical.shape = "round"
+site."google.com" = true
+
+# Array of tables
+[[products]]
+name = "Hammer"
+sku = "TOOL-001"
+price = 9.99
+in_stock = true
+
+[[products]]
+name = "Nail"
+sku = "TOOL-002"
+price = 0.05
+in_stock = true
+quantity = 1000
+
+[[products]]
+name = "Screwdriver"
+sku = "TOOL-003"
+price = 7.50
+in_stock = false
+
+# Nested array of tables
+[[servers]]
+name = "alpha"
+ip = "10.0.0.1"
+
+[[servers.ports]]
+port = 80
+protocol = "http"
+
+[[servers.ports]]
+port = 443
+protocol = "https"
+
+[[servers]]
+name = "beta"
+ip = "10.0.0.2"
+
+[[servers.ports]]
+port = 22
+protocol = "ssh"
+
+# Package definition (like Cargo.toml)
+[package]
+name = "my-project"
+version = "0.1.0"
+edition = "2021"
+authors = ["Author <author@example.com>"]
+description = "A sample project"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/example/repo"
+keywords = ["test", "example"]
+categories = ["development-tools"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1.0", features = ["full"], optional = true }
+log = "0.4"
+
+[dev-dependencies]
+criterion = "0.5"
+tempfile = "3"
+
+[build-dependencies]
+cc = "1.0"
+
+[features]
+default = ["std"]
+std = []
+async = ["tokio"]
+full = ["std", "async"]
+
+[[bin]]
+name = "my-app"
+path = "src/main.rs"
+
+[[example]]
+name = "basic"
+path = "examples/basic.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
