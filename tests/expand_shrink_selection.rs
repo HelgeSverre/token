@@ -35,12 +35,12 @@ fn test_expand_from_word_selects_line() {
     // Second expand: word → line
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
-    // Should select entire line (including newline)
+    // Should select entire line content (NOT including newline)
     let sel = model.editor().primary_selection();
     assert_eq!(sel.start().line, 0);
     assert_eq!(sel.start().column, 0);
-    assert_eq!(sel.end().line, 1);
-    assert_eq!(sel.end().column, 0);
+    assert_eq!(sel.end().line, 0);
+    assert_eq!(sel.end().column, 11); // "hello world" = 11 chars
 }
 
 #[test]
@@ -108,12 +108,62 @@ fn test_expand_on_empty_line() {
 
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
-    // Should select the empty line (just the newline)
+    // On empty line, selection is empty (start = end = (1, 0))
+    // This should expand to "all" since there's no word and line is empty
     let sel = model.editor().primary_selection();
     assert_eq!(sel.start().line, 1);
     assert_eq!(sel.start().column, 0);
-    assert_eq!(sel.end().line, 2);
-    assert_eq!(sel.end().column, 0);
+    assert_eq!(sel.end().line, 1);
+    assert_eq!(sel.end().column, 0); // Empty line has length 0
+}
+
+#[test]
+fn test_expand_to_line_cursor_at_end_of_line_content() {
+    // When expanding to line, cursor and selection should be at end of line content
+    // (before newline), not at the start of the next line
+    let mut model = test_model("hello world\nline two\n", 0, 2);
+
+    // Expand: cursor → word
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+    
+    // Expand: word → line
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+
+    // Selection should NOT include the newline - ends at column 11 (end of "hello world")
+    let sel = model.editor().primary_selection();
+    assert_eq!(sel.start().line, 0);
+    assert_eq!(sel.start().column, 0);
+    assert_eq!(sel.end().line, 0);
+    assert_eq!(sel.end().column, 11); // "hello world" = 11 chars
+
+    // Cursor should be at end of line 0's content
+    let cursor = model.editor().primary_cursor();
+    assert_eq!(cursor.line, 0, "cursor should stay on the original line");
+    assert_eq!(cursor.column, 11, "cursor should be at end of line content");
+}
+
+#[test]
+fn test_expand_to_line_on_last_line_cursor_at_end() {
+    // On a line with multiple words, expanding to line should keep cursor at end of line
+    let mut model = test_model("hello\nworld test", 1, 2);
+
+    // Expand: cursor → word ("world")
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+    
+    // Expand: word → line
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+
+    // Selection covers line 1 (end of "world test" = 10 chars)
+    let sel = model.editor().primary_selection();
+    assert_eq!(sel.start().line, 1);
+    assert_eq!(sel.start().column, 0);
+    assert_eq!(sel.end().line, 1);
+    assert_eq!(sel.end().column, 10); // "world test" = 10 chars
+
+    // Cursor should be at end of line content
+    let cursor = model.editor().primary_cursor();
+    assert_eq!(cursor.line, 1);
+    assert_eq!(cursor.column, 10);
 }
 
 // ============================================================================

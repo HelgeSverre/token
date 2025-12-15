@@ -980,13 +980,15 @@ fn expand_selection(model: &mut AppModel) {
                 // No word under cursor, try to select line
                 select_line_at(model, cursor.line)
             }
+        } else if is_line_selection_at(&current, model, cursor.line) {
+            // Level 2 → 3: Select all
+            // Check line selection BEFORE word selection because a single-word line
+            // matches both patterns - we want line → all, not line → line
+            should_select_all = true;
+            None // Will be set to select_all below
         } else if is_word_selection_at(&current, model) {
             // Level 1 → 2: Select line
             select_line_at(model, cursor.line)
-        } else if is_line_selection_at(&current, model, cursor.line) {
-            // Level 2 → 3: Select all
-            should_select_all = true;
-            None // Will be set to select_all below
         } else {
             // Arbitrary selection: expand to line if within single line, else to all
             if is_within_single_line(&current) {
@@ -1110,15 +1112,10 @@ fn is_line_selection_at(selection: &Selection, model: &AppModel, cursor_line: us
         return false;
     }
 
-    // Single line: must end at line length or at start of next line
+    // Selection must be on a single line and end at line length
     if start.line == end.line {
-        if let Some(line_text) = model.document().get_line(start.line) {
-            let line_len = line_text.trim_end_matches('\n').chars().count();
-            return end.column == line_len || end.column == line_text.chars().count();
-        }
-    } else if end.line == start.line + 1 && end.column == 0 {
-        // Selection ends at start of next line (includes newline)
-        return true;
+        let line_len = model.document().line_length(start.line);
+        return end.column == line_len;
     }
 
     false
@@ -1129,7 +1126,8 @@ fn is_within_single_line(selection: &Selection) -> bool {
     selection.start().line == selection.end().line
 }
 
-/// Create selection covering a specific line (including newline if present)
+/// Create selection covering a specific line (NOT including newline)
+/// Selection ends at the last character of the line, not at the start of the next line
 fn select_line_at(model: &AppModel, line: usize) -> Option<Selection> {
     let total_lines = model.document().line_count();
 
@@ -1138,14 +1136,8 @@ fn select_line_at(model: &AppModel, line: usize) -> Option<Selection> {
     }
 
     let start = Position::new(line, 0);
-
-    // End at start of next line if exists, else at end of this line
-    let end = if line + 1 < total_lines {
-        Position::new(line + 1, 0)
-    } else {
-        let line_len = model.document().line_length(line);
-        Position::new(line, line_len)
-    };
+    let line_len = model.document().line_length(line);
+    let end = Position::new(line, line_len);
 
     Some(Selection::from_positions(start, end))
 }
