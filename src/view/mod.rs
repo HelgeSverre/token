@@ -226,6 +226,7 @@ impl Renderer {
             content_h,
             line_height,
             char_width,
+            is_focused,
         );
 
         // Gutter (line numbers, border) - drawn on top of text area background
@@ -372,7 +373,7 @@ impl Renderer {
     /// - Current line highlight
     /// - Selection highlights
     /// - Text content
-    /// - Cursors
+    /// - Cursors (only if group is focused)
     #[allow(clippy::too_many_arguments)]
     fn render_text_area(
         frame: &mut Frame,
@@ -386,6 +387,7 @@ impl Renderer {
         content_h: usize,
         line_height: usize,
         char_width: f32,
+        is_focused: bool,
     ) {
         let text_start_x_offset = text_start_x(char_width).round() as usize;
         let group_text_start_x = rect_x + text_start_x_offset;
@@ -495,8 +497,8 @@ impl Renderer {
             }
         }
 
-        // Cursors
-        if model.ui.cursor_visible {
+        // Cursors: only show in focused group when blink state is visible
+        if is_focused && model.ui.cursor_visible {
             let actual_visible_columns =
                 ((rect_w as f32 - text_start_x_offset as f32) / char_width).floor() as usize;
             let primary_cursor_color = model.theme.editor.cursor_color.to_argb_u32();
@@ -1004,12 +1006,6 @@ impl Renderer {
     pub fn is_in_status_bar(&self, y: f64) -> bool {
         let line_height = self.line_metrics.new_line_size.ceil() as usize;
         geometry::is_in_status_bar(y, self.height, line_height)
-    }
-
-    /// Check if a y-coordinate is within the tab bar region.
-    /// Delegates to geometry module for the actual calculation.
-    pub fn is_in_tab_bar(&self, y: f64) -> bool {
-        geometry::is_in_tab_bar(y)
     }
 
     /// Returns the tab index at the given x position within a group's tab bar.

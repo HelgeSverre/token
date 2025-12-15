@@ -220,6 +220,12 @@ impl EditorArea {
         self.groups.get_mut(&self.focused_group_id)
     }
 
+    /// Check if a group is the currently focused group
+    #[inline]
+    pub fn is_group_focused(&self, group_id: GroupId) -> bool {
+        self.focused_group_id == group_id
+    }
+
     /// Get the editor ID of the focused group's active tab
     pub fn focused_editor_id(&self) -> Option<EditorId> {
         self.focused_group().and_then(|g| g.active_editor_id())

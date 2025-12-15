@@ -1471,3 +1471,64 @@ fn test_cursor_sync_delete_backward() {
     assert_eq!(model.editor().primary_cursor().line, 0);
     assert_eq!(model.editor().primary_cursor().column, 4);
 }
+
+// ============================================================================
+// Focus State Tests (is_group_focused helper)
+// ============================================================================
+
+#[test]
+fn test_is_group_focused_single_group() {
+    let model = test_model("hello\nworld\n", 0, 0);
+    let group_id = model.editor_area.focused_group_id;
+    
+    assert!(model.editor_area.is_group_focused(group_id));
+}
+
+#[test]
+fn test_is_group_focused_after_split() {
+    let mut model = test_model("hello\nworld\n", 0, 0);
+    let group1 = model.editor_area.focused_group_id;
+    
+    // Split creates a new focused group
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
+    );
+    let group2 = model.editor_area.focused_group_id;
+    
+    // group2 should be focused, group1 should not
+    assert!(model.editor_area.is_group_focused(group2));
+    assert!(!model.editor_area.is_group_focused(group1));
+}
+
+#[test]
+fn test_is_group_focused_after_focus_change() {
+    let mut model = test_model("hello\nworld\n", 0, 0);
+    let group1 = model.editor_area.focused_group_id;
+    
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
+    );
+    let group2 = model.editor_area.focused_group_id;
+    
+    // Focus back to group1
+    update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
+    
+    assert!(model.editor_area.is_group_focused(group1));
+    assert!(!model.editor_area.is_group_focused(group2));
+    
+    // Focus to group2
+    update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group2)));
+    
+    assert!(!model.editor_area.is_group_focused(group1));
+    assert!(model.editor_area.is_group_focused(group2));
+}
+
+#[test]
+fn test_is_group_focused_invalid_group() {
+    let model = test_model("hello\nworld\n", 0, 0);
+    
+    // Non-existent group should return false
+    assert!(!model.editor_area.is_group_focused(GroupId(999)));
+}

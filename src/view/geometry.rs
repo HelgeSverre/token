@@ -127,15 +127,16 @@ pub fn is_in_status_bar(y: f64, window_height: u32, line_height: usize) -> bool 
     y >= status_bar_top
 }
 
-/// Check if a y-coordinate is within the tab bar region
+/// Check if a y-coordinate is within the global tab bar region (top of window)
+/// Note: For split views, use `is_in_group_tab_bar` instead
 #[inline]
+#[allow(dead_code)]
 pub fn is_in_tab_bar(y: f64) -> bool {
     y < TAB_BAR_HEIGHT as f64
 }
 
 /// Check if a point is within a group's tab bar region
 #[inline]
-#[allow(dead_code)]
 pub fn is_in_group_tab_bar(y: f64, group_rect: &Rect) -> bool {
     let local_y = y - group_rect.y as f64;
     local_y >= 0.0 && local_y < TAB_BAR_HEIGHT as f64
