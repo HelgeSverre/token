@@ -65,8 +65,12 @@ impl Rect {
 pub struct Tab {
     pub id: TabId,
     pub editor_id: EditorId,
+    // TODO: is_pinned is currently unused. Implement pinned tab functionality
+    // to prevent accidental closure of important tabs.
     pub is_pinned: bool,
-    pub is_preview: bool, // Preview tabs get replaced on next file open
+    // TODO: is_preview is currently unused. Implement preview tab behavior
+    // where opening a new file replaces the preview tab instead of creating a new one.
+    pub is_preview: bool,
 }
 
 // ============================================================================
@@ -116,6 +120,9 @@ pub struct SplitContainer {
     /// Proportional sizes (0.0 to 1.0, must sum to 1.0)
     pub ratios: Vec<f32>,
     /// Minimum size in pixels for each child
+    // TODO: min_sizes is currently not enforced in compute_layout_node().
+    // Implement enforcement to prevent panes from being resized below usable size.
+    // This is a UX enhancement, not a crash risk (Rust bounds checking handles edge cases).
     pub min_sizes: Vec<f32>,
 }
 
@@ -426,35 +433,31 @@ impl EditorArea {
 
     /// Sync all editor viewports based on their group's rect.
     /// Should be called after compute_layout() or after split/close operations.
+    ///
+    /// Uses `ViewportGeometry` methods for canonical calculations to ensure
+    /// consistent viewport sizing across the codebase.
     pub fn sync_all_viewports(&mut self, line_height: usize, char_width: f32) {
+        use super::ViewportGeometry;
+
         // Collect group rects and their editor IDs
-        let group_info: Vec<(Vec<EditorId>, f32, f32)> = self
+        let group_info: Vec<(Vec<EditorId>, u32, u32)> = self
             .groups
             .values()
             .map(|group| {
                 let editor_ids: Vec<EditorId> = group.tabs.iter().map(|t| t.editor_id).collect();
-                (editor_ids, group.rect.width, group.rect.height)
+                (
+                    editor_ids,
+                    group.rect.width as u32,
+                    group.rect.height as u32,
+                )
             })
             .collect();
 
         // Update each editor's viewport based on its group's dimensions
         for (editor_ids, width, height) in group_info {
-            // Calculate visible lines from group height
-            let visible_lines = if line_height > 0 {
-                (height as usize) / line_height
-            } else {
-                25 // fallback
-            };
-
-            // Calculate visible columns from group width
-            // Account for gutter/line numbers (estimate ~50px)
-            let gutter_width = 50.0;
-            let available_width = (width - gutter_width).max(0.0);
-            let visible_columns = if char_width > 0.0 {
-                (available_width / char_width).floor() as usize
-            } else {
-                80 // fallback
-            };
+            // Use canonical ViewportGeometry methods for consistent calculations
+            let visible_lines = ViewportGeometry::compute_visible_lines(height, line_height, 0);
+            let visible_columns = ViewportGeometry::compute_visible_columns(width, char_width);
 
             for editor_id in editor_ids {
                 if let Some(editor) = self.editors.get_mut(&editor_id) {
@@ -658,4 +661,70 @@ pub struct SplitterBar {
     pub rect: Rect,
     /// Index of this splitter within its parent container
     pub index: usize,
+}
+
+// ============================================================================
+// Debug Invariant Validation
+// ============================================================================
+
+impl EditorArea {
+    /// Validate internal invariants in debug builds.
+    ///
+    /// This function checks that:
+    /// - focused_group_id points to an existing group
+    /// - All groups have valid active_tab_index values
+    /// - All tabs reference existing editors
+    /// - All editors reference existing documents (if document_id is Some)
+    ///
+    /// Panics in debug builds if any invariant is violated.
+    #[cfg(debug_assertions)]
+    pub fn assert_invariants(&self) {
+        // Check focused group exists
+        assert!(
+            self.groups.contains_key(&self.focused_group_id),
+            "focused_group_id {:?} does not exist in groups",
+            self.focused_group_id
+        );
+
+        // Check each group
+        for (group_id, group) in &self.groups {
+            // Check active_tab_index is valid
+            if !group.tabs.is_empty() {
+                assert!(
+                    group.active_tab_index < group.tabs.len(),
+                    "Group {:?} has active_tab_index {} but only {} tabs",
+                    group_id,
+                    group.active_tab_index,
+                    group.tabs.len()
+                );
+            }
+
+            // Check each tab references a valid editor
+            for tab in &group.tabs {
+                assert!(
+                    self.editors.contains_key(&tab.editor_id),
+                    "Tab {:?} references non-existent editor {:?}",
+                    tab.id,
+                    tab.editor_id
+                );
+            }
+        }
+
+        // Check each editor references a valid document (if document_id is Some)
+        for (editor_id, editor) in &self.editors {
+            if let Some(doc_id) = editor.document_id {
+                assert!(
+                    self.documents.contains_key(&doc_id),
+                    "Editor {:?} references non-existent document {:?}",
+                    editor_id,
+                    doc_id
+                );
+            }
+        }
+    }
+
+    /// No-op in release builds
+    #[cfg(not(debug_assertions))]
+    #[inline]
+    pub fn assert_invariants(&self) {}
 }
