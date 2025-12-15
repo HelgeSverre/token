@@ -11,7 +11,7 @@ pub struct Store<K, V> {
 }
 
 impl<K: Eq + std::hash::Hash, V> Store<K, V> {
-    /// Create a new store with the  apacity
+    /// Create a new store with the capacity
     pub fn new(capacity: usize) -> Self {
         Self {
             data: HashMap::with_capacity(capacity),
