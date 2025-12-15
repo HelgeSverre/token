@@ -55,11 +55,11 @@ List them with `make help`
 
 ### Testing
 
-| Command                   | Description           |
-| ------------------------- | --------------------- |
-| `make test`               | Run all tests         |
-| `make test-one TEST=name` | Run a specific test   |
-| `make test-verbose`       | Run tests with output |
+| Command             | Description                            |
+| ------------------- | -------------------------------------- |
+| `make test`         | Run all tests                          |
+| `make test-verbose` | Run tests with output                  |
+| `make test-fast`    | Run tests faster using `cargo nextest` |
 
 ---
 
