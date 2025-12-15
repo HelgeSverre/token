@@ -63,11 +63,8 @@ impl ViewportGeometry {
         let line_height = Self::DEFAULT_LINE_HEIGHT;
         let char_width = Self::DEFAULT_CHAR_WIDTH;
 
-        let text_x = text_start_x(char_width).round();
-        let visible_columns = ((window_width as f32 - text_x) / char_width).floor() as usize;
-        let status_bar_height = line_height;
-        let visible_lines =
-            (window_height as usize).saturating_sub(status_bar_height) / line_height;
+        let visible_columns = Self::compute_visible_columns(window_width, char_width);
+        let visible_lines = Self::compute_visible_lines(window_height, line_height, line_height);
 
         Self {
             window_width,
@@ -77,6 +74,34 @@ impl ViewportGeometry {
             visible_lines,
             visible_columns,
         }
+    }
+
+    /// Compute number of visible text lines given window height.
+    ///
+    /// This is the canonical calculation used across the codebase.
+    #[inline]
+    pub fn compute_visible_lines(
+        window_height: u32,
+        line_height: usize,
+        status_bar_height: usize,
+    ) -> usize {
+        if line_height == 0 {
+            return 25; // fallback
+        }
+        (window_height as usize).saturating_sub(status_bar_height) / line_height
+    }
+
+    /// Compute number of visible columns given window width.
+    ///
+    /// Uses `text_start_x()` for accurate gutter width calculation.
+    /// This is the canonical calculation used across the codebase.
+    #[inline]
+    pub fn compute_visible_columns(window_width: u32, char_width: f32) -> usize {
+        if char_width <= 0.0 {
+            return 80; // fallback
+        }
+        let text_x = text_start_x(char_width).round();
+        ((window_width as f32 - text_x) / char_width).floor() as usize
     }
 }
 
