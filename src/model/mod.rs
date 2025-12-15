@@ -27,6 +27,7 @@ pub use ui::{
 };
 
 use crate::config::EditorConfig;
+use crate::config_paths;
 #[cfg(debug_assertions)]
 use crate::debug_overlay::DebugOverlay;
 use crate::theme::{load_theme, Theme};
@@ -150,7 +151,7 @@ impl AppModel {
         }
 
         // Ensure config directories exist
-        EditorConfig::ensure_config_dirs();
+        config_paths::ensure_all_config_dirs();
 
         // Load config and theme
         let config = EditorConfig::load();

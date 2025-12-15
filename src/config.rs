@@ -2,11 +2,7 @@
 //!
 //! Stores user preferences in `~/.config/token-editor/config.yaml`
 
-use std::path::PathBuf;
-
 use serde::{Deserialize, Serialize};
-
-use crate::theme::get_config_dir;
 
 /// Editor configuration that persists across sessions
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,17 +25,9 @@ impl Default for EditorConfig {
 }
 
 impl EditorConfig {
-    /// Get the config file path
-    ///
-    /// Returns `~/.config/token-editor/config.yaml` on Unix
-    /// Returns `%APPDATA%\token-editor\config.yaml` on Windows
-    pub fn config_path() -> Option<PathBuf> {
-        get_config_dir().map(|dir| dir.join("config.yaml"))
-    }
-
     /// Load config from disk, or return defaults if not found
     pub fn load() -> Self {
-        let Some(path) = Self::config_path() else {
+        let Some(path) = crate::config_paths::config_file() else {
             tracing::debug!("No config directory available, using defaults");
             return Self::default();
         };
@@ -74,8 +62,8 @@ impl EditorConfig {
     ///
     /// Creates the config directory if it doesn't exist.
     pub fn save(&self) -> Result<(), String> {
-        let path =
-            Self::config_path().ok_or_else(|| "No config directory available".to_string())?;
+        let path = crate::config_paths::config_file()
+            .ok_or_else(|| "No config directory available".to_string())?;
 
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
@@ -99,61 +87,4 @@ impl EditorConfig {
         self.save()
     }
 
-    /// Ensure config directories exist
-    ///
-    /// Creates `~/.config/token-editor/` and `~/.config/token-editor/themes/` if missing.
-    /// Called on startup to prepare the config structure.
-    pub fn ensure_config_dirs() {
-        if let Some(config_dir) = get_config_dir() {
-            if !config_dir.exists() {
-                if let Err(e) = std::fs::create_dir_all(&config_dir) {
-                    tracing::warn!("Failed to create config directory: {}", e);
-                } else {
-                    tracing::info!("Created config directory: {}", config_dir.display());
-                }
-            }
-
-            // Also create themes subdirectory
-            let themes_dir = config_dir.join("themes");
-            if !themes_dir.exists() {
-                if let Err(e) = std::fs::create_dir_all(&themes_dir) {
-                    tracing::warn!("Failed to create themes directory: {}", e);
-                } else {
-                    tracing::info!("Created themes directory: {}", themes_dir.display());
-                }
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_config() {
-        let config = EditorConfig::default();
-        assert_eq!(config.theme, "default-dark");
-    }
-
-    #[test]
-    fn test_config_path_returns_some() {
-        // On most systems, this should return a valid path
-        let path = EditorConfig::config_path();
-        if let Some(p) = path {
-            let path_str = p.to_string_lossy();
-            assert!(path_str.contains("token-editor"));
-            assert!(path_str.contains("config.yaml"));
-        }
-    }
-
-    #[test]
-    fn test_serialize_deserialize() {
-        let config = EditorConfig {
-            theme: "fleet-dark".to_string(),
-        };
-        let yaml = serde_yaml::to_string(&config).unwrap();
-        let parsed: EditorConfig = serde_yaml::from_str(&yaml).unwrap();
-        assert_eq!(parsed.theme, "fleet-dark");
-    }
 }

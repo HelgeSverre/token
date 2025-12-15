@@ -1,6 +1,8 @@
 //! App message handlers (file operations, window events)
 
 use crate::commands::{Cmd, CommandId};
+use crate::config_paths;
+use crate::keymap::get_default_keymap_yaml;
 use crate::messages::{AppMsg, DocumentMsg, LayoutMsg, UiMsg};
 use crate::model::{AppModel, ModalId, SplitDirection};
 
@@ -114,5 +116,38 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             update_ui(model, UiMsg::ToggleModal(ModalId::CommandPalette))
         }
         CommandId::SwitchTheme => update_ui(model, UiMsg::ToggleModal(ModalId::ThemePicker)),
+        CommandId::OpenConfigDirectory => {
+            if let Some(config_dir) = config_paths::config_dir() {
+                config_paths::ensure_all_config_dirs();
+                Some(Cmd::OpenInExplorer { path: config_dir })
+            } else {
+                model.ui.set_status("Could not determine config directory");
+                Some(Cmd::Redraw)
+            }
+        }
+        CommandId::OpenKeybindings => {
+            if let Some(keymap_path) = config_paths::keymap_file() {
+                config_paths::ensure_all_config_dirs();
+                if !keymap_path.exists() {
+                    if let Err(e) = create_default_keymap_file(&keymap_path) {
+                        model.ui.set_status(format!("Failed to create keymap: {}", e));
+                        return Some(Cmd::Redraw);
+                    }
+                }
+                Some(Cmd::OpenFileInEditor { path: keymap_path })
+            } else {
+                model.ui.set_status("Could not determine keymap path");
+                Some(Cmd::Redraw)
+            }
+        }
     }
+}
+
+fn create_default_keymap_file(path: &std::path::Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+    std::fs::write(path, get_default_keymap_yaml())
+        .map_err(|e| format!("Failed to write file: {}", e))
 }

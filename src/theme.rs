@@ -7,7 +7,7 @@
 //! 1. User config: `~/.config/token-editor/themes/{id}.yaml`
 //! 2. Embedded: Built-in themes compiled into binary
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Deserialize;
 
@@ -65,37 +65,6 @@ pub struct ThemeInfo {
     pub source: ThemeSource,
 }
 
-/// Get the user's theme configuration directory
-///
-/// Returns `~/.config/token-editor/themes/` on Unix
-/// Returns `%APPDATA%\token-editor\themes\` on Windows
-pub fn get_user_themes_dir() -> Option<PathBuf> {
-    get_config_dir().map(|config| config.join("themes"))
-}
-
-/// Get the user's config directory for token-editor
-///
-/// Returns `~/.config/token-editor/` on Unix/macOS
-/// Returns `%APPDATA%\token-editor\` on Windows
-pub fn get_config_dir() -> Option<PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        std::env::var("APPDATA")
-            .ok()
-            .map(|appdata| PathBuf::from(appdata).join("token-editor"))
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        // Use XDG-style ~/.config on all Unix systems including macOS
-        // (dirs::config_dir() returns ~/Library/Application Support on macOS)
-        std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .or_else(|| dirs::home_dir().map(|h| h.join(".config")))
-            .map(|config| config.join("token-editor"))
-    }
-}
-
 /// Load a theme from a YAML file
 pub fn from_file(path: &Path) -> Result<Theme, String> {
     let content = std::fs::read_to_string(path)
@@ -110,7 +79,7 @@ pub fn from_file(path: &Path) -> Result<Theme, String> {
 /// 2. Embedded builtin themes
 pub fn load_theme(id: &str) -> Result<Theme, String> {
     // Try user themes directory
-    if let Some(user_dir) = get_user_themes_dir() {
+    if let Some(user_dir) = crate::config_paths::themes_dir() {
         let user_path = user_dir.join(format!("{}.yaml", id));
         if user_path.exists() {
             tracing::info!("Loading user theme from {}", user_path.display());
@@ -132,7 +101,7 @@ pub fn list_available_themes() -> Vec<ThemeInfo> {
     let mut seen_ids = std::collections::HashSet::new();
 
     // Collect user themes (highest priority)
-    if let Some(user_dir) = get_user_themes_dir() {
+    if let Some(user_dir) = crate::config_paths::themes_dir() {
         if let Ok(entries) = std::fs::read_dir(&user_dir) {
             for entry in entries.filter_map(|e| e.ok()) {
                 let path = entry.path();

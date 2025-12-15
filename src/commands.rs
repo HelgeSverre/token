@@ -44,6 +44,10 @@ pub enum CommandId {
 
     // Theme
     SwitchTheme,
+
+    // Settings
+    OpenConfigDirectory,
+    OpenKeybindings,
 }
 
 /// A command definition for the command palette
@@ -146,6 +150,16 @@ pub static COMMANDS: &[CommandDef] = &[
         label: "Switch Theme...",
         keybinding: None,
     },
+    CommandDef {
+        id: CommandId::OpenConfigDirectory,
+        label: "Open Config Directory",
+        keybinding: None,
+    },
+    CommandDef {
+        id: CommandId::OpenKeybindings,
+        label: "Open Keymap",
+        keybinding: None,
+    },
 ];
 
 /// Filter commands by a search query (fuzzy match on label)
@@ -186,7 +200,9 @@ impl CommandId {
             CommandId::CloseTab => Some(KeymapCommand::CloseTab),
             CommandId::Find => Some(KeymapCommand::ToggleFindReplace),
             CommandId::ShowCommandPalette => Some(KeymapCommand::ToggleCommandPalette),
-            CommandId::SwitchTheme => None, // No keybinding
+            CommandId::SwitchTheme => None,
+            CommandId::OpenConfigDirectory => None,
+            CommandId::OpenKeybindings => None,
         }
     }
 }
@@ -221,6 +237,10 @@ pub enum Cmd {
     SaveFile { path: PathBuf, content: String },
     /// Load file asynchronously
     LoadFile { path: PathBuf },
+    /// Open a path in the system file explorer/finder
+    OpenInExplorer { path: PathBuf },
+    /// Open a file in a new tab for editing
+    OpenFileInEditor { path: PathBuf },
     /// Execute multiple commands
     Batch(Vec<Cmd>),
 }
@@ -236,8 +256,10 @@ impl Cmd {
         match self {
             Cmd::None => false,
             Cmd::Redraw => true,
-            Cmd::SaveFile { .. } => true, // Show "Saving..." status
-            Cmd::LoadFile { .. } => true, // Show "Loading..." status
+            Cmd::SaveFile { .. } => true,
+            Cmd::LoadFile { .. } => true,
+            Cmd::OpenInExplorer { .. } => true,
+            Cmd::OpenFileInEditor { .. } => true,
             Cmd::Batch(cmds) => cmds.iter().any(|c| c.needs_redraw()),
         }
     }

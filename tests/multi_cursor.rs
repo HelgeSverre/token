@@ -392,9 +392,73 @@ fn test_delete_line_multi_cursor_all_lines() {
 // ========================================================================
 
 #[test]
-#[ignore = "Requires undo/redo to be updated for multi-cursor support"]
 fn test_multi_cursor_undo_redo_preserves_all_cursors() {
-    // Undo/redo should preserve all cursor positions, not just primary
+    use token::messages::{DocumentMsg, Msg};
+
+    let mut model = test_model("aaa\nbbb\nccc\n", 0, 0);
+
+    model.editor_mut().add_cursor_at(1, 0);
+    model.editor_mut().add_cursor_at(2, 0);
+    assert_eq!(model.editor().cursor_count(), 3);
+
+    let cursors_before: Vec<_> = model.editor().cursors.clone();
+
+    update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
+
+    let content: String = model.document().buffer.chars().collect();
+    assert_eq!(content, "Xaaa\nXbbb\nXccc\n");
+
+    assert_eq!(model.editor().cursor_count(), 3);
+    for cursor in &model.editor().cursors {
+        assert_eq!(cursor.column, 1, "All cursors should be at column 1 after insert");
+    }
+    let cursors_after: Vec<_> = model.editor().cursors.clone();
+
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+
+    let content: String = model.document().buffer.chars().collect();
+    assert_eq!(content, "aaa\nbbb\nccc\n", "Undo should restore original text");
+
+    assert_eq!(
+        model.editor().cursor_count(),
+        3,
+        "Undo should preserve all 3 cursors"
+    );
+    for (i, cursor) in model.editor().cursors.iter().enumerate() {
+        assert_eq!(
+            cursor.line, cursors_before[i].line,
+            "Cursor {} line should be restored",
+            i
+        );
+        assert_eq!(
+            cursor.column, cursors_before[i].column,
+            "Cursor {} column should be restored",
+            i
+        );
+    }
+
+    update(&mut model, Msg::Document(DocumentMsg::Redo));
+
+    let content: String = model.document().buffer.chars().collect();
+    assert_eq!(content, "Xaaa\nXbbb\nXccc\n", "Redo should re-apply inserts");
+
+    assert_eq!(
+        model.editor().cursor_count(),
+        3,
+        "Redo should preserve all 3 cursors"
+    );
+    for (i, cursor) in model.editor().cursors.iter().enumerate() {
+        assert_eq!(
+            cursor.line, cursors_after[i].line,
+            "Cursor {} line should match after redo",
+            i
+        );
+        assert_eq!(
+            cursor.column, cursors_after[i].column,
+            "Cursor {} column should match after redo",
+            i
+        );
+    }
 }
 
 // ========================================================================

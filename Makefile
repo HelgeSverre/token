@@ -230,9 +230,12 @@ bench-glyph:
 
 # === Coverage targets (requires: cargo install cargo-llvm-cov) ===
 
+# Files to exclude from coverage (runtime/rendering code, data-only modules)
+COVERAGE_IGNORE := --ignore-filename-regex '(runtime/|view/|debug_dump|debug_overlay|messages\.rs)'
+
 # Generate HTML coverage report
 coverage coverage-html:
-	cargo llvm-cov --html
+	cargo llvm-cov --html $(COVERAGE_IGNORE)
 	@if [ -f target/llvm-cov/html/index.html ]; then \
 		open target/llvm-cov/html/index.html; \
 	else \
@@ -242,7 +245,7 @@ coverage coverage-html:
 
 # Generate coverage for CI (codecov format)
 coverage-ci:
-	cargo llvm-cov --codecov --output-path codecov.json
+	cargo llvm-cov --codecov --output-path codecov.json $(COVERAGE_IGNORE)
 
 # === Development workflow targets ===
 

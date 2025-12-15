@@ -5,6 +5,7 @@
 
 pub mod commands;
 pub mod config;
+pub mod config_paths;
 #[cfg(debug_assertions)]
 pub mod debug_overlay;
 pub mod keymap;

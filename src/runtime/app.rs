@@ -635,6 +635,27 @@ impl App {
                     let _ = tx.send(Msg::App(AppMsg::FileLoaded { path, result }));
                 });
             }
+            Cmd::OpenInExplorer { path } => {
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = std::process::Command::new("open").arg(&path).spawn();
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    let _ = std::process::Command::new("explorer").arg(&path).spawn();
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
+                }
+            }
+            Cmd::OpenFileInEditor { path } => {
+                let tx = self.msg_tx.clone();
+                std::thread::spawn(move || {
+                    let result = std::fs::read_to_string(&path).map_err(|e| e.to_string());
+                    let _ = tx.send(Msg::App(AppMsg::FileLoaded { path, result }));
+                });
+            }
             Cmd::Batch(cmds) => {
                 for cmd in cmds {
                     self.process_cmd(cmd);

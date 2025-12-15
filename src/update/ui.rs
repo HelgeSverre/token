@@ -233,7 +233,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             if let Some(ref mut modal) = model.ui.active_modal {
                 match modal {
                     ModalState::CommandPalette(state) => {
-                        state.selected_index = state.selected_index.saturating_add(1);
+                        let filtered = filter_commands(&state.input);
+                        let max_index = filtered.len().saturating_sub(1);
+                        state.selected_index =
+                            state.selected_index.saturating_add(1).min(max_index);
                     }
                     ModalState::ThemePicker(state) => {
                         let max_index = state.themes.len().saturating_sub(1);
