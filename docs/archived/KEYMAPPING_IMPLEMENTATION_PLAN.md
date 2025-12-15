@@ -1,6 +1,6 @@
 # Keymapping Implementation Plan
 
-> **Status:** Phase 6 Complete, Phase 7 Partial  
+> **Status:** Phase 11 Complete (All Phases Done)  
 > **Last Updated:** December 2024  
 > **Related:** [KEYMAPPING.md](./KEYMAPPING.md)
 
@@ -16,8 +16,27 @@ This document outlines a phased migration from the current hardcoded key handlin
 - **Phase 4**: Bridge integration - keymap tried first for simple commands
 - **Phase 5**: CommandId → KeymapCommand mapping for palette keybinding lookup
 - **Phase 6**: Context system with `KeyContext` and `Condition` for conditional bindings
+- **Phase 9**: User configuration with layered loading and merge support
 - **YAML Config**: `keymap.yaml` at project root with 74 default bindings (embedded at compile time)
-- **66 tests** covering keymap functionality including context-aware bindings
+- **74 tests** covering keymap functionality including context-aware bindings and merge logic
+
+### User Configuration (Phase 9)
+
+User-configurable keymaps with layered loading:
+
+- **Loading order** (each layer overrides the previous):
+  1. Embedded default keymap (compiled into binary)
+  2. `keymap.yaml` in current directory (project-local overrides)
+  3. User config at `~/.config/token-editor/keymap.yaml`
+
+- **`merge_bindings()`** combines base + user bindings:
+  - Same keystroke + conditions → user binding replaces base
+  - `command: Unbound` → removes matching default bindings
+  - Different conditions → both bindings coexist
+
+- **`get_user_config_path()`** returns platform-appropriate path:
+  - Unix: `~/.config/token-editor/keymap.yaml`
+  - Windows: `%APPDATA%\token-editor\keymap.yaml`
 
 ### Context System (Phase 6)
 
@@ -59,8 +78,8 @@ The context system enables bindings that activate only under certain conditions:
 
 ### Test Coverage
 
-- 537 total tests passing
-- 66 keymap-specific tests
+- 547 total tests passing
+- 74 keymap-specific tests (includes 8 merge tests)
 - 9 modal isolation tests
 - Context-aware Tab and Escape tests
 
@@ -89,14 +108,17 @@ The following behaviors remain in `input.rs` because they require imperative log
 
 Modal input (`handle_modal_key()`) remains separate. The current architecture properly isolates modal input from editor keybindings. Unifying them would add complexity without clear benefit.
 
-### Phase 9: User Configuration (Future)
+### Phase 9: User Configuration ✅
 
-**Status:** Planned for future release
+**Status:** Complete
 
-- Load user keymap from `~/.config/token-editor/keymap.yaml`
-- Merge user bindings with defaults (user overrides take precedence)
-- Support `command: Unbound` to disable default bindings
-- Hot-reload on file change (optional)
+Implemented user-configurable keymaps with layered loading:
+- `get_user_config_path()` returns `~/.config/token-editor/keymap.yaml` (Unix) or `%APPDATA%\token-editor\keymap.yaml` (Windows)
+- `merge_bindings()` combines base + user bindings with override semantics
+- `command: Unbound` removes matching default bindings
+- Layered loading: embedded defaults → project keymap.yaml → user config
+
+**Not implemented:** Hot-reload on file change (deferred - requires file watcher)
 
 ### Phase 10: Chord Support (Future)
 
@@ -111,13 +133,22 @@ No default chords are currently defined. Could add:
 - `Cmd+K Cmd+C` for comment
 - `Cmd+K Cmd+U` for uncomment
 
-### Phase 11: Cleanup (Future)
+### Phase 11: Cleanup ✅
 
-**Status:** Planned
+**Status:** Complete
 
-- Remove redundant match arms from input.rs (those now handled by keymap)
-- Audit for dead code
-- Performance profiling of keymap lookup
+Cleaned up `input.rs` to remove redundant code now handled by keymap:
+
+- **Removed 350+ lines** of redundant match arms from input.rs
+- Removed: numpad shortcuts, undo/redo, save, clipboard, select all, duplicate, select next/unselect occurrence, modals (command palette, goto line, find), layout (splits, tabs, focus groups), tab/shift-tab indent, escape, expand/shrink selection, all selection navigation (shift+arrows)
+- **Kept** only:
+  - Modal input routing (`handle_modal_key`)
+  - Option double-tap for multi-cursor creation (temporal gesture)
+  - Navigation with selection collapse (Home, End, Ctrl+Home/End, Alt+Arrow, PageUp/Down, Arrow Up/Down with selection)
+  - Character input (regular typing)
+- Updated tests in `main.rs` to use message system instead of `handle_key` directly
+- `input.rs` reduced from ~477 lines to ~220 lines (54% reduction)
+- 546 tests passing
 
 ---
 
@@ -126,7 +157,8 @@ No default chords are currently defined. Could add:
 ### File Location
 
 - **Default:** `keymap.yaml` at project root (embedded at compile time)
-- **User override:** `~/.config/token-editor/keymap.yaml` (future)
+- **Project-local:** `keymap.yaml` in current working directory (overrides defaults)
+- **User config:** `~/.config/token-editor/keymap.yaml` (highest priority)
 
 ### Modifier Keys
 
@@ -238,13 +270,16 @@ No default chords are currently defined. Could add:
 
 - [x] 90%+ shortcuts via keymap
 - [x] Palette shows correct bindings from keymap
-- [x] All 537 tests pass
+- [x] All 546 tests pass
 - [x] Context-aware Tab and Escape work correctly
 - [x] Option double-tap still works for multi-cursor
 - [x] Modal input properly isolated
+- [x] User-configurable keymap file with layered loading
+- [x] `command: Unbound` to disable default bindings
+- [x] Redundant input.rs code removed (54% line reduction)
 
 ### Future Milestones
 
-- [ ] User-configurable keymap file
+- [ ] Hot-reload keymap on file change
 - [ ] Chord sequences (Ctrl+K Ctrl+C style)
-- [ ] Remove redundant input.rs code
+- [ ] Move remaining selection-clearing logic into editor movement handlers
