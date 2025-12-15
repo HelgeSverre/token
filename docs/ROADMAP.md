@@ -8,6 +8,47 @@ For completed work, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Recently Completed
 
+### Benchmark Suite Improvements ✅
+
+**Design:** [feature/benchmark-improvements.md](feature/benchmark-improvements.md) | **Completed:** 2025-12-15
+
+Comprehensive audit and improvement of the benchmark suite in `benches/`:
+
+- **Fixed inaccurate benchmarks:**
+  - Rewrote `glyph_cache.rs` to use actual fontdue rasterization
+  - Created shared `token::rendering::blend_pixel_u8` function
+  - Removed duplicated blend code from `rendering.rs` and `support.rs`
+- **Added multi-cursor benchmarks:** Setup, insert, delete, move, select word (10-500 cursors)
+- **Added large file scaling:** 100k, 500k, 1M line tests in `rope_operations.rs`
+- **New `benches/search.rs`:** Literal search, case-insensitive, whole word, visible range
+- **New `benches/layout.rs`:** Line width, visible lines, char position, viewport layout
+- **New Makefile targets:** `bench-loop`, `bench-search`, `bench-layout`, `bench-multicursor`, `bench-large`
+
+Remaining: Phase 3 (criterion throughput metrics for CI), syntax highlighting benchmarks (when feature ready).
+
+### Syntax Highlighting MVP ✅
+
+**Design:** [feature/syntax-highlighting.md](feature/syntax-highlighting.md) | **Completed:** 2025-12-15
+
+Tree-sitter based syntax highlighting with async background parsing:
+
+- **Core data structures:** `HighlightToken`, `LineHighlights`, `SyntaxHighlights`, `LanguageId`
+- **Async parser:** Background worker thread with mpsc channels
+- **Debouncing:** 30ms timer prevents parsing on every keystroke
+- **Revision tracking:** Staleness checks discard outdated parse results
+- **Languages:** YAML, Markdown, Rust, HTML, CSS, JavaScript (Phase 1-2 complete)
+- **Theme integration:** `SyntaxTheme` struct with VS Code-like default colors
+- **Rendering:** Highlighted text rendering with proper tab expansion
+- **Auto-trigger:** Parsing on document load and content changes
+- **No FOUC:** Old highlights preserved until new ones arrive
+
+**Bug fixes (v0.3.1):**
+- Fixed tree-sitter incremental parsing bug causing misaligned highlights
+- Fixed flash of unstyled text during re-parsing
+- Fixed tab expansion in highlight token rendering
+
+Future phases: Additional languages (PHP, Python, Go, TypeScript), language injection, proper incremental parsing with `tree.edit()`.
+
 ### File Operations – Phases 1-5 Complete ✅
 
 **Design:** [feature/file-operations.md](feature/file-operations.md) | **Completed:** 2025-12-15
@@ -235,7 +276,7 @@ Group rapid consecutive edits into single undo entries:
 | Feature | Design Doc |
 |---------|------------|
 | Keymap Hot-Reload & Chords | [future/keymap-enhancements.md](future/keymap-enhancements.md) |
-| Syntax Highlighting | [feature/syntax-highlighting.md](feature/syntax-highlighting.md) |
+| Syntax Highlighting Phase 2+ | [feature/syntax-highlighting.md](feature/syntax-highlighting.md) |
 
 ---
 
@@ -257,7 +298,7 @@ Group rapid consecutive edits into single undo entries:
 | Configurable Keymapping     | ✅ Complete | [archived/KEYMAPPING_IMPLEMENTATION_PLAN.md](archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) |
 | Keymap Enhancements         | Future      | [future/keymap-enhancements.md](future/keymap-enhancements.md)                           |
 | Workspace Management        | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                       |
-| Syntax Highlighting         | Planned     | [feature/syntax-highlighting.md](feature/syntax-highlighting.md)                         |
+| Syntax Highlighting         | ✅ MVP      | [feature/syntax-highlighting.md](feature/syntax-highlighting.md)                         |
 
 ---
 
@@ -310,9 +351,14 @@ src/
 │   ├── defaults.rs      # Default bindings loader + user config merge
 │   ├── winit_adapter.rs # winit key event conversion
 │   └── tests.rs         # 74 keymap tests
+├── syntax/              # Syntax highlighting system
+│   ├── mod.rs           # Public exports, HIGHLIGHT_NAMES
+│   ├── highlights.rs    # HighlightToken, LineHighlights, SyntaxHighlights
+│   ├── languages.rs     # LanguageId, language detection from extensions
+│   └── worker.rs        # SyntaxWorker, async parsing, debouncing
 ├── config.rs            # EditorConfig, theme persistence
 ├── config_paths.rs      # Centralized config directory paths
-├── theme.rs             # Theme, Color, ThemeInfo, load_theme()
+├── theme.rs             # Theme, Color, ThemeInfo, load_theme(), SyntaxTheme
 ├── overlay.rs           # OverlayConfig, OverlayBounds, render functions
 └── util/
     ├── mod.rs           # Module exports, re-exports

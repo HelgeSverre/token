@@ -4,7 +4,104 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## v0.3.0 - 2025-12-15 (Latest)
+## v0.3.1 - 2025-12-15 (Latest)
+
+### Fixed - Syntax Highlighting Bugs
+
+Critical fixes for the syntax highlighting system:
+
+**Tree-sitter Incremental Parsing Bug:**
+- Fixed misaligned highlights after document edits (e.g., pressing Enter)
+- Root cause: Passing old cached tree to tree-sitter without calling `tree.edit()`
+- Tree-sitter incorrectly reused nodes from stale tree, producing wrong line/column positions
+- Fix: Always do full reparse by passing `None` instead of cached tree
+- Removed unused tree caching from `ParserState` until proper incremental parsing is implemented
+
+**Flash of Unstyled Text (FOUC):**
+- Fixed jarring unstyled flash during syntax re-parsing
+- Old highlights are now preserved until new ones arrive
+- Revision checks ensure only matching highlights are applied
+- Reduced debounce from 50ms to 30ms for snappier updates
+
+**Tab Expansion in Highlighting:**
+- Fixed highlight token columns not accounting for tab expansion
+- Token character columns are now converted to visual columns using `char_col_to_visual_col()`
+
+### Changed
+
+- `SYNTAX_DEBOUNCE_MS` reduced from 50ms to 30ms
+- `ParserState` no longer caches syntax trees (simplified until incremental parsing)
+
+---
+
+## v0.3.0 - 2025-12-15
+
+### Added - Benchmark Suite Improvements
+
+Comprehensive audit and improvement of the benchmark suite:
+
+**Phase 1: Fixed Inaccurate Benchmarks**
+- **Rewrote `glyph_cache.rs`** — Now uses actual fontdue rasterization instead of fictional patterns
+  - `glyph_rasterize` tests real character rasterization at various font sizes
+  - `glyph_cache_realistic_paragraph` tests actual cache hit/miss patterns
+  - `glyph_cache_code_sample` tests with code-like content
+  - `font_metrics_extraction` tests line width measurement
+- **Created `token::rendering::blend_pixel_u8`** — Shared blend function in lib.rs
+- **Updated `rendering.rs` and `support.rs`** — Use shared blend function instead of duplicated code
+
+**Phase 2: Added Missing Benchmarks**
+- **Multi-cursor benchmarks in `main_loop.rs`:**
+  - `multi_cursor_setup` (10, 100, 500 cursors)
+  - `multi_cursor_insert_char`, `multi_cursor_delete`, `multi_cursor_move_down`
+  - `multi_cursor_select_word`, `multi_cursor_add_cursor_above_below`
+- **Large file scaling in `rope_operations.rs`** (100k, 500k, 1M lines):
+  - `insert_middle_large_file`, `insert_start_large_file`, `insert_end_large_file`
+  - `delete_middle_large_file`, `navigate_large_file`
+  - `sequential_inserts_large_file`, `sequential_deletes_large_file`
+- **New `benches/search.rs`** — Search operation benchmarks:
+  - `search_literal_string`, `search_case_insensitive`, `search_whole_word`
+  - `count_occurrences`, `find_first_occurrence`, `search_visible_range`
+- **New `benches/layout.rs`** — Text layout benchmarks:
+  - `measure_line_width`, `calculate_visible_lines`, `char_position_in_line`
+  - `column_from_x_position`, `full_viewport_layout`, `viewport_layout_with_cache`
+
+**New Makefile Targets:**
+- `make bench-loop` — Main loop benchmarks
+- `make bench-search` — Search benchmarks
+- `make bench-layout` — Layout benchmarks
+- `make bench-multicursor` — Multi-cursor specific benchmarks
+- `make bench-large` — Large file (500k+) benchmarks
+
+---
+
+### Added - Syntax Highlighting MVP
+
+Tree-sitter based syntax highlighting with async background parsing:
+
+**New `src/syntax/` module:**
+- `highlights.rs` - `HighlightToken`, `LineHighlights`, `SyntaxHighlights` data structures
+- `languages.rs` - `LanguageId` enum with extension-based language detection
+- `worker.rs` - `SyntaxWorker` with background thread, mpsc channels, debouncing
+
+**Features:**
+- **Async parsing** - Background worker thread prevents UI blocking
+- **Debouncing** - 50ms timer prevents parsing on every keystroke
+- **Revision tracking** - Staleness checks discard outdated parse results
+- **Phase 1 languages** - YAML, Markdown, Rust support
+- **Theme integration** - `SyntaxTheme` struct in theme.rs with VS Code-like default colors
+- **Auto-trigger** - Parsing on document load and content changes
+
+**New messages:**
+- `SyntaxMsg::ParseCompleted` - Delivers highlights from background thread
+- `Cmd::ParseSyntax` - Triggers async syntax parsing
+
+**Dependencies added:**
+- `tree-sitter = "0.24"`
+- `tree-sitter-yaml = "0.6"`
+- `tree-sitter-md = "0.3"`
+- `tree-sitter-rust = "0.23"`
+
+---
 
 ### Added - CLI Arguments with clap
 
