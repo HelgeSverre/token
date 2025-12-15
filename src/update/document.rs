@@ -34,6 +34,32 @@ fn word_start_before(buffer: &ropey::Rope, offset: usize) -> usize {
     i
 }
 
+/// Find the end of the word after the given offset
+fn word_end_after(buffer: &ropey::Rope, offset: usize) -> usize {
+    let len = buffer.len_chars();
+    if offset >= len {
+        return len;
+    }
+
+    // Collect chars from offset onwards
+    let text: String = buffer.slice(offset..).chars().collect();
+    let chars: Vec<char> = text.chars().collect();
+    
+    if chars.is_empty() {
+        return offset;
+    }
+
+    let mut i = 0;
+    
+    // Move through current word type until we hit a different type or EOF
+    let current_type = char_type(chars[0]);
+    while i < chars.len() && char_type(chars[i]) == current_type {
+        i += 1;
+    }
+
+    offset + i
+}
+
 /// Handle document messages (text editing, undo/redo)
 pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
     // Clear occurrence selection state on any editing operation
@@ -552,6 +578,141 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     model.document_mut().buffer.remove(start_offset..end_offset);
 
                     model.set_cursor_from_position(start_offset);
+                    model.ensure_cursor_visible();
+
+                    let cursor_after = *model.editor().primary_cursor();
+                    model.document_mut().push_edit(EditOperation::Delete {
+                        position: start_offset,
+                        text: deleted_text,
+                        cursor_before,
+                        cursor_after,
+                    });
+
+                    model.document_mut().is_modified = true;
+                }
+            }
+
+            model.reset_cursor_blink();
+            Some(Cmd::Redraw)
+        }
+
+        DocumentMsg::DeleteWordForward => {
+            let cursor_before = *model.editor().primary_cursor();
+
+            // Multi-cursor: process all cursors in reverse document order
+            if model.editor().has_multiple_cursors() {
+                let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
+                let indices = cursors_in_reverse_order(model);
+                let mut operations = Vec::new();
+
+                for idx in indices {
+                    let selection = model.editor().selections[idx];
+                    if !selection.is_empty() {
+                        // Delete selection (same as DeleteForward)
+                        let start = selection.start();
+                        let end = selection.end();
+                        let start_offset =
+                            model.document().cursor_to_offset(start.line, start.column);
+                        let end_offset = model.document().cursor_to_offset(end.line, end.column);
+
+                        if start_offset < end_offset {
+                            let deleted_text: String = model
+                                .document()
+                                .buffer
+                                .slice(start_offset..end_offset)
+                                .to_string();
+                            model.document_mut().buffer.remove(start_offset..end_offset);
+
+                            operations.push(EditOperation::Delete {
+                                position: start_offset,
+                                text: deleted_text,
+                                cursor_before: model.editor().cursors[idx],
+                                cursor_after: Cursor::at(start.line, start.column),
+                            });
+
+                            model.editor_mut().cursors[idx].line = start.line;
+                            model.editor_mut().cursors[idx].column = start.column;
+                            model.editor_mut().selections[idx] = Selection::new(start);
+                        }
+                    } else {
+                        // No selection: delete word to the right
+                        let cursor = model.editor().cursors[idx];
+                        let start_offset = model
+                            .document()
+                            .cursor_to_offset(cursor.line, cursor.column);
+
+                        let buffer_len = model.document().buffer.len_chars();
+                        if start_offset >= buffer_len {
+                            continue;
+                        }
+
+                        let end_offset = word_end_after(&model.document().buffer, start_offset);
+                        if end_offset <= start_offset {
+                            continue;
+                        }
+
+                        let deleted_text: String = model
+                            .document()
+                            .buffer
+                            .slice(start_offset..end_offset)
+                            .to_string();
+                        model.document_mut().buffer.remove(start_offset..end_offset);
+
+                        operations.push(EditOperation::Delete {
+                            position: start_offset,
+                            text: deleted_text,
+                            cursor_before: cursor,
+                            cursor_after: cursor, // Cursor stays in place
+                        });
+
+                        // Cursor position doesn't change for forward delete
+                        let new_pos = model.editor().cursors[idx].to_position();
+                        model.editor_mut().selections[idx] = Selection::new(new_pos);
+                    }
+                }
+
+                let cursors_after: Vec<Cursor> = model.editor().cursors.clone();
+                model.document_mut().push_edit(EditOperation::Batch {
+                    operations,
+                    cursors_before,
+                    cursors_after,
+                });
+
+                model.document_mut().is_modified = true;
+                model.ensure_cursor_visible();
+                model.reset_cursor_blink();
+                return Some(Cmd::Redraw);
+            }
+
+            // Single cursor: check for selection
+            if let Some((pos, deleted_text)) = delete_selection(model) {
+                let cursor_after = *model.editor().primary_cursor();
+                model.document_mut().push_edit(EditOperation::Delete {
+                    position: pos,
+                    text: deleted_text,
+                    cursor_before,
+                    cursor_after,
+                });
+                model.document_mut().is_modified = true;
+                model.ensure_cursor_visible();
+                model.reset_cursor_blink();
+                return Some(Cmd::Redraw);
+            }
+
+            // No selection: delete word to the right
+            let start_offset = model.cursor_buffer_position();
+            let buffer_len = model.document().buffer.len_chars();
+            if start_offset < buffer_len {
+                let end_offset = word_end_after(&model.document().buffer, start_offset);
+                if end_offset > start_offset {
+                    let deleted_text: String = model
+                        .document()
+                        .buffer
+                        .slice(start_offset..end_offset)
+                        .to_string();
+                    model.document_mut().buffer.remove(start_offset..end_offset);
+
+                    // Cursor position doesn't change for forward delete
                     model.ensure_cursor_visible();
 
                     let cursor_after = *model.editor().primary_cursor();

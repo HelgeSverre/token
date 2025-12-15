@@ -120,6 +120,8 @@ pub enum DocumentMsg {
     DeleteBackward,
     /// Delete word before cursor (Option+Backspace)
     DeleteWordBackward,
+    /// Delete word after cursor (Option+Delete)
+    DeleteWordForward,
     /// Delete character at cursor (Delete)
     DeleteForward,
     /// Delete entire current line (Cmd+Backspace)
