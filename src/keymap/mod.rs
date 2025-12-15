@@ -36,7 +36,7 @@ pub use binding::Keybinding;
 pub use command::Command;
 pub use config::{load_keymap_file, parse_keymap_yaml, KeymapError};
 pub use context::{Condition, KeyContext};
-pub use defaults::{default_bindings, load_default_keymap};
+pub use defaults::{default_bindings, get_user_config_path, load_default_keymap, merge_bindings};
 pub use keymap::{KeyAction, Keymap};
 pub use types::{KeyCode, Keystroke, Modifiers};
 pub use winit_adapter::keystroke_from_winit;
