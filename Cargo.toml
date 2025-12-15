@@ -31,6 +31,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 # For clipboard support
 arboard = "3.4"
 
+# For user config directory detection
+dirs = "5"
+
 # Optional: heap profiling
 dhat = { version = "0.3", optional = true }
 
