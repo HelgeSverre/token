@@ -808,33 +808,45 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
         }
 
         // === Rectangle Selection ===
-        EditorMsg::StartRectangleSelection { line, column } => {
+        EditorMsg::StartRectangleSelection { line, visual_col } => {
             model.editor_mut().rectangle_selection.active = true;
-            model.editor_mut().rectangle_selection.start = Position::new(line, column);
-            model.editor_mut().rectangle_selection.current = Position::new(line, column);
+            model.editor_mut().rectangle_selection.start_line = line;
+            model.editor_mut().rectangle_selection.start_visual_col = visual_col;
+            model.editor_mut().rectangle_selection.current_line = line;
+            model.editor_mut().rectangle_selection.current_visual_col = visual_col;
             Some(Cmd::Redraw)
         }
 
-        EditorMsg::UpdateRectangleSelection { line, column } => {
+        EditorMsg::UpdateRectangleSelection { line, visual_col } => {
             if model.editor().rectangle_selection.active {
-                model.editor_mut().rectangle_selection.current = Position::new(line, column);
+                model.editor_mut().rectangle_selection.current_line = line;
+                model.editor_mut().rectangle_selection.current_visual_col = visual_col;
 
-                // Compute preview cursor positions
-                let top_left = model.editor().rectangle_selection.top_left();
-                let bottom_right = model.editor().rectangle_selection.bottom_right();
-                let cursor_col = model.editor().rectangle_selection.current.column;
+                // Compute preview cursor positions (clamped per-line to line length)
+                let top_line = model.editor().rectangle_selection.top_line();
+                let bottom_line = model.editor().rectangle_selection.bottom_line();
+                let current_visual_col = model.editor().rectangle_selection.current_visual_col;
 
                 model
                     .editor_mut()
                     .rectangle_selection
                     .preview_cursors
                     .clear();
-                for preview_line in top_left.line..=bottom_right.line {
+                for preview_line in top_line..=bottom_line {
+                    let line_text = model.document().get_line(preview_line).unwrap_or_default();
+                    let line_text_trimmed = line_text.trim_end_matches('\n');
+                    // Convert visual column to char column, clamped to line length
+                    let char_col = crate::util::text::visual_col_to_char_col(
+                        line_text_trimmed,
+                        current_visual_col,
+                    );
+                    let line_len = model.document().line_length(preview_line);
+                    let clamped_col = char_col.min(line_len);
                     model
                         .editor_mut()
                         .rectangle_selection
                         .preview_cursors
-                        .push(Position::new(preview_line, cursor_col));
+                        .push(Position::new(preview_line, clamped_col));
                 }
             }
             Some(Cmd::Redraw)
@@ -845,44 +857,59 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 return Some(Cmd::Redraw);
             }
 
-            let top_left = model.editor().rectangle_selection.top_left();
-            let bottom_right = model.editor().rectangle_selection.bottom_right();
-            // The cursor should be at the "current" position (where user dragged TO)
-            let cursor_col = model.editor().rectangle_selection.current.column;
+            let top_line = model.editor().rectangle_selection.top_line();
+            let bottom_line = model.editor().rectangle_selection.bottom_line();
+            let left_visual_col = model.editor().rectangle_selection.left_visual_col();
+            let right_visual_col = model.editor().rectangle_selection.right_visual_col();
+            let current_visual_col = model.editor().rectangle_selection.current_visual_col;
 
             // Clear existing cursors and selections
             model.editor_mut().cursors.clear();
             model.editor_mut().selections.clear();
 
             // Create a cursor (and optionally selection) for each line in the rectangle
-            for line in top_left.line..=bottom_right.line {
+            for line in top_line..=bottom_line {
+                let line_text = model.document().get_line(line).unwrap_or_default();
+                let line_text_trimmed = line_text.trim_end_matches('\n');
                 let line_len = model.document().line_length(line);
 
-                // Clamp columns to line length
-                let start_col = top_left.column.min(line_len);
-                let end_col = bottom_right.column.min(line_len);
-                let clamped_cursor_col = cursor_col.min(line_len);
+                // Convert visual columns to char columns for this line
+                let start_char_col = crate::util::text::visual_col_to_char_col(
+                    line_text_trimmed,
+                    left_visual_col,
+                )
+                .min(line_len);
+                let end_char_col = crate::util::text::visual_col_to_char_col(
+                    line_text_trimmed,
+                    right_visual_col,
+                )
+                .min(line_len);
+                let cursor_char_col = crate::util::text::visual_col_to_char_col(
+                    line_text_trimmed,
+                    current_visual_col,
+                )
+                .min(line_len);
 
                 // Create cursor at the dragged-to position (clamped to line length)
-                let cursor = Cursor::at(line, clamped_cursor_col);
+                let cursor = Cursor::at(line, cursor_char_col);
                 model.editor_mut().cursors.push(cursor);
 
-                // Create selection if rectangle has width
-                if start_col < end_col {
+                // Create selection if rectangle has width on this line
+                if start_char_col < end_char_col {
                     // Anchor is the opposite end from cursor, head is at cursor
-                    let anchor_col = if cursor_col == start_col {
-                        end_col
+                    let anchor_col = if current_visual_col == left_visual_col {
+                        end_char_col
                     } else {
-                        start_col
+                        start_char_col
                     };
                     let selection = Selection {
-                        anchor: Position::new(line, anchor_col.min(line_len)),
-                        head: Position::new(line, clamped_cursor_col),
+                        anchor: Position::new(line, anchor_col),
+                        head: Position::new(line, cursor_char_col),
                     };
                     model.editor_mut().selections.push(selection);
                 } else {
                     // Zero-width: just cursor, no selection
-                    let selection = Selection::new(Position::new(line, clamped_cursor_col));
+                    let selection = Selection::new(Position::new(line, cursor_char_col));
                     model.editor_mut().selections.push(selection);
                 }
             }

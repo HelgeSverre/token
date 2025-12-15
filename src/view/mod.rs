@@ -468,7 +468,70 @@ impl Renderer {
             }
         }
 
-        // Text content
+        // Rectangle selection highlight (middle mouse drag preview)
+        // Uses visual columns (screen position) for consistent behavior across lines
+        if editor.rectangle_selection.active {
+            let rect_sel = &editor.rectangle_selection;
+            let top_line = rect_sel.top_line();
+            let bottom_line = rect_sel.bottom_line();
+            let left_visual_col = rect_sel.left_visual_col();
+            let right_visual_col = rect_sel.right_visual_col();
+            let current_visual_col = rect_sel.current_visual_col;
+
+            let visible_start = top_line.max(editor.viewport.top_line);
+            let visible_end = (bottom_line + 1).min(end_line);
+
+            for doc_line in visible_start..visible_end {
+                let line_text = document.get_line(doc_line).unwrap_or_default();
+                let line_text_trimmed = if line_text.ends_with('\n') {
+                    &line_text[..line_text.len() - 1]
+                } else {
+                    &line_text
+                };
+                let line_visual_len =
+                    char_col_to_visual_col(line_text_trimmed, line_text_trimmed.chars().count());
+
+                // Only show highlight if current position is within the line's visual width
+                // (not dragging past line end)
+                if current_visual_col > line_visual_len {
+                    continue;
+                }
+
+                // Clamp visual columns to line's visual width
+                let start_visual = left_visual_col.min(line_visual_len);
+                let end_visual = right_visual_col.min(line_visual_len);
+
+                // Skip lines where selection would be empty
+                if start_visual >= end_visual {
+                    continue;
+                }
+
+                let screen_line = doc_line - editor.viewport.top_line;
+                let y_start = content_y + screen_line * line_height;
+                let y_end = (y_start + line_height).min(content_y + content_h);
+
+                let visible_start_col = start_visual.saturating_sub(editor.viewport.left_column);
+                let visible_end_col = end_visual.saturating_sub(editor.viewport.left_column);
+
+                let x_start =
+                    group_text_start_x + (visible_start_col as f32 * char_width).round() as usize;
+                let x_end = (group_text_start_x
+                    + (visible_end_col as f32 * char_width).round() as usize)
+                    .min(rect_x + rect_w);
+
+                if x_end > x_start {
+                    frame.fill_rect_px(
+                        x_start,
+                        y_start,
+                        x_end.saturating_sub(x_start),
+                        y_end.saturating_sub(y_start),
+                        selection_color,
+                    );
+                }
+            }
+        }
+
+        // Text content with syntax highlighting
         let text_color = model.theme.editor.foreground.to_argb_u32();
         for (screen_line, doc_line) in (editor.viewport.top_line..end_line).enumerate() {
             if let Some(line_text) = document.get_line(doc_line) {
@@ -493,7 +556,48 @@ impl Renderer {
                     .take(max_chars)
                     .collect();
 
-                painter.draw(frame, group_text_start_x, y, &display_text, text_color);
+                // Get syntax highlights for this line
+                let line_tokens = document.get_line_highlights(doc_line);
+
+                // Adjust token columns for horizontal scroll and tab expansion
+                // Token columns are in character positions, but display uses visual columns
+                // (where tabs expand to multiple spaces)
+                let adjusted_tokens: Vec<token::syntax::HighlightToken> = line_tokens
+                    .iter()
+                    .filter_map(|t| {
+                        // Convert character columns to visual columns (accounting for tabs)
+                        let visual_start = char_col_to_visual_col(visible_text, t.start_col);
+                        let visual_end = char_col_to_visual_col(visible_text, t.end_col);
+
+                        // Adjust for horizontal scroll
+                        let start = visual_start.saturating_sub(editor.viewport.left_column);
+                        let end = visual_end.saturating_sub(editor.viewport.left_column);
+
+                        if end > 0 && start < max_chars {
+                            Some(token::syntax::HighlightToken {
+                                start_col: start,
+                                end_col: end.min(max_chars),
+                                highlight: t.highlight,
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                if adjusted_tokens.is_empty() {
+                    painter.draw(frame, group_text_start_x, y, &display_text, text_color);
+                } else {
+                    painter.draw_with_highlights(
+                        frame,
+                        group_text_start_x,
+                        y,
+                        &display_text,
+                        &adjusted_tokens,
+                        &model.theme.syntax,
+                        text_color,
+                    );
+                }
             }
         }
 
@@ -535,6 +639,53 @@ impl Renderer {
                     // Cursor: 2px wide, line_height - 2 tall, offset by 1px from top
                     frame.fill_rect_px(x, y + 1, 2, line_height.saturating_sub(2), cursor_color);
                 }
+            }
+        }
+
+        // Preview cursors for rectangle selection (always visible during drag, no blink)
+        if is_focused && editor.rectangle_selection.active {
+            let secondary_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
+            let actual_visible_columns =
+                ((rect_w as f32 - text_start_x_offset as f32) / char_width).floor() as usize;
+
+            for preview_pos in &editor.rectangle_selection.preview_cursors {
+                let cursor_in_vertical_view = preview_pos.line >= editor.viewport.top_line
+                    && preview_pos.line < editor.viewport.top_line + visible_lines;
+
+                if !cursor_in_vertical_view {
+                    continue;
+                }
+
+                let line_text = document.get_line(preview_pos.line).unwrap_or_default();
+                let line_text_trimmed = if line_text.ends_with('\n') {
+                    &line_text[..line_text.len() - 1]
+                } else {
+                    &line_text
+                };
+
+                let visual_cursor_col =
+                    char_col_to_visual_col(line_text_trimmed, preview_pos.column);
+
+                let cursor_in_horizontal_view = visual_cursor_col >= editor.viewport.left_column
+                    && visual_cursor_col < editor.viewport.left_column + actual_visible_columns;
+
+                if !cursor_in_horizontal_view {
+                    continue;
+                }
+
+                let screen_line = preview_pos.line - editor.viewport.top_line;
+                let cursor_visual_column = visual_cursor_col - editor.viewport.left_column;
+                let x = (group_text_start_x as f32 + cursor_visual_column as f32 * char_width)
+                    .round() as usize;
+                let y = content_y + screen_line * line_height;
+
+                frame.fill_rect_px(
+                    x,
+                    y + 1,
+                    2,
+                    line_height.saturating_sub(2),
+                    secondary_cursor_color,
+                );
             }
         }
     }
@@ -759,13 +910,27 @@ impl Renderer {
                 // Command list
                 if !filtered_commands.is_empty() {
                     let list_y = input_y + input_height + 8;
+                    let total_items = filtered_commands.len();
                     let clamped_selected = state
                         .selected_index
-                        .min(filtered_commands.len().saturating_sub(1));
+                        .min(total_items.saturating_sub(1));
 
-                    for (i, cmd) in filtered_commands.iter().take(max_visible_items).enumerate() {
+                    // Compute scroll offset to keep selected item visible
+                    let scroll_offset = if clamped_selected >= max_visible_items {
+                        clamped_selected + 1 - max_visible_items
+                    } else {
+                        0
+                    };
+
+                    for (i, cmd) in filtered_commands
+                        .iter()
+                        .skip(scroll_offset)
+                        .take(max_visible_items)
+                        .enumerate()
+                    {
+                        let actual_index = scroll_offset + i;
                         let item_y = list_y + i * line_height;
-                        let is_selected = i == clamped_selected;
+                        let is_selected = actual_index == clamped_selected;
 
                         if is_selected {
                             frame.fill_rect_px(
@@ -787,12 +952,12 @@ impl Renderer {
                         }
                     }
 
-                    if filtered_commands.len() > max_visible_items {
+                    // Show "and X more" for items after the visible window
+                    let items_after =
+                        total_items.saturating_sub(scroll_offset + max_visible_items);
+                    if items_after > 0 {
                         let more_y = list_y + max_visible_items * line_height;
-                        let more_text = format!(
-                            "... and {} more",
-                            filtered_commands.len() - max_visible_items
-                        );
+                        let more_text = format!("... and {} more", items_after);
                         painter.draw(frame, modal_x + 16, more_y, &more_text, dim_color);
                     }
                 }
@@ -1072,6 +1237,19 @@ impl Renderer {
     pub fn pixel_to_cursor(&mut self, x: f64, y: f64, model: &AppModel) -> (usize, usize) {
         let line_height = self.line_metrics.new_line_size.ceil() as f64;
         geometry::pixel_to_cursor(x, y, self.char_width, line_height, model)
+    }
+
+    /// Convert pixel coordinates to line and visual column (screen position).
+    /// Used for rectangle selection where the raw visual column is needed,
+    /// independent of any specific line's text content.
+    pub fn pixel_to_line_and_visual_column(
+        &mut self,
+        x: f64,
+        y: f64,
+        model: &AppModel,
+    ) -> (usize, usize) {
+        let line_height = self.line_metrics.new_line_size.ceil() as f64;
+        geometry::pixel_to_line_and_visual_column(x, y, self.char_width, line_height, model)
     }
 
     /// Check if a y-coordinate is within the status bar region.

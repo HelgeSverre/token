@@ -7,8 +7,9 @@ use crate::config_paths;
 use crate::keymap::get_default_keymap_yaml;
 use crate::messages::{AppMsg, DocumentMsg, LayoutMsg, UiMsg};
 use crate::model::{AppModel, ModalId, SplitDirection};
+use crate::syntax::LanguageId;
 
-use super::{update_document, update_layout, update_ui};
+use super::{update_document, update_layout, update_ui, SYNTAX_DEBOUNCE_MS};
 
 /// Handle app messages (file operations, window events)
 pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
@@ -66,13 +67,36 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             model.ui.is_loading = false;
             match result {
                 Ok(content) => {
-                    model.document_mut().buffer = ropey::Rope::from(content);
-                    model.document_mut().file_path = Some(path.clone());
-                    model.document_mut().is_modified = false;
-                    model.document_mut().undo_stack.clear();
-                    model.document_mut().redo_stack.clear();
+                    // Detect language from file extension
+                    let language = LanguageId::from_path(&path);
+
+                    let doc = model.document_mut();
+                    doc.buffer = ropey::Rope::from(content);
+                    doc.file_path = Some(path.clone());
+                    doc.is_modified = false;
+                    doc.undo_stack.clear();
+                    doc.redo_stack.clear();
+                    doc.language = language;
+                    doc.syntax_highlights = None;
+                    doc.revision = doc.revision.wrapping_add(1);
+
                     *model.editor_mut().primary_cursor_mut() = Default::default();
                     model.ui.set_status(format!("Loaded: {}", path.display()));
+
+                    // Trigger syntax parsing if language has highlighting
+                    if language.has_highlighting() {
+                        if let Some(doc_id) = model.document().id {
+                            let revision = model.document().revision;
+                            return Some(Cmd::Batch(vec![
+                                Cmd::Redraw,
+                                Cmd::DebouncedSyntaxParse {
+                                    document_id: doc_id,
+                                    revision,
+                                    delay_ms: SYNTAX_DEBOUNCE_MS,
+                                },
+                            ]));
+                        }
+                    }
                 }
                 Err(e) => {
                     model.ui.set_status(format!("Error: {}", e));

@@ -1,6 +1,6 @@
 [package]
 name = "token"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 
 [features]
@@ -40,6 +40,16 @@ clap = { version = "4", features = ["derive"] }
 # For user config directory detection
 dirs = "5"
 
+# Syntax highlighting with tree-sitter
+tree-sitter = "0.24"
+tree-sitter-yaml = "0.6"
+tree-sitter-md = "0.3"
+tree-sitter-rust = "0.23"
+tree-sitter-html = "0.23"
+tree-sitter-css = "0.23"
+tree-sitter-javascript = "0.23"
+streaming-iterator = "0.1"
+
 # Optional: heap profiling
 dhat = { version = "0.3", optional = true }
 
@@ -61,6 +71,14 @@ harness = false
 
 [[bench]]
 name = "main_loop"
+harness = false
+
+[[bench]]
+name = "search"
+harness = false
+
+[[bench]]
+name = "layout"
 harness = false
 
 # Profiling profile: release speed with debug symbols

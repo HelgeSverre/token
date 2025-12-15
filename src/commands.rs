@@ -5,6 +5,8 @@
 use std::path::PathBuf;
 
 use crate::keymap::{Command as KeymapCommand, Keymap};
+use crate::model::editor_area::DocumentId;
+use crate::syntax::LanguageId;
 
 // ============================================================================
 // Command Palette Registry
@@ -180,21 +182,76 @@ pub static COMMANDS: &[CommandDef] = &[
     },
 ];
 
+/// Calculate fuzzy match score. Returns None if no match, Some(score) if matches.
+/// Higher score = better match. Consecutive matches and word-start matches score higher.
+fn fuzzy_match_score(query: &str, target: &str) -> Option<i32> {
+    let query_chars: Vec<char> = query.to_lowercase().chars().collect();
+    let target_lower = target.to_lowercase();
+    let target_chars: Vec<char> = target_lower.chars().collect();
+
+    if query_chars.is_empty() {
+        return Some(0);
+    }
+
+    let mut query_idx = 0;
+    let mut score = 0;
+    let mut prev_matched = false;
+    let mut prev_was_separator = true; // Start of string counts as separator
+
+    for (i, &tc) in target_chars.iter().enumerate() {
+        let is_separator = tc == ' ' || tc == '_' || tc == '-';
+
+        if query_idx < query_chars.len() && tc == query_chars[query_idx] {
+            // Match found
+            score += 1;
+
+            // Bonus for consecutive matches
+            if prev_matched {
+                score += 2;
+            }
+
+            // Bonus for matching at word start (after separator or at beginning)
+            if prev_was_separator {
+                score += 3;
+            }
+
+            // Bonus for matching at string start
+            if i == 0 {
+                score += 5;
+            }
+
+            query_idx += 1;
+            prev_matched = true;
+        } else {
+            prev_matched = false;
+        }
+
+        prev_was_separator = is_separator;
+    }
+
+    // All query chars must be found
+    if query_idx == query_chars.len() {
+        Some(score)
+    } else {
+        None
+    }
+}
+
 /// Filter commands by a search query (fuzzy match on label)
 pub fn filter_commands(query: &str) -> Vec<&'static CommandDef> {
     if query.is_empty() {
         return COMMANDS.iter().collect();
     }
 
-    let query_lower = query.to_lowercase();
-    COMMANDS
+    let mut matches: Vec<(&'static CommandDef, i32)> = COMMANDS
         .iter()
-        .filter(|cmd| {
-            let label_lower = cmd.label.to_lowercase();
-            // Simple substring match for now
-            label_lower.contains(&query_lower)
-        })
-        .collect()
+        .filter_map(|cmd| fuzzy_match_score(query, cmd.label).map(|score| (cmd, score)))
+        .collect();
+
+    // Sort by score descending (best matches first)
+    matches.sort_by(|a, b| b.1.cmp(&a.1));
+
+    matches.into_iter().map(|(cmd, _)| cmd).collect()
 }
 
 /// Map CommandId to keymap::Command for keybinding lookup
@@ -283,6 +340,23 @@ pub enum Cmd {
         /// Starting directory for the dialog
         start_dir: Option<PathBuf>,
     },
+
+    // === Syntax Highlighting Commands ===
+    /// Start debounce timer for syntax parsing
+    /// After delay_ms, sends Msg::Syntax(ParseReady)
+    DebouncedSyntaxParse {
+        document_id: DocumentId,
+        revision: u64,
+        delay_ms: u64,
+    },
+    /// Run syntax parsing in background worker
+    /// Sends Msg::Syntax(ParseCompleted) when done
+    RunSyntaxParse {
+        document_id: DocumentId,
+        revision: u64,
+        source: String,
+        language: LanguageId,
+    },
 }
 
 impl Cmd {
@@ -305,6 +379,9 @@ impl Cmd {
             Cmd::ShowOpenFileDialog { .. } => false,
             Cmd::ShowSaveFileDialog { .. } => false,
             Cmd::ShowOpenFolderDialog { .. } => false,
+            // Syntax commands don't need immediate redraw - ParseCompleted triggers redraw
+            Cmd::DebouncedSyntaxParse { .. } => false,
+            Cmd::RunSyntaxParse { .. } => false,
         }
     }
 

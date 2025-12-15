@@ -99,10 +99,10 @@ pub enum EditorMsg {
     ShrinkSelection,
 
     // === Rectangle Selection (Middle mouse) ===
-    /// Start rectangle selection at position
-    StartRectangleSelection { line: usize, column: usize },
-    /// Update rectangle selection to position
-    UpdateRectangleSelection { line: usize, column: usize },
+    /// Start rectangle selection at position (visual column = screen position)
+    StartRectangleSelection { line: usize, visual_col: usize },
+    /// Update rectangle selection to position (visual column = screen position)
+    UpdateRectangleSelection { line: usize, visual_col: usize },
     /// Finish rectangle selection
     FinishRectangleSelection,
     /// Cancel rectangle selection
@@ -300,6 +300,27 @@ pub enum AppMsg {
     OpenFolderDialogResult { folder: Option<PathBuf> },
 }
 
+/// Syntax highlighting messages
+#[derive(Debug, Clone)]
+pub enum SyntaxMsg {
+    /// Parse is ready to be performed (after debounce delay)
+    ParseReady {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+    },
+    /// Parse has completed with results
+    ParseCompleted {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        highlights: crate::syntax::SyntaxHighlights,
+    },
+    /// Language changed for a document (triggers re-parse)
+    LanguageChanged {
+        document_id: crate::model::editor_area::DocumentId,
+        language: crate::syntax::LanguageId,
+    },
+}
+
 /// Top-level message type
 #[derive(Debug, Clone)]
 pub enum Msg {
@@ -313,6 +334,8 @@ pub enum Msg {
     Layout(LayoutMsg),
     /// App messages (file I/O, window)
     App(AppMsg),
+    /// Syntax highlighting messages
+    Syntax(SyntaxMsg),
 }
 
 // Convenience constructors for common messages

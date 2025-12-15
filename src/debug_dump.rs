@@ -36,6 +36,30 @@ pub struct DocumentDump {
     pub char_count: usize,
     pub undo_stack_size: usize,
     pub redo_stack_size: usize,
+    pub language: String,
+    pub revision: u64,
+    pub syntax_highlights: Option<SyntaxHighlightsDump>,
+}
+
+#[derive(Serialize)]
+pub struct SyntaxHighlightsDump {
+    pub revision: u64,
+    pub line_count: usize,
+    pub total_tokens: usize,
+    pub lines_with_tokens: Vec<LineHighlightDump>,
+}
+
+#[derive(Serialize)]
+pub struct LineHighlightDump {
+    pub line: usize,
+    pub tokens: Vec<TokenDump>,
+}
+
+#[derive(Serialize)]
+pub struct TokenDump {
+    pub start_col: usize,
+    pub end_col: usize,
+    pub highlight_name: String,
 }
 
 #[derive(Serialize)]
@@ -155,6 +179,34 @@ impl EditorAreaDump {
             .documents
             .iter()
             .map(|(id, doc)| {
+                let syntax_highlights = doc.syntax_highlights.as_ref().map(|hl| {
+                    let total_tokens: usize = hl.lines.values().map(|lh| lh.tokens.len()).sum();
+                    let lines_with_tokens: Vec<LineHighlightDump> = hl
+                        .lines
+                        .iter()
+                        .map(|(&line, lh)| LineHighlightDump {
+                            line,
+                            tokens: lh
+                                .tokens
+                                .iter()
+                                .map(|t| TokenDump {
+                                    start_col: t.start_col,
+                                    end_col: t.end_col,
+                                    highlight_name: token::syntax::HIGHLIGHT_NAMES
+                                        .get(t.highlight as usize)
+                                        .unwrap_or(&"?")
+                                        .to_string(),
+                                })
+                                .collect(),
+                        })
+                        .collect();
+                    SyntaxHighlightsDump {
+                        revision: hl.revision,
+                        line_count: hl.lines.len(),
+                        total_tokens,
+                        lines_with_tokens,
+                    }
+                });
                 (
                     id.0,
                     DocumentDump {
@@ -165,6 +217,9 @@ impl EditorAreaDump {
                         char_count: doc.buffer.len_chars(),
                         undo_stack_size: doc.undo_stack.len(),
                         redo_stack_size: doc.redo_stack.len(),
+                        language: doc.language.display_name().to_string(),
+                        revision: doc.revision,
+                        syntax_highlights,
                     },
                 )
             })

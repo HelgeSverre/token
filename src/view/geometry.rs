@@ -222,6 +222,35 @@ pub fn pixel_to_cursor(
     (line, column)
 }
 
+/// Convert pixel coordinates to line and VISUAL column (screen position).
+/// Used for rectangle selection where the raw visual column is needed,
+/// independent of any specific line's text content.
+/// Returns (line, visual_column) where visual_column is the screen column.
+pub fn pixel_to_line_and_visual_column(
+    x: f64,
+    y: f64,
+    char_width: f32,
+    line_height: f64,
+    model: &AppModel,
+) -> (usize, usize) {
+    let text_x = text_start_x(char_width).round() as f64;
+
+    let text_start_y = TAB_BAR_HEIGHT as f64;
+    let adjusted_y = (y - text_start_y).max(0.0);
+    let visual_line = (adjusted_y / line_height).floor() as usize;
+    let line = model.editor().viewport.top_line + visual_line;
+    let line = line.min(model.document().buffer.len_lines().saturating_sub(1));
+
+    let x_offset = x - text_x;
+    let visual_column = if x_offset > 0.0 {
+        model.editor().viewport.left_column + (x_offset / char_width as f64).round() as usize
+    } else {
+        model.editor().viewport.left_column
+    };
+
+    (line, visual_column)
+}
+
 /// Convert pixel coordinates to document line and column for a specific group.
 ///
 /// Accounts for the group's rect position within the window.

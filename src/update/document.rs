@@ -9,6 +9,17 @@ use super::editor::{
     cursors_in_reverse_order, delete_selection, lines_covered_by_all_cursors,
     sync_other_editor_cursors,
 };
+use super::syntax::schedule_syntax_parse;
+
+/// Returns a Cmd that redraws and schedules syntax parsing for the current document
+fn redraw_with_syntax_parse(model: &mut AppModel) -> Cmd {
+    if let Some(doc_id) = model.document().id {
+        if let Some(parse_cmd) = schedule_syntax_parse(model, doc_id) {
+            return Cmd::Batch(vec![Cmd::Redraw, parse_cmd]);
+        }
+    }
+    Cmd::Redraw
+}
 
 /// Find the start of the word before the given offset
 fn word_start_before(buffer: &ropey::Rope, offset: usize) -> usize {
@@ -118,7 +129,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             // Single cursor: existing behavior
@@ -160,7 +171,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
             }
 
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
 
         DocumentMsg::InsertNewline => {
@@ -225,7 +236,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             // Single cursor: check for selection first
@@ -263,7 +274,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
             }
 
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
 
         DocumentMsg::DeleteBackward => {
@@ -396,7 +407,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             // Single cursor: check for selection
@@ -411,7 +422,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             let pos = model.cursor_buffer_position();
@@ -457,7 +468,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
             }
 
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
 
         DocumentMsg::DeleteWordBackward => {
@@ -547,7 +558,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             // Single cursor: check for selection
@@ -562,7 +573,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             // No selection: delete word to the left
@@ -593,7 +604,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
             }
 
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
 
         DocumentMsg::DeleteWordForward => {
@@ -681,7 +692,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             // Single cursor: check for selection
@@ -696,7 +707,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             // No selection: delete word to the right
@@ -728,7 +739,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
             }
 
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
 
         DocumentMsg::DeleteForward => {
@@ -802,7 +813,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
                 model.document_mut().is_modified = true;
                 model.reset_cursor_blink();
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             // Single cursor: check for selection
@@ -816,7 +827,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 });
                 model.document_mut().is_modified = true;
                 model.reset_cursor_blink();
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             let pos = model.cursor_buffer_position();
@@ -854,13 +865,13 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
             }
 
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
 
         DocumentMsg::DeleteLine => {
             let total_lines = model.document().line_count();
             if total_lines == 0 {
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             if model.editor().has_multiple_cursors() {
@@ -1002,7 +1013,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             let cursor_before = *model.editor().primary_cursor();
@@ -1073,7 +1084,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
 
         DocumentMsg::Undo => {
@@ -1085,7 +1096,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
             }
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
 
         DocumentMsg::Redo => {
@@ -1097,7 +1108,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
             }
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
 
         DocumentMsg::Copy => {
@@ -1153,7 +1164,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                     .set_status(format!("Copied {} chars", text_to_copy.len()));
             }
 
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
 
         DocumentMsg::Cut => {
@@ -1274,7 +1285,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
 
         DocumentMsg::Paste => {
@@ -1287,7 +1298,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
             if let Some(text) = clipboard_text {
                 if text.is_empty() {
-                    return Some(Cmd::Redraw);
+                    return Some(redraw_with_syntax_parse(model));
                 }
 
                 let cursor_before = *model.editor().primary_cursor();
@@ -1431,7 +1442,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.reset_cursor_blink();
             }
 
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
 
         DocumentMsg::Duplicate => {
@@ -1592,7 +1603,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             // Single cursor: existing behavior
@@ -1682,7 +1693,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
             model.document_mut().is_modified = true;
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
 
         DocumentMsg::IndentLines => {
@@ -1690,7 +1701,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
             let covered_lines = lines_covered_by_all_cursors(model);
 
             if covered_lines.is_empty() {
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
@@ -1735,7 +1746,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
             model.document_mut().is_modified = true;
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
 
         DocumentMsg::UnindentLines => {
@@ -1743,7 +1754,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
             let covered_lines = lines_covered_by_all_cursors(model);
 
             if covered_lines.is_empty() {
-                return Some(Cmd::Redraw);
+                return Some(redraw_with_syntax_parse(model));
             }
 
             let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
@@ -1807,7 +1818,7 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(redraw_with_syntax_parse(model))
         }
     }
 }

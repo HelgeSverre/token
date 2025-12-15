@@ -213,33 +213,43 @@ impl Default for Viewport {
 }
 
 /// State for an in-progress rectangle selection (middle mouse drag)
+/// Uses VISUAL columns (screen position) rather than character columns
+/// so rectangle selection works consistently across lines of different lengths.
 #[derive(Debug, Clone, Default)]
 pub struct RectangleSelectionState {
     /// Whether a rectangle selection is currently active
     pub active: bool,
-    /// Starting position (where mouse was pressed)
-    pub start: Position,
-    /// Current position (where mouse is now)
-    pub current: Position,
+    /// Starting line
+    pub start_line: usize,
+    /// Starting visual column (screen position)
+    pub start_visual_col: usize,
+    /// Current line (where mouse is now)
+    pub current_line: usize,
+    /// Current visual column (screen position)
+    pub current_visual_col: usize,
     /// Preview cursor positions (computed during drag, shown before commit)
     pub preview_cursors: Vec<Position>,
 }
 
 impl RectangleSelectionState {
-    /// Get the top-left corner of the rectangle
-    pub fn top_left(&self) -> Position {
-        Position::new(
-            self.start.line.min(self.current.line),
-            self.start.column.min(self.current.column),
-        )
+    /// Get the top line of the rectangle
+    pub fn top_line(&self) -> usize {
+        self.start_line.min(self.current_line)
     }
 
-    /// Get the bottom-right corner of the rectangle
-    pub fn bottom_right(&self) -> Position {
-        Position::new(
-            self.start.line.max(self.current.line),
-            self.start.column.max(self.current.column),
-        )
+    /// Get the bottom line of the rectangle
+    pub fn bottom_line(&self) -> usize {
+        self.start_line.max(self.current_line)
+    }
+
+    /// Get the left visual column of the rectangle
+    pub fn left_visual_col(&self) -> usize {
+        self.start_visual_col.min(self.current_visual_col)
+    }
+
+    /// Get the right visual column of the rectangle
+    pub fn right_visual_col(&self) -> usize {
+        self.start_visual_col.max(self.current_visual_col)
     }
 }
 

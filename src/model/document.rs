@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use super::editor::Cursor;
 use super::editor_area::DocumentId;
+use crate::syntax::{LanguageId, SyntaxHighlights};
 
 /// Represents an edit operation for undo/redo functionality
 #[derive(Debug, Clone)]
@@ -58,6 +59,15 @@ pub struct Document {
     pub undo_stack: Vec<EditOperation>,
     /// Redo stack
     pub redo_stack: Vec<EditOperation>,
+
+    // === Syntax Highlighting ===
+    /// Detected language for syntax highlighting
+    pub language: LanguageId,
+    /// Current syntax highlights (updated asynchronously)
+    pub syntax_highlights: Option<SyntaxHighlights>,
+    /// Document revision counter (incremented on each edit)
+    /// Used for staleness checking in async parsing
+    pub revision: u64,
 }
 
 impl Document {
@@ -71,6 +81,9 @@ impl Document {
             is_modified: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            language: LanguageId::PlainText,
+            syntax_highlights: None,
+            revision: 0,
         }
     }
 
@@ -84,12 +97,16 @@ impl Document {
             is_modified: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            language: LanguageId::PlainText,
+            syntax_highlights: None,
+            revision: 0,
         }
     }
 
     /// Load a document from a file path
     pub fn from_file(path: PathBuf) -> Result<Self, std::io::Error> {
         let content = std::fs::read_to_string(&path)?;
+        let language = LanguageId::from_path(&path);
         Ok(Self {
             id: None,
             buffer: Rope::from(content),
@@ -98,6 +115,9 @@ impl Document {
             is_modified: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            language,
+            syntax_highlights: None,
+            revision: 0,
         })
     }
 
@@ -192,6 +212,19 @@ impl Document {
         self.undo_stack.push(op);
         self.redo_stack.clear();
         self.is_modified = true;
+        self.revision = self.revision.wrapping_add(1);
+        // Keep existing syntax highlights until new ones arrive.
+        // This prevents "flash of unstyled text" during the debounce window.
+        // The revision check in ParseCompleted ensures only matching highlights are applied.
+    }
+
+    /// Get highlight tokens for a specific line
+    pub fn get_line_highlights(&self, line: usize) -> &[crate::syntax::HighlightToken] {
+        self.syntax_highlights
+            .as_ref()
+            .and_then(|h| h.get_line(line))
+            .map(|lh| lh.tokens.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Find all occurrences of text in the document

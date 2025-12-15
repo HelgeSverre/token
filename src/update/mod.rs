@@ -6,6 +6,7 @@ mod app;
 mod document;
 mod editor;
 mod layout;
+mod syntax;
 mod ui;
 
 use crate::commands::Cmd;
@@ -22,6 +23,7 @@ pub use app::update_app;
 pub use document::update_document;
 pub use editor::update_editor;
 pub use layout::update_layout;
+pub use syntax::{schedule_syntax_parse, update_syntax, SYNTAX_DEBOUNCE_MS};
 pub use ui::update_ui;
 
 /// Main update function - dispatches to sub-handlers
@@ -48,6 +50,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::Ui(m) => ui::update_ui(model, m),
         Msg::Layout(m) => layout::update_layout(model, m),
         Msg::App(m) => app::update_app(model, m),
+        Msg::Syntax(m) => syntax::update_syntax(model, m),
     };
 
     sync_status_bar(model);
@@ -117,5 +120,6 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Ui(m) => format!("Ui::{:?}", m),
         Msg::Layout(m) => format!("Layout::{:?}", m),
         Msg::App(m) => format!("App::{:?}", m),
+        Msg::Syntax(m) => format!("Syntax::{:?}", m),
     }
 }

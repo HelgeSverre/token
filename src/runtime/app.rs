@@ -18,7 +18,8 @@ use token::commands::{filter_commands, Cmd};
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
 };
-use token::messages::{AppMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, UiMsg};
+use token::messages::{AppMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, SyntaxMsg, UiMsg};
+use token::syntax::{LanguageId, ParserState};
 use token::model::editor::Position;
 use token::model::editor_area::{Rect, SplitDirection};
 use token::model::{AppModel, ModalState};
@@ -32,6 +33,14 @@ use crate::view::Renderer;
 use super::perf::PerfStats;
 
 use winit::keyboard::ModifiersState;
+
+/// Request sent to syntax worker thread
+struct SyntaxParseRequest {
+    document_id: token::model::editor_area::DocumentId,
+    revision: u64,
+    source: String,
+    language: LanguageId,
+}
 
 pub struct App {
     model: AppModel,
@@ -54,12 +63,21 @@ pub struct App {
     msg_tx: Sender<Msg>,
     msg_rx: Receiver<Msg>,
     perf: PerfStats,
+    /// Channel to send parse requests to syntax worker
+    syntax_tx: Sender<SyntaxParseRequest>,
 }
 
 impl App {
     pub fn new(window_width: u32, window_height: u32, startup_config: StartupConfig) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
         let keymap = Keymap::with_bindings(load_default_keymap());
+
+        // Spawn syntax highlighting worker thread
+        let (syntax_tx, syntax_rx) = mpsc::channel::<SyntaxParseRequest>();
+        {
+            let msg_tx_clone = msg_tx.clone();
+            std::thread::spawn(move || syntax_worker_loop(syntax_rx, msg_tx_clone));
+        }
 
         // Extract file paths and workspace from config
         let file_paths = startup_config.file_paths();
@@ -83,7 +101,7 @@ impl App {
             model.ensure_cursor_visible();
         }
 
-        Self {
+        let mut app = Self {
             model,
             keymap,
             renderer: None,
@@ -104,6 +122,35 @@ impl App {
             msg_tx,
             msg_rx,
             perf: PerfStats::default(),
+            syntax_tx,
+        };
+
+        // Trigger initial syntax parsing for all loaded documents
+        app.trigger_initial_syntax_parsing();
+
+        app
+    }
+
+    /// Trigger syntax parsing for all documents loaded at startup
+    fn trigger_initial_syntax_parsing(&mut self) {
+        // Collect document info first to avoid borrow issues
+        let docs_to_parse: Vec<_> = self
+            .model
+            .editor_area
+            .documents
+            .iter()
+            .filter(|(_, doc)| doc.language.has_highlighting())
+            .map(|(&id, doc)| (id, doc.revision, doc.buffer.to_string(), doc.language))
+            .collect();
+
+        // Send parse requests for each document
+        for (doc_id, revision, source, language) in docs_to_parse {
+            let _ = self.syntax_tx.send(SyntaxParseRequest {
+                document_id: doc_id,
+                revision,
+                source,
+                language,
+            });
         }
     }
 
@@ -336,11 +383,15 @@ impl App {
 
                 if self.model.editor().rectangle_selection.active {
                     if let Some(renderer) = &mut self.renderer {
-                        let (line, column) =
-                            renderer.pixel_to_cursor(position.x, position.y, &self.model);
+                        // Use visual column (screen position) for rectangle selection
+                        let (line, visual_col) = renderer.pixel_to_line_and_visual_column(
+                            position.x,
+                            position.y,
+                            &self.model,
+                        );
                         return update(
                             &mut self.model,
-                            Msg::Editor(EditorMsg::UpdateRectangleSelection { line, column }),
+                            Msg::Editor(EditorMsg::UpdateRectangleSelection { line, visual_col }),
                         );
                     }
                 } else if self.left_mouse_down {
@@ -565,10 +616,11 @@ impl App {
                             }
                         }
 
-                        let (line, column) = renderer.pixel_to_cursor(x, y, &self.model);
+                        let (line, visual_col) =
+                            renderer.pixel_to_line_and_visual_column(x, y, &self.model);
                         return update(
                             &mut self.model,
-                            Msg::Editor(EditorMsg::StartRectangleSelection { line, column }),
+                            Msg::Editor(EditorMsg::StartRectangleSelection { line, visual_col }),
                         );
                     }
                 }
@@ -748,12 +800,70 @@ impl App {
                     let _ = tx.send(Msg::App(AppMsg::OpenFolderDialogResult { folder }));
                 });
             }
+
+            // =====================================================================
+            // Syntax Highlighting
+            // =====================================================================
+            Cmd::DebouncedSyntaxParse {
+                document_id,
+                revision,
+                delay_ms,
+            } => {
+                tracing::debug!(
+                    "DebouncedSyntaxParse: doc={} rev={} delay={}ms",
+                    document_id.0,
+                    revision,
+                    delay_ms
+                );
+                let tx = self.msg_tx.clone();
+                std::thread::spawn(move || {
+                    if delay_ms > 0 {
+                        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                    }
+                    tracing::debug!(
+                        "Sending ParseReady: doc={} rev={}",
+                        document_id.0,
+                        revision
+                    );
+                    let _ = tx.send(Msg::Syntax(SyntaxMsg::ParseReady {
+                        document_id,
+                        revision,
+                    }));
+                });
+            }
+
+            Cmd::RunSyntaxParse {
+                document_id,
+                revision,
+                source,
+                language,
+            } => {
+                tracing::debug!(
+                    "RunSyntaxParse: doc={} rev={} lang={:?} len={}",
+                    document_id.0,
+                    revision,
+                    language,
+                    source.len()
+                );
+                let syntax_tx = self.syntax_tx.clone();
+                let _ = syntax_tx.send(SyntaxParseRequest {
+                    document_id,
+                    revision,
+                    source,
+                    language,
+                });
+            }
         }
     }
 
     fn process_async_messages(&mut self) -> bool {
         let mut needs_redraw = false;
         while let Ok(msg) = self.msg_rx.try_recv() {
+            // Log syntax-related messages for debugging
+            if let Msg::Syntax(ref syntax_msg) = msg {
+                tracing::debug!("Received async syntax message: {:?}", syntax_msg);
+            }
+
             if let Some(cmd) = update(&mut self.model, msg) {
                 if cmd.needs_redraw() {
                     needs_redraw = true;
@@ -830,6 +940,78 @@ impl ApplicationHandler for App {
                     window.request_redraw();
                 }
             }
+        }
+    }
+}
+
+/// Syntax highlighting worker thread loop
+fn syntax_worker_loop(rx: Receiver<SyntaxParseRequest>, msg_tx: Sender<Msg>) {
+    use std::collections::HashMap;
+
+    tracing::info!("Syntax worker thread started");
+
+    let mut parser_state = ParserState::new();
+    let mut pending: HashMap<token::model::editor_area::DocumentId, SyntaxParseRequest> =
+        HashMap::new();
+
+    loop {
+        // Wait for first request (blocking)
+        let request = match rx.recv() {
+            Ok(req) => {
+                tracing::debug!(
+                    "Worker received request: doc={} rev={} lang={:?}",
+                    req.document_id.0,
+                    req.revision,
+                    req.language
+                );
+                req
+            }
+            Err(_) => {
+                tracing::info!("Syntax worker channel closed, exiting");
+                return;
+            }
+        };
+        pending.insert(request.document_id, request);
+
+        // Drain any additional pending requests (non-blocking)
+        // Keep only the latest request per document
+        while let Ok(req) = rx.try_recv() {
+            tracing::debug!(
+                "Worker draining request: doc={} rev={}",
+                req.document_id.0,
+                req.revision
+            );
+            pending.insert(req.document_id, req);
+        }
+
+        // Process all pending requests
+        for (_doc_id, req) in pending.drain() {
+            tracing::debug!(
+                "Worker parsing: doc={} rev={} lang={:?}",
+                req.document_id.0,
+                req.revision,
+                req.language
+            );
+
+            let highlights =
+                parser_state.parse_and_highlight(&req.source, req.language, req.document_id, req.revision);
+
+            let line_count = highlights.lines.len();
+            let token_count: usize = highlights.lines.values().map(|lh| lh.tokens.len()).sum();
+
+            tracing::debug!(
+                "Worker sending ParseCompleted: doc={} rev={} lines={} tokens={}",
+                req.document_id.0,
+                req.revision,
+                line_count,
+                token_count
+            );
+
+            let _ = msg_tx.send(Msg::Syntax(SyntaxMsg::ParseCompleted {
+                document_id: req.document_id,
+                revision: req.revision,
+                highlights,
+            }));
         }
     }
 }

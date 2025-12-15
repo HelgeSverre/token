@@ -233,6 +233,8 @@ pub struct UiThemeData {
     pub status_bar: StatusBarThemeData,
     #[serde(default)]
     pub overlay: OverlayThemeData,
+    #[serde(default)]
+    pub syntax: SyntaxThemeData,
 }
 
 /// Editor area colors
@@ -285,6 +287,55 @@ pub struct OverlayThemeData {
     pub error: Option<String>,
 }
 
+/// Syntax highlighting colors (all optional for backward compatibility)
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SyntaxThemeData {
+    #[serde(default)]
+    pub keyword: Option<String>,
+    #[serde(default)]
+    pub function: Option<String>,
+    #[serde(default)]
+    pub function_builtin: Option<String>,
+    #[serde(default)]
+    pub string: Option<String>,
+    #[serde(default)]
+    pub number: Option<String>,
+    #[serde(default)]
+    pub comment: Option<String>,
+    #[serde(default, rename = "type")]
+    pub type_name: Option<String>,
+    #[serde(default)]
+    pub variable: Option<String>,
+    #[serde(default)]
+    pub variable_builtin: Option<String>,
+    #[serde(default)]
+    pub property: Option<String>,
+    #[serde(default)]
+    pub operator: Option<String>,
+    #[serde(default)]
+    pub punctuation: Option<String>,
+    #[serde(default)]
+    pub constant: Option<String>,
+    #[serde(default)]
+    pub tag: Option<String>,
+    #[serde(default)]
+    pub attribute: Option<String>,
+    #[serde(default)]
+    pub escape: Option<String>,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub text_emphasis: Option<String>,
+    #[serde(default)]
+    pub text_strong: Option<String>,
+    #[serde(default)]
+    pub text_title: Option<String>,
+    #[serde(default)]
+    pub text_uri: Option<String>,
+}
+
 /// Resolved theme with parsed colors
 #[derive(Debug, Clone)]
 pub struct Theme {
@@ -295,6 +346,7 @@ pub struct Theme {
     pub overlay: OverlayTheme,
     pub tab_bar: TabBarTheme,
     pub splitter: SplitterTheme,
+    pub syntax: SyntaxTheme,
 }
 
 /// Editor colors (resolved)
@@ -415,6 +467,103 @@ impl SplitterTheme {
             background: Color::rgb(0x25, 0x25, 0x25),
             hover: Color::rgb(0x00, 0x7A, 0xCC),
             active: Color::rgb(0x00, 0x7A, 0xCC),
+        }
+    }
+}
+
+/// Syntax highlighting colors (resolved)
+#[derive(Debug, Clone)]
+pub struct SyntaxTheme {
+    pub keyword: Color,
+    pub function: Color,
+    pub function_builtin: Color,
+    pub string: Color,
+    pub number: Color,
+    pub comment: Color,
+    pub type_name: Color,
+    pub variable: Color,
+    pub variable_builtin: Color,
+    pub property: Color,
+    pub operator: Color,
+    pub punctuation: Color,
+    pub constant: Color,
+    pub tag: Color,
+    pub attribute: Color,
+    pub escape: Color,
+    pub label: Color,
+    pub text: Color,
+    pub text_emphasis: Color,
+    pub text_strong: Color,
+    pub text_title: Color,
+    pub text_uri: Color,
+}
+
+impl SyntaxTheme {
+    /// Default dark syntax theme (VS Code-like)
+    pub fn default_dark() -> Self {
+        Self {
+            keyword: Color::rgb(0xC5, 0x86, 0xC0),  // Purple/pink
+            function: Color::rgb(0xDC, 0xDC, 0xAA), // Yellow
+            function_builtin: Color::rgb(0xDC, 0xDC, 0xAA),
+            string: Color::rgb(0xCE, 0x91, 0x78), // Orange/brown
+            number: Color::rgb(0xB5, 0xCE, 0xA8), // Light green
+            comment: Color::rgb(0x6A, 0x99, 0x55), // Green
+            type_name: Color::rgb(0x4E, 0xC9, 0xB0), // Teal
+            variable: Color::rgb(0x9C, 0xDC, 0xFE), // Light blue
+            variable_builtin: Color::rgb(0x56, 0x9C, 0xD6), // Blue
+            property: Color::rgb(0x9C, 0xDC, 0xFE), // Light blue
+            operator: Color::rgb(0xD4, 0xD4, 0xD4), // Light gray
+            punctuation: Color::rgb(0xD4, 0xD4, 0xD4), // Light gray
+            constant: Color::rgb(0x56, 0x9C, 0xD6), // Blue
+            tag: Color::rgb(0x56, 0x9C, 0xD6),    // Blue (HTML tags)
+            attribute: Color::rgb(0x9C, 0xDC, 0xFE), // Light blue
+            escape: Color::rgb(0xD7, 0xBA, 0x7D), // Gold
+            label: Color::rgb(0xD7, 0xBA, 0x7D),  // Gold (anchors, labels)
+            text: Color::rgb(0xD4, 0xD4, 0xD4),   // Default text
+            text_emphasis: Color::rgb(0xD4, 0xD4, 0xD4),
+            text_strong: Color::rgb(0xD4, 0xD4, 0xD4),
+            text_title: Color::rgb(0x56, 0x9C, 0xD6), // Blue for headings
+            text_uri: Color::rgb(0x3E, 0x9C, 0xD6),   // Slightly different blue
+        }
+    }
+
+    /// Get color for a highlight ID
+    pub fn color_for_highlight(&self, highlight_id: crate::syntax::HighlightId) -> Color {
+        use crate::syntax::HIGHLIGHT_NAMES;
+
+        let name = HIGHLIGHT_NAMES
+            .get(highlight_id as usize)
+            .copied()
+            .unwrap_or("text");
+
+        match name {
+            "keyword" | "keyword.return" | "keyword.function" | "keyword.operator" => self.keyword,
+            "function" | "function.method" => self.function,
+            "function.builtin" => self.function_builtin,
+            "string" | "string.special" => self.string,
+            "number" => self.number,
+            "comment" => self.comment,
+            "type" | "type.builtin" => self.type_name,
+            "variable" | "variable.parameter" => self.variable,
+            "variable.builtin" => self.variable_builtin,
+            "property" | "tag.attribute" => self.property,
+            "operator" => self.operator,
+            "punctuation"
+            | "punctuation.bracket"
+            | "punctuation.delimiter"
+            | "punctuation.special" => self.punctuation,
+            "constant" | "constant.builtin" | "boolean" => self.constant,
+            "tag" => self.tag,
+            "attribute" => self.attribute,
+            "escape" => self.escape,
+            "label" => self.label,
+            "text" => self.text,
+            "text.emphasis" => self.text_emphasis,
+            "text.strong" => self.text_strong,
+            "text.title" => self.text_title,
+            "text.uri" => self.text_uri,
+            "constructor" => self.type_name,
+            _ => self.text, // Default fallback
         }
     }
 }
@@ -553,6 +702,187 @@ impl Theme {
             // Use defaults for tab_bar and splitter (not in YAML yet)
             tab_bar: TabBarTheme::default_dark(),
             splitter: SplitterTheme::default_dark(),
+            syntax: {
+                let defaults = SyntaxTheme::default_dark();
+                SyntaxTheme {
+                    keyword: data
+                        .ui
+                        .syntax
+                        .keyword
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.keyword),
+                    function: data
+                        .ui
+                        .syntax
+                        .function
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.function),
+                    function_builtin: data
+                        .ui
+                        .syntax
+                        .function_builtin
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.function_builtin),
+                    string: data
+                        .ui
+                        .syntax
+                        .string
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.string),
+                    number: data
+                        .ui
+                        .syntax
+                        .number
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.number),
+                    comment: data
+                        .ui
+                        .syntax
+                        .comment
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.comment),
+                    type_name: data
+                        .ui
+                        .syntax
+                        .type_name
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.type_name),
+                    variable: data
+                        .ui
+                        .syntax
+                        .variable
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.variable),
+                    variable_builtin: data
+                        .ui
+                        .syntax
+                        .variable_builtin
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.variable_builtin),
+                    property: data
+                        .ui
+                        .syntax
+                        .property
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.property),
+                    operator: data
+                        .ui
+                        .syntax
+                        .operator
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.operator),
+                    punctuation: data
+                        .ui
+                        .syntax
+                        .punctuation
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.punctuation),
+                    constant: data
+                        .ui
+                        .syntax
+                        .constant
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.constant),
+                    tag: data
+                        .ui
+                        .syntax
+                        .tag
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.tag),
+                    attribute: data
+                        .ui
+                        .syntax
+                        .attribute
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.attribute),
+                    escape: data
+                        .ui
+                        .syntax
+                        .escape
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.escape),
+                    label: data
+                        .ui
+                        .syntax
+                        .label
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.label),
+                    text: data
+                        .ui
+                        .syntax
+                        .text
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.text),
+                    text_emphasis: data
+                        .ui
+                        .syntax
+                        .text_emphasis
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.text_emphasis),
+                    text_strong: data
+                        .ui
+                        .syntax
+                        .text_strong
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.text_strong),
+                    text_title: data
+                        .ui
+                        .syntax
+                        .text_title
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.text_title),
+                    text_uri: data
+                        .ui
+                        .syntax
+                        .text_uri
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.text_uri),
+                }
+            },
         })
     }
 
@@ -585,6 +915,7 @@ impl Theme {
                     overlay: OverlayTheme::default_dark(),
                     tab_bar: TabBarTheme::default_dark(),
                     splitter: SplitterTheme::default_dark(),
+                    syntax: SyntaxTheme::default_dark(),
                 }
             }
         }

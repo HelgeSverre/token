@@ -299,6 +299,101 @@ impl<'a> TextPainter<'a> {
         }
         width
     }
+
+    /// Draw text with syntax highlighting
+    ///
+    /// Applies per-character colors based on highlight tokens.
+    /// Falls back to default_color for characters without highlighting.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_with_highlights(
+        &mut self,
+        frame: &mut Frame,
+        x: usize,
+        y: usize,
+        text: &str,
+        tokens: &[token::syntax::HighlightToken],
+        syntax_theme: &token::theme::SyntaxTheme,
+        default_color: u32,
+    ) {
+        if tokens.is_empty() {
+            // No highlighting, use default color
+            self.draw(frame, x, y, text, default_color);
+            return;
+        }
+
+        let mut current_x = x as f32;
+        let baseline = y as f32 + self.ascent;
+
+        let mut token_idx = 0;
+
+        for (col, ch) in text.chars().enumerate() {
+            // Advance token_idx past any tokens that end before or at this column
+            while token_idx < tokens.len() && tokens[token_idx].end_col <= col {
+                token_idx += 1;
+            }
+
+            // Determine color for this character
+            let color = if token_idx < tokens.len()
+                && col >= tokens[token_idx].start_col
+                && col < tokens[token_idx].end_col
+            {
+                syntax_theme
+                    .color_for_highlight(tokens[token_idx].highlight)
+                    .to_argb_u32()
+            } else {
+                default_color
+            };
+
+            // Draw the character
+            let key = (ch, self.font_size.to_bits());
+            let (metrics, bitmap) = self
+                .glyph_cache
+                .entry(key)
+                .or_insert_with(|| self.font.rasterize(ch, self.font_size));
+
+            let glyph_top = baseline - metrics.height as f32 - metrics.ymin as f32;
+
+            for bitmap_y in 0..metrics.height {
+                for bitmap_x in 0..metrics.width {
+                    let bitmap_idx = bitmap_y * metrics.width + bitmap_x;
+                    if bitmap_idx < bitmap.len() {
+                        let alpha = bitmap[bitmap_idx];
+                        if alpha > 0 {
+                            let px = current_x as isize + bitmap_x as isize + metrics.xmin as isize;
+                            let py = (glyph_top + bitmap_y as f32) as isize;
+
+                            if px >= 0 && py >= 0 {
+                                let px = px as usize;
+                                let py = py as usize;
+
+                                if px < frame.width && py < frame.height {
+                                    let alpha_f = alpha as f32 / 255.0;
+                                    let bg_pixel = frame.buffer[py * frame.width + px];
+
+                                    let bg_r = ((bg_pixel >> 16) & 0xFF) as f32;
+                                    let bg_g = ((bg_pixel >> 8) & 0xFF) as f32;
+                                    let bg_b = (bg_pixel & 0xFF) as f32;
+
+                                    let fg_r = ((color >> 16) & 0xFF) as f32;
+                                    let fg_g = ((color >> 8) & 0xFF) as f32;
+                                    let fg_b = (color & 0xFF) as f32;
+
+                                    let final_r = (bg_r * (1.0 - alpha_f) + fg_r * alpha_f) as u32;
+                                    let final_g = (bg_g * (1.0 - alpha_f) + fg_g * alpha_f) as u32;
+                                    let final_b = (bg_b * (1.0 - alpha_f) + fg_b * alpha_f) as u32;
+
+                                    frame.buffer[py * frame.width + px] =
+                                        0xFF000000 | (final_r << 16) | (final_g << 8) | final_b;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            current_x += metrics.advance_width;
+        }
+    }
 }
 
 #[cfg(test)]

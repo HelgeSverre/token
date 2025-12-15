@@ -76,9 +76,12 @@ fn test_rectangle_selection_right_to_left_cursor_placement() {
     // Simulate dragging from column 10 to column 3 (right-to-left) on lines 0-2
     // Start position: (line 0, col 10)
     // End position: (line 2, col 3)
+    // Note: Using visual columns (same as char columns for ASCII without tabs)
     model.editor_mut().rectangle_selection.active = true;
-    model.editor_mut().rectangle_selection.start = Position::new(0, 10);
-    model.editor_mut().rectangle_selection.current = Position::new(2, 3);
+    model.editor_mut().rectangle_selection.start_line = 0;
+    model.editor_mut().rectangle_selection.start_visual_col = 10;
+    model.editor_mut().rectangle_selection.current_line = 2;
+    model.editor_mut().rectangle_selection.current_visual_col = 3;
 
     // Finish the rectangle selection
     update(&mut model, Msg::Editor(EditorMsg::FinishRectangleSelection));
@@ -103,9 +106,12 @@ fn test_rectangle_selection_left_to_right_cursor_placement() {
     let mut model = test_model("hello world\nfoo bar baz\ntest line 3\n", 0, 0);
 
     // Simulate dragging from column 3 to column 10 (left-to-right) on lines 0-2
+    // Note: Using visual columns (same as char columns for ASCII without tabs)
     model.editor_mut().rectangle_selection.active = true;
-    model.editor_mut().rectangle_selection.start = Position::new(0, 3);
-    model.editor_mut().rectangle_selection.current = Position::new(2, 10);
+    model.editor_mut().rectangle_selection.start_line = 0;
+    model.editor_mut().rectangle_selection.start_visual_col = 3;
+    model.editor_mut().rectangle_selection.current_line = 2;
+    model.editor_mut().rectangle_selection.current_visual_col = 10;
 
     update(&mut model, Msg::Editor(EditorMsg::FinishRectangleSelection));
 
@@ -1227,7 +1233,8 @@ fn test_extend_selection_resets_active_cursor_index() {
 
     assert_eq!(model.editor().cursors.len(), 5, "Should have 5 cursors");
     assert_eq!(
-        model.editor().active_cursor_index, 4,
+        model.editor().active_cursor_index,
+        4,
         "Active cursor should be index 4"
     );
 
@@ -1237,9 +1244,14 @@ fn test_extend_selection_resets_active_cursor_index() {
         Msg::Editor(EditorMsg::ExtendSelectionToPosition { line: 2, column: 5 }),
     );
 
-    assert_eq!(model.editor().cursors.len(), 1, "Should collapse to 1 cursor");
     assert_eq!(
-        model.editor().active_cursor_index, 0,
+        model.editor().cursors.len(),
+        1,
+        "Should collapse to 1 cursor"
+    );
+    assert_eq!(
+        model.editor().active_cursor_index,
+        0,
         "Active cursor index should be reset to 0"
     );
 }
