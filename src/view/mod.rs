@@ -4,8 +4,10 @@
 
 pub mod frame;
 pub mod geometry;
+pub mod helpers;
 
 pub use frame::{Frame, TextPainter};
+pub use helpers::{get_tab_display_name, trim_line_ending};
 
 // Re-export geometry helpers for backward compatibility
 pub use geometry::{char_col_to_visual_col, expand_tabs_for_display, TAB_BAR_HEIGHT};
@@ -18,28 +20,11 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use winit::window::Window;
 
-use token::model::editor_area::{EditorGroup, GroupId, Rect, SplitterBar, Tab};
+use token::model::editor_area::{EditorGroup, GroupId, Rect, SplitterBar};
 use token::model::{gutter_border_x, text_start_x, AppModel};
 
 pub type GlyphCacheKey = (char, u32);
 
-/// Get the display title for a tab.
-/// Centralizes the logic for determining what text to show in the tab bar.
-fn tab_title(model: &AppModel, tab: &Tab) -> String {
-    let editor = match model.editor_area.editors.get(&tab.editor_id) {
-        Some(e) => e,
-        None => return "Untitled".to_string(),
-    };
-    let doc_id = match editor.document_id {
-        Some(id) => id,
-        None => return "Untitled".to_string(),
-    };
-    let document = match model.editor_area.documents.get(&doc_id) {
-        Some(d) => d,
-        None => return "Untitled".to_string(),
-    };
-    document.display_name()
-}
 pub type GlyphCache = HashMap<GlyphCacheKey, (Metrics, Vec<u8>)>;
 
 pub struct Renderer {
@@ -274,7 +259,7 @@ impl Renderer {
 
         for (idx, tab) in group.tabs.iter().enumerate() {
             let is_active = idx == group.active_tab_index;
-            let display_name = tab_title(model, tab);
+            let display_name = get_tab_display_name(model, tab);
             let tab_width = (display_name.len() as f32 * char_width).round() as usize + 16;
 
             let (bg_color, fg_color) = if is_active {
@@ -393,6 +378,8 @@ impl Renderer {
         let group_text_start_x = rect_x + text_start_x_offset;
 
         let visible_lines = content_h / line_height;
+        let visible_columns =
+            ((rect_w as f32 - text_start_x_offset as f32) / char_width).floor() as usize;
         let end_line = (editor.viewport.top_line + visible_lines).min(document.buffer.len_lines());
 
         // Current line highlight
@@ -428,11 +415,7 @@ impl Renderer {
                 let line_len = document.line_length(doc_line);
 
                 let line_text = document.get_line(doc_line).unwrap_or_default();
-                let line_text_trimmed = if line_text.ends_with('\n') {
-                    &line_text[..line_text.len() - 1]
-                } else {
-                    &line_text
-                };
+                let line_text_trimmed = trim_line_ending(&line_text);
 
                 let start_col = if doc_line == sel_start.line {
                     sel_start.column
@@ -483,11 +466,7 @@ impl Renderer {
 
             for doc_line in visible_start..visible_end {
                 let line_text = document.get_line(doc_line).unwrap_or_default();
-                let line_text_trimmed = if line_text.ends_with('\n') {
-                    &line_text[..line_text.len() - 1]
-                } else {
-                    &line_text
-                };
+                let line_text_trimmed = trim_line_ending(&line_text);
                 let line_visual_len =
                     char_col_to_visual_col(line_text_trimmed, line_text_trimmed.chars().count());
 
@@ -540,16 +519,11 @@ impl Renderer {
                     break;
                 }
 
-                let visible_text = if line_text.ends_with('\n') {
-                    &line_text[..line_text.len() - 1]
-                } else {
-                    &line_text
-                };
+                let visible_text = trim_line_ending(&line_text);
 
                 let expanded_text = expand_tabs_for_display(visible_text);
 
-                let max_chars =
-                    ((rect_w as f32 - text_start_x_offset as f32) / char_width).floor() as usize;
+                let max_chars = visible_columns;
                 let display_text: String = expanded_text
                     .chars()
                     .skip(editor.viewport.left_column)
@@ -603,8 +577,6 @@ impl Renderer {
 
         // Cursors: only show in focused group when blink state is visible
         if is_focused && model.ui.cursor_visible {
-            let actual_visible_columns =
-                ((rect_w as f32 - text_start_x_offset as f32) / char_width).floor() as usize;
             let primary_cursor_color = model.theme.editor.cursor_color.to_argb_u32();
             let secondary_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
 
@@ -613,15 +585,11 @@ impl Renderer {
                     && cursor.line < editor.viewport.top_line + visible_lines;
 
                 let line_text = document.get_line(cursor.line).unwrap_or_default();
-                let line_text_trimmed = if line_text.ends_with('\n') {
-                    &line_text[..line_text.len() - 1]
-                } else {
-                    &line_text
-                };
+                let line_text_trimmed = trim_line_ending(&line_text);
                 let visual_cursor_col = char_col_to_visual_col(line_text_trimmed, cursor.column);
 
                 let cursor_in_horizontal_view = visual_cursor_col >= editor.viewport.left_column
-                    && visual_cursor_col < editor.viewport.left_column + actual_visible_columns;
+                    && visual_cursor_col < editor.viewport.left_column + visible_columns;
 
                 if cursor_in_vertical_view && cursor_in_horizontal_view {
                     let screen_line = cursor.line - editor.viewport.top_line;
@@ -645,8 +613,6 @@ impl Renderer {
         // Preview cursors for rectangle selection (always visible during drag, no blink)
         if is_focused && editor.rectangle_selection.active {
             let secondary_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
-            let actual_visible_columns =
-                ((rect_w as f32 - text_start_x_offset as f32) / char_width).floor() as usize;
 
             for preview_pos in &editor.rectangle_selection.preview_cursors {
                 let cursor_in_vertical_view = preview_pos.line >= editor.viewport.top_line
@@ -657,17 +623,13 @@ impl Renderer {
                 }
 
                 let line_text = document.get_line(preview_pos.line).unwrap_or_default();
-                let line_text_trimmed = if line_text.ends_with('\n') {
-                    &line_text[..line_text.len() - 1]
-                } else {
-                    &line_text
-                };
+                let line_text_trimmed = trim_line_ending(&line_text);
 
                 let visual_cursor_col =
                     char_col_to_visual_col(line_text_trimmed, preview_pos.column);
 
                 let cursor_in_horizontal_view = visual_cursor_col >= editor.viewport.left_column
-                    && visual_cursor_col < editor.viewport.left_column + actual_visible_columns;
+                    && visual_cursor_col < editor.viewport.left_column + visible_columns;
 
                 if !cursor_in_horizontal_view {
                     continue;
@@ -911,9 +873,7 @@ impl Renderer {
                 if !filtered_commands.is_empty() {
                     let list_y = input_y + input_height + 8;
                     let total_items = filtered_commands.len();
-                    let clamped_selected = state
-                        .selected_index
-                        .min(total_items.saturating_sub(1));
+                    let clamped_selected = state.selected_index.min(total_items.saturating_sub(1));
 
                     // Compute scroll offset to keep selected item visible
                     let scroll_offset = if clamped_selected >= max_visible_items {
@@ -953,8 +913,7 @@ impl Renderer {
                     }
 
                     // Show "and X more" for items after the visible window
-                    let items_after =
-                        total_items.saturating_sub(scroll_offset + max_visible_items);
+                    let items_after = total_items.saturating_sub(scroll_offset + max_visible_items);
                     if items_after > 0 {
                         let more_y = list_y + max_visible_items * line_height;
                         let more_text = format!("... and {} more", items_after);
