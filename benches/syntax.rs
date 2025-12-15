@@ -241,7 +241,7 @@ editor.open("file.rs")?;
 fn generate_large_rust(lines: usize) -> String {
     let mut source = String::with_capacity(lines * 50);
     source.push_str("use std::collections::HashMap;\n\n");
-    
+
     for i in 0..lines / 10 {
         source.push_str(&format!(
             r#"fn function_{}(x: i32) -> i32 {{
@@ -260,7 +260,7 @@ fn generate_large_rust(lines: usize) -> String {
 fn generate_large_javascript(lines: usize) -> String {
     let mut source = String::with_capacity(lines * 50);
     source.push_str("import { useState } from 'react';\n\n");
-    
+
     for i in 0..lines / 10 {
         source.push_str(&format!(
             r#"function handler{}(event) {{
@@ -284,7 +284,7 @@ fn generate_large_javascript(lines: usize) -> String {
 fn parse_sample(lang: &str) {
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
-    
+
     let (source, language) = match lang {
         "rust" => (RUST_SAMPLE, LanguageId::Rust),
         "javascript" => (JAVASCRIPT_SAMPLE, LanguageId::JavaScript),
@@ -294,7 +294,7 @@ fn parse_sample(lang: &str) {
         "markdown" => (MARKDOWN_SAMPLE, LanguageId::Markdown),
         _ => panic!("Unknown language"),
     };
-    
+
     let highlights = state.parse_and_highlight(source, language, doc_id, 1);
     divan::black_box(highlights);
 }
@@ -304,7 +304,7 @@ fn parse_large_rust(lines: usize) {
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
     let source = generate_large_rust(lines);
-    
+
     let highlights = state.parse_and_highlight(&source, LanguageId::Rust, doc_id, 1);
     divan::black_box(highlights);
 }
@@ -314,7 +314,7 @@ fn parse_large_javascript(lines: usize) {
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
     let source = generate_large_javascript(lines);
-    
+
     let highlights = state.parse_and_highlight(&source, LanguageId::JavaScript, doc_id, 1);
     divan::black_box(highlights);
 }
@@ -327,9 +327,10 @@ fn parse_large_javascript(lines: usize) {
 fn parse_rust_repeated(iterations: usize) {
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
-    
+
     for rev in 0..iterations {
-        let highlights = state.parse_and_highlight(RUST_SAMPLE, LanguageId::Rust, doc_id, rev as u64);
+        let highlights =
+            state.parse_and_highlight(RUST_SAMPLE, LanguageId::Rust, doc_id, rev as u64);
         divan::black_box(&highlights);
     }
 }
@@ -338,9 +339,14 @@ fn parse_rust_repeated(iterations: usize) {
 fn parse_javascript_repeated(iterations: usize) {
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
-    
+
     for rev in 0..iterations {
-        let highlights = state.parse_and_highlight(JAVASCRIPT_SAMPLE, LanguageId::JavaScript, doc_id, rev as u64);
+        let highlights = state.parse_and_highlight(
+            JAVASCRIPT_SAMPLE,
+            LanguageId::JavaScript,
+            doc_id,
+            rev as u64,
+        );
         divan::black_box(&highlights);
     }
 }
@@ -353,9 +359,9 @@ fn parse_javascript_repeated(iterations: usize) {
 fn parse_with_small_edit_rust(iterations: usize) {
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
-    
+
     let mut source = RUST_SAMPLE.to_string();
-    
+
     for rev in 0..iterations {
         // Simulate small edit: append a character
         source.push('x');
@@ -368,9 +374,9 @@ fn parse_with_small_edit_rust(iterations: usize) {
 fn parse_with_small_edit_large_rust(iterations: usize) {
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
-    
+
     let mut source = generate_large_rust(1000);
-    
+
     for rev in 0..iterations {
         // Simulate small edit in the middle
         let mid = source.len() / 2;
@@ -389,9 +395,9 @@ fn extract_highlights_lookup(lines: usize) {
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
     let source = generate_large_rust(lines);
-    
+
     let highlights = state.parse_and_highlight(&source, LanguageId::Rust, doc_id, 1);
-    
+
     // Simulate rendering: look up highlights for visible lines
     for line in 0..50.min(lines) {
         let tokens = highlights.get_line_tokens(line);
@@ -418,7 +424,7 @@ fn parser_state_init() {
 fn parse_only_sample(bencher: divan::Bencher, lang: &str) {
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
-    
+
     let (source, language) = match lang {
         "rust" => (RUST_SAMPLE, LanguageId::Rust),
         "javascript" => (JAVASCRIPT_SAMPLE, LanguageId::JavaScript),
@@ -428,7 +434,7 @@ fn parse_only_sample(bencher: divan::Bencher, lang: &str) {
         "markdown" => (MARKDOWN_SAMPLE, LanguageId::Markdown),
         _ => panic!("Unknown language"),
     };
-    
+
     bencher.bench_local(|| {
         let highlights = state.parse_and_highlight(source, language, doc_id, 1);
         divan::black_box(highlights)
@@ -440,7 +446,7 @@ fn parse_only_large_rust(bencher: divan::Bencher, lines: usize) {
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
     let source = generate_large_rust(lines);
-    
+
     bencher.bench_local(|| {
         let highlights = state.parse_and_highlight(&source, LanguageId::Rust, doc_id, 1);
         divan::black_box(highlights)
@@ -457,10 +463,10 @@ fn incremental_parse_small_edit(bencher: divan::Bencher, lines: usize) {
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
     let mut source = generate_large_rust(lines);
-    
+
     // Initial parse to populate cache
     state.parse_and_highlight(&source, LanguageId::Rust, doc_id, 0);
-    
+
     bencher.bench_local(|| {
         // Append a character (small edit at end)
         source.push('x');
@@ -474,10 +480,10 @@ fn incremental_parse_middle_edit(bencher: divan::Bencher, lines: usize) {
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
     let source = generate_large_rust(lines);
-    
+
     // Initial parse to populate cache
     state.parse_and_highlight(&source, LanguageId::Rust, doc_id, 0);
-    
+
     bencher.bench_local(|| {
         // Insert in the middle (worst case for incremental)
         let mut modified = source.clone();
@@ -492,7 +498,7 @@ fn incremental_parse_middle_edit(bencher: divan::Bencher, lines: usize) {
 fn full_reparse_comparison(bencher: divan::Bencher, lines: usize) {
     let doc_id = DocumentId(1);
     let source = generate_large_rust(lines);
-    
+
     bencher.bench_local(|| {
         // Create fresh parser state each time (forces full reparse)
         let mut state = ParserState::new();
@@ -509,16 +515,16 @@ fn full_reparse_comparison(bencher: divan::Bencher, lines: usize) {
 fn query_capture_iteration(lang: &str) {
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
-    
+
     let (source, language) = match lang {
         "rust" => (generate_large_rust(500), LanguageId::Rust),
         "javascript" => (generate_large_javascript(500), LanguageId::JavaScript),
         _ => panic!("Unknown language"),
     };
-    
+
     // Parse and extract highlights (query matching is inside)
     let highlights = state.parse_and_highlight(&source, language, doc_id, 1);
-    
+
     let total_tokens: usize = highlights.lines.values().map(|lh| lh.tokens.len()).sum();
     divan::black_box(total_tokens);
 }
@@ -532,12 +538,12 @@ fn highlights_memory_rust_large() {
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
     let source = generate_large_rust(5000);
-    
+
     let highlights = state.parse_and_highlight(&source, LanguageId::Rust, doc_id, 1);
-    
+
     // Count total allocations in highlights
     let line_count = highlights.lines.len();
     let token_count: usize = highlights.lines.values().map(|lh| lh.tokens.len()).sum();
-    
+
     divan::black_box((line_count, token_count));
 }

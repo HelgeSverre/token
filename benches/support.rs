@@ -6,8 +6,8 @@ use token::model::editor::EditorState;
 use token::model::editor_area::EditorArea;
 use token::model::ui::UiState;
 use token::model::AppModel;
-use token::theme::Theme;
 use token::rendering::blend_pixel_u8;
+use token::theme::Theme;
 
 /// Create an AppModel with the specified number of lines
 #[allow(dead_code)]

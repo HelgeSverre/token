@@ -597,11 +597,7 @@ enabled: true
 
         #[test]
         fn test_yaml_query_compiles() {
-            assert_query_compiles(
-                "YAML",
-                tree_sitter_yaml::language(),
-                YAML_HIGHLIGHTS,
-            );
+            assert_query_compiles("YAML", tree_sitter_yaml::language(), YAML_HIGHLIGHTS);
         }
 
         #[test]
@@ -615,29 +611,17 @@ enabled: true
 
         #[test]
         fn test_rust_query_compiles() {
-            assert_query_compiles(
-                "Rust",
-                tree_sitter_rust::LANGUAGE.into(),
-                RUST_HIGHLIGHTS,
-            );
+            assert_query_compiles("Rust", tree_sitter_rust::LANGUAGE.into(), RUST_HIGHLIGHTS);
         }
 
         #[test]
         fn test_html_query_compiles() {
-            assert_query_compiles(
-                "HTML",
-                tree_sitter_html::LANGUAGE.into(),
-                HTML_HIGHLIGHTS,
-            );
+            assert_query_compiles("HTML", tree_sitter_html::LANGUAGE.into(), HTML_HIGHLIGHTS);
         }
 
         #[test]
         fn test_css_query_compiles() {
-            assert_query_compiles(
-                "CSS",
-                tree_sitter_css::LANGUAGE.into(),
-                CSS_HIGHLIGHTS,
-            );
+            assert_query_compiles("CSS", tree_sitter_css::LANGUAGE.into(), CSS_HIGHLIGHTS);
         }
 
         #[test]
@@ -671,11 +655,7 @@ enabled: true
 
         #[test]
         fn test_json_query_compiles() {
-            assert_query_compiles(
-                "JSON",
-                tree_sitter_json::LANGUAGE.into(),
-                JSON_HIGHLIGHTS,
-            );
+            assert_query_compiles("JSON", tree_sitter_json::LANGUAGE.into(), JSON_HIGHLIGHTS);
         }
 
         #[test]
@@ -700,58 +680,34 @@ enabled: true
 
         #[test]
         fn test_go_query_compiles() {
-            assert_query_compiles(
-                "Go",
-                tree_sitter_go::LANGUAGE.into(),
-                GO_HIGHLIGHTS,
-            );
+            assert_query_compiles("Go", tree_sitter_go::LANGUAGE.into(), GO_HIGHLIGHTS);
         }
 
         #[test]
         fn test_php_query_compiles() {
-            assert_query_compiles(
-                "PHP",
-                tree_sitter_php::LANGUAGE_PHP.into(),
-                PHP_HIGHLIGHTS,
-            );
+            assert_query_compiles("PHP", tree_sitter_php::LANGUAGE_PHP.into(), PHP_HIGHLIGHTS);
         }
 
         // Phase 5 languages
 
         #[test]
         fn test_c_query_compiles() {
-            assert_query_compiles(
-                "C",
-                tree_sitter_c::LANGUAGE.into(),
-                C_HIGHLIGHTS,
-            );
+            assert_query_compiles("C", tree_sitter_c::LANGUAGE.into(), C_HIGHLIGHTS);
         }
 
         #[test]
         fn test_cpp_query_compiles() {
-            assert_query_compiles(
-                "C++",
-                tree_sitter_cpp::LANGUAGE.into(),
-                CPP_HIGHLIGHTS,
-            );
+            assert_query_compiles("C++", tree_sitter_cpp::LANGUAGE.into(), CPP_HIGHLIGHTS);
         }
 
         #[test]
         fn test_java_query_compiles() {
-            assert_query_compiles(
-                "Java",
-                tree_sitter_java::LANGUAGE.into(),
-                JAVA_HIGHLIGHTS,
-            );
+            assert_query_compiles("Java", tree_sitter_java::LANGUAGE.into(), JAVA_HIGHLIGHTS);
         }
 
         #[test]
         fn test_bash_query_compiles() {
-            assert_query_compiles(
-                "Bash",
-                tree_sitter_bash::LANGUAGE.into(),
-                BASH_HIGHLIGHTS,
-            );
+            assert_query_compiles("Bash", tree_sitter_bash::LANGUAGE.into(), BASH_HIGHLIGHTS);
         }
     }
 
@@ -1104,12 +1060,18 @@ fi"#;
         // Initial parse
         let source1 = "let x = 1;";
         let highlights1 = state.parse_and_highlight(source1, LanguageId::JavaScript, doc_id, 1);
-        assert!(!highlights1.lines.is_empty(), "Initial parse should produce highlights");
+        assert!(
+            !highlights1.lines.is_empty(),
+            "Initial parse should produce highlights"
+        );
 
         // Second parse with modified content (simulating edit)
         let source2 = "let x = 1;\nlet y = 2;";
         let highlights2 = state.parse_and_highlight(source2, LanguageId::JavaScript, doc_id, 2);
-        assert!(!highlights2.lines.is_empty(), "Second parse should produce highlights");
+        assert!(
+            !highlights2.lines.is_empty(),
+            "Second parse should produce highlights"
+        );
         assert_eq!(highlights2.revision, 2, "Revision should match");
 
         // Verify we have highlights for line 0
@@ -1142,17 +1104,20 @@ fi"#;
         let highlights = state.parse_and_highlight(source, LanguageId::Rust, doc_id, 1);
 
         eprintln!("Source: {:?}", source);
-        eprintln!("Lines from source.lines(): {:?}", source.lines().collect::<Vec<_>>());
-        eprintln!("Highlights lines: {:?}", highlights.lines.keys().collect::<Vec<_>>());
+        eprintln!(
+            "Lines from source.lines(): {:?}",
+            source.lines().collect::<Vec<_>>()
+        );
+        eprintln!(
+            "Highlights lines: {:?}",
+            highlights.lines.keys().collect::<Vec<_>>()
+        );
         for (line, lh) in &highlights.lines {
             eprintln!("Line {}: {:?}", line, lh.tokens);
         }
 
         // Should have highlights on line 1 (the fn main line)
-        assert!(
-            !highlights.lines.is_empty(),
-            "Should have some highlights"
-        );
+        assert!(!highlights.lines.is_empty(), "Should have some highlights");
         assert!(
             highlights.lines.contains_key(&1),
             "Should have highlights on line 1 where 'fn main' is"
@@ -1185,7 +1150,10 @@ fi"#;
         for (line_num, lh) in &highlights.lines {
             eprintln!("Line {}: {} tokens", line_num, lh.tokens.len());
             for tok in &lh.tokens {
-                eprintln!("  col {}..{}: highlight {}", tok.start_col, tok.end_col, tok.highlight);
+                eprintln!(
+                    "  col {}..{}: highlight {}",
+                    tok.start_col, tok.end_col, tok.highlight
+                );
             }
         }
 
@@ -1195,13 +1163,22 @@ fi"#;
 
         let rope_line_1 = rope.line(1).to_string();
         eprintln!("\nRope line 1: {:?}", rope_line_1);
-        eprintln!("Highlights for line 1 exist: {}", highlights.lines.contains_key(&1));
+        eprintln!(
+            "Highlights for line 1 exist: {}",
+            highlights.lines.contains_key(&1)
+        );
 
         // The highlight tokens for line 1 should match the text on rope line 1
         if let Some(line_highlights) = highlights.lines.get(&1) {
             // "fn main() {}" - "fn" is keyword at columns 0..2
-            let fn_token = line_highlights.tokens.iter().find(|t| t.start_col == 0 && t.end_col == 2);
-            assert!(fn_token.is_some(), "Should have 'fn' token at 0..2 on line 1");
+            let fn_token = line_highlights
+                .tokens
+                .iter()
+                .find(|t| t.start_col == 0 && t.end_col == 2);
+            assert!(
+                fn_token.is_some(),
+                "Should have 'fn' token at 0..2 on line 1"
+            );
         } else {
             panic!("No highlights for line 1!");
         }
@@ -1257,7 +1234,10 @@ fi"#;
         let h2 = state.parse_and_highlight(source2, LanguageId::Rust, doc_id, 2);
         assert!(!h2.lines.is_empty());
         // Should have highlights on multiple lines now
-        assert!(h2.lines.len() >= 2, "Should have highlights on multiple lines");
+        assert!(
+            h2.lines.len() >= 2,
+            "Should have highlights on multiple lines"
+        );
     }
 
     #[test]
@@ -1275,7 +1255,10 @@ fi"#;
         assert!(!h2.lines.is_empty());
 
         // Cache should reflect JavaScript now
-        assert_eq!(state.doc_cache.get(&doc_id).unwrap().language, LanguageId::JavaScript);
+        assert_eq!(
+            state.doc_cache.get(&doc_id).unwrap().language,
+            LanguageId::JavaScript
+        );
     }
 
     #[test]
