@@ -1,16 +1,33 @@
-use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
+//! Keyboard input handling
+//!
+//! This module handles keyboard input that requires special imperative logic
+//! beyond what the declarative keymap system can express.
+//!
+//! Most keybindings are handled by the keymap system in `src/keymap/`.
+//! This file handles:
+//! - Modal input routing (when a modal dialog is active)
+//! - Option double-tap for multi-cursor creation
+//! - Navigation with selection collapse (moving clears selection first)
+//! - Character input (regular typing)
+
+use winit::keyboard::{Key, NamedKey};
 
 use token::commands::Cmd;
-use token::messages::{AppMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, UiMsg};
-use token::model::editor_area::SplitDirection;
-use token::model::{AppModel, ModalId};
+use token::messages::{Direction, DocumentMsg, EditorMsg, ModalMsg, Msg, UiMsg};
+use token::model::AppModel;
 use token::update::update;
 
+/// Handle keyboard input for special cases not covered by keymap
+///
+/// Called as a fallback when:
+/// - A modal is active (all input routes to modal)
+/// - Option double-tap multi-cursor gesture is in progress
+/// - Keymap returns NoMatch or a non-simple command
 #[allow(clippy::too_many_arguments)]
 pub fn handle_key(
     model: &mut AppModel,
     key: Key,
-    physical_key: PhysicalKey,
+    _physical_key: winit::keyboard::PhysicalKey,
     ctrl: bool,
     shift: bool,
     alt: bool,
@@ -21,37 +38,13 @@ pub fn handle_key(
     if model.ui.has_modal() {
         return handle_modal_key(model, key, ctrl, shift, alt, logo);
     }
-    // === Numpad Shortcuts (no modifiers needed) ===
-    match physical_key {
-        PhysicalKey::Code(KeyCode::Numpad1) => {
-            return update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(1)));
-        }
-        PhysicalKey::Code(KeyCode::Numpad2) => {
-            return update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(2)));
-        }
-        PhysicalKey::Code(KeyCode::Numpad3) => {
-            return update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(3)));
-        }
-        PhysicalKey::Code(KeyCode::Numpad4) => {
-            return update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(4)));
-        }
-        PhysicalKey::Code(KeyCode::NumpadSubtract) => {
-            return update(
-                model,
-                Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
-            );
-        }
-        PhysicalKey::Code(KeyCode::NumpadAdd) => {
-            return update(
-                model,
-                Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Vertical)),
-            );
-        }
-        _ => {}
-    }
 
     match key {
-        // Double-tap Option + Arrow for multi-cursor (must be before other alt combinations)
+        // =====================================================================
+        // Multi-cursor: Option double-tap + Arrow
+        // This is a temporal gesture (300ms window) that can't be expressed
+        // in the keymap, so it's handled here.
+        // =====================================================================
         Key::Named(NamedKey::ArrowUp) if alt && option_double_tapped => {
             update(model, Msg::Editor(EditorMsg::AddCursorAbove))
         }
@@ -59,234 +52,64 @@ pub fn handle_key(
             update(model, Msg::Editor(EditorMsg::AddCursorBelow))
         }
 
-        // Expand/Shrink Selection (Option+Up/Down without double-tap)
-        Key::Named(NamedKey::ArrowUp) if alt && !shift => {
-            update(model, Msg::Editor(EditorMsg::ExpandSelection))
-        }
-        Key::Named(NamedKey::ArrowDown) if alt && !shift => {
-            update(model, Msg::Editor(EditorMsg::ShrinkSelection))
-        }
-        // Undo/Redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Y)
-        Key::Character(ref s) if (ctrl || logo) && s.eq_ignore_ascii_case("z") => {
-            if shift {
-                update(model, Msg::Document(DocumentMsg::Redo))
-            } else {
-                update(model, Msg::Document(DocumentMsg::Undo))
-            }
-        }
-        Key::Character(ref s) if (ctrl || logo) && s.eq_ignore_ascii_case("y") => {
-            update(model, Msg::Document(DocumentMsg::Redo))
-        }
+        // =====================================================================
+        // Navigation with selection collapse
+        //
+        // These navigation commands clear the selection before moving.
+        // The keymap handles the movement itself, but can't clear selection first.
+        // TODO: Move this logic into the editor's movement handlers.
+        // =====================================================================
 
-        // Save file (Ctrl+S on Windows/Linux, Cmd+S on macOS)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("s") && (ctrl || logo) => {
-            update(model, Msg::App(AppMsg::SaveFile))
-        }
-
-        // Command Palette (Shift+Cmd+A on macOS, Shift+Ctrl+A elsewhere)
-        // Must be before Select All to take precedence
-        Key::Character(ref s) if s.eq_ignore_ascii_case("a") && (ctrl || logo) && shift => {
-            update(model, Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)))
-        }
-
-        // Select All (Cmd+A on macOS, Ctrl+A elsewhere)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("a") && (ctrl || logo) && !shift => {
-            update(model, Msg::Editor(EditorMsg::SelectAll))
-        }
-
-        // Copy (Cmd+C on macOS, Ctrl+C elsewhere)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("c") && (ctrl || logo) => {
-            update(model, Msg::Document(DocumentMsg::Copy))
-        }
-
-        // Cut (Cmd+X on macOS, Ctrl+X elsewhere)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("x") && (ctrl || logo) => {
-            update(model, Msg::Document(DocumentMsg::Cut))
-        }
-
-        // Paste (Cmd+V on macOS, Ctrl+V elsewhere)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("v") && (ctrl || logo) => {
-            update(model, Msg::Document(DocumentMsg::Paste))
-        }
-
-        // Duplicate line/selection (Cmd+D on macOS, Ctrl+D elsewhere)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("d") && (ctrl || logo) => {
-            update(model, Msg::Document(DocumentMsg::Duplicate))
-        }
-
-        // Select next occurrence (Cmd+J on macOS, Ctrl+J elsewhere)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("j") && (ctrl || logo) && !shift => {
-            update(model, Msg::Editor(EditorMsg::SelectNextOccurrence))
-        }
-
-        // Unselect last occurrence (Shift+Cmd+J on macOS, Shift+Ctrl+J elsewhere)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("j") && (ctrl || logo) && shift => {
-            update(model, Msg::Editor(EditorMsg::UnselectOccurrence))
-        }
-
-        // === Modal Shortcuts ===
-
-        // Goto Line (Cmd+L on macOS, Ctrl+L elsewhere)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("l") && (ctrl || logo) && !shift => {
-            update(model, Msg::Ui(UiMsg::ToggleModal(ModalId::GotoLine)))
-        }
-
-        // Find (Cmd+F on macOS, Ctrl+F elsewhere)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("f") && (ctrl || logo) && !shift => {
-            update(model, Msg::Ui(UiMsg::ToggleModal(ModalId::FindReplace)))
-        }
-
-        // === Split View Shortcuts ===
-
-        // Split horizontal (Shift+Option+Cmd+H)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("h") && logo && shift && alt => update(
-            model,
-            Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
-        ),
-
-        // Split vertical (Shift+Option+Cmd+V)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("v") && logo && shift && alt => update(
-            model,
-            Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Vertical)),
-        ),
-
-        // New tab (Shift+Cmd+N)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("n") && logo && shift && !alt => {
-            update(model, Msg::Layout(LayoutMsg::NewTab))
-        }
-
-        // Close tab (Cmd+W)
-        Key::Character(ref s) if s.eq_ignore_ascii_case("w") && logo && !shift && !alt => {
-            update(model, Msg::Layout(LayoutMsg::CloseFocusedTab))
-        }
-
-        // Next tab (Option+Cmd+Right)
-        Key::Named(NamedKey::ArrowRight) if logo && alt && !shift => {
-            update(model, Msg::Layout(LayoutMsg::NextTab))
-        }
-
-        // Previous tab (Option+Cmd+Left)
-        Key::Named(NamedKey::ArrowLeft) if logo && alt && !shift => {
-            update(model, Msg::Layout(LayoutMsg::PrevTab))
-        }
-
-        // Focus group by index (Shift+Cmd+1/2/3/4)
-        Key::Character(ref s) if s == "1" && logo && shift && !alt => {
-            update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(1)))
-        }
-        Key::Character(ref s) if s == "2" && logo && shift && !alt => {
-            update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(2)))
-        }
-        Key::Character(ref s) if s == "3" && logo && shift && !alt => {
-            update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(3)))
-        }
-        Key::Character(ref s) if s == "4" && logo && shift && !alt => {
-            update(model, Msg::Layout(LayoutMsg::FocusGroupByIndex(4)))
-        }
-
-        // Focus next/previous group (Ctrl+Tab / Ctrl+Shift+Tab)
-        Key::Named(NamedKey::Tab) if ctrl && !shift => {
-            update(model, Msg::Layout(LayoutMsg::FocusNextGroup))
-        }
-        Key::Named(NamedKey::Tab) if ctrl && shift => {
-            update(model, Msg::Layout(LayoutMsg::FocusPrevGroup))
-        }
-
-        // Indent/Unindent (Tab / Shift+Tab)
-        Key::Named(NamedKey::Tab) if shift && !(ctrl || logo) => {
-            update(model, Msg::Document(DocumentMsg::UnindentLines))
-        }
-        Key::Named(NamedKey::Tab) if !(ctrl || logo) => {
-            if model.editor().active_selection().is_empty() {
-                update(model, Msg::Document(DocumentMsg::InsertChar('\t')))
-            } else {
-                update(model, Msg::Document(DocumentMsg::IndentLines))
-            }
-        }
-
-        // Escape: clear selection or collapse to single cursor
-        Key::Named(NamedKey::Escape) => {
-            if model.editor().has_multiple_cursors() {
-                update(model, Msg::Editor(EditorMsg::CollapseToSingleCursor))
-            } else if !model.editor().active_selection().is_empty() {
-                update(model, Msg::Editor(EditorMsg::ClearSelection))
-            } else {
-                None
-            }
-        }
-
-        // Document navigation with selection (Shift+Ctrl+Home/End)
-        Key::Named(NamedKey::Home) if ctrl && shift => update(
-            model,
-            Msg::Editor(EditorMsg::MoveCursorDocumentStartWithSelection),
-        ),
-        Key::Named(NamedKey::End) if ctrl && shift => update(
-            model,
-            Msg::Editor(EditorMsg::MoveCursorDocumentEndWithSelection),
-        ),
-
-        // Document navigation (Ctrl+Home/End)
-        Key::Named(NamedKey::Home) if ctrl => {
+        // Document navigation (Ctrl+Home/End) - clears selection
+        Key::Named(NamedKey::Home) if ctrl && !shift => {
             model.editor_mut().clear_selection();
             update(model, Msg::Editor(EditorMsg::MoveCursorDocumentStart))
         }
-        Key::Named(NamedKey::End) if ctrl => {
+        Key::Named(NamedKey::End) if ctrl && !shift => {
             model.editor_mut().clear_selection();
             update(model, Msg::Editor(EditorMsg::MoveCursorDocumentEnd))
         }
 
-        // Line navigation with selection (Shift+Cmd+Arrow on macOS)
-        Key::Named(NamedKey::ArrowLeft) if logo && shift => update(
-            model,
-            Msg::Editor(EditorMsg::MoveCursorLineStartWithSelection),
-        ),
-        Key::Named(NamedKey::ArrowRight) if logo && shift => update(
-            model,
-            Msg::Editor(EditorMsg::MoveCursorLineEndWithSelection),
-        ),
-
-        // Line navigation (Cmd+Arrow on macOS)
-        Key::Named(NamedKey::ArrowLeft) if logo => {
+        // Line navigation (Cmd+Arrow on macOS) - clears selection
+        Key::Named(NamedKey::ArrowLeft) if logo && !shift => {
             model.editor_mut().clear_selection();
             update(model, Msg::Editor(EditorMsg::MoveCursorLineStart))
         }
-        Key::Named(NamedKey::ArrowRight) if logo => {
+        Key::Named(NamedKey::ArrowRight) if logo && !shift => {
             model.editor_mut().clear_selection();
             update(model, Msg::Editor(EditorMsg::MoveCursorLineEnd))
         }
 
-        // Line navigation with selection (Shift+Home/End)
-        Key::Named(NamedKey::Home) if shift => update(
-            model,
-            Msg::Editor(EditorMsg::MoveCursorLineStartWithSelection),
-        ),
-        Key::Named(NamedKey::End) if shift => update(
-            model,
-            Msg::Editor(EditorMsg::MoveCursorLineEndWithSelection),
-        ),
-
-        // Line navigation (Home/End keys)
-        Key::Named(NamedKey::Home) => {
+        // Line navigation (Home/End keys) - clears selection
+        Key::Named(NamedKey::Home) if !shift && !ctrl => {
             model.editor_mut().clear_selection();
             update(model, Msg::Editor(EditorMsg::MoveCursorLineStart))
         }
-        Key::Named(NamedKey::End) => {
+        Key::Named(NamedKey::End) if !shift && !ctrl => {
             model.editor_mut().clear_selection();
             update(model, Msg::Editor(EditorMsg::MoveCursorLineEnd))
         }
 
-        // Page navigation with selection (Shift+PageUp/Down)
-        Key::Named(NamedKey::PageUp) if shift => {
-            update(model, Msg::Editor(EditorMsg::PageUpWithSelection))
+        // Word navigation (Alt+Arrow) - clears selection
+        // Note: option_double_tapped case is handled above
+        Key::Named(NamedKey::ArrowLeft) if alt && !shift && !option_double_tapped => {
+            model.editor_mut().clear_selection();
+            update(
+                model,
+                Msg::Editor(EditorMsg::MoveCursorWord(Direction::Left)),
+            )
         }
-        Key::Named(NamedKey::PageDown) if shift => {
-            update(model, Msg::Editor(EditorMsg::PageDownWithSelection))
+        Key::Named(NamedKey::ArrowRight) if alt && !shift && !option_double_tapped => {
+            model.editor_mut().clear_selection();
+            update(
+                model,
+                Msg::Editor(EditorMsg::MoveCursorWord(Direction::Right)),
+            )
         }
 
-        // Page navigation
-        Key::Named(NamedKey::PageUp) => {
+        // PageUp/Down with selection - jump to selection edge first
+        Key::Named(NamedKey::PageUp) if !shift => {
             if !model.editor().active_selection().is_empty() {
-                // Jump to selection START, then page up
                 let start = model.editor().active_selection().start();
                 model.editor_mut().active_cursor_mut().line = start.line;
                 model.editor_mut().active_cursor_mut().column = start.column;
@@ -294,9 +117,8 @@ pub fn handle_key(
             }
             update(model, Msg::Editor(EditorMsg::PageUp))
         }
-        Key::Named(NamedKey::PageDown) => {
+        Key::Named(NamedKey::PageDown) if !shift => {
             if !model.editor().active_selection().is_empty() {
-                // Jump to selection END, then page down
                 let end = model.editor().active_selection().end();
                 model.editor_mut().active_cursor_mut().line = end.line;
                 model.editor_mut().active_cursor_mut().column = end.column;
@@ -305,101 +127,40 @@ pub fn handle_key(
             update(model, Msg::Editor(EditorMsg::PageDown))
         }
 
-        // Word navigation with selection (Shift+Option/Alt + Arrow)
-        Key::Named(NamedKey::ArrowLeft) if alt && shift => update(
-            model,
-            Msg::Editor(EditorMsg::MoveCursorWordWithSelection(Direction::Left)),
-        ),
-        Key::Named(NamedKey::ArrowRight) if alt && shift => update(
-            model,
-            Msg::Editor(EditorMsg::MoveCursorWordWithSelection(Direction::Right)),
-        ),
-
-        // Word navigation (Option/Alt + Arrow)
-        Key::Named(NamedKey::ArrowLeft) if alt => {
-            model.editor_mut().clear_selection();
-            update(
-                model,
-                Msg::Editor(EditorMsg::MoveCursorWord(Direction::Left)),
-            )
-        }
-        Key::Named(NamedKey::ArrowRight) if alt => {
-            model.editor_mut().clear_selection();
-            update(
-                model,
-                Msg::Editor(EditorMsg::MoveCursorWord(Direction::Right)),
-            )
-        }
-
-        // Arrow keys with selection (Shift+Arrow)
-        Key::Named(NamedKey::ArrowUp) if shift => update(
-            model,
-            Msg::Editor(EditorMsg::MoveCursorWithSelection(Direction::Up)),
-        ),
-        Key::Named(NamedKey::ArrowDown) if shift => update(
-            model,
-            Msg::Editor(EditorMsg::MoveCursorWithSelection(Direction::Down)),
-        ),
-        Key::Named(NamedKey::ArrowLeft) if shift => update(
-            model,
-            Msg::Editor(EditorMsg::MoveCursorWithSelection(Direction::Left)),
-        ),
-        Key::Named(NamedKey::ArrowRight) if shift => update(
-            model,
-            Msg::Editor(EditorMsg::MoveCursorWithSelection(Direction::Right)),
-        ),
-
-        // Arrow keys (with selection: jump to start/end, then optionally move)
-        Key::Named(NamedKey::ArrowUp) => {
+        // Arrow Up/Down with selection - jump to selection edge, then move
+        Key::Named(NamedKey::ArrowUp) if !shift && !alt && !ctrl && !logo => {
             if !model.editor().active_selection().is_empty() {
-                // Jump to selection START, then move up
                 let start = model.editor().active_selection().start();
                 model.editor_mut().active_cursor_mut().line = start.line;
                 model.editor_mut().active_cursor_mut().column = start.column;
                 model.editor_mut().clear_selection();
                 update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Up)))
             } else {
-                update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Up)))
+                // No selection - let keymap handle it
+                None
             }
         }
-        Key::Named(NamedKey::ArrowDown) => {
+        Key::Named(NamedKey::ArrowDown) if !shift && !alt && !ctrl && !logo => {
             if !model.editor().active_selection().is_empty() {
-                // Jump to selection END, then move down
                 let end = model.editor().active_selection().end();
                 model.editor_mut().active_cursor_mut().line = end.line;
                 model.editor_mut().active_cursor_mut().column = end.column;
                 model.editor_mut().clear_selection();
                 update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Down)))
             } else {
-                update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Down)))
+                // No selection - let keymap handle it
+                None
             }
         }
-        Key::Named(NamedKey::ArrowLeft) => {
-            // move_all_cursors_left handles selection collapse for all cursors
-            update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Left)))
-        }
-        Key::Named(NamedKey::ArrowRight) => {
-            // move_all_cursors_right handles selection collapse for all cursors
-            update(model, Msg::Editor(EditorMsg::MoveCursor(Direction::Right)))
-        }
 
-        // Editing
-        Key::Named(NamedKey::Enter) => update(model, Msg::Document(DocumentMsg::InsertNewline)),
-        Key::Named(NamedKey::Backspace) if ctrl || logo => {
-            update(model, Msg::Document(DocumentMsg::DeleteLine))
-        }
-        Key::Named(NamedKey::Backspace) if alt => {
-            update(model, Msg::Document(DocumentMsg::DeleteWordBackward))
-        }
-        Key::Named(NamedKey::Backspace) => {
-            update(model, Msg::Document(DocumentMsg::DeleteBackward))
-        }
-        Key::Named(NamedKey::Delete) => update(model, Msg::Document(DocumentMsg::DeleteForward)),
+        // =====================================================================
+        // Character input
+        // Regular typing flows through here, not the keymap.
+        // =====================================================================
         Key::Named(NamedKey::Space) if !(ctrl || logo) => {
             update(model, Msg::Document(DocumentMsg::InsertChar(' ')))
         }
 
-        // Character input (only when no Ctrl/Cmd)
         Key::Character(ref s) if !(ctrl || logo) => {
             let mut cmd = None;
             for ch in s.chars() {
