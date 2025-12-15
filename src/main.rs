@@ -110,19 +110,14 @@ mod tests {
     fn test_left_arrow_with_selection_jumps_to_start() {
         // When text is selected and Left is pressed, cursor should go to selection START
         // Text: "hello world" with "llo wo" selected (columns 2-8)
+        use token::messages::Direction;
         let mut model = test_model_with_selection("hello world\n", 0, 2, 0, 8);
         // Selection: anchor at col 2, head/cursor at col 8
 
-        // Press Left (without shift)
-        handle_key(
+        // MoveCursor(Left) via keymap dispatches this message
+        update(
             &mut model,
-            Key::Named(NamedKey::ArrowLeft),
-            PhysicalKey::Code(KeyCode::ArrowLeft),
-            false,
-            false,
-            false,
-            false,
-            false,
+            Msg::Editor(EditorMsg::MoveCursor(Direction::Left)),
         );
 
         // Selection should be cleared
@@ -142,18 +137,13 @@ mod tests {
     fn test_right_arrow_with_selection_jumps_to_end() {
         // When text is selected and Right is pressed, cursor should go to selection END
         // Text: "hello world" with "llo wo" selected (columns 2-8)
+        use token::messages::Direction;
         let mut model = test_model_with_selection("hello world\n", 0, 2, 0, 8);
 
-        // Press Right (without shift)
-        handle_key(
+        // MoveCursor(Right) via keymap dispatches this message
+        update(
             &mut model,
-            Key::Named(NamedKey::ArrowRight),
-            PhysicalKey::Code(KeyCode::ArrowRight),
-            false,
-            false,
-            false,
-            false,
-            false,
+            Msg::Editor(EditorMsg::MoveCursor(Direction::Right)),
         );
 
         // Selection should be cleared
@@ -449,15 +439,11 @@ mod tests {
         );
 
         // Press Right arrow - should clear selection and position cursor at end
-        handle_key(
+        // MoveCursor(Right) via keymap dispatches this message
+        use token::messages::Direction;
+        update(
             &mut model,
-            Key::Named(NamedKey::ArrowRight),
-            PhysicalKey::Code(KeyCode::ArrowRight),
-            false,
-            false,
-            false,
-            false,
-            false,
+            Msg::Editor(EditorMsg::MoveCursor(Direction::Right)),
         );
 
         // Selection should be cleared
@@ -594,12 +580,14 @@ mod tests {
     }
 
     // ========================================================================
-    // Cmd+Z / Cmd+Shift+Z Keybinding Tests (macOS)
+    // Undo/Redo Tests
+    // These test the Undo/Redo commands via the message system.
+    // The keymap handles Cmd+Z/Ctrl+Z → Undo and Cmd+Shift+Z/Ctrl+Y → Redo.
     // ========================================================================
 
     #[test]
-    fn test_cmd_z_triggers_undo_not_insert_z() {
-        // Test that Cmd+Z (logo=true) triggers undo and doesn't insert 'z'
+    fn test_undo_command() {
+        // Test that Undo command works correctly
         let mut model = test_model_with_selection("hello", 0, 5, 0, 5);
 
         // Make a change: insert 'X'
@@ -607,30 +595,21 @@ mod tests {
         assert_eq!(model.document().buffer.to_string(), "helloX");
         assert_eq!(model.editor().active_cursor().column, 6);
 
-        // Simulate Cmd+Z: logo=true, ctrl=false
-        handle_key(
-            &mut model,
-            Key::Character("z".into()),
-            PhysicalKey::Code(KeyCode::KeyZ),
-            false, // ctrl
-            false, // shift
-            false, // alt
-            true,  // logo (Cmd on macOS)
-            false, // option_double_tapped
-        );
+        // Undo via message (what keymap dispatches for Cmd+Z/Ctrl+Z)
+        update(&mut model, Msg::Document(DocumentMsg::Undo));
 
-        // Undo should have run, and no 'z' should be typed
+        // Undo should have run
         assert_eq!(
             model.document().buffer.to_string(),
             "hello",
-            "Cmd+Z should undo the insert, not type 'z'"
+            "Undo should revert the insert"
         );
         assert_eq!(model.editor().active_cursor().column, 5);
     }
 
     #[test]
-    fn test_cmd_shift_z_triggers_redo_not_insert_z() {
-        // Test that Cmd+Shift+Z (logo=true, shift=true) triggers redo
+    fn test_redo_command() {
+        // Test that Redo command works correctly
         let mut model = test_model_with_selection("hello", 0, 5, 0, 5);
 
         // Make a change and undo it
@@ -640,52 +619,16 @@ mod tests {
         update(&mut model, Msg::Document(DocumentMsg::Undo));
         assert_eq!(model.document().buffer.to_string(), "hello");
 
-        // Simulate Cmd+Shift+Z: logo=true, shift=true
-        handle_key(
-            &mut model,
-            Key::Character("z".into()),
-            PhysicalKey::Code(KeyCode::KeyZ),
-            false, // ctrl
-            true,  // shift
-            false, // alt
-            true,  // logo (Cmd on macOS)
-            false, // option_double_tapped
-        );
+        // Redo via message (what keymap dispatches for Cmd+Shift+Z/Ctrl+Y)
+        update(&mut model, Msg::Document(DocumentMsg::Redo));
 
         // Redo should have run
         assert_eq!(
             model.document().buffer.to_string(),
             "helloX",
-            "Cmd+Shift+Z should redo the insert"
+            "Redo should re-apply the insert"
         );
         assert_eq!(model.editor().active_cursor().column, 6);
-    }
-
-    #[test]
-    fn test_ctrl_z_still_works_for_undo() {
-        // Ensure Ctrl+Z still works (for non-macOS)
-        let mut model = test_model_with_selection("hello", 0, 5, 0, 5);
-
-        update(&mut model, Msg::Document(DocumentMsg::InsertChar('X')));
-        assert_eq!(model.document().buffer.to_string(), "helloX");
-
-        // Simulate Ctrl+Z
-        handle_key(
-            &mut model,
-            Key::Character("z".into()),
-            PhysicalKey::Code(KeyCode::KeyZ),
-            true,  // ctrl
-            false, // shift
-            false, // alt
-            false, // logo
-            false,
-        );
-
-        assert_eq!(
-            model.document().buffer.to_string(),
-            "hello",
-            "Ctrl+Z should undo"
-        );
     }
 
     // ========================================================================
