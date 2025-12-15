@@ -148,19 +148,46 @@ pub type HighlightId = u16; // Index into HIGHLIGHT_NAMES
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LanguageId {
     PlainText,
+    // Phase 1 languages
+    Yaml,
+    Markdown,
+    Rust,
+    // Phase 2 languages (web stack)
     Php,
     Html,
     Css,
     JavaScript,
+    TypeScript,
+    // Phase 3 languages (common)
+    Python,
+    Go,
+    C,
+    Cpp,
+    Json,
+    Toml,
+    // ... extensible for 20+ languages
 }
 
 impl LanguageId {
     pub fn from_extension(ext: &str) -> Self {
         match ext.to_lowercase().as_str() {
+            // Phase 1
+            "yaml" | "yml" => LanguageId::Yaml,
+            "md" | "markdown" => LanguageId::Markdown,
+            "rs" => LanguageId::Rust,
+            // Phase 2
             "php" | "phtml" => LanguageId::Php,
             "html" | "htm" => LanguageId::Html,
             "css" => LanguageId::Css,
-            "js" => LanguageId::JavaScript,
+            "js" | "mjs" | "cjs" => LanguageId::JavaScript,
+            "ts" | "tsx" => LanguageId::TypeScript,
+            // Phase 3
+            "py" => LanguageId::Python,
+            "go" => LanguageId::Go,
+            "c" | "h" => LanguageId::C,
+            "cpp" | "cc" | "hpp" => LanguageId::Cpp,
+            "json" => LanguageId::Json,
+            "toml" => LanguageId::Toml,
             _ => LanguageId::PlainText,
         }
     }
@@ -881,18 +908,24 @@ src/
 ├── messages.rs             # Add SyntaxMsg
 └── theme.rs                # Add SyntaxTheme
 
-queries/                     # NEW: Tree-sitter query files
+queries/                     # Tree-sitter query files (embedded via include_str! initially)
+├── yaml/
+│   └── highlights.scm      # Phase 1
+├── markdown/
+│   └── highlights.scm      # Phase 1
+├── rust/
+│   └── highlights.scm      # Phase 1
 ├── php/
-│   ├── highlights.scm
+│   ├── highlights.scm      # Phase 3
 │   ├── injections.scm
 │   └── locals.scm
 ├── html/
-│   ├── highlights.scm
+│   ├── highlights.scm      # Phase 3
 │   └── injections.scm
 ├── css/
-│   └── highlights.scm
+│   └── highlights.scm      # Phase 3
 └── javascript/
-    ├── highlights.scm
+    ├── highlights.scm      # Phase 3
     └── locals.scm
 ```
 
@@ -904,14 +937,27 @@ queries/                     # NEW: Tree-sitter query files
 # Cargo.toml additions
 
 [dependencies]
-tree-sitter = "0.25"
-tree-sitter-highlight = "0.25"  # Optional, if using high-level API
+tree-sitter = "0.24"
 
-# Language grammars
+# Phase 1: Initial languages
+tree-sitter-yaml = "0.6"
+tree-sitter-md = "0.3"
+tree-sitter-rust = "0.23"
+
+# Phase 2: Web stack (for injection support)
 tree-sitter-php = "0.24"
 tree-sitter-html = "0.23"
-tree-sitter-css = "0.25"
-tree-sitter-javascript = "0.23"  # For PHP injection support
+tree-sitter-css = "0.23"
+tree-sitter-javascript = "0.23"
+tree-sitter-typescript = "0.23"
+
+# Phase 3: Common languages
+tree-sitter-python = "0.23"
+tree-sitter-go = "0.23"
+tree-sitter-c = "0.23"
+tree-sitter-cpp = "0.23"
+tree-sitter-json = "0.24"
+tree-sitter-toml = "0.6"
 ```
 
 ---
@@ -960,43 +1006,136 @@ Merge with syntactic → Store in document → Cmd::Redraw
 
 ## Implementation Phases
 
-### Phase 1: Core Infrastructure (3-4 days)
+### Phase 1A: Core Infrastructure (2-3 days)
 
 - [ ] Add `src/syntax/` module structure
 - [ ] Define `HighlightToken`, `SyntaxHighlights`, `LanguageId`
-- [ ] Add `SyntaxMsg` and `Cmd::ParseSyntax`
-- [ ] Implement basic `update_syntax()` handler
-- [ ] Add to `process_cmd()` for background parsing
-- [ ] Add tree-sitter dependencies
+- [ ] Add `SyntaxMsg` and `Cmd::ParseSyntax` with `EditInfo`
+- [ ] Add `SyntaxTheme` to theme system, update YAML theme files
+- [ ] Add tree-sitter + YAML/Markdown/Rust grammar dependencies
 
-### Phase 2: Single Language (2 days)
+### Phase 1B: Async Parser & Debouncing (2 days)
 
-- [ ] Implement `ParserState` for PHP
-- [ ] Add PHP highlights.scm query file
-- [ ] Connect parsing to document edits
-- [ ] Implement debouncing
-- [ ] Basic tests
+- [ ] Implement `ParserState` with tree caching per document
+- [ ] Add syntax worker thread with mpsc channels
+- [ ] Implement debouncing (50ms timer thread pattern)
+- [ ] Implement revision-based staleness checks
+- [ ] Wire `process_cmd()` for `DebouncedSyntaxParse` and `RunSyntaxParse`
 
-### Phase 3: Rendering (2 days)
+### Phase 1C: Single Language - YAML (1 day)
 
-- [ ] Add `SyntaxTheme` to theme system
-- [ ] Update YAML theme files with syntax colors
-- [ ] Modify `draw_text` to use token colors
+- [ ] Add YAML highlights.scm query (embedded)
+- [ ] Connect document edits → parse request flow
+- [ ] Test with `keymap.yaml`
+- [ ] Basic unit tests
+
+### Phase 1D: Rendering Integration (1-2 days)
+
+- [ ] Extend `TextPainter` with `draw_with_highlights()`
+- [ ] Update editor line rendering to pass highlights
 - [ ] Optimize character-by-character rendering
 
-### Phase 4: Multi-Language (2-3 days)
+### Phase 1E: Additional Languages (1 day)
 
-- [ ] Add HTML, CSS grammar support
-- [ ] Implement injection parsing for PHP
+- [ ] Add Markdown highlights.scm
+- [ ] Add Rust highlights.scm
+- [ ] Test with README.md and Rust source files
+
+### Phase 2: Incremental Parsing (1-2 days)
+
+- [ ] Generate `EditInfo` from document edits
+- [ ] Pass `EditInfo` to worker for `tree.edit()` before reparse
+- [ ] Verify incremental parsing works correctly
+- [ ] Performance comparison: full vs incremental
+
+### Phase 3: Web Stack & Injection (2-3 days)
+
+- [ ] Add PHP, HTML, CSS, JavaScript grammars
+- [ ] Implement `injection.scm` parsing for PHP
 - [ ] Add `MultiLanguageDocument` layer tracking
-- [ ] Test PHP + HTML + CSS files
+- [ ] Test PHP files with embedded HTML/CSS/JS
 
-### Phase 5: Polish (1-2 days)
+### Phase 4: Language Expansion (ongoing)
 
-- [ ] Viewport-limited highlighting
-- [ ] Cancellation of stale parses
-- [ ] Performance profiling
+- [ ] Add remaining Phase 2 languages (TypeScript)
+- [ ] Add Phase 3 languages (Python, Go, C, C++, JSON, TOML)
+- [ ] External `queries/` directory structure for easy customization
+
+### Phase 5: Polish & Optimization (1-2 days)
+
+- [ ] Viewport-limited queries (only highlight visible + buffer)
+- [ ] Cancellation of in-flight parses via AtomicBool
+- [ ] Performance profiling and optimization
 - [ ] Documentation
+
+---
+
+## Phase 1 Implementation Notes
+
+### What's Implemented First (MVP)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Core data structures | ✓ | `HighlightToken`, `SyntaxHighlights`, `LanguageId` |
+| Async background parsing | ✓ | Worker thread + mpsc channels |
+| Debouncing (50ms) | ✓ | Timer thread pattern from Oracle |
+| Revision-based staleness | ✓ | Simpler than AtomicBool cancellation |
+| YAML highlighting | ✓ | First language, test with keymap.yaml |
+| Markdown highlighting | ✓ | Second language |
+| Rust highlighting | ✓ | Third language |
+| Theme integration | ✓ | SyntaxTheme with capture→color mapping |
+| Full document reparse | ✓ | Initial approach |
+
+### What's Deferred (Phase 2+)
+
+| Feature | Phase | Alignment Path |
+|---------|-------|----------------|
+| Incremental parsing via `EditInfo` | 2 | Add `EditInfo` generation in document edit handlers, pass to worker |
+| `tree.edit()` before reparse | 2 | Modify `ParserState::parse_and_highlight()` to call `tree.edit()` |
+| Language injection | 3 | Add `injection.scm` queries, `MultiLanguageDocument` layer tracking |
+| Viewport-limited queries | 5 | Add `visible_range` to `ParseRequest`, use `QueryCursor::set_byte_range()` |
+| AtomicBool cancellation | 5 | Add `cancel_flag: Arc<AtomicBool>` to `ParseRequest`, check in worker loop |
+| External query files | 4 | Move from `include_str!()` to runtime loading from `queries/` dir |
+
+### Architecture Decisions
+
+**Debouncing approach:** Using timer thread spawned by `Cmd::DebouncedSyntaxParse` rather than 
+`pending_parse` field checked in tick(). This keeps debounce logic in the Cmd/Msg flow rather 
+than scattered in the event loop.
+
+**Staleness checking:** Using document `revision: u64` rather than complex `EditInfo` tracking
+initially. The revision is bumped on every edit; stale parse results are simply dropped when
+`result.revision != doc.revision`. This is simpler and sufficient for MVP.
+
+**Query embedding:** Using `include_str!()` for query files initially rather than external 
+`queries/` directory. This simplifies distribution and testing. Phase 4 adds external queries
+for user customization.
+
+### Alignment Checklist (Post-MVP)
+
+To fully align with the design doc after MVP:
+
+1. **Incremental parsing:**
+   - [ ] Add `last_edit: Option<EditInfo>` to Document
+   - [ ] Generate `EditInfo` in `InsertChar`, `DeleteBackward`, etc.
+   - [ ] Pass `edit` to `Cmd::ParseSyntax`
+   - [ ] Call `tree.edit(&edit.to_input_edit())` in worker before reparse
+
+2. **Language injection:**
+   - [ ] Add `injection.scm` queries for PHP, HTML
+   - [ ] Implement `MultiLanguageDocument` with `layers: Vec<SyntaxLayer>`
+   - [ ] Parse injected regions recursively
+   - [ ] Merge highlights from all layers
+
+3. **Viewport optimization:**
+   - [ ] Track visible line range in `ParseRequest`
+   - [ ] Use `QueryCursor::set_byte_range()` to limit query scope
+   - [ ] Add `HIGHLIGHT_BUFFER_LINES` constant (50 lines)
+
+4. **Cancellation:**
+   - [ ] Add `cancel_flag: Arc<AtomicBool>` to `ParseRequest`
+   - [ ] Check flag periodically in long parses
+   - [ ] Cancel on new edit before debounce fires
 
 ---
 
