@@ -5,7 +5,7 @@
         bench bench-rope bench-render bench-glyph \
         coverage coverage-html coverage-ci \
         watch watch-lint test-fast test-retry \
-        setup setup-tools \
+        setup setup-tools install uninstall \
         compile-all compile-macos-x86 compile-macos-arm compile-linux compile-windows
 
 # Default target
@@ -18,6 +18,26 @@ build:
 # Build optimized release binary
 release:
 	cargo build --release
+
+# Install to ~/.local/bin (add to PATH if needed)
+INSTALL_DIR := $(HOME)/.local/bin
+
+install: release
+	@mkdir -p $(INSTALL_DIR)
+	@cp target/release/token $(INSTALL_DIR)/token
+	@chmod +x $(INSTALL_DIR)/token
+	@echo "Installed token to $(INSTALL_DIR)/token"
+	@if ! echo "$$PATH" | grep -q "$(INSTALL_DIR)"; then \
+		echo ""; \
+		echo "NOTE: Add $(INSTALL_DIR) to your PATH:"; \
+		echo "  echo 'export PATH=\"$(INSTALL_DIR):\$$PATH\"' >> ~/.zshrc"; \
+		echo "  source ~/.zshrc"; \
+	fi
+
+# Uninstall from ~/.local/bin
+uninstall:
+	@rm -f $(INSTALL_DIR)/token
+	@echo "Removed token from $(INSTALL_DIR)"
 
 # Run release build with default samples file
 run: release
@@ -75,6 +95,8 @@ help:
 	@echo "Build targets:"
 	@echo "  make build        - Build debug binary"
 	@echo "  make release      - Build optimized release binary"
+	@echo "  make install      - Install to ~/.local/bin"
+	@echo "  make uninstall    - Remove from ~/.local/bin"
 	@echo "  make build-prof   - Build with debug symbols for profiling"
 	@echo "  make clean        - Remove build artifacts"
 	@echo "  make fmt          - Format Rust code and markdown files"
