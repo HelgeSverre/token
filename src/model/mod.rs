@@ -22,8 +22,8 @@ pub use status_bar::{
     StatusBarLayout, StatusSegment, TransientMessage,
 };
 pub use ui::{
-    CommandPaletteState, FindReplaceState, GotoLineState, ModalId, ModalState, ThemePickerState,
-    UiState,
+    CommandPaletteState, DropState, FindReplaceState, GotoLineState, ModalId, ModalState,
+    ThemePickerState, UiState,
 };
 
 use crate::config::EditorConfig;
@@ -31,7 +31,167 @@ use crate::config_paths;
 #[cfg(debug_assertions)]
 use crate::debug_overlay::DebugOverlay;
 use crate::theme::{load_theme, Theme};
+use crate::util::{is_likely_binary, validate_file_for_opening};
 use std::path::PathBuf;
+
+// ============================================================================
+// Viewport Geometry - pure calculations for dimensions
+// ============================================================================
+
+/// Viewport geometry calculations (pure, no I/O)
+///
+/// Encapsulates window dimension calculations for editor viewports.
+/// Initial values are estimates that get corrected by the renderer
+/// once actual font metrics are available.
+#[derive(Debug, Clone, Copy)]
+pub struct ViewportGeometry {
+    pub window_width: u32,
+    pub window_height: u32,
+    pub line_height: usize,
+    pub char_width: f32,
+    pub visible_lines: usize,
+    pub visible_columns: usize,
+}
+
+impl ViewportGeometry {
+    /// Default line height in pixels
+    pub const DEFAULT_LINE_HEIGHT: usize = 20;
+    /// Default character width (corrected by renderer with actual font metrics)
+    pub const DEFAULT_CHAR_WIDTH: f32 = 10.0;
+
+    pub fn new(window_width: u32, window_height: u32) -> Self {
+        let line_height = Self::DEFAULT_LINE_HEIGHT;
+        let char_width = Self::DEFAULT_CHAR_WIDTH;
+
+        let text_x = text_start_x(char_width).round();
+        let visible_columns = ((window_width as f32 - text_x) / char_width).floor() as usize;
+        let status_bar_height = line_height;
+        let visible_lines =
+            (window_height as usize).saturating_sub(status_bar_height) / line_height;
+
+        Self {
+            window_width,
+            window_height,
+            line_height,
+            char_width,
+            visible_lines,
+            visible_columns,
+        }
+    }
+}
+
+// ============================================================================
+// Session Initialization - file loading and editor setup
+// ============================================================================
+
+/// Result of initial session creation
+pub struct InitialSession {
+    pub editor_area: EditorArea,
+    pub status_message: String,
+}
+
+/// Load configuration and theme from disk
+fn load_config_and_theme() -> (EditorConfig, Theme) {
+    config_paths::ensure_all_config_dirs();
+    let config = EditorConfig::load();
+    let theme = load_theme(&config.theme).unwrap_or_else(|e| {
+        tracing::warn!(
+            "Failed to load theme '{}': {}, using default",
+            config.theme,
+            e
+        );
+        Theme::default()
+    });
+    (config, theme)
+}
+
+/// Create initial session with documents and editor area
+fn create_initial_session(file_paths: Vec<PathBuf>, geom: &ViewportGeometry) -> InitialSession {
+    // Load first file or create empty document
+    let (first_document, status_message) = if let Some(first_path) = file_paths.first() {
+        // Validate and load the first file
+        if let Err(e) = validate_file_for_opening(first_path) {
+            let msg = e.user_message(&first_path.display().to_string());
+            (Document::new(), msg)
+        } else if is_likely_binary(first_path) {
+            let msg = format!("Cannot open binary file: {}", first_path.display());
+            (Document::new(), msg)
+        } else {
+            match Document::from_file(first_path.clone()) {
+                Ok(doc) => {
+                    let msg = if file_paths.len() > 1 {
+                        format!("Opened {} files", file_paths.len())
+                    } else {
+                        format!("Loaded: {}", first_path.display())
+                    };
+                    (doc, msg)
+                }
+                Err(e) => {
+                    let msg = format!("Error loading {}: {}", first_path.display(), e);
+                    (Document::new(), msg)
+                }
+            }
+        }
+    } else {
+        (Document::new(), "New file".to_string())
+    };
+
+    // Create editor state with viewport
+    let editor = EditorState::with_viewport(geom.visible_lines, geom.visible_columns);
+
+    // Create editor area with first document
+    let mut editor_area = EditorArea::single_document(first_document, editor);
+
+    // Open additional files as tabs
+    for path in file_paths.into_iter().skip(1) {
+        // Validate before attempting to open
+        if let Err(e) = validate_file_for_opening(&path) {
+            tracing::warn!("Skipping {}: {}", path.display(), e);
+            continue;
+        }
+        if is_likely_binary(&path) {
+            tracing::warn!("Skipping binary file: {}", path.display());
+            continue;
+        }
+
+        let doc_id = editor_area.next_document_id();
+        match Document::from_file(path.clone()) {
+            Ok(mut doc) => {
+                doc.id = Some(doc_id);
+                editor_area.documents.insert(doc_id, doc);
+
+                // Create editor for this document
+                let editor_id = editor_area.next_editor_id();
+                let mut editor =
+                    EditorState::with_viewport(geom.visible_lines, geom.visible_columns);
+                editor.id = Some(editor_id);
+                editor.document_id = Some(doc_id);
+                editor_area.editors.insert(editor_id, editor);
+
+                // Create tab in focused group
+                let tab_id = editor_area.next_tab_id();
+                let tab = Tab {
+                    id: tab_id,
+                    editor_id,
+                    is_pinned: false,
+                    is_preview: false,
+                };
+
+                if let Some(group) = editor_area.groups.get_mut(&editor_area.focused_group_id) {
+                    group.tabs.push(tab);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to open {}: {}", path.display(), e);
+            }
+        }
+    }
+
+    InitialSession {
+        editor_area,
+        status_message,
+    }
+}
 
 /// Layout constant - width of line number gutter in characters (e.g., " 123 ")
 pub const LINE_NUMBER_GUTTER_CHARS: usize = 5;
@@ -71,6 +231,8 @@ pub struct AppModel {
     pub line_height: usize,
     /// Character width in pixels (monospace)
     pub char_width: f32,
+    /// Workspace root directory (for future file tree sidebar)
+    pub workspace_root: Option<PathBuf>,
     /// Debug overlay state (debug builds only)
     #[cfg(debug_assertions)]
     pub debug_overlay: Option<DebugOverlay>,
@@ -79,90 +241,17 @@ pub struct AppModel {
 impl AppModel {
     /// Create a new application model with the given window size
     pub fn new(window_width: u32, window_height: u32, file_paths: Vec<PathBuf>) -> Self {
-        let line_height = 20;
-        let char_width: f32 = 10.0; // Will be corrected by renderer with actual font metrics
-
-        // Calculate viewport dimensions
-        let text_x = text_start_x(char_width).round();
-        let visible_columns = ((window_width as f32 - text_x) / char_width).floor() as usize;
-        let status_bar_height = line_height;
-        let visible_lines =
-            (window_height as usize).saturating_sub(status_bar_height) / line_height;
-
-        // Load first file or create demo document
-        let (first_document, status_message) = if let Some(first_path) = file_paths.first() {
-            match Document::from_file(first_path.clone()) {
-                Ok(doc) => {
-                    let msg = if file_paths.len() > 1 {
-                        format!("Opened {} files", file_paths.len())
-                    } else {
-                        format!("Loaded: {}", first_path.display())
-                    };
-                    (doc, msg)
-                }
-                Err(e) => {
-                    let msg = format!("Error loading {}: {}", first_path.display(), e);
-                    (Document::new(), msg)
-                }
-            }
-        } else {
-            let doc = Document::new();
-            (doc, "New file".to_string())
-        };
-
-        // Create editor state with viewport
-        let editor = EditorState::with_viewport(visible_lines, visible_columns);
-
-        // Create editor area with first document
-        let mut editor_area = EditorArea::single_document(first_document, editor);
-
-        // Open additional files as tabs
-        for path in file_paths.into_iter().skip(1) {
-            let doc_id = editor_area.next_document_id();
-            match Document::from_file(path.clone()) {
-                Ok(mut doc) => {
-                    doc.id = Some(doc_id);
-                    editor_area.documents.insert(doc_id, doc);
-
-                    // Create editor for this document
-                    let editor_id = editor_area.next_editor_id();
-                    let mut editor = EditorState::with_viewport(visible_lines, visible_columns);
-                    editor.id = Some(editor_id);
-                    editor.document_id = Some(doc_id);
-                    editor_area.editors.insert(editor_id, editor);
-
-                    // Create tab in focused group
-                    let tab_id = editor_area.next_tab_id();
-                    let tab = Tab {
-                        id: tab_id,
-                        editor_id,
-                        is_pinned: false,
-                        is_preview: false,
-                    };
-
-                    if let Some(group) = editor_area.groups.get_mut(&editor_area.focused_group_id) {
-                        group.tabs.push(tab);
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to open {}: {}", path.display(), e);
-                }
-            }
-        }
-
-        // Ensure config directories exist
-        config_paths::ensure_all_config_dirs();
+        // Calculate viewport geometry
+        let geom = ViewportGeometry::new(window_width, window_height);
 
         // Load config and theme
-        let config = EditorConfig::load();
-        let theme = load_theme(&config.theme).unwrap_or_else(|e| {
-            tracing::warn!(
-                "Failed to load theme '{}': {}, using default",
-                config.theme,
-                e
-            );
-            Theme::default()
-        });
+        let (config, theme) = load_config_and_theme();
+
+        // Create initial session with documents
+        let InitialSession {
+            editor_area,
+            status_message,
+        } = create_initial_session(file_paths, &geom);
 
         Self {
             editor_area,
@@ -170,8 +259,9 @@ impl AppModel {
             theme,
             config,
             window_size: (window_width, window_height),
-            line_height,
-            char_width,
+            line_height: geom.line_height,
+            char_width: geom.char_width,
+            workspace_root: None,
             #[cfg(debug_assertions)]
             debug_overlay: Some(DebugOverlay::new()),
         }

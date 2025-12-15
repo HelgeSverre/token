@@ -1,6 +1,6 @@
 [package]
 name = "token"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 
 [features]
@@ -31,6 +31,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 # For clipboard support
 arboard = "3.4"
 
+# For native file dialogs
+rfd = "0.15"
+
+# For CLI argument parsing
+clap = { version = "4", features = ["derive"] }
+
 # For user config directory detection
 dirs = "5"
 
@@ -39,6 +45,7 @@ dhat = { version = "0.3", optional = true }
 
 [dev-dependencies]
 divan = "0.1"
+tempfile = "3"
 
 [[bench]]
 name = "rope_operations"

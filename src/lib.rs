@@ -3,6 +3,7 @@
 //! This crate provides the core types and logic for a minimal text editor
 //! implementing the Elm Architecture pattern.
 
+pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod config_paths;

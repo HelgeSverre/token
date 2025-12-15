@@ -13,6 +13,7 @@ use winit::keyboard::{Key, NamedKey};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorIcon, Window};
 
+use token::cli::StartupConfig;
 use token::commands::{filter_commands, Cmd};
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
@@ -30,7 +31,6 @@ use crate::view::Renderer;
 
 use super::perf::PerfStats;
 
-use std::path::PathBuf;
 use winit::keyboard::ModifiersState;
 
 pub struct App {
@@ -57,12 +57,34 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(window_width: u32, window_height: u32, file_paths: Vec<PathBuf>) -> Self {
+    pub fn new(window_width: u32, window_height: u32, startup_config: StartupConfig) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
         let keymap = Keymap::with_bindings(load_default_keymap());
 
+        // Extract file paths and workspace from config
+        let file_paths = startup_config.file_paths();
+        let workspace_root = startup_config.workspace_root().cloned();
+        let initial_position = startup_config.initial_position;
+
+        let mut model = AppModel::new(window_width, window_height, file_paths);
+
+        // Set workspace root if specified
+        if let Some(root) = workspace_root {
+            model.workspace_root = Some(root);
+        }
+
+        // Apply initial cursor position if specified (--line/--column)
+        if let Some((line, column)) = initial_position {
+            let editor = model.editor_mut();
+            editor.cursors[0].line = line;
+            editor.cursors[0].column = column;
+            editor.selections[0].anchor = Position::new(line, column);
+            editor.selections[0].head = Position::new(line, column);
+            model.ensure_cursor_visible();
+        }
+
         Self {
-            model: AppModel::new(window_width, window_height, file_paths),
+            model,
             keymap,
             renderer: None,
             window: None,
@@ -593,10 +615,20 @@ impl App {
 
                 v_cmd.or(h_cmd)
             }
-            WindowEvent::DroppedFile(path) => update(
-                &mut self.model,
-                Msg::Layout(LayoutMsg::OpenFileInNewTab(path.clone())),
-            ),
+            WindowEvent::DroppedFile(path) => {
+                // Clear hover state first
+                self.model.ui.drop_state.cancel_hover();
+                update(
+                    &mut self.model,
+                    Msg::Layout(LayoutMsg::OpenFileInNewTab(path.clone())),
+                )
+            }
+            WindowEvent::HoveredFile(path) => {
+                update(&mut self.model, Msg::Ui(UiMsg::FileHovered(path.clone())))
+            }
+            WindowEvent::HoveredFileCancelled => {
+                update(&mut self.model, Msg::Ui(UiMsg::FileHoverCancelled))
+            }
             _ => None,
         }
     }
@@ -660,6 +692,61 @@ impl App {
                 for cmd in cmds {
                     self.process_cmd(cmd);
                 }
+            }
+
+            // =====================================================================
+            // File Dialogs (using rfd)
+            // =====================================================================
+            Cmd::ShowOpenFileDialog {
+                allow_multi,
+                start_dir,
+            } => {
+                let tx = self.msg_tx.clone();
+                std::thread::spawn(move || {
+                    let mut dlg = rfd::FileDialog::new();
+                    if let Some(dir) = start_dir {
+                        dlg = dlg.set_directory(dir);
+                    }
+
+                    let paths = if allow_multi {
+                        dlg.pick_files().unwrap_or_default()
+                    } else {
+                        dlg.pick_file().into_iter().collect()
+                    };
+
+                    let _ = tx.send(Msg::App(AppMsg::OpenFileDialogResult { paths }));
+                });
+            }
+
+            Cmd::ShowSaveFileDialog { suggested_path } => {
+                let tx = self.msg_tx.clone();
+                std::thread::spawn(move || {
+                    let mut dlg = rfd::FileDialog::new();
+                    if let Some(ref path) = suggested_path {
+                        if let Some(dir) = path.parent() {
+                            dlg = dlg.set_directory(dir);
+                        }
+                        if let Some(name) = path.file_name() {
+                            dlg = dlg.set_file_name(name.to_string_lossy());
+                        }
+                    }
+
+                    let path = dlg.save_file();
+                    let _ = tx.send(Msg::App(AppMsg::SaveFileAsDialogResult { path }));
+                });
+            }
+
+            Cmd::ShowOpenFolderDialog { start_dir } => {
+                let tx = self.msg_tx.clone();
+                std::thread::spawn(move || {
+                    let mut dlg = rfd::FileDialog::new();
+                    if let Some(dir) = start_dir {
+                        dlg = dlg.set_directory(dir);
+                    }
+
+                    let folder = dlg.pick_folder();
+                    let _ = tx.send(Msg::App(AppMsg::OpenFolderDialogResult { folder }));
+                });
             }
         }
     }

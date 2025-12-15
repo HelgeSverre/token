@@ -8,6 +8,7 @@ use crate::model::{
     AppModel, Document, EditorGroup, EditorState, GroupId, LayoutNode, SplitContainer,
     SplitDirection, Tab, TabId,
 };
+use crate::util::{filename_for_display, is_likely_binary, validate_file_for_opening};
 
 /// Handle layout messages (split views, tabs, groups)
 pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
@@ -167,9 +168,35 @@ fn new_tab_in_focused_group(model: &mut AppModel) {
 
 /// Open a file in a new tab in the focused group
 fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) {
+    let filename = filename_for_display(&path);
+
+    // 0. Check if file is already open - if so, focus it instead
+    if let Some((_doc_id, group_id, tab_idx)) = model.editor_area.find_open_file(&path) {
+        model.editor_area.focused_group_id = group_id;
+        if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
+            group.active_tab_index = tab_idx;
+        }
+        model.ui.set_status(format!("Switched to: {}", filename));
+        return;
+    }
+
     let group_id = model.editor_area.focused_group_id;
 
-    // 1. Load the document from file
+    // 1. Validate file before attempting to open
+    if let Err(e) = validate_file_for_opening(&path) {
+        model.ui.set_status(e.user_message(&filename));
+        return;
+    }
+
+    // 2. Check for binary content
+    if is_likely_binary(&path) {
+        model
+            .ui
+            .set_status(format!("Cannot open binary file: {}", filename));
+        return;
+    }
+
+    // 3. Load the document from file
     let doc_id = model.editor_area.next_document_id();
     let document = match Document::from_file(path.clone()) {
         Ok(mut doc) => {

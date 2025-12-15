@@ -410,14 +410,20 @@ fn test_multi_cursor_undo_redo_preserves_all_cursors() {
 
     assert_eq!(model.editor().cursor_count(), 3);
     for cursor in &model.editor().cursors {
-        assert_eq!(cursor.column, 1, "All cursors should be at column 1 after insert");
+        assert_eq!(
+            cursor.column, 1,
+            "All cursors should be at column 1 after insert"
+        );
     }
     let cursors_after: Vec<_> = model.editor().cursors.clone();
 
     update(&mut model, Msg::Document(DocumentMsg::Undo));
 
     let content: String = model.document().buffer.chars().collect();
-    assert_eq!(content, "aaa\nbbb\nccc\n", "Undo should restore original text");
+    assert_eq!(
+        content, "aaa\nbbb\nccc\n",
+        "Undo should restore original text"
+    );
 
     assert_eq!(
         model.editor().cursor_count(),
@@ -440,7 +446,10 @@ fn test_multi_cursor_undo_redo_preserves_all_cursors() {
     update(&mut model, Msg::Document(DocumentMsg::Redo));
 
     let content: String = model.document().buffer.chars().collect();
-    assert_eq!(content, "Xaaa\nXbbb\nXccc\n", "Redo should re-apply inserts");
+    assert_eq!(
+        content, "Xaaa\nXbbb\nXccc\n",
+        "Redo should re-apply inserts"
+    );
 
     assert_eq!(
         model.editor().cursor_count(),

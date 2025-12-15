@@ -28,6 +28,15 @@ bindings:
   - key: "cmd+s"
     command: SaveFile
 
+  - key: "cmd+shift+s"
+    command: SaveFileAs
+
+  - key: "cmd+o"
+    command: OpenFile
+
+  - key: "cmd+shift+o"
+    command: OpenFolder
+
   - key: "cmd+shift+n"
     command: NewTab
 

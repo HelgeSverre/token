@@ -1,5 +1,7 @@
 //! App message handlers (file operations, window events)
 
+use std::path::PathBuf;
+
 use crate::commands::{Cmd, CommandId};
 use crate::config_paths;
 use crate::keymap::get_default_keymap_yaml;
@@ -83,6 +85,72 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             // Handled by the event loop
             None
         }
+
+        // =====================================================================
+        // File Dialog Messages
+        // =====================================================================
+        AppMsg::SaveFileAs => {
+            let suggested = model.document().file_path.clone();
+            Some(Cmd::ShowSaveFileDialog {
+                suggested_path: suggested,
+            })
+        }
+
+        AppMsg::SaveFileAsDialogResult { path } => {
+            if let Some(path) = path {
+                model.document_mut().file_path = Some(path.clone());
+                let content = model.document().buffer.to_string();
+                model.ui.is_saving = true;
+                model.ui.set_status("Saving...");
+                Some(Cmd::SaveFile { path, content })
+            } else {
+                model.ui.set_status("Save cancelled");
+                Some(Cmd::Redraw)
+            }
+        }
+
+        AppMsg::OpenFileDialog => {
+            let start_dir = model
+                .document()
+                .file_path
+                .as_ref()
+                .and_then(|p| p.parent().map(PathBuf::from))
+                .or_else(|| model.workspace_root.clone());
+            Some(Cmd::ShowOpenFileDialog {
+                allow_multi: true,
+                start_dir,
+            })
+        }
+
+        AppMsg::OpenFileDialogResult { paths } => {
+            if paths.is_empty() {
+                model.ui.set_status("Open cancelled");
+                return Some(Cmd::Redraw);
+            }
+
+            // Open each file as a new tab
+            for path in paths {
+                update_layout(model, LayoutMsg::OpenFileInNewTab(path));
+            }
+            Some(Cmd::Redraw)
+        }
+
+        AppMsg::OpenFolderDialog => {
+            let start_dir = model.workspace_root.clone();
+            Some(Cmd::ShowOpenFolderDialog { start_dir })
+        }
+
+        AppMsg::OpenFolderDialogResult { folder } => {
+            if let Some(root) = folder {
+                model.workspace_root = Some(root.clone());
+                model
+                    .ui
+                    .set_status(format!("Workspace: {}", root.display()));
+            } else {
+                model.ui.set_status("Open folder cancelled");
+            }
+            Some(Cmd::Redraw)
+        }
     }
 }
 
@@ -90,7 +158,10 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
 pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
     match cmd_id {
         CommandId::NewFile => update_layout(model, LayoutMsg::NewTab),
+        CommandId::OpenFile => update_app(model, AppMsg::OpenFileDialog),
+        CommandId::OpenFolder => update_app(model, AppMsg::OpenFolderDialog),
         CommandId::SaveFile => update_app(model, AppMsg::SaveFile),
+        CommandId::SaveFileAs => update_app(model, AppMsg::SaveFileAs),
         CommandId::Undo => update_document(model, DocumentMsg::Undo),
         CommandId::Redo => update_document(model, DocumentMsg::Redo),
         CommandId::Cut => update_document(model, DocumentMsg::Cut),
@@ -130,7 +201,9 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
                 config_paths::ensure_all_config_dirs();
                 if !keymap_path.exists() {
                     if let Err(e) = create_default_keymap_file(&keymap_path) {
-                        model.ui.set_status(format!("Failed to create keymap: {}", e));
+                        model
+                            .ui
+                            .set_status(format!("Failed to create keymap: {}", e));
                         return Some(Cmd::Redraw);
                     }
                 }

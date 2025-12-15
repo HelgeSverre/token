@@ -323,6 +323,9 @@ impl FromStr for Command {
 
             // File operations
             "SaveFile" => Ok(Command::SaveFile),
+            "SaveFileAs" => Ok(Command::SaveFileAs),
+            "OpenFile" => Ok(Command::OpenFile),
+            "OpenFolder" => Ok(Command::OpenFolder),
             "NewFile" => Ok(Command::NewFile),
             "Quit" => Ok(Command::Quit),
 

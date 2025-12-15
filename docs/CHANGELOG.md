@@ -4,7 +4,50 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## v0.2.1 - 2025-12-15 (Latest)
+## v0.3.0 - 2025-12-15 (Latest)
+
+### Added - CLI Arguments with clap
+
+Full command-line argument parsing using clap:
+
+- **New `src/cli.rs` module** with `CliArgs`, `StartupConfig`, `StartupMode`
+- **Supported flags:**
+  - `token file.rs` - open file
+  - `token --new` / `-n` - start with empty buffer
+  - `token --line 42 file.rs` - open file at line 42
+  - `token --line 42 --column 10 file.rs` - open at line 42, column 10
+  - `token --wait` / `-w` - wait mode for git integration (parsed, not yet implemented)
+  - `token ./src` - open directory as workspace (sets workspace_root)
+- 1-indexed user input converted to 0-indexed internal representation
+- 7 new CLI tests
+
+### Added - Duplicate File Detection
+
+Already-open files now focus existing tab instead of creating duplicates:
+
+- Added `find_open_file()` and `is_file_open()` methods to `EditorArea`
+- Uses canonicalized paths to handle symlinks and relative paths
+- Status bar shows "Switched to: filename" when focusing existing tab
+- Integrated into `open_file_in_new_tab()` in layout.rs
+
+### Added - Visual Feedback for File Drag-Hover
+
+File drag-and-drop now shows visual feedback overlay:
+
+- **`DropState` struct** in `UiState` with `hovered_files` and `is_hovering`
+- **New `UiMsg` variants:** `FileHovered(PathBuf)`, `FileHoverCancelled`
+- Handles `WindowEvent::HoveredFile` and `HoveredFileCancelled`
+- Semi-transparent overlay centered in window with "Drop to open: filename" text
+- Overlay disappears when drag leaves window
+
+### Changed
+
+- Test count: 703 (was 603)
+- Dependencies: Added `clap = "4"` with derive feature
+
+---
+
+## v0.2.1 - 2025-12-15
 
 ### Added - Centralized Config Paths
 

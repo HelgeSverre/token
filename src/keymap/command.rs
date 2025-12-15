@@ -146,6 +146,12 @@ pub enum Command {
     // ========================================================================
     /// Save current file
     SaveFile,
+    /// Save current file with new name
+    SaveFileAs,
+    /// Open file dialog
+    OpenFile,
+    /// Open folder dialog
+    OpenFolder,
     /// Create new file
     NewFile,
     /// Quit application
@@ -302,6 +308,9 @@ impl Command {
 
             // File operations
             SaveFile => vec![Msg::App(AppMsg::SaveFile)],
+            SaveFileAs => vec![Msg::App(AppMsg::SaveFileAs)],
+            OpenFile => vec![Msg::App(AppMsg::OpenFileDialog)],
+            OpenFolder => vec![Msg::App(AppMsg::OpenFolderDialog)],
             NewFile => vec![Msg::App(AppMsg::NewFile)],
             Quit => vec![Msg::App(AppMsg::Quit)],
 
@@ -415,6 +424,9 @@ impl Command {
             Redo => "Redo",
 
             SaveFile => "Save File",
+            SaveFileAs => "Save File As",
+            OpenFile => "Open File",
+            OpenFolder => "Open Folder",
             NewFile => "New File",
             Quit => "Quit",
 

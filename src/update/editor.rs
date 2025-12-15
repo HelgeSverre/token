@@ -457,6 +457,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 if editor.cursors.len() > 1 {
                     editor.cursors.truncate(1);
                     editor.selections.truncate(1);
+                    editor.active_cursor_index = 0;
                 }
 
                 // Single selection semantics

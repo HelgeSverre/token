@@ -197,6 +197,12 @@ pub enum UiMsg {
     Modal(ModalMsg),
     /// Toggle a modal (open if closed, close if open)
     ToggleModal(ModalId),
+
+    // === File Drag-and-Drop ===
+    /// File is being hovered over the window
+    FileHovered(PathBuf),
+    /// Hover was cancelled (dragged away from window)
+    FileHoverCancelled,
 }
 
 /// Layout messages (split views, tabs, groups)
@@ -276,6 +282,22 @@ pub enum AppMsg {
     },
     /// Quit the application
     Quit,
+
+    // === File Dialog Messages ===
+    /// User requested "Save As..." dialog
+    SaveFileAs,
+    /// Save As dialog returned a path (or None if cancelled)
+    SaveFileAsDialogResult { path: Option<PathBuf> },
+
+    /// User requested "Open File..." dialog
+    OpenFileDialog,
+    /// Open File dialog returned paths (empty if cancelled)
+    OpenFileDialogResult { paths: Vec<PathBuf> },
+
+    /// User requested "Open Folder..." dialog
+    OpenFolderDialog,
+    /// Open Folder dialog returned folder (or None if cancelled)
+    OpenFolderDialogResult { folder: Option<PathBuf> },
 }
 
 /// Top-level message type

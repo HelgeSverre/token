@@ -1,14 +1,15 @@
 # Syntax Highlighting with Tree-sitter
 
-**Status:** Planned  
+**Status:** In Progress  
 **Created:** 2025-12-07  
+**Updated:** 2025-12-15  
 **Effort:** L (1-2 weeks)
 
 ---
 
 ## Overview
 
-Add syntax highlighting to the editor using [tree-sitter](https://tree-sitter.github.io/tree-sitter/) for incremental parsing. Initial support for PHP, HTML, and CSS with architecture designed for easy language addition.
+Add syntax highlighting to the editor using [tree-sitter](https://tree-sitter.github.io/tree-sitter/) for incremental parsing. Initial support for **YAML, Markdown, and Rust** with architecture designed for easy language addition (target: 20+ languages).
 
 ### Goals
 

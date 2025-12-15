@@ -329,6 +329,38 @@ impl EditorArea {
             .collect()
     }
 
+    /// Find if a file is already open by its path
+    /// Returns the document ID and group/tab info if found
+    pub fn find_open_file(&self, path: &std::path::Path) -> Option<(DocumentId, GroupId, usize)> {
+        // Canonicalize the input path for comparison
+        let canonical_path = path.canonicalize().ok()?;
+
+        for (doc_id, doc) in &self.documents {
+            if let Some(ref doc_path) = doc.file_path {
+                if let Ok(doc_canonical) = doc_path.canonicalize() {
+                    if doc_canonical == canonical_path {
+                        // Find which group/tab has this document
+                        for (group_id, group) in &self.groups {
+                            for (tab_idx, tab) in group.tabs.iter().enumerate() {
+                                if let Some(editor) = self.editors.get(&tab.editor_id) {
+                                    if editor.document_id == Some(*doc_id) {
+                                        return Some((*doc_id, *group_id, tab_idx));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if a file is already open (quick check without returning details)
+    pub fn is_file_open(&self, path: &std::path::Path) -> bool {
+        self.find_open_file(path).is_some()
+    }
+
     /// Adjust cursors in all editors (except the specified one) viewing the same document
     /// after an edit operation.
     ///

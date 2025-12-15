@@ -86,5 +86,4 @@ impl EditorConfig {
         self.theme = theme_id.to_string();
         self.save()
     }
-
 }

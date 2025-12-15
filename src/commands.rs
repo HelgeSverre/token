@@ -15,7 +15,10 @@ use crate::keymap::{Command as KeymapCommand, Keymap};
 pub enum CommandId {
     // File operations
     NewFile,
+    OpenFile,
+    OpenFolder,
     SaveFile,
+    SaveFileAs,
 
     // Edit operations
     Undo,
@@ -66,9 +69,24 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: Some("⇧⌘N"),
     },
     CommandDef {
+        id: CommandId::OpenFile,
+        label: "Open File...",
+        keybinding: Some("⌘O"),
+    },
+    CommandDef {
+        id: CommandId::OpenFolder,
+        label: "Open Folder...",
+        keybinding: Some("⇧⌘O"),
+    },
+    CommandDef {
         id: CommandId::SaveFile,
         label: "Save File",
         keybinding: Some("⌘S"),
+    },
+    CommandDef {
+        id: CommandId::SaveFileAs,
+        label: "Save File As...",
+        keybinding: Some("⇧⌘S"),
     },
     CommandDef {
         id: CommandId::Undo,
@@ -184,7 +202,10 @@ impl CommandId {
     pub fn to_keymap_command(self) -> Option<KeymapCommand> {
         match self {
             CommandId::NewFile => Some(KeymapCommand::NewTab), // NewFile maps to NewTab
+            CommandId::OpenFile => Some(KeymapCommand::OpenFile),
+            CommandId::OpenFolder => Some(KeymapCommand::OpenFolder),
             CommandId::SaveFile => Some(KeymapCommand::SaveFile),
+            CommandId::SaveFileAs => Some(KeymapCommand::SaveFileAs),
             CommandId::Undo => Some(KeymapCommand::Undo),
             CommandId::Redo => Some(KeymapCommand::Redo),
             CommandId::Cut => Some(KeymapCommand::Cut),
@@ -243,6 +264,25 @@ pub enum Cmd {
     OpenFileInEditor { path: PathBuf },
     /// Execute multiple commands
     Batch(Vec<Cmd>),
+
+    // File dialogs
+    /// Show native open file dialog
+    ShowOpenFileDialog {
+        /// Allow selecting multiple files
+        allow_multi: bool,
+        /// Starting directory for the dialog
+        start_dir: Option<PathBuf>,
+    },
+    /// Show native save file dialog
+    ShowSaveFileDialog {
+        /// Suggested file path (for pre-filling name/directory)
+        suggested_path: Option<PathBuf>,
+    },
+    /// Show native open folder dialog
+    ShowOpenFolderDialog {
+        /// Starting directory for the dialog
+        start_dir: Option<PathBuf>,
+    },
 }
 
 impl Cmd {
@@ -261,6 +301,10 @@ impl Cmd {
             Cmd::OpenInExplorer { .. } => true,
             Cmd::OpenFileInEditor { .. } => true,
             Cmd::Batch(cmds) => cmds.iter().any(|c| c.needs_redraw()),
+            // Dialogs don't need immediate redraw - they'll trigger messages when done
+            Cmd::ShowOpenFileDialog { .. } => false,
+            Cmd::ShowSaveFileDialog { .. } => false,
+            Cmd::ShowOpenFolderDialog { .. } => false,
         }
     }
 

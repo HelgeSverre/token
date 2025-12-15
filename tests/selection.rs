@@ -1195,3 +1195,51 @@ fn test_extend_selection_collapses_multi_cursor() {
     );
     assert_eq!(sel.head, Position::new(1, 4), "Head at target position");
 }
+
+#[test]
+fn test_extend_selection_resets_active_cursor_index() {
+    // Regression test: shift-click with multi-cursor should not panic
+    // when active_cursor_index > 0
+    let mut model = test_model("line one\nline two\nline three\nline four\nline five", 0, 0);
+
+    // Add multiple cursors and set active_cursor_index to non-zero
+    model.editor_mut().cursors.push(Cursor::at(1, 0));
+    model.editor_mut().cursors.push(Cursor::at(2, 0));
+    model.editor_mut().cursors.push(Cursor::at(3, 0));
+    model.editor_mut().cursors.push(Cursor::at(4, 0));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::new(Position::new(1, 0)));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::new(Position::new(2, 0)));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::new(Position::new(3, 0)));
+    model
+        .editor_mut()
+        .selections
+        .push(Selection::new(Position::new(4, 0)));
+    model.editor_mut().active_cursor_index = 4;
+
+    assert_eq!(model.editor().cursors.len(), 5, "Should have 5 cursors");
+    assert_eq!(
+        model.editor().active_cursor_index, 4,
+        "Active cursor should be index 4"
+    );
+
+    // This should not panic - it truncates to 1 cursor and must reset active_cursor_index
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::ExtendSelectionToPosition { line: 2, column: 5 }),
+    );
+
+    assert_eq!(model.editor().cursors.len(), 1, "Should collapse to 1 cursor");
+    assert_eq!(
+        model.editor().active_cursor_index, 0,
+        "Active cursor index should be reset to 0"
+    );
+}

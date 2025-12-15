@@ -92,6 +92,17 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             model.ui.open_modal(state);
             Some(Cmd::Redraw)
         }
+
+        // === File Drag-and-Drop ===
+        UiMsg::FileHovered(path) => {
+            model.ui.drop_state.start_hover(path);
+            Some(Cmd::Redraw)
+        }
+
+        UiMsg::FileHoverCancelled => {
+            model.ui.drop_state.cancel_hover();
+            Some(Cmd::Redraw)
+        }
     }
 }
 

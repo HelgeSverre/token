@@ -8,6 +8,21 @@ For completed work, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Recently Completed
 
+### File Operations – Phases 1-5 Complete ✅
+
+**Design:** [feature/file-operations.md](feature/file-operations.md) | **Completed:** 2025-12-15
+
+Comprehensive file handling with dialogs, CLI arguments, and drag-drop feedback:
+
+- **Phase 1:** Refactored `AppModel::new()` with `ViewportGeometry`, `load_config_and_theme()`, `create_initial_session()` helpers
+- **Phase 2:** Native file dialogs via `rfd` crate (⌘O Open File, ⇧⌘O Open Folder, ⇧⌘S Save As)
+- **Phase 3:** Visual feedback for file drag-hover (`DropState`, overlay rendering)
+- **Phase 4:** File validation (`FileOpenError`, binary detection, 50MB size limit)
+- **Phase 5:** CLI arguments with `clap` (`--new`, `--wait`, `--line`, `--column`)
+- **Duplicate file detection:** Already-open files focus existing tab
+- Added `workspace_root: Option<PathBuf>` to `AppModel`
+- 703 total tests passing
+
 ### Centralized Config Paths ✅
 
 **Completed:** 2025-12-15
@@ -158,16 +173,17 @@ All cursor movement operations now work with multiple cursors:
 
 ## Planned Features
 
-### File Dropping
+### Workspace & File Tree Sidebar (Phase 6)
 
-**Design:** [feature/handle-file-dropping.md](archived/handle-file-dropping.md)
+**Design:** [feature/file-operations.md](feature/file-operations.md)
 
-Drag-and-drop file handling:
+Remaining Phase 6 work for file operations:
 
-- Handle `WindowEvent::DroppedFile` and `HoveredFile` from winit
-- Visual overlay during drag hover
-- Open files in tabs, switch to existing if already open
-- Binary file detection and size limits
+- **Workspace concept** with `Workspace` struct, `FileTree`, `FileNode`
+- **Sidebar rendering** with file tree and expand/collapse folders
+- **File system watching** with `notify` crate
+- **Keyboard shortcuts:** Cmd+B toggle sidebar, arrow navigation
+- **Mouse interaction:** Click to open file, click to expand/collapse folder
 
 ### Workspace Management
 
@@ -227,6 +243,7 @@ Group rapid consecutive edits into single undo entries:
 
 | Feature                     | Status      | Design Doc                                                                               |
 | --------------------------- | ----------- |------------------------------------------------------------------------------------------|
+| File Operations             | ✅ P1-5     | [feature/file-operations.md](feature/file-operations.md)                                 |
 | GUI Cleanup (Frame/Painter) | ✅ Phase 1  | [GUI-CLEANUP.md](GUI-CLEANUP.md)                                                         |
 | Debug Tracing               | ✅ Complete | [feature/tracing-instrumentation.md](feature/tracing-instrumentation.md)                 |
 | Codebase Organization       | ✅ Complete | [archived/ORGANIZATION-CODEBASE.md](archived/ORGANIZATION-CODEBASE.md)                   |
@@ -239,7 +256,6 @@ Group rapid consecutive edits into single undo entries:
 | Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md)     |
 | Configurable Keymapping     | ✅ Complete | [archived/KEYMAPPING_IMPLEMENTATION_PLAN.md](archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) |
 | Keymap Enhancements         | Future      | [future/keymap-enhancements.md](future/keymap-enhancements.md)                           |
-| File Dropping               | Planned     | [feature/handle-file-dropping.md](archived/handle-file-dropping.md)                       |
 | Workspace Management        | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                       |
 | Syntax Highlighting         | Planned     | [feature/syntax-highlighting.md](feature/syntax-highlighting.md)                         |
 
@@ -298,7 +314,10 @@ src/
 ├── config_paths.rs      # Centralized config directory paths
 ├── theme.rs             # Theme, Color, ThemeInfo, load_theme()
 ├── overlay.rs           # OverlayConfig, OverlayBounds, render functions
-└── util.rs              # CharType enum, is_punctuation, char_type
+└── util/
+    ├── mod.rs           # Module exports, re-exports
+    ├── text.rs          # CharType enum, is_punctuation, char_type
+    └── file_validation.rs # FileOpenError, validate_file_for_opening, is_likely_binary
 
 themes/
 ├── dark.yaml            # Default dark theme (VS Code-inspired)
@@ -326,4 +345,4 @@ tests/                   # Integration tests
 └── theme.rs             # 15 tests (Color, YAML parsing, theme loading)
 ```
 
-**Test count:** 597 total (61 lib + 33 main + 503 integration, 1 ignored)
+**Test count:** 703 total (74 lib + 33 main + 596 integration, 1 ignored)

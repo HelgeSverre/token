@@ -842,6 +842,42 @@ impl Renderer {
         }
     }
 
+    /// Render the file drop overlay when files are being dragged over the window.
+    #[allow(clippy::too_many_arguments)]
+    fn render_drop_overlay(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        window_width: usize,
+        window_height: usize,
+        line_height: usize,
+        char_width: f32,
+    ) {
+        // Semi-transparent overlay covering the entire window
+        frame.dim(0x80); // 50% dim
+
+        // Draw centered drop zone
+        let text = model.ui.drop_state.display_text();
+        let text_len = text.chars().count();
+
+        let box_width = ((text_len as f32 + 4.0) * char_width).round() as usize;
+        let box_height = line_height * 3;
+        let box_x = (window_width.saturating_sub(box_width)) / 2;
+        let box_y = (window_height.saturating_sub(box_height)) / 2;
+
+        let bg_color = model.theme.overlay.background.to_argb_u32();
+        let border_color = model.theme.overlay.highlight.to_argb_u32();
+        let fg_color = model.theme.overlay.foreground.to_argb_u32();
+
+        frame.draw_bordered_rect(box_x, box_y, box_width, box_height, bg_color, border_color);
+
+        // Centered text
+        let text_x = box_x + (box_width - (text_len as f32 * char_width).round() as usize) / 2;
+        let text_y = box_y + line_height;
+
+        painter.draw(frame, text_x, text_y, &text, fg_color);
+    }
+
     pub fn render(
         &mut self,
         model: &mut AppModel,
@@ -930,6 +966,22 @@ impl Renderer {
             let mut painter =
                 TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
             Self::render_modals(
+                &mut frame,
+                &mut painter,
+                model,
+                width_usize,
+                height_usize,
+                line_height,
+                char_width,
+            );
+        }
+
+        // Render drop overlay (layer 3 - on top of modals)
+        if model.ui.drop_state.is_hovering {
+            let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
+            let mut painter =
+                TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
+            Self::render_drop_overlay(
                 &mut frame,
                 &mut painter,
                 model,

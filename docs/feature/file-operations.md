@@ -6,7 +6,7 @@ Comprehensive file handling including dialogs, drag-and-drop, CLI arguments, and
 
 ## Overview
 
-### Current State (as of implementation)
+### Current State (as of 2025-12-15)
 
 **Implemented:**
 - `Document::from_file(path)` - Synchronous file loading
@@ -17,14 +17,15 @@ Comprehensive file handling including dialogs, drag-and-drop, CLI arguments, and
 - `EditorConfig` persistence to `~/.config/token-editor/config.yaml`
 - Theme loading with user → builtin fallback
 - Multiple files via CLI args open as tabs
+- ✅ **Phase 1:** `AppModel::new()` refactored with `ViewportGeometry`, `load_config_and_theme()`, `create_initial_session()` helpers
+- ✅ **Phase 2:** Native file dialogs via `rfd` crate (⌘O Open File, ⇧⌘O Open Folder, ⇧⌘S Save As)
+- ✅ **Phase 3:** Visual feedback during file drag-hover (`DropState`, overlay rendering)
+- ✅ **Phase 4:** File validation (`FileOpenError`, binary detection, 50MB size limit) in `src/util/file_validation.rs`
+- ✅ **Phase 5:** CLI arguments with `clap` (`--new`, `--wait`, `--line`, `--column`) in `src/cli.rs`
+- ✅ **Duplicate file detection:** Already-open files focus existing tab instead of opening again
 
 **Not Implemented:**
-- File dialogs (Save As, Open File, Open Folder)
-- Visual feedback during file drag-hover
-- File validation (binary detection, size limits)
-- CLI argument parsing with flags (`--new`, `--wait`, `--line`)
-- Workspace concept with file tree sidebar
-- Duplicate file detection (already-open files)
+- Workspace concept with file tree sidebar (Phase 6)
 
 ### Architecture
 
@@ -44,7 +45,9 @@ Result message → back to update()
 
 ---
 
-## Phase 1: Refactor AppModel::new()
+## Phase 1: Refactor AppModel::new() ✅
+
+**Status:** Completed 2025-12-15
 
 **Goal:** Separate concerns - config/theme loading, file loading, UI initialization.
 
@@ -136,15 +139,17 @@ impl AppModel {
 
 ### Tasks
 
-- [ ] Add `ViewportGeometry` struct
-- [ ] Extract `load_config_and_theme()` helper
-- [ ] Extract `create_initial_session()` helper  
-- [ ] Add `workspace_root: Option<PathBuf>` to `AppModel`
-- [ ] Refactor `AppModel::new()` to use helpers
+- [x] Add `ViewportGeometry` struct
+- [x] Extract `load_config_and_theme()` helper
+- [x] Extract `create_initial_session()` helper  
+- [x] Add `workspace_root: Option<PathBuf>` to `AppModel`
+- [x] Refactor `AppModel::new()` to use helpers
 
 ---
 
-## Phase 2: File Dialogs with rfd
+## Phase 2: File Dialogs with rfd ✅
+
+**Status:** Completed 2025-12-15
 
 **Goal:** Native Save As, Open File, and Open Folder dialogs.
 
@@ -332,18 +337,20 @@ fn process_cmd(&self, cmd: Cmd, window: &Window, proxy: &EventLoopProxy<Msg>) {
 
 ### Tasks
 
-- [ ] Add `rfd` to Cargo.toml
-- [ ] Add dialog `Cmd` variants
-- [ ] Add dialog `AppMsg` variants
-- [ ] Add `CommandId::SaveFileAs`, `OpenFile`, `OpenFolder`
-- [ ] Implement `update_app` handlers for dialog messages
-- [ ] Implement `process_cmd` for dialog commands
-- [ ] Add keybindings (⇧⌘S, ⌘O, ⇧⌘O)
-- [ ] Wire up command palette entries
+- [x] Add `rfd` to Cargo.toml
+- [x] Add dialog `Cmd` variants (`ShowOpenFileDialog`, `ShowSaveFileDialog`, `ShowOpenFolderDialog`)
+- [x] Add dialog `AppMsg` variants (`SaveFileAs`, `OpenFileDialog`, `OpenFolderDialog` + results)
+- [x] Add `CommandId::SaveFileAs`, `OpenFile`, `OpenFolder`
+- [x] Implement `update_app` handlers for dialog messages
+- [x] Implement `process_cmd` for dialog commands (runs in background thread)
+- [x] Add keybindings (⇧⌘S, ⌘O, ⇧⌘O) in `keymap.yaml` and defaults
+- [x] Wire up command palette entries
 
 ---
 
-## Phase 3: Visual Feedback for File Dropping
+## Phase 3: Visual Feedback for File Dropping ✅
+
+**Status:** Completed 2025-12-15
 
 **Goal:** Show overlay when files are dragged over the window.
 
@@ -478,19 +485,21 @@ fn render_drop_overlay(&mut self, model: &AppModel) {
 
 ### Tasks
 
-- [ ] Add `DropState` to `UiState`
-- [ ] Add `DropMsg` message type
-- [ ] Handle `WindowEvent::HoveredFile` and `HoveredFileCancelled`
-- [ ] Create `update_drop()` handler
-- [ ] Add `DropZoneTheme` to theme
-- [ ] Implement `render_drop_overlay()`
-- [ ] Update existing `DroppedFile` handling to use `DropMsg`
+- [x] Add `DropState` to `UiState`
+- [x] Add drop-related messages to `UiMsg` (`FileHovered`, `FileHoverCancelled`)
+- [x] Handle `WindowEvent::HoveredFile` and `HoveredFileCancelled`
+- [x] Implement drop overlay rendering in `src/view/mod.rs`
+- [x] Use existing theme overlay colors for drop feedback
 
 ---
 
-## Phase 4: File Validation
+## Phase 4: File Validation ✅
+
+**Status:** Completed 2025-12-15
 
 **Goal:** Validate files before opening (binary detection, size limits, permissions).
+
+**Implementation:** Created `src/util/file_validation.rs` with validation utilities.
 
 ### Error Types
 
@@ -582,15 +591,20 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) {
 
 ### Tasks
 
-- [ ] Add `FileOpenError` enum
-- [ ] Implement `validate_file_for_opening()`
-- [ ] Implement `is_binary_file()`
-- [ ] Integrate validation into `open_file_in_new_tab()`
-- [ ] Add user-friendly error messages to status bar
+- [x] Add `FileOpenError` enum with `NotFound`, `PermissionDenied`, `IsDirectory`, `BinaryFile`, `TooLarge`, `IoError`
+- [x] Implement `validate_file_for_opening()` - checks existence, permissions, size (50MB limit)
+- [x] Implement `is_likely_binary()` - scans first 8KB for null bytes
+- [x] Integrate validation into `open_file_in_new_tab()` in `src/update/layout.rs`
+- [x] Integrate validation into `create_initial_session()` in `src/model/mod.rs`
+- [x] Add `filename_for_display()` helper for error messages
+- [x] User-friendly error messages shown in status bar
+- [x] 6 unit tests for validation functions
 
 ---
 
-## Phase 5: CLI Arguments with clap
+## Phase 5: CLI Arguments with clap ✅
+
+**Status:** Completed 2025-12-15
 
 **Goal:** Parse command-line arguments with flags for startup behavior.
 
@@ -721,13 +735,27 @@ fn main() {
 
 ### Tasks
 
-- [ ] Add `clap` to Cargo.toml
-- [ ] Create `src/cli.rs` module
-- [ ] Implement `CliArgs` with derive macros
-- [ ] Implement `StartupConfig` and `StartupMode`
-- [ ] Update `main()` to use CLI parsing
-- [ ] Handle `--line` and `--column` flags
-- [ ] Handle `--wait` mode for git integration
+- [x] Add `clap` to Cargo.toml
+- [x] Create `src/cli.rs` module
+- [x] Implement `CliArgs` with derive macros
+- [x] Implement `StartupConfig` and `StartupMode`
+- [x] Update `main()` to use CLI parsing
+- [x] Handle `--line` and `--column` flags (1-indexed to 0-indexed conversion)
+- [ ] Handle `--wait` mode for git integration (flag parsed but not yet implemented)
+- [x] 7 unit tests for CLI parsing
+
+---
+
+## Duplicate File Detection ✅
+
+**Status:** Completed 2025-12-15
+
+**Implementation:** Added `find_open_file()` and `is_file_open()` methods to `EditorArea` in `src/model/editor_area.rs`.
+
+When opening a file that's already open:
+- The existing tab is focused instead of creating a new one
+- Status bar shows "Switched to: filename"
+- Works with canonicalized paths to handle symlinks/relative paths
 
 ---
 
@@ -769,34 +797,38 @@ notify = "6.1"
 
 ## Success Criteria
 
-### Phase 1 (Refactor)
-- [ ] `AppModel::new()` is clean with separated concerns
-- [ ] `ViewportGeometry` calculates dimensions
-- [ ] `workspace_root` field exists for future use
+### Phase 1 (Refactor) ✅
+- [x] `AppModel::new()` is clean with separated concerns
+- [x] `ViewportGeometry` calculates dimensions
+- [x] `workspace_root` field exists for future use
 
-### Phase 2 (Dialogs)
-- [ ] ⌘O opens native Open File dialog
-- [ ] ⇧⌘S opens native Save As dialog
-- [ ] ⇧⌘O opens native Open Folder dialog
-- [ ] Dialogs work on macOS, Linux, Windows
-- [ ] Commands appear in command palette
+### Phase 2 (Dialogs) ✅
+- [x] ⌘O opens native Open File dialog
+- [x] ⇧⌘S opens native Save As dialog
+- [x] ⇧⌘O opens native Open Folder dialog
+- [x] Dialogs work on macOS, Linux, Windows (via rfd)
+- [x] Commands appear in command palette
 
-### Phase 3 (Drop Feedback)
-- [ ] Dragging files shows overlay with file names
-- [ ] Overlay disappears when drag leaves window
-- [ ] Dropping opens files (existing behavior preserved)
+### Phase 3 (Drop Feedback) ✅
+- [x] Dragging files shows overlay with file names
+- [x] Overlay disappears when drag leaves window
+- [x] Dropping opens files (existing behavior preserved)
 
-### Phase 4 (Validation)
-- [ ] Binary files show error message
-- [ ] Large files (>50MB) show error with size
-- [ ] Missing files show "not found" error
-- [ ] Permission errors are caught
+### Phase 4 (Validation) ✅
+- [x] Binary files show error message
+- [x] Large files (>50MB) show error with size
+- [x] Missing files show "not found" error
+- [x] Permission errors are caught
 
-### Phase 5 (CLI)
-- [ ] `token file.rs` opens file
-- [ ] `token --new` starts with empty buffer
-- [ ] `token --line 42 file.rs` opens at line 42
-- [ ] `token ./src` opens directory as workspace
+### Phase 5 (CLI) ✅
+- [x] `token file.rs` opens file
+- [x] `token --new` starts with empty buffer
+- [x] `token --line 42 file.rs` opens at line 42
+- [x] `token ./src` opens directory as workspace (sets workspace_root)
+
+### Duplicate File Detection ✅
+- [x] Opening already-open file focuses existing tab
+- [x] Canonicalized path comparison handles symlinks
 
 ### Phase 6 (Workspace)
 - [ ] Sidebar shows file tree

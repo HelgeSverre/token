@@ -22,7 +22,10 @@ fn test_toggle_modal_opens_command_palette() {
 
     assert!(model.ui.active_modal.is_none());
 
-    update(&mut model, Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)));
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)),
+    );
 
     assert!(model.ui.active_modal.is_some());
     assert_eq!(
@@ -35,10 +38,16 @@ fn test_toggle_modal_opens_command_palette() {
 fn test_toggle_modal_closes_same_modal() {
     let mut model = test_model("hello\n", 0, 0);
 
-    update(&mut model, Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)));
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)),
+    );
     assert!(model.ui.active_modal.is_some());
 
-    update(&mut model, Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)));
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)),
+    );
     assert!(model.ui.active_modal.is_none());
 }
 
@@ -46,7 +55,10 @@ fn test_toggle_modal_closes_same_modal() {
 fn test_toggle_modal_switches_to_different_modal() {
     let mut model = test_model("hello\n", 0, 0);
 
-    update(&mut model, Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)));
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)),
+    );
     assert_eq!(
         model.ui.active_modal.as_ref().unwrap().id(),
         ModalId::CommandPalette
@@ -98,17 +110,14 @@ fn test_command_palette_insert_char() {
 #[test]
 fn test_command_palette_delete_backward() {
     let mut model = test_model("hello\n", 0, 0);
-    model.ui.open_modal(ModalState::CommandPalette(
-        CommandPaletteState {
+    model
+        .ui
+        .open_modal(ModalState::CommandPalette(CommandPaletteState {
             input: "save".to_string(),
             selected_index: 0,
-        },
-    ));
+        }));
 
-    update(
-        &mut model,
-        Msg::Ui(UiMsg::Modal(ModalMsg::DeleteBackward)),
-    );
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteBackward)));
 
     if let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal {
         assert_eq!(state.input, "sav");
@@ -121,12 +130,12 @@ fn test_command_palette_delete_backward() {
 #[test]
 fn test_command_palette_delete_word_backward() {
     let mut model = test_model("hello\n", 0, 0);
-    model.ui.open_modal(ModalState::CommandPalette(
-        CommandPaletteState {
+    model
+        .ui
+        .open_modal(ModalState::CommandPalette(CommandPaletteState {
             input: "switch theme".to_string(),
             selected_index: 5,
-        },
-    ));
+        }));
 
     update(
         &mut model,
@@ -161,12 +170,12 @@ fn test_command_palette_select_next() {
 #[test]
 fn test_command_palette_select_previous() {
     let mut model = test_model("hello\n", 0, 0);
-    model.ui.open_modal(ModalState::CommandPalette(
-        CommandPaletteState {
+    model
+        .ui
+        .open_modal(ModalState::CommandPalette(CommandPaletteState {
             input: String::new(),
             selected_index: 5,
-        },
-    ));
+        }));
 
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectPrevious)));
 
@@ -196,12 +205,12 @@ fn test_command_palette_select_previous_at_zero() {
 #[test]
 fn test_command_palette_input_resets_selection() {
     let mut model = test_model("hello\n", 0, 0);
-    model.ui.open_modal(ModalState::CommandPalette(
-        CommandPaletteState {
+    model
+        .ui
+        .open_modal(ModalState::CommandPalette(CommandPaletteState {
             input: String::new(),
             selected_index: 5,
-        },
-    ));
+        }));
 
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar('a'))));
 
@@ -350,17 +359,16 @@ fn test_find_replace_insert_char() {
 #[test]
 fn test_find_replace_delete_backward() {
     let mut model = test_model("hello\n", 0, 0);
-    model.ui.open_modal(ModalState::FindReplace(FindReplaceState {
-        query: "search".to_string(),
-        replacement: String::new(),
-        replace_mode: false,
-        case_sensitive: false,
-    }));
+    model
+        .ui
+        .open_modal(ModalState::FindReplace(FindReplaceState {
+            query: "search".to_string(),
+            replacement: String::new(),
+            replace_mode: false,
+            case_sensitive: false,
+        }));
 
-    update(
-        &mut model,
-        Msg::Ui(UiMsg::Modal(ModalMsg::DeleteBackward)),
-    );
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteBackward)));
 
     if let Some(ModalState::FindReplace(state)) = &model.ui.active_modal {
         assert_eq!(state.query, "searc");
@@ -448,10 +456,7 @@ fn test_delete_backward_without_modal_returns_none() {
     let mut model = test_model("hello\n", 0, 0);
     assert!(model.ui.active_modal.is_none());
 
-    let result = update(
-        &mut model,
-        Msg::Ui(UiMsg::Modal(ModalMsg::DeleteBackward)),
-    );
+    let result = update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteBackward)));
     assert!(result.is_none());
 }
 
@@ -562,10 +567,7 @@ fn test_open_goto_line_message() {
 fn test_open_find_replace_message() {
     let mut model = test_model("hello\n", 0, 0);
 
-    update(
-        &mut model,
-        Msg::Ui(UiMsg::Modal(ModalMsg::OpenFindReplace)),
-    );
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::OpenFindReplace)));
 
     assert!(model.ui.active_modal.is_some());
     assert_eq!(

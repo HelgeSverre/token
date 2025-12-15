@@ -2,6 +2,7 @@
 
 use super::status_bar::{StatusBar, TransientMessage};
 use crate::theme::{list_available_themes, ThemeInfo};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 // ============================================================================
@@ -89,6 +90,50 @@ impl ModalState {
     }
 }
 
+// ============================================================================
+// Drop State (file drag-and-drop feedback)
+// ============================================================================
+
+/// State for file drag-and-drop visual feedback
+#[derive(Debug, Clone, Default)]
+pub struct DropState {
+    /// Files currently being hovered over the window
+    pub hovered_files: Vec<PathBuf>,
+    /// Whether files are currently being dragged over the window
+    pub is_hovering: bool,
+}
+
+impl DropState {
+    /// Start hovering with a file
+    pub fn start_hover(&mut self, path: PathBuf) {
+        if !self.hovered_files.contains(&path) {
+            self.hovered_files.push(path);
+        }
+        self.is_hovering = true;
+    }
+
+    /// Cancel the hover (user dragged away)
+    pub fn cancel_hover(&mut self) {
+        self.hovered_files.clear();
+        self.is_hovering = false;
+    }
+
+    /// Get display text for the hover overlay
+    pub fn display_text(&self) -> String {
+        match self.hovered_files.len() {
+            0 => String::new(),
+            1 => {
+                let filename = self.hovered_files[0]
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "file".to_string());
+                format!("Drop to open: {}", filename)
+            }
+            n => format!("Drop to open {} files", n),
+        }
+    }
+}
+
 /// UI state - status messages and cursor animation
 #[derive(Debug, Clone)]
 pub struct UiState {
@@ -108,6 +153,8 @@ pub struct UiState {
     pub is_saving: bool,
     /// Currently active modal (if any)
     pub active_modal: Option<ModalState>,
+    /// File drag-and-drop state
+    pub drop_state: DropState,
 }
 
 impl UiState {
@@ -122,6 +169,7 @@ impl UiState {
             is_loading: false,
             is_saving: false,
             active_modal: None,
+            drop_state: DropState::default(),
         }
     }
 
@@ -136,6 +184,7 @@ impl UiState {
             is_loading: false,
             is_saving: false,
             active_modal: None,
+            drop_state: DropState::default(),
         }
     }
 

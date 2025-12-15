@@ -5,7 +5,7 @@
 use token::config::EditorConfig;
 use token::config_paths;
 use token::keymap::{
-    default_bindings, merge_bindings, Command, Condition, Keybinding, KeyCode, Keystroke, Modifiers,
+    default_bindings, merge_bindings, Command, Condition, KeyCode, Keybinding, Keystroke, Modifiers,
 };
 
 // ========================================================================

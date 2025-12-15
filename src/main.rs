@@ -3,8 +3,10 @@
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
 use anyhow::Result;
-use std::path::PathBuf;
+use clap::Parser;
 use winit::event_loop::EventLoop;
+
+use token::cli::CliArgs;
 
 #[cfg(debug_assertions)]
 mod debug_dump;
@@ -23,12 +25,12 @@ fn main() -> Result<()> {
 
     token::tracing::init();
 
-    // Parse command-line arguments - collect all file paths
-    let args: Vec<String> = std::env::args().collect();
-    let file_paths: Vec<PathBuf> = args.iter().skip(1).map(PathBuf::from).collect();
+    // Parse command-line arguments
+    let args = CliArgs::parse();
+    let startup_config = args.into_config().map_err(|e| anyhow::anyhow!(e))?;
 
     let event_loop = EventLoop::new()?;
-    let mut app = App::new(800, 600, file_paths);
+    let mut app = App::new(800, 600, startup_config);
 
     event_loop.run_app(&mut app)?;
 
@@ -98,6 +100,7 @@ mod tests {
             window_size: (800, 600),
             line_height: 20,
             char_width: 10.0,
+            workspace_root: None,
             #[cfg(debug_assertions)]
             debug_overlay: None,
         }
@@ -674,6 +677,7 @@ mod tests {
             window_size: (800, 600),
             line_height: 20,
             char_width: 10.0,
+            workspace_root: None,
             #[cfg(debug_assertions)]
             debug_overlay: None,
         };
