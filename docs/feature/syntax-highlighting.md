@@ -1,9 +1,11 @@
 # Syntax Highlighting with Tree-sitter
 
-**Status:** In Progress  
+**Status:** Phase 1-2 Complete, Phase 3+ Ready  
 **Created:** 2025-12-07  
 **Updated:** 2025-12-15  
-**Effort:** L (1-2 weeks)
+**Effort:** L (1-2 weeks for MVP, ongoing for languages)
+
+**See also:** [Adding Languages Guide](adding-languages.md)
 
 ---
 
@@ -1006,67 +1008,79 @@ Merge with syntactic → Store in document → Cmd::Redraw
 
 ## Implementation Phases
 
-### Phase 1A: Core Infrastructure (2-3 days)
+### Phase 1A: Core Infrastructure ✅
 
-- [ ] Add `src/syntax/` module structure
-- [ ] Define `HighlightToken`, `SyntaxHighlights`, `LanguageId`
-- [ ] Add `SyntaxMsg` and `Cmd::ParseSyntax` with `EditInfo`
-- [ ] Add `SyntaxTheme` to theme system, update YAML theme files
-- [ ] Add tree-sitter + YAML/Markdown/Rust grammar dependencies
+- [x] Add `src/syntax/` module structure
+- [x] Define `HighlightToken`, `SyntaxHighlights`, `LanguageId`
+- [x] Add `SyntaxMsg` and `Cmd::ParseSyntax` with `EditInfo`
+- [x] Add `SyntaxTheme` to theme system, update YAML theme files
+- [x] Add tree-sitter + YAML/Markdown/Rust grammar dependencies
 
-### Phase 1B: Async Parser & Debouncing (2 days)
+### Phase 1B: Async Parser & Debouncing ✅
 
-- [ ] Implement `ParserState` with tree caching per document
-- [ ] Add syntax worker thread with mpsc channels
-- [ ] Implement debouncing (50ms timer thread pattern)
-- [ ] Implement revision-based staleness checks
-- [ ] Wire `process_cmd()` for `DebouncedSyntaxParse` and `RunSyntaxParse`
+- [x] Implement `ParserState` with tree caching per document
+- [x] Add syntax worker thread with mpsc channels
+- [x] Implement debouncing (30ms timer thread pattern)
+- [x] Implement revision-based staleness checks
+- [x] Wire `process_cmd()` for `DebouncedSyntaxParse` and `RunSyntaxParse`
 
-### Phase 1C: Single Language - YAML (1 day)
+### Phase 1C: Single Language - YAML ✅
 
-- [ ] Add YAML highlights.scm query (embedded)
-- [ ] Connect document edits → parse request flow
-- [ ] Test with `keymap.yaml`
-- [ ] Basic unit tests
+- [x] Add YAML highlights.scm query (embedded)
+- [x] Connect document edits → parse request flow
+- [x] Test with `keymap.yaml`
+- [x] Basic unit tests
 
-### Phase 1D: Rendering Integration (1-2 days)
+### Phase 1D: Rendering Integration ✅
 
-- [ ] Extend `TextPainter` with `draw_with_highlights()`
-- [ ] Update editor line rendering to pass highlights
-- [ ] Optimize character-by-character rendering
+- [x] Update editor line rendering to pass highlights
+- [x] Tab expansion for highlight token columns
+- [x] Preserve old highlights until new ones arrive (no FOUC)
 
-### Phase 1E: Additional Languages (1 day)
+### Phase 1E: Additional Languages ✅
 
-- [ ] Add Markdown highlights.scm
-- [ ] Add Rust highlights.scm
-- [ ] Test with README.md and Rust source files
+- [x] Add Markdown highlights.scm
+- [x] Add Rust highlights.scm (uses built-in query)
+- [x] Test with README.md and Rust source files
 
-### Phase 2: Incremental Parsing (1-2 days)
+### Phase 2A: Incremental Parsing ✅
 
-- [ ] Generate `EditInfo` from document edits
-- [ ] Pass `EditInfo` to worker for `tree.edit()` before reparse
-- [ ] Verify incremental parsing works correctly
-- [ ] Performance comparison: full vs incremental
+- [x] `DocParseState` caches tree + source per document
+- [x] `compute_incremental_edit()` diffs old/new source
+- [x] `tree.edit()` called before incremental reparse
+- [x] Performance benchmarks in `benches/syntax.rs`
 
-### Phase 3: Web Stack & Injection (2-3 days)
+### Phase 2B: Web Stack Languages ✅
 
-- [ ] Add PHP, HTML, CSS, JavaScript grammars
+- [x] Add HTML, CSS, JavaScript grammars
+- [x] Add custom query files for each
+- [x] Per-language query compilation tests
+
+### Phase 3: More Languages (Ready for Implementation)
+
+See [Adding Languages Guide](adding-languages.md) for step-by-step instructions.
+
+**Priority languages:**
+- [ ] TypeScript (`tree-sitter-typescript`)
+- [ ] JSON (`tree-sitter-json`)
+- [ ] TOML (`tree-sitter-toml`)
+
+**Common languages:**
+- [ ] Python (`tree-sitter-python`)
+- [ ] Go (`tree-sitter-go`)
+- [ ] PHP (`tree-sitter-php`)
+
+### Phase 4: Language Injection (Future)
+
 - [ ] Implement `injection.scm` parsing for PHP
 - [ ] Add `MultiLanguageDocument` layer tracking
 - [ ] Test PHP files with embedded HTML/CSS/JS
 
-### Phase 4: Language Expansion (ongoing)
-
-- [ ] Add remaining Phase 2 languages (TypeScript)
-- [ ] Add Phase 3 languages (Python, Go, C, C++, JSON, TOML)
-- [ ] External `queries/` directory structure for easy customization
-
-### Phase 5: Polish & Optimization (1-2 days)
+### Phase 5: Polish & Optimization (Future)
 
 - [ ] Viewport-limited queries (only highlight visible + buffer)
 - [ ] Cancellation of in-flight parses via AtomicBool
-- [ ] Performance profiling and optimization
-- [ ] Documentation
+- [ ] External `queries/` directory for user customization
 
 ---
 

@@ -36,18 +36,44 @@ Tree-sitter based syntax highlighting with async background parsing:
 - **Async parser:** Background worker thread with mpsc channels
 - **Debouncing:** 30ms timer prevents parsing on every keystroke
 - **Revision tracking:** Staleness checks discard outdated parse results
-- **Languages:** YAML, Markdown, Rust, HTML, CSS, JavaScript (Phase 1-2 complete)
+- **Languages:** 17 languages supported:
+  - Phase 1: YAML, Markdown, Rust
+  - Phase 2: HTML, CSS, JavaScript
+  - Phase 3: TypeScript, TSX, JSON, TOML
+  - Phase 4: Python, Go, PHP
+  - Phase 5: C, C++, Java, Bash
 - **Theme integration:** `SyntaxTheme` struct with VS Code-like default colors
 - **Rendering:** Highlighted text rendering with proper tab expansion
 - **Auto-trigger:** Parsing on document load and content changes
 - **No FOUC:** Old highlights preserved until new ones arrive
+
+**v0.3.3 - Phase 3-5 languages:**
+- Added TypeScript/TSX with `tree-sitter-typescript` (0.23)
+- Added JSON with `tree-sitter-json` (0.24)
+- Added TOML with `tree-sitter-toml-ng` (0.7)
+- Added Python with `tree-sitter-python` (0.25) using built-in queries
+- Added Go with `tree-sitter-go` (0.25) using built-in queries
+- Added PHP with `tree-sitter-php` (0.24) using built-in queries
+- Added C with `tree-sitter-c` (0.24) using built-in queries
+- Added C++ with `tree-sitter-cpp` (0.23) using built-in queries
+- Added Java with `tree-sitter-java` (0.23) using built-in queries
+- Added Bash with `tree-sitter-bash` (0.25) using built-in queries
+- Upgraded tree-sitter core from 0.24 to 0.25 (ABI compatibility)
+- 671 total tests passing
+
+**Performance improvements (v0.3.2):**
+- Implemented proper incremental parsing with `tree.edit()` and tree caching
+- `ParserState` caches trees per document for incremental updates
+- `compute_incremental_edit()` diffs old/new source to generate `InputEdit`
+- Added comprehensive benchmark suite (`benches/syntax.rs`)
+- Parse times: 67µs (100 lines) to 7.5ms (10000 lines)
 
 **Bug fixes (v0.3.1):**
 - Fixed tree-sitter incremental parsing bug causing misaligned highlights
 - Fixed flash of unstyled text during re-parsing
 - Fixed tab expansion in highlight token rendering
 
-Future phases: Additional languages (PHP, Python, Go, TypeScript), language injection, proper incremental parsing with `tree.edit()`.
+Future phases: Language injection for PHP/HTML/Vue, semantic highlighting via LSP.
 
 ### File Operations – Phases 1-5 Complete ✅
 
