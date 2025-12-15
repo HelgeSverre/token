@@ -17,8 +17,8 @@ use token::model::AppModel;
 /// Height of the tab bar in pixels
 pub const TAB_BAR_HEIGHT: usize = 28;
 
-/// Width of the tabulator character in spaces
-pub const TABULATOR_WIDTH: usize = 4;
+// Re-export TABULATOR_WIDTH from util::text for single source of truth
+pub use token::util::text::TABULATOR_WIDTH;
 
 // Re-export model geometry helpers for unified access
 pub use token::model::{gutter_border_x, text_start_x};
@@ -34,30 +34,41 @@ pub fn status_bar_height(line_height: usize) -> usize {
 }
 
 /// Compute number of visible text lines given window height
+///
+/// Delegates to `ViewportGeometry::compute_visible_lines()` for the canonical calculation.
+/// Kept for API compatibility - prefer using `ViewportGeometry` directly.
+#[inline]
 #[allow(dead_code)]
 pub fn compute_visible_lines(window_height: u32, line_height: usize, status_bar_h: usize) -> usize {
-    if line_height == 0 {
-        return 25; // fallback
-    }
-    let available = (window_height as usize).saturating_sub(status_bar_h);
-    available / line_height
+    token::model::ViewportGeometry::compute_visible_lines(window_height, line_height, status_bar_h)
 }
 
 /// Compute number of visible columns given window width
+///
+/// Delegates to `ViewportGeometry::compute_visible_columns()` for the canonical calculation.
+/// Kept for API compatibility - prefer using `ViewportGeometry` directly.
+#[inline]
 #[allow(dead_code)]
 pub fn compute_visible_columns(window_width: u32, char_width: f32) -> usize {
-    if char_width <= 0.0 {
-        return 80; // fallback
-    }
-    let text_x = text_start_x(char_width).round();
-    ((window_width as f32 - text_x) / char_width).floor() as usize
+    token::model::ViewportGeometry::compute_visible_columns(window_width, char_width)
 }
 
 // ============================================================================
 // Tab Expansion Helpers
 // ============================================================================
 
-/// Expand tab characters to spaces for display
+/// Expand tab characters to spaces for display.
+///
+/// Converts each tab character to the appropriate number of spaces based on
+/// the current visual column and `TABULATOR_WIDTH`. This is used for rendering
+/// text where tabs need to be visually aligned.
+///
+/// # Example
+/// ```ignore
+/// let text = "a\tb";  // Tab at column 1
+/// let expanded = expand_tabs_for_display(text);
+/// assert_eq!(expanded, "a   b");  // Tab becomes 3 spaces (to reach column 4)
+/// ```
 pub fn expand_tabs_for_display(text: &str) -> String {
     let mut result = String::with_capacity(text.len() * 2);
     let mut visual_col = 0;
@@ -78,7 +89,18 @@ pub fn expand_tabs_for_display(text: &str) -> String {
     result
 }
 
-/// Convert a character column to a visual column (accounting for tabs)
+/// Convert a character column index to a visual (screen) column position.
+///
+/// Accounts for tab expansion when calculating the screen position.
+/// A character column is an index into the string's characters, while
+/// a visual column is the screen position accounting for variable-width tabs.
+///
+/// # Arguments
+/// * `text` - The line of text containing possible tab characters
+/// * `char_col` - The character index to convert
+///
+/// # Returns
+/// The visual column (screen position) for the given character index.
 pub fn char_col_to_visual_col(text: &str, char_col: usize) -> usize {
     let mut visual_col = 0;
     for (i, ch) in text.chars().enumerate() {
@@ -94,7 +116,19 @@ pub fn char_col_to_visual_col(text: &str, char_col: usize) -> usize {
     visual_col
 }
 
-/// Convert a visual column to a character column (accounting for tabs)
+/// Convert a visual (screen) column position to a character column index.
+///
+/// This is the inverse of `char_col_to_visual_col`. Given a screen position,
+/// it returns the character index that would be at that position, accounting
+/// for tab expansion.
+///
+/// # Arguments
+/// * `text` - The line of text containing possible tab characters
+/// * `visual_col` - The screen column position to convert
+///
+/// # Returns
+/// The character index corresponding to the given visual column.
+/// If the visual column is past the end of the line, returns the line length.
 pub fn visual_col_to_char_col(text: &str, visual_col: usize) -> usize {
     let mut current_visual = 0;
     let mut char_col = 0;
@@ -142,22 +176,7 @@ pub fn is_in_group_tab_bar(y: f64, group_rect: &Rect) -> bool {
     local_y >= 0.0 && local_y < TAB_BAR_HEIGHT as f64
 }
 
-/// Get the display title for a tab (helper for tab_at_position)
-fn tab_title(model: &AppModel, tab: &token::model::editor_area::Tab) -> String {
-    let editor = match model.editor_area.editors.get(&tab.editor_id) {
-        Some(e) => e,
-        None => return "Untitled".to_string(),
-    };
-    let doc_id = match editor.document_id {
-        Some(id) => id,
-        None => return "Untitled".to_string(),
-    };
-    let document = match model.editor_area.documents.get(&doc_id) {
-        Some(d) => d,
-        None => return "Untitled".to_string(),
-    };
-    document.display_name()
-}
+use super::helpers::get_tab_display_name;
 
 /// Find which tab index is at the given x position within a group's tab bar.
 /// Returns None if the click is not on any tab.
@@ -170,7 +189,7 @@ pub fn tab_at_position(
     let mut tab_x = 4.0; // Initial padding
 
     for (idx, tab) in group.tabs.iter().enumerate() {
-        let title = tab_title(model, tab);
+        let title = get_tab_display_name(model, tab);
         let tab_width = (title.len() as f32 * char_width).round() as f64 + 16.0;
 
         if x >= tab_x && x < tab_x + tab_width {
@@ -209,11 +228,7 @@ pub fn pixel_to_cursor(
     };
 
     let line_text = model.document().get_line(line).unwrap_or_default();
-    let line_text_trimmed = if line_text.ends_with('\n') {
-        &line_text[..line_text.len() - 1]
-    } else {
-        &line_text
-    };
+    let line_text_trimmed = super::helpers::trim_line_ending(&line_text);
     let column = visual_col_to_char_col(line_text_trimmed, visual_column);
 
     let line_len = model.document().line_length(line);
@@ -284,11 +299,7 @@ pub fn pixel_to_cursor_in_group(
     };
 
     let line_text = document.get_line(line).unwrap_or_default();
-    let line_text_trimmed = if line_text.ends_with('\n') {
-        &line_text[..line_text.len() - 1]
-    } else {
-        &line_text
-    };
+    let line_text_trimmed = super::helpers::trim_line_ending(&line_text);
     let column = visual_col_to_char_col(line_text_trimmed, visual_column);
 
     let line_len = document.line_length(line);
@@ -366,7 +377,7 @@ pub fn modal_bounds(
 }
 
 /// Check if a point is inside the modal dialog
-pub fn point_in_modal(
+pub fn is_in_modal(
     x: f64,
     y: f64,
     window_width: usize,
