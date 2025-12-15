@@ -14,13 +14,14 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorIcon, Window};
 
 use token::commands::{filter_commands, Cmd};
+use token::keymap::{Command, KeyAction, KeyContext, Keymap, load_default_keymap, keystroke_from_winit};
 use token::messages::{AppMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, UiMsg};
 use token::model::editor::Position;
 use token::model::editor_area::{Rect, SplitDirection};
 use token::model::{AppModel, ModalState};
 use token::update::update;
 
-use crate::view::geometry::point_in_modal;
+use crate::view::geometry::{is_in_group_tab_bar, point_in_modal};
 
 use super::input::handle_key;
 use crate::view::Renderer;
@@ -32,6 +33,7 @@ use winit::keyboard::ModifiersState;
 
 pub struct App {
     model: AppModel,
+    keymap: Keymap,
     renderer: Option<Renderer>,
     window: Option<Rc<Window>>,
     context: Option<Context<Rc<Window>>>,
@@ -55,8 +57,11 @@ pub struct App {
 impl App {
     pub fn new(window_width: u32, window_height: u32, file_paths: Vec<PathBuf>) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
+        let keymap = Keymap::with_bindings(load_default_keymap());
+        
         Self {
             model: AppModel::new(window_width, window_height, file_paths),
+            keymap,
             renderer: None,
             window: None,
             context: None,
@@ -75,6 +80,25 @@ impl App {
             msg_tx,
             msg_rx,
             perf: PerfStats::default(),
+        }
+    }
+    
+    /// Dispatch a command through the update loop
+    fn dispatch_command(&mut self, command: Command) -> Option<Cmd> {
+        let mut result = None;
+        for msg in command.to_msgs() {
+            result = update(&mut self.model, msg).or(result);
+        }
+        result
+    }
+
+    /// Extract current context from the model for keybinding evaluation
+    fn get_key_context(&self) -> KeyContext {
+        KeyContext {
+            has_selection: !self.model.editor().active_selection().is_empty(),
+            has_multiple_cursors: self.model.editor().has_multiple_cursors(),
+            modal_active: self.model.ui.has_modal(),
+            editor_focused: !self.model.ui.has_modal(),
         }
     }
 
@@ -152,10 +176,15 @@ impl App {
             return;
         }
 
-        // Tab bar → Default
-        if renderer.is_in_tab_bar(y) {
-            window.set_cursor(CursorIcon::Default);
-            return;
+        // Any group's tab bar → Default
+        for group in self.model.editor_area.groups.values() {
+            if is_in_group_tab_bar(y, &group.rect)
+                && x >= group.rect.x as f64
+                && x < (group.rect.x + group.rect.width) as f64
+            {
+                window.set_cursor(CursorIcon::Default);
+                return;
+            }
         }
 
         // Editor area → Text (I-beam)
@@ -221,6 +250,39 @@ impl App {
                     let shift = self.modifiers.shift_key();
                     let alt = self.modifiers.alt_key();
                     let logo = self.modifiers.super_key();
+                    
+                    // Try keymap first for simple commands, but only when:
+                    // - No modal is active (modals handled by handle_modal_key in input.rs)
+                    // - Not in option double-tap mode with alt pressed (multi-cursor gesture)
+                    let skip_keymap = self.model.ui.has_modal() 
+                        || (self.option_double_tapped && alt);
+                    
+                    if !skip_keymap {
+                        if let Some(keystroke) = keystroke_from_winit(
+                            &event.logical_key,
+                            event.physical_key,
+                            ctrl,
+                            shift,
+                            alt,
+                            logo,
+                        ) {
+                            let context = self.get_key_context();
+                            match self.keymap.handle_keystroke_with_context(keystroke, Some(&context)) {
+                                KeyAction::Execute(command) if command.is_simple() => {
+                                    return self.dispatch_command(command);
+                                }
+                                KeyAction::AwaitMore => {
+                                    // Chord in progress - don't fall through to handle_key
+                                    return Some(Cmd::Redraw);
+                                }
+                                _ => {
+                                    // NoMatch or complex command - fall through to handle_key
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Fall back to legacy handle_key for complex/context-dependent behavior
                     handle_key(
                         &mut self.model,
                         event.logical_key.clone(),
@@ -329,36 +391,46 @@ impl App {
                             return None;
                         }
 
-                        if renderer.is_in_tab_bar(y) {
-                            // Find which group this tab bar belongs to
-                            // Use y + 50 to hit the editor area below the tab bar
-                            if let Some(group_id) = self
-                                .model
-                                .editor_area
-                                .group_at_point(x as f32, y as f32 + 50.0)
-                            {
-                                // Focus the group if not already focused
-                                if group_id != self.model.editor_area.focused_group_id {
-                                    update(
+                        // Per-group tab bar hit testing (handles splits correctly)
+                        // First, find the clicked group/tab without holding borrow
+                        let tab_click_info: Option<(_, f64, Rect)> = self
+                            .model
+                            .editor_area
+                            .groups
+                            .iter()
+                            .find_map(|(&gid, g)| {
+                                if is_in_group_tab_bar(y, &g.rect)
+                                    && x >= g.rect.x as f64
+                                    && x < (g.rect.x + g.rect.width) as f64
+                                {
+                                    Some((gid, x - g.rect.x as f64, g.rect))
+                                } else {
+                                    None
+                                }
+                            });
+
+                        if let Some((group_id, local_x, _rect)) = tab_click_info {
+                            // Focus the group if not already focused
+                            if group_id != self.model.editor_area.focused_group_id {
+                                update(
+                                    &mut self.model,
+                                    Msg::Layout(LayoutMsg::FocusGroup(group_id)),
+                                );
+                            }
+
+                            // Find which tab was clicked
+                            if let Some(group) = self.model.editor_area.groups.get(&group_id) {
+                                if let Some(tab_index) =
+                                    renderer.tab_at_position(local_x, &self.model, group)
+                                {
+                                    return update(
                                         &mut self.model,
-                                        Msg::Layout(LayoutMsg::FocusGroup(group_id)),
+                                        Msg::Layout(LayoutMsg::SwitchToTab(tab_index)),
                                     );
                                 }
-
-                                // Find which tab was clicked
-                                if let Some(group) = self.model.editor_area.groups.get(&group_id) {
-                                    // Adjust x for the group's rect offset
-                                    let local_x = x - group.rect.x as f64;
-                                    if let Some(tab_index) =
-                                        renderer.tab_at_position(local_x, &self.model, group)
-                                    {
-                                        return update(
-                                            &mut self.model,
-                                            Msg::Layout(LayoutMsg::SwitchToTab(tab_index)),
-                                        );
-                                    }
-                                }
                             }
+
+                            // Click in empty tab bar area - consume but don't click-through
                             return None;
                         }
 
@@ -460,8 +532,14 @@ impl App {
                             return None;
                         }
 
-                        if renderer.is_in_tab_bar(y) {
-                            return None;
+                        // Ignore middle clicks on any group's tab bar
+                        for group in self.model.editor_area.groups.values() {
+                            if is_in_group_tab_bar(y, &group.rect)
+                                && x >= group.rect.x as f64
+                                && x < (group.rect.x + group.rect.width) as f64
+                            {
+                                return None;
+                            }
                         }
 
                         let (line, column) = renderer.pixel_to_cursor(x, y, &self.model);

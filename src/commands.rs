@@ -4,6 +4,8 @@
 
 use std::path::PathBuf;
 
+use crate::keymap::{Command as KeymapCommand, Keymap};
+
 // ============================================================================
 // Command Palette Registry
 // ============================================================================
@@ -161,6 +163,45 @@ pub fn filter_commands(query: &str) -> Vec<&'static CommandDef> {
             label_lower.contains(&query_lower)
         })
         .collect()
+}
+
+/// Map CommandId to keymap::Command for keybinding lookup
+impl CommandId {
+    pub fn to_keymap_command(self) -> Option<KeymapCommand> {
+        match self {
+            CommandId::NewFile => Some(KeymapCommand::NewTab), // NewFile maps to NewTab
+            CommandId::SaveFile => Some(KeymapCommand::SaveFile),
+            CommandId::Undo => Some(KeymapCommand::Undo),
+            CommandId::Redo => Some(KeymapCommand::Redo),
+            CommandId::Cut => Some(KeymapCommand::Cut),
+            CommandId::Copy => Some(KeymapCommand::Copy),
+            CommandId::Paste => Some(KeymapCommand::Paste),
+            CommandId::SelectAll => Some(KeymapCommand::SelectAll),
+            CommandId::GotoLine => Some(KeymapCommand::ToggleGotoLine),
+            CommandId::SplitHorizontal => Some(KeymapCommand::SplitHorizontal),
+            CommandId::SplitVertical => Some(KeymapCommand::SplitVertical),
+            CommandId::CloseGroup => None, // No direct mapping yet
+            CommandId::NextTab => Some(KeymapCommand::NextTab),
+            CommandId::PrevTab => Some(KeymapCommand::PrevTab),
+            CommandId::CloseTab => Some(KeymapCommand::CloseTab),
+            CommandId::Find => Some(KeymapCommand::ToggleFindReplace),
+            CommandId::ShowCommandPalette => Some(KeymapCommand::ToggleCommandPalette),
+            CommandId::SwitchTheme => None, // No keybinding
+        }
+    }
+}
+
+/// Get keybinding display string for a command from the keymap
+pub fn keybinding_for_command(id: CommandId, keymap: &Keymap) -> Option<String> {
+    let keymap_cmd = id.to_keymap_command()?;
+    keymap.display_for(keymap_cmd)
+}
+
+/// Get keybinding display string using the static fallback (for when keymap isn't available)
+pub fn keybinding_for_command_static(id: CommandId) -> Option<&'static str> {
+    COMMANDS.iter()
+        .find(|cmd| cmd.id == id)
+        .and_then(|cmd| cmd.keybinding)
 }
 
 // ============================================================================

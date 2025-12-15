@@ -1,0 +1,307 @@
+# Token Editor - Default Keybindings
+#
+# Modifier keys:
+#   cmd   - Command on macOS, Ctrl on Windows/Linux (platform "command" key)
+#   ctrl  - Control key
+#   shift - Shift key
+#   alt   - Alt/Option key
+#   meta  - Command on macOS, Win on Windows (explicit meta key)
+#
+# Key names:
+#   - Single characters: a, b, c, 1, 2, etc.
+#   - Named keys: enter, escape, tab, backspace, delete, space
+#   - Arrows: up, down, left, right
+#   - Navigation: home, end, pageup, pagedown, insert
+#   - Function keys: f1, f2, ... f12
+#   - Numpad: numpad0-9, numpad_add, numpad_subtract, etc.
+#
+# Format:
+#   - key: "modifier+key" or just "key"
+#     command: CommandName
+#
+# Use "cmd" for the platform command key (Cmd on macOS, Ctrl elsewhere)
+
+bindings:
+  # ===========================================================================
+  # File Operations
+  # ===========================================================================
+  - key: "cmd+s"
+    command: SaveFile
+
+  - key: "cmd+shift+n"
+    command: NewTab
+
+  - key: "cmd+w"
+    command: CloseTab
+
+  # ===========================================================================
+  # Undo/Redo
+  # ===========================================================================
+  - key: "cmd+z"
+    command: Undo
+
+  - key: "cmd+shift+z"
+    command: Redo
+
+  - key: "cmd+y"
+    command: Redo
+
+  # ===========================================================================
+  # Clipboard
+  # ===========================================================================
+  - key: "cmd+c"
+    command: Copy
+
+  - key: "cmd+x"
+    command: Cut
+
+  - key: "cmd+v"
+    command: Paste
+
+  # ===========================================================================
+  # Selection
+  # ===========================================================================
+  - key: "cmd+a"
+    command: SelectAll
+
+  - key: "cmd+d"
+    command: Duplicate
+
+  - key: "cmd+j"
+    command: SelectNextOccurrence
+
+  - key: "cmd+shift+j"
+    command: UnselectOccurrence
+
+  # ===========================================================================
+  # Modals/Dialogs
+  # ===========================================================================
+  - key: "cmd+shift+a"
+    command: ToggleCommandPalette
+
+  - key: "cmd+l"
+    command: ToggleGotoLine
+
+  - key: "cmd+f"
+    command: ToggleFindReplace
+
+  # ===========================================================================
+  # Layout: Splits
+  # ===========================================================================
+  - key: "cmd+shift+alt+h"
+    command: SplitHorizontal
+
+  - key: "cmd+shift+alt+v"
+    command: SplitVertical
+
+  # ===========================================================================
+  # Layout: Tabs
+  # ===========================================================================
+  - key: "cmd+alt+right"
+    command: NextTab
+
+  - key: "cmd+alt+left"
+    command: PrevTab
+
+  # ===========================================================================
+  # Layout: Focus Groups
+  # ===========================================================================
+  - key: "ctrl+tab"
+    command: FocusNextGroup
+
+  - key: "ctrl+shift+tab"
+    command: FocusPrevGroup
+
+  - key: "cmd+shift+1"
+    command: FocusGroup1
+
+  - key: "cmd+shift+2"
+    command: FocusGroup2
+
+  - key: "cmd+shift+3"
+    command: FocusGroup3
+
+  - key: "cmd+shift+4"
+    command: FocusGroup4
+
+  # Numpad group focus (no modifiers)
+  - key: "numpad1"
+    command: FocusGroup1
+
+  - key: "numpad2"
+    command: FocusGroup2
+
+  - key: "numpad3"
+    command: FocusGroup3
+
+  - key: "numpad4"
+    command: FocusGroup4
+
+  - key: "numpad_add"
+    command: SplitVertical
+
+  - key: "numpad_subtract"
+    command: SplitHorizontal
+
+  # ===========================================================================
+  # Basic Navigation (no selection)
+  # ===========================================================================
+  - key: "up"
+    command: MoveCursorUp
+
+  - key: "down"
+    command: MoveCursorDown
+
+  - key: "left"
+    command: MoveCursorLeft
+
+  - key: "right"
+    command: MoveCursorRight
+
+  - key: "home"
+    command: MoveCursorLineStart
+
+  - key: "end"
+    command: MoveCursorLineEnd
+
+  - key: "pageup"
+    command: PageUp
+
+  - key: "pagedown"
+    command: PageDown
+
+  # Word navigation (Alt+Arrow)
+  - key: "alt+left"
+    command: MoveCursorWordLeft
+
+  - key: "alt+right"
+    command: MoveCursorWordRight
+
+  # Document navigation (Ctrl+Home/End)
+  - key: "ctrl+home"
+    command: MoveCursorDocumentStart
+
+  - key: "ctrl+end"
+    command: MoveCursorDocumentEnd
+
+  # ===========================================================================
+  # Selection Navigation (Shift+key)
+  # ===========================================================================
+  - key: "shift+up"
+    command: MoveCursorUpWithSelection
+
+  - key: "shift+down"
+    command: MoveCursorDownWithSelection
+
+  - key: "shift+left"
+    command: MoveCursorLeftWithSelection
+
+  - key: "shift+right"
+    command: MoveCursorRightWithSelection
+
+  - key: "shift+home"
+    command: MoveCursorLineStartWithSelection
+
+  - key: "shift+end"
+    command: MoveCursorLineEndWithSelection
+
+  - key: "shift+pageup"
+    command: PageUpWithSelection
+
+  - key: "shift+pagedown"
+    command: PageDownWithSelection
+
+  # Word navigation with selection
+  - key: "alt+shift+left"
+    command: MoveCursorWordLeftWithSelection
+
+  - key: "alt+shift+right"
+    command: MoveCursorWordRightWithSelection
+
+  # Document navigation with selection
+  - key: "ctrl+shift+home"
+    command: MoveCursorDocumentStartWithSelection
+
+  - key: "ctrl+shift+end"
+    command: MoveCursorDocumentEndWithSelection
+
+  # ===========================================================================
+  # Editing
+  # ===========================================================================
+  - key: "enter"
+    command: InsertNewline
+
+  - key: "backspace"
+    command: DeleteBackward
+
+  - key: "delete"
+    command: DeleteForward
+
+  - key: "alt+backspace"
+    command: DeleteWordBackward
+
+  - key: "alt+delete"
+    command: DeleteWordForward
+
+  - key: "cmd+backspace"
+    command: DeleteLine
+
+  # Tab handling - context-aware
+  # Tab with selection → indent
+  - key: "tab"
+    command: IndentLines
+    when: ["has_selection"]
+
+  # Tab without selection → insert tab character
+  - key: "tab"
+    command: InsertTab
+    when: ["no_selection"]
+
+  - key: "shift+tab"
+    command: UnindentLines
+
+  # ===========================================================================
+  # Expand/Shrink Selection
+  # ===========================================================================
+  - key: "alt+up"
+    command: ExpandSelection
+
+  - key: "alt+down"
+    command: ShrinkSelection
+
+  # ===========================================================================
+  # Escape (smart clear: multi-cursor → selection → nothing)
+  # Context-aware cascade:
+  # 1. If multiple cursors → collapse to single cursor
+  # 2. Else if selection → clear selection  
+  # 3. Else → do nothing (EscapeSmartClear handles the no-op case)
+  # ===========================================================================
+  - key: "escape"
+    command: CollapseToSingleCursor
+    when: ["has_multiple_cursors"]
+
+  - key: "escape"
+    command: ClearSelection
+    when: ["has_selection", "single_cursor"]
+
+  - key: "escape"
+    command: EscapeSmartClear
+
+  # ===========================================================================
+  # macOS-specific: Cmd+Arrow for line navigation
+  # ===========================================================================
+  - key: "meta+left"
+    command: MoveCursorLineStart
+    platform: macos
+
+  - key: "meta+right"
+    command: MoveCursorLineEnd
+    platform: macos
+
+  - key: "meta+shift+left"
+    command: MoveCursorLineStartWithSelection
+    platform: macos
+
+  - key: "meta+shift+right"
+    command: MoveCursorLineEndWithSelection
+    platform: macos

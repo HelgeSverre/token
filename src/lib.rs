@@ -6,6 +6,7 @@
 pub mod commands;
 #[cfg(debug_assertions)]
 pub mod debug_overlay;
+pub mod keymap;
 pub mod messages;
 pub mod model;
 pub mod overlay;
