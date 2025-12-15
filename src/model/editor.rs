@@ -1058,6 +1058,35 @@ impl EditorState {
     // All-cursors movement wrappers (Phase 1)
     // =========================================================================
 
+    /// Apply a cursor movement operation to all cursors, then deduplicate.
+    ///
+    /// This is the base helper for multi-cursor operations. The closure receives
+    /// the cursor index and should perform the movement for that cursor.
+    fn for_each_cursor<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&mut Self, usize),
+    {
+        for i in 0..self.cursors.len() {
+            f(self, i);
+        }
+        self.deduplicate_cursors();
+    }
+
+    /// Apply a cursor movement operation to all cursors and extend selections.
+    ///
+    /// After moving each cursor, updates the selection head to the new position.
+    fn for_each_cursor_extend_selection<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&mut Self, usize),
+    {
+        for i in 0..self.cursors.len() {
+            f(self, i);
+            let pos = self.cursors[i].to_position();
+            self.selections[i].head = pos;
+        }
+        self.deduplicate_cursors();
+    }
+
     /// Move all cursors left
     /// If a cursor has a selection, collapse to selection start instead of moving by 1 char
     pub fn move_all_cursors_left(&mut self, doc: &Document) {
@@ -1100,82 +1129,52 @@ impl EditorState {
 
     /// Move all cursors up
     pub fn move_all_cursors_up(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_up_at(doc, i);
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor(|s, i| s.move_cursor_up_at(doc, i));
     }
 
     /// Move all cursors down
     pub fn move_all_cursors_down(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_down_at(doc, i);
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor(|s, i| s.move_cursor_down_at(doc, i));
     }
 
     /// Move all cursors to line start
     pub fn move_all_cursors_line_start(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_line_start_at(doc, i);
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor(|s, i| s.move_cursor_line_start_at(doc, i));
     }
 
     /// Move all cursors to line end
     pub fn move_all_cursors_line_end(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_line_end_at(doc, i);
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor(|s, i| s.move_cursor_line_end_at(doc, i));
     }
 
     /// Move all cursors to document start
     pub fn move_all_cursors_document_start(&mut self) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_document_start_at(i);
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor(|s, i| s.move_cursor_document_start_at(i));
     }
 
     /// Move all cursors to document end
     pub fn move_all_cursors_document_end(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_document_end_at(doc, i);
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor(|s, i| s.move_cursor_document_end_at(doc, i));
     }
 
     /// Move all cursors word left
     pub fn move_all_cursors_word_left(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_word_left_at(doc, i);
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor(|s, i| s.move_cursor_word_left_at(doc, i));
     }
 
     /// Move all cursors word right
     pub fn move_all_cursors_word_right(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_word_right_at(doc, i);
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor(|s, i| s.move_cursor_word_right_at(doc, i));
     }
 
     /// Page up all cursors
     pub fn page_up_all_cursors(&mut self, doc: &Document, jump: usize) {
-        for i in 0..self.cursors.len() {
-            self.page_up_at(doc, jump, i);
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor(|s, i| s.page_up_at(doc, jump, i));
     }
 
     /// Page down all cursors
     pub fn page_down_all_cursors(&mut self, doc: &Document, jump: usize) {
-        for i in 0..self.cursors.len() {
-            self.page_down_at(doc, jump, i);
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor(|s, i| s.page_down_at(doc, jump, i));
     }
 
     // =========================================================================
@@ -1184,122 +1183,62 @@ impl EditorState {
 
     /// Move all cursors left and extend selections
     pub fn move_all_cursors_left_with_selection(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_left_at(doc, i);
-            let pos = self.cursors[i].to_position();
-            self.selections[i].head = pos;
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_left_at(doc, i));
     }
 
     /// Move all cursors right and extend selections
     pub fn move_all_cursors_right_with_selection(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_right_at(doc, i);
-            let pos = self.cursors[i].to_position();
-            self.selections[i].head = pos;
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_right_at(doc, i));
     }
 
     /// Move all cursors up and extend selections
     pub fn move_all_cursors_up_with_selection(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_up_at(doc, i);
-            let pos = self.cursors[i].to_position();
-            self.selections[i].head = pos;
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_up_at(doc, i));
     }
 
     /// Move all cursors down and extend selections
     pub fn move_all_cursors_down_with_selection(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_down_at(doc, i);
-            let pos = self.cursors[i].to_position();
-            self.selections[i].head = pos;
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_down_at(doc, i));
     }
 
     /// Move all cursors to line start and extend selections
     pub fn move_all_cursors_line_start_with_selection(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_line_start_at(doc, i);
-            let pos = self.cursors[i].to_position();
-            self.selections[i].head = pos;
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_line_start_at(doc, i));
     }
 
     /// Move all cursors to line end and extend selections
     pub fn move_all_cursors_line_end_with_selection(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_line_end_at(doc, i);
-            let pos = self.cursors[i].to_position();
-            self.selections[i].head = pos;
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_line_end_at(doc, i));
     }
 
     /// Move all cursors to document start and extend selections
     pub fn move_all_cursors_document_start_with_selection(&mut self) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_document_start_at(i);
-            let pos = self.cursors[i].to_position();
-            self.selections[i].head = pos;
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_document_start_at(i));
     }
 
     /// Move all cursors to document end and extend selections
     pub fn move_all_cursors_document_end_with_selection(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_document_end_at(doc, i);
-            let pos = self.cursors[i].to_position();
-            self.selections[i].head = pos;
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_document_end_at(doc, i));
     }
 
     /// Move all cursors word left and extend selections
     pub fn move_all_cursors_word_left_with_selection(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_word_left_at(doc, i);
-            let pos = self.cursors[i].to_position();
-            self.selections[i].head = pos;
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_word_left_at(doc, i));
     }
 
     /// Move all cursors word right and extend selections
     pub fn move_all_cursors_word_right_with_selection(&mut self, doc: &Document) {
-        for i in 0..self.cursors.len() {
-            self.move_cursor_word_right_at(doc, i);
-            let pos = self.cursors[i].to_position();
-            self.selections[i].head = pos;
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_word_right_at(doc, i));
     }
 
     /// Page up all cursors and extend selections
     pub fn page_up_all_cursors_with_selection(&mut self, doc: &Document, jump: usize) {
-        for i in 0..self.cursors.len() {
-            self.page_up_at(doc, jump, i);
-            let pos = self.cursors[i].to_position();
-            self.selections[i].head = pos;
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor_extend_selection(|s, i| s.page_up_at(doc, jump, i));
     }
 
     /// Page down all cursors and extend selections
     pub fn page_down_all_cursors_with_selection(&mut self, doc: &Document, jump: usize) {
-        for i in 0..self.cursors.len() {
-            self.page_down_at(doc, jump, i);
-            let pos = self.cursors[i].to_position();
-            self.selections[i].head = pos;
-        }
-        self.deduplicate_cursors();
+        self.for_each_cursor_extend_selection(|s, i| s.page_down_at(doc, jump, i));
     }
 }
 
