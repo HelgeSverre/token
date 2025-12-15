@@ -9,6 +9,24 @@ For archived phases, see [archived/old-roadmap-file.md](archived/old-roadmap-fil
 
 ## Recently Completed
 
+### Configurable Keymapping System ✅
+
+**Design:** [feature/KEYMAPPING_IMPLEMENTATION_PLAN.md](feature/KEYMAPPING_IMPLEMENTATION_PLAN.md) | **Completed:** 2025-12-15
+
+Data-driven keybinding system with YAML configuration:
+
+- **Core module** (`src/keymap/`): Types, commands, bindings, context, YAML parser
+- **74 default bindings** in `keymap.yaml` (embedded at compile time)
+- **Platform-aware `cmd` modifier**: Maps to Cmd on macOS, Ctrl elsewhere
+- **Context-aware bindings**: `when: ["has_selection"]` for conditional activation
+- **Bridge integration**: Keymap tried first, input.rs fallback for complex behaviors
+- **Chord infrastructure**: `KeyAction::AwaitMore` for multi-key sequences
+- Tab behavior: Indent with selection, insert tab without
+- Escape cascade: Multi-cursor → selection → nothing
+- Option double-tap preserved for multi-cursor gestures
+- 66 keymap tests, 539 total tests passing
+- Line selection fix: excludes newline character, cursor stays on same line
+
 ### GUI Phase 1 – Frame/Painter Abstraction ✅
 
 **Design:** [GUI-CLEANUP.md](GUI-CLEANUP.md) | **Completed:** 2025-12-08
@@ -132,17 +150,17 @@ CLI arguments and file tree sidebar:
 - File system watching for external changes
 - Dependencies: `clap` for CLI, `notify` for FS watching
 
-### Configurable Keymapping
+### User Keymap Configuration (Future)
 
-**Design:** [feature/KEYMAPPING.md](feature/KEYMAPPING.md)
+**Design:** [feature/KEYMAPPING_IMPLEMENTATION_PLAN.md](feature/KEYMAPPING_IMPLEMENTATION_PLAN.md)
 
-User-configurable keyboard mapping system:
+Extend the keymapping system with user customization:
 
-- TOML config files (`~/.config/token-editor/keymap.toml`)
-- Platform-agnostic modifiers (`mod+s` = Cmd on macOS, Ctrl elsewhere)
-- Multi-key chord sequences (`Ctrl+K Ctrl+C`)
-- Context-aware bindings (editor focus, selection active, etc.)
-- Maps to existing Msg enum for Elm-style dispatch
+- Load user keymap from `~/.config/token-editor/keymap.yaml`
+- Merge user bindings with defaults (user overrides take precedence)
+- Support `command: Unbound` to disable default bindings
+- Define default chord sequences (Ctrl+K Ctrl+C for comment, etc.)
+- Hot-reload on file change (optional)
 
 ### Command Palette & Modal System
 
@@ -193,7 +211,7 @@ Group rapid consecutive edits into single undo entries:
 | Selection & Multi-Cursor    | ✅ Complete | [archived/SELECTION_MULTICURSOR.md](archived/SELECTION_MULTICURSOR.md)               |
 | Multi-Cursor Movement       | ✅ Complete | [archived/MULTI_CURSOR_MOVEMENT.md](archived/MULTI_CURSOR_MOVEMENT.md)               |
 | Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md) |
-| Configurable Keymapping     | Planned     | [feature/KEYMAPPING.md](feature/KEYMAPPING.md)                                       |
+| Configurable Keymapping     | ✅ Complete | [feature/KEYMAPPING_IMPLEMENTATION_PLAN.md](feature/KEYMAPPING_IMPLEMENTATION_PLAN.md) |
 | File Dropping               | Planned     | [feature/handle-file-dropping.md](feature/handle-file-dropping.md)                   |
 | Workspace Management        | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                   |
 | Syntax Highlighting         | Planned     | [feature/syntax-highlighting.md](feature/syntax-highlighting.md)                     |
@@ -238,6 +256,17 @@ src/
 │   └── perf.rs          # PerfStats, debug overlay (debug only)
 ├── messages.rs          # Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg, AppMsg
 ├── commands.rs          # Cmd enum (Redraw, SaveFile, LoadFile, Batch)
+├── keymap/              # Configurable keybinding system
+│   ├── mod.rs           # Module exports
+│   ├── types.rs         # KeyCode, Keystroke, Modifiers
+│   ├── command.rs       # Command enum with to_msgs()
+│   ├── binding.rs       # Keybinding struct
+│   ├── context.rs       # KeyContext, Condition
+│   ├── config.rs        # YAML parsing
+│   ├── keymap.rs        # Keymap lookup engine
+│   ├── defaults.rs      # Default bindings loader
+│   ├── winit_adapter.rs # winit key event conversion
+│   └── tests.rs         # 66 keymap tests
 ├── theme.rs             # Theme, Color, TabBarTheme, SplitterTheme
 ├── overlay.rs           # OverlayConfig, OverlayBounds, render functions
 └── util.rs              # CharType enum, is_punctuation, char_type
@@ -266,4 +295,4 @@ tests/                   # Integration tests
 └── theme.rs             # 10 tests (Color, YAML parsing)
 ```
 
-**Test count:** 426 total (14 main + 412 integration, 2 ignored)
+**Test count:** 539 total (66 keymap + 14 main + 459 integration, 2 ignored)

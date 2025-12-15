@@ -4,7 +4,68 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## 2025-12-09 (Latest)
+## 2025-12-15 (Latest)
+
+### Added - Configurable Keymapping System
+
+Complete data-driven keybinding system with YAML configuration:
+
+**Core Module** (`src/keymap/`):
+- `KeyCode`, `Keystroke`, `Modifiers` - platform-agnostic key representation
+- `Command` enum - 52 bindable editor commands with `to_msgs()` conversion
+- `Keybinding` struct - binds keystroke to command with optional conditions
+- `Keymap` - lookup engine with context-aware binding resolution
+- `KeyContext` - captures editor state (has_selection, has_multiple_cursors, modal_active, editor_focused)
+- `Condition` enum - 7 conditions for context-aware bindings
+- YAML parser with platform-specific binding support
+
+**Default Bindings** (`keymap.yaml`):
+- 74 default bindings embedded at compile time
+- Platform-aware `cmd` modifier (Cmd on macOS, Ctrl elsewhere)
+- macOS-specific bindings (meta+arrow for line navigation)
+- Context-aware Tab (indent with selection, insert tab without)
+- Context-aware Escape (collapse multi-cursor → clear selection → nothing)
+
+**Integration** (`src/runtime/app.rs`):
+- Keymap tried first for all key events
+- Fallback to `input.rs` for complex behaviors (option double-tap, selection collapse on arrows)
+- `KeyContext` extracted from model state for binding evaluation
+
+**Commands Added**:
+- `DeleteWordForward` - Option+Delete deletes word after cursor
+- `InsertTab` - Insert tab character (for Tab without selection)
+- `EscapeSmartClear` - No-op fallback for Escape key
+
+### Fixed - Expand Selection Line Behavior
+
+Fixed line selection to exclude the newline character:
+
+**Before**: Expanding selection to line selected through the newline, placing cursor at start of next line
+**After**: Line selection ends at last character of line content, cursor stays on same line
+
+- Changed `select_line_at()` to end at last character of line content
+- Reordered checks in `expand_selection()` to check `is_line_selection_at` before `is_word_selection_at`
+- This fixes single-word lines where word selection equals line selection
+- Simplified `is_line_selection_at()` to only check same-line selection ending at line length
+
+### Fixed - Option Double-Tap for Multi-Cursor
+
+Fixed Option double-tap gesture being intercepted by keymap:
+
+**Before**: Keymap would handle Alt+Up/Down before input.rs could check for double-tap
+**After**: Keymap lookup is skipped when `option_double_tapped && alt` is true
+
+This preserves the Option+Option+Arrow gesture for adding cursors above/below.
+
+### Changed
+
+- Test count: 539 (was 537)
+- 66 keymap-specific tests
+- 2 new expand selection tests for line behavior
+
+---
+
+## 2025-12-09
 
 ### Added - Command Palette (GUI Phase 4)
 
