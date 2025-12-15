@@ -21,7 +21,7 @@ pub mod util;
 
 pub mod rendering {
     //! Rendering utilities exposed for benchmarks
-    
+
     /// Blend a foreground color onto a background color with a separate alpha value.
     ///
     /// This is the integer-based blend used for glyph rendering where the alpha

@@ -874,16 +874,12 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 let line_len = model.document().line_length(line);
 
                 // Convert visual columns to char columns for this line
-                let start_char_col = crate::util::text::visual_col_to_char_col(
-                    line_text_trimmed,
-                    left_visual_col,
-                )
-                .min(line_len);
-                let end_char_col = crate::util::text::visual_col_to_char_col(
-                    line_text_trimmed,
-                    right_visual_col,
-                )
-                .min(line_len);
+                let start_char_col =
+                    crate::util::text::visual_col_to_char_col(line_text_trimmed, left_visual_col)
+                        .min(line_len);
+                let end_char_col =
+                    crate::util::text::visual_col_to_char_col(line_text_trimmed, right_visual_col)
+                        .min(line_len);
                 let cursor_char_col = crate::util::text::visual_col_to_char_col(
                     line_text_trimmed,
                     current_visual_col,

@@ -19,13 +19,13 @@ use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
 };
 use token::messages::{AppMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, SyntaxMsg, UiMsg};
-use token::syntax::{LanguageId, ParserState};
 use token::model::editor::Position;
 use token::model::editor_area::{Rect, SplitDirection};
 use token::model::{AppModel, ModalState};
+use token::syntax::{LanguageId, ParserState};
 use token::update::update;
 
-use crate::view::geometry::{is_in_group_tab_bar, point_in_modal};
+use crate::view::geometry::{is_in_group_tab_bar, is_in_modal};
 
 use super::input::handle_key;
 use crate::view::Renderer;
@@ -445,7 +445,7 @@ impl App {
                             }
                             _ => (false, 0),
                         };
-                        let in_modal = point_in_modal(
+                        let in_modal = is_in_modal(
                             x,
                             y,
                             self.model.window_size.0 as usize,
@@ -820,11 +820,7 @@ impl App {
                     if delay_ms > 0 {
                         std::thread::sleep(std::time::Duration::from_millis(delay_ms));
                     }
-                    tracing::debug!(
-                        "Sending ParseReady: doc={} rev={}",
-                        document_id.0,
-                        revision
-                    );
+                    tracing::debug!("Sending ParseReady: doc={} rev={}", document_id.0, revision);
                     let _ = tx.send(Msg::Syntax(SyntaxMsg::ParseReady {
                         document_id,
                         revision,
@@ -993,8 +989,12 @@ fn syntax_worker_loop(rx: Receiver<SyntaxParseRequest>, msg_tx: Sender<Msg>) {
                 req.language
             );
 
-            let highlights =
-                parser_state.parse_and_highlight(&req.source, req.language, req.document_id, req.revision);
+            let highlights = parser_state.parse_and_highlight(
+                &req.source,
+                req.language,
+                req.document_id,
+                req.revision,
+            );
 
             let line_count = highlights.lines.len();
             let token_count: usize = highlights.lines.values().map(|lh| lh.tokens.len()).sum();

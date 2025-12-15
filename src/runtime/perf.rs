@@ -250,8 +250,8 @@ pub fn render_perf_overlay(
     theme: &Theme,
     line_height: usize,
 ) {
-    let width_usize = frame.width;
-    let height_usize = frame.height;
+    let width_usize = frame.width();
+    let height_usize = frame.height();
 
     let config = OverlayConfig::new(OverlayAnchor::TopRight, 380, 480)
         .with_margin(10)
@@ -259,7 +259,7 @@ pub fn render_perf_overlay(
 
     let bounds = config.compute_bounds(width_usize, height_usize);
     render_overlay_background(
-        frame.buffer,
+        frame.buffer_mut(),
         &bounds,
         config.background,
         width_usize,
@@ -268,7 +268,7 @@ pub fn render_perf_overlay(
 
     if let Some(border_color) = &theme.overlay.border {
         render_overlay_border(
-            frame.buffer,
+            frame.buffer_mut(),
             &bounds,
             border_color.to_argb_u32(),
             width_usize,
@@ -362,7 +362,7 @@ pub fn render_perf_overlay(
     painter.draw(frame, text_x, text_y, &avg_text, text_color);
     text_y += line_height + 4;
 
-    let cache_size = painter.glyph_cache.len();
+    let cache_size = painter.glyph_cache_size();
     let hit_rate = perf.cache_hit_rate();
     let cache_text = format!("Cache: {} glyphs", cache_size);
     painter.draw(frame, text_x, text_y, &cache_text, text_color);

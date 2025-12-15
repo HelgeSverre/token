@@ -218,7 +218,11 @@ impl DebugOverlay {
                 let line_count = highlights.lines.len();
                 let total_tokens: usize = highlights.lines.values().map(|lh| lh.tokens.len()).sum();
                 let hl_revision = highlights.revision;
-                let revision_match = if hl_revision == revision { "✓" } else { "✗ STALE" };
+                let revision_match = if hl_revision == revision {
+                    "✓"
+                } else {
+                    "✗ STALE"
+                };
 
                 lines.push(format!(
                     "  Highlights: {} lines, {} tokens (rev {} {})",

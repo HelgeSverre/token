@@ -488,7 +488,8 @@ mod tests {
         // After the edit:
         // 1. Document should have a new revision
         assert_eq!(
-            model.document().revision, 1,
+            model.document().revision,
+            1,
             "Revision should be incremented"
         );
 
@@ -501,19 +502,16 @@ mod tests {
         // 3. The command should include a syntax parse request
         let cmd = cmd.expect("Should return a command");
         let has_syntax_parse = match &cmd {
-            Cmd::Batch(cmds) => cmds.iter().any(|c| {
-                matches!(
-                    c,
-                    Cmd::DebouncedSyntaxParse {
-                        revision: 1,
-                        ..
-                    }
-                )
-            }),
+            Cmd::Batch(cmds) => cmds
+                .iter()
+                .any(|c| matches!(c, Cmd::DebouncedSyntaxParse { revision: 1, .. })),
             Cmd::DebouncedSyntaxParse { revision: 1, .. } => true,
             _ => false,
         };
-        assert!(has_syntax_parse, "Should schedule syntax parse with new revision");
+        assert!(
+            has_syntax_parse,
+            "Should schedule syntax parse with new revision"
+        );
 
         // 4. Buffer should have newline at start
         assert_eq!(
@@ -539,7 +537,8 @@ mod tests {
             "New highlights should have tokens on line 1"
         );
         assert!(
-            !new_highlights.lines.contains_key(&0) || new_highlights.lines.get(&0).unwrap().tokens.is_empty(),
+            !new_highlights.lines.contains_key(&0)
+                || new_highlights.lines.get(&0).unwrap().tokens.is_empty(),
             "Line 0 should be empty or have no tokens (it's just a newline)"
         );
 
