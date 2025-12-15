@@ -296,11 +296,7 @@ impl Keystroke {
             _ => format!("{}", self.key),
         };
 
-        if cfg!(target_os = "macos") {
-            format!("{}{}", parts.join(""), key_str)
-        } else {
-            format!("{}{}", parts.join(""), key_str)
-        }
+        format!("{}{}", parts.join(""), key_str)
     }
 }
 

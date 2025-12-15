@@ -27,6 +27,7 @@ mod command;
 mod config;
 mod context;
 mod defaults;
+#[allow(clippy::module_inception)]
 mod keymap;
 mod types;
 mod winit_adapter;

@@ -68,7 +68,7 @@ pub fn keystroke_from_winit(
     };
 
     // If logical key mapping failed, try physical key for numpad
-    let key_code = key_code.or_else(|| match physical_key {
+    let key_code = key_code.or(match physical_key {
         PhysicalKey::Code(code) => match code {
             WinitKeyCode::Numpad0 => Some(KeyCode::Numpad0),
             WinitKeyCode::Numpad1 => Some(KeyCode::Numpad1),
