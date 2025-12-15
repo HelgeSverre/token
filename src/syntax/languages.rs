@@ -17,15 +17,20 @@ pub enum LanguageId {
     Html,
     Css,
     JavaScript,
-    // Future phases
-    // Php,
-    // TypeScript,
-    // Python,
-    // Go,
-    // C,
-    // Cpp,
-    // Json,
-    // Toml,
+    // Phase 3 languages (priority)
+    TypeScript,
+    Tsx,
+    Json,
+    Toml,
+    // Phase 4 languages (common)
+    Python,
+    Go,
+    Php,
+    // Phase 5 languages (extended)
+    C,
+    Cpp,
+    Java,
+    Bash,
 }
 
 impl LanguageId {
@@ -40,13 +45,37 @@ impl LanguageId {
             "html" | "htm" => LanguageId::Html,
             "css" => LanguageId::Css,
             "js" | "mjs" | "cjs" => LanguageId::JavaScript,
-            // Future phases will add more
+            // Phase 3 (priority)
+            "ts" | "mts" | "cts" => LanguageId::TypeScript,
+            "tsx" => LanguageId::Tsx,
+            "json" | "jsonc" => LanguageId::Json,
+            "toml" => LanguageId::Toml,
+            // Phase 4 (common)
+            "py" | "pyw" | "pyi" => LanguageId::Python,
+            "go" => LanguageId::Go,
+            "php" | "phtml" | "php3" | "php4" | "php5" | "phps" => LanguageId::Php,
+            // Phase 5 (extended)
+            "c" | "h" => LanguageId::C,
+            "cpp" | "cc" | "cxx" | "c++" | "hpp" | "hh" | "hxx" | "h++" => LanguageId::Cpp,
+            "java" => LanguageId::Java,
+            "sh" | "bash" | "zsh" | "ksh" => LanguageId::Bash,
+            // Default
             _ => LanguageId::PlainText,
         }
     }
 
     /// Detect language from file path
     pub fn from_path(path: &Path) -> Self {
+        // Check for special filenames first
+        if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+            match filename {
+                "Makefile" | "makefile" | "GNUmakefile" => return LanguageId::Bash,
+                "Dockerfile" => return LanguageId::Bash,
+                ".bashrc" | ".bash_profile" | ".zshrc" | ".profile" => return LanguageId::Bash,
+                _ => {}
+            }
+        }
+
         path.extension()
             .and_then(|ext| ext.to_str())
             .map(Self::from_extension)
@@ -63,6 +92,17 @@ impl LanguageId {
             LanguageId::Html => "HTML",
             LanguageId::Css => "CSS",
             LanguageId::JavaScript => "JavaScript",
+            LanguageId::TypeScript => "TypeScript",
+            LanguageId::Tsx => "TSX",
+            LanguageId::Json => "JSON",
+            LanguageId::Toml => "TOML",
+            LanguageId::Python => "Python",
+            LanguageId::Go => "Go",
+            LanguageId::Php => "PHP",
+            LanguageId::C => "C",
+            LanguageId::Cpp => "C++",
+            LanguageId::Java => "Java",
+            LanguageId::Bash => "Bash",
         }
     }
 
@@ -78,11 +118,32 @@ mod tests {
 
     #[test]
     fn test_from_extension() {
+        // Phase 1
         assert_eq!(LanguageId::from_extension("yaml"), LanguageId::Yaml);
         assert_eq!(LanguageId::from_extension("yml"), LanguageId::Yaml);
         assert_eq!(LanguageId::from_extension("YML"), LanguageId::Yaml);
         assert_eq!(LanguageId::from_extension("md"), LanguageId::Markdown);
         assert_eq!(LanguageId::from_extension("rs"), LanguageId::Rust);
+        // Phase 2
+        assert_eq!(LanguageId::from_extension("html"), LanguageId::Html);
+        assert_eq!(LanguageId::from_extension("css"), LanguageId::Css);
+        assert_eq!(LanguageId::from_extension("js"), LanguageId::JavaScript);
+        // Phase 3
+        assert_eq!(LanguageId::from_extension("ts"), LanguageId::TypeScript);
+        assert_eq!(LanguageId::from_extension("tsx"), LanguageId::Tsx);
+        assert_eq!(LanguageId::from_extension("json"), LanguageId::Json);
+        assert_eq!(LanguageId::from_extension("toml"), LanguageId::Toml);
+        // Phase 4
+        assert_eq!(LanguageId::from_extension("py"), LanguageId::Python);
+        assert_eq!(LanguageId::from_extension("go"), LanguageId::Go);
+        assert_eq!(LanguageId::from_extension("php"), LanguageId::Php);
+        // Phase 5
+        assert_eq!(LanguageId::from_extension("c"), LanguageId::C);
+        assert_eq!(LanguageId::from_extension("cpp"), LanguageId::Cpp);
+        assert_eq!(LanguageId::from_extension("java"), LanguageId::Java);
+        assert_eq!(LanguageId::from_extension("sh"), LanguageId::Bash);
+        assert_eq!(LanguageId::from_extension("bash"), LanguageId::Bash);
+        // Unknown
         assert_eq!(LanguageId::from_extension("txt"), LanguageId::PlainText);
         assert_eq!(LanguageId::from_extension("unknown"), LanguageId::PlainText);
     }
@@ -105,5 +166,29 @@ mod tests {
             LanguageId::from_path(Path::new("no_extension")),
             LanguageId::PlainText
         );
+        // Special filenames
+        assert_eq!(
+            LanguageId::from_path(Path::new("Makefile")),
+            LanguageId::Bash
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new(".bashrc")),
+            LanguageId::Bash
+        );
+    }
+
+    #[test]
+    fn test_display_names() {
+        assert_eq!(LanguageId::TypeScript.display_name(), "TypeScript");
+        assert_eq!(LanguageId::Tsx.display_name(), "TSX");
+        assert_eq!(LanguageId::Json.display_name(), "JSON");
+        assert_eq!(LanguageId::Toml.display_name(), "TOML");
+        assert_eq!(LanguageId::Python.display_name(), "Python");
+        assert_eq!(LanguageId::Go.display_name(), "Go");
+        assert_eq!(LanguageId::Php.display_name(), "PHP");
+        assert_eq!(LanguageId::C.display_name(), "C");
+        assert_eq!(LanguageId::Cpp.display_name(), "C++");
+        assert_eq!(LanguageId::Java.display_name(), "Java");
+        assert_eq!(LanguageId::Bash.display_name(), "Bash");
     }
 }
