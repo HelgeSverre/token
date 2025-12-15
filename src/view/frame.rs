@@ -8,13 +8,36 @@ use token::model::editor_area::Rect;
 
 use super::GlyphCache;
 
+/// Blend a foreground color onto a background color using alpha compositing.
+///
+/// Both colors are in ARGB format (0xAARRGGBB). The alpha value from the
+/// foreground color determines the blend ratio.
+///
+/// Returns the blended color with full opacity (alpha = 0xFF).
+#[inline]
+pub fn blend_colors(bg: u32, fg: u32, alpha: f32) -> u32 {
+    let bg_r = ((bg >> 16) & 0xFF) as f32;
+    let bg_g = ((bg >> 8) & 0xFF) as f32;
+    let bg_b = (bg & 0xFF) as f32;
+
+    let fg_r = ((fg >> 16) & 0xFF) as f32;
+    let fg_g = ((fg >> 8) & 0xFF) as f32;
+    let fg_b = (fg & 0xFF) as f32;
+
+    let final_r = (bg_r * (1.0 - alpha) + fg_r * alpha) as u32;
+    let final_g = (bg_g * (1.0 - alpha) + fg_g * alpha) as u32;
+    let final_b = (bg_b * (1.0 - alpha) + fg_b * alpha) as u32;
+
+    0xFF000000 | (final_r << 16) | (final_g << 8) | final_b
+}
+
 /// A frame buffer wrapper providing safe drawing primitives.
 ///
 /// All coordinates are in pixels. Out-of-bounds operations are safely clipped.
 pub struct Frame<'a> {
-    pub buffer: &'a mut [u32],
-    pub width: usize,
-    pub height: usize,
+    buffer: &'a mut [u32],
+    width: usize,
+    height: usize,
 }
 
 impl<'a> Frame<'a> {
@@ -25,6 +48,27 @@ impl<'a> Frame<'a> {
             width,
             height,
         }
+    }
+
+    /// Get the frame width in pixels
+    #[inline]
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    /// Get the frame height in pixels
+    #[inline]
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
+    /// Get mutable access to the underlying pixel buffer
+    ///
+    /// Use this for low-level operations that need direct buffer access.
+    /// Prefer using Frame's drawing methods when possible.
+    #[inline]
+    pub fn buffer_mut(&mut self) -> &mut [u32] {
+        self.buffer
     }
 
     /// Clear the entire buffer with a solid color
@@ -90,8 +134,6 @@ impl<'a> Frame<'a> {
         }
 
         let idx = y * self.width + x;
-        let bg = self.buffer[idx];
-
         let alpha = ((color >> 24) & 0xFF) as f32 / 255.0;
         if alpha <= 0.0 {
             return;
@@ -101,19 +143,7 @@ impl<'a> Frame<'a> {
             return;
         }
 
-        let bg_r = ((bg >> 16) & 0xFF) as f32;
-        let bg_g = ((bg >> 8) & 0xFF) as f32;
-        let bg_b = (bg & 0xFF) as f32;
-
-        let fg_r = ((color >> 16) & 0xFF) as f32;
-        let fg_g = ((color >> 8) & 0xFF) as f32;
-        let fg_b = (color & 0xFF) as f32;
-
-        let final_r = (bg_r * (1.0 - alpha) + fg_r * alpha) as u32;
-        let final_g = (bg_g * (1.0 - alpha) + fg_g * alpha) as u32;
-        let final_b = (bg_b * (1.0 - alpha) + fg_b * alpha) as u32;
-
-        self.buffer[idx] = 0xFF000000 | (final_r << 16) | (final_g << 8) | final_b;
+        self.buffer[idx] = blend_colors(self.buffer[idx], color, alpha);
     }
 
     /// Fill a rectangle with alpha blending
@@ -205,12 +235,14 @@ impl<'a> Frame<'a> {
     }
 }
 
-/// Text rendering context wrapping font and glyph cache
+/// Text rendering context wrapping font and glyph cache.
+///
+/// Provides methods for drawing text with proper font metrics and glyph caching.
 pub struct TextPainter<'a> {
-    pub font: &'a Font,
-    pub glyph_cache: &'a mut GlyphCache,
-    pub font_size: f32,
-    pub ascent: f32,
+    font: &'a Font,
+    glyph_cache: &'a mut GlyphCache,
+    font_size: f32,
+    ascent: f32,
 }
 
 impl<'a> TextPainter<'a> {
@@ -227,6 +259,12 @@ impl<'a> TextPainter<'a> {
             font_size,
             ascent,
         }
+    }
+
+    /// Get the number of cached glyphs
+    #[inline]
+    pub fn glyph_cache_size(&self) -> usize {
+        self.glyph_cache.len()
     }
 
     /// Draw text at the specified position
@@ -258,22 +296,9 @@ impl<'a> TextPainter<'a> {
 
                                 if px < frame.width && py < frame.height {
                                     let alpha_f = alpha as f32 / 255.0;
-                                    let bg_pixel = frame.buffer[py * frame.width + px];
-
-                                    let bg_r = ((bg_pixel >> 16) & 0xFF) as f32;
-                                    let bg_g = ((bg_pixel >> 8) & 0xFF) as f32;
-                                    let bg_b = (bg_pixel & 0xFF) as f32;
-
-                                    let fg_r = ((color >> 16) & 0xFF) as f32;
-                                    let fg_g = ((color >> 8) & 0xFF) as f32;
-                                    let fg_b = (color & 0xFF) as f32;
-
-                                    let final_r = (bg_r * (1.0 - alpha_f) + fg_r * alpha_f) as u32;
-                                    let final_g = (bg_g * (1.0 - alpha_f) + fg_g * alpha_f) as u32;
-                                    let final_b = (bg_b * (1.0 - alpha_f) + fg_b * alpha_f) as u32;
-
-                                    frame.buffer[py * frame.width + px] =
-                                        0xFF000000 | (final_r << 16) | (final_g << 8) | final_b;
+                                    let idx = py * frame.width + px;
+                                    frame.buffer[idx] =
+                                        blend_colors(frame.buffer[idx], color, alpha_f);
                                 }
                             }
                         }
@@ -368,22 +393,9 @@ impl<'a> TextPainter<'a> {
 
                                 if px < frame.width && py < frame.height {
                                     let alpha_f = alpha as f32 / 255.0;
-                                    let bg_pixel = frame.buffer[py * frame.width + px];
-
-                                    let bg_r = ((bg_pixel >> 16) & 0xFF) as f32;
-                                    let bg_g = ((bg_pixel >> 8) & 0xFF) as f32;
-                                    let bg_b = (bg_pixel & 0xFF) as f32;
-
-                                    let fg_r = ((color >> 16) & 0xFF) as f32;
-                                    let fg_g = ((color >> 8) & 0xFF) as f32;
-                                    let fg_b = (color & 0xFF) as f32;
-
-                                    let final_r = (bg_r * (1.0 - alpha_f) + fg_r * alpha_f) as u32;
-                                    let final_g = (bg_g * (1.0 - alpha_f) + fg_g * alpha_f) as u32;
-                                    let final_b = (bg_b * (1.0 - alpha_f) + fg_b * alpha_f) as u32;
-
-                                    frame.buffer[py * frame.width + px] =
-                                        0xFF000000 | (final_r << 16) | (final_g << 8) | final_b;
+                                    let idx = py * frame.width + px;
+                                    frame.buffer[idx] =
+                                        blend_colors(frame.buffer[idx], color, alpha_f);
                                 }
                             }
                         }
