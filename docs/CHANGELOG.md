@@ -4,7 +4,41 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## 2025-12-15 (Latest)
+## v0.2.1 - 2025-12-15 (Latest)
+
+### Added - Centralized Config Paths
+
+Single source of truth for all configuration directories:
+
+- **New `src/config_paths.rs` module** with all config path functions:
+  - `config_dir()` → `~/.config/token-editor/` (Unix) or `%APPDATA%\token-editor\` (Windows)
+  - `config_file()` → `config.yaml` path
+  - `keymap_file()` → `keymap.yaml` path
+  - `themes_dir()` → themes subdirectory
+  - `ensure_all_config_dirs()` → creates directory structure
+- Respects `XDG_CONFIG_HOME` on Unix if set
+- Explicitly uses `~/.config` on macOS (not `~/Library/Application Support`)
+
+### Changed - Test Organization
+
+Moved inline tests to integration test folder:
+
+- Extracted tests from `config.rs`, `config_paths.rs`, `keymap/defaults.rs`
+- New `tests/config.rs` with 22 tests covering config paths, editor config, and keymap merge logic
+- Total test count: 597
+
+### Fixed - Command Palette Navigation
+
+- Selection index now properly clamped to filtered item count
+- Prevents selecting beyond visible items when filter reduces list
+
+### Changed
+
+- Renamed "Open Keybindings" → "Open Keymap" in command palette
+
+---
+
+## 2025-12-15
 
 ### Added - Configurable Keymapping System
 

@@ -8,6 +8,19 @@ For completed work, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Recently Completed
 
+### Centralized Config Paths ✅
+
+**Completed:** 2025-12-15
+
+Single source of truth for configuration directories:
+
+- New `src/config_paths.rs` module centralizing all path logic
+- XDG-compliant paths on Unix (`~/.config/token-editor/`)
+- Windows support (`%APPDATA%\token-editor\`)
+- Moved inline tests to `tests/config.rs`
+- Fixed command palette navigation clamping bug
+- 597 total tests passing
+
 ### User Theme Configuration ✅
 
 **Completed:** 2025-12-15
@@ -282,6 +295,7 @@ src/
 │   ├── winit_adapter.rs # winit key event conversion
 │   └── tests.rs         # 74 keymap tests
 ├── config.rs            # EditorConfig, theme persistence
+├── config_paths.rs      # Centralized config directory paths
 ├── theme.rs             # Theme, Color, ThemeInfo, load_theme()
 ├── overlay.rs           # OverlayConfig, OverlayBounds, render functions
 └── util.rs              # CharType enum, is_punctuation, char_type
@@ -294,12 +308,14 @@ themes/
 
 tests/                   # Integration tests
 ├── common/mod.rs        # Shared test helpers (test_model, etc.)
+├── config.rs            # 22 tests (config paths, editor config, keymap merge)
 ├── cursor_movement.rs   # 48 tests
 ├── document_cursor.rs   # 32 tests
 ├── edge_cases.rs        # 9 tests
 ├── editor_area.rs       # 7 tests (layout, hit testing)
 ├── expand_shrink_selection.rs # 23 tests
 ├── layout.rs            # 55 tests (split view)
+├── modal.rs             # 32 tests (command palette, goto line, find/replace)
 ├── monkey_tests.rs      # 34 tests (resize edge cases)
 ├── multi_cursor.rs      # 41 tests (1 ignored)
 ├── overlay.rs           # 7 tests (anchor, blending)
@@ -310,4 +326,4 @@ tests/                   # Integration tests
 └── theme.rs             # 15 tests (Color, YAML parsing, theme loading)
 ```
 
-**Test count:** 556 total (77 lib + 33 main + 446 integration, 2 ignored)
+**Test count:** 597 total (61 lib + 33 main + 503 integration, 1 ignored)
