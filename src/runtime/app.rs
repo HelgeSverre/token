@@ -14,7 +14,9 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorIcon, Window};
 
 use token::commands::{filter_commands, Cmd};
-use token::keymap::{Command, KeyAction, KeyContext, Keymap, load_default_keymap, keystroke_from_winit};
+use token::keymap::{
+    keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
+};
 use token::messages::{AppMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, UiMsg};
 use token::model::editor::Position;
 use token::model::editor_area::{Rect, SplitDirection};
@@ -58,7 +60,7 @@ impl App {
     pub fn new(window_width: u32, window_height: u32, file_paths: Vec<PathBuf>) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
         let keymap = Keymap::with_bindings(load_default_keymap());
-        
+
         Self {
             model: AppModel::new(window_width, window_height, file_paths),
             keymap,
@@ -82,7 +84,7 @@ impl App {
             perf: PerfStats::default(),
         }
     }
-    
+
     /// Dispatch a command through the update loop
     fn dispatch_command(&mut self, command: Command) -> Option<Cmd> {
         let mut result = None;
@@ -250,13 +252,13 @@ impl App {
                     let shift = self.modifiers.shift_key();
                     let alt = self.modifiers.alt_key();
                     let logo = self.modifiers.super_key();
-                    
+
                     // Try keymap first for simple commands, but only when:
                     // - No modal is active (modals handled by handle_modal_key in input.rs)
                     // - Not in option double-tap mode with alt pressed (multi-cursor gesture)
-                    let skip_keymap = self.model.ui.has_modal() 
-                        || (self.option_double_tapped && alt);
-                    
+                    let skip_keymap =
+                        self.model.ui.has_modal() || (self.option_double_tapped && alt);
+
                     if !skip_keymap {
                         if let Some(keystroke) = keystroke_from_winit(
                             &event.logical_key,
@@ -267,7 +269,10 @@ impl App {
                             logo,
                         ) {
                             let context = self.get_key_context();
-                            match self.keymap.handle_keystroke_with_context(keystroke, Some(&context)) {
+                            match self
+                                .keymap
+                                .handle_keystroke_with_context(keystroke, Some(&context))
+                            {
                                 KeyAction::Execute(command) if command.is_simple() => {
                                     return self.dispatch_command(command);
                                 }
@@ -281,7 +286,7 @@ impl App {
                             }
                         }
                     }
-                    
+
                     // Fall back to legacy handle_key for complex/context-dependent behavior
                     handle_key(
                         &mut self.model,
@@ -393,12 +398,8 @@ impl App {
 
                         // Per-group tab bar hit testing (handles splits correctly)
                         // First, find the clicked group/tab without holding borrow
-                        let tab_click_info: Option<(_, f64, Rect)> = self
-                            .model
-                            .editor_area
-                            .groups
-                            .iter()
-                            .find_map(|(&gid, g)| {
+                        let tab_click_info: Option<(_, f64, Rect)> =
+                            self.model.editor_area.groups.iter().find_map(|(&gid, g)| {
                                 if is_in_group_tab_bar(y, &g.rect)
                                     && x >= g.rect.x as f64
                                     && x < (g.rect.x + g.rect.width) as f64

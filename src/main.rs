@@ -43,6 +43,7 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use crate::runtime::input::handle_key;
+    use token::config::EditorConfig;
     use token::messages::{DocumentMsg, EditorMsg, Msg};
     use token::model::{
         AppModel, Cursor, Document, EditorArea, EditorState, Position, RectangleSelectionState,
@@ -93,6 +94,7 @@ mod tests {
             editor_area,
             ui: UiState::new(),
             theme: Theme::default(),
+            config: EditorConfig::default(),
             window_size: (800, 600),
             line_height: 20,
             char_width: 10.0,
@@ -668,15 +670,18 @@ mod tests {
             editor_area,
             ui: UiState::new(),
             theme: Theme::default(),
+            config: EditorConfig::default(),
             window_size: (800, 600),
             line_height: 20,
             char_width: 10.0,
             #[cfg(debug_assertions)]
             debug_overlay: None,
         };
-        
+
         // Open command palette
-        model.ui.open_modal(ModalState::CommandPalette(CommandPaletteState::default()));
+        model
+            .ui
+            .open_modal(ModalState::CommandPalette(CommandPaletteState::default()));
         assert!(model.ui.has_modal(), "Modal should be open");
         model
     }
@@ -684,7 +689,7 @@ mod tests {
     #[test]
     fn test_modal_arrow_keys_dont_move_editor_cursor() {
         let mut model = test_model_with_modal("hello\nworld\nfoo\nbar\n");
-        
+
         // Position editor cursor at line 2 (must also update selection to match)
         model.editor_mut().primary_cursor_mut().line = 2;
         model.editor_mut().primary_cursor_mut().column = 1;
@@ -698,7 +703,11 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::ArrowDown),
             PhysicalKey::Code(KeyCode::ArrowDown),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
 
         // Editor cursor should NOT have moved
@@ -713,7 +722,11 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::ArrowUp),
             PhysicalKey::Code(KeyCode::ArrowUp),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
 
         assert_eq!(
@@ -727,13 +740,21 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::ArrowLeft),
             PhysicalKey::Code(KeyCode::ArrowLeft),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
         handle_key(
             &mut model,
             Key::Named(NamedKey::ArrowRight),
             PhysicalKey::Code(KeyCode::ArrowRight),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
 
         assert_eq!(
@@ -753,19 +774,31 @@ mod tests {
             &mut model,
             Key::Character("a".into()),
             PhysicalKey::Code(KeyCode::KeyA),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
         handle_key(
             &mut model,
             Key::Character("b".into()),
             PhysicalKey::Code(KeyCode::KeyB),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
         handle_key(
             &mut model,
             Key::Character("c".into()),
             PhysicalKey::Code(KeyCode::KeyC),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
 
         // Editor text should NOT have changed
@@ -790,7 +823,11 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::Backspace),
             PhysicalKey::Code(KeyCode::Backspace),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
 
         // Editor text should NOT have changed
@@ -814,7 +851,11 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::Delete),
             PhysicalKey::Code(KeyCode::Delete),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
 
         // Editor text should NOT have changed
@@ -835,7 +876,11 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::Enter),
             PhysicalKey::Code(KeyCode::Enter),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
 
         // Modal should be closed (Enter confirms), but no newline inserted
@@ -852,9 +897,11 @@ mod tests {
     fn test_modal_escape_closes_modal_not_clear_editor_selection() {
         let mut model = test_model_with_selection("hello world", 0, 0, 0, 5);
         // Open modal
-        model.ui.open_modal(ModalState::CommandPalette(CommandPaletteState::default()));
+        model
+            .ui
+            .open_modal(ModalState::CommandPalette(CommandPaletteState::default()));
         assert!(model.ui.has_modal());
-        
+
         // Editor has a selection
         assert!(!model.editor().active_selection().is_empty());
 
@@ -863,12 +910,16 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::Escape),
             PhysicalKey::Code(KeyCode::Escape),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
 
         // Modal should be closed
         assert!(!model.ui.has_modal(), "Escape should close modal");
-        
+
         // Editor selection should still be there (Escape didn't clear it)
         assert!(
             !model.editor().active_selection().is_empty(),
@@ -878,12 +929,14 @@ mod tests {
 
     #[test]
     fn test_modal_pageup_pagedown_dont_scroll_editor() {
-        let text = (0..100).map(|i| format!("line {}\n", i)).collect::<String>();
+        let text = (0..100)
+            .map(|i| format!("line {}\n", i))
+            .collect::<String>();
         let mut model = test_model_with_modal(&text);
         model.editor_mut().viewport.visible_lines = 20;
         model.editor_mut().viewport.top_line = 50;
         model.editor_mut().primary_cursor_mut().line = 55;
-        
+
         let initial_viewport = model.editor().viewport.top_line;
         let initial_cursor_line = model.editor().active_cursor().line;
 
@@ -892,7 +945,11 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::PageDown),
             PhysicalKey::Code(KeyCode::PageDown),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
 
         // Editor viewport and cursor should NOT have changed
@@ -912,7 +969,11 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::PageUp),
             PhysicalKey::Code(KeyCode::PageUp),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
 
         assert_eq!(
@@ -929,7 +990,7 @@ mod tests {
         model.editor_mut().primary_cursor_mut().column = 5;
         let pos = Position::new(1, 5);
         model.editor_mut().selections[0] = Selection::new(pos);
-        
+
         let initial_line = model.editor().active_cursor().line;
         let initial_col = model.editor().active_cursor().column;
 
@@ -938,7 +999,11 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::Home),
             PhysicalKey::Code(KeyCode::Home),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
 
         assert_eq!(
@@ -952,7 +1017,11 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::End),
             PhysicalKey::Code(KeyCode::End),
-            false, false, false, false, false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
 
         assert_eq!(
@@ -969,7 +1038,7 @@ mod tests {
         model.editor_mut().primary_cursor_mut().column = 5;
         let pos = Position::new(0, 5);
         model.editor_mut().selections[0] = Selection::new(pos);
-        
+
         // Make a change first so we can test that Cmd+Z doesn't undo
         let initial_text = model.document().buffer.to_string();
 
@@ -978,7 +1047,11 @@ mod tests {
             &mut model,
             Key::Character("a".into()),
             PhysicalKey::Code(KeyCode::KeyA),
-            false, false, false, true, false, // logo=true (Cmd on macOS)
+            false,
+            false,
+            false,
+            true,
+            false, // logo=true (Cmd on macOS)
         );
 
         // Selection in editor should remain empty
@@ -992,7 +1065,11 @@ mod tests {
             &mut model,
             Key::Character("d".into()),
             PhysicalKey::Code(KeyCode::KeyD),
-            false, false, false, true, false,
+            false,
+            false,
+            false,
+            true,
+            false,
         );
 
         assert_eq!(

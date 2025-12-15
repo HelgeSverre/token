@@ -323,7 +323,9 @@ impl Command {
                 ))]
             }
             SplitVertical => {
-                vec![Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Vertical))]
+                vec![Msg::Layout(LayoutMsg::SplitFocused(
+                    SplitDirection::Vertical,
+                ))]
             }
             FocusNextGroup => vec![Msg::Layout(LayoutMsg::FocusNextGroup)],
             FocusPrevGroup => vec![Msg::Layout(LayoutMsg::FocusPrevGroup)],

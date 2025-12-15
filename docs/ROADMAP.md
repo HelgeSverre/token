@@ -8,6 +8,22 @@ For completed work, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Recently Completed
 
+### User Theme Configuration ✅
+
+**Completed:** 2025-12-15
+
+Theme loading from user config directories with persistence:
+
+- **Layered loading**: User config → embedded builtins
+  - User themes at `~/.config/token-editor/themes/*.yaml`
+  - 4 built-in themes (default-dark, fleet-dark, github-dark, github-light)
+- **Config persistence**: Theme selection saved to `~/.config/token-editor/config.yaml`
+- **ThemePicker improvements**: Sectioned list showing User/Builtin themes
+- **New APIs**: `load_theme(id)`, `list_available_themes()`, `ThemeInfo`, `ThemeSource`
+- **EditorConfig**: New config module for persistent editor settings
+- **Fallback handling**: Falls back to default-dark if saved theme not found
+- 15 theme tests, 556 total tests passing
+
 ### Configurable Keymapping System ✅
 
 **Design:** [archived/KEYMAPPING_IMPLEMENTATION_PLAN.md](archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) | **Completed:** 2025-12-15
@@ -18,7 +34,7 @@ Data-driven keybinding system with YAML configuration:
 - **74 default bindings** in `keymap.yaml` (embedded at compile time)
 - **Platform-aware `cmd` modifier**: Maps to Cmd on macOS, Ctrl elsewhere
 - **Context-aware bindings**: `when: ["has_selection"]` for conditional activation
-- **User configuration**: Layered loading from embedded → project → user config
+- **User configuration**: Layered loading from embedded → user config
   - User keymap at `~/.config/token-editor/keymap.yaml`
   - `merge_bindings()` combines base + user with override semantics
   - `command: Unbound` to disable default bindings
@@ -265,7 +281,8 @@ src/
 │   ├── defaults.rs      # Default bindings loader + user config merge
 │   ├── winit_adapter.rs # winit key event conversion
 │   └── tests.rs         # 74 keymap tests
-├── theme.rs             # Theme, Color, TabBarTheme, SplitterTheme
+├── config.rs            # EditorConfig, theme persistence
+├── theme.rs             # Theme, Color, ThemeInfo, load_theme()
 ├── overlay.rs           # OverlayConfig, OverlayBounds, render functions
 └── util.rs              # CharType enum, is_punctuation, char_type
 
@@ -290,7 +307,7 @@ tests/                   # Integration tests
 ├── selection.rs         # 47 tests
 ├── status_bar.rs        # 47 tests
 ├── text_editing.rs      # 47 tests (includes multi-cursor undo)
-└── theme.rs             # 10 tests (Color, YAML parsing)
+└── theme.rs             # 15 tests (Color, YAML parsing, theme loading)
 ```
 
-**Test count:** 546 total (74 keymap + 33 main + 439 integration, 2 ignored)
+**Test count:** 556 total (77 lib + 33 main + 446 integration, 2 ignored)

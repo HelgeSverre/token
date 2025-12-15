@@ -3,7 +3,7 @@
 //! These are the standard keybindings that ship with the editor.
 //! Can be loaded from keymap.yaml at project root, or falls back to hardcoded defaults.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::binding::Keybinding;
 use super::command::Command;
@@ -20,9 +20,11 @@ const DEFAULT_KEYMAP_YAML: &str = include_str!("../../keymap.yaml");
 pub fn get_user_config_path() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
-        std::env::var("APPDATA")
-            .ok()
-            .map(|appdata| PathBuf::from(appdata).join("token-editor").join("keymap.yaml"))
+        std::env::var("APPDATA").ok().map(|appdata| {
+            PathBuf::from(appdata)
+                .join("token-editor")
+                .join("keymap.yaml")
+        })
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -35,8 +37,7 @@ pub fn get_user_config_path() -> Option<PathBuf> {
 ///
 /// Loading order (each layer overrides the previous):
 /// 1. Embedded default keymap (compiled into binary)
-/// 2. keymap.yaml in current directory (project-local overrides)
-/// 3. User config at ~/.config/token-editor/keymap.yaml
+/// 2. User config at ~/.config/token-editor/keymap.yaml
 ///
 /// User bindings with `command: Unbound` will remove matching default bindings.
 pub fn load_default_keymap() -> Vec<Keybinding> {
@@ -55,15 +56,6 @@ pub fn load_default_keymap() -> Vec<Keybinding> {
         }
     };
 
-    // Try loading project-local keymap.yaml
-    if let Ok(local_bindings) = load_keymap_file(Path::new("keymap.yaml")) {
-        tracing::info!(
-            "Merging project keymap.yaml ({} bindings)",
-            local_bindings.len()
-        );
-        bindings = merge_bindings(bindings, local_bindings);
-    }
-
     // Try loading user config
     if let Some(user_path) = get_user_config_path() {
         if user_path.exists() {
@@ -77,7 +69,11 @@ pub fn load_default_keymap() -> Vec<Keybinding> {
                     bindings = merge_bindings(bindings, user_bindings);
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to load user keymap from {}: {}", user_path.display(), e);
+                    tracing::warn!(
+                        "Failed to load user keymap from {}: {}",
+                        user_path.display(),
+                        e
+                    );
                 }
             }
         }
@@ -106,9 +102,9 @@ pub fn merge_bindings(base: Vec<Keybinding>, user: Vec<Keybinding>) -> Vec<Keybi
         }
 
         // Check if this overrides an existing binding
-        let existing_idx = result.iter().position(|b| {
-            b.keystrokes == user_binding.keystrokes && b.when == user_binding.when
-        });
+        let existing_idx = result
+            .iter()
+            .position(|b| b.keystrokes == user_binding.keystrokes && b.when == user_binding.when);
 
         if let Some(idx) = existing_idx {
             // Replace existing binding
@@ -144,21 +140,18 @@ pub fn default_bindings() -> Vec<Keybinding> {
         bind(KeyCode::Char('s'), cmd, Command::SaveFile),
         bind(KeyCode::Char('n'), cmd_shift, Command::NewTab), // Shift+Cmd+N
         bind(KeyCode::Char('w'), cmd, Command::CloseTab),
-
         // ====================================================================
         // Undo/Redo
         // ====================================================================
         bind(KeyCode::Char('z'), cmd, Command::Undo),
         bind(KeyCode::Char('z'), cmd_shift, Command::Redo),
         bind(KeyCode::Char('y'), cmd, Command::Redo), // Alternative
-
         // ====================================================================
         // Clipboard
         // ====================================================================
         bind(KeyCode::Char('c'), cmd, Command::Copy),
         bind(KeyCode::Char('x'), cmd, Command::Cut),
         bind(KeyCode::Char('v'), cmd, Command::Paste),
-
         // ====================================================================
         // Selection
         // ====================================================================
@@ -166,26 +159,22 @@ pub fn default_bindings() -> Vec<Keybinding> {
         bind(KeyCode::Char('d'), cmd, Command::Duplicate),
         bind(KeyCode::Char('j'), cmd, Command::SelectNextOccurrence),
         bind(KeyCode::Char('j'), cmd_shift, Command::UnselectOccurrence),
-
         // ====================================================================
         // Modals/Dialogs
         // ====================================================================
         bind(KeyCode::Char('a'), cmd_shift, Command::ToggleCommandPalette),
         bind(KeyCode::Char('l'), cmd, Command::ToggleGotoLine),
         bind(KeyCode::Char('f'), cmd, Command::ToggleFindReplace),
-
         // ====================================================================
         // Layout: Splits
         // ====================================================================
         bind(KeyCode::Char('h'), cmd_shift_alt, Command::SplitHorizontal),
         bind(KeyCode::Char('v'), cmd_shift_alt, Command::SplitVertical),
-
         // ====================================================================
         // Layout: Tabs
         // ====================================================================
         bind(KeyCode::Right, cmd_alt, Command::NextTab),
         bind(KeyCode::Left, cmd_alt, Command::PrevTab),
-
         // ====================================================================
         // Layout: Focus Groups
         // ====================================================================
@@ -195,7 +184,6 @@ pub fn default_bindings() -> Vec<Keybinding> {
         bind(KeyCode::Char('2'), cmd_shift, Command::FocusGroup2),
         bind(KeyCode::Char('3'), cmd_shift, Command::FocusGroup3),
         bind(KeyCode::Char('4'), cmd_shift, Command::FocusGroup4),
-
         // Numpad group focus (no modifiers needed)
         bind(KeyCode::Numpad1, none, Command::FocusGroup1),
         bind(KeyCode::Numpad2, none, Command::FocusGroup2),
@@ -203,7 +191,6 @@ pub fn default_bindings() -> Vec<Keybinding> {
         bind(KeyCode::Numpad4, none, Command::FocusGroup4),
         bind(KeyCode::NumpadAdd, none, Command::SplitVertical),
         bind(KeyCode::NumpadSubtract, none, Command::SplitHorizontal),
-
         // ====================================================================
         // Basic Navigation (no selection)
         // ====================================================================
@@ -215,11 +202,9 @@ pub fn default_bindings() -> Vec<Keybinding> {
         bind(KeyCode::End, none, Command::MoveCursorLineEnd),
         bind(KeyCode::PageUp, none, Command::PageUp),
         bind(KeyCode::PageDown, none, Command::PageDown),
-
         // Word navigation (Alt+Arrow)
         bind(KeyCode::Left, alt, Command::MoveCursorWordLeft),
         bind(KeyCode::Right, alt, Command::MoveCursorWordRight),
-
         // ====================================================================
         // Selection Navigation (Shift+key)
         // ====================================================================
@@ -227,15 +212,25 @@ pub fn default_bindings() -> Vec<Keybinding> {
         bind(KeyCode::Down, shift, Command::MoveCursorDownWithSelection),
         bind(KeyCode::Left, shift, Command::MoveCursorLeftWithSelection),
         bind(KeyCode::Right, shift, Command::MoveCursorRightWithSelection),
-        bind(KeyCode::Home, shift, Command::MoveCursorLineStartWithSelection),
+        bind(
+            KeyCode::Home,
+            shift,
+            Command::MoveCursorLineStartWithSelection,
+        ),
         bind(KeyCode::End, shift, Command::MoveCursorLineEndWithSelection),
         bind(KeyCode::PageUp, shift, Command::PageUpWithSelection),
         bind(KeyCode::PageDown, shift, Command::PageDownWithSelection),
-
         // Word navigation with selection (Alt+Shift+Arrow)
-        bind(KeyCode::Left, alt_shift, Command::MoveCursorWordLeftWithSelection),
-        bind(KeyCode::Right, alt_shift, Command::MoveCursorWordRightWithSelection),
-
+        bind(
+            KeyCode::Left,
+            alt_shift,
+            Command::MoveCursorWordLeftWithSelection,
+        ),
+        bind(
+            KeyCode::Right,
+            alt_shift,
+            Command::MoveCursorWordRightWithSelection,
+        ),
         // ====================================================================
         // Editing
         // ====================================================================
@@ -245,20 +240,17 @@ pub fn default_bindings() -> Vec<Keybinding> {
         bind(KeyCode::Backspace, alt, Command::DeleteWordBackward),
         bind(KeyCode::Backspace, cmd, Command::DeleteLine),
         bind(KeyCode::Space, none, Command::InsertTab), // Will need context: InsertChar(' ') normally
-
         // Tab handling - these will need context conditions
         // Tab with selection -> IndentLines
         // Tab without selection -> InsertTab
         // For now, default to InsertTab, context system will refine this
         bind(KeyCode::Tab, none, Command::InsertTab),
         bind(KeyCode::Tab, shift, Command::UnindentLines),
-
         // ====================================================================
         // Expand/Shrink Selection (Option+Up/Down)
         // ====================================================================
         bind(KeyCode::Up, alt, Command::ExpandSelection),
         bind(KeyCode::Down, alt, Command::ShrinkSelection),
-
         // ====================================================================
         // Escape (smart clear)
         // ====================================================================
@@ -271,8 +263,16 @@ pub fn default_bindings() -> Vec<Keybinding> {
         // macOS: Cmd+Arrow for line start/end
         bindings.push(bind(KeyCode::Left, cmd, Command::MoveCursorLineStart));
         bindings.push(bind(KeyCode::Right, cmd, Command::MoveCursorLineEnd));
-        bindings.push(bind(KeyCode::Left, cmd_shift, Command::MoveCursorLineStartWithSelection));
-        bindings.push(bind(KeyCode::Right, cmd_shift, Command::MoveCursorLineEndWithSelection));
+        bindings.push(bind(
+            KeyCode::Left,
+            cmd_shift,
+            Command::MoveCursorLineStartWithSelection,
+        ));
+        bindings.push(bind(
+            KeyCode::Right,
+            cmd_shift,
+            Command::MoveCursorLineEndWithSelection,
+        ));
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -280,15 +280,31 @@ pub fn default_bindings() -> Vec<Keybinding> {
         // Windows/Linux: Ctrl+Home/End for document start/end
         bindings.push(bind(KeyCode::Home, ctrl, Command::MoveCursorDocumentStart));
         bindings.push(bind(KeyCode::End, ctrl, Command::MoveCursorDocumentEnd));
-        bindings.push(bind(KeyCode::Home, ctrl_shift, Command::MoveCursorDocumentStartWithSelection));
-        bindings.push(bind(KeyCode::End, ctrl_shift, Command::MoveCursorDocumentEndWithSelection));
+        bindings.push(bind(
+            KeyCode::Home,
+            ctrl_shift,
+            Command::MoveCursorDocumentStartWithSelection,
+        ));
+        bindings.push(bind(
+            KeyCode::End,
+            ctrl_shift,
+            Command::MoveCursorDocumentEndWithSelection,
+        ));
     }
 
     // Document start/end with Ctrl on all platforms (works on macOS too)
     bindings.push(bind(KeyCode::Home, ctrl, Command::MoveCursorDocumentStart));
     bindings.push(bind(KeyCode::End, ctrl, Command::MoveCursorDocumentEnd));
-    bindings.push(bind(KeyCode::Home, ctrl_shift, Command::MoveCursorDocumentStartWithSelection));
-    bindings.push(bind(KeyCode::End, ctrl_shift, Command::MoveCursorDocumentEndWithSelection));
+    bindings.push(bind(
+        KeyCode::Home,
+        ctrl_shift,
+        Command::MoveCursorDocumentStartWithSelection,
+    ));
+    bindings.push(bind(
+        KeyCode::End,
+        ctrl_shift,
+        Command::MoveCursorDocumentEndWithSelection,
+    ));
 
     bindings
 }
@@ -339,9 +355,15 @@ mod tests {
     fn test_has_cursor_movement() {
         let bindings = default_bindings();
         let has_up = bindings.iter().any(|b| b.command == Command::MoveCursorUp);
-        let has_down = bindings.iter().any(|b| b.command == Command::MoveCursorDown);
-        let has_left = bindings.iter().any(|b| b.command == Command::MoveCursorLeft);
-        let has_right = bindings.iter().any(|b| b.command == Command::MoveCursorRight);
+        let has_down = bindings
+            .iter()
+            .any(|b| b.command == Command::MoveCursorDown);
+        let has_left = bindings
+            .iter()
+            .any(|b| b.command == Command::MoveCursorLeft);
+        let has_right = bindings
+            .iter()
+            .any(|b| b.command == Command::MoveCursorRight);
 
         assert!(
             has_up && has_down && has_left && has_right,
@@ -448,9 +470,8 @@ mod tests {
         let tab = Keystroke::new(KeyCode::Tab, Modifiers::NONE);
 
         // Base has Tab → InsertTab when no_selection
-        let base = vec![
-            Keybinding::new(tab, Command::InsertTab).when(vec![Condition::NoSelection])
-        ];
+        let base =
+            vec![Keybinding::new(tab, Command::InsertTab).when(vec![Condition::NoSelection])];
         // User overrides Tab when no_selection → Undo
         let user = vec![Keybinding::new(tab, Command::Undo).when(vec![Condition::NoSelection])];
 

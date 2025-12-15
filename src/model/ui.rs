@@ -1,6 +1,7 @@
 //! UI state - status bar, cursor blink, modals, and other UI concerns
 
 use super::status_bar::{StatusBar, TransientMessage};
+use crate::theme::{list_available_themes, ThemeInfo};
 use std::time::{Duration, Instant};
 
 // ============================================================================
@@ -50,10 +51,21 @@ pub struct FindReplaceState {
 }
 
 /// State for the theme picker modal
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ThemePickerState {
     /// Index of selected theme in list
     pub selected_index: usize,
+    /// Cached list of available themes (refreshed when modal opens)
+    pub themes: Vec<ThemeInfo>,
+}
+
+impl Default for ThemePickerState {
+    fn default() -> Self {
+        Self {
+            selected_index: 0,
+            themes: list_available_themes(),
+        }
+    }
 }
 
 /// Union of all modal states

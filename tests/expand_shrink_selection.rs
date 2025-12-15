@@ -125,7 +125,7 @@ fn test_expand_to_line_cursor_at_end_of_line_content() {
 
     // Expand: cursor → word
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
-    
+
     // Expand: word → line
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
@@ -149,7 +149,7 @@ fn test_expand_to_line_on_last_line_cursor_at_end() {
 
     // Expand: cursor → word ("world")
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
-    
+
     // Expand: word → line
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 

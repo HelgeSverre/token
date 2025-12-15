@@ -8,7 +8,7 @@ use crate::model::{
     AppModel, CommandPaletteState, FindReplaceState, GotoLineState, ModalId, ModalState,
     SegmentContent, SegmentId, ThemePickerState, TransientMessage,
 };
-use crate::theme::BUILTIN_THEMES;
+use crate::theme::load_theme;
 
 use super::app::execute_command;
 
@@ -236,7 +236,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                         state.selected_index = state.selected_index.saturating_add(1);
                     }
                     ModalState::ThemePicker(state) => {
-                        let max_index = BUILTIN_THEMES.len().saturating_sub(1);
+                        let max_index = state.themes.len().saturating_sub(1);
                         state.selected_index =
                             state.selected_index.saturating_add(1).min(max_index);
                     }
@@ -310,10 +310,15 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                         Some(Cmd::Redraw)
                     }
                     ModalState::ThemePicker(state) => {
-                        // Apply selected theme
-                        if let Some(theme_entry) = BUILTIN_THEMES.get(state.selected_index) {
-                            if let Ok(theme) = crate::theme::Theme::from_yaml(theme_entry.yaml) {
+                        // Apply selected theme and save config
+                        if let Some(theme_info) = state.themes.get(state.selected_index) {
+                            let theme_id = theme_info.id.clone();
+                            if let Ok(theme) = load_theme(&theme_id) {
                                 model.theme = theme;
+                                // Save theme preference to config
+                                if let Err(e) = model.config.set_theme(&theme_id) {
+                                    tracing::warn!("Failed to save theme preference: {}", e);
+                                }
                             }
                         }
                         model.ui.close_modal();

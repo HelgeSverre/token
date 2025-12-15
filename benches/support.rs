@@ -1,5 +1,6 @@
 //! Shared helpers for benchmarks
 
+use token::config::EditorConfig;
 use token::model::document::Document;
 use token::model::editor::EditorState;
 use token::model::editor_area::EditorArea;
@@ -28,6 +29,7 @@ pub fn make_model(lines: usize) -> AppModel {
         editor_area,
         ui: UiState::new(),
         theme: Theme::default(),
+        config: EditorConfig::default(),
         window_size: (window_width, window_height),
         line_height,
         char_width,

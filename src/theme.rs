@@ -1,6 +1,13 @@
 //! Theme system for the editor
 //!
-//! Provides YAML-based theming support with compile-time embedded themes.
+//! Provides YAML-based theming support with compile-time embedded themes
+//! and user-defined themes from config directories.
+//!
+//! Theme loading priority:
+//! 1. User config: `~/.config/token-editor/themes/{id}.yaml`
+//! 2. Embedded: Built-in themes compiled into binary
+
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -37,6 +44,149 @@ pub const BUILTIN_THEMES: &[BuiltinTheme] = &[
         yaml: GITHUB_LIGHT_YAML,
     },
 ];
+
+/// Where the theme came from
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeSource {
+    /// User-defined theme in ~/.config/token-editor/themes/
+    User,
+    /// Built-in theme embedded in binary
+    Builtin,
+}
+
+/// Information about an available theme
+#[derive(Debug, Clone)]
+pub struct ThemeInfo {
+    /// Stable identifier (e.g., "default-dark", "my-custom-theme")
+    pub id: String,
+    /// Display name from YAML (e.g., "Default Dark")
+    pub name: String,
+    /// Where this theme is loaded from
+    pub source: ThemeSource,
+}
+
+/// Get the user's theme configuration directory
+///
+/// Returns `~/.config/token-editor/themes/` on Unix
+/// Returns `%APPDATA%\token-editor\themes\` on Windows
+pub fn get_user_themes_dir() -> Option<PathBuf> {
+    get_config_dir().map(|config| config.join("themes"))
+}
+
+/// Get the user's config directory for token-editor
+///
+/// Returns `~/.config/token-editor/` on Unix/macOS
+/// Returns `%APPDATA%\token-editor\` on Windows
+pub fn get_config_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("APPDATA")
+            .ok()
+            .map(|appdata| PathBuf::from(appdata).join("token-editor"))
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Use XDG-style ~/.config on all Unix systems including macOS
+        // (dirs::config_dir() returns ~/Library/Application Support on macOS)
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| dirs::home_dir().map(|h| h.join(".config")))
+            .map(|config| config.join("token-editor"))
+    }
+}
+
+/// Load a theme from a YAML file
+pub fn from_file(path: &Path) -> Result<Theme, String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read theme file {}: {}", path.display(), e))?;
+    Theme::from_yaml(&content)
+}
+
+/// Load theme by id with priority: user → builtin
+///
+/// Searches in order:
+/// 1. `~/.config/token-editor/themes/{id}.yaml`
+/// 2. Embedded builtin themes
+pub fn load_theme(id: &str) -> Result<Theme, String> {
+    // Try user themes directory
+    if let Some(user_dir) = get_user_themes_dir() {
+        let user_path = user_dir.join(format!("{}.yaml", id));
+        if user_path.exists() {
+            tracing::info!("Loading user theme from {}", user_path.display());
+            return from_file(&user_path);
+        }
+    }
+
+    // Fall back to builtin
+    tracing::info!("Loading builtin theme: {}", id);
+    Theme::from_builtin(id)
+}
+
+/// List all available themes from all sources
+///
+/// Returns themes grouped by source, with duplicates resolved by priority:
+/// user themes override builtins with the same id.
+pub fn list_available_themes() -> Vec<ThemeInfo> {
+    let mut themes = Vec::new();
+    let mut seen_ids = std::collections::HashSet::new();
+
+    // Collect user themes (highest priority)
+    if let Some(user_dir) = get_user_themes_dir() {
+        if let Ok(entries) = std::fs::read_dir(&user_dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path
+                    .extension()
+                    .is_some_and(|ext| ext == "yaml" || ext == "yml")
+                {
+                    if let Some(id) = path.file_stem().and_then(|s| s.to_str()) {
+                        if seen_ids.insert(id.to_string()) {
+                            let name = extract_theme_name(&path).unwrap_or_else(|| id.to_string());
+                            themes.push(ThemeInfo {
+                                id: id.to_string(),
+                                name,
+                                source: ThemeSource::User,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Add builtins (user themes with same id take priority)
+    for builtin in BUILTIN_THEMES {
+        if seen_ids.insert(builtin.id.to_string()) {
+            let name = Theme::from_yaml(builtin.yaml)
+                .map(|t| t.name)
+                .unwrap_or_else(|_| builtin.id.to_string());
+            themes.push(ThemeInfo {
+                id: builtin.id.to_string(),
+                name,
+                source: ThemeSource::Builtin,
+            });
+        }
+    }
+
+    themes
+}
+
+/// Extract theme name from YAML file without full parsing
+fn extract_theme_name(path: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+    // Quick extraction - look for "name:" line
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("name:") {
+            let value = trimmed.strip_prefix("name:")?.trim();
+            // Remove quotes if present
+            let value = value.trim_matches('"').trim_matches('\'');
+            return Some(value.to_string());
+        }
+    }
+    None
+}
 
 /// RGBA color (0-255 per channel)
 #[derive(Debug, Clone, Copy, Default)]

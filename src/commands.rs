@@ -199,7 +199,8 @@ pub fn keybinding_for_command(id: CommandId, keymap: &Keymap) -> Option<String> 
 
 /// Get keybinding display string using the static fallback (for when keymap isn't available)
 pub fn keybinding_for_command_static(id: CommandId) -> Option<&'static str> {
-    COMMANDS.iter()
+    COMMANDS
+        .iter()
         .find(|cmd| cmd.id == id)
         .and_then(|cmd| cmd.keybinding)
 }

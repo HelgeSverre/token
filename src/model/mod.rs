@@ -26,9 +26,10 @@ pub use ui::{
     UiState,
 };
 
+use crate::config::EditorConfig;
 #[cfg(debug_assertions)]
 use crate::debug_overlay::DebugOverlay;
-use crate::theme::Theme;
+use crate::theme::{load_theme, Theme};
 use std::path::PathBuf;
 
 /// Layout constant - width of line number gutter in characters (e.g., " 123 ")
@@ -61,6 +62,8 @@ pub struct AppModel {
     pub ui: UiState,
     /// Theme for colors and styling
     pub theme: Theme,
+    /// Persisted editor configuration
+    pub config: EditorConfig,
     /// Window dimensions
     pub window_size: (u32, u32),
     /// Line height in pixels
@@ -148,10 +151,25 @@ impl AppModel {
             }
         }
 
+        // Ensure config directories exist
+        EditorConfig::ensure_config_dirs();
+
+        // Load config and theme
+        let config = EditorConfig::load();
+        let theme = load_theme(&config.theme).unwrap_or_else(|e| {
+            tracing::warn!(
+                "Failed to load theme '{}': {}, using default",
+                config.theme,
+                e
+            );
+            Theme::default()
+        });
+
         Self {
             editor_area,
             ui: UiState::with_status(status_message),
-            theme: Theme::default(),
+            theme,
+            config,
             window_size: (window_width, window_height),
             line_height,
             char_width,

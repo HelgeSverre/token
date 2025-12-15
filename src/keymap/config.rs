@@ -31,20 +31,19 @@ pub struct BindingConfig {
 
 /// Load keybindings from a YAML file
 pub fn load_keymap_file(path: &Path) -> Result<Vec<Keybinding>, KeymapError> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| KeymapError::IoError(e.to_string()))?;
-    
+    let content = std::fs::read_to_string(path).map_err(|e| KeymapError::IoError(e.to_string()))?;
+
     parse_keymap_yaml(&content)
 }
 
 /// Parse keybindings from YAML string
 pub fn parse_keymap_yaml(yaml: &str) -> Result<Vec<Keybinding>, KeymapError> {
-    let config: KeymapConfig = serde_yaml::from_str(yaml)
-        .map_err(|e| KeymapError::ParseError(e.to_string()))?;
-    
+    let config: KeymapConfig =
+        serde_yaml::from_str(yaml).map_err(|e| KeymapError::ParseError(e.to_string()))?;
+
     let current_platform = get_current_platform();
     let mut bindings = Vec::new();
-    
+
     for entry in config.bindings {
         // Skip if platform-specific and doesn't match current platform
         if let Some(ref platform) = entry.platform {
@@ -52,32 +51,32 @@ pub fn parse_keymap_yaml(yaml: &str) -> Result<Vec<Keybinding>, KeymapError> {
                 continue;
             }
         }
-        
+
         let keystroke = parse_key_string(&entry.key)?;
         let command = parse_command(&entry.command)?;
         let conditions = parse_conditions(&entry.when)?;
-        
+
         let mut binding = Keybinding::new(keystroke, command);
         if let Some(conds) = conditions {
             binding = binding.when(conds);
         }
         bindings.push(binding);
     }
-    
+
     Ok(bindings)
 }
 
 /// Parse a key string like "cmd+shift+s" into a Keystroke
 pub fn parse_key_string(key_str: &str) -> Result<Keystroke, KeymapError> {
     let parts: Vec<&str> = key_str.split('+').collect();
-    
+
     if parts.is_empty() {
         return Err(KeymapError::InvalidKey(key_str.to_string()));
     }
-    
+
     let mut mods = Modifiers::NONE;
     let mut key_part = None;
-    
+
     for part in parts {
         let part_lower = part.to_lowercase();
         match part_lower.as_str() {
@@ -109,11 +108,10 @@ pub fn parse_key_string(key_str: &str) -> Result<Keystroke, KeymapError> {
             }
         }
     }
-    
-    let key = key_part.ok_or_else(|| {
-        KeymapError::InvalidKey(format!("No key found in binding: {}", key_str))
-    })?;
-    
+
+    let key = key_part
+        .ok_or_else(|| KeymapError::InvalidKey(format!("No key found in binding: {}", key_str)))?;
+
     Ok(Keystroke::new(key, mods))
 }
 
@@ -124,7 +122,7 @@ fn parse_key_code(key: &str) -> Result<KeyCode, KeymapError> {
         let c = key.chars().next().unwrap();
         return Ok(KeyCode::Char(c.to_ascii_lowercase()));
     }
-    
+
     // Named keys
     match key {
         "enter" | "return" => Ok(KeyCode::Enter),
@@ -133,18 +131,18 @@ fn parse_key_code(key: &str) -> Result<KeyCode, KeymapError> {
         "backspace" | "back" => Ok(KeyCode::Backspace),
         "delete" | "del" => Ok(KeyCode::Delete),
         "space" => Ok(KeyCode::Space),
-        
+
         "up" | "arrowup" => Ok(KeyCode::Up),
         "down" | "arrowdown" => Ok(KeyCode::Down),
         "left" | "arrowleft" => Ok(KeyCode::Left),
         "right" | "arrowright" => Ok(KeyCode::Right),
-        
+
         "home" => Ok(KeyCode::Home),
         "end" => Ok(KeyCode::End),
         "pageup" | "pgup" => Ok(KeyCode::PageUp),
         "pagedown" | "pgdown" | "pgdn" => Ok(KeyCode::PageDown),
         "insert" | "ins" => Ok(KeyCode::Insert),
-        
+
         // Function keys
         "f1" => Ok(KeyCode::F(1)),
         "f2" => Ok(KeyCode::F(2)),
@@ -158,7 +156,7 @@ fn parse_key_code(key: &str) -> Result<KeyCode, KeymapError> {
         "f10" => Ok(KeyCode::F(10)),
         "f11" => Ok(KeyCode::F(11)),
         "f12" => Ok(KeyCode::F(12)),
-        
+
         // Numpad
         "numpad0" | "num0" => Ok(KeyCode::Numpad0),
         "numpad1" | "num1" => Ok(KeyCode::Numpad1),
@@ -176,15 +174,14 @@ fn parse_key_code(key: &str) -> Result<KeyCode, KeymapError> {
         "numpad_divide" | "numdiv" => Ok(KeyCode::NumpadDivide),
         "numpad_enter" | "numenter" => Ok(KeyCode::NumpadEnter),
         "numpad_decimal" | "numdot" => Ok(KeyCode::NumpadDecimal),
-        
+
         _ => Err(KeymapError::InvalidKey(format!("Unknown key: {}", key))),
     }
 }
 
 /// Parse a command name string into a Command enum
 fn parse_command(cmd: &str) -> Result<Command, KeymapError> {
-    Command::from_str(cmd)
-        .map_err(|_| KeymapError::InvalidCommand(cmd.to_string()))
+    Command::from_str(cmd).map_err(|_| KeymapError::InvalidCommand(cmd.to_string()))
 }
 
 /// Parse condition strings into Condition enums
@@ -192,7 +189,7 @@ fn parse_conditions(when: &Option<Vec<String>>) -> Result<Option<Vec<Condition>>
     let Some(conditions) = when else {
         return Ok(None);
     };
-    
+
     let mut result = Vec::with_capacity(conditions.len());
     for cond_str in conditions {
         let condition = parse_condition(cond_str)?;
@@ -255,7 +252,7 @@ impl std::error::Error for KeymapError {}
 // Implement FromStr for Command to parse from YAML
 impl FromStr for Command {
     type Err = ();
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             // Cursor movement
@@ -271,7 +268,7 @@ impl FromStr for Command {
             "MoveCursorWordRight" => Ok(Command::MoveCursorWordRight),
             "PageUp" => Ok(Command::PageUp),
             "PageDown" => Ok(Command::PageDown),
-            
+
             // Selection movement
             "MoveCursorUpWithSelection" => Ok(Command::MoveCursorUpWithSelection),
             "MoveCursorDownWithSelection" => Ok(Command::MoveCursorDownWithSelection),
@@ -279,13 +276,15 @@ impl FromStr for Command {
             "MoveCursorRightWithSelection" => Ok(Command::MoveCursorRightWithSelection),
             "MoveCursorLineStartWithSelection" => Ok(Command::MoveCursorLineStartWithSelection),
             "MoveCursorLineEndWithSelection" => Ok(Command::MoveCursorLineEndWithSelection),
-            "MoveCursorDocumentStartWithSelection" => Ok(Command::MoveCursorDocumentStartWithSelection),
+            "MoveCursorDocumentStartWithSelection" => {
+                Ok(Command::MoveCursorDocumentStartWithSelection)
+            }
             "MoveCursorDocumentEndWithSelection" => Ok(Command::MoveCursorDocumentEndWithSelection),
             "MoveCursorWordLeftWithSelection" => Ok(Command::MoveCursorWordLeftWithSelection),
             "MoveCursorWordRightWithSelection" => Ok(Command::MoveCursorWordRightWithSelection),
             "PageUpWithSelection" => Ok(Command::PageUpWithSelection),
             "PageDownWithSelection" => Ok(Command::PageDownWithSelection),
-            
+
             // Selection commands
             "SelectAll" => Ok(Command::SelectAll),
             "SelectWord" => Ok(Command::SelectWord),
@@ -293,14 +292,14 @@ impl FromStr for Command {
             "ClearSelection" => Ok(Command::ClearSelection),
             "ExpandSelection" => Ok(Command::ExpandSelection),
             "ShrinkSelection" => Ok(Command::ShrinkSelection),
-            
+
             // Multi-cursor
             "AddCursorAbove" => Ok(Command::AddCursorAbove),
             "AddCursorBelow" => Ok(Command::AddCursorBelow),
             "CollapseToSingleCursor" => Ok(Command::CollapseToSingleCursor),
             "SelectNextOccurrence" => Ok(Command::SelectNextOccurrence),
             "UnselectOccurrence" => Ok(Command::UnselectOccurrence),
-            
+
             // Text editing
             "InsertNewline" => Ok(Command::InsertNewline),
             "DeleteBackward" => Ok(Command::DeleteBackward),
@@ -312,26 +311,26 @@ impl FromStr for Command {
             "IndentLines" => Ok(Command::IndentLines),
             "UnindentLines" => Ok(Command::UnindentLines),
             "InsertTab" => Ok(Command::InsertTab),
-            
+
             // Clipboard
             "Copy" => Ok(Command::Copy),
             "Cut" => Ok(Command::Cut),
             "Paste" => Ok(Command::Paste),
-            
+
             // Undo/Redo
             "Undo" => Ok(Command::Undo),
             "Redo" => Ok(Command::Redo),
-            
+
             // File operations
             "SaveFile" => Ok(Command::SaveFile),
             "NewFile" => Ok(Command::NewFile),
             "Quit" => Ok(Command::Quit),
-            
+
             // Modals
             "ToggleCommandPalette" => Ok(Command::ToggleCommandPalette),
             "ToggleGotoLine" => Ok(Command::ToggleGotoLine),
             "ToggleFindReplace" => Ok(Command::ToggleFindReplace),
-            
+
             // Layout
             "NewTab" => Ok(Command::NewTab),
             "CloseTab" => Ok(Command::CloseTab),
@@ -345,11 +344,11 @@ impl FromStr for Command {
             "FocusGroup2" => Ok(Command::FocusGroup2),
             "FocusGroup3" => Ok(Command::FocusGroup3),
             "FocusGroup4" => Ok(Command::FocusGroup4),
-            
+
             // Special
             "EscapeSmartClear" => Ok(Command::EscapeSmartClear),
             "Unbound" => Ok(Command::Unbound),
-            
+
             _ => Err(()),
         }
     }
@@ -358,21 +357,21 @@ impl FromStr for Command {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_parse_simple_key() {
         let stroke = parse_key_string("a").unwrap();
         assert_eq!(stroke.key, KeyCode::Char('a'));
         assert!(stroke.mods.is_empty());
     }
-    
+
     #[test]
     fn test_parse_key_with_modifier() {
         let stroke = parse_key_string("ctrl+s").unwrap();
         assert_eq!(stroke.key, KeyCode::Char('s'));
         assert!(stroke.mods.ctrl());
     }
-    
+
     #[test]
     fn test_parse_key_with_multiple_modifiers() {
         let stroke = parse_key_string("ctrl+shift+s").unwrap();
@@ -380,7 +379,7 @@ mod tests {
         assert!(stroke.mods.ctrl());
         assert!(stroke.mods.shift());
     }
-    
+
     #[test]
     fn test_parse_cmd_modifier() {
         let stroke = parse_key_string("cmd+s").unwrap();
@@ -388,26 +387,26 @@ mod tests {
         // cmd maps to META on macOS, CTRL elsewhere
         assert!(stroke.mods.has_cmd());
     }
-    
+
     #[test]
     fn test_parse_named_key() {
         let stroke = parse_key_string("enter").unwrap();
         assert_eq!(stroke.key, KeyCode::Enter);
-        
+
         let stroke = parse_key_string("escape").unwrap();
         assert_eq!(stroke.key, KeyCode::Escape);
-        
+
         let stroke = parse_key_string("up").unwrap();
         assert_eq!(stroke.key, KeyCode::Up);
     }
-    
+
     #[test]
     fn test_parse_command() {
         assert_eq!(Command::from_str("SaveFile"), Ok(Command::SaveFile));
         assert_eq!(Command::from_str("Undo"), Ok(Command::Undo));
         assert_eq!(Command::from_str("MoveCursorUp"), Ok(Command::MoveCursorUp));
     }
-    
+
     #[test]
     fn test_parse_yaml() {
         let yaml = r#"
@@ -417,13 +416,13 @@ bindings:
   - key: "cmd+z"
     command: Undo
 "#;
-        
+
         let bindings = parse_keymap_yaml(yaml).unwrap();
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[0].command, Command::SaveFile);
         assert_eq!(bindings[1].command, Command::Undo);
     }
-    
+
     #[test]
     fn test_parse_yaml_with_platform() {
         let yaml = r#"
@@ -434,22 +433,22 @@ bindings:
     command: MoveCursorLineStart
     platform: macos
 "#;
-        
+
         let bindings = parse_keymap_yaml(yaml).unwrap();
-        
+
         // On macOS, should have 2 bindings; on other platforms, 1
         #[cfg(target_os = "macos")]
         assert_eq!(bindings.len(), 2);
-        
+
         #[cfg(not(target_os = "macos"))]
         assert_eq!(bindings.len(), 1);
     }
-    
+
     #[test]
     fn test_parse_numpad() {
         let stroke = parse_key_string("numpad1").unwrap();
         assert_eq!(stroke.key, KeyCode::Numpad1);
-        
+
         let stroke = parse_key_string("numpad_add").unwrap();
         assert_eq!(stroke.key, KeyCode::NumpadAdd);
     }

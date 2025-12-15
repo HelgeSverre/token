@@ -4,6 +4,7 @@
 //! implementing the Elm Architecture pattern.
 
 pub mod commands;
+pub mod config;
 #[cfg(debug_assertions)]
 pub mod debug_overlay;
 pub mod keymap;
@@ -17,6 +18,7 @@ pub mod util;
 
 // Re-export commonly used types
 pub use commands::Cmd;
+pub use config::EditorConfig;
 pub use messages::Msg;
 pub use model::AppModel;
 pub use theme::Theme;

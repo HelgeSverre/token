@@ -44,13 +44,13 @@ fn word_end_after(buffer: &ropey::Rope, offset: usize) -> usize {
     // Collect chars from offset onwards
     let text: String = buffer.slice(offset..).chars().collect();
     let chars: Vec<char> = text.chars().collect();
-    
+
     if chars.is_empty() {
         return offset;
     }
 
     let mut i = 0;
-    
+
     // Move through current word type until we hit a different type or EOF
     let current_type = char_type(chars[0]);
     while i < chars.len() && char_type(chars[i]) == current_type {

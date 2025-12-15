@@ -610,7 +610,7 @@ impl Renderer {
     ) {
         use token::commands::filter_commands;
         use token::model::ModalState;
-        use token::theme::BUILTIN_THEMES;
+        use token::theme::ThemeSource;
 
         let Some(ref modal) = model.ui.active_modal else {
             return;
@@ -636,9 +636,17 @@ impl Renderer {
         // Handle different modal types
         match modal {
             ModalState::ThemePicker(state) => {
-                // Theme picker: list only, no input field
-                let max_visible_items = BUILTIN_THEMES.len();
-                let list_height = max_visible_items * line_height;
+                // Theme picker: sectioned list (User / Builtin)
+                let themes = &state.themes;
+
+                // Count themes by source for section headers
+                let has_user = themes.iter().any(|t| t.source == ThemeSource::User);
+                let has_builtin = themes.iter().any(|t| t.source == ThemeSource::Builtin);
+                let section_count = has_user as usize + has_builtin as usize;
+
+                // Calculate visible rows: themes + section headers
+                let total_rows = themes.len() + section_count;
+                let list_height = total_rows * line_height;
                 let modal_height = 8 + line_height + 8 + list_height + 8; // title + gap + list + padding
                 let modal_width = 400;
                 let modal_x = (window_width.saturating_sub(modal_width)) / 2;
@@ -658,36 +666,49 @@ impl Renderer {
                 let title_y = modal_y + 8;
                 painter.draw(frame, title_x, title_y, "Switch Theme", fg_color);
 
-                // Theme list
+                // Theme list with sections
                 let list_y = title_y + line_height + 8;
-                let clamped_selected = state
-                    .selected_index
-                    .min(BUILTIN_THEMES.len().saturating_sub(1));
+                let clamped_selected = state.selected_index.min(themes.len().saturating_sub(1));
 
-                for (i, theme_entry) in BUILTIN_THEMES.iter().enumerate() {
-                    let item_y = list_y + i * line_height;
+                let mut current_y = list_y;
+                let mut current_source: Option<ThemeSource> = None;
+                let dim_color = 0xFF666666; // Dimmed color for section headers
+
+                for (i, theme_info) in themes.iter().enumerate() {
+                    // Draw section header when source changes
+                    if current_source != Some(theme_info.source) {
+                        current_source = Some(theme_info.source);
+                        let header = match theme_info.source {
+                            ThemeSource::User => "User Themes",
+                            ThemeSource::Builtin => "Built-in Themes",
+                        };
+                        painter.draw(frame, modal_x + 12, current_y, header, dim_color);
+                        current_y += line_height;
+                    }
+
                     let is_selected = i == clamped_selected;
 
                     if is_selected {
                         frame.fill_rect_px(
                             modal_x + 4,
-                            item_y,
+                            current_y,
                             modal_width - 8,
                             line_height,
                             selection_bg,
                         );
                     }
 
-                    // Draw theme name (capitalize and format ID)
-                    let label = theme_entry.id.replace('-', " ");
-                    let label_x = modal_x + 16;
-                    painter.draw(frame, label_x, item_y, &label, fg_color);
+                    // Draw theme name with indent
+                    let label_x = modal_x + 24;
+                    painter.draw(frame, label_x, current_y, &theme_info.name, fg_color);
 
                     // Show checkmark for current theme
-                    if model.theme.name.to_lowercase().replace(' ', "-") == theme_entry.id {
+                    if model.theme.name == theme_info.name || model.config.theme == theme_info.id {
                         let check_x = modal_x + modal_width - 30;
-                        painter.draw(frame, check_x, item_y, "✓", highlight_color);
+                        painter.draw(frame, check_x, current_y, "✓", highlight_color);
                     }
+
+                    current_y += line_height;
                 }
             }
 

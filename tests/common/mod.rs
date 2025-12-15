@@ -4,6 +4,7 @@
 
 #![allow(dead_code)]
 
+use token::config::EditorConfig;
 use token::model::{
     AppModel, Cursor, Document, EditorArea, EditorState, Position, RectangleSelectionState,
     Selection, UiState, Viewport,
@@ -44,6 +45,7 @@ pub fn test_model(text: &str, line: usize, column: usize) -> AppModel {
         editor_area,
         ui: UiState::new(),
         theme: Theme::default(),
+        config: EditorConfig::default(),
         window_size: (800, 600),
         line_height: 20,
         char_width: 10.0,
@@ -101,6 +103,7 @@ pub fn test_model_with_selection(
         editor_area,
         ui: UiState::new(),
         theme: Theme::default(),
+        config: EditorConfig::default(),
         window_size: (800, 600),
         line_height: 20,
         char_width: 10.0,
@@ -155,6 +158,7 @@ pub fn test_model_multi_cursor(text: &str, positions: &[(usize, usize)]) -> AppM
         editor_area,
         ui: UiState::new(),
         theme: Theme::default(),
+        config: EditorConfig::default(),
         window_size: (800, 600),
         line_height: 20,
         char_width: 10.0,

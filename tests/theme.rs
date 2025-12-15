@@ -1,6 +1,6 @@
 use token::theme::{
-    Color, Theme, BUILTIN_THEMES, DEFAULT_DARK_YAML, FLEET_DARK_YAML, GITHUB_DARK_YAML,
-    GITHUB_LIGHT_YAML,
+    list_available_themes, load_theme, Color, Theme, ThemeSource, BUILTIN_THEMES,
+    DEFAULT_DARK_YAML, FLEET_DARK_YAML, GITHUB_DARK_YAML, GITHUB_LIGHT_YAML,
 };
 
 #[test]
@@ -79,6 +79,63 @@ fn test_all_builtin_themes_parse() {
             !theme.name.is_empty(),
             "Theme '{}' has empty name",
             builtin.id
+        );
+    }
+}
+
+// ============================================================================
+// Theme loading tests
+// ============================================================================
+
+#[test]
+fn test_load_theme_builtin() {
+    let theme = load_theme("default-dark").unwrap();
+    assert_eq!(theme.name, "Default Dark");
+
+    let theme = load_theme("fleet-dark").unwrap();
+    assert_eq!(theme.name, "Fleet Dark");
+}
+
+#[test]
+fn test_load_theme_nonexistent() {
+    let result = load_theme("nonexistent-theme-that-does-not-exist");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_list_available_themes_includes_builtins() {
+    let themes = list_available_themes();
+
+    // Should have at least the 4 builtin themes
+    assert!(themes.len() >= 4);
+
+    // Check that all builtins are present
+    let ids: Vec<&str> = themes.iter().map(|t| t.id.as_str()).collect();
+    assert!(ids.contains(&"default-dark"));
+    assert!(ids.contains(&"fleet-dark"));
+    assert!(ids.contains(&"github-dark"));
+    assert!(ids.contains(&"github-light"));
+}
+
+#[test]
+fn test_list_available_themes_has_builtin_source() {
+    let themes = list_available_themes();
+
+    // Find a builtin theme and check its source
+    let default_dark = themes.iter().find(|t| t.id == "default-dark").unwrap();
+    assert_eq!(default_dark.source, ThemeSource::Builtin);
+    assert_eq!(default_dark.name, "Default Dark");
+}
+
+#[test]
+fn test_list_available_themes_names_populated() {
+    let themes = list_available_themes();
+
+    for theme in &themes {
+        assert!(
+            !theme.name.is_empty(),
+            "Theme '{}' has empty name",
+            theme.id
         );
     }
 }
