@@ -105,9 +105,7 @@ impl AppModel {
                 }
             }
         } else {
-            let doc = Document::with_text(
-                "Hello, World!\nThis is a text editor built in Rust.\nUsing Elm architecture!\n\nStart typing to edit.\n"
-            );
+            let doc = Document::new();
             (doc, "New file".to_string())
         };
 
