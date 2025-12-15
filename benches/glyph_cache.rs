@@ -4,6 +4,8 @@
 
 use std::collections::HashMap;
 
+use fontdue::{Font, FontSettings, Metrics};
+
 #[global_allocator]
 static ALLOC: divan::AllocProfiler = divan::AllocProfiler::system();
 
@@ -11,8 +13,102 @@ fn main() {
     divan::main();
 }
 
+fn load_test_font() -> Font {
+    Font::from_bytes(
+        include_bytes!("../assets/JetBrainsMono.ttf") as &[u8],
+        FontSettings::default(),
+    )
+    .expect("Failed to load font")
+}
+
 // ============================================================================
-// HashMap lookup patterns
+// Actual glyph rasterization (using fontdue)
+// ============================================================================
+
+#[divan::bench(args = [12.0, 16.0, 20.0, 24.0])]
+fn glyph_rasterize(font_size: f32) {
+    let font = load_test_font();
+    for ch in "The quick brown fox".chars() {
+        let (_metrics, bitmap) = font.rasterize(ch, font_size);
+        divan::black_box(bitmap);
+    }
+}
+
+#[divan::bench(args = [12.0, 16.0, 20.0, 24.0])]
+fn glyph_rasterize_full_alphabet(font_size: f32) {
+    let font = load_test_font();
+    for ch in '!'..='~' {
+        let (_metrics, bitmap) = font.rasterize(ch, font_size);
+        divan::black_box(bitmap);
+    }
+}
+
+// ============================================================================
+// Cache hit vs miss patterns with actual rasterization
+// ============================================================================
+
+type GlyphCache = HashMap<(char, u32), (Metrics, Vec<u8>)>;
+
+#[divan::bench]
+fn glyph_cache_realistic_paragraph() {
+    let font = load_test_font();
+    let mut cache: GlyphCache = HashMap::new();
+    let text = "The quick brown fox jumps over the lazy dog. ".repeat(10);
+    let font_size = 16.0_f32;
+
+    for ch in text.chars() {
+        let key = (ch, font_size.to_bits());
+        cache
+            .entry(key)
+            .or_insert_with(|| font.rasterize(ch, font_size));
+    }
+    divan::black_box(&cache);
+}
+
+#[divan::bench]
+fn glyph_cache_code_sample() {
+    let font = load_test_font();
+    let mut cache: GlyphCache = HashMap::new();
+    let code = r#"
+fn main() {
+    let x = 42;
+    println!("Hello, world! {}", x);
+}
+"#
+    .repeat(20);
+    let font_size = 14.0_f32;
+
+    for ch in code.chars() {
+        let key = (ch, font_size.to_bits());
+        cache
+            .entry(key)
+            .or_insert_with(|| font.rasterize(ch, font_size));
+    }
+    divan::black_box(&cache);
+}
+
+#[divan::bench(args = [100, 500, 1000])]
+fn glyph_cache_lookup_after_warmup(text_repeats: usize) {
+    let font = load_test_font();
+    let mut cache: GlyphCache = HashMap::new();
+    let font_size = 16.0_f32;
+
+    // Warmup: populate cache with ASCII printable characters
+    for ch in ' '..='~' {
+        let key = (ch, font_size.to_bits());
+        cache.insert(key, font.rasterize(ch, font_size));
+    }
+
+    // Benchmark: lookup common text (should be 100% cache hits)
+    let text = "The quick brown fox jumps over the lazy dog.\n".repeat(text_repeats);
+    for ch in text.chars() {
+        let key = (ch, font_size.to_bits());
+        divan::black_box(cache.get(&key));
+    }
+}
+
+// ============================================================================
+// HashMap lookup patterns (cache-only, no rasterization)
 // ============================================================================
 
 #[divan::bench]
@@ -95,24 +191,33 @@ fn key_creation_with_style() {
 }
 
 // ============================================================================
-// Bitmap allocation patterns
+// Font metrics extraction (common pattern in line measurement)
 // ============================================================================
 
-#[divan::bench(args = [12, 16, 20, 24])]
-fn glyph_bitmap_alloc(font_size: usize) {
-    let bitmap_size = font_size * font_size;
-    for _ in 0..1000 {
-        let bitmap: Vec<u8> = vec![0u8; bitmap_size];
-        divan::black_box(bitmap);
+#[divan::bench]
+fn font_metrics_extraction() {
+    let font = load_test_font();
+    let font_size = 16.0_f32;
+    let text = "The quick brown fox jumps over the lazy dog.";
+
+    let mut total_width = 0.0_f32;
+    for ch in text.chars() {
+        let metrics = font.metrics(ch, font_size);
+        total_width += metrics.advance_width;
     }
+    divan::black_box(total_width);
 }
 
-#[divan::bench]
-fn glyph_bitmap_reuse() {
-    let mut bitmap: Vec<u8> = Vec::with_capacity(1024);
-    for _ in 0..1000 {
-        bitmap.clear();
-        bitmap.resize(256, 0);
-        divan::black_box(&bitmap);
+#[divan::bench(args = [80, 120, 200])]
+fn font_metrics_long_line(line_length: usize) {
+    let font = load_test_font();
+    let font_size = 16.0_f32;
+    let text = "x".repeat(line_length);
+
+    let mut total_width = 0.0_f32;
+    for ch in text.chars() {
+        let metrics = font.metrics(ch, font_size);
+        total_width += metrics.advance_width;
     }
+    divan::black_box(total_width);
 }

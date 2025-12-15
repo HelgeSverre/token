@@ -2,6 +2,8 @@
 //!
 //! Run with: cargo bench rendering
 
+use token::rendering::blend_pixel_u8;
+
 #[global_allocator]
 static ALLOC: divan::AllocProfiler = divan::AllocProfiler::system();
 
@@ -39,25 +41,6 @@ fn clear_buffer_iter(width: usize) {
 // Alpha blending
 // ============================================================================
 
-fn blend_pixel(bg: u32, fg: u32, alpha: u8) -> u32 {
-    let a = alpha as u32;
-    let inv_a = 255 - a;
-
-    let bg_r = (bg >> 16) & 0xFF;
-    let bg_g = (bg >> 8) & 0xFF;
-    let bg_b = bg & 0xFF;
-
-    let fg_r = (fg >> 16) & 0xFF;
-    let fg_g = (fg >> 8) & 0xFF;
-    let fg_b = fg & 0xFF;
-
-    let r = (fg_r * a + bg_r * inv_a) / 255;
-    let g = (fg_g * a + bg_g * inv_a) / 255;
-    let b = (fg_b * a + bg_b * inv_a) / 255;
-
-    0xFF000000 | (r << 16) | (g << 8) | b
-}
-
 #[divan::bench]
 fn alpha_blend_single_glyph() {
     let mut buffer: Vec<u32> = vec![0xFF1E1E2E; 32 * 32];
@@ -68,7 +51,7 @@ fn alpha_blend_single_glyph() {
         for (gx, &alpha) in row.iter().enumerate() {
             if alpha > 0 {
                 let idx = gy * 32 + gx;
-                buffer[idx] = blend_pixel(buffer[idx], fg_color, alpha);
+                buffer[idx] = blend_pixel_u8(buffer[idx], fg_color, alpha);
             }
         }
     }
@@ -94,7 +77,7 @@ fn alpha_blend_text_line(glyph_count: usize) {
                     let py = base_y + gy;
                     if px < width && py < height {
                         let idx = py * width + px;
-                        buffer[idx] = blend_pixel(buffer[idx], fg_color, alpha);
+                        buffer[idx] = blend_pixel_u8(buffer[idx], fg_color, alpha);
                     }
                 }
             }
@@ -130,7 +113,7 @@ fn render_visible_lines(line_count: usize) {
                         let py = base_y + gy;
                         if px < width && py < height {
                             let idx = py * width + px;
-                            buffer[idx] = blend_pixel(buffer[idx], fg_color, alpha);
+                            buffer[idx] = blend_pixel_u8(buffer[idx], fg_color, alpha);
                         }
                     }
                 }
@@ -169,7 +152,7 @@ fn render_line_numbers(line_count: usize) {
                         let py = base_y + gy;
                         if px < gutter_width && py < height {
                             let idx = py * gutter_width + px;
-                            buffer[idx] = blend_pixel(buffer[idx], fg_color, alpha);
+                            buffer[idx] = blend_pixel_u8(buffer[idx], fg_color, alpha);
                         }
                     }
                 }

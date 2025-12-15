@@ -264,6 +264,118 @@ fn scaling_page_down_by_doc_size(doc_lines: usize) {
 }
 
 // ============================================================================
+// Multi-cursor benchmarks
+// ============================================================================
+
+#[divan::bench(args = [10, 100, 500])]
+fn multi_cursor_setup(cursor_count: usize) {
+    let mut model = make_model(10_000);
+
+    for i in 0..cursor_count {
+        let line = (i * 10) % 10_000;
+        model.editor_mut().add_cursor_at(line, 0);
+    }
+
+    divan::black_box(&model);
+}
+
+#[divan::bench(args = [10, 100, 500])]
+fn multi_cursor_insert_char(cursor_count: usize) {
+    let mut model = make_model(10_000);
+
+    // Create multiple cursors spread across the document
+    for i in 0..cursor_count {
+        let line = (i * 10) % 10_000;
+        model.editor_mut().add_cursor_at(line, 0);
+    }
+
+    // Insert at all cursors simultaneously
+    for i in 0..10 {
+        let ch = (b'a' + (i % 26) as u8) as char;
+        let cmd = update(&mut model, Msg::Document(DocumentMsg::InsertChar(ch)));
+        divan::black_box(cmd);
+    }
+
+    divan::black_box(&model);
+}
+
+#[divan::bench(args = [10, 100, 500])]
+fn multi_cursor_delete(cursor_count: usize) {
+    let mut model = make_model(10_000);
+
+    // Create multiple cursors
+    for i in 0..cursor_count {
+        let line = (i * 10) % 10_000;
+        model.editor_mut().add_cursor_at(line, 5);
+    }
+
+    // Delete backward at all cursors
+    for _ in 0..5 {
+        let cmd = update(&mut model, Msg::Document(DocumentMsg::DeleteBackward));
+        divan::black_box(cmd);
+    }
+
+    divan::black_box(&model);
+}
+
+#[divan::bench(args = [10, 100, 500])]
+fn multi_cursor_move_down(cursor_count: usize) {
+    let mut model = make_model(10_000);
+
+    // Create multiple cursors
+    for i in 0..cursor_count {
+        let line = (i * 10) % 9000; // Leave room for movement
+        model.editor_mut().add_cursor_at(line, 0);
+    }
+
+    // Move all cursors down
+    for _ in 0..10 {
+        let cmd = update(
+            &mut model,
+            Msg::Editor(EditorMsg::MoveCursor(Direction::Down)),
+        );
+        divan::black_box(cmd);
+    }
+
+    divan::black_box(&model);
+}
+
+#[divan::bench(args = [10, 100, 500])]
+fn multi_cursor_select_word(cursor_count: usize) {
+    let mut model = make_model(10_000);
+
+    // Create cursors at word positions
+    for i in 0..cursor_count {
+        let line = (i * 10) % 10_000;
+        model.editor_mut().add_cursor_at(line, 4); // In the middle of "quick"
+    }
+
+    // Select word at all cursors
+    let cmd = update(&mut model, Msg::Editor(EditorMsg::SelectWord));
+    divan::black_box(cmd);
+    divan::black_box(&model);
+}
+
+#[divan::bench]
+fn multi_cursor_add_cursor_above_below() {
+    let mut model = make_model(10_000);
+
+    // Add 50 cursors using AddCursorBelow
+    for _ in 0..50 {
+        let cmd = update(&mut model, Msg::Editor(EditorMsg::AddCursorBelow));
+        divan::black_box(cmd);
+    }
+
+    // Now add 50 using AddCursorAbove
+    for _ in 0..50 {
+        let cmd = update(&mut model, Msg::Editor(EditorMsg::AddCursorAbove));
+        divan::black_box(cmd);
+    }
+
+    divan::black_box(&model);
+}
+
+// ============================================================================
 // Realistic typing simulation
 // ============================================================================
 

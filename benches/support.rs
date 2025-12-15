@@ -7,6 +7,7 @@ use token::model::editor_area::EditorArea;
 use token::model::ui::UiState;
 use token::model::AppModel;
 use token::theme::Theme;
+use token::rendering::blend_pixel_u8;
 
 /// Create an AppModel with the specified number of lines
 pub fn make_model(lines: usize) -> AppModel {
@@ -40,6 +41,7 @@ pub fn make_model(lines: usize) -> AppModel {
 }
 
 /// Simplified renderer for benchmarking the render phase without actual GPU/windowing
+#[allow(dead_code)]
 pub struct BenchRenderer {
     pub width: usize,
     pub height: usize,
@@ -49,6 +51,7 @@ pub struct BenchRenderer {
     glyph: Vec<u8>,
 }
 
+#[allow(dead_code)]
 impl BenchRenderer {
     pub fn new(width: usize, height: usize, line_height: usize) -> Self {
         let buffer = vec![0xFF1E1E2E; width * height];
@@ -61,26 +64,6 @@ impl BenchRenderer {
             buffer,
             glyph,
         }
-    }
-
-    #[inline]
-    fn blend_pixel(bg: u32, fg: u32, alpha: u8) -> u32 {
-        let a = alpha as u32;
-        let inv_a = 255 - a;
-
-        let bg_r = (bg >> 16) & 0xFF;
-        let bg_g = (bg >> 8) & 0xFF;
-        let bg_b = bg & 0xFF;
-
-        let fg_r = (fg >> 16) & 0xFF;
-        let fg_g = (fg >> 8) & 0xFF;
-        let fg_b = fg & 0xFF;
-
-        let r = (fg_r * a + bg_r * inv_a) / 255;
-        let g = (fg_g * a + bg_g * inv_a) / 255;
-        let b = (fg_b * a + bg_b * inv_a) / 255;
-
-        0xFF000000 | (r << 16) | (g << 8) | b
     }
 
     /// Render a frame simulating the work done by the real Renderer
@@ -121,7 +104,7 @@ impl BenchRenderer {
                             if px < self.width && py < self.height {
                                 let idx = py * self.width + px;
                                 self.buffer[idx] =
-                                    Self::blend_pixel(self.buffer[idx], fg_color, alpha);
+                                    blend_pixel_u8(self.buffer[idx], fg_color, alpha);
                             }
                         }
                     }

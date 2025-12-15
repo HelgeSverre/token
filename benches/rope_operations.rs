@@ -130,3 +130,96 @@ fn slice_to_string() {
     let slice = rope.slice(start..end);
     divan::black_box(slice.to_string());
 }
+
+// ============================================================================
+// Large file scaling tests (500k+ lines)
+// ============================================================================
+
+#[divan::bench(args = [100_000, 500_000, 1_000_000])]
+fn insert_middle_large_file(line_count: usize) {
+    let mut rope = Rope::from_str(&"line content here\n".repeat(line_count));
+    let pos = rope.len_chars() / 2;
+    rope.insert(pos, divan::black_box("inserted text\n"));
+}
+
+#[divan::bench(args = [100_000, 500_000, 1_000_000])]
+fn insert_start_large_file(line_count: usize) {
+    let mut rope = Rope::from_str(&"line content here\n".repeat(line_count));
+    rope.insert(0, divan::black_box("inserted text\n"));
+}
+
+#[divan::bench(args = [100_000, 500_000, 1_000_000])]
+fn insert_end_large_file(line_count: usize) {
+    let mut rope = Rope::from_str(&"line content here\n".repeat(line_count));
+    let pos = rope.len_chars();
+    rope.insert(pos, divan::black_box("inserted text\n"));
+}
+
+#[divan::bench(args = [100_000, 500_000, 1_000_000])]
+fn delete_middle_large_file(line_count: usize) {
+    let mut rope = Rope::from_str(&"line content here\n".repeat(line_count));
+    let start = rope.len_chars() / 2;
+    let end = start + 1000;
+    rope.remove(start..end);
+}
+
+#[divan::bench(args = [100_000, 500_000, 1_000_000])]
+fn navigate_large_file(line_count: usize) {
+    let rope = Rope::from_str(&"line content here\n".repeat(line_count));
+
+    // Jump around the file
+    let targets = [
+        0,
+        line_count / 4,
+        line_count / 2,
+        line_count * 3 / 4,
+        line_count - 1,
+    ];
+    for target_line in targets {
+        let char_idx = rope.line_to_char(target_line);
+        divan::black_box(char_idx);
+    }
+}
+
+#[divan::bench(args = [100_000, 500_000, 1_000_000])]
+fn line_count_large_file(line_count: usize) {
+    let rope = Rope::from_str(&"line content here\n".repeat(line_count));
+    divan::black_box(rope.len_lines());
+}
+
+#[divan::bench(args = [100_000, 500_000])]
+fn get_line_near_end_large_file(line_count: usize) {
+    let rope = Rope::from_str(&"line content here with more text\n".repeat(line_count));
+    let target_line = line_count - 100;
+    let line = rope.line(target_line);
+    divan::black_box(line.to_string());
+}
+
+// ============================================================================
+// Realistic editing patterns at scale
+// ============================================================================
+
+#[divan::bench(args = [100_000, 500_000])]
+fn sequential_inserts_large_file(line_count: usize) {
+    let mut rope = Rope::from_str(&"base line\n".repeat(line_count));
+
+    // Simulate typing 100 characters at the middle
+    let mut pos = rope.len_chars() / 2;
+    for _ in 0..100 {
+        rope.insert_char(pos, 'x');
+        pos += 1;
+    }
+    divan::black_box(&rope);
+}
+
+#[divan::bench(args = [100_000, 500_000])]
+fn sequential_deletes_large_file(line_count: usize) {
+    let mut rope = Rope::from_str(&"base line content\n".repeat(line_count));
+
+    // Delete 100 characters from middle
+    let pos = rope.len_chars() / 2;
+    for _ in 0..100 {
+        rope.remove(pos..pos + 1);
+    }
+    divan::black_box(&rope);
+}

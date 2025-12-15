@@ -1,7 +1,8 @@
 # Benchmark Suite Improvements
 
-**Status:** Planned  
+**Status:** Completed (Phases 1, 2, 4)  
 **Created:** 2025-12-15  
+**Completed:** 2025-12-15  
 **Effort:** M (3-5 days)
 
 ---
@@ -397,29 +398,29 @@ harness = false         # criterion for CI tracking
 
 ## Implementation Checklist
 
-### Phase 1: Fix Inaccurate Benchmarks
-- [ ] Rewrite `glyph_bitmap_alloc` to use actual fontdue
-- [ ] Extract `blend_pixel` to `src/view/blend.rs`
-- [ ] Update `rendering.rs` to use extracted function
-- [ ] Remove duplicated code from `support.rs`
-- [ ] Add test font loading helper
+### Phase 1: Fix Inaccurate Benchmarks ✅ (Completed 2025-12-15)
+- [x] Rewrite `glyph_bitmap_alloc` to use actual fontdue
+- [x] Extract `blend_pixel` to `src/lib.rs::rendering` module
+- [x] Update `rendering.rs` to use extracted function
+- [x] Remove duplicated code from `support.rs`
+- [x] Add test font loading helper
 
-### Phase 2: Add Missing Benchmarks
-- [ ] Create `benches/syntax.rs` with tree-sitter benchmarks
-- [ ] Add multi-cursor benchmarks to `main_loop.rs`
-- [ ] Add 500k+ line tests to `rope_operations.rs`
-- [ ] Create `benches/search.rs` for find/replace
-- [ ] Create `benches/layout.rs` for text measurement
+### Phase 2: Add Missing Benchmarks ✅ (Completed 2025-12-15)
+- [ ] Create `benches/syntax.rs` with tree-sitter benchmarks (deferred — feature not ready)
+- [x] Add multi-cursor benchmarks to `main_loop.rs`
+- [x] Add 500k+ line tests to `rope_operations.rs`
+- [x] Create `benches/search.rs` for find/replace
+- [x] Create `benches/layout.rs` for text measurement
 
-### Phase 3: Throughput Metrics
+### Phase 3: Throughput Metrics (Future)
 - [ ] Add criterion as dev dependency
 - [ ] Create `benches/ci.rs` with throughput tracking
 - [ ] Document CI integration approach
 
-### Phase 4: Text Layout
-- [ ] Add line width measurement benchmarks
-- [ ] Add visible line calculation benchmarks
-- [ ] Add line wrapping benchmarks (future)
+### Phase 4: Text Layout ✅ (Completed 2025-12-15)
+- [x] Add line width measurement benchmarks
+- [x] Add visible line calculation benchmarks
+- [ ] Add line wrapping benchmarks (future — when soft wrap implemented)
 
 ---
 

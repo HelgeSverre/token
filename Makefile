@@ -45,7 +45,7 @@ run: release
 
 # Run debug build (faster compile, slower runtime)
 dev: build
-	./target/debug/token samples/sample_code.rs
+	./target/debug/token samples/sample_code.rs README.md keymap.yaml samples/sample.html
 
 # Run with full debug tracing enabled
 trace: build
@@ -118,6 +118,11 @@ help:
 	@echo "  make bench-rope   - Rope operation benchmarks"
 	@echo "  make bench-render - Rendering benchmarks"
 	@echo "  make bench-glyph  - Glyph cache benchmarks"
+	@echo "  make bench-loop   - Main loop benchmarks"
+	@echo "  make bench-search - Search operation benchmarks"
+	@echo "  make bench-layout - Text layout benchmarks"
+	@echo "  make bench-multicursor - Multi-cursor benchmarks"
+	@echo "  make bench-large  - Large file (500k+) benchmarks"
 	@echo ""
 	@echo "Profiling:"
 	@echo "  make flamegraph     - Generate CPU flamegraph"
@@ -216,7 +221,7 @@ endif
 bench:
 	cargo bench
 
-# Run rope operation benchmarks
+# Run rope operation benchmarks (includes large file scaling)
 bench-rope:
 	cargo bench --bench rope_operations
 
@@ -224,9 +229,29 @@ bench-rope:
 bench-render:
 	cargo bench --bench rendering
 
-# Run glyph cache benchmarks
+# Run glyph cache benchmarks (actual fontdue rasterization)
 bench-glyph:
 	cargo bench --bench glyph_cache
+
+# Run main loop benchmarks (update cycle, multi-cursor)
+bench-loop:
+	cargo bench --bench main_loop
+
+# Run search benchmarks (find/replace operations)
+bench-search:
+	cargo bench --bench search
+
+# Run text layout benchmarks (line measurement, viewport)
+bench-layout:
+	cargo bench --bench layout
+
+# Run multi-cursor specific benchmarks
+bench-multicursor:
+	cargo bench --bench main_loop -- multi_cursor
+
+# Run large file benchmarks (500k+ lines)
+bench-large:
+	cargo bench -- large_file
 
 # === Coverage targets (requires: cargo install cargo-llvm-cov) ===
 
