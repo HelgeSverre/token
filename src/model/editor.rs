@@ -2,6 +2,7 @@
 
 use super::document::Document;
 use super::editor_area::{DocumentId, EditorId};
+use crate::csv::CsvState;
 use crate::util::{char_type, CharType};
 
 /// Strategy for revealing the cursor when it's outside the viewport
@@ -264,6 +265,42 @@ pub struct OccurrenceState {
     pub last_search_offset: usize,
 }
 
+/// View mode for the editor
+///
+/// Allows switching between normal text editing and specialized views
+/// like CSV grid mode. The underlying Document is shared.
+#[derive(Debug, Clone, Default)]
+pub enum ViewMode {
+    /// Normal text editing mode (default)
+    #[default]
+    Text,
+    /// CSV spreadsheet view mode
+    Csv(Box<CsvState>),
+}
+
+impl ViewMode {
+    /// Check if in CSV mode
+    pub fn is_csv(&self) -> bool {
+        matches!(self, ViewMode::Csv(_))
+    }
+
+    /// Get CSV state if in CSV mode
+    pub fn as_csv(&self) -> Option<&CsvState> {
+        match self {
+            ViewMode::Csv(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    /// Get mutable CSV state if in CSV mode
+    pub fn as_csv_mut(&mut self) -> Option<&mut CsvState> {
+        match self {
+            ViewMode::Csv(state) => Some(state),
+            _ => None,
+        }
+    }
+}
+
 /// Editor state - view-specific state for editing a document
 ///
 /// Supports multiple cursors and selections. The "active" cursor is the one
@@ -295,6 +332,8 @@ pub struct EditorState {
     /// Selection history stack for expand/shrink selection (Option+Up/Down)
     /// Push before expanding, pop when shrinking
     pub selection_history: Vec<Selection>,
+    /// Current view mode (Text or CSV)
+    pub view_mode: ViewMode,
 }
 
 impl EditorState {
@@ -313,6 +352,7 @@ impl EditorState {
             rectangle_selection: RectangleSelectionState::default(),
             occurrence_state: None,
             selection_history: Vec::new(),
+            view_mode: ViewMode::default(),
         }
     }
 
@@ -331,6 +371,7 @@ impl EditorState {
             rectangle_selection: RectangleSelectionState::default(),
             occurrence_state: None,
             selection_history: Vec::new(),
+            view_mode: ViewMode::default(),
         }
     }
 
