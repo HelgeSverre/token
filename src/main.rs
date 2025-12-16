@@ -49,7 +49,7 @@ mod tests {
     use token::messages::{DocumentMsg, EditorMsg, Msg};
     use token::model::{
         AppModel, Cursor, Document, EditorArea, EditorState, Position, RectangleSelectionState,
-        Selection, UiState, Viewport,
+        Selection, UiState, ViewMode, Viewport,
     };
     use token::theme::Theme;
     use token::update::update;
@@ -90,6 +90,7 @@ mod tests {
             rectangle_selection: RectangleSelectionState::default(),
             occurrence_state: None,
             selection_history: Vec::new(),
+            view_mode: ViewMode::default(),
         };
         let editor_area = EditorArea::single_document(document, editor);
         AppModel {
@@ -668,6 +669,7 @@ mod tests {
             rectangle_selection: RectangleSelectionState::default(),
             occurrence_state: None,
             selection_history: Vec::new(),
+            view_mode: ViewMode::default(),
         };
         let editor_area = EditorArea::single_document(document, editor);
         let mut model = AppModel {

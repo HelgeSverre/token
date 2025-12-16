@@ -11,7 +11,7 @@ pub mod ui;
 pub use document::{Document, EditOperation};
 pub use editor::{
     Cursor, EditorState, OccurrenceState, Position, RectangleSelectionState, ScrollRevealMode,
-    Selection, Viewport,
+    Selection, ViewMode, Viewport,
 };
 pub use editor_area::{
     DocumentId, EditorArea, EditorGroup, EditorId, GroupId, LayoutNode, Rect, SplitContainer,

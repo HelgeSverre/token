@@ -476,9 +476,18 @@ impl EditorArea {
     }
 
     /// Compute layout with a custom splitter width (for HiDPI scaling).
-    pub fn compute_layout_scaled(&mut self, available: Rect, splitter_width: f32) -> Vec<SplitterBar> {
+    pub fn compute_layout_scaled(
+        &mut self,
+        available: Rect,
+        splitter_width: f32,
+    ) -> Vec<SplitterBar> {
         let mut splitters = Vec::new();
-        self.compute_layout_node(&self.layout.clone(), available, &mut splitters, splitter_width);
+        self.compute_layout_node(
+            &self.layout.clone(),
+            available,
+            &mut splitters,
+            splitter_width,
+        );
         splitters
     }
 

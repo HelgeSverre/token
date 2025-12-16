@@ -1,6 +1,6 @@
 # Makefile for token
 
-.PHONY: build release run dev test-syntax trace test clean fmt format lint help samples-files ci \
+.PHONY: build release run dev csv test-syntax trace test clean fmt format lint help samples-files ci \
         build-prof flamegraph profile-samply profile-memory \
         bench bench-rope bench-render bench-glyph \
         coverage coverage-html coverage-ci \
@@ -68,6 +68,10 @@ test-syntax: release
 		samples/syntax/sample.java \
 		samples/syntax/sample.sh
 
+# Run with CSV sample file for testing CSV viewer
+csv: build samples/large_data.csv
+	./target/debug/token samples/large_data.csv
+
 # Run with full debug tracing enabled
 trace: build
 	RUST_LOG=debug ./target/debug/token samples/sample_code.rs
@@ -109,6 +113,26 @@ samples/binary.bin:
 	@echo "Generating binary test file..."
 	@head -c 1024 /dev/urandom > samples/binary.bin
 
+samples/large_data.csv:
+	@mkdir -p samples
+	@echo "Generating large CSV file (10000 rows)..."
+	@echo "id,first_name,last_name,email,company,department,job_title,salary,hire_date,country,city,phone,status,age,performance_score" > samples/large_data.csv
+	@for i in $$(seq 1 10000); do \
+		fn=$$(echo "James Maria Wei Sarah Mohammed Emma Raj Sophie Hans Yuki Carlos Anna John Fatima Lucas Olivia Kim Elena Ahmed Lisa" | tr ' ' '\n' | shuf -n1); \
+		ln=$$(echo "Smith Garcia Chen Johnson Hassan Williams Patel Dubois Mueller Tanaka Rodriguez Kowalski Brown Khan Silva Taylor Park Volkov Ibrahim Anderson" | tr ' ' '\n' | shuf -n1); \
+		dept=$$(echo "Engineering Marketing Finance Product HR Design Research Sales Support Operations Legal" | tr ' ' '\n' | shuf -n1); \
+		country=$$(echo "USA UK Germany France Japan China India Brazil Canada Australia Spain Italy" | tr ' ' '\n' | shuf -n1); \
+		city=$$(echo "NYC London Berlin Paris Tokyo Shanghai Mumbai SP Toronto Sydney Madrid Rome" | tr ' ' '\n' | shuf -n1); \
+		status=$$(echo "active active active active inactive" | tr ' ' '\n' | shuf -n1); \
+		salary=$$((50000 + RANDOM % 150000)); \
+		age=$$((22 + RANDOM % 40)); \
+		score=$$(echo "3.5 3.7 3.9 4.0 4.2 4.4 4.5 4.7 4.9" | tr ' ' '\n' | shuf -n1); \
+		year=$$((2015 + RANDOM % 10)); \
+		month=$$(printf "%02d" $$((1 + RANDOM % 12))); \
+		day=$$(printf "%02d" $$((1 + RANDOM % 28))); \
+		echo "$$i,$$fn,$$ln,$$fn.$$ln@company.com,Company$$i,$$dept,$$dept Manager,$$salary,$$year-$$month-$$day,$$country,$$city,+1-555-$$((1000 + i)),$$status,$$age,$$score"; \
+	done >> samples/large_data.csv
+
 # Help
 help:
 	@echo "token Makefile"
@@ -126,6 +150,7 @@ help:
 	@echo "Run targets:"
 	@echo "  make run          - Run with default samples file (indentation.txt)"
 	@echo "  make dev          - Run debug build (faster compile)"
+	@echo "  make csv          - Run with large CSV file (tests CSV viewer)"
 	@echo "  make test-syntax  - Open all 17 syntax sample files for manual testing"
 	@echo ""
 	@echo "Test targets:"

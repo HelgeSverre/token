@@ -50,6 +50,7 @@ List them with `make help`
 | `make release` | Build optimized release binary                   |
 | `make run`     | Run with default sample file (indentation.txt)   |
 | `make dev`     | Run debug build (faster compile, slower runtime) |
+| `make csv`     | Run with large CSV file (tests CSV viewer)       |
 | `make clean`   | Remove build artifacts                           |
 | `make fmt`     | Format Rust code and markdown files              |
 
@@ -60,6 +61,17 @@ List them with `make help`
 | `make test`         | Run all tests                          |
 | `make test-verbose` | Run tests with output                  |
 | `make test-fast`    | Run tests faster using `cargo nextest` |
+
+### Features
+
+| Feature                   | Description                                                    |
+| ------------------------- | -------------------------------------------------------------- |
+| Multi-cursor editing      | Option+Click to add cursors, Option+Option+Arrow to add above/below |
+| Split views               | Horizontal and vertical splits with independent viewports      |
+| Syntax highlighting       | Tree-sitter based, 17 languages supported                      |
+| **CSV Viewer**            | Spreadsheet view for CSV/TSV/PSV files (Command Palette → "Toggle CSV View") |
+| Configurable keybindings  | YAML-based keymap with context-aware bindings                  |
+| Themes                    | Dark and light themes with full customization                  |
 
 ---
 
