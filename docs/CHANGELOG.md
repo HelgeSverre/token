@@ -4,7 +4,48 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## v0.3.4 - 2025-12-16 (Latest)
+## v0.3.5 - 2025-12-16 (Latest)
+
+### Added - CSV Viewer Mode (Phase 1)
+
+Spreadsheet-like view for CSV, TSV, and PSV files with full navigation support:
+
+**Core Features:**
+- **Grid rendering** with row numbers (1, 2, 3...) and column headers (A, B, C...)
+- **Cell selection** via mouse click with proper hit-testing
+- **Delimiter detection** from file extension or content sniffing
+- **Column width auto-calculation** based on content (sampled from first 100 rows)
+- **Theme integration** with configurable colors for headers, grid lines, selection
+- **Memory-efficient storage** using delimited strings (Tablecruncher pattern)
+
+**Navigation:**
+- Arrow keys move cell selection
+- Tab/Shift+Tab for next/previous cell with row wrapping
+- Home/End for first/last column in row
+- Cmd+Home/End for first/last cell in document
+- Page Up/Down jumps by viewport height
+- Mouse wheel scrolling (vertical and horizontal)
+- Click to select cell
+
+**Integration:**
+- Command palette: "Toggle CSV View" command
+- Escape exits CSV mode
+- Status bar shows CSV mode indicator
+- Works with split views
+
+**New files:**
+- `src/csv/` module with `mod.rs`, `model.rs`, `parser.rs`, `render.rs`, `navigation.rs`, `viewport.rs`
+- `samples/large_data.csv` - 10,001-line test file
+- `make csv` target for testing
+
+**Messages added:**
+- `CsvMsg` enum with Toggle, Move*, NextCell, PrevCell, FirstCell, LastCell, RowStart, RowEnd, PageUp, PageDown, Exit, SelectCell, ScrollVertical, ScrollHorizontal
+
+**Documentation:** See [docs/feature/csv-editor.md](feature/csv-editor.md)
+
+---
+
+## v0.3.4 - 2025-12-16
 
 ### Fixed - HiDPI Display Switching
 

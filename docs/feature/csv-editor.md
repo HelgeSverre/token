@@ -1,10 +1,28 @@
 # CSV Viewer/Editor Mode
 
-A spreadsheet-like view for tabular data files (CSV, TSV) with cell editing, horizontal scrolling, and synchronization with the underlying text buffer.
+A spreadsheet-like view for tabular data files (CSV, TSV, PSV) with cell editing, horizontal scrolling, and synchronization with the underlying text buffer.
 
-> **Status:** Planning
+> **Status:** Phase 1 Complete ✅ (Read-only viewer with full navigation)
 > **Inspired by:** [Tablecruncher](https://github.com/Tablecruncher/tablecruncher), TablePlus
-> **Target:** Phase 1 (Read-only) → Phase 2 (Cell Editing) → Phase 3 (Advanced Features)
+> **Target:** ~~Phase 1 (Read-only)~~ → Phase 2 (Cell Editing) → Phase 3 (Advanced Features)
+
+---
+
+## Phase 1 Implementation Summary
+
+Phase 1 delivers a fully functional read-only CSV viewer with:
+
+- **Grid rendering** with row numbers (1, 2, 3...) and column headers (A, B, C...)
+- **Cell selection** via mouse click or keyboard navigation
+- **Keyboard navigation**: Arrow keys, Tab/Shift+Tab, Home/End, Page Up/Down, Cmd+Home/End
+- **Mouse wheel scrolling** for both vertical and horizontal navigation
+- **Delimiter detection** from file extension (.csv, .tsv, .psv) or content sniffing
+- **Column width auto-calculation** based on content (sampled from first 100 rows)
+- **Theme integration** with configurable colors for headers, grid lines, selection
+- **Command palette integration** via "Toggle CSV View" command
+- **Large file support** tested with 10,000+ row files
+
+**Test command:** `make csv` opens a 10,001-line sample CSV file for testing.
 
 ---
 

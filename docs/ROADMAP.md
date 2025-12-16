@@ -8,6 +8,25 @@ For completed work, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Recently Completed
 
+### CSV Viewer Phase 1 (Read-Only) ✅
+
+**Design:** [feature/csv-editor.md](feature/csv-editor.md) | **Completed:** 2025-12-16
+
+Spreadsheet-like view for CSV/TSV/PSV files with grid rendering and cell navigation:
+
+- **Module structure:** `src/csv/` with model.rs, parser.rs, viewport.rs, navigation.rs, render.rs
+- **Data model:** `CsvData` with memory-efficient row storage (0xFA delimiter), `CsvState`, `CellPosition`
+- **Parsing:** RFC 4180 compliant via `csv` crate, auto-detect delimiter from content or extension
+- **ViewMode enum:** Added to `EditorState` for switching between Text and Csv modes
+- **Grid rendering:** Row numbers, column headers (A, B, C...), cell grid, selected cell highlight
+- **Navigation:** Arrow keys, Tab/Shift+Tab, Page Up/Down, Home/End, Cmd+Home/End
+- **Theme support:** `CsvTheme` with header, grid lines, selection, and number colors
+- **Command integration:** "Toggle CSV View" in command palette
+
+Remaining phases:
+- **Phase 2:** Cell editing with sync to document buffer, undo/redo
+- **Phase 3:** Mouse click selection, copy support, virtual scrolling for large files
+
 ### HiDPI Display Switching Fixes ✅
 
 **Design:** [archived/UI-SCALING-REVIEW.md](archived/UI-SCALING-REVIEW.md) | **Completed:** 2025-12-16 (v0.3.4)
@@ -343,6 +362,7 @@ Group rapid consecutive edits into single undo entries:
 | Keymap Enhancements         | Future      | [future/keymap-enhancements.md](future/keymap-enhancements.md)                           |
 | Workspace Management        | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                       |
 | Syntax Highlighting         | ✅ MVP      | [feature/syntax-highlighting.md](feature/syntax-highlighting.md)                         |
+| CSV Viewer/Editor           | ✅ Phase 1  | [feature/csv-editor.md](feature/csv-editor.md)                                           |
 
 ---
 
@@ -400,6 +420,13 @@ src/
 │   ├── highlights.rs    # HighlightToken, LineHighlights, SyntaxHighlights
 │   ├── languages.rs     # LanguageId, language detection from extensions
 │   └── worker.rs        # SyntaxWorker, async parsing, debouncing
+├── csv/                 # CSV viewer/editor mode
+│   ├── mod.rs           # Module exports
+│   ├── model.rs         # CsvData, CsvState, CellPosition, Delimiter
+│   ├── parser.rs        # RFC 4180 parsing with csv crate
+│   ├── viewport.rs      # CsvViewport for scrolling
+│   ├── navigation.rs    # Cell navigation logic
+│   └── render.rs        # Grid rendering helpers
 ├── config.rs            # EditorConfig, theme persistence
 ├── config_paths.rs      # Centralized config directory paths
 ├── theme.rs             # Theme, Color, ThemeInfo, load_theme(), SyntaxTheme
