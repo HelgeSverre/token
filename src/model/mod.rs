@@ -449,11 +449,19 @@ impl AppModel {
     pub fn resize(&mut self, width: u32, height: u32) {
         self.window_size = (width, height);
 
-        let text_x = text_start_x(self.char_width).round();
+        let text_x = text_start_x_scaled(self.char_width, &self.metrics).round();
         let visible_columns = ((width as f32 - text_x) / self.char_width).floor() as usize;
-        // Subtract status bar height (1 line) from available height
+        // Subtract status bar height (1 line) and tab bar height from available height
         let status_bar_height = self.line_height;
-        let visible_lines = (height as usize).saturating_sub(status_bar_height) / self.line_height;
+        let tab_bar_height = self.metrics.tab_bar_height;
+        let available_height = (height as usize)
+            .saturating_sub(status_bar_height)
+            .saturating_sub(tab_bar_height);
+        let visible_lines = if self.line_height > 0 {
+            available_height / self.line_height
+        } else {
+            0
+        };
 
         // FIX: Update ALL editors, not just the focused one
         for editor in self.editor_area.editors.values_mut() {
@@ -466,8 +474,8 @@ impl AppModel {
     pub fn set_char_width(&mut self, char_width: f32) {
         self.char_width = char_width;
 
-        // Recalculate visible columns with new char width
-        let text_x = text_start_x(char_width).round();
+        // Recalculate visible columns with new char width using scaled metrics
+        let text_x = text_start_x_scaled(char_width, &self.metrics).round();
         let visible_columns = ((self.window_size.0 as f32 - text_x) / char_width).floor() as usize;
 
         // FIX: Update ALL editors, not just the focused one

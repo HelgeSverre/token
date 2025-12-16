@@ -57,8 +57,17 @@ impl Renderer {
             (size.width, size.height)
         };
 
-        let surface = Surface::new(context, Rc::clone(&window))
+        let mut surface = Surface::new(context, Rc::clone(&window))
             .map_err(|e| anyhow::anyhow!("Failed to create surface: {}", e))?;
+
+        // Explicitly resize the surface to match window dimensions
+        // This is critical after DPI changes when the physical size changes
+        surface
+            .resize(
+                NonZeroU32::new(width).unwrap_or(NonZeroU32::new(1).unwrap()),
+                NonZeroU32::new(height).unwrap_or(NonZeroU32::new(1).unwrap()),
+            )
+            .map_err(|e| anyhow::anyhow!("Failed to resize surface: {}", e))?;
 
         let font = Font::from_bytes(
             include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
@@ -107,7 +116,6 @@ impl Renderer {
         self.font_size
     }
 
-    #[allow(dead_code)]
     pub fn line_height(&self) -> usize {
         self.line_metrics.new_line_size.ceil() as usize
     }

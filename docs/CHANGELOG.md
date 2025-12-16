@@ -4,7 +4,33 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## v0.3.3 - 2025-12-15 (Latest)
+## v0.3.4 - 2025-12-16 (Latest)
+
+### Fixed - HiDPI Display Switching
+
+Fixed critical issues when switching between displays with different DPI/scale factors (e.g., moving window between Retina and non-Retina monitors):
+
+- **Surface resize on display change** - The softbuffer Surface is now explicitly resized after creation, fixing incorrect rendering when switching displays
+- **Buffer bounds checking in Frame** - Frame::new now validates buffer size matches dimensions, preventing panics during display transitions
+- **Dynamic tab bar height** - Tab bar height is now computed from actual glyph metrics (`line_height + padding * 2`) instead of hardcoded values
+- **Scaled metrics throughout** - Model's `resize()` and `set_char_width()` now use properly scaled metrics for viewport calculations
+
+### Changed
+
+- `ScaleFactorChanged` now triggers both `ReinitializeRenderer` and `Redraw` commands to ensure immediate visual update
+- `reinit_renderer` recomputes tab bar height and viewport geometry after font metrics change
+- Viewport visible lines calculation now accounts for tab bar height
+
+### Technical Details
+
+- `Renderer::with_scale_factor` explicitly calls `surface.resize()` after creation
+- `Frame::new` adjusts height if buffer is smaller than expected (`width * height`)
+- `recompute_tab_bar_height_from_line_height()` added to AppModel for font-metric-based sizing
+- `group_content_rect_scaled()` now used in rendering for DPI-aware content areas
+
+---
+
+## v0.3.3 - 2025-12-15
 
 ### Added - Phase 3-5 Languages for Syntax Highlighting
 
