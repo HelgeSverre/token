@@ -42,7 +42,21 @@ pub struct Frame<'a> {
 
 impl<'a> Frame<'a> {
     /// Create a new frame from a mutable pixel buffer
+    ///
+    /// If the buffer is smaller than width*height, dimensions are adjusted
+    /// to match the actual buffer size to prevent out-of-bounds access.
     pub fn new(buffer: &'a mut [u32], width: usize, height: usize) -> Self {
+        let expected_size = width * height;
+        let actual_size = buffer.len();
+
+        let (width, height) = if actual_size < expected_size && width > 0 {
+            // Buffer is smaller than expected - recalculate height to fit
+            let adjusted_height = actual_size / width;
+            (width, adjusted_height)
+        } else {
+            (width, height)
+        };
+
         Self {
             buffer,
             width,
