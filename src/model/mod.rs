@@ -220,23 +220,101 @@ fn create_initial_session(file_paths: Vec<PathBuf>, geom: &ViewportGeometry) -> 
 
 /// Layout constant - width of line number gutter in characters (e.g., " 123 ")
 pub const LINE_NUMBER_GUTTER_CHARS: usize = 5;
-/// Padding after line numbers, before the gutter border (pixels)
-pub const GUTTER_PADDING_PX: f32 = 4.0;
-/// Padding after the gutter border, before text content (pixels)  
-pub const TEXT_AREA_PADDING_PX: f32 = 8.0;
 
-/// Calculate the x-coordinate where text content begins
-#[inline]
-pub fn text_start_x(char_width: f32) -> f32 {
-    let gutter_width = char_width * LINE_NUMBER_GUTTER_CHARS as f32 + GUTTER_PADDING_PX;
-    let border_width = 1.0;
-    gutter_width + border_width + TEXT_AREA_PADDING_PX
+// ============================================================================
+// Scaled Metrics - UI layout constants scaled for display DPI
+// ============================================================================
+
+/// Layout metrics scaled for the current display's scale factor.
+///
+/// All values are in physical pixels, computed from base values at scale factor 1.0.
+/// This ensures UI elements (tab bar, splitters, padding) scale correctly on HiDPI displays.
+#[derive(Debug, Clone, Copy)]
+pub struct ScaledMetrics {
+    /// Display scale factor (1.0 for standard, 2.0 for retina)
+    pub scale_factor: f64,
+    /// Tab bar height in physical pixels
+    pub tab_bar_height: usize,
+    /// Splitter width in physical pixels
+    pub splitter_width: f32,
+    /// Gutter padding (after line numbers, before border) in physical pixels
+    pub gutter_padding: f32,
+    /// Text area padding (after border, before content) in physical pixels
+    pub text_area_padding: f32,
+    /// Small UI padding in physical pixels (e.g., tab gap)
+    pub padding_small: usize,
+    /// Medium UI padding in physical pixels (e.g., tab content padding)
+    pub padding_medium: usize,
+    /// Large UI padding in physical pixels (e.g., text padding inside tabs)
+    pub padding_large: usize,
+    /// Border width in physical pixels
+    pub border_width: usize,
 }
 
-/// Calculate the x-coordinate of the gutter border
+impl ScaledMetrics {
+    /// Base tab bar height at scale factor 1.0
+    const BASE_TAB_BAR_HEIGHT: f64 = 28.0;
+    /// Base splitter width at scale factor 1.0
+    const BASE_SPLITTER_WIDTH: f64 = 6.0;
+    /// Base gutter padding at scale factor 1.0
+    const BASE_GUTTER_PADDING: f64 = 4.0;
+    /// Base text area padding at scale factor 1.0
+    const BASE_TEXT_AREA_PADDING: f64 = 8.0;
+    /// Base small padding at scale factor 1.0
+    const BASE_PADDING_SMALL: f64 = 2.0;
+    /// Base medium padding at scale factor 1.0
+    const BASE_PADDING_MEDIUM: f64 = 4.0;
+    /// Base large padding at scale factor 1.0
+    const BASE_PADDING_LARGE: f64 = 8.0;
+    /// Base border width at scale factor 1.0
+    const BASE_BORDER_WIDTH: f64 = 1.0;
+
+    /// Create scaled metrics for the given display scale factor
+    pub fn new(scale_factor: f64) -> Self {
+        Self {
+            scale_factor,
+            tab_bar_height: (Self::BASE_TAB_BAR_HEIGHT * scale_factor).round() as usize,
+            splitter_width: (Self::BASE_SPLITTER_WIDTH * scale_factor) as f32,
+            gutter_padding: (Self::BASE_GUTTER_PADDING * scale_factor) as f32,
+            text_area_padding: (Self::BASE_TEXT_AREA_PADDING * scale_factor) as f32,
+            padding_small: (Self::BASE_PADDING_SMALL * scale_factor).round() as usize,
+            padding_medium: (Self::BASE_PADDING_MEDIUM * scale_factor).round() as usize,
+            padding_large: (Self::BASE_PADDING_LARGE * scale_factor).round() as usize,
+            border_width: (Self::BASE_BORDER_WIDTH * scale_factor).round().max(1.0) as usize,
+        }
+    }
+}
+
+impl Default for ScaledMetrics {
+    fn default() -> Self {
+        Self::new(1.0)
+    }
+}
+
+/// Calculate the x-coordinate where text content begins (with metrics)
+#[inline]
+pub fn text_start_x_scaled(char_width: f32, metrics: &ScaledMetrics) -> f32 {
+    let gutter_width = char_width * LINE_NUMBER_GUTTER_CHARS as f32 + metrics.gutter_padding;
+    let border_width = metrics.border_width as f32;
+    gutter_width + border_width + metrics.text_area_padding
+}
+
+/// Calculate the x-coordinate of the gutter border (with metrics)
+#[inline]
+pub fn gutter_border_x_scaled(char_width: f32, metrics: &ScaledMetrics) -> f32 {
+    char_width * LINE_NUMBER_GUTTER_CHARS as f32 + metrics.gutter_padding
+}
+
+/// Calculate the x-coordinate where text content begins (legacy, uses scale factor 1.0)
+#[inline]
+pub fn text_start_x(char_width: f32) -> f32 {
+    text_start_x_scaled(char_width, &ScaledMetrics::default())
+}
+
+/// Calculate the x-coordinate of the gutter border (legacy, uses scale factor 1.0)
 #[inline]
 pub fn gutter_border_x(char_width: f32) -> f32 {
-    char_width * LINE_NUMBER_GUTTER_CHARS as f32 + GUTTER_PADDING_PX
+    gutter_border_x_scaled(char_width, &ScaledMetrics::default())
 }
 
 /// The complete application model
@@ -256,6 +334,8 @@ pub struct AppModel {
     pub line_height: usize,
     /// Character width in pixels (monospace)
     pub char_width: f32,
+    /// Scaled UI metrics for HiDPI support
+    pub metrics: ScaledMetrics,
     /// Workspace root directory (for future file tree sidebar)
     pub workspace_root: Option<PathBuf>,
     /// Debug overlay state (debug builds only)
@@ -264,10 +344,18 @@ pub struct AppModel {
 }
 
 impl AppModel {
-    /// Create a new application model with the given window size
-    pub fn new(window_width: u32, window_height: u32, file_paths: Vec<PathBuf>) -> Self {
+    /// Create a new application model with the given window size and scale factor
+    pub fn new(
+        window_width: u32,
+        window_height: u32,
+        scale_factor: f64,
+        file_paths: Vec<PathBuf>,
+    ) -> Self {
         // Calculate viewport geometry
         let geom = ViewportGeometry::new(window_width, window_height);
+
+        // Create scaled metrics for HiDPI support
+        let metrics = ScaledMetrics::new(scale_factor);
 
         // Load config and theme
         let (config, theme) = load_config_and_theme();
@@ -286,10 +374,31 @@ impl AppModel {
             window_size: (window_width, window_height),
             line_height: geom.line_height,
             char_width: geom.char_width,
+            metrics,
             workspace_root: None,
             #[cfg(debug_assertions)]
             debug_overlay: Some(DebugOverlay::new()),
         }
+    }
+
+    /// Update scale factor and recalculate metrics
+    pub fn set_scale_factor(&mut self, scale_factor: f64) {
+        self.metrics = ScaledMetrics::new(scale_factor);
+    }
+
+    /// Recompute tab bar height based on current font metrics.
+    ///
+    /// Formula: glyph line height + vertical padding * 2.
+    /// This ensures tab bar height scales correctly with font size and DPI.
+    pub fn recompute_tab_bar_height_from_line_height(&mut self) {
+        if self.line_height == 0 {
+            return;
+        }
+
+        let glyph_height = self.line_height;
+        let padding = self.metrics.padding_medium;
+
+        self.metrics.tab_bar_height = glyph_height + padding * 2;
     }
 
     /// Get the focused editor (read-only), or None if no editor is focused
@@ -453,5 +562,69 @@ impl AppModel {
     pub fn last_non_whitespace_column(&self) -> usize {
         self.document()
             .last_non_whitespace_column(self.editor().active_cursor().line)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scaled_metrics_standard() {
+        let metrics = ScaledMetrics::new(1.0);
+        assert_eq!(metrics.tab_bar_height, 28);
+        assert_eq!(metrics.splitter_width, 6.0);
+        assert_eq!(metrics.gutter_padding, 4.0);
+        assert_eq!(metrics.text_area_padding, 8.0);
+        assert_eq!(metrics.padding_small, 2);
+        assert_eq!(metrics.padding_medium, 4);
+        assert_eq!(metrics.padding_large, 8);
+        assert_eq!(metrics.border_width, 1);
+    }
+
+    #[test]
+    fn test_scaled_metrics_retina() {
+        let metrics = ScaledMetrics::new(2.0);
+        assert_eq!(metrics.tab_bar_height, 56);
+        assert_eq!(metrics.splitter_width, 12.0);
+        assert_eq!(metrics.gutter_padding, 8.0);
+        assert_eq!(metrics.text_area_padding, 16.0);
+        assert_eq!(metrics.padding_small, 4);
+        assert_eq!(metrics.padding_medium, 8);
+        assert_eq!(metrics.padding_large, 16);
+        assert_eq!(metrics.border_width, 2);
+    }
+
+    #[test]
+    fn test_scaled_metrics_fractional() {
+        let metrics = ScaledMetrics::new(1.5);
+        assert_eq!(metrics.tab_bar_height, 42); // 28 * 1.5 = 42
+        assert_eq!(metrics.splitter_width, 9.0); // 6 * 1.5 = 9
+        assert_eq!(metrics.padding_small, 3); // 2 * 1.5 = 3
+        assert_eq!(metrics.padding_medium, 6); // 4 * 1.5 = 6
+    }
+
+    #[test]
+    fn test_scaled_metrics_border_minimum() {
+        let metrics = ScaledMetrics::new(0.5);
+        assert_eq!(metrics.border_width, 1);
+    }
+
+    #[test]
+    fn test_text_start_x_scaled() {
+        let metrics = ScaledMetrics::new(1.0);
+        let char_width = 10.0;
+        let result = text_start_x_scaled(char_width, &metrics);
+        let expected = char_width * LINE_NUMBER_GUTTER_CHARS as f32 + 4.0 + 1.0 + 8.0;
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_gutter_border_x_scaled() {
+        let metrics = ScaledMetrics::new(2.0);
+        let char_width = 10.0;
+        let result = gutter_border_x_scaled(char_width, &metrics);
+        let expected = char_width * LINE_NUMBER_GUTTER_CHARS as f32 + 8.0;
+        assert_eq!(result, expected);
     }
 }
