@@ -323,6 +323,42 @@ pub enum SyntaxMsg {
     },
 }
 
+/// CSV mode messages
+#[derive(Debug, Clone)]
+pub enum CsvMsg {
+    /// Toggle CSV view mode (parse if entering, discard state if exiting)
+    Toggle,
+    /// Move cell selection
+    MoveUp,
+    MoveDown,
+    MoveLeft,
+    MoveRight,
+    /// Move to next cell (Tab)
+    NextCell,
+    /// Move to previous cell (Shift+Tab)
+    PrevCell,
+    /// Move to first cell (Cmd+Home)
+    FirstCell,
+    /// Move to last cell (Cmd+End)
+    LastCell,
+    /// Move to first column in row (Home)
+    RowStart,
+    /// Move to last column in row (End)
+    RowEnd,
+    /// Page up
+    PageUp,
+    /// Page down
+    PageDown,
+    /// Exit CSV mode (Escape)
+    Exit,
+    /// Select a specific cell (from mouse click)
+    SelectCell { row: usize, col: usize },
+    /// Scroll viewport vertically (from mouse wheel)
+    ScrollVertical(i32),
+    /// Scroll viewport horizontally (from mouse wheel)
+    ScrollHorizontal(i32),
+}
+
 /// Top-level message type
 #[derive(Debug, Clone)]
 pub enum Msg {
@@ -338,6 +374,8 @@ pub enum Msg {
     App(AppMsg),
     /// Syntax highlighting messages
     Syntax(SyntaxMsg),
+    /// CSV mode messages
+    Csv(CsvMsg),
 }
 
 // Convenience constructors for common messages
