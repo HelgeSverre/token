@@ -8,6 +8,19 @@ A spreadsheet-like view for tabular data files (CSV, TSV) with cell editing, hor
 
 ---
 
+## Design Decisions
+
+These decisions were resolved during planning:
+
+| Decision | Resolution |
+|----------|------------|
+| **State preservation** | Discard state on toggle. Re-parse on each toggle. Simple, stateless approach. |
+| **Auto-enable** | No auto-enable. Manual toggle via command palette ("Toggle CSV View"). Users can bind their own shortcut. |
+| **Size limits** | No hard limits. Implementation should handle large files efficiently. Defer warnings if needed later. |
+| **Internal delimiter (0xFA)** | Accepted risk. Re-assess if collisions become an issue in practice. |
+
+---
+
 ## Table of Contents
 
 1. [Overview](#1-overview)
@@ -62,15 +75,14 @@ A spreadsheet-like view for tabular data files (CSV, TSV) with cell editing, hor
 
 ### 2.1 Toggling CSV Mode
 
-**Entry Points:**
-1. **Automatic:** When opening a `.csv`, `.tsv`, or `.psv` file, prompt or auto-enable CSV mode
-2. **Manual command:** `Toggle CSV View` (Cmd+Shift+T or via command palette)
-3. **Status bar indicator:** Click "CSV" in status bar to toggle
+**Entry Point:**
+- **Command palette:** "Toggle CSV View" command (no default keybinding; users can bind their own)
 
 **Exit Points:**
 1. Same command toggles off
 2. Press Escape while in CSV mode (returns to text view)
-3. File type changes (Save As different extension)
+
+> **Note:** No auto-enable for `.csv` files. This keeps the behavior explicit and predictable.
 
 ### 2.2 Visual Layout
 
@@ -176,6 +188,61 @@ src/
 csv = "1.3"  # RFC 4180 compliant parser with streaming support
 ```
 
+### 3.4 Keymap Integration
+
+CSV mode requires integration with the existing keymap system in `src/keymap/`:
+
+**Key routing flow:**
+1. Key events captured via `src/runtime/input.rs`
+2. Keymap lookup in `src/keymap/keymap.rs` checks context
+3. CSV mode active → `KeyContext::csv_mode = true`
+4. CSV-specific bindings take precedence when in CSV mode
+
+**Required additions to `src/keymap/command.rs`:**
+```rust
+pub enum KeymapCommand {
+    // ... existing commands ...
+    
+    // CSV mode commands
+    CsvToggle,
+    CsvMoveUp,
+    CsvMoveDown,
+    CsvMoveLeft,
+    CsvMoveRight,
+    CsvNextCell,      // Tab
+    CsvPrevCell,      // Shift+Tab
+    CsvStartEdit,     // Enter
+    CsvConfirmEdit,   // Enter (when editing)
+    CsvCancelEdit,    // Escape
+}
+```
+
+**Example keymap.yaml additions:**
+```yaml
+- key: shift+cmd+t
+  command: CsvToggle
+  
+- key: tab
+  command: CsvNextCell
+  when: [csv_mode]
+  
+- key: shift+tab
+  command: CsvPrevCell
+  when: [csv_mode]
+  
+- key: enter
+  command: CsvStartEdit
+  when: [csv_mode, not_editing]
+  
+- key: escape
+  command: CsvCancelEdit
+  when: [csv_mode, editing]
+```
+
+**Context conditions to add:**
+- `csv_mode` - True when editor is in CSV view mode
+- `csv_editing` - True when actively editing a cell
+
 ---
 
 ## 4. Data Model
@@ -184,6 +251,14 @@ csv = "1.3"  # RFC 4180 compliant parser with streaming support
 
 ```rust
 /// View mode for an editor - either text or CSV
+/// 
+/// **State preservation:** State is discarded on toggle (stateless approach).
+/// 
+/// - **Text → CSV:** CsvState freshly initialized, cell (0,0) selected, document re-parsed.
+/// - **CSV → Text:** CsvState discarded, text cursor placed at document start.
+/// - **Re-enabling CSV:** Full re-parse (no caching).
+/// 
+/// This keeps the implementation simple. Re-parsing is fast (< 100ms for 50K rows).
 #[derive(Debug, Clone, Default)]
 pub enum ViewMode {
     #[default]
@@ -288,7 +363,11 @@ Instead of `Vec<Vec<String>>` (expensive), store each row as a single delimited 
 
 ```rust
 impl CsvData {
-    /// Internal delimiter - uses invalid UTF-8 byte
+    /// Internal delimiter - uses byte 0xFA
+    /// 
+    /// **Accepted risk:** 0xFA can appear in multi-byte UTF-8 sequences, but this is
+    /// rare in typical CSV content. If collision occurs, cell data will be incorrectly
+    /// split. Re-assess if this becomes an issue in practice.
     const FIELD_DELIMITER: u8 = 0xFA;
     
     /// Get cell value at (row, col)
@@ -378,6 +457,15 @@ impl CsvState {
 }
 
 /// Convert column index to letter (0 = A, 1 = B, ..., 25 = Z, 26 = AA, ...)
+/// 
+/// **Boundary verification required:** The `-1` adjustment at `n / 26 - 1` handles
+/// the base-26 bijective numeration correctly. Test cases to verify:
+/// - `column_letter(0)` → "A"
+/// - `column_letter(25)` → "Z"  
+/// - `column_letter(26)` → "AA" (first two-letter)
+/// - `column_letter(27)` → "AB"
+/// - `column_letter(701)` → "ZZ" (last two-letter)
+/// - `column_letter(702)` → "AAA" (first three-letter)
 pub fn column_letter(index: usize) -> String {
     let mut result = String::new();
     let mut n = index;
@@ -1157,6 +1245,20 @@ pub fn sync_cell_to_document(
 }
 
 /// Find byte range of a cell in the document
+/// 
+/// **IMPORTANT:** This naive implementation counts raw newlines to find rows.
+/// This breaks for CSV files with quoted multi-line fields:
+/// ```csv
+/// Name,Description
+/// Alice,"Line 1
+/// Line 2"
+/// Bob,Simple
+/// ```
+/// Row 2 ("Bob") would be miscounted because the quoted field contains a newline.
+/// 
+/// **TODO:** Use CSV-aware row finding that respects quoted fields. Consider using
+/// the `csv` crate's `Reader` for row boundary detection, or implement a proper
+/// CSV-aware position mapping that tracks logical vs physical line numbers.
 fn find_cell_range(
     document: &Document,
     csv: &CsvState,
@@ -1165,7 +1267,7 @@ fn find_cell_range(
     let content = document.buffer.to_string();
     let delimiter = csv.delimiter as char;
     
-    // Find row start
+    // Find row start (FIXME: doesn't handle quoted multi-line fields)
     let mut row_start = 0;
     for (i, _) in content.match_indices('\n').take(pos.row) {
         row_start = i + 1;
@@ -1425,7 +1527,7 @@ Create benchmarks for:
 ### 11.2 Benchmark Implementation
 
 ```rust
-// benches/csv_benchmark.rs
+// benches/csv.rs (matches existing convention: rope_operations.rs, rendering.rs, etc.)
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 use token::csv::{parse_csv, CsvData, CsvState};
 
@@ -1615,6 +1717,67 @@ Line2""#;
         assert_eq!(column_letter(701), "ZZ");
         assert_eq!(column_letter(702), "AAA");
     }
+    
+    // --- Additional test cases from gap analysis ---
+    
+    #[test]
+    fn test_field_delimiter_in_data() {
+        // Verify behavior when source contains 0xFA byte
+        let csv = "a,b\nval\xFAwith_delimiter,c";
+        let result = parse_csv(csv, b',', None);
+        // Document expected behavior: corruption or graceful handling
+    }
+    
+    #[test]
+    fn test_multiline_quoted_fields() {
+        let csv = r#"Name,Description
+Alice,"Line 1
+Line 2"
+Bob,Simple"#;
+        let result = parse_csv(csv, b',', None).unwrap();
+        assert_eq!(result.data.row_count(), 3);
+        assert_eq!(result.data.get(1, 1), "Line 1\nLine 2");
+        assert_eq!(result.data.get(2, 0), "Bob");
+    }
+    
+    #[test]
+    fn test_parse_with_bom() {
+        // UTF-8 BOM: EF BB BF
+        let csv = "\u{FEFF}a,b,c\n1,2,3";
+        let result = parse_csv(csv, b',', None).unwrap();
+        assert_eq!(result.data.get(0, 0), "a"); // BOM should be stripped
+    }
+    
+    #[test]
+    fn test_empty_file() {
+        let csv = "";
+        let result = parse_csv(csv, b',', None).unwrap();
+        assert_eq!(result.data.row_count(), 0);
+        assert_eq!(result.data.column_count(), 0);
+    }
+    
+    #[test]
+    fn test_single_column_csv() {
+        let csv = "a\nb\nc";
+        let result = parse_csv(csv, b',', None).unwrap();
+        assert_eq!(result.data.column_count(), 1);
+        assert_eq!(result.data.row_count(), 3);
+    }
+    
+    #[test]
+    fn test_trailing_delimiter() {
+        let csv = "a,b,c,\n1,2,3,";
+        let result = parse_csv(csv, b',', None).unwrap();
+        assert_eq!(result.data.column_count(), 4); // Empty trailing field
+    }
+    
+    #[test]
+    fn test_unicode_content() {
+        let csv = "名前,説明\nアリス,こんにちは\n🎉,emoji";
+        let result = parse_csv(csv, b',', None).unwrap();
+        assert_eq!(result.data.get(0, 0), "名前");
+        assert_eq!(result.data.get(2, 0), "🎉");
+    }
 }
 ```
 
@@ -1654,6 +1817,59 @@ fn test_csv_mode_undo_sync() {
         assert_eq!(csv.data.get(0, 0), "a"); // Original value restored
     }
 }
+
+// --- Additional integration tests from gap analysis ---
+
+#[test]
+fn test_toggle_preserves_no_text_state() {
+    // Verify cursor/selection NOT preserved on round-trip (per design)
+    let mut model = create_test_model_with_file("test.csv", "a,b,c\n1,2,3\n4,5,6");
+    
+    // Set text cursor to specific position
+    model.editor_mut().cursor.position = 10;
+    
+    // Toggle to CSV
+    model.handle_message(Msg::Csv(CsvMsg::ToggleCsvMode));
+    
+    // Toggle back to text
+    model.handle_message(Msg::Csv(CsvMsg::ToggleCsvMode));
+    
+    // Cursor should be reset (not preserved)
+    assert_eq!(model.editor().cursor.position, 0);
+}
+
+#[test]
+fn test_theme_without_csv_section() {
+    // Verify graceful fallback to defaults when theme lacks csv section
+    let theme = load_theme("default-dark"); // Has no csv section
+    let csv_theme = theme.csv_theme(); // Should return defaults
+    
+    // Should not panic, should return usable colors
+    assert!(csv_theme.header_background.to_argb_u32() != 0);
+}
+
+#[test]
+fn test_keyboard_shortcuts_csv_mode() {
+    let mut model = create_test_model_with_file("test.csv", "a,b,c\n1,2,3");
+    model.handle_message(Msg::Csv(CsvMsg::ToggleCsvMode));
+    
+    // Arrow keys should navigate cells
+    model.handle_message(Msg::Csv(CsvMsg::MoveSelection { delta_row: 1, delta_col: 0 }));
+    if let ViewMode::Csv(csv) = &model.editor().view_mode {
+        assert_eq!(csv.selected_cell.row, 1);
+    }
+}
+
+#[test]
+fn test_status_bar_csv_segments() {
+    let mut model = create_test_model_with_file("test.csv", "a,b,c\n1,2,3");
+    model.handle_message(Msg::Csv(CsvMsg::ToggleCsvMode));
+    
+    // Status bar should show CSV-specific info
+    let status = model.status_bar();
+    assert!(status.contains_segment("CSV"));
+    assert!(status.contains_segment("Row 1, Col 1")); // or similar
+}
 ```
 
 ### 12.3 Stress Tests
@@ -1692,6 +1908,72 @@ fn test_large_csv_500k() {
     
     assert_eq!(result.data.row_count(), 500001);
     assert!(duration.as_secs() < 3, "Took too long: {:?}", duration);
+}
+
+// --- Additional stress tests from gap analysis ---
+
+#[test]
+fn test_wide_columns() {
+    // Test cells with 1000+ character values
+    let long_value = "x".repeat(1500);
+    let csv = format!("header\n{}", long_value);
+    let result = parse_csv(&csv, b',', None).unwrap();
+    assert_eq!(result.data.get(1, 0).len(), 1500);
+}
+
+#[test]
+fn test_many_columns() {
+    // Test 500+ columns
+    let header: String = (0..500).map(|i| format!("col{}", i)).collect::<Vec<_>>().join(",");
+    let row: String = (0..500).map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+    let csv = format!("{}\n{}", header, row);
+    let result = parse_csv(&csv, b',', None).unwrap();
+    assert_eq!(result.data.column_count(), 500);
+}
+
+#[test]
+fn test_rapid_toggle() {
+    // Toggle mode 100x quickly without issues
+    let mut model = create_test_model_with_file("test.csv", "a,b,c\n1,2,3");
+    for _ in 0..100 {
+        model.handle_message(Msg::Csv(CsvMsg::ToggleCsvMode));
+    }
+    // Should not panic or corrupt state
+}
+```
+
+### 12.4 Render Tests
+
+```rust
+// tests/csv_render.rs
+
+#[test]
+fn test_csv_grid_render_empty() {
+    let mut model = create_test_model_with_file("test.csv", "");
+    model.handle_message(Msg::Csv(CsvMsg::ToggleCsvMode));
+    // Should render without crash, showing empty grid or message
+}
+
+#[test]
+fn test_csv_viewport_clipping() {
+    // Cells outside viewport should not be rendered
+    let csv = generate_csv(1000, 50);
+    let mut model = create_test_model_with_file("test.csv", &csv);
+    model.handle_message(Msg::Csv(CsvMsg::ToggleCsvMode));
+    
+    // Render should complete in reasonable time (viewport clipping works)
+    let start = std::time::Instant::now();
+    model.render(); // or equivalent
+    assert!(start.elapsed().as_millis() < 50);
+}
+
+#[test]
+fn test_csv_selection_highlight() {
+    let mut model = create_test_model_with_file("test.csv", "a,b,c\n1,2,3");
+    model.handle_message(Msg::Csv(CsvMsg::ToggleCsvMode));
+    
+    // Active cell should have selection border
+    // (This would require render inspection or snapshot testing)
 }
 ```
 
@@ -1874,6 +2156,24 @@ pub struct CsvTheme {
     /// Alternating row background (optional)
     pub alternate_row_background: Option<Color>,
 }
+
+/// Default fallbacks when theme has no `csv` section
+/// (Current themes: dark, fleet-dark, github-dark, github-light lack csv sections)
+impl Default for CsvTheme {
+    fn default() -> Self {
+        // Derive from existing theme fields
+        Self {
+            header_background: theme.gutter.background,
+            header_foreground: theme.gutter.foreground_active,
+            row_number_background: theme.gutter.background,
+            row_number_foreground: theme.gutter.foreground,
+            grid_line: theme.gutter.border_color,
+            selection_border: theme.editor.cursor_color,
+            number_foreground: theme.syntax.number,
+            alternate_row_background: None,
+        }
+    }
+}
 ```
 
 ### 16.2 Editor Config Extensions
@@ -1882,11 +2182,9 @@ Add to `config.rs`:
 
 ```rust
 pub struct CsvConfig {
-    /// Auto-enable CSV mode for .csv/.tsv files
-    pub auto_enable: bool,
     /// Treat first row as header
     pub default_has_header: bool,
-    /// Maximum columns to sample for width calculation
+    /// Maximum rows to sample for column width calculation
     pub width_sample_rows: usize,
     /// Minimum column width (characters)
     pub min_column_width: usize,
@@ -1897,7 +2195,6 @@ pub struct CsvConfig {
 impl Default for CsvConfig {
     fn default() -> Self {
         Self {
-            auto_enable: true,
             default_has_header: true,
             width_sample_rows: 1000,
             min_column_width: 4,
@@ -1906,6 +2203,9 @@ impl Default for CsvConfig {
     }
 }
 ```
+
+> **Note:** No `auto_enable` setting—CSV mode is always manual via command palette.
+> No size limits are enforced; large files should work with the virtual scrolling implementation.
 
 ---
 
@@ -1944,4 +2244,4 @@ pub fn from_file(path: PathBuf) -> Result<Self, std::io::Error> {
 
 ---
 
-*Last updated: 2024-12-15*
+*Last updated: 2025-12-16*
