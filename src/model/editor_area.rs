@@ -470,9 +470,15 @@ impl EditorArea {
     /// Compute layout for all groups given the available rectangle.
     /// Updates the `rect` field of each EditorGroup.
     /// Returns a list of splitter bar positions for rendering/hit testing.
+    /// Uses the default SPLITTER_WIDTH constant.
     pub fn compute_layout(&mut self, available: Rect) -> Vec<SplitterBar> {
+        self.compute_layout_scaled(available, SPLITTER_WIDTH)
+    }
+
+    /// Compute layout with a custom splitter width (for HiDPI scaling).
+    pub fn compute_layout_scaled(&mut self, available: Rect, splitter_width: f32) -> Vec<SplitterBar> {
         let mut splitters = Vec::new();
-        self.compute_layout_node(&self.layout.clone(), available, &mut splitters);
+        self.compute_layout_node(&self.layout.clone(), available, &mut splitters, splitter_width);
         splitters
     }
 
@@ -482,6 +488,7 @@ impl EditorArea {
         node: &LayoutNode,
         rect: Rect,
         splitters: &mut Vec<SplitterBar>,
+        splitter_width: f32,
     ) {
         match node {
             LayoutNode::Group(group_id) => {
@@ -526,9 +533,9 @@ impl EditorArea {
                             SplitDirection::Horizontal => SplitterBar {
                                 direction: container.direction,
                                 rect: Rect::new(
-                                    rect.x + offset + child_size - SPLITTER_WIDTH / 2.0,
+                                    rect.x + offset + child_size - splitter_width / 2.0,
                                     rect.y,
-                                    SPLITTER_WIDTH,
+                                    splitter_width,
                                     rect.height,
                                 ),
                                 index: i,
@@ -537,9 +544,9 @@ impl EditorArea {
                                 direction: container.direction,
                                 rect: Rect::new(
                                     rect.x,
-                                    rect.y + offset + child_size - SPLITTER_WIDTH / 2.0,
+                                    rect.y + offset + child_size - splitter_width / 2.0,
                                     rect.width,
-                                    SPLITTER_WIDTH,
+                                    splitter_width,
                                 ),
                                 index: i,
                             },
@@ -548,7 +555,7 @@ impl EditorArea {
                     }
 
                     // Recursively layout child
-                    self.compute_layout_node(child, child_rect, splitters);
+                    self.compute_layout_node(child, child_rect, splitters, splitter_width);
 
                     offset += child_size;
                 }
