@@ -5,8 +5,8 @@ use std::time::Duration;
 use crate::commands::{filter_commands, Cmd};
 use crate::messages::{ModalMsg, UiMsg};
 use crate::model::{
-    AppModel, CommandPaletteState, FindReplaceState, GotoLineState, ModalId, ModalState,
-    SegmentContent, SegmentId, ThemePickerState, TransientMessage,
+    AppModel, FindReplaceState, GotoLineState, ModalId, ModalState, SegmentContent, SegmentId,
+    ThemePickerState, TransientMessage,
 };
 use crate::theme::load_theme;
 
@@ -83,7 +83,12 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             // Open the requested modal
             let state = match modal_id {
                 ModalId::CommandPalette => {
-                    ModalState::CommandPalette(CommandPaletteState::default())
+                    let state = model
+                        .ui
+                        .last_command_palette
+                        .clone()
+                        .unwrap_or_default();
+                    ModalState::CommandPalette(state)
                 }
                 ModalId::GotoLine => ModalState::GotoLine(GotoLineState::default()),
                 ModalId::FindReplace => ModalState::FindReplace(FindReplaceState::default()),
@@ -110,9 +115,12 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
 fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
     match msg {
         ModalMsg::OpenCommandPalette => {
-            model
+            let state = model
                 .ui
-                .open_modal(ModalState::CommandPalette(CommandPaletteState::default()));
+                .last_command_palette
+                .clone()
+                .unwrap_or_default();
+            model.ui.open_modal(ModalState::CommandPalette(state));
             Some(Cmd::Redraw)
         }
 
@@ -276,6 +284,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
                         if let Some(cmd_def) = filtered.get(selected_index) {
                             let cmd_id = cmd_def.id;
+                            // Save state for next time (only on successful execution)
+                            model.ui.last_command_palette = Some(state);
                             model.ui.close_modal();
                             return execute_command(model, cmd_id);
                         }
