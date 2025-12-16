@@ -10,7 +10,7 @@ pub use frame::{Frame, TextPainter};
 pub use helpers::{get_tab_display_name, trim_line_ending};
 
 // Re-export geometry helpers for backward compatibility
-pub use geometry::{char_col_to_visual_col, expand_tabs_for_display, TAB_BAR_HEIGHT};
+pub use geometry::{char_col_to_visual_col, expand_tabs_for_display};
 
 use anyhow::Result;
 use fontdue::{Font, FontSettings, LineMetrics, Metrics};
@@ -21,7 +21,7 @@ use std::rc::Rc;
 use winit::window::Window;
 
 use token::model::editor_area::{EditorGroup, GroupId, Rect, SplitterBar};
-use token::model::{gutter_border_x, text_start_x, AppModel};
+use token::model::{gutter_border_x_scaled, text_start_x_scaled, AppModel};
 
 pub type GlyphCacheKey = (char, u32);
 
@@ -36,11 +36,22 @@ pub struct Renderer {
     line_metrics: LineMetrics,
     glyph_cache: GlyphCache,
     char_width: f32,
+    scale_factor: f64,
 }
 
 impl Renderer {
+    /// Create a new renderer, automatically detecting the window's scale factor
     pub fn new(window: Rc<Window>, context: &softbuffer::Context<Rc<Window>>) -> Result<Self> {
         let scale_factor = window.scale_factor();
+        Self::with_scale_factor(window, context, scale_factor)
+    }
+
+    /// Create a new renderer with an explicit scale factor
+    pub fn with_scale_factor(
+        window: Rc<Window>,
+        context: &softbuffer::Context<Rc<Window>>,
+        scale_factor: f64,
+    ) -> Result<Self> {
         let (width, height) = {
             let size = window.inner_size();
             (size.width, size.height)
@@ -73,7 +84,13 @@ impl Renderer {
             line_metrics,
             glyph_cache: HashMap::new(),
             char_width,
+            scale_factor,
         })
+    }
+
+    /// Get the current scale factor
+    pub fn scale_factor(&self) -> f64 {
+        self.scale_factor
     }
 
     pub fn char_width(&self) -> f32 {
@@ -193,8 +210,8 @@ impl Renderer {
             frame, painter, model, group, rect_x, rect_y, rect_w, char_width,
         );
 
-        // Content area (below tab bar)
-        let content_rect = geometry::group_content_rect(&group_rect);
+        // Content area (below tab bar) - use scaled metrics for correct DPI handling
+        let content_rect = geometry::group_content_rect_scaled(&group_rect, model);
         let content_y = content_rect.y as usize;
         let content_h = content_rect.height as usize;
 
@@ -246,21 +263,24 @@ impl Renderer {
         rect_w: usize,
         char_width: f32,
     ) {
+        let metrics = &model.metrics;
+        let tab_bar_height = metrics.tab_bar_height;
         let tab_bar_bg = model.theme.tab_bar.background.to_argb_u32();
-        frame.fill_rect_px(rect_x, rect_y, rect_w, TAB_BAR_HEIGHT, tab_bar_bg);
+        frame.fill_rect_px(rect_x, rect_y, rect_w, tab_bar_height, tab_bar_bg);
 
         let border_color = model.theme.tab_bar.border.to_argb_u32();
-        let border_y = (rect_y + TAB_BAR_HEIGHT).saturating_sub(1);
-        frame.fill_rect_px(rect_x, border_y, rect_w, 1, border_color);
+        let border_y = (rect_y + tab_bar_height).saturating_sub(1);
+        frame.fill_rect_px(rect_x, border_y, rect_w, metrics.border_width, border_color);
 
-        let mut tab_x = rect_x + 4;
-        let tab_height = TAB_BAR_HEIGHT - 4;
-        let tab_y = rect_y + 2;
+        let mut tab_x = rect_x + metrics.padding_medium;
+        let tab_height = tab_bar_height.saturating_sub(metrics.padding_medium);
+        let tab_y = rect_y + metrics.padding_small;
 
         for (idx, tab) in group.tabs.iter().enumerate() {
             let is_active = idx == group.active_tab_index;
             let display_name = get_tab_display_name(model, tab);
-            let tab_width = (display_name.len() as f32 * char_width).round() as usize + 16;
+            let tab_width =
+                (display_name.len() as f32 * char_width).round() as usize + metrics.padding_large * 2;
 
             let (bg_color, fg_color) = if is_active {
                 (
@@ -277,11 +297,11 @@ impl Renderer {
             let actual_tab_width = tab_width.min(rect_x + rect_w - tab_x);
             frame.fill_rect_px(tab_x, tab_y, actual_tab_width, tab_height, bg_color);
 
-            let text_x = tab_x + 8;
-            let text_y = tab_y + 4;
+            let text_x = tab_x + metrics.padding_large;
+            let text_y = tab_y + metrics.padding_medium;
             painter.draw(frame, text_x, text_y, &display_name, fg_color);
 
-            tab_x += tab_width + 2;
+            tab_x += tab_width + metrics.padding_small;
             if tab_x >= rect_x + rect_w {
                 break;
             }
@@ -322,7 +342,7 @@ impl Renderer {
         let end_line = (editor.viewport.top_line + visible_lines).min(document.buffer.len_lines());
 
         let gutter_border_color = model.theme.gutter.border_color.to_argb_u32();
-        let gutter_right_x = rect_x + gutter_border_x(char_width).round() as usize;
+        let gutter_right_x = rect_x + gutter_border_x_scaled(char_width, &model.metrics).round() as usize;
         let gutter_width = gutter_right_x - rect_x;
 
         // Draw gutter background
@@ -374,7 +394,7 @@ impl Renderer {
         char_width: f32,
         is_focused: bool,
     ) {
-        let text_start_x_offset = text_start_x(char_width).round() as usize;
+        let text_start_x_offset = text_start_x_scaled(char_width, &model.metrics).round() as usize;
         let group_text_start_x = rect_x + text_start_x_offset;
 
         let visible_lines = content_h / line_height;
@@ -1034,7 +1054,7 @@ impl Renderer {
             width as f32,
             (height as usize).saturating_sub(status_bar_height) as f32,
         );
-        let splitters = model.editor_area.compute_layout(available_rect);
+        let splitters = model.editor_area.compute_layout_scaled(available_rect, model.metrics.splitter_width);
 
         let mut buffer = self
             .surface
