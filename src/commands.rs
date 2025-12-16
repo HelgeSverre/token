@@ -357,6 +357,10 @@ pub enum Cmd {
         source: String,
         language: LanguageId,
     },
+
+    // === Display Commands ===
+    /// Reinitialize the renderer (e.g., after scale factor change)
+    ReinitializeRenderer,
 }
 
 impl Cmd {
@@ -382,6 +386,8 @@ impl Cmd {
             // Syntax commands don't need immediate redraw - ParseCompleted triggers redraw
             Cmd::DebouncedSyntaxParse { .. } => false,
             Cmd::RunSyntaxParse { .. } => false,
+            // Reinitialize triggers a full redraw after renderer is recreated
+            Cmd::ReinitializeRenderer => true,
         }
     }
 

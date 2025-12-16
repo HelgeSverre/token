@@ -267,6 +267,8 @@ pub enum LayoutMsg {
 pub enum AppMsg {
     /// Window resized
     Resize(u32, u32),
+    /// Display scale factor changed (e.g., moving between monitors)
+    ScaleFactorChanged(f64),
     /// Save current file
     SaveFile,
     /// Load a file
