@@ -29,3 +29,33 @@ Key structures: Rope (ropey) for text buffer, Cursor, EditOperation for undo/red
 - Rust 2021 edition, run `make fmt` and `make lint` before committing
 - Design docs in `docs/feature/*.md`; check `docs/ROADMAP.md` for planned work
 - Update `docs/CHANGELOG.md` when features are complete
+
+## Releasing a New Version
+
+When releasing a new version, follow these steps:
+
+1. **Update version** in `Cargo.toml`
+2. **Update `docs/CHANGELOG.md`** with release notes under new version header
+3. **Run tests and lint**: `make test && make lint`
+4. **Commit changes**:
+   ```bash
+   git add -A && git commit -m "chore: release vX.Y.Z"
+   ```
+5. **Create annotated tag**:
+   ```bash
+   git tag -a vX.Y.Z -m "vX.Y.Z - Brief description"
+   ```
+6. **Push commits and tags**:
+   ```bash
+   git push && git push --tags
+   ```
+7. **Create GitHub release**:
+   ```bash
+   gh release create vX.Y.Z --title "vX.Y.Z - Title" --notes "Release notes here"
+   ```
+
+### Version Numbering
+
+- **Major (X)**: Breaking changes or major rewrites
+- **Minor (Y)**: New features, significant improvements
+- **Patch (Z)**: Bug fixes, minor improvements
