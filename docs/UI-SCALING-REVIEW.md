@@ -1,9 +1,10 @@
 # UI Scaling Review: Retina/HiDPI Display Support
 
-**Status:** Review Complete
+**Status:** ✅ Implemented (v0.3.4)
 **Priority:** P1 (affects all retina users)
 **Effort:** M (2-4 hours)
 **Created:** 2025-12-16
+**Completed:** 2025-12-16
 
 This document provides a comprehensive analysis of how the Token editor handles pixel coordinates, scale factors, and HiDPI/Retina displays, identifies current issues, and proposes a fix.
 
@@ -31,20 +32,23 @@ This document provides a comprehensive analysis of how the Token editor handles 
 - Mouse input is correctly received in physical pixels
 - Character widths and line heights are correctly computed from scaled fonts
 
-### What's Broken
+### What Was Fixed (v0.3.4)
 
-- **UI layout constants don't scale**: `TAB_BAR_HEIGHT`, `SPLITTER_WIDTH`, padding values are hardcoded in pixels
-- **Scale factor isn't stored**: Can't be used after initialization
-- **No scale factor change handling**: Moving window between monitors breaks UI
-- **Inconsistent coordinate types**: No semantic distinction between physical/logical pixels
+- **UI layout constants now scale**: `ScaledMetrics` struct holds all scaled values
+- **Scale factor is stored**: `model.metrics.scale_factor` available throughout
+- **Scale factor change handling**: `ScaleFactorChanged` event triggers full renderer reinitialization
+- **Surface properly resized**: New Surface explicitly resized after creation
+- **Dynamic tab bar height**: Computed from glyph metrics (`line_height + padding * 2`)
+- **Buffer bounds checking**: `Frame::new` validates buffer size to prevent panics
 
-### Impact
+### Previous Impact (Now Fixed)
 
-On a 2x Retina display:
-- Tab bar appears half the intended size (28px physical = 14pt logical)
-- Gutter padding appears too tight
-- Click targets for tabs may be misaligned
-- Overall UI looks cramped while text looks correct
+On a 2x Retina display (before fix):
+- Tab bar appeared half the intended size (28px physical = 14pt logical)
+- Gutter padding appeared too tight
+- Click targets for tabs were misaligned
+- Overall UI looked cramped while text looked correct
+- Switching displays caused incorrect rendering until window resize
 
 ---
 

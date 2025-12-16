@@ -8,6 +8,24 @@ For completed work, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Recently Completed
 
+### HiDPI Display Switching Fixes ✅
+
+**Design:** [UI-SCALING-REVIEW.md](UI-SCALING-REVIEW.md) | **Completed:** 2025-12-16 (v0.3.4)
+
+Fixed critical issues when switching between displays with different DPI/scale factors:
+
+- **Surface resize on display change** - The softbuffer Surface is now explicitly resized after creation
+- **Buffer bounds checking** - `Frame::new` validates buffer size matches dimensions, preventing panics
+- **Dynamic tab bar height** - Computed from glyph metrics (`line_height + padding * 2`) instead of hardcoded
+- **Scaled metrics throughout** - `resize()` and `set_char_width()` use properly scaled metrics
+- **Viewport calculation** - Now accounts for tab bar height when computing visible lines
+
+Key implementation:
+- `ScaledMetrics` struct with all DPI-aware layout constants
+- `recompute_tab_bar_height_from_line_height()` for font-metric-based sizing
+- `Renderer::with_scale_factor()` explicitly resizes Surface after creation
+- `ScaleFactorChanged` triggers `Cmd::Batch([ReinitializeRenderer, Redraw])`
+
 ### Benchmark Suite Improvements ✅
 
 **Design:** [feature/benchmark-improvements.md](feature/benchmark-improvements.md) | **Completed:** 2025-12-15
