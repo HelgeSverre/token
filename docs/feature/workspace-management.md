@@ -10,19 +10,34 @@ A comprehensive workspace management system including CLI argument handling, fil
 
 The editor currently has:
 
-- Single file argument handling: `args[1]` in `main()`
-- `AppModel` with single `Document` and `EditorState`
-- `EditorArea` structure for future split-view support
+- ✅ CLI argument parsing with clap (v0.3.0)
+- ✅ `EditorArea` with split views and tabs (v0.3.0)
+- ✅ `ScaledMetrics` for HiDPI support (v0.3.4)
 - No workspace concept
 - No file tree sidebar
 
 ### Goals
 
-1. **CLI Argument Parsing**: Support multiple files, directories, flags
+1. ~~**CLI Argument Parsing**: Support multiple files, directories, flags~~ ✅ Done (v0.3.0)
 2. **Workspace Concept**: Track root directory, manage open files
 3. **File Tree Sidebar**: VS Code-style tree with expand/collapse, icons
 4. **File System Watching**: React to external file changes
 5. **Integration with Split View**: Files open in tabs within groups
+
+### HiDPI Considerations (v0.3.4+)
+
+All layout constants must use `ScaledMetrics` to work correctly on Retina/HiDPI displays. See [UI-SCALING-REVIEW.md](../archived/UI-SCALING-REVIEW.md) for background.
+
+**New constants needed in `ScaledMetrics`:**
+```rust
+// File tree layout (base values at scale factor 1.0)
+const BASE_FILE_TREE_ROW_HEIGHT: f64 = 22.0;
+const BASE_FILE_TREE_INDENT: f64 = 16.0;
+const BASE_SIDEBAR_DEFAULT_WIDTH: f64 = 250.0;
+const BASE_SIDEBAR_MIN_WIDTH: f64 = 150.0;
+const BASE_SIDEBAR_MAX_WIDTH: f64 = 500.0;
+const BASE_RESIZE_HANDLE_ZONE: f64 = 4.0;
+```
 
 ---
 
@@ -209,16 +224,23 @@ pub struct Workspace {
     /// Sidebar visibility
     pub sidebar_visible: bool,
 
-    /// Sidebar width in pixels
-    pub sidebar_width: f32,
+    /// Sidebar width in LOGICAL pixels (multiply by scale_factor for physical)
+    /// This ensures the width remains consistent when switching displays.
+    pub sidebar_width_logical: f32,
 }
 
 impl Workspace {
-    pub const DEFAULT_SIDEBAR_WIDTH: f32 = 250.0;
-    pub const MIN_SIDEBAR_WIDTH: f32 = 150.0;
-    pub const MAX_SIDEBAR_WIDTH: f32 = 500.0;
+    /// Get sidebar width in physical pixels
+    pub fn sidebar_width(&self, scale_factor: f64) -> f32 {
+        self.sidebar_width_logical * scale_factor as f32
+    }
 
-    pub fn new(root: PathBuf) -> std::io::Result<Self> {
+    /// Set sidebar width from physical pixels
+    pub fn set_sidebar_width(&mut self, physical_width: f32, scale_factor: f64) {
+        self.sidebar_width_logical = physical_width / scale_factor as f32;
+    }
+
+    pub fn new(root: PathBuf, metrics: &ScaledMetrics) -> std::io::Result<Self> {
         let file_tree = FileTree::from_directory(&root)?;
         Ok(Self {
             root,
@@ -226,8 +248,16 @@ impl Workspace {
             selected_item: None,
             file_tree,
             sidebar_visible: true,
-            sidebar_width: Self::DEFAULT_SIDEBAR_WIDTH,
+            // Store logical width; ScaledMetrics has the base values
+            sidebar_width_logical: metrics.sidebar_default_width_logical,
         })
+    }
+
+    /// Clamp sidebar width to valid range (in logical pixels)
+    pub fn clamp_sidebar_width(&mut self, metrics: &ScaledMetrics) {
+        self.sidebar_width_logical = self.sidebar_width_logical
+            .max(metrics.sidebar_min_width_logical)
+            .min(metrics.sidebar_max_width_logical);
     }
 }
 
@@ -624,23 +654,25 @@ impl Default for FileTreeTheme {
 
 ### Rendering Logic
 
+**Note:** All layout values come from `ScaledMetrics`, not hardcoded constants.
+
 ```rust
 impl Renderer {
-    const ROW_HEIGHT: f32 = 22.0;
-    const INDENT_WIDTH: f32 = 16.0;
-
     /// Render the file tree sidebar
     pub fn render_sidebar(
         &mut self,
         workspace: &Workspace,
         open_files: &[PathBuf],
+        model: &AppModel,  // Access metrics and scale_factor
         theme: &Theme,
     ) -> Result<()> {
         if !workspace.sidebar_visible {
             return Ok(());
         }
 
-        let rect = Rect::new(0.0, 0.0, workspace.sidebar_width, self.height as f32);
+        let metrics = &model.metrics;
+        let sidebar_width = workspace.sidebar_width(model.scale_factor);
+        let rect = Rect::new(0.0, 0.0, sidebar_width, self.height as f32);
 
         // Background
         self.fill_rect(&rect, theme.sidebar.background.to_argb_u32());
@@ -655,12 +687,13 @@ impl Renderer {
                 workspace,
                 open_files,
                 &rect,
+                metrics,
                 theme,
             )?;
         }
 
         // Render resize border
-        let border_x = workspace.sidebar_width - 1.0;
+        let border_x = sidebar_width - 1.0;
         self.draw_vertical_line(
             border_x,
             0.0,
@@ -679,9 +712,14 @@ impl Renderer {
         workspace: &Workspace,
         open_files: &[PathBuf],
         sidebar_rect: &Rect,
+        metrics: &ScaledMetrics,  // Use scaled values
         theme: &Theme,
     ) -> Result<()> {
-        let x = Self::INDENT_WIDTH * depth as f32;
+        let row_height = metrics.file_tree_row_height as f32;
+        let indent = metrics.file_tree_indent;
+        let padding = metrics.padding_small as f32;
+
+        let x = indent * depth as f32;
         let y = *y_offset;
 
         // Skip if below visible area
@@ -691,9 +729,9 @@ impl Renderer {
 
         // Row background (selection)
         let is_selected = workspace.selected_item.as_ref() == Some(&node.path);
-        let is_open = open_files.contains(&node.path);
+        let _is_open = open_files.contains(&node.path);
 
-        let row_rect = Rect::new(0.0, y, sidebar_rect.width, Self::ROW_HEIGHT);
+        let row_rect = Rect::new(0.0, y, sidebar_rect.width, row_height);
 
         if is_selected {
             self.fill_rect(&row_rect, theme.file_tree.selected_background.to_argb_u32());
@@ -702,12 +740,12 @@ impl Renderer {
         // Expand/collapse arrow for directories
         if matches!(node.node_type, FileNodeType::Directory) {
             let arrow = if node.is_expanded { "v" } else { ">" };
-            self.draw_text(x + 2.0, y + 4.0, arrow,
+            self.draw_text(x + padding, y + padding, arrow,
                 theme.file_tree.folder_icon.to_argb_u32())?;
         }
 
         // Icon (based on file type)
-        let icon_x = x + Self::INDENT_WIDTH;
+        let icon_x = x + indent;
         let icon = match &node.node_type {
             FileNodeType::Directory => "D ",
             FileNodeType::File { extension } => extension.icon(),
@@ -717,18 +755,18 @@ impl Renderer {
             FileNodeType::Directory => theme.file_tree.folder_icon,
             _ => theme.file_tree.file_icon,
         };
-        self.draw_text(icon_x, y + 4.0, icon, icon_color.to_argb_u32())?;
+        self.draw_text(icon_x, y + padding, icon, icon_color.to_argb_u32())?;
 
         // File name
-        let text_x = icon_x + Self::INDENT_WIDTH + 4.0;
+        let text_x = icon_x + indent + padding;
         let text_color = if is_selected {
             theme.file_tree.selected_foreground
         } else {
             theme.file_tree.foreground
         };
-        self.draw_text(text_x, y + 4.0, &node.name, text_color.to_argb_u32())?;
+        self.draw_text(text_x, y + padding, &node.name, text_color.to_argb_u32())?;
 
-        *y_offset += Self::ROW_HEIGHT;
+        *y_offset += row_height;
 
         // Render children if expanded
         if node.is_expanded && matches!(node.node_type, FileNodeType::Directory) {
@@ -740,6 +778,7 @@ impl Renderer {
                     workspace,
                     open_files,
                     sidebar_rect,
+                    metrics,
                     theme,
                 )?;
             }
@@ -823,14 +862,22 @@ impl FileSystemWatcher {
 
 ### Hit Testing for Sidebar
 
+**Note:** All hit testing uses `ScaledMetrics` for proper HiDPI support.
+
 ```rust
 impl App {
     fn handle_mouse_click(&mut self, x: f64, y: f64, button: MouseButton) {
+        let metrics = &self.model.metrics;
+        let scale_factor = self.model.scale_factor;
+
         // Check if click is in sidebar
         if let Some(workspace) = &self.model.workspace {
-            if workspace.sidebar_visible && x < workspace.sidebar_width as f64 {
-                // Check for resize border click
-                if (x - workspace.sidebar_width as f64).abs() < 4.0 {
+            let sidebar_width = workspace.sidebar_width(scale_factor) as f64;
+            let resize_zone = metrics.resize_handle_zone as f64;
+
+            if workspace.sidebar_visible && x < sidebar_width {
+                // Check for resize border click (scaled zone)
+                if (x - sidebar_width).abs() < resize_zone {
                     self.dispatch(Msg::Workspace(WorkspaceMsg::StartSidebarResize {
                         initial_x: x,
                     }));
@@ -838,7 +885,7 @@ impl App {
                 }
 
                 // File tree click
-                if let Some(path) = self.file_tree_hit_test(x, y, workspace) {
+                if let Some(path) = self.file_tree_hit_test(x, y, workspace, metrics) {
                     let is_double = self.is_double_click();
                     self.dispatch(Msg::Workspace(WorkspaceMsg::OpenFile {
                         path,
@@ -852,11 +899,17 @@ impl App {
         // Otherwise, delegate to editor area
     }
 
-    fn file_tree_hit_test(&self, _x: f64, y: f64, workspace: &Workspace) -> Option<PathBuf> {
-        const ROW_HEIGHT: f64 = 22.0;
+    fn file_tree_hit_test(
+        &self,
+        _x: f64,
+        y: f64,
+        workspace: &Workspace,
+        metrics: &ScaledMetrics,  // Use scaled row height
+    ) -> Option<PathBuf> {
+        let row_height = metrics.file_tree_row_height as f64;
 
         // Calculate which row was clicked
-        let row = (y / ROW_HEIGHT) as usize;
+        let row = (y / row_height) as usize;
 
         // Walk the tree to find the nth visible item
         self.find_nth_visible_item(&workspace.file_tree, row)
@@ -893,17 +946,29 @@ notify = "6.1"
 
 ## Implementation Plan
 
-### Phase 1: CLI Argument Parsing
+### Phase 0: ScaledMetrics Extension (Prerequisite)
 
-- [ ] Add `clap` dependency to `Cargo.toml`
-- [ ] Create `src/cli.rs` module
-- [ ] Implement `CliArgs` struct with derive macros
-- [ ] Implement `StartupConfig` with validation
-- [ ] Update `main()` to use new CLI parsing
-- [ ] Handle non-existent paths gracefully
-- [ ] Add `--help` and `--version` output
+- [ ] Add file tree constants to `ScaledMetrics` in `src/model/mod.rs`:
+  - `file_tree_row_height: usize`
+  - `file_tree_indent: f32`
+  - `sidebar_default_width_logical: f32`
+  - `sidebar_min_width_logical: f32`
+  - `sidebar_max_width_logical: f32`
+  - `resize_handle_zone: usize`
 
-**Test:** `red --help` shows usage; `red file.rs` opens file; `red ./src` opens workspace.
+**Test:** `ScaledMetrics::new(2.0).file_tree_row_height == 44` (22 * 2)
+
+### Phase 1: CLI Argument Parsing ✅ COMPLETE (v0.3.0)
+
+- [x] Add `clap` dependency to `Cargo.toml`
+- [x] Create `src/cli.rs` module
+- [x] Implement `CliArgs` struct with derive macros
+- [x] Implement `StartupConfig` with validation
+- [x] Update `main()` to use new CLI parsing
+- [x] Handle non-existent paths gracefully
+- [x] Add `--help` and `--version` output
+
+**Status:** Implemented in v0.3.0. See CHANGELOG.md.
 
 ### Phase 2: Workspace Data Structures
 
