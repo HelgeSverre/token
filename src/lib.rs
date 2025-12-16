@@ -7,6 +7,7 @@ pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod config_paths;
+pub mod csv;
 #[cfg(debug_assertions)]
 pub mod debug_overlay;
 pub mod keymap;
