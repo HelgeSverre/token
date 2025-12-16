@@ -84,7 +84,7 @@ impl App {
         let workspace_root = startup_config.workspace_root().cloned();
         let initial_position = startup_config.initial_position;
 
-        let mut model = AppModel::new(window_width, window_height, file_paths);
+        let mut model = AppModel::new(window_width, window_height, 1.0, file_paths);
 
         // Set workspace root if specified
         if let Some(root) = workspace_root {
@@ -174,9 +174,42 @@ impl App {
     }
 
     fn init_renderer(&mut self, window: Rc<Window>, context: &Context<Rc<Window>>) -> Result<()> {
-        let renderer = Renderer::new(window, context)?;
+        let renderer = Renderer::new(Rc::clone(&window), context)?;
 
         self.model.set_char_width(renderer.char_width());
+        self.model.set_scale_factor(renderer.scale_factor());
+        self.model.line_height = renderer.line_height();
+
+        // Derive tab bar height from glyph metrics instead of hardcoded value
+        self.model.recompute_tab_bar_height_from_line_height();
+
+        // Recompute viewport geometry with new metrics
+        let size = window.inner_size();
+        self.model.resize(size.width, size.height);
+
+        self.renderer = Some(renderer);
+        Ok(())
+    }
+
+    fn reinit_renderer(&mut self, scale_factor: f64) -> Result<()> {
+        let Some(window) = &self.window else {
+            return Ok(());
+        };
+        let Some(context) = &self.context else {
+            return Ok(());
+        };
+
+        let renderer = Renderer::with_scale_factor(Rc::clone(window), context, scale_factor)?;
+
+        self.model.set_char_width(renderer.char_width());
+        self.model.line_height = renderer.line_height();
+
+        // Recompute tab bar height from new font metrics
+        self.model.recompute_tab_bar_height_from_line_height();
+
+        // Recompute viewport geometry for new char_width/line_height
+        let size = window.inner_size();
+        self.model.resize(size.width, size.height);
 
         self.renderer = Some(renderer);
         Ok(())
@@ -225,7 +258,8 @@ impl App {
             width as f32,
             (height as usize).saturating_sub(status_bar_height) as f32,
         );
-        let splitters = self.model.editor_area.compute_layout(available_rect);
+        let splitter_width = self.model.metrics.splitter_width;
+        let splitters = self.model.editor_area.compute_layout_scaled(available_rect, splitter_width);
 
         // Check splitter bars first
         if let Some(idx) = self
@@ -248,8 +282,9 @@ impl App {
         }
 
         // Any group's tab bar → Default
+        let tab_bar_height = self.model.metrics.tab_bar_height;
         for group in self.model.editor_area.groups.values() {
-            if is_in_group_tab_bar(y, &group.rect)
+            if is_in_group_tab_bar(y, &group.rect, tab_bar_height)
                 && x >= group.rect.x as f64
                 && x < (group.rect.x + group.rect.width) as f64
             {
@@ -267,6 +302,10 @@ impl App {
             WindowEvent::Resized(size) => update(
                 &mut self.model,
                 Msg::App(AppMsg::Resize(size.width, size.height)),
+            ),
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => update(
+                &mut self.model,
+                Msg::App(AppMsg::ScaleFactorChanged(*scale_factor)),
             ),
             WindowEvent::ModifiersChanged(mods) => {
                 self.modifiers = mods.state();
@@ -471,9 +510,10 @@ impl App {
 
                         // Per-group tab bar hit testing (handles splits correctly)
                         // First, find the clicked group/tab without holding borrow
+                        let tab_bar_h = self.model.metrics.tab_bar_height;
                         let tab_click_info: Option<(_, f64, Rect)> =
                             self.model.editor_area.groups.iter().find_map(|(&gid, g)| {
-                                if is_in_group_tab_bar(y, &g.rect)
+                                if is_in_group_tab_bar(y, &g.rect, tab_bar_h)
                                     && x >= g.rect.x as f64
                                     && x < (g.rect.x + g.rect.width) as f64
                                 {
@@ -607,8 +647,9 @@ impl App {
                         }
 
                         // Ignore middle clicks on any group's tab bar
+                        let tab_h = self.model.metrics.tab_bar_height;
                         for group in self.model.editor_area.groups.values() {
-                            if is_in_group_tab_bar(y, &group.rect)
+                            if is_in_group_tab_bar(y, &group.rect, tab_h)
                                 && x >= group.rect.x as f64
                                 && x < (group.rect.x + group.rect.width) as f64
                             {
@@ -701,10 +742,16 @@ impl App {
         update(&mut self.model, Msg::Ui(UiMsg::BlinkCursor))
     }
 
-    fn process_cmd(&self, cmd: Cmd) {
+    fn process_cmd(&mut self, cmd: Cmd) {
         match cmd {
             Cmd::None => {}
             Cmd::Redraw => {}
+            Cmd::ReinitializeRenderer => {
+                let scale_factor = self.model.metrics.scale_factor;
+                if let Err(e) = self.reinit_renderer(scale_factor) {
+                    tracing::error!("Failed to reinitialize renderer: {}", e);
+                }
+            }
             Cmd::SaveFile { path, content } => {
                 let tx = self.msg_tx.clone();
                 std::thread::spawn(move || {
