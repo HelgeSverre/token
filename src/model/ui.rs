@@ -153,6 +153,8 @@ pub struct UiState {
     pub is_saving: bool,
     /// Currently active modal (if any)
     pub active_modal: Option<ModalState>,
+    /// Last command palette state (persisted for quick re-execution)
+    pub last_command_palette: Option<CommandPaletteState>,
     /// File drag-and-drop state
     pub drop_state: DropState,
 }
@@ -169,6 +171,7 @@ impl UiState {
             is_loading: false,
             is_saving: false,
             active_modal: None,
+            last_command_palette: None,
             drop_state: DropState::default(),
         }
     }
@@ -184,6 +187,7 @@ impl UiState {
             is_loading: false,
             is_saving: false,
             active_modal: None,
+            last_command_palette: None,
             drop_state: DropState::default(),
         }
     }

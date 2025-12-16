@@ -16,6 +16,23 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
     match msg {
         AppMsg::Resize(width, height) => {
             model.resize(width, height);
+
+            // Update CSV viewport size if in CSV mode
+            if let Some(editor) = model.editor_area.focused_editor_mut() {
+                if let Some(csv) = editor.view_mode.as_csv_mut() {
+                    let line_height = model.line_height.max(1);
+                    let tab_bar_height = model.metrics.tab_bar_height;
+                    let status_bar_height = line_height;
+                    let col_header_height = line_height;
+                    let content_height = (height as usize)
+                        .saturating_sub(tab_bar_height)
+                        .saturating_sub(status_bar_height)
+                        .saturating_sub(col_header_height);
+                    let visible_rows = content_height / line_height;
+                    csv.set_viewport_size(visible_rows.max(1), csv.viewport.visible_cols);
+                }
+            }
+
             Some(Cmd::Redraw)
         }
 
@@ -243,6 +260,7 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
                 Some(Cmd::Redraw)
             }
         }
+        CommandId::ToggleCsvView => super::csv::update_csv(model, crate::messages::CsvMsg::Toggle),
     }
 }
 

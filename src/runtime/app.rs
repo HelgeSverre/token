@@ -18,7 +18,7 @@ use token::commands::{filter_commands, Cmd};
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
 };
-use token::messages::{AppMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, SyntaxMsg, UiMsg};
+use token::messages::{AppMsg, CsvMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, SyntaxMsg, UiMsg};
 use token::model::editor::Position;
 use token::model::editor_area::{Rect, SplitDirection};
 use token::model::{AppModel, ModalState};
@@ -259,7 +259,10 @@ impl App {
             (height as usize).saturating_sub(status_bar_height) as f32,
         );
         let splitter_width = self.model.metrics.splitter_width;
-        let splitters = self.model.editor_area.compute_layout_scaled(available_rect, splitter_width);
+        let splitters = self
+            .model
+            .editor_area
+            .compute_layout_scaled(available_rect, splitter_width);
 
         // Check splitter bars first
         if let Some(idx) = self
@@ -563,6 +566,27 @@ impl App {
                             }
                         }
 
+                        // Check if focused editor is in CSV mode - route click to CSV hit-testing
+                        let in_csv_mode = self
+                            .model
+                            .editor_area
+                            .focused_editor()
+                            .map(|e| e.view_mode.is_csv())
+                            .unwrap_or(false);
+
+                        if in_csv_mode {
+                            if let Some(cell) = renderer.pixel_to_csv_cell(x, y, &self.model) {
+                                return update(
+                                    &mut self.model,
+                                    Msg::Csv(CsvMsg::SelectCell {
+                                        row: cell.row,
+                                        col: cell.col,
+                                    }),
+                                );
+                            }
+                            return None;
+                        }
+
                         let (line, column) = renderer.pixel_to_cursor(x, y, &self.model);
                         let now = Instant::now();
                         let double_click_time = Duration::from_millis(300);
@@ -690,6 +714,33 @@ impl App {
                         ((pos.x / char_width) as i32, (-pos.y / line_height) as i32)
                     }
                 };
+
+                // Check if focused editor is in CSV mode
+                let in_csv_mode = self
+                    .model
+                    .editor_area
+                    .focused_editor()
+                    .map(|e| e.view_mode.is_csv())
+                    .unwrap_or(false);
+
+                if in_csv_mode {
+                    let v_cmd = if v_delta != 0 {
+                        update(&mut self.model, Msg::Csv(CsvMsg::ScrollVertical(v_delta)))
+                    } else {
+                        None
+                    };
+
+                    let h_cmd = if h_delta != 0 {
+                        update(
+                            &mut self.model,
+                            Msg::Csv(CsvMsg::ScrollHorizontal(h_delta)),
+                        )
+                    } else {
+                        None
+                    };
+
+                    return v_cmd.or(h_cmd);
+                }
 
                 let v_cmd = if v_delta != 0 {
                     update(&mut self.model, Msg::Editor(EditorMsg::Scroll(v_delta)))

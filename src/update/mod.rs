@@ -3,6 +3,7 @@
 //! All state transformations flow through these functions.
 
 mod app;
+mod csv;
 mod document;
 mod editor;
 mod layout;
@@ -10,7 +11,7 @@ mod syntax;
 mod ui;
 
 use crate::commands::Cmd;
-use crate::messages::Msg;
+use crate::messages::{CsvMsg, Direction, EditorMsg, Msg};
 use crate::model::sync_status_bar;
 use crate::model::AppModel;
 
@@ -20,6 +21,7 @@ use crate::tracing::CursorSnapshot;
 use tracing::{debug, span, Level};
 
 pub use app::update_app;
+pub use csv::update_csv;
 pub use document::update_document;
 pub use editor::update_editor;
 pub use layout::update_layout;
@@ -45,16 +47,50 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
 /// Inner update logic (no tracing)
 fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     let result = match msg {
-        Msg::Editor(m) => editor::update_editor(model, m),
+        Msg::Editor(m) => {
+            // When in CSV mode, intercept navigation messages and route to CSV
+            let in_csv_mode = model
+                .editor_area
+                .focused_editor()
+                .map(|e| e.view_mode.is_csv())
+                .unwrap_or(false);
+
+            if in_csv_mode {
+                if let Some(csv_msg) = map_editor_to_csv(&m) {
+                    return csv::update_csv(model, csv_msg);
+                }
+                // For other editor messages in CSV mode, ignore them
+                return None;
+            }
+            editor::update_editor(model, m)
+        }
         Msg::Document(m) => document::update_document(model, m),
         Msg::Ui(m) => ui::update_ui(model, m),
         Msg::Layout(m) => layout::update_layout(model, m),
         Msg::App(m) => app::update_app(model, m),
         Msg::Syntax(m) => syntax::update_syntax(model, m),
+        Msg::Csv(m) => csv::update_csv(model, m),
     };
 
     sync_status_bar(model);
     result
+}
+
+/// Map text editor movement messages to CSV navigation messages
+fn map_editor_to_csv(editor_msg: &EditorMsg) -> Option<CsvMsg> {
+    match editor_msg {
+        EditorMsg::MoveCursor(Direction::Up) => Some(CsvMsg::MoveUp),
+        EditorMsg::MoveCursor(Direction::Down) => Some(CsvMsg::MoveDown),
+        EditorMsg::MoveCursor(Direction::Left) => Some(CsvMsg::MoveLeft),
+        EditorMsg::MoveCursor(Direction::Right) => Some(CsvMsg::MoveRight),
+        EditorMsg::MoveCursorLineStart => Some(CsvMsg::RowStart),
+        EditorMsg::MoveCursorLineEnd => Some(CsvMsg::RowEnd),
+        EditorMsg::MoveCursorDocumentStart => Some(CsvMsg::FirstCell),
+        EditorMsg::MoveCursorDocumentEnd => Some(CsvMsg::LastCell),
+        EditorMsg::PageUp => Some(CsvMsg::PageUp),
+        EditorMsg::PageDown => Some(CsvMsg::PageDown),
+        _ => None,
+    }
 }
 
 /// Traced update wrapper (debug builds only)
@@ -121,5 +157,6 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Layout(m) => format!("Layout::{:?}", m),
         Msg::App(m) => format!("App::{:?}", m),
         Msg::Syntax(m) => format!("Syntax::{:?}", m),
+        Msg::Csv(m) => format!("Csv::{:?}", m),
     }
 }
