@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_schedule_syntax_parse_for_supported_language() {
-        let mut model = AppModel::new(800, 600, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
         // Get the document ID from the model
         let doc_id = model.document().id.expect("Document should have an ID");
 
@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_schedule_syntax_parse_skips_plain_text() {
-        let mut model = AppModel::new(800, 600, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
         let doc_id = model.document().id.expect("Document should have an ID");
         // Default is PlainText, so no parse should be scheduled
         let cmd = schedule_syntax_parse(&mut model, doc_id);
@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     fn test_parse_ready_triggers_run_syntax_parse() {
-        let mut model = AppModel::new(800, 600, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
         let doc_id = model.document().id.expect("Document should have an ID");
 
         // Set up a Rust document
@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_parse_ready_skips_stale_revision() {
-        let mut model = AppModel::new(800, 600, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
         let doc_id = model.document().id.expect("Document should have an ID");
 
         // Set up document with revision 10
@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn test_parse_completed_stores_highlights() {
-        let mut model = AppModel::new(800, 600, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
         let doc_id = model.document().id.expect("Document should have an ID");
 
         // Set up document with specific revision
@@ -358,7 +358,7 @@ mod tests {
 
     #[test]
     fn test_parse_completed_discards_stale_results() {
-        let mut model = AppModel::new(800, 600, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
         let doc_id = model.document().id.expect("Document should have an ID");
 
         // Set up document with revision 10
@@ -390,7 +390,7 @@ mod tests {
     #[test]
     fn test_full_syntax_update_flow() {
         // Simulate the complete flow: edit -> schedule -> ready -> parse -> completed
-        let mut model = AppModel::new(800, 600, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
         let doc_id = model.document().id.expect("Document should have an ID");
 
         // Set up a JavaScript document
@@ -444,7 +444,7 @@ mod tests {
         use crate::update::update;
 
         // Create model with Rust content
-        let mut model = AppModel::new(800, 600, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
         let doc_id = model.document().id.expect("Document should have an ID");
 
         // Set up a Rust document with some code
