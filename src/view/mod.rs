@@ -223,35 +223,55 @@ impl Renderer {
         let content_y = content_rect.y as usize;
         let content_h = content_rect.height as usize;
 
-        // Text area (background highlights, text, cursors)
-        Self::render_text_area(
-            frame,
-            painter,
-            model,
-            editor,
-            document,
-            rect_x,
-            rect_w,
-            content_y,
-            content_h,
-            line_height,
-            char_width,
-            is_focused,
-        );
+        // Check view mode and dispatch to appropriate renderer
+        if let Some(csv_state) = editor.view_mode.as_csv() {
+            // CSV mode: render grid
+            Self::render_csv_grid(
+                frame,
+                painter,
+                model,
+                csv_state,
+                rect_x,
+                rect_w,
+                content_y,
+                content_h,
+                line_height,
+                char_width,
+                is_focused,
+            );
+        } else {
+            // Text mode: render normal text area
 
-        // Gutter (line numbers, border) - drawn on top of text area background
-        Self::render_gutter(
-            frame,
-            painter,
-            model,
-            editor,
-            document,
-            rect_x,
-            content_y,
-            content_h,
-            line_height,
-            char_width,
-        );
+            // Text area (background highlights, text, cursors)
+            Self::render_text_area(
+                frame,
+                painter,
+                model,
+                editor,
+                document,
+                rect_x,
+                rect_w,
+                content_y,
+                content_h,
+                line_height,
+                char_width,
+                is_focused,
+            );
+
+            // Gutter (line numbers, border) - drawn on top of text area background
+            Self::render_gutter(
+                frame,
+                painter,
+                model,
+                editor,
+                document,
+                rect_x,
+                content_y,
+                content_h,
+                line_height,
+                char_width,
+            );
+        }
 
         // Dim non-focused groups when multiple groups exist (4% black overlay)
         if !is_focused && model.editor_area.groups.len() > 1 {
@@ -287,8 +307,8 @@ impl Renderer {
         for (idx, tab) in group.tabs.iter().enumerate() {
             let is_active = idx == group.active_tab_index;
             let display_name = get_tab_display_name(model, tab);
-            let tab_width =
-                (display_name.len() as f32 * char_width).round() as usize + metrics.padding_large * 2;
+            let tab_width = (display_name.len() as f32 * char_width).round() as usize
+                + metrics.padding_large * 2;
 
             let (bg_color, fg_color) = if is_active {
                 (
@@ -350,7 +370,8 @@ impl Renderer {
         let end_line = (editor.viewport.top_line + visible_lines).min(document.buffer.len_lines());
 
         let gutter_border_color = model.theme.gutter.border_color.to_argb_u32();
-        let gutter_right_x = rect_x + gutter_border_x_scaled(char_width, &model.metrics).round() as usize;
+        let gutter_right_x =
+            rect_x + gutter_border_x_scaled(char_width, &model.metrics).round() as usize;
         let gutter_width = gutter_right_x - rect_x;
 
         // Draw gutter background
@@ -677,6 +698,220 @@ impl Renderer {
                     secondary_cursor_color,
                 );
             }
+        }
+    }
+
+    /// Render CSV grid view
+    ///
+    /// Draws:
+    /// - Row numbers column
+    /// - Column headers (A, B, C, ...)
+    /// - Cell grid with data
+    /// - Selected cell highlight
+    #[allow(clippy::too_many_arguments)]
+    fn render_csv_grid(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        csv: &token::csv::CsvState,
+        rect_x: usize,
+        rect_w: usize,
+        content_y: usize,
+        content_h: usize,
+        line_height: usize,
+        char_width: f32,
+        is_focused: bool,
+    ) {
+        use token::csv::render::{column_to_letters, truncate_text, CsvRenderLayout};
+
+        let theme = &model.theme;
+        let bg_color = theme.editor.background.to_argb_u32();
+        let fg_color = theme.editor.foreground.to_argb_u32();
+        let header_bg = theme.csv.header_background.to_argb_u32();
+        let header_fg = theme.csv.header_foreground.to_argb_u32();
+        let grid_line_color = theme.csv.grid_line.to_argb_u32();
+        let selection_bg = theme.csv.selected_cell_background.to_argb_u32();
+        let selection_border = theme.csv.selected_cell_border.to_argb_u32();
+        let number_color = theme.csv.number_foreground.to_argb_u32();
+
+        // Fill background
+        frame.fill_rect_px(rect_x, content_y, rect_w, content_h, bg_color);
+
+        // Calculate layout
+        let layout =
+            CsvRenderLayout::calculate(csv, rect_x, rect_w, content_y, line_height, char_width);
+
+        // Draw column headers background
+        frame.fill_rect_px(
+            layout.grid_x,
+            layout.col_header_y,
+            rect_w.saturating_sub(layout.row_header_width),
+            layout.col_header_height,
+            header_bg,
+        );
+
+        // Draw row header background
+        frame.fill_rect_px(
+            layout.row_header_x,
+            content_y,
+            layout.row_header_width,
+            content_h,
+            header_bg,
+        );
+
+        // Draw column headers (A, B, C, ...)
+        for (i, &(col_idx, col_x)) in layout.visible_columns.iter().enumerate() {
+            let col_width_px = layout.column_widths_px.get(i).copied().unwrap_or(50);
+            let letter = column_to_letters(col_idx);
+
+            // Center the letter in the column
+            let text_width = (letter.len() as f32 * char_width).ceil() as usize;
+            let text_x = layout.grid_x + col_x + (col_width_px.saturating_sub(text_width)) / 2;
+
+            painter.draw(frame, text_x, layout.col_header_y, &letter, header_fg);
+        }
+
+        // Calculate visible rows
+        let visible_rows = content_h.saturating_sub(layout.col_header_height) / line_height;
+        let end_row = (csv.viewport.top_row + visible_rows).min(csv.data.row_count());
+
+        // Draw row headers (1, 2, 3, ...)
+        for screen_row in 0..visible_rows {
+            let data_row = csv.viewport.top_row + screen_row;
+            if data_row >= csv.data.row_count() {
+                break;
+            }
+
+            let y = layout.data_y + screen_row * line_height;
+            let row_label = format!("{}", data_row + 1);
+            let text_width = (row_label.len() as f32 * char_width).ceil() as usize;
+            let text_x = layout.row_header_x + layout.row_header_width - text_width - 8;
+
+            painter.draw(frame, text_x, y, &row_label, header_fg);
+        }
+
+        // Draw horizontal grid lines
+        for screen_row in 0..=visible_rows {
+            let y = layout.data_y + screen_row * line_height;
+            if y < content_y + content_h {
+                frame.fill_rect_px(
+                    layout.grid_x,
+                    y,
+                    rect_w.saturating_sub(layout.row_header_width),
+                    1,
+                    grid_line_color,
+                );
+            }
+        }
+
+        // Draw vertical grid lines
+        for &(_, col_x) in layout.visible_columns.iter() {
+            let x = layout.grid_x + col_x;
+            frame.fill_rect_px(x, content_y, 1, content_h, grid_line_color);
+        }
+        // Right edge of last column
+        if let Some(&(_, last_x)) = layout.visible_columns.last() {
+            if let Some(&last_w) = layout.column_widths_px.last() {
+                let x = layout.grid_x + last_x + last_w;
+                if x < rect_x + rect_w {
+                    frame.fill_rect_px(x, content_y, 1, content_h, grid_line_color);
+                }
+            }
+        }
+
+        // Pre-calculate selected cell geometry for background drawing
+        let selection_geom = if is_focused {
+            let sel_row = csv.selected_cell.row;
+            let sel_col = csv.selected_cell.col;
+
+            if sel_row >= csv.viewport.top_row && sel_row < end_row {
+                layout
+                    .visible_columns
+                    .iter()
+                    .enumerate()
+                    .find(|(_, &(col_idx, _))| col_idx == sel_col)
+                    .map(|(screen_col, &(_, col_x))| {
+                        let col_width_px = layout
+                            .column_widths_px
+                            .get(screen_col)
+                            .copied()
+                            .unwrap_or(50);
+                        let screen_row = sel_row - csv.viewport.top_row;
+                        let cell_x = layout.grid_x + col_x;
+                        let cell_y = layout.data_y + screen_row * line_height;
+                        (cell_x, cell_y, col_width_px)
+                    })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Draw selection background BEFORE cells so text is visible on top
+        if let Some((cell_x, cell_y, col_width_px)) = selection_geom {
+            frame.fill_rect_px(
+                cell_x + 1,
+                cell_y + 1,
+                col_width_px.saturating_sub(2),
+                line_height.saturating_sub(2),
+                selection_bg,
+            );
+        }
+
+        // Draw cells
+        for screen_row in 0..visible_rows {
+            let data_row = csv.viewport.top_row + screen_row;
+            if data_row >= csv.data.row_count() {
+                break;
+            }
+
+            let y = layout.data_y + screen_row * line_height;
+
+            for (i, &(col_idx, col_x)) in layout.visible_columns.iter().enumerate() {
+                let col_width_px = layout.column_widths_px.get(i).copied().unwrap_or(50);
+                let col_width_chars = csv.column_widths.get(col_idx).copied().unwrap_or(10);
+
+                let cell_value = csv.data.get(data_row, col_idx);
+                let display_text = truncate_text(cell_value, col_width_chars);
+
+                // Determine color and alignment
+                let (text_color, align_right) = if token::csv::render::is_number(cell_value) {
+                    (number_color, true)
+                } else {
+                    (fg_color, false)
+                };
+
+                let text_width = (display_text.chars().count() as f32 * char_width).ceil() as usize;
+                let text_x = if align_right {
+                    layout.grid_x + col_x + col_width_px - text_width - 4
+                } else {
+                    layout.grid_x + col_x + 4
+                };
+
+                painter.draw(frame, text_x, y + 1, &display_text, text_color);
+            }
+        }
+
+        // Draw selection border AFTER cells (on top)
+        if let Some((cell_x, cell_y, col_width_px)) = selection_geom {
+            // Draw selection border (2px on all sides)
+            frame.fill_rect_px(cell_x, cell_y, col_width_px, 2, selection_border); // top
+            frame.fill_rect_px(
+                cell_x,
+                cell_y + line_height - 2,
+                col_width_px,
+                2,
+                selection_border,
+            ); // bottom
+            frame.fill_rect_px(cell_x, cell_y, 2, line_height, selection_border); // left
+            frame.fill_rect_px(
+                cell_x + col_width_px - 2,
+                cell_y,
+                2,
+                line_height,
+                selection_border,
+            ); // right
         }
     }
 
@@ -1062,7 +1297,9 @@ impl Renderer {
             width as f32,
             (height as usize).saturating_sub(status_bar_height) as f32,
         );
-        let splitters = model.editor_area.compute_layout_scaled(available_rect, model.metrics.splitter_width);
+        let splitters = model
+            .editor_area
+            .compute_layout_scaled(available_rect, model.metrics.splitter_width);
 
         let mut buffer = self
             .surface
@@ -1251,5 +1488,30 @@ impl Renderer {
     /// Delegates to geometry module for the actual calculation.
     pub fn tab_at_position(&self, x: f64, model: &AppModel, group: &EditorGroup) -> Option<usize> {
         geometry::tab_at_position(x, self.char_width, model, group)
+    }
+
+    /// Hit-test a CSV cell given window coordinates.
+    /// Returns None if the click is outside the data grid or editor is not in CSV mode.
+    pub fn pixel_to_csv_cell(
+        &self,
+        x: f64,
+        y: f64,
+        model: &AppModel,
+    ) -> Option<token::csv::CellPosition> {
+        let group = model.editor_area.focused_group()?;
+        let editor = model.editor_area.focused_editor()?;
+        let csv = editor.view_mode.as_csv()?;
+
+        let line_height = self.line_metrics.new_line_size.ceil() as usize;
+
+        token::csv::render::pixel_to_csv_cell(
+            csv,
+            &group.rect,
+            x,
+            y,
+            line_height,
+            self.char_width,
+            model.metrics.tab_bar_height,
+        )
     }
 }

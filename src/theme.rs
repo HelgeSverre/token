@@ -287,6 +287,23 @@ pub struct OverlayThemeData {
     pub error: Option<String>,
 }
 
+/// CSV mode colors (all optional for backward compatibility)
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct CsvThemeData {
+    #[serde(default)]
+    pub header_background: Option<String>,
+    #[serde(default)]
+    pub header_foreground: Option<String>,
+    #[serde(default)]
+    pub grid_line: Option<String>,
+    #[serde(default)]
+    pub selected_cell_background: Option<String>,
+    #[serde(default)]
+    pub selected_cell_border: Option<String>,
+    #[serde(default)]
+    pub number_foreground: Option<String>,
+}
+
 /// Syntax highlighting colors (all optional for backward compatibility)
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct SyntaxThemeData {
@@ -346,6 +363,7 @@ pub struct Theme {
     pub overlay: OverlayTheme,
     pub tab_bar: TabBarTheme,
     pub splitter: SplitterTheme,
+    pub csv: CsvTheme,
     pub syntax: SyntaxTheme,
 }
 
@@ -467,6 +485,73 @@ impl SplitterTheme {
             background: Color::rgb(0x25, 0x25, 0x25),
             hover: Color::rgb(0x00, 0x7A, 0xCC),
             active: Color::rgb(0x00, 0x7A, 0xCC),
+        }
+    }
+}
+
+/// CSV mode colors (resolved)
+#[derive(Debug, Clone)]
+pub struct CsvTheme {
+    /// Background color for header row
+    pub header_background: Color,
+    /// Foreground color for header text
+    pub header_foreground: Color,
+    /// Color for grid lines
+    pub grid_line: Color,
+    /// Background color for selected cell
+    pub selected_cell_background: Color,
+    /// Border color for selected cell
+    pub selected_cell_border: Color,
+    /// Color for numeric values (right-aligned)
+    pub number_foreground: Color,
+}
+
+impl CsvTheme {
+    /// Default dark CSV theme (derives from gutter/editor colors)
+    pub fn default_dark() -> Self {
+        Self {
+            header_background: Color::rgb(0x2D, 0x2D, 0x2D),
+            header_foreground: Color::rgb(0xE0, 0xE0, 0xE0),
+            grid_line: Color::rgb(0x40, 0x40, 0x40),
+            selected_cell_background: Color::rgba(0x26, 0x4F, 0x78, 0x80),
+            selected_cell_border: Color::rgb(0x00, 0x7A, 0xCC),
+            number_foreground: Color::rgb(0xB5, 0xCE, 0xA8), // Same as syntax numbers
+        }
+    }
+
+    /// Create CSV theme from theme data and fallback colors
+    pub fn from_data(
+        data: Option<&CsvThemeData>,
+        gutter: &GutterTheme,
+        editor: &EditorTheme,
+    ) -> Self {
+        let default = Self::default_dark();
+
+        Self {
+            header_background: data
+                .and_then(|d| d.header_background.as_ref())
+                .and_then(|s| Color::from_hex(s).ok())
+                .unwrap_or(gutter.background),
+            header_foreground: data
+                .and_then(|d| d.header_foreground.as_ref())
+                .and_then(|s| Color::from_hex(s).ok())
+                .unwrap_or(gutter.foreground_active),
+            grid_line: data
+                .and_then(|d| d.grid_line.as_ref())
+                .and_then(|s| Color::from_hex(s).ok())
+                .unwrap_or(default.grid_line),
+            selected_cell_background: data
+                .and_then(|d| d.selected_cell_background.as_ref())
+                .and_then(|s| Color::from_hex(s).ok())
+                .unwrap_or(editor.selection_background),
+            selected_cell_border: data
+                .and_then(|d| d.selected_cell_border.as_ref())
+                .and_then(|s| Color::from_hex(s).ok())
+                .unwrap_or(default.selected_cell_border),
+            number_foreground: data
+                .and_then(|d| d.number_foreground.as_ref())
+                .and_then(|s| Color::from_hex(s).ok())
+                .unwrap_or(default.number_foreground),
         }
     }
 }
@@ -699,9 +784,10 @@ impl Theme {
                         .unwrap_or(defaults.error),
                 }
             },
-            // Use defaults for tab_bar and splitter (not in YAML yet)
+            // Use defaults for tab_bar, splitter, and csv (not in YAML yet)
             tab_bar: TabBarTheme::default_dark(),
             splitter: SplitterTheme::default_dark(),
+            csv: CsvTheme::default_dark(),
             syntax: {
                 let defaults = SyntaxTheme::default_dark();
                 SyntaxTheme {
@@ -915,6 +1001,7 @@ impl Theme {
                     overlay: OverlayTheme::default_dark(),
                     tab_bar: TabBarTheme::default_dark(),
                     splitter: SplitterTheme::default_dark(),
+                    csv: CsvTheme::default_dark(),
                     syntax: SyntaxTheme::default_dark(),
                 }
             }
