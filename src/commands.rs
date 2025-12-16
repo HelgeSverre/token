@@ -53,6 +53,9 @@ pub enum CommandId {
     // Settings
     OpenConfigDirectory,
     OpenKeybindings,
+
+    // CSV
+    ToggleCsvView,
 }
 
 /// A command definition for the command palette
@@ -180,6 +183,11 @@ pub static COMMANDS: &[CommandDef] = &[
         label: "Open Keymap",
         keybinding: None,
     },
+    CommandDef {
+        id: CommandId::ToggleCsvView,
+        label: "Toggle CSV View",
+        keybinding: None,
+    },
 ];
 
 /// Calculate fuzzy match score. Returns None if no match, Some(score) if matches.
@@ -281,6 +289,7 @@ impl CommandId {
             CommandId::SwitchTheme => None,
             CommandId::OpenConfigDirectory => None,
             CommandId::OpenKeybindings => None,
+            CommandId::ToggleCsvView => Some(KeymapCommand::CsvToggle),
         }
     }
 }

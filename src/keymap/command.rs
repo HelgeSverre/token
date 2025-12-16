@@ -3,7 +3,7 @@
 //! Commands are the bridge between keybindings and the message system.
 //! Each command maps to one or more `Msg` values for the Elm-style update loop.
 
-use crate::messages::{AppMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, Msg, UiMsg};
+use crate::messages::{AppMsg, CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, Msg, UiMsg};
 use crate::model::editor_area::SplitDirection;
 use crate::model::ModalId;
 
@@ -199,6 +199,26 @@ pub enum Command {
     EscapeSmartClear,
     /// Explicitly unbound - disables a default binding
     Unbound,
+
+    // ========================================================================
+    // CSV Mode
+    // ========================================================================
+    /// Toggle CSV view mode
+    CsvToggle,
+    /// CSV navigation commands (used when csv_mode context is active)
+    CsvMoveUp,
+    CsvMoveDown,
+    CsvMoveLeft,
+    CsvMoveRight,
+    CsvNextCell,
+    CsvPrevCell,
+    CsvFirstCell,
+    CsvLastCell,
+    CsvRowStart,
+    CsvRowEnd,
+    CsvPageUp,
+    CsvPageDown,
+    CsvExit,
 }
 
 impl Command {
@@ -350,6 +370,22 @@ impl Command {
                 vec![]
             }
             Unbound => vec![], // Explicitly does nothing
+
+            // CSV mode
+            CsvToggle => vec![Msg::Csv(CsvMsg::Toggle)],
+            CsvMoveUp => vec![Msg::Csv(CsvMsg::MoveUp)],
+            CsvMoveDown => vec![Msg::Csv(CsvMsg::MoveDown)],
+            CsvMoveLeft => vec![Msg::Csv(CsvMsg::MoveLeft)],
+            CsvMoveRight => vec![Msg::Csv(CsvMsg::MoveRight)],
+            CsvNextCell => vec![Msg::Csv(CsvMsg::NextCell)],
+            CsvPrevCell => vec![Msg::Csv(CsvMsg::PrevCell)],
+            CsvFirstCell => vec![Msg::Csv(CsvMsg::FirstCell)],
+            CsvLastCell => vec![Msg::Csv(CsvMsg::LastCell)],
+            CsvRowStart => vec![Msg::Csv(CsvMsg::RowStart)],
+            CsvRowEnd => vec![Msg::Csv(CsvMsg::RowEnd)],
+            CsvPageUp => vec![Msg::Csv(CsvMsg::PageUp)],
+            CsvPageDown => vec![Msg::Csv(CsvMsg::PageDown)],
+            CsvExit => vec![Msg::Csv(CsvMsg::Exit)],
         }
     }
 
@@ -449,6 +485,21 @@ impl Command {
 
             EscapeSmartClear => "Escape",
             Unbound => "Unbound",
+
+            CsvToggle => "Toggle CSV View",
+            CsvMoveUp => "CSV Move Up",
+            CsvMoveDown => "CSV Move Down",
+            CsvMoveLeft => "CSV Move Left",
+            CsvMoveRight => "CSV Move Right",
+            CsvNextCell => "CSV Next Cell",
+            CsvPrevCell => "CSV Previous Cell",
+            CsvFirstCell => "CSV First Cell",
+            CsvLastCell => "CSV Last Cell",
+            CsvRowStart => "CSV Row Start",
+            CsvRowEnd => "CSV Row End",
+            CsvPageUp => "CSV Page Up",
+            CsvPageDown => "CSV Page Down",
+            CsvExit => "Exit CSV View",
         }
     }
 }
