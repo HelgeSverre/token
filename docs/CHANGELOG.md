@@ -4,7 +4,40 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## v0.3.5 - 2025-12-16 (Latest)
+## v0.3.6 - 2025-12-16 (Latest)
+
+### Added - CSV Cell Editing (Phase 2)
+
+Full cell editing support for CSV mode with document synchronization:
+
+**Editing:**
+- **Enter or typing** starts editing the selected cell
+- **Typing replaces** cell content when starting with a character
+- **Edit cursor** navigation with Left/Right arrows, Home/End
+- **Backspace/Delete** for character deletion
+- **Enter confirms** edit and moves to next row
+- **Tab confirms** edit and moves to next cell
+- **Escape cancels** edit, restoring original value
+
+**Document Sync:**
+- Edits update the underlying text buffer in real-time
+- Proper CSV escaping for values with delimiters, quotes, or newlines
+- Quoted fields are handled correctly (embedded commas don't break parsing)
+- File becomes "modified" after edits, triggers save prompt
+
+**New types:**
+- `CellEditState` - tracks edit buffer, cursor position, original value
+- `CellEdit` - represents a completed edit for sync/undo
+
+**New messages:**
+- `CsvMsg::StartEditing`, `StartEditingWithChar(char)`
+- `CsvMsg::ConfirmEdit`, `CancelEdit`
+- `CsvMsg::EditInsertChar`, `EditDeleteBackward`, `EditDeleteForward`
+- `CsvMsg::EditCursorLeft`, `EditCursorRight`, `EditCursorHome`, `EditCursorEnd`
+
+---
+
+## v0.3.5 - 2025-12-16
 
 ### Added - CSV Viewer Mode (Phase 1)
 

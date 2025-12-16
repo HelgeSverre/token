@@ -2,9 +2,23 @@
 
 A spreadsheet-like view for tabular data files (CSV, TSV, PSV) with cell editing, horizontal scrolling, and synchronization with the underlying text buffer.
 
-> **Status:** Phase 1 Complete ✅ (Read-only viewer with full navigation)
+> **Status:** Phase 2 Complete ✅ (Cell editing with document sync)
 > **Inspired by:** [Tablecruncher](https://github.com/Tablecruncher/tablecruncher), TablePlus
-> **Target:** ~~Phase 1 (Read-only)~~ → Phase 2 (Cell Editing) → Phase 3 (Advanced Features)
+> **Target:** ~~Phase 1 (Read-only)~~ → ~~Phase 2 (Cell Editing)~~ → Phase 3 (Advanced Features)
+
+---
+
+## Phase 2 Implementation Summary
+
+Phase 2 adds cell editing with full document synchronization:
+
+- **Cell editing**: Press Enter or start typing to edit the selected cell
+- **Edit cursor**: Navigate within cells with Left/Right arrows, Home/End
+- **Edit operations**: Insert characters, Backspace, Delete
+- **Confirm edit**: Enter confirms and moves down, Tab confirms and moves right
+- **Cancel edit**: Escape discards changes
+- **Document sync**: Edits update the underlying text buffer with proper CSV escaping
+- **Quoted field support**: Values with delimiters, quotes, or newlines are properly escaped
 
 ---
 

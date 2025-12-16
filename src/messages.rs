@@ -349,7 +349,7 @@ pub enum CsvMsg {
     PageUp,
     /// Page down
     PageDown,
-    /// Exit CSV mode (Escape)
+    /// Exit CSV mode (Escape) or cancel edit
     Exit,
     /// Select a specific cell (from mouse click)
     SelectCell { row: usize, col: usize },
@@ -357,6 +357,32 @@ pub enum CsvMsg {
     ScrollVertical(i32),
     /// Scroll viewport horizontally (from mouse wheel)
     ScrollHorizontal(i32),
+
+    // === Cell Editing (Phase 2) ===
+    /// Start editing the selected cell (Enter or F2)
+    StartEditing,
+    /// Start editing with initial character (typing replaces content)
+    StartEditingWithChar(char),
+    /// Confirm edit and save changes, then move down (Enter while editing)
+    ConfirmEdit,
+    /// Confirm edit and move up (Up arrow while editing)
+    ConfirmEditUp,
+    /// Cancel edit and discard changes (Escape while editing)
+    CancelEdit,
+    /// Insert character into edit buffer
+    EditInsertChar(char),
+    /// Delete character before cursor (Backspace)
+    EditDeleteBackward,
+    /// Delete character at cursor (Delete)
+    EditDeleteForward,
+    /// Move edit cursor left
+    EditCursorLeft,
+    /// Move edit cursor right
+    EditCursorRight,
+    /// Move edit cursor to start (Home while editing)
+    EditCursorHome,
+    /// Move edit cursor to end (End while editing)
+    EditCursorEnd,
 }
 
 /// Top-level message type

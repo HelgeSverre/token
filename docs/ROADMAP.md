@@ -8,12 +8,13 @@ For completed work, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Recently Completed
 
-### CSV Viewer Phase 1 (Read-Only) ✅
+### CSV Viewer/Editor Phases 1-2 ✅
 
-**Design:** [feature/csv-editor.md](feature/csv-editor.md) | **Completed:** 2025-12-16
+**Design:** [feature/csv-editor.md](feature/csv-editor.md) | **Completed:** 2025-12-16 (v0.3.6)
 
-Spreadsheet-like view for CSV/TSV/PSV files with grid rendering and cell navigation:
+Spreadsheet-like view for CSV/TSV/PSV files with grid rendering, cell navigation, and editing:
 
+**Phase 1 (Read-Only):**
 - **Module structure:** `src/csv/` with model.rs, parser.rs, viewport.rs, navigation.rs, render.rs
 - **Data model:** `CsvData` with memory-efficient row storage (0xFA delimiter), `CsvState`, `CellPosition`
 - **Parsing:** RFC 4180 compliant via `csv` crate, auto-detect delimiter from content or extension
@@ -23,9 +24,17 @@ Spreadsheet-like view for CSV/TSV/PSV files with grid rendering and cell navigat
 - **Theme support:** `CsvTheme` with header, grid lines, selection, and number colors
 - **Command integration:** "Toggle CSV View" in command palette
 
-Remaining phases:
-- **Phase 2:** Cell editing with sync to document buffer, undo/redo
-- **Phase 3:** Mouse click selection, copy support, virtual scrolling for large files
+**Phase 2 (Cell Editing):**
+- **Cell editing:** Enter or typing starts editing the selected cell
+- **Edit buffer:** `CellEditState` tracks buffer, cursor position, original value
+- **Cursor navigation:** Left/Right arrows, Home/End within cell editor
+- **Edit operations:** Insert characters, Backspace, Delete
+- **Confirm/Cancel:** Enter confirms and moves down, Tab moves to next cell, Escape cancels
+- **Document sync:** Edits update underlying text buffer with proper CSV escaping (RFC 4180)
+- **Quoted fields:** Values with delimiters, quotes, or newlines properly escaped
+
+Remaining:
+- **Phase 3:** Copy support, virtual scrolling for large files, row/column insertion/deletion
 
 ### HiDPI Display Switching Fixes ✅
 
@@ -362,7 +371,7 @@ Group rapid consecutive edits into single undo entries:
 | Keymap Enhancements         | Future      | [future/keymap-enhancements.md](future/keymap-enhancements.md)                           |
 | Workspace Management        | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                       |
 | Syntax Highlighting         | ✅ MVP      | [feature/syntax-highlighting.md](feature/syntax-highlighting.md)                         |
-| CSV Viewer/Editor           | ✅ Phase 1  | [feature/csv-editor.md](feature/csv-editor.md)                                           |
+| CSV Viewer/Editor           | ✅ P1-2     | [feature/csv-editor.md](feature/csv-editor.md)                                           |
 
 ---
 

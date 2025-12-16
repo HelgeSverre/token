@@ -6,6 +6,7 @@
 //! Most keybindings are handled by the keymap system in `src/keymap/`.
 //! This file handles:
 //! - Modal input routing (when a modal dialog is active)
+//! - CSV cell editing input routing
 //! - Option double-tap for multi-cursor creation
 //! - Navigation with selection collapse (moving clears selection first)
 //! - Character input (regular typing)
@@ -13,7 +14,7 @@
 use winit::keyboard::{Key, NamedKey};
 
 use token::commands::Cmd;
-use token::messages::{Direction, DocumentMsg, EditorMsg, ModalMsg, Msg, UiMsg};
+use token::messages::{CsvMsg, Direction, DocumentMsg, EditorMsg, ModalMsg, Msg, UiMsg};
 use token::model::AppModel;
 use token::update::update;
 
@@ -21,6 +22,7 @@ use token::update::update;
 ///
 /// Called as a fallback when:
 /// - A modal is active (all input routes to modal)
+/// - CSV cell editing is active (all input routes to cell editor)
 /// - Option double-tap multi-cursor gesture is in progress
 /// - Keymap returns NoMatch or a non-simple command
 #[allow(clippy::too_many_arguments)]
@@ -37,6 +39,11 @@ pub fn handle_key(
     // Focus capture: route keys to modal when active
     if model.ui.has_modal() {
         return handle_modal_key(model, key, ctrl, shift, alt, logo);
+    }
+
+    // Focus capture: route keys to CSV cell editor when editing
+    if is_csv_editing(model) {
+        return handle_csv_edit_key(model, key, ctrl, shift, alt, logo);
     }
 
     match key {
@@ -233,6 +240,91 @@ fn handle_modal_key(
         }
 
         // Block all other keys when modal is active (consume but don't act)
+        _ => Some(Cmd::Redraw),
+    }
+}
+
+/// Check if currently editing a CSV cell
+fn is_csv_editing(model: &AppModel) -> bool {
+    model
+        .editor_area
+        .focused_editor()
+        .map(|e| e.view_mode.as_csv().map(|csv| csv.is_editing()).unwrap_or(false))
+        .unwrap_or(false)
+}
+
+/// Handle keyboard input when editing a CSV cell
+///
+/// This captures focus and routes keys to the cell editor instead of the normal editor.
+#[allow(clippy::too_many_arguments)]
+fn handle_csv_edit_key(
+    model: &mut AppModel,
+    key: Key,
+    ctrl: bool,
+    _shift: bool,
+    alt: bool,
+    logo: bool,
+) -> Option<Cmd> {
+    match key {
+        // Escape: cancel edit
+        Key::Named(NamedKey::Escape) => update(model, Msg::Csv(CsvMsg::CancelEdit)),
+
+        // Enter: confirm edit and move down
+        Key::Named(NamedKey::Enter) => {
+            let cmd = update(model, Msg::Csv(CsvMsg::ConfirmEdit));
+            update(model, Msg::Csv(CsvMsg::MoveDown));
+            cmd
+        }
+
+        // Tab: confirm edit and move to next cell
+        Key::Named(NamedKey::Tab) => {
+            update(model, Msg::Csv(CsvMsg::ConfirmEdit));
+            update(model, Msg::Csv(CsvMsg::NextCell))
+        }
+
+        // Arrow Left/Right: move cursor within cell
+        Key::Named(NamedKey::ArrowLeft) if !alt && !ctrl && !logo => {
+            update(model, Msg::Csv(CsvMsg::EditCursorLeft))
+        }
+        Key::Named(NamedKey::ArrowRight) if !alt && !ctrl && !logo => {
+            update(model, Msg::Csv(CsvMsg::EditCursorRight))
+        }
+
+        // Arrow Up/Down: confirm edit and navigate
+        Key::Named(NamedKey::ArrowUp) => {
+            update(model, Msg::Csv(CsvMsg::ConfirmEdit));
+            update(model, Msg::Csv(CsvMsg::MoveUp))
+        }
+        Key::Named(NamedKey::ArrowDown) => {
+            update(model, Msg::Csv(CsvMsg::ConfirmEdit));
+            update(model, Msg::Csv(CsvMsg::MoveDown))
+        }
+
+        // Home/End: move cursor to start/end
+        Key::Named(NamedKey::Home) => update(model, Msg::Csv(CsvMsg::EditCursorHome)),
+        Key::Named(NamedKey::End) => update(model, Msg::Csv(CsvMsg::EditCursorEnd)),
+
+        // Backspace: delete backward
+        Key::Named(NamedKey::Backspace) => update(model, Msg::Csv(CsvMsg::EditDeleteBackward)),
+
+        // Delete: delete forward
+        Key::Named(NamedKey::Delete) => update(model, Msg::Csv(CsvMsg::EditDeleteForward)),
+
+        // Space
+        Key::Named(NamedKey::Space) if !(ctrl || logo) => {
+            update(model, Msg::Csv(CsvMsg::EditInsertChar(' ')))
+        }
+
+        // Character input
+        Key::Character(ref s) if !(ctrl || logo) => {
+            let mut cmd = None;
+            for ch in s.chars() {
+                cmd = update(model, Msg::Csv(CsvMsg::EditInsertChar(ch))).or(cmd);
+            }
+            cmd
+        }
+
+        // Block all other keys when editing (consume but don't act)
         _ => Some(Cmd::Redraw),
     }
 }

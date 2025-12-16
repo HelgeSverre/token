@@ -11,7 +11,7 @@ mod syntax;
 mod ui;
 
 use crate::commands::Cmd;
-use crate::messages::{CsvMsg, Direction, EditorMsg, Msg};
+use crate::messages::{CsvMsg, Direction, DocumentMsg, EditorMsg, Msg};
 use crate::model::sync_status_bar;
 use crate::model::AppModel;
 
@@ -49,14 +49,12 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     let result = match msg {
         Msg::Editor(m) => {
             // When in CSV mode, intercept navigation messages and route to CSV
-            let in_csv_mode = model
-                .editor_area
-                .focused_editor()
-                .map(|e| e.view_mode.is_csv())
-                .unwrap_or(false);
+            let csv_info = model.editor_area.focused_editor().and_then(|e| {
+                e.view_mode.as_csv().map(|csv| (true, csv.is_editing()))
+            });
 
-            if in_csv_mode {
-                if let Some(csv_msg) = map_editor_to_csv(&m) {
+            if let Some((true, is_editing)) = csv_info {
+                if let Some(csv_msg) = map_editor_to_csv(&m, is_editing) {
                     return csv::update_csv(model, csv_msg);
                 }
                 // For other editor messages in CSV mode, ignore them
@@ -64,7 +62,21 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
             }
             editor::update_editor(model, m)
         }
-        Msg::Document(m) => document::update_document(model, m),
+        Msg::Document(m) => {
+            // When in CSV mode, intercept document messages for cell editing
+            let csv_info = model.editor_area.focused_editor().and_then(|e| {
+                e.view_mode.as_csv().map(|csv| (true, csv.is_editing()))
+            });
+
+            if let Some((true, is_editing)) = csv_info {
+                if let Some(csv_msg) = map_document_to_csv(&m, is_editing) {
+                    return csv::update_csv(model, csv_msg);
+                }
+                // Block other document messages in CSV mode
+                return None;
+            }
+            document::update_document(model, m)
+        }
         Msg::Ui(m) => ui::update_ui(model, m),
         Msg::Layout(m) => layout::update_layout(model, m),
         Msg::App(m) => app::update_app(model, m),
@@ -77,18 +89,48 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
 }
 
 /// Map text editor movement messages to CSV navigation messages
-fn map_editor_to_csv(editor_msg: &EditorMsg) -> Option<CsvMsg> {
-    match editor_msg {
-        EditorMsg::MoveCursor(Direction::Up) => Some(CsvMsg::MoveUp),
-        EditorMsg::MoveCursor(Direction::Down) => Some(CsvMsg::MoveDown),
-        EditorMsg::MoveCursor(Direction::Left) => Some(CsvMsg::MoveLeft),
-        EditorMsg::MoveCursor(Direction::Right) => Some(CsvMsg::MoveRight),
-        EditorMsg::MoveCursorLineStart => Some(CsvMsg::RowStart),
-        EditorMsg::MoveCursorLineEnd => Some(CsvMsg::RowEnd),
-        EditorMsg::MoveCursorDocumentStart => Some(CsvMsg::FirstCell),
-        EditorMsg::MoveCursorDocumentEnd => Some(CsvMsg::LastCell),
-        EditorMsg::PageUp => Some(CsvMsg::PageUp),
-        EditorMsg::PageDown => Some(CsvMsg::PageDown),
+///
+/// When not editing: arrows move cell selection
+/// When editing: left/right move cursor in cell, up/down confirm and navigate
+fn map_editor_to_csv(editor_msg: &EditorMsg, is_editing: bool) -> Option<CsvMsg> {
+    match (editor_msg, is_editing) {
+        // When editing, left/right move cursor within cell
+        (EditorMsg::MoveCursor(Direction::Left), true) => Some(CsvMsg::EditCursorLeft),
+        (EditorMsg::MoveCursor(Direction::Right), true) => Some(CsvMsg::EditCursorRight),
+        // When editing, up/down confirm edit and navigate
+        (EditorMsg::MoveCursor(Direction::Up), true) => Some(CsvMsg::ConfirmEditUp),
+        (EditorMsg::MoveCursor(Direction::Down), true) => Some(CsvMsg::ConfirmEdit),
+        // When editing, Home/End move cursor within cell
+        (EditorMsg::MoveCursorLineStart, true) => Some(CsvMsg::EditCursorHome),
+        (EditorMsg::MoveCursorLineEnd, true) => Some(CsvMsg::EditCursorEnd),
+
+        // When not editing, standard cell navigation
+        (EditorMsg::MoveCursor(Direction::Up), false) => Some(CsvMsg::MoveUp),
+        (EditorMsg::MoveCursor(Direction::Down), false) => Some(CsvMsg::MoveDown),
+        (EditorMsg::MoveCursor(Direction::Left), false) => Some(CsvMsg::MoveLeft),
+        (EditorMsg::MoveCursor(Direction::Right), false) => Some(CsvMsg::MoveRight),
+        (EditorMsg::MoveCursorLineStart, false) => Some(CsvMsg::RowStart),
+        (EditorMsg::MoveCursorLineEnd, false) => Some(CsvMsg::RowEnd),
+        (EditorMsg::MoveCursorDocumentStart, _) => Some(CsvMsg::FirstCell),
+        (EditorMsg::MoveCursorDocumentEnd, _) => Some(CsvMsg::LastCell),
+        (EditorMsg::PageUp, _) => Some(CsvMsg::PageUp),
+        (EditorMsg::PageDown, _) => Some(CsvMsg::PageDown),
+        _ => None,
+    }
+}
+
+/// Map document messages to CSV cell editing messages
+///
+/// When not editing: InsertNewline starts editing, InsertChar starts with that char
+/// When editing: InsertNewline confirms edit, InsertChar inserts into buffer
+fn map_document_to_csv(doc_msg: &DocumentMsg, is_editing: bool) -> Option<CsvMsg> {
+    match (doc_msg, is_editing) {
+        (DocumentMsg::InsertNewline, false) => Some(CsvMsg::StartEditing),
+        (DocumentMsg::InsertNewline, true) => Some(CsvMsg::ConfirmEdit),
+        (DocumentMsg::InsertChar(ch), false) => Some(CsvMsg::StartEditingWithChar(*ch)),
+        (DocumentMsg::InsertChar(ch), true) => Some(CsvMsg::EditInsertChar(*ch)),
+        (DocumentMsg::DeleteBackward, true) => Some(CsvMsg::EditDeleteBackward),
+        (DocumentMsg::DeleteForward, true) => Some(CsvMsg::EditDeleteForward),
         _ => None,
     }
 }

@@ -82,6 +82,22 @@ pub fn detect_delimiter(content: &str) -> Delimiter {
     }
 }
 
+/// Escape a value for CSV output
+///
+/// Adds quotes if the value contains the delimiter, quotes, or newlines.
+/// Existing quotes are doubled per RFC 4180.
+pub fn escape_csv_value(value: &str, delimiter: Delimiter) -> String {
+    let delim = delimiter.char();
+    let needs_quotes =
+        value.contains(delim) || value.contains('"') || value.contains('\n') || value.contains('\r');
+
+    if needs_quotes {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +179,41 @@ mod tests {
 
         assert_eq!(data.row_count(), 3);
         assert_eq!(data.column_count(), 1);
+    }
+
+    #[test]
+    fn test_escape_csv_value_simple() {
+        assert_eq!(escape_csv_value("hello", Delimiter::Comma), "hello");
+        assert_eq!(escape_csv_value("123", Delimiter::Comma), "123");
+    }
+
+    #[test]
+    fn test_escape_csv_value_with_comma() {
+        assert_eq!(
+            escape_csv_value("hello, world", Delimiter::Comma),
+            "\"hello, world\""
+        );
+    }
+
+    #[test]
+    fn test_escape_csv_value_with_quotes() {
+        assert_eq!(
+            escape_csv_value("say \"hello\"", Delimiter::Comma),
+            "\"say \"\"hello\"\"\""
+        );
+    }
+
+    #[test]
+    fn test_escape_csv_value_with_newline() {
+        assert_eq!(
+            escape_csv_value("line1\nline2", Delimiter::Comma),
+            "\"line1\nline2\""
+        );
+    }
+
+    #[test]
+    fn test_escape_csv_value_tab_delimiter() {
+        assert_eq!(escape_csv_value("a,b", Delimiter::Tab), "a,b");
+        assert_eq!(escape_csv_value("a\tb", Delimiter::Tab), "\"a\tb\"");
     }
 }

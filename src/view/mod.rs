@@ -913,6 +913,79 @@ impl Renderer {
                 selection_border,
             ); // right
         }
+
+        // Draw cell editor if editing
+        if let Some(edit_state) = &csv.editing {
+            Self::render_csv_cell_editor(
+                frame,
+                painter,
+                model,
+                csv,
+                &layout,
+                edit_state,
+                line_height,
+                char_width,
+            );
+        }
+    }
+
+    /// Render the cell editor overlay when editing a CSV cell
+    #[allow(clippy::too_many_arguments)]
+    fn render_csv_cell_editor(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        csv: &token::csv::CsvState,
+        layout: &token::csv::render::CsvRenderLayout,
+        edit_state: &token::csv::CellEditState,
+        line_height: usize,
+        char_width: f32,
+    ) {
+        let pos = &edit_state.position;
+
+        // Check if cell is visible
+        if pos.row < csv.viewport.top_row {
+            return;
+        }
+        let screen_row = pos.row - csv.viewport.top_row;
+        if screen_row >= csv.viewport.visible_rows {
+            return;
+        }
+
+        // Find column position
+        let col_info = layout
+            .visible_columns
+            .iter()
+            .enumerate()
+            .find(|(_, &(col_idx, _))| col_idx == pos.col);
+
+        let (screen_col_idx, col_x) = match col_info {
+            Some((idx, &(_, x))) => (idx, x),
+            None => return,
+        };
+
+        let col_width_px = layout.column_widths_px.get(screen_col_idx).copied().unwrap_or(50);
+        let cell_x = layout.grid_x + col_x;
+        let cell_y = layout.data_y + screen_row * line_height;
+
+        // Use input field colors from overlay theme
+        let edit_bg = model.theme.overlay.input_background.to_argb_u32();
+        let edit_fg = model.theme.overlay.foreground.to_argb_u32();
+        let cursor_color = model.theme.editor.cursor_color.to_argb_u32();
+
+        // Draw edit background (fill entire cell)
+        frame.fill_rect_px(cell_x + 1, cell_y + 1, col_width_px.saturating_sub(2), line_height.saturating_sub(2), edit_bg);
+
+        // Draw edit text
+        let text_x = cell_x + 4;
+        painter.draw(frame, text_x, cell_y + 1, &edit_state.buffer, edit_fg);
+
+        // Draw cursor if visible (blinking)
+        if model.ui.cursor_visible {
+            let cursor_char_pos = edit_state.cursor_char_position();
+            let cursor_x = text_x + (cursor_char_pos as f32 * char_width).round() as usize;
+            frame.fill_rect_px(cursor_x, cell_y + 2, 2, line_height.saturating_sub(4), cursor_color);
+        }
     }
 
     /// Render the status bar at the bottom of the window.
