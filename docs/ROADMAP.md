@@ -10,7 +10,7 @@ For completed work, see [CHANGELOG.md](CHANGELOG.md).
 
 ### HiDPI Display Switching Fixes ✅
 
-**Design:** [UI-SCALING-REVIEW.md](UI-SCALING-REVIEW.md) | **Completed:** 2025-12-16 (v0.3.4)
+**Design:** [archived/UI-SCALING-REVIEW.md](archived/UI-SCALING-REVIEW.md) | **Completed:** 2025-12-16 (v0.3.4)
 
 Fixed critical issues when switching between displays with different DPI/scale factors:
 
