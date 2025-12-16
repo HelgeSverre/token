@@ -49,6 +49,7 @@ pub fn test_model(text: &str, line: usize, column: usize) -> AppModel {
         window_size: (800, 600),
         line_height: 20,
         char_width: 10.0,
+        metrics: token::model::ScaledMetrics::default(),
         workspace_root: None,
         #[cfg(debug_assertions)]
         debug_overlay: None,
@@ -108,6 +109,7 @@ pub fn test_model_with_selection(
         window_size: (800, 600),
         line_height: 20,
         char_width: 10.0,
+        metrics: token::model::ScaledMetrics::default(),
         workspace_root: None,
         #[cfg(debug_assertions)]
         debug_overlay: None,
@@ -164,6 +166,7 @@ pub fn test_model_multi_cursor(text: &str, positions: &[(usize, usize)]) -> AppM
         window_size: (800, 600),
         line_height: 20,
         char_width: 10.0,
+        metrics: token::model::ScaledMetrics::default(),
         workspace_root: None,
         #[cfg(debug_assertions)]
         debug_overlay: None,

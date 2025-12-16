@@ -100,6 +100,7 @@ mod tests {
             window_size: (800, 600),
             line_height: 20,
             char_width: 10.0,
+            metrics: token::model::ScaledMetrics::default(),
             workspace_root: None,
             #[cfg(debug_assertions)]
             debug_overlay: None,
@@ -677,6 +678,7 @@ mod tests {
             window_size: (800, 600),
             line_height: 20,
             char_width: 10.0,
+            metrics: token::model::ScaledMetrics::default(),
             workspace_root: None,
             #[cfg(debug_assertions)]
             debug_overlay: None,
