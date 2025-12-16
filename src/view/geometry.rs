@@ -14,8 +14,16 @@ use token::model::AppModel;
 // Layout Constants
 // ============================================================================
 
-/// Height of the tab bar in pixels
+/// Height of the tab bar in pixels (base value at scale factor 1.0)
+/// For actual rendering, use `model.metrics.tab_bar_height`
 pub const TAB_BAR_HEIGHT: usize = 28;
+
+/// Get tab bar height from model's scaled metrics
+#[inline]
+#[allow(dead_code)]
+pub fn tab_bar_height(model: &AppModel) -> usize {
+    model.metrics.tab_bar_height
+}
 
 // Re-export TABULATOR_WIDTH from util::text for single source of truth
 pub use token::util::text::TABULATOR_WIDTH;
@@ -163,6 +171,7 @@ pub fn is_in_status_bar(y: f64, window_height: u32, line_height: usize) -> bool 
 
 /// Check if a y-coordinate is within the global tab bar region (top of window)
 /// Note: For split views, use `is_in_group_tab_bar` instead
+/// Uses the base TAB_BAR_HEIGHT constant (not scaled).
 #[inline]
 #[allow(dead_code)]
 pub fn is_in_tab_bar(y: f64) -> bool {
@@ -171,9 +180,9 @@ pub fn is_in_tab_bar(y: f64) -> bool {
 
 /// Check if a point is within a group's tab bar region
 #[inline]
-pub fn is_in_group_tab_bar(y: f64, group_rect: &Rect) -> bool {
+pub fn is_in_group_tab_bar(y: f64, group_rect: &Rect, tab_bar_height: usize) -> bool {
     let local_y = y - group_rect.y as f64;
-    local_y >= 0.0 && local_y < TAB_BAR_HEIGHT as f64
+    local_y >= 0.0 && local_y < tab_bar_height as f64
 }
 
 use super::helpers::get_tab_display_name;
@@ -212,9 +221,9 @@ pub fn pixel_to_cursor(
     line_height: f64,
     model: &AppModel,
 ) -> (usize, usize) {
-    let text_x = text_start_x(char_width).round() as f64;
+    let text_x = token::model::text_start_x_scaled(char_width, &model.metrics).round() as f64;
 
-    let text_start_y = TAB_BAR_HEIGHT as f64;
+    let text_start_y = model.metrics.tab_bar_height as f64;
     let adjusted_y = (y - text_start_y).max(0.0);
     let visual_line = (adjusted_y / line_height).floor() as usize;
     let line = model.editor().viewport.top_line + visual_line;
@@ -248,9 +257,9 @@ pub fn pixel_to_line_and_visual_column(
     line_height: f64,
     model: &AppModel,
 ) -> (usize, usize) {
-    let text_x = text_start_x(char_width).round() as f64;
+    let text_x = token::model::text_start_x_scaled(char_width, &model.metrics).round() as f64;
 
-    let text_start_y = TAB_BAR_HEIGHT as f64;
+    let text_start_y = model.metrics.tab_bar_height as f64;
     let adjusted_y = (y - text_start_y).max(0.0);
     let visual_line = (adjusted_y / line_height).floor() as usize;
     let line = model.editor().viewport.top_line + visual_line;
@@ -277,15 +286,15 @@ pub fn pixel_to_cursor_in_group(
     char_width: f32,
     line_height: f64,
     group_rect: &Rect,
-    _model: &AppModel,
+    model: &AppModel,
     editor: &token::model::EditorState,
     document: &token::model::Document,
 ) -> (usize, usize) {
     let local_x = x - group_rect.x as f64;
     let local_y = y - group_rect.y as f64;
 
-    let text_x = text_start_x(char_width).round() as f64;
-    let text_start_y = TAB_BAR_HEIGHT as f64;
+    let text_x = token::model::text_start_x_scaled(char_width, &model.metrics).round() as f64;
+    let text_start_y = model.metrics.tab_bar_height as f64;
     let adjusted_y = (local_y - text_start_y).max(0.0);
     let visual_line = (adjusted_y / line_height).floor() as usize;
     let line = editor.viewport.top_line + visual_line;
@@ -313,6 +322,21 @@ pub fn pixel_to_cursor_in_group(
 // ============================================================================
 
 /// Compute the content area rect for an editor group (excluding tab bar)
+/// This version uses the model's scaled metrics.
+#[inline]
+#[allow(dead_code)]
+pub fn group_content_rect_scaled(group_rect: &Rect, model: &AppModel) -> Rect {
+    let tbh = model.metrics.tab_bar_height as f32;
+    Rect::new(
+        group_rect.x,
+        group_rect.y + tbh,
+        group_rect.width,
+        (group_rect.height - tbh).max(0.0),
+    )
+}
+
+/// Compute the content area rect for an editor group (excluding tab bar)
+/// Legacy version using base TAB_BAR_HEIGHT constant.
 #[inline]
 pub fn group_content_rect(group_rect: &Rect) -> Rect {
     Rect::new(
