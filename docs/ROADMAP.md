@@ -155,7 +155,7 @@ Centralized drawing primitives for cleaner rendering code:
 
 ### Debug Tracing & Instrumentation ✅
 
-**Design:** [feature/tracing-instrumentation.md](feature/tracing-instrumentation.md) | **Completed:** 2025-12-08
+**Design:** [feature/tracing-instrumentation.md](archived/tracing-instrumentation.md) | **Completed:** 2025-12-08
 
 Debug instrumentation for multi-cursor state transitions:
 
@@ -312,7 +312,7 @@ Group rapid consecutive edits into single undo entries:
 | --------------------------- | ----------- |------------------------------------------------------------------------------------------|
 | File Operations             | ✅ P1-5     | [feature/file-operations.md](feature/file-operations.md)                                 |
 | GUI Cleanup (Frame/Painter) | ✅ Phase 1  | [GUI-CLEANUP.md](GUI-CLEANUP.md)                                                         |
-| Debug Tracing               | ✅ Complete | [feature/tracing-instrumentation.md](feature/tracing-instrumentation.md)                 |
+| Debug Tracing               | ✅ Complete | [feature/tracing-instrumentation.md](archived/tracing-instrumentation.md)                 |
 | Codebase Organization       | ✅ Complete | [archived/ORGANIZATION-CODEBASE.md](archived/ORGANIZATION-CODEBASE.md)                   |
 | Multi-Cursor Selection Gaps | ✅ Complete | [archived/MULTI_CURSOR_SELECTION_GAPS.md](archived/MULTI_CURSOR_SELECTION_GAPS.md)       |
 | Theming System              | ✅ Complete | [archived/THEMING.md](archived/THEMING.md)                                               |
