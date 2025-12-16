@@ -19,6 +19,12 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
 
+        AppMsg::ScaleFactorChanged(scale_factor) => {
+            model.set_scale_factor(scale_factor);
+            // Reinitialize renderer (creates new glyph cache) and force redraw
+            Some(Cmd::Batch(vec![Cmd::ReinitializeRenderer, Cmd::Redraw]))
+        }
+
         AppMsg::SaveFile => {
             let file_path = model.document().file_path.clone();
             match file_path {
