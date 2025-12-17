@@ -31,7 +31,7 @@ pub fn update_csv(model: &mut AppModel, msg: CsvMsg) -> Option<Cmd> {
         // Cell editing messages
         CsvMsg::StartEditing => start_editing(model),
         CsvMsg::StartEditingWithChar(ch) => start_editing_with_char(model, ch),
-        CsvMsg::ConfirmEdit => confirm_edit(model, 1),   // Move down
+        CsvMsg::ConfirmEdit => confirm_edit(model, 1), // Move down
         CsvMsg::ConfirmEditUp => confirm_edit(model, -1), // Move up
         CsvMsg::CancelEdit => cancel_edit(model),
         CsvMsg::EditInsertChar(ch) => edit_insert_char(model, ch),
@@ -512,10 +512,7 @@ mod tests {
 
         assert_eq!(find_field_byte_range(row, 0, Delimiter::Comma), Some(0..5));
         assert_eq!(find_field_byte_range(row, 1, Delimiter::Comma), Some(6..8));
-        assert_eq!(
-            find_field_byte_range(row, 2, Delimiter::Comma),
-            Some(9..17)
-        );
+        assert_eq!(find_field_byte_range(row, 2, Delimiter::Comma), Some(9..17));
         assert_eq!(find_field_byte_range(row, 3, Delimiter::Comma), None);
     }
 

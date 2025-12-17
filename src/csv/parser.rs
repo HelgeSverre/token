@@ -88,8 +88,10 @@ pub fn detect_delimiter(content: &str) -> Delimiter {
 /// Existing quotes are doubled per RFC 4180.
 pub fn escape_csv_value(value: &str, delimiter: Delimiter) -> String {
     let delim = delimiter.char();
-    let needs_quotes =
-        value.contains(delim) || value.contains('"') || value.contains('\n') || value.contains('\r');
+    let needs_quotes = value.contains(delim)
+        || value.contains('"')
+        || value.contains('\n')
+        || value.contains('\r');
 
     if needs_quotes {
         format!("\"{}\"", value.replace('"', "\"\""))

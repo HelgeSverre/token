@@ -36,7 +36,7 @@ pub fn make_model(lines: usize) -> AppModel {
         line_height,
         char_width,
         metrics: token::model::ScaledMetrics::default(),
-        workspace_root: None,
+        workspace: None,
         #[cfg(debug_assertions)]
         debug_overlay: None,
     }

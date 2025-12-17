@@ -125,7 +125,10 @@ impl CsvState {
 
     /// Scroll viewport vertically (from mouse wheel)
     pub fn scroll_vertical(&mut self, delta: i32) {
-        let max_top = self.data.row_count().saturating_sub(self.viewport.visible_rows.max(1));
+        let max_top = self
+            .data
+            .row_count()
+            .saturating_sub(self.viewport.visible_rows.max(1));
         let new_top = (self.viewport.top_row as i32 + delta)
             .max(0)
             .min(max_top as i32) as usize;

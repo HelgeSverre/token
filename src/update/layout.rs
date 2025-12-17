@@ -11,6 +11,8 @@ use crate::model::{
 };
 use crate::util::{filename_for_display, is_likely_binary, validate_file_for_opening};
 
+use super::syntax::schedule_syntax_parse;
+
 /// Drag threshold in pixels before drag becomes active
 const DRAG_THRESHOLD_PIXELS: f32 = 4.0;
 /// Minimum pane size in pixels
@@ -24,10 +26,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
 
-        LayoutMsg::OpenFileInNewTab(path) => {
-            open_file_in_new_tab(model, path);
-            Some(Cmd::Redraw)
-        }
+        LayoutMsg::OpenFileInNewTab(path) => open_file_in_new_tab(model, path),
 
         LayoutMsg::SplitFocused(direction) => {
             split_focused_group(model, direction);
@@ -197,7 +196,7 @@ fn new_tab_in_focused_group(model: &mut AppModel) {
 }
 
 /// Open a file in a new tab in the focused group
-fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) {
+fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
     let filename = filename_for_display(&path);
 
     // 0. Check if file is already open - if so, focus it instead
@@ -207,7 +206,7 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) {
             group.active_tab_index = tab_idx;
         }
         model.ui.set_status(format!("Switched to: {}", filename));
-        return;
+        return Some(Cmd::Redraw);
     }
 
     let group_id = model.editor_area.focused_group_id;
@@ -215,7 +214,7 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) {
     // 1. Validate file before attempting to open
     if let Err(e) = validate_file_for_opening(&path) {
         model.ui.set_status(e.user_message(&filename));
-        return;
+        return Some(Cmd::Redraw);
     }
 
     // 2. Check for binary content
@@ -223,7 +222,7 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) {
         model
             .ui
             .set_status(format!("Cannot open binary file: {}", filename));
-        return;
+        return Some(Cmd::Redraw);
     }
 
     // 3. Load the document from file
@@ -238,19 +237,19 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) {
             model
                 .ui
                 .set_status(format!("Error opening {}: {}", path.display(), e));
-            return;
+            return Some(Cmd::Redraw);
         }
     };
     model.editor_area.documents.insert(doc_id, document);
 
-    // 2. Create new editor state for this document
+    // 4. Create new editor state for this document
     let editor_id = model.editor_area.next_editor_id();
     let mut editor = EditorState::new();
     editor.id = Some(editor_id);
     editor.document_id = Some(doc_id);
     model.editor_area.editors.insert(editor_id, editor);
 
-    // 3. Create tab in focused group
+    // 5. Create tab in focused group
     let tab_id = model.editor_area.next_tab_id();
     let tab = Tab {
         id: tab_id,
@@ -262,6 +261,13 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) {
     if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
         group.tabs.push(tab);
         group.active_tab_index = group.tabs.len() - 1;
+    }
+
+    // 6. Schedule syntax parsing for the new document
+    if let Some(parse_cmd) = schedule_syntax_parse(model, doc_id) {
+        Some(Cmd::Batch(vec![Cmd::Redraw, parse_cmd]))
+    } else {
+        Some(Cmd::Redraw)
     }
 }
 
@@ -626,7 +632,10 @@ fn begin_splitter_drag(model: &mut AppModel, splitter_index: usize, position: (f
 
     // First compute the layout to get splitter info
     // Use a reasonable default rect - the actual values will come from window size
-    let available = model.editor_area.last_layout_rect.unwrap_or(Rect::new(0.0, 0.0, 800.0, 600.0));
+    let available = model
+        .editor_area
+        .last_layout_rect
+        .unwrap_or(Rect::new(0.0, 0.0, 800.0, 600.0));
     let splitters = model
         .editor_area
         .compute_layout_scaled(available, model.metrics.splitter_width);
@@ -686,8 +695,8 @@ fn update_splitter_drag(model: &mut AppModel, position: (f32, f32)) {
 
     // Check threshold if not yet active
     if !active {
-        let distance = ((position.0 - start_pos.0).powi(2) + (position.1 - start_pos.1).powi(2))
-            .sqrt();
+        let distance =
+            ((position.0 - start_pos.0).powi(2) + (position.1 - start_pos.1).powi(2)).sqrt();
         if distance < DRAG_THRESHOLD_PIXELS {
             return; // Threshold not exceeded yet
         }
@@ -884,12 +893,17 @@ fn update_container_ratios_by_splitter(
     new_right: f32,
 ) -> bool {
     let mut current_index = 0;
-    visit_splitter_container_mut(layout, target_index, &mut current_index, &mut |container, _| {
-        if local_idx < container.ratios.len() && local_idx + 1 < container.ratios.len() {
-            container.ratios[local_idx] = new_left;
-            container.ratios[local_idx + 1] = new_right;
-        }
-    })
+    visit_splitter_container_mut(
+        layout,
+        target_index,
+        &mut current_index,
+        &mut |container, _| {
+            if local_idx < container.ratios.len() && local_idx + 1 < container.ratios.len() {
+                container.ratios[local_idx] = new_left;
+                container.ratios[local_idx + 1] = new_right;
+            }
+        },
+    )
 }
 
 /// Restore original ratios to the container that owns the target splitter.
@@ -899,7 +913,12 @@ fn restore_container_ratios_by_splitter(
     original_ratios: &[f32],
 ) -> bool {
     let mut current_index = 0;
-    visit_splitter_container_mut(layout, target_index, &mut current_index, &mut |container, _| {
-        container.ratios = original_ratios.to_vec();
-    })
+    visit_splitter_container_mut(
+        layout,
+        target_index,
+        &mut current_index,
+        &mut |container, _| {
+            container.ratios = original_ratios.to_vec();
+        },
+    )
 }

@@ -347,7 +347,9 @@ impl CsvState {
 
     /// Start editing the selected cell
     pub fn start_editing(&mut self) {
-        let value = self.data.get(self.selected_cell.row, self.selected_cell.col);
+        let value = self
+            .data
+            .get(self.selected_cell.row, self.selected_cell.col);
         self.editing = Some(CellEditState::new(self.selected_cell, value.to_string()));
     }
 

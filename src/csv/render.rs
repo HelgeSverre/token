@@ -144,7 +144,8 @@ pub fn pixel_to_csv_cell(
 
     let rect_x = 0usize;
     let rect_w = group_rect.width as usize;
-    let layout = CsvRenderLayout::calculate(csv, rect_x, rect_w, content_y, line_height, char_width);
+    let layout =
+        CsvRenderLayout::calculate(csv, rect_x, rect_w, content_y, line_height, char_width);
 
     if local_x < (layout.grid_x as f64) {
         return None;
