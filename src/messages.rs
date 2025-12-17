@@ -428,11 +428,17 @@ pub enum WorkspaceMsg {
     /// Select next item in file tree (Arrow Down)
     SelectNext,
 
+    /// Select parent folder of current item (Arrow Left on collapsed/file)
+    SelectParent,
+
     /// Open file from tree (single-click = preview, double-click = permanent)
     OpenFile {
         path: std::path::PathBuf,
         preview: bool,
     },
+
+    /// Open selected file or toggle folder (Enter key behavior)
+    OpenOrToggle,
 
     /// Reveal the active file in the tree (Cmd+Shift+R)
     RevealActiveFile,
@@ -448,6 +454,9 @@ pub enum WorkspaceMsg {
 
     /// Refresh the file tree from disk
     Refresh,
+
+    /// Scroll the sidebar file tree (positive = down, negative = up)
+    Scroll { lines: i32 },
 }
 
 /// Top-level message type

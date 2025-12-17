@@ -7,6 +7,49 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 // ============================================================================
+// Focus Management
+// ============================================================================
+
+/// Which top-level UI region currently has keyboard focus
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FocusTarget {
+    /// Main editor text area (default)
+    #[default]
+    Editor,
+    /// File tree sidebar
+    Sidebar,
+    /// Modal dialog (command palette, goto line, find/replace, etc.)
+    Modal,
+}
+
+/// Which UI region the mouse is currently hovering over
+///
+/// Used for:
+/// - Determining scroll event targets (sidebar vs editor)
+/// - Setting appropriate cursor icons
+/// - Visual hover feedback
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HoverRegion {
+    /// Not hovering over any tracked region
+    #[default]
+    None,
+    /// Hovering over the sidebar file tree
+    Sidebar,
+    /// Hovering over the sidebar resize handle
+    SidebarResize,
+    /// Hovering over the editor text area
+    EditorText,
+    /// Hovering over the editor tab bar
+    EditorTabBar,
+    /// Hovering over the status bar
+    StatusBar,
+    /// Hovering over a modal dialog
+    Modal,
+    /// Hovering over a splitter (split view resize handle)
+    Splitter,
+}
+
+// ============================================================================
 // Modal System
 // ============================================================================
 
@@ -158,6 +201,19 @@ pub struct SplitterDragState {
     pub active: bool,
 }
 
+// ============================================================================
+// Sidebar Resize State
+// ============================================================================
+
+/// State for sidebar resize dragging
+#[derive(Debug, Clone)]
+pub struct SidebarResizeState {
+    /// Starting mouse X position when drag began
+    pub start_x: f64,
+    /// Original sidebar width (logical pixels) before drag started
+    pub original_width: f32,
+}
+
 /// UI state - status messages and cursor animation
 #[derive(Debug, Clone)]
 pub struct UiState {
@@ -183,6 +239,12 @@ pub struct UiState {
     pub drop_state: DropState,
     /// Splitter (resize handle) drag state
     pub splitter_drag: Option<SplitterDragState>,
+    /// Sidebar resize drag state
+    pub sidebar_resize: Option<SidebarResizeState>,
+    /// Which UI region has keyboard focus
+    pub focus: FocusTarget,
+    /// Which UI region the mouse is currently hovering over
+    pub hover: HoverRegion,
 }
 
 impl UiState {
@@ -200,6 +262,9 @@ impl UiState {
             last_command_palette: None,
             drop_state: DropState::default(),
             splitter_drag: None,
+            sidebar_resize: None,
+            focus: FocusTarget::Editor,
+            hover: HoverRegion::None,
         }
     }
 
@@ -217,22 +282,55 @@ impl UiState {
             last_command_palette: None,
             drop_state: DropState::default(),
             splitter_drag: None,
+            sidebar_resize: None,
+            focus: FocusTarget::Editor,
+            hover: HoverRegion::None,
         }
     }
+
+    // =========================================================================
+    // Focus Management
+    // =========================================================================
 
     /// Check if a modal is currently active
     pub fn has_modal(&self) -> bool {
         self.active_modal.is_some()
     }
 
-    /// Open a modal
+    /// Open a modal (also sets focus to Modal)
     pub fn open_modal(&mut self, state: ModalState) {
         self.active_modal = Some(state);
+        self.focus = FocusTarget::Modal;
     }
 
-    /// Close the active modal
+    /// Close the active modal (returns focus to Editor)
     pub fn close_modal(&mut self) {
         self.active_modal = None;
+        self.focus = FocusTarget::Editor;
+    }
+
+    /// Set focus to the editor
+    pub fn focus_editor(&mut self) {
+        if self.focus != FocusTarget::Editor {
+            tracing::trace!("Focus changed: {:?} -> Editor", self.focus);
+            self.focus = FocusTarget::Editor;
+        }
+    }
+
+    /// Set focus to the sidebar
+    pub fn focus_sidebar(&mut self) {
+        if self.focus != FocusTarget::Sidebar {
+            tracing::trace!("Focus changed: {:?} -> Sidebar", self.focus);
+            self.focus = FocusTarget::Sidebar;
+        }
+    }
+
+    /// Set focus to a modal (prefer using open_modal instead)
+    pub fn focus_modal(&mut self) {
+        if self.focus != FocusTarget::Modal {
+            tracing::trace!("Focus changed: {:?} -> Modal", self.focus);
+            self.focus = FocusTarget::Modal;
+        }
     }
 
     /// Reset cursor blink timer (call after user input)
