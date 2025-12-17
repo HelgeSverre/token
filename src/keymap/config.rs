@@ -348,6 +348,10 @@ impl FromStr for Command {
             "FocusGroup3" => Ok(Command::FocusGroup3),
             "FocusGroup4" => Ok(Command::FocusGroup4),
 
+            // Workspace
+            "ToggleSidebar" => Ok(Command::ToggleSidebar),
+            "RevealInSidebar" => Ok(Command::RevealInSidebar),
+
             // Special
             "EscapeSmartClear" => Ok(Command::EscapeSmartClear),
             "Unbound" => Ok(Command::Unbound),
