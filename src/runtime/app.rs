@@ -11,7 +11,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow};
 #[cfg(debug_assertions)]
 use winit::keyboard::{Key, NamedKey};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::{CursorIcon, Window};
+use winit::window::{CursorIcon, Icon, Window};
 
 use token::cli::StartupConfig;
 use token::commands::{filter_commands, Cmd};
@@ -27,7 +27,7 @@ use token::model::{AppModel, ModalState};
 use token::syntax::{LanguageId, ParserState};
 use token::update::update;
 
-use crate::view::geometry::{is_in_group_tab_bar, is_in_modal};
+use crate::view::geometry::{is_in_group_tab_bar, is_in_modal, is_in_status_bar};
 
 use super::input::handle_key;
 use crate::view::Renderer;
@@ -167,11 +167,16 @@ impl App {
 
     /// Extract current context from the model for keybinding evaluation
     fn get_key_context(&self) -> KeyContext {
+        use token::model::FocusTarget;
+
+        let focus = self.model.ui.focus;
+
         KeyContext {
             has_selection: !self.model.editor().active_selection().is_empty(),
             has_multiple_cursors: self.model.editor().has_multiple_cursors(),
             modal_active: self.model.ui.has_modal(),
-            editor_focused: !self.model.ui.has_modal(),
+            editor_focused: matches!(focus, FocusTarget::Editor),
+            sidebar_focused: matches!(focus, FocusTarget::Sidebar),
         }
     }
 
@@ -245,7 +250,11 @@ impl App {
         update(&mut self.model, Msg::Editor(EditorMsg::Scroll(direction)))
     }
 
+    /// Update both hover region tracking and cursor icon based on mouse position.
+    /// This ensures hover state and cursor icons are always in sync.
     fn update_cursor_icon(&mut self, x: f64, y: f64) {
+        use token::model::HoverRegion;
+
         let Some(window) = &self.window else { return };
         let Some(renderer) = &self.renderer else {
             return;
@@ -263,33 +272,44 @@ impl App {
             .map(|ws| ws.sidebar_width(self.model.metrics.scale_factor))
             .unwrap_or(0.0);
 
-        // Modal overlay → Default pointer
+        // Sidebar resize in progress → always show ColResize, keep current hover
+        if self.model.ui.sidebar_resize.is_some() {
+            self.model.ui.hover = HoverRegion::SidebarResize;
+            window.set_cursor(CursorIcon::ColResize);
+            return;
+        }
+
+        // Modal overlay → Modal hover region
         if self.model.ui.has_modal() {
+            self.model.ui.hover = HoverRegion::Modal;
             window.set_cursor(CursorIcon::Default);
             return;
         }
 
-        // Sidebar resize border (right edge, ~4px hit zone) → ColResize
+        // Status bar has highest priority - "on top" of everything
+        if renderer.is_in_status_bar(y) {
+            self.model.ui.hover = HoverRegion::StatusBar;
+            window.set_cursor(CursorIcon::Default);
+            return;
+        }
+
+        // Sidebar resize border (right edge, ~4px hit zone)
         const SIDEBAR_RESIZE_HIT_ZONE: f64 = 4.0;
         if sidebar_width > 0.0 {
             let resize_zone_start = sidebar_width as f64 - SIDEBAR_RESIZE_HIT_ZONE;
             let resize_zone_end = sidebar_width as f64 + SIDEBAR_RESIZE_HIT_ZONE;
             if x >= resize_zone_start && x <= resize_zone_end {
+                self.model.ui.hover = HoverRegion::SidebarResize;
                 window.set_cursor(CursorIcon::ColResize);
                 return;
             }
 
-            // Sidebar file tree area → Default pointer
+            // Sidebar file tree area
             if x < sidebar_width as f64 {
+                self.model.ui.hover = HoverRegion::Sidebar;
                 window.set_cursor(CursorIcon::Default);
                 return;
             }
-        }
-
-        // Status bar → Default pointer
-        if renderer.is_in_status_bar(y) {
-            window.set_cursor(CursorIcon::Default);
-            return;
         }
 
         // Compute splitter layout for hit testing
@@ -305,12 +325,13 @@ impl App {
             .editor_area
             .compute_layout_scaled(available_rect, splitter_width);
 
-        // Splitter bars → ColResize/RowResize
+        // Splitter bars
         if let Some(idx) = self
             .model
             .editor_area
             .splitter_at_point(&splitters, x as f32, y as f32)
         {
+            self.model.ui.hover = HoverRegion::Splitter;
             let icon = match splitters[idx].direction {
                 SplitDirection::Horizontal => CursorIcon::ColResize,
                 SplitDirection::Vertical => CursorIcon::RowResize,
@@ -319,36 +340,35 @@ impl App {
             return;
         }
 
-        // Tab bars → Default pointer
+        // Tab bars
         let tab_bar_height = self.model.metrics.tab_bar_height;
         for group in self.model.editor_area.groups.values() {
             if is_in_group_tab_bar(y, &group.rect, tab_bar_height)
                 && x >= group.rect.x as f64
                 && x < (group.rect.x + group.rect.width) as f64
             {
+                self.model.ui.hover = HoverRegion::EditorTabBar;
                 window.set_cursor(CursorIcon::Default);
                 return;
             }
         }
 
-        // Gutter area (line numbers) → Default pointer
-        let gutter_width = token::model::gutter_border_x_scaled(
-            renderer.char_width(),
-            &self.model.metrics,
-        ) as f64;
+        // Gutter area (line numbers)
+        let gutter_width =
+            token::model::gutter_border_x_scaled(renderer.char_width(), &self.model.metrics) as f64;
         if let Some(group) = self.model.editor_area.focused_group() {
             let gutter_x_end = group.rect.x as f64 + gutter_width;
             let content_y_start = group.rect.y as f64 + tab_bar_height as f64;
-            if x >= group.rect.x as f64
-                && x < gutter_x_end
-                && y >= content_y_start
-            {
+            if x >= group.rect.x as f64 && x < gutter_x_end && y >= content_y_start {
+                // Gutter is part of the editor, but use default pointer
+                self.model.ui.hover = HoverRegion::EditorText;
                 window.set_cursor(CursorIcon::Default);
                 return;
             }
         }
 
-        // Editor text area → I-beam cursor
+        // Editor text area
+        self.model.ui.hover = HoverRegion::EditorText;
         window.set_cursor(CursorIcon::Text);
     }
 
@@ -416,11 +436,40 @@ impl App {
                     let alt = self.modifiers.alt_key();
                     let logo = self.modifiers.super_key();
 
-                    // Try keymap first for simple commands, but only when:
+                    // Check for global commands first (work regardless of focus state)
+                    // These include command palette, save, quit, etc.
+                    if let Some(keystroke) = keystroke_from_winit(
+                        &event.logical_key,
+                        event.physical_key,
+                        ctrl,
+                        shift,
+                        alt,
+                        logo,
+                    ) {
+                        let context = self.get_key_context();
+                        if let KeyAction::Execute(command) = self
+                            .keymap
+                            .handle_keystroke_with_context(keystroke, Some(&context))
+                        {
+                            if command.is_global() {
+                                return self.dispatch_command(command);
+                            }
+                        }
+                        // Reset keymap state after global check (we'll re-check below if needed)
+                        self.keymap.reset();
+                    }
+
+                    // Try keymap for non-global commands, but only when:
                     // - No modal is active (modals handled by handle_modal_key in input.rs)
                     // - Not in option double-tap mode with alt pressed (multi-cursor gesture)
-                    let skip_keymap =
-                        self.model.ui.has_modal() || (self.option_double_tapped && alt);
+                    // - Sidebar is not focused (sidebar keys handled by handle_sidebar_key in input.rs)
+                    // - Not editing a CSV cell (CSV cell editor handled by handle_csv_edit_key in input.rs)
+                    let sidebar_focused =
+                        matches!(self.model.ui.focus, token::model::FocusTarget::Sidebar);
+                    let skip_keymap = self.model.ui.has_modal()
+                        || (self.option_double_tapped && alt)
+                        || sidebar_focused
+                        || self.model.is_csv_editing();
 
                     if !skip_keymap {
                         if let Some(keystroke) = keystroke_from_winit(
@@ -482,6 +531,14 @@ impl App {
                         Msg::Layout(LayoutMsg::UpdateSplitterDrag {
                             position: (position.x as f32, position.y as f32),
                         }),
+                    );
+                }
+
+                // Handle sidebar resize drag
+                if self.model.ui.sidebar_resize.is_some() {
+                    return update(
+                        &mut self.model,
+                        Msg::Workspace(WorkspaceMsg::UpdateSidebarResize { x: position.x }),
                     );
                 }
 
@@ -568,6 +625,33 @@ impl App {
                         }
                     }
 
+                    // Status bar has highest priority - "on top" of everything
+                    let line_height = self.model.line_height;
+                    let window_height = self.model.window_size.1;
+                    if is_in_status_bar(y, window_height, line_height) {
+                        return None;
+                    }
+
+                    // Check for sidebar resize border click first
+                    const SIDEBAR_RESIZE_HIT_ZONE: f64 = 4.0;
+                    if let Some(workspace) = &self.model.workspace {
+                        if workspace.sidebar_visible {
+                            let sidebar_width =
+                                workspace.sidebar_width(self.model.metrics.scale_factor) as f64;
+                            let resize_zone_start = sidebar_width - SIDEBAR_RESIZE_HIT_ZONE;
+                            let resize_zone_end = sidebar_width + SIDEBAR_RESIZE_HIT_ZONE;
+
+                            if x >= resize_zone_start && x <= resize_zone_end {
+                                return update(
+                                    &mut self.model,
+                                    Msg::Workspace(WorkspaceMsg::StartSidebarResize {
+                                        initial_x: x,
+                                    }),
+                                );
+                            }
+                        }
+                    }
+
                     // Check for sidebar click before other interactions
                     // Extract sidebar info without holding borrow across update() calls
                     let sidebar_click_info = if let Some(workspace) = &self.model.workspace {
@@ -580,12 +664,14 @@ impl App {
                             if x < sidebar_width {
                                 let row_height = self.model.metrics.file_tree_row_height as f64;
                                 let indent = self.model.metrics.file_tree_indent as f64;
-                                let clicked_row = (y / row_height) as usize;
+                                let clicked_visual_row = (y / row_height) as usize;
+                                // Account for scroll offset when looking up the item
+                                let clicked_row =
+                                    workspace.scroll_offset.saturating_add(clicked_visual_row);
 
                                 // Find the item at this row and extract info including depth
-                                if let Some((node, depth)) = workspace
-                                    .file_tree
-                                    .get_visible_item_with_depth(
+                                if let Some((node, depth)) =
+                                    workspace.file_tree.get_visible_item_with_depth(
                                         clicked_row,
                                         &workspace.expanded_folders,
                                     )
@@ -602,7 +688,8 @@ impl App {
                                         clicked_on_chevron,
                                     ))
                                 } else {
-                                    Some((std::path::PathBuf::new(), false, clicked_row, false)) // Empty click in sidebar
+                                    Some((std::path::PathBuf::new(), false, clicked_row, false))
+                                    // Empty click in sidebar
                                 }
                             } else {
                                 None // Not in sidebar
@@ -614,8 +701,12 @@ impl App {
                         None // No workspace
                     };
 
-                    if let Some((path, is_dir, clicked_row, clicked_on_chevron)) = sidebar_click_info
+                    if let Some((path, is_dir, clicked_row, clicked_on_chevron)) =
+                        sidebar_click_info
                     {
+                        // Any click in sidebar transfers focus to sidebar
+                        self.model.ui.focus_sidebar();
+
                         if path.as_os_str().is_empty() {
                             // Click in sidebar but not on an item
                             return Some(Cmd::Redraw);
@@ -669,6 +760,9 @@ impl App {
                         return Some(Cmd::Redraw);
                     }
 
+                    // Click outside sidebar - focus goes to editor
+                    self.model.ui.focus_editor();
+
                     // Check for splitter hit before other interactions
                     {
                         // Calculate sidebar offset for fallback rect
@@ -680,12 +774,13 @@ impl App {
                             .map(|ws| ws.sidebar_width(self.model.metrics.scale_factor))
                             .unwrap_or(0.0);
 
+                        let status_bar_height = self.model.line_height as f32;
                         let available =
                             self.model.editor_area.last_layout_rect.unwrap_or(Rect::new(
                                 sidebar_width,
                                 0.0,
                                 self.model.window_size.0 as f32 - sidebar_width,
-                                self.model.window_size.1 as f32,
+                                self.model.window_size.1 as f32 - status_bar_height,
                             ));
                         let splitters = self
                             .model
@@ -707,10 +802,6 @@ impl App {
                     }
 
                     if let Some(renderer) = &mut self.renderer {
-                        if renderer.is_in_status_bar(y) {
-                            return None;
-                        }
-
                         // Per-group tab bar hit testing (handles splits correctly)
                         // First, find the clicked group/tab without holding borrow
                         let tab_bar_h = self.model.metrics.tab_bar_height;
@@ -862,6 +953,14 @@ impl App {
                 if self.model.ui.splitter_drag.is_some() {
                     return update(&mut self.model, Msg::Layout(LayoutMsg::EndSplitterDrag));
                 }
+
+                // End sidebar resize drag if active
+                if self.model.ui.sidebar_resize.is_some() {
+                    return update(
+                        &mut self.model,
+                        Msg::Workspace(WorkspaceMsg::EndSidebarResize),
+                    );
+                }
                 None
             }
             WindowEvent::MouseInput {
@@ -939,7 +1038,9 @@ impl App {
                 None
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                use token::model::HoverRegion;
                 use winit::event::MouseScrollDelta;
+
                 let (h_delta, v_delta) = match delta {
                     MouseScrollDelta::LineDelta(x, y) => ((x * 3.0) as i32, (-y * 3.0) as i32),
                     MouseScrollDelta::PixelDelta(pos) => {
@@ -949,46 +1050,72 @@ impl App {
                     }
                 };
 
-                // Check if focused editor is in CSV mode
-                let in_csv_mode = self
-                    .model
-                    .editor_area
-                    .focused_editor()
-                    .map(|e| e.view_mode.is_csv())
-                    .unwrap_or(false);
+                // Route scroll based on hover region
+                match self.model.ui.hover {
+                    // Sidebar: scroll the file tree
+                    HoverRegion::Sidebar => {
+                        if v_delta != 0 {
+                            update(
+                                &mut self.model,
+                                Msg::Workspace(WorkspaceMsg::Scroll { lines: v_delta }),
+                            )
+                        } else {
+                            None
+                        }
+                    }
 
-                if in_csv_mode {
-                    let v_cmd = if v_delta != 0 {
-                        update(&mut self.model, Msg::Csv(CsvMsg::ScrollVertical(v_delta)))
-                    } else {
-                        None
-                    };
+                    // Modal/StatusBar/Splitter/TabBar: ignore scroll
+                    HoverRegion::Modal
+                    | HoverRegion::StatusBar
+                    | HoverRegion::Splitter
+                    | HoverRegion::EditorTabBar
+                    | HoverRegion::SidebarResize
+                    | HoverRegion::None => None,
 
-                    let h_cmd = if h_delta != 0 {
-                        update(&mut self.model, Msg::Csv(CsvMsg::ScrollHorizontal(h_delta)))
-                    } else {
-                        None
-                    };
+                    // Editor text area: scroll the editor (or CSV if in CSV mode)
+                    HoverRegion::EditorText => {
+                        // Check if focused editor is in CSV mode
+                        let in_csv_mode = self
+                            .model
+                            .editor_area
+                            .focused_editor()
+                            .map(|e| e.view_mode.is_csv())
+                            .unwrap_or(false);
 
-                    return v_cmd.or(h_cmd);
+                        if in_csv_mode {
+                            let v_cmd = if v_delta != 0 {
+                                update(&mut self.model, Msg::Csv(CsvMsg::ScrollVertical(v_delta)))
+                            } else {
+                                None
+                            };
+
+                            let h_cmd = if h_delta != 0 {
+                                update(&mut self.model, Msg::Csv(CsvMsg::ScrollHorizontal(h_delta)))
+                            } else {
+                                None
+                            };
+
+                            return v_cmd.or(h_cmd);
+                        }
+
+                        let v_cmd = if v_delta != 0 {
+                            update(&mut self.model, Msg::Editor(EditorMsg::Scroll(v_delta)))
+                        } else {
+                            None
+                        };
+
+                        let h_cmd = if h_delta != 0 {
+                            update(
+                                &mut self.model,
+                                Msg::Editor(EditorMsg::ScrollHorizontal(h_delta)),
+                            )
+                        } else {
+                            None
+                        };
+
+                        v_cmd.or(h_cmd)
+                    }
                 }
-
-                let v_cmd = if v_delta != 0 {
-                    update(&mut self.model, Msg::Editor(EditorMsg::Scroll(v_delta)))
-                } else {
-                    None
-                };
-
-                let h_cmd = if h_delta != 0 {
-                    update(
-                        &mut self.model,
-                        Msg::Editor(EditorMsg::ScrollHorizontal(h_delta)),
-                    )
-                } else {
-                    None
-                };
-
-                v_cmd.or(h_cmd)
             }
             WindowEvent::DroppedFile(path) => {
                 // Clear hover state first
@@ -1200,11 +1327,20 @@ impl App {
     }
 }
 
+/// Create window icon from embedded PNG
+fn create_window_icon() -> Option<Icon> {
+    let icon_bytes = include_bytes!("../../assets/icon.png");
+    let icon_image = image::load_from_memory(icon_bytes).ok()?.to_rgba8();
+    let (width, height) = icon_image.dimensions();
+    Icon::from_rgba(icon_image.into_raw(), width, height).ok()
+}
+
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
             let window_attributes = Window::default_attributes()
                 .with_title("Token")
+                .with_window_icon(create_window_icon())
                 .with_inner_size(LogicalSize::new(800, 600)); // TODO: Persist window size/position/monitor on exit/boot
 
             let window = Rc::new(event_loop.create_window(window_attributes).unwrap());
