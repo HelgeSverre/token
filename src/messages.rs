@@ -260,6 +260,22 @@ pub enum LayoutMsg {
 
     /// Switch to tab by index in focused group (0-indexed)
     SwitchToTab(usize),
+
+    // === Splitter Dragging ===
+    /// Mouse pressed on a splitter - begin potential drag
+    BeginSplitterDrag {
+        splitter_index: usize,
+        position: (f32, f32),
+    },
+
+    /// Mouse moved during splitter drag
+    UpdateSplitterDrag { position: (f32, f32) },
+
+    /// Mouse released - finish drag
+    EndSplitterDrag,
+
+    /// Cancel drag (e.g., Escape key pressed)
+    CancelSplitterDrag,
 }
 
 /// Application-level messages (file operations, window events)
