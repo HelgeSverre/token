@@ -251,13 +251,52 @@ impl App {
             return;
         };
 
-        // Compute layout to get splitters
         let status_bar_height = renderer.line_height();
         let (width, height) = renderer.dimensions();
+
+        // Calculate sidebar dimensions
+        let sidebar_width = self
+            .model
+            .workspace
+            .as_ref()
+            .filter(|ws| ws.sidebar_visible)
+            .map(|ws| ws.sidebar_width(self.model.metrics.scale_factor))
+            .unwrap_or(0.0);
+
+        // Modal overlay → Default pointer
+        if self.model.ui.has_modal() {
+            window.set_cursor(CursorIcon::Default);
+            return;
+        }
+
+        // Sidebar resize border (right edge, ~4px hit zone) → ColResize
+        const SIDEBAR_RESIZE_HIT_ZONE: f64 = 4.0;
+        if sidebar_width > 0.0 {
+            let resize_zone_start = sidebar_width as f64 - SIDEBAR_RESIZE_HIT_ZONE;
+            let resize_zone_end = sidebar_width as f64 + SIDEBAR_RESIZE_HIT_ZONE;
+            if x >= resize_zone_start && x <= resize_zone_end {
+                window.set_cursor(CursorIcon::ColResize);
+                return;
+            }
+
+            // Sidebar file tree area → Default pointer
+            if x < sidebar_width as f64 {
+                window.set_cursor(CursorIcon::Default);
+                return;
+            }
+        }
+
+        // Status bar → Default pointer
+        if renderer.is_in_status_bar(y) {
+            window.set_cursor(CursorIcon::Default);
+            return;
+        }
+
+        // Compute splitter layout for hit testing
         let available_rect = Rect::new(
+            sidebar_width,
             0.0,
-            0.0,
-            width as f32,
+            (width as f32) - sidebar_width,
             (height as usize).saturating_sub(status_bar_height) as f32,
         );
         let splitter_width = self.model.metrics.splitter_width;
@@ -266,7 +305,7 @@ impl App {
             .editor_area
             .compute_layout_scaled(available_rect, splitter_width);
 
-        // Check splitter bars first
+        // Splitter bars → ColResize/RowResize
         if let Some(idx) = self
             .model
             .editor_area
@@ -280,13 +319,7 @@ impl App {
             return;
         }
 
-        // Status bar → Default
-        if renderer.is_in_status_bar(y) {
-            window.set_cursor(CursorIcon::Default);
-            return;
-        }
-
-        // Any group's tab bar → Default
+        // Tab bars → Default pointer
         let tab_bar_height = self.model.metrics.tab_bar_height;
         for group in self.model.editor_area.groups.values() {
             if is_in_group_tab_bar(y, &group.rect, tab_bar_height)
@@ -298,7 +331,24 @@ impl App {
             }
         }
 
-        // Editor area → Text (I-beam)
+        // Gutter area (line numbers) → Default pointer
+        let gutter_width = token::model::gutter_border_x_scaled(
+            renderer.char_width(),
+            &self.model.metrics,
+        ) as f64;
+        if let Some(group) = self.model.editor_area.focused_group() {
+            let gutter_x_end = group.rect.x as f64 + gutter_width;
+            let content_y_start = group.rect.y as f64 + tab_bar_height as f64;
+            if x >= group.rect.x as f64
+                && x < gutter_x_end
+                && y >= content_y_start
+            {
+                window.set_cursor(CursorIcon::Default);
+                return;
+            }
+        }
+
+        // Editor text area → I-beam cursor
         window.set_cursor(CursorIcon::Text);
     }
 
@@ -529,16 +579,30 @@ impl App {
 
                             if x < sidebar_width {
                                 let row_height = self.model.metrics.file_tree_row_height as f64;
+                                let indent = self.model.metrics.file_tree_indent as f64;
                                 let clicked_row = (y / row_height) as usize;
 
-                                // Find the item at this row and extract info
-                                if let Some(node) = workspace
+                                // Find the item at this row and extract info including depth
+                                if let Some((node, depth)) = workspace
                                     .file_tree
-                                    .get_visible_item(clicked_row, &workspace.expanded_folders)
+                                    .get_visible_item_with_depth(
+                                        clicked_row,
+                                        &workspace.expanded_folders,
+                                    )
                                 {
-                                    Some((node.path.clone(), node.is_dir, clicked_row))
+                                    // Calculate chevron area: starts at (depth * indent + 8), width ~16px
+                                    let chevron_start = (depth as f64 * indent) + 8.0;
+                                    let chevron_end = chevron_start + 16.0;
+                                    let clicked_on_chevron =
+                                        node.is_dir && x >= chevron_start && x < chevron_end;
+                                    Some((
+                                        node.path.clone(),
+                                        node.is_dir,
+                                        clicked_row,
+                                        clicked_on_chevron,
+                                    ))
                                 } else {
-                                    Some((std::path::PathBuf::new(), false, clicked_row)) // Empty click in sidebar
+                                    Some((std::path::PathBuf::new(), false, clicked_row, false)) // Empty click in sidebar
                                 }
                             } else {
                                 None // Not in sidebar
@@ -550,10 +614,23 @@ impl App {
                         None // No workspace
                     };
 
-                    if let Some((path, is_dir, clicked_row)) = sidebar_click_info {
+                    if let Some((path, is_dir, clicked_row, clicked_on_chevron)) = sidebar_click_info
+                    {
                         if path.as_os_str().is_empty() {
                             // Click in sidebar but not on an item
                             return Some(Cmd::Redraw);
+                        }
+
+                        // Single-click on chevron immediately toggles folder
+                        if clicked_on_chevron {
+                            update(
+                                &mut self.model,
+                                Msg::Workspace(WorkspaceMsg::SelectItem(path.clone())),
+                            );
+                            return update(
+                                &mut self.model,
+                                Msg::Workspace(WorkspaceMsg::ToggleFolder(path)),
+                            );
                         }
 
                         let now = Instant::now();
@@ -594,11 +671,20 @@ impl App {
 
                     // Check for splitter hit before other interactions
                     {
+                        // Calculate sidebar offset for fallback rect
+                        let sidebar_width = self
+                            .model
+                            .workspace
+                            .as_ref()
+                            .filter(|ws| ws.sidebar_visible)
+                            .map(|ws| ws.sidebar_width(self.model.metrics.scale_factor))
+                            .unwrap_or(0.0);
+
                         let available =
                             self.model.editor_area.last_layout_rect.unwrap_or(Rect::new(
+                                sidebar_width,
                                 0.0,
-                                0.0,
-                                self.model.window_size.0 as f32,
+                                self.model.window_size.0 as f32 - sidebar_width,
                                 self.model.window_size.1 as f32,
                             ));
                         let splitters = self
@@ -789,15 +875,44 @@ impl App {
                             return None;
                         }
 
-                        // Ignore middle clicks on any group's tab bar
+                        // Middle-click on tab bar closes the clicked tab
                         let tab_h = self.model.metrics.tab_bar_height;
-                        for group in self.model.editor_area.groups.values() {
-                            if is_in_group_tab_bar(y, &group.rect, tab_h)
-                                && x >= group.rect.x as f64
-                                && x < (group.rect.x + group.rect.width) as f64
-                            {
-                                return None;
+                        let tab_click_info: Option<(_, f64)> =
+                            self.model.editor_area.groups.iter().find_map(|(&gid, g)| {
+                                if is_in_group_tab_bar(y, &g.rect, tab_h)
+                                    && x >= g.rect.x as f64
+                                    && x < (g.rect.x + g.rect.width) as f64
+                                {
+                                    Some((gid, x - g.rect.x as f64))
+                                } else {
+                                    None
+                                }
+                            });
+
+                        if let Some((group_id, local_x)) = tab_click_info {
+                            // Find which tab was clicked and close it
+                            if let Some(group) = self.model.editor_area.groups.get(&group_id) {
+                                if let Some(tab_index) =
+                                    renderer.tab_at_position(local_x, &self.model, group)
+                                {
+                                    // Get the TabId from the group's tabs
+                                    if let Some(tab) = group.tabs.get(tab_index) {
+                                        let tab_id = tab.id;
+                                        // Focus the group first if needed
+                                        if group_id != self.model.editor_area.focused_group_id {
+                                            update(
+                                                &mut self.model,
+                                                Msg::Layout(LayoutMsg::FocusGroup(group_id)),
+                                            );
+                                        }
+                                        return update(
+                                            &mut self.model,
+                                            Msg::Layout(LayoutMsg::CloseTab(tab_id)),
+                                        );
+                                    }
+                                }
                             }
+                            return None;
                         }
 
                         let (line, visual_col) =
