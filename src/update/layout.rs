@@ -639,10 +639,12 @@ fn begin_splitter_drag(model: &mut AppModel, splitter_index: usize, position: (f
         .filter(|ws| ws.sidebar_visible)
         .map(|ws| ws.sidebar_width(model.metrics.scale_factor))
         .unwrap_or(0.0);
-    let available = model
-        .editor_area
-        .last_layout_rect
-        .unwrap_or(Rect::new(sidebar_width, 0.0, 800.0 - sidebar_width, 600.0));
+    let available = model.editor_area.last_layout_rect.unwrap_or(Rect::new(
+        sidebar_width,
+        0.0,
+        800.0 - sidebar_width,
+        600.0,
+    ));
     let splitters = model
         .editor_area
         .compute_layout_scaled(available, model.metrics.splitter_width);

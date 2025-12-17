@@ -23,8 +23,8 @@ pub use status_bar::{
     StatusBarLayout, StatusSegment, TransientMessage,
 };
 pub use ui::{
-    CommandPaletteState, DropState, FindReplaceState, GotoLineState, ModalId, ModalState,
-    ThemePickerState, UiState,
+    CommandPaletteState, DropState, FindReplaceState, FocusTarget, GotoLineState, HoverRegion,
+    ModalId, ModalState, SidebarResizeState, ThemePickerState, UiState,
 };
 pub use workspace::{FileExtension, FileNode, FileTree, Workspace};
 
@@ -634,6 +634,21 @@ impl AppModel {
     pub fn last_non_whitespace_column(&self) -> usize {
         self.document()
             .last_non_whitespace_column(self.editor().active_cursor().line)
+    }
+
+    /// Check if currently editing a CSV cell
+    ///
+    /// Used by keyboard routing to bypass keymap when CSV cell editor has focus.
+    pub fn is_csv_editing(&self) -> bool {
+        self.editor_area
+            .focused_editor()
+            .map(|e| {
+                e.view_mode
+                    .as_csv()
+                    .map(|csv| csv.is_editing())
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
     }
 }
 

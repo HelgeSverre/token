@@ -181,8 +181,10 @@ fn update_traced(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         editor.assert_invariants_with_context(&msg_name);
     }
 
-    if let Some(ref mut overlay) = model.debug_overlay {
-        overlay.record_message(msg_name.clone(), diff);
+    if !is_noisy {
+        if let Some(ref mut overlay) = model.debug_overlay {
+            overlay.record_message(msg_name.clone(), diff);
+        }
     }
 
     result
