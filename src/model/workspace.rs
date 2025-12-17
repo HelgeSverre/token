@@ -221,15 +221,26 @@ pub struct FileTree {
 
 impl FileTree {
     /// Create a file tree by scanning a directory
+    ///
+    /// The workspace root folder itself becomes the first (and only) root node,
+    /// with its contents as children. This matches VS Code behavior where the
+    /// project folder name is visible at the top of the file tree.
     pub fn from_directory(root: &Path) -> std::io::Result<Self> {
-        let mut roots = Vec::new();
-
-        if root.is_dir() {
-            roots = Self::scan_directory(root, 0)?;
-            Self::sort_nodes(&mut roots);
+        if !root.is_dir() {
+            return Ok(Self { roots: Vec::new() });
         }
 
-        Ok(Self { roots })
+        // Scan the contents of the root directory
+        let mut children = Self::scan_directory(root, 0)?;
+        Self::sort_nodes(&mut children);
+
+        // Create the root folder node with the workspace directory itself
+        let mut root_node = FileNode::new_dir(root.to_path_buf());
+        root_node.children = children;
+
+        Ok(Self {
+            roots: vec![root_node],
+        })
     }
 
     /// Scan a directory recursively (up to max depth)
@@ -357,6 +368,44 @@ impl FileTree {
         None
     }
 
+    /// Get a visible item by its path (for parent navigation)
+    ///
+    /// Returns the node if the path is visible in the current tree state.
+    /// A node is visible if all its ancestor folders are expanded.
+    pub fn get_visible_item_by_path(
+        &self,
+        path: &PathBuf,
+        expanded: &HashSet<PathBuf>,
+    ) -> Option<&FileNode> {
+        for node in &self.roots {
+            if let Some(found) = Self::get_visible_item_by_path_node(node, path, expanded) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    fn get_visible_item_by_path_node<'a>(
+        node: &'a FileNode,
+        target: &PathBuf,
+        expanded: &HashSet<PathBuf>,
+    ) -> Option<&'a FileNode> {
+        if &node.path == target {
+            return Some(node);
+        }
+
+        // Only recurse into expanded directories
+        if node.is_dir && expanded.contains(&node.path) {
+            for child in &node.children {
+                if let Some(found) = Self::get_visible_item_by_path_node(child, target, expanded) {
+                    return Some(found);
+                }
+            }
+        }
+
+        None
+    }
+
     fn get_visible_item_node<'a>(
         node: &'a FileNode,
         target: usize,
@@ -441,11 +490,15 @@ pub struct Workspace {
 impl Workspace {
     /// Create a new workspace from a directory
     pub fn new(root: PathBuf, metrics: &ScaledMetrics) -> std::io::Result<Self> {
+        // Canonicalize the root path to get the full absolute path
+        // This ensures file_name() works correctly (e.g., "." becomes "/path/to/dir")
+        let root = std::fs::canonicalize(&root)?;
+
         let file_tree = FileTree::from_directory(&root)?;
 
-        // Auto-expand the root level
-        let expanded_folders = HashSet::new();
-        // We don't add root itself since it's not shown as a node
+        // Auto-expand the workspace root folder so its contents are visible
+        let mut expanded_folders = HashSet::new();
+        expanded_folders.insert(root.clone());
 
         Ok(Self {
             root,
