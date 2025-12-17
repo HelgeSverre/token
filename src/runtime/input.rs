@@ -256,7 +256,12 @@ fn is_csv_editing(model: &AppModel) -> bool {
     model
         .editor_area
         .focused_editor()
-        .map(|e| e.view_mode.as_csv().map(|csv| csv.is_editing()).unwrap_or(false))
+        .map(|e| {
+            e.view_mode
+                .as_csv()
+                .map(|csv| csv.is_editing())
+                .unwrap_or(false)
+        })
         .unwrap_or(false)
 }
 

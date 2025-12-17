@@ -18,7 +18,9 @@ use token::commands::{filter_commands, Cmd};
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
 };
-use token::messages::{AppMsg, CsvMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, SyntaxMsg, UiMsg};
+use token::messages::{
+    AppMsg, CsvMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg,
+};
 use token::model::editor::Position;
 use token::model::editor_area::{Rect, SplitDirection};
 use token::model::{AppModel, ModalState};
@@ -86,9 +88,9 @@ impl App {
 
         let mut model = AppModel::new(window_width, window_height, 1.0, file_paths);
 
-        // Set workspace root if specified
+        // Open workspace if specified
         if let Some(root) = workspace_root {
-            model.workspace_root = Some(root);
+            model.open_workspace(root);
         }
 
         // Apply initial cursor position if specified (--line/--column)
@@ -516,16 +518,98 @@ impl App {
                         }
                     }
 
+                    // Check for sidebar click before other interactions
+                    // Extract sidebar info without holding borrow across update() calls
+                    let sidebar_click_info = if let Some(workspace) = &self.model.workspace {
+                        if workspace.sidebar_visible {
+                            // Mouse coordinates are already in physical pixels (winit provides physical coords)
+                            // sidebar_width and file_tree_row_height are also in physical pixels (scaled)
+                            let sidebar_width =
+                                workspace.sidebar_width(self.model.metrics.scale_factor) as f64;
+
+                            if x < sidebar_width {
+                                let row_height = self.model.metrics.file_tree_row_height as f64;
+                                let clicked_row = (y / row_height) as usize;
+
+                                // Find the item at this row and extract info
+                                if let Some(node) = workspace
+                                    .file_tree
+                                    .get_visible_item(clicked_row, &workspace.expanded_folders)
+                                {
+                                    Some((node.path.clone(), node.is_dir, clicked_row))
+                                } else {
+                                    Some((std::path::PathBuf::new(), false, clicked_row)) // Empty click in sidebar
+                                }
+                            } else {
+                                None // Not in sidebar
+                            }
+                        } else {
+                            None // Sidebar not visible
+                        }
+                    } else {
+                        None // No workspace
+                    };
+
+                    if let Some((path, is_dir, clicked_row)) = sidebar_click_info {
+                        if path.as_os_str().is_empty() {
+                            // Click in sidebar but not on an item
+                            return Some(Cmd::Redraw);
+                        }
+
+                        let now = Instant::now();
+                        let double_click_time = Duration::from_millis(300);
+                        let is_double_click = now.duration_since(self.last_click_time)
+                            < double_click_time
+                            && self.last_click_position == Some((clicked_row, 0));
+
+                        // Update click tracking for sidebar
+                        self.last_click_time = now;
+                        self.last_click_position = Some((clicked_row, 0));
+
+                        // Always select the item
+                        update(
+                            &mut self.model,
+                            Msg::Workspace(WorkspaceMsg::SelectItem(path.clone())),
+                        );
+
+                        // Only toggle folder or open file on double-click
+                        if is_double_click {
+                            if is_dir {
+                                return update(
+                                    &mut self.model,
+                                    Msg::Workspace(WorkspaceMsg::ToggleFolder(path)),
+                                );
+                            } else {
+                                return update(
+                                    &mut self.model,
+                                    Msg::Workspace(WorkspaceMsg::OpenFile {
+                                        path,
+                                        preview: false,
+                                    }),
+                                );
+                            }
+                        }
+                        return Some(Cmd::Redraw);
+                    }
+
                     // Check for splitter hit before other interactions
                     {
-                        let available = self.model.editor_area.last_layout_rect.unwrap_or(
-                            Rect::new(0.0, 0.0, self.model.window_size.0 as f32, self.model.window_size.1 as f32)
-                        );
-                        let splitters = self.model.editor_area.compute_layout_scaled(
-                            available,
-                            self.model.metrics.splitter_width,
-                        );
-                        if let Some(idx) = self.model.editor_area.splitter_at_point(&splitters, x as f32, y as f32) {
+                        let available =
+                            self.model.editor_area.last_layout_rect.unwrap_or(Rect::new(
+                                0.0,
+                                0.0,
+                                self.model.window_size.0 as f32,
+                                self.model.window_size.1 as f32,
+                            ));
+                        let splitters = self
+                            .model
+                            .editor_area
+                            .compute_layout_scaled(available, self.model.metrics.splitter_width);
+                        if let Some(idx) = self
+                            .model
+                            .editor_area
+                            .splitter_at_point(&splitters, x as f32, y as f32)
+                        {
                             return update(
                                 &mut self.model,
                                 Msg::Layout(LayoutMsg::BeginSplitterDrag {
@@ -766,10 +850,7 @@ impl App {
                     };
 
                     let h_cmd = if h_delta != 0 {
-                        update(
-                            &mut self.model,
-                            Msg::Csv(CsvMsg::ScrollHorizontal(h_delta)),
-                        )
+                        update(&mut self.model, Msg::Csv(CsvMsg::ScrollHorizontal(h_delta)))
                     } else {
                         None
                     };
