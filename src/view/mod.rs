@@ -387,8 +387,13 @@ impl Renderer {
 
         let mut y = 0usize;
         let mut visible_index = 0usize;
+        let scroll_offset = workspace.scroll_offset;
 
-        // Helper closure to render a tree node recursively
+        // Helper function to render a tree node recursively.
+        // visible_index tracks the global flattened index of items.
+        // Items before scroll_offset are counted but not drawn.
+        // y only advances for items that are actually drawn.
+        #[allow(clippy::too_many_arguments)]
         fn render_node(
             frame: &mut Frame,
             painter: &mut TextPainter,
@@ -405,72 +410,92 @@ impl Renderer {
             selection_fg: u32,
             folder_icon_color: u32,
             sidebar_height: usize,
+            scroll_offset: usize,
         ) {
-            // Skip if out of visible area
-            if *y >= sidebar_height {
+            // If we've started rendering and filled the viewport, bail out
+            if *visible_index >= scroll_offset && *y >= sidebar_height {
                 return;
             }
 
-            let x_offset = (depth as f32 * indent) as usize + 8; // 8px left padding
-
-            // Check if this item is selected
-            let is_selected = workspace
-                .selected_item
-                .as_ref()
-                .map(|p| p == &node.path)
-                .unwrap_or(false);
-
-            // Draw selection background with alpha blending
-            if is_selected {
-                frame.fill_rect_blended(
-                    Rect::new(0.0, *y as f32, sidebar_width as f32, row_height as f32),
-                    selection_bg,
-                );
-            }
-
-            // Draw expand/collapse indicator for directories
-            let icon_x = x_offset;
-            let text_x = x_offset + 16; // Space for chevron indicator
-
-            // Text is positioned with y as the top of the text area
-            // Add small vertical padding to center text in the row
-            let text_y = *y + 2; // Small top padding
-
-            if node.is_dir {
-                let is_expanded = workspace.is_expanded(&node.path);
-                // Use simple text chevrons: > for collapsed, v for expanded
-                let indicator = if is_expanded { "v" } else { ">" };
-                let icon_color = if is_selected {
-                    selection_fg
-                } else {
-                    folder_icon_color
-                };
-                painter.draw(frame, icon_x, text_y, indicator, icon_color);
-            }
-
-            // Draw file/folder name, truncating if too long
-            let fg = if is_selected { selection_fg } else { text_color };
-
-            // Calculate available width for text (sidebar_width minus text_x and right padding)
-            let right_padding = 8;
-            let available_width = sidebar_width.saturating_sub(text_x + right_padding);
-
-            // Truncate the name if it's too long (estimate char width as ~8px for now)
-            let estimated_char_width = 8;
-            let max_chars = available_width / estimated_char_width;
-            let display_name = if node.name.len() > max_chars && max_chars > 3 {
-                let truncated = &node.name[..max_chars.saturating_sub(2)];
-                format!("{}…", truncated)
-            } else {
-                node.name.clone()
-            };
-
-            painter.draw(frame, text_x, text_y, &display_name, fg);
-
-            *y += row_height;
+            // Capture this node's global index, then advance the counter
+            let idx = *visible_index;
             *visible_index += 1;
 
-            // Render children if expanded
+            // Only draw if this item is at or after scroll_offset
+            let is_visible_row = idx >= scroll_offset;
+
+            if is_visible_row {
+                // If we're beyond the viewport height, stop drawing
+                if *y >= sidebar_height {
+                    return;
+                }
+
+                let x_offset = (depth as f32 * indent) as usize + 8; // 8px left padding
+
+                // Check if this item is selected
+                let is_selected = workspace
+                    .selected_item
+                    .as_ref()
+                    .map(|p| p == &node.path)
+                    .unwrap_or(false);
+
+                // Draw selection background with alpha blending
+                if is_selected {
+                    frame.fill_rect_blended(
+                        Rect::new(0.0, *y as f32, sidebar_width as f32, row_height as f32),
+                        selection_bg,
+                    );
+                }
+
+                // Draw expand/collapse indicator for directories
+                let icon_x = x_offset;
+                let text_x = x_offset + 16; // Space for chevron indicator
+
+                // Text is positioned with y as the top of the text area
+                // Add small vertical padding to center text in the row
+                let text_y = *y + 2; // Small top padding
+
+                if node.is_dir {
+                    let is_expanded = workspace.is_expanded(&node.path);
+                    // Use +/- indicators: - for expanded, + for collapsed
+                    let indicator = if is_expanded { "-" } else { "+" };
+                    let icon_color = if is_selected {
+                        selection_fg
+                    } else {
+                        folder_icon_color
+                    };
+                    painter.draw(frame, icon_x, text_y, indicator, icon_color);
+                }
+
+                // Draw file/folder name, truncating if too long
+                let fg = if is_selected {
+                    selection_fg
+                } else {
+                    text_color
+                };
+
+                // Calculate available width for text (sidebar_width minus text_x and right padding)
+                let right_padding = 8;
+                let available_width = sidebar_width.saturating_sub(text_x + right_padding);
+
+                // Truncate the name if it's too long (estimate char width as ~8px for now)
+                let estimated_char_width = 8;
+                let max_chars = available_width / estimated_char_width;
+                let display_name = if node.name.len() > max_chars && max_chars > 3 {
+                    let truncated = &node.name[..max_chars.saturating_sub(2)];
+                    format!("{}…", truncated)
+                } else {
+                    node.name.clone()
+                };
+
+                painter.draw(frame, text_x, text_y, &display_name, fg);
+
+                // Only advance y for items that are actually drawn
+                *y += row_height;
+            }
+
+            // Always recurse into children if expanded (even if parent is above viewport)
+            // Children may scroll into view even when their parent folder header is not visible
             if node.is_dir && workspace.is_expanded(&node.path) {
                 for child in &node.children {
                     render_node(
@@ -489,6 +514,7 @@ impl Renderer {
                         selection_fg,
                         folder_icon_color,
                         sidebar_height,
+                        scroll_offset,
                     );
                 }
             }
@@ -512,7 +538,12 @@ impl Renderer {
                 selection_fg,
                 folder_icon_color,
                 sidebar_height,
+                scroll_offset,
             );
+            // Early exit if viewport is filled
+            if visible_index >= scroll_offset && y >= sidebar_height {
+                break;
+            }
         }
     }
 

@@ -245,7 +245,16 @@ pub fn pixel_to_cursor(
     model: &AppModel,
 ) -> (usize, usize) {
     if let Some((group, editor, document)) = focused_group_editor_document(model) {
-        pixel_to_cursor_in_group(x, y, char_width, line_height, &group.rect, model, editor, document)
+        pixel_to_cursor_in_group(
+            x,
+            y,
+            char_width,
+            line_height,
+            &group.rect,
+            model,
+            editor,
+            document,
+        )
     } else {
         // No focused group/editor/document - safe fallback
         (0, 0)

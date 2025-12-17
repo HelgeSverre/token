@@ -121,6 +121,10 @@ impl DebugOverlay {
 
         let mut lines = vec!["─── DEBUG OVERLAY (F8 to hide) ───".to_string()];
 
+        // Focus & Hover info (always shown at top)
+        lines.push(String::new());
+        lines.extend(self.render_focus_info(model));
+
         if let Some(editor) = model.focused_editor() {
             if self.show_cursors {
                 lines.push(String::new());
@@ -199,6 +203,14 @@ impl DebugOverlay {
         }
 
         lines
+    }
+
+    fn render_focus_info(&self, model: &AppModel) -> Vec<String> {
+        vec![
+            "Focus & Hover:".to_string(),
+            format!("  Focus: {:?}", model.ui.focus),
+            format!("  Hover: {:?}", model.ui.hover),
+        ]
     }
 
     fn render_syntax_info(&self, model: &AppModel) -> Vec<String> {
