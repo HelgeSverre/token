@@ -14,6 +14,17 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
         WorkspaceMsg::ToggleSidebar => {
             if let Some(workspace) = &mut model.workspace {
                 workspace.sidebar_visible = !workspace.sidebar_visible;
+                // If sidebar is hidden while focused, return focus to editor
+                if !workspace.sidebar_visible
+                    && matches!(model.ui.focus, crate::model::FocusTarget::Sidebar)
+                {
+                    model.ui.focus_editor();
+                }
+                tracing::trace!(
+                    "Sidebar toggled: visible={}, focus={:?}",
+                    workspace.sidebar_visible,
+                    model.ui.focus
+                );
             }
             Some(Cmd::Redraw)
         }
@@ -48,11 +59,19 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
 
         WorkspaceMsg::SelectPrevious => {
             select_adjacent_item(model, -1);
+            ensure_selection_visible(model);
             Some(Cmd::Redraw)
         }
 
         WorkspaceMsg::SelectNext => {
             select_adjacent_item(model, 1);
+            ensure_selection_visible(model);
+            Some(Cmd::Redraw)
+        }
+
+        WorkspaceMsg::SelectParent => {
+            select_parent_folder(model);
+            ensure_selection_visible(model);
             Some(Cmd::Redraw)
         }
 
@@ -62,32 +81,72 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
             update_layout(model, LayoutMsg::OpenFileInNewTab(path))
         }
 
+        WorkspaceMsg::OpenOrToggle => {
+            // Get the selected item and determine if it's a file or folder
+            let action = model.workspace.as_ref().and_then(|ws| {
+                ws.selected_item.as_ref().map(|path| {
+                    let is_dir = path.is_dir();
+                    (path.clone(), is_dir)
+                })
+            });
+
+            match action {
+                Some((path, true)) => {
+                    // It's a folder - toggle expansion
+                    if let Some(workspace) = &mut model.workspace {
+                        workspace.toggle_folder(&path);
+                    }
+                    Some(Cmd::Redraw)
+                }
+                Some((path, false)) => {
+                    // It's a file - open it
+                    update_layout(model, LayoutMsg::OpenFileInNewTab(path))
+                }
+                None => {
+                    // No selection
+                    Some(Cmd::Redraw)
+                }
+            }
+        }
+
         WorkspaceMsg::RevealActiveFile => {
             reveal_active_file(model);
             Some(Cmd::Redraw)
         }
 
-        WorkspaceMsg::StartSidebarResize { initial_x: _ } => {
-            // Store initial resize state in UiState if needed
-            // For now, we handle resize directly
-            Some(Cmd::Redraw)
-        }
-
-        WorkspaceMsg::UpdateSidebarResize { x } => {
-            if let Some(workspace) = &mut model.workspace {
-                let scale_factor = model.metrics.scale_factor;
-                let min_width = workspace
-                    .sidebar_width(scale_factor)
-                    .max(model.metrics.sidebar_min_width_logical * scale_factor as f32);
-                let max_width = model.metrics.sidebar_max_width_logical * scale_factor as f32;
-
-                let new_width = (x as f32).clamp(min_width, max_width);
-                workspace.set_sidebar_width(new_width, scale_factor);
+        WorkspaceMsg::StartSidebarResize { initial_x } => {
+            if let Some(workspace) = &model.workspace {
+                model.ui.sidebar_resize = Some(crate::model::SidebarResizeState {
+                    start_x: initial_x,
+                    original_width: workspace.sidebar_width_logical,
+                });
             }
             Some(Cmd::Redraw)
         }
 
-        WorkspaceMsg::EndSidebarResize => Some(Cmd::Redraw),
+        WorkspaceMsg::UpdateSidebarResize { x } => {
+            if let (Some(workspace), Some(resize_state)) =
+                (&mut model.workspace, &model.ui.sidebar_resize)
+            {
+                let scale_factor = model.metrics.scale_factor;
+                let min_width = model.metrics.sidebar_min_width_logical;
+                let max_width = model.metrics.sidebar_max_width_logical;
+
+                // Calculate delta in logical pixels
+                let delta_physical = x - resize_state.start_x;
+                let delta_logical = delta_physical as f32 / scale_factor as f32;
+                let new_width_logical =
+                    (resize_state.original_width + delta_logical).clamp(min_width, max_width);
+
+                workspace.sidebar_width_logical = new_width_logical;
+            }
+            Some(Cmd::Redraw)
+        }
+
+        WorkspaceMsg::EndSidebarResize => {
+            model.ui.sidebar_resize = None;
+            Some(Cmd::Redraw)
+        }
 
         WorkspaceMsg::Refresh => {
             if let Some(workspace) = &mut model.workspace {
@@ -99,6 +158,134 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
             }
             Some(Cmd::Redraw)
         }
+
+        WorkspaceMsg::Scroll { lines } => {
+            if let Some(workspace) = &mut model.workspace {
+                let total = workspace.visible_item_count();
+                if total == 0 {
+                    tracing::trace!("Sidebar scroll: no visible items");
+                    return Some(Cmd::Redraw);
+                }
+
+                // Calculate how many rows fit in the sidebar viewport
+                let row_height = model.metrics.file_tree_row_height;
+                let sidebar_height = model.window_size.1 as usize;
+                let visible_rows = if row_height > 0 {
+                    sidebar_height / row_height
+                } else {
+                    20 // fallback
+                };
+
+                let max_offset = total.saturating_sub(visible_rows);
+                let current = workspace.scroll_offset as i32;
+                let new_offset = (current + lines).clamp(0, max_offset as i32) as usize;
+
+                tracing::trace!(
+                    "Sidebar scroll: lines={}, total={}, visible_rows={}, offset: {} -> {}",
+                    lines,
+                    total,
+                    visible_rows,
+                    current,
+                    new_offset
+                );
+
+                workspace.scroll_offset = new_offset;
+            }
+            Some(Cmd::Redraw)
+        }
+    }
+}
+
+/// Ensure the selected item is visible within the sidebar viewport.
+/// Scrolls up or down as needed to bring the selection into view.
+fn ensure_selection_visible(model: &mut AppModel) {
+    let Some(workspace) = &model.workspace else {
+        return;
+    };
+    let Some(selected) = &workspace.selected_item else {
+        return;
+    };
+
+    // Find the visible index of the selected item
+    let Some(selected_index) =
+        find_visible_index(&workspace.file_tree, selected, &workspace.expanded_folders)
+    else {
+        return;
+    };
+
+    // Calculate viewport bounds
+    let row_height = model.metrics.file_tree_row_height;
+    let sidebar_height = model.window_size.1 as usize;
+    let visible_rows = if row_height > 0 {
+        sidebar_height / row_height
+    } else {
+        20
+    };
+
+    let scroll_offset = workspace.scroll_offset;
+    let viewport_end = scroll_offset + visible_rows;
+
+    // Determine if we need to scroll
+    let new_offset = if selected_index < scroll_offset {
+        // Selection is above viewport - scroll up
+        selected_index
+    } else if selected_index >= viewport_end {
+        // Selection is below viewport - scroll down
+        selected_index.saturating_sub(visible_rows.saturating_sub(1))
+    } else {
+        // Already visible
+        return;
+    };
+
+    // Apply the scroll
+    if let Some(ws) = &mut model.workspace {
+        let total = ws.visible_item_count();
+        let max_offset = total.saturating_sub(visible_rows);
+        ws.scroll_offset = new_offset.min(max_offset);
+
+        tracing::trace!(
+            "Auto-scroll sidebar: selected_index={}, scroll_offset: {} -> {}",
+            selected_index,
+            scroll_offset,
+            ws.scroll_offset
+        );
+    }
+}
+
+/// Select the parent folder of the currently selected item
+///
+/// Standard file tree behavior:
+/// - From a file: select its containing folder
+/// - From a collapsed folder: select its parent folder
+/// - From a root item: do nothing (no parent to select)
+fn select_parent_folder(model: &mut AppModel) {
+    let Some(workspace) = &mut model.workspace else {
+        return;
+    };
+
+    let Some(selected) = workspace.selected_item.clone() else {
+        return;
+    };
+
+    // Get the parent path
+    let Some(parent) = selected.parent() else {
+        return; // Already at filesystem root
+    };
+    let parent_path = parent.to_path_buf();
+
+    // Check if parent is within the workspace (not above the root)
+    if !parent_path.starts_with(&workspace.root) {
+        return; // Parent is above workspace root, don't navigate there
+    }
+
+    // Check if parent exists in the file tree (it should be a visible folder)
+    // If the parent folder is in the tree, select it
+    if workspace
+        .file_tree
+        .get_visible_item_by_path(&parent_path, &workspace.expanded_folders)
+        .is_some()
+    {
+        workspace.selected_item = Some(parent_path);
     }
 }
 
