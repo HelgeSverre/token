@@ -340,6 +340,23 @@ impl FileTree {
         None
     }
 
+    /// Get the nth visible item with its depth (for hit testing with chevron area detection)
+    pub fn get_visible_item_with_depth(
+        &self,
+        index: usize,
+        expanded: &HashSet<PathBuf>,
+    ) -> Option<(&FileNode, usize)> {
+        let mut current = 0;
+        for node in &self.roots {
+            if let Some(found) =
+                Self::get_visible_item_node_with_depth(node, index, &mut current, 0, expanded)
+            {
+                return Some(found);
+            }
+        }
+        None
+    }
+
     fn get_visible_item_node<'a>(
         node: &'a FileNode,
         target: usize,
@@ -354,6 +371,35 @@ impl FileTree {
         if node.is_dir && expanded.contains(&node.path) {
             for child in &node.children {
                 if let Some(found) = Self::get_visible_item_node(child, target, current, expanded) {
+                    return Some(found);
+                }
+            }
+        }
+
+        None
+    }
+
+    fn get_visible_item_node_with_depth<'a>(
+        node: &'a FileNode,
+        target: usize,
+        current: &mut usize,
+        depth: usize,
+        expanded: &HashSet<PathBuf>,
+    ) -> Option<(&'a FileNode, usize)> {
+        if *current == target {
+            return Some((node, depth));
+        }
+        *current += 1;
+
+        if node.is_dir && expanded.contains(&node.path) {
+            for child in &node.children {
+                if let Some(found) = Self::get_visible_item_node_with_depth(
+                    child,
+                    target,
+                    current,
+                    depth + 1,
+                    expanded,
+                ) {
                     return Some(found);
                 }
             }
