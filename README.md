@@ -466,10 +466,155 @@ Systematic extraction from monolithic files:
 
 </details>
 
+<details>
+<summary><strong>⌨️ Keymapping System v0.2.0</strong> | <a href="https://ampcode.com/threads/T-019b217e-cd52-76ce-bdf5-f17b8d46105d">T-019b217e</a></summary>
+
+**Date**: 2025-12-15
+
+**Problem**: Hardcoded keybindings in input.rs made customization impossible and led to precedence issues.
+
+**Solution**: Complete migration to YAML-configurable keymapping system:
+
+```yaml
+# keymap.yaml - platform-aware, context-sensitive bindings
+- key: cmd+s
+  command: Save
+- key: tab
+  command: Indent
+  when: [has_selection]
+- key: tab
+  command: InsertTab
+  when: [no_selection]
+```
+
+**Key Implementation Details**:
+
+- 74 default bindings embedded at compile time via `include_str!()`
+- Platform-aware `cmd` modifier (Cmd on macOS, Ctrl elsewhere)
+- Context conditions: `has_selection`, `has_multiple_cursors`, `modal_active`, etc.
+- Chord support with `KeyAction::{Execute, AwaitMore, NoMatch}`
+- `command: Unbound` pattern to disable default bindings
+
+**Threads in this feature**: T-019b0309, T-019b0323, T-019b2111, T-019b2125, T-019b217e
+
+</details>
+
+<details>
+<summary><strong>🌈 Syntax Highlighting with Tree-sitter</strong> | <a href="https://ampcode.com/threads/T-019b22cc-7eae-750e-92dc-a62e57a18d8f">T-019b22cc</a></summary>
+
+**Date**: 2025-12-15
+
+**Problem**: No syntax highlighting - all code displayed as plain text.
+
+**Solution**: Async tree-sitter-based syntax highlighting with 17 language support:
+
+- **Background worker thread** with mpsc channels for non-blocking parsing
+- **30ms debounce** prevents parsing on every keystroke
+- **Revision tracking** discards stale parse results
+- **Incremental parsing** with `tree.edit()` for efficient updates
+
+**Supported Languages**: Rust, YAML, Markdown, HTML, CSS, JavaScript, TypeScript, JSON, TOML, Python, Go, PHP, C, C++, Java, Bash
+
+**Architecture**:
+
+```
+Edit → DebouncedSyntaxParse → ParseReady → Worker Thread → ParseCompleted → Apply Highlights
+```
+
+**Threads in this feature**: T-019b2280, T-019b22cc, T-019b22f1, T-019b2307, T-019b230f, T-019b238a, T-019b239e
+
+</details>
+
+<details>
+<summary><strong>📊 CSV Viewer with Cell Editing</strong> | <a href="https://ampcode.com/threads/T-019b2783-7db1-73cf-b7de-2373fcbb61f0">T-019b2783</a></summary>
+
+**Date**: 2025-12-16
+
+**Problem**: CSV files displayed as raw text with no structure.
+
+**Solution**: Spreadsheet-style CSV viewer with cell editing:
+
+- **Phase 1**: Grid rendering, row/column headers, cell navigation, mouse wheel scrolling
+- **Phase 2**: Cell editing with proper CSV escaping (RFC 4180), document synchronization
+
+**Key Features**:
+
+- Toggle via Command Palette: "Toggle CSV View"
+- Delimiter detection from file extension or content (CSV, TSV, PSV)
+- Keyboard navigation: Arrow keys, Tab/Shift+Tab, Page Up/Down, Cmd+Home/End
+- Edit with Enter or start typing, Escape to cancel
+
+**Stress Tested**: Handles 10k+ row files with virtual scrolling
+
+**Threads in this feature**: T-019b22bd, T-019b2734, T-019b274f, T-019b275d, T-019b2783, T-019b2794
+
+</details>
+
+<details>
+<summary><strong>📁 Workspace Management & File Tree</strong> | <a href="https://ampcode.com/threads/T-019b2b7a-8dd7-763a-9ab7-3132ddcf516a">T-019b2b7a</a></summary>
+
+**Date**: 2025-12-17
+
+**Problem**: No file browser - users had to open files via command line or dialogs.
+
+**Solution**: Full workspace management with sidebar file tree:
+
+- **File tree sidebar** with expand/collapse folders, file icons
+- **Focus management system**: `FocusTarget` enum (Editor, Sidebar, Modal)
+- **Mouse interaction**: Double-click to open files, single-click chevron for folders
+- **Keyboard navigation**: Arrow keys, Enter to open, Escape to return to editor
+- **Theming**: Full sidebar color customization in theme YAML
+
+**Architecture**:
+
+```rust
+struct Workspace {
+    root: PathBuf,
+    file_tree: FileTree,
+    sidebar_visible: bool,
+    sidebar_width: f32,
+}
+```
+
+**Threads in this feature**: T-019b2b7a, T-019b2bc5, T-019b2be7, T-019b2c40, T-019b2c8a, T-019b2ca6
+
+</details>
+
+<details>
+<summary><strong>🖥️ HiDPI Display Scaling Fixes</strong> | <a href="https://ampcode.com/threads/T-019b2476-55a8-7058-9ba9-9360a9280c1b">T-019b2476</a></summary>
+
+**Date**: 2025-12-16
+
+**Problem**: Tab area too small on Retina displays, debug overlay misaligned - scaling broken on HiDPI.
+
+**Root Cause Investigation**:
+
+- Metrics calculated in logical units but used as physical pixels
+- Font sizes not scaled by DPI factor
+- Inconsistent coordinate systems between rendering and hit testing
+
+**The Fix - ScaledMetrics**:
+
+```rust
+pub struct ScaledMetrics {
+    pub tab_bar_height: u32,      // Pre-scaled by scale_factor
+    pub status_bar_height: u32,
+    pub line_height: u32,
+    pub char_width: u32,
+    // ... all measurements pre-scaled
+}
+```
+
+**Key Insight**: Scale once at metrics creation, use physical pixels everywhere else.
+
+**Threads in this feature**: T-019b2476, T-019b26ca, T-019b26e5
+
+</details>
+
 ---
 
 <details>
-<summary><strong>📋 Full Thread Reference (58 threads)</strong></summary>
+<summary><strong>📋 Full Thread Reference (108 threads)</strong></summary>
 
 All conversations are public. Sorted by timestamp (oldest first).
 
@@ -531,6 +676,54 @@ All conversations are public. Sorted by timestamp (oldest first).
 | 2025-12-07 10:42 | [Renderer Benchmark](https://ampcode.com/threads/T-4d6395e5-38be-4dd2-9c68-bb9b0e727c72)        | Research | Create pure renderer for benchmarking view.rs                                                          |
 | 2025-12-07 11:26 | [Unified PerfStats](https://ampcode.com/threads/T-612ca421-647d-4483-b4c6-92e38527d0a1)         | Feature  | Create unified PerfStats (no-op in release)                                                            |
 | 2025-12-07 12:05 | [DeleteBackward Fix](https://ampcode.com/threads/T-7c00a046-9808-407e-b176-807270a6c15e)        | Bugfix   | Fix DeleteBackward multi-cursor newline adjustment                                                     |
+| 2025-12-07 22:41 | [Tracing Instrumentation](https://ampcode.com/threads/T-653bca39-d3a2-4296-a101-8aa3b5557bbe)   | Feature  | Implement tracing/logging instrumentation                                                              |
+| 2025-12-07 23:01 | [One-Pager Website](https://ampcode.com/threads/T-74f6c6a1-4935-4a89-a1c7-2e7df37eef1f)         | Feature  | Create minimal HTML landing page                                                                       |
+| 2025-12-08 10:03 | [Frame Abstraction](https://ampcode.com/threads/T-b63f7909-6744-49cd-a978-0f7f2e9c79f4)         | Refactor | Migrate render code to Frame/TextPainter abstractions                                                  |
+| 2025-12-08 13:36 | [README Rewrite](https://ampcode.com/threads/T-5dacbe13-29ee-4035-a383-bc43630d7f92)            | Docs     | Rewrite README with AI development guide                                                               |
+| 2025-12-09 09:55 | [GUI Phase 2](https://ampcode.com/threads/T-019b025e-956c-766f-b7b1-9b98280e99cd)               | Refactor | Widget extraction and geometry centralization                                                          |
+| 2025-12-09 10:22 | [Modal/Focus System](https://ampcode.com/threads/T-019b02a2-7bee-7428-ac95-c814a48d1182)        | Feature  | Phase 3 GUI cleanup - modal focus system                                                               |
+| 2025-12-09 11:02 | [Modal Keybindings](https://ampcode.com/threads/T-019b02c5-f407-7489-a431-b25e60556bb3)         | Feature  | Modal input handling and keybinding refinements                                                        |
+| 2025-12-09 12:19 | [Keymapping Plan](https://ampcode.com/threads/T-019b0309-e9b1-77dc-a891-243357a55774)           | Feature  | Plan keymapping file system implementation                                                             |
+| 2025-12-09 12:43 | [Keymapping Phases 1-5](https://ampcode.com/threads/T-019b0323-2114-7077-b10c-d1814a7c9fcf)     | Feature  | Implement keymapping system phases 1-5                                                                 |
+| 2025-12-15 08:12 | [Keymap Verification](https://ampcode.com/threads/T-019b2111-88c9-7559-ac60-62e15c4bef76)       | Feature  | Verify keymap system and update documentation                                                          |
+| 2025-12-15 08:34 | [Expand Selection Fix](https://ampcode.com/threads/T-019b2125-7a74-7079-b62c-bb68a4d58788)      | Bugfix   | Fix expand selection behavior, prepare release                                                         |
+| 2025-12-15 10:12 | [Keymapping v0.2.0](https://ampcode.com/threads/T-019b217e-cd52-76ce-bdf5-f17b8d46105d)         | Feature  | Complete keymapping system, release v0.2.0                                                             |
+| 2025-12-15 12:55 | [Theme Loading](https://ampcode.com/threads/T-019b2214-3280-75a2-b06f-2d679f5f087b)             | Feature  | Plan theme loading from user config directory                                                          |
+| 2025-12-15 13:31 | [AGENTS.md Creation](https://ampcode.com/threads/T-019b2235-6273-7522-aa2a-312acf106816)        | Setup    | Create AGENTS.md documentation file                                                                    |
+| 2025-12-15 13:54 | [File I/O Planning](https://ampcode.com/threads/T-019b2247-2375-774c-85ec-d26ecef8e7cc)         | Feature  | Plan file I/O dialogs and workspace management                                                         |
+| 2025-12-15 13:55 | [Damage Tracking Plan](https://ampcode.com/threads/T-019b224a-777f-72dc-bcd0-8acde7ba4234)      | Feature  | Plan damage tracking feature implementation                                                            |
+| 2025-12-15 14:16 | [Multi-Cursor Undo/Redo](https://ampcode.com/threads/T-019b225e-8947-72b8-b1d3-1351de3812ce)    | Bugfix   | Investigate multi-cursor undo/redo test coverage                                                       |
+| 2025-12-15 14:42 | [Config Path Cleanup](https://ampcode.com/threads/T-019b2276-da67-753e-a8cc-9b6dc1c61a1e)       | Refactor | Centralize config paths and consolidate tests                                                          |
+| 2025-12-15 14:54 | [Syntax Highlighting Plan](https://ampcode.com/threads/T-019b2280-72a0-71c8-bb79-c045e147d126)  | Feature  | Syntax highlighting implementation plan for YAML/Markdown                                              |
+| 2025-12-15 15:18 | [CLI Arguments](https://ampcode.com/threads/T-019b2297-3977-721f-bef1-d8734472a45a)             | Feature  | CLI args, duplicate detection, drag-hover feedback                                                     |
+| 2025-12-15 15:39 | [File Ops Release](https://ampcode.com/threads/T-019b22ab-0d03-753a-b68c-5db45442a4c0)          | Feature  | Commit file operations features and tag release                                                        |
+| 2025-12-15 15:49 | [Benchmark Analysis](https://ampcode.com/threads/T-019b22b2-f8f5-77ce-9b3e-d88042e91c9d)        | Research | Investigate benchmarking validity and optimization                                                     |
+| 2025-12-15 15:59 | [Selection Rect Preview](https://ampcode.com/threads/T-019b22bb-bddd-71aa-9118-dc0137f7aeea)    | Bugfix   | Investigate selection rect preview drawing feature                                                     |
+| 2025-12-15 16:09 | [CSV Viewer Design](https://ampcode.com/threads/T-019b22bd-974e-72e4-9c1e-86526b4b55d0)         | Feature  | Design CSV viewer mode with spreadsheet UI                                                             |
+| 2025-12-15 16:16 | [Syntax Highlighting MVP](https://ampcode.com/threads/T-019b22cc-7eae-750e-92dc-a62e57a18d8f)   | Feature  | Complete syntax highlighting MVP, update roadmap                                                       |
+| 2025-12-15 16:56 | [Syntax Highlight Fixes](https://ampcode.com/threads/T-019b22f1-86d3-74a0-a9a8-fd7ab44fba88)    | Bugfix   | Fix syntax highlighting updates after document edits                                                   |
+| 2025-12-15 17:08 | [Benchmark Improvements](https://ampcode.com/threads/T-019b22fb-81c8-704a-ad89-efa242661c0b)    | Feature  | Implement benchmark improvements and text layout                                                       |
+| 2025-12-15 17:21 | [Syntax Debug Runtime](https://ampcode.com/threads/T-019b2307-cd6f-70ba-8ef2-142b0add0f35)      | Bugfix   | Debug syntax highlighting rendering and runtime flow                                                   |
+| 2025-12-15 17:29 | [Syntax Debug Events](https://ampcode.com/threads/T-019b230f-339a-75fd-83ed-72df6fe91f70)       | Bugfix   | Debug syntax highlighting update events                                                                |
+| 2025-12-15 19:44 | [Incremental Parsing](https://ampcode.com/threads/T-019b238a-cfc7-75ed-9b30-d9bfb119e56d)       | Feature  | Syntax highlighting with tree-sitter incremental parsing                                               |
+| 2025-12-15 20:05 | [Language Support 3-5](https://ampcode.com/threads/T-019b239e-0f2f-71ce-b793-63a784c6aa4f)      | Feature  | Implement Phase 3, 4, 5 language support (17 languages)                                                |
+| 2025-12-15 20:36 | [Syntax Sample Testing](https://ampcode.com/threads/T-019b23ba-ed60-74c4-af98-bb3013d8bdad)     | Feature  | Add Makefile target for syntax sample testing                                                          |
+| 2025-12-15 23:47 | [UI Code Review](https://ampcode.com/threads/T-019b2469-6390-75e7-bdd0-c31937d9e607)            | Refactor | Identify next 10 actionable review items                                                               |
+| 2025-12-16 00:03 | [HiDPI Scaling](https://ampcode.com/threads/T-019b2476-55a8-7058-9ba9-9360a9280c1b)             | Bugfix   | High DPI display scaling issues investigation                                                          |
+| 2025-12-16 10:53 | [UI Scaling Impl](https://ampcode.com/threads/T-019b26ca-a72d-7188-94e8-76964795edb5)           | Bugfix   | Verify UI scaling claims and implement suggestions                                                     |
+| 2025-12-16 11:22 | [Display Switching](https://ampcode.com/threads/T-019b26e5-8bec-70dd-90d8-0c8a84da7555)         | Bugfix   | HiDPI display switching fixes (v0.3.4)                                                                 |
+| 2025-12-16 12:48 | [CSV Gap Analysis](https://ampcode.com/threads/T-019b2734-d942-72ca-a572-1c3d1ee4036e)          | Feature  | Merge CSV editor gap analysis into design doc                                                          |
+| 2025-12-16 13:12 | [Workspace vs Scaling](https://ampcode.com/threads/T-019b274a-3264-738c-96e0-53f0be6ffa30)      | Feature  | Review workspace management plan against UI scaling                                                    |
+| 2025-12-16 13:18 | [CSV Implementation](https://ampcode.com/threads/T-019b274f-d35e-7014-9c1f-979b1452722a)        | Feature  | CSV editor design consolidation and implementation                                                     |
+| 2025-12-16 13:33 | [CSV Sample Data](https://ampcode.com/threads/T-019b275d-95a8-747c-8296-9ac1df203a6d)           | Feature  | Generate large CSV file and add make target                                                            |
+| 2025-12-16 14:14 | [CSV Phase 2](https://ampcode.com/threads/T-019b2783-7db1-73cf-b7de-2373fcbb61f0)               | Feature  | CSV viewer phase 2 cell editing implementation                                                         |
+| 2025-12-16 14:33 | [CSV v0.3.6 Release](https://ampcode.com/threads/T-019b2794-20a6-703c-b2b4-621b5f1c832f)        | Feature  | Release Phase 2 CSV cell editing feature                                                               |
+| 2025-12-17 08:43 | [Workspace Implementation](https://ampcode.com/threads/T-019b2b7a-8dd7-763a-9ab7-3132ddcf516a)  | Feature  | Workspace management feature implementation                                                            |
+| 2025-12-17 10:05 | [Sidebar Hit Testing](https://ampcode.com/threads/T-019b2bc5-dd85-7066-a46c-2e14bb039078)       | Bugfix   | Sidebar hit test offset and visual alignment fixes                                                     |
+| 2025-12-17 10:42 | [Editor Hit Testing](https://ampcode.com/threads/T-019b2be7-48a3-720c-b0bd-efa4ec347fb3)        | Bugfix   | Editor hit testing not offset by sidebar width                                                         |
+| 2025-12-17 12:19 | [Cursor Icon Cleanup](https://ampcode.com/threads/T-019b2c40-3b31-764a-a3c9-31369108ef99)       | Refactor | Cursor icon handling cleanup for UI consistency                                                        |
+| 2025-12-17 13:40 | [Focus Management](https://ampcode.com/threads/T-019b2c8a-b043-70ee-b7c6-5576369d38f3)          | Feature  | Focus and scrolling in sidebar implementation                                                          |
+| 2025-12-17 14:11 | [Sidebar Navigation](https://ampcode.com/threads/T-019b2ca6-720c-759f-896d-29eb7d047b2e)        | Bugfix   | Sidebar arrow key navigation not working after click                                                   |
 
 </details>
 
