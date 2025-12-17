@@ -4,11 +4,17 @@ use std::path::PathBuf;
 
 use crate::commands::Cmd;
 use crate::messages::LayoutMsg;
+use crate::model::ui::SplitterDragState;
 use crate::model::{
-    AppModel, Document, EditorGroup, EditorState, GroupId, LayoutNode, SplitContainer,
+    AppModel, Document, EditorGroup, EditorState, GroupId, LayoutNode, Rect, SplitContainer,
     SplitDirection, Tab, TabId,
 };
 use crate::util::{filename_for_display, is_likely_binary, validate_file_for_opening};
+
+/// Drag threshold in pixels before drag becomes active
+const DRAG_THRESHOLD_PIXELS: f32 = 4.0;
+/// Minimum pane size in pixels
+const MIN_PANE_SIZE_PIXELS: f32 = 100.0;
 
 /// Handle layout messages (split views, tabs, groups)
 pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
@@ -123,6 +129,30 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                     group.active_tab_index = index;
                 }
             }
+            Some(Cmd::Redraw)
+        }
+
+        // === Splitter Dragging ===
+        LayoutMsg::BeginSplitterDrag {
+            splitter_index,
+            position,
+        } => {
+            begin_splitter_drag(model, splitter_index, position);
+            Some(Cmd::Redraw)
+        }
+
+        LayoutMsg::UpdateSplitterDrag { position } => {
+            update_splitter_drag(model, position);
+            Some(Cmd::Redraw)
+        }
+
+        LayoutMsg::EndSplitterDrag => {
+            model.ui.splitter_drag = None;
+            Some(Cmd::Redraw)
+        }
+
+        LayoutMsg::CancelSplitterDrag => {
+            cancel_splitter_drag(model);
             Some(Cmd::Redraw)
         }
     }
@@ -581,4 +611,295 @@ fn close_tab(model: &mut AppModel, tab_id: TabId) {
     {
         close_group(model, group_id);
     }
+}
+
+// ============================================================================
+// Splitter Drag Helper Functions
+// ============================================================================
+
+/// Begin dragging a splitter
+fn begin_splitter_drag(model: &mut AppModel, splitter_index: usize, position: (f32, f32)) {
+    // We need to find:
+    // 1. The SplitterBar for this index (to get direction and local index)
+    // 2. The container that owns this splitter (to get ratios and size)
+    // 3. The container's size in the relevant direction
+
+    // First compute the layout to get splitter info
+    // Use a reasonable default rect - the actual values will come from window size
+    let available = model.editor_area.last_layout_rect.unwrap_or(Rect::new(0.0, 0.0, 800.0, 600.0));
+    let splitters = model
+        .editor_area
+        .compute_layout_scaled(available, model.metrics.splitter_width);
+
+    // Get the splitter bar
+    let splitter = match splitters.get(splitter_index) {
+        Some(s) => *s,
+        None => return,
+    };
+
+    // Find the container and its size by traversing the layout tree
+    let mut current_index = 0;
+    let container_info = find_container_for_splitter(
+        &model.editor_area.layout,
+        splitter_index,
+        &mut current_index,
+        available,
+    );
+
+    let (original_ratios, container_size) = match container_info {
+        Some(info) => info,
+        None => return,
+    };
+
+    model.ui.splitter_drag = Some(SplitterDragState {
+        splitter_index,
+        local_index: splitter.index,
+        start_position: position,
+        original_ratios,
+        direction: splitter.direction,
+        container_size,
+        active: false,
+    });
+}
+
+/// Update splitter position during drag
+fn update_splitter_drag(model: &mut AppModel, position: (f32, f32)) {
+    // Extract needed fields without cloning the Vec<f32> on every frame
+    let (splitter_index, local_idx, start_pos, direction, container_size, active) =
+        match model.ui.splitter_drag.as_ref() {
+            Some(state) => (
+                state.splitter_index,
+                state.local_index,
+                state.start_position,
+                state.direction,
+                state.container_size,
+                state.active,
+            ),
+            None => return,
+        };
+
+    // Calculate delta from start position
+    let delta = match direction {
+        SplitDirection::Horizontal => position.0 - start_pos.0,
+        SplitDirection::Vertical => position.1 - start_pos.1,
+    };
+
+    // Check threshold if not yet active
+    if !active {
+        let distance = ((position.0 - start_pos.0).powi(2) + (position.1 - start_pos.1).powi(2))
+            .sqrt();
+        if distance < DRAG_THRESHOLD_PIXELS {
+            return; // Threshold not exceeded yet
+        }
+        // Activate the drag
+        if let Some(ref mut state) = model.ui.splitter_drag {
+            state.active = true;
+        }
+    }
+
+    // Get the two ratios we're adjusting (defensive: return early if indices invalid)
+    let (left_ratio, right_ratio) = match model.ui.splitter_drag.as_ref() {
+        Some(state) => {
+            match (
+                state.original_ratios.get(local_idx),
+                state.original_ratios.get(local_idx + 1),
+            ) {
+                (Some(&l), Some(&r)) => (l, r),
+                _ => return, // Layout changed underneath us; ignore this drag frame
+            }
+        }
+        None => return,
+    };
+
+    // Calculate new ratios
+    let ratio_delta = delta / container_size;
+    let combined = left_ratio + right_ratio;
+
+    // Calculate minimum ratio based on minimum pane size
+    // Guard against tiny containers where 2*MIN_PANE_SIZE > container_size
+    // which would cause clamp(min, max) to panic when min > max
+    let raw_min_ratio = MIN_PANE_SIZE_PIXELS / container_size;
+    let max_min_ratio = combined / 2.0;
+    let effective_min_ratio = if raw_min_ratio <= max_min_ratio {
+        raw_min_ratio
+    } else {
+        // Container too small to satisfy min pane size for both panes;
+        // allow smaller panes but keep ratios non-negative
+        0.01 // Small epsilon to prevent zero-width panes
+    };
+
+    // Apply delta with constraints
+    let new_left =
+        (left_ratio + ratio_delta).clamp(effective_min_ratio, combined - effective_min_ratio);
+    let new_right = combined - new_left;
+
+    // Find and update the container
+    update_container_ratios_by_splitter(
+        &mut model.editor_area.layout,
+        splitter_index,
+        local_idx,
+        new_left,
+        new_right,
+    );
+}
+
+/// Cancel splitter drag and restore original ratios
+fn cancel_splitter_drag(model: &mut AppModel) {
+    let drag_state = match model.ui.splitter_drag.take() {
+        Some(state) => state,
+        None => return,
+    };
+
+    // Restore original ratios
+    restore_container_ratios_by_splitter(
+        &mut model.editor_area.layout,
+        drag_state.splitter_index,
+        &drag_state.original_ratios,
+    );
+}
+
+// ============================================================================
+// Splitter Container Traversal Helpers
+// ============================================================================
+
+/// Generic helper to visit the container owning a splitter by global index.
+///
+/// The layout tree is traversed depth-first. Each SplitContainer with N children
+/// owns N-1 splitters (one between each pair of children). The global splitter
+/// index is computed by summing splitter counts during traversal.
+///
+/// When the target container is found, the closure `f` is called with:
+/// - A mutable reference to the container
+/// - The local index within that container (which child boundary)
+///
+/// Returns true if the target was found and the closure was called.
+fn visit_splitter_container_mut<F>(
+    layout: &mut LayoutNode,
+    target_index: usize,
+    current_index: &mut usize,
+    f: &mut F,
+) -> bool
+where
+    F: FnMut(&mut SplitContainer, usize),
+{
+    match layout {
+        LayoutNode::Group(_) => false,
+        LayoutNode::Split(container) => {
+            let splitter_count = container.children.len().saturating_sub(1);
+
+            // Check if target is in this container's splitter range
+            if target_index >= *current_index && target_index < *current_index + splitter_count {
+                let local_idx = target_index - *current_index;
+                f(container, local_idx);
+                return true;
+            }
+
+            *current_index += splitter_count;
+
+            // Recurse into children
+            for child in &mut container.children {
+                if visit_splitter_container_mut(child, target_index, current_index, f) {
+                    return true;
+                }
+            }
+
+            false
+        }
+    }
+}
+
+/// Find the container that owns a given splitter by global index.
+/// Returns (original_ratios, container_size) if found.
+///
+/// This needs a separate implementation because it requires calculating
+/// child rects during traversal to determine container size.
+fn find_container_for_splitter(
+    layout: &LayoutNode,
+    target_index: usize,
+    current_index: &mut usize,
+    rect: Rect,
+) -> Option<(Vec<f32>, f32)> {
+    match layout {
+        LayoutNode::Group(_) => None,
+        LayoutNode::Split(container) => {
+            let splitter_count = container.children.len().saturating_sub(1);
+
+            // Check if target is in this container
+            if target_index >= *current_index && target_index < *current_index + splitter_count {
+                let size = match container.direction {
+                    SplitDirection::Horizontal => rect.width,
+                    SplitDirection::Vertical => rect.height,
+                };
+                return Some((container.ratios.clone(), size));
+            }
+
+            *current_index += splitter_count;
+
+            // Recurse into children with their calculated rects
+            let total_size = match container.direction {
+                SplitDirection::Horizontal => rect.width,
+                SplitDirection::Vertical => rect.height,
+            };
+            let mut offset = 0.0;
+
+            for (i, child) in container.children.iter().enumerate() {
+                let ratio = container
+                    .ratios
+                    .get(i)
+                    .copied()
+                    .unwrap_or(1.0 / container.children.len() as f32);
+                let child_size = total_size * ratio;
+
+                let child_rect = match container.direction {
+                    SplitDirection::Horizontal => {
+                        Rect::new(rect.x + offset, rect.y, child_size, rect.height)
+                    }
+                    SplitDirection::Vertical => {
+                        Rect::new(rect.x, rect.y + offset, rect.width, child_size)
+                    }
+                };
+
+                if let Some(result) =
+                    find_container_for_splitter(child, target_index, current_index, child_rect)
+                {
+                    return Some(result);
+                }
+
+                offset += child_size;
+            }
+
+            None
+        }
+    }
+}
+
+/// Update ratios in the container that owns the target splitter.
+///
+/// Adjusts the two adjacent ratios (at local_idx and local_idx+1) to new values.
+fn update_container_ratios_by_splitter(
+    layout: &mut LayoutNode,
+    target_index: usize,
+    local_idx: usize,
+    new_left: f32,
+    new_right: f32,
+) -> bool {
+    let mut current_index = 0;
+    visit_splitter_container_mut(layout, target_index, &mut current_index, &mut |container, _| {
+        if local_idx < container.ratios.len() && local_idx + 1 < container.ratios.len() {
+            container.ratios[local_idx] = new_left;
+            container.ratios[local_idx + 1] = new_right;
+        }
+    })
+}
+
+/// Restore original ratios to the container that owns the target splitter.
+fn restore_container_ratios_by_splitter(
+    layout: &mut LayoutNode,
+    target_index: usize,
+    original_ratios: &[f32],
+) -> bool {
+    let mut current_index = 0;
+    visit_splitter_container_mut(layout, target_index, &mut current_index, &mut |container, _| {
+        container.ratios = original_ratios.to_vec();
+    })
 }
