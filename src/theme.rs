@@ -236,6 +236,8 @@ pub struct UiThemeData {
     #[serde(default)]
     pub sidebar: SidebarThemeData,
     #[serde(default)]
+    pub tab_bar: TabBarThemeData,
+    #[serde(default)]
     pub syntax: SyntaxThemeData,
 }
 
@@ -308,6 +310,25 @@ pub struct SidebarThemeData {
     pub file_icon: Option<String>,
     #[serde(default)]
     pub border: Option<String>,
+}
+
+/// Tab bar colors (all optional for backward compatibility)
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct TabBarThemeData {
+    #[serde(default)]
+    pub background: Option<String>,
+    #[serde(default)]
+    pub active_background: Option<String>,
+    #[serde(default)]
+    pub active_foreground: Option<String>,
+    #[serde(default)]
+    pub inactive_background: Option<String>,
+    #[serde(default)]
+    pub inactive_foreground: Option<String>,
+    #[serde(default)]
+    pub border: Option<String>,
+    #[serde(default)]
+    pub modified_indicator: Option<String>,
 }
 
 /// CSV mode colors (all optional for backward compatibility)
@@ -845,8 +866,67 @@ impl Theme {
                         .unwrap_or(defaults.error),
                 }
             },
-            // Use defaults for these themes (not in YAML yet)
-            tab_bar: TabBarTheme::default_dark(),
+            tab_bar: {
+                let defaults = TabBarTheme::default_dark();
+                TabBarTheme {
+                    background: data
+                        .ui
+                        .tab_bar
+                        .background
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.background),
+                    active_background: data
+                        .ui
+                        .tab_bar
+                        .active_background
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.active_background),
+                    active_foreground: data
+                        .ui
+                        .tab_bar
+                        .active_foreground
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.active_foreground),
+                    inactive_background: data
+                        .ui
+                        .tab_bar
+                        .inactive_background
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.inactive_background),
+                    inactive_foreground: data
+                        .ui
+                        .tab_bar
+                        .inactive_foreground
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.inactive_foreground),
+                    border: data
+                        .ui
+                        .tab_bar
+                        .border
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.border),
+                    modified_indicator: data
+                        .ui
+                        .tab_bar
+                        .modified_indicator
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.modified_indicator),
+                }
+            },
             splitter: SplitterTheme::default_dark(),
             sidebar: {
                 let defaults = SidebarTheme::default_dark();

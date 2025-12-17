@@ -32,6 +32,15 @@ ui:
     file_icon: "#9CDCFE"
     border: "#3C3C3C"
 
+  tab_bar:
+    background: "#252526"
+    active_background: "#1E1E1E"
+    active_foreground: "#FFFFFF"
+    inactive_background: "#2D2D2D"
+    inactive_foreground: "#808080"
+    border: "#3C3C3C"
+    modified_indicator: "#FFFFFF"
+
   overlay:
     border: "#43454A"
     background: "#2B2D30"
