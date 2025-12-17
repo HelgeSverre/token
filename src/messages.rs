@@ -368,7 +368,10 @@ pub enum CsvMsg {
     /// Exit CSV mode (Escape) or cancel edit
     Exit,
     /// Select a specific cell (from mouse click)
-    SelectCell { row: usize, col: usize },
+    SelectCell {
+        row: usize,
+        col: usize,
+    },
     /// Scroll viewport vertically (from mouse wheel)
     ScrollVertical(i32),
     /// Scroll viewport horizontally (from mouse wheel)
@@ -401,6 +404,52 @@ pub enum CsvMsg {
     EditCursorEnd,
 }
 
+/// Workspace messages (file tree sidebar)
+#[derive(Debug, Clone)]
+pub enum WorkspaceMsg {
+    /// Toggle sidebar visibility (Cmd+B)
+    ToggleSidebar,
+
+    /// Toggle folder expanded/collapsed state
+    ToggleFolder(std::path::PathBuf),
+
+    /// Expand a folder
+    ExpandFolder(std::path::PathBuf),
+
+    /// Collapse a folder
+    CollapseFolder(std::path::PathBuf),
+
+    /// Select an item in the file tree
+    SelectItem(std::path::PathBuf),
+
+    /// Select previous item in file tree (Arrow Up)
+    SelectPrevious,
+
+    /// Select next item in file tree (Arrow Down)
+    SelectNext,
+
+    /// Open file from tree (single-click = preview, double-click = permanent)
+    OpenFile {
+        path: std::path::PathBuf,
+        preview: bool,
+    },
+
+    /// Reveal the active file in the tree (Cmd+Shift+R)
+    RevealActiveFile,
+
+    /// Start resizing sidebar
+    StartSidebarResize { initial_x: f64 },
+
+    /// Update sidebar width during resize
+    UpdateSidebarResize { x: f64 },
+
+    /// End sidebar resize
+    EndSidebarResize,
+
+    /// Refresh the file tree from disk
+    Refresh,
+}
+
 /// Top-level message type
 #[derive(Debug, Clone)]
 pub enum Msg {
@@ -418,6 +467,8 @@ pub enum Msg {
     Syntax(SyntaxMsg),
     /// CSV mode messages
     Csv(CsvMsg),
+    /// Workspace messages (file tree)
+    Workspace(WorkspaceMsg),
 }
 
 // Convenience constructors for common messages

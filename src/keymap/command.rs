@@ -3,7 +3,9 @@
 //! Commands are the bridge between keybindings and the message system.
 //! Each command maps to one or more `Msg` values for the Elm-style update loop.
 
-use crate::messages::{AppMsg, CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, Msg, UiMsg};
+use crate::messages::{
+    AppMsg, CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, Msg, UiMsg, WorkspaceMsg,
+};
 use crate::model::editor_area::SplitDirection;
 use crate::model::ModalId;
 
@@ -193,6 +195,14 @@ pub enum Command {
     FocusGroup4,
 
     // ========================================================================
+    // Workspace (Sidebar/File Tree)
+    // ========================================================================
+    /// Toggle sidebar visibility
+    ToggleSidebar,
+    /// Reveal active file in sidebar
+    RevealInSidebar,
+
+    // ========================================================================
     // Special
     // ========================================================================
     /// Escape key behavior: collapse multi-cursor, then clear selection
@@ -363,6 +373,10 @@ impl Command {
             FocusGroup3 => vec![Msg::Layout(LayoutMsg::FocusGroupByIndex(3))],
             FocusGroup4 => vec![Msg::Layout(LayoutMsg::FocusGroupByIndex(4))],
 
+            // Workspace
+            ToggleSidebar => vec![Msg::Workspace(WorkspaceMsg::ToggleSidebar)],
+            RevealInSidebar => vec![Msg::Workspace(WorkspaceMsg::RevealActiveFile)],
+
             // Special - these need context-aware handling
             EscapeSmartClear => {
                 // This is handled specially in the keymap dispatch
@@ -482,6 +496,9 @@ impl Command {
             FocusGroup2 => "Focus Group 2",
             FocusGroup3 => "Focus Group 3",
             FocusGroup4 => "Focus Group 4",
+
+            ToggleSidebar => "Toggle Sidebar",
+            RevealInSidebar => "Reveal in Sidebar",
 
             EscapeSmartClear => "Escape",
             Unbound => "Unbound",
