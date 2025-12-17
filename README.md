@@ -256,6 +256,11 @@ Token's development followed distinct phases, each with focused objectives:
 | Codebase Refactor   | Dec 6          | Extract modules from main.rs (3100→20 lines)    |
 | Research & Polish   | Dec 7          | Zed research, cursor API fixes, test extraction |
 | Maintenance         | Dec 7          | Bugfixes, benchmarks, documentation             |
+| Keymapping System   | Dec 15         | Configurable YAML keybindings, 74 default bindings |
+| Syntax Highlighting | Dec 15         | Tree-sitter integration, 17 languages supported |
+| CSV Viewer/Editor   | Dec 16         | Spreadsheet view with cell editing (Phases 1-2) |
+| HiDPI Fixes         | Dec 16         | Display switching, ScaledMetrics system         |
+| Workspace Management| Dec 17         | Sidebar file tree, focus system, global shortcuts |
 
 ---
 
