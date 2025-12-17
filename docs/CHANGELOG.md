@@ -4,7 +4,48 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## v0.3.6 - 2025-12-16 (Latest)
+## v0.3.7 - 2025-12-17 (Latest)
+
+### Added - Workspace Management Improvements
+
+**Sidebar Resize:**
+- Click-and-drag to resize sidebar width
+- ColResize cursor shown on hover over resize border
+- `SidebarResizeState` tracks drag operation
+- Width persists in logical pixels for DPI-independence
+
+**File Tree Keyboard Navigation:**
+- Arrow Up/Down to navigate between items
+- Arrow Right expands folders or moves to next item
+- Arrow Left collapses folders or moves to previous item
+- Enter opens files or toggles folders
+- Space toggles folder expansion
+- Escape returns focus to editor
+
+**Focus Management System:**
+- New `FocusTarget` enum: `Editor`, `Sidebar`, `Modal`
+- Explicit focus tracking in `UiState.focus`
+- Click on sidebar transfers focus to sidebar
+- Click outside sidebar returns focus to editor
+- Modals automatically capture/release focus on open/close
+- Hiding sidebar while focused returns focus to editor
+- `KeyContext.sidebar_focused` and `editor_focused` now reflect actual focus state
+
+**Cursor Icon Cleanup:**
+- I-beam cursor only appears over editable text areas
+- Default pointer for sidebar, tab bars, status bar, modals, gutter
+- ColResize/RowResize for splitters and sidebar resize border
+
+**New Commands:**
+- `FileTreeSelectPrevious`, `FileTreeSelectNext`
+- `FileTreeOpenOrToggle`, `FileTreeRefresh`
+
+**New Messages:**
+- `WorkspaceMsg::OpenOrToggle` - opens file or toggles folder
+
+---
+
+## v0.3.6 - 2025-12-16
 
 ### Added - CSV Cell Editing (Phase 2)
 
