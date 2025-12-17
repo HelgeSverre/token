@@ -7,6 +7,7 @@ pub mod editor;
 pub mod editor_area;
 pub mod status_bar;
 pub mod ui;
+pub mod workspace;
 
 pub use document::{Document, EditOperation};
 pub use editor::{
@@ -25,6 +26,7 @@ pub use ui::{
     CommandPaletteState, DropState, FindReplaceState, GotoLineState, ModalId, ModalState,
     ThemePickerState, UiState,
 };
+pub use workspace::{FileExtension, FileNode, FileTree, Workspace};
 
 use crate::config::EditorConfig;
 use crate::config_paths;
@@ -249,6 +251,20 @@ pub struct ScaledMetrics {
     pub padding_large: usize,
     /// Border width in physical pixels
     pub border_width: usize,
+
+    // === File Tree / Sidebar Metrics ===
+    /// File tree row height in physical pixels
+    pub file_tree_row_height: usize,
+    /// File tree indent per nesting level in physical pixels
+    pub file_tree_indent: f32,
+    /// Default sidebar width in logical pixels (scale-independent)
+    pub sidebar_default_width_logical: f32,
+    /// Minimum sidebar width in logical pixels
+    pub sidebar_min_width_logical: f32,
+    /// Maximum sidebar width in logical pixels
+    pub sidebar_max_width_logical: f32,
+    /// Resize handle hit zone in physical pixels
+    pub resize_handle_zone: usize,
 }
 
 impl ScaledMetrics {
@@ -269,6 +285,20 @@ impl ScaledMetrics {
     /// Base border width at scale factor 1.0
     const BASE_BORDER_WIDTH: f64 = 1.0;
 
+    // === File Tree / Sidebar Base Values ===
+    /// Base file tree row height at scale factor 1.0
+    const BASE_FILE_TREE_ROW_HEIGHT: f64 = 22.0;
+    /// Base file tree indent at scale factor 1.0
+    const BASE_FILE_TREE_INDENT: f64 = 16.0;
+    /// Default sidebar width in logical pixels (not scaled)
+    const BASE_SIDEBAR_DEFAULT_WIDTH: f32 = 250.0;
+    /// Minimum sidebar width in logical pixels (not scaled)
+    const BASE_SIDEBAR_MIN_WIDTH: f32 = 150.0;
+    /// Maximum sidebar width in logical pixels (not scaled)
+    const BASE_SIDEBAR_MAX_WIDTH: f32 = 500.0;
+    /// Base resize handle zone at scale factor 1.0
+    const BASE_RESIZE_HANDLE_ZONE: f64 = 4.0;
+
     /// Create scaled metrics for the given display scale factor
     pub fn new(scale_factor: f64) -> Self {
         Self {
@@ -281,6 +311,15 @@ impl ScaledMetrics {
             padding_medium: (Self::BASE_PADDING_MEDIUM * scale_factor).round() as usize,
             padding_large: (Self::BASE_PADDING_LARGE * scale_factor).round() as usize,
             border_width: (Self::BASE_BORDER_WIDTH * scale_factor).round().max(1.0) as usize,
+            // File tree metrics
+            file_tree_row_height: (Self::BASE_FILE_TREE_ROW_HEIGHT * scale_factor).round() as usize,
+            file_tree_indent: (Self::BASE_FILE_TREE_INDENT * scale_factor) as f32,
+            sidebar_default_width_logical: Self::BASE_SIDEBAR_DEFAULT_WIDTH,
+            sidebar_min_width_logical: Self::BASE_SIDEBAR_MIN_WIDTH,
+            sidebar_max_width_logical: Self::BASE_SIDEBAR_MAX_WIDTH,
+            resize_handle_zone: (Self::BASE_RESIZE_HANDLE_ZONE * scale_factor)
+                .round()
+                .max(2.0) as usize,
         }
     }
 }
@@ -336,8 +375,8 @@ pub struct AppModel {
     pub char_width: f32,
     /// Scaled UI metrics for HiDPI support
     pub metrics: ScaledMetrics,
-    /// Workspace root directory (for future file tree sidebar)
-    pub workspace_root: Option<PathBuf>,
+    /// Workspace with file tree sidebar (None if no directory opened)
+    pub workspace: Option<Workspace>,
     /// Debug overlay state (debug builds only)
     #[cfg(debug_assertions)]
     pub debug_overlay: Option<DebugOverlay>,
@@ -375,10 +414,35 @@ impl AppModel {
             line_height: geom.line_height,
             char_width: geom.char_width,
             metrics,
-            workspace_root: None,
+            workspace: None,
             #[cfg(debug_assertions)]
             debug_overlay: Some(DebugOverlay::new()),
         }
+    }
+
+    /// Open a directory as workspace
+    pub fn open_workspace(&mut self, root: PathBuf) {
+        match Workspace::new(root.clone(), &self.metrics) {
+            Ok(workspace) => {
+                self.workspace = Some(workspace);
+                self.ui
+                    .set_status(format!("Opened workspace: {}", root.display()));
+            }
+            Err(e) => {
+                self.ui
+                    .set_status(format!("Failed to open workspace: {}", e));
+            }
+        }
+    }
+
+    /// Close the current workspace
+    pub fn close_workspace(&mut self) {
+        self.workspace = None;
+    }
+
+    /// Get workspace root directory (convenience accessor)
+    pub fn workspace_root(&self) -> Option<&PathBuf> {
+        self.workspace.as_ref().map(|ws| &ws.root)
     }
 
     /// Update scale factor and recalculate metrics
@@ -588,6 +652,11 @@ mod tests {
         assert_eq!(metrics.padding_medium, 4);
         assert_eq!(metrics.padding_large, 8);
         assert_eq!(metrics.border_width, 1);
+        // File tree metrics
+        assert_eq!(metrics.file_tree_row_height, 22);
+        assert_eq!(metrics.file_tree_indent, 16.0);
+        assert_eq!(metrics.sidebar_default_width_logical, 250.0);
+        assert_eq!(metrics.resize_handle_zone, 4);
     }
 
     #[test]
@@ -601,6 +670,11 @@ mod tests {
         assert_eq!(metrics.padding_medium, 8);
         assert_eq!(metrics.padding_large, 16);
         assert_eq!(metrics.border_width, 2);
+        // File tree metrics (row height and indent scale, sidebar width is logical)
+        assert_eq!(metrics.file_tree_row_height, 44); // 22 * 2
+        assert_eq!(metrics.file_tree_indent, 32.0); // 16 * 2
+        assert_eq!(metrics.sidebar_default_width_logical, 250.0); // Not scaled
+        assert_eq!(metrics.resize_handle_zone, 8); // 4 * 2
     }
 
     #[test]
