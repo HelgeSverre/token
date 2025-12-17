@@ -6,9 +6,10 @@ mod app;
 mod csv;
 mod document;
 mod editor;
-mod layout;
+pub mod layout;
 mod syntax;
 mod ui;
+mod workspace;
 
 use crate::commands::Cmd;
 use crate::messages::{CsvMsg, Direction, DocumentMsg, EditorMsg, Msg};
@@ -27,6 +28,7 @@ pub use editor::update_editor;
 pub use layout::update_layout;
 pub use syntax::{schedule_syntax_parse, update_syntax, SYNTAX_DEBOUNCE_MS};
 pub use ui::update_ui;
+pub use workspace::update_workspace;
 
 /// Main update function - dispatches to sub-handlers
 ///
@@ -49,9 +51,10 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     let result = match msg {
         Msg::Editor(m) => {
             // When in CSV mode, intercept navigation messages and route to CSV
-            let csv_info = model.editor_area.focused_editor().and_then(|e| {
-                e.view_mode.as_csv().map(|csv| (true, csv.is_editing()))
-            });
+            let csv_info = model
+                .editor_area
+                .focused_editor()
+                .and_then(|e| e.view_mode.as_csv().map(|csv| (true, csv.is_editing())));
 
             if let Some((true, is_editing)) = csv_info {
                 if let Some(csv_msg) = map_editor_to_csv(&m, is_editing) {
@@ -64,9 +67,10 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         }
         Msg::Document(m) => {
             // When in CSV mode, intercept document messages for cell editing
-            let csv_info = model.editor_area.focused_editor().and_then(|e| {
-                e.view_mode.as_csv().map(|csv| (true, csv.is_editing()))
-            });
+            let csv_info = model
+                .editor_area
+                .focused_editor()
+                .and_then(|e| e.view_mode.as_csv().map(|csv| (true, csv.is_editing())));
 
             if let Some((true, is_editing)) = csv_info {
                 if let Some(csv_msg) = map_document_to_csv(&m, is_editing) {
@@ -82,6 +86,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::App(m) => app::update_app(model, m),
         Msg::Syntax(m) => syntax::update_syntax(model, m),
         Msg::Csv(m) => csv::update_csv(model, m),
+        Msg::Workspace(m) => workspace::update_workspace(model, m),
     };
 
     sync_status_bar(model);
@@ -200,5 +205,6 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::App(m) => format!("App::{:?}", m),
         Msg::Syntax(m) => format!("Syntax::{:?}", m),
         Msg::Csv(m) => format!("Csv::{:?}", m),
+        Msg::Workspace(m) => format!("Workspace::{:?}", m),
     }
 }

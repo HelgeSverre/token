@@ -83,11 +83,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             // Open the requested modal
             let state = match modal_id {
                 ModalId::CommandPalette => {
-                    let state = model
-                        .ui
-                        .last_command_palette
-                        .clone()
-                        .unwrap_or_default();
+                    let state = model.ui.last_command_palette.clone().unwrap_or_default();
                     ModalState::CommandPalette(state)
                 }
                 ModalId::GotoLine => ModalState::GotoLine(GotoLineState::default()),
@@ -115,11 +111,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
 fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
     match msg {
         ModalMsg::OpenCommandPalette => {
-            let state = model
-                .ui
-                .last_command_palette
-                .clone()
-                .unwrap_or_default();
+            let state = model.ui.last_command_palette.clone().unwrap_or_default();
             model.ui.open_modal(ModalState::CommandPalette(state));
             Some(Cmd::Redraw)
         }

@@ -162,7 +162,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                 .file_path
                 .as_ref()
                 .and_then(|p| p.parent().map(PathBuf::from))
-                .or_else(|| model.workspace_root.clone());
+                .or_else(|| model.workspace_root().cloned());
             Some(Cmd::ShowOpenFileDialog {
                 allow_multi: true,
                 start_dir,
@@ -183,16 +183,13 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
         }
 
         AppMsg::OpenFolderDialog => {
-            let start_dir = model.workspace_root.clone();
+            let start_dir = model.workspace_root().cloned();
             Some(Cmd::ShowOpenFolderDialog { start_dir })
         }
 
         AppMsg::OpenFolderDialogResult { folder } => {
             if let Some(root) = folder {
-                model.workspace_root = Some(root.clone());
-                model
-                    .ui
-                    .set_status(format!("Workspace: {}", root.display()));
+                model.open_workspace(root);
             } else {
                 model.ui.set_status("Open folder cancelled");
             }
