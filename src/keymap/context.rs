@@ -16,6 +16,8 @@ pub struct KeyContext {
     pub modal_active: bool,
     /// Whether the editor (vs modal input) has focus
     pub editor_focused: bool,
+    /// Whether the sidebar file tree has focus
+    pub sidebar_focused: bool,
 }
 
 impl KeyContext {
@@ -26,6 +28,7 @@ impl KeyContext {
             has_multiple_cursors: false,
             modal_active: false,
             editor_focused: true,
+            sidebar_focused: false,
         }
     }
 
@@ -36,6 +39,7 @@ impl KeyContext {
             has_multiple_cursors: false,
             modal_active: true,
             editor_focused: false,
+            sidebar_focused: false,
         }
     }
 }
@@ -60,6 +64,8 @@ pub enum Condition {
     ModalInactive,
     /// Binding only active when editor has focus
     EditorFocused,
+    /// Binding only active when sidebar has focus
+    SidebarFocused,
 }
 
 impl Condition {
@@ -73,6 +79,7 @@ impl Condition {
             Condition::ModalActive => ctx.modal_active,
             Condition::ModalInactive => !ctx.modal_active,
             Condition::EditorFocused => ctx.editor_focused,
+            Condition::SidebarFocused => ctx.sidebar_focused,
         }
     }
 

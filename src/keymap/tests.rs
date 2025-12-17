@@ -179,6 +179,7 @@ fn test_context_aware_tab_with_selection() {
         has_multiple_cursors: false,
         modal_active: false,
         editor_focused: true,
+        sidebar_focused: false,
     };
 
     let result = keymap.lookup_with_context(&tab, Some(&ctx_selection));
@@ -196,6 +197,7 @@ fn test_context_aware_tab_without_selection() {
         has_multiple_cursors: false,
         modal_active: false,
         editor_focused: true,
+        sidebar_focused: false,
     };
 
     let result = keymap.lookup_with_context(&tab, Some(&ctx_no_selection));
@@ -213,6 +215,7 @@ fn test_context_aware_escape_multi_cursor() {
         has_multiple_cursors: true,
         modal_active: false,
         editor_focused: true,
+        sidebar_focused: false,
     };
 
     let result = keymap.lookup_with_context(&escape, Some(&ctx));
@@ -230,6 +233,7 @@ fn test_context_aware_escape_selection() {
         has_multiple_cursors: false,
         modal_active: false,
         editor_focused: true,
+        sidebar_focused: false,
     };
 
     let result = keymap.lookup_with_context(&escape, Some(&ctx));
@@ -247,6 +251,7 @@ fn test_context_aware_escape_fallback() {
         has_multiple_cursors: false,
         modal_active: false,
         editor_focused: true,
+        sidebar_focused: false,
     };
 
     let result = keymap.lookup_with_context(&escape, Some(&ctx));

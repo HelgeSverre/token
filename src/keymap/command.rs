@@ -201,6 +201,14 @@ pub enum Command {
     ToggleSidebar,
     /// Reveal active file in sidebar
     RevealInSidebar,
+    /// Select previous item in file tree
+    FileTreeSelectPrevious,
+    /// Select next item in file tree
+    FileTreeSelectNext,
+    /// Open selected file or toggle folder in file tree
+    FileTreeOpenOrToggle,
+    /// Refresh the file tree from disk
+    FileTreeRefresh,
 
     // ========================================================================
     // Special
@@ -376,6 +384,10 @@ impl Command {
             // Workspace
             ToggleSidebar => vec![Msg::Workspace(WorkspaceMsg::ToggleSidebar)],
             RevealInSidebar => vec![Msg::Workspace(WorkspaceMsg::RevealActiveFile)],
+            FileTreeSelectPrevious => vec![Msg::Workspace(WorkspaceMsg::SelectPrevious)],
+            FileTreeSelectNext => vec![Msg::Workspace(WorkspaceMsg::SelectNext)],
+            FileTreeOpenOrToggle => vec![Msg::Workspace(WorkspaceMsg::OpenOrToggle)],
+            FileTreeRefresh => vec![Msg::Workspace(WorkspaceMsg::Refresh)],
 
             // Special - these need context-aware handling
             EscapeSmartClear => {
@@ -409,6 +421,24 @@ impl Command {
     /// Complex commands (like Escape behavior) need special handling.
     pub fn is_simple(self) -> bool {
         !matches!(self, Command::EscapeSmartClear)
+    }
+
+    /// Global commands work regardless of focus state (sidebar, CSV editing, etc.)
+    ///
+    /// These are typically modal toggles and app-level actions that should
+    /// always be available.
+    pub fn is_global(self) -> bool {
+        matches!(
+            self,
+            Command::ToggleCommandPalette
+                | Command::ToggleGotoLine
+                | Command::ToggleFindReplace
+                | Command::ToggleSidebar
+                | Command::Quit
+                | Command::SaveFile
+                | Command::NewTab
+                | Command::CloseTab
+        )
     }
 
     /// Get a display name for this command (for command palette, etc.)
@@ -499,6 +529,10 @@ impl Command {
 
             ToggleSidebar => "Toggle Sidebar",
             RevealInSidebar => "Reveal in Sidebar",
+            FileTreeSelectPrevious => "File Tree: Select Previous",
+            FileTreeSelectNext => "File Tree: Select Next",
+            FileTreeOpenOrToggle => "File Tree: Open/Toggle",
+            FileTreeRefresh => "File Tree: Refresh",
 
             EscapeSmartClear => "Escape",
             Unbound => "Unbound",

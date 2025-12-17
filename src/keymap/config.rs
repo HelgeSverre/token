@@ -351,6 +351,10 @@ impl FromStr for Command {
             // Workspace
             "ToggleSidebar" => Ok(Command::ToggleSidebar),
             "RevealInSidebar" => Ok(Command::RevealInSidebar),
+            "FileTreeSelectPrevious" => Ok(Command::FileTreeSelectPrevious),
+            "FileTreeSelectNext" => Ok(Command::FileTreeSelectNext),
+            "FileTreeOpenOrToggle" => Ok(Command::FileTreeOpenOrToggle),
+            "FileTreeRefresh" => Ok(Command::FileTreeRefresh),
 
             // Special
             "EscapeSmartClear" => Ok(Command::EscapeSmartClear),
