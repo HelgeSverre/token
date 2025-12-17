@@ -988,7 +988,7 @@ notify = "6.1"
 - [x] Implement folder expand/collapse
 - [x] Implement file selection
 - [x] Implement sidebar toggle
-- [ ] Implement sidebar resize (deferred - basic version works)
+- [x] Implement sidebar resize
 
 **Test:** Cmd+1 toggles sidebar; clicking folders expands/collapses.
 
@@ -1009,17 +1009,25 @@ notify = "6.1"
 - [x] Implement file tree row hit testing
 - [x] Handle click on folder (toggle expand)
 - [x] Handle click on file (open in tab)
-- [ ] Implement resize drag (deferred)
-- [ ] Update cursor on resize hover (deferred)
+- [x] Implement resize drag
+- [x] Update cursor on resize hover (ColResize on sidebar edge)
 
 **Test:** Clicking file opens it; clicking folder toggles expansion.
 
-### Phase 6: Keyboard Navigation (Partial)
+### Phase 6: Keyboard Navigation ✅ COMPLETE
 
 - [x] Add keyboard shortcuts for sidebar (Cmd+1)
 - [x] Add reveal in sidebar shortcut (Cmd+Shift+R)
-- [ ] Implement arrow key navigation in tree
-- [ ] Implement expand/collapse with Enter/arrows
+- [x] Implement arrow key navigation in tree (Up/Down select items)
+- [x] Implement expand/collapse with Enter/arrows (Left collapses, Right expands)
+- [x] Enter opens files or toggles folders
+- [x] Space toggles folder expansion
+- [x] Escape returns focus to editor
+- [x] Focus management system with `FocusTarget` enum
+  - Click on sidebar transfers focus to sidebar
+  - Click outside sidebar returns focus to editor
+  - Modals capture/release focus on open/close
+  - Hiding sidebar returns focus to editor if focused
 
 **Test:** Arrow keys navigate tree; Enter opens selected file.
 
@@ -1047,12 +1055,12 @@ notify = "6.1"
 
 ## Success Criteria
 
-- [ ] CLI supports `red file1 file2` to open multiple files
-- [ ] CLI supports `red ./src` to open directory as workspace
-- [ ] Sidebar shows file tree with folders first
-- [ ] Folders expand/collapse on click
-- [ ] Single-click opens file in preview mode
-- [ ] Double-click opens file permanently
-- [ ] Cmd+B toggles sidebar
-- [ ] File changes detected and tree updates
-- [ ] Open files highlighted in tree
+- [x] CLI supports `red file1 file2` to open multiple files
+- [x] CLI supports `red ./src` to open directory as workspace
+- [x] Sidebar shows file tree with folders first
+- [x] Folders expand/collapse on click
+- [ ] Single-click opens file in preview mode (currently opens permanently)
+- [x] Double-click opens file permanently
+- [x] Cmd+B toggles sidebar (Cmd+1 in current implementation)
+- [ ] File changes detected and tree updates (Phase 7)
+- [ ] Open files highlighted in tree (Phase 8)

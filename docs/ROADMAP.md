@@ -8,6 +8,28 @@ For completed work, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Recently Completed
 
+### Workspace Management Improvements ✅
+
+**Design:** [feature/workspace-management.md](feature/workspace-management.md) | **Completed:** 2025-12-17 (v0.3.7)
+
+Sidebar resize, file tree keyboard navigation, and focus management:
+
+- **Sidebar resize drag** - Click-and-drag to resize sidebar width with proper cursor feedback
+- **File tree keyboard navigation:**
+  - Arrow Up/Down to navigate between items
+  - Arrow Right expands folders, Arrow Left collapses
+  - Enter opens files or toggles folders
+  - Space toggles folder expansion
+  - Escape returns focus to editor
+- **Focus management system:**
+  - New `FocusTarget` enum: `Editor`, `Sidebar`, `Modal`
+  - Explicit focus tracking in `UiState.focus`
+  - Click transfers focus appropriately; modals capture/release on open/close
+- **Cursor icon cleanup** - I-beam only over editable text, default pointer elsewhere
+- **New commands:** `FileTreeSelectPrevious`, `FileTreeSelectNext`, `FileTreeOpenOrToggle`, `FileTreeRefresh`
+
+Remaining: Phase 7 (file system watching), Phase 8 (tab integration, preview tabs, open file highlighting)
+
 ### CSV Viewer/Editor Phases 1-2 ✅
 
 **Design:** [feature/csv-editor.md](feature/csv-editor.md) | **Completed:** 2025-12-16 (v0.3.6)
@@ -286,29 +308,24 @@ All cursor movement operations now work with multiple cursors:
 
 ## Planned Features
 
-### Workspace & File Tree Sidebar (Phase 6)
-
-**Design:** [feature/file-operations.md](feature/file-operations.md)
-
-Remaining Phase 6 work for file operations:
-
-- **Workspace concept** with `Workspace` struct, `FileTree`, `FileNode`
-- **Sidebar rendering** with file tree and expand/collapse folders
-- **File system watching** with `notify` crate
-- **Keyboard shortcuts:** Cmd+B toggle sidebar, arrow navigation
-- **Mouse interaction:** Click to open file, click to expand/collapse folder
-
-### Workspace Management
+### Workspace Management - Remaining Phases
 
 **Design:** [feature/workspace-management.md](feature/workspace-management.md)
 
-CLI arguments and file tree sidebar:
+Phases 0-6 complete. Remaining work:
 
-- Support `red file1 file2` for multiple files
-- Support `red ./src` to open directory as workspace
-- File tree sidebar with expand/collapse
-- File system watching for external changes
-- Dependencies: `clap` for CLI, `notify` for FS watching
+**Phase 7 - File System Watching:**
+- Add `notify` crate dependency
+- Create `src/fs_watcher.rs` module
+- Integrate watcher into event loop
+- Handle create/modify/delete/rename events
+- Auto-refresh tree on external changes
+
+**Phase 8 - Tab Integration:**
+- Preview tabs (single-click opens preview, double-click makes permanent)
+- Highlight open files in tree
+- Sync tree selection with active tab
+- Support opening files in new split pane
 
 ### Command Palette & Modal System
 
@@ -369,7 +386,7 @@ Group rapid consecutive edits into single undo entries:
 | Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md)     |
 | Configurable Keymapping     | ✅ Complete | [archived/KEYMAPPING_IMPLEMENTATION_PLAN.md](archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) |
 | Keymap Enhancements         | Future      | [future/keymap-enhancements.md](future/keymap-enhancements.md)                           |
-| Workspace Management        | Planned     | [feature/workspace-management.md](feature/workspace-management.md)                       |
+| Workspace Management        | ✅ P0-6     | [feature/workspace-management.md](feature/workspace-management.md)                       |
 | Syntax Highlighting         | ✅ MVP      | [feature/syntax-highlighting.md](feature/syntax-highlighting.md)                         |
 | CSV Viewer/Editor           | ✅ P1-2     | [feature/csv-editor.md](feature/csv-editor.md)                                           |
 
@@ -394,8 +411,9 @@ src/
 │   ├── document.rs      # Document struct (buffer, undo/redo, file_path)
 │   ├── editor.rs        # EditorState, Cursor, Selection, Viewport
 │   ├── editor_area.rs   # EditorArea, groups, tabs, layout tree
-│   ├── ui.rs            # UiState (cursor blink, transient messages)
-│   └── status_bar.rs    # StatusBar, StatusSegment, sync_status_bar()
+│   ├── ui.rs            # UiState (cursor blink, sidebar resize, splitter drag)
+│   ├── status_bar.rs    # StatusBar, StatusSegment, sync_status_bar()
+│   └── workspace.rs     # Workspace, FileTree, FileNode, FileExtension
 ├── update/
 │   ├── mod.rs           # Pure dispatcher
 │   ├── editor.rs        # Cursor, selection, expand/shrink
