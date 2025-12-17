@@ -631,11 +631,18 @@ fn begin_splitter_drag(model: &mut AppModel, splitter_index: usize, position: (f
     // 3. The container's size in the relevant direction
 
     // First compute the layout to get splitter info
-    // Use a reasonable default rect - the actual values will come from window size
+    // Use last_layout_rect which includes sidebar offset from render pass
+    // Fallback includes sidebar offset for consistency
+    let sidebar_width = model
+        .workspace
+        .as_ref()
+        .filter(|ws| ws.sidebar_visible)
+        .map(|ws| ws.sidebar_width(model.metrics.scale_factor))
+        .unwrap_or(0.0);
     let available = model
         .editor_area
         .last_layout_rect
-        .unwrap_or(Rect::new(0.0, 0.0, 800.0, 600.0));
+        .unwrap_or(Rect::new(sidebar_width, 0.0, 800.0 - sidebar_width, 600.0));
     let splitters = model
         .editor_area
         .compute_layout_scaled(available, model.metrics.splitter_width);
