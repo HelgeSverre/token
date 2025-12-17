@@ -8,7 +8,7 @@
 //! tested independently of the rendering infrastructure.
 
 use token::model::editor_area::{EditorGroup, Rect};
-use token::model::AppModel;
+use token::model::{AppModel, Document, EditorState};
 
 // ============================================================================
 // Layout Constants
@@ -162,6 +162,25 @@ pub fn visual_col_to_char_col(text: &str, visual_col: usize) -> usize {
 // Hit-Testing Helpers
 // ============================================================================
 
+/// Get the focused group, editor, and document from the model.
+///
+/// This helper centralizes the lookup of the currently focused editor context,
+/// which is needed for hit-testing functions that need to convert global window
+/// coordinates to local group coordinates.
+fn focused_group_editor_document(
+    model: &AppModel,
+) -> Option<(&EditorGroup, &EditorState, &Document)> {
+    let editor_area = &model.editor_area;
+
+    let group = editor_area.focused_group()?;
+    let editor_id = group.active_editor_id()?;
+    let editor = editor_area.editors.get(&editor_id)?;
+    let doc_id = editor.document_id?;
+    let document = editor_area.documents.get(&doc_id)?;
+
+    Some((group, editor, document))
+}
+
 /// Check if a y-coordinate is within the status bar region
 #[inline]
 pub fn is_in_status_bar(y: f64, window_height: u32, line_height: usize) -> bool {
@@ -213,7 +232,11 @@ pub fn tab_at_position(
 
 /// Convert pixel coordinates to document line and column for the focused editor.
 ///
-/// Takes into account the tab bar, gutter, scroll offset, and horizontal scrolling.
+/// Takes into account the group's position (including sidebar offset), tab bar,
+/// gutter, scroll offset, and horizontal scrolling.
+///
+/// This function delegates to `pixel_to_cursor_in_group` using the focused group's
+/// rect, which includes the sidebar offset and any split view positioning.
 pub fn pixel_to_cursor(
     x: f64,
     y: f64,
@@ -221,35 +244,21 @@ pub fn pixel_to_cursor(
     line_height: f64,
     model: &AppModel,
 ) -> (usize, usize) {
-    let text_x = token::model::text_start_x_scaled(char_width, &model.metrics).round() as f64;
-
-    let text_start_y = model.metrics.tab_bar_height as f64;
-    let adjusted_y = (y - text_start_y).max(0.0);
-    let visual_line = (adjusted_y / line_height).floor() as usize;
-    let line = model.editor().viewport.top_line + visual_line;
-    let line = line.min(model.document().buffer.len_lines().saturating_sub(1));
-
-    let x_offset = x - text_x;
-    let visual_column = if x_offset > 0.0 {
-        model.editor().viewport.left_column + (x_offset / char_width as f64).round() as usize
+    if let Some((group, editor, document)) = focused_group_editor_document(model) {
+        pixel_to_cursor_in_group(x, y, char_width, line_height, &group.rect, model, editor, document)
     } else {
-        model.editor().viewport.left_column
-    };
-
-    let line_text = model.document().get_line(line).unwrap_or_default();
-    let line_text_trimmed = super::helpers::trim_line_ending(&line_text);
-    let column = visual_col_to_char_col(line_text_trimmed, visual_column);
-
-    let line_len = model.document().line_length(line);
-    let column = column.min(line_len);
-
-    (line, column)
+        // No focused group/editor/document - safe fallback
+        (0, 0)
+    }
 }
 
 /// Convert pixel coordinates to line and VISUAL column (screen position).
 /// Used for rectangle selection where the raw visual column is needed,
 /// independent of any specific line's text content.
 /// Returns (line, visual_column) where visual_column is the screen column.
+///
+/// This function delegates to `pixel_to_line_and_visual_column_in_group` using
+/// the focused group's rect, which includes the sidebar offset and split positioning.
 pub fn pixel_to_line_and_visual_column(
     x: f64,
     y: f64,
@@ -257,19 +266,54 @@ pub fn pixel_to_line_and_visual_column(
     line_height: f64,
     model: &AppModel,
 ) -> (usize, usize) {
+    if let Some((group, editor, document)) = focused_group_editor_document(model) {
+        pixel_to_line_and_visual_column_in_group(
+            x,
+            y,
+            char_width,
+            line_height,
+            &group.rect,
+            model,
+            editor,
+            document,
+        )
+    } else {
+        // No focused group/editor/document - safe fallback
+        (0, 0)
+    }
+}
+
+/// Convert pixel coordinates to line and VISUAL column for a specific group.
+///
+/// Accounts for the group's rect position within the window.
+/// Used for rectangle selection where the raw visual column is needed.
+#[allow(clippy::too_many_arguments)]
+pub fn pixel_to_line_and_visual_column_in_group(
+    x: f64,
+    y: f64,
+    char_width: f32,
+    line_height: f64,
+    group_rect: &Rect,
+    model: &AppModel,
+    editor: &EditorState,
+    document: &Document,
+) -> (usize, usize) {
+    let local_x = x - group_rect.x as f64;
+    let local_y = y - group_rect.y as f64;
+
     let text_x = token::model::text_start_x_scaled(char_width, &model.metrics).round() as f64;
 
     let text_start_y = model.metrics.tab_bar_height as f64;
-    let adjusted_y = (y - text_start_y).max(0.0);
+    let adjusted_y = (local_y - text_start_y).max(0.0);
     let visual_line = (adjusted_y / line_height).floor() as usize;
-    let line = model.editor().viewport.top_line + visual_line;
-    let line = line.min(model.document().buffer.len_lines().saturating_sub(1));
+    let line = editor.viewport.top_line + visual_line;
+    let line = line.min(document.buffer.len_lines().saturating_sub(1));
 
-    let x_offset = x - text_x;
+    let x_offset = local_x - text_x;
     let visual_column = if x_offset > 0.0 {
-        model.editor().viewport.left_column + (x_offset / char_width as f64).round() as usize
+        editor.viewport.left_column + (x_offset / char_width as f64).round() as usize
     } else {
-        model.editor().viewport.left_column
+        editor.viewport.left_column
     };
 
     (line, visual_column)
@@ -278,8 +322,9 @@ pub fn pixel_to_line_and_visual_column(
 /// Convert pixel coordinates to document line and column for a specific group.
 ///
 /// Accounts for the group's rect position within the window.
+/// This is the core hit-testing function that handles coordinate conversion
+/// from absolute window coordinates to local group coordinates.
 #[allow(clippy::too_many_arguments)]
-#[allow(dead_code)]
 pub fn pixel_to_cursor_in_group(
     x: f64,
     y: f64,
@@ -287,8 +332,8 @@ pub fn pixel_to_cursor_in_group(
     line_height: f64,
     group_rect: &Rect,
     model: &AppModel,
-    editor: &token::model::EditorState,
-    document: &token::model::Document,
+    editor: &EditorState,
+    document: &Document,
 ) -> (usize, usize) {
     let local_x = x - group_rect.x as f64;
     let local_y = y - group_rect.y as f64;
