@@ -22,6 +22,16 @@ ui:
     background: "#1E1E1E"
     foreground: "#787A80"
 
+  sidebar:
+    background: "#181818"
+    foreground: "#BCBEC4"
+    selection_background: "#FFFFFF1A"
+    selection_foreground: "#FFFFFF"
+    hover_background: "#FFFFFF0D"
+    folder_icon: "#FFC66D"
+    file_icon: "#9CDCFE"
+    border: "#2B2B2B"
+
   overlay:
     border: "#2B2B2B"
     background: "#181818E0"
