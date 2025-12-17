@@ -14,7 +14,7 @@
 use winit::keyboard::{Key, NamedKey};
 
 use token::commands::Cmd;
-use token::messages::{CsvMsg, Direction, DocumentMsg, EditorMsg, ModalMsg, Msg, UiMsg};
+use token::messages::{CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, UiMsg};
 use token::model::AppModel;
 use token::update::update;
 
@@ -36,6 +36,13 @@ pub fn handle_key(
     logo: bool,
     option_double_tapped: bool,
 ) -> Option<Cmd> {
+    // Cancel splitter drag with Escape (highest priority)
+    if model.ui.splitter_drag.is_some() {
+        if let Key::Named(NamedKey::Escape) = key {
+            return update(model, Msg::Layout(LayoutMsg::CancelSplitterDrag));
+        }
+    }
+
     // Focus capture: route keys to modal when active
     if model.ui.has_modal() {
         return handle_modal_key(model, key, ctrl, shift, alt, logo);

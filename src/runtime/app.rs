@@ -423,6 +423,16 @@ impl App {
                 self.mouse_position = Some((position.x, position.y));
                 self.update_cursor_icon(position.x, position.y);
 
+                // Handle splitter drag first (highest priority)
+                if self.model.ui.splitter_drag.is_some() {
+                    return update(
+                        &mut self.model,
+                        Msg::Layout(LayoutMsg::UpdateSplitterDrag {
+                            position: (position.x as f32, position.y as f32),
+                        }),
+                    );
+                }
+
                 if self.model.editor().rectangle_selection.active {
                     if let Some(renderer) = &mut self.renderer {
                         // Use visual column (screen position) for rectangle selection
@@ -503,6 +513,26 @@ impl App {
                         } else {
                             // Click outside modal closes it
                             return update(&mut self.model, Msg::Ui(UiMsg::Modal(ModalMsg::Close)));
+                        }
+                    }
+
+                    // Check for splitter hit before other interactions
+                    {
+                        let available = self.model.editor_area.last_layout_rect.unwrap_or(
+                            Rect::new(0.0, 0.0, self.model.window_size.0 as f32, self.model.window_size.1 as f32)
+                        );
+                        let splitters = self.model.editor_area.compute_layout_scaled(
+                            available,
+                            self.model.metrics.splitter_width,
+                        );
+                        if let Some(idx) = self.model.editor_area.splitter_at_point(&splitters, x as f32, y as f32) {
+                            return update(
+                                &mut self.model,
+                                Msg::Layout(LayoutMsg::BeginSplitterDrag {
+                                    splitter_index: idx,
+                                    position: (x as f32, y as f32),
+                                }),
+                            );
                         }
                     }
 
@@ -657,6 +687,11 @@ impl App {
                 self.last_auto_scroll = None;
                 self.drag_start_position = None;
                 self.drag_active = false;
+
+                // End splitter drag if active
+                if self.model.ui.splitter_drag.is_some() {
+                    return update(&mut self.model, Msg::Layout(LayoutMsg::EndSplitterDrag));
+                }
                 None
             }
             WindowEvent::MouseInput {
