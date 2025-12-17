@@ -14,7 +14,9 @@
 use winit::keyboard::{Key, NamedKey};
 
 use token::commands::Cmd;
-use token::messages::{CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, UiMsg};
+use token::messages::{
+    CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, UiMsg, WorkspaceMsg,
+};
 use token::model::AppModel;
 use token::update::update;
 
@@ -49,8 +51,14 @@ pub fn handle_key(
     }
 
     // Focus capture: route keys to CSV cell editor when editing
-    if is_csv_editing(model) {
+    if model.is_csv_editing() {
         return handle_csv_edit_key(model, key, ctrl, shift, alt, logo);
+    }
+
+    // Focus capture: route keys exclusively to sidebar when it has focus
+    // Keys that sidebar doesn't handle are consumed (not passed to editor)
+    if is_sidebar_focused(model) {
+        return handle_sidebar_key(model, &key, ctrl).or(Some(Cmd::Redraw));
     }
 
     match key {
@@ -251,20 +259,6 @@ fn handle_modal_key(
     }
 }
 
-/// Check if currently editing a CSV cell
-fn is_csv_editing(model: &AppModel) -> bool {
-    model
-        .editor_area
-        .focused_editor()
-        .map(|e| {
-            e.view_mode
-                .as_csv()
-                .map(|csv| csv.is_editing())
-                .unwrap_or(false)
-        })
-        .unwrap_or(false)
-}
-
 /// Handle keyboard input when editing a CSV cell
 ///
 /// This captures focus and routes keys to the cell editor instead of the normal editor.
@@ -338,5 +332,94 @@ fn handle_csv_edit_key(
 
         // Block all other keys when editing (consume but don't act)
         _ => Some(Cmd::Redraw),
+    }
+}
+
+// =============================================================================
+// Sidebar Focus Handling
+// =============================================================================
+
+/// Check if the sidebar file tree has keyboard focus
+fn is_sidebar_focused(model: &AppModel) -> bool {
+    use token::model::FocusTarget;
+    matches!(model.ui.focus, FocusTarget::Sidebar)
+}
+
+/// Handle keyboard input when sidebar file tree is focused
+fn handle_sidebar_key(model: &mut AppModel, key: &Key, ctrl: bool) -> Option<Cmd> {
+    match key {
+        // Arrow Up/Down: navigate file tree
+        Key::Named(NamedKey::ArrowUp) => {
+            update(model, Msg::Workspace(WorkspaceMsg::SelectPrevious))
+        }
+        Key::Named(NamedKey::ArrowDown) => update(model, Msg::Workspace(WorkspaceMsg::SelectNext)),
+
+        // Arrow Right: expand folder or move into children
+        Key::Named(NamedKey::ArrowRight) => {
+            if let Some(workspace) = &model.workspace {
+                if let Some(path) = &workspace.selected_item {
+                    if path.is_dir() && !workspace.is_expanded(path) {
+                        // Expand the folder
+                        let path_clone = path.clone();
+                        return update(
+                            model,
+                            Msg::Workspace(WorkspaceMsg::ExpandFolder(path_clone)),
+                        );
+                    }
+                }
+            }
+            // If already expanded or is a file, move to next item
+            update(model, Msg::Workspace(WorkspaceMsg::SelectNext))
+        }
+
+        // Arrow Left: collapse folder or jump to parent
+        // Standard file tree behavior:
+        // - On expanded folder: collapse it
+        // - On collapsed folder or file: jump to parent folder
+        Key::Named(NamedKey::ArrowLeft) => {
+            if let Some(workspace) = &model.workspace {
+                if let Some(path) = &workspace.selected_item {
+                    if path.is_dir() && workspace.is_expanded(path) {
+                        // Collapse the folder
+                        let path_clone = path.clone();
+                        return update(
+                            model,
+                            Msg::Workspace(WorkspaceMsg::CollapseFolder(path_clone)),
+                        );
+                    }
+                }
+            }
+            // If already collapsed or is a file, jump to parent folder
+            update(model, Msg::Workspace(WorkspaceMsg::SelectParent))
+        }
+
+        // Enter: open file or toggle folder
+        Key::Named(NamedKey::Enter) => update(model, Msg::Workspace(WorkspaceMsg::OpenOrToggle)),
+
+        // Space: toggle folder expansion (files do nothing)
+        Key::Named(NamedKey::Space) => {
+            if let Some(workspace) = &model.workspace {
+                if let Some(path) = workspace.selected_item.clone() {
+                    if path.is_dir() {
+                        return update(model, Msg::Workspace(WorkspaceMsg::ToggleFolder(path)));
+                    }
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        // Escape: return focus to editor
+        Key::Named(NamedKey::Escape) => {
+            model.ui.focus_editor();
+            Some(Cmd::Redraw)
+        }
+
+        // Cmd+R / Ctrl+R: refresh file tree
+        Key::Character(ref s) if (ctrl || cfg!(target_os = "macos")) && s == "r" => {
+            update(model, Msg::Workspace(WorkspaceMsg::Refresh))
+        }
+
+        // Don't consume other keys - let them fall through to normal handling
+        _ => None,
     }
 }
