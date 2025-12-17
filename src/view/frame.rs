@@ -121,6 +121,30 @@ impl<'a> Frame<'a> {
         }
     }
 
+    /// Fill a rectangle with alpha blending (color is ARGB format)
+    pub fn fill_rect_blended(&mut self, rect: Rect, color: u32) {
+        let alpha = ((color >> 24) & 0xFF) as f32 / 255.0;
+        if alpha <= 0.0 {
+            return;
+        }
+        if alpha >= 1.0 {
+            return self.fill_rect(rect, color | 0xFF000000);
+        }
+
+        let x0 = (rect.x.max(0.0) as usize).min(self.width);
+        let y0 = (rect.y.max(0.0) as usize).min(self.height);
+        let x1 = ((rect.x + rect.width) as usize).min(self.width);
+        let y1 = ((rect.y + rect.height) as usize).min(self.height);
+
+        for y in y0..y1 {
+            let row_start = y * self.width;
+            for x in x0..x1 {
+                let idx = row_start + x;
+                self.buffer[idx] = blend_colors(self.buffer[idx], color, alpha);
+            }
+        }
+    }
+
     /// Set a single pixel (bounds-checked)
     #[inline]
     pub fn set_pixel(&mut self, x: usize, y: usize, color: u32) {

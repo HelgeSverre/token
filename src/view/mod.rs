@@ -344,6 +344,178 @@ impl Renderer {
         }
     }
 
+    /// Render the sidebar (file tree) for a workspace.
+    #[allow(clippy::too_many_arguments)]
+    fn render_sidebar(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        sidebar_width: usize,
+        sidebar_height: usize,
+        _line_height: usize,
+        _char_width: f32,
+    ) {
+        let Some(workspace) = &model.workspace else {
+            return;
+        };
+
+        let theme = &model.theme.sidebar;
+        let metrics = &model.metrics;
+
+        // Draw sidebar background
+        let bg_color = theme.background.to_argb_u32();
+        frame.fill_rect(
+            Rect::new(0.0, 0.0, sidebar_width as f32, sidebar_height as f32),
+            bg_color,
+        );
+
+        // Draw resize border on the right edge
+        let border_color = theme.border.to_argb_u32();
+        let border_x = sidebar_width.saturating_sub(1);
+        frame.fill_rect(
+            Rect::new(border_x as f32, 0.0, 1.0, sidebar_height as f32),
+            border_color,
+        );
+
+        // Render file tree items
+        let row_height = metrics.file_tree_row_height;
+        let indent = metrics.file_tree_indent;
+        let text_color = theme.foreground.to_argb_u32();
+        let selection_bg = theme.selection_background.to_argb_u32();
+        let selection_fg = theme.selection_foreground.to_argb_u32();
+        let folder_icon_color = theme.folder_icon.to_argb_u32();
+
+        let mut y = 0usize;
+        let mut visible_index = 0usize;
+
+        // Helper closure to render a tree node recursively
+        fn render_node(
+            frame: &mut Frame,
+            painter: &mut TextPainter,
+            node: &token::model::FileNode,
+            workspace: &token::model::Workspace,
+            y: &mut usize,
+            visible_index: &mut usize,
+            depth: usize,
+            sidebar_width: usize,
+            row_height: usize,
+            indent: f32,
+            text_color: u32,
+            selection_bg: u32,
+            selection_fg: u32,
+            folder_icon_color: u32,
+            sidebar_height: usize,
+        ) {
+            // Skip if out of visible area
+            if *y >= sidebar_height {
+                return;
+            }
+
+            let x_offset = (depth as f32 * indent) as usize + 8; // 8px left padding
+
+            // Check if this item is selected
+            let is_selected = workspace
+                .selected_item
+                .as_ref()
+                .map(|p| p == &node.path)
+                .unwrap_or(false);
+
+            // Draw selection background with alpha blending
+            if is_selected {
+                frame.fill_rect_blended(
+                    Rect::new(0.0, *y as f32, sidebar_width as f32, row_height as f32),
+                    selection_bg,
+                );
+            }
+
+            // Draw expand/collapse indicator for directories
+            let icon_x = x_offset;
+            let text_x = x_offset + 16; // Space for chevron indicator
+
+            // Text is positioned with y as the top of the text area
+            // Add small vertical padding to center text in the row
+            let text_y = *y + 2; // Small top padding
+
+            if node.is_dir {
+                let is_expanded = workspace.is_expanded(&node.path);
+                // Use simple text chevrons: > for collapsed, v for expanded
+                let indicator = if is_expanded { "v" } else { ">" };
+                let icon_color = if is_selected {
+                    selection_fg
+                } else {
+                    folder_icon_color
+                };
+                painter.draw(frame, icon_x, text_y, indicator, icon_color);
+            }
+
+            // Draw file/folder name, truncating if too long
+            let fg = if is_selected { selection_fg } else { text_color };
+
+            // Calculate available width for text (sidebar_width minus text_x and right padding)
+            let right_padding = 8;
+            let available_width = sidebar_width.saturating_sub(text_x + right_padding);
+
+            // Truncate the name if it's too long (estimate char width as ~8px for now)
+            let estimated_char_width = 8;
+            let max_chars = available_width / estimated_char_width;
+            let display_name = if node.name.len() > max_chars && max_chars > 3 {
+                let truncated = &node.name[..max_chars.saturating_sub(2)];
+                format!("{}…", truncated)
+            } else {
+                node.name.clone()
+            };
+
+            painter.draw(frame, text_x, text_y, &display_name, fg);
+
+            *y += row_height;
+            *visible_index += 1;
+
+            // Render children if expanded
+            if node.is_dir && workspace.is_expanded(&node.path) {
+                for child in &node.children {
+                    render_node(
+                        frame,
+                        painter,
+                        child,
+                        workspace,
+                        y,
+                        visible_index,
+                        depth + 1,
+                        sidebar_width,
+                        row_height,
+                        indent,
+                        text_color,
+                        selection_bg,
+                        selection_fg,
+                        folder_icon_color,
+                        sidebar_height,
+                    );
+                }
+            }
+        }
+
+        // Render all root nodes
+        for node in &workspace.file_tree.roots {
+            render_node(
+                frame,
+                painter,
+                node,
+                workspace,
+                &mut y,
+                &mut visible_index,
+                0,
+                sidebar_width,
+                row_height,
+                indent,
+                text_color,
+                selection_bg,
+                selection_fg,
+                folder_icon_color,
+                sidebar_height,
+            );
+        }
+    }
+
     /// Render the gutter (line numbers and border) for an editor group.
     ///
     /// Draws:
@@ -964,7 +1136,11 @@ impl Renderer {
             None => return,
         };
 
-        let col_width_px = layout.column_widths_px.get(screen_col_idx).copied().unwrap_or(50);
+        let col_width_px = layout
+            .column_widths_px
+            .get(screen_col_idx)
+            .copied()
+            .unwrap_or(50);
         let cell_x = layout.grid_x + col_x;
         let cell_y = layout.data_y + screen_row * line_height;
 
@@ -974,7 +1150,13 @@ impl Renderer {
         let cursor_color = model.theme.editor.cursor_color.to_argb_u32();
 
         // Draw edit background (fill entire cell)
-        frame.fill_rect_px(cell_x + 1, cell_y + 1, col_width_px.saturating_sub(2), line_height.saturating_sub(2), edit_bg);
+        frame.fill_rect_px(
+            cell_x + 1,
+            cell_y + 1,
+            col_width_px.saturating_sub(2),
+            line_height.saturating_sub(2),
+            edit_bg,
+        );
 
         // Draw edit text
         let text_x = cell_x + 4;
@@ -984,7 +1166,13 @@ impl Renderer {
         if model.ui.cursor_visible {
             let cursor_char_pos = edit_state.cursor_char_position();
             let cursor_x = text_x + (cursor_char_pos as f32 * char_width).round() as usize;
-            frame.fill_rect_px(cursor_x, cell_y + 2, 2, line_height.saturating_sub(4), cursor_color);
+            frame.fill_rect_px(
+                cursor_x,
+                cell_y + 2,
+                2,
+                line_height.saturating_sub(4),
+                cursor_color,
+            );
         }
     }
 
@@ -1364,10 +1552,20 @@ impl Renderer {
         let height = self.height;
 
         let status_bar_height = line_height;
+
+        // Calculate sidebar offset if workspace is open and sidebar is visible
+        let sidebar_width = model
+            .workspace
+            .as_ref()
+            .filter(|ws| ws.sidebar_visible)
+            .map(|ws| ws.sidebar_width(model.metrics.scale_factor))
+            .unwrap_or(0.0);
+
+        // Editor area starts after sidebar
         let available_rect = Rect::new(
+            sidebar_width,
             0.0,
-            0.0,
-            width as f32,
+            (width as f32) - sidebar_width,
             (height as usize).saturating_sub(status_bar_height) as f32,
         );
         let splitters = model
@@ -1401,6 +1599,22 @@ impl Renderer {
                 &mut painter,
                 model,
                 &splitters,
+                line_height,
+                char_width,
+            );
+        }
+
+        // Render sidebar if workspace is open
+        if sidebar_width > 0.0 {
+            let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
+            let mut painter =
+                TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
+            Self::render_sidebar(
+                &mut frame,
+                &mut painter,
+                model,
+                sidebar_width as usize,
+                height_usize.saturating_sub(status_bar_height),
                 line_height,
                 char_width,
             );
