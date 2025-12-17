@@ -6,7 +6,9 @@ All notable changes to rust-editor are documented in this file.
 
 ## v0.3.7 - 2025-12-17 (Latest)
 
-### Added - Workspace Management Improvements
+### Added - Workspace Management & Focus System
+
+Complete workspace management with sidebar file tree and comprehensive focus handling:
 
 **Sidebar Resize:**
 - Click-and-drag to resize sidebar width
@@ -17,10 +19,16 @@ All notable changes to rust-editor are documented in this file.
 **File Tree Keyboard Navigation:**
 - Arrow Up/Down to navigate between items
 - Arrow Right expands folders or moves to next item
-- Arrow Left collapses folders or moves to previous item
+- Arrow Left collapses folders or jumps to parent folder (standard file tree behavior)
 - Enter opens files or toggles folders
 - Space toggles folder expansion
 - Escape returns focus to editor
+
+**Workspace Root Display:**
+- Workspace root folder is now displayed as the first item in the file tree
+- Root folder is auto-expanded when workspace opens
+- Root path is canonicalized to ensure proper display name (fixes "." showing as empty)
+- Folder expand/collapse indicators: `-` for expanded, `+` for collapsed
 
 **Focus Management System:**
 - New `FocusTarget` enum: `Editor`, `Sidebar`, `Modal`
@@ -31,10 +39,19 @@ All notable changes to rust-editor are documented in this file.
 - Hiding sidebar while focused returns focus to editor
 - `KeyContext.sidebar_focused` and `editor_focused` now reflect actual focus state
 
+**Global Shortcuts:**
+- Command palette (Cmd+Shift+A), Save (Cmd+S), Quit (Cmd+Q), and other global shortcuts now work regardless of focus state
+- New `Command::is_global()` method identifies shortcuts that bypass focus-based input routing
+- Global commands include: ToggleCommandPalette, ToggleGotoLine, ToggleFindReplace, ToggleSidebar, Quit, SaveFile, NewTab, CloseTab
+
 **Cursor Icon Cleanup:**
 - I-beam cursor only appears over editable text areas
 - Default pointer for sidebar, tab bars, status bar, modals, gutter
 - ColResize/RowResize for splitters and sidebar resize border
+
+**Keyboard Routing Fixes:**
+- CSV cell editing now properly bypasses keymap (arrow keys work in cell editor)
+- Added `AppModel::is_csv_editing()` helper method for consistent checking
 
 **New Commands:**
 - `FileTreeSelectPrevious`, `FileTreeSelectNext`
@@ -42,6 +59,7 @@ All notable changes to rust-editor are documented in this file.
 
 **New Messages:**
 - `WorkspaceMsg::OpenOrToggle` - opens file or toggles folder
+- `WorkspaceMsg::SelectParent` - navigate to parent folder
 
 ---
 

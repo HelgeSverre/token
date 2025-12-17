@@ -17,7 +17,8 @@ Sidebar resize, file tree keyboard navigation, and focus management:
 - **Sidebar resize drag** - Click-and-drag to resize sidebar width with proper cursor feedback
 - **File tree keyboard navigation:**
   - Arrow Up/Down to navigate between items
-  - Arrow Right expands folders, Arrow Left collapses
+  - Arrow Right expands folders or moves to next item
+  - Arrow Left collapses folders or jumps to parent folder
   - Enter opens files or toggles folders
   - Space toggles folder expansion
   - Escape returns focus to editor
@@ -25,8 +26,11 @@ Sidebar resize, file tree keyboard navigation, and focus management:
   - New `FocusTarget` enum: `Editor`, `Sidebar`, `Modal`
   - Explicit focus tracking in `UiState.focus`
   - Click transfers focus appropriately; modals capture/release on open/close
+  - Global shortcuts (Cmd+Shift+A, Cmd+S, etc.) work regardless of focus state
 - **Cursor icon cleanup** - I-beam only over editable text, default pointer elsewhere
+- **Workspace root display** - Root folder shown as first item, auto-expanded on open
 - **New commands:** `FileTreeSelectPrevious`, `FileTreeSelectNext`, `FileTreeOpenOrToggle`, `FileTreeRefresh`
+- **New messages:** `WorkspaceMsg::SelectParent` for parent folder navigation
 
 Remaining: Phase 7 (file system watching), Phase 8 (tab integration, preview tabs, open file highlighting)
 
