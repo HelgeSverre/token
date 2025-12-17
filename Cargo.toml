@@ -1,6 +1,6 @@
 [package]
 name = "token"
-version = "0.3.6"
+version = "0.3.7"
 edition = "2021"
 
 [features]
@@ -33,6 +33,9 @@ arboard = "3.4"
 
 # For native file dialogs
 rfd = "0.15"
+
+# For window icon loading
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 # For CLI argument parsing
 clap = { version = "4", features = ["derive"] }
@@ -72,6 +75,9 @@ streaming-iterator = "0.1"
 
 # Optional: heap profiling
 dhat = { version = "0.3", optional = true }
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
 
 [dev-dependencies]
 divan = "0.1"

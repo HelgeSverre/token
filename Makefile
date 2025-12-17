@@ -6,7 +6,8 @@
         coverage coverage-html coverage-ci \
         watch watch-lint test-fast test-retry \
         setup setup-tools install uninstall \
-        compile-all compile-macos-x86 compile-macos-arm compile-linux compile-windows
+        compile-all compile-macos-x86 compile-macos-arm compile-linux compile-windows \
+        generate-icon icons bundle-macos
 
 # Default target
 all: help
@@ -72,9 +73,9 @@ test-syntax: release
 csv: build samples/large_data.csv
 	./target/debug/token samples/large_data.csv
 
-# Run with syntax samples folder as workspace (tests file tree sidebar)
-workspace: release
-	./target/release/token ./
+# Run with codebase as workspace
+workspace: build
+	./target/debug/token ./
 
 # Run with full debug tracing enabled
 trace: build
@@ -92,6 +93,8 @@ test-verbose:
 # Clean build artifacts
 clean:
 	cargo clean
+	rm -rf Token.app
+	rm -f assets/icon.icns assets/icon.ico
 
 # Format all code and markdown files
 fmt format:
@@ -203,6 +206,11 @@ help:
 	@echo "  make compile-macos-arm - macOS Apple Silicon"
 	@echo "  make compile-linux    - Linux x86_64 (requires cross + Docker)"
 	@echo "  make compile-windows  - Windows x86_64 (requires cargo-xwin)"
+	@echo ""
+	@echo "App bundling:"
+	@echo "  make generate-icon    - Generate placeholder icon PNG"
+	@echo "  make icons            - Generate .icns and .ico from PNG"
+	@echo "  make bundle-macos     - Create Token.app bundle"
 
 # === Setup targets ===
 
@@ -375,3 +383,58 @@ compile-linux:
 # Windows x86_64 (requires: cargo install cargo-xwin)
 compile-windows:
 	cargo xwin build --release --target x86_64-pc-windows-msvc
+
+# === Icon and App Bundle targets ===
+
+# Generate placeholder icon PNG (requires Python with PIL)
+generate-icon:
+	@python3 -c "\
+from PIL import Image, ImageDraw, ImageFont; \
+img = Image.new('RGBA', (512, 512), (30, 30, 30, 255)); \
+draw = ImageDraw.Draw(img); \
+font = ImageFont.truetype('assets/JetBrainsMono.ttf', 380); \
+bbox = draw.textbbox((0, 0), 'T', font=font); \
+x = (512 - (bbox[2] - bbox[0])) // 2 - bbox[0]; \
+y = (512 - (bbox[3] - bbox[1])) // 2 - bbox[1]; \
+draw.text((x, y), 'T', font=font, fill=(100, 180, 255, 255)); \
+img.save('assets/icon.png'); \
+print('Created assets/icon.png')"
+
+# Generate platform-specific icons from PNG
+icons: assets/icon.png
+	@echo "Generating macOS .icns..."
+	@mkdir -p assets/icon.iconset
+	@sips -z 16 16     assets/icon.png --out assets/icon.iconset/icon_16x16.png >/dev/null
+	@sips -z 32 32     assets/icon.png --out assets/icon.iconset/icon_16x16@2x.png >/dev/null
+	@sips -z 32 32     assets/icon.png --out assets/icon.iconset/icon_32x32.png >/dev/null
+	@sips -z 64 64     assets/icon.png --out assets/icon.iconset/icon_32x32@2x.png >/dev/null
+	@sips -z 128 128   assets/icon.png --out assets/icon.iconset/icon_128x128.png >/dev/null
+	@sips -z 256 256   assets/icon.png --out assets/icon.iconset/icon_128x128@2x.png >/dev/null
+	@sips -z 256 256   assets/icon.png --out assets/icon.iconset/icon_256x256.png >/dev/null
+	@sips -z 512 512   assets/icon.png --out assets/icon.iconset/icon_256x256@2x.png >/dev/null
+	@sips -z 512 512   assets/icon.png --out assets/icon.iconset/icon_512x512.png >/dev/null
+	@sips -z 1024 1024 assets/icon.png --out assets/icon.iconset/icon_512x512@2x.png >/dev/null
+	@iconutil -c icns assets/icon.iconset -o assets/icon.icns
+	@rm -rf assets/icon.iconset
+	@echo "Created assets/icon.icns"
+	@echo "Generating Windows .ico..."
+	@if command -v magick >/dev/null 2>&1; then \
+		magick assets/icon.png -define icon:auto-resize=256,128,64,48,32,16 assets/icon.ico; \
+	elif command -v convert >/dev/null 2>&1; then \
+		convert assets/icon.png -define icon:auto-resize=256,128,64,48,32,16 assets/icon.ico; \
+	else \
+		echo "Warning: ImageMagick not found, skipping .ico generation"; \
+		echo "Install with: brew install imagemagick"; \
+	fi
+	@test -f assets/icon.ico && echo "Created assets/icon.ico" || true
+
+# Create macOS app bundle
+bundle-macos: release icons
+	@echo "Creating Token.app bundle..."
+	@rm -rf Token.app
+	@mkdir -p Token.app/Contents/MacOS
+	@mkdir -p Token.app/Contents/Resources
+	@cp target/release/token Token.app/Contents/MacOS/
+	@cp assets/icon.icns Token.app/Contents/Resources/
+	@cp macos/Info.plist Token.app/Contents/
+	@echo "Created Token.app"
