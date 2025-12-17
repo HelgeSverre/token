@@ -1,5 +1,6 @@
 //! UI state - status bar, cursor blink, modals, and other UI concerns
 
+use super::editor_area::SplitDirection;
 use super::status_bar::{StatusBar, TransientMessage};
 use crate::theme::{list_available_themes, ThemeInfo};
 use std::path::PathBuf;
@@ -134,6 +135,29 @@ impl DropState {
     }
 }
 
+// ============================================================================
+// Splitter Drag State
+// ============================================================================
+
+/// State for splitter (resize handle) dragging
+#[derive(Debug, Clone)]
+pub struct SplitterDragState {
+    /// Index of the splitter being dragged (into the splitters vec from compute_layout)
+    pub splitter_index: usize,
+    /// Local index within the container (which children boundary)
+    pub local_index: usize,
+    /// Starting mouse position when drag began (pixels)
+    pub start_position: (f32, f32),
+    /// Original ratios before drag started (for cancel/restore)
+    pub original_ratios: Vec<f32>,
+    /// Direction of the split (determines which axis to track)
+    pub direction: SplitDirection,
+    /// Container's total size in the drag direction (pixels)
+    pub container_size: f32,
+    /// Whether threshold exceeded (true = actively dragging with visual updates)
+    pub active: bool,
+}
+
 /// UI state - status messages and cursor animation
 #[derive(Debug, Clone)]
 pub struct UiState {
@@ -157,6 +181,8 @@ pub struct UiState {
     pub last_command_palette: Option<CommandPaletteState>,
     /// File drag-and-drop state
     pub drop_state: DropState,
+    /// Splitter (resize handle) drag state
+    pub splitter_drag: Option<SplitterDragState>,
 }
 
 impl UiState {
@@ -173,6 +199,7 @@ impl UiState {
             active_modal: None,
             last_command_palette: None,
             drop_state: DropState::default(),
+            splitter_drag: None,
         }
     }
 
@@ -189,6 +216,7 @@ impl UiState {
             active_modal: None,
             last_command_palette: None,
             drop_state: DropState::default(),
+            splitter_drag: None,
         }
     }
 

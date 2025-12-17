@@ -163,6 +163,9 @@ pub struct EditorArea {
 
     /// Counter for generating unique untitled document names
     next_untitled_number: u32,
+
+    /// Last layout rect used for compute_layout (for splitter drag calculations)
+    pub last_layout_rect: Option<Rect>,
 }
 
 impl EditorArea {
@@ -214,6 +217,7 @@ impl EditorArea {
             next_group_id: 2,
             next_tab_id: 2,
             next_untitled_number: 1,
+            last_layout_rect: None,
         }
     }
 
@@ -481,6 +485,9 @@ impl EditorArea {
         available: Rect,
         splitter_width: f32,
     ) -> Vec<SplitterBar> {
+        // Store the rect for splitter drag calculations
+        self.last_layout_rect = Some(available);
+
         let mut splitters = Vec::new();
         self.compute_layout_node(
             &self.layout.clone(),
