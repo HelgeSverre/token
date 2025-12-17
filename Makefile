@@ -72,6 +72,10 @@ test-syntax: release
 csv: build samples/large_data.csv
 	./target/debug/token samples/large_data.csv
 
+# Run with syntax samples folder as workspace (tests file tree sidebar)
+workspace: release
+	./target/release/token ./
+
 # Run with full debug tracing enabled
 trace: build
 	RUST_LOG=debug ./target/debug/token samples/sample_code.rs
@@ -151,6 +155,7 @@ help:
 	@echo "  make run          - Run with default samples file (indentation.txt)"
 	@echo "  make dev          - Run debug build (faster compile)"
 	@echo "  make csv          - Run with large CSV file (tests CSV viewer)"
+	@echo "  make workspace    - Open codebase folder as workspace (tests sidebar)"
 	@echo "  make test-syntax  - Open all 17 syntax sample files for manual testing"
 	@echo ""
 	@echo "Test targets:"

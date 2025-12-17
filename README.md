@@ -64,14 +64,14 @@ List them with `make help`
 
 ### Features
 
-| Feature                   | Description                                                    |
-| ------------------------- | -------------------------------------------------------------- |
-| Multi-cursor editing      | Option+Click to add cursors, Option+Option+Arrow to add above/below |
-| Split views               | Horizontal and vertical splits with independent viewports      |
-| Syntax highlighting       | Tree-sitter based, 17 languages supported                      |
-| **CSV Viewer**            | Spreadsheet view for CSV/TSV/PSV files (Command Palette → "Toggle CSV View") |
-| Configurable keybindings  | YAML-based keymap with context-aware bindings                  |
-| Themes                    | Dark and light themes with full customization                  |
+| Feature                  | Description                                                                  |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| Multi-cursor editing     | Option+Click to add cursors, Option+Option+Arrow to add above/below          |
+| Split views              | Horizontal and vertical splits with independent viewports                    |
+| Syntax highlighting      | Tree-sitter based, 17 languages supported                                    |
+| **CSV Viewer**           | Spreadsheet view for CSV/TSV/PSV files (Command Palette → "Toggle CSV View") |
+| Configurable keybindings | YAML-based keymap with context-aware bindings                                |
+| Themes                   | Dark and light themes with full customization                                |
 
 ---
 

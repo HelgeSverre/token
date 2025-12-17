@@ -946,9 +946,9 @@ notify = "6.1"
 
 ## Implementation Plan
 
-### Phase 0: ScaledMetrics Extension (Prerequisite)
+### Phase 0: ScaledMetrics Extension ✅ COMPLETE
 
-- [ ] Add file tree constants to `ScaledMetrics` in `src/model/mod.rs`:
+- [x] Add file tree constants to `ScaledMetrics` in `src/model/mod.rs`:
   - `file_tree_row_height: usize`
   - `file_tree_indent: f32`
   - `sidebar_default_width_logical: f32`
@@ -970,57 +970,56 @@ notify = "6.1"
 
 **Status:** Implemented in v0.3.0. See CHANGELOG.md.
 
-### Phase 2: Workspace Data Structures
+### Phase 2: Workspace Data Structures ✅ COMPLETE
 
-- [ ] Create `src/model/workspace.rs` module
-- [ ] Implement `Workspace`, `FileTree`, `FileNode` structs
-- [ ] Implement `FileExtension` classification
-- [ ] Add directory scanning with filtering
-- [ ] Add sorting (folders first, alphabetical)
-- [ ] Integrate `Workspace` into `AppModel`
+- [x] Create `src/model/workspace.rs` module
+- [x] Implement `Workspace`, `FileTree`, `FileNode` structs
+- [x] Implement `FileExtension` classification
+- [x] Add directory scanning with filtering
+- [x] Add sorting (folders first, alphabetical)
+- [x] Integrate `Workspace` into `AppModel`
 
 **Test:** Opening directory creates valid `FileTree` with sorted entries.
 
-### Phase 3: Messages and Update Logic
+### Phase 3: Messages and Update Logic ✅ COMPLETE
 
-- [ ] Add `WorkspaceMsg` enum to `messages.rs`
-- [ ] Add `update_workspace()` function
-- [ ] Implement folder expand/collapse
-- [ ] Implement file selection
-- [ ] Implement sidebar toggle
-- [ ] Implement sidebar resize
+- [x] Add `WorkspaceMsg` enum to `messages.rs`
+- [x] Add `update_workspace()` function
+- [x] Implement folder expand/collapse
+- [x] Implement file selection
+- [x] Implement sidebar toggle
+- [ ] Implement sidebar resize (deferred - basic version works)
 
-**Test:** Cmd+B toggles sidebar; clicking folders expands/collapses.
+**Test:** Cmd+1 toggles sidebar; clicking folders expands/collapses.
 
-### Phase 4: Sidebar Rendering
+### Phase 4: Sidebar Rendering ✅ COMPLETE
 
-- [ ] Add `SidebarTheme` and `FileTreeTheme` to theme
-- [ ] Add sidebar colors to `dark.yaml` theme
-- [ ] Implement `render_sidebar()` in Renderer
-- [ ] Implement file tree rendering with indentation
-- [ ] Add file type icons (text-based)
-- [ ] Add selection highlighting
-- [ ] Render resize border
+- [x] Add `SidebarTheme` to theme
+- [x] Implement `render_sidebar()` in Renderer
+- [x] Implement file tree rendering with indentation
+- [x] Add expand/collapse indicators
+- [x] Add selection highlighting
+- [x] Render resize border
 
 **Test:** Sidebar renders with file tree; selection is highlighted.
 
-### Phase 5: Mouse Interaction
+### Phase 5: Mouse Interaction ✅ COMPLETE
 
-- [ ] Implement sidebar hit testing
-- [ ] Implement file tree row hit testing
-- [ ] Handle single-click (select/preview)
-- [ ] Handle double-click (open permanent)
-- [ ] Implement resize drag
-- [ ] Update cursor on resize hover
+- [x] Implement sidebar hit testing
+- [x] Implement file tree row hit testing
+- [x] Handle click on folder (toggle expand)
+- [x] Handle click on file (open in tab)
+- [ ] Implement resize drag (deferred)
+- [ ] Update cursor on resize hover (deferred)
 
-**Test:** Clicking file opens it; double-click makes tab permanent.
+**Test:** Clicking file opens it; clicking folder toggles expansion.
 
-### Phase 6: Keyboard Navigation
+### Phase 6: Keyboard Navigation (Partial)
 
-- [ ] Add keyboard shortcuts for sidebar (Cmd+B)
+- [x] Add keyboard shortcuts for sidebar (Cmd+1)
+- [x] Add reveal in sidebar shortcut (Cmd+Shift+R)
 - [ ] Implement arrow key navigation in tree
 - [ ] Implement expand/collapse with Enter/arrows
-- [ ] Implement reveal active file (Cmd+Shift+R)
 
 **Test:** Arrow keys navigate tree; Enter opens selected file.
 
