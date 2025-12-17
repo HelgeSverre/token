@@ -234,6 +234,8 @@ pub struct UiThemeData {
     #[serde(default)]
     pub overlay: OverlayThemeData,
     #[serde(default)]
+    pub sidebar: SidebarThemeData,
+    #[serde(default)]
     pub syntax: SyntaxThemeData,
 }
 
@@ -285,6 +287,27 @@ pub struct OverlayThemeData {
     pub warning: Option<String>,
     #[serde(default)]
     pub error: Option<String>,
+}
+
+/// Sidebar theme colors (all optional for backward compatibility)
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SidebarThemeData {
+    #[serde(default)]
+    pub background: Option<String>,
+    #[serde(default)]
+    pub foreground: Option<String>,
+    #[serde(default)]
+    pub selection_background: Option<String>,
+    #[serde(default)]
+    pub selection_foreground: Option<String>,
+    #[serde(default)]
+    pub hover_background: Option<String>,
+    #[serde(default)]
+    pub folder_icon: Option<String>,
+    #[serde(default)]
+    pub file_icon: Option<String>,
+    #[serde(default)]
+    pub border: Option<String>,
 }
 
 /// CSV mode colors (all optional for backward compatibility)
@@ -363,6 +386,7 @@ pub struct Theme {
     pub overlay: OverlayTheme,
     pub tab_bar: TabBarTheme,
     pub splitter: SplitterTheme,
+    pub sidebar: SidebarTheme,
     pub csv: CsvTheme,
     pub syntax: SyntaxTheme,
 }
@@ -485,6 +509,43 @@ impl SplitterTheme {
             background: Color::rgb(0x25, 0x25, 0x25),
             hover: Color::rgb(0x00, 0x7A, 0xCC),
             active: Color::rgb(0x00, 0x7A, 0xCC),
+        }
+    }
+}
+
+/// Sidebar / file tree colors (resolved)
+#[derive(Debug, Clone)]
+pub struct SidebarTheme {
+    /// Sidebar background color
+    pub background: Color,
+    /// Default text color
+    pub foreground: Color,
+    /// Selected item background
+    pub selection_background: Color,
+    /// Selected item foreground
+    pub selection_foreground: Color,
+    /// Hover background
+    pub hover_background: Color,
+    /// Folder icon color
+    pub folder_icon: Color,
+    /// File icon color (default for unknown types)
+    pub file_icon: Color,
+    /// Resize border color
+    pub border: Color,
+}
+
+impl SidebarTheme {
+    /// Default dark sidebar theme
+    pub fn default_dark() -> Self {
+        Self {
+            background: Color::rgb(0x21, 0x21, 0x21),
+            foreground: Color::rgb(0xCC, 0xCC, 0xCC),
+            selection_background: Color::rgba(0x26, 0x4F, 0x78, 0xFF),
+            selection_foreground: Color::rgb(0xFF, 0xFF, 0xFF),
+            hover_background: Color::rgba(0x5A, 0x5A, 0x5A, 0x40),
+            folder_icon: Color::rgb(0xDC, 0xDC, 0xAA), // Yellow/gold
+            file_icon: Color::rgb(0x9C, 0xDC, 0xFE),   // Light blue
+            border: Color::rgb(0x3C, 0x3C, 0x3C),
         }
     }
 }
@@ -784,9 +845,78 @@ impl Theme {
                         .unwrap_or(defaults.error),
                 }
             },
-            // Use defaults for tab_bar, splitter, and csv (not in YAML yet)
+            // Use defaults for these themes (not in YAML yet)
             tab_bar: TabBarTheme::default_dark(),
             splitter: SplitterTheme::default_dark(),
+            sidebar: {
+                let defaults = SidebarTheme::default_dark();
+                SidebarTheme {
+                    background: data
+                        .ui
+                        .sidebar
+                        .background
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.background),
+                    foreground: data
+                        .ui
+                        .sidebar
+                        .foreground
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.foreground),
+                    selection_background: data
+                        .ui
+                        .sidebar
+                        .selection_background
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.selection_background),
+                    selection_foreground: data
+                        .ui
+                        .sidebar
+                        .selection_foreground
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.selection_foreground),
+                    hover_background: data
+                        .ui
+                        .sidebar
+                        .hover_background
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.hover_background),
+                    folder_icon: data
+                        .ui
+                        .sidebar
+                        .folder_icon
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.folder_icon),
+                    file_icon: data
+                        .ui
+                        .sidebar
+                        .file_icon
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.file_icon),
+                    border: data
+                        .ui
+                        .sidebar
+                        .border
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.border),
+                }
+            },
             csv: CsvTheme::default_dark(),
             syntax: {
                 let defaults = SyntaxTheme::default_dark();
@@ -1001,6 +1131,7 @@ impl Theme {
                     overlay: OverlayTheme::default_dark(),
                     tab_bar: TabBarTheme::default_dark(),
                     splitter: SplitterTheme::default_dark(),
+                    sidebar: SidebarTheme::default_dark(),
                     csv: CsvTheme::default_dark(),
                     syntax: SyntaxTheme::default_dark(),
                 }
