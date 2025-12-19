@@ -31,6 +31,10 @@ pub enum LanguageId {
     Cpp,
     Java,
     Bash,
+    // Phase 6 languages (specialized)
+    Scheme,
+    Ini,
+    Xml,
 }
 
 impl LanguageId {
@@ -59,6 +63,10 @@ impl LanguageId {
             "cpp" | "cc" | "cxx" | "c++" | "hpp" | "hh" | "hxx" | "h++" => LanguageId::Cpp,
             "java" => LanguageId::Java,
             "sh" | "bash" | "zsh" | "ksh" => LanguageId::Bash,
+            // Phase 6 (specialized)
+            "scm" | "rkt" | "ss" => LanguageId::Scheme,
+            "ini" | "cfg" | "conf" => LanguageId::Ini,
+            "xml" | "xsd" | "xsl" | "xslt" | "svg" | "plist" => LanguageId::Xml,
             // Default
             _ => LanguageId::PlainText,
         }
@@ -72,6 +80,12 @@ impl LanguageId {
                 "Makefile" | "makefile" | "GNUmakefile" => return LanguageId::Bash,
                 "Dockerfile" => return LanguageId::Bash,
                 ".bashrc" | ".bash_profile" | ".zshrc" | ".profile" => return LanguageId::Bash,
+                // Lock files (TOML format)
+                "Cargo.lock" | "poetry.lock" | "pdm.lock" => return LanguageId::Toml,
+                // Lock files (JSON format)
+                "package-lock.json" | "composer.lock" | "Pipfile.lock" => return LanguageId::Json,
+                // Config dotfiles (INI format)
+                ".editorconfig" | ".gitconfig" | ".npmrc" | ".pylintrc" => return LanguageId::Ini,
                 _ => {}
             }
         }
@@ -103,6 +117,9 @@ impl LanguageId {
             LanguageId::Cpp => "C++",
             LanguageId::Java => "Java",
             LanguageId::Bash => "Bash",
+            LanguageId::Scheme => "Scheme",
+            LanguageId::Ini => "INI",
+            LanguageId::Xml => "XML",
         }
     }
 
@@ -143,6 +160,16 @@ mod tests {
         assert_eq!(LanguageId::from_extension("java"), LanguageId::Java);
         assert_eq!(LanguageId::from_extension("sh"), LanguageId::Bash);
         assert_eq!(LanguageId::from_extension("bash"), LanguageId::Bash);
+        // Phase 6
+        assert_eq!(LanguageId::from_extension("scm"), LanguageId::Scheme);
+        assert_eq!(LanguageId::from_extension("rkt"), LanguageId::Scheme);
+        assert_eq!(LanguageId::from_extension("ss"), LanguageId::Scheme);
+        assert_eq!(LanguageId::from_extension("ini"), LanguageId::Ini);
+        assert_eq!(LanguageId::from_extension("cfg"), LanguageId::Ini);
+        assert_eq!(LanguageId::from_extension("conf"), LanguageId::Ini);
+        assert_eq!(LanguageId::from_extension("xml"), LanguageId::Xml);
+        assert_eq!(LanguageId::from_extension("plist"), LanguageId::Xml);
+        assert_eq!(LanguageId::from_extension("svg"), LanguageId::Xml);
         // Unknown
         assert_eq!(LanguageId::from_extension("txt"), LanguageId::PlainText);
         assert_eq!(LanguageId::from_extension("unknown"), LanguageId::PlainText);
@@ -175,6 +202,41 @@ mod tests {
             LanguageId::from_path(Path::new(".bashrc")),
             LanguageId::Bash
         );
+        // Lock files (TOML)
+        assert_eq!(
+            LanguageId::from_path(Path::new("Cargo.lock")),
+            LanguageId::Toml
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new("poetry.lock")),
+            LanguageId::Toml
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new("pdm.lock")),
+            LanguageId::Toml
+        );
+        // Lock files (JSON)
+        assert_eq!(
+            LanguageId::from_path(Path::new("package-lock.json")),
+            LanguageId::Json
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new("composer.lock")),
+            LanguageId::Json
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new("Pipfile.lock")),
+            LanguageId::Json
+        );
+        // Config dotfiles (INI)
+        assert_eq!(
+            LanguageId::from_path(Path::new(".editorconfig")),
+            LanguageId::Ini
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new(".gitconfig")),
+            LanguageId::Ini
+        );
     }
 
     #[test]
@@ -190,5 +252,8 @@ mod tests {
         assert_eq!(LanguageId::Cpp.display_name(), "C++");
         assert_eq!(LanguageId::Java.display_name(), "Java");
         assert_eq!(LanguageId::Bash.display_name(), "Bash");
+        assert_eq!(LanguageId::Scheme.display_name(), "Scheme");
+        assert_eq!(LanguageId::Ini.display_name(), "INI");
+        assert_eq!(LanguageId::Xml.display_name(), "XML");
     }
 }
