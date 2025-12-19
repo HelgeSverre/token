@@ -9,7 +9,9 @@ use crate::model::{
     AppModel, Document, EditorGroup, EditorState, GroupId, LayoutNode, Rect, SplitContainer,
     SplitDirection, Tab, TabId,
 };
-use crate::util::{filename_for_display, is_likely_binary, validate_file_for_opening, FileOpenError};
+use crate::util::{
+    filename_for_display, is_likely_binary, validate_file_for_opening, FileOpenError,
+};
 
 use super::syntax::schedule_syntax_parse;
 

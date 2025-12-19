@@ -48,7 +48,7 @@ run: release
 dev: build
 	./target/debug/token samples/sample_code.rs README.md keymap.yaml samples/sample.html
 
-# Test syntax highlighting with all 17 supported language samples
+# Test syntax highlighting with all 20 supported language samples
 test-syntax: release
 	./target/release/token \
 		samples/syntax/sample.rs \
@@ -67,7 +67,10 @@ test-syntax: release
 		samples/syntax/sample.c \
 		samples/syntax/sample.cpp \
 		samples/syntax/sample.java \
-		samples/syntax/sample.sh
+		samples/syntax/sample.sh \
+		samples/syntax/sample.scm \
+		samples/syntax/sample.ini \
+		samples/syntax/sample.xml
 
 # Run with CSV sample file for testing CSV viewer
 csv: build samples/large_data.csv
@@ -159,7 +162,7 @@ help:
 	@echo "  make dev          - Run debug build (faster compile)"
 	@echo "  make csv          - Run with large CSV file (tests CSV viewer)"
 	@echo "  make workspace    - Open codebase folder as workspace (tests sidebar)"
-	@echo "  make test-syntax  - Open all 17 syntax sample files for manual testing"
+	@echo "  make test-syntax  - Open all 20 syntax sample files for manual testing"
 	@echo ""
 	@echo "Test targets:"
 	@echo "  make test         - Run all tests"

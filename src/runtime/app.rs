@@ -1446,7 +1446,10 @@ impl App {
 
         // Dispatch a single FileSystemChange message to refresh the tree
         // (The watcher already debounces, so we just need one refresh)
-        if let Some(cmd) = update(&mut self.model, Msg::Workspace(WorkspaceMsg::FileSystemChange)) {
+        if let Some(cmd) = update(
+            &mut self.model,
+            Msg::Workspace(WorkspaceMsg::FileSystemChange),
+        ) {
             if cmd.needs_redraw() {
                 return true;
             }

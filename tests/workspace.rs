@@ -193,8 +193,10 @@ fn test_file_tree_count_visible_empty() {
 #[test]
 fn test_file_tree_count_visible_with_roots() {
     let mut tree = FileTree::default();
-    tree.roots.push(FileNode::new_file(PathBuf::from("file1.rs")));
-    tree.roots.push(FileNode::new_file(PathBuf::from("file2.rs")));
+    tree.roots
+        .push(FileNode::new_file(PathBuf::from("file1.rs")));
+    tree.roots
+        .push(FileNode::new_file(PathBuf::from("file2.rs")));
 
     let expanded = HashSet::new();
     assert_eq!(tree.count_visible(&expanded), 2);
@@ -204,8 +206,10 @@ fn test_file_tree_count_visible_with_roots() {
 fn test_file_tree_count_visible_collapsed_dir() {
     let mut tree = FileTree::default();
     let mut dir = FileNode::new_dir(PathBuf::from("/project/src"));
-    dir.children.push(FileNode::new_file(PathBuf::from("/project/src/main.rs")));
-    dir.children.push(FileNode::new_file(PathBuf::from("/project/src/lib.rs")));
+    dir.children
+        .push(FileNode::new_file(PathBuf::from("/project/src/main.rs")));
+    dir.children
+        .push(FileNode::new_file(PathBuf::from("/project/src/lib.rs")));
     tree.roots.push(dir);
 
     let expanded = HashSet::new();
@@ -218,8 +222,10 @@ fn test_file_tree_count_visible_expanded_dir() {
     let mut tree = FileTree::default();
     let dir_path = PathBuf::from("/project/src");
     let mut dir = FileNode::new_dir(dir_path.clone());
-    dir.children.push(FileNode::new_file(PathBuf::from("/project/src/main.rs")));
-    dir.children.push(FileNode::new_file(PathBuf::from("/project/src/lib.rs")));
+    dir.children
+        .push(FileNode::new_file(PathBuf::from("/project/src/main.rs")));
+    dir.children
+        .push(FileNode::new_file(PathBuf::from("/project/src/lib.rs")));
     tree.roots.push(dir);
 
     let mut expanded = HashSet::new();
@@ -231,8 +237,10 @@ fn test_file_tree_count_visible_expanded_dir() {
 #[test]
 fn test_file_tree_get_visible_item() {
     let mut tree = FileTree::default();
-    tree.roots.push(FileNode::new_file(PathBuf::from("first.rs")));
-    tree.roots.push(FileNode::new_file(PathBuf::from("second.rs")));
+    tree.roots
+        .push(FileNode::new_file(PathBuf::from("first.rs")));
+    tree.roots
+        .push(FileNode::new_file(PathBuf::from("second.rs")));
 
     let expanded = HashSet::new();
     let item0 = tree.get_visible_item(0, &expanded);
@@ -251,7 +259,8 @@ fn test_file_tree_get_visible_item_with_depth() {
     let mut tree = FileTree::default();
     let dir_path = PathBuf::from("/project/src");
     let mut dir = FileNode::new_dir(dir_path.clone());
-    dir.children.push(FileNode::new_file(PathBuf::from("/project/src/main.rs")));
+    dir.children
+        .push(FileNode::new_file(PathBuf::from("/project/src/main.rs")));
     tree.roots.push(dir);
 
     let mut expanded = HashSet::new();
@@ -355,7 +364,9 @@ fn test_workspace_visible_item_count() {
     let mut ws = test_workspace();
     assert_eq!(ws.visible_item_count(), 0);
 
-    ws.file_tree.roots.push(FileNode::new_file(PathBuf::from("/test/project/file.rs")));
+    ws.file_tree
+        .roots
+        .push(FileNode::new_file(PathBuf::from("/test/project/file.rs")));
     assert_eq!(ws.visible_item_count(), 1);
 }
 
@@ -488,21 +499,32 @@ fn test_workspace_scroll_message() {
 
     // Add some items to make scrolling meaningful
     for i in 0..50 {
-        ws.file_tree.roots.push(FileNode::new_file(PathBuf::from(format!(
-            "/test/project/file{}.rs",
-            i
-        ))));
+        ws.file_tree
+            .roots
+            .push(FileNode::new_file(PathBuf::from(format!(
+                "/test/project/file{}.rs",
+                i
+            ))));
     }
     model.workspace = Some(ws);
 
-    update(&mut model, Msg::Workspace(WorkspaceMsg::Scroll { lines: 5 }));
+    update(
+        &mut model,
+        Msg::Workspace(WorkspaceMsg::Scroll { lines: 5 }),
+    );
     assert_eq!(model.workspace.as_ref().unwrap().scroll_offset, 5);
 
-    update(&mut model, Msg::Workspace(WorkspaceMsg::Scroll { lines: -3 }));
+    update(
+        &mut model,
+        Msg::Workspace(WorkspaceMsg::Scroll { lines: -3 }),
+    );
     assert_eq!(model.workspace.as_ref().unwrap().scroll_offset, 2);
 
     // Scrolling up past 0 should clamp to 0
-    update(&mut model, Msg::Workspace(WorkspaceMsg::Scroll { lines: -10 }));
+    update(
+        &mut model,
+        Msg::Workspace(WorkspaceMsg::Scroll { lines: -10 }),
+    );
     assert_eq!(model.workspace.as_ref().unwrap().scroll_offset, 0);
 }
 
@@ -531,9 +553,15 @@ fn test_workspace_select_next_previous() {
     let mut ws = test_workspace();
 
     // Add items
-    ws.file_tree.roots.push(FileNode::new_file(PathBuf::from("/test/project/a.rs")));
-    ws.file_tree.roots.push(FileNode::new_file(PathBuf::from("/test/project/b.rs")));
-    ws.file_tree.roots.push(FileNode::new_file(PathBuf::from("/test/project/c.rs")));
+    ws.file_tree
+        .roots
+        .push(FileNode::new_file(PathBuf::from("/test/project/a.rs")));
+    ws.file_tree
+        .roots
+        .push(FileNode::new_file(PathBuf::from("/test/project/b.rs")));
+    ws.file_tree
+        .roots
+        .push(FileNode::new_file(PathBuf::from("/test/project/c.rs")));
     model.workspace = Some(ws);
 
     // Select first item
@@ -561,8 +589,8 @@ fn test_workspace_select_next_previous() {
 #[test]
 fn test_workspace_open_or_toggle_file() {
     use common::test_model;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     // Create a temporary directory with a real file
     let dir = tempdir().expect("Failed to create temp dir");
@@ -572,7 +600,9 @@ fn test_workspace_open_or_toggle_file() {
     let mut model = test_model("hello\nworld\n", 0, 0);
     let mut ws = test_workspace();
     ws.root = dir.path().to_path_buf();
-    ws.file_tree.roots.push(FileNode::new_file(file_path.clone()));
+    ws.file_tree
+        .roots
+        .push(FileNode::new_file(file_path.clone()));
     ws.selected_item = Some(file_path.clone());
     model.workspace = Some(ws);
 
@@ -584,8 +614,8 @@ fn test_workspace_open_or_toggle_file() {
 #[test]
 fn test_workspace_open_or_toggle_folder() {
     use common::test_model;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     // Create actual directory for is_dir() check to work
     let dir = tempdir().expect("Failed to create temp dir");

@@ -92,11 +92,10 @@ fn create_nested_tree(depth: usize, files_per_dir: usize) -> FileTree {
 
         // Add files
         for i in 0..files_per_dir {
-            dir.children
-                .push(FileNode::new_file(PathBuf::from(format!(
-                    "{}/file{}.rs",
-                    base, i
-                ))));
+            dir.children.push(FileNode::new_file(PathBuf::from(format!(
+                "{}/file{}.rs",
+                base, i
+            ))));
         }
 
         // Add subdirectory if depth > 0
@@ -112,7 +111,8 @@ fn create_nested_tree(depth: usize, files_per_dir: usize) -> FileTree {
     }
 
     let mut tree = FileTree::default();
-    tree.roots.push(create_nested_dir("/project", depth, files_per_dir));
+    tree.roots
+        .push(create_nested_dir("/project", depth, files_per_dir));
     tree
 }
 

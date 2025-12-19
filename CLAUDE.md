@@ -62,13 +62,15 @@ Message → Update → Command → Render
 | ------------ | ----------------- | --------------------------------------------- |
 | **Model**    | `src/model/`      | AppModel, Document, EditorState, EditorArea   |
 | **Messages** | `src/messages.rs` | Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg |
-| **Update**   | `src/update/`     | Pure state transformation (5 submodules)      |
+| **Update**   | `src/update/`     | Pure state transformation (10 submodules)     |
 | **Commands** | `src/commands.rs` | Cmd enum (Redraw, SaveFile, LoadFile, Batch)  |
 | **Theme**    | `src/theme.rs`    | YAML theme loading, Color types               |
-| **Renderer** | `src/view.rs`     | CPU rendering with fontdue + softbuffer       |
-| **Input**    | `src/input.rs`    | handle_key, keyboard→Msg mapping              |
-| **App**      | `src/app.rs`      | App struct, winit ApplicationHandler          |
-| **Perf**     | `src/perf.rs`     | PerfStats, debug overlay (debug builds only)  |
+| **View**     | `src/view/`       | CPU rendering with fontdue + softbuffer       |
+| **Runtime**  | `src/runtime/`    | App, input handling, perf stats (winit)       |
+| **Keymap**   | `src/keymap/`     | Configurable keybindings, command dispatch    |
+| **Syntax**   | `src/syntax/`     | Tree-sitter syntax highlighting (20 langs)    |
+| **CSV**      | `src/csv/`        | CSV viewer/editor with spreadsheet UI         |
+| **Editable** | `src/editable/`   | Unified text editing (cursors, selection)     |
 
 ### Module Structure
 
@@ -76,15 +78,16 @@ Message → Update → Command → Render
 src/
 ├── main.rs              # Entry point (~20 lines)
 ├── lib.rs               # Library root with module exports
-├── app.rs               # App struct, ApplicationHandler impl
-├── input.rs             # handle_key, keyboard→Msg mapping
-├── view.rs              # Renderer, drawing functions
-├── perf.rs              # PerfStats, debug overlay (debug only)
+├── messages.rs          # All message types
+├── commands.rs          # Cmd enum
+├── theme.rs             # Theme, Color, TabBarTheme
+├── overlay.rs           # OverlayConfig, OverlayBounds
 ├── model/
 │   ├── mod.rs           # AppModel struct, layout constants
 │   ├── document.rs      # Document (buffer, undo/redo, file_path)
 │   ├── editor.rs        # EditorState, Cursor, Selection, Viewport
 │   ├── editor_area.rs   # EditorArea, groups, tabs, layout tree
+│   ├── workspace.rs     # Workspace, file tree, sidebar
 │   ├── ui.rs            # UiState (cursor blink, transient messages)
 │   └── status_bar.rs    # StatusBar, StatusSegment, sync_status_bar()
 ├── update/
@@ -93,14 +96,29 @@ src/
 │   ├── document.rs      # Text editing, undo/redo
 │   ├── layout.rs        # Split views, tabs, groups
 │   ├── app.rs           # File operations, window resize
-│   └── ui.rs            # Status bar, cursor blink
-├── messages.rs          # All message types
-├── commands.rs          # Cmd enum
-├── theme.rs             # Theme, Color, TabBarTheme
-├── overlay.rs           # OverlayConfig, OverlayBounds
-└── util.rs              # CharType enum, char classification
+│   ├── ui.rs            # Status bar, cursor blink
+│   ├── csv.rs           # CSV view updates
+│   ├── syntax.rs        # Syntax highlighting updates
+│   ├── text_edit.rs     # Unified text editing dispatch
+│   └── workspace.rs     # File tree, workspace updates
+├── runtime/
+│   ├── mod.rs           # Runtime module exports
+│   ├── app.rs           # App struct, winit ApplicationHandler
+│   ├── input.rs         # handle_key, keyboard→Msg mapping
+│   └── perf.rs          # PerfStats, debug overlay (debug only)
+├── view/
+│   ├── mod.rs           # Renderer, GlyphCache
+│   ├── frame.rs         # Frame, TextPainter abstractions
+│   ├── geometry.rs      # Geometry helpers
+│   ├── helpers.rs       # Rendering helpers
+│   └── text_field.rs    # Text field rendering
+├── keymap/              # Configurable keybindings
+├── syntax/              # Tree-sitter syntax highlighting
+├── csv/                 # CSV viewer/editor
+├── editable/            # Unified text editing system
+└── util/                # Utilities (file validation, text helpers)
 
-tests/                   # Integration tests (400+ tests)
+tests/                   # Integration tests (600+ tests)
 themes/                  # YAML theme files (dark.yaml, fleet-dark.yaml, etc.)
 ```
 
@@ -187,13 +205,13 @@ Design docs live in `docs/feature/*.md`. Before implementing a feature:
 
 ### Key Docs
 
-| Doc                           | Purpose                                    |
-| ----------------------------- | ------------------------------------------ |
-| `docs/ROADMAP.md`             | Planned features, module structure         |
-| `docs/CHANGELOG.md`           | Completed work by date                     |
-| `docs/EDITOR_UI_REFERENCE.md` | Comprehensive UI component reference       |
-| `docs/GUI-REVIEW-FINDINGS.md` | GUI architecture improvements plan         |
-| `docs/feature/*.md`           | Design specs (KEYMAPPING, SPLIT_VIEW, etc) |
+| Doc                                    | Purpose                                    |
+| -------------------------------------- | ------------------------------------------ |
+| `docs/ROADMAP.md`                      | Planned features, module structure         |
+| `docs/CHANGELOG.md`                    | Completed work by date                     |
+| `docs/EDITOR_UI_REFERENCE.md`          | Comprehensive UI component reference       |
+| `docs/archived/GUI-REVIEW-FINDINGS.md` | GUI architecture improvements plan         |
+| `docs/feature/*.md`                    | Design specs (KEYMAPPING, SPLIT_VIEW, etc) |
 
 ## Releasing a New Version
 
