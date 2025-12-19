@@ -33,7 +33,7 @@ use crate::config_paths;
 #[cfg(debug_assertions)]
 use crate::debug_overlay::DebugOverlay;
 use crate::theme::{load_theme, Theme};
-use crate::util::{is_likely_binary, validate_file_for_opening};
+use crate::util::{is_likely_binary, validate_file_for_opening, FileOpenError};
 use std::path::PathBuf;
 
 // ============================================================================
@@ -137,26 +137,39 @@ fn create_initial_session(file_paths: Vec<PathBuf>, geom: &ViewportGeometry) -> 
     // Load first file or create empty document
     let (first_document, status_message) = if let Some(first_path) = file_paths.first() {
         // Validate and load the first file
-        if let Err(e) = validate_file_for_opening(first_path) {
-            let msg = e.user_message(&first_path.display().to_string());
-            (Document::new(), msg)
-        } else if is_likely_binary(first_path) {
-            let msg = format!("Cannot open binary file: {}", first_path.display());
-            (Document::new(), msg)
-        } else {
-            match Document::from_file(first_path.clone()) {
-                Ok(doc) => {
-                    let msg = if file_paths.len() > 1 {
-                        format!("Opened {} files", file_paths.len())
-                    } else {
-                        format!("Loaded: {}", first_path.display())
-                    };
-                    (doc, msg)
-                }
-                Err(e) => {
-                    let msg = format!("Error loading {}: {}", first_path.display(), e);
+        match validate_file_for_opening(first_path) {
+            Ok(()) => {
+                // File exists and is valid - check for binary
+                if is_likely_binary(first_path) {
+                    let msg = format!("Cannot open binary file: {}", first_path.display());
                     (Document::new(), msg)
+                } else {
+                    match Document::from_file(first_path.clone()) {
+                        Ok(doc) => {
+                            let msg = if file_paths.len() > 1 {
+                                format!("Opened {} files", file_paths.len())
+                            } else {
+                                format!("Loaded: {}", first_path.display())
+                            };
+                            (doc, msg)
+                        }
+                        Err(e) => {
+                            let msg = format!("Error loading {}: {}", first_path.display(), e);
+                            (Document::new(), msg)
+                        }
+                    }
                 }
+            }
+            Err(FileOpenError::NotFound) => {
+                // File doesn't exist - create new document with this path
+                // Saving will create the file (common pattern: `editor newfile.txt`)
+                let msg = format!("New file: {}", first_path.display());
+                (Document::new_with_path(first_path.clone()), msg)
+            }
+            Err(e) => {
+                // Other errors (permission denied, is directory, etc.)
+                let msg = e.user_message(&first_path.display().to_string());
+                (Document::new(), msg)
             }
         }
     } else {
@@ -172,45 +185,54 @@ fn create_initial_session(file_paths: Vec<PathBuf>, geom: &ViewportGeometry) -> 
     // Open additional files as tabs
     for path in file_paths.into_iter().skip(1) {
         // Validate before attempting to open
-        if let Err(e) = validate_file_for_opening(&path) {
-            tracing::warn!("Skipping {}: {}", path.display(), e);
-            continue;
-        }
-        if is_likely_binary(&path) {
-            tracing::warn!("Skipping binary file: {}", path.display());
-            continue;
-        }
-
-        let doc_id = editor_area.next_document_id();
-        match Document::from_file(path.clone()) {
-            Ok(mut doc) => {
-                doc.id = Some(doc_id);
-                editor_area.documents.insert(doc_id, doc);
-
-                // Create editor for this document
-                let editor_id = editor_area.next_editor_id();
-                let mut editor =
-                    EditorState::with_viewport(geom.visible_lines, geom.visible_columns);
-                editor.id = Some(editor_id);
-                editor.document_id = Some(doc_id);
-                editor_area.editors.insert(editor_id, editor);
-
-                // Create tab in focused group
-                let tab_id = editor_area.next_tab_id();
-                let tab = Tab {
-                    id: tab_id,
-                    editor_id,
-                    is_pinned: false,
-                    is_preview: false,
-                };
-
-                if let Some(group) = editor_area.groups.get_mut(&editor_area.focused_group_id) {
-                    group.tabs.push(tab);
+        let doc = match validate_file_for_opening(&path) {
+            Ok(()) => {
+                // File exists - check for binary
+                if is_likely_binary(&path) {
+                    tracing::warn!("Skipping binary file: {}", path.display());
+                    continue;
+                }
+                match Document::from_file(path.clone()) {
+                    Ok(doc) => doc,
+                    Err(e) => {
+                        tracing::warn!("Failed to open {}: {}", path.display(), e);
+                        continue;
+                    }
                 }
             }
-            Err(e) => {
-                tracing::warn!("Failed to open {}: {}", path.display(), e);
+            Err(FileOpenError::NotFound) => {
+                // File doesn't exist - create new document with this path
+                Document::new_with_path(path.clone())
             }
+            Err(e) => {
+                tracing::warn!("Skipping {}: {}", path.display(), e);
+                continue;
+            }
+        };
+
+        let doc_id = editor_area.next_document_id();
+        let mut doc = doc;
+        doc.id = Some(doc_id);
+        editor_area.documents.insert(doc_id, doc);
+
+        // Create editor for this document
+        let editor_id = editor_area.next_editor_id();
+        let mut editor = EditorState::with_viewport(geom.visible_lines, geom.visible_columns);
+        editor.id = Some(editor_id);
+        editor.document_id = Some(doc_id);
+        editor_area.editors.insert(editor_id, editor);
+
+        // Create tab in focused group
+        let tab_id = editor_area.next_tab_id();
+        let tab = Tab {
+            id: tab_id,
+            editor_id,
+            is_pinned: false,
+            is_preview: false,
+        };
+
+        if let Some(group) = editor_area.groups.get_mut(&editor_area.focused_group_id) {
+            group.tabs.push(tab);
         }
     }
 

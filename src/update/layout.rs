@@ -9,7 +9,7 @@ use crate::model::{
     AppModel, Document, EditorGroup, EditorState, GroupId, LayoutNode, Rect, SplitContainer,
     SplitDirection, Tab, TabId,
 };
-use crate::util::{filename_for_display, is_likely_binary, validate_file_for_opening};
+use crate::util::{filename_for_display, is_likely_binary, validate_file_for_opening, FileOpenError};
 
 use super::syntax::schedule_syntax_parse;
 
@@ -211,32 +211,41 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
 
     let group_id = model.editor_area.focused_group_id;
 
-    // 1. Validate file before attempting to open
-    if let Err(e) = validate_file_for_opening(&path) {
-        model.ui.set_status(e.user_message(&filename));
-        return Some(Cmd::Redraw);
-    }
-
-    // 2. Check for binary content
-    if is_likely_binary(&path) {
-        model
-            .ui
-            .set_status(format!("Cannot open binary file: {}", filename));
-        return Some(Cmd::Redraw);
-    }
-
-    // 3. Load the document from file
+    // 1. Validate file and load/create document
     let doc_id = model.editor_area.next_document_id();
-    let document = match Document::from_file(path.clone()) {
-        Ok(mut doc) => {
+    let document = match validate_file_for_opening(&path) {
+        Ok(()) => {
+            // File exists - check for binary content
+            if is_likely_binary(&path) {
+                model
+                    .ui
+                    .set_status(format!("Cannot open binary file: {}", filename));
+                return Some(Cmd::Redraw);
+            }
+            // Load document from file
+            match Document::from_file(path.clone()) {
+                Ok(mut doc) => {
+                    doc.id = Some(doc_id);
+                    model.ui.set_status(format!("Opened: {}", path.display()));
+                    doc
+                }
+                Err(e) => {
+                    model
+                        .ui
+                        .set_status(format!("Error opening {}: {}", path.display(), e));
+                    return Some(Cmd::Redraw);
+                }
+            }
+        }
+        Err(FileOpenError::NotFound) => {
+            // File doesn't exist - create new document with this path
+            let mut doc = Document::new_with_path(path.clone());
             doc.id = Some(doc_id);
-            model.ui.set_status(format!("Opened: {}", path.display()));
+            model.ui.set_status(format!("New file: {}", path.display()));
             doc
         }
         Err(e) => {
-            model
-                .ui
-                .set_status(format!("Error opening {}: {}", path.display(), e));
+            model.ui.set_status(e.user_message(&filename));
             return Some(Cmd::Redraw);
         }
     };
