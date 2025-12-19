@@ -107,6 +107,11 @@ const CPP_HIGHLIGHTS: &str = tree_sitter_cpp::HIGHLIGHT_QUERY;
 const JAVA_HIGHLIGHTS: &str = tree_sitter_java::HIGHLIGHTS_QUERY;
 const BASH_HIGHLIGHTS: &str = tree_sitter_bash::HIGHLIGHT_QUERY;
 
+// Phase 6 languages (specialized)
+const SCHEME_HIGHLIGHTS: &str = tree_sitter_racket::HIGHLIGHTS_QUERY;
+const INI_HIGHLIGHTS: &str = tree_sitter_ini::HIGHLIGHTS_QUERY;
+const XML_HIGHLIGHTS: &str = tree_sitter_xml::XML_HIGHLIGHT_QUERY;
+
 /// Thread-local parser state (tree-sitter parsers are !Sync)
 pub struct ParserState {
     /// Parser instances per language
@@ -153,6 +158,11 @@ impl ParserState {
         state.init_language(LanguageId::Java);
         state.init_language(LanguageId::Bash);
 
+        // Initialize Phase 6 languages (specialized)
+        state.init_language(LanguageId::Scheme);
+        state.init_language(LanguageId::Ini);
+        state.init_language(LanguageId::Xml);
+
         state
     }
 
@@ -190,6 +200,10 @@ impl ParserState {
             LanguageId::Cpp => (tree_sitter_cpp::LANGUAGE.into(), CPP_HIGHLIGHTS),
             LanguageId::Java => (tree_sitter_java::LANGUAGE.into(), JAVA_HIGHLIGHTS),
             LanguageId::Bash => (tree_sitter_bash::LANGUAGE.into(), BASH_HIGHLIGHTS),
+            // Phase 6 languages (specialized)
+            LanguageId::Scheme => (tree_sitter_racket::LANGUAGE.into(), SCHEME_HIGHLIGHTS),
+            LanguageId::Ini => (tree_sitter_ini::LANGUAGE.into(), INI_HIGHLIGHTS),
+            LanguageId::Xml => (tree_sitter_xml::LANGUAGE_XML.into(), XML_HIGHLIGHTS),
             // No highlighting for plain text
             LanguageId::PlainText => return,
         };
@@ -538,6 +552,10 @@ enabled: true
             LanguageId::Cpp,
             LanguageId::Java,
             LanguageId::Bash,
+            // Phase 6
+            LanguageId::Scheme,
+            LanguageId::Ini,
+            LanguageId::Xml,
         ];
 
         for lang in languages_with_queries {
@@ -708,6 +726,27 @@ enabled: true
         #[test]
         fn test_bash_query_compiles() {
             assert_query_compiles("Bash", tree_sitter_bash::LANGUAGE.into(), BASH_HIGHLIGHTS);
+        }
+
+        // Phase 6 languages
+
+        #[test]
+        fn test_scheme_query_compiles() {
+            assert_query_compiles(
+                "Scheme",
+                tree_sitter_racket::LANGUAGE.into(),
+                SCHEME_HIGHLIGHTS,
+            );
+        }
+
+        #[test]
+        fn test_ini_query_compiles() {
+            assert_query_compiles("INI", tree_sitter_ini::LANGUAGE.into(), INI_HIGHLIGHTS);
+        }
+
+        #[test]
+        fn test_xml_query_compiles() {
+            assert_query_compiles("XML", tree_sitter_xml::LANGUAGE_XML.into(), XML_HIGHLIGHTS);
         }
     }
 
@@ -1049,6 +1088,64 @@ fi"#;
         let highlights = state.parse_and_highlight(source, LanguageId::Bash, doc_id, 1);
 
         assert_eq!(highlights.language, LanguageId::Bash);
+        assert!(!highlights.lines.is_empty());
+    }
+
+    #[test]
+    fn test_scheme_parsing() {
+        let mut state = ParserState::new();
+        let source = r#"; Tree-sitter highlights query for Scheme
+(comment) @comment
+
+(string) @string
+
+[
+  "define"
+  "lambda"
+  "let"
+] @keyword
+
+(symbol) @variable
+"#;
+        let doc_id = DocumentId(50);
+        let highlights = state.parse_and_highlight(source, LanguageId::Scheme, doc_id, 1);
+
+        assert_eq!(highlights.language, LanguageId::Scheme);
+        assert!(!highlights.lines.is_empty());
+    }
+
+    #[test]
+    fn test_ini_parsing() {
+        let mut state = ParserState::new();
+        let source = r#"; This is a comment
+[section]
+key = value
+another_key = "quoted value"
+number = 42
+"#;
+        let doc_id = DocumentId(51);
+        let highlights = state.parse_and_highlight(source, LanguageId::Ini, doc_id, 1);
+
+        assert_eq!(highlights.language, LanguageId::Ini);
+        assert!(!highlights.lines.is_empty());
+    }
+
+    #[test]
+    fn test_xml_parsing() {
+        let mut state = ParserState::new();
+        let source = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN">
+<plist version="1.0">
+    <dict>
+        <key>CFBundleName</key>
+        <string>MyApp</string>
+    </dict>
+</plist>
+"#;
+        let doc_id = DocumentId(52);
+        let highlights = state.parse_and_highlight(source, LanguageId::Xml, doc_id, 1);
+
+        assert_eq!(highlights.language, LanguageId::Xml);
         assert!(!highlights.lines.is_empty());
     }
 
