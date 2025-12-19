@@ -8,6 +8,7 @@ mod document;
 mod editor;
 pub mod layout;
 mod syntax;
+mod text_edit;
 mod ui;
 mod workspace;
 
@@ -27,6 +28,7 @@ pub use document::update_document;
 pub use editor::update_editor;
 pub use layout::update_layout;
 pub use syntax::{schedule_syntax_parse, update_syntax, SYNTAX_DEBOUNCE_MS};
+pub use text_edit::{apply_text_edit_msg, update_text_edit};
 pub use ui::update_ui;
 pub use workspace::update_workspace;
 
@@ -87,6 +89,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::Syntax(m) => syntax::update_syntax(model, m),
         Msg::Csv(m) => csv::update_csv(model, m),
         Msg::Workspace(m) => workspace::update_workspace(model, m),
+        Msg::TextEdit(context, m) => text_edit::update_text_edit(model, context, m),
     };
 
     sync_status_bar(model);
@@ -208,5 +211,6 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Syntax(m) => format!("Syntax::{:?}", m),
         Msg::Csv(m) => format!("Csv::{:?}", m),
         Msg::Workspace(m) => format!("Workspace::{:?}", m),
+        Msg::TextEdit(ctx, m) => format!("TextEdit::{:?}::{:?}", ctx, m),
     }
 }

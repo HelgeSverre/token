@@ -203,7 +203,7 @@ fn handle_modal_key(
     model: &mut AppModel,
     key: Key,
     ctrl: bool,
-    _shift: bool,
+    shift: bool,
     alt: bool,
     logo: bool,
 ) -> Option<Cmd> {
@@ -214,13 +214,23 @@ fn handle_modal_key(
         // Enter: confirm modal action
         Key::Named(NamedKey::Enter) => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Confirm))),
 
-        // Arrow keys for navigation in modal lists
-        Key::Named(NamedKey::ArrowUp) => {
+        // Arrow Up/Down for navigation in modal lists (only without modifiers)
+        Key::Named(NamedKey::ArrowUp) if !shift && !alt => {
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectPrevious)))
         }
-        Key::Named(NamedKey::ArrowDown) => {
+        Key::Named(NamedKey::ArrowDown) if !shift && !alt => {
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)))
         }
+
+        // Word navigation with selection (Shift+Option+Arrow)
+        Key::Named(NamedKey::ArrowLeft) if shift && alt => update(
+            model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorWordLeftWithSelection)),
+        ),
+        Key::Named(NamedKey::ArrowRight) if shift && alt => update(
+            model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorWordRightWithSelection)),
+        ),
 
         // Word navigation (Option/Alt + Arrow)
         Key::Named(NamedKey::ArrowLeft) if alt => {
@@ -228,6 +238,60 @@ fn handle_modal_key(
         }
         Key::Named(NamedKey::ArrowRight) if alt => {
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorWordRight)))
+        }
+
+        // Cursor left/right with selection (Shift+Arrow)
+        Key::Named(NamedKey::ArrowLeft) if shift => update(
+            model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorLeftWithSelection)),
+        ),
+        Key::Named(NamedKey::ArrowRight) if shift => update(
+            model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorRightWithSelection)),
+        ),
+
+        // Cursor left/right
+        Key::Named(NamedKey::ArrowLeft) => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorLeft)))
+        }
+        Key::Named(NamedKey::ArrowRight) => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorRight)))
+        }
+
+        // Home/End with selection (Shift+Home/End)
+        Key::Named(NamedKey::Home) if shift => update(
+            model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorHomeWithSelection)),
+        ),
+        Key::Named(NamedKey::End) if shift => update(
+            model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorEndWithSelection)),
+        ),
+
+        // Home/End (also Cmd+Left/Right on Mac)
+        Key::Named(NamedKey::Home) => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorHome)))
+        }
+        Key::Named(NamedKey::End) => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorEnd))),
+
+        // Select all (Cmd+A)
+        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("a") => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectAll)))
+        }
+
+        // Copy (Cmd+C)
+        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("c") => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Copy)))
+        }
+
+        // Cut (Cmd+X)
+        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("x") => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Cut)))
+        }
+
+        // Paste (Cmd+V)
+        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("v") => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Paste)))
         }
 
         // Word deletion (Option/Alt + Backspace)
@@ -238,6 +302,11 @@ fn handle_modal_key(
         // Backspace: delete character
         Key::Named(NamedKey::Backspace) => {
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteBackward)))
+        }
+
+        // Delete key: delete forward
+        Key::Named(NamedKey::Delete) => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteForward)))
         }
 
         // Character input (only when no Ctrl/Cmd modifiers)
@@ -267,7 +336,7 @@ fn handle_csv_edit_key(
     model: &mut AppModel,
     key: Key,
     ctrl: bool,
-    _shift: bool,
+    shift: bool,
     alt: bool,
     logo: bool,
 ) -> Option<Cmd> {
@@ -288,11 +357,60 @@ fn handle_csv_edit_key(
             update(model, Msg::Csv(CsvMsg::NextCell))
         }
 
+        // === Undo/Redo (Cmd+Z / Cmd+Shift+Z) ===
+        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("z") => {
+            if shift {
+                update(model, Msg::Csv(CsvMsg::EditRedo))
+            } else {
+                update(model, Msg::Csv(CsvMsg::EditUndo))
+            }
+        }
+
+        // === Select All (Cmd+A) ===
+        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("a") => {
+            update(model, Msg::Csv(CsvMsg::EditSelectAll))
+        }
+
+        // === Clipboard (Cmd+C/X/V) ===
+        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("c") => {
+            update(model, Msg::Csv(CsvMsg::EditCopy))
+        }
+        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("x") => {
+            update(model, Msg::Csv(CsvMsg::EditCut))
+        }
+        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("v") => {
+            update(model, Msg::Csv(CsvMsg::EditPaste))
+        }
+
+        // === Word Movement with Selection (Shift+Option+Arrow) ===
+        Key::Named(NamedKey::ArrowLeft) if shift && alt && !ctrl && !logo => {
+            update(model, Msg::Csv(CsvMsg::EditCursorWordLeftWithSelection))
+        }
+        Key::Named(NamedKey::ArrowRight) if shift && alt && !ctrl && !logo => {
+            update(model, Msg::Csv(CsvMsg::EditCursorWordRightWithSelection))
+        }
+
+        // === Word Movement (Option+Arrow) ===
+        Key::Named(NamedKey::ArrowLeft) if alt && !shift && !ctrl && !logo => {
+            update(model, Msg::Csv(CsvMsg::EditCursorWordLeft))
+        }
+        Key::Named(NamedKey::ArrowRight) if alt && !shift && !ctrl && !logo => {
+            update(model, Msg::Csv(CsvMsg::EditCursorWordRight))
+        }
+
+        // === Selection Movement (Shift+Arrow) ===
+        Key::Named(NamedKey::ArrowLeft) if shift && !alt && !ctrl && !logo => {
+            update(model, Msg::Csv(CsvMsg::EditCursorLeftWithSelection))
+        }
+        Key::Named(NamedKey::ArrowRight) if shift && !alt && !ctrl && !logo => {
+            update(model, Msg::Csv(CsvMsg::EditCursorRightWithSelection))
+        }
+
         // Arrow Left/Right: move cursor within cell
-        Key::Named(NamedKey::ArrowLeft) if !alt && !ctrl && !logo => {
+        Key::Named(NamedKey::ArrowLeft) if !shift && !alt && !ctrl && !logo => {
             update(model, Msg::Csv(CsvMsg::EditCursorLeft))
         }
-        Key::Named(NamedKey::ArrowRight) if !alt && !ctrl && !logo => {
+        Key::Named(NamedKey::ArrowRight) if !shift && !alt && !ctrl && !logo => {
             update(model, Msg::Csv(CsvMsg::EditCursorRight))
         }
 
@@ -306,9 +424,25 @@ fn handle_csv_edit_key(
             update(model, Msg::Csv(CsvMsg::MoveDown))
         }
 
+        // Home/End with selection (Shift+Home/End)
+        Key::Named(NamedKey::Home) if shift => {
+            update(model, Msg::Csv(CsvMsg::EditCursorHomeWithSelection))
+        }
+        Key::Named(NamedKey::End) if shift => {
+            update(model, Msg::Csv(CsvMsg::EditCursorEndWithSelection))
+        }
+
         // Home/End: move cursor to start/end
         Key::Named(NamedKey::Home) => update(model, Msg::Csv(CsvMsg::EditCursorHome)),
         Key::Named(NamedKey::End) => update(model, Msg::Csv(CsvMsg::EditCursorEnd)),
+
+        // === Word Deletion (Option+Backspace / Option+Delete) ===
+        Key::Named(NamedKey::Backspace) if alt => {
+            update(model, Msg::Csv(CsvMsg::EditDeleteWordBackward))
+        }
+        Key::Named(NamedKey::Delete) if alt => {
+            update(model, Msg::Csv(CsvMsg::EditDeleteWordForward))
+        }
 
         // Backspace: delete backward
         Key::Named(NamedKey::Backspace) => update(model, Msg::Csv(CsvMsg::EditDeleteBackward)),
