@@ -121,6 +121,26 @@ impl Document {
         })
     }
 
+    /// Create a new empty document with a target file path
+    ///
+    /// Used when the user specifies a non-existent file path on the command line.
+    /// The file will be created when the user saves.
+    pub fn new_with_path(path: PathBuf) -> Self {
+        let language = LanguageId::from_path(&path);
+        Self {
+            id: None,
+            buffer: Rope::from(""),
+            file_path: Some(path),
+            untitled_name: None,
+            is_modified: true, // Mark as modified since file doesn't exist yet
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            language,
+            syntax_highlights: None,
+            revision: 0,
+        }
+    }
+
     /// Get the display name for this document.
     /// Returns the filename if saved, the untitled name if set, or "Untitled" as fallback.
     pub fn display_name(&self) -> String {
@@ -294,5 +314,355 @@ impl Document {
 impl Default for Document {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // Document creation tests
+    // ========================================================================
+
+    #[test]
+    fn test_new_document_has_no_path() {
+        let doc = Document::new();
+        assert!(doc.file_path.is_none());
+        assert!(!doc.is_modified);
+    }
+
+    #[test]
+    fn test_new_document_empty_stacks() {
+        let doc = Document::new();
+        assert!(doc.undo_stack.is_empty());
+        assert!(doc.redo_stack.is_empty());
+    }
+
+    #[test]
+    fn test_new_document_default_language() {
+        let doc = Document::new();
+        assert_eq!(doc.language, LanguageId::PlainText);
+    }
+
+    #[test]
+    fn test_with_text_creates_buffer() {
+        let doc = Document::with_text("hello\nworld");
+        assert_eq!(doc.buffer.to_string(), "hello\nworld");
+        assert_eq!(doc.line_count(), 2);
+    }
+
+    // ========================================================================
+    // Document::new_with_path tests
+    // ========================================================================
+
+    #[test]
+    fn test_new_with_path_preserves_path() {
+        let path = PathBuf::from("/tmp/newfile.rs");
+        let doc = Document::new_with_path(path.clone());
+
+        assert_eq!(doc.file_path, Some(path));
+        assert!(doc.is_modified); // Should be marked modified since file doesn't exist
+        assert_eq!(doc.buffer.to_string(), ""); // Empty content
+    }
+
+    #[test]
+    fn test_new_with_path_detects_language() {
+        let rs_doc = Document::new_with_path(PathBuf::from("test.rs"));
+        assert_eq!(rs_doc.language, LanguageId::Rust);
+
+        let py_doc = Document::new_with_path(PathBuf::from("script.py"));
+        assert_eq!(py_doc.language, LanguageId::Python);
+
+        let txt_doc = Document::new_with_path(PathBuf::from("readme.txt"));
+        assert_eq!(txt_doc.language, LanguageId::PlainText);
+    }
+
+    #[test]
+    fn test_new_with_path_detects_all_common_languages() {
+        let test_cases = [
+            ("file.js", LanguageId::JavaScript),
+            ("file.ts", LanguageId::TypeScript),
+            ("file.tsx", LanguageId::Tsx), // TSX is a separate language
+            ("file.json", LanguageId::Json),
+            ("file.yaml", LanguageId::Yaml),
+            ("file.yml", LanguageId::Yaml),
+            ("file.toml", LanguageId::Toml),
+            ("file.md", LanguageId::Markdown),
+            ("file.html", LanguageId::Html),
+            ("file.css", LanguageId::Css),
+            ("file.go", LanguageId::Go),
+            ("file.c", LanguageId::C),
+            ("file.cpp", LanguageId::Cpp),
+            ("file.java", LanguageId::Java),
+            ("file.sh", LanguageId::Bash),
+            ("file.php", LanguageId::Php),
+        ];
+
+        for (filename, expected_lang) in test_cases {
+            let doc = Document::new_with_path(PathBuf::from(filename));
+            assert_eq!(
+                doc.language, expected_lang,
+                "Language detection failed for {}",
+                filename
+            );
+        }
+    }
+
+    #[test]
+    fn test_new_with_path_empty_stacks() {
+        let doc = Document::new_with_path(PathBuf::from("/path/to/new.rs"));
+        assert!(doc.undo_stack.is_empty());
+        assert!(doc.redo_stack.is_empty());
+    }
+
+    #[test]
+    fn test_new_with_path_no_syntax_highlights() {
+        let doc = Document::new_with_path(PathBuf::from("/path/to/new.rs"));
+        assert!(doc.syntax_highlights.is_none());
+    }
+
+    #[test]
+    fn test_new_with_path_zero_revision() {
+        let doc = Document::new_with_path(PathBuf::from("/path/to/new.rs"));
+        assert_eq!(doc.revision, 0);
+    }
+
+    #[test]
+    fn test_new_with_path_no_id() {
+        let doc = Document::new_with_path(PathBuf::from("/path/to/new.rs"));
+        assert!(doc.id.is_none());
+    }
+
+    #[test]
+    fn test_new_with_path_absolute_path() {
+        let path = PathBuf::from("/home/user/projects/myapp/src/main.rs");
+        let doc = Document::new_with_path(path.clone());
+        assert_eq!(doc.file_path, Some(path));
+    }
+
+    #[test]
+    fn test_new_with_path_relative_path() {
+        let path = PathBuf::from("./src/lib.rs");
+        let doc = Document::new_with_path(path.clone());
+        assert_eq!(doc.file_path, Some(path));
+    }
+
+    #[test]
+    fn test_new_with_path_windows_style_path() {
+        let path = PathBuf::from("C:\\Users\\dev\\project\\main.rs");
+        let doc = Document::new_with_path(path.clone());
+        assert_eq!(doc.file_path, Some(path));
+        assert_eq!(doc.language, LanguageId::Rust);
+    }
+
+    #[test]
+    fn test_new_with_path_no_extension() {
+        // Files without extensions default to PlainText (unless they're special)
+        let doc = Document::new_with_path(PathBuf::from("README"));
+        assert_eq!(doc.language, LanguageId::PlainText);
+    }
+
+    #[test]
+    fn test_new_with_path_makefile() {
+        // Makefile is detected as Bash (shell syntax)
+        let doc = Document::new_with_path(PathBuf::from("Makefile"));
+        assert_eq!(doc.language, LanguageId::Bash);
+    }
+
+    #[test]
+    fn test_new_with_path_hidden_file() {
+        let doc = Document::new_with_path(PathBuf::from(".gitignore"));
+        assert!(doc.file_path.is_some());
+        assert!(doc.is_modified);
+    }
+
+    #[test]
+    fn test_new_with_path_deeply_nested() {
+        let path = PathBuf::from("/a/b/c/d/e/f/g/h/file.rs");
+        let doc = Document::new_with_path(path.clone());
+        assert_eq!(doc.file_path, Some(path));
+    }
+
+    // ========================================================================
+    // Display name tests
+    // ========================================================================
+
+    #[test]
+    fn test_display_name_with_path() {
+        let doc = Document::new_with_path(PathBuf::from("/path/to/myfile.rs"));
+        assert_eq!(doc.display_name(), "myfile.rs");
+    }
+
+    #[test]
+    fn test_display_name_with_untitled() {
+        let mut doc = Document::new();
+        doc.untitled_name = Some("Untitled-3".to_string());
+        assert_eq!(doc.display_name(), "Untitled-3");
+    }
+
+    #[test]
+    fn test_display_name_fallback() {
+        let doc = Document::new();
+        assert_eq!(doc.display_name(), "Untitled");
+    }
+
+    // ========================================================================
+    // Line operations tests
+    // ========================================================================
+
+    #[test]
+    fn test_line_count_empty() {
+        let doc = Document::new();
+        assert_eq!(doc.line_count(), 1); // Empty rope has 1 line
+    }
+
+    #[test]
+    fn test_line_count_single_line() {
+        let doc = Document::with_text("hello");
+        assert_eq!(doc.line_count(), 1);
+    }
+
+    #[test]
+    fn test_line_count_multiple_lines() {
+        let doc = Document::with_text("line1\nline2\nline3");
+        assert_eq!(doc.line_count(), 3);
+    }
+
+    #[test]
+    fn test_line_length_excludes_newline() {
+        let doc = Document::with_text("hello\nworld\n");
+        assert_eq!(doc.line_length(0), 5); // "hello" not "hello\n"
+        assert_eq!(doc.line_length(1), 5); // "world"
+    }
+
+    #[test]
+    fn test_line_length_empty_line() {
+        let doc = Document::with_text("hello\n\nworld");
+        assert_eq!(doc.line_length(1), 0); // Empty line
+    }
+
+    #[test]
+    fn test_get_line_valid() {
+        let doc = Document::with_text("first\nsecond\nthird");
+        assert_eq!(doc.get_line(0), Some("first\n".to_string()));
+        assert_eq!(doc.get_line(1), Some("second\n".to_string()));
+        assert_eq!(doc.get_line(2), Some("third".to_string()));
+    }
+
+    #[test]
+    fn test_get_line_out_of_bounds() {
+        let doc = Document::with_text("single line");
+        assert!(doc.get_line(99).is_none());
+    }
+
+    // ========================================================================
+    // Cursor/offset conversion tests
+    // ========================================================================
+
+    #[test]
+    fn test_cursor_to_offset_start() {
+        let doc = Document::with_text("hello\nworld");
+        assert_eq!(doc.cursor_to_offset(0, 0), 0);
+    }
+
+    #[test]
+    fn test_cursor_to_offset_second_line() {
+        let doc = Document::with_text("hello\nworld");
+        assert_eq!(doc.cursor_to_offset(1, 0), 6);
+    }
+
+    #[test]
+    fn test_offset_to_cursor_roundtrip() {
+        let doc = Document::with_text("first\nsecond\nthird");
+        for offset in 0..doc.buffer.len_chars() {
+            let (line, col) = doc.offset_to_cursor(offset);
+            let result = doc.cursor_to_offset(line, col);
+            assert_eq!(result, offset);
+        }
+    }
+
+    // ========================================================================
+    // Edit operation tests
+    // ========================================================================
+
+    #[test]
+    fn test_push_edit_increments_revision() {
+        let mut doc = Document::with_text("hello");
+        let initial_rev = doc.revision;
+
+        doc.push_edit(EditOperation::Insert {
+            position: 0,
+            text: "X".to_string(),
+            cursor_before: Cursor::default(),
+            cursor_after: Cursor::default(),
+        });
+
+        assert_eq!(doc.revision, initial_rev + 1);
+    }
+
+    #[test]
+    fn test_push_edit_marks_modified() {
+        let mut doc = Document::with_text("hello");
+        doc.is_modified = false;
+
+        doc.push_edit(EditOperation::Insert {
+            position: 0,
+            text: "X".to_string(),
+            cursor_before: Cursor::default(),
+            cursor_after: Cursor::default(),
+        });
+
+        assert!(doc.is_modified);
+    }
+
+    #[test]
+    fn test_push_edit_clears_redo_stack() {
+        let mut doc = Document::with_text("hello");
+        doc.redo_stack.push(EditOperation::Insert {
+            position: 0,
+            text: "old".to_string(),
+            cursor_before: Cursor::default(),
+            cursor_after: Cursor::default(),
+        });
+
+        doc.push_edit(EditOperation::Insert {
+            position: 0,
+            text: "new".to_string(),
+            cursor_before: Cursor::default(),
+            cursor_after: Cursor::default(),
+        });
+
+        assert!(doc.redo_stack.is_empty());
+    }
+
+    // ========================================================================
+    // Find tests
+    // ========================================================================
+
+    #[test]
+    fn test_find_all_occurrences_basic() {
+        let doc = Document::with_text("abc abc abc");
+        let results = doc.find_all_occurrences("abc");
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_find_all_occurrences_empty_needle() {
+        let doc = Document::with_text("hello");
+        let results = doc.find_all_occurrences("");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_find_next_occurrence_wraps() {
+        let doc = Document::with_text("abc xyz abc");
+        // After position 5, next "abc" is at 8
+        let result = doc.find_next_occurrence("abc", 5);
+        assert_eq!(result, Some((8, 11)));
+
+        // After position 10, wraps to first occurrence at 0
+        let result = doc.find_next_occurrence("abc", 10);
+        assert_eq!(result, Some((0, 3)));
     }
 }
