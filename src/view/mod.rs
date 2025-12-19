@@ -451,7 +451,7 @@ impl Renderer {
 
                 // Draw expand/collapse indicator for directories
                 let icon_x = x_offset;
-                let text_x = x_offset + 16; // Space for chevron indicator
+                let text_x = x_offset + 20; // Space for +/- indicator plus gap
 
                 // Text is positioned with y as the top of the text area
                 // Add small vertical padding to center text in the row
@@ -460,7 +460,7 @@ impl Renderer {
                 if node.is_dir {
                     let is_expanded = workspace.is_expanded(&node.path);
                     // Use +/- indicators: - for expanded, + for collapsed
-                    let indicator = if is_expanded { "- " } else { "+ " };
+                    let indicator = if is_expanded { "-" } else { "+" };
                     let icon_color = if is_selected {
                         selection_fg
                     } else {
