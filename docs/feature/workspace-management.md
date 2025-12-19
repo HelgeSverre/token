@@ -6,23 +6,24 @@ A comprehensive workspace management system including CLI argument handling, fil
 
 ## Overview
 
-### Current State
+### Current State (v0.3.9+)
 
 The editor currently has:
 
 - ✅ CLI argument parsing with clap (v0.3.0)
 - ✅ `EditorArea` with split views and tabs (v0.3.0)
 - ✅ `ScaledMetrics` for HiDPI support (v0.3.4)
-- No workspace concept
-- No file tree sidebar
+- ✅ Workspace concept with root directory tracking (v0.3.9)
+- ✅ File tree sidebar with expand/collapse and icons (v0.3.9)
+- ✅ Focus management system (`FocusTarget` enum) (v0.3.9)
 
 ### Goals
 
 1. ~~**CLI Argument Parsing**: Support multiple files, directories, flags~~ ✅ Done (v0.3.0)
-2. **Workspace Concept**: Track root directory, manage open files
-3. **File Tree Sidebar**: VS Code-style tree with expand/collapse, icons
-4. **File System Watching**: React to external file changes
-5. **Integration with Split View**: Files open in tabs within groups
+2. ~~**Workspace Concept**: Track root directory, manage open files~~ ✅ Done (v0.3.9)
+3. ~~**File Tree Sidebar**: VS Code-style tree with expand/collapse, icons~~ ✅ Done (v0.3.9)
+4. ~~**File System Watching**: React to external file changes~~ ✅ Done (v0.3.10)
+5. ~~**Integration with Split View**: Files open in tabs within groups~~ ✅ Basic (v0.3.9)
 
 ### HiDPI Considerations (v0.3.4+)
 
@@ -921,25 +922,35 @@ impl App {
 
 ## Part 8: Keyboard Shortcuts
 
-| Action          | Shortcut             | Message                                     |
-| --------------- | -------------------- | ------------------------------------------- |
-| Toggle sidebar  | Cmd+B                | `WorkspaceMsg::ToggleSidebar`               |
-| Focus file tree | Cmd+Shift+E          | (Focus management)                          |
-| Navigate up     | Arrow Up (in tree)   | `WorkspaceMsg::SelectPrevious`              |
-| Navigate down   | Arrow Down (in tree) | `WorkspaceMsg::SelectNext`                  |
-| Expand folder   | Right Arrow / Enter  | `WorkspaceMsg::ToggleFolder`                |
-| Collapse folder | Left Arrow           | `WorkspaceMsg::ToggleFolder`                |
-| Open file       | Enter                | `WorkspaceMsg::OpenFile { preview: false }` |
-| Reveal in tree  | Cmd+Shift+R          | `WorkspaceMsg::RevealActiveFile`            |
+| Action           | Shortcut              | Message                                     | Status |
+| ---------------- | --------------------- | ------------------------------------------- | ------ |
+| Toggle sidebar   | Cmd+1                 | `WorkspaceMsg::ToggleSidebar`               | ✅     |
+| Navigate up      | Arrow Up (in tree)    | `WorkspaceMsg::SelectPrevious`              | ✅     |
+| Navigate down    | Arrow Down (in tree)  | `WorkspaceMsg::SelectNext`                  | ✅     |
+| Expand folder    | Right Arrow           | `WorkspaceMsg::ExpandFolder`                | ✅     |
+| Collapse folder  | Left Arrow            | `WorkspaceMsg::CollapseFolder`              | ✅     |
+| Jump to parent   | Left Arrow (on file)  | `WorkspaceMsg::SelectParent`                | ✅     |
+| Toggle folder    | Space                 | `WorkspaceMsg::ToggleFolder`                | ✅     |
+| Open file/toggle | Enter                 | `WorkspaceMsg::OpenOrToggle`                | ✅     |
+| Reveal in tree   | Cmd+Shift+R           | `WorkspaceMsg::RevealActiveFile`            | ✅     |
+| Return to editor | Escape                | Focus returns to editor                     | ✅     |
+| Refresh tree     | Cmd+R (in sidebar)    | `WorkspaceMsg::Refresh`                     | ✅     |
+
+**Note:** Focus transfers to sidebar on click; clicking outside returns focus to editor.
 
 ---
 
-## Dependencies to Add
+## Dependencies
 
+### Currently Added
 ```toml
-# Cargo.toml additions
-clap = { version = "4.4", features = ["derive"] }
-notify = "6.1"
+clap = { version = "4.4", features = ["derive"] }  # ✅ Added in v0.3.0
+```
+
+### Added in v0.3.10 (Phase 7)
+```toml
+notify = "6.1"                  # File system event notifications
+notify-debouncer-mini = "0.4"   # Debouncing for rapid events
 ```
 
 ---
@@ -1031,25 +1042,35 @@ notify = "6.1"
 
 **Test:** Arrow keys navigate tree; Enter opens selected file.
 
-### Phase 7: File System Watching
+### Phase 7: File System Watching ✅ COMPLETE
 
-- [ ] Add `notify` dependency
-- [ ] Create `src/fs_watcher.rs` module
-- [ ] Integrate watcher into event loop
-- [ ] Handle create/modify/delete events
-- [ ] Refresh tree on changes
+- [x] Add `notify` and `notify-debouncer-mini` dependencies to Cargo.toml
+- [x] Create `src/fs_watcher.rs` module with `FileSystemWatcher` struct
+- [x] Integrate watcher into App struct and event loop (`about_to_wait`)
+- [x] Handle file system events via `WorkspaceMsg::FileSystemChange`
+- [x] Refresh tree on changes (silently, without status spam)
+- [x] Debounce rapid file system events (500ms delay via notify-debouncer-mini)
+- [x] Ignore patterns matching FileTree (`.git`, `target`, `node_modules`, etc.)
 
-**Test:** Create file externally; it appears in tree automatically.
+**Test:** Create file externally; it appears in tree automatically after ~500ms.
 
-### Phase 8: Tab Integration
+**Implementation notes:**
+- Watcher is created when workspace is opened, stored in `App.fs_watcher`
+- Events are polled in `about_to_wait` hook (non-blocking)
+- Uses debounced events to coalesce rapid changes (git operations, builds)
+- Manual refresh still available via `Cmd+R` when sidebar is focused
 
-- [ ] Wire `OpenFile` to `EditorArea.open_document()`
-- [ ] Support preview tabs (single-click opens preview)
-- [ ] Support opening in new split pane
-- [ ] Highlight open files in tree
-- [ ] Sync tree selection with active tab
+### Phase 8: Tab Integration ⚠️ PARTIAL
+
+- [x] Wire `OpenFile` to `EditorArea.open_document()` via `LayoutMsg::OpenFileInNewTab`
+- [ ] Support preview tabs (single-click opens preview, double-click makes permanent)
+- [ ] Support opening in new split pane (`OpenFileInSplit` message exists but not wired)
+- [ ] Highlight open files in tree (visual indicator)
+- [ ] Sync tree selection with active tab (auto-select on tab switch)
 
 **Test:** Opening file from tree creates tab; switching tabs updates tree selection.
+
+**Current behavior:** All file opens create permanent tabs. Preview tab feature requires UI work (italic tab title, auto-replace on next preview open).
 
 ---
 
@@ -1058,9 +1079,15 @@ notify = "6.1"
 - [x] CLI supports `red file1 file2` to open multiple files
 - [x] CLI supports `red ./src` to open directory as workspace
 - [x] Sidebar shows file tree with folders first
-- [x] Folders expand/collapse on click
-- [ ] Single-click opens file in preview mode (currently opens permanently)
+- [x] Folders expand/collapse on click (double-click or chevron single-click)
+- [x] Single-click on chevron toggles folder immediately
 - [x] Double-click opens file permanently
-- [x] Cmd+B toggles sidebar (Cmd+1 in current implementation)
-- [ ] File changes detected and tree updates (Phase 7)
-- [ ] Open files highlighted in tree (Phase 8)
+- [x] Cmd+1 toggles sidebar visibility
+- [x] Cmd+Shift+R reveals active file in tree
+- [x] Keyboard navigation: Arrow keys, Enter, Space, Escape
+- [x] Focus management: sidebar captures keys when focused
+- [x] Sidebar resize via drag
+- [x] File tree scrolling with auto-scroll on selection
+- [x] File changes detected and tree updates automatically (500ms debounce)
+- [ ] Single-click opens file in preview mode *(not implemented - opens permanently)*
+- [ ] Open files highlighted in tree *(Phase 8 - not started)*
