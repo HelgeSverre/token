@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Application Info -->
+    <key>CFBundleName</key>
+    <string>Token</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>Token Editor</string>
+
+    <key>CFBundleIdentifier</key>
+    <string>com.helgesverre.token</string>
+
+    <key>CFBundleVersion</key>
+    <string>0.3.9</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>0.3</string>
+
+    <key>CFBundleExecutable</key>
+    <string>token</string>
+
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+
+    <!-- Document Types -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Text Document</string>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>txt</string>
+                <string>md</string>
+                <string>rs</string>
+            </array>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+        </dict>
+    </array>
+
+    <!-- Capabilities -->
+    <key>LSMinimumSystemVersion</key>
+    <string>10.15</string>
+
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+
+    <!-- Privacy -->
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>Token needs access to your Desktop folder to open and save files.</string>
+
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>Token needs access to your Documents folder to open and save files.</string>
+</dict>
+</plist>

@@ -10,7 +10,7 @@
 
 This document describes how to add support for new programming languages to the syntax highlighting system. The architecture is designed to make adding languages straightforward.
 
-### Current Languages (17)
+### Current Languages (20)
 
 | Language | Tree-sitter Crate | Query Source |
 |----------|-------------------|--------------|
@@ -31,6 +31,9 @@ This document describes how to add support for new programming languages to the 
 | C++ | `tree-sitter-cpp` | Built-in: `HIGHLIGHT_QUERY` |
 | Java | `tree-sitter-java` | Built-in: `HIGHLIGHTS_QUERY` |
 | Bash | `tree-sitter-bash` | Built-in: `HIGHLIGHT_QUERY` |
+| Scheme | `tree-sitter-racket` | Built-in: `HIGHLIGHTS_QUERY` |
+| INI | `tree-sitter-ini` | Built-in: `HIGHLIGHTS_QUERY` |
+| XML | `tree-sitter-xml` | Built-in: `XML_HIGHLIGHT_QUERY` |
 
 ### Future Languages
 

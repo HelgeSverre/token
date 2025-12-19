@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Sample XML file for syntax highlighting -->
+<!DOCTYPE catalog SYSTEM "catalog.dtd">
+
+<catalog xmlns="http://example.com/catalog"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+    <book id="bk101" category="fiction">
+        <author>Gambardella, Matthew</author>
+        <title>XML Developer's Guide</title>
+        <genre>Computer</genre>
+        <price currency="USD">44.95</price>
+        <publish_date>2000-10-01</publish_date>
+        <description><![CDATA[An in-depth look at creating
+applications with XML & special <characters>]]></description>
+    </book>
+
+    <book id="bk102" category="fantasy">
+        <author>Ralls, Kim</author>
+        <title>Midnight Rain</title>
+        <genre>Fantasy</genre>
+        <price currency="USD">5.95</price>
+        <publish_date>2000-12-16</publish_date>
+        <description>A former architect battles corporate zombies.</description>
+    </book>
+
+    <!-- Configuration section -->
+    <settings version="1.0">
+        <display>
+            <width>1920</width>
+            <height>1080</height>
+            <fullscreen>false</fullscreen>
+        </display>
+        <audio enabled="true">
+            <volume>75</volume>
+            <muted>false</muted>
+        </audio>
+    </settings>
+
+</catalog>

@@ -215,7 +215,7 @@ Data-driven keybinding system with YAML configuration:
 
 ### GUI Phase 1 – Frame/Painter Abstraction ✅
 
-**Design:** [GUI-CLEANUP.md](GUI-CLEANUP.md) | **Completed:** 2025-12-08
+**Design:** [GUI-CLEANUP.md](archived/GUI-CLEANUP.md) | **Completed:** 2025-12-08
 
 Centralized drawing primitives for cleaner rendering code:
 
@@ -227,7 +227,7 @@ Centralized drawing primitives for cleaner rendering code:
 
 ### Debug Tracing & Instrumentation ✅
 
-**Design:** [feature/tracing-instrumentation.md](archived/tracing-instrumentation.md) | **Completed:** 2025-12-08
+**Design:** [tracing-instrumentation.md](archived/tracing-instrumentation.md) | **Completed:** 2025-12-08
 
 Debug instrumentation for multi-cursor state transitions:
 
@@ -343,7 +343,7 @@ VS Code-style command palette and modal overlays:
 
 ### GUI Architecture Improvements
 
-**Design:** [GUI-CLEANUP.md](GUI-CLEANUP.md)
+**Design:** [GUI-CLEANUP.md](archived/GUI-CLEANUP.md)
 
 Thin, editor-focused view layer abstractions:
 
@@ -368,6 +368,7 @@ Group rapid consecutive edits into single undo entries:
 
 | Feature | Design Doc |
 |---------|------------|
+| Gesture Bindings (alt+alt+key) | [feature/gesture-bindings.md](feature/gesture-bindings.md) |
 | Keymap Hot-Reload & Chords | [future/keymap-enhancements.md](future/keymap-enhancements.md) |
 | Syntax Highlighting Phase 2+ | [feature/syntax-highlighting.md](feature/syntax-highlighting.md) |
 
@@ -378,8 +379,8 @@ Group rapid consecutive edits into single undo entries:
 | Feature                     | Status      | Design Doc                                                                               |
 | --------------------------- | ----------- |------------------------------------------------------------------------------------------|
 | File Operations             | ✅ P1-5     | [feature/file-operations.md](feature/file-operations.md)                                 |
-| GUI Cleanup (Frame/Painter) | ✅ Phase 1  | [GUI-CLEANUP.md](GUI-CLEANUP.md)                                                         |
-| Debug Tracing               | ✅ Complete | [feature/tracing-instrumentation.md](archived/tracing-instrumentation.md)                 |
+| GUI Cleanup (Frame/Painter) | ✅ Phase 1  | [GUI-CLEANUP.md](archived/GUI-CLEANUP.md)                                                |
+| Debug Tracing               | ✅ Complete | [tracing-instrumentation.md](archived/tracing-instrumentation.md)                        |
 | Codebase Organization       | ✅ Complete | [archived/ORGANIZATION-CODEBASE.md](archived/ORGANIZATION-CODEBASE.md)                   |
 | Multi-Cursor Selection Gaps | ✅ Complete | [archived/MULTI_CURSOR_SELECTION_GAPS.md](archived/MULTI_CURSOR_SELECTION_GAPS.md)       |
 | Theming System              | ✅ Complete | [archived/THEMING.md](archived/THEMING.md)                                               |
@@ -389,6 +390,7 @@ Group rapid consecutive edits into single undo entries:
 | Multi-Cursor Movement       | ✅ Complete | [archived/MULTI_CURSOR_MOVEMENT.md](archived/MULTI_CURSOR_MOVEMENT.md)                   |
 | Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md)     |
 | Configurable Keymapping     | ✅ Complete | [archived/KEYMAPPING_IMPLEMENTATION_PLAN.md](archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) |
+| Gesture Bindings            | Planned     | [feature/gesture-bindings.md](feature/gesture-bindings.md)                               |
 | Keymap Enhancements         | Future      | [future/keymap-enhancements.md](future/keymap-enhancements.md)                           |
 | Workspace Management        | ✅ P0-6     | [feature/workspace-management.md](feature/workspace-management.md)                       |
 | Syntax Highlighting         | ✅ MVP      | [feature/syntax-highlighting.md](feature/syntax-highlighting.md)                         |
