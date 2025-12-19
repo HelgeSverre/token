@@ -5,9 +5,11 @@
 pub mod frame;
 pub mod geometry;
 pub mod helpers;
+pub mod text_field;
 
 pub use frame::{Frame, TextPainter};
 pub use helpers::{get_tab_display_name, trim_line_ending};
+pub use text_field::{TextFieldContent, TextFieldOptions, TextFieldRenderer};
 
 // Re-export geometry helpers for backward compatibility
 pub use geometry::{char_col_to_visual_col, expand_tabs_for_display};
@@ -458,7 +460,7 @@ impl Renderer {
                 if node.is_dir {
                     let is_expanded = workspace.is_expanded(&node.path);
                     // Use +/- indicators: - for expanded, + for collapsed
-                    let indicator = if is_expanded { "-" } else { "+" };
+                    let indicator = if is_expanded { "- " } else { "+ " };
                     let icon_color = if is_selected {
                         selection_fg
                     } else {
@@ -1191,7 +1193,8 @@ impl Renderer {
 
         // Draw edit text
         let text_x = cell_x + 4;
-        painter.draw(frame, text_x, cell_y + 1, &edit_state.buffer, edit_fg);
+        let buffer_text = edit_state.buffer();
+        painter.draw(frame, text_x, cell_y + 1, &buffer_text, edit_fg);
 
         // Draw cursor if visible (blinking)
         if model.ui.cursor_visible {
@@ -1381,7 +1384,8 @@ impl Renderer {
             }
 
             ModalState::CommandPalette(state) => {
-                let filtered_commands = filter_commands(&state.input);
+                let input_text = state.input();
+                let filtered_commands = filter_commands(&input_text);
                 let max_visible_items = 8;
 
                 let (modal_x, modal_y, modal_width, modal_height) = geometry::modal_bounds(
@@ -1406,23 +1410,31 @@ impl Renderer {
                 let title_y = modal_y + 8;
                 painter.draw(frame, title_x, title_y, "Command Palette", fg_color);
 
-                // Input field
+                // Input field background
                 let input_x = modal_x + 12;
                 let input_y = title_y + line_height + 4;
                 let input_width = modal_width - 24;
                 let input_height = line_height + 8;
                 frame.fill_rect_px(input_x, input_y, input_width, input_height, input_bg);
 
+                // Render text field using unified renderer
                 let text_x = input_x + 8;
                 let text_y = input_y + 4;
-                painter.draw(frame, text_x, text_y, &state.input, fg_color);
-
-                // Cursor
-                if model.ui.cursor_visible {
-                    let cursor_x =
-                        text_x + (state.input.len() as f32 * char_width).round() as usize;
-                    frame.fill_rect_px(cursor_x, text_y, 2, line_height, highlight_color);
-                }
+                let text_width = input_width - 16;
+                let opts = TextFieldOptions {
+                    x: text_x,
+                    y: text_y,
+                    width: text_width,
+                    height: line_height,
+                    char_width,
+                    line_height,
+                    text_color: fg_color,
+                    cursor_color: highlight_color,
+                    selection_color: selection_bg,
+                    cursor_visible: model.ui.cursor_visible,
+                    scroll_x: 0,
+                };
+                TextFieldRenderer::render(frame, painter, &state.editable, &opts);
 
                 // Command list
                 if !filtered_commands.is_empty() {
@@ -1477,13 +1489,7 @@ impl Renderer {
                 }
             }
 
-            ModalState::GotoLine(_) | ModalState::FindReplace(_) => {
-                let (title, input_text) = match modal {
-                    ModalState::GotoLine(s) => ("Go to Line", s.input.as_str()),
-                    ModalState::FindReplace(s) => ("Find", s.query.as_str()),
-                    _ => unreachable!(),
-                };
-
+            ModalState::GotoLine(state) => {
                 let (modal_x, modal_y, modal_width, modal_height) =
                     geometry::modal_bounds(window_width, window_height, line_height, false, 0);
 
@@ -1499,24 +1505,78 @@ impl Renderer {
                 // Title
                 let title_x = modal_x + 12;
                 let title_y = modal_y + 8;
-                painter.draw(frame, title_x, title_y, title, fg_color);
+                painter.draw(frame, title_x, title_y, "Go to Line", fg_color);
 
-                // Input field
+                // Input field background
                 let input_x = modal_x + 12;
                 let input_y = title_y + line_height + 4;
                 let input_width = modal_width - 24;
                 let input_height = line_height + 8;
                 frame.fill_rect_px(input_x, input_y, input_width, input_height, input_bg);
 
+                // Render text field using unified renderer
                 let text_x = input_x + 8;
                 let text_y = input_y + 4;
-                painter.draw(frame, text_x, text_y, input_text, fg_color);
+                let text_width = input_width - 16;
+                let opts = TextFieldOptions {
+                    x: text_x,
+                    y: text_y,
+                    width: text_width,
+                    height: line_height,
+                    char_width,
+                    line_height,
+                    text_color: fg_color,
+                    cursor_color: highlight_color,
+                    selection_color: selection_bg,
+                    cursor_visible: model.ui.cursor_visible,
+                    scroll_x: 0,
+                };
+                TextFieldRenderer::render(frame, painter, &state.editable, &opts);
+            }
 
-                // Cursor
-                if model.ui.cursor_visible {
-                    let cursor_x = text_x + (input_text.len() as f32 * char_width).round() as usize;
-                    frame.fill_rect_px(cursor_x, text_y, 2, line_height, highlight_color);
-                }
+            ModalState::FindReplace(state) => {
+                let (modal_x, modal_y, modal_width, modal_height) =
+                    geometry::modal_bounds(window_width, window_height, line_height, false, 0);
+
+                frame.draw_bordered_rect(
+                    modal_x,
+                    modal_y,
+                    modal_width,
+                    modal_height,
+                    bg_color,
+                    border_color,
+                );
+
+                // Title
+                let title_x = modal_x + 12;
+                let title_y = modal_y + 8;
+                painter.draw(frame, title_x, title_y, "Find", fg_color);
+
+                // Input field background
+                let input_x = modal_x + 12;
+                let input_y = title_y + line_height + 4;
+                let input_width = modal_width - 24;
+                let input_height = line_height + 8;
+                frame.fill_rect_px(input_x, input_y, input_width, input_height, input_bg);
+
+                // Render text field using unified renderer
+                let text_x = input_x + 8;
+                let text_y = input_y + 4;
+                let text_width = input_width - 16;
+                let opts = TextFieldOptions {
+                    x: text_x,
+                    y: text_y,
+                    width: text_width,
+                    height: line_height,
+                    char_width,
+                    line_height,
+                    text_color: fg_color,
+                    cursor_color: highlight_color,
+                    selection_color: selection_bg,
+                    cursor_visible: model.ui.cursor_visible,
+                    scroll_x: 0,
+                };
+                TextFieldRenderer::render(frame, painter, state.focused_editable(), &opts);
             }
         }
     }

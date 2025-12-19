@@ -602,7 +602,8 @@ impl App {
                     if self.model.ui.has_modal() {
                         let (has_list, list_items) = match &self.model.ui.active_modal {
                             Some(ModalState::CommandPalette(state)) => {
-                                (true, filter_commands(&state.input).len())
+                                let input_text = state.input();
+                                (true, filter_commands(&input_text).len())
                             }
                             _ => (false, 0),
                         };

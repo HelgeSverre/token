@@ -23,8 +23,8 @@ pub use status_bar::{
     StatusBarLayout, StatusSegment, TransientMessage,
 };
 pub use ui::{
-    CommandPaletteState, DropState, FindReplaceState, FocusTarget, GotoLineState, HoverRegion,
-    ModalId, ModalState, SidebarResizeState, ThemePickerState, UiState,
+    CommandPaletteState, DropState, FindReplaceField, FindReplaceState, FocusTarget, GotoLineState,
+    HoverRegion, ModalId, ModalState, SidebarResizeState, ThemePickerState, UiState,
 };
 pub use workspace::{FileExtension, FileNode, FileTree, Workspace};
 

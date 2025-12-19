@@ -12,6 +12,28 @@ use token::model::{
 };
 use token::update::update;
 
+// Helper to create a CommandPaletteState with initial text
+fn command_palette_with_input(text: &str, selected_index: usize) -> CommandPaletteState {
+    let mut state = CommandPaletteState::default();
+    state.set_input(text);
+    state.selected_index = selected_index;
+    state
+}
+
+// Helper to create a GotoLineState with initial text
+fn goto_line_with_input(text: &str) -> GotoLineState {
+    let mut state = GotoLineState::default();
+    state.set_input(text);
+    state
+}
+
+// Helper to create a FindReplaceState with initial text
+fn find_replace_with_query(query: &str) -> FindReplaceState {
+    let mut state = FindReplaceState::default();
+    state.set_query(query);
+    state
+}
+
 // ========================================================================
 // Modal Open/Close Tests
 // ========================================================================
@@ -101,7 +123,7 @@ fn test_command_palette_insert_char() {
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar('e'))));
 
     if let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal {
-        assert_eq!(state.input, "save");
+        assert_eq!(state.input(), "save");
     } else {
         panic!("Expected command palette modal");
     }
@@ -112,15 +134,14 @@ fn test_command_palette_delete_backward() {
     let mut model = test_model("hello\n", 0, 0);
     model
         .ui
-        .open_modal(ModalState::CommandPalette(CommandPaletteState {
-            input: "save".to_string(),
-            selected_index: 0,
-        }));
+        .open_modal(ModalState::CommandPalette(command_palette_with_input(
+            "save", 0,
+        )));
 
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteBackward)));
 
     if let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal {
-        assert_eq!(state.input, "sav");
+        assert_eq!(state.input(), "sav");
         assert_eq!(state.selected_index, 0); // Reset on delete
     } else {
         panic!("Expected command palette modal");
@@ -132,10 +153,10 @@ fn test_command_palette_delete_word_backward() {
     let mut model = test_model("hello\n", 0, 0);
     model
         .ui
-        .open_modal(ModalState::CommandPalette(CommandPaletteState {
-            input: "switch theme".to_string(),
-            selected_index: 5,
-        }));
+        .open_modal(ModalState::CommandPalette(command_palette_with_input(
+            "switch theme",
+            5,
+        )));
 
     update(
         &mut model,
@@ -143,7 +164,7 @@ fn test_command_palette_delete_word_backward() {
     );
 
     if let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal {
-        assert_eq!(state.input, "switch ");
+        assert_eq!(state.input(), "switch ");
         assert_eq!(state.selected_index, 0); // Reset on delete
     } else {
         panic!("Expected command palette modal");
@@ -172,10 +193,9 @@ fn test_command_palette_select_previous() {
     let mut model = test_model("hello\n", 0, 0);
     model
         .ui
-        .open_modal(ModalState::CommandPalette(CommandPaletteState {
-            input: String::new(),
-            selected_index: 5,
-        }));
+        .open_modal(ModalState::CommandPalette(command_palette_with_input(
+            "", 5,
+        )));
 
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectPrevious)));
 
@@ -207,16 +227,15 @@ fn test_command_palette_input_resets_selection() {
     let mut model = test_model("hello\n", 0, 0);
     model
         .ui
-        .open_modal(ModalState::CommandPalette(CommandPaletteState {
-            input: String::new(),
-            selected_index: 5,
-        }));
+        .open_modal(ModalState::CommandPalette(command_palette_with_input(
+            "", 5,
+        )));
 
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar('a'))));
 
     if let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal {
         assert_eq!(state.selected_index, 0); // Reset when input changes
-        assert_eq!(state.input, "a");
+        assert_eq!(state.input(), "a");
     } else {
         panic!("Expected command palette modal");
     }
@@ -238,7 +257,7 @@ fn test_goto_line_accepts_digits() {
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar('3'))));
 
     if let Some(ModalState::GotoLine(state)) = &model.ui.active_modal {
-        assert_eq!(state.input, "123");
+        assert_eq!(state.input(), "123");
     } else {
         panic!("Expected goto line modal");
     }
@@ -257,7 +276,7 @@ fn test_goto_line_accepts_colon() {
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar('5'))));
 
     if let Some(ModalState::GotoLine(state)) = &model.ui.active_modal {
-        assert_eq!(state.input, "10:5");
+        assert_eq!(state.input(), "10:5");
     } else {
         panic!("Expected goto line modal");
     }
@@ -275,7 +294,7 @@ fn test_goto_line_rejects_letters() {
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar('2'))));
 
     if let Some(ModalState::GotoLine(state)) = &model.ui.active_modal {
-        assert_eq!(state.input, "12"); // 'a' was rejected
+        assert_eq!(state.input(), "12"); // 'a' was rejected
     } else {
         panic!("Expected goto line modal");
     }
@@ -284,9 +303,9 @@ fn test_goto_line_rejects_letters() {
 #[test]
 fn test_goto_line_confirm_jumps_to_line() {
     let mut model = test_model("line1\nline2\nline3\nline4\nline5\n", 0, 0);
-    model.ui.open_modal(ModalState::GotoLine(GotoLineState {
-        input: "3".to_string(),
-    }));
+    model
+        .ui
+        .open_modal(ModalState::GotoLine(goto_line_with_input("3")));
 
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::Confirm)));
 
@@ -297,9 +316,9 @@ fn test_goto_line_confirm_jumps_to_line() {
 #[test]
 fn test_goto_line_confirm_with_column() {
     let mut model = test_model("hello world\nfoo bar\nbaz qux\n", 0, 0);
-    model.ui.open_modal(ModalState::GotoLine(GotoLineState {
-        input: "2:5".to_string(),
-    }));
+    model
+        .ui
+        .open_modal(ModalState::GotoLine(goto_line_with_input("2:5")));
 
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::Confirm)));
 
@@ -311,9 +330,9 @@ fn test_goto_line_confirm_with_column() {
 #[test]
 fn test_goto_line_clamps_beyond_document() {
     let mut model = test_model("line1\nline2", 0, 0); // No trailing newline = 2 lines
-    model.ui.open_modal(ModalState::GotoLine(GotoLineState {
-        input: "999".to_string(),
-    }));
+    model
+        .ui
+        .open_modal(ModalState::GotoLine(goto_line_with_input("999")));
 
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::Confirm)));
 
@@ -325,9 +344,9 @@ fn test_goto_line_clamps_beyond_document() {
 #[test]
 fn test_goto_line_empty_input_goes_to_line_1() {
     let mut model = test_model("line1\nline2\nline3\n", 2, 3);
-    model.ui.open_modal(ModalState::GotoLine(GotoLineState {
-        input: String::new(),
-    }));
+    model
+        .ui
+        .open_modal(ModalState::GotoLine(GotoLineState::default()));
 
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::Confirm)));
 
@@ -350,7 +369,7 @@ fn test_find_replace_insert_char() {
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar('i'))));
 
     if let Some(ModalState::FindReplace(state)) = &model.ui.active_modal {
-        assert_eq!(state.query, "hi");
+        assert_eq!(state.query(), "hi");
     } else {
         panic!("Expected find/replace modal");
     }
@@ -361,17 +380,12 @@ fn test_find_replace_delete_backward() {
     let mut model = test_model("hello\n", 0, 0);
     model
         .ui
-        .open_modal(ModalState::FindReplace(FindReplaceState {
-            query: "search".to_string(),
-            replacement: String::new(),
-            replace_mode: false,
-            case_sensitive: false,
-        }));
+        .open_modal(ModalState::FindReplace(find_replace_with_query("search")));
 
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteBackward)));
 
     if let Some(ModalState::FindReplace(state)) = &model.ui.active_modal {
-        assert_eq!(state.query, "searc");
+        assert_eq!(state.query(), "searc");
     } else {
         panic!("Expected find/replace modal");
     }
@@ -486,7 +500,7 @@ fn test_set_input_command_palette() {
     );
 
     if let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal {
-        assert_eq!(state.input, "new text");
+        assert_eq!(state.input(), "new text");
     } else {
         panic!("Expected command palette modal");
     }
@@ -505,7 +519,7 @@ fn test_set_input_goto_line() {
     );
 
     if let Some(ModalState::GotoLine(state)) = &model.ui.active_modal {
-        assert_eq!(state.input, "42");
+        assert_eq!(state.input(), "42");
     } else {
         panic!("Expected goto line modal");
     }
@@ -524,7 +538,7 @@ fn test_set_input_find_replace() {
     );
 
     if let Some(ModalState::FindReplace(state)) = &model.ui.active_modal {
-        assert_eq!(state.query, "search term");
+        assert_eq!(state.query(), "search term");
     } else {
         panic!("Expected find/replace modal");
     }
