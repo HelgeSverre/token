@@ -10,6 +10,7 @@ pub mod config_paths;
 pub mod csv;
 #[cfg(debug_assertions)]
 pub mod debug_overlay;
+pub mod editable;
 pub mod keymap;
 pub mod messages;
 pub mod model;
