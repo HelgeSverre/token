@@ -535,6 +535,9 @@ pub enum WorkspaceMsg {
 
     /// Scroll the sidebar file tree (positive = down, negative = up)
     Scroll { lines: i32 },
+
+    /// File system change detected by watcher (triggers tree refresh)
+    FileSystemChange,
 }
 
 /// Top-level message type
