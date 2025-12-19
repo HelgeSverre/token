@@ -238,6 +238,8 @@ pub struct UiThemeData {
     #[serde(default)]
     pub tab_bar: TabBarThemeData,
     #[serde(default)]
+    pub csv: CsvThemeData,
+    #[serde(default)]
     pub syntax: SyntaxThemeData,
 }
 
@@ -757,43 +759,51 @@ impl Theme {
         let default_selection_bg = Color::rgb(0x26, 0x4F, 0x78);
         let default_secondary_cursor = Color::rgba(0xFF, 0xFF, 0xFF, 0x80);
 
+        // Build editor and gutter first (needed for CSV theme fallbacks)
+        let editor = EditorTheme {
+            background: Color::from_hex(&data.ui.editor.background)?,
+            foreground: Color::from_hex(&data.ui.editor.foreground)?,
+            current_line_background: Color::from_hex(&data.ui.editor.current_line_background)?,
+            cursor_color: Color::from_hex(&data.ui.editor.cursor_color)?,
+            selection_background: data
+                .ui
+                .editor
+                .selection_background
+                .as_ref()
+                .map(|s| Color::from_hex(s))
+                .transpose()?
+                .unwrap_or(default_selection_bg),
+            secondary_cursor_color: data
+                .ui
+                .editor
+                .secondary_cursor_color
+                .as_ref()
+                .map(|s| Color::from_hex(s))
+                .transpose()?
+                .unwrap_or(default_secondary_cursor),
+        };
+
+        let gutter = GutterTheme {
+            background: Color::from_hex(&data.ui.gutter.background)?,
+            foreground: Color::from_hex(&data.ui.gutter.foreground)?,
+            foreground_active: Color::from_hex(&data.ui.gutter.foreground_active)?,
+            border_color: data
+                .ui
+                .gutter
+                .border_color
+                .as_ref()
+                .map(|s| Color::from_hex(s))
+                .transpose()?
+                .unwrap_or(Color::rgb(0x31, 0x34, 0x38)),
+        };
+
+        // Build CSV theme using editor/gutter as fallbacks
+        let csv = CsvTheme::from_data(Some(&data.ui.csv), &gutter, &editor);
+
         Ok(Theme {
             name: data.name,
-            editor: EditorTheme {
-                background: Color::from_hex(&data.ui.editor.background)?,
-                foreground: Color::from_hex(&data.ui.editor.foreground)?,
-                current_line_background: Color::from_hex(&data.ui.editor.current_line_background)?,
-                cursor_color: Color::from_hex(&data.ui.editor.cursor_color)?,
-                selection_background: data
-                    .ui
-                    .editor
-                    .selection_background
-                    .as_ref()
-                    .map(|s| Color::from_hex(s))
-                    .transpose()?
-                    .unwrap_or(default_selection_bg),
-                secondary_cursor_color: data
-                    .ui
-                    .editor
-                    .secondary_cursor_color
-                    .as_ref()
-                    .map(|s| Color::from_hex(s))
-                    .transpose()?
-                    .unwrap_or(default_secondary_cursor),
-            },
-            gutter: GutterTheme {
-                background: Color::from_hex(&data.ui.gutter.background)?,
-                foreground: Color::from_hex(&data.ui.gutter.foreground)?,
-                foreground_active: Color::from_hex(&data.ui.gutter.foreground_active)?,
-                border_color: data
-                    .ui
-                    .gutter
-                    .border_color
-                    .as_ref()
-                    .map(|s| Color::from_hex(s))
-                    .transpose()?
-                    .unwrap_or(Color::rgb(0x31, 0x34, 0x38)),
-            },
+            editor,
+            gutter,
             status_bar: StatusBarTheme {
                 background: Color::from_hex(&data.ui.status_bar.background)?,
                 foreground: Color::from_hex(&data.ui.status_bar.foreground)?,
@@ -997,7 +1007,7 @@ impl Theme {
                         .unwrap_or(defaults.border),
                 }
             },
-            csv: CsvTheme::default_dark(),
+            csv,
             syntax: {
                 let defaults = SyntaxTheme::default_dark();
                 SyntaxTheme {
