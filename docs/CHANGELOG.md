@@ -4,7 +4,42 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## v0.3.9 - 2025-12-19 (Latest)
+## v0.3.10 - 2025-12-19 (Latest)
+
+### Added - File System Watcher & New Languages
+
+**Workspace File Watching:**
+- Integrated `notify` crate for real-time file system monitoring
+- `FileSystemChange` event for workspace updates
+- Automatic refresh when files change externally
+
+**New Language Support:**
+- **Scheme** - tree-sitter-scheme parser and highlighting
+- **INI** - tree-sitter-ini parser and highlighting  
+- **XML** - tree-sitter-xml parser and highlighting
+
+**File Operations:**
+- Support for opening files via sidebar
+- Support for creating new files
+- `Document::new_with_path` constructor with comprehensive tests
+
+**Theme Improvements:**
+- Added CSV highlighting colors to all themes
+- Restructured CSV theme initialization
+
+**Documentation:**
+- Added comprehensive documentation suite
+- Updated workspace feature documentation
+- Added workspace performance benchmarks and testing guide
+
+### Changed
+
+- Removed legacy highlight query files
+- Cleaned up obsolete assets
+
+---
+
+## v0.3.9 - 2025-12-19
 
 ### Added - SelectWord for EditableState
 
