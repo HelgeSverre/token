@@ -43,6 +43,10 @@ clap = { version = "4", features = ["derive"] }
 # For user config directory detection
 dirs = "5"
 
+# For file system watching (workspace file tree)
+notify = "6.1"
+notify-debouncer-mini = "0.4"
+
 # For CSV parsing (RFC 4180 compliant)
 csv = "1.3"
 
@@ -109,6 +113,10 @@ harness = false
 
 [[bench]]
 name = "syntax"
+harness = false
+
+[[bench]]
+name = "workspace"
 harness = false
 
 # Profiling profile: release speed with debug symbols
