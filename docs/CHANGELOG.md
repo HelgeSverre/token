@@ -4,7 +4,71 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## v0.3.7 - 2025-12-17 (Latest)
+## v0.3.8 - 2025-12-19 (Latest)
+
+### Added - Unified Text Editing System
+
+Major refactoring to unify text editing across all input contexts (modals, CSV cells) with consistent behavior:
+
+**Core Architecture (`src/editable/` module):**
+- **`TextBuffer` / `TextBufferMut` traits** - Abstract over String and Rope buffer backends
+- **`StringBuffer`** - Efficient single-line buffer for modals and CSV cells
+- **`EditableState<B>`** - Unified state container with cursor, selection, and undo history
+- **`EditConstraints`** - Context-specific restrictions (multiline, multi-cursor, char filters)
+- **`TextEditMsg` / `MoveTarget`** - Unified message types for all editing operations
+- **`EditContext`** - Identifies which input area is being edited
+- **`TextFieldRenderer`** - Unified text field rendering with selection support
+
+**Modal Input Improvements:**
+- Full cursor navigation in all modals (Left/Right, Home/End)
+- Selection support (Shift+Arrow) in command palette, goto line, find/replace
+- Word movement (Option+Arrow) in all modals
+- Word deletion (Option+Backspace/Delete) in all modals
+- Select all (Cmd+A) in all modals
+- Undo/redo within modal inputs
+- Delete forward (Delete key) now works in modals
+- Clipboard integration (Cmd+C/X/V) in all modals
+
+**CSV Cell Editor Enhancements:**
+- Migrated `CellEditState` to use `EditableState<StringBuffer>`
+- Word movement (Option+Left/Right) while editing cells
+- Word deletion (Option+Backspace/Delete) while editing cells
+- Select all (Cmd+A) while editing cells
+- Undo/redo (Cmd+Z / Cmd+Shift+Z) within cell editing session
+- Selection support (Shift+Arrow, Shift+Home/End, Shift+Option+Arrow) while editing cells
+- Clipboard integration (Cmd+C/X/V) while editing cells
+
+**New Messages:**
+- `CsvMsg::EditCursorWordLeft`, `EditCursorWordRight`
+- `CsvMsg::EditDeleteWordBackward`, `EditDeleteWordForward`
+- `CsvMsg::EditSelectAll`, `EditUndo`, `EditRedo`
+- `CsvMsg::EditCursorLeftWithSelection`, `EditCursorRightWithSelection`, etc. - Selection movement
+- `CsvMsg::EditCopy`, `EditCut`, `EditPaste` - Clipboard operations
+- `ModalMsg::Copy`, `Cut`, `Paste` - Modal clipboard operations
+- `Msg::TextEdit(EditContext, TextEditMsg)` - Unified text editing dispatch
+
+**Main Editor Bridge:**
+- `bridge_text_edit_to_editor()` maps `TextEditMsg` to legacy `EditorMsg`/`DocumentMsg`
+- Enables unified message system to control main editor via bridge pattern
+- All movement, selection, editing, clipboard, undo/redo, and multi-cursor operations bridged
+- Allows gradual migration without breaking existing functionality
+
+**New Files:**
+- `src/editable/mod.rs` - Module exports
+- `src/editable/buffer.rs` - TextBuffer traits and implementations
+- `src/editable/cursor.rs` - Position and Cursor types
+- `src/editable/selection.rs` - Selection operations
+- `src/editable/history.rs` - EditOperation and EditHistory
+- `src/editable/constraints.rs` - EditConstraints
+- `src/editable/state.rs` - EditableState implementation
+- `src/editable/context.rs` - EditContext enum
+- `src/editable/messages.rs` - TextEditMsg and MoveTarget
+- `src/update/text_edit.rs` - TextEditMsg routing, application, and editor bridge
+- `src/view/text_field.rs` - TextFieldRenderer
+
+---
+
+## v0.3.7 - 2025-12-17
 
 ### Added - Workspace Management & Focus System
 

@@ -7,6 +7,23 @@ A comprehensive guide to consolidating text editing functionality across all inp
 
 ---
 
+## Implementation Progress (Updated 2025-12-19)
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| **Phase 1** | Core Data Model (`src/editable/` module) | ✅ Complete |
+| **Phase 2** | Message and Update System (`TextEditMsg`, `update_text_edit.rs`) | ✅ Complete |
+| **Phase 3** | Rendering Consolidation (`TextFieldRenderer`) | ✅ Complete |
+| **Phase 4a-c** | Modal States Migration (CommandPalette, GotoLine, FindReplace) | ✅ Complete |
+| **Phase 4d** | Wire `update_text_edit()` to modal EditableStates | ✅ Complete |
+| **Phase 4e** | Modal rendering with TextFieldRenderer | ✅ Complete |
+| **Phase 4f** | Full keyboard navigation for modals | ✅ Complete |
+| **Milestone 3** | CSV Cell Migration to EditableState | ✅ Complete |
+| **Milestone 6** | Main Editor Bridge (`bridge_text_edit_to_editor()`) | ✅ Complete |
+| **Milestone 8** | Cleanup and Documentation | ✅ Complete |
+
+---
+
 ## Table of Contents
 
 1. [Executive Summary](#1-executive-summary)
@@ -2967,19 +2984,19 @@ pub struct CellEditState {
 - `src/view/mod.rs` - Update `render_csv_cell_editor()` to use `TextFieldRenderer`
 
 **Test checklist:**
-- [ ] Start editing cell (Enter, F2, typing)
-- [ ] Type characters
-- [ ] Backspace, Delete
-- [ ] Arrow keys move cursor
-- [ ] Home/End
-- [ ] Word movement (Option+Arrow)
-- [ ] Word delete (Option+Backspace)
-- [ ] Selection (Shift+Arrow)
-- [ ] Select all (Cmd+A)
-- [ ] Cut/Copy/Paste
-- [ ] Undo/Redo
-- [ ] Confirm edit (Enter)
-- [ ] Cancel edit (Escape)
+- [x] Start editing cell (Enter, F2, typing)
+- [x] Type characters
+- [x] Backspace, Delete
+- [x] Arrow keys move cursor
+- [x] Home/End
+- [x] Word movement (Option+Arrow)
+- [x] Word delete (Option+Backspace)
+- [x] Selection (Shift+Arrow, Shift+Home/End, Shift+Option+Arrow)
+- [x] Select all (Cmd+A)
+- [x] Cut/Copy/Paste (Cmd+C/X/V)
+- [x] Undo/Redo
+- [x] Confirm edit (Enter)
+- [x] Cancel edit (Escape)
 
 #### Step 3: Migrate Modal Inputs
 
@@ -3007,12 +3024,13 @@ pub struct CommandPaletteState {
 - `src/view/mod.rs` - Update modal rendering
 
 **Test checklist:**
-- [ ] Command palette: Full text editing
-- [ ] Go-to-line: Only digits accepted
-- [ ] Find/Replace: Both fields editable
-- [ ] Tab switches fields in find/replace
-- [ ] Escape closes modal
-- [ ] Selection and clipboard work
+- [x] Command palette: Full text editing
+- [x] Go-to-line: Only digits accepted
+- [x] Find/Replace: Both fields editable
+- [x] Tab switches fields in find/replace
+- [x] Escape closes modal
+- [x] Selection works (Shift+Arrow, Cmd+A)
+- [x] Clipboard integration (Cmd+C/X/V)
 
 #### Step 4: Rendering Consolidation
 

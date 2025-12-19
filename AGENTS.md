@@ -17,12 +17,13 @@ make run                         # Run release build with sample file
 Elm Architecture in Rust: `Message → Update → Command → Render`
 
 - **Model** (`src/model/`): AppModel, Document, EditorState, EditorArea, UiState
-- **Messages** (`src/messages.rs`): Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg
-- **Update** (`src/update/`): Pure state transformation (5 submodules)
+- **Messages** (`src/messages.rs`): Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg, TextEditMsg
+- **Update** (`src/update/`): Pure state transformation (6 submodules including text_edit.rs)
 - **Commands** (`src/commands.rs`): Cmd enum (Redraw, SaveFile, LoadFile, Batch)
 - **View** (`src/view/`): CPU rendering with fontdue + softbuffer, winit event loop
+- **Editable** (`src/editable/`): Unified text editing system (EditableState, StringBuffer, Cursor, Selection)
 
-Key structures: Rope (ropey) for text buffer, Cursor, EditOperation for undo/redo, GlyphCache.
+Key structures: Rope (ropey) for text buffer, Cursor, EditOperation for undo/redo, GlyphCache, EditableState for modal/CSV inputs.
 
 ## Code Style
 
