@@ -51,6 +51,14 @@ ui:
     warning: "#9A6700"
     error: "#CF222E"
 
+  csv:
+    header_background: "#F6F8FA"
+    header_foreground: "#24292F"
+    grid_line: "#D0D7DE"
+    selected_cell_background: "#ADD6FF80"
+    selected_cell_border: "#0969DA"
+    number_foreground: "#0550AE"
+
   syntax:
     keyword: "#CF222E"
     function: "#8250DF"
