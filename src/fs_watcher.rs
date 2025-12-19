@@ -296,7 +296,10 @@ mod tests {
         let dir = tempdir().expect("Failed to create temp dir");
         let watcher = FileSystemWatcher::new(dir.path().to_path_buf());
 
-        assert!(watcher.is_ok(), "Should be able to create watcher for valid directory");
+        assert!(
+            watcher.is_ok(),
+            "Should be able to create watcher for valid directory"
+        );
     }
 
     #[test]
@@ -318,7 +321,10 @@ mod tests {
         if let Ok(w) = watcher {
             // Poll immediately - should return empty
             let events = w.poll_events();
-            assert!(events.is_empty(), "Should have no events when nothing changed");
+            assert!(
+                events.is_empty(),
+                "Should have no events when nothing changed"
+            );
         }
     }
 
@@ -355,8 +361,8 @@ mod tests {
     #[ignore] // Flaky in CI - file system event timing varies by platform
     fn test_watcher_detects_file_creation() {
         let dir = tempdir().expect("Failed to create temp dir");
-        let watcher = FileSystemWatcher::new(dir.path().to_path_buf())
-            .expect("Failed to create watcher");
+        let watcher =
+            FileSystemWatcher::new(dir.path().to_path_buf()).expect("Failed to create watcher");
 
         // Create a file
         let file_path = dir.path().join("test.txt");
@@ -379,8 +385,8 @@ mod tests {
         fs::write(&file_path, "initial content").expect("Failed to write file");
 
         // Start watching after file exists
-        let watcher = FileSystemWatcher::new(dir.path().to_path_buf())
-            .expect("Failed to create watcher");
+        let watcher =
+            FileSystemWatcher::new(dir.path().to_path_buf()).expect("Failed to create watcher");
 
         // Modify the file
         fs::write(&file_path, "modified content").expect("Failed to modify file");
@@ -396,8 +402,8 @@ mod tests {
     #[ignore] // Flaky in CI - file system event timing varies by platform
     fn test_watcher_ignores_target_directory() {
         let dir = tempdir().expect("Failed to create temp dir");
-        let watcher = FileSystemWatcher::new(dir.path().to_path_buf())
-            .expect("Failed to create watcher");
+        let watcher =
+            FileSystemWatcher::new(dir.path().to_path_buf()).expect("Failed to create watcher");
 
         // Create file in target directory (should be ignored)
         let target_dir = dir.path().join("target");
@@ -411,10 +417,14 @@ mod tests {
         // Events should be empty or not contain target paths
         for event in &events {
             match event {
-                FileSystemEvent::Changed(p) | FileSystemEvent::Created(p)
-                | FileSystemEvent::Modified(p) | FileSystemEvent::Deleted(p) => {
-                    assert!(!p.to_string_lossy().contains("target"),
-                        "Should not report events from target directory");
+                FileSystemEvent::Changed(p)
+                | FileSystemEvent::Created(p)
+                | FileSystemEvent::Modified(p)
+                | FileSystemEvent::Deleted(p) => {
+                    assert!(
+                        !p.to_string_lossy().contains("target"),
+                        "Should not report events from target directory"
+                    );
                 }
             }
         }
@@ -424,8 +434,8 @@ mod tests {
     #[ignore] // Flaky in CI - file system event timing varies by platform
     fn test_watcher_deduplicates_events() {
         let dir = tempdir().expect("Failed to create temp dir");
-        let watcher = FileSystemWatcher::new(dir.path().to_path_buf())
-            .expect("Failed to create watcher");
+        let watcher =
+            FileSystemWatcher::new(dir.path().to_path_buf()).expect("Failed to create watcher");
 
         // Create and immediately modify the same file multiple times
         let file_path = dir.path().join("rapid.txt");
@@ -440,14 +450,18 @@ mod tests {
         let events = watcher.poll_events();
 
         // Count events for the same path - should be deduplicated
-        let rapid_events: Vec<_> = events.iter().filter(|e| {
-            match e {
+        let rapid_events: Vec<_> = events
+            .iter()
+            .filter(|e| match e {
                 FileSystemEvent::Changed(p) => p.ends_with("rapid.txt"),
                 _ => false,
-            }
-        }).collect();
+            })
+            .collect();
 
         // Due to deduplication, should have at most 1 event for this file
-        assert!(rapid_events.len() <= 1, "Should deduplicate events for same file");
+        assert!(
+            rapid_events.len() <= 1,
+            "Should deduplicate events for same file"
+        );
     }
 }
