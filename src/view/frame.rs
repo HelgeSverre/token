@@ -66,12 +66,14 @@ impl<'a> Frame<'a> {
 
     /// Get the frame width in pixels
     #[inline]
+    #[allow(dead_code)]
     pub fn width(&self) -> usize {
         self.width
     }
 
     /// Get the frame height in pixels
     #[inline]
+    #[allow(dead_code)]
     pub fn height(&self) -> usize {
         self.height
     }
@@ -81,6 +83,7 @@ impl<'a> Frame<'a> {
     /// Use this for low-level operations that need direct buffer access.
     /// Prefer using Frame's drawing methods when possible.
     #[inline]
+    #[allow(dead_code)]
     pub fn buffer_mut(&mut self) -> &mut [u32] {
         self.buffer
     }
@@ -147,6 +150,7 @@ impl<'a> Frame<'a> {
 
     /// Set a single pixel (bounds-checked)
     #[inline]
+    #[allow(dead_code)]
     pub fn set_pixel(&mut self, x: usize, y: usize, color: u32) {
         if x < self.width && y < self.height {
             self.buffer[y * self.width + x] = color;
@@ -301,6 +305,7 @@ impl<'a> TextPainter<'a> {
 
     /// Get the number of cached glyphs
     #[inline]
+    #[allow(dead_code)]
     pub fn glyph_cache_size(&self) -> usize {
         self.glyph_cache.len()
     }
