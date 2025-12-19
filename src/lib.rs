@@ -11,6 +11,7 @@ pub mod csv;
 #[cfg(debug_assertions)]
 pub mod debug_overlay;
 pub mod editable;
+pub mod fs_watcher;
 pub mod keymap;
 pub mod messages;
 pub mod model;
