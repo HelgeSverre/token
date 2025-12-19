@@ -4,7 +4,22 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## v0.3.8 - 2025-12-19 (Latest)
+## v0.3.9 - 2025-12-19 (Latest)
+
+### Added - SelectWord for EditableState
+
+- Implemented `select_word()` method for `EditableState` in `src/editable/state.rs`
+- Wired `TextEditMsg::SelectWord` in `src/update/text_edit.rs` (previously a TODO stub)
+- Added 4 tests for select_word covering middle-of-word, on-space, at-start, and at-end scenarios
+
+### Fixed - Sidebar Folder Indicator Spacing
+
+- Increased spacing between +/- folder indicators and folder names in sidebar
+- Changed `text_x` offset from 16px to 20px for better visual separation
+
+---
+
+## v0.3.8 - 2025-12-19
 
 ### Added - Unified Text Editing System
 

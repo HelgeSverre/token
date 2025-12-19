@@ -617,10 +617,53 @@ pub struct ScaledMetrics {
 
 </details>
 
+<details>
+<summary><strong>✏️ Unified Text Editing System</strong> | <a href="https://ampcode.com/threads/T-019b3643-79af-7573-bb69-18dac832eb94">T-019b3643</a></summary>
+
+**Date**: 2025-12-19
+
+**Problem**: 5 separate text editing implementations (main editor, command palette, go-to-line, find/replace, CSV cells) with duplicated logic and inconsistent behavior.
+
+**Solution**: Created unified `src/editable/` module with:
+
+```rust
+// Core abstraction for all text editing
+pub struct EditableState<B: TextBuffer> {
+    pub buffer: B,                    // StringBuffer or RopeBuffer
+    pub cursors: Vec<Cursor>,
+    pub selections: Vec<Selection>,
+    pub constraints: EditConstraints,  // Context-specific rules
+    history: EditHistory,              // Undo/redo
+}
+
+// Unified message type
+pub enum TextEditMsg {
+    Move(MoveTarget),
+    MoveWithSelection(MoveTarget),
+    InsertChar(char),
+    DeleteBackward,
+    SelectAll,
+    Undo,
+    Redo,
+    // ...
+}
+```
+
+**Key Insight**: Abstract buffer operations behind traits, share editing logic across all contexts.
+
+**Benefits**:
+- All modals now have full cursor navigation, selection, word movement
+- CSV cell editing has undo/redo, selection, clipboard support
+- Bridge pattern maps `TextEditMsg` to existing editor messages for gradual migration
+
+**Threads in this feature**: T-019b3643, T-019b3664, T-019b3671, T-019b367e, T-019b3688, T-019b368e, T-019b369a
+
+</details>
+
 ---
 
 <details>
-<summary><strong>📋 Full Thread Reference (108 threads)</strong></summary>
+<summary><strong>📋 Full Thread Reference (116 threads)</strong></summary>
 
 All conversations are public. Sorted by timestamp (oldest first).
 
@@ -730,6 +773,13 @@ All conversations are public. Sorted by timestamp (oldest first).
 | 2025-12-17 12:19 | [Cursor Icon Cleanup](https://ampcode.com/threads/T-019b2c40-3b31-764a-a3c9-31369108ef99)       | Refactor | Cursor icon handling cleanup for UI consistency                                                        |
 | 2025-12-17 13:40 | [Focus Management](https://ampcode.com/threads/T-019b2c8a-b043-70ee-b7c6-5576369d38f3)          | Feature  | Focus and scrolling in sidebar implementation                                                          |
 | 2025-12-17 14:11 | [Sidebar Navigation](https://ampcode.com/threads/T-019b2ca6-720c-759f-896d-29eb7d047b2e)        | Bugfix   | Sidebar arrow key navigation not working after click                                                   |
+| 2025-12-19 10:59 | [Unified Editing Analysis](https://ampcode.com/threads/T-019b3643-79af-7573-bb69-18dac832eb94)  | Feature  | Analysis of duplicated text editing logic across contexts                                              |
+| 2025-12-19 11:36 | [Unified Editing Phase 1](https://ampcode.com/threads/T-019b3664-f5b5-7006-824b-db413f42a0be)   | Feature  | Implementing unified text editing architecture foundation                                              |
+| 2025-12-19 11:50 | [Unified Editing Phase 2](https://ampcode.com/threads/T-019b3671-fd6b-779e-91ed-1ab285ee4deb)   | Feature  | Unified text editing system phase 2 implementation                                                     |
+| 2025-12-19 12:04 | [Unified Editing Phase 4d](https://ampcode.com/threads/T-019b367e-dad9-730f-b44a-230362166a89)  | Feature  | Phase 4d: wiring text edit handler routing                                                             |
+| 2025-12-19 12:14 | [Unified Editing Milestone 3](https://ampcode.com/threads/T-019b3688-6a6f-70cf-9978-6f6214b6366d) | Feature | Unified text editing system milestone 3 (CSV cell migration)                                           |
+| 2025-12-19 12:21 | [Main Editor Bridge](https://ampcode.com/threads/T-019b368e-76e6-73f0-9bdc-55889e4a801a)        | Feature  | Main editor bridge for unified text editing                                                            |
+| 2025-12-19 12:34 | [Implementation Gaps](https://ampcode.com/threads/T-019b369a-6bd2-76de-9d1c-121e3bd78e2c)       | Feature  | Fix sidebar symbols and identify stubbed methods                                                       |
 
 </details>
 
