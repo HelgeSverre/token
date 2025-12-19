@@ -12,18 +12,6 @@ use crate::theme::load_theme;
 
 use super::app::execute_command;
 
-/// Delete word backward from end of string (like Option+Backspace)
-fn delete_word_backward(s: &mut String) {
-    // Skip trailing whitespace
-    while s.ends_with(char::is_whitespace) {
-        s.pop();
-    }
-    // Delete until whitespace or start
-    while !s.is_empty() && !s.ends_with(char::is_whitespace) {
-        s.pop();
-    }
-}
-
 /// Handle UI messages (status bar, cursor blink, modals)
 pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
     match msg {
@@ -138,9 +126,9 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         ModalMsg::SetInput(text) => {
             if let Some(ref mut modal) = model.ui.active_modal {
                 match modal {
-                    ModalState::CommandPalette(state) => state.input = text,
-                    ModalState::GotoLine(state) => state.input = text,
-                    ModalState::FindReplace(state) => state.query = text,
+                    ModalState::CommandPalette(state) => state.set_input(&text),
+                    ModalState::GotoLine(state) => state.set_input(&text),
+                    ModalState::FindReplace(state) => state.set_query(&text),
                     ModalState::ThemePicker(_) => {} // No text input for theme picker
                 }
                 Some(Cmd::Redraw)
@@ -153,16 +141,16 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             if let Some(ref mut modal) = model.ui.active_modal {
                 match modal {
                     ModalState::CommandPalette(state) => {
-                        state.input.push(ch);
+                        state.editable.insert_char(ch);
                         state.selected_index = 0; // Reset selection when input changes
                     }
                     ModalState::GotoLine(state) => {
-                        // Allow digits and colon for line:col format
-                        if ch.is_ascii_digit() || ch == ':' {
-                            state.input.push(ch);
-                        }
+                        // EditableState handles the char filter constraint
+                        state.editable.insert_char(ch);
                     }
-                    ModalState::FindReplace(state) => state.query.push(ch),
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().insert_char(ch);
+                    }
                     ModalState::ThemePicker(_) => {} // No text input for theme picker
                 }
                 Some(Cmd::Redraw)
@@ -175,14 +163,14 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             if let Some(ref mut modal) = model.ui.active_modal {
                 match modal {
                     ModalState::CommandPalette(state) => {
-                        state.input.pop();
+                        state.editable.delete_backward();
                         state.selected_index = 0; // Reset selection when input changes
                     }
                     ModalState::GotoLine(state) => {
-                        state.input.pop();
+                        state.editable.delete_backward();
                     }
                     ModalState::FindReplace(state) => {
-                        state.query.pop();
+                        state.focused_editable_mut().delete_backward();
                     }
                     ModalState::ThemePicker(_) => {} // No text input for theme picker
                 }
@@ -196,14 +184,14 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             if let Some(ref mut modal) = model.ui.active_modal {
                 match modal {
                     ModalState::CommandPalette(state) => {
-                        delete_word_backward(&mut state.input);
+                        state.editable.delete_word_backward();
                         state.selected_index = 0;
                     }
                     ModalState::GotoLine(state) => {
-                        delete_word_backward(&mut state.input);
+                        state.editable.delete_word_backward();
                     }
                     ModalState::FindReplace(state) => {
-                        delete_word_backward(&mut state.query);
+                        state.focused_editable_mut().delete_word_backward();
                     }
                     ModalState::ThemePicker(_) => {} // No text input for theme picker
                 }
@@ -214,13 +202,346 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::MoveCursorWordLeft => {
-            // For now, move to start of input (full word nav would need cursor position tracking)
+            if let Some(ref mut modal) = model.ui.active_modal {
+                match modal {
+                    ModalState::CommandPalette(state) => {
+                        state.editable.move_word_left(false);
+                    }
+                    ModalState::GotoLine(state) => {
+                        state.editable.move_word_left(false);
+                    }
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().move_word_left(false);
+                    }
+                    ModalState::ThemePicker(_) => {}
+                }
+            }
             Some(Cmd::Redraw)
         }
 
         ModalMsg::MoveCursorWordRight => {
-            // For now, move to end of input (full word nav would need cursor position tracking)
+            if let Some(ref mut modal) = model.ui.active_modal {
+                match modal {
+                    ModalState::CommandPalette(state) => {
+                        state.editable.move_word_right(false);
+                    }
+                    ModalState::GotoLine(state) => {
+                        state.editable.move_word_right(false);
+                    }
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().move_word_right(false);
+                    }
+                    ModalState::ThemePicker(_) => {}
+                }
+            }
             Some(Cmd::Redraw)
+        }
+
+        ModalMsg::MoveCursorLeft => {
+            if let Some(ref mut modal) = model.ui.active_modal {
+                match modal {
+                    ModalState::CommandPalette(state) => {
+                        state.editable.move_left(false);
+                    }
+                    ModalState::GotoLine(state) => {
+                        state.editable.move_left(false);
+                    }
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().move_left(false);
+                    }
+                    ModalState::ThemePicker(_) => {}
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::MoveCursorRight => {
+            if let Some(ref mut modal) = model.ui.active_modal {
+                match modal {
+                    ModalState::CommandPalette(state) => {
+                        state.editable.move_right(false);
+                    }
+                    ModalState::GotoLine(state) => {
+                        state.editable.move_right(false);
+                    }
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().move_right(false);
+                    }
+                    ModalState::ThemePicker(_) => {}
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::MoveCursorHome => {
+            if let Some(ref mut modal) = model.ui.active_modal {
+                match modal {
+                    ModalState::CommandPalette(state) => {
+                        state.editable.move_line_start(false);
+                    }
+                    ModalState::GotoLine(state) => {
+                        state.editable.move_line_start(false);
+                    }
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().move_line_start(false);
+                    }
+                    ModalState::ThemePicker(_) => {}
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::MoveCursorEnd => {
+            if let Some(ref mut modal) = model.ui.active_modal {
+                match modal {
+                    ModalState::CommandPalette(state) => {
+                        state.editable.move_line_end(false);
+                    }
+                    ModalState::GotoLine(state) => {
+                        state.editable.move_line_end(false);
+                    }
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().move_line_end(false);
+                    }
+                    ModalState::ThemePicker(_) => {}
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::MoveCursorLeftWithSelection => {
+            if let Some(ref mut modal) = model.ui.active_modal {
+                match modal {
+                    ModalState::CommandPalette(state) => {
+                        state.editable.move_left(true);
+                    }
+                    ModalState::GotoLine(state) => {
+                        state.editable.move_left(true);
+                    }
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().move_left(true);
+                    }
+                    ModalState::ThemePicker(_) => {}
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::MoveCursorRightWithSelection => {
+            if let Some(ref mut modal) = model.ui.active_modal {
+                match modal {
+                    ModalState::CommandPalette(state) => {
+                        state.editable.move_right(true);
+                    }
+                    ModalState::GotoLine(state) => {
+                        state.editable.move_right(true);
+                    }
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().move_right(true);
+                    }
+                    ModalState::ThemePicker(_) => {}
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::MoveCursorHomeWithSelection => {
+            if let Some(ref mut modal) = model.ui.active_modal {
+                match modal {
+                    ModalState::CommandPalette(state) => {
+                        state.editable.move_line_start(true);
+                    }
+                    ModalState::GotoLine(state) => {
+                        state.editable.move_line_start(true);
+                    }
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().move_line_start(true);
+                    }
+                    ModalState::ThemePicker(_) => {}
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::MoveCursorEndWithSelection => {
+            if let Some(ref mut modal) = model.ui.active_modal {
+                match modal {
+                    ModalState::CommandPalette(state) => {
+                        state.editable.move_line_end(true);
+                    }
+                    ModalState::GotoLine(state) => {
+                        state.editable.move_line_end(true);
+                    }
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().move_line_end(true);
+                    }
+                    ModalState::ThemePicker(_) => {}
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::MoveCursorWordLeftWithSelection => {
+            if let Some(ref mut modal) = model.ui.active_modal {
+                match modal {
+                    ModalState::CommandPalette(state) => {
+                        state.editable.move_word_left(true);
+                    }
+                    ModalState::GotoLine(state) => {
+                        state.editable.move_word_left(true);
+                    }
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().move_word_left(true);
+                    }
+                    ModalState::ThemePicker(_) => {}
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::MoveCursorWordRightWithSelection => {
+            if let Some(ref mut modal) = model.ui.active_modal {
+                match modal {
+                    ModalState::CommandPalette(state) => {
+                        state.editable.move_word_right(true);
+                    }
+                    ModalState::GotoLine(state) => {
+                        state.editable.move_word_right(true);
+                    }
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().move_word_right(true);
+                    }
+                    ModalState::ThemePicker(_) => {}
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::SelectAll => {
+            if let Some(ref mut modal) = model.ui.active_modal {
+                match modal {
+                    ModalState::CommandPalette(state) => {
+                        state.editable.select_all();
+                    }
+                    ModalState::GotoLine(state) => {
+                        state.editable.select_all();
+                    }
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().select_all();
+                    }
+                    ModalState::ThemePicker(_) => {}
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::Copy => {
+            if let Some(ref mut modal) = model.ui.active_modal {
+                let text = match modal {
+                    ModalState::CommandPalette(state) => state.editable.selected_text(),
+                    ModalState::GotoLine(state) => state.editable.selected_text(),
+                    ModalState::FindReplace(state) => state.focused_editable_mut().selected_text(),
+                    ModalState::ThemePicker(_) => String::new(),
+                };
+                if !text.is_empty() {
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        let _ = clipboard.set_text(&text);
+                    }
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::Cut => {
+            if let Some(ref mut modal) = model.ui.active_modal {
+                let text = match modal {
+                    ModalState::CommandPalette(state) => {
+                        let t = state.editable.selected_text();
+                        if !t.is_empty() {
+                            state.editable.delete_backward();
+                            state.selected_index = 0;
+                        }
+                        t
+                    }
+                    ModalState::GotoLine(state) => {
+                        let t = state.editable.selected_text();
+                        if !t.is_empty() {
+                            state.editable.delete_backward();
+                        }
+                        t
+                    }
+                    ModalState::FindReplace(state) => {
+                        let editable = state.focused_editable_mut();
+                        let t = editable.selected_text();
+                        if !t.is_empty() {
+                            editable.delete_backward();
+                        }
+                        t
+                    }
+                    ModalState::ThemePicker(_) => String::new(),
+                };
+                if !text.is_empty() {
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        let _ = clipboard.set_text(&text);
+                    }
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::Paste => {
+            let clipboard_text = if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                clipboard.get_text().ok()
+            } else {
+                None
+            };
+
+            if let Some(text) = clipboard_text {
+                // Filter out newlines for single-line modal inputs
+                let filtered: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+                if !filtered.is_empty() {
+                    if let Some(ref mut modal) = model.ui.active_modal {
+                        match modal {
+                            ModalState::CommandPalette(state) => {
+                                state.editable.insert_text(&filtered);
+                                state.selected_index = 0;
+                            }
+                            ModalState::GotoLine(state) => {
+                                // Filter to only digits for goto line
+                                let digits: String =
+                                    filtered.chars().filter(|c| c.is_ascii_digit()).collect();
+                                state.editable.insert_text(&digits);
+                            }
+                            ModalState::FindReplace(state) => {
+                                state.focused_editable_mut().insert_text(&filtered);
+                            }
+                            ModalState::ThemePicker(_) => {}
+                        }
+                    }
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::DeleteForward => {
+            if let Some(ref mut modal) = model.ui.active_modal {
+                match modal {
+                    ModalState::CommandPalette(state) => {
+                        state.editable.delete_forward();
+                        state.selected_index = 0;
+                    }
+                    ModalState::GotoLine(state) => {
+                        state.editable.delete_forward();
+                    }
+                    ModalState::FindReplace(state) => {
+                        state.focused_editable_mut().delete_forward();
+                    }
+                    ModalState::ThemePicker(_) => {}
+                }
+                Some(Cmd::Redraw)
+            } else {
+                None
+            }
         }
 
         ModalMsg::SelectPrevious => {
@@ -244,7 +565,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             if let Some(ref mut modal) = model.ui.active_modal {
                 match modal {
                     ModalState::CommandPalette(state) => {
-                        let filtered = filter_commands(&state.input);
+                        let input_text = state.input();
+                        let filtered = filter_commands(&input_text);
                         let max_index = filtered.len().saturating_sub(1);
                         state.selected_index =
                             state.selected_index.saturating_add(1).min(max_index);
@@ -270,7 +592,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                 match modal {
                     ModalState::CommandPalette(state) => {
                         // Get the selected command
-                        let filtered = filter_commands(&state.input);
+                        let input_text = state.input();
+                        let filtered = filter_commands(&input_text);
                         let selected_index =
                             state.selected_index.min(filtered.len().saturating_sub(1));
 
@@ -286,13 +609,14 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     }
                     ModalState::GotoLine(state) => {
                         // Parse line:col or just line format
+                        let input_text = state.input();
                         let (target_line, target_col) =
-                            if let Some((line_str, col_str)) = state.input.split_once(':') {
+                            if let Some((line_str, col_str)) = input_text.split_once(':') {
                                 let line = line_str.parse::<usize>().unwrap_or(1);
                                 let col = col_str.parse::<usize>().unwrap_or(1);
                                 (line, col)
                             } else {
-                                let line = state.input.parse::<usize>().unwrap_or(1);
+                                let line = input_text.parse::<usize>().unwrap_or(1);
                                 (line, 1)
                             };
 

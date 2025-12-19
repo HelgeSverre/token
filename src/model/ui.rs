@@ -2,6 +2,7 @@
 
 use super::editor_area::SplitDirection;
 use super::status_bar::{StatusBar, TransientMessage};
+use crate::editable::{EditConstraints, EditableState, StringBuffer};
 use crate::theme::{list_available_themes, ThemeInfo};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -67,32 +68,144 @@ pub enum ModalId {
 }
 
 /// State for the command palette modal
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct CommandPaletteState {
-    /// Current input text
-    pub input: String,
+    /// Editable state for the input field
+    pub editable: EditableState<StringBuffer>,
     /// Index of selected command in filtered list
     pub selected_index: usize,
 }
 
+impl Default for CommandPaletteState {
+    fn default() -> Self {
+        Self {
+            editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
+            selected_index: 0,
+        }
+    }
+}
+
+impl CommandPaletteState {
+    /// Get the input text (convenience accessor)
+    pub fn input(&self) -> String {
+        self.editable.text()
+    }
+
+    /// Set the input text (replaces content)
+    pub fn set_input(&mut self, text: &str) {
+        self.editable.set_content(text);
+    }
+}
+
 /// State for the goto line modal
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct GotoLineState {
-    /// Current input text (line number)
-    pub input: String,
+    /// Editable state for the input field (numeric + colon only)
+    pub editable: EditableState<StringBuffer>,
+}
+
+impl Default for GotoLineState {
+    fn default() -> Self {
+        Self {
+            editable: EditableState::new(StringBuffer::new(), EditConstraints::goto_line()),
+        }
+    }
+}
+
+impl GotoLineState {
+    /// Get the input text (convenience accessor)
+    pub fn input(&self) -> String {
+        self.editable.text()
+    }
+
+    /// Set the input text (replaces content)
+    pub fn set_input(&mut self, text: &str) {
+        self.editable.set_content(text);
+    }
+}
+
+/// Which field is focused in find/replace
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FindReplaceField {
+    #[default]
+    Query,
+    Replace,
 }
 
 /// State for the find/replace modal
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FindReplaceState {
-    /// Search query
-    pub query: String,
-    /// Replacement text
-    pub replacement: String,
+    /// Editable state for the query field
+    pub query_editable: EditableState<StringBuffer>,
+    /// Editable state for the replacement field
+    pub replace_editable: EditableState<StringBuffer>,
+    /// Which field is currently focused
+    pub focused_field: FindReplaceField,
     /// Whether replace mode is active (vs find-only)
     pub replace_mode: bool,
     /// Case-sensitive search
     pub case_sensitive: bool,
+}
+
+impl Default for FindReplaceState {
+    fn default() -> Self {
+        Self {
+            query_editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
+            replace_editable: EditableState::new(
+                StringBuffer::new(),
+                EditConstraints::single_line(),
+            ),
+            focused_field: FindReplaceField::Query,
+            replace_mode: false,
+            case_sensitive: false,
+        }
+    }
+}
+
+impl FindReplaceState {
+    /// Get the query text (convenience accessor)
+    pub fn query(&self) -> String {
+        self.query_editable.text()
+    }
+
+    /// Set the query text (replaces content)
+    pub fn set_query(&mut self, text: &str) {
+        self.query_editable.set_content(text);
+    }
+
+    /// Get the replacement text (convenience accessor)
+    pub fn replacement(&self) -> String {
+        self.replace_editable.text()
+    }
+
+    /// Set the replacement text (replaces content)
+    pub fn set_replacement(&mut self, text: &str) {
+        self.replace_editable.set_content(text);
+    }
+
+    /// Get the currently focused editable state
+    pub fn focused_editable(&self) -> &EditableState<StringBuffer> {
+        match self.focused_field {
+            FindReplaceField::Query => &self.query_editable,
+            FindReplaceField::Replace => &self.replace_editable,
+        }
+    }
+
+    /// Get the currently focused editable state mutably
+    pub fn focused_editable_mut(&mut self) -> &mut EditableState<StringBuffer> {
+        match self.focused_field {
+            FindReplaceField::Query => &mut self.query_editable,
+            FindReplaceField::Replace => &mut self.replace_editable,
+        }
+    }
+
+    /// Toggle focus between query and replacement fields
+    pub fn toggle_field(&mut self) {
+        self.focused_field = match self.focused_field {
+            FindReplaceField::Query => FindReplaceField::Replace,
+            FindReplaceField::Replace => FindReplaceField::Query,
+        };
+    }
 }
 
 /// State for the theme picker modal

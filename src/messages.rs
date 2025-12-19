@@ -4,6 +4,8 @@
 
 use std::path::PathBuf;
 
+use crate::editable::{EditContext, TextEditMsg};
+
 /// Direction for cursor movement
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
@@ -163,12 +165,50 @@ pub enum ModalMsg {
     InsertChar(char),
     /// Delete character from modal input (backspace)
     DeleteBackward,
+    /// Delete character after cursor (delete)
+    DeleteForward,
     /// Delete word backward from modal input (Option+Backspace)
     DeleteWordBackward,
+
+    // === Cursor Movement ===
+    /// Move cursor left one character
+    MoveCursorLeft,
+    /// Move cursor right one character
+    MoveCursorRight,
+    /// Move cursor to start of line (Home)
+    MoveCursorHome,
+    /// Move cursor to end of line (End)
+    MoveCursorEnd,
     /// Move cursor word left in modal input (Option+Left)
     MoveCursorWordLeft,
     /// Move cursor word right in modal input (Option+Right)
     MoveCursorWordRight,
+
+    // === Selection Movement ===
+    /// Move cursor left with selection (Shift+Left)
+    MoveCursorLeftWithSelection,
+    /// Move cursor right with selection (Shift+Right)
+    MoveCursorRightWithSelection,
+    /// Move cursor to start with selection (Shift+Home)
+    MoveCursorHomeWithSelection,
+    /// Move cursor to end with selection (Shift+End)
+    MoveCursorEndWithSelection,
+    /// Move cursor word left with selection (Shift+Option+Left)
+    MoveCursorWordLeftWithSelection,
+    /// Move cursor word right with selection (Shift+Option+Right)
+    MoveCursorWordRightWithSelection,
+    /// Select all text in modal input (Cmd+A)
+    SelectAll,
+
+    // === Clipboard ===
+    /// Copy selection to clipboard (Cmd+C)
+    Copy,
+    /// Cut selection to clipboard (Cmd+X)
+    Cut,
+    /// Paste from clipboard (Cmd+V)
+    Paste,
+
+    // === List Navigation ===
     /// Move selection up in list (e.g., command palette results)
     SelectPrevious,
     /// Move selection down in list
@@ -402,6 +442,44 @@ pub enum CsvMsg {
     EditCursorHome,
     /// Move edit cursor to end (End while editing)
     EditCursorEnd,
+
+    // === Enhanced Cell Editing (via unified editable system) ===
+    /// Move edit cursor left by word (Option+Left while editing)
+    EditCursorWordLeft,
+    /// Move edit cursor right by word (Option+Right while editing)
+    EditCursorWordRight,
+    /// Delete word before cursor (Option+Backspace while editing)
+    EditDeleteWordBackward,
+    /// Delete word after cursor (Option+Delete while editing)
+    EditDeleteWordForward,
+    /// Select all text in cell (Cmd+A while editing)
+    EditSelectAll,
+    /// Undo last edit operation (Cmd+Z while editing)
+    EditUndo,
+    /// Redo last undone operation (Cmd+Shift+Z while editing)
+    EditRedo,
+
+    // === Selection Movement (Shift+Arrow while editing) ===
+    /// Move cursor left with selection (Shift+Left while editing)
+    EditCursorLeftWithSelection,
+    /// Move cursor right with selection (Shift+Right while editing)
+    EditCursorRightWithSelection,
+    /// Move to start with selection (Shift+Home while editing)
+    EditCursorHomeWithSelection,
+    /// Move to end with selection (Shift+End while editing)
+    EditCursorEndWithSelection,
+    /// Move word left with selection (Shift+Option+Left while editing)
+    EditCursorWordLeftWithSelection,
+    /// Move word right with selection (Shift+Option+Right while editing)
+    EditCursorWordRightWithSelection,
+
+    // === Clipboard (while editing) ===
+    /// Copy selection to clipboard (Cmd+C while editing)
+    EditCopy,
+    /// Cut selection to clipboard (Cmd+X while editing)
+    EditCut,
+    /// Paste from clipboard (Cmd+V while editing)
+    EditPaste,
 }
 
 /// Workspace messages (file tree sidebar)
@@ -478,6 +556,8 @@ pub enum Msg {
     Csv(CsvMsg),
     /// Workspace messages (file tree)
     Workspace(WorkspaceMsg),
+    /// Unified text editing messages (Phase 2 - editable system)
+    TextEdit(EditContext, TextEditMsg),
 }
 
 // Convenience constructors for common messages
