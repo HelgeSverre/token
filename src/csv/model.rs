@@ -2,6 +2,8 @@
 //!
 //! Memory-efficient storage using delimited strings instead of Vec<Vec<String>>.
 
+use crate::editable::{EditConstraints, EditableState, StringBuffer};
+
 use super::viewport::CsvViewport;
 
 /// Internal delimiter for cell storage (0xFA - rarely used in real data)
@@ -56,10 +58,8 @@ impl CellPosition {
 pub struct CellEditState {
     /// Position of the cell being edited
     pub position: CellPosition,
-    /// Current edit buffer content
-    pub buffer: String,
-    /// Cursor position within buffer (byte offset)
-    pub cursor: usize,
+    /// Editable state for the cell content
+    pub editable: EditableState<StringBuffer>,
     /// Original value before editing (for cancel/undo)
     pub original: String,
 }
@@ -67,89 +67,164 @@ pub struct CellEditState {
 impl CellEditState {
     /// Create new edit state for a cell
     pub fn new(position: CellPosition, value: String) -> Self {
-        let cursor = value.len();
+        let mut editable =
+            EditableState::new(StringBuffer::from_text(&value), EditConstraints::csv_cell());
+        // Move cursor to end
+        editable.move_line_end(false);
         Self {
             position,
-            buffer: value.clone(),
-            cursor,
+            editable,
             original: value,
         }
     }
 
     /// Create new edit state starting with a character (replaces content)
     pub fn with_char(position: CellPosition, original: String, ch: char) -> Self {
+        let mut editable = EditableState::new(
+            StringBuffer::from_text(&ch.to_string()),
+            EditConstraints::csv_cell(),
+        );
+        // Move cursor to end (after the character)
+        editable.move_line_end(false);
         Self {
             position,
-            buffer: ch.to_string(),
-            cursor: ch.len_utf8(),
+            editable,
             original,
         }
     }
 
+    /// Get the current buffer content
+    pub fn buffer(&self) -> String {
+        self.editable.text()
+    }
+
     /// Insert character at cursor position
     pub fn insert_char(&mut self, ch: char) {
-        self.buffer.insert(self.cursor, ch);
-        self.cursor += ch.len_utf8();
+        self.editable.insert_char(ch);
     }
 
     /// Delete character before cursor (backspace)
     pub fn delete_backward(&mut self) {
-        if self.cursor > 0 {
-            let prev_boundary = self.buffer[..self.cursor]
-                .char_indices()
-                .last()
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-            self.buffer.remove(prev_boundary);
-            self.cursor = prev_boundary;
-        }
+        self.editable.delete_backward();
     }
 
     /// Delete character at cursor (delete)
     pub fn delete_forward(&mut self) {
-        if self.cursor < self.buffer.len() {
-            self.buffer.remove(self.cursor);
-        }
+        self.editable.delete_forward();
     }
 
     /// Move cursor left
     pub fn cursor_left(&mut self) {
-        if self.cursor > 0 {
-            self.cursor = self.buffer[..self.cursor]
-                .char_indices()
-                .last()
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-        }
+        self.editable.move_left(false);
     }
 
     /// Move cursor right
     pub fn cursor_right(&mut self) {
-        if self.cursor < self.buffer.len() {
-            if let Some((_, ch)) = self.buffer[self.cursor..].char_indices().next() {
-                self.cursor += ch.len_utf8();
-            }
-        }
+        self.editable.move_right(false);
     }
 
     /// Move cursor to start
     pub fn cursor_home(&mut self) {
-        self.cursor = 0;
+        self.editable.move_line_start(false);
     }
 
     /// Move cursor to end
     pub fn cursor_end(&mut self) {
-        self.cursor = self.buffer.len();
+        self.editable.move_line_end(false);
     }
 
     /// Check if content changed from original
     pub fn is_modified(&self) -> bool {
-        self.buffer != self.original
+        self.editable.text() != self.original
     }
 
     /// Get cursor position in characters (for rendering)
     pub fn cursor_char_position(&self) -> usize {
-        self.buffer[..self.cursor].chars().count()
+        self.editable.cursor().column
+    }
+
+    // === New methods available through EditableState ===
+
+    /// Move cursor left by one word
+    pub fn cursor_word_left(&mut self) {
+        self.editable.move_word_left(false);
+    }
+
+    /// Move cursor right by one word
+    pub fn cursor_word_right(&mut self) {
+        self.editable.move_word_right(false);
+    }
+
+    /// Delete word before cursor
+    pub fn delete_word_backward(&mut self) {
+        self.editable.delete_word_backward();
+    }
+
+    /// Delete word after cursor
+    pub fn delete_word_forward(&mut self) {
+        self.editable.delete_word_forward();
+    }
+
+    /// Select all text
+    pub fn select_all(&mut self) {
+        self.editable.select_all();
+    }
+
+    /// Check if there's a selection
+    pub fn has_selection(&self) -> bool {
+        self.editable.has_selection()
+    }
+
+    /// Get the selected text
+    pub fn selected_text(&self) -> String {
+        self.editable.selected_text()
+    }
+
+    /// Undo last operation
+    pub fn undo(&mut self) -> bool {
+        self.editable.undo()
+    }
+
+    /// Redo last undone operation
+    pub fn redo(&mut self) -> bool {
+        self.editable.redo()
+    }
+
+    // === Selection Movement ===
+
+    /// Move cursor left with selection
+    pub fn cursor_left_with_selection(&mut self) {
+        self.editable.move_left(true);
+    }
+
+    /// Move cursor right with selection
+    pub fn cursor_right_with_selection(&mut self) {
+        self.editable.move_right(true);
+    }
+
+    /// Move cursor to start with selection
+    pub fn cursor_home_with_selection(&mut self) {
+        self.editable.move_line_start(true);
+    }
+
+    /// Move cursor to end with selection
+    pub fn cursor_end_with_selection(&mut self) {
+        self.editable.move_line_end(true);
+    }
+
+    /// Move cursor word left with selection
+    pub fn cursor_word_left_with_selection(&mut self) {
+        self.editable.move_word_left(true);
+    }
+
+    /// Move cursor word right with selection
+    pub fn cursor_word_right_with_selection(&mut self) {
+        self.editable.move_word_right(true);
+    }
+
+    /// Insert text at cursor (for paste)
+    pub fn insert_text(&mut self, text: &str) {
+        self.editable.insert_text(text);
     }
 }
 
@@ -370,10 +445,11 @@ impl CsvState {
             return None;
         }
 
+        let new_value = edit_state.buffer();
         let edit = CellEdit {
             position: edit_state.position,
             old_value: edit_state.original,
-            new_value: edit_state.buffer.clone(),
+            new_value: new_value.clone(),
         };
 
         self.data
@@ -504,8 +580,8 @@ mod tests {
         let edit = CellEditState::new(pos, "hello".to_string());
 
         assert_eq!(edit.position, pos);
-        assert_eq!(edit.buffer, "hello");
-        assert_eq!(edit.cursor, 5);
+        assert_eq!(edit.buffer(), "hello");
+        assert_eq!(edit.cursor_char_position(), 5); // cursor at end
         assert_eq!(edit.original, "hello");
         assert!(!edit.is_modified());
     }
@@ -515,8 +591,8 @@ mod tests {
         let pos = CellPosition::new(0, 0);
         let edit = CellEditState::with_char(pos, "old".to_string(), 'x');
 
-        assert_eq!(edit.buffer, "x");
-        assert_eq!(edit.cursor, 1);
+        assert_eq!(edit.buffer(), "x");
+        assert_eq!(edit.cursor_char_position(), 1); // cursor after 'x'
         assert_eq!(edit.original, "old");
         assert!(edit.is_modified());
     }
@@ -525,22 +601,25 @@ mod tests {
     fn test_cell_edit_state_insert_char() {
         let pos = CellPosition::new(0, 0);
         let mut edit = CellEditState::new(pos, "ab".to_string());
-        edit.cursor = 1;
+        // Cursor starts at end (2), move to position 1
+        edit.cursor_home();
+        edit.cursor_right();
         edit.insert_char('X');
 
-        assert_eq!(edit.buffer, "aXb");
-        assert_eq!(edit.cursor, 2);
+        assert_eq!(edit.buffer(), "aXb");
+        assert_eq!(edit.cursor_char_position(), 2);
     }
 
     #[test]
     fn test_cell_edit_state_delete_backward() {
         let pos = CellPosition::new(0, 0);
         let mut edit = CellEditState::new(pos, "abc".to_string());
-        edit.cursor = 2;
+        // Cursor at end (3), move to position 2
+        edit.cursor_left();
         edit.delete_backward();
 
-        assert_eq!(edit.buffer, "ac");
-        assert_eq!(edit.cursor, 1);
+        assert_eq!(edit.buffer(), "ac");
+        assert_eq!(edit.cursor_char_position(), 1);
     }
 
     #[test]
@@ -548,17 +627,18 @@ mod tests {
         let pos = CellPosition::new(0, 0);
         let mut edit = CellEditState::new(pos, "hello".to_string());
 
+        // Cursor starts at end (5)
         edit.cursor_home();
-        assert_eq!(edit.cursor, 0);
+        assert_eq!(edit.cursor_char_position(), 0);
 
         edit.cursor_right();
-        assert_eq!(edit.cursor, 1);
+        assert_eq!(edit.cursor_char_position(), 1);
 
         edit.cursor_end();
-        assert_eq!(edit.cursor, 5);
+        assert_eq!(edit.cursor_char_position(), 5);
 
         edit.cursor_left();
-        assert_eq!(edit.cursor, 4);
+        assert_eq!(edit.cursor_char_position(), 4);
     }
 
     #[test]
@@ -573,10 +653,10 @@ mod tests {
 
         state.start_editing();
         assert!(state.is_editing());
-        assert_eq!(state.editing.as_ref().unwrap().buffer, "a");
+        assert_eq!(state.editing.as_ref().unwrap().buffer(), "a");
 
         state.edit_insert_char('X');
-        assert_eq!(state.editing.as_ref().unwrap().buffer, "aX");
+        assert_eq!(state.editing.as_ref().unwrap().buffer(), "aX");
 
         let edit = state.confirm_edit();
         assert!(edit.is_some());
@@ -598,5 +678,33 @@ mod tests {
 
         assert!(!state.is_editing());
         assert_eq!(state.data.get(0, 0), "a");
+    }
+
+    #[test]
+    fn test_cell_edit_state_word_movement() {
+        let pos = CellPosition::new(0, 0);
+        let mut edit = CellEditState::new(pos, "hello world".to_string());
+
+        edit.cursor_home();
+        assert_eq!(edit.cursor_char_position(), 0);
+
+        edit.cursor_word_right();
+        // Should be at position 6 (after "hello ")
+        assert_eq!(edit.cursor_char_position(), 6);
+
+        edit.cursor_word_left();
+        assert_eq!(edit.cursor_char_position(), 0);
+    }
+
+    #[test]
+    fn test_cell_edit_state_selection() {
+        let pos = CellPosition::new(0, 0);
+        let mut edit = CellEditState::new(pos, "hello".to_string());
+
+        assert!(!edit.has_selection());
+
+        edit.select_all();
+        assert!(edit.has_selection());
+        assert_eq!(edit.selected_text(), "hello");
     }
 }

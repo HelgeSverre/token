@@ -41,6 +41,28 @@ pub fn update_csv(model: &mut AppModel, msg: CsvMsg) -> Option<Cmd> {
         CsvMsg::EditCursorRight => edit_cursor_right(model),
         CsvMsg::EditCursorHome => edit_cursor_home(model),
         CsvMsg::EditCursorEnd => edit_cursor_end(model),
+
+        // Enhanced editing (via unified editable system)
+        CsvMsg::EditCursorWordLeft => edit_cursor_word_left(model),
+        CsvMsg::EditCursorWordRight => edit_cursor_word_right(model),
+        CsvMsg::EditDeleteWordBackward => edit_delete_word_backward(model),
+        CsvMsg::EditDeleteWordForward => edit_delete_word_forward(model),
+        CsvMsg::EditSelectAll => edit_select_all(model),
+        CsvMsg::EditUndo => edit_undo(model),
+        CsvMsg::EditRedo => edit_redo(model),
+
+        // Selection movement
+        CsvMsg::EditCursorLeftWithSelection => edit_cursor_left_with_selection(model),
+        CsvMsg::EditCursorRightWithSelection => edit_cursor_right_with_selection(model),
+        CsvMsg::EditCursorHomeWithSelection => edit_cursor_home_with_selection(model),
+        CsvMsg::EditCursorEndWithSelection => edit_cursor_end_with_selection(model),
+        CsvMsg::EditCursorWordLeftWithSelection => edit_cursor_word_left_with_selection(model),
+        CsvMsg::EditCursorWordRightWithSelection => edit_cursor_word_right_with_selection(model),
+
+        // Clipboard
+        CsvMsg::EditCopy => edit_copy(model),
+        CsvMsg::EditCut => edit_cut(model),
+        CsvMsg::EditPaste => edit_paste(model),
     }
 }
 
@@ -396,6 +418,238 @@ fn edit_cursor_end(model: &mut AppModel) -> Option<Cmd> {
     } else {
         None
     }
+}
+
+/// Move cursor left by word in edit buffer
+fn edit_cursor_word_left(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            edit.cursor_word_left();
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+/// Move cursor right by word in edit buffer
+fn edit_cursor_word_right(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            edit.cursor_word_right();
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+/// Delete word backward in edit buffer
+fn edit_delete_word_backward(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            edit.delete_word_backward();
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+/// Delete word forward in edit buffer
+fn edit_delete_word_forward(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            edit.delete_word_forward();
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+/// Select all text in edit buffer
+fn edit_select_all(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            edit.select_all();
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+/// Undo last edit operation
+fn edit_undo(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            edit.undo();
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+/// Redo last undone operation
+fn edit_redo(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            edit.redo();
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+// === Selection Movement ===
+
+/// Move cursor left with selection
+fn edit_cursor_left_with_selection(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            edit.cursor_left_with_selection();
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+/// Move cursor right with selection
+fn edit_cursor_right_with_selection(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            edit.cursor_right_with_selection();
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+/// Move cursor to start with selection
+fn edit_cursor_home_with_selection(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            edit.cursor_home_with_selection();
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+/// Move cursor to end with selection
+fn edit_cursor_end_with_selection(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            edit.cursor_end_with_selection();
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+/// Move cursor word left with selection
+fn edit_cursor_word_left_with_selection(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            edit.cursor_word_left_with_selection();
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+/// Move cursor word right with selection
+fn edit_cursor_word_right_with_selection(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            edit.cursor_word_right_with_selection();
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+// === Clipboard ===
+
+/// Copy selection to clipboard
+fn edit_copy(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            let text = edit.selected_text();
+            if !text.is_empty() {
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(&text);
+                }
+            }
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+/// Cut selection to clipboard
+fn edit_cut(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            let text = edit.selected_text();
+            if !text.is_empty() {
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(&text);
+                }
+                edit.delete_backward();
+            }
+        }
+        Some(Cmd::Redraw)
+    } else {
+        None
+    }
+}
+
+/// Paste from clipboard
+fn edit_paste(model: &mut AppModel) -> Option<Cmd> {
+    let clipboard_text = if let Ok(mut clipboard) = arboard::Clipboard::new() {
+        clipboard.get_text().ok()
+    } else {
+        None
+    };
+
+    if let Some(text) = clipboard_text {
+        let editor = model.editor_area.focused_editor_mut()?;
+        if let Some(csv) = editor.view_mode.as_csv_mut() {
+            if let Some(edit) = &mut csv.editing {
+                // Filter out newlines for single-line cell editing
+                let filtered: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+                edit.insert_text(&filtered);
+            }
+            return Some(Cmd::Redraw);
+        }
+    }
+    None
 }
 
 // === Document Sync ===
