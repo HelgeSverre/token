@@ -193,6 +193,18 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
             }
             Some(Cmd::Redraw)
         }
+
+        WorkspaceMsg::FileSystemChange => {
+            // Refresh the file tree silently (no status message to avoid spam)
+            if let Some(workspace) = &mut model.workspace {
+                if let Err(e) = workspace.refresh() {
+                    tracing::warn!("Failed to refresh file tree: {}", e);
+                } else {
+                    tracing::debug!("File tree refreshed due to file system change");
+                }
+            }
+            Some(Cmd::Redraw)
+        }
     }
 }
 

@@ -15,6 +15,7 @@ use winit::window::{CursorIcon, Icon, Window};
 
 use token::cli::StartupConfig;
 use token::commands::{filter_commands, Cmd};
+use token::fs_watcher::FileSystemWatcher;
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
 };
@@ -67,6 +68,8 @@ pub struct App {
     perf: PerfStats,
     /// Channel to send parse requests to syntax worker
     syntax_tx: Sender<SyntaxParseRequest>,
+    /// File system watcher for workspace directory (if workspace is open)
+    fs_watcher: Option<FileSystemWatcher>,
 }
 
 impl App {
@@ -88,10 +91,20 @@ impl App {
 
         let mut model = AppModel::new(window_width, window_height, 1.0, file_paths);
 
-        // Open workspace if specified
-        if let Some(root) = workspace_root {
-            model.open_workspace(root);
-        }
+        // Open workspace if specified and start file watcher
+        let fs_watcher = if let Some(root) = workspace_root {
+            model.open_workspace(root.clone());
+            // Start file system watcher for the workspace
+            match FileSystemWatcher::new(root) {
+                Ok(watcher) => Some(watcher),
+                Err(e) => {
+                    tracing::warn!("Failed to start file system watcher: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         // Apply initial cursor position if specified (--line/--column)
         if let Some((line, column)) = initial_position {
@@ -125,6 +138,7 @@ impl App {
             msg_rx,
             perf: PerfStats::default(),
             syntax_tx,
+            fs_watcher,
         };
 
         // Trigger initial syntax parsing for all loaded documents
@@ -1388,7 +1402,18 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         event_loop.set_control_flow(ControlFlow::Poll);
 
+        let mut needs_redraw = false;
+
         if self.process_async_messages() {
+            needs_redraw = true;
+        }
+
+        // Poll file system watcher for changes
+        if self.poll_fs_watcher() {
+            needs_redraw = true;
+        }
+
+        if needs_redraw {
             if let Some(window) = &self.window {
                 window.request_redraw();
             }
@@ -1403,6 +1428,31 @@ impl ApplicationHandler for App {
                 }
             }
         }
+    }
+}
+
+impl App {
+    /// Poll file system watcher and dispatch events
+    /// Returns true if any events were processed
+    fn poll_fs_watcher(&mut self) -> bool {
+        let Some(watcher) = &self.fs_watcher else {
+            return false;
+        };
+
+        let events = watcher.poll_events();
+        if events.is_empty() {
+            return false;
+        }
+
+        // Dispatch a single FileSystemChange message to refresh the tree
+        // (The watcher already debounces, so we just need one refresh)
+        if let Some(cmd) = update(&mut self.model, Msg::Workspace(WorkspaceMsg::FileSystemChange)) {
+            if cmd.needs_redraw() {
+                return true;
+            }
+        }
+
+        true
     }
 }
 
