@@ -1400,8 +1400,6 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        event_loop.set_control_flow(ControlFlow::Poll);
-
         let mut needs_redraw = false;
 
         if self.process_async_messages() {
@@ -1419,8 +1417,12 @@ impl ApplicationHandler for App {
             }
         }
 
+        // Check if cursor blink timer has elapsed
         let now = Instant::now();
-        if now.duration_since(self.last_tick) > Duration::from_millis(500) {
+        let time_since_tick = now.duration_since(self.last_tick);
+        let blink_interval = Duration::from_millis(500);
+
+        if time_since_tick >= blink_interval {
             self.last_tick = now;
             if self.tick().is_some() {
                 if let Some(window) = &self.window {
@@ -1428,6 +1430,12 @@ impl ApplicationHandler for App {
                 }
             }
         }
+
+        // Use WaitUntil to wake up for the next cursor blink
+        // This avoids spinning the event loop constantly (Poll mode)
+        // while still handling async messages, fs changes, and cursor blinks
+        let next_blink = self.last_tick + blink_interval;
+        event_loop.set_control_flow(ControlFlow::WaitUntil(next_blink));
     }
 }
 
