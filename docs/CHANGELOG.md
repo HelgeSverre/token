@@ -4,7 +4,52 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## v0.3.10 - 2025-12-19 (Latest)
+## v0.3.11 - 2025-12-20 (Latest)
+
+### Fixed - Event Loop Performance
+
+Critical fix for the event loop spinning issue that caused ~7 FPS in multi-split scenarios:
+
+**Root Cause:** `ControlFlow::Poll` was spinning the event loop constantly at ~100% CPU even when idle.
+
+**Fix:** Changed to `ControlFlow::WaitUntil` in `src/runtime/app.rs`:
+- Event loop now sleeps until the next cursor blink timer (500ms)
+- Wakes immediately for user input, async messages, or file system changes
+- Idle CPU usage dropped from ~100% to ~0%
+- Multi-split FPS improved from ~7 to 60 (VSync limited)
+
+**Performance Profile (30-second live session):**
+| Category | Time |
+|----------|------|
+| Idle/Waiting | 77.6% |
+| Event Handling | 21.5% |
+| Rendering | ~0.9% |
+
+### Fixed - Debug Overlay HiDPI Scaling
+
+Fixed hard-coded pixel values in the performance overlay (`src/runtime/perf.rs`) that didn't scale on Retina displays:
+
+- Overlay dimensions now scale based on `line_height` ratio
+- Chart widths derived from approximate character width
+- Stacked bar calculation fixed with `saturating_sub` to prevent overflow panic
+
+### Added - Profiling Documentation
+
+Enhanced [docs/profiling-guide.md](profiling-guide.md) with recommended workflow:
+
+- Step-by-step process: headless benchmark → sample command → Instruments
+- Interpreting `sample` output (mach_msg2_trap, CFRunLoop patterns)
+- Common issues & solutions troubleshooting table
+- Example healthy profile output
+
+### Changed
+
+- Archived detailed allocation analysis to [performance-analysis-v1.md](performance-analysis-v1.md)
+- Created new [performance-analysis.md](performance-analysis.md) with summary of all optimizations
+
+---
+
+## v0.3.10 - 2025-12-19
 
 ### Added - File System Watcher & New Languages
 

@@ -1,6 +1,6 @@
 [package]
 name = "token"
-version = "0.3.10"
+version = "0.3.11"
 edition = "2021"
 description = "A fast, minimal multi-cursor text editor with syntax highlighting"
 homepage = "https://token-editor.com"
