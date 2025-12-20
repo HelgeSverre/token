@@ -1,125 +1,146 @@
-# Configurable Gesture Bindings
+# Double-Tap Modifier Keybindings
 
-**Status:** Planned
-**Created:** 2025-12-19
-**Effort:** M (3-5 sessions)
+Support repeated modifiers in key specifications (`alt+alt+up`)
+
+> **Status:** 📋 Planned
+> **Priority:** P2 (Important)
+> **Effort:** S (1-2 days)
+> **Created:** 2025-12-19
+> **Updated:** 2025-12-20
+> **Milestone:** 3 - Keybinding Enhancements
 
 ---
 
 ## Overview
 
-Enable configurable keybindings for temporal gestures like double-tap modifier keys. Currently, `Option+Option+Arrow` (double-tap Option then Arrow) is hardcoded for adding cursors above/below. This feature makes such gestures configurable through the keymap system.
+### Current State
 
-### Goals
+The editor currently has a hardcoded implementation for `Option+Option+Arrow` (double-tap Option, then arrow key) to add cursors above/below. This works but:
 
-1. **Configurable double-tap bindings** — Express `alt+alt+up` in keymap.yaml
-2. **Support all modifiers** — Alt, Ctrl, Shift, Cmd can all have double-tap gestures
-3. **Clean syntax** — `key: alt+alt+down` instead of conditions
-4. **Backward compatible** — Existing hardcoded behavior becomes default binding
+- Cannot be reconfigured or disabled
+- Not expressed in keymap.yaml
+- Requires special handling that bypasses the keymap system
 
-### Non-Goals (This Phase)
+### Goal
 
-- Configurable timing window (hardcode 300ms)
-- Triple-tap detection
-- Hold-to-repeat gestures
-- Modifier-only bindings (double-tap must end with a key)
-
----
-
-## Current Implementation
-
-### Detection (`src/runtime/app.rs:404-421`)
-
-```rust
-let is_option_key = matches!(
-    event.physical_key,
-    PhysicalKey::Code(KeyCode::AltLeft) | PhysicalKey::Code(KeyCode::AltRight)
-);
-
-if is_option_key {
-    if event.state == ElementState::Pressed && !event.repeat {
-        let now = Instant::now();
-        if let Some(last) = self.last_option_press {
-            if now.duration_since(last) < Duration::from_millis(300) {
-                self.option_double_tapped = true;
-            }
-        }
-        self.last_option_press = Some(now);
-    } else if event.state == ElementState::Released {
-        self.option_double_tapped = false;
-    }
-}
-```
-
-### Handling (`src/runtime/input.rs:70-75`)
-
-```rust
-Key::Named(NamedKey::ArrowUp) if alt && option_double_tapped => {
-    update(model, Msg::Editor(EditorMsg::AddCursorAbove))
-}
-Key::Named(NamedKey::ArrowDown) if alt && option_double_tapped => {
-    update(model, Msg::Editor(EditorMsg::AddCursorBelow))
-}
-```
-
-### Why It Bypasses the Keymap
-
-The keymap system is declarative and cannot express temporal constraints. The current code explicitly skips the keymap when `option_double_tapped && alt` is true.
-
----
-
-## Proposed Design
-
-### YAML Syntax
+Allow keybindings like `alt+alt+up` in keymap.yaml where repeating a modifier means "double-tap that modifier":
 
 ```yaml
-# Double-tap modifier expressed in key specification
+# keymap.yaml
 - key: alt+alt+up
   command: AddCursorAbove
 
 - key: alt+alt+down
   command: AddCursorBelow
-
-# Works with all modifiers
-- key: ctrl+ctrl+d
-  command: DuplicateLine
-
-- key: cmd+cmd+k
-  command: ToggleBookmark
 ```
 
-The parser recognizes `modifier+modifier` (same modifier twice) as a double-tap pattern.
+### Non-Goals
 
-### Extended Keystroke
+- Configurable timing window (hardcode 300ms)
+- Triple-tap or more
+- Modifier-only bindings (must end with a key)
+- Complex gesture sequences
+
+---
+
+## Design
+
+### Core Insight
+
+The key insight is simple: when parsing a key specification like `alt+alt+up`, if we see the same modifier twice, it means "that modifier was double-tapped."
+
+At match time, we check if the modifier is currently held AND was double-tapped (based on timing).
+
+### Keystroke Extension
 
 ```rust
 // src/keymap/types.rs
 
+/// A parsed keystroke from config
+pub struct Keystroke {
+    pub key: KeyCode,
+    pub mods: Modifiers,
+    pub double_tap: Option<ModifierKey>,  // NEW: Which modifier must be double-tapped
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModifierKey {
     Alt,
     Ctrl,
     Shift,
     Cmd,
 }
+```
 
-pub struct Keystroke {
-    pub key: KeyCode,
-    pub mods: Modifiers,
-    pub double_tap_mod: Option<ModifierKey>,  // NEW
+### Gesture State (Already Exists)
+
+The existing code already tracks double-tap state:
+
+```rust
+// src/runtime/app.rs (existing)
+pub struct App {
+    last_option_press: Option<Instant>,
+    option_double_tapped: bool,
+    // ...
 }
 ```
 
-### Extended KeyContext
+We just need to:
+1. Generalize to track all modifiers
+2. Expose this state to the keymap matching
+
+### Generalized Gesture Tracking
 
 ```rust
-// src/keymap/context.rs
+// src/runtime/app.rs
 
-pub struct KeyContext {
-    // Existing...
-    pub has_selection: bool,
-    pub modal_active: bool,
+const DOUBLE_TAP_WINDOW_MS: u64 = 300;
 
-    // Gesture states (NEW)
+#[derive(Default)]
+struct ModifierGesture {
+    last_press: Option<Instant>,
+    double_tapped: bool,
+}
+
+impl ModifierGesture {
+    fn on_press(&mut self) {
+        let now = Instant::now();
+        if let Some(last) = self.last_press {
+            if now.duration_since(last) < Duration::from_millis(DOUBLE_TAP_WINDOW_MS) {
+                self.double_tapped = true;
+            }
+        }
+        self.last_press = Some(now);
+    }
+
+    fn on_release(&mut self) {
+        self.double_tapped = false;
+    }
+}
+
+pub struct App {
+    alt_gesture: ModifierGesture,
+    ctrl_gesture: ModifierGesture,
+    shift_gesture: ModifierGesture,
+    cmd_gesture: ModifierGesture,
+    // ...
+}
+
+impl App {
+    /// Get current double-tap states for keymap matching
+    pub fn gesture_state(&self) -> GestureState {
+        GestureState {
+            alt_double_tap: self.alt_gesture.double_tapped,
+            ctrl_double_tap: self.ctrl_gesture.double_tapped,
+            shift_double_tap: self.shift_gesture.double_tapped,
+            cmd_double_tap: self.cmd_gesture.double_tapped,
+        }
+    }
+}
+
+/// Passed to keymap for matching
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GestureState {
     pub alt_double_tap: bool,
     pub ctrl_double_tap: bool,
     pub shift_double_tap: bool,
@@ -127,97 +148,229 @@ pub struct KeyContext {
 }
 ```
 
-### Gesture State Tracking
+### Config Parsing
 
 ```rust
-// src/runtime/app.rs
+// src/keymap/config.rs
 
-#[derive(Default)]
-struct GestureState {
-    last_press: Option<Instant>,
-    double_tapped: bool,
-}
+fn parse_key_spec(spec: &str) -> Result<Keystroke, ParseError> {
+    let parts: Vec<&str> = spec.split('+').collect();
 
-struct App {
-    // Replace single field with per-modifier tracking
-    alt_gesture: GestureState,
-    ctrl_gesture: GestureState,
-    shift_gesture: GestureState,
-    cmd_gesture: GestureState,
+    let mut mods = Modifiers::default();
+    let mut double_tap: Option<ModifierKey> = None;
+    let mut seen_modifiers: Vec<&str> = Vec::new();
+
+    // Parse all but last part as modifiers
+    for part in &parts[..parts.len() - 1] {
+        let lower = part.to_lowercase();
+
+        // Check for repeated modifier (double-tap)
+        if seen_modifiers.contains(&lower.as_str()) {
+            double_tap = Some(match lower.as_str() {
+                "alt" | "option" => ModifierKey::Alt,
+                "ctrl" | "control" => ModifierKey::Ctrl,
+                "shift" => ModifierKey::Shift,
+                "cmd" | "meta" | "super" => ModifierKey::Cmd,
+                _ => return Err(ParseError::InvalidModifier(lower)),
+            });
+        } else {
+            seen_modifiers.push(part);
+            match lower.as_str() {
+                "alt" | "option" => mods.alt = true,
+                "ctrl" | "control" => mods.ctrl = true,
+                "shift" => mods.shift = true,
+                "cmd" | "meta" | "super" => mods.cmd = true,
+                _ => return Err(ParseError::InvalidModifier(lower)),
+            }
+        }
+    }
+
+    // Last part is the key
+    let key = parse_key_code(parts.last().unwrap())?;
+
+    Ok(Keystroke { key, mods, double_tap })
 }
+```
+
+### Keymap Matching
+
+```rust
+// src/keymap/keymap.rs
+
+impl Keymap {
+    pub fn lookup(
+        &self,
+        keystroke: &Keystroke,
+        context: &KeyContext,
+        gesture: &GestureState,
+    ) -> Option<&Command> {
+        for binding in &self.bindings {
+            if self.matches(binding, keystroke, context, gesture) {
+                return Some(&binding.command);
+            }
+        }
+        None
+    }
+
+    fn matches(
+        &self,
+        binding: &Keybinding,
+        keystroke: &Keystroke,
+        context: &KeyContext,
+        gesture: &GestureState,
+    ) -> bool {
+        // Check key and modifiers
+        if binding.keystroke.key != keystroke.key {
+            return false;
+        }
+        if binding.keystroke.mods != keystroke.mods {
+            return false;
+        }
+
+        // Check double-tap requirement
+        if let Some(mod_key) = binding.keystroke.double_tap {
+            let is_double_tapped = match mod_key {
+                ModifierKey::Alt => gesture.alt_double_tap,
+                ModifierKey::Ctrl => gesture.ctrl_double_tap,
+                ModifierKey::Shift => gesture.shift_double_tap,
+                ModifierKey::Cmd => gesture.cmd_double_tap,
+            };
+            if !is_double_tapped {
+                return false;
+            }
+        }
+
+        // Check context conditions
+        self.check_conditions(&binding.when, context)
+    }
+}
+```
+
+---
+
+## Default Bindings
+
+```yaml
+# keymap.yaml - move hardcoded behavior to config
+
+# Double-tap Option + Arrow for multi-cursor
+- key: alt+alt+up
+  command: AddCursorAbove
+
+- key: alt+alt+down
+  command: AddCursorBelow
 ```
 
 ---
 
 ## Implementation Plan
 
-### Phase 1: Generalize Gesture Detection
-**File:** `src/runtime/app.rs`
+### Phase 1: Generalize Gesture Tracking
 
-- Add `GestureState` struct with `last_press` and `double_tapped`
-- Track all 4 modifiers: Alt, Ctrl, Shift, Cmd
-- Update keyboard event handler to detect double-tap for each
+**Effort:** S (half day)
 
-### Phase 2: Extend KeyContext
-**File:** `src/keymap/context.rs`
+- [ ] Create `ModifierGesture` struct
+- [ ] Add gesture tracking for Alt, Ctrl, Shift, Cmd in `App`
+- [ ] Create `GestureState` struct for passing to keymap
+- [ ] Update keyboard event handler to track all modifiers
 
-- Add `alt_double_tap`, `ctrl_double_tap`, `shift_double_tap`, `cmd_double_tap` fields
-- Wire up from App gesture state when creating context
+**Test:** Log gesture state, verify double-tap detection works.
 
-### Phase 3: Extend Keystroke
-**File:** `src/keymap/types.rs`
+### Phase 2: Extend Keystroke Parsing
 
-- Add `ModifierKey` enum
-- Add `double_tap_mod: Option<ModifierKey>` to Keystroke
-- Update `Keystroke::new()` and related constructors
+**Effort:** S (half day)
 
-### Phase 4: Update Config Parser
-**File:** `src/keymap/config.rs`
+- [ ] Add `double_tap: Option<ModifierKey>` to `Keystroke`
+- [ ] Update `parse_key_spec()` to detect repeated modifiers
+- [ ] Add unit tests for parsing `alt+alt+up`
 
-- Parse `alt+alt+key` syntax
-- Detect repeated modifier (e.g., `alt+alt`) and set `double_tap_mod`
-- Handle all combinations: `ctrl+ctrl`, `cmd+cmd`, `shift+shift`
+**Test:** Parse "alt+alt+up", verify `double_tap = Some(Alt)`.
 
-### Phase 5: Update Keymap Matching
-**File:** `src/keymap/keymap.rs`
+### Phase 3: Update Keymap Matching
 
-- When matching, check if `double_tap_mod` requirement is satisfied
-- Compare against corresponding `KeyContext` gesture field
+**Effort:** S (half day)
 
-### Phase 6: Remove Hardcoded Handling
-**Files:** `src/runtime/app.rs`, `src/runtime/input.rs`
+- [ ] Pass `GestureState` to `Keymap::lookup()`
+- [ ] Add double-tap check in `matches()`
+- [ ] Update all call sites to pass gesture state
 
-- Remove `skip_keymap` check for `option_double_tapped`
-- Remove hardcoded ArrowUp/ArrowDown handling in input.rs
-- Let keymap handle it naturally
+**Test:** Binding with `alt+alt+up` only matches when Alt double-tapped.
 
-### Phase 7: Add Default Bindings
-**File:** `keymap.yaml`
+### Phase 4: Remove Hardcoded Logic
 
-```yaml
-- key: alt+alt+up
-  command: AddCursorAbove
-- key: alt+alt+down
-  command: AddCursorBelow
-```
+**Effort:** S (half day)
 
-### Phase 8: Testing
+- [ ] Remove `skip_keymap` check in `input.rs`
+- [ ] Remove hardcoded Arrow handling for double-tap
+- [ ] Add default bindings to `keymap.yaml`
+- [ ] Verify existing behavior preserved
 
-- Unit tests for gesture detection timing
-- Unit tests for YAML parsing of double-modifier syntax
-- Integration tests for keymap matching with gesture context
-- Verify backward compatibility (default behavior unchanged)
+**Test:** Double-tap Option + Arrow still works, now via keymap.
 
 ---
 
-## Edge Cases
+## Testing
 
-| Scenario | Behavior |
-|----------|----------|
-| Alt+Alt+Alt+Up | Third press within window keeps double_tapped true |
-| Alt release before arrow | double_tapped becomes false, binding doesn't match |
-| Alt+Ctrl+Up during alt_double_tap | Only matches if binding requires both (unlikely) |
-| Very fast typing 301ms+ | Gesture expires, treated as normal Alt+Up |
+### Unit Tests
+
+```rust
+#[test]
+fn test_parse_double_tap() {
+    let ks = parse_key_spec("alt+alt+up").unwrap();
+    assert_eq!(ks.key, KeyCode::ArrowUp);
+    assert!(ks.mods.alt);
+    assert_eq!(ks.double_tap, Some(ModifierKey::Alt));
+}
+
+#[test]
+fn test_parse_no_double_tap() {
+    let ks = parse_key_spec("alt+up").unwrap();
+    assert_eq!(ks.key, KeyCode::ArrowUp);
+    assert!(ks.mods.alt);
+    assert_eq!(ks.double_tap, None);
+}
+
+#[test]
+fn test_match_requires_double_tap() {
+    let binding = Keybinding {
+        keystroke: Keystroke {
+            key: KeyCode::ArrowUp,
+            mods: Modifiers { alt: true, ..Default::default() },
+            double_tap: Some(ModifierKey::Alt),
+        },
+        command: Command::AddCursorAbove,
+        when: vec![],
+    };
+
+    let input = Keystroke {
+        key: KeyCode::ArrowUp,
+        mods: Modifiers { alt: true, ..Default::default() },
+        double_tap: None,
+    };
+
+    // Without double-tap state, should NOT match
+    let gesture_no = GestureState::default();
+    assert!(!keymap.matches(&binding, &input, &context, &gesture_no));
+
+    // With double-tap state, SHOULD match
+    let gesture_yes = GestureState { alt_double_tap: true, ..Default::default() };
+    assert!(keymap.matches(&binding, &input, &context, &gesture_yes));
+}
+```
+
+### Manual Testing
+
+- [ ] Double-tap Option + Up/Down adds cursors (existing behavior)
+- [ ] Single Option + Up/Down does NOT add cursors
+- [ ] Can remap to `ctrl+ctrl+up` in user keymap
+- [ ] Can disable with `command: Unbound`
+- [ ] Timing window feels right (~300ms)
+
+---
+
+## Migration
+
+Existing users will get the same behavior automatically via the default bindings. No breaking changes.
 
 ---
 
@@ -225,20 +378,16 @@ struct App {
 
 | File | Changes |
 |------|---------|
-| `src/runtime/app.rs` | Generalize gesture tracking to all modifiers |
-| `src/keymap/types.rs` | Add `ModifierKey`, `double_tap_mod` to Keystroke |
-| `src/keymap/context.rs` | Add gesture state fields to KeyContext |
-| `src/keymap/config.rs` | Parse `alt+alt+key` syntax |
-| `src/keymap/keymap.rs` | Match double-tap bindings against gesture state |
-| `src/runtime/input.rs` | Remove hardcoded gesture handling |
+| `src/runtime/app.rs` | Add `ModifierGesture` for all modifiers, expose `gesture_state()` |
+| `src/keymap/types.rs` | Add `double_tap: Option<ModifierKey>` to `Keystroke` |
+| `src/keymap/config.rs` | Parse `alt+alt+up` syntax |
+| `src/keymap/keymap.rs` | Check gesture state in `matches()` |
+| `src/runtime/input.rs` | Remove hardcoded double-tap handling |
 | `keymap.yaml` | Add `alt+alt+up/down` default bindings |
 
 ---
 
-## Success Criteria
+## References
 
-1. `alt+alt+up` and `alt+alt+down` work as before (default bindings)
-2. Users can remap to different modifiers: `ctrl+ctrl+up`
-3. Users can disable by binding to `Unbound`
-4. No timing window configuration needed (300ms hardcoded)
-5. All existing tests pass
+- [Current implementation](../../src/runtime/app.rs#L404-421) - Existing gesture detection
+- [Keymapping System](../archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) - Keymap architecture
