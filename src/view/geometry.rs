@@ -65,19 +65,30 @@ pub fn compute_visible_columns(window_width: u32, char_width: f32) -> usize {
 // Tab Expansion Helpers
 // ============================================================================
 
+use std::borrow::Cow;
+
 /// Expand tab characters to spaces for display.
 ///
 /// Converts each tab character to the appropriate number of spaces based on
 /// the current visual column and `TABULATOR_WIDTH`. This is used for rendering
 /// text where tabs need to be visually aligned.
 ///
+/// Returns `Cow::Borrowed` if no tabs are present (zero allocation),
+/// or `Cow::Owned` with expanded tabs otherwise.
+///
 /// # Example
 /// ```ignore
 /// let text = "a\tb";  // Tab at column 1
 /// let expanded = expand_tabs_for_display(text);
-/// assert_eq!(expanded, "a   b");  // Tab becomes 3 spaces (to reach column 4)
+/// assert_eq!(&*expanded, "a   b");  // Tab becomes 3 spaces (to reach column 4)
 /// ```
-pub fn expand_tabs_for_display(text: &str) -> String {
+pub fn expand_tabs_for_display(text: &str) -> Cow<'_, str> {
+    // Fast path: if no tabs, return borrowed reference (no allocation)
+    if !text.contains('\t') {
+        return Cow::Borrowed(text);
+    }
+
+    // Slow path: expand tabs
     let mut result = String::with_capacity(text.len() * 2);
     let mut visual_col = 0;
 
@@ -94,7 +105,7 @@ pub fn expand_tabs_for_display(text: &str) -> String {
         }
     }
 
-    result
+    Cow::Owned(result)
 }
 
 /// Convert a character column index to a visual (screen) column position.
