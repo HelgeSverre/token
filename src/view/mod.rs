@@ -8,7 +8,7 @@ pub mod helpers;
 pub mod text_field;
 
 pub use frame::{Frame, TextPainter};
-pub use helpers::{get_tab_display_name, trim_line_ending};
+pub use helpers::get_tab_display_name;
 pub use text_field::{TextFieldContent, TextFieldOptions, TextFieldRenderer};
 
 // Re-export geometry helpers for backward compatibility
@@ -668,8 +668,8 @@ impl Renderer {
 
                 let line_len = document.line_length(doc_line);
 
-                let line_text = document.get_line(doc_line).unwrap_or_default();
-                let line_text_trimmed = trim_line_ending(&line_text);
+                // Use get_line_cow for zero-allocation when line is contiguous
+                let line_text = document.get_line_cow(doc_line).unwrap_or_default();
 
                 let start_col = if doc_line == sel_start.line {
                     sel_start.column
@@ -682,8 +682,8 @@ impl Renderer {
                     line_len
                 };
 
-                let visual_start_col = char_col_to_visual_col(line_text_trimmed, start_col);
-                let visual_end_col = char_col_to_visual_col(line_text_trimmed, end_col);
+                let visual_start_col = char_col_to_visual_col(&line_text, start_col);
+                let visual_end_col = char_col_to_visual_col(&line_text, end_col);
 
                 let visible_start_col =
                     visual_start_col.saturating_sub(editor.viewport.left_column);
@@ -719,10 +719,10 @@ impl Renderer {
             let visible_end = (bottom_line + 1).min(end_line);
 
             for doc_line in visible_start..visible_end {
-                let line_text = document.get_line(doc_line).unwrap_or_default();
-                let line_text_trimmed = trim_line_ending(&line_text);
+                // Use get_line_cow for zero-allocation when line is contiguous
+                let line_text = document.get_line_cow(doc_line).unwrap_or_default();
                 let line_visual_len =
-                    char_col_to_visual_col(line_text_trimmed, line_text_trimmed.chars().count());
+                    char_col_to_visual_col(&line_text, line_text.chars().count());
 
                 // Only show highlight if current position is within the line's visual width
                 // (not dragging past line end)
@@ -765,62 +765,65 @@ impl Renderer {
         }
 
         // Text content with syntax highlighting
+        // Reuse buffers to avoid per-line allocations
         let text_color = model.theme.editor.foreground.to_argb_u32();
+        let max_chars = visible_columns;
+        let mut adjusted_tokens: Vec<token::syntax::HighlightToken> =
+            Vec::with_capacity(32); // Reused across lines
+        let mut display_text_buf = String::with_capacity(max_chars + 16); // Reused for display
+
         for (screen_line, doc_line) in (editor.viewport.top_line..end_line).enumerate() {
-            if let Some(line_text) = document.get_line(doc_line) {
+            // Use get_line_cow for zero-allocation when line is contiguous
+            if let Some(line_text) = document.get_line_cow(doc_line) {
                 let y = content_y + screen_line * line_height;
                 if y >= content_y + content_h {
                     break;
                 }
 
-                let visible_text = trim_line_ending(&line_text);
+                // expand_tabs_for_display returns Cow - no allocation if no tabs
+                let expanded_text = expand_tabs_for_display(&line_text);
 
-                let expanded_text = expand_tabs_for_display(visible_text);
-
-                let max_chars = visible_columns;
-                let display_text: String = expanded_text
+                // Reuse display_text buffer instead of allocating new String each line
+                display_text_buf.clear();
+                for ch in expanded_text
                     .chars()
                     .skip(editor.viewport.left_column)
                     .take(max_chars)
-                    .collect();
+                {
+                    display_text_buf.push(ch);
+                }
 
                 // Get syntax highlights for this line
                 let line_tokens = document.get_line_highlights(doc_line);
 
-                // Adjust token columns for horizontal scroll and tab expansion
-                // Token columns are in character positions, but display uses visual columns
-                // (where tabs expand to multiple spaces)
-                let adjusted_tokens: Vec<token::syntax::HighlightToken> = line_tokens
-                    .iter()
-                    .filter_map(|t| {
-                        // Convert character columns to visual columns (accounting for tabs)
-                        let visual_start = char_col_to_visual_col(visible_text, t.start_col);
-                        let visual_end = char_col_to_visual_col(visible_text, t.end_col);
+                // Reuse adjusted_tokens buffer instead of allocating new Vec each line
+                adjusted_tokens.clear();
+                for t in line_tokens.iter() {
+                    // Convert character columns to visual columns (accounting for tabs)
+                    let visual_start = char_col_to_visual_col(&line_text, t.start_col);
+                    let visual_end = char_col_to_visual_col(&line_text, t.end_col);
 
-                        // Adjust for horizontal scroll
-                        let start = visual_start.saturating_sub(editor.viewport.left_column);
-                        let end = visual_end.saturating_sub(editor.viewport.left_column);
+                    // Adjust for horizontal scroll
+                    let start = visual_start.saturating_sub(editor.viewport.left_column);
+                    let end = visual_end.saturating_sub(editor.viewport.left_column);
 
-                        if end > 0 && start < max_chars {
-                            Some(token::syntax::HighlightToken {
-                                start_col: start,
-                                end_col: end.min(max_chars),
-                                highlight: t.highlight,
-                            })
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+                    if end > 0 && start < max_chars {
+                        adjusted_tokens.push(token::syntax::HighlightToken {
+                            start_col: start,
+                            end_col: end.min(max_chars),
+                            highlight: t.highlight,
+                        });
+                    }
+                }
 
                 if adjusted_tokens.is_empty() {
-                    painter.draw(frame, group_text_start_x, y, &display_text, text_color);
+                    painter.draw(frame, group_text_start_x, y, &display_text_buf, text_color);
                 } else {
                     painter.draw_with_highlights(
                         frame,
                         group_text_start_x,
                         y,
-                        &display_text,
+                        &display_text_buf,
                         &adjusted_tokens,
                         &model.theme.syntax,
                         text_color,
@@ -838,9 +841,9 @@ impl Renderer {
                 let cursor_in_vertical_view = cursor.line >= editor.viewport.top_line
                     && cursor.line < editor.viewport.top_line + visible_lines;
 
-                let line_text = document.get_line(cursor.line).unwrap_or_default();
-                let line_text_trimmed = trim_line_ending(&line_text);
-                let visual_cursor_col = char_col_to_visual_col(line_text_trimmed, cursor.column);
+                // Use get_line_cow for zero-allocation when line is contiguous
+                let line_text = document.get_line_cow(cursor.line).unwrap_or_default();
+                let visual_cursor_col = char_col_to_visual_col(&line_text, cursor.column);
 
                 let cursor_in_horizontal_view = visual_cursor_col >= editor.viewport.left_column
                     && visual_cursor_col < editor.viewport.left_column + visible_columns;
@@ -876,11 +879,9 @@ impl Renderer {
                     continue;
                 }
 
-                let line_text = document.get_line(preview_pos.line).unwrap_or_default();
-                let line_text_trimmed = trim_line_ending(&line_text);
-
-                let visual_cursor_col =
-                    char_col_to_visual_col(line_text_trimmed, preview_pos.column);
+                // Use get_line_cow for zero-allocation when line is contiguous
+                let line_text = document.get_line_cow(preview_pos.line).unwrap_or_default();
+                let visual_cursor_col = char_col_to_visual_col(&line_text, preview_pos.column);
 
                 let cursor_in_horizontal_view = visual_cursor_col >= editor.viewport.left_column
                     && visual_cursor_col < editor.viewport.left_column + visible_columns;
