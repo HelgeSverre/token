@@ -22,53 +22,58 @@ fn redraw_with_syntax_parse(model: &mut AppModel) -> Cmd {
 }
 
 /// Find the start of the word before the given offset
+///
+/// Uses direct character indexing instead of collecting to String/Vec to avoid
+/// allocating the entire document prefix (which could be megabytes for large files).
 fn word_start_before(buffer: &ropey::Rope, offset: usize) -> usize {
     if offset == 0 {
         return 0;
     }
 
-    // Collect chars before offset
-    let text: String = buffer.slice(..offset).chars().collect();
-    let chars: Vec<char> = text.chars().collect();
-    let mut i = chars.len();
+    let mut pos = offset;
 
-    if i == 0 {
-        return 0;
+    // Get the character type of the char just before offset
+    let first_char = buffer.char(pos - 1);
+    let current_type = char_type(first_char);
+    pos -= 1;
+
+    // Continue backwards while same char type
+    while pos > 0 {
+        let ch = buffer.char(pos - 1);
+        if char_type(ch) != current_type {
+            break;
+        }
+        pos -= 1;
     }
 
-    // Move through current word type until we hit a different type or BOF
-    let current_type = char_type(chars[i - 1]);
-    while i > 0 && char_type(chars[i - 1]) == current_type {
-        i -= 1;
-    }
-
-    i
+    pos
 }
 
 /// Find the end of the word after the given offset
+///
+/// Uses direct character indexing instead of collecting to String/Vec to avoid
+/// allocating the entire document suffix (which could be megabytes for large files).
 fn word_end_after(buffer: &ropey::Rope, offset: usize) -> usize {
     let len = buffer.len_chars();
     if offset >= len {
         return len;
     }
 
-    // Collect chars from offset onwards
-    let text: String = buffer.slice(offset..).chars().collect();
-    let chars: Vec<char> = text.chars().collect();
+    // Get the character type of the char at offset
+    let first_char = buffer.char(offset);
+    let current_type = char_type(first_char);
+    let mut pos = offset + 1;
 
-    if chars.is_empty() {
-        return offset;
+    // Continue forwards while same char type
+    while pos < len {
+        let ch = buffer.char(pos);
+        if char_type(ch) != current_type {
+            break;
+        }
+        pos += 1;
     }
 
-    let mut i = 0;
-
-    // Move through current word type until we hit a different type or EOF
-    let current_type = char_type(chars[0]);
-    while i < chars.len() && char_type(chars[i]) == current_type {
-        i += 1;
-    }
-
-    offset + i
+    pos
 }
 
 /// Handle document messages (text editing, undo/redo)
