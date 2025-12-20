@@ -253,8 +253,15 @@ pub fn render_perf_overlay(
     let width_usize = frame.width();
     let height_usize = frame.height();
 
-    let config = OverlayConfig::new(OverlayAnchor::TopRight, 380, 480)
-        .with_margin(10)
+    // Scale overlay dimensions based on line_height to handle HiDPI correctly.
+    // At 1x scale (line_height ~20), we want ~380x480. At 2x, we want ~760x960.
+    // Use line_height as the scaling reference since it's already DPI-aware.
+    let scale = (line_height as f32 / 20.0).max(1.0);
+    let overlay_width = (420.0 * scale).round() as usize;
+    let overlay_height = (500.0 * scale).round() as usize;
+
+    let config = OverlayConfig::new(OverlayAnchor::TopRight, overlay_width, overlay_height)
+        .with_margin((10.0 * scale).round() as usize)
         .with_background(theme.overlay.background.to_argb_u32());
 
     let bounds = config.compute_bounds(width_usize, height_usize);
@@ -281,8 +288,11 @@ pub fn render_perf_overlay(
     let warning_color = theme.overlay.warning.to_argb_u32();
     let error_color = theme.overlay.error.to_argb_u32();
 
-    let text_x = bounds.x + 8;
-    let mut text_y = bounds.y + 4;
+    // Scale padding for HiDPI
+    let padding_x = (8.0 * scale).round() as usize;
+    let padding_y = (4.0 * scale).round() as usize;
+    let text_x = bounds.x + padding_x;
+    let mut text_y = bounds.y + padding_y;
 
     painter.draw(frame, text_x, text_y, "Performance", text_color);
     text_y += line_height;
@@ -316,8 +326,9 @@ pub fn render_perf_overlay(
     let total_render_us = total_render.as_micros().max(1) as f32;
     let frame_us = perf.last_frame_time.as_micros().max(1) as f32;
 
-    let bar_total_width: usize = 300;
-    let bar_height: usize = 14;
+    // Scale stacked bar dimensions for HiDPI
+    let bar_total_width = (bounds.width - 16).min((300.0 * scale).round() as usize);
+    let bar_height = ((line_height as f32 * 0.7).round() as usize).max(10);
     let bar_y = text_y + 2;
 
     let unaccounted_color = 0xFF404040_u32;
@@ -330,11 +341,13 @@ pub fn render_perf_overlay(
     );
 
     let mut bar_x = text_x;
+    let bar_end_x = text_x + bar_total_width;
     for (_name, duration, color) in &phases {
         let phase_us = duration.as_micros() as f32;
         let segment_width = ((phase_us / frame_us) * bar_total_width as f32) as usize;
-        if segment_width > 0 {
-            let actual_width = segment_width.min(text_x + bar_total_width - bar_x);
+        if segment_width > 0 && bar_x < bar_end_x {
+            let remaining = bar_end_x.saturating_sub(bar_x);
+            let actual_width = segment_width.min(remaining);
             frame.fill_rect_px(bar_x, bar_y, actual_width, bar_height, *color);
             bar_x += segment_width;
         }
@@ -386,10 +399,22 @@ pub fn render_perf_overlay(
     painter.draw(frame, text_x, text_y, "Render breakdown:", text_color);
     text_y += line_height;
 
-    let chart_width = 180;
-    let chart_height = 20;
-    let chart_x = text_x + 80;
+    // Scale chart dimensions with line_height for HiDPI support.
+    // Label column needs ~10 chars worth of space ("Highlight:" is longest).
+    // Approximate char width as ~0.6 * line_height for monospace fonts.
+    let char_width_approx = (line_height as f32 * 0.6).round() as usize;
+    let label_width = char_width_approx * 10;
+    let chart_width = (160.0 * scale).round() as usize;
+    let chart_height = line_height;
+    let chart_x = text_x + label_width;
+    let value_width = char_width_approx * 10; // "99999 µs" + padding
     let chart_bg = theme.overlay.background.with_alpha(200).to_argb_u32();
+
+    // Ensure chart fits within overlay bounds
+    let max_chart_width = bounds
+        .width
+        .saturating_sub(label_width + value_width + 24);
+    let chart_width = chart_width.min(max_chart_width);
 
     let breakdown_with_history: [(&str, Duration, &VecDeque<Duration>, u32); 7] = [
         ("Clear", perf.clear_time, &perf.clear_history, 0xFF7AA2F7),
