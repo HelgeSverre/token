@@ -160,13 +160,68 @@ impl Document {
         self.buffer.len_lines()
     }
 
-    /// Get a line by index
+    /// Get a line by index (allocates a String)
+    ///
+    /// For rendering hot paths, prefer `get_line_slice()` which can avoid allocation
+    /// by iterating over the rope slice directly.
     pub fn get_line(&self, line_idx: usize) -> Option<String> {
         if line_idx < self.buffer.len_lines() {
             let line = self.buffer.line(line_idx);
             Some(line.to_string())
         } else {
             None
+        }
+    }
+
+    /// Get a line as a RopeSlice for zero-allocation iteration
+    ///
+    /// Use this in rendering hot paths to avoid String allocation.
+    /// The returned slice can be iterated with `.chars()` or converted
+    /// to a contiguous slice with `Cow<str>` when needed.
+    #[inline]
+    pub fn get_line_slice(&self, line_idx: usize) -> Option<ropey::RopeSlice<'_>> {
+        if line_idx < self.buffer.len_lines() {
+            Some(self.buffer.line(line_idx))
+        } else {
+            None
+        }
+    }
+
+    /// Get line content as Cow<str>, avoiding allocation when possible
+    ///
+    /// Returns Cow::Borrowed if the line is stored contiguously in a single chunk,
+    /// otherwise returns Cow::Owned with the line as a String.
+    /// Also trims the trailing newline for display purposes.
+    #[inline]
+    pub fn get_line_cow(&self, line_idx: usize) -> Option<std::borrow::Cow<'_, str>> {
+        use std::borrow::Cow;
+
+        if line_idx >= self.buffer.len_lines() {
+            return None;
+        }
+
+        let line = self.buffer.line(line_idx);
+        let len = line.len_chars();
+
+        // Calculate trim length (remove trailing newline)
+        let trim_len = if len > 0 && line.char(len - 1) == '\n' {
+            if len > 1 && line.char(len - 2) == '\r' {
+                2 // CRLF
+            } else {
+                1 // LF
+            }
+        } else {
+            0
+        };
+
+        let trimmed = line.slice(..len - trim_len);
+
+        // Try to get as a contiguous slice (zero allocation)
+        if let Some(s) = trimmed.as_str() {
+            Some(Cow::Borrowed(s))
+        } else {
+            // Falls back to allocation only when line spans multiple chunks
+            Some(Cow::Owned(trimmed.to_string()))
         }
     }
 
