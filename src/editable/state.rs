@@ -354,27 +354,29 @@ impl<B: TextBuffer> EditableState<B> {
             return;
         }
 
-        // Get line content
-        let line_content = self.buffer.line(self.cursors[idx].line).unwrap_or_default();
-        let chars: Vec<char> = line_content.chars().collect();
+        // Get line length and use char_at for direct character access (avoids Vec<char> allocation)
+        let line_len = self.buffer.line_length(self.cursors[idx].line);
+        let line = self.cursors[idx].line;
 
         // Start from position before cursor
-        let mut pos = self.cursors[idx].column.min(chars.len());
+        let mut pos = self.cursors[idx].column.min(line_len);
 
         // Skip any whitespace/punctuation first (moving backwards)
         while pos > 0 {
-            let ct = char_type(chars[pos - 1]);
-            if ct == CharType::WordChar {
-                break;
+            if let Some(ch) = self.buffer.char_at(line, pos - 1) {
+                if char_type(ch) == CharType::WordChar {
+                    break;
+                }
             }
             pos -= 1;
         }
 
         // Then skip word characters
         while pos > 0 {
-            let ct = char_type(chars[pos - 1]);
-            if ct != CharType::WordChar {
-                break;
+            if let Some(ch) = self.buffer.char_at(line, pos - 1) {
+                if char_type(ch) != CharType::WordChar {
+                    break;
+                }
             }
             pos -= 1;
         }
@@ -421,22 +423,35 @@ impl<B: TextBuffer> EditableState<B> {
             return;
         }
 
-        // Get line content
-        let line_content = self.buffer.line(self.cursors[idx].line).unwrap_or_default();
-        let chars: Vec<char> = line_content.chars().collect();
+        // Use char_at for direct character access (avoids Vec<char> allocation)
+        let line = self.cursors[idx].line;
 
         let mut pos = self.cursors[idx].column;
 
         // Skip current word type
-        if pos < chars.len() {
-            let start_type = char_type(chars[pos]);
-            while pos < chars.len() && char_type(chars[pos]) == start_type {
+        if let Some(first_ch) = self.buffer.char_at(line, pos) {
+            let start_type = char_type(first_ch);
+            while pos < line_len {
+                if let Some(ch) = self.buffer.char_at(line, pos) {
+                    if char_type(ch) != start_type {
+                        break;
+                    }
+                } else {
+                    break;
+                }
                 pos += 1;
             }
         }
 
         // Skip any following whitespace
-        while pos < chars.len() && char_type(chars[pos]) == CharType::Whitespace {
+        while pos < line_len {
+            if let Some(ch) = self.buffer.char_at(line, pos) {
+                if char_type(ch) != CharType::Whitespace {
+                    break;
+                }
+            } else {
+                break;
+            }
             pos += 1;
         }
 
