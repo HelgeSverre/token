@@ -128,6 +128,10 @@ harness = false
 name = "workspace"
 harness = false
 
+[[bench]]
+name = "hot_paths"
+harness = false
+
 # Profiling profile: release speed with debug symbols
 [profile.profiling]
 inherits = "release"
