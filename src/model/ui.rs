@@ -348,6 +348,8 @@ pub struct UiState {
     pub active_modal: Option<ModalState>,
     /// Last command palette state (persisted for quick re-execution)
     pub last_command_palette: Option<CommandPaletteState>,
+    /// Last find/replace state (persisted for quick re-use)
+    pub last_find_replace: Option<FindReplaceState>,
     /// File drag-and-drop state
     pub drop_state: DropState,
     /// Splitter (resize handle) drag state
@@ -373,6 +375,7 @@ impl UiState {
             is_saving: false,
             active_modal: None,
             last_command_palette: None,
+            last_find_replace: None,
             drop_state: DropState::default(),
             splitter_drag: None,
             sidebar_resize: None,
@@ -393,6 +396,7 @@ impl UiState {
             is_saving: false,
             active_modal: None,
             last_command_palette: None,
+            last_find_replace: None,
             drop_state: DropState::default(),
             splitter_drag: None,
             sidebar_resize: None,

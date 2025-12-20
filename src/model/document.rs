@@ -305,15 +305,34 @@ impl Document {
     /// Find all occurrences of text in the document
     /// Returns Vec of (start_char_offset, end_char_offset) in character indices
     pub fn find_all_occurrences(&self, needle: &str) -> Vec<(usize, usize)> {
+        self.find_all_occurrences_with_options(needle, true)
+    }
+
+    /// Find all occurrences with case sensitivity option
+    /// Returns Vec of (start_char_offset, end_char_offset) in character indices
+    pub fn find_all_occurrences_with_options(
+        &self,
+        needle: &str,
+        case_sensitive: bool,
+    ) -> Vec<(usize, usize)> {
         if needle.is_empty() {
             return Vec::new();
         }
 
         let haystack = self.buffer.to_string();
         let needle_char_len = needle.chars().count();
-        let needle_byte_len = needle.len();
+
+        // For case-insensitive search, convert both to lowercase
+        let (search_haystack, search_needle) = if case_sensitive {
+            (haystack.clone(), needle.to_string())
+        } else {
+            (haystack.to_lowercase(), needle.to_lowercase())
+        };
+
+        let needle_byte_len = search_needle.len();
 
         // Build byte offset → char index mapping (only for char boundaries)
+        // Use original haystack for char mapping since byte positions correspond
         let byte_to_char: std::collections::HashMap<usize, usize> = haystack
             .char_indices()
             .enumerate()
@@ -323,8 +342,8 @@ impl Document {
         let mut results = Vec::new();
         let mut start_byte = 0;
 
-        while start_byte <= haystack.len().saturating_sub(needle_byte_len) {
-            if let Some(rel_byte) = haystack[start_byte..].find(needle) {
+        while start_byte <= search_haystack.len().saturating_sub(needle_byte_len) {
+            if let Some(rel_byte) = search_haystack[start_byte..].find(&search_needle) {
                 let match_start_byte = start_byte + rel_byte;
 
                 // Convert byte offset to char offset
@@ -335,7 +354,7 @@ impl Document {
 
                 // Advance by the byte length of the first character of the match
                 // to allow overlapping matches while staying on char boundaries
-                let first_char_byte_len = haystack[match_start_byte..]
+                let first_char_byte_len = search_haystack[match_start_byte..]
                     .chars()
                     .next()
                     .map(|c| c.len_utf8())
@@ -348,13 +367,27 @@ impl Document {
         results
     }
 
-    /// Find next occurrence after given offset (wraps back to start, on
+    /// Find next occurrence after given offset (wraps back to start)
     pub fn find_next_occurrence(
         &self,
         needle: &str,
         after_offset: usize,
     ) -> Option<(usize, usize)> {
-        let occurrences = self.find_all_occurrences(needle);
+        self.find_next_occurrence_with_options(needle, after_offset, true)
+    }
+
+    /// Find next occurrence with case sensitivity option (wraps back to start)
+    pub fn find_next_occurrence_with_options(
+        &self,
+        needle: &str,
+        after_offset: usize,
+        case_sensitive: bool,
+    ) -> Option<(usize, usize)> {
+        if needle.is_empty() {
+            return None;
+        }
+
+        let occurrences = self.find_all_occurrences_with_options(needle, case_sensitive);
 
         // Find first occurrence after current position
         if let Some(&occ) = occurrences.iter().find(|(start, _)| *start > after_offset) {
@@ -363,6 +396,28 @@ impl Document {
 
         // Wrap around to first occurrence
         occurrences.first().copied()
+    }
+
+    /// Find previous occurrence before given offset (wraps to end)
+    pub fn find_prev_occurrence_with_options(
+        &self,
+        needle: &str,
+        before_offset: usize,
+        case_sensitive: bool,
+    ) -> Option<(usize, usize)> {
+        if needle.is_empty() {
+            return None;
+        }
+
+        let occurrences = self.find_all_occurrences_with_options(needle, case_sensitive);
+
+        // Find last occurrence before current position
+        if let Some(&occ) = occurrences.iter().rev().find(|(start, _)| *start < before_offset) {
+            return Some(occ);
+        }
+
+        // Wrap around to last occurrence
+        occurrences.last().copied()
     }
 }
 
@@ -719,5 +774,191 @@ mod tests {
         // After position 10, wraps to first occurrence at 0
         let result = doc.find_next_occurrence("abc", 10);
         assert_eq!(result, Some((0, 3)));
+    }
+
+    #[test]
+    fn test_find_next_occurrence_empty_needle() {
+        let doc = Document::with_text("hello");
+        assert_eq!(doc.find_next_occurrence("", 0), None);
+    }
+
+    #[test]
+    fn test_find_next_occurrence_not_found() {
+        let doc = Document::with_text("abc xyz");
+        assert_eq!(doc.find_next_occurrence("zzz", 0), None);
+    }
+
+    #[test]
+    fn test_find_next_occurrence_from_match_start() {
+        let doc = Document::with_text("abc xyz abc");
+        // Start at first match start: should find next match (not same one)
+        // because we search for occurrences where start > after_offset
+        assert_eq!(doc.find_next_occurrence("abc", 0), Some((8, 11)));
+    }
+
+    #[test]
+    fn test_find_next_occurrence_start_past_end() {
+        let doc = Document::with_text("abc xyz");
+        let len = doc.buffer.len_chars();
+        // Past end should wrap to first
+        assert_eq!(doc.find_next_occurrence("abc", len + 10), Some((0, 3)));
+    }
+
+    // ========================================================================
+    // Case-insensitive find tests
+    // ========================================================================
+
+    #[test]
+    fn test_find_case_insensitive_basic() {
+        let doc = Document::with_text("Hello HELLO hello");
+        let results = doc.find_all_occurrences_with_options("hello", false);
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0], (0, 5));
+        assert_eq!(results[1], (6, 11));
+        assert_eq!(results[2], (12, 17));
+    }
+
+    #[test]
+    fn test_find_case_sensitive_basic() {
+        let doc = Document::with_text("Hello HELLO hello");
+        let results = doc.find_all_occurrences_with_options("hello", true);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], (12, 17));
+    }
+
+    #[test]
+    fn test_find_next_case_insensitive() {
+        let doc = Document::with_text("Hello HELLO hello");
+        let result = doc.find_next_occurrence_with_options("HELLO", 0, false);
+        assert_eq!(result, Some((6, 11))); // First after position 0
+    }
+
+    // ========================================================================
+    // Unicode find tests
+    // ========================================================================
+
+    #[test]
+    fn test_find_unicode_single_char() {
+        let doc = Document::with_text("αβγ αβγ");
+        let results = doc.find_all_occurrences("β");
+        assert_eq!(results, vec![(1, 2), (5, 6)]);
+    }
+
+    #[test]
+    fn test_find_unicode_word() {
+        let doc = Document::with_text("café café");
+        let results = doc.find_all_occurrences("café");
+        assert_eq!(results, vec![(0, 4), (5, 9)]);
+    }
+
+    #[test]
+    fn test_find_unicode_emoji() {
+        let doc = Document::with_text("hello 🎉 world 🎉 end");
+        let results = doc.find_all_occurrences("🎉");
+        assert_eq!(results, vec![(6, 7), (14, 15)]);
+    }
+
+    #[test]
+    fn test_find_unicode_mixed() {
+        let doc = Document::with_text("日本語テスト 日本語");
+        let results = doc.find_all_occurrences("日本語");
+        assert_eq!(results, vec![(0, 3), (7, 10)]);
+    }
+
+    #[test]
+    fn test_find_unicode_case_insensitive() {
+        let doc = Document::with_text("Ößer ößer ÖSSER");
+        // German sharp s case folding
+        let results = doc.find_all_occurrences_with_options("ößer", false);
+        // Note: simple lowercase may not handle ẞ properly, but ö should work
+        assert!(results.len() >= 2);
+    }
+
+    // ========================================================================
+    // Find previous tests
+    // ========================================================================
+
+    #[test]
+    fn test_find_prev_occurrence_basic() {
+        let doc = Document::with_text("abc xyz abc");
+        // Before position 5, prev "abc" is at 0
+        let result = doc.find_prev_occurrence_with_options("abc", 5, true);
+        assert_eq!(result, Some((0, 3)));
+
+        // Before position 10 (after second "abc" starts at 8), prev is at 8
+        let result = doc.find_prev_occurrence_with_options("abc", 10, true);
+        assert_eq!(result, Some((8, 11)));
+    }
+
+    #[test]
+    fn test_find_prev_occurrence_wraps() {
+        let doc = Document::with_text("abc xyz abc");
+        // Before position 2 (inside first match), should wrap to last
+        let result = doc.find_prev_occurrence_with_options("abc", 0, true);
+        assert_eq!(result, Some((8, 11)));
+    }
+
+    #[test]
+    fn test_find_prev_occurrence_empty_needle() {
+        let doc = Document::with_text("hello");
+        assert_eq!(doc.find_prev_occurrence_with_options("", 5, true), None);
+    }
+
+    // ========================================================================
+    // Overlapping match tests
+    // ========================================================================
+
+    #[test]
+    fn test_find_overlapping_matches() {
+        let doc = Document::with_text("aaaa");
+        let results = doc.find_all_occurrences("aa");
+        // Should find overlapping: (0,2), (1,3), (2,4)
+        assert_eq!(results, vec![(0, 2), (1, 3), (2, 4)]);
+    }
+
+    #[test]
+    fn test_find_overlapping_pattern() {
+        let doc = Document::with_text("ababa");
+        let results = doc.find_all_occurrences("aba");
+        // Should find overlapping: (0,3), (2,5)
+        assert_eq!(results, vec![(0, 3), (2, 5)]);
+    }
+
+    // ========================================================================
+    // Edge case tests
+    // ========================================================================
+
+    #[test]
+    fn test_find_in_empty_document() {
+        let doc = Document::with_text("");
+        assert!(doc.find_all_occurrences("test").is_empty());
+        assert_eq!(doc.find_next_occurrence("test", 0), None);
+    }
+
+    #[test]
+    fn test_find_needle_longer_than_haystack() {
+        let doc = Document::with_text("ab");
+        assert!(doc.find_all_occurrences("abcdef").is_empty());
+    }
+
+    #[test]
+    fn test_find_exact_match() {
+        let doc = Document::with_text("hello");
+        let results = doc.find_all_occurrences("hello");
+        assert_eq!(results, vec![(0, 5)]);
+    }
+
+    #[test]
+    fn test_find_with_newlines() {
+        let doc = Document::with_text("line1\nline2\nline1");
+        let results = doc.find_all_occurrences("line1");
+        assert_eq!(results, vec![(0, 5), (12, 17)]);
+    }
+
+    #[test]
+    fn test_find_newline_character() {
+        let doc = Document::with_text("a\nb\nc");
+        let results = doc.find_all_occurrences("\n");
+        assert_eq!(results, vec![(1, 2), (3, 4)]);
     }
 }

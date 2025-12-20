@@ -4,7 +4,42 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## v0.3.11 - 2025-12-20 (Latest)
+## v0.3.12 - 2025-12-20 (Latest)
+
+### Added - Find/Replace Implementation
+
+Complete implementation of the Find/Replace modal (Cmd+F):
+
+**Core Search Functions:**
+- `find_all_occurrences_with_options()` with case sensitivity support
+- `find_next_occurrence_with_options()` for forward search with wrapping
+- `find_prev_occurrence_with_options()` for backward search with wrapping
+- Full Unicode support (Greek, Japanese, emoji, accented characters)
+- Overlapping match detection
+
+**New Modal Messages:**
+- `ToggleFindReplaceField` - Tab to switch between query/replace fields
+- `ToggleFindReplaceCaseSensitive` - Toggle case-sensitive search
+- `FindNext` / `FindPrevious` - Navigate through matches
+- `ReplaceAndFindNext` - Replace current match and find next
+- `ReplaceAll` - Replace all occurrences at once
+
+**UX Improvements:**
+- Query persists when reopening Cmd+F (like command palette)
+- Transient messages show "No matches found" or "Replaced N occurrences"
+- Selection highlights the current match
+- Cursor scrolls to ensure match is visible
+
+**Test Coverage:**
+- 25+ new tests for find functionality
+- Case sensitivity tests
+- Unicode edge cases (emoji, CJK, Greek letters)
+- Overlapping pattern matching
+- Empty document and needle handling
+
+---
+
+## v0.3.11 - 2025-12-20
 
 ### Fixed - Event Loop Performance
 

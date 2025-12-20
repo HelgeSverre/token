@@ -5,7 +5,7 @@ use std::time::Duration;
 use crate::commands::{filter_commands, Cmd};
 use crate::messages::{ModalMsg, UiMsg};
 use crate::model::{
-    AppModel, FindReplaceState, GotoLineState, ModalId, ModalState, SegmentContent, SegmentId,
+    AppModel, GotoLineState, ModalId, ModalState, SegmentContent, SegmentId,
     ThemePickerState, TransientMessage,
 };
 use crate::theme::load_theme;
@@ -75,7 +75,10 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                     ModalState::CommandPalette(state)
                 }
                 ModalId::GotoLine => ModalState::GotoLine(GotoLineState::default()),
-                ModalId::FindReplace => ModalState::FindReplace(FindReplaceState::default()),
+                ModalId::FindReplace => {
+                    let state = model.ui.last_find_replace.clone().unwrap_or_default();
+                    ModalState::FindReplace(state)
+                }
                 ModalId::ThemePicker => ModalState::ThemePicker(ThemePickerState::default()),
             };
             model.ui.open_modal(state);
@@ -112,9 +115,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::OpenFindReplace => {
-            model
-                .ui
-                .open_modal(ModalState::FindReplace(FindReplaceState::default()));
+            let state = model.ui.last_find_replace.clone().unwrap_or_default();
+            model.ui.open_modal(ModalState::FindReplace(state));
             Some(Cmd::Redraw)
         }
 
@@ -644,8 +646,14 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                         model.ensure_cursor_visible();
                         Some(Cmd::Redraw)
                     }
-                    ModalState::FindReplace(_state) => {
-                        // TODO: Execute find/replace (Phase 6)
+                    ModalState::FindReplace(state) => {
+                        // For Confirm, treat it as FindNext
+                        let query = state.query();
+                        if !query.is_empty() {
+                            let case_sensitive = state.case_sensitive;
+                            model.ui.last_find_replace = Some(state);
+                            return find_next_in_document(model, &query, case_sensitive);
+                        }
                         model.ui.close_modal();
                         Some(Cmd::Redraw)
                     }
@@ -669,5 +677,281 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                 None
             }
         }
+
+        ModalMsg::ToggleFindReplaceField => {
+            if let Some(ModalState::FindReplace(ref mut state)) = model.ui.active_modal {
+                state.toggle_field();
+                Some(Cmd::Redraw)
+            } else {
+                None
+            }
+        }
+
+        ModalMsg::ToggleFindReplaceCaseSensitive => {
+            if let Some(ModalState::FindReplace(ref mut state)) = model.ui.active_modal {
+                state.case_sensitive = !state.case_sensitive;
+                Some(Cmd::Redraw)
+            } else {
+                None
+            }
+        }
+
+        ModalMsg::FindNext => {
+            if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
+                let query = state.query();
+                let case_sensitive = state.case_sensitive;
+                if !query.is_empty() {
+                    model.ui.last_find_replace = model.ui.active_modal.clone().and_then(|m| {
+                        if let ModalState::FindReplace(s) = m {
+                            Some(s)
+                        } else {
+                            None
+                        }
+                    });
+                    return find_next_in_document(model, &query, case_sensitive);
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::FindPrevious => {
+            if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
+                let query = state.query();
+                let case_sensitive = state.case_sensitive;
+                if !query.is_empty() {
+                    model.ui.last_find_replace = model.ui.active_modal.clone().and_then(|m| {
+                        if let ModalState::FindReplace(s) = m {
+                            Some(s)
+                        } else {
+                            None
+                        }
+                    });
+                    return find_prev_in_document(model, &query, case_sensitive);
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::ReplaceAndFindNext => {
+            if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
+                let query = state.query();
+                let replacement = state.replacement();
+                let case_sensitive = state.case_sensitive;
+                if !query.is_empty() {
+                    model.ui.last_find_replace = model.ui.active_modal.clone().and_then(|m| {
+                        if let ModalState::FindReplace(s) = m {
+                            Some(s)
+                        } else {
+                            None
+                        }
+                    });
+                    return replace_and_find_next(model, &query, &replacement, case_sensitive);
+                }
+            }
+            Some(Cmd::Redraw)
+        }
+
+        ModalMsg::ReplaceAll => {
+            if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
+                let query = state.query();
+                let replacement = state.replacement();
+                let case_sensitive = state.case_sensitive;
+                if !query.is_empty() {
+                    model.ui.last_find_replace = model.ui.active_modal.clone().and_then(|m| {
+                        if let ModalState::FindReplace(s) = m {
+                            Some(s)
+                        } else {
+                            None
+                        }
+                    });
+                    return replace_all(model, &query, &replacement, case_sensitive);
+                }
+            }
+            Some(Cmd::Redraw)
+        }
     }
+}
+
+/// Find next occurrence in the document and select it
+fn find_next_in_document(model: &mut AppModel, query: &str, case_sensitive: bool) -> Option<Cmd> {
+    let editor = model.editor();
+    let doc = model.document();
+
+    // Get current cursor position as the search start point
+    let start_offset = if !editor.selections[0].is_empty() {
+        // If there's a selection, search from after the selection end
+        let sel_end = editor.selections[0].end();
+        doc.cursor_to_offset(sel_end.line, sel_end.column)
+    } else {
+        doc.cursor_to_offset(editor.cursors[0].line, editor.cursors[0].column)
+    };
+
+    if let Some((start, end)) = doc.find_next_occurrence_with_options(query, start_offset, case_sensitive) {
+        let (start_line, start_col) = doc.offset_to_cursor(start);
+        let (end_line, end_col) = doc.offset_to_cursor(end);
+
+        let editor = model.editor_mut();
+        // Set cursor to end of match
+        editor.cursors[0].line = end_line;
+        editor.cursors[0].column = end_col;
+        editor.cursors[0].desired_column = None;
+
+        // Set selection to cover the match
+        editor.selections[0] = crate::model::Selection::from_anchor_head(
+            crate::model::Position::new(start_line, start_col),
+            crate::model::Position::new(end_line, end_col),
+        );
+
+        model.ensure_cursor_visible();
+        Some(Cmd::Redraw)
+    } else {
+        // No match found - show transient message
+        model.ui.transient_message = Some(TransientMessage::new(
+            "No matches found".to_string(),
+            Duration::from_secs(2),
+        ));
+        Some(Cmd::Redraw)
+    }
+}
+
+/// Find previous occurrence in the document and select it
+fn find_prev_in_document(model: &mut AppModel, query: &str, case_sensitive: bool) -> Option<Cmd> {
+    let editor = model.editor();
+    let doc = model.document();
+
+    // Get current cursor position as the search start point
+    let start_offset = if !editor.selections[0].is_empty() {
+        // If there's a selection, search from before the selection start
+        let sel_start = editor.selections[0].start();
+        doc.cursor_to_offset(sel_start.line, sel_start.column)
+    } else {
+        doc.cursor_to_offset(editor.cursors[0].line, editor.cursors[0].column)
+    };
+
+    if let Some((start, end)) = doc.find_prev_occurrence_with_options(query, start_offset, case_sensitive) {
+        let (start_line, start_col) = doc.offset_to_cursor(start);
+        let (end_line, end_col) = doc.offset_to_cursor(end);
+
+        let editor = model.editor_mut();
+        // Set cursor to start of match (for prev, cursor goes to start)
+        editor.cursors[0].line = start_line;
+        editor.cursors[0].column = start_col;
+        editor.cursors[0].desired_column = None;
+
+        // Set selection to cover the match
+        editor.selections[0] = crate::model::Selection::from_anchor_head(
+            crate::model::Position::new(start_line, start_col),
+            crate::model::Position::new(end_line, end_col),
+        );
+
+        model.ensure_cursor_visible();
+        Some(Cmd::Redraw)
+    } else {
+        model.ui.transient_message = Some(TransientMessage::new(
+            "No matches found".to_string(),
+            Duration::from_secs(2),
+        ));
+        Some(Cmd::Redraw)
+    }
+}
+
+/// Replace current selection if it matches, then find next
+fn replace_and_find_next(
+    model: &mut AppModel,
+    query: &str,
+    replacement: &str,
+    case_sensitive: bool,
+) -> Option<Cmd> {
+    // First, gather all the info we need without holding borrows
+    let should_replace = {
+        let editor = model.editor();
+        let doc = model.document();
+
+        if editor.selections[0].is_empty() {
+            None
+        } else {
+            let sel = &editor.selections[0];
+            let start = sel.start();
+            let end = sel.end();
+            let start_offset = doc.cursor_to_offset(start.line, start.column);
+            let end_offset = doc.cursor_to_offset(end.line, end.column);
+
+            let selected_text = doc.buffer.slice(start_offset..end_offset).to_string();
+            let matches = if case_sensitive {
+                selected_text == query
+            } else {
+                selected_text.to_lowercase() == query.to_lowercase()
+            };
+
+            if matches {
+                Some((start_offset, end_offset))
+            } else {
+                None
+            }
+        }
+    };
+
+    // Now do the replacement if needed
+    if let Some((start_offset, end_offset)) = should_replace {
+        let doc = model.document_mut();
+        doc.buffer.remove(start_offset..end_offset);
+        doc.buffer.insert(start_offset, replacement);
+        doc.is_modified = true;
+        doc.revision += 1;
+
+        // Update cursor position
+        let new_offset = start_offset + replacement.chars().count();
+        let (new_line, new_col) = doc.offset_to_cursor(new_offset);
+
+        let editor = model.editor_mut();
+        editor.cursors[0].line = new_line;
+        editor.cursors[0].column = new_col;
+        editor.clear_selection();
+    }
+
+    // Now find next
+    find_next_in_document(model, query, case_sensitive)
+}
+
+/// Replace all occurrences
+fn replace_all(
+    model: &mut AppModel,
+    query: &str,
+    replacement: &str,
+    case_sensitive: bool,
+) -> Option<Cmd> {
+    let doc = model.document();
+    let occurrences = doc.find_all_occurrences_with_options(query, case_sensitive);
+
+    if occurrences.is_empty() {
+        model.ui.transient_message = Some(TransientMessage::new(
+            "No matches found".to_string(),
+            Duration::from_secs(2),
+        ));
+        return Some(Cmd::Redraw);
+    }
+
+    let count = occurrences.len();
+
+    // Replace from end to start to preserve offsets
+    let doc = model.document_mut();
+    let replacement_char_len = replacement.chars().count();
+    for (start, end) in occurrences.into_iter().rev() {
+        doc.buffer.remove(start..end);
+        doc.buffer.insert(start, replacement);
+    }
+    doc.is_modified = true;
+    doc.revision += 1;
+
+    // Position cursor at end of last replacement (which is now first in document)
+    let editor = model.editor_mut();
+    editor.cursors[0].line = 0;
+    editor.cursors[0].column = replacement_char_len;
+    editor.clear_selection();
+
+    model.ui.transient_message = Some(TransientMessage::new(
+        format!("Replaced {} occurrences", count),
+        Duration::from_secs(2),
+    ));
+    Some(Cmd::Redraw)
 }

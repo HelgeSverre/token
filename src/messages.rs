@@ -215,6 +215,20 @@ pub enum ModalMsg {
     SelectNext,
     /// Confirm/execute the modal action (Enter)
     Confirm,
+
+    // === Find/Replace Specific ===
+    /// Toggle between query and replace fields (Tab)
+    ToggleFindReplaceField,
+    /// Toggle case sensitivity for find/replace
+    ToggleFindReplaceCaseSensitive,
+    /// Find next occurrence (Enter in find field or F3)
+    FindNext,
+    /// Find previous occurrence (Shift+Enter or Shift+F3)
+    FindPrevious,
+    /// Replace current match and find next
+    ReplaceAndFindNext,
+    /// Replace all occurrences
+    ReplaceAll,
 }
 
 /// UI-specific messages (status bar, cursor blink, modals)
