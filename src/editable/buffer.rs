@@ -298,10 +298,24 @@ impl TextBuffer for RopeBuffer {
             return None;
         }
         let line_slice = self.rope.line(line);
-        let s = line_slice.to_string();
-        // Strip trailing newline
-        let trimmed = s.trim_end_matches(&['\n', '\r'][..]).to_string();
-        Some(Cow::Owned(trimmed))
+        let len = line_slice.len_chars();
+
+        // Calculate how many trailing newline chars to skip (avoids second allocation)
+        let trim_len = if len > 0 && line_slice.char(len - 1) == '\n' {
+            if len > 1 && line_slice.char(len - 2) == '\r' {
+                2 // CRLF
+            } else {
+                1 // LF only
+            }
+        } else {
+            0
+        };
+
+        if trim_len > 0 {
+            Some(Cow::Owned(line_slice.slice(..len - trim_len).to_string()))
+        } else {
+            Some(Cow::Owned(line_slice.to_string()))
+        }
     }
 
     fn position_to_offset(&self, line: usize, column: usize) -> usize {
@@ -348,9 +362,21 @@ impl TextBuffer for RopeBuffer {
             return 0;
         }
         let line_slice = self.rope.line(line);
-        let s: String = line_slice.chars().collect();
-        let trimmed = s.trim_end_matches(|c: char| c.is_whitespace());
-        trimmed.chars().count()
+        let total = line_slice.len_chars();
+
+        // Count trailing whitespace by indexing from end (avoids String allocation)
+        let mut trailing_ws = 0;
+        let mut pos = total;
+        while pos > 0 {
+            let ch = line_slice.char(pos - 1);
+            if !ch.is_whitespace() {
+                break;
+            }
+            trailing_ws += 1;
+            pos -= 1;
+        }
+
+        total.saturating_sub(trailing_ws)
     }
 }
 
