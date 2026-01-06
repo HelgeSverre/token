@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use streaming_iterator::StreamingIterator;
-use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, Tree};
+use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, Tree, TreeCursor};
 
 use super::highlights::{highlight_id_for_name, HighlightToken, SyntaxHighlights};
 use super::languages::LanguageId;
@@ -84,6 +84,7 @@ fn compute_incremental_edit(old_src: &str, new_src: &str) -> Option<InputEdit> {
 // Phase 1 languages
 const YAML_HIGHLIGHTS: &str = include_str!("../../queries/yaml/highlights.scm");
 const MARKDOWN_HIGHLIGHTS: &str = include_str!("../../queries/markdown/highlights.scm");
+const MARKDOWN_INLINE_HIGHLIGHTS: &str = include_str!("../../queries/markdown/inline-highlights.scm");
 const RUST_HIGHLIGHTS: &str = tree_sitter_rust::HIGHLIGHTS_QUERY;
 
 // Phase 2 languages (web stack)
@@ -120,6 +121,10 @@ pub struct ParserState {
     queries: HashMap<LanguageId, Query>,
     /// Cached parse state per document (for incremental parsing)
     doc_cache: HashMap<DocumentId, DocParseState>,
+    /// Markdown inline grammar parser (for two-pass parsing)
+    markdown_inline_parser: Option<Parser>,
+    /// Markdown inline grammar query
+    markdown_inline_query: Option<Query>,
 }
 
 impl ParserState {
@@ -129,6 +134,8 @@ impl ParserState {
             parsers: HashMap::new(),
             queries: HashMap::new(),
             doc_cache: HashMap::new(),
+            markdown_inline_parser: None,
+            markdown_inline_query: None,
         };
 
         // Initialize Phase 1 languages
@@ -163,7 +170,34 @@ impl ParserState {
         state.init_language(LanguageId::Ini);
         state.init_language(LanguageId::Xml);
 
+        // Initialize markdown inline parser for two-pass parsing
+        state.init_markdown_inline();
+
         state
+    }
+
+    /// Initialize the markdown inline grammar parser and query
+    fn init_markdown_inline(&mut self) {
+        let ts_lang: tree_sitter::Language = tree_sitter_md::INLINE_LANGUAGE.into();
+
+        // Create inline parser
+        let mut parser = Parser::new();
+        if let Err(e) = parser.set_language(&ts_lang) {
+            tracing::error!("Failed to set markdown inline language: {}", e);
+            return;
+        }
+
+        // Create inline query
+        match Query::new(&ts_lang, MARKDOWN_INLINE_HIGHLIGHTS) {
+            Ok(query) => {
+                self.markdown_inline_parser = Some(parser);
+                self.markdown_inline_query = Some(query);
+                tracing::debug!("Markdown inline parser initialized successfully");
+            }
+            Err(e) => {
+                tracing::error!("Failed to compile markdown inline query: {:?}", e);
+            }
+        }
     }
 
     /// Initialize a language's parser and query
@@ -239,6 +273,16 @@ impl ParserState {
         // Skip plain text
         if language == LanguageId::PlainText {
             return SyntaxHighlights::new(language, revision);
+        }
+
+        // Use specialized two-pass parsing for markdown (block + inline)
+        if language == LanguageId::Markdown {
+            return self.parse_and_highlight_markdown(source, doc_id, revision);
+        }
+
+        // Use specialized parsing with language injection for HTML
+        if language == LanguageId::Html {
+            return self.parse_and_highlight_html(source, doc_id, revision);
         }
 
         let parser = match self.parsers.get_mut(&language) {
@@ -464,6 +508,824 @@ impl ParserState {
         }
 
         highlights
+    }
+
+    /// Two-pass markdown parsing: block structure + inline elements
+    fn parse_and_highlight_markdown(
+        &mut self,
+        source: &str,
+        doc_id: DocumentId,
+        revision: u64,
+    ) -> SyntaxHighlights {
+        let language = LanguageId::Markdown;
+
+        // Step 1: Parse block structure with existing block parser
+        let parser = match self.parsers.get_mut(&language) {
+            Some(p) => p,
+            None => {
+                tracing::warn!("No parser for markdown");
+                return SyntaxHighlights::new(language, revision);
+            }
+        };
+
+        // Try incremental parsing if we have a cached tree
+        let block_tree = if let Some(cached) = self.doc_cache.get_mut(&doc_id) {
+            if cached.language == language {
+                if let Some(edit) = compute_incremental_edit(&cached.source, source) {
+                    cached.tree.edit(&edit);
+                    match parser.parse(source, Some(&cached.tree)) {
+                        Some(new_tree) => {
+                            cached.tree = new_tree.clone();
+                            cached.source = source.to_owned();
+                            new_tree
+                        }
+                        None => {
+                            self.doc_cache.remove(&doc_id);
+                            match parser.parse(source, None) {
+                                Some(t) => {
+                                    self.doc_cache.insert(
+                                        doc_id,
+                                        DocParseState {
+                                            language,
+                                            tree: t.clone(),
+                                            source: source.to_owned(),
+                                        },
+                                    );
+                                    t
+                                }
+                                None => return SyntaxHighlights::new(language, revision),
+                            }
+                        }
+                    }
+                } else {
+                    cached.tree.clone()
+                }
+            } else {
+                self.doc_cache.remove(&doc_id);
+                match parser.parse(source, None) {
+                    Some(t) => {
+                        self.doc_cache.insert(
+                            doc_id,
+                            DocParseState {
+                                language,
+                                tree: t.clone(),
+                                source: source.to_owned(),
+                            },
+                        );
+                        t
+                    }
+                    None => return SyntaxHighlights::new(language, revision),
+                }
+            }
+        } else {
+            match parser.parse(source, None) {
+                Some(t) => {
+                    self.doc_cache.insert(
+                        doc_id,
+                        DocParseState {
+                            language,
+                            tree: t.clone(),
+                            source: source.to_owned(),
+                        },
+                    );
+                    t
+                }
+                None => return SyntaxHighlights::new(language, revision),
+            }
+        };
+
+        // Step 2: Extract block-level highlights
+        let mut highlights = self.extract_highlights(source, &block_tree, language, revision);
+
+        // Step 3: Parse inline content if we have the inline parser
+        if self.markdown_inline_parser.is_some() && self.markdown_inline_query.is_some() {
+            self.parse_markdown_inline_regions(source, &block_tree, &mut highlights);
+        }
+
+        // Step 4: Language injection for fenced code blocks
+        self.extract_fenced_code_highlights(source, &block_tree, &mut highlights);
+
+        // Re-sort tokens after adding inline and injected highlights
+        for line_highlights in highlights.lines.values_mut() {
+            line_highlights
+                .tokens
+                .sort_by_key(|t| (t.start_col, t.end_col));
+        }
+
+        highlights
+    }
+
+    /// Parse inline content regions within markdown block tree
+    fn parse_markdown_inline_regions(
+        &mut self,
+        source: &str,
+        block_tree: &Tree,
+        highlights: &mut SyntaxHighlights,
+    ) {
+        // Node kinds that contain inline content
+        const INLINE_NODE_KINDS: &[&str] = &[
+            "paragraph",
+            "heading_content",
+            "pipe_table_cell",
+        ];
+
+        let lines: Vec<&str> = source.lines().collect();
+
+        // Walk block tree to find nodes with inline content
+        let mut cursor = block_tree.walk();
+        self.visit_inline_nodes(&mut cursor, source, &lines, highlights, INLINE_NODE_KINDS);
+    }
+
+    /// Recursively visit nodes and parse inline content
+    fn visit_inline_nodes(
+        &mut self,
+        cursor: &mut TreeCursor,
+        source: &str,
+        lines: &[&str],
+        highlights: &mut SyntaxHighlights,
+        inline_node_kinds: &[&str],
+    ) {
+        loop {
+            let node = cursor.node();
+
+            if inline_node_kinds.contains(&node.kind()) {
+                // Parse this node's text with inline grammar
+                let start_byte = node.start_byte();
+                let end_byte = node.end_byte();
+
+                if start_byte < end_byte && end_byte <= source.len() {
+                    let inline_source = &source[start_byte..end_byte];
+                    let base_row = node.start_position().row;
+                    let base_col = node.start_position().column;
+
+                    self.parse_and_extract_inline_highlights(
+                        inline_source,
+                        lines,
+                        highlights,
+                        base_row,
+                        base_col,
+                    );
+                }
+            }
+
+            // Recurse into children
+            if cursor.goto_first_child() {
+                self.visit_inline_nodes(cursor, source, lines, highlights, inline_node_kinds);
+                cursor.goto_parent();
+            }
+
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+    }
+
+    /// Parse inline source and extract highlights with offset adjustment
+    fn parse_and_extract_inline_highlights(
+        &mut self,
+        inline_source: &str,
+        _lines: &[&str],
+        highlights: &mut SyntaxHighlights,
+        base_row: usize,
+        base_col: usize,
+    ) {
+        let inline_parser = match self.markdown_inline_parser.as_mut() {
+            Some(p) => p,
+            None => return,
+        };
+        let inline_query = match &self.markdown_inline_query {
+            Some(q) => q,
+            None => return,
+        };
+
+        // Parse inline content
+        let inline_tree = match inline_parser.parse(inline_source, None) {
+            Some(t) => t,
+            None => return,
+        };
+
+        // Helper: convert byte column to character column
+        fn byte_to_char_col(text: &str, byte_col: usize) -> usize {
+            let byte_col = byte_col.min(text.len());
+            let mut valid_byte = byte_col;
+            while valid_byte > 0 && !text.is_char_boundary(valid_byte) {
+                valid_byte -= 1;
+            }
+            text[..valid_byte].chars().count()
+        }
+
+        let inline_lines: Vec<&str> = inline_source.lines().collect();
+        let source_bytes = inline_source.as_bytes();
+
+        let mut cursor = QueryCursor::new();
+        let mut captures = cursor.captures(inline_query, inline_tree.root_node(), source_bytes);
+
+        while let Some((query_match, capture_idx)) = captures.next() {
+            let capture = &query_match.captures[*capture_idx];
+            let capture_name = &inline_query.capture_names()[capture.index as usize];
+
+            let highlight_id = match highlight_id_for_name(capture_name) {
+                Some(id) => id,
+                None => continue,
+            };
+
+            let node = capture.node;
+            let start = node.start_position();
+            let end = node.end_position();
+
+            // Handle single-line inline tokens
+            if start.row == end.row {
+                let local_line = inline_lines.get(start.row).copied().unwrap_or("");
+                let start_char = byte_to_char_col(local_line, start.column);
+                let end_char = byte_to_char_col(local_line, end.column);
+
+                // Adjust for base position
+                let actual_row = base_row + start.row;
+                let (actual_start_col, actual_end_col) = if start.row == 0 {
+                    // First line: add base column offset
+                    let base_char = byte_to_char_col(
+                        inline_source.lines().next().unwrap_or(""),
+                        0,
+                    );
+                    let _ = base_char; // base_col is already in chars for first line
+                    (base_col + start_char, base_col + end_char)
+                } else {
+                    (start_char, end_char)
+                };
+
+                if actual_start_col < actual_end_col {
+                    let line_highlights = highlights.lines.entry(actual_row).or_default();
+                    line_highlights.tokens.push(HighlightToken {
+                        start_col: actual_start_col,
+                        end_col: actual_end_col,
+                        highlight: highlight_id,
+                    });
+                }
+            } else {
+                // Multi-line inline tokens: split across lines
+                for row in start.row..=end.row {
+                    let local_line = inline_lines.get(row).copied().unwrap_or("");
+                    let line_char_len = local_line.chars().count();
+
+                    let (start_char, end_char) = if row == start.row {
+                        let start_char = byte_to_char_col(local_line, start.column);
+                        (start_char, line_char_len)
+                    } else if row == end.row {
+                        let end_char = byte_to_char_col(local_line, end.column);
+                        (0, end_char)
+                    } else {
+                        (0, line_char_len)
+                    };
+
+                    let actual_row = base_row + row;
+                    let (actual_start_col, actual_end_col) = if row == 0 {
+                        (base_col + start_char, base_col + end_char)
+                    } else {
+                        (start_char, end_char)
+                    };
+
+                    if actual_start_col < actual_end_col {
+                        let line_highlights = highlights.lines.entry(actual_row).or_default();
+                        line_highlights.tokens.push(HighlightToken {
+                            start_col: actual_start_col,
+                            end_col: actual_end_col,
+                            highlight: highlight_id,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /// Extract syntax highlights for fenced code blocks using language injection
+    fn extract_fenced_code_highlights(
+        &mut self,
+        source: &str,
+        block_tree: &Tree,
+        highlights: &mut SyntaxHighlights,
+    ) {
+        let lines: Vec<&str> = source.lines().collect();
+
+        // Walk block tree to find fenced_code_block nodes
+        let mut cursor = block_tree.walk();
+        self.visit_code_blocks(&mut cursor, source, &lines, highlights);
+    }
+
+    /// Recursively visit nodes to find and process fenced code blocks
+    fn visit_code_blocks(
+        &mut self,
+        cursor: &mut TreeCursor,
+        source: &str,
+        lines: &[&str],
+        highlights: &mut SyntaxHighlights,
+    ) {
+        loop {
+            let node = cursor.node();
+
+            if node.kind() == "fenced_code_block" {
+                self.process_fenced_code_block(node, source, lines, highlights);
+            }
+
+            // Recurse into children
+            if cursor.goto_first_child() {
+                self.visit_code_blocks(cursor, source, lines, highlights);
+                cursor.goto_parent();
+            }
+
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+    }
+
+    /// Process a single fenced code block for language injection
+    fn process_fenced_code_block(
+        &mut self,
+        node: tree_sitter::Node,
+        source: &str,
+        _lines: &[&str],
+        highlights: &mut SyntaxHighlights,
+    ) {
+        // Find info_string and code_fence_content children
+        let mut language_name: Option<&str> = None;
+        let mut content_node: Option<tree_sitter::Node> = None;
+
+        let mut child_cursor = node.walk();
+        if child_cursor.goto_first_child() {
+            loop {
+                let child = child_cursor.node();
+                match child.kind() {
+                    "info_string" => {
+                        // Get the language from info_string's first child (usually "language" node)
+                        if let Some(lang_node) = child.child(0) {
+                            if lang_node.kind() == "language" {
+                                if let Ok(text) = lang_node.utf8_text(source.as_bytes()) {
+                                    language_name = Some(text);
+                                }
+                            }
+                        }
+                    }
+                    "code_fence_content" => {
+                        content_node = Some(child);
+                    }
+                    _ => {}
+                }
+
+                if !child_cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
+
+        // If we have both language and content, inject highlighting
+        let (Some(lang_str), Some(content)) = (language_name, content_node) else {
+            return;
+        };
+
+        // Map language name to LanguageId
+        let Some(lang_id) = LanguageId::from_code_fence_info(lang_str) else {
+            return;
+        };
+
+        // Skip if we don't have a parser for this language
+        let Some(parser) = self.parsers.get_mut(&lang_id) else {
+            return;
+        };
+
+        // Get the code content
+        let start_byte = content.start_byte();
+        let end_byte = content.end_byte();
+        if start_byte >= end_byte || end_byte > source.len() {
+            return;
+        }
+
+        let code_source = &source[start_byte..end_byte];
+        let base_row = content.start_position().row;
+        let base_col = content.start_position().column;
+
+        // Parse with the language's parser
+        let Some(code_tree) = parser.parse(code_source, None) else {
+            return;
+        };
+
+        // Get the query for this language
+        let Some(query) = self.queries.get(&lang_id) else {
+            return;
+        };
+
+        // Extract highlights from the parsed code
+        let code_lines: Vec<&str> = code_source.lines().collect();
+        let source_bytes = code_source.as_bytes();
+
+        // Helper: convert byte column to character column
+        fn byte_to_char_col(text: &str, byte_col: usize) -> usize {
+            let byte_col = byte_col.min(text.len());
+            let mut valid_byte = byte_col;
+            while valid_byte > 0 && !text.is_char_boundary(valid_byte) {
+                valid_byte -= 1;
+            }
+            text[..valid_byte].chars().count()
+        }
+
+        let mut cursor = QueryCursor::new();
+        let mut captures = cursor.captures(query, code_tree.root_node(), source_bytes);
+
+        while let Some((query_match, capture_idx)) = captures.next() {
+            let capture = &query_match.captures[*capture_idx];
+            let capture_name = &query.capture_names()[capture.index as usize];
+
+            let highlight_id = match highlight_id_for_name(capture_name) {
+                Some(id) => id,
+                None => continue,
+            };
+
+            let cap_node = capture.node;
+            let start = cap_node.start_position();
+            let end = cap_node.end_position();
+
+            // Handle single-line tokens
+            if start.row == end.row {
+                let local_line = code_lines.get(start.row).copied().unwrap_or("");
+                let start_char = byte_to_char_col(local_line, start.column);
+                let end_char = byte_to_char_col(local_line, end.column);
+
+                // Adjust for base position
+                let actual_row = base_row + start.row;
+                let (actual_start_col, actual_end_col) = if start.row == 0 {
+                    (base_col + start_char, base_col + end_char)
+                } else {
+                    (start_char, end_char)
+                };
+
+                if actual_start_col < actual_end_col {
+                    // Remove any existing highlight for this range (block query may have
+                    // marked the whole content as @string)
+                    let line_highlights = highlights.lines.entry(actual_row).or_default();
+                    line_highlights.tokens.push(HighlightToken {
+                        start_col: actual_start_col,
+                        end_col: actual_end_col,
+                        highlight: highlight_id,
+                    });
+                }
+            } else {
+                // Multi-line tokens: split across lines
+                for row in start.row..=end.row {
+                    let local_line = code_lines.get(row).copied().unwrap_or("");
+                    let line_char_len = local_line.chars().count();
+
+                    let (start_char, end_char) = if row == start.row {
+                        let start_char = byte_to_char_col(local_line, start.column);
+                        (start_char, line_char_len)
+                    } else if row == end.row {
+                        let end_char = byte_to_char_col(local_line, end.column);
+                        (0, end_char)
+                    } else {
+                        (0, line_char_len)
+                    };
+
+                    let actual_row = base_row + row;
+                    let (actual_start_col, actual_end_col) = if row == 0 {
+                        (base_col + start_char, base_col + end_char)
+                    } else {
+                        (start_char, end_char)
+                    };
+
+                    if actual_start_col < actual_end_col {
+                        let line_highlights = highlights.lines.entry(actual_row).or_default();
+                        line_highlights.tokens.push(HighlightToken {
+                            start_col: actual_start_col,
+                            end_col: actual_end_col,
+                            highlight: highlight_id,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /// Specialized HTML parsing with script/style language injection
+    fn parse_and_highlight_html(
+        &mut self,
+        source: &str,
+        doc_id: DocumentId,
+        revision: u64,
+    ) -> SyntaxHighlights {
+        let language = LanguageId::Html;
+
+        // Step 1: Parse HTML structure
+        let parser = match self.parsers.get_mut(&language) {
+            Some(p) => p,
+            None => {
+                tracing::warn!("No parser for HTML");
+                return SyntaxHighlights::new(language, revision);
+            }
+        };
+
+        // Try incremental parsing if cached
+        let html_tree = if let Some(cached) = self.doc_cache.get_mut(&doc_id) {
+            if cached.language == language {
+                if let Some(edit) = compute_incremental_edit(&cached.source, source) {
+                    cached.tree.edit(&edit);
+                    match parser.parse(source, Some(&cached.tree)) {
+                        Some(new_tree) => {
+                            cached.tree = new_tree.clone();
+                            cached.source = source.to_owned();
+                            new_tree
+                        }
+                        None => {
+                            self.doc_cache.remove(&doc_id);
+                            match parser.parse(source, None) {
+                                Some(t) => {
+                                    self.doc_cache.insert(
+                                        doc_id,
+                                        DocParseState {
+                                            language,
+                                            tree: t.clone(),
+                                            source: source.to_owned(),
+                                        },
+                                    );
+                                    t
+                                }
+                                None => return SyntaxHighlights::new(language, revision),
+                            }
+                        }
+                    }
+                } else {
+                    cached.tree.clone()
+                }
+            } else {
+                self.doc_cache.remove(&doc_id);
+                match parser.parse(source, None) {
+                    Some(t) => {
+                        self.doc_cache.insert(
+                            doc_id,
+                            DocParseState {
+                                language,
+                                tree: t.clone(),
+                                source: source.to_owned(),
+                            },
+                        );
+                        t
+                    }
+                    None => return SyntaxHighlights::new(language, revision),
+                }
+            }
+        } else {
+            match parser.parse(source, None) {
+                Some(t) => {
+                    self.doc_cache.insert(
+                        doc_id,
+                        DocParseState {
+                            language,
+                            tree: t.clone(),
+                            source: source.to_owned(),
+                        },
+                    );
+                    t
+                }
+                None => return SyntaxHighlights::new(language, revision),
+            }
+        };
+
+        // Step 2: Extract HTML-level highlights
+        let mut highlights = self.extract_highlights(source, &html_tree, language, revision);
+
+        // Step 3: Language injection for <script> and <style> elements
+        self.extract_html_embedded_highlights(source, &html_tree, &mut highlights);
+
+        // Re-sort tokens after adding injected highlights
+        for line_highlights in highlights.lines.values_mut() {
+            line_highlights
+                .tokens
+                .sort_by_key(|t| (t.start_col, t.end_col));
+        }
+
+        highlights
+    }
+
+    /// Extract highlights for embedded script/style content in HTML
+    fn extract_html_embedded_highlights(
+        &mut self,
+        source: &str,
+        html_tree: &Tree,
+        highlights: &mut SyntaxHighlights,
+    ) {
+        let mut cursor = html_tree.walk();
+        self.visit_html_embedded_elements(&mut cursor, source, highlights);
+    }
+
+    /// Recursively visit nodes to find script/style elements
+    fn visit_html_embedded_elements(
+        &mut self,
+        cursor: &mut TreeCursor,
+        source: &str,
+        highlights: &mut SyntaxHighlights,
+    ) {
+        loop {
+            let node = cursor.node();
+
+            match node.kind() {
+                "script_element" => {
+                    self.process_script_element(node, source, highlights);
+                }
+                "style_element" => {
+                    self.process_style_element(node, source, highlights);
+                }
+                _ => {}
+            }
+
+            if cursor.goto_first_child() {
+                self.visit_html_embedded_elements(cursor, source, highlights);
+                cursor.goto_parent();
+            }
+
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+    }
+
+    /// Process <script> element - inject JavaScript highlighting
+    fn process_script_element(
+        &mut self,
+        node: tree_sitter::Node,
+        source: &str,
+        highlights: &mut SyntaxHighlights,
+    ) {
+        // Find raw_text child (the script content)
+        let mut raw_text_node: Option<tree_sitter::Node> = None;
+
+        let mut child_cursor = node.walk();
+        if child_cursor.goto_first_child() {
+            loop {
+                let child = child_cursor.node();
+                if child.kind() == "raw_text" {
+                    raw_text_node = Some(child);
+                    break;
+                }
+                if !child_cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
+
+        let Some(raw_text) = raw_text_node else {
+            return;
+        };
+
+        // Default to JavaScript (could check type attribute for TypeScript)
+        self.inject_html_language_highlights(raw_text, source, LanguageId::JavaScript, highlights);
+    }
+
+    /// Process <style> element - inject CSS highlighting
+    fn process_style_element(
+        &mut self,
+        node: tree_sitter::Node,
+        source: &str,
+        highlights: &mut SyntaxHighlights,
+    ) {
+        // Find raw_text child (the style content)
+        let mut raw_text_node: Option<tree_sitter::Node> = None;
+
+        let mut child_cursor = node.walk();
+        if child_cursor.goto_first_child() {
+            loop {
+                let child = child_cursor.node();
+                if child.kind() == "raw_text" {
+                    raw_text_node = Some(child);
+                    break;
+                }
+                if !child_cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
+
+        let Some(raw_text) = raw_text_node else {
+            return;
+        };
+
+        self.inject_html_language_highlights(raw_text, source, LanguageId::Css, highlights);
+    }
+
+    /// Inject language highlights for HTML embedded content
+    fn inject_html_language_highlights(
+        &mut self,
+        raw_text: tree_sitter::Node,
+        source: &str,
+        lang_id: LanguageId,
+        highlights: &mut SyntaxHighlights,
+    ) {
+        let start_byte = raw_text.start_byte();
+        let end_byte = raw_text.end_byte();
+
+        if start_byte >= end_byte || end_byte > source.len() {
+            return;
+        }
+
+        let code_source = &source[start_byte..end_byte];
+        let base_row = raw_text.start_position().row;
+        let base_col = raw_text.start_position().column;
+
+        // Get parser for this language
+        let Some(parser) = self.parsers.get_mut(&lang_id) else {
+            return;
+        };
+
+        // Parse the embedded code
+        let Some(code_tree) = parser.parse(code_source, None) else {
+            return;
+        };
+
+        // Get query for this language
+        let Some(query) = self.queries.get(&lang_id) else {
+            return;
+        };
+
+        // Extract highlights
+        let code_lines: Vec<&str> = code_source.lines().collect();
+        let source_bytes = code_source.as_bytes();
+
+        fn byte_to_char_col(text: &str, byte_col: usize) -> usize {
+            let byte_col = byte_col.min(text.len());
+            let mut valid_byte = byte_col;
+            while valid_byte > 0 && !text.is_char_boundary(valid_byte) {
+                valid_byte -= 1;
+            }
+            text[..valid_byte].chars().count()
+        }
+
+        let mut cursor = QueryCursor::new();
+        let mut captures = cursor.captures(query, code_tree.root_node(), source_bytes);
+
+        while let Some((query_match, capture_idx)) = captures.next() {
+            let capture = &query_match.captures[*capture_idx];
+            let capture_name = &query.capture_names()[capture.index as usize];
+
+            let highlight_id = match highlight_id_for_name(capture_name) {
+                Some(id) => id,
+                None => continue,
+            };
+
+            let cap_node = capture.node;
+            let start = cap_node.start_position();
+            let end = cap_node.end_position();
+
+            // Handle single-line tokens
+            if start.row == end.row {
+                let local_line = code_lines.get(start.row).copied().unwrap_or("");
+                let start_char = byte_to_char_col(local_line, start.column);
+                let end_char = byte_to_char_col(local_line, end.column);
+
+                let actual_row = base_row + start.row;
+                let (actual_start_col, actual_end_col) = if start.row == 0 {
+                    (base_col + start_char, base_col + end_char)
+                } else {
+                    (start_char, end_char)
+                };
+
+                if actual_start_col < actual_end_col {
+                    let line_highlights = highlights.lines.entry(actual_row).or_default();
+                    line_highlights.tokens.push(HighlightToken {
+                        start_col: actual_start_col,
+                        end_col: actual_end_col,
+                        highlight: highlight_id,
+                    });
+                }
+            } else {
+                // Multi-line tokens
+                for row in start.row..=end.row {
+                    let local_line = code_lines.get(row).copied().unwrap_or("");
+                    let line_char_len = local_line.chars().count();
+
+                    let (start_char, end_char) = if row == start.row {
+                        let sc = byte_to_char_col(local_line, start.column);
+                        (sc, line_char_len)
+                    } else if row == end.row {
+                        let ec = byte_to_char_col(local_line, end.column);
+                        (0, ec)
+                    } else {
+                        (0, line_char_len)
+                    };
+
+                    let actual_row = base_row + row;
+                    let (actual_start_col, actual_end_col) = if row == 0 {
+                        (base_col + start_char, base_col + end_char)
+                    } else {
+                        (start_char, end_char)
+                    };
+
+                    if actual_start_col < actual_end_col {
+                        let line_highlights = highlights.lines.entry(actual_row).or_default();
+                        line_highlights.tokens.push(HighlightToken {
+                            start_col: actual_start_col,
+                            end_col: actual_end_col,
+                            highlight: highlight_id,
+                        });
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1454,5 +2316,327 @@ number = 42
         let p11 = byte_to_point(text, 11);
         assert_eq!(p11.row, 1);
         assert_eq!(p11.column, 5);
+    }
+
+    // Markdown inline highlighting tests
+
+    #[test]
+    fn test_markdown_inline_query_compiles() {
+        // Verify inline query compiles successfully
+        let ts_lang: tree_sitter::Language = tree_sitter_md::INLINE_LANGUAGE.into();
+        let query = Query::new(&ts_lang, MARKDOWN_INLINE_HIGHLIGHTS);
+        assert!(
+            query.is_ok(),
+            "Markdown inline query failed to compile: {:?}",
+            query.err()
+        );
+    }
+
+    #[test]
+    fn test_markdown_inline_emphasis() {
+        let mut state = ParserState::new();
+        let source = "This is *italic* text";
+        let doc_id = DocumentId(100);
+        let highlights = state.parse_and_highlight(source, LanguageId::Markdown, doc_id, 1);
+
+        assert_eq!(highlights.language, LanguageId::Markdown);
+        // Should have highlights for inline content
+        let line0 = highlights.lines.get(&0);
+        assert!(line0.is_some(), "Line 0 should have highlights");
+
+        // Check that we have a text.emphasis highlight
+        let line = line0.unwrap();
+        let has_emphasis = line.tokens.iter().any(|t| {
+            let name = super::super::highlights::HIGHLIGHT_NAMES
+                .get(t.highlight as usize)
+                .unwrap_or(&"");
+            *name == "text.emphasis"
+        });
+        assert!(
+            has_emphasis,
+            "Should have text.emphasis highlight for *italic*, found: {:?}",
+            line.tokens
+        );
+    }
+
+    #[test]
+    fn test_markdown_inline_strong() {
+        let mut state = ParserState::new();
+        let source = "This is **bold** text";
+        let doc_id = DocumentId(101);
+        let highlights = state.parse_and_highlight(source, LanguageId::Markdown, doc_id, 1);
+
+        assert_eq!(highlights.language, LanguageId::Markdown);
+        let line0 = highlights.lines.get(&0);
+        assert!(line0.is_some(), "Line 0 should have highlights");
+
+        let line = line0.unwrap();
+        let has_strong = line.tokens.iter().any(|t| {
+            let name = super::super::highlights::HIGHLIGHT_NAMES
+                .get(t.highlight as usize)
+                .unwrap_or(&"");
+            *name == "text.strong"
+        });
+        assert!(
+            has_strong,
+            "Should have text.strong highlight for **bold**, found: {:?}",
+            line.tokens
+        );
+    }
+
+    #[test]
+    fn test_markdown_code_span() {
+        let mut state = ParserState::new();
+        let source = "Use `code` here";
+        let doc_id = DocumentId(102);
+        let highlights = state.parse_and_highlight(source, LanguageId::Markdown, doc_id, 1);
+
+        assert_eq!(highlights.language, LanguageId::Markdown);
+        let line0 = highlights.lines.get(&0);
+        assert!(line0.is_some(), "Line 0 should have highlights");
+
+        let line = line0.unwrap();
+        let has_code = line.tokens.iter().any(|t| {
+            let name = super::super::highlights::HIGHLIGHT_NAMES
+                .get(t.highlight as usize)
+                .unwrap_or(&"");
+            *name == "string" // code_span maps to @string
+        });
+        assert!(
+            has_code,
+            "Should have string highlight for `code`, found: {:?}",
+            line.tokens
+        );
+    }
+
+    #[test]
+    fn test_markdown_fenced_code_injection() {
+        let mut state = ParserState::new();
+        let source = r#"# Code Example
+
+```rust
+fn main() {
+    println!("Hello");
+}
+```
+"#;
+        let doc_id = DocumentId(103);
+        let highlights = state.parse_and_highlight(source, LanguageId::Markdown, doc_id, 1);
+
+        assert_eq!(highlights.language, LanguageId::Markdown);
+
+        // Line 3 should have "fn" highlighted as keyword (rust code inside code block)
+        // Note: Line 0 = "# Code Example", Line 1 = "", Line 2 = "```rust", Line 3 = "fn main..."
+        let line3 = highlights.lines.get(&3);
+        assert!(
+            line3.is_some(),
+            "Line 3 (fn main) should have highlights"
+        );
+
+        let line = line3.unwrap();
+        let has_keyword = line.tokens.iter().any(|t| {
+            let name = super::super::highlights::HIGHLIGHT_NAMES
+                .get(t.highlight as usize)
+                .unwrap_or(&"");
+            name.starts_with("keyword")
+        });
+        assert!(
+            has_keyword,
+            "Should have keyword highlight for 'fn' in rust code block, found: {:?}",
+            line.tokens
+        );
+    }
+
+    #[test]
+    fn test_markdown_full_document() {
+        let mut state = ParserState::new();
+        let source = r#"# Heading
+
+This paragraph has *italic*, **bold**, and `code`.
+
+- List item with [link](url)
+
+```python
+def hello():
+    print("Hello")
+```
+"#;
+        let doc_id = DocumentId(104);
+        let highlights = state.parse_and_highlight(source, LanguageId::Markdown, doc_id, 1);
+
+        // Should have highlights for heading
+        assert!(
+            highlights.lines.contains_key(&0),
+            "Should highlight heading"
+        );
+        // Should have highlights for paragraph with inline elements
+        assert!(
+            highlights.lines.contains_key(&2),
+            "Should highlight paragraph with inline elements"
+        );
+        // Should have highlights for code block
+        assert!(
+            highlights.lines.contains_key(&7),
+            "Should highlight python code block"
+        );
+    }
+
+    #[test]
+    fn test_markdown_debug_output() {
+        let mut state = ParserState::new();
+        let source = r#"# Heading
+
+This has *italic* and **bold** and `code`.
+
+```rust
+fn main() {}
+```
+"#;
+        let doc_id = DocumentId(200);
+        let highlights = state.parse_and_highlight(source, LanguageId::Markdown, doc_id, 1);
+
+        // Verify specific highlights exist
+        // Line 0: # Heading - should have punctuation.special and text.title
+        let line0 = highlights.lines.get(&0).expect("Line 0 should have highlights");
+        assert!(line0.tokens.iter().any(|t| {
+            super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize) == Some(&"punctuation.special")
+        }), "Line 0 should have punctuation.special for #");
+        assert!(line0.tokens.iter().any(|t| {
+            super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize) == Some(&"text.title")
+        }), "Line 0 should have text.title for Heading");
+
+        // Line 2: inline elements
+        let line2 = highlights.lines.get(&2).expect("Line 2 should have highlights");
+        let highlight_names: Vec<&str> = line2.tokens.iter()
+            .filter_map(|t| super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize).copied())
+            .collect();
+
+        assert!(highlight_names.contains(&"text.emphasis"),
+            "Line 2 should have text.emphasis, found: {:?}", highlight_names);
+        assert!(highlight_names.contains(&"text.strong"),
+            "Line 2 should have text.strong, found: {:?}", highlight_names);
+        assert!(highlight_names.contains(&"string"),
+            "Line 2 should have string for code, found: {:?}", highlight_names);
+
+        // Line 5: rust code block content should have keyword (line 4 is ```rust)
+        let line5 = highlights.lines.get(&5).expect("Line 5 (fn main) should have highlights");
+        let has_keyword = line5.tokens.iter().any(|t| {
+            let name = super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize).unwrap_or(&"");
+            name.starts_with("keyword")
+        });
+        assert!(has_keyword, "Line 5 should have keyword for 'fn', got: {:?}",
+            line5.tokens.iter()
+                .filter_map(|t| super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize))
+                .collect::<Vec<_>>());
+    }
+
+    // HTML language injection tests
+
+    #[test]
+    fn test_html_script_injection() {
+        let mut state = ParserState::new();
+        let source = r#"<!DOCTYPE html>
+<html>
+<head>
+<script>
+function hello() {
+    const x = 42;
+    return x;
+}
+</script>
+</head>
+</html>"#;
+        let doc_id = DocumentId(300);
+        let highlights = state.parse_and_highlight(source, LanguageId::Html, doc_id, 1);
+
+        assert_eq!(highlights.language, LanguageId::Html);
+
+        // Line 4 should have "function" as keyword.function
+        let line4 = highlights.lines.get(&4);
+        assert!(line4.is_some(), "Line 4 (function hello) should have highlights");
+
+        let line = line4.unwrap();
+        let has_keyword = line.tokens.iter().any(|t| {
+            let name = super::super::highlights::HIGHLIGHT_NAMES
+                .get(t.highlight as usize)
+                .unwrap_or(&"");
+            name.starts_with("keyword")
+        });
+        assert!(
+            has_keyword,
+            "Should have keyword highlight for 'function', got: {:?}",
+            line.tokens
+                .iter()
+                .filter_map(|t| super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_html_style_injection() {
+        let mut state = ParserState::new();
+        let source = r#"<!DOCTYPE html>
+<html>
+<head>
+<style>
+.container {
+    color: red;
+    font-size: 16px;
+}
+</style>
+</head>
+</html>"#;
+        let doc_id = DocumentId(301);
+        let highlights = state.parse_and_highlight(source, LanguageId::Html, doc_id, 1);
+
+        assert_eq!(highlights.language, LanguageId::Html);
+
+        // Line 4 should have ".container" class highlighted as @type
+        let line4 = highlights.lines.get(&4);
+        assert!(line4.is_some(), "Line 4 (.container) should have highlights");
+
+        let line = line4.unwrap();
+        let has_type = line.tokens.iter().any(|t| {
+            let name = super::super::highlights::HIGHLIGHT_NAMES
+                .get(t.highlight as usize)
+                .unwrap_or(&"");
+            *name == "type"
+        });
+        assert!(
+            has_type,
+            "Should have type highlight for class selector, got: {:?}",
+            line.tokens
+                .iter()
+                .filter_map(|t| super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_html_full_document_with_injection() {
+        let mut state = ParserState::new();
+        let source = r#"<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { margin: 0; }
+    </style>
+    <script>
+        console.log("Hello");
+    </script>
+</head>
+<body>
+    <h1>Title</h1>
+</body>
+</html>"#;
+        let doc_id = DocumentId(302);
+        let highlights = state.parse_and_highlight(source, LanguageId::Html, doc_id, 1);
+
+        // Should have highlights for HTML tags
+        assert!(highlights.lines.contains_key(&1), "Should highlight <html>");
+        // Should have highlights for CSS inside style
+        assert!(highlights.lines.contains_key(&4), "Should highlight CSS body selector");
+        // Should have highlights for JavaScript inside script
+        assert!(highlights.lines.contains_key(&7), "Should highlight JS console.log");
     }
 }
