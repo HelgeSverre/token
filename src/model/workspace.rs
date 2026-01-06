@@ -314,10 +314,104 @@ impl FileTree {
         });
     }
 
-    /// Refresh the file tree from disk
+    /// Refresh the file tree from disk (full rescan)
     pub fn refresh(&mut self, root: &Path) -> std::io::Result<()> {
         *self = Self::from_directory(root)?;
         Ok(())
+    }
+
+    /// Incrementally update the tree for changed paths.
+    ///
+    /// Instead of rescanning the entire tree, this method only refreshes
+    /// the parent directories of the changed paths. This is much faster
+    /// for typical file system changes (creating/deleting/modifying files).
+    pub fn update_paths(&mut self, root: &Path, paths: &[PathBuf]) -> std::io::Result<()> {
+        // Collect unique parent directories that need updating
+        let mut parents_to_refresh: HashSet<PathBuf> = HashSet::new();
+
+        for path in paths {
+            // Get the parent directory of the changed path
+            if let Some(parent) = path.parent() {
+                // Only include if within the workspace root
+                if parent.starts_with(root) {
+                    parents_to_refresh.insert(parent.to_path_buf());
+                }
+            }
+        }
+
+        // If no valid parents or too many changes, fall back to full refresh
+        if parents_to_refresh.is_empty() || parents_to_refresh.len() > 10 {
+            return self.refresh(root);
+        }
+
+        // Refresh each parent directory incrementally
+        for parent in &parents_to_refresh {
+            self.refresh_directory(root, parent)?;
+        }
+
+        Ok(())
+    }
+
+    /// Refresh a single directory's children in the tree.
+    fn refresh_directory(&mut self, root: &Path, dir_path: &Path) -> std::io::Result<()> {
+        // Special case: refreshing the root itself
+        if dir_path == root {
+            return self.refresh(root);
+        }
+
+        // Find the node for this directory and update its children
+        for tree_root in &mut self.roots {
+            if Self::refresh_node_directory(tree_root, dir_path)? {
+                return Ok(());
+            }
+        }
+
+        // Directory not found in tree - might be new, do full refresh
+        self.refresh(root)
+    }
+
+    /// Recursively find and refresh a directory node.
+    /// Returns true if the directory was found and refreshed.
+    fn refresh_node_directory(node: &mut FileNode, target_dir: &Path) -> std::io::Result<bool> {
+        if node.path == target_dir && node.is_dir {
+            // Found it! Refresh this node's children
+            let mut new_children = Self::scan_directory(&node.path, 0)?;
+            Self::sort_nodes(&mut new_children);
+            node.children = new_children;
+            return Ok(true);
+        }
+
+        // Recurse into children
+        if node.is_dir && target_dir.starts_with(&node.path) {
+            for child in &mut node.children {
+                if Self::refresh_node_directory(child, target_dir)? {
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
+    /// Get all file paths recursively (excludes directories)
+    ///
+    /// Returns a flat list of all files in the tree, useful for fuzzy file search.
+    pub fn get_all_file_paths(&self) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        for root in &self.roots {
+            Self::collect_files_recursive(root, &mut files);
+        }
+        files
+    }
+
+    fn collect_files_recursive(node: &FileNode, files: &mut Vec<PathBuf>) {
+        if node.is_dir {
+            for child in &node.children {
+                Self::collect_files_recursive(child, files);
+            }
+        } else {
+            files.push(node.path.clone());
+        }
     }
 
     /// Count total visible items (for scrolling calculations)
@@ -545,9 +639,15 @@ impl Workspace {
         self.expanded_folders.contains(path)
     }
 
-    /// Refresh the file tree from disk
+    /// Refresh the file tree from disk (full rescan)
     pub fn refresh(&mut self) -> std::io::Result<()> {
         self.file_tree.refresh(&self.root)
+    }
+
+    /// Incrementally update the file tree for specific changed paths.
+    /// Much faster than full refresh for typical file operations.
+    pub fn update_paths(&mut self, paths: &[PathBuf]) -> std::io::Result<()> {
+        self.file_tree.update_paths(&self.root, paths)
     }
 
     /// Get visible item count (for scrollbar)

@@ -22,8 +22,33 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use winit::window::Window;
 
+use token::commands::{Damage, DamageArea};
 use token::model::editor_area::{EditorGroup, GroupId, Rect, SplitterBar};
-use token::model::{gutter_border_x_scaled, text_start_x_scaled, AppModel};
+
+/// Check if the damage contains cursor lines (free function to avoid borrow issues)
+fn has_cursor_lines_damage(damage: &Damage) -> bool {
+    match damage {
+        Damage::None | Damage::Full => false,
+        Damage::Areas(areas) => areas
+            .iter()
+            .any(|a| matches!(a, DamageArea::CursorLines(_))),
+    }
+}
+use token::model::AppModel;
+
+/// Context for sidebar rendering, holding constant values throughout tree traversal.
+struct SidebarRenderContext {
+    sidebar_width: usize,
+    sidebar_height: usize,
+    row_height: usize,
+    indent: f32,
+    scroll_offset: usize,
+    // Colors
+    text_color: u32,
+    selection_bg: u32,
+    selection_fg: u32,
+    folder_icon_color: u32,
+}
 
 pub type GlyphCacheKey = (char, u32);
 
@@ -32,6 +57,10 @@ pub type GlyphCache = HashMap<GlyphCacheKey, (Metrics, Vec<u8>)>;
 pub struct Renderer {
     font: Font,
     surface: Surface<Rc<Window>, Rc<Window>>,
+    /// Persistent back buffer for partial rendering.
+    /// Softbuffer doesn't guarantee buffer contents are preserved between frames,
+    /// so we maintain our own buffer and copy to the surface on present.
+    back_buffer: Vec<u32>,
     width: u32,
     height: u32,
     font_size: f32,
@@ -86,9 +115,14 @@ impl Renderer {
         let (metrics, _) = font.rasterize('M', font_size);
         let char_width = metrics.advance_width;
 
+        // Initialize back buffer with enough space for the window
+        let buffer_size = (width as usize) * (height as usize);
+        let back_buffer = vec![0u32; buffer_size];
+
         Ok(Self {
             font,
             surface,
+            back_buffer,
             width,
             height,
             font_size,
@@ -133,13 +167,247 @@ impl Renderer {
     }
 
     #[allow(dead_code)]
-    pub fn glyph_cache_mut(&mut self) -> &mut GlyphCache {
-        &mut self.glyph_cache
-    }
-
-    #[allow(dead_code)]
     pub fn dimensions(&self) -> (u32, u32) {
         (self.width, self.height)
+    }
+
+    // =========================================================================
+    // Damage Tracking Helpers
+    // =========================================================================
+
+    /// Compute effective damage, forcing Full for complex overlays
+    ///
+    /// Forces full redraw when:
+    /// - Modal is active (background dim accumulation)
+    /// - Drop overlay is showing
+    /// - Debug overlays are visible (debug builds only)
+    fn compute_effective_damage(
+        &self,
+        damage: &Damage,
+        model: &AppModel,
+        #[allow(unused_variables)] perf: &crate::runtime::perf::PerfStats,
+    ) -> Damage {
+        // Force full redraw for complex overlays
+        if model.ui.active_modal.is_some() {
+            return Damage::Full;
+        }
+
+        if model.ui.drop_state.is_hovering {
+            return Damage::Full;
+        }
+
+        // Debug builds: force full for perf/debug overlays
+        #[cfg(debug_assertions)]
+        {
+            if perf.should_show_overlay() {
+                return Damage::Full;
+            }
+            if let Some(ref overlay) = model.debug_overlay {
+                if overlay.visible {
+                    return Damage::Full;
+                }
+            }
+        }
+
+        damage.clone()
+    }
+
+    /// Render only specific cursor lines (optimized path for cursor blink)
+    ///
+    /// This function redraws only the specified line numbers, which is much faster
+    /// than redrawing the entire editor area. Used for cursor blink optimization.
+    ///
+    /// For each dirty line, renders:
+    /// - Line background (editor bg or current line highlight)
+    /// - Gutter (line number)
+    /// - Text content with syntax highlighting
+    /// - Cursor (if visible and on this line)
+    fn render_cursor_lines_only(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        dirty_lines: &[usize],
+    ) {
+        let char_width = painter.char_width();
+        let line_height = painter.line_height();
+
+        // Get the focused group and its document
+        let focused_group_id = model.editor_area.focused_group_id;
+        let Some(group) = model.editor_area.groups.get(&focused_group_id) else {
+            return;
+        };
+
+        let Some(editor_id) = group.active_editor_id() else {
+            return;
+        };
+
+        let Some(editor) = model.editor_area.editors.get(&editor_id) else {
+            return;
+        };
+
+        let Some(doc_id) = editor.document_id else {
+            return;
+        };
+
+        let Some(document) = model.editor_area.documents.get(&doc_id) else {
+            return;
+        };
+
+        // Use GroupLayout for all positioning (DPI-aware, single source of truth)
+        let layout = geometry::GroupLayout::new(group, model, char_width);
+
+        let visible_lines = layout.visible_lines(line_height);
+        let end_line = (editor.viewport.top_line + visible_lines).min(document.buffer.len_lines());
+
+        // Colors
+        let bg_color = model.theme.editor.background.to_argb_u32();
+        let current_line_color = model.theme.editor.current_line_background.to_argb_u32();
+        let gutter_bg_color = model.theme.gutter.background.to_argb_u32();
+        let line_num_color = model.theme.gutter.foreground.to_argb_u32();
+        let line_num_active_color = model.theme.gutter.foreground_active.to_argb_u32();
+        let text_color = model.theme.editor.foreground.to_argb_u32();
+        let primary_cursor_color = model.theme.editor.cursor_color.to_argb_u32();
+        let secondary_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
+
+        // Layout-derived values
+        let rect_x = layout.rect_x();
+        let rect_w = layout.rect_w();
+        let gutter_right_x = layout.gutter_right_x;
+        let gutter_width = layout.gutter_width();
+        let group_text_start_x = layout.text_start_x;
+
+        let text_start_x_offset = layout.text_start_x - rect_x;
+        let visible_columns =
+            ((rect_w as f32 - text_start_x_offset as f32) / char_width).floor() as usize;
+        let max_chars = visible_columns;
+
+        // Reusable buffers
+        let mut adjusted_tokens: Vec<token::syntax::HighlightToken> = Vec::with_capacity(32);
+        let mut display_text_buf = String::with_capacity(max_chars + 16);
+
+        for &doc_line in dirty_lines {
+            // Skip lines outside viewport
+            if doc_line < editor.viewport.top_line || doc_line >= end_line {
+                continue;
+            }
+
+            // Use layout helper for line Y position
+            let Some(y) = layout.line_to_screen_y(doc_line, editor.viewport.top_line, line_height)
+            else {
+                continue;
+            };
+
+            // 1. Clear line background (gutter + text area)
+            let is_cursor_line = doc_line == editor.active_cursor().line;
+
+            // Clear gutter area for this line
+            frame.fill_rect_px(rect_x, y, gutter_width, line_height, gutter_bg_color);
+
+            // Clear text area for this line
+            let text_area_x = gutter_right_x + 1; // After gutter border
+            let text_area_w = rect_w.saturating_sub(gutter_width + 1);
+            if is_cursor_line {
+                frame.fill_rect_px(text_area_x, y, text_area_w, line_height, current_line_color);
+            } else {
+                frame.fill_rect_px(text_area_x, y, text_area_w, line_height, bg_color);
+            }
+
+            // 2. Render gutter (line number)
+            let line_num_str = format!("{}", doc_line + 1);
+            let text_width_px = (line_num_str.len() as f32 * char_width).round() as usize;
+            let gutter_text_x = gutter_right_x.saturating_sub(4 + text_width_px);
+            let line_color = if is_cursor_line {
+                line_num_active_color
+            } else {
+                line_num_color
+            };
+            painter.draw(frame, gutter_text_x, y, &line_num_str, line_color);
+
+            // 3. Render text content with syntax highlighting
+            if let Some(line_text) = document.get_line_cow(doc_line) {
+                let expanded_text = expand_tabs_for_display(&line_text);
+
+                display_text_buf.clear();
+                for ch in expanded_text
+                    .chars()
+                    .skip(editor.viewport.left_column)
+                    .take(max_chars)
+                {
+                    display_text_buf.push(ch);
+                }
+
+                // Get syntax highlights
+                let line_tokens = document.get_line_highlights(doc_line);
+
+                adjusted_tokens.clear();
+                for t in line_tokens.iter() {
+                    let visual_start = char_col_to_visual_col(&line_text, t.start_col);
+                    let visual_end = char_col_to_visual_col(&line_text, t.end_col);
+
+                    let start = visual_start.saturating_sub(editor.viewport.left_column);
+                    let end = visual_end.saturating_sub(editor.viewport.left_column);
+
+                    if end > 0 && start < max_chars {
+                        adjusted_tokens.push(token::syntax::HighlightToken {
+                            start_col: start,
+                            end_col: end.min(max_chars),
+                            highlight: t.highlight,
+                        });
+                    }
+                }
+
+                if adjusted_tokens.is_empty() {
+                    painter.draw(frame, group_text_start_x, y, &display_text_buf, text_color);
+                } else {
+                    painter.draw_with_highlights(
+                        frame,
+                        group_text_start_x,
+                        y,
+                        &display_text_buf,
+                        &adjusted_tokens,
+                        &model.theme.syntax,
+                        text_color,
+                    );
+                }
+            }
+
+            // 4. Render cursors on this line (if visible)
+            if model.ui.cursor_visible {
+                for (idx, cursor) in editor.cursors.iter().enumerate() {
+                    if cursor.line != doc_line {
+                        continue;
+                    }
+
+                    let line_text = document.get_line_cow(cursor.line).unwrap_or_default();
+                    let visual_cursor_col = char_col_to_visual_col(&line_text, cursor.column);
+
+                    let cursor_in_horizontal_view = visual_cursor_col
+                        >= editor.viewport.left_column
+                        && visual_cursor_col < editor.viewport.left_column + visible_columns;
+
+                    if cursor_in_horizontal_view {
+                        let cursor_visual_column = visual_cursor_col - editor.viewport.left_column;
+                        let cursor_x = (group_text_start_x as f32
+                            + cursor_visual_column as f32 * char_width)
+                            .round() as usize;
+
+                        let cursor_color = if idx == 0 {
+                            primary_cursor_color
+                        } else {
+                            secondary_cursor_color
+                        };
+
+                        frame.fill_rect_px(
+                            cursor_x,
+                            y + 1,
+                            2,
+                            line_height.saturating_sub(2),
+                            cursor_color,
+                        );
+                    }
+                }
+            }
+        }
     }
 
     /// Render the entire editor area: all groups and splitters.
@@ -152,21 +420,10 @@ impl Renderer {
         painter: &mut TextPainter,
         model: &AppModel,
         splitters: &[SplitterBar],
-        line_height: usize,
-        char_width: f32,
     ) {
         for (&group_id, group) in &model.editor_area.groups {
             let is_focused = group_id == model.editor_area.focused_group_id;
-            Self::render_editor_group(
-                frame,
-                painter,
-                model,
-                group_id,
-                group.rect,
-                is_focused,
-                line_height,
-                char_width,
-            );
+            Self::render_editor_group(frame, painter, model, group_id, group.rect, is_focused);
         }
 
         Self::render_splitters(frame, splitters, model);
@@ -175,7 +432,7 @@ impl Renderer {
     /// Render an entire editor group: tab bar, gutter, text area, and focus dimming.
     ///
     /// This is the main orchestrator that calls individual widget functions.
-    #[allow(clippy::too_many_arguments)]
+    /// Uses GroupLayout for all positioning to ensure DPI-aware, consistent rendering.
     fn render_editor_group(
         frame: &mut Frame,
         painter: &mut TextPainter,
@@ -183,9 +440,9 @@ impl Renderer {
         group_id: GroupId,
         group_rect: Rect,
         is_focused: bool,
-        line_height: usize,
-        char_width: f32,
     ) {
+        let char_width = painter.char_width();
+
         let group = match model.editor_area.groups.get(&group_id) {
             Some(g) => g,
             None => return,
@@ -211,68 +468,24 @@ impl Renderer {
             None => return,
         };
 
-        let rect_x = group_rect.x as usize;
-        let rect_y = group_rect.y as usize;
-        let rect_w = group_rect.width as usize;
+        // Create GroupLayout - single source of truth for all positioning
+        let layout = geometry::GroupLayout::new(group, model, char_width);
 
         // Tab bar
-        Self::render_tab_bar(
-            frame, painter, model, group, rect_x, rect_y, rect_w, char_width,
-        );
-
-        // Content area (below tab bar) - use scaled metrics for correct DPI handling
-        let content_rect = geometry::group_content_rect_scaled(&group_rect, model);
-        let content_y = content_rect.y as usize;
-        let content_h = content_rect.height as usize;
+        Self::render_tab_bar(frame, painter, model, group, &layout);
 
         // Check view mode and dispatch to appropriate renderer
         if let Some(csv_state) = editor.view_mode.as_csv() {
             // CSV mode: render grid
-            Self::render_csv_grid(
-                frame,
-                painter,
-                model,
-                csv_state,
-                rect_x,
-                rect_w,
-                content_y,
-                content_h,
-                line_height,
-                char_width,
-                is_focused,
-            );
+            Self::render_csv_grid(frame, painter, model, csv_state, &layout, is_focused);
         } else {
             // Text mode: render normal text area
 
             // Text area (background highlights, text, cursors)
-            Self::render_text_area(
-                frame,
-                painter,
-                model,
-                editor,
-                document,
-                rect_x,
-                rect_w,
-                content_y,
-                content_h,
-                line_height,
-                char_width,
-                is_focused,
-            );
+            Self::render_text_area(frame, painter, model, editor, document, &layout, is_focused);
 
             // Gutter (line numbers, border) - drawn on top of text area background
-            Self::render_gutter(
-                frame,
-                painter,
-                model,
-                editor,
-                document,
-                rect_x,
-                content_y,
-                content_h,
-                line_height,
-                char_width,
-            );
+            Self::render_gutter(frame, painter, model, editor, document, &layout);
         }
 
         // Dim non-focused groups when multiple groups exist (4% black overlay)
@@ -282,19 +495,20 @@ impl Renderer {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_tab_bar(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
         group: &EditorGroup,
-        rect_x: usize,
-        rect_y: usize,
-        rect_w: usize,
-        char_width: f32,
+        layout: &geometry::GroupLayout,
     ) {
         let metrics = &model.metrics;
-        let tab_bar_height = metrics.tab_bar_height;
+        let char_width = painter.char_width();
+        let rect_x = layout.rect_x();
+        let rect_y = layout.rect_y();
+        let rect_w = layout.rect_w();
+        let tab_bar_height = layout.tab_bar_height;
+
         let tab_bar_bg = model.theme.tab_bar.background.to_argb_u32();
         frame.fill_rect_px(rect_x, rect_y, rect_w, tab_bar_height, tab_bar_bg);
 
@@ -347,15 +561,12 @@ impl Renderer {
     }
 
     /// Render the sidebar (file tree) for a workspace.
-    #[allow(clippy::too_many_arguments)]
     fn render_sidebar(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
         sidebar_width: usize,
         sidebar_height: usize,
-        _line_height: usize,
-        _char_width: f32,
     ) {
         let Some(workspace) = &model.workspace else {
             return;
@@ -379,17 +590,21 @@ impl Renderer {
             border_color,
         );
 
-        // Render file tree items
-        let row_height = metrics.file_tree_row_height;
-        let indent = metrics.file_tree_indent;
-        let text_color = theme.foreground.to_argb_u32();
-        let selection_bg = theme.selection_background.to_argb_u32();
-        let selection_fg = theme.selection_foreground.to_argb_u32();
-        let folder_icon_color = theme.folder_icon.to_argb_u32();
+        // Build render context with all constant values
+        let ctx = SidebarRenderContext {
+            sidebar_width,
+            sidebar_height,
+            row_height: metrics.file_tree_row_height,
+            indent: metrics.file_tree_indent,
+            scroll_offset: workspace.scroll_offset,
+            text_color: theme.foreground.to_argb_u32(),
+            selection_bg: theme.selection_background.to_argb_u32(),
+            selection_fg: theme.selection_foreground.to_argb_u32(),
+            folder_icon_color: theme.folder_icon.to_argb_u32(),
+        };
 
         let mut y = 0usize;
         let mut visible_index = 0usize;
-        let scroll_offset = workspace.scroll_offset;
 
         // Helper function to render a tree node recursively.
         // visible_index tracks the global flattened index of items.
@@ -401,21 +616,13 @@ impl Renderer {
             painter: &mut TextPainter,
             node: &token::model::FileNode,
             workspace: &token::model::Workspace,
+            ctx: &SidebarRenderContext,
             y: &mut usize,
             visible_index: &mut usize,
             depth: usize,
-            sidebar_width: usize,
-            row_height: usize,
-            indent: f32,
-            text_color: u32,
-            selection_bg: u32,
-            selection_fg: u32,
-            folder_icon_color: u32,
-            sidebar_height: usize,
-            scroll_offset: usize,
         ) {
             // If we've started rendering and filled the viewport, bail out
-            if *visible_index >= scroll_offset && *y >= sidebar_height {
+            if *visible_index >= ctx.scroll_offset && *y >= ctx.sidebar_height {
                 return;
             }
 
@@ -424,15 +631,15 @@ impl Renderer {
             *visible_index += 1;
 
             // Only draw if this item is at or after scroll_offset
-            let is_visible_row = idx >= scroll_offset;
+            let is_visible_row = idx >= ctx.scroll_offset;
 
             if is_visible_row {
                 // If we're beyond the viewport height, stop drawing
-                if *y >= sidebar_height {
+                if *y >= ctx.sidebar_height {
                     return;
                 }
 
-                let x_offset = (depth as f32 * indent) as usize + 8; // 8px left padding
+                let x_offset = (depth as f32 * ctx.indent) as usize + 8; // 8px left padding
 
                 // Check if this item is selected
                 let is_selected = workspace
@@ -444,8 +651,13 @@ impl Renderer {
                 // Draw selection background with alpha blending
                 if is_selected {
                     frame.fill_rect_blended(
-                        Rect::new(0.0, *y as f32, sidebar_width as f32, row_height as f32),
-                        selection_bg,
+                        Rect::new(
+                            0.0,
+                            *y as f32,
+                            ctx.sidebar_width as f32,
+                            ctx.row_height as f32,
+                        ),
+                        ctx.selection_bg,
                     );
                 }
 
@@ -462,38 +674,44 @@ impl Renderer {
                     // Use +/- indicators: - for expanded, + for collapsed
                     let indicator = if is_expanded { "-" } else { "+" };
                     let icon_color = if is_selected {
-                        selection_fg
+                        ctx.selection_fg
                     } else {
-                        folder_icon_color
+                        ctx.folder_icon_color
                     };
                     painter.draw(frame, icon_x, text_y, indicator, icon_color);
                 }
 
                 // Draw file/folder name, truncating if too long
                 let fg = if is_selected {
-                    selection_fg
+                    ctx.selection_fg
                 } else {
-                    text_color
+                    ctx.text_color
                 };
 
                 // Calculate available width for text (sidebar_width minus text_x and right padding)
                 let right_padding = 8;
-                let available_width = sidebar_width.saturating_sub(text_x + right_padding);
+                let available_width = ctx.sidebar_width.saturating_sub(text_x + right_padding);
 
                 // Truncate the name if it's too long (estimate char width as ~8px for now)
+                // Use Cow to avoid allocation when no truncation needed
                 let estimated_char_width = 8;
                 let max_chars = available_width / estimated_char_width;
-                let display_name = if node.name.len() > max_chars && max_chars > 3 {
-                    let truncated = &node.name[..max_chars.saturating_sub(2)];
-                    format!("{}…", truncated)
-                } else {
-                    node.name.clone()
-                };
+                let needs_truncation = node.name.len() > max_chars && max_chars > 3;
 
-                painter.draw(frame, text_x, text_y, &display_name, fg);
+                if needs_truncation {
+                    // Only allocate when truncation is needed
+                    let truncated = &node.name[..max_chars.saturating_sub(2)];
+                    let mut display_name = String::with_capacity(truncated.len() + 3);
+                    display_name.push_str(truncated);
+                    display_name.push('…');
+                    painter.draw(frame, text_x, text_y, &display_name, fg);
+                } else {
+                    // No allocation - use the name directly
+                    painter.draw(frame, text_x, text_y, &node.name, fg);
+                }
 
                 // Only advance y for items that are actually drawn
-                *y += row_height;
+                *y += ctx.row_height;
             }
 
             // Always recurse into children if expanded (even if parent is above viewport)
@@ -505,18 +723,10 @@ impl Renderer {
                         painter,
                         child,
                         workspace,
+                        ctx,
                         y,
                         visible_index,
                         depth + 1,
-                        sidebar_width,
-                        row_height,
-                        indent,
-                        text_color,
-                        selection_bg,
-                        selection_fg,
-                        folder_icon_color,
-                        sidebar_height,
-                        scroll_offset,
                     );
                 }
             }
@@ -529,21 +739,13 @@ impl Renderer {
                 painter,
                 node,
                 workspace,
+                &ctx,
                 &mut y,
                 &mut visible_index,
                 0,
-                sidebar_width,
-                row_height,
-                indent,
-                text_color,
-                selection_bg,
-                selection_fg,
-                folder_icon_color,
-                sidebar_height,
-                scroll_offset,
             );
             // Early exit if viewport is filled
-            if visible_index >= scroll_offset && y >= sidebar_height {
+            if visible_index >= ctx.scroll_offset && y >= ctx.sidebar_height {
                 break;
             }
         }
@@ -554,30 +756,30 @@ impl Renderer {
     /// Draws:
     /// - Line numbers (highlighted for current line)
     /// - Gutter border line
-    #[allow(clippy::too_many_arguments)]
     fn render_gutter(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
         editor: &token::model::EditorState,
         document: &token::model::Document,
-        rect_x: usize,
-        content_y: usize,
-        content_h: usize,
-        line_height: usize,
-        char_width: f32,
+        layout: &geometry::GroupLayout,
     ) {
         let gutter_bg_color = model.theme.gutter.background.to_argb_u32();
         let line_num_color = model.theme.gutter.foreground.to_argb_u32();
         let line_num_active_color = model.theme.gutter.foreground_active.to_argb_u32();
+        let char_width = painter.char_width();
+        let line_height = painter.line_height();
 
-        let visible_lines = content_h / line_height;
+        let rect_x = layout.rect_x();
+        let content_y = layout.content_y();
+        let content_h = layout.content_h();
+        let gutter_right_x = layout.gutter_right_x;
+        let gutter_width = layout.gutter_width();
+
+        let visible_lines = layout.visible_lines(line_height);
         let end_line = (editor.viewport.top_line + visible_lines).min(document.buffer.len_lines());
 
         let gutter_border_color = model.theme.gutter.border_color.to_argb_u32();
-        let gutter_right_x =
-            rect_x + gutter_border_x_scaled(char_width, &model.metrics).round() as usize;
-        let gutter_width = gutter_right_x - rect_x;
 
         // Draw gutter background
         frame.fill_rect_px(rect_x, content_y, gutter_width, content_h, gutter_bg_color);
@@ -613,25 +815,25 @@ impl Renderer {
     /// - Selection highlights
     /// - Text content
     /// - Cursors (only if group is focused)
-    #[allow(clippy::too_many_arguments)]
     fn render_text_area(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
         editor: &token::model::EditorState,
         document: &token::model::Document,
-        rect_x: usize,
-        rect_w: usize,
-        content_y: usize,
-        content_h: usize,
-        line_height: usize,
-        char_width: f32,
+        layout: &geometry::GroupLayout,
         is_focused: bool,
     ) {
-        let text_start_x_offset = text_start_x_scaled(char_width, &model.metrics).round() as usize;
-        let group_text_start_x = rect_x + text_start_x_offset;
+        let char_width = painter.char_width();
+        let line_height = painter.line_height();
+        let rect_x = layout.rect_x();
+        let rect_w = layout.rect_w();
+        let content_y = layout.content_y();
+        let content_h = layout.content_h();
+        let group_text_start_x = layout.text_start_x;
 
-        let visible_lines = content_h / line_height;
+        let text_start_x_offset = layout.text_start_x - rect_x;
+        let visible_lines = layout.visible_lines(line_height);
         let visible_columns =
             ((rect_w as f32 - text_start_x_offset as f32) / char_width).floor() as usize;
         let end_line = (editor.viewport.top_line + visible_lines).min(document.buffer.len_lines());
@@ -912,21 +1114,22 @@ impl Renderer {
     /// - Column headers (A, B, C, ...)
     /// - Cell grid with data
     /// - Selected cell highlight
-    #[allow(clippy::too_many_arguments)]
     fn render_csv_grid(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
         csv: &token::csv::CsvState,
-        rect_x: usize,
-        rect_w: usize,
-        content_y: usize,
-        content_h: usize,
-        line_height: usize,
-        char_width: f32,
+        layout: &geometry::GroupLayout,
         is_focused: bool,
     ) {
         use token::csv::render::{column_to_letters, truncate_text, CsvRenderLayout};
+
+        let char_width = painter.char_width();
+        let line_height = painter.line_height();
+        let rect_x = layout.rect_x();
+        let rect_w = layout.rect_w();
+        let content_y = layout.content_y();
+        let content_h = layout.content_h();
 
         let theme = &model.theme;
         let bg_color = theme.editor.background.to_argb_u32();
@@ -1222,9 +1425,9 @@ impl Renderer {
         model: &AppModel,
         window_width: usize,
         window_height: usize,
-        line_height: usize,
-        char_width: f32,
     ) {
+        let char_width = painter.char_width();
+        let line_height = painter.line_height();
         let status_bar_bg = model.theme.status_bar.background.to_argb_u32();
         let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
         let status_bar_h = geometry::status_bar_height(line_height);
@@ -1268,19 +1471,18 @@ impl Renderer {
     /// - Dimmed background over entire window
     /// - Modal dialog box (centered)
     /// - Modal content (title, input field, command list for palette)
-    #[allow(clippy::too_many_arguments)]
     fn render_modals(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
         window_width: usize,
         window_height: usize,
-        line_height: usize,
-        char_width: f32,
     ) {
         use token::commands::filter_commands;
         use token::model::ModalState;
         use token::theme::ThemeSource;
+        let char_width = painter.char_width();
+        let line_height = painter.line_height();
 
         let Some(ref modal) = model.ui.active_modal else {
             return;
@@ -1426,7 +1628,6 @@ impl Renderer {
                     width: text_width,
                     height: line_height,
                     char_width,
-                    line_height,
                     text_color: fg_color,
                     cursor_color: highlight_color,
                     selection_color: selection_bg,
@@ -1523,7 +1724,6 @@ impl Renderer {
                     width: text_width,
                     height: line_height,
                     char_width,
-                    line_height,
                     text_color: fg_color,
                     cursor_color: highlight_color,
                     selection_color: selection_bg,
@@ -1568,7 +1768,6 @@ impl Renderer {
                     width: text_width,
                     height: line_height,
                     char_width,
-                    line_height,
                     text_color: fg_color,
                     cursor_color: highlight_color,
                     selection_color: selection_bg,
@@ -1577,20 +1776,141 @@ impl Renderer {
                 };
                 TextFieldRenderer::render(frame, painter, state.focused_editable(), &opts);
             }
+
+            ModalState::FileFinder(state) => {
+                // File finder modal: input field + results list
+                // Use a wider modal than other dialogs to fit file paths
+                let results = &state.results;
+                let max_visible_items = 10;
+                let visible_count = results.len().min(max_visible_items);
+
+                // Custom wider bounds for file finder (70% of window, min 500, max 900)
+                let modal_width = (window_width as f32 * 0.7).clamp(500.0, 900.0) as usize;
+                let base_height = line_height * 3 + 20;
+                let list_height = visible_count * line_height + 8;
+                let modal_height = base_height + list_height;
+                let modal_x = (window_width - modal_width) / 2;
+                let modal_y = (window_height / 4).min(100);
+
+                // Background
+                frame.draw_bordered_rect(
+                    modal_x,
+                    modal_y,
+                    modal_width,
+                    modal_height,
+                    bg_color,
+                    border_color,
+                );
+
+                // Title
+                let title_x = modal_x + 12;
+                let title_y = modal_y + 8;
+                painter.draw(frame, title_x, title_y, "Go to File", fg_color);
+
+                // Input field
+                let input_y = title_y + line_height + 8;
+                let input_x = modal_x + 8;
+                let input_width = modal_width - 16;
+                let input_height = line_height + 8;
+
+                frame.fill_rect_px(input_x, input_y, input_width, input_height, input_bg);
+
+                // Input text
+                let text_x = input_x + 8;
+                let text_y = input_y + 4;
+                let text_width = input_width - 16;
+                let opts = TextFieldOptions {
+                    x: text_x,
+                    y: text_y,
+                    width: text_width,
+                    height: line_height,
+                    char_width,
+                    text_color: fg_color,
+                    cursor_color: highlight_color,
+                    selection_color: selection_bg,
+                    cursor_visible: model.ui.cursor_visible,
+                    scroll_x: 0,
+                };
+                TextFieldRenderer::render(frame, painter, &state.editable, &opts);
+
+                // Results list
+                let results_y = input_y + input_height + 8;
+                let clamped_selected = state.selected_index.min(results.len().saturating_sub(1));
+                let dim_color = 0xFF888888; // Dimmed color for relative path
+
+                for (i, file_match) in results.iter().take(max_visible_items).enumerate() {
+                    let item_y = results_y + i * line_height;
+                    let is_selected = i == clamped_selected;
+
+                    // Selection highlight
+                    if is_selected {
+                        frame.fill_rect_px(
+                            modal_x + 4,
+                            item_y,
+                            modal_width - 8,
+                            line_height,
+                            selection_bg,
+                        );
+                    }
+
+                    // File icon
+                    let icon = token::model::FileExtension::from_path(&file_match.path).icon();
+                    let icon_x = modal_x + 12;
+                    painter.draw(frame, icon_x, item_y, icon, fg_color);
+
+                    // Filename
+                    let name_x = modal_x + 36;
+                    painter.draw(frame, name_x, item_y, &file_match.filename, fg_color);
+
+                    // Relative path (dimmed, after filename) - truncate if needed
+                    let filename_width = (file_match.filename.len() as f32 * char_width) as usize;
+                    let path_x = name_x + filename_width + (char_width as usize * 2);
+                    let available_width = (modal_x + modal_width).saturating_sub(path_x + 16);
+                    let max_path_chars = (available_width as f32 / char_width) as usize;
+
+                    if max_path_chars > 5 {
+                        let path_display =
+                            if file_match.relative_path.chars().count() > max_path_chars {
+                                // Truncate with ellipsis
+                                let truncated: String = file_match
+                                    .relative_path
+                                    .chars()
+                                    .take(max_path_chars - 1)
+                                    .collect();
+                                format!("{}…", truncated)
+                            } else {
+                                file_match.relative_path.clone()
+                            };
+                        painter.draw(frame, path_x, item_y, &path_display, dim_color);
+                    }
+                }
+
+                // Show "No matches" if results are empty and query is not empty
+                if results.is_empty() && !state.input().is_empty() {
+                    let no_match_y = results_y;
+                    painter.draw(
+                        frame,
+                        modal_x + 12,
+                        no_match_y,
+                        "No files match your query",
+                        dim_color,
+                    );
+                }
+            }
         }
     }
 
     /// Render the file drop overlay when files are being dragged over the window.
-    #[allow(clippy::too_many_arguments)]
     fn render_drop_overlay(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
         window_width: usize,
         window_height: usize,
-        line_height: usize,
-        char_width: f32,
     ) {
+        let char_width = painter.char_width();
+        let line_height = painter.line_height();
+
         // Semi-transparent overlay covering the entire window
         frame.dim(0x80); // 50% dim
 
@@ -1620,12 +1940,23 @@ impl Renderer {
         &mut self,
         model: &mut AppModel,
         perf: &mut crate::runtime::perf::PerfStats,
+        damage: &Damage,
     ) -> Result<()> {
+        // Skip rendering entirely if no damage
+        if matches!(damage, Damage::None) {
+            return Ok(());
+        }
+
         perf.reset_frame_stats();
 
         if self.width != model.window_size.0 || self.height != model.window_size.1 {
             self.width = model.window_size.0;
             self.height = model.window_size.1;
+
+            // Resize back buffer to match new window size
+            let new_size = (self.width as usize) * (self.height as usize);
+            self.back_buffer.resize(new_size, 0);
+
             self.surface
                 .resize(
                     NonZeroU32::new(self.width).unwrap(),
@@ -1662,114 +1993,211 @@ impl Renderer {
             .editor_area
             .compute_layout_scaled(available_rect, model.metrics.splitter_width);
 
-        let mut buffer = self
-            .surface
-            .buffer_mut()
-            .map_err(|e| anyhow::anyhow!("Failed to get surface buffer: {}", e))?;
-
         // Create Frame wrapper for cleaner drawing API
         // Note: We use Frame for new code; legacy code still uses raw buffer slices
         let width_usize = width as usize;
         let height_usize = height as usize;
 
-        {
+        // Compute effective damage: force Full for complex overlays
+        // (Must be done before borrowing buffer)
+        let effective_damage = self.compute_effective_damage(damage, model, perf);
+
+        // Determine what regions need to be rendered
+        let render_editor = effective_damage.is_full()
+            || effective_damage.includes_editor()
+            || has_cursor_lines_damage(&effective_damage);
+        let render_status_bar =
+            effective_damage.is_full() || effective_damage.includes_status_bar();
+
+        // All rendering happens to back_buffer (persistent between frames).
+        // At the end, we copy to the surface buffer and present.
+
+        // Clear and render based on damage
+        let bg_color = model.theme.editor.background.to_argb_u32();
+
+        // Check for cursor-lines-only damage early (before clearing)
+        let cursor_lines_damage = effective_damage.cursor_lines_only().map(|v| v.to_vec());
+
+        if effective_damage.is_full() {
+            // Full redraw: clear entire screen
             let _timer = perf.time_clear();
-            let bg_color = model.theme.editor.background.to_argb_u32();
-            let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
+            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
             frame.clear(bg_color);
+        } else if cursor_lines_damage.is_some() {
+            // Cursor lines only: clear just those line rectangles
+            // (clearing happens in render_cursor_lines_only for precise line bounds)
+        } else {
+            // Partial redraw: only clear damaged regions
+            let _timer = perf.time_clear();
+            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
+
+            if render_editor {
+                // Clear editor area (everything except status bar)
+                let editor_rect = Rect::new(
+                    0.0,
+                    0.0,
+                    width as f32,
+                    height_usize.saturating_sub(status_bar_height) as f32,
+                );
+                frame.fill_rect(editor_rect, bg_color);
+            }
+
+            if render_status_bar {
+                // Clear status bar area
+                let status_bg = model.theme.status_bar.background.to_argb_u32();
+                let status_rect = Rect::new(
+                    0.0,
+                    height_usize.saturating_sub(status_bar_height) as f32,
+                    width as f32,
+                    status_bar_height as f32,
+                );
+                frame.fill_rect(status_rect, status_bg);
+            }
         }
 
-        {
-            let _timer = perf.time_text();
-            let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
-            let mut painter =
-                TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
-            Self::render_editor_area(
-                &mut frame,
-                &mut painter,
-                model,
-                &splitters,
-                line_height,
+        // Render editor area if needed
+        // Check for cursor-lines-only damage for optimized rendering
+        let cursor_lines_only = effective_damage.cursor_lines_only();
+
+        if let Some(dirty_lines) = cursor_lines_only {
+            // Optimized path: only redraw specific cursor lines
+            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
+            let mut painter = TextPainter::new(
+                &self.font,
+                &mut self.glyph_cache,
+                font_size,
+                ascent,
                 char_width,
+                line_height,
             );
+            {
+                let _timer = perf.time_text();
+                Self::render_cursor_lines_only(&mut frame, &mut painter, model, dirty_lines);
+            }
+            #[cfg(debug_assertions)]
+            {
+                let stats = painter.cache_stats();
+                perf.add_cache_stats(stats.hits, stats.misses);
+            }
+        } else if render_editor {
+            // Full editor area render
+            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
+            let mut painter = TextPainter::new(
+                &self.font,
+                &mut self.glyph_cache,
+                font_size,
+                ascent,
+                char_width,
+                line_height,
+            );
+            {
+                let _timer = perf.time_text();
+                Self::render_editor_area(&mut frame, &mut painter, model, &splitters);
+            }
+            #[cfg(debug_assertions)]
+            {
+                let stats = painter.cache_stats();
+                perf.add_cache_stats(stats.hits, stats.misses);
+            }
         }
 
-        // Render sidebar if workspace is open
-        if sidebar_width > 0.0 {
-            let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
-            let mut painter =
-                TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
+        // Render sidebar if workspace is open and editor is being rendered
+        if sidebar_width > 0.0 && render_editor {
+            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
+            let mut painter = TextPainter::new(
+                &self.font,
+                &mut self.glyph_cache,
+                font_size,
+                ascent,
+                char_width,
+                line_height,
+            );
             Self::render_sidebar(
                 &mut frame,
                 &mut painter,
                 model,
                 sidebar_width as usize,
                 height_usize.saturating_sub(status_bar_height),
-                line_height,
-                char_width,
             );
+            #[cfg(debug_assertions)]
+            {
+                let stats = painter.cache_stats();
+                perf.add_cache_stats(stats.hits, stats.misses);
+            }
         }
 
-        {
-            let _timer = perf.time_status_bar();
-            let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
-            let mut painter =
-                TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
-            Self::render_status_bar(
-                &mut frame,
-                &mut painter,
-                model,
-                width_usize,
-                height_usize,
-                line_height,
+        // Render status bar if needed
+        if render_status_bar {
+            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
+            let mut painter = TextPainter::new(
+                &self.font,
+                &mut self.glyph_cache,
+                font_size,
+                ascent,
                 char_width,
+                line_height,
             );
+            {
+                let _timer = perf.time_status_bar();
+                Self::render_status_bar(&mut frame, &mut painter, model, width_usize, height_usize);
+            }
+            #[cfg(debug_assertions)]
+            {
+                let stats = painter.cache_stats();
+                perf.add_cache_stats(stats.hits, stats.misses);
+            }
         }
 
         // Render modals (layer 2 - on top of editor and status bar)
         if model.ui.active_modal.is_some() {
-            let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
-            let mut painter =
-                TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
-            Self::render_modals(
-                &mut frame,
-                &mut painter,
-                model,
-                width_usize,
-                height_usize,
-                line_height,
+            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
+            let mut painter = TextPainter::new(
+                &self.font,
+                &mut self.glyph_cache,
+                font_size,
+                ascent,
                 char_width,
+                line_height,
             );
+            Self::render_modals(&mut frame, &mut painter, model, width_usize, height_usize);
+            #[cfg(debug_assertions)]
+            {
+                let stats = painter.cache_stats();
+                perf.add_cache_stats(stats.hits, stats.misses);
+            }
         }
 
         // Render drop overlay (layer 3 - on top of modals)
         if model.ui.drop_state.is_hovering {
-            let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
-            let mut painter =
-                TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
-            Self::render_drop_overlay(
-                &mut frame,
-                &mut painter,
-                model,
-                width_usize,
-                height_usize,
-                line_height,
+            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
+            let mut painter = TextPainter::new(
+                &self.font,
+                &mut self.glyph_cache,
+                font_size,
+                ascent,
                 char_width,
+                line_height,
             );
+            Self::render_drop_overlay(&mut frame, &mut painter, model, width_usize, height_usize);
+            #[cfg(debug_assertions)]
+            {
+                let stats = painter.cache_stats();
+                perf.add_cache_stats(stats.hits, stats.misses);
+            }
         }
 
         #[cfg(debug_assertions)]
         if perf.should_show_overlay() {
-            let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
-            let mut painter =
-                TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
-            crate::runtime::perf::render_perf_overlay(
-                &mut frame,
-                &mut painter,
-                perf,
-                &model.theme,
+            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
+            let mut painter = TextPainter::new(
+                &self.font,
+                &mut self.glyph_cache,
+                font_size,
+                ascent,
+                char_width,
                 line_height,
             );
+            crate::runtime::perf::render_perf_overlay(&mut frame, &mut painter, perf, &model.theme);
         }
 
         #[cfg(debug_assertions)]
@@ -1777,14 +2205,21 @@ impl Renderer {
             if overlay.visible {
                 let lines = overlay.render_lines(model);
                 if !lines.is_empty() {
-                    let mut frame = Frame::new(&mut buffer, width_usize, height_usize);
-                    let mut painter =
-                        TextPainter::new(&self.font, &mut self.glyph_cache, font_size, ascent);
+                    let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
+                    let mut painter = TextPainter::new(
+                        &self.font,
+                        &mut self.glyph_cache,
+                        font_size,
+                        ascent,
+                        char_width,
+                        line_height,
+                    );
 
                     // Calculate dimensions
                     let max_line_len = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
-                    let overlay_width = (max_line_len as f32 * char_width).ceil() as usize + 20;
-                    let overlay_height = lines.len() * line_height + 10;
+                    let overlay_width =
+                        (max_line_len as f32 * painter.char_width()).ceil() as usize + 20;
+                    let overlay_height = lines.len() * painter.line_height() + 10;
 
                     // Position in top-right corner (perf overlay is top-left)
                     let overlay_x = width_usize.saturating_sub(overlay_width + 10);
@@ -1803,15 +2238,37 @@ impl Renderer {
                     // Render text lines
                     for (i, line) in lines.iter().enumerate() {
                         let text_x = overlay_x + 10;
-                        let text_y = overlay_y + 5 + i * line_height;
+                        let text_y = overlay_y + 5 + i * painter.line_height();
                         painter.draw(&mut frame, text_x, text_y, line, fg_color);
                     }
                 }
             }
         }
 
+        // Debug: visualize damage regions with colored outlines
+        #[cfg(feature = "damage-debug")]
+        {
+            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
+            Self::render_damage_debug(
+                &mut frame,
+                &effective_damage,
+                model,
+                width_usize,
+                height_usize,
+                status_bar_height,
+                line_height,
+                char_width,
+            );
+        }
+
+        // Copy back buffer to surface and present
         {
             let _timer = perf.time_present();
+            let mut buffer = self
+                .surface
+                .buffer_mut()
+                .map_err(|e| anyhow::anyhow!("Failed to get surface buffer: {}", e))?;
+            buffer.copy_from_slice(&self.back_buffer);
             buffer
                 .present()
                 .map_err(|e| anyhow::anyhow!("Failed to present buffer: {}", e))?;
@@ -1820,17 +2277,129 @@ impl Renderer {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    fn get_char_width(&mut self) -> f32 {
-        let key = ('m', self.font_size.to_bits());
-        if let Some((metrics, _)) = self.glyph_cache.get(&key) {
-            metrics.advance_width
-        } else {
-            let (metrics, bitmap) = self.font.rasterize('m', self.font_size);
-            let width = metrics.advance_width;
-            self.glyph_cache.insert(key, (metrics, bitmap));
-            width
+    /// Render debug visualization of damage regions
+    #[cfg(feature = "damage-debug")]
+    fn render_damage_debug(
+        frame: &mut Frame,
+        damage: &Damage,
+        model: &AppModel,
+        width: usize,
+        height: usize,
+        status_bar_height: usize,
+        line_height: usize,
+        char_width: f32,
+    ) {
+        // Semi-transparent colors for different damage types (alpha = 0x80 = 50%)
+        const RED: u32 = 0x80FF0000; // EditorArea - red
+        const BLUE: u32 = 0x800000FF; // StatusBar - blue
+        const GREEN: u32 = 0x8000FF00; // CursorLines - green
+        const YELLOW: u32 = 0x80FFFF00; // Full - yellow
+
+        match damage {
+            Damage::None => {
+                // No damage - nothing to visualize
+            }
+            Damage::Full => {
+                // Draw yellow border around entire window
+                Self::draw_rect_outline_blended(frame, 0, 0, width, height, YELLOW, 3);
+            }
+            Damage::Areas(areas) => {
+                for area in areas {
+                    match area {
+                        DamageArea::EditorArea => {
+                            // Red outline around editor area (everything except status bar)
+                            let editor_height = height.saturating_sub(status_bar_height);
+                            Self::draw_rect_outline_blended(
+                                frame,
+                                0,
+                                0,
+                                width,
+                                editor_height,
+                                RED,
+                                3,
+                            );
+                        }
+                        DamageArea::StatusBar => {
+                            // Blue outline around status bar
+                            let status_y = height.saturating_sub(status_bar_height);
+                            Self::draw_rect_outline_blended(
+                                frame,
+                                0,
+                                status_y,
+                                width,
+                                status_bar_height,
+                                BLUE,
+                                3,
+                            );
+                        }
+                        DamageArea::CursorLines(lines) => {
+                            // Draw green highlight over each damaged cursor line
+                            // Use GroupLayout for consistent, DPI-aware positioning
+                            let focused_group_id = model.editor_area.focused_group_id;
+                            if let Some(group) = model.editor_area.groups.get(&focused_group_id) {
+                                if let Some(editor_id) = group.active_editor_id() {
+                                    if let Some(editor) = model.editor_area.editors.get(&editor_id)
+                                    {
+                                        let layout =
+                                            geometry::GroupLayout::new(group, model, char_width);
+
+                                        for &doc_line in lines {
+                                            if let Some(y) = layout.line_to_screen_y(
+                                                doc_line,
+                                                editor.viewport.top_line,
+                                                line_height,
+                                            ) {
+                                                // Fill with semi-transparent green
+                                                frame.blend_rect_px(
+                                                    layout.rect_x(),
+                                                    y,
+                                                    layout.rect_w(),
+                                                    line_height,
+                                                    GREEN,
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    /// Draw a rectangle outline with alpha blending (border only, not filled)
+    #[cfg(feature = "damage-debug")]
+    fn draw_rect_outline_blended(
+        frame: &mut Frame,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+        color: u32,
+        thickness: usize,
+    ) {
+        // Top edge
+        frame.blend_rect_px(x, y, width, thickness, color);
+        // Bottom edge
+        frame.blend_rect_px(
+            x,
+            y + height.saturating_sub(thickness),
+            width,
+            thickness,
+            color,
+        );
+        // Left edge
+        frame.blend_rect_px(x, y, thickness, height, color);
+        // Right edge
+        frame.blend_rect_px(
+            x + width.saturating_sub(thickness),
+            y,
+            thickness,
+            height,
+            color,
+        );
     }
 
     /// Convert pixel coordinates to document line and column.

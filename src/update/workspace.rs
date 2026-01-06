@@ -26,53 +26,53 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
                     model.ui.focus
                 );
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         WorkspaceMsg::ToggleFolder(path) => {
             if let Some(workspace) = &mut model.workspace {
                 workspace.toggle_folder(&path);
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         WorkspaceMsg::ExpandFolder(path) => {
             if let Some(workspace) = &mut model.workspace {
                 workspace.expand_folder(&path);
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         WorkspaceMsg::CollapseFolder(path) => {
             if let Some(workspace) = &mut model.workspace {
                 workspace.collapse_folder(&path);
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         WorkspaceMsg::SelectItem(path) => {
             if let Some(workspace) = &mut model.workspace {
                 workspace.selected_item = Some(path);
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         WorkspaceMsg::SelectPrevious => {
             select_adjacent_item(model, -1);
             ensure_selection_visible(model);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         WorkspaceMsg::SelectNext => {
             select_adjacent_item(model, 1);
             ensure_selection_visible(model);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         WorkspaceMsg::SelectParent => {
             select_parent_folder(model);
             ensure_selection_visible(model);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         WorkspaceMsg::OpenFile { path, preview: _ } => {
@@ -96,7 +96,7 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
                     if let Some(workspace) = &mut model.workspace {
                         workspace.toggle_folder(&path);
                     }
-                    Some(Cmd::Redraw)
+                    Some(Cmd::redraw_editor())
                 }
                 Some((path, false)) => {
                     // It's a file - open it
@@ -104,14 +104,14 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
                 }
                 None => {
                     // No selection
-                    Some(Cmd::Redraw)
+                    Some(Cmd::redraw_editor())
                 }
             }
         }
 
         WorkspaceMsg::RevealActiveFile => {
             reveal_active_file(model);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         WorkspaceMsg::StartSidebarResize { initial_x } => {
@@ -121,7 +121,7 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
                     original_width: workspace.sidebar_width_logical,
                 });
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         WorkspaceMsg::UpdateSidebarResize { x } => {
@@ -140,12 +140,12 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
 
                 workspace.sidebar_width_logical = new_width_logical;
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         WorkspaceMsg::EndSidebarResize => {
             model.ui.sidebar_resize = None;
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         WorkspaceMsg::Refresh => {
@@ -156,7 +156,7 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
                     model.ui.set_status("File tree refreshed");
                 }
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         WorkspaceMsg::Scroll { lines } => {
@@ -164,7 +164,7 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
                 let total = workspace.visible_item_count();
                 if total == 0 {
                     tracing::trace!("Sidebar scroll: no visible items");
-                    return Some(Cmd::Redraw);
+                    return Some(Cmd::redraw_editor());
                 }
 
                 // Calculate how many rows fit in the sidebar viewport
@@ -191,19 +191,33 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
 
                 workspace.scroll_offset = new_offset;
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
-        WorkspaceMsg::FileSystemChange => {
-            // Refresh the file tree silently (no status message to avoid spam)
+        WorkspaceMsg::FileSystemChange { paths } => {
+            // Incrementally update the file tree for changed paths
+            // This is much faster than a full refresh
             if let Some(workspace) = &mut model.workspace {
-                if let Err(e) = workspace.refresh() {
-                    tracing::warn!("Failed to refresh file tree: {}", e);
+                if paths.is_empty() {
+                    // No specific paths - do full refresh
+                    if let Err(e) = workspace.refresh() {
+                        tracing::warn!("Failed to refresh file tree: {}", e);
+                    } else {
+                        tracing::debug!("File tree fully refreshed");
+                    }
                 } else {
-                    tracing::debug!("File tree refreshed due to file system change");
+                    // Incremental update for specific changed paths
+                    if let Err(e) = workspace.update_paths(&paths) {
+                        tracing::warn!("Failed to update file tree: {}", e);
+                    } else {
+                        tracing::debug!(
+                            "File tree incrementally updated for {} paths",
+                            paths.len()
+                        );
+                    }
                 }
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
     }
 }

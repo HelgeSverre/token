@@ -22,9 +22,6 @@ pub struct TextFieldOptions {
     pub height: usize,
     /// Character width (monospace font)
     pub char_width: f32,
-    /// Line height in pixels (used for multi-line text fields)
-    #[allow(dead_code)]
-    pub line_height: usize,
     /// Text foreground color
     pub text_color: u32,
     /// Cursor color
@@ -45,7 +42,6 @@ impl Default for TextFieldOptions {
             width: 200,
             height: 20,
             char_width: 8.0,
-            line_height: 20,
             text_color: 0xFFFFFFFF,
             cursor_color: 0xFFFFFFFF,
             selection_color: 0x40FFFFFF,

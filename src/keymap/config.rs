@@ -325,7 +325,7 @@ impl FromStr for Command {
             "SaveFile" => Ok(Command::SaveFile),
             "SaveFileAs" => Ok(Command::SaveFileAs),
             "OpenFile" => Ok(Command::OpenFile),
-            "OpenFolder" => Ok(Command::OpenFolder),
+            "FuzzyFileFinder" => Ok(Command::FuzzyFileFinder),
             "NewFile" => Ok(Command::NewFile),
             "Quit" => Ok(Command::Quit),
 

@@ -38,7 +38,7 @@ bindings:
   # Cmd+O will auto-detect file vs folder
   # See docs/feature/workspace-management.md and docs/feature/quick-open.md
   - key: "cmd+shift+o"
-    command: OpenFolder
+    command: FuzzyFileFinder
 
   - key: "cmd+shift+n"
     command: NewTab

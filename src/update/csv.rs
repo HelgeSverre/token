@@ -74,7 +74,7 @@ fn toggle_csv_mode(model: &mut AppModel) -> Option<Cmd> {
     if editor.view_mode.is_csv() {
         // Exit CSV mode - just discard the state
         editor.view_mode = ViewMode::Text;
-        return Some(Cmd::Redraw);
+        return Some(Cmd::redraw_editor());
     }
 
     // Get document content to parse
@@ -95,7 +95,7 @@ fn toggle_csv_mode(model: &mut AppModel) -> Option<Cmd> {
         Ok(data) => {
             if data.is_empty() || data.column_count() == 0 {
                 tracing::warn!("CSV parsing produced empty data");
-                return Some(Cmd::Redraw);
+                return Some(Cmd::redraw_editor());
             }
             let mut csv_state = CsvState::new(data, delimiter);
 
@@ -122,7 +122,7 @@ fn toggle_csv_mode(model: &mut AppModel) -> Option<Cmd> {
         }
     }
 
-    Some(Cmd::Redraw)
+    Some(Cmd::redraw_editor())
 }
 
 /// Exit CSV mode or cancel edit if editing
@@ -131,10 +131,10 @@ fn exit_or_cancel_edit(model: &mut AppModel) -> Option<Cmd> {
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         if csv.is_editing() {
             csv.cancel_edit();
-            return Some(Cmd::Redraw);
+            return Some(Cmd::redraw_editor());
         }
         editor.view_mode = ViewMode::Text;
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -145,7 +145,7 @@ fn move_selection(model: &mut AppModel, delta_row: i32, delta_col: i32) -> Optio
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.move_selection(delta_row, delta_col);
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -156,7 +156,7 @@ fn next_cell(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.move_to_next_cell();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -167,7 +167,7 @@ fn prev_cell(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.move_to_prev_cell();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -178,7 +178,7 @@ fn first_cell(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.move_to_first_cell();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -189,7 +189,7 @@ fn last_cell(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.move_to_last_cell();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -200,7 +200,7 @@ fn row_start(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.move_to_row_start();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -211,7 +211,7 @@ fn row_end(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.move_to_row_end();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -222,7 +222,7 @@ fn page_up(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.page_up();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -233,7 +233,7 @@ fn page_down(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.page_down();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -244,7 +244,7 @@ fn select_cell(model: &mut AppModel, row: usize, col: usize) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.select_cell(row, col);
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -255,7 +255,7 @@ fn scroll_vertical(model: &mut AppModel, delta: i32) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.scroll_vertical(delta);
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -266,7 +266,7 @@ fn scroll_horizontal(model: &mut AppModel, delta: i32) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.scroll_horizontal(delta);
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -282,7 +282,7 @@ fn start_editing(model: &mut AppModel) -> Option<Cmd> {
             return None;
         }
         csv.start_editing();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -297,7 +297,7 @@ fn start_editing_with_char(model: &mut AppModel, ch: char) -> Option<Cmd> {
         } else {
             csv.start_editing_with_char(ch);
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -329,7 +329,7 @@ fn confirm_edit(model: &mut AppModel, row_delta: i32) -> Option<Cmd> {
         }
     }
 
-    Some(Cmd::Redraw)
+    Some(Cmd::redraw_editor())
 }
 
 /// Cancel edit and discard changes
@@ -337,7 +337,7 @@ fn cancel_edit(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.cancel_edit();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -348,7 +348,7 @@ fn edit_insert_char(model: &mut AppModel, ch: char) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.edit_insert_char(ch);
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -359,7 +359,7 @@ fn edit_delete_backward(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.edit_delete_backward();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -370,7 +370,7 @@ fn edit_delete_forward(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.edit_delete_forward();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -381,7 +381,7 @@ fn edit_cursor_left(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.edit_cursor_left();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -392,7 +392,7 @@ fn edit_cursor_right(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.edit_cursor_right();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -403,7 +403,7 @@ fn edit_cursor_home(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.edit_cursor_home();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -414,7 +414,7 @@ fn edit_cursor_end(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.edit_cursor_end();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -427,7 +427,7 @@ fn edit_cursor_word_left(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_word_left();
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -440,7 +440,7 @@ fn edit_cursor_word_right(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_word_right();
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -453,7 +453,7 @@ fn edit_delete_word_backward(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.delete_word_backward();
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -466,7 +466,7 @@ fn edit_delete_word_forward(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.delete_word_forward();
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -479,7 +479,7 @@ fn edit_select_all(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.select_all();
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -492,7 +492,7 @@ fn edit_undo(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.undo();
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -505,7 +505,7 @@ fn edit_redo(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.redo();
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -520,7 +520,7 @@ fn edit_cursor_left_with_selection(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_left_with_selection();
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -533,7 +533,7 @@ fn edit_cursor_right_with_selection(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_right_with_selection();
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -546,7 +546,7 @@ fn edit_cursor_home_with_selection(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_home_with_selection();
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -559,7 +559,7 @@ fn edit_cursor_end_with_selection(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_end_with_selection();
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -572,7 +572,7 @@ fn edit_cursor_word_left_with_selection(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_word_left_with_selection();
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -585,7 +585,7 @@ fn edit_cursor_word_right_with_selection(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_word_right_with_selection();
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -605,7 +605,7 @@ fn edit_copy(model: &mut AppModel) -> Option<Cmd> {
                 }
             }
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -624,7 +624,7 @@ fn edit_cut(model: &mut AppModel) -> Option<Cmd> {
                 edit.delete_backward();
             }
         }
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         None
     }
@@ -646,7 +646,7 @@ fn edit_paste(model: &mut AppModel) -> Option<Cmd> {
                 let filtered: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
                 edit.insert_text(&filtered);
             }
-            return Some(Cmd::Redraw);
+            return Some(Cmd::redraw_editor());
         }
     }
     None

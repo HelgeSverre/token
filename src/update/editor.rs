@@ -69,7 +69,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             };
             model.ensure_cursor_visible_directional(vertical_hint);
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::MoveCursorLineStart => {
@@ -81,7 +81,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::MoveCursorLineEnd => {
@@ -93,7 +93,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::MoveCursorDocumentStart => {
@@ -105,7 +105,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::MoveCursorDocumentEnd => {
@@ -122,7 +122,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::MoveCursorWord(direction) => {
@@ -138,7 +138,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::PageUp => {
@@ -152,7 +152,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible_directional(Some(true));
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::PageDown => {
@@ -172,7 +172,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible_directional(Some(false));
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::SetCursorPosition { line, column } => {
@@ -182,7 +182,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             model.editor_mut().collapse_selections_to_cursors();
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::Scroll(delta) => {
@@ -205,7 +205,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                     .saturating_sub(delta.unsigned_abs() as usize);
             }
 
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::ScrollHorizontal(delta) => {
@@ -242,7 +242,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                     .saturating_sub(delta.unsigned_abs() as usize);
             }
 
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         // === Selection Movement (Shift+key) ===
@@ -264,7 +264,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             };
             model.ensure_cursor_visible_directional(vertical_hint);
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::MoveCursorLineStartWithSelection => {
@@ -275,7 +275,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::MoveCursorLineEndWithSelection => {
@@ -286,7 +286,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::MoveCursorDocumentStartWithSelection => {
@@ -297,7 +297,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::MoveCursorDocumentEndWithSelection => {
@@ -313,7 +313,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::MoveCursorWordWithSelection(direction) => {
@@ -328,7 +328,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::PageUpWithSelection => {
@@ -341,7 +341,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::PageDownWithSelection => {
@@ -360,7 +360,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         // === Selection Commands ===
@@ -383,7 +383,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 .push(Selection::from_positions(start, end));
 
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::SelectWord => {
@@ -407,7 +407,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::SelectLine => {
@@ -443,7 +443,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::ExtendSelectionToPosition { line, column } => {
@@ -475,19 +475,19 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::ClearSelection => {
             model.editor_mut().clear_selection();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::CollapseToSingleCursor => {
             model.editor_mut().collapse_to_primary();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         // === Multi-Cursor Operations ===
@@ -501,7 +501,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::AddCursorBelow => {
@@ -516,14 +516,14 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::ToggleCursorAtPosition { line, column } => {
             model.editor_mut().toggle_cursor_at(line, column);
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::RemoveCursor(index) => {
@@ -533,7 +533,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 editor.selections.remove(index);
             }
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::SelectNextOccurrence => {
@@ -552,7 +552,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                     model.editor_mut().primary_cursor_mut().column = end.column;
                     (word, true) // Mark that we just selected the word
                 } else {
-                    return Some(Cmd::Redraw); // No word under cursor
+                    return Some(Cmd::redraw_editor()); // No word under cursor
                 }
             };
 
@@ -560,11 +560,11 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             // This matches standard IDE behavior (VS Code, IntelliJ)
             if just_selected_word {
                 model.reset_cursor_blink();
-                return Some(Cmd::Redraw);
+                return Some(Cmd::redraw_editor());
             }
 
             if search_text.is_empty() {
-                return Some(Cmd::Redraw);
+                return Some(Cmd::redraw_editor());
             }
 
             // Compute the end offset of the current primary selection/cursor
@@ -682,7 +682,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
 
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::UnselectOccurrence => {
@@ -713,7 +713,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             }
 
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::SelectAllOccurrences => {
@@ -732,19 +732,19 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                     model.editor_mut().primary_cursor_mut().column = end.column;
                     word
                 } else {
-                    return Some(Cmd::Redraw); // No word under cursor
+                    return Some(Cmd::redraw_editor()); // No word under cursor
                 }
             };
 
             if search_text.is_empty() {
-                return Some(Cmd::Redraw);
+                return Some(Cmd::redraw_editor());
             }
 
             // Find all occurrences
             let occurrences = model.document().find_all_occurrences(&search_text);
 
             if occurrences.is_empty() {
-                return Some(Cmd::Redraw);
+                return Some(Cmd::redraw_editor());
             }
 
             // Build cursors and selections for all occurrences
@@ -789,7 +789,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         // === Expand/Shrink Selection ===
@@ -797,14 +797,14 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             expand_selection(model);
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::ShrinkSelection => {
             shrink_selection(model);
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         // === Rectangle Selection ===
@@ -814,7 +814,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             model.editor_mut().rectangle_selection.start_visual_col = visual_col;
             model.editor_mut().rectangle_selection.current_line = line;
             model.editor_mut().rectangle_selection.current_visual_col = visual_col;
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::UpdateRectangleSelection { line, visual_col } => {
@@ -849,12 +849,12 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                         .push(Position::new(preview_line, clamped_col));
                 }
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::FinishRectangleSelection => {
             if !model.editor().rectangle_selection.active {
-                return Some(Cmd::Redraw);
+                return Some(Cmd::redraw_editor());
             }
 
             let top_line = model.editor().rectangle_selection.top_line();
@@ -919,7 +919,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 .clear();
 
             model.reset_cursor_blink();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         EditorMsg::CancelRectangleSelection => {
@@ -929,7 +929,7 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 .rectangle_selection
                 .preview_cursors
                 .clear();
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
     }
 }
