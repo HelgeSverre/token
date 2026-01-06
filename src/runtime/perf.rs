@@ -121,6 +121,16 @@ impl PerfStats {
         self.frame_cache_misses = 0;
     }
 
+    /// Accumulate cache statistics from a text painter
+    #[inline(always)]
+    #[allow(dead_code)]
+    pub fn add_cache_stats(&mut self, hits: usize, misses: usize) {
+        self.frame_cache_hits += hits;
+        self.frame_cache_misses += misses;
+        self.total_cache_hits += hits;
+        self.total_cache_misses += misses;
+    }
+
     #[inline(always)]
     pub fn start_frame(&mut self) {
         self.frame_start = Some(Instant::now());
@@ -248,10 +258,10 @@ pub fn render_perf_overlay(
     painter: &mut TextPainter,
     perf: &PerfStats,
     theme: &Theme,
-    line_height: usize,
 ) {
     let width_usize = frame.width();
     let height_usize = frame.height();
+    let line_height = painter.line_height();
 
     // Scale overlay dimensions based on line_height to handle HiDPI correctly.
     // At 1x scale (line_height ~20), we want ~380x480. At 2x, we want ~760x960.
@@ -411,9 +421,7 @@ pub fn render_perf_overlay(
     let chart_bg = theme.overlay.background.with_alpha(200).to_argb_u32();
 
     // Ensure chart fits within overlay bounds
-    let max_chart_width = bounds
-        .width
-        .saturating_sub(label_width + value_width + 24);
+    let max_chart_width = bounds.width.saturating_sub(label_width + value_width + 24);
     let chart_width = chart_width.min(max_chart_width);
 
     let breakdown_with_history: [(&str, Duration, &VecDeque<Duration>, u32); 7] = [

@@ -217,6 +217,8 @@ pub enum Command {
     EscapeSmartClear,
     /// Explicitly unbound - disables a default binding
     Unbound,
+    /// Open the log file in the editor
+    OpenLogFile,
 
     // ========================================================================
     // CSV Mode
@@ -396,6 +398,13 @@ impl Command {
                 vec![]
             }
             Unbound => vec![], // Explicitly does nothing
+            OpenLogFile => {
+                if let Some(log_path) = crate::config_paths::log_file() {
+                    vec![Msg::Layout(LayoutMsg::OpenFileInNewTab(log_path))]
+                } else {
+                    vec![]
+                }
+            }
 
             // CSV mode
             CsvToggle => vec![Msg::Csv(CsvMsg::Toggle)],
@@ -536,6 +545,7 @@ impl Command {
 
             EscapeSmartClear => "Escape",
             Unbound => "Unbound",
+            OpenLogFile => "Open Log File",
 
             CsvToggle => "Toggle CSV View",
             CsvMoveUp => "CSV Move Up",

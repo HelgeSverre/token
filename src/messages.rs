@@ -551,7 +551,8 @@ pub enum WorkspaceMsg {
     Scroll { lines: i32 },
 
     /// File system change detected by watcher (triggers tree refresh)
-    FileSystemChange,
+    /// Contains the paths that changed for incremental updates.
+    FileSystemChange { paths: Vec<PathBuf> },
 }
 
 /// Top-level message type
