@@ -1,12 +1,13 @@
 # Quick Open
 
-Fuzzy file search across workspace with Cmd+P shortcut.
+Fuzzy file search across workspace with Shift+Cmd+O shortcut.
 
 > **Status:** Planned
 > **Priority:** P1
 > **Effort:** L
 > **Created:** 2025-12-19
 > **Milestone:** 1 - Navigation
+> **Keybinding:** Shift+Cmd+O (replaces former Open Folder binding)
 
 ---
 
@@ -600,7 +601,7 @@ impl AppModel {
 
 | Action | Mac | Windows/Linux | Notes |
 |--------|-----|---------------|-------|
-| Open Quick Open | Cmd+P | Ctrl+P | Main shortcut |
+| Open Quick Open | Shift+Cmd+O | Shift+Ctrl+O | Main shortcut (was Cmd+P) |
 | Navigate up | Up Arrow | Up Arrow | Select previous result |
 | Navigate down | Down Arrow | Down Arrow | Select next result |
 | Open file | Enter | Enter | Open in current group |

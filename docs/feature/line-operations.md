@@ -2,9 +2,9 @@
 
 Join lines, duplicate lines/selections, and trim trailing whitespace.
 
-> **Status:** Planned
-> **Priority:** P2
-> **Effort:** S
+> **Status:** ⏳ Partial - Duplicate implemented
+> **Implemented:** Duplicate (Cmd+D)
+> **Remaining:** Join lines, trim trailing whitespace
 > **Created:** 2025-12-19
 > **Milestone:** 2 - Search & Editing
 
