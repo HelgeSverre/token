@@ -127,6 +127,37 @@ impl LanguageId {
     pub fn has_highlighting(&self) -> bool {
         !matches!(self, LanguageId::PlainText)
     }
+
+    /// Detect language from fenced code block info string (e.g., "rust", "python", "js")
+    /// Used for language injection in markdown code blocks.
+    pub fn from_code_fence_info(info: &str) -> Option<Self> {
+        // Fenced code block info strings are typically lowercase language names
+        match info.to_lowercase().as_str() {
+            // Common language names
+            "rust" | "rs" => Some(LanguageId::Rust),
+            "python" | "py" => Some(LanguageId::Python),
+            "javascript" | "js" => Some(LanguageId::JavaScript),
+            "typescript" | "ts" => Some(LanguageId::TypeScript),
+            "tsx" => Some(LanguageId::Tsx),
+            "html" => Some(LanguageId::Html),
+            "css" => Some(LanguageId::Css),
+            "json" | "jsonc" => Some(LanguageId::Json),
+            "yaml" | "yml" => Some(LanguageId::Yaml),
+            "toml" => Some(LanguageId::Toml),
+            "go" | "golang" => Some(LanguageId::Go),
+            "java" => Some(LanguageId::Java),
+            "c" => Some(LanguageId::C),
+            "cpp" | "c++" | "cxx" => Some(LanguageId::Cpp),
+            "php" => Some(LanguageId::Php),
+            "bash" | "sh" | "shell" | "zsh" => Some(LanguageId::Bash),
+            "scheme" | "scm" | "racket" | "rkt" => Some(LanguageId::Scheme),
+            "xml" | "svg" => Some(LanguageId::Xml),
+            "ini" | "conf" => Some(LanguageId::Ini),
+            // Don't inject markdown into markdown
+            "markdown" | "md" => None,
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
