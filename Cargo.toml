@@ -10,6 +10,8 @@ license = "MIT"
 [features]
 default = []
 dhat-heap = ["dhat"]
+# Enable debug visualization of damage regions (colored outlines)
+damage-debug = []
 
 [dependencies]
 winit = "0.30.12"
@@ -31,6 +33,7 @@ serde_json = "1"
 # Tracing (debug instrumentation)
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
 
 # For clipboard support
 arboard = "3.4"
