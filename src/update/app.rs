@@ -203,7 +203,7 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
     match cmd_id {
         CommandId::NewFile => update_layout(model, LayoutMsg::NewTab),
         CommandId::OpenFile => update_app(model, AppMsg::OpenFileDialog),
-        CommandId::OpenFolder => update_app(model, AppMsg::OpenFolderDialog),
+        CommandId::FuzzyFileFinder => update_ui(model, UiMsg::OpenFuzzyFileFinder),
         CommandId::SaveFile => update_app(model, AppMsg::SaveFile),
         CommandId::SaveFileAs => update_app(model, AppMsg::SaveFileAs),
         CommandId::Undo => update_document(model, DocumentMsg::Undo),
