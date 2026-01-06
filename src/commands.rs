@@ -594,6 +594,10 @@ pub enum Cmd {
     /// Reinitialize the renderer (e.g., after scale factor change)
     ReinitializeRenderer,
 
+    // === Application Commands ===
+    /// Request application exit
+    Quit,
+
     // === Debug Commands ===
     /// Toggle performance overlay (debug builds only)
     #[cfg(debug_assertions)]
@@ -626,6 +630,8 @@ impl Cmd {
             Cmd::RunSyntaxParse { .. } => false,
             // Reinitialize triggers a full redraw after renderer is recreated
             Cmd::ReinitializeRenderer => true,
+            // Quit doesn't need redraw - app is exiting
+            Cmd::Quit => false,
             // Debug overlay toggle triggers redraw
             #[cfg(debug_assertions)]
             Cmd::TogglePerfOverlay => true,
@@ -673,6 +679,8 @@ impl Cmd {
             Cmd::RunSyntaxParse { .. } => Damage::Areas(vec![]),
             // Reinitialize triggers full redraw
             Cmd::ReinitializeRenderer => Damage::Full,
+            // Quit doesn't need redraw - app is exiting
+            Cmd::Quit => Damage::Areas(vec![]),
             // Debug overlay toggle triggers full redraw
             #[cfg(debug_assertions)]
             Cmd::TogglePerfOverlay => Damage::Full,

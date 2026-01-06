@@ -72,6 +72,8 @@ pub struct App {
     fs_watcher: Option<FileSystemWatcher>,
     /// Pending damage for the next render (accumulated from commands)
     pending_damage: Damage,
+    /// Flag to request application exit (set by Cmd::Quit)
+    should_quit: bool,
 }
 
 impl App {
@@ -142,6 +144,7 @@ impl App {
             syntax_tx,
             fs_watcher,
             pending_damage: Damage::Full, // Start with full render
+            should_quit: false,
         };
 
         // Trigger initial syntax parsing for all loaded documents
@@ -1328,6 +1331,13 @@ impl App {
             }
 
             // =====================================================================
+            // Application Commands
+            // =====================================================================
+            Cmd::Quit => {
+                self.should_quit = true;
+            }
+
+            // =====================================================================
             // Debug Commands
             // =====================================================================
             #[cfg(debug_assertions)]
@@ -1408,7 +1418,7 @@ impl ApplicationHandler for App {
             false
         };
 
-        if should_exit {
+        if should_exit || self.should_quit {
             event_loop.exit();
         } else if should_redraw {
             if let Some(window) = &self.window {

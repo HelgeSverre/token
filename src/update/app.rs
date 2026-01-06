@@ -130,10 +130,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
 
-        AppMsg::Quit => {
-            // Handled by the event loop
-            None
-        }
+        AppMsg::Quit => Some(Cmd::Quit),
 
         AppMsg::ReloadConfiguration => {
             use crate::config::ReloadResult;

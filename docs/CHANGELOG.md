@@ -6,6 +6,43 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Added - Command Palette Enhancements
+
+**New Commands:**
+- Added "Open Folder..." command to open workspace directories
+- Added "Quit" command (⌘Q) to close the application
+- Added "Toggle Performance Overlay" command (F2) - debug builds only
+- Added "Toggle Debug Overlay" command (F8) - debug builds only
+
+**Implementation:**
+- Added `Cmd::Quit` for proper application exit flow
+- Debug commands use conditional compilation (`#[cfg(debug_assertions)]`)
+- Added `DEBUG_COMMANDS` array for debug-only command definitions
+
+### Added - Configuration and Command System
+
+**Configuration Reload:**
+- Implemented `ReloadConfiguration` command for hot-reloading config without restart
+- Command palette now includes "Reload Configuration" command
+- Allows changes to config.yaml and keymap.yaml to take effect immediately
+
+**Application Commands:**
+- Added `ApplicationCommand` enum for app-level operations (quit, reload config)
+- Added `WorkspaceCommand` enum for workspace operations (toggle sidebar, refresh, etc.)
+- Unified command structure with `Cmd::Application` and `Cmd::Workspace` variants
+
+**Theme Picker Enhancements:**
+- Implemented theme preview with live updates
+- Theme changes are applied immediately while browsing
+- Restore original theme on cancel (Escape)
+- Confirm theme selection with Enter
+- Updated theme picker tests for new preview/restore API
+
+**Configuration Integration:**
+- Cursor blink interval now configurable via `editor.cursor_blink_interval_ms` in config.yaml
+- Performance overlay toggle now configurable via `editor.show_perf_overlay` in config.yaml
+- Runtime respects user configuration preferences
+
 ### Fixed - Rendering Bugs
 
 **Selection Highlights Disappearing:**
