@@ -537,7 +537,10 @@ fn test_workspace_file_system_change_message() {
 
     // FileSystemChange should trigger a refresh (silently)
     // We can't easily test the actual refresh, but we can verify it doesn't crash
-    let result = update(&mut model, Msg::Workspace(WorkspaceMsg::FileSystemChange));
+    let result = update(
+        &mut model,
+        Msg::Workspace(WorkspaceMsg::FileSystemChange { paths: vec![] }),
+    );
     assert!(result.is_some());
 }
 
