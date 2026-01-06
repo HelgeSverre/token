@@ -360,6 +360,9 @@ pub struct UiState {
     pub focus: FocusTarget,
     /// Which UI region the mouse is currently hovering over
     pub hover: HoverRegion,
+    /// Lines that contained cursors in the previous frame (for damage tracking)
+    /// Used by cursor blink to determine which lines need redrawing
+    pub previous_cursor_lines: Vec<usize>,
 }
 
 impl UiState {
@@ -381,6 +384,7 @@ impl UiState {
             sidebar_resize: None,
             focus: FocusTarget::Editor,
             hover: HoverRegion::None,
+            previous_cursor_lines: Vec::new(),
         }
     }
 
@@ -402,6 +406,7 @@ impl UiState {
             sidebar_resize: None,
             focus: FocusTarget::Editor,
             hover: HoverRegion::None,
+            previous_cursor_lines: Vec::new(),
         }
     }
 

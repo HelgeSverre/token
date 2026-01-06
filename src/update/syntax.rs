@@ -149,7 +149,7 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
                 );
             }
 
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         SyntaxMsg::LanguageChanged {
@@ -349,7 +349,8 @@ mod tests {
         );
 
         // Should trigger redraw
-        assert!(matches!(cmd, Some(Cmd::Redraw)));
+        assert!(cmd.is_some());
+        assert!(cmd.as_ref().unwrap().needs_redraw());
 
         // Highlights should be stored
         let doc = model.editor_area.documents.get(&doc_id).unwrap();
@@ -430,7 +431,8 @@ mod tests {
                 highlights,
             },
         );
-        assert!(matches!(redraw_cmd, Some(Cmd::Redraw)));
+        assert!(redraw_cmd.is_some());
+        assert!(redraw_cmd.as_ref().unwrap().needs_redraw());
 
         // Verify highlights are stored
         let doc = model.editor_area.documents.get(&doc_id).unwrap();
@@ -551,7 +553,8 @@ mod tests {
                 highlights: new_highlights,
             },
         );
-        assert!(matches!(redraw_cmd, Some(Cmd::Redraw)));
+        assert!(redraw_cmd.is_some());
+        assert!(redraw_cmd.as_ref().unwrap().needs_redraw());
 
         // Final verification: highlights are stored and aligned correctly
         let doc = model.editor_area.documents.get(&doc_id).unwrap();

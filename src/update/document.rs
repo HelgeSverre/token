@@ -15,10 +15,10 @@ use super::syntax::schedule_syntax_parse;
 fn redraw_with_syntax_parse(model: &mut AppModel) -> Cmd {
     if let Some(doc_id) = model.document().id {
         if let Some(parse_cmd) = schedule_syntax_parse(model, doc_id) {
-            return Cmd::Batch(vec![Cmd::Redraw, parse_cmd]);
+            return Cmd::Batch(vec![Cmd::redraw_editor(), parse_cmd]);
         }
     }
-    Cmd::Redraw
+    Cmd::redraw_editor()
 }
 
 /// Find the start of the word before the given offset

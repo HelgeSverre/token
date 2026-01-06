@@ -5,8 +5,8 @@ use std::time::Duration;
 use crate::commands::{filter_commands, Cmd};
 use crate::messages::{ModalMsg, UiMsg};
 use crate::model::{
-    AppModel, GotoLineState, ModalId, ModalState, SegmentContent, SegmentId,
-    ThemePickerState, TransientMessage,
+    AppModel, GotoLineState, ModalId, ModalState, SegmentContent, SegmentId, ThemePickerState,
+    TransientMessage,
 };
 use crate::theme::load_theme;
 
@@ -22,12 +22,32 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                 SegmentContent::Text(message.clone()),
             );
             model.ui.set_status(message);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_status_bar())
         }
 
         UiMsg::BlinkCursor => {
             if model.ui.update_cursor_blink(Duration::from_millis(500)) {
-                Some(Cmd::Redraw)
+                // Compute dirty lines for cursor blink optimization
+                let current_cursor_lines = get_current_cursor_lines(model);
+                let previous_cursor_lines = &model.ui.previous_cursor_lines;
+
+                // Dirty lines = union of previous and current cursor lines
+                let mut dirty_lines: Vec<usize> = current_cursor_lines.clone();
+                for &line in previous_cursor_lines {
+                    if !dirty_lines.contains(&line) {
+                        dirty_lines.push(line);
+                    }
+                }
+
+                // Update previous cursor lines for next blink
+                model.ui.previous_cursor_lines = current_cursor_lines;
+
+                // Return cursor-lines-only damage (or Full if no focused editor)
+                if dirty_lines.is_empty() {
+                    Some(Cmd::Redraw)
+                } else {
+                    Some(Cmd::redraw_cursor_lines(dirty_lines))
+                }
             } else {
                 None
             }
@@ -35,7 +55,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
 
         UiMsg::UpdateSegment { id, content } => {
             model.ui.status_bar.update_segment(id, content);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_status_bar())
         }
 
         UiMsg::SetTransientMessage { text, duration_ms } => {
@@ -46,7 +66,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                 .ui
                 .status_bar
                 .update_segment(SegmentId::StatusMessage, SegmentContent::Text(text));
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_status_bar())
         }
 
         UiMsg::ClearTransientMessage => {
@@ -55,7 +75,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                 .ui
                 .status_bar
                 .update_segment(SegmentId::StatusMessage, SegmentContent::Empty);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_status_bar())
         }
 
         UiMsg::Modal(modal_msg) => update_modal(model, modal_msg),
@@ -786,7 +806,9 @@ fn find_next_in_document(model: &mut AppModel, query: &str, case_sensitive: bool
         doc.cursor_to_offset(editor.cursors[0].line, editor.cursors[0].column)
     };
 
-    if let Some((start, end)) = doc.find_next_occurrence_with_options(query, start_offset, case_sensitive) {
+    if let Some((start, end)) =
+        doc.find_next_occurrence_with_options(query, start_offset, case_sensitive)
+    {
         let (start_line, start_col) = doc.offset_to_cursor(start);
         let (end_line, end_col) = doc.offset_to_cursor(end);
 
@@ -828,7 +850,9 @@ fn find_prev_in_document(model: &mut AppModel, query: &str, case_sensitive: bool
         doc.cursor_to_offset(editor.cursors[0].line, editor.cursors[0].column)
     };
 
-    if let Some((start, end)) = doc.find_prev_occurrence_with_options(query, start_offset, case_sensitive) {
+    if let Some((start, end)) =
+        doc.find_prev_occurrence_with_options(query, start_offset, case_sensitive)
+    {
         let (start_line, start_col) = doc.offset_to_cursor(start);
         let (end_line, end_col) = doc.offset_to_cursor(end);
 
@@ -954,4 +978,15 @@ fn replace_all(
         Duration::from_secs(2),
     ));
     Some(Cmd::Redraw)
+}
+
+/// Get the line numbers of all cursors in the focused editor
+/// Returns empty vec if no focused editor exists
+fn get_current_cursor_lines(model: &AppModel) -> Vec<usize> {
+    // Get the focused editor's cursors
+    if let Some(editor) = model.focused_editor() {
+        editor.cursors.iter().map(|c| c.line).collect()
+    } else {
+        Vec::new()
+    }
 }

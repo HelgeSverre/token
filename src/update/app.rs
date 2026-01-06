@@ -258,6 +258,16 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             }
         }
         CommandId::ToggleCsvView => super::csv::update_csv(model, crate::messages::CsvMsg::Toggle),
+        CommandId::OpenLogFile => {
+            if let Some(log_path) = config_paths::log_file() {
+                // Ensure logs dir exists
+                let _ = config_paths::ensure_logs_dir();
+                Some(Cmd::OpenFileInEditor { path: log_path })
+            } else {
+                model.ui.set_status("Could not determine log file path");
+                Some(Cmd::Redraw)
+            }
+        }
     }
 }
 
