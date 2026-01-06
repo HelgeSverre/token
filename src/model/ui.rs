@@ -217,13 +217,17 @@ pub struct ThemePickerState {
     pub selected_index: usize,
     /// Cached list of available themes (refreshed when modal opens)
     pub themes: Vec<ThemeInfo>,
+    /// Original theme ID for restore on cancel
+    pub original_theme_id: String,
 }
 
-impl Default for ThemePickerState {
-    fn default() -> Self {
+impl ThemePickerState {
+    /// Create a new theme picker state with the current theme for restore
+    pub fn new(current_theme_id: String) -> Self {
         Self {
             selected_index: 0,
             themes: list_available_themes(),
+            original_theme_id: current_theme_id,
         }
     }
 }

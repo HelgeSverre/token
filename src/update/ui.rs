@@ -28,7 +28,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
         }
 
         UiMsg::BlinkCursor => {
-            if model.ui.update_cursor_blink(Duration::from_millis(600)) {
+            if model.ui.update_cursor_blink(Duration::from_millis(model.config.cursor_blink_ms)) {
                 // Compute dirty lines for cursor blink optimization
                 let current_cursor_lines = get_current_cursor_lines(model);
                 let previous_cursor_lines = &model.ui.previous_cursor_lines;
@@ -101,7 +101,9 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                     let state = model.ui.last_find_replace.clone().unwrap_or_default();
                     ModalState::FindReplace(state)
                 }
-                ModalId::ThemePicker => ModalState::ThemePicker(ThemePickerState::default()),
+                ModalId::ThemePicker => {
+                    ModalState::ThemePicker(ThemePickerState::new(model.config.theme.clone()))
+                }
                 ModalId::FileFinder => {
                     // Get files from workspace (if open)
                     if let Some(ref workspace) = model.workspace {
@@ -183,6 +185,12 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::Close => {
+            // Restore original theme if closing theme picker without confirming
+            if let Some(ModalState::ThemePicker(state)) = &model.ui.active_modal {
+                if let Ok(theme) = load_theme(&state.original_theme_id) {
+                    model.theme = theme;
+                }
+            }
             model.ui.close_modal();
             Some(Cmd::Redraw)
         }
@@ -596,17 +604,26 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::SelectPrevious => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
+                let preview_theme_id = match modal {
                     ModalState::CommandPalette(state) => {
                         state.selected_index = state.selected_index.saturating_sub(1);
+                        None
                     }
                     ModalState::ThemePicker(state) => {
                         state.selected_index = state.selected_index.saturating_sub(1);
+                        state.themes.get(state.selected_index).map(|t| t.id.clone())
                     }
                     ModalState::FileFinder(state) => {
                         state.selected_index = state.selected_index.saturating_sub(1);
+                        None
                     }
-                    _ => {}
+                    _ => None,
+                };
+                // Apply preview theme for instant preview
+                if let Some(theme_id) = preview_theme_id {
+                    if let Ok(theme) = load_theme(&theme_id) {
+                        model.theme = theme;
+                    }
                 }
                 Some(Cmd::Redraw)
             } else {
@@ -616,25 +633,34 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::SelectNext => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
+                let preview_theme_id = match modal {
                     ModalState::CommandPalette(state) => {
                         let input_text = state.input();
                         let filtered = filter_commands(&input_text);
                         let max_index = filtered.len().saturating_sub(1);
                         state.selected_index =
                             state.selected_index.saturating_add(1).min(max_index);
+                        None
                     }
                     ModalState::ThemePicker(state) => {
                         let max_index = state.themes.len().saturating_sub(1);
                         state.selected_index =
                             state.selected_index.saturating_add(1).min(max_index);
+                        state.themes.get(state.selected_index).map(|t| t.id.clone())
                     }
                     ModalState::FileFinder(state) => {
                         let max_index = state.results.len().saturating_sub(1);
                         state.selected_index =
                             state.selected_index.saturating_add(1).min(max_index);
+                        None
                     }
-                    _ => {}
+                    _ => None,
+                };
+                // Apply preview theme for instant preview
+                if let Some(theme_id) = preview_theme_id {
+                    if let Ok(theme) = load_theme(&theme_id) {
+                        model.theme = theme;
+                    }
                 }
                 Some(Cmd::Redraw)
             } else {
