@@ -24,6 +24,75 @@ The editor currently has:
 3. ~~**File Tree Sidebar**: VS Code-style tree with expand/collapse, icons~~ ✅ Done (v0.3.9)
 4. ~~**File System Watching**: React to external file changes~~ ✅ Done (v0.3.10)
 5. ~~**Integration with Split View**: Files open in tabs within groups~~ ✅ Basic (v0.3.9)
+6. **Unified Open Command**: Combine Open File/Folder into single Cmd+O with auto-detection (planned)
+
+---
+
+## Planned: Unified Open Command
+
+### Design
+
+Currently there are two separate commands:
+- `Cmd+O` → Open File dialog
+- `Shift+Cmd+O` → Open Folder dialog
+
+**Proposed change:** Combine into single `Cmd+O` command that auto-detects:
+
+```
+User presses Cmd+O
+        │
+        ▼
+┌─────────────────────┐
+│  Native File Dialog │
+│  (can select files  │
+│   OR folders)       │
+└──────────┬──────────┘
+           │
+           ▼
+    ┌──────────────┐
+    │ User selects │
+    │   path(s)    │
+    └──────┬───────┘
+           │
+           ▼
+    ┌──────────────────┐
+    │ path.is_dir()?   │
+    └────┬────────┬────┘
+         │        │
+    Yes  │        │ No
+         ▼        ▼
+┌─────────────┐ ┌─────────────┐
+│ Open as     │ │ Open as     │
+│ Workspace   │ │ File Tab    │
+└─────────────┘ └─────────────┘
+```
+
+### Keybinding Changes
+
+| Before | After |
+|--------|-------|
+| `Cmd+O` → Open File | `Cmd+O` → Open (auto-detect) |
+| `Shift+Cmd+O` → Open Folder | `Shift+Cmd+O` → **Quick Open** (file search) |
+
+### Implementation
+
+**Files to modify:**
+- `src/keymap/defaults.rs` - Remove `OpenFolder` binding
+- `src/update/app.rs` - Add path detection logic to `OpenFileDialogResult`
+- `keymap.yaml` - Remove `cmd+shift+o` → `OpenFolder`
+
+**Logic in `OpenFileDialogResult`:**
+```rust
+for path in paths {
+    if path.is_dir() {
+        // Open as workspace
+        model.open_workspace(path.clone());
+    } else {
+        // Open as file tab
+        update_layout(model, LayoutMsg::OpenFileInNewTab(path));
+    }
+}
+```
 
 ### HiDPI Considerations (v0.3.4+)
 
