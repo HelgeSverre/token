@@ -1776,6 +1776,116 @@ impl Renderer {
                 };
                 TextFieldRenderer::render(frame, painter, state.focused_editable(), &opts);
             }
+
+            ModalState::FileFinder(state) => {
+                // File finder modal: input field + results list
+                // Use a wider modal than other dialogs to fit file paths
+                let results = &state.results;
+                let max_visible_items = 10;
+                let visible_count = results.len().min(max_visible_items);
+
+                // Custom wider bounds for file finder (70% of window, min 500, max 900)
+                let modal_width = (window_width as f32 * 0.7).clamp(500.0, 900.0) as usize;
+                let base_height = line_height * 3 + 20;
+                let list_height = visible_count * line_height + 8;
+                let modal_height = base_height + list_height;
+                let modal_x = (window_width - modal_width) / 2;
+                let modal_y = (window_height / 4).min(100);
+
+                // Background
+                frame.draw_bordered_rect(
+                    modal_x,
+                    modal_y,
+                    modal_width,
+                    modal_height,
+                    bg_color,
+                    border_color,
+                );
+
+                // Title
+                let title_x = modal_x + 12;
+                let title_y = modal_y + 8;
+                painter.draw(frame, title_x, title_y, "Go to File", fg_color);
+
+                // Input field
+                let input_y = title_y + line_height + 8;
+                let input_x = modal_x + 8;
+                let input_width = modal_width - 16;
+                let input_height = line_height + 8;
+
+                frame.fill_rect_px(input_x, input_y, input_width, input_height, input_bg);
+
+                // Input text
+                let text_x = input_x + 8;
+                let text_y = input_y + 4;
+                let text_width = input_width - 16;
+                let opts = TextFieldOptions {
+                    x: text_x,
+                    y: text_y,
+                    width: text_width,
+                    height: line_height,
+                    char_width,
+                    text_color: fg_color,
+                    cursor_color: highlight_color,
+                    selection_color: selection_bg,
+                    cursor_visible: model.ui.cursor_visible,
+                    scroll_x: 0,
+                };
+                TextFieldRenderer::render(frame, painter, &state.editable, &opts);
+
+                // Results list
+                let results_y = input_y + input_height + 8;
+                let clamped_selected = state.selected_index.min(results.len().saturating_sub(1));
+                let dim_color = 0xFF888888; // Dimmed color for relative path
+
+                for (i, file_match) in results.iter().take(max_visible_items).enumerate() {
+                    let item_y = results_y + i * line_height;
+                    let is_selected = i == clamped_selected;
+
+                    // Selection highlight
+                    if is_selected {
+                        frame.fill_rect_px(
+                            modal_x + 4,
+                            item_y,
+                            modal_width - 8,
+                            line_height,
+                            selection_bg,
+                        );
+                    }
+
+                    // File icon
+                    let icon = token::model::FileExtension::from_path(&file_match.path).icon();
+                    let icon_x = modal_x + 12;
+                    painter.draw(frame, icon_x, item_y, icon, fg_color);
+
+                    // Filename
+                    let name_x = modal_x + 36;
+                    painter.draw(frame, name_x, item_y, &file_match.filename, fg_color);
+
+                    // Relative path (dimmed, after filename) - truncate if needed
+                    let filename_width = (file_match.filename.len() as f32 * char_width) as usize;
+                    let path_x = name_x + filename_width + (char_width as usize * 2);
+                    let available_width = (modal_x + modal_width).saturating_sub(path_x + 16);
+                    let max_path_chars = (available_width as f32 / char_width) as usize;
+
+                    if max_path_chars > 5 {
+                        let path_display = if file_match.relative_path.chars().count() > max_path_chars {
+                            // Truncate with ellipsis
+                            let truncated: String = file_match.relative_path.chars().take(max_path_chars - 1).collect();
+                            format!("{}…", truncated)
+                        } else {
+                            file_match.relative_path.clone()
+                        };
+                        painter.draw(frame, path_x, item_y, &path_display, dim_color);
+                    }
+                }
+
+                // Show "No matches" if results are empty and query is not empty
+                if results.is_empty() && !state.input().is_empty() {
+                    let no_match_y = results_y;
+                    painter.draw(frame, modal_x + 12, no_match_y, "No files match your query", dim_color);
+                }
+            }
         }
     }
 
