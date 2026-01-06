@@ -398,9 +398,9 @@ fn test_find_replace_delete_backward() {
 #[test]
 fn test_theme_picker_select_next() {
     let mut model = test_model("hello\n", 0, 0);
-    model
-        .ui
-        .open_modal(ModalState::ThemePicker(ThemePickerState::default()));
+    model.ui.open_modal(ModalState::ThemePicker(
+        ThemePickerState::new("default-dark".to_string()),
+    ));
 
     let initial_index = if let Some(ModalState::ThemePicker(state)) = &model.ui.active_modal {
         state.selected_index
@@ -420,10 +420,8 @@ fn test_theme_picker_select_next() {
 #[test]
 fn test_theme_picker_select_previous() {
     let mut model = test_model("hello\n", 0, 0);
-    let picker_state = ThemePickerState {
-        selected_index: 2,
-        ..Default::default()
-    };
+    let mut picker_state = ThemePickerState::new("default-dark".to_string());
+    picker_state.selected_index = 2;
     model.ui.open_modal(ModalState::ThemePicker(picker_state));
 
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectPrevious)));
@@ -438,7 +436,7 @@ fn test_theme_picker_select_previous() {
 #[test]
 fn test_theme_picker_select_next_respects_bounds() {
     let mut model = test_model("hello\n", 0, 0);
-    let mut picker_state = ThemePickerState::default();
+    let mut picker_state = ThemePickerState::new("default-dark".to_string());
     let max_index = picker_state.themes.len().saturating_sub(1);
     picker_state.selected_index = max_index;
     model.ui.open_modal(ModalState::ThemePicker(picker_state));
