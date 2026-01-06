@@ -5,8 +5,8 @@ use std::time::Duration;
 use crate::commands::{filter_commands, Cmd};
 use crate::messages::{ModalMsg, UiMsg};
 use crate::model::{
-    AppModel, GotoLineState, ModalId, ModalState, SegmentContent, SegmentId,
-    ThemePickerState, TransientMessage,
+    AppModel, GotoLineState, ModalId, ModalState, SegmentContent, SegmentId, ThemePickerState,
+    TransientMessage,
 };
 use crate::theme::load_theme;
 
@@ -786,7 +786,9 @@ fn find_next_in_document(model: &mut AppModel, query: &str, case_sensitive: bool
         doc.cursor_to_offset(editor.cursors[0].line, editor.cursors[0].column)
     };
 
-    if let Some((start, end)) = doc.find_next_occurrence_with_options(query, start_offset, case_sensitive) {
+    if let Some((start, end)) =
+        doc.find_next_occurrence_with_options(query, start_offset, case_sensitive)
+    {
         let (start_line, start_col) = doc.offset_to_cursor(start);
         let (end_line, end_col) = doc.offset_to_cursor(end);
 
@@ -828,7 +830,9 @@ fn find_prev_in_document(model: &mut AppModel, query: &str, case_sensitive: bool
         doc.cursor_to_offset(editor.cursors[0].line, editor.cursors[0].column)
     };
 
-    if let Some((start, end)) = doc.find_prev_occurrence_with_options(query, start_offset, case_sensitive) {
+    if let Some((start, end)) =
+        doc.find_prev_occurrence_with_options(query, start_offset, case_sensitive)
+    {
         let (start_line, start_col) = doc.offset_to_cursor(start);
         let (end_line, end_col) = doc.offset_to_cursor(end);
 
