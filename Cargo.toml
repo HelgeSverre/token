@@ -89,6 +89,9 @@ tree-sitter-xml = "0.7"
 
 streaming-iterator = "0.1"
 
+# For fuzzy file finder
+nucleo-matcher = "0.3"
+
 # Optional: heap profiling
 dhat = { version = "0.3", optional = true }
 
