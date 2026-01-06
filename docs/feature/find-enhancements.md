@@ -1,12 +1,13 @@
-# Find Enhancements
+# Find Enhancements (Advanced)
 
-Highlight all matches, regex support, whole word matching, and case sensitivity toggle.
+Regex support, whole word matching, match count display, and visual highlighting.
 
 > **Status:** Planned
 > **Priority:** P1
 > **Effort:** M
 > **Created:** 2025-12-19
 > **Milestone:** 2 - Search & Editing
+> **Prerequisite:** Basic find implemented (see `docs/archived/find-basic.md`)
 
 ---
 
@@ -24,32 +25,13 @@ Highlight all matches, regex support, whole word matching, and case sensitivity 
 
 ## Overview
 
-### Current State
+### Already Implemented (v0.3.11)
 
-The Find/Replace modal exists in `src/model/ui.rs` as `FindReplaceState`:
-
-```rust
-pub struct FindReplaceState {
-    pub query_editable: EditableState<StringBuffer>,
-    pub replace_editable: EditableState<StringBuffer>,
-    pub focused_field: FindReplaceField,
-    pub replace_mode: bool,
-    pub case_sensitive: bool,
-}
-```
-
-Current capabilities:
 - Basic text search with case sensitivity toggle
 - Single match navigation (Find Next / Find Previous)
-- Simple replace functionality
+- Current match highlighting
 
-Missing features:
-- No visual highlighting of all matches in document
-- No regex support
-- No whole word matching option
-- No match count display
-
-### Goals
+### Remaining Goals
 
 1. **Highlight all matches** - Visual indication of all matches in the viewport
 2. **Regex support** - Full regular expression search capability

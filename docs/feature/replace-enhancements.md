@@ -1,12 +1,13 @@
-# Replace Enhancements
+# Replace Enhancements (Advanced)
 
-Replace all, preserve case, selection scope, and capture group references.
+Preserve case, selection scope, and regex capture group references.
 
 > **Status:** Planned
 > **Priority:** P1
 > **Effort:** M
 > **Created:** 2025-12-19
 > **Milestone:** 2 - Search & Editing
+> **Prerequisite:** Basic replace implemented (see `docs/archived/replace-basic.md`)
 
 ---
 
@@ -24,23 +25,19 @@ Replace all, preserve case, selection scope, and capture group references.
 
 ## Overview
 
-### Current State
+### Already Implemented (v0.3.11)
 
-The Find/Replace modal has basic replace functionality with a replacement text field. Current behavior:
 - Replace single occurrence at cursor
-- Manual iteration through matches
-- No preview of replacement
-- No case preservation
-- No regex capture group support
+- Replace All with single undo operation
+- Case sensitivity (from find bar)
 
-### Goals
+### Remaining Goals
 
-1. **Replace All** - Replace all matches in one operation with undo support
-2. **Preserve Case** - Match capitalization pattern of original text
-3. **Selection scope** - Replace only within selection
-4. **Regex capture groups** - Support `$1`, `$2`, etc. in replacement
-5. **Preview replacement** - Show what the replacement will look like
-6. **Replace confirmation** - Optional confirmation for large replacements
+1. **Preserve Case** - Match capitalization pattern of original text
+2. **Selection scope** - Replace only within selection
+3. **Regex capture groups** - Support `$1`, `$2`, etc. in replacement
+4. **Preview replacement** - Show what the replacement will look like
+5. **Replace confirmation** - Optional confirmation for large replacements
 
 ### Non-Goals
 
