@@ -721,8 +721,7 @@ impl Renderer {
             for doc_line in visible_start..visible_end {
                 // Use get_line_cow for zero-allocation when line is contiguous
                 let line_text = document.get_line_cow(doc_line).unwrap_or_default();
-                let line_visual_len =
-                    char_col_to_visual_col(&line_text, line_text.chars().count());
+                let line_visual_len = char_col_to_visual_col(&line_text, line_text.chars().count());
 
                 // Only show highlight if current position is within the line's visual width
                 // (not dragging past line end)
@@ -768,8 +767,7 @@ impl Renderer {
         // Reuse buffers to avoid per-line allocations
         let text_color = model.theme.editor.foreground.to_argb_u32();
         let max_chars = visible_columns;
-        let mut adjusted_tokens: Vec<token::syntax::HighlightToken> =
-            Vec::with_capacity(32); // Reused across lines
+        let mut adjusted_tokens: Vec<token::syntax::HighlightToken> = Vec::with_capacity(32); // Reused across lines
         let mut display_text_buf = String::with_capacity(max_chars + 16); // Reused for display
 
         for (screen_line, doc_line) in (editor.viewport.top_line..end_line).enumerate() {

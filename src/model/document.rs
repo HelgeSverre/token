@@ -412,7 +412,11 @@ impl Document {
         let occurrences = self.find_all_occurrences_with_options(needle, case_sensitive);
 
         // Find last occurrence before current position
-        if let Some(&occ) = occurrences.iter().rev().find(|(start, _)| *start < before_offset) {
+        if let Some(&occ) = occurrences
+            .iter()
+            .rev()
+            .find(|(start, _)| *start < before_offset)
+        {
             return Some(occ);
         }
 

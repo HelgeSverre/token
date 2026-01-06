@@ -411,9 +411,7 @@ pub fn render_perf_overlay(
     let chart_bg = theme.overlay.background.with_alpha(200).to_argb_u32();
 
     // Ensure chart fits within overlay bounds
-    let max_chart_width = bounds
-        .width
-        .saturating_sub(label_width + value_width + 24);
+    let max_chart_width = bounds.width.saturating_sub(label_width + value_width + 24);
     let chart_width = chart_width.min(max_chart_width);
 
     let breakdown_with_history: [(&str, Duration, &VecDeque<Duration>, u32); 7] = [
