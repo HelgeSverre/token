@@ -3,7 +3,9 @@
 use std::path::PathBuf;
 
 use crate::commands::{Cmd, CommandId};
+use crate::config::EditorConfig;
 use crate::config_paths;
+use crate::theme::{load_theme, Theme};
 use crate::keymap::get_default_keymap_yaml;
 use crate::messages::{AppMsg, DocumentMsg, LayoutMsg, UiMsg};
 use crate::model::{AppModel, ModalId, SplitDirection};
@@ -103,7 +105,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                     doc.syntax_highlights = None;
                     doc.revision = doc.revision.wrapping_add(1);
 
-                    *model.editor_mut().primary_cursor_mut() = Default::default();
+                    model.editor_mut().collapse_to_primary();
                     model.ui.set_status(format!("Loaded: {}", path.display()));
 
                     // Trigger syntax parsing if language has highlighting
@@ -131,6 +133,31 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
         AppMsg::Quit => {
             // Handled by the event loop
             None
+        }
+
+        AppMsg::ReloadConfiguration => {
+            use crate::config::ReloadResult;
+
+            let (new_config, result) = EditorConfig::reload();
+            let new_theme = load_theme(&new_config.theme).unwrap_or_else(|_| Theme::default());
+            model.config = new_config;
+            model.theme = new_theme;
+
+            let msg = match result {
+                ReloadResult::Loaded => "Configuration reloaded",
+                ReloadResult::FileNotFound => "Config file not found, using defaults",
+                ReloadResult::ParseError(ref e) => {
+                    tracing::warn!("Config parse error: {}", e);
+                    "Config file invalid, using defaults"
+                }
+                ReloadResult::ReadError(ref e) => {
+                    tracing::warn!("Config read error: {}", e);
+                    "Could not read config file, using defaults"
+                }
+                ReloadResult::NoConfigDir => "No config directory, using defaults",
+            };
+            model.ui.set_status(msg);
+            Some(Cmd::Redraw)
         }
 
         // =====================================================================
@@ -270,6 +297,18 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
                 model.ui.set_status("Could not determine log file path");
                 Some(Cmd::Redraw)
             }
+        }
+        CommandId::ReloadConfiguration => update_app(model, AppMsg::ReloadConfiguration),
+        CommandId::OpenFolder => update_app(model, AppMsg::OpenFolderDialog),
+        CommandId::Quit => update_app(model, AppMsg::Quit),
+        #[cfg(debug_assertions)]
+        CommandId::TogglePerfOverlay => Some(Cmd::TogglePerfOverlay),
+        #[cfg(debug_assertions)]
+        CommandId::ToggleDebugOverlay => {
+            if let Some(ref mut overlay) = model.debug_overlay {
+                overlay.toggle();
+            }
+            Some(Cmd::Redraw)
         }
     }
 }

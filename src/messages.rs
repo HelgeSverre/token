@@ -357,6 +357,8 @@ pub enum AppMsg {
     },
     /// Quit the application
     Quit,
+    /// Reload configuration from disk
+    ReloadConfiguration,
 
     // === File Dialog Messages ===
     /// User requested "Save As..." dialog
