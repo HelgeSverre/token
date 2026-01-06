@@ -2,11 +2,10 @@
 
 Select rectangular regions of text and convert to multi-cursor
 
-> **Status:** Planned
-> **Priority:** P2
-> **Effort:** L
+> **Status:** ✅ Implemented
+> **Implemented:** v0.3.x
+> **Keybindings:** Middle-mouse drag for rectangle select
 > **Created:** 2025-12-19
-> **Milestone:** 4 - Hard Problems
 
 ---
 
