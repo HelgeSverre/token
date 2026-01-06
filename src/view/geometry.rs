@@ -28,9 +28,6 @@ pub fn tab_bar_height(model: &AppModel) -> usize {
 // Re-export TABULATOR_WIDTH from util::text for single source of truth
 pub use token::util::text::TABULATOR_WIDTH;
 
-// Re-export model geometry helpers for unified access
-pub use token::model::{gutter_border_x, text_start_x};
-
 // ============================================================================
 // Viewport Sizing Helpers
 // ============================================================================
@@ -383,56 +380,169 @@ pub fn pixel_to_cursor_in_group(
 }
 
 // ============================================================================
-// Layout Rect Helpers
+// GroupLayout - Unified Layout Computation
 // ============================================================================
 
-/// Compute the content area rect for an editor group (excluding tab bar)
-/// This version uses the model's scaled metrics.
-#[inline]
-#[allow(dead_code)]
-pub fn group_content_rect_scaled(group_rect: &Rect, model: &AppModel) -> Rect {
-    let tbh = model.metrics.tab_bar_height as f32;
-    Rect::new(
-        group_rect.x,
-        group_rect.y + tbh,
-        group_rect.width,
-        (group_rect.height - tbh).max(0.0),
-    )
+/// Pre-computed layout for an editor group, with all positions in window coordinates.
+///
+/// This struct provides a single source of truth for all positioning calculations
+/// within an editor group. It uses scaled metrics (DPI-aware) and ensures consistent
+/// positioning across all rendering functions.
+///
+/// # Usage
+/// ```ignore
+/// let layout = GroupLayout::new(group, model, char_width);
+/// // Use layout.content_y(), layout.gutter_right_x, etc.
+/// ```
+#[derive(Debug, Clone, Copy)]
+pub struct GroupLayout {
+    /// The group's rect in window coordinates (from compute_layout_scaled)
+    pub group_rect: Rect,
+    /// Content area (excludes tab bar), in window coordinates
+    pub content_rect: Rect,
+    /// Tab bar height (scaled for DPI)
+    pub tab_bar_height: usize,
+    /// Gutter border X position (absolute window coordinate)
+    pub gutter_right_x: usize,
+    /// X coordinate where text content starts (absolute window coordinate)
+    pub text_start_x: usize,
 }
 
-/// Compute the content area rect for an editor group (excluding tab bar)
-/// Legacy version using base TAB_BAR_HEIGHT constant.
-#[inline]
-pub fn group_content_rect(group_rect: &Rect) -> Rect {
-    Rect::new(
-        group_rect.x,
-        group_rect.y + TAB_BAR_HEIGHT as f32,
-        group_rect.width,
-        (group_rect.height - TAB_BAR_HEIGHT as f32).max(0.0),
-    )
-}
+impl GroupLayout {
+    /// Create a new GroupLayout from an editor group.
+    ///
+    /// All positioning values are computed using scaled metrics from the model,
+    /// ensuring DPI-correct rendering on all displays.
+    pub fn new(group: &EditorGroup, model: &AppModel, char_width: f32) -> Self {
+        let group_rect = group.rect;
+        let metrics = &model.metrics;
 
-/// Compute the gutter rect for an editor group
-#[inline]
-#[allow(dead_code)]
-pub fn group_gutter_rect(group_rect: &Rect, char_width: f32) -> Rect {
-    let content = group_content_rect(group_rect);
-    let gutter_width = gutter_border_x(char_width);
-    Rect::new(content.x, content.y, gutter_width, content.height)
-}
+        let tab_bar_height = metrics.tab_bar_height;
+        let content_rect = Rect::new(
+            group_rect.x,
+            group_rect.y + tab_bar_height as f32,
+            group_rect.width,
+            (group_rect.height - tab_bar_height as f32).max(0.0),
+        );
 
-/// Compute the text area rect for an editor group
-#[inline]
-#[allow(dead_code)]
-pub fn group_text_area_rect(group_rect: &Rect, char_width: f32) -> Rect {
-    let content = group_content_rect(group_rect);
-    let text_x = text_start_x(char_width);
-    Rect::new(
-        content.x + text_x,
-        content.y,
-        (content.width - text_x).max(0.0),
-        content.height,
-    )
+        let rect_x = group_rect.x.round() as usize;
+        let gutter_right_x =
+            rect_x + token::model::gutter_border_x_scaled(char_width, metrics).round() as usize;
+        let text_start_x =
+            rect_x + token::model::text_start_x_scaled(char_width, metrics).round() as usize;
+
+        Self {
+            group_rect,
+            content_rect,
+            tab_bar_height,
+            gutter_right_x,
+            text_start_x,
+        }
+    }
+
+    // =========================================================================
+    // Group-level accessors (tab bar area)
+    // =========================================================================
+
+    /// Get absolute X position of the group
+    #[inline]
+    pub fn rect_x(&self) -> usize {
+        self.group_rect.x.round() as usize
+    }
+
+    /// Get absolute Y position of the group
+    #[inline]
+    pub fn rect_y(&self) -> usize {
+        self.group_rect.y.round() as usize
+    }
+
+    /// Get group width in pixels
+    #[inline]
+    pub fn rect_w(&self) -> usize {
+        self.group_rect.width.round() as usize
+    }
+
+    /// Get group height in pixels
+    #[inline]
+    #[allow(dead_code)]
+    pub fn rect_h(&self) -> usize {
+        self.group_rect.height.round() as usize
+    }
+
+    // =========================================================================
+    // Content-level accessors (below tab bar)
+    // =========================================================================
+
+    /// Get absolute X position for content area
+    #[inline]
+    #[allow(dead_code)]
+    pub fn content_x(&self) -> usize {
+        self.content_rect.x.round() as usize
+    }
+
+    /// Get absolute Y position for content area (below tab bar)
+    #[inline]
+    pub fn content_y(&self) -> usize {
+        self.content_rect.y.round() as usize
+    }
+
+    /// Get content width in pixels
+    #[inline]
+    #[allow(dead_code)]
+    pub fn content_w(&self) -> usize {
+        self.content_rect.width.round() as usize
+    }
+
+    /// Get content height in pixels
+    #[inline]
+    pub fn content_h(&self) -> usize {
+        self.content_rect.height.round() as usize
+    }
+
+    // =========================================================================
+    // Gutter accessors
+    // =========================================================================
+
+    /// Get gutter width in pixels (from rect_x to gutter_right_x)
+    #[inline]
+    pub fn gutter_width(&self) -> usize {
+        self.gutter_right_x - self.rect_x()
+    }
+
+    // =========================================================================
+    // Line positioning helpers
+    // =========================================================================
+
+    /// Convert a document line number to screen Y coordinate.
+    ///
+    /// Returns `Some(y)` if the line is visible in the viewport,
+    /// or `None` if the line is outside the visible area.
+    #[inline]
+    pub fn line_to_screen_y(
+        &self,
+        doc_line: usize,
+        viewport_top: usize,
+        line_height: usize,
+    ) -> Option<usize> {
+        if doc_line < viewport_top {
+            return None;
+        }
+        let screen_line = doc_line - viewport_top;
+        let y = self.content_y() + screen_line * line_height;
+
+        // Check if line is within visible content area
+        if y + line_height <= self.content_y() + self.content_h() {
+            Some(y)
+        } else {
+            None
+        }
+    }
+
+    /// Calculate visible line count for this group
+    #[inline]
+    pub fn visible_lines(&self, line_height: usize) -> usize {
+        self.content_h() / line_height
+    }
 }
 
 // ============================================================================
@@ -540,15 +650,5 @@ mod tests {
     fn test_visual_col_to_char_col() {
         assert_eq!(visual_col_to_char_col("abc", 2), 2);
         assert_eq!(visual_col_to_char_col("a\tb", 4), 2); // visual 4 is 'b' which is char 2
-    }
-
-    #[test]
-    fn test_group_content_rect() {
-        let group_rect = Rect::new(100.0, 50.0, 400.0, 300.0);
-        let content = group_content_rect(&group_rect);
-        assert_eq!(content.x, 100.0);
-        assert_eq!(content.y, 50.0 + TAB_BAR_HEIGHT as f32);
-        assert_eq!(content.width, 400.0);
-        assert_eq!(content.height, 300.0 - TAB_BAR_HEIGHT as f32);
     }
 }
