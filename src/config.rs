@@ -4,22 +4,46 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Result of reloading configuration
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReloadResult {
+    /// Successfully loaded from file
+    Loaded,
+    /// File doesn't exist, using defaults
+    FileNotFound,
+    /// Parse error, using defaults
+    ParseError(String),
+    /// Read error (locked/no access), using defaults
+    ReadError(String),
+    /// No config directory available
+    NoConfigDir,
+}
+
 /// Editor configuration that persists across sessions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EditorConfig {
     /// Selected theme id (e.g., "default-dark", "fleet-dark")
     #[serde(default = "default_theme")]
     pub theme: String,
+
+    /// Cursor blink interval in milliseconds (default: 600)
+    #[serde(default = "default_cursor_blink_ms")]
+    pub cursor_blink_ms: u64,
 }
 
 fn default_theme() -> String {
     "default-dark".to_string()
 }
 
+fn default_cursor_blink_ms() -> u64 {
+    600
+}
+
 impl Default for EditorConfig {
     fn default() -> Self {
         Self {
             theme: default_theme(),
+            cursor_blink_ms: default_cursor_blink_ms(),
         }
     }
 }
@@ -55,6 +79,25 @@ impl EditorConfig {
                 tracing::warn!("Failed to read config at {}: {}", path.display(), e);
                 Self::default()
             }
+        }
+    }
+
+    /// Reload config from disk with detailed status for user feedback
+    pub fn reload() -> (Self, ReloadResult) {
+        let Some(path) = crate::config_paths::config_file() else {
+            return (Self::default(), ReloadResult::NoConfigDir);
+        };
+
+        if !path.exists() {
+            return (Self::default(), ReloadResult::FileNotFound);
+        }
+
+        match std::fs::read_to_string(&path) {
+            Ok(content) => match serde_yaml::from_str(&content) {
+                Ok(config) => (config, ReloadResult::Loaded),
+                Err(e) => (Self::default(), ReloadResult::ParseError(e.to_string())),
+            },
+            Err(e) => (Self::default(), ReloadResult::ReadError(e.to_string())),
         }
     }
 

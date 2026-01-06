@@ -79,10 +79,73 @@ fn test_config_path_returns_some() {
 fn test_config_serialize_deserialize() {
     let config = EditorConfig {
         theme: "fleet-dark".to_string(),
+        cursor_blink_ms: 600,
     };
     let yaml = serde_yaml::to_string(&config).unwrap();
     let parsed: EditorConfig = serde_yaml::from_str(&yaml).unwrap();
     assert_eq!(parsed.theme, "fleet-dark");
+}
+
+#[test]
+fn test_config_cursor_blink_ms_default() {
+    let config = EditorConfig::default();
+    assert_eq!(config.cursor_blink_ms, 600);
+}
+
+#[test]
+fn test_config_cursor_blink_ms_deserialize() {
+    let yaml = "theme: dark\ncursor_blink_ms: 500";
+    let config: EditorConfig = serde_yaml::from_str(yaml).unwrap();
+    assert_eq!(config.cursor_blink_ms, 500);
+}
+
+#[test]
+fn test_config_cursor_blink_ms_default_when_missing() {
+    let yaml = "theme: dark";
+    let config: EditorConfig = serde_yaml::from_str(yaml).unwrap();
+    assert_eq!(config.cursor_blink_ms, 600); // Should use default
+}
+
+// ========================================================================
+// ReloadResult Tests
+// ========================================================================
+
+use token::config::ReloadResult;
+
+#[test]
+fn test_reload_result_variants() {
+    // Test all variants can be constructed and compared
+    assert_eq!(ReloadResult::Loaded, ReloadResult::Loaded);
+    assert_eq!(ReloadResult::FileNotFound, ReloadResult::FileNotFound);
+    assert_eq!(ReloadResult::NoConfigDir, ReloadResult::NoConfigDir);
+    assert_ne!(ReloadResult::Loaded, ReloadResult::FileNotFound);
+}
+
+#[test]
+fn test_reload_parse_error_contains_message() {
+    let err = ReloadResult::ParseError("invalid yaml".to_string());
+    if let ReloadResult::ParseError(msg) = err {
+        assert!(msg.contains("invalid"));
+    } else {
+        panic!("Expected ParseError variant");
+    }
+}
+
+#[test]
+fn test_reload_read_error_contains_message() {
+    let err = ReloadResult::ReadError("permission denied".to_string());
+    if let ReloadResult::ReadError(msg) = err {
+        assert!(msg.contains("permission"));
+    } else {
+        panic!("Expected ReadError variant");
+    }
+}
+
+#[test]
+fn test_reload_result_clone() {
+    let orig = ReloadResult::ParseError("test error".to_string());
+    let cloned = orig.clone();
+    assert_eq!(orig, cloned);
 }
 
 // ========================================================================
