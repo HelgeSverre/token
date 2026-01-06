@@ -182,6 +182,9 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
 
+        // TODO: Remove OpenFolderDialog - combine with OpenFileDialog using auto-detection
+        // After dialog returns: if path.is_dir() -> open workspace, else -> open file in tab
+        // See docs/feature/workspace-management.md for design
         AppMsg::OpenFolderDialog => {
             let start_dir = model.workspace_root().cloned();
             Some(Cmd::ShowOpenFolderDialog { start_dir })

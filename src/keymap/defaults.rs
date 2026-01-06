@@ -123,6 +123,9 @@ pub fn default_bindings() -> Vec<Keybinding> {
         bind(KeyCode::Char('s'), cmd, Command::SaveFile),
         bind(KeyCode::Char('s'), cmd_shift, Command::SaveFileAs),
         bind(KeyCode::Char('o'), cmd, Command::OpenFile),
+        // TODO: Remove OpenFolder command - merge with OpenFile using auto-detection
+        // Shift+Cmd+O will be used for Quick Open (file search)
+        // See docs/feature/workspace-management.md for design
         bind(KeyCode::Char('o'), cmd_shift, Command::OpenFolder),
         bind(KeyCode::Char('n'), cmd_shift, Command::NewTab), // Shift+Cmd+N
         bind(KeyCode::Char('w'), cmd, Command::CloseTab),
