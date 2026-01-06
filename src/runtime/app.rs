@@ -1326,6 +1326,14 @@ impl App {
                     language,
                 });
             }
+
+            // =====================================================================
+            // Debug Commands
+            // =====================================================================
+            #[cfg(debug_assertions)]
+            Cmd::TogglePerfOverlay => {
+                self.perf.show_overlay = !self.perf.show_overlay;
+            }
         }
     }
 
@@ -1430,7 +1438,7 @@ impl ApplicationHandler for App {
         // Check if cursor blink timer has elapsed
         let now = Instant::now();
         let time_since_tick = now.duration_since(self.last_tick);
-        let blink_interval = Duration::from_millis(600);
+        let blink_interval = Duration::from_millis(self.model.config.cursor_blink_ms);
 
         if time_since_tick >= blink_interval {
             self.last_tick = now;
