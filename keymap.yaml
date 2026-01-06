@@ -35,7 +35,7 @@ bindings:
     command: OpenFile
 
   - key: "cmd+shift+o"
-    command: OpenFolder
+    command: FuzzyFileFinder
 
   - key: "cmd+shift+n"
     command: NewTab
