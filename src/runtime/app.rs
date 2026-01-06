@@ -14,8 +14,8 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorIcon, Icon, Window};
 
 use token::cli::StartupConfig;
-use token::commands::{filter_commands, Cmd};
-use token::fs_watcher::FileSystemWatcher;
+use token::commands::{filter_commands, Cmd, Damage};
+use token::fs_watcher::{FileSystemEvent, FileSystemWatcher};
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
 };
@@ -70,6 +70,8 @@ pub struct App {
     syntax_tx: Sender<SyntaxParseRequest>,
     /// File system watcher for workspace directory (if workspace is open)
     fs_watcher: Option<FileSystemWatcher>,
+    /// Pending damage for the next render (accumulated from commands)
+    pending_damage: Damage,
 }
 
 impl App {
@@ -139,6 +141,7 @@ impl App {
             perf: PerfStats::default(),
             syntax_tx,
             fs_watcher,
+            pending_damage: Damage::Full, // Start with full render
         };
 
         // Trigger initial syntax parsing for all loaded documents
@@ -1154,7 +1157,9 @@ impl App {
         self.perf.start_frame();
 
         if let Some(renderer) = &mut self.renderer {
-            renderer.render(&mut self.model, &mut self.perf)?;
+            // Take pending damage and reset to empty for next frame
+            let damage = std::mem::take(&mut self.pending_damage);
+            renderer.render(&mut self.model, &mut self.perf, &damage)?;
         }
 
         self.perf.record_frame_time();
@@ -1170,6 +1175,7 @@ impl App {
         match cmd {
             Cmd::None => {}
             Cmd::Redraw => {}
+            Cmd::RedrawAreas(_) => {} // Partial redraw - handled by damage tracking in render()
             Cmd::ReinitializeRenderer => {
                 let scale_factor = self.model.metrics.scale_factor;
                 if let Err(e) = self.reinit_renderer(scale_factor) {
@@ -1335,6 +1341,8 @@ impl App {
                 if cmd.needs_redraw() {
                     needs_redraw = true;
                 }
+                // Accumulate damage from async message
+                self.pending_damage.merge(cmd.damage());
                 self.process_cmd(cmd);
             }
         }
@@ -1378,6 +1386,8 @@ impl ApplicationHandler for App {
             if window_id == window.id() && !should_exit {
                 if let Some(cmd) = self.handle_event(&event) {
                     let needs_redraw = cmd.needs_redraw();
+                    // Accumulate damage from command
+                    self.pending_damage.merge(cmd.damage());
                     self.process_cmd(cmd);
                     needs_redraw
                 } else {
@@ -1424,7 +1434,9 @@ impl ApplicationHandler for App {
 
         if time_since_tick >= blink_interval {
             self.last_tick = now;
-            if self.tick().is_some() {
+            if let Some(cmd) = self.tick() {
+                // Accumulate damage from cursor blink
+                self.pending_damage.merge(cmd.damage());
                 if let Some(window) = &self.window {
                     window.request_redraw();
                 }
@@ -1452,12 +1464,24 @@ impl App {
             return false;
         }
 
-        // Dispatch a single FileSystemChange message to refresh the tree
-        // (The watcher already debounces, so we just need one refresh)
+        // Extract changed paths from events for incremental update
+        let paths: Vec<_> = events
+            .into_iter()
+            .map(|e| match e {
+                FileSystemEvent::Created(p)
+                | FileSystemEvent::Modified(p)
+                | FileSystemEvent::Deleted(p)
+                | FileSystemEvent::Changed(p) => p,
+            })
+            .collect();
+
+        // Dispatch FileSystemChange with the changed paths for incremental update
         if let Some(cmd) = update(
             &mut self.model,
-            Msg::Workspace(WorkspaceMsg::FileSystemChange),
+            Msg::Workspace(WorkspaceMsg::FileSystemChange { paths }),
         ) {
+            // Accumulate damage from file system change
+            self.pending_damage.merge(cmd.damage());
             if cmd.needs_redraw() {
                 return true;
             }
