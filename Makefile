@@ -1,6 +1,6 @@
 # Makefile for token
 
-.PHONY: build release run dev csv damage-debug test-syntax trace test clean fmt format lint help samples-files ci \
+.PHONY: build release dist debugging run dev csv damage-debug test-syntax trace test clean fmt format lint help samples-files ci \
         build-prof flamegraph profile-samply profile-memory \
         bench bench-rope bench-render bench-glyph \
         coverage coverage-html coverage-ci \
@@ -16,9 +16,17 @@ all: help
 build:
 	cargo build
 
-# Build optimized release binary
+# Build optimized release binary (fast compile, for local testing)
 release:
 	cargo build --release
+
+# Build distribution binary (maximum optimization, slower compile)
+dist:
+	cargo build --profile dist
+
+# Build with full debug info (for detailed debugging)
+debugging:
+	cargo build --profile debugging
 
 # Install to ~/.local/bin (add to PATH if needed)
 INSTALL_DIR := $(HOME)/.local/bin
@@ -152,8 +160,10 @@ help:
 	@echo "token Makefile"
 	@echo ""
 	@echo "Build targets:"
-	@echo "  make build        - Build debug binary"
-	@echo "  make release      - Build optimized release binary"
+	@echo "  make build        - Build debug binary (fast compile)"
+	@echo "  make debugging    - Build with full debug info (for debuggers)"
+	@echo "  make release      - Build release binary (fast compile, local testing)"
+	@echo "  make dist         - Build distribution binary (max optimization)"
 	@echo "  make install      - Install to ~/.local/bin"
 	@echo "  make uninstall    - Remove from ~/.local/bin"
 	@echo "  make build-prof   - Build with debug symbols for profiling"
@@ -208,7 +218,7 @@ help:
 	@echo "CI targets:"
 	@echo "  make ci           - Test GitHub Actions locally with act"
 	@echo ""
-	@echo "Cross-compilation:"
+	@echo "Cross-compilation (uses dist profile):"
 	@echo "  make compile-all      - Build for all platforms"
 	@echo "  make compile-macos-x86 - macOS Intel"
 	@echo "  make compile-macos-arm - macOS Apple Silicon"
@@ -369,28 +379,28 @@ test-retry:
 ci:
 	act push --job build --matrix os:ubuntu-latest --matrix target:x86_64-unknown-linux-gnu --container-architecture linux/amd64
 
-# === Cross-compilation targets ===
+# === Cross-compilation targets (uses dist profile for max optimization) ===
 
 # Build for all platforms
 compile-all: compile-macos-x86 compile-macos-arm compile-linux compile-windows
 	@echo "All cross-compilation builds complete!"
-	@ls -la target/*/release/token* 2>/dev/null || true
+	@ls -la target/*/dist/token* 2>/dev/null || true
 
 # macOS x86_64 (Intel)
 compile-macos-x86:
-	cargo build --release --target x86_64-apple-darwin
+	cargo build --profile dist --target x86_64-apple-darwin
 
 # macOS aarch64 (Apple Silicon)
 compile-macos-arm:
-	cargo build --release --target aarch64-apple-darwin
+	cargo build --profile dist --target aarch64-apple-darwin
 
 # Linux x86_64 (requires: cargo install cross, Docker running)
 compile-linux:
-	cross build --release --target x86_64-unknown-linux-gnu
+	cross build --profile dist --target x86_64-unknown-linux-gnu
 
 # Windows x86_64 (requires: cargo install cargo-xwin)
 compile-windows:
-	cargo xwin build --release --target x86_64-pc-windows-msvc
+	cargo xwin build --profile dist --target x86_64-pc-windows-msvc
 
 # === Icon and App Bundle targets ===
 
@@ -436,13 +446,13 @@ icons: assets/icon.png
 	fi
 	@test -f assets/icon.ico && echo "Created assets/icon.ico" || true
 
-# Create macOS app bundle
-bundle-macos: release icons
+# Create macOS app bundle (uses dist profile for smallest binary)
+bundle-macos: dist icons
 	@echo "Creating Token.app bundle..."
 	@rm -rf Token.app
 	@mkdir -p Token.app/Contents/MacOS
 	@mkdir -p Token.app/Contents/Resources
-	@cp target/release/token Token.app/Contents/MacOS/
+	@cp target/dist/token Token.app/Contents/MacOS/
 	@cp assets/icon.icns Token.app/Contents/Resources/
 	@cp macos/Info.plist Token.app/Contents/
 	@echo "Created Token.app"

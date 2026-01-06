@@ -1430,7 +1430,7 @@ impl ApplicationHandler for App {
         // Check if cursor blink timer has elapsed
         let now = Instant::now();
         let time_since_tick = now.duration_since(self.last_tick);
-        let blink_interval = Duration::from_millis(500);
+        let blink_interval = Duration::from_millis(600);
 
         if time_since_tick >= blink_interval {
             self.last_tick = now;

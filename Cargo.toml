@@ -2,10 +2,16 @@
 name = "token"
 version = "0.3.12"
 edition = "2021"
+default-run = "token"
 description = "A fast, minimal multi-cursor text editor with syntax highlighting"
 homepage = "https://token-editor.com"
 repository = "https://github.com/HelgeSverre/token"
 license = "MIT"
+authors = ["Helge Sverre <helge.sverre@gmail.com>"]
+readme = "README.md"
+keywords = ["editor", "text-editor", "syntax-highlighting", "terminal", "rust"]
+categories = ["text-editors", "development-tools"]
+exclude = ["samples/", "docs/", "*.md", "Makefile", "assets/icon.png"]
 
 [features]
 default = []
@@ -138,9 +144,38 @@ harness = false
 name = "hot_paths"
 harness = false
 
+# Dev profile: fast compile, basic debugging
+[profile.dev]
+opt-level = 0
+debug = "line-tables-only"  # Faster compile than full debug
+incremental = true
+
+# No debug info for dependencies (faster compile)
+[profile.dev.package."*"]
+debug = false
+
+# Debugging profile: full debug info when needed (cargo build --profile debugging)
+[profile.debugging]
+inherits = "dev"
+debug = true
+
+# Release profile: optimized, fast compile for local testing
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = false
+panic = "abort"
+
+# Dist profile: maximum optimization for distribution
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = true
+
 # Profiling profile: release speed with debug symbols
 [profile.profiling]
 inherits = "release"
 debug = true
 lto = false
-codegen-units = 1
+strip = false

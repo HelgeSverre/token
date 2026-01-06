@@ -312,6 +312,105 @@ impl Renderer {
                 frame.fill_rect_px(text_area_x, y, text_area_w, line_height, bg_color);
             }
 
+            // 1b. Render selection highlights for this line
+            let selection_color = model.theme.editor.selection_background.to_argb_u32();
+            for selection in &editor.selections {
+                if selection.is_empty() {
+                    continue;
+                }
+
+                let sel_start = selection.start();
+                let sel_end = selection.end();
+
+                // Check if this line is within the selection range
+                if doc_line < sel_start.line || doc_line > sel_end.line {
+                    continue;
+                }
+
+                let line_len = document.line_length(doc_line);
+                let line_text = document.get_line_cow(doc_line).unwrap_or_default();
+
+                let start_col = if doc_line == sel_start.line {
+                    sel_start.column
+                } else {
+                    0
+                };
+                let end_col = if doc_line == sel_end.line {
+                    sel_end.column
+                } else {
+                    line_len
+                };
+
+                let visual_start_col = char_col_to_visual_col(&line_text, start_col);
+                let visual_end_col = char_col_to_visual_col(&line_text, end_col);
+
+                let visible_start_col =
+                    visual_start_col.saturating_sub(editor.viewport.left_column);
+                let visible_end_col = visual_end_col.saturating_sub(editor.viewport.left_column);
+
+                let x_start =
+                    group_text_start_x + (visible_start_col as f32 * char_width).round() as usize;
+                let x_end = (group_text_start_x
+                    + (visible_end_col as f32 * char_width).round() as usize)
+                    .min(rect_x + rect_w);
+
+                if x_end > x_start {
+                    frame.fill_rect_px(
+                        x_start,
+                        y,
+                        x_end.saturating_sub(x_start),
+                        line_height,
+                        selection_color,
+                    );
+                }
+            }
+
+            // 1c. Render rectangle selection highlight for this line
+            if editor.rectangle_selection.active {
+                let rect_sel = &editor.rectangle_selection;
+                let top_line = rect_sel.top_line();
+                let bottom_line = rect_sel.bottom_line();
+
+                if doc_line >= top_line && doc_line <= bottom_line {
+                    let left_visual_col = rect_sel.left_visual_col();
+                    let right_visual_col = rect_sel.right_visual_col();
+                    let current_visual_col = rect_sel.current_visual_col;
+
+                    let line_text = document.get_line_cow(doc_line).unwrap_or_default();
+                    let line_visual_len =
+                        char_col_to_visual_col(&line_text, line_text.chars().count());
+
+                    // Only show highlight if current position is within the line's visual width
+                    if current_visual_col <= line_visual_len {
+                        let start_visual = left_visual_col.min(line_visual_len);
+                        let end_visual = right_visual_col.min(line_visual_len);
+
+                        if start_visual < end_visual {
+                            let visible_start_col =
+                                start_visual.saturating_sub(editor.viewport.left_column);
+                            let visible_end_col =
+                                end_visual.saturating_sub(editor.viewport.left_column);
+
+                            let x_start = group_text_start_x
+                                + (visible_start_col as f32 * char_width).round() as usize;
+                            let x_end = (group_text_start_x
+                                + (visible_end_col as f32 * char_width).round() as usize)
+                                .min(rect_x + rect_w);
+
+                            if x_end > x_start {
+                                frame.fill_rect_px(
+                                    x_start,
+                                    y,
+                                    x_end.saturating_sub(x_start),
+                                    line_height,
+                                    selection_color,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
             // 2. Render gutter (line number)
             let line_num_str = format!("{}", doc_line + 1);
             let text_width_px = (line_num_str.len() as f32 * char_width).round() as usize;
@@ -2057,7 +2156,21 @@ impl Renderer {
 
         // Render editor area if needed
         // Check for cursor-lines-only damage for optimized rendering
-        let cursor_lines_only = effective_damage.cursor_lines_only();
+        // Note: cursor-lines optimization only works for text mode, not CSV mode
+        let is_csv_mode = model
+            .editor_area
+            .groups
+            .get(&model.editor_area.focused_group_id)
+            .and_then(|g| g.active_editor_id())
+            .and_then(|id| model.editor_area.editors.get(&id))
+            .map(|e| e.view_mode.is_csv())
+            .unwrap_or(false);
+
+        let cursor_lines_only = if is_csv_mode {
+            None // Skip optimization for CSV mode
+        } else {
+            effective_damage.cursor_lines_only()
+        };
 
         if let Some(dirty_lines) = cursor_lines_only {
             // Optimized path: only redraw specific cursor lines

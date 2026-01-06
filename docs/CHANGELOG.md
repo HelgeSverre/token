@@ -4,6 +4,39 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
+## Unreleased
+
+### Fixed - Rendering Bugs
+
+**Selection Highlights Disappearing:**
+- Selection highlights were disappearing after ~1 second due to cursor blink optimization
+- `render_cursor_lines_only()` now properly renders selection highlights and rectangle selections
+- Cursor blink interval changed from 500ms to 600ms
+
+**CSV Cell Editor Cursor:**
+- Fixed cursor appearing at top of editor instead of inside cell when editing CSV
+- Skip cursor-lines-only optimization for CSV mode (falls back to full render)
+
+### Changed - Build System
+
+**Cargo.toml Enhancements:**
+- Added package metadata: authors, readme, keywords, categories, exclude
+- Added `default-run = "token"` to handle multiple binaries
+- New build profiles:
+  - `dev`: Fast compile with `debug = "line-tables-only"`, no debug info for deps
+  - `debugging`: Full debug info for debuggers
+  - `release`: Thin LTO, `panic = "abort"` for local testing
+  - `dist`: Fat LTO, `codegen-units = 1`, stripped for distribution
+  - `profiling`: Debug symbols, no LTO for flamegraph/samply
+
+**Makefile Updates:**
+- Added `make dist` and `make debugging` targets
+- Cross-compilation targets now use `dist` profile for maximum optimization
+- `make bundle-macos` uses `dist` profile for smallest binary
+- Updated help text
+
+---
+
 ## v0.3.12 - 2025-12-20 (Latest)
 
 ### Added - Find/Replace Implementation

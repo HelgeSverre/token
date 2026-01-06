@@ -28,7 +28,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
         }
 
         UiMsg::BlinkCursor => {
-            if model.ui.update_cursor_blink(Duration::from_millis(500)) {
+            if model.ui.update_cursor_blink(Duration::from_millis(600)) {
                 // Compute dirty lines for cursor blink optimization
                 let current_cursor_lines = get_current_cursor_lines(model);
                 let previous_cursor_lines = &model.ui.previous_cursor_lines;
