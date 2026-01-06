@@ -252,6 +252,9 @@ pub enum UiMsg {
     /// Toggle a modal (open if closed, close if open)
     ToggleModal(ModalId),
 
+    /// Open fuzzy file finder modal (Cmd+Shift+O)
+    OpenFuzzyFileFinder,
+
     // === File Drag-and-Drop ===
     /// File is being hovered over the window
     FileHovered(PathBuf),
