@@ -22,6 +22,16 @@ struct DocParseState {
     source: String,
 }
 
+/// Convert byte column to character column (handles UTF-8 multi-byte chars)
+fn byte_to_char_col(text: &str, byte_col: usize) -> usize {
+    let byte_col = byte_col.min(text.len());
+    let mut valid_byte = byte_col;
+    while valid_byte > 0 && !text.is_char_boundary(valid_byte) {
+        valid_byte -= 1;
+    }
+    text[..valid_byte].chars().count()
+}
+
 /// Convert a byte offset to a tree-sitter Point (row, column in bytes)
 fn byte_to_point(text: &str, byte_offset: usize) -> Point {
     let mut row = 0usize;
@@ -424,19 +434,6 @@ impl ParserState {
         // Pre-split into lines for byte→char column conversion
         let lines: Vec<&str> = source.lines().collect();
 
-        // Helper: convert byte column to character column on a given line
-        // Tree-sitter positions are in bytes, but we need character indices
-        fn byte_to_char_col(line: &str, byte_col: usize) -> usize {
-            // Clamp to line length
-            let byte_col = byte_col.min(line.len());
-            // Find the nearest valid char boundary at or before byte_col
-            let mut valid_byte = byte_col;
-            while valid_byte > 0 && !line.is_char_boundary(valid_byte) {
-                valid_byte -= 1;
-            }
-            line[..valid_byte].chars().count()
-        }
-
         // Run query and collect captures using StreamingIterator
         let mut captures = cursor.captures(query, tree.root_node(), source_bytes);
         while let Some((query_match, capture_idx)) = captures.next() {
@@ -704,16 +701,6 @@ impl ParserState {
             None => return,
         };
 
-        // Helper: convert byte column to character column
-        fn byte_to_char_col(text: &str, byte_col: usize) -> usize {
-            let byte_col = byte_col.min(text.len());
-            let mut valid_byte = byte_col;
-            while valid_byte > 0 && !text.is_char_boundary(valid_byte) {
-                valid_byte -= 1;
-            }
-            text[..valid_byte].chars().count()
-        }
-
         let inline_lines: Vec<&str> = inline_source.lines().collect();
         let source_bytes = inline_source.as_bytes();
 
@@ -916,16 +903,6 @@ impl ParserState {
         // Extract highlights from the parsed code
         let code_lines: Vec<&str> = code_source.lines().collect();
         let source_bytes = code_source.as_bytes();
-
-        // Helper: convert byte column to character column
-        fn byte_to_char_col(text: &str, byte_col: usize) -> usize {
-            let byte_col = byte_col.min(text.len());
-            let mut valid_byte = byte_col;
-            while valid_byte > 0 && !text.is_char_boundary(valid_byte) {
-                valid_byte -= 1;
-            }
-            text[..valid_byte].chars().count()
-        }
 
         let mut cursor = QueryCursor::new();
         let mut captures = cursor.captures(query, code_tree.root_node(), source_bytes);
@@ -1245,15 +1222,6 @@ impl ParserState {
         // Extract highlights
         let code_lines: Vec<&str> = code_source.lines().collect();
         let source_bytes = code_source.as_bytes();
-
-        fn byte_to_char_col(text: &str, byte_col: usize) -> usize {
-            let byte_col = byte_col.min(text.len());
-            let mut valid_byte = byte_col;
-            while valid_byte > 0 && !text.is_char_boundary(valid_byte) {
-                valid_byte -= 1;
-            }
-            text[..valid_byte].chars().count()
-        }
 
         let mut cursor = QueryCursor::new();
         let mut captures = cursor.captures(query, code_tree.root_node(), source_bytes);
