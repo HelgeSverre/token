@@ -393,6 +393,27 @@ impl FileTree {
         Ok(false)
     }
 
+    /// Get all file paths recursively (excludes directories)
+    ///
+    /// Returns a flat list of all files in the tree, useful for fuzzy file search.
+    pub fn get_all_file_paths(&self) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        for root in &self.roots {
+            Self::collect_files_recursive(root, &mut files);
+        }
+        files
+    }
+
+    fn collect_files_recursive(node: &FileNode, files: &mut Vec<PathBuf>) {
+        if node.is_dir {
+            for child in &node.children {
+                Self::collect_files_recursive(child, files);
+            }
+        } else {
+            files.push(node.path.clone());
+        }
+    }
+
     /// Count total visible items (for scrolling calculations)
     pub fn count_visible(&self, expanded: &HashSet<PathBuf>) -> usize {
         self.roots
