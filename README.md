@@ -58,7 +58,7 @@ Common shortcuts (Cmd = Command on macOS, Ctrl on Windows/Linux):
 ### Files & Navigation
 
 | Action          | Shortcut    |
-|-----------------|-------------|
+| --------------- | ----------- |
 | Save            | Cmd+S       |
 | Open File       | Cmd+O       |
 | Open Folder     | Cmd+Shift+O |
@@ -70,7 +70,7 @@ Common shortcuts (Cmd = Command on macOS, Ctrl on Windows/Linux):
 ### Editing
 
 | Action         | Shortcut      |
-|----------------|---------------|
+| -------------- | ------------- |
 | Undo           | Cmd+Z         |
 | Redo           | Cmd+Shift+Z   |
 | Copy/Cut/Paste | Cmd+C/X/V     |
@@ -81,7 +81,7 @@ Common shortcuts (Cmd = Command on macOS, Ctrl on Windows/Linux):
 ### Multi-Cursor
 
 | Action            | Shortcut           |
-|-------------------|--------------------|
+| ----------------- | ------------------ |
 | Add cursor        | Option+Click       |
 | Add cursor above  | Option+Option+Up   |
 | Add cursor below  | Option+Option+Down |
@@ -92,7 +92,7 @@ _Note: Option+Option shortcuts are hardcoded and not remappable via keymap.yaml.
 ### Navigation
 
 | Action             | Shortcut            |
-|--------------------|---------------------|
+| ------------------ | ------------------- |
 | Word left/right    | Option+←/→          |
 | Line start/end     | Cmd+←/→ or Home/End |
 | Document start/end | Ctrl+Home/End       |
@@ -108,7 +108,7 @@ For the complete keybinding reference, see [docs/KEYBINDINGS.md](docs/KEYBINDING
 Configuration files are stored in `~/.config/token-editor/`:
 
 | File                 | Purpose            |
-|----------------------|--------------------|
+| -------------------- | ------------------ |
 | `keymap.yaml`        | Custom keybindings |
 | `themes/<name>.yaml` | Custom themes      |
 
@@ -124,7 +124,7 @@ See the documentation for details:
 Run `make help` for the full command list.
 
 | Command        | Description                      |
-|----------------|----------------------------------|
+| -------------- | -------------------------------- |
 | `make build`   | Build debug binary               |
 | `make release` | Build optimized release binary   |
 | `make run`     | Run release build                |
@@ -149,7 +149,7 @@ documented publicly.
 ## Documentation
 
 | Document                                              | Description                             |
-|-------------------------------------------------------|-----------------------------------------|
+| ----------------------------------------------------- | --------------------------------------- |
 | [KEYBINDINGS.md](docs/KEYBINDINGS.md)                 | Complete keyboard shortcuts reference   |
 | [THEMES.md](docs/THEMES.md)                           | Theme customization guide               |
 | [BUILDING_WITH_AI.md](docs/BUILDING_WITH_AI.md)       | AI-assisted development framework       |

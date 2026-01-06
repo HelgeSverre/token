@@ -53,6 +53,16 @@ pub fn keymap_file() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("keymap.yaml"))
 }
 
+/// `~/.config/token-editor/logs/`
+pub fn logs_dir() -> Option<PathBuf> {
+    config_dir().map(|dir| dir.join("logs"))
+}
+
+/// `~/.config/token-editor/logs/token.log`
+pub fn log_file() -> Option<PathBuf> {
+    logs_dir().map(|dir| dir.join("token.log"))
+}
+
 fn ensure_dir(path: &Path) -> Result<(), String> {
     fs::create_dir_all(path)
         .map_err(|e| format!("Failed to create directory {}: {}", path.display(), e))
@@ -71,6 +81,14 @@ pub fn ensure_themes_dir() -> Result<PathBuf, String> {
     let themes = config.join("themes");
     ensure_dir(&themes)?;
     Ok(themes)
+}
+
+/// Ensure logs dir exists, returning it
+pub fn ensure_logs_dir() -> Result<PathBuf, String> {
+    let config = ensure_config_dir()?;
+    let logs = config.join("logs");
+    ensure_dir(&logs)?;
+    Ok(logs)
 }
 
 /// Ensure full config structure (config dir + themes)

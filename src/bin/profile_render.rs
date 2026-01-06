@@ -70,17 +70,16 @@ fn main() -> Result<()> {
     // Create the application model
     let mut model = create_model(&args)?;
 
-    eprintln!("Model created with {} splits", model.editor_area.groups.len());
+    eprintln!(
+        "Model created with {} splits",
+        model.editor_area.groups.len()
+    );
     for (id, group) in &model.editor_area.groups {
         if let Some(editor_id) = group.active_editor_id() {
             if let Some(editor) = model.editor_area.editors.get(&editor_id) {
                 if let Some(doc_id) = editor.document_id {
                     if let Some(doc) = model.editor_area.documents.get(&doc_id) {
-                        eprintln!(
-                            "  Group {:?}: {} lines",
-                            id,
-                            doc.line_count()
-                        );
+                        eprintln!("  Group {:?}: {} lines", id, doc.line_count());
                     }
                 }
             }
@@ -102,7 +101,10 @@ fn main() -> Result<()> {
         glyph_cache.insert(ch, (metrics, bitmap));
     }
 
-    eprintln!("Glyph cache pre-warmed with {} characters", glyph_cache.len());
+    eprintln!(
+        "Glyph cache pre-warmed with {} characters",
+        glyph_cache.len()
+    );
     eprintln!();
 
     // Compute layout once (as the real renderer does)
@@ -331,7 +333,9 @@ fn generate_rust_content(lines: usize) -> String {
 
 fn generate_csv_content(rows: usize) -> String {
     let mut content = String::with_capacity(rows * 150);
-    content.push_str("id,first_name,last_name,email,company,department,job_title,salary,hire_date,country\n");
+    content.push_str(
+        "id,first_name,last_name,email,company,department,job_title,salary,hire_date,country\n",
+    );
     for i in 0..rows {
         content.push_str(&format!(
             "{},John{},Smith{},john{}@company.com,Company{},Engineering,Developer,{},{}-01-15,USA\n",

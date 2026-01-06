@@ -124,6 +124,31 @@ impl<'a> Frame<'a> {
         }
     }
 
+    /// Fill a rectangle with alpha blending (pixel coordinates, ARGB format)
+    #[cfg_attr(not(feature = "damage-debug"), allow(dead_code))]
+    pub fn blend_rect_px(&mut self, x: usize, y: usize, w: usize, h: usize, color: u32) {
+        let alpha = ((color >> 24) & 0xFF) as f32 / 255.0;
+        if alpha <= 0.0 {
+            return;
+        }
+        if alpha >= 1.0 {
+            return self.fill_rect_px(x, y, w, h, color | 0xFF000000);
+        }
+
+        let x0 = x.min(self.width);
+        let y0 = y.min(self.height);
+        let x1 = (x + w).min(self.width);
+        let y1 = (y + h).min(self.height);
+
+        for py in y0..y1 {
+            let row_start = py * self.width;
+            for px in x0..x1 {
+                self.buffer[row_start + px] =
+                    blend_colors(self.buffer[row_start + px], color, alpha);
+            }
+        }
+    }
+
     /// Fill a rectangle with alpha blending (color is ARGB format)
     pub fn fill_rect_blended(&mut self, rect: Rect, color: u32) {
         let alpha = ((color >> 24) & 0xFF) as f32 / 255.0;
@@ -277,6 +302,15 @@ impl<'a> Frame<'a> {
     }
 }
 
+/// Statistics for glyph cache hit/miss tracking (debug only)
+#[cfg(debug_assertions)]
+#[derive(Default)]
+#[allow(dead_code)]
+pub struct CacheStats {
+    pub hits: usize,
+    pub misses: usize,
+}
+
 /// Text rendering context wrapping font and glyph cache.
 ///
 /// Provides methods for drawing text with proper font metrics and glyph caching.
@@ -285,6 +319,11 @@ pub struct TextPainter<'a> {
     glyph_cache: &'a mut GlyphCache,
     font_size: f32,
     ascent: f32,
+    char_width: f32,
+    line_height: usize,
+    #[cfg(debug_assertions)]
+    #[allow(dead_code)]
+    cache_stats: CacheStats,
 }
 
 impl<'a> TextPainter<'a> {
@@ -294,13 +333,39 @@ impl<'a> TextPainter<'a> {
         glyph_cache: &'a mut GlyphCache,
         font_size: f32,
         ascent: f32,
+        char_width: f32,
+        line_height: usize,
     ) -> Self {
         Self {
             font,
             glyph_cache,
             font_size,
             ascent,
+            char_width,
+            line_height,
+            #[cfg(debug_assertions)]
+            cache_stats: CacheStats::default(),
         }
+    }
+
+    /// Get the cache statistics (hits and misses)
+    #[cfg(debug_assertions)]
+    #[inline]
+    #[allow(dead_code)]
+    pub fn cache_stats(&self) -> &CacheStats {
+        &self.cache_stats
+    }
+
+    /// Get the character width for monospace layout calculations
+    #[inline]
+    pub fn char_width(&self) -> f32 {
+        self.char_width
+    }
+
+    /// Get the line height in pixels
+    #[inline]
+    pub fn line_height(&self) -> usize {
+        self.line_height
     }
 
     /// Get the number of cached glyphs
@@ -317,6 +382,17 @@ impl<'a> TextPainter<'a> {
 
         for ch in text.chars() {
             let key = (ch, self.font_size.to_bits());
+
+            // Track cache hit/miss before lookup
+            #[cfg(debug_assertions)]
+            let is_hit = self.glyph_cache.contains_key(&key);
+            #[cfg(debug_assertions)]
+            if is_hit {
+                self.cache_stats.hits += 1;
+            } else {
+                self.cache_stats.misses += 1;
+            }
+
             let (metrics, bitmap) = self
                 .glyph_cache
                 .entry(key)
@@ -414,6 +490,17 @@ impl<'a> TextPainter<'a> {
 
             // Draw the character
             let key = (ch, self.font_size.to_bits());
+
+            // Track cache hit/miss before lookup
+            #[cfg(debug_assertions)]
+            let is_hit = self.glyph_cache.contains_key(&key);
+            #[cfg(debug_assertions)]
+            if is_hit {
+                self.cache_stats.hits += 1;
+            } else {
+                self.cache_stats.misses += 1;
+            }
+
             let (metrics, bitmap) = self
                 .glyph_cache
                 .entry(key)

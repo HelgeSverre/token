@@ -203,7 +203,7 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
     match cmd_id {
         CommandId::NewFile => update_layout(model, LayoutMsg::NewTab),
         CommandId::OpenFile => update_app(model, AppMsg::OpenFileDialog),
-        CommandId::OpenFolder => update_app(model, AppMsg::OpenFolderDialog),
+        CommandId::FuzzyFileFinder => update_ui(model, UiMsg::OpenFuzzyFileFinder),
         CommandId::SaveFile => update_app(model, AppMsg::SaveFile),
         CommandId::SaveFileAs => update_app(model, AppMsg::SaveFileAs),
         CommandId::Undo => update_document(model, DocumentMsg::Undo),
@@ -258,6 +258,16 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             }
         }
         CommandId::ToggleCsvView => super::csv::update_csv(model, crate::messages::CsvMsg::Toggle),
+        CommandId::OpenLogFile => {
+            if let Some(log_path) = config_paths::log_file() {
+                // Ensure logs dir exists
+                let _ = config_paths::ensure_logs_dir();
+                Some(Cmd::OpenFileInEditor { path: log_path })
+            } else {
+                model.ui.set_status("Could not determine log file path");
+                Some(Cmd::Redraw)
+            }
+        }
     }
 }
 

@@ -123,7 +123,7 @@ pub fn default_bindings() -> Vec<Keybinding> {
         bind(KeyCode::Char('s'), cmd, Command::SaveFile),
         bind(KeyCode::Char('s'), cmd_shift, Command::SaveFileAs),
         bind(KeyCode::Char('o'), cmd, Command::OpenFile),
-        bind(KeyCode::Char('o'), cmd_shift, Command::OpenFolder),
+        bind(KeyCode::Char('o'), cmd_shift, Command::FuzzyFileFinder),
         bind(KeyCode::Char('n'), cmd_shift, Command::NewTab), // Shift+Cmd+N
         bind(KeyCode::Char('w'), cmd, Command::CloseTab),
         // ====================================================================

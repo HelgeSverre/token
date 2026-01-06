@@ -1,6 +1,6 @@
 # Makefile for token
 
-.PHONY: build release run dev csv test-syntax trace test clean fmt format lint help samples-files ci \
+.PHONY: build release run dev csv damage-debug test-syntax trace test clean fmt format lint help samples-files ci \
         build-prof flamegraph profile-samply profile-memory \
         bench bench-rope bench-render bench-glyph \
         coverage coverage-html coverage-ci \
@@ -79,6 +79,10 @@ csv: build samples/large_data.csv
 # Run with codebase as workspace
 workspace: build
 	./target/debug/token ./
+
+# Run with damage tracking debug visualization
+damage-debug:
+	cargo run --release --bin token --features damage-debug -- /Users/helge/conductor/workspaces/token-editor/abu-dhabi/src
 
 # Run with full debug tracing enabled
 trace: build
@@ -162,6 +166,7 @@ help:
 	@echo "  make dev          - Run debug build (faster compile)"
 	@echo "  make csv          - Run with large CSV file (tests CSV viewer)"
 	@echo "  make workspace    - Open codebase folder as workspace (tests sidebar)"
+	@echo "  make damage-debug - Run with damage tracking visualization (colored outlines)"
 	@echo "  make test-syntax  - Open all 20 syntax sample files for manual testing"
 	@echo ""
 	@echo "Test targets:"

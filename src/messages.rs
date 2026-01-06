@@ -252,6 +252,9 @@ pub enum UiMsg {
     /// Toggle a modal (open if closed, close if open)
     ToggleModal(ModalId),
 
+    /// Open fuzzy file finder modal (Cmd+Shift+O)
+    OpenFuzzyFileFinder,
+
     // === File Drag-and-Drop ===
     /// File is being hovered over the window
     FileHovered(PathBuf),
@@ -551,7 +554,8 @@ pub enum WorkspaceMsg {
     Scroll { lines: i32 },
 
     /// File system change detected by watcher (triggers tree refresh)
-    FileSystemChange,
+    /// Contains the paths that changed for incremental updates.
+    FileSystemChange { paths: Vec<PathBuf> },
 }
 
 /// Top-level message type

@@ -65,6 +65,8 @@ pub enum ModalId {
     FindReplace,
     /// Theme picker
     ThemePicker,
+    /// File finder (Shift+Cmd+O) - fuzzy search files in workspace
+    FileFinder,
 }
 
 /// State for the command palette modal
@@ -226,6 +228,80 @@ impl Default for ThemePickerState {
     }
 }
 
+/// A file match result from fuzzy search
+#[derive(Debug, Clone)]
+pub struct FileMatch {
+    /// Full path to the file
+    pub path: PathBuf,
+    /// Just the file name (for display)
+    pub filename: String,
+    /// Path relative to workspace root (for display)
+    pub relative_path: String,
+    /// Fuzzy match score (higher = better match)
+    pub score: u32,
+    /// Character indices in filename that matched (for highlighting)
+    pub indices: Vec<u32>,
+}
+
+impl FileMatch {
+    /// Create a FileMatch from a path
+    pub fn from_path(path: &std::path::Path, workspace_root: &std::path::Path, score: u32, indices: Vec<u32>) -> Self {
+        let filename = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let relative_path = path
+            .strip_prefix(workspace_root)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| path.to_string_lossy().to_string());
+        Self {
+            path: path.to_path_buf(),
+            filename,
+            relative_path,
+            score,
+            indices,
+        }
+    }
+}
+
+/// State for the file finder modal (fuzzy file search)
+#[derive(Debug, Clone)]
+pub struct FileFinderState {
+    /// Editable state for the search input field
+    pub editable: EditableState<StringBuffer>,
+    /// Index of selected file in filtered results
+    pub selected_index: usize,
+    /// Filtered and ranked file results
+    pub results: Vec<FileMatch>,
+    /// All files in workspace (cached when modal opens)
+    pub all_files: Vec<PathBuf>,
+    /// Workspace root path (for computing relative paths)
+    pub workspace_root: PathBuf,
+}
+
+impl FileFinderState {
+    /// Create a new file finder state with the given files
+    pub fn new(all_files: Vec<PathBuf>, workspace_root: PathBuf) -> Self {
+        Self {
+            editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
+            selected_index: 0,
+            results: Vec::new(),
+            all_files,
+            workspace_root,
+        }
+    }
+
+    /// Get the search input text
+    pub fn input(&self) -> String {
+        self.editable.text()
+    }
+
+    /// Set the search input text
+    pub fn set_input(&mut self, text: &str) {
+        self.editable.set_content(text);
+    }
+}
+
 /// Union of all modal states
 #[derive(Debug, Clone)]
 pub enum ModalState {
@@ -233,6 +309,7 @@ pub enum ModalState {
     GotoLine(GotoLineState),
     FindReplace(FindReplaceState),
     ThemePicker(ThemePickerState),
+    FileFinder(FileFinderState),
 }
 
 impl ModalState {
@@ -243,6 +320,7 @@ impl ModalState {
             ModalState::GotoLine(_) => ModalId::GotoLine,
             ModalState::FindReplace(_) => ModalId::FindReplace,
             ModalState::ThemePicker(_) => ModalId::ThemePicker,
+            ModalState::FileFinder(_) => ModalId::FileFinder,
         }
     }
 }
@@ -360,6 +438,9 @@ pub struct UiState {
     pub focus: FocusTarget,
     /// Which UI region the mouse is currently hovering over
     pub hover: HoverRegion,
+    /// Lines that contained cursors in the previous frame (for damage tracking)
+    /// Used by cursor blink to determine which lines need redrawing
+    pub previous_cursor_lines: Vec<usize>,
 }
 
 impl UiState {
@@ -381,6 +462,7 @@ impl UiState {
             sidebar_resize: None,
             focus: FocusTarget::Editor,
             hover: HoverRegion::None,
+            previous_cursor_lines: Vec::new(),
         }
     }
 
@@ -402,6 +484,7 @@ impl UiState {
             sidebar_resize: None,
             focus: FocusTarget::Editor,
             hover: HoverRegion::None,
+            previous_cursor_lines: Vec::new(),
         }
     }
 

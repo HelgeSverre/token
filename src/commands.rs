@@ -18,7 +18,7 @@ pub enum CommandId {
     // File operations
     NewFile,
     OpenFile,
-    OpenFolder,
+    FuzzyFileFinder,
     SaveFile,
     SaveFileAs,
 
@@ -56,6 +56,9 @@ pub enum CommandId {
 
     // CSV
     ToggleCsvView,
+
+    // Debug/Troubleshooting
+    OpenLogFile,
 }
 
 /// A command definition for the command palette
@@ -79,8 +82,8 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: Some("⌘O"),
     },
     CommandDef {
-        id: CommandId::OpenFolder,
-        label: "Open Folder...",
+        id: CommandId::FuzzyFileFinder,
+        label: "Go to File...",
         keybinding: Some("⇧⌘O"),
     },
     CommandDef {
@@ -188,6 +191,11 @@ pub static COMMANDS: &[CommandDef] = &[
         label: "Toggle CSV View",
         keybinding: None,
     },
+    CommandDef {
+        id: CommandId::OpenLogFile,
+        label: "Open Log File",
+        keybinding: None,
+    },
 ];
 
 /// Calculate fuzzy match score. Returns None if no match, Some(score) if matches.
@@ -268,7 +276,7 @@ impl CommandId {
         match self {
             CommandId::NewFile => Some(KeymapCommand::NewTab), // NewFile maps to NewTab
             CommandId::OpenFile => Some(KeymapCommand::OpenFile),
-            CommandId::OpenFolder => Some(KeymapCommand::OpenFolder),
+            CommandId::FuzzyFileFinder => Some(KeymapCommand::FuzzyFileFinder),
             CommandId::SaveFile => Some(KeymapCommand::SaveFile),
             CommandId::SaveFileAs => Some(KeymapCommand::SaveFileAs),
             CommandId::Undo => Some(KeymapCommand::Undo),
@@ -290,6 +298,7 @@ impl CommandId {
             CommandId::OpenConfigDirectory => None,
             CommandId::OpenKeybindings => None,
             CommandId::ToggleCsvView => Some(KeymapCommand::CsvToggle),
+            CommandId::OpenLogFile => Some(KeymapCommand::OpenLogFile),
         }
     }
 }
@@ -309,6 +318,157 @@ pub fn keybinding_for_command_static(id: CommandId) -> Option<&'static str> {
 }
 
 // ============================================================================
+// Damage Tracking (partial redraw optimization)
+// ============================================================================
+
+/// Represents which parts of the UI need redrawing
+///
+/// Used for partial redraw optimization to avoid full-frame rendering
+/// on every update. When in doubt, use `Damage::Full` for correctness.
+#[derive(Debug, Clone, Default)]
+pub enum Damage {
+    /// No redraw needed (default state for accumulation)
+    #[default]
+    None,
+    /// Redraw everything (always safe fallback)
+    Full,
+    /// Redraw specific areas only
+    Areas(Vec<DamageArea>),
+}
+
+/// High-level UI regions that can be independently redrawn
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DamageArea {
+    /// All editor groups, tab bars, gutters, text areas, splitters
+    EditorArea,
+    /// Bottom status bar only
+    StatusBar,
+    /// Specific lines for cursor blink optimization (line numbers are document-relative)
+    /// This enables the most fine-grained optimization for cursor blink which happens
+    /// at 2Hz and would otherwise require full EditorArea redraws.
+    CursorLines(Vec<usize>),
+}
+
+impl Damage {
+    /// Create damage for specific areas
+    pub fn areas(areas: Vec<DamageArea>) -> Self {
+        if areas.is_empty() {
+            Damage::Full // Empty areas means nothing to redraw, but treat as full for safety
+        } else {
+            Damage::Areas(areas)
+        }
+    }
+
+    /// Create damage for just the editor area
+    pub fn editor_area() -> Self {
+        Damage::Areas(vec![DamageArea::EditorArea])
+    }
+
+    /// Create damage for just the status bar
+    pub fn status_bar() -> Self {
+        Damage::Areas(vec![DamageArea::StatusBar])
+    }
+
+    /// Create damage for specific cursor lines
+    pub fn cursor_lines(lines: Vec<usize>) -> Self {
+        if lines.is_empty() {
+            Damage::Areas(vec![]) // No lines to redraw
+        } else {
+            Damage::Areas(vec![DamageArea::CursorLines(lines)])
+        }
+    }
+
+    /// Merge another damage into this one
+    ///
+    /// If either damage is Full, the result is Full.
+    /// If either damage is None, the other takes precedence.
+    /// Otherwise, areas are combined with deduplication.
+    pub fn merge(&mut self, other: Damage) {
+        match (&mut *self, other) {
+            // None is identity for merge
+            (Damage::None, other) => *self = other,
+            (_, Damage::None) => {} // Nothing to merge
+            // Full absorbs everything
+            (Damage::Full, _) => {} // Already full, nothing to do
+            (this, Damage::Full) => *this = Damage::Full,
+            // Merge areas
+            (Damage::Areas(areas), Damage::Areas(other_areas)) => {
+                for area in other_areas {
+                    // Merge CursorLines specially (combine line lists)
+                    if let DamageArea::CursorLines(ref lines) = area {
+                        if let Some(existing) = areas.iter_mut().find_map(|a| {
+                            if let DamageArea::CursorLines(ref mut l) = a {
+                                Some(l)
+                            } else {
+                                Option::None
+                            }
+                        }) {
+                            // Merge line numbers, avoiding duplicates
+                            for &line in lines {
+                                if !existing.contains(&line) {
+                                    existing.push(line);
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                    // For EditorArea/StatusBar, just add if not present
+                    if !areas.contains(&area) {
+                        areas.push(area);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Check if this damage is a full redraw
+    pub fn is_full(&self) -> bool {
+        matches!(self, Damage::Full)
+    }
+
+    /// Check if this damage includes the editor area (or is full)
+    pub fn includes_editor(&self) -> bool {
+        match self {
+            Damage::None => false,
+            Damage::Full => true,
+            Damage::Areas(areas) => areas.iter().any(|a| matches!(a, DamageArea::EditorArea)),
+        }
+    }
+
+    /// Check if this damage includes the status bar (or is full)
+    pub fn includes_status_bar(&self) -> bool {
+        match self {
+            Damage::None => false,
+            Damage::Full => true,
+            Damage::Areas(areas) => areas.iter().any(|a| matches!(a, DamageArea::StatusBar)),
+        }
+    }
+
+    /// Get cursor lines if this is a cursor-lines-only damage
+    pub fn cursor_lines_only(&self) -> Option<&[usize]> {
+        match self {
+            Damage::Areas(areas) if areas.len() == 1 => {
+                if let Some(DamageArea::CursorLines(lines)) = areas.first() {
+                    Some(lines)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Check if any redraw is needed
+    pub fn needs_redraw(&self) -> bool {
+        match self {
+            Damage::None => false,
+            Damage::Full => true,
+            Damage::Areas(areas) => !areas.is_empty(),
+        }
+    }
+}
+
+// ============================================================================
 // Side-Effect Commands (returned from update)
 // ============================================================================
 
@@ -318,8 +478,10 @@ pub enum Cmd {
     /// No command - do nothing
     #[default]
     None,
-    /// Request a redraw of the UI
+    /// Request a full redraw of the UI (legacy, always safe)
     Redraw,
+    /// Request a partial redraw of specific areas (optimization)
+    RedrawAreas(Vec<DamageArea>),
     /// Save file asynchronously
     SaveFile { path: PathBuf, content: String },
     /// Load file asynchronously
@@ -383,6 +545,7 @@ impl Cmd {
         match self {
             Cmd::None => false,
             Cmd::Redraw => true,
+            Cmd::RedrawAreas(areas) => !areas.is_empty(),
             Cmd::SaveFile { .. } => true,
             Cmd::LoadFile { .. } => true,
             Cmd::OpenInExplorer { .. } => true,
@@ -397,6 +560,69 @@ impl Cmd {
             Cmd::RunSyntaxParse { .. } => false,
             // Reinitialize triggers a full redraw after renderer is recreated
             Cmd::ReinitializeRenderer => true,
+        }
+    }
+
+    /// Get the damage for this command
+    ///
+    /// Returns the combined damage from this command. For batch commands,
+    /// merges all sub-command damages.
+    pub fn damage(&self) -> Damage {
+        match self {
+            Cmd::None => Damage::Areas(vec![]), // No damage
+            Cmd::Redraw => Damage::Full,
+            Cmd::RedrawAreas(areas) => {
+                if areas.is_empty() {
+                    Damage::Areas(vec![])
+                } else {
+                    Damage::Areas(areas.clone())
+                }
+            }
+            // File operations may cause full redraw (file load changes content)
+            Cmd::SaveFile { .. } => Damage::Full,
+            Cmd::LoadFile { .. } => Damage::Full,
+            Cmd::OpenInExplorer { .. } => Damage::Full,
+            Cmd::OpenFileInEditor { .. } => Damage::Full,
+            // Batch: merge all damages
+            Cmd::Batch(cmds) => {
+                let mut damage = Damage::Areas(vec![]);
+                for cmd in cmds {
+                    damage.merge(cmd.damage());
+                    // Short-circuit if we hit Full
+                    if damage.is_full() {
+                        break;
+                    }
+                }
+                damage
+            }
+            // Dialogs don't need immediate redraw
+            Cmd::ShowOpenFileDialog { .. } => Damage::Areas(vec![]),
+            Cmd::ShowSaveFileDialog { .. } => Damage::Areas(vec![]),
+            Cmd::ShowOpenFolderDialog { .. } => Damage::Areas(vec![]),
+            // Syntax commands don't need immediate redraw
+            Cmd::DebouncedSyntaxParse { .. } => Damage::Areas(vec![]),
+            Cmd::RunSyntaxParse { .. } => Damage::Areas(vec![]),
+            // Reinitialize triggers full redraw
+            Cmd::ReinitializeRenderer => Damage::Full,
+        }
+    }
+
+    /// Create a command to redraw just the editor area
+    pub fn redraw_editor() -> Self {
+        Cmd::RedrawAreas(vec![DamageArea::EditorArea])
+    }
+
+    /// Create a command to redraw just the status bar
+    pub fn redraw_status_bar() -> Self {
+        Cmd::RedrawAreas(vec![DamageArea::StatusBar])
+    }
+
+    /// Create a command to redraw specific cursor lines
+    pub fn redraw_cursor_lines(lines: Vec<usize>) -> Self {
+        if lines.is_empty() {
+            Cmd::None
+        } else {
+            Cmd::RedrawAreas(vec![DamageArea::CursorLines(lines)])
         }
     }
 
