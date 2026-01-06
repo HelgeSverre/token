@@ -18,7 +18,7 @@ pub enum CommandId {
     // File operations
     NewFile,
     OpenFile,
-    OpenFolder,
+    FuzzyFileFinder,
     SaveFile,
     SaveFileAs,
 
@@ -82,8 +82,8 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: Some("⌘O"),
     },
     CommandDef {
-        id: CommandId::OpenFolder,
-        label: "Open Folder...",
+        id: CommandId::FuzzyFileFinder,
+        label: "Go to File...",
         keybinding: Some("⇧⌘O"),
     },
     CommandDef {
@@ -276,7 +276,7 @@ impl CommandId {
         match self {
             CommandId::NewFile => Some(KeymapCommand::NewTab), // NewFile maps to NewTab
             CommandId::OpenFile => Some(KeymapCommand::OpenFile),
-            CommandId::OpenFolder => Some(KeymapCommand::OpenFolder),
+            CommandId::FuzzyFileFinder => Some(KeymapCommand::FuzzyFileFinder),
             CommandId::SaveFile => Some(KeymapCommand::SaveFile),
             CommandId::SaveFileAs => Some(KeymapCommand::SaveFileAs),
             CommandId::Undo => Some(KeymapCommand::Undo),

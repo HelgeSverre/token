@@ -152,8 +152,8 @@ pub enum Command {
     SaveFileAs,
     /// Open file dialog
     OpenFile,
-    /// Open folder dialog
-    OpenFolder,
+    /// Fuzzy file finder - search workspace files (Cmd+Shift+O)
+    FuzzyFileFinder,
     /// Create new file
     NewFile,
     /// Quit application
@@ -350,7 +350,7 @@ impl Command {
             SaveFile => vec![Msg::App(AppMsg::SaveFile)],
             SaveFileAs => vec![Msg::App(AppMsg::SaveFileAs)],
             OpenFile => vec![Msg::App(AppMsg::OpenFileDialog)],
-            OpenFolder => vec![Msg::App(AppMsg::OpenFolderDialog)],
+            FuzzyFileFinder => vec![Msg::Ui(UiMsg::OpenFuzzyFileFinder)],
             NewFile => vec![Msg::App(AppMsg::NewFile)],
             Quit => vec![Msg::App(AppMsg::Quit)],
 
@@ -442,6 +442,7 @@ impl Command {
             Command::ToggleCommandPalette
                 | Command::ToggleGotoLine
                 | Command::ToggleFindReplace
+                | Command::FuzzyFileFinder
                 | Command::ToggleSidebar
                 | Command::Quit
                 | Command::SaveFile
@@ -515,7 +516,7 @@ impl Command {
             SaveFile => "Save File",
             SaveFileAs => "Save File As",
             OpenFile => "Open File",
-            OpenFolder => "Open Folder",
+            FuzzyFileFinder => "Go to File",
             NewFile => "New File",
             Quit => "Quit",
 
