@@ -53,12 +53,25 @@ pub enum CommandId {
     // Settings
     OpenConfigDirectory,
     OpenKeybindings,
+    ReloadConfiguration,
 
     // CSV
     ToggleCsvView,
 
     // Debug/Troubleshooting
     OpenLogFile,
+
+    // Workspace
+    OpenFolder,
+
+    // Application
+    Quit,
+
+    // Debug overlays (only available in debug builds)
+    #[cfg(debug_assertions)]
+    TogglePerfOverlay,
+    #[cfg(debug_assertions)]
+    ToggleDebugOverlay,
 }
 
 /// A command definition for the command palette
@@ -187,6 +200,11 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: None,
     },
     CommandDef {
+        id: CommandId::ReloadConfiguration,
+        label: "Reload Configuration",
+        keybinding: None,
+    },
+    CommandDef {
         id: CommandId::ToggleCsvView,
         label: "Toggle CSV View",
         keybinding: None,
@@ -195,6 +213,31 @@ pub static COMMANDS: &[CommandDef] = &[
         id: CommandId::OpenLogFile,
         label: "Open Log File",
         keybinding: None,
+    },
+    CommandDef {
+        id: CommandId::OpenFolder,
+        label: "Open Folder...",
+        keybinding: None,
+    },
+    CommandDef {
+        id: CommandId::Quit,
+        label: "Quit",
+        keybinding: Some("⌘Q"),
+    },
+];
+
+/// Debug-only commands (only available in debug builds)
+#[cfg(debug_assertions)]
+pub static DEBUG_COMMANDS: &[CommandDef] = &[
+    CommandDef {
+        id: CommandId::TogglePerfOverlay,
+        label: "Toggle Performance Overlay",
+        keybinding: Some("F2"),
+    },
+    CommandDef {
+        id: CommandId::ToggleDebugOverlay,
+        label: "Toggle Debug Overlay",
+        keybinding: Some("F8"),
     },
 ];
 
@@ -253,14 +296,25 @@ fn fuzzy_match_score(query: &str, target: &str) -> Option<i32> {
     }
 }
 
+/// Get all available commands (including debug commands in debug builds)
+fn all_commands() -> Vec<&'static CommandDef> {
+    #[allow(unused_mut)]
+    let mut cmds: Vec<&'static CommandDef> = COMMANDS.iter().collect();
+    #[cfg(debug_assertions)]
+    cmds.extend(DEBUG_COMMANDS.iter());
+    cmds
+}
+
 /// Filter commands by a search query (fuzzy match on label)
 pub fn filter_commands(query: &str) -> Vec<&'static CommandDef> {
+    let all = all_commands();
+
     if query.is_empty() {
-        return COMMANDS.iter().collect();
+        return all;
     }
 
-    let mut matches: Vec<(&'static CommandDef, i32)> = COMMANDS
-        .iter()
+    let mut matches: Vec<(&'static CommandDef, i32)> = all
+        .into_iter()
         .filter_map(|cmd| fuzzy_match_score(query, cmd.label).map(|score| (cmd, score)))
         .collect();
 
@@ -297,8 +351,15 @@ impl CommandId {
             CommandId::SwitchTheme => None,
             CommandId::OpenConfigDirectory => None,
             CommandId::OpenKeybindings => None,
+            CommandId::ReloadConfiguration => None,
             CommandId::ToggleCsvView => Some(KeymapCommand::CsvToggle),
             CommandId::OpenLogFile => Some(KeymapCommand::OpenLogFile),
+            CommandId::OpenFolder => None,
+            CommandId::Quit => Some(KeymapCommand::Quit),
+            #[cfg(debug_assertions)]
+            CommandId::TogglePerfOverlay => None,
+            #[cfg(debug_assertions)]
+            CommandId::ToggleDebugOverlay => None,
         }
     }
 }
@@ -532,6 +593,11 @@ pub enum Cmd {
     // === Display Commands ===
     /// Reinitialize the renderer (e.g., after scale factor change)
     ReinitializeRenderer,
+
+    // === Debug Commands ===
+    /// Toggle performance overlay (debug builds only)
+    #[cfg(debug_assertions)]
+    TogglePerfOverlay,
 }
 
 impl Cmd {
@@ -560,6 +626,9 @@ impl Cmd {
             Cmd::RunSyntaxParse { .. } => false,
             // Reinitialize triggers a full redraw after renderer is recreated
             Cmd::ReinitializeRenderer => true,
+            // Debug overlay toggle triggers redraw
+            #[cfg(debug_assertions)]
+            Cmd::TogglePerfOverlay => true,
         }
     }
 
@@ -604,6 +673,9 @@ impl Cmd {
             Cmd::RunSyntaxParse { .. } => Damage::Areas(vec![]),
             // Reinitialize triggers full redraw
             Cmd::ReinitializeRenderer => Damage::Full,
+            // Debug overlay toggle triggers full redraw
+            #[cfg(debug_assertions)]
+            Cmd::TogglePerfOverlay => Damage::Full,
         }
     }
 
