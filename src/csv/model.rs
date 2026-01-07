@@ -64,11 +64,13 @@ pub struct CellEditState {
     pub original: String,
     /// Horizontal scroll offset for wide content
     pub scroll_x: usize,
+    /// Original column width before editing (for cancel/restore)
+    pub original_column_width: usize,
 }
 
 impl CellEditState {
     /// Create new edit state for a cell
-    pub fn new(position: CellPosition, value: String) -> Self {
+    pub fn new(position: CellPosition, value: String, column_width: usize) -> Self {
         let mut editable =
             EditableState::new(StringBuffer::from_text(&value), EditConstraints::csv_cell());
         // Move cursor to end
@@ -78,11 +80,12 @@ impl CellEditState {
             editable,
             original: value,
             scroll_x: 0,
+            original_column_width: column_width,
         }
     }
 
     /// Create new edit state starting with a character (replaces content)
-    pub fn with_char(position: CellPosition, original: String, ch: char) -> Self {
+    pub fn with_char(position: CellPosition, original: String, ch: char, column_width: usize) -> Self {
         let mut editable = EditableState::new(
             StringBuffer::from_text(&ch.to_string()),
             EditConstraints::csv_cell(),
@@ -94,6 +97,7 @@ impl CellEditState {
             editable,
             original,
             scroll_x: 0,
+            original_column_width: column_width,
         }
     }
 
@@ -429,7 +433,16 @@ impl CsvState {
         let value = self
             .data
             .get(self.selected_cell.row, self.selected_cell.col);
-        self.editing = Some(CellEditState::new(self.selected_cell, value.to_string()));
+        let col_width = self
+            .column_widths
+            .get(self.selected_cell.col)
+            .copied()
+            .unwrap_or(4);
+        self.editing = Some(CellEditState::new(
+            self.selected_cell,
+            value.to_string(),
+            col_width,
+        ));
     }
 
     /// Start editing with initial character (replaces cell content)
@@ -438,7 +451,17 @@ impl CsvState {
             .data
             .get(self.selected_cell.row, self.selected_cell.col)
             .to_string();
-        self.editing = Some(CellEditState::with_char(self.selected_cell, original, ch));
+        let col_width = self
+            .column_widths
+            .get(self.selected_cell.col)
+            .copied()
+            .unwrap_or(4);
+        self.editing = Some(CellEditState::with_char(
+            self.selected_cell,
+            original,
+            ch,
+            col_width,
+        ));
     }
 
     /// Confirm edit and update data, returning the edit operation if changed
@@ -581,30 +604,32 @@ mod tests {
     #[test]
     fn test_cell_edit_state_new() {
         let pos = CellPosition::new(1, 2);
-        let edit = CellEditState::new(pos, "hello".to_string());
+        let edit = CellEditState::new(pos, "hello".to_string(), 10);
 
         assert_eq!(edit.position, pos);
         assert_eq!(edit.buffer(), "hello");
         assert_eq!(edit.cursor_char_position(), 5); // cursor at end
         assert_eq!(edit.original, "hello");
+        assert_eq!(edit.original_column_width, 10);
         assert!(!edit.is_modified());
     }
 
     #[test]
     fn test_cell_edit_state_with_char() {
         let pos = CellPosition::new(0, 0);
-        let edit = CellEditState::with_char(pos, "old".to_string(), 'x');
+        let edit = CellEditState::with_char(pos, "old".to_string(), 'x', 10);
 
         assert_eq!(edit.buffer(), "x");
         assert_eq!(edit.cursor_char_position(), 1); // cursor after 'x'
         assert_eq!(edit.original, "old");
+        assert_eq!(edit.original_column_width, 10);
         assert!(edit.is_modified());
     }
 
     #[test]
     fn test_cell_edit_state_insert_char() {
         let pos = CellPosition::new(0, 0);
-        let mut edit = CellEditState::new(pos, "ab".to_string());
+        let mut edit = CellEditState::new(pos, "ab".to_string(), 10);
         // Cursor starts at end (2), move to position 1
         edit.cursor_home();
         edit.cursor_right();
@@ -617,7 +642,7 @@ mod tests {
     #[test]
     fn test_cell_edit_state_delete_backward() {
         let pos = CellPosition::new(0, 0);
-        let mut edit = CellEditState::new(pos, "abc".to_string());
+        let mut edit = CellEditState::new(pos, "abc".to_string(), 10);
         // Cursor at end (3), move to position 2
         edit.cursor_left();
         edit.delete_backward();
@@ -629,7 +654,7 @@ mod tests {
     #[test]
     fn test_cell_edit_state_cursor_movement() {
         let pos = CellPosition::new(0, 0);
-        let mut edit = CellEditState::new(pos, "hello".to_string());
+        let mut edit = CellEditState::new(pos, "hello".to_string(), 10);
 
         // Cursor starts at end (5)
         edit.cursor_home();
@@ -687,7 +712,7 @@ mod tests {
     #[test]
     fn test_cell_edit_state_word_movement() {
         let pos = CellPosition::new(0, 0);
-        let mut edit = CellEditState::new(pos, "hello world".to_string());
+        let mut edit = CellEditState::new(pos, "hello world".to_string(), 12);
 
         edit.cursor_home();
         assert_eq!(edit.cursor_char_position(), 0);
@@ -703,7 +728,7 @@ mod tests {
     #[test]
     fn test_cell_edit_state_selection() {
         let pos = CellPosition::new(0, 0);
-        let mut edit = CellEditState::new(pos, "hello".to_string());
+        let mut edit = CellEditState::new(pos, "hello".to_string(), 10);
 
         assert!(!edit.has_selection());
 

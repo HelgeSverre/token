@@ -305,16 +305,12 @@ fn start_editing_with_char(model: &mut AppModel, ch: char) -> Option<Cmd> {
 
 /// Confirm edit and sync to document, then move in specified direction
 fn confirm_edit(model: &mut AppModel, row_delta: i32) -> Option<Cmd> {
-    const MIN_WIDTH: usize = 4;
-    const EDIT_MAX_WIDTH: usize = 60;
-
     let editor_id = model.editor_area.focused_group()?.active_editor_id()?;
     let editor = model.editor_area.editors.get_mut(&editor_id)?;
 
-    let (edit, delimiter, col_idx) = if let Some(csv) = editor.view_mode.as_csv_mut() {
+    let (edit, delimiter) = if let Some(csv) = editor.view_mode.as_csv_mut() {
         let delimiter = csv.delimiter;
-        let col_idx = csv.editing.as_ref().map(|e| e.position.col);
-        (csv.confirm_edit(), delimiter, col_idx)
+        (csv.confirm_edit(), delimiter)
     } else {
         return None;
     };
@@ -325,17 +321,7 @@ fn confirm_edit(model: &mut AppModel, row_delta: i32) -> Option<Cmd> {
             sync_cell_edit_to_document(doc, &cell_edit, delimiter);
         }
 
-        // Recalculate column width to fit final content
-        if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
-            if let Some(csv) = editor.view_mode.as_csv_mut() {
-                if let Some(col) = col_idx {
-                    let final_len = cell_edit.new_value.chars().count();
-                    if let Some(width) = csv.column_widths.get_mut(col) {
-                        *width = final_len.clamp(MIN_WIDTH, EDIT_MAX_WIDTH);
-                    }
-                }
-            }
-        }
+        // Keep current column width - already correctly sized from grow-only updates during editing
     }
 
     // Move in specified direction after confirming edit
@@ -350,23 +336,20 @@ fn confirm_edit(model: &mut AppModel, row_delta: i32) -> Option<Cmd> {
 
 /// Cancel edit and discard changes
 fn cancel_edit(model: &mut AppModel) -> Option<Cmd> {
-    const MIN_WIDTH: usize = 4;
-    const EDIT_MAX_WIDTH: usize = 60;
-
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
-        // Get original content length before canceling
-        let (col, original_len) = if let Some(edit) = &csv.editing {
-            (edit.position.col, edit.original.chars().count())
+        // Get original column width before canceling
+        let (col, original_width) = if let Some(edit) = &csv.editing {
+            (edit.position.col, edit.original_column_width)
         } else {
             return None;
         };
 
         csv.cancel_edit();
 
-        // Reset width to original content size
+        // Restore original column width
         if let Some(width) = csv.column_widths.get_mut(col) {
-            *width = original_len.clamp(MIN_WIDTH, EDIT_MAX_WIDTH);
+            *width = original_width;
         }
 
         Some(Cmd::redraw_editor())
@@ -378,21 +361,24 @@ fn cancel_edit(model: &mut AppModel) -> Option<Cmd> {
 // ===== Cell Editing Helpers =====
 
 /// Update column width to fit current edit content (up to EDIT_MAX_WIDTH)
+/// Uses grow-only logic: column can grow but never shrinks below existing width
 fn update_column_width_for_edit(csv: &mut CsvState, content_len: usize) {
     const MIN_WIDTH: usize = 4;
-    const EDIT_MAX_WIDTH: usize = 60;
+    const EDIT_MAX_WIDTH: usize = 32;
 
     if let Some(edit) = &csv.editing {
         let col = edit.position.col;
         if let Some(width) = csv.column_widths.get_mut(col) {
-            *width = content_len.clamp(MIN_WIDTH, EDIT_MAX_WIDTH);
+            // Grow-only: max(new_content, current_width)
+            let new_width = content_len.clamp(MIN_WIDTH, EDIT_MAX_WIDTH);
+            *width = (*width).max(new_width);
         }
     }
 }
 
 /// Update horizontal scroll to keep cursor visible in cell editor
 fn update_edit_scroll(char_width: f32, csv: &mut CsvState) {
-    const EDIT_MAX_WIDTH: usize = 60;
+    const EDIT_MAX_WIDTH: usize = 32;
 
     if let Some(edit) = &mut csv.editing {
         let cursor_col = edit.cursor_char_position();
