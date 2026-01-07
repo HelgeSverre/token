@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Token</title>
+    <meta name="description" content="A fast, minimal text editor built in Rust.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="../icon.png" type="image/png">
+</head>
+<body>
+    <div class="grain"></div>
+    
+    <header class="header">
+        <a href="#" class="logo">Token<span class="logo-cursor"></span></a>
+        <nav class="nav">
+            <a href="keys.html">Keys</a>
+            <a href="themes.html">Themes</a>
+            <a href="https://github.com/HelgeSverre/token" target="_blank">Source</a>
+        </nav>
+    </header>
+
+    <main>
+        <!-- Hero -->
+        <section class="hero">
+            <div class="hero-left">
+                <p class="hero-tag">Text editor / Rust / MIT</p>
+                <h1>
+                    <span class="hero-line">Multi-cursor.</span>
+                    <span class="hero-line">Syntax aware.</span>
+                    <span class="hero-line accent">Absurdly fast.</span>
+                </h1>
+                <p class="hero-desc">
+                    Token is a minimal code editor with multi-cursor editing, 
+                    split views, and Tree-sitter syntax highlighting. 
+                    No Electron. No bloat. Just code.
+                </p>
+                <div class="hero-actions">
+                    <a href="#download" class="btn-primary">
+                        Download
+                        <span class="btn-arrow">↓</span>
+                    </a>
+                    <a href="https://github.com/HelgeSverre/token" class="btn-ghost" target="_blank">
+                        View source →
+                    </a>
+                </div>
+            </div>
+            <div class="hero-right">
+                <div class="terminal">
+                    <div class="terminal-bar">
+                        <span class="terminal-dot"></span>
+                        <span class="terminal-dot"></span>
+                        <span class="terminal-dot"></span>
+                        <span class="terminal-title">~/code</span>
+                    </div>
+                    <div class="terminal-body">
+                        <code>
+<span class="prompt">$</span> token main.rs
+<span class="output">
+<span class="dim">  1</span> <span class="kw">fn</span> <span class="fn">main</span>() {
+<span class="dim">  2</span>     <span class="kw">let</span> editors = <span class="macro">vec!</span>[
+<span class="dim">  3</span>         <span class="str">"vscode"</span>,
+<span class="dim">  4</span>         <span class="str">"sublime"</span>,  
+<span class="dim">  5</span>         <span class="str">"atom"</span>,<span class="cursor-block">█</span>
+<span class="dim">  6</span>         <span class="str">"token"</span>,<span class="cursor-block">█</span>
+<span class="dim">  7</span>     ];
+<span class="dim">  8</span>     
+<span class="dim">  9</span>     <span class="cmt">// guess which one is fastest</span>
+<span class="dim"> 10</span> }
+</span>
+                        </code>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Stats Bar -->
+        <section class="stats">
+            <div class="stat">
+                <span class="stat-value">20+</span>
+                <span class="stat-label">Languages</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat">
+                <span class="stat-value">&lt;50ms</span>
+                <span class="stat-label">Startup</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat">
+                <span class="stat-value">∞</span>
+                <span class="stat-label">Cursors</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat">
+                <span class="stat-value">0</span>
+                <span class="stat-label">Electron</span>
+            </div>
+        </section>
+
+        <!-- Features -->
+        <section class="features">
+            <div class="feature-row">
+                <div class="feature-block feature-main">
+                    <span class="feature-num">01</span>
+                    <h2>Multi-cursor editing</h2>
+                    <p>
+                        Add cursors anywhere with Option+Click. Add cursors above/below with 
+                        Option+Option+Arrow. All cursors move and edit simultaneously. 
+                        Overlapping cursors merge automatically.
+                    </p>
+                    <div class="feature-keys">
+                        <kbd>⌥</kbd>+<kbd>Click</kbd> add cursor
+                        <kbd>⌘</kbd>+<kbd>J</kbd> select next match
+                    </div>
+                </div>
+                <div class="feature-block">
+                    <span class="feature-num">02</span>
+                    <h2>Split views</h2>
+                    <p>
+                        Horizontal and vertical splits with independent viewports. 
+                        Same file, different positions. Different files, same window.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="feature-row">
+                <div class="feature-block">
+                    <span class="feature-num">03</span>
+                    <h2>Tree-sitter syntax</h2>
+                    <p>
+                        Incremental parsing with real AST understanding. 
+                        Not regex. Accurate highlighting that actually works.
+                    </p>
+                </div>
+                <div class="feature-block">
+                    <span class="feature-num">04</span>
+                    <h2>CSV spreadsheet</h2>
+                    <p>
+                        View CSV, TSV, PSV as a proper table. Navigate with arrow keys. 
+                        Edit cells in place. Auto-sizing columns.
+                    </p>
+                </div>
+                <div class="feature-block">
+                    <span class="feature-num">05</span>
+                    <h2>YAML config</h2>
+                    <p>
+                        Keymaps and themes in plain YAML. No JSON schema hunting. 
+                        No settings UI maze. Just text.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Languages -->
+        <section class="languages">
+            <h3>Languages</h3>
+            <div class="lang-marquee">
+                <div class="lang-track">
+                    <span>Rust</span><span>TypeScript</span><span>JavaScript</span><span>Python</span>
+                    <span>Go</span><span>Java</span><span>C</span><span>C++</span><span>PHP</span>
+                    <span>HTML</span><span>CSS</span><span>JSON</span><span>YAML</span><span>TOML</span>
+                    <span>Markdown</span><span>Bash</span><span>Scheme</span><span>XML</span>
+                    <span>Rust</span><span>TypeScript</span><span>JavaScript</span><span>Python</span>
+                    <span>Go</span><span>Java</span><span>C</span><span>C++</span><span>PHP</span>
+                    <span>HTML</span><span>CSS</span><span>JSON</span><span>YAML</span><span>TOML</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Screenshot -->
+        <section class="showcase">
+            <img src="../screenshot-v2.png" alt="Token editor interface">
+        </section>
+
+        <!-- Download -->
+        <section id="download" class="download">
+            <div class="download-header">
+                <h2>Get Token</h2>
+                <p>Pick your platform. Extract. Run. That's it.</p>
+            </div>
+            
+            <div class="download-grid">
+                <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-macos-aarch64.tar.gz" class="download-card">
+                    <span class="download-platform">macOS</span>
+                    <span class="download-arch">Apple Silicon</span>
+                    <span class="download-ext">.tar.gz</span>
+                </a>
+                <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-macos-x86_64.tar.gz" class="download-card">
+                    <span class="download-platform">macOS</span>
+                    <span class="download-arch">Intel</span>
+                    <span class="download-ext">.tar.gz</span>
+                </a>
+                <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-linux-x86_64.tar.gz" class="download-card">
+                    <span class="download-platform">Linux</span>
+                    <span class="download-arch">x86_64</span>
+                    <span class="download-ext">.tar.gz</span>
+                </a>
+                <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-windows-x86_64.zip" class="download-card">
+                    <span class="download-platform">Windows</span>
+                    <span class="download-arch">x86_64</span>
+                    <span class="download-ext">.zip</span>
+                </a>
+            </div>
+
+            <div class="install-block">
+                <h3>Or install with one command</h3>
+                <div class="install-tabs">
+                    <button class="install-tab active" data-target="install-mac">macOS (ARM)</button>
+                    <button class="install-tab" data-target="install-linux">Linux</button>
+                    <button class="install-tab" data-target="install-source">Source</button>
+                </div>
+                <div class="install-code" id="install-mac">
+                    <pre>curl -L https://github.com/HelgeSverre/token/releases/latest/download/token-macos-aarch64.tar.gz | tar xz && sudo mv token /usr/local/bin/</pre>
+                    <button class="copy-btn" aria-label="Copy">⎘</button>
+                </div>
+                <div class="install-code hidden" id="install-linux">
+                    <pre>curl -L https://github.com/HelgeSverre/token/releases/latest/download/token-linux-x86_64.tar.gz | tar xz && sudo mv token /usr/local/bin/</pre>
+                    <button class="copy-btn" aria-label="Copy">⎘</button>
+                </div>
+                <div class="install-code hidden" id="install-source">
+                    <pre>git clone https://github.com/HelgeSverre/token && cd token && make release && sudo mv target/release/token /usr/local/bin/</pre>
+                    <button class="copy-btn" aria-label="Copy">⎘</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Keys -->
+        <section class="keys">
+            <div class="keys-header">
+                <h2>Keyboard-first editing</h2>
+                <p>Token is designed to keep your hands on the keyboard. Master these and you'll fly.</p>
+            </div>
+            
+            <div class="keys-columns">
+                <div class="keys-group">
+                    <h4>Files</h4>
+                    <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>S</kbd></span><span class="key-action">Save</span></div>
+                    <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>O</kbd></span><span class="key-action">Open file</span></div>
+                    <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>O</kbd></span><span class="key-action">Open folder</span></div>
+                    <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>W</kbd></span><span class="key-action">Close tab</span></div>
+                </div>
+                
+                <div class="keys-group">
+                    <h4>Navigation</h4>
+                    <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>A</kbd></span><span class="key-action">Command palette</span></div>
+                    <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>L</kbd></span><span class="key-action">Go to line</span></div>
+                    <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>F</kbd></span><span class="key-action">Find & replace</span></div>
+                    <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>1</kbd></span><span class="key-action">Toggle sidebar</span></div>
+                </div>
+                
+                <div class="keys-group">
+                    <h4>Multi-cursor</h4>
+                    <div class="key-row"><span class="key-combo"><kbd>⌥</kbd><span class="key-plus">+</span><kbd>Click</kbd></span><span class="key-action">Add cursor</span></div>
+                    <div class="key-row"><span class="key-combo"><kbd>⌥</kbd><kbd>⌥</kbd><kbd>↓</kbd></span><span class="key-action">Cursor below</span></div>
+                    <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>J</kbd></span><span class="key-action">Select next match</span></div>
+                    <div class="key-row"><span class="key-combo"><kbd>Esc</kbd></span><span class="key-action">Single cursor</span></div>
+                </div>
+                
+                <div class="keys-group">
+                    <h4>Editing</h4>
+                    <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>D</kbd></span><span class="key-action">Duplicate line</span></div>
+                    <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>⌫</kbd></span><span class="key-action">Delete line</span></div>
+                    <div class="key-row"><span class="key-combo"><kbd>⌥</kbd><kbd>↑</kbd></span><span class="key-action">Expand selection</span></div>
+                    <div class="key-row"><span class="key-combo"><kbd>⇧</kbd><kbd>Tab</kbd></span><span class="key-action">Unindent</span></div>
+                </div>
+            </div>
+            
+            <div class="keys-cta">
+                <a href="keys.html" class="btn-outline">View all keybindings →</a>
+            </div>
+        </section>
+
+        <!-- AI Section -->
+        <section class="ai-section">
+            <div class="ai-content">
+                <span class="ai-badge">100+ conversations</span>
+                <h2>Built with AI</h2>
+                <p>
+                    Token was built through conversations with AI coding assistants. 
+                    The entire development process—architecture, debugging, features—is 
+                    documented publicly on Amp Code.
+                </p>
+                <a href="https://ampcode.com/@helgesverre" class="btn-outline" target="_blank">
+                    View the threads →
+                </a>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-left">
+            <span class="footer-logo">Token</span>
+            <span class="footer-copy">MIT License</span>
+        </div>
+        <div class="footer-right">
+            <a href="https://github.com/HelgeSverre/token">GitHub</a>
+            <a href="https://github.com/HelgeSverre/token/blob/main/docs/KEYBINDINGS.md">Keys</a>
+            <a href="https://github.com/HelgeSverre/token/blob/main/docs/THEMES.md">Themes</a>
+            <a href="https://github.com/HelgeSverre">@HelgeSverre</a>
+        </div>
+    </footer>
+
+    <script>
+        // Tab switching
+        document.querySelectorAll('.install-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.install-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.install-code').forEach(c => c.classList.add('hidden'));
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.target).classList.remove('hidden');
+            });
+        });
+
+        // Copy
+        document.querySelectorAll('.copy-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const code = btn.parentElement.querySelector('pre').textContent;
+                await navigator.clipboard.writeText(code);
+                btn.textContent = '✓';
+                setTimeout(() => btn.textContent = '⎘', 1500);
+            });
+        });
+    </script>
+</body>
+</html>

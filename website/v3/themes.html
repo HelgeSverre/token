@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Themes — Token</title>
+    <meta name="description" content="Color themes for Token editor. Dark and light themes with full customization.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="../icon.png" type="image/png">
+</head>
+<body>
+    <div class="grain"></div>
+    
+    <header class="header">
+        <a href="index.html" class="logo">Token<span class="logo-cursor"></span></a>
+        <nav class="nav">
+            <a href="keys.html">Keys</a>
+            <a href="themes.html" class="active">Themes</a>
+            <a href="https://github.com/HelgeSverre/token" target="_blank">Source</a>
+        </nav>
+    </header>
+
+    <main class="docs-page">
+        <div class="docs-hero">
+            <h1>Themes</h1>
+            <p>Token supports fully customizable color themes via YAML. Ship with four built-in themes, or create your own.</p>
+        </div>
+
+        <!-- Built-in Themes -->
+        <section class="themes-showcase">
+            <h2>Built-in themes</h2>
+            
+            <div class="theme-grid">
+                <div class="theme-card">
+                    <div class="theme-preview" style="--bg: #1E1E1E; --fg: #D4D4D4; --kw: #C586C0; --fn: #DCDCAA; --str: #CE9178; --cmt: #6A9955; --cursor: #FCE146;">
+                        <div class="theme-preview-code">
+                            <span class="line"><span class="ln">1</span><span class="kw">fn</span> <span class="fn">main</span>() {</span>
+                            <span class="line"><span class="ln">2</span>    <span class="kw">let</span> msg = <span class="str">"Hello"</span>;</span>
+                            <span class="line hl"><span class="ln">3</span>    println!(<span class="str">"{}"</span>, msg);<span class="cur"></span></span>
+                            <span class="line"><span class="ln">4</span>    <span class="cmt">// Token editor</span></span>
+                            <span class="line"><span class="ln">5</span>}</span>
+                        </div>
+                    </div>
+                    <div class="theme-info">
+                        <h3>Default Dark</h3>
+                        <p>VS Code-inspired dark theme</p>
+                        <code>dark.yaml</code>
+                    </div>
+                </div>
+
+                <div class="theme-card">
+                    <div class="theme-preview" style="--bg: #0D1117; --fg: #C9D1D9; --kw: #FF7B72; --fn: #D2A8FF; --str: #A5D6FF; --cmt: #8B949E; --cursor: #58A6FF;">
+                        <div class="theme-preview-code">
+                            <span class="line"><span class="ln">1</span><span class="kw">fn</span> <span class="fn">main</span>() {</span>
+                            <span class="line"><span class="ln">2</span>    <span class="kw">let</span> msg = <span class="str">"Hello"</span>;</span>
+                            <span class="line hl"><span class="ln">3</span>    println!(<span class="str">"{}"</span>, msg);<span class="cur"></span></span>
+                            <span class="line"><span class="ln">4</span>    <span class="cmt">// Token editor</span></span>
+                            <span class="line"><span class="ln">5</span>}</span>
+                        </div>
+                    </div>
+                    <div class="theme-info">
+                        <h3>GitHub Dark</h3>
+                        <p>GitHub's dark theme</p>
+                        <code>github-dark.yaml</code>
+                    </div>
+                </div>
+
+                <div class="theme-card">
+                    <div class="theme-preview" style="--bg: #181818; --fg: #C8C8C8; --kw: #CC7C8A; --fn: #7EB8DA; --str: #A8CC7C; --cmt: #7A7A7A; --cursor: #FFFFFF;">
+                        <div class="theme-preview-code">
+                            <span class="line"><span class="ln">1</span><span class="kw">fn</span> <span class="fn">main</span>() {</span>
+                            <span class="line"><span class="ln">2</span>    <span class="kw">let</span> msg = <span class="str">"Hello"</span>;</span>
+                            <span class="line hl"><span class="ln">3</span>    println!(<span class="str">"{}"</span>, msg);<span class="cur"></span></span>
+                            <span class="line"><span class="ln">4</span>    <span class="cmt">// Token editor</span></span>
+                            <span class="line"><span class="ln">5</span>}</span>
+                        </div>
+                    </div>
+                    <div class="theme-info">
+                        <h3>Fleet Dark</h3>
+                        <p>JetBrains Fleet-inspired</p>
+                        <code>fleet-dark.yaml</code>
+                    </div>
+                </div>
+
+                <div class="theme-card">
+                    <div class="theme-preview light" style="--bg: #FFFFFF; --fg: #24292F; --kw: #CF222E; --fn: #8250DF; --str: #0A3069; --cmt: #6E7781; --cursor: #1F2328;">
+                        <div class="theme-preview-code">
+                            <span class="line"><span class="ln">1</span><span class="kw">fn</span> <span class="fn">main</span>() {</span>
+                            <span class="line"><span class="ln">2</span>    <span class="kw">let</span> msg = <span class="str">"Hello"</span>;</span>
+                            <span class="line hl"><span class="ln">3</span>    println!(<span class="str">"{}"</span>, msg);<span class="cur"></span></span>
+                            <span class="line"><span class="ln">4</span>    <span class="cmt">// Token editor</span></span>
+                            <span class="line"><span class="ln">5</span>}</span>
+                        </div>
+                    </div>
+                    <div class="theme-info">
+                        <h3>GitHub Light</h3>
+                        <p>GitHub's light theme</p>
+                        <code>github-light.yaml</code>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Switching Themes -->
+        <section class="docs-section">
+            <h2>Switching themes</h2>
+            <p>Use the Command Palette to switch themes:</p>
+            <div class="steps">
+                <div class="step">
+                    <span class="step-num">1</span>
+                    <span>Open Command Palette with <kbd>⌘</kbd><kbd>⇧</kbd><kbd>A</kbd></span>
+                </div>
+                <div class="step">
+                    <span class="step-num">2</span>
+                    <span>Type "Switch Theme"</span>
+                </div>
+                <div class="step">
+                    <span class="step-num">3</span>
+                    <span>Select your theme</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Creating Custom Themes -->
+        <section class="docs-section">
+            <h2>Creating custom themes</h2>
+            <p>Themes are YAML files with a structured format. Create yours in the themes directory:</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span>~/.config/token-editor/themes/my-theme.yaml</span>
+                </div>
+                <pre><code>version: 1
+name: "My Theme"
+author: "Your Name"
+description: "My custom Token theme"
+
+ui:
+  editor:
+    background: "#282C34"
+    foreground: "#ABB2BF"
+    current_line_background: "#2C313A"
+    cursor_color: "#528BFF"
+    selection_background: "#3E4451"
+    secondary_cursor_color: "#528BFF80"
+
+  gutter:
+    background: "#282C34"
+    foreground: "#4B5263"
+    foreground_active: "#ABB2BF"
+    border_color: "#3E4451"
+
+  status_bar:
+    background: "#21252B"
+    foreground: "#9DA5B4"
+
+  syntax:
+    keyword: "#C678DD"
+    function: "#61AFEF"
+    string: "#98C379"
+    number: "#D19A66"
+    comment: "#5C6370"
+    type: "#E5C07B"
+    variable: "#E06C75"
+    operator: "#56B6C2"</code></pre>
+            </div>
+        </section>
+
+        <!-- Color Reference -->
+        <section class="docs-section">
+            <h2>Color reference</h2>
+            <p>All available theme properties organized by section.</p>
+
+            <div class="ref-section">
+                <h3><span class="ref-tag">ui.editor</span> Main editor area</h3>
+                <div class="ref-table">
+                    <div class="ref-row">
+                        <code>background</code>
+                        <span>Editor background color</span>
+                    </div>
+                    <div class="ref-row">
+                        <code>foreground</code>
+                        <span>Default text color</span>
+                    </div>
+                    <div class="ref-row">
+                        <code>current_line_background</code>
+                        <span>Background of the current line</span>
+                    </div>
+                    <div class="ref-row">
+                        <code>cursor_color</code>
+                        <span>Primary cursor color</span>
+                    </div>
+                    <div class="ref-row">
+                        <code>selection_background</code>
+                        <span>Selected text background</span>
+                    </div>
+                    <div class="ref-row">
+                        <code>secondary_cursor_color</code>
+                        <span>Multi-cursor secondary cursor</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ref-section">
+                <h3><span class="ref-tag">ui.gutter</span> Line numbers</h3>
+                <div class="ref-table">
+                    <div class="ref-row">
+                        <code>background</code>
+                        <span>Gutter background</span>
+                    </div>
+                    <div class="ref-row">
+                        <code>foreground</code>
+                        <span>Inactive line numbers</span>
+                    </div>
+                    <div class="ref-row">
+                        <code>foreground_active</code>
+                        <span>Current line number</span>
+                    </div>
+                    <div class="ref-row">
+                        <code>border_color</code>
+                        <span>Border between gutter and editor</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ref-section">
+                <h3><span class="ref-tag">ui.sidebar</span> File tree</h3>
+                <div class="ref-table">
+                    <div class="ref-row">
+                        <code>background</code>
+                        <span>Sidebar background</span>
+                    </div>
+                    <div class="ref-row">
+                        <code>foreground</code>
+                        <span>Default text color</span>
+                    </div>
+                    <div class="ref-row">
+                        <code>selection_background</code>
+                        <span>Selected item background</span>
+                    </div>
+                    <div class="ref-row">
+                        <code>hover_background</code>
+                        <span>Hovered item background</span>
+                    </div>
+                    <div class="ref-row">
+                        <code>folder_icon</code>
+                        <span>Folder icon color</span>
+                    </div>
+                    <div class="ref-row">
+                        <code>file_icon</code>
+                        <span>File icon color</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ref-section">
+                <h3><span class="ref-tag">ui.syntax</span> Syntax highlighting</h3>
+                <div class="ref-table syntax-ref">
+                    <div class="ref-row">
+                        <code>keyword</code>
+                        <span><em>if, else, fn, let</em></span>
+                    </div>
+                    <div class="ref-row">
+                        <code>function</code>
+                        <span><em>println, map, filter</em></span>
+                    </div>
+                    <div class="ref-row">
+                        <code>string</code>
+                        <span><em>"hello world"</em></span>
+                    </div>
+                    <div class="ref-row">
+                        <code>number</code>
+                        <span><em>42, 3.14, 0xFF</em></span>
+                    </div>
+                    <div class="ref-row">
+                        <code>comment</code>
+                        <span><em>// comment</em></span>
+                    </div>
+                    <div class="ref-row">
+                        <code>type</code>
+                        <span><em>String, Vec, Option</em></span>
+                    </div>
+                    <div class="ref-row">
+                        <code>variable</code>
+                        <span><em>count, name, result</em></span>
+                    </div>
+                    <div class="ref-row">
+                        <code>operator</code>
+                        <span><em>+, -, =>, ::</em></span>
+                    </div>
+                    <div class="ref-row">
+                        <code>constant</code>
+                        <span><em>TRUE, NULL, PI</em></span>
+                    </div>
+                    <div class="ref-row">
+                        <code>tag</code>
+                        <span><em>&lt;div&gt;, &lt;span&gt;</em></span>
+                    </div>
+                    <div class="ref-row">
+                        <code>attribute</code>
+                        <span><em>class=, id=</em></span>
+                    </div>
+                    <div class="ref-row">
+                        <code>escape</code>
+                        <span><em>\n, \t, \x00</em></span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tips -->
+        <section class="docs-section">
+            <h2>Tips</h2>
+            <ul class="tips-list">
+                <li><strong>Start from an existing theme</strong> — Copy one of the built-in themes and modify the colors</li>
+                <li><strong>Use hex colors</strong> — 6-digit (#RRGGBB) or 8-digit with alpha (#RRGGBBAA)</li>
+                <li><strong>Test with different file types</strong> — Verify syntax colors across multiple languages</li>
+                <li><strong>Consider contrast</strong> — Ensure sufficient contrast for readability</li>
+            </ul>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-left">
+            <span class="footer-logo">Token</span>
+            <span class="footer-copy">MIT License</span>
+        </div>
+        <div class="footer-right">
+            <a href="https://github.com/HelgeSverre/token">GitHub</a>
+            <a href="keys.html">Keys</a>
+            <a href="themes.html">Themes</a>
+            <a href="https://github.com/HelgeSverre">@HelgeSverre</a>
+        </div>
+    </footer>
+</body>
+</html>

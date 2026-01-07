@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keybindings — Token</title>
+    <meta name="description" content="Complete keyboard shortcuts reference for Token editor. Customize keybindings with YAML.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="../icon.png" type="image/png">
+</head>
+<body>
+    <div class="grain"></div>
+    
+    <header class="header">
+        <a href="index.html" class="logo">Token<span class="logo-cursor"></span></a>
+        <nav class="nav">
+            <a href="keys.html" class="active">Keys</a>
+            <a href="themes.html">Themes</a>
+            <a href="https://github.com/HelgeSverre/token" target="_blank">Source</a>
+        </nav>
+    </header>
+
+    <main class="docs-page">
+        <div class="docs-hero">
+            <h1>Keybindings</h1>
+            <p>Complete keyboard shortcuts reference. All bindings are customizable via YAML configuration.</p>
+        </div>
+
+        <!-- Modifier Key Reference -->
+        <section class="docs-section">
+            <h2>Modifier keys</h2>
+            <p>Token uses platform-aware modifiers. The <code>cmd</code> modifier maps to Command on macOS and Ctrl on Windows/Linux.</p>
+            
+            <div class="modifier-grid">
+                <div class="modifier-card">
+                    <kbd>⌘</kbd>
+                    <div class="modifier-info">
+                        <strong>cmd</strong>
+                        <span>Command (macOS) / Ctrl (Win/Linux)</span>
+                    </div>
+                </div>
+                <div class="modifier-card">
+                    <kbd>⌃</kbd>
+                    <div class="modifier-info">
+                        <strong>ctrl</strong>
+                        <span>Control key</span>
+                    </div>
+                </div>
+                <div class="modifier-card">
+                    <kbd>⌥</kbd>
+                    <div class="modifier-info">
+                        <strong>alt</strong>
+                        <span>Option (macOS) / Alt (Win/Linux)</span>
+                    </div>
+                </div>
+                <div class="modifier-card">
+                    <kbd>⇧</kbd>
+                    <div class="modifier-info">
+                        <strong>shift</strong>
+                        <span>Shift key</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- File Operations -->
+        <section class="docs-section">
+            <h2>File operations</h2>
+            <div class="bindings-table">
+                <div class="binding-row header">
+                    <span>Action</span>
+                    <span>Shortcut</span>
+                    <span>Command</span>
+                </div>
+                <div class="binding-row">
+                    <span>Save</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>S</kbd></span>
+                    <code>SaveFile</code>
+                </div>
+                <div class="binding-row">
+                    <span>Save As</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>S</kbd></span>
+                    <code>SaveFileAs</code>
+                </div>
+                <div class="binding-row">
+                    <span>Open File</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>O</kbd></span>
+                    <code>OpenFile</code>
+                </div>
+                <div class="binding-row">
+                    <span>Open Folder</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>O</kbd></span>
+                    <code>FuzzyFileFinder</code>
+                </div>
+                <div class="binding-row">
+                    <span>New Tab</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>N</kbd></span>
+                    <code>NewTab</code>
+                </div>
+                <div class="binding-row">
+                    <span>Close Tab</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>W</kbd></span>
+                    <code>CloseTab</code>
+                </div>
+            </div>
+        </section>
+
+        <!-- Editing -->
+        <section class="docs-section">
+            <h2>Editing</h2>
+            <div class="bindings-table">
+                <div class="binding-row header">
+                    <span>Action</span>
+                    <span>Shortcut</span>
+                    <span>Command</span>
+                </div>
+                <div class="binding-row">
+                    <span>Undo</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>Z</kbd></span>
+                    <code>Undo</code>
+                </div>
+                <div class="binding-row">
+                    <span>Redo</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>Z</kbd></span>
+                    <code>Redo</code>
+                </div>
+                <div class="binding-row">
+                    <span>Copy</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>C</kbd></span>
+                    <code>Copy</code>
+                </div>
+                <div class="binding-row">
+                    <span>Cut</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>X</kbd></span>
+                    <code>Cut</code>
+                </div>
+                <div class="binding-row">
+                    <span>Paste</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>V</kbd></span>
+                    <code>Paste</code>
+                </div>
+                <div class="binding-row">
+                    <span>Select All</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>A</kbd></span>
+                    <code>SelectAll</code>
+                </div>
+                <div class="binding-row">
+                    <span>Duplicate</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>D</kbd></span>
+                    <code>Duplicate</code>
+                </div>
+                <div class="binding-row">
+                    <span>Delete Line</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>⌫</kbd></span>
+                    <code>DeleteLine</code>
+                </div>
+                <div class="binding-row">
+                    <span>Delete Word Backward</span>
+                    <span class="key-combo"><kbd>⌥</kbd><kbd>⌫</kbd></span>
+                    <code>DeleteWordBackward</code>
+                </div>
+                <div class="binding-row">
+                    <span>Delete Word Forward</span>
+                    <span class="key-combo"><kbd>⌥</kbd><kbd>Del</kbd></span>
+                    <code>DeleteWordForward</code>
+                </div>
+                <div class="binding-row">
+                    <span>Indent</span>
+                    <span class="key-combo"><kbd>Tab</kbd></span>
+                    <code>IndentLines</code>
+                    <span class="context-tag">has_selection</span>
+                </div>
+                <div class="binding-row">
+                    <span>Unindent</span>
+                    <span class="key-combo"><kbd>⇧</kbd><kbd>Tab</kbd></span>
+                    <code>UnindentLines</code>
+                </div>
+            </div>
+        </section>
+
+        <!-- Selection & Multi-cursor -->
+        <section class="docs-section">
+            <h2>Selection & multi-cursor</h2>
+            <div class="bindings-table">
+                <div class="binding-row header">
+                    <span>Action</span>
+                    <span>Shortcut</span>
+                    <span>Command</span>
+                </div>
+                <div class="binding-row">
+                    <span>Add Cursor</span>
+                    <span class="key-combo"><kbd>⌥</kbd><span class="key-plus">+</span><kbd>Click</kbd></span>
+                    <code>—</code>
+                </div>
+                <div class="binding-row">
+                    <span>Add Cursor Above</span>
+                    <span class="key-combo"><kbd>⌥</kbd><kbd>⌥</kbd><kbd>↑</kbd></span>
+                    <code>—</code>
+                </div>
+                <div class="binding-row">
+                    <span>Add Cursor Below</span>
+                    <span class="key-combo"><kbd>⌥</kbd><kbd>⌥</kbd><kbd>↓</kbd></span>
+                    <code>—</code>
+                </div>
+                <div class="binding-row">
+                    <span>Select Next Occurrence</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>J</kbd></span>
+                    <code>SelectNextOccurrence</code>
+                </div>
+                <div class="binding-row">
+                    <span>Unselect Last</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>J</kbd></span>
+                    <code>UnselectOccurrence</code>
+                </div>
+                <div class="binding-row">
+                    <span>Expand Selection</span>
+                    <span class="key-combo"><kbd>⌥</kbd><kbd>↑</kbd></span>
+                    <code>ExpandSelection</code>
+                </div>
+                <div class="binding-row">
+                    <span>Shrink Selection</span>
+                    <span class="key-combo"><kbd>⌥</kbd><kbd>↓</kbd></span>
+                    <code>ShrinkSelection</code>
+                </div>
+                <div class="binding-row">
+                    <span>Collapse to Single Cursor</span>
+                    <span class="key-combo"><kbd>Esc</kbd></span>
+                    <code>CollapseToSingleCursor</code>
+                    <span class="context-tag">has_multiple_cursors</span>
+                </div>
+                <div class="binding-row">
+                    <span>Clear Selection</span>
+                    <span class="key-combo"><kbd>Esc</kbd></span>
+                    <code>ClearSelection</code>
+                    <span class="context-tag">has_selection</span>
+                </div>
+            </div>
+            <p class="note">Note: Option+Option shortcuts (double-tap Option then arrow) are hardcoded and not remappable.</p>
+        </section>
+
+        <!-- Navigation -->
+        <section class="docs-section">
+            <h2>Navigation</h2>
+            <div class="bindings-table">
+                <div class="binding-row header">
+                    <span>Action</span>
+                    <span>Shortcut</span>
+                    <span>Command</span>
+                </div>
+                <div class="binding-row">
+                    <span>Command Palette</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>A</kbd></span>
+                    <code>ToggleCommandPalette</code>
+                </div>
+                <div class="binding-row">
+                    <span>Go to Line</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>L</kbd></span>
+                    <code>ToggleGotoLine</code>
+                </div>
+                <div class="binding-row">
+                    <span>Find/Replace</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>F</kbd></span>
+                    <code>ToggleFindReplace</code>
+                </div>
+                <div class="binding-row">
+                    <span>Word Left</span>
+                    <span class="key-combo"><kbd>⌥</kbd><kbd>←</kbd></span>
+                    <code>MoveCursorWordLeft</code>
+                </div>
+                <div class="binding-row">
+                    <span>Word Right</span>
+                    <span class="key-combo"><kbd>⌥</kbd><kbd>→</kbd></span>
+                    <code>MoveCursorWordRight</code>
+                </div>
+                <div class="binding-row">
+                    <span>Line Start</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>←</kbd></span>
+                    <code>MoveCursorLineStart</code>
+                </div>
+                <div class="binding-row">
+                    <span>Line End</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>→</kbd></span>
+                    <code>MoveCursorLineEnd</code>
+                </div>
+                <div class="binding-row">
+                    <span>Document Start</span>
+                    <span class="key-combo"><kbd>⌃</kbd><kbd>Home</kbd></span>
+                    <code>MoveCursorDocumentStart</code>
+                </div>
+                <div class="binding-row">
+                    <span>Document End</span>
+                    <span class="key-combo"><kbd>⌃</kbd><kbd>End</kbd></span>
+                    <code>MoveCursorDocumentEnd</code>
+                </div>
+                <div class="binding-row">
+                    <span>Page Up</span>
+                    <span class="key-combo"><kbd>PgUp</kbd></span>
+                    <code>PageUp</code>
+                </div>
+                <div class="binding-row">
+                    <span>Page Down</span>
+                    <span class="key-combo"><kbd>PgDn</kbd></span>
+                    <code>PageDown</code>
+                </div>
+            </div>
+            <p class="note">Add <kbd>⇧</kbd> to any navigation command to extend selection.</p>
+        </section>
+
+        <!-- Workspace -->
+        <section class="docs-section">
+            <h2>Workspace & layout</h2>
+            <div class="bindings-table">
+                <div class="binding-row header">
+                    <span>Action</span>
+                    <span>Shortcut</span>
+                    <span>Command</span>
+                </div>
+                <div class="binding-row">
+                    <span>Toggle Sidebar</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>1</kbd></span>
+                    <code>ToggleSidebar</code>
+                </div>
+                <div class="binding-row">
+                    <span>Reveal in Sidebar</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>R</kbd></span>
+                    <code>RevealInSidebar</code>
+                </div>
+                <div class="binding-row">
+                    <span>Split Horizontal</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>⌥</kbd><kbd>H</kbd></span>
+                    <code>SplitHorizontal</code>
+                </div>
+                <div class="binding-row">
+                    <span>Split Vertical</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>⌥</kbd><kbd>V</kbd></span>
+                    <code>SplitVertical</code>
+                </div>
+                <div class="binding-row">
+                    <span>Next Tab</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>⌥</kbd><kbd>→</kbd></span>
+                    <code>NextTab</code>
+                </div>
+                <div class="binding-row">
+                    <span>Previous Tab</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>⌥</kbd><kbd>←</kbd></span>
+                    <code>PrevTab</code>
+                </div>
+                <div class="binding-row">
+                    <span>Focus Next Group</span>
+                    <span class="key-combo"><kbd>⌃</kbd><kbd>Tab</kbd></span>
+                    <code>FocusNextGroup</code>
+                </div>
+                <div class="binding-row">
+                    <span>Focus Group 1-4</span>
+                    <span class="key-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>1-4</kbd></span>
+                    <code>FocusGroup1-4</code>
+                </div>
+            </div>
+        </section>
+
+        <!-- Customization -->
+        <section class="docs-section">
+            <h2>Custom keybindings</h2>
+            <p>Create <code>~/.config/token-editor/keymap.yaml</code> to customize bindings:</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span>~/.config/token-editor/keymap.yaml</span>
+                </div>
+                <pre><code>bindings:
+  # Override an existing binding
+  - key: "cmd+s"
+    command: SaveFileAs
+
+  # Add a new binding
+  - key: "cmd+shift+d"
+    command: DeleteLine
+
+  # Context-aware binding
+  - key: "cmd+enter"
+    command: InsertNewlineBelow
+    when: ["no_selection"]
+
+  # Disable a default binding
+  - key: "cmd+d"
+    command: Unbound</code></pre>
+            </div>
+        </section>
+
+        <!-- Context Conditions -->
+        <section class="docs-section">
+            <h2>Context conditions</h2>
+            <p>Use the <code>when</code> field to make bindings context-aware:</p>
+            
+            <div class="ref-table">
+                <div class="ref-row">
+                    <code>has_selection</code>
+                    <span>At least one cursor has a selection</span>
+                </div>
+                <div class="ref-row">
+                    <code>no_selection</code>
+                    <span>No cursors have selections</span>
+                </div>
+                <div class="ref-row">
+                    <code>has_multiple_cursors</code>
+                    <span>More than one cursor is active</span>
+                </div>
+                <div class="ref-row">
+                    <code>single_cursor</code>
+                    <span>Exactly one cursor is active</span>
+                </div>
+                <div class="ref-row">
+                    <code>modal_active</code>
+                    <span>A modal dialog is open</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Key Names -->
+        <section class="docs-section">
+            <h2>Key names reference</h2>
+            <div class="key-names-grid">
+                <div class="key-names-group">
+                    <h4>Letters & Numbers</h4>
+                    <p><code>a</code> through <code>z</code>, <code>0</code> through <code>9</code></p>
+                </div>
+                <div class="key-names-group">
+                    <h4>Named Keys</h4>
+                    <p><code>enter</code>, <code>escape</code>, <code>tab</code>, <code>backspace</code>, <code>delete</code>, <code>space</code>, <code>insert</code></p>
+                </div>
+                <div class="key-names-group">
+                    <h4>Arrow Keys</h4>
+                    <p><code>up</code>, <code>down</code>, <code>left</code>, <code>right</code></p>
+                </div>
+                <div class="key-names-group">
+                    <h4>Navigation</h4>
+                    <p><code>home</code>, <code>end</code>, <code>pageup</code>, <code>pagedown</code></p>
+                </div>
+                <div class="key-names-group">
+                    <h4>Function Keys</h4>
+                    <p><code>f1</code> through <code>f12</code></p>
+                </div>
+                <div class="key-names-group">
+                    <h4>Numpad</h4>
+                    <p><code>numpad0-9</code>, <code>numpad_add</code>, <code>numpad_subtract</code>, <code>numpad_multiply</code>, <code>numpad_divide</code></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Platform-specific -->
+        <section class="docs-section">
+            <h2>Platform-specific bindings</h2>
+            <p>Use the <code>platform</code> field to create OS-specific bindings:</p>
+            
+            <div class="code-block">
+                <pre><code>bindings:
+  # macOS only
+  - key: "meta+left"
+    command: MoveCursorLineStart
+    platform: macos
+
+  # Windows/Linux only  
+  - key: "ctrl+home"
+    command: MoveCursorDocumentStart
+    platform: windows</code></pre>
+            </div>
+            <p class="note">Valid values: <code>macos</code>, <code>windows</code>, <code>linux</code></p>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-left">
+            <span class="footer-logo">Token</span>
+            <span class="footer-copy">MIT License</span>
+        </div>
+        <div class="footer-right">
+            <a href="https://github.com/HelgeSverre/token">GitHub</a>
+            <a href="keys.html">Keys</a>
+            <a href="themes.html">Themes</a>
+            <a href="https://github.com/HelgeSverre">@HelgeSverre</a>
+        </div>
+    </footer>
+</body>
+</html>
