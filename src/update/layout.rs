@@ -58,17 +58,17 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
             if model.editor_area.groups.contains_key(&group_id) {
                 model.editor_area.focused_group_id = group_id;
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         LayoutMsg::FocusNextGroup => {
             focus_adjacent_group(model, true);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         LayoutMsg::FocusPrevGroup => {
             focus_adjacent_group(model, false);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         LayoutMsg::FocusGroupByIndex(index) => {
@@ -77,17 +77,17 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
             if index > 0 && index <= group_ids.len() {
                 model.editor_area.focused_group_id = group_ids[index - 1];
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         LayoutMsg::MoveTab { tab_id, to_group } => {
             move_tab(model, tab_id, to_group);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         LayoutMsg::CloseTab(tab_id) => {
             close_tab(model, tab_id);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         LayoutMsg::CloseFocusedTab => {
@@ -99,7 +99,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                 let tab_id = tab.id;
                 close_tab(model, tab_id);
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         LayoutMsg::NextTab => {
@@ -108,7 +108,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                     group.active_tab_index = (group.active_tab_index + 1) % group.tabs.len();
                 }
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         LayoutMsg::PrevTab => {
@@ -121,7 +121,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                     };
                 }
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         LayoutMsg::SwitchToTab(index) => {
@@ -130,7 +130,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                     group.active_tab_index = index;
                 }
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_editor())
         }
 
         // === Splitter Dragging ===
