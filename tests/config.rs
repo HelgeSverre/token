@@ -55,6 +55,30 @@ fn test_themes_dir_is_subdir_of_config() {
     assert!(themes.starts_with(&config));
 }
 
+#[test]
+fn test_log_file_returns_some() {
+    let log_file = config_paths::log_file();
+    assert!(log_file.is_some());
+}
+
+#[test]
+fn test_log_file_contains_token_log() {
+    let path = config_paths::log_file().unwrap();
+    let path_str = path.to_string_lossy();
+    assert!(
+        path_str.contains("token.log"),
+        "Expected token.log in path, got: {}",
+        path.display()
+    );
+}
+
+#[test]
+fn test_log_file_is_in_logs_dir() {
+    let logs_dir = config_paths::logs_dir().unwrap();
+    let log_file = config_paths::log_file().unwrap();
+    assert!(log_file.starts_with(&logs_dir));
+}
+
 // ========================================================================
 // Editor Config Tests
 // ========================================================================

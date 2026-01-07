@@ -58,9 +58,36 @@ pub fn logs_dir() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("logs"))
 }
 
-/// `~/.config/token-editor/logs/token.log`
+/// Returns the most recent log file in `~/.config/token-editor/logs/`
+/// (e.g., `token.log.2026-01-07`)
+///
+/// The logging system uses daily rotation, creating files like `token.log.YYYY-MM-DD`.
+/// This function scans the logs directory and returns the newest file.
 pub fn log_file() -> Option<PathBuf> {
-    logs_dir().map(|dir| dir.join("token.log"))
+    let logs_dir = logs_dir()?;
+
+    // Try to find the most recent token.log.YYYY-MM-DD file
+    let mut log_files: Vec<PathBuf> = fs::read_dir(&logs_dir)
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with("token.log"))
+                .unwrap_or(false)
+        })
+        .collect();
+
+    // Sort by filename in descending order (newest first)
+    // YYYY-MM-DD format sorts naturally
+    log_files.sort_by(|a, b| b.cmp(a));
+
+    // Return the most recent log file, or fallback to token.log if none exist
+    log_files
+        .into_iter()
+        .next()
+        .or_else(|| Some(logs_dir.join("token.log")))
 }
 
 fn ensure_dir(path: &Path) -> Result<(), String> {
