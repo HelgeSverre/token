@@ -6,7 +6,20 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Added
+- Docs: Updated developer OVERVIEW and archived obsolete docs to reflect recent refactors and module moves.
+- Tests: Comprehensive damage computation tests added for redraw/damage logic.
+
+### Changed
+- Refactor (app): Introduced specific redraw helpers and tighter damage accumulation to reduce unnecessary full redraws; clearer separation between damage computation and command processing.
+- Refactor (layout): Added `redraw_editor`-style helpers to limit redraw scope when layout changes are localized.
+- Refactor (ui): Optimized cursor-blink related redraw behavior to prevent selection flicker and avoid unnecessary redraws of unrelated regions.
+
+### Fixed
+- Rendering: Minor fixes to selection/cursor rendering behavior related to the cursor-blink optimization and partial redraws.
+
 ---
+
 
 ## v0.3.13 - 2026-01-07
 
