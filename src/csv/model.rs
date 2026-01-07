@@ -62,6 +62,8 @@ pub struct CellEditState {
     pub editable: EditableState<StringBuffer>,
     /// Original value before editing (for cancel/undo)
     pub original: String,
+    /// Horizontal scroll offset for wide content
+    pub scroll_x: usize,
 }
 
 impl CellEditState {
@@ -75,6 +77,7 @@ impl CellEditState {
             position,
             editable,
             original: value,
+            scroll_x: 0,
         }
     }
 
@@ -90,6 +93,7 @@ impl CellEditState {
             position,
             editable,
             original,
+            scroll_x: 0,
         }
     }
 

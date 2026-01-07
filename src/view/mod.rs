@@ -1480,8 +1480,6 @@ impl Renderer {
 
         // Use input field colors from overlay theme
         let edit_bg = model.theme.overlay.input_background.to_argb_u32();
-        let edit_fg = model.theme.overlay.foreground.to_argb_u32();
-        let cursor_color = model.theme.editor.cursor_color.to_argb_u32();
 
         // Draw edit background (fill entire cell)
         frame.fill_rect_px(
@@ -1492,23 +1490,21 @@ impl Renderer {
             edit_bg,
         );
 
-        // Draw edit text
-        let text_x = cell_x + 4;
-        let buffer_text = edit_state.buffer();
-        painter.draw(frame, text_x, cell_y + 1, &buffer_text, edit_fg);
+        // Use TextFieldRenderer with scroll support
+        let opts = TextFieldOptions {
+            x: cell_x + 4,
+            y: cell_y + 1,
+            width: col_width_px.saturating_sub(8), // 4px padding each side
+            height: line_height.saturating_sub(2),
+            char_width,
+            text_color: model.theme.overlay.foreground.to_argb_u32(),
+            cursor_color: model.theme.editor.cursor_color.to_argb_u32(),
+            selection_color: model.theme.editor.selection_background.to_argb_u32(),
+            cursor_visible: model.ui.cursor_visible,
+            scroll_x: edit_state.scroll_x, // Use scroll offset from state
+        };
 
-        // Draw cursor if visible (blinking)
-        if model.ui.cursor_visible {
-            let cursor_char_pos = edit_state.cursor_char_position();
-            let cursor_x = text_x + (cursor_char_pos as f32 * char_width).round() as usize;
-            frame.fill_rect_px(
-                cursor_x,
-                cell_y + 2,
-                2,
-                line_height.saturating_sub(4),
-                cursor_color,
-            );
-        }
+        TextFieldRenderer::render(frame, painter, &edit_state.editable, &opts);
     }
 
     /// Render the status bar at the bottom of the window.
@@ -2392,6 +2388,7 @@ impl Renderer {
 
     /// Render debug visualization of damage regions
     #[cfg(feature = "damage-debug")]
+    #[allow(clippy::too_many_arguments)]
     fn render_damage_debug(
         frame: &mut Frame,
         damage: &Damage,

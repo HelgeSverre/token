@@ -305,12 +305,16 @@ fn start_editing_with_char(model: &mut AppModel, ch: char) -> Option<Cmd> {
 
 /// Confirm edit and sync to document, then move in specified direction
 fn confirm_edit(model: &mut AppModel, row_delta: i32) -> Option<Cmd> {
+    const MIN_WIDTH: usize = 4;
+    const EDIT_MAX_WIDTH: usize = 60;
+
     let editor_id = model.editor_area.focused_group()?.active_editor_id()?;
     let editor = model.editor_area.editors.get_mut(&editor_id)?;
 
-    let (edit, delimiter) = if let Some(csv) = editor.view_mode.as_csv_mut() {
+    let (edit, delimiter, col_idx) = if let Some(csv) = editor.view_mode.as_csv_mut() {
         let delimiter = csv.delimiter;
-        (csv.confirm_edit(), delimiter)
+        let col_idx = csv.editing.as_ref().map(|e| e.position.col);
+        (csv.confirm_edit(), delimiter, col_idx)
     } else {
         return None;
     };
@@ -319,6 +323,18 @@ fn confirm_edit(model: &mut AppModel, row_delta: i32) -> Option<Cmd> {
         let doc_id = editor.document_id?;
         if let Some(doc) = model.editor_area.documents.get_mut(&doc_id) {
             sync_cell_edit_to_document(doc, &cell_edit, delimiter);
+        }
+
+        // Recalculate column width to fit final content
+        if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
+            if let Some(csv) = editor.view_mode.as_csv_mut() {
+                if let Some(col) = col_idx {
+                    let final_len = cell_edit.new_value.chars().count();
+                    if let Some(width) = csv.column_widths.get_mut(col) {
+                        *width = final_len.clamp(MIN_WIDTH, EDIT_MAX_WIDTH);
+                    }
+                }
+            }
         }
     }
 
@@ -334,12 +350,81 @@ fn confirm_edit(model: &mut AppModel, row_delta: i32) -> Option<Cmd> {
 
 /// Cancel edit and discard changes
 fn cancel_edit(model: &mut AppModel) -> Option<Cmd> {
+    const MIN_WIDTH: usize = 4;
+    const EDIT_MAX_WIDTH: usize = 60;
+
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
+        // Get original content length before canceling
+        let (col, original_len) = if let Some(edit) = &csv.editing {
+            (edit.position.col, edit.original.chars().count())
+        } else {
+            return None;
+        };
+
         csv.cancel_edit();
+
+        // Reset width to original content size
+        if let Some(width) = csv.column_widths.get_mut(col) {
+            *width = original_len.clamp(MIN_WIDTH, EDIT_MAX_WIDTH);
+        }
+
         Some(Cmd::redraw_editor())
     } else {
         None
+    }
+}
+
+// ===== Cell Editing Helpers =====
+
+/// Update column width to fit current edit content (up to EDIT_MAX_WIDTH)
+fn update_column_width_for_edit(csv: &mut CsvState, content_len: usize) {
+    const MIN_WIDTH: usize = 4;
+    const EDIT_MAX_WIDTH: usize = 60;
+
+    if let Some(edit) = &csv.editing {
+        let col = edit.position.col;
+        if let Some(width) = csv.column_widths.get_mut(col) {
+            *width = content_len.clamp(MIN_WIDTH, EDIT_MAX_WIDTH);
+        }
+    }
+}
+
+/// Update horizontal scroll to keep cursor visible in cell editor
+fn update_edit_scroll(char_width: f32, csv: &mut CsvState) {
+    const EDIT_MAX_WIDTH: usize = 60;
+
+    if let Some(edit) = &mut csv.editing {
+        let cursor_col = edit.cursor_char_position();
+        let col_width = csv
+            .column_widths
+            .get(edit.position.col)
+            .copied()
+            .unwrap_or(4);
+
+        // If column is at max width, use scrolling
+        if col_width >= EDIT_MAX_WIDTH {
+            // Calculate visible characters in the cell
+            let col_width_px = (col_width as f32 * char_width + 12.0) as usize;
+            let padding = 8; // 4px padding on each side
+            let visible_chars = ((col_width_px.saturating_sub(padding)) as f32 / char_width) as usize;
+
+            // Calculate scroll offset to keep cursor visible (with 2-char margin)
+            let margin = 2;
+            edit.scroll_x = if cursor_col < edit.scroll_x + margin {
+                // Cursor is too far left, scroll left
+                cursor_col.saturating_sub(margin)
+            } else if cursor_col >= edit.scroll_x + visible_chars.saturating_sub(margin) {
+                // Cursor is too far right, scroll right
+                cursor_col.saturating_sub(visible_chars.saturating_sub(margin + 1))
+            } else {
+                // Cursor is visible, keep current scroll
+                edit.scroll_x
+            };
+        } else {
+            // Column not at max, no scrolling needed
+            edit.scroll_x = 0;
+        }
     }
 }
 
@@ -348,6 +433,14 @@ fn edit_insert_char(model: &mut AppModel, ch: char) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.edit_insert_char(ch);
+
+        // Update column width and scroll position
+        if let Some(edit) = &csv.editing {
+            let content_len = edit.buffer().chars().count();
+            update_column_width_for_edit(csv, content_len);
+        }
+        update_edit_scroll(model.char_width, csv);
+
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -359,6 +452,14 @@ fn edit_delete_backward(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.edit_delete_backward();
+
+        // Update column width and scroll position
+        if let Some(edit) = &csv.editing {
+            let content_len = edit.buffer().chars().count();
+            update_column_width_for_edit(csv, content_len);
+        }
+        update_edit_scroll(model.char_width, csv);
+
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -370,6 +471,14 @@ fn edit_delete_forward(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.edit_delete_forward();
+
+        // Update column width and scroll position
+        if let Some(edit) = &csv.editing {
+            let content_len = edit.buffer().chars().count();
+            update_column_width_for_edit(csv, content_len);
+        }
+        update_edit_scroll(model.char_width, csv);
+
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -381,6 +490,7 @@ fn edit_cursor_left(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.edit_cursor_left();
+        update_edit_scroll(model.char_width, csv);
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -392,6 +502,7 @@ fn edit_cursor_right(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.edit_cursor_right();
+        update_edit_scroll(model.char_width, csv);
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -403,6 +514,7 @@ fn edit_cursor_home(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.edit_cursor_home();
+        update_edit_scroll(model.char_width, csv);
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -414,6 +526,7 @@ fn edit_cursor_end(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
         csv.edit_cursor_end();
+        update_edit_scroll(model.char_width, csv);
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -427,6 +540,7 @@ fn edit_cursor_word_left(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_word_left();
         }
+        update_edit_scroll(model.char_width, csv);
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -440,6 +554,7 @@ fn edit_cursor_word_right(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_word_right();
         }
+        update_edit_scroll(model.char_width, csv);
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -453,6 +568,14 @@ fn edit_delete_word_backward(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.delete_word_backward();
         }
+
+        // Update column width and scroll position
+        if let Some(edit) = &csv.editing {
+            let content_len = edit.buffer().chars().count();
+            update_column_width_for_edit(csv, content_len);
+        }
+        update_edit_scroll(model.char_width, csv);
+
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -466,6 +589,14 @@ fn edit_delete_word_forward(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.delete_word_forward();
         }
+
+        // Update column width and scroll position
+        if let Some(edit) = &csv.editing {
+            let content_len = edit.buffer().chars().count();
+            update_column_width_for_edit(csv, content_len);
+        }
+        update_edit_scroll(model.char_width, csv);
+
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -520,6 +651,7 @@ fn edit_cursor_left_with_selection(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_left_with_selection();
         }
+        update_edit_scroll(model.char_width, csv);
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -533,6 +665,7 @@ fn edit_cursor_right_with_selection(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_right_with_selection();
         }
+        update_edit_scroll(model.char_width, csv);
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -546,6 +679,7 @@ fn edit_cursor_home_with_selection(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_home_with_selection();
         }
+        update_edit_scroll(model.char_width, csv);
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -559,6 +693,7 @@ fn edit_cursor_end_with_selection(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_end_with_selection();
         }
+        update_edit_scroll(model.char_width, csv);
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -572,6 +707,7 @@ fn edit_cursor_word_left_with_selection(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_word_left_with_selection();
         }
+        update_edit_scroll(model.char_width, csv);
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -585,6 +721,7 @@ fn edit_cursor_word_right_with_selection(model: &mut AppModel) -> Option<Cmd> {
         if let Some(edit) = &mut csv.editing {
             edit.cursor_word_right_with_selection();
         }
+        update_edit_scroll(model.char_width, csv);
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -624,6 +761,14 @@ fn edit_cut(model: &mut AppModel) -> Option<Cmd> {
                 edit.delete_backward();
             }
         }
+
+        // Update column width and scroll position
+        if let Some(edit) = &csv.editing {
+            let content_len = edit.buffer().chars().count();
+            update_column_width_for_edit(csv, content_len);
+        }
+        update_edit_scroll(model.char_width, csv);
+
         Some(Cmd::redraw_editor())
     } else {
         None
@@ -646,6 +791,14 @@ fn edit_paste(model: &mut AppModel) -> Option<Cmd> {
                 let filtered: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
                 edit.insert_text(&filtered);
             }
+
+            // Update column width and scroll position
+            if let Some(edit) = &csv.editing {
+                let content_len = edit.buffer().chars().count();
+                update_column_width_for_edit(csv, content_len);
+            }
+            update_edit_scroll(model.char_width, csv);
+
             return Some(Cmd::redraw_editor());
         }
     }

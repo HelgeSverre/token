@@ -687,9 +687,9 @@ impl Cmd {
         }
     }
 
-    /// Create a command to redraw just the editor area
+    /// Create a command to redraw the editor area and status bar
     pub fn redraw_editor() -> Self {
-        Cmd::RedrawAreas(vec![DamageArea::EditorArea])
+        Cmd::RedrawAreas(vec![DamageArea::EditorArea, DamageArea::StatusBar])
     }
 
     /// Create a command to redraw just the status bar
