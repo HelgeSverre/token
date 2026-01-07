@@ -107,14 +107,22 @@ winres = "0.1"
 [package.metadata.bundle]
 name = "Token"
 identifier = "no.helgesverre.token"
-icon = ["assets/icon.icns"]
+icon = ["assets/icon.icns", "assets/icon.ico"]
 category = "public.app-category.developer-tools"
-copyright = "Copyright (c) Helge Sverre 2024"
+copyright = "Copyright (c) Helge Sverre 2026"
+short_description = "A fast, multi-cursor code editor built in Rust"
+long_description = """
+Token is a lightweight, high-performance code editor inspired by JetBrains IDEs.
+Built entirely in Rust with CPU-based rendering, it features powerful multi-cursor editing,
+syntax highlighting via Tree-sitter, customizable themes and keybindings, and a responsive
+file tree sidebar. Designed for developers who value speed and simplicity.
+"""
+osx_minimum_system_version = "11.0"
 
 [package.metadata.bundle.bin.token]
 name = "Token"
 identifier = "no.helgesverre.token"
-icon = ["assets/icon.icns"]
+icon = ["assets/icon.icns", "assets/icon.ico"]
 
 [dev-dependencies]
 divan = "0.1"

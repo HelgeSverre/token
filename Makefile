@@ -232,7 +232,7 @@ help:
 	@echo "  make bundle           - Create app bundle for current platform"
 	@echo "  make bundle-macos     - Create macOS .dmg package"
 	@echo "  make bundle-linux     - Create Linux .deb package"
-	@echo "  make bundle-windows   - Create Windows .msi installer"
+	@echo "  make bundle-windows   - Create Windows .zip distribution"
 	@echo "  make bundle-all       - Create bundles for all platforms"
 
 # === Setup targets ===
@@ -469,6 +469,13 @@ bundle-macos: dist icons
 bundle-linux: dist icons
 	cargo bundle --release --bin token --format deb
 
-# Create Windows .msi installer (Windows only)
+# Create Windows .zip with executable
 bundle-windows: dist icons
-	cargo bundle --release --bin token --format msi
+	@echo "Creating Windows distribution zip..."
+	@mkdir -p target/bundle/windows
+	@cp target/dist/token target/bundle/windows/token.exe 2>/dev/null || cp target/release/token target/bundle/windows/token.exe 2>/dev/null || echo "Note: Build for Windows target to get .exe"
+	@cp assets/icon.ico target/bundle/windows/ 2>/dev/null || true
+	@cp README.md target/bundle/windows/ 2>/dev/null || true
+	@cp LICENSE.md target/bundle/windows/ 2>/dev/null || true
+	@cd target/bundle && zip -r Token-windows.zip windows/
+	@echo "Created target/bundle/Token-windows.zip"
