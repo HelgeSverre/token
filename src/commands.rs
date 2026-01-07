@@ -492,7 +492,9 @@ impl Damage {
         match self {
             Damage::None => false,
             Damage::Full => true,
-            Damage::Areas(areas) => areas.iter().any(|a| matches!(a, DamageArea::EditorArea)),
+            Damage::Areas(areas) => areas.iter().any(|a| {
+                matches!(a, DamageArea::EditorArea) || matches!(a, DamageArea::CursorLines(_))
+            }),
         }
     }
 
@@ -716,5 +718,201 @@ impl Cmd {
 impl From<Option<Cmd>> for Cmd {
     fn from(opt: Option<Cmd>) -> Self {
         opt.unwrap_or(Cmd::None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cmd_damage_computation() {
+        // None -> empty areas
+        assert!(matches!(Cmd::None.damage(), Damage::Areas(a) if a.is_empty()));
+
+        // Redraw -> Full
+        assert!(matches!(Cmd::Redraw.damage(), Damage::Full));
+
+        // RedrawAreas preserves areas
+        let cmd = Cmd::RedrawAreas(vec![DamageArea::EditorArea]);
+        assert!(matches!(cmd.damage(), Damage::Areas(a) if a.contains(&DamageArea::EditorArea)));
+
+        // Empty RedrawAreas -> empty areas (not Full)
+        let cmd = Cmd::RedrawAreas(vec![]);
+        assert!(matches!(cmd.damage(), Damage::Areas(a) if a.is_empty()));
+    }
+
+    #[test]
+    fn test_cmd_damage_batch_full() {
+        // Batch with Full -> Full
+        let batch = Cmd::Batch(vec![
+            Cmd::RedrawAreas(vec![DamageArea::StatusBar]),
+            Cmd::Redraw,
+        ]);
+        assert!(matches!(batch.damage(), Damage::Full));
+    }
+
+    #[test]
+    fn test_cmd_damage_batch_merge() {
+        // Batch without Full -> merged areas
+        let batch = Cmd::Batch(vec![
+            Cmd::RedrawAreas(vec![DamageArea::StatusBar]),
+            Cmd::RedrawAreas(vec![DamageArea::EditorArea]),
+        ]);
+        let damage = batch.damage();
+        match damage {
+            Damage::Areas(a) => {
+                assert_eq!(a.len(), 2);
+                assert!(a.contains(&DamageArea::StatusBar));
+                assert!(a.contains(&DamageArea::EditorArea));
+            }
+            _ => panic!("Expected Damage::Areas, got {:?}", damage),
+        }
+    }
+
+    #[test]
+    fn test_cmd_damage_cursor_lines() {
+        // CursorLines damage
+        let cmd = Cmd::redraw_cursor_lines(vec![5, 10, 15]);
+        let damage = cmd.damage();
+        match damage {
+            Damage::Areas(a) => {
+                assert_eq!(a.len(), 1);
+                if let DamageArea::CursorLines(lines) = &a[0] {
+                    assert_eq!(lines.len(), 3);
+                    assert!(lines.contains(&5));
+                    assert!(lines.contains(&10));
+                    assert!(lines.contains(&15));
+                } else {
+                    panic!("Expected DamageArea::CursorLines");
+                }
+            }
+            _ => panic!("Expected Damage::Areas"),
+        }
+    }
+
+    #[test]
+    fn test_cmd_damage_merge_cursor_lines() {
+        // Merge cursor lines with existing cursor lines
+        let mut damage = Damage::Areas(vec![DamageArea::CursorLines(vec![1, 2])]);
+        damage.merge(Damage::Areas(vec![DamageArea::CursorLines(vec![2, 3])]));
+        match damage {
+            Damage::Areas(a) => {
+                assert_eq!(a.len(), 1);
+                if let DamageArea::CursorLines(lines) = &a[0] {
+                    assert_eq!(lines.len(), 3);
+                    assert!(lines.contains(&1));
+                    assert!(lines.contains(&2));
+                    assert!(lines.contains(&3));
+                } else {
+                    panic!("Expected DamageArea::CursorLines");
+                }
+            }
+            _ => panic!("Expected Damage::Areas"),
+        }
+    }
+
+    #[test]
+    fn test_cmd_damage_merge_editor_area() {
+        // Merge EditorArea with existing EditorArea (should dedupe)
+        let mut damage = Damage::Areas(vec![DamageArea::EditorArea]);
+        damage.merge(Damage::Areas(vec![DamageArea::EditorArea]));
+        match damage {
+            Damage::Areas(a) => {
+                assert_eq!(a.len(), 1);
+                assert!(a.contains(&DamageArea::EditorArea));
+            }
+            _ => panic!("Expected Damage::Areas"),
+        }
+    }
+
+    #[test]
+    fn test_cmd_damage_merge_none() {
+        // None is identity for merge
+        let mut damage = Damage::Areas(vec![DamageArea::EditorArea]);
+        damage.merge(Damage::None);
+        match damage {
+            Damage::Areas(a) => {
+                assert_eq!(a.len(), 1);
+                assert!(a.contains(&DamageArea::EditorArea));
+            }
+            _ => panic!("Expected Damage::Areas"),
+        }
+    }
+
+    #[test]
+    fn test_cmd_damage_merge_full_absorbs() {
+        // Full absorbs everything
+        let mut damage = Damage::Areas(vec![DamageArea::EditorArea, DamageArea::StatusBar]);
+        damage.merge(Damage::Full);
+        assert!(damage.is_full());
+
+        // Full is also absorbed (stays Full)
+        let mut damage = Damage::Full;
+        damage.merge(Damage::Areas(vec![DamageArea::EditorArea]));
+        assert!(damage.is_full());
+    }
+
+    #[test]
+    fn test_damage_editor_area_helper() {
+        let damage = Damage::editor_area();
+        assert!(damage.includes_editor());
+        assert!(!damage.includes_status_bar());
+    }
+
+    #[test]
+    fn test_damage_status_bar_helper() {
+        let damage = Damage::status_bar();
+        assert!(damage.includes_status_bar());
+        assert!(!damage.includes_editor());
+    }
+
+    #[test]
+    fn test_damage_cursor_lines_helper() {
+        let damage = Damage::cursor_lines(vec![5, 10]);
+        assert!(damage.includes_editor());
+        if let Some(lines) = damage.cursor_lines_only() {
+            assert_eq!(lines.len(), 2);
+        } else {
+            panic!("Expected cursor_lines_only to return Some");
+        }
+    }
+
+    #[test]
+    fn test_damage_needs_redraw() {
+        assert!(!Damage::None.needs_redraw());
+        assert!(Damage::Full.needs_redraw());
+        assert!(Damage::Areas(vec![DamageArea::EditorArea]).needs_redraw());
+        assert!(!Damage::Areas(vec![]).needs_redraw());
+    }
+
+    #[test]
+    fn test_cmd_redraw_helpers() {
+        // redraw_editor includes both EditorArea and StatusBar
+        let cmd = Cmd::redraw_editor();
+        let damage = cmd.damage();
+        match damage {
+            Damage::Areas(a) => {
+                assert_eq!(a.len(), 2);
+                assert!(a.contains(&DamageArea::EditorArea));
+                assert!(a.contains(&DamageArea::StatusBar));
+            }
+            _ => panic!("Expected Damage::Areas"),
+        }
+
+        // redraw_status_bar only includes StatusBar
+        let cmd = Cmd::redraw_status_bar();
+        let damage = cmd.damage();
+        match damage {
+            Damage::Areas(a) => {
+                assert_eq!(a.len(), 1);
+                assert!(a.contains(&DamageArea::StatusBar));
+            }
+            _ => panic!("Expected Damage::Areas"),
+        }
+
+        // redraw_cursor_lines with empty vec returns None
+        let cmd = Cmd::redraw_cursor_lines(vec![]);
+        assert!(matches!(cmd, Cmd::None));
     }
 }
