@@ -6,6 +6,26 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+---
+
+## v0.3.13 - 2026-01-07
+
+### Fixed - CSV Cell Editing
+
+**Column Truncation:**
+- Fixed column truncation issue during CSV cell editing
+- Cells now properly handle content that exceeds initial column width
+- No data loss when editing longer values
+
+**Horizontal Scrolling:**
+- Added horizontal scroll support for CSV cell editing
+- Long cell content now scrollable within the edit field
+- Improved UX for editing cells with long text values
+
+**Log File Discovery:**
+- Fixed log file discovery to find most recent dated log file
+- Improved config path resolution for logging
+
 ### Added - Command Palette Enhancements
 
 **New Commands:**
@@ -74,7 +94,7 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## v0.3.12 - 2025-12-20 (Latest)
+## v0.3.12 - 2025-12-20
 
 ### Added - Find/Replace Implementation
 
