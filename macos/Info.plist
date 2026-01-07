@@ -7,11 +7,11 @@
     <key>CFBundleDisplayName</key>
     <string>Token</string>
     <key>CFBundleIdentifier</key>
-    <string>com.token.editor</string>
+    <string>no.helgesverre.token</string>
     <key>CFBundleVersion</key>
-    <string>0.3.6</string>
+    <string>VERSION_PLACEHOLDER</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.3.6</string>
+    <string>VERSION_PLACEHOLDER</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>

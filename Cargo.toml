@@ -104,6 +104,18 @@ dhat = { version = "0.3", optional = true }
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
 
+[package.metadata.bundle]
+name = "Token"
+identifier = "no.helgesverre.token"
+icon = ["assets/icon.icns"]
+category = "public.app-category.developer-tools"
+copyright = "Copyright (c) Helge Sverre 2024"
+
+[package.metadata.bundle.bin.token]
+name = "Token"
+identifier = "no.helgesverre.token"
+icon = ["assets/icon.icns"]
+
 [dev-dependencies]
 divan = "0.1"
 tempfile = "3"

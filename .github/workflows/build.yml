@@ -19,16 +19,16 @@ jobs:
         include:
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact: token-macos-x86_64
+            format: osx
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: token-macos-aarch64
+            format: osx
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: token-linux-x86_64
+            format: deb
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: token-windows-x86_64
+            format: msi
 
     runs-on: ${{ matrix.os }}
     name: Build (${{ matrix.target }})
@@ -52,29 +52,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libxkbcommon-dev libwayland-dev
 
+      - name: Install cargo-bundle
+        run: cargo install cargo-bundle --locked
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Package (Unix)
-        if: matrix.os != 'windows-latest'
-        run: |
-          mkdir -p dist
-          cp target/${{ matrix.target }}/release/token dist/
-          tar -czvf ${{ matrix.artifact }}.tar.gz -C dist token
-
-      - name: Package (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          mkdir dist
-          copy target\${{ matrix.target }}\release\token.exe dist\
-          Compress-Archive -Path dist\token.exe -DestinationPath ${{ matrix.artifact }}.zip
+      - name: Bundle
+        run: cargo bundle --release --target ${{ matrix.target }} --format ${{ matrix.format }} --bin token
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: |
-            ${{ matrix.artifact }}.tar.gz
-            ${{ matrix.artifact }}.zip
+          name: ${{ matrix.target }}-bundle
+          path: target/bundle/**/*
           if-no-files-found: ignore
           retention-days: 7

@@ -28,15 +28,12 @@ jobs:
       - name: Generate SHA256 checksums
         run: |
           cd artifacts
-          sha256sum *.tar.gz *.zip > SHA256SUMS.txt
+          sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/*.tar.gz
-            artifacts/*.zip
-            artifacts/SHA256SUMS.txt
+          files: artifacts/*
           generate_release_notes: true
           prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}

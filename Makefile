@@ -7,7 +7,7 @@
         watch watch-lint test-fast test-retry \
         setup setup-tools install uninstall \
         compile-all compile-macos-x86 compile-macos-arm compile-linux compile-windows \
-        generate-icon icons bundle-macos
+        generate-icon icons bundle-macos bundle-linux bundle-windows bundle bundle-all
 
 # Default target
 all: help
@@ -108,6 +108,7 @@ test-verbose:
 # Clean build artifacts
 clean:
 	cargo clean
+	rm -rf target/bundle
 	rm -rf Token.app
 	rm -f assets/icon.icns assets/icon.ico
 
@@ -228,7 +229,11 @@ help:
 	@echo "App bundling:"
 	@echo "  make generate-icon    - Generate placeholder icon PNG"
 	@echo "  make icons            - Generate .icns and .ico from PNG"
-	@echo "  make bundle-macos     - Create Token.app bundle"
+	@echo "  make bundle           - Create app bundle for current platform"
+	@echo "  make bundle-macos     - Create macOS .dmg package"
+	@echo "  make bundle-linux     - Create Linux .deb package"
+	@echo "  make bundle-windows   - Create Windows .msi installer"
+	@echo "  make bundle-all       - Create bundles for all platforms"
 
 # === Setup targets ===
 
@@ -245,6 +250,7 @@ setup setup-tools:
 	cargo install bacon --locked
 	cargo install flamegraph --locked
 	cargo install samply --locked
+	cargo install cargo-bundle --locked
 	@echo ""
 	@echo "==> Setup complete!"
 	@echo ""
@@ -402,7 +408,7 @@ compile-linux:
 compile-windows:
 	cargo xwin build --profile dist --target x86_64-pc-windows-msvc
 
-# === Icon and App Bundle targets ===
+# === App bundling targets ===
 
 # Generate placeholder icon PNG (requires Python with PIL)
 generate-icon:
@@ -446,13 +452,23 @@ icons: assets/icon.png
 	fi
 	@test -f assets/icon.ico && echo "Created assets/icon.ico" || true
 
-# Create macOS app bundle (uses dist profile for smallest binary)
+# Bundle for current platform (requires: cargo install cargo-bundle)
+bundle: dist icons
+	cargo bundle --release --bin token
+
+# Bundle for all platforms (requires cross-compilation toolchains)
+bundle-all: bundle-macos bundle-linux bundle-windows
+	@echo "All platform bundles created!"
+	@ls -la target/bundle/*/
+
+# Create macOS .app bundle / .dmg (macOS only)
 bundle-macos: dist icons
-	@echo "Creating Token.app bundle..."
-	@rm -rf Token.app
-	@mkdir -p Token.app/Contents/MacOS
-	@mkdir -p Token.app/Contents/Resources
-	@cp target/dist/token Token.app/Contents/MacOS/
-	@cp assets/icon.icns Token.app/Contents/Resources/
-	@cp macos/Info.plist Token.app/Contents/
-	@echo "Created Token.app"
+	cargo bundle --release --bin token --format osx
+
+# Create Linux .deb package (Linux only)
+bundle-linux: dist icons
+	cargo bundle --release --bin token --format deb
+
+# Create Windows .msi installer (Windows only)
+bundle-windows: dist icons
+	cargo bundle --release --bin token --format msi
