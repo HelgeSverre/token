@@ -28,7 +28,10 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
         }
 
         UiMsg::BlinkCursor => {
-            if model.ui.update_cursor_blink(Duration::from_millis(model.config.cursor_blink_ms)) {
+            if model
+                .ui
+                .update_cursor_blink(Duration::from_millis(model.config.cursor_blink_ms))
+            {
                 // Compute dirty lines for cursor blink optimization
                 let current_cursor_lines = get_current_cursor_lines(model);
                 let previous_cursor_lines = &model.ui.previous_cursor_lines;
@@ -44,9 +47,9 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                 // Update previous cursor lines for next blink
                 model.ui.previous_cursor_lines = current_cursor_lines;
 
-                // Return cursor-lines-only damage (or Full if no focused editor)
+                // Return cursor-lines-only damage (or None if no focused editor)
                 if dirty_lines.is_empty() {
-                    Some(Cmd::Redraw)
+                    None
                 } else {
                     Some(Cmd::redraw_cursor_lines(dirty_lines))
                 }
@@ -897,14 +900,14 @@ fn find_next_in_document(model: &mut AppModel, query: &str, case_sensitive: bool
         );
 
         model.ensure_cursor_visible();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         // No match found - show transient message
         model.ui.transient_message = Some(TransientMessage::new(
             "No matches found".to_string(),
             Duration::from_secs(2),
         ));
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     }
 }
 
@@ -941,13 +944,13 @@ fn find_prev_in_document(model: &mut AppModel, query: &str, case_sensitive: bool
         );
 
         model.ensure_cursor_visible();
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     } else {
         model.ui.transient_message = Some(TransientMessage::new(
             "No matches found".to_string(),
             Duration::from_secs(2),
         ));
-        Some(Cmd::Redraw)
+        Some(Cmd::redraw_editor())
     }
 }
 
@@ -1049,7 +1052,7 @@ fn replace_all(
         format!("Replaced {} occurrences", count),
         Duration::from_secs(2),
     ));
-    Some(Cmd::Redraw)
+    Some(Cmd::redraw_editor())
 }
 
 /// Get the line numbers of all cursors in the focused editor
