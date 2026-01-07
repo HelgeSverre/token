@@ -5,11 +5,11 @@ use std::path::PathBuf;
 use crate::commands::{Cmd, CommandId};
 use crate::config::EditorConfig;
 use crate::config_paths;
-use crate::theme::{load_theme, Theme};
 use crate::keymap::get_default_keymap_yaml;
 use crate::messages::{AppMsg, DocumentMsg, LayoutMsg, UiMsg};
 use crate::model::{AppModel, ModalId, SplitDirection};
 use crate::syntax::LanguageId;
+use crate::theme::{load_theme, Theme};
 
 use super::{update_document, update_layout, update_ui, SYNTAX_DEBOUNCE_MS};
 
@@ -55,7 +55,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                 }
                 None => {
                     model.ui.set_status("No file path - cannot save");
-                    Some(Cmd::Redraw)
+                    Some(Cmd::redraw_status_bar())
                 }
             }
         }
@@ -69,7 +69,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
         AppMsg::NewFile => {
             // TODO: Implement new file
             model.ui.set_status("New file not yet implemented");
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_status_bar())
         }
 
         AppMsg::SaveCompleted(result) => {
@@ -85,7 +85,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                     model.ui.set_status(format!("Error: {}", e));
                 }
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_status_bar())
         }
 
         AppMsg::FileLoaded { path, result } => {
@@ -113,7 +113,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                         if let Some(doc_id) = model.document().id {
                             let revision = model.document().revision;
                             return Some(Cmd::Batch(vec![
-                                Cmd::Redraw,
+                                Cmd::redraw_editor(),
                                 Cmd::DebouncedSyntaxParse {
                                     document_id: doc_id,
                                     revision,
@@ -122,12 +122,13 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                             ]));
                         }
                     }
+                    Some(Cmd::redraw_editor())
                 }
                 Err(e) => {
                     model.ui.set_status(format!("Error: {}", e));
+                    Some(Cmd::redraw_status_bar())
                 }
             }
-            Some(Cmd::Redraw)
         }
 
         AppMsg::Quit => Some(Cmd::Quit),
@@ -154,7 +155,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                 ReloadResult::NoConfigDir => "No config directory, using defaults",
             };
             model.ui.set_status(msg);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_status_bar())
         }
 
         // =====================================================================
@@ -176,7 +177,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                 Some(Cmd::SaveFile { path, content })
             } else {
                 model.ui.set_status("Save cancelled");
-                Some(Cmd::Redraw)
+                Some(Cmd::redraw_status_bar())
             }
         }
 
@@ -220,7 +221,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             } else {
                 model.ui.set_status("Open folder cancelled");
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_status_bar())
         }
     }
 }
@@ -264,7 +265,7 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
                 Some(Cmd::OpenInExplorer { path: config_dir })
             } else {
                 model.ui.set_status("Could not determine config directory");
-                Some(Cmd::Redraw)
+                Some(Cmd::redraw_status_bar())
             }
         }
         CommandId::OpenKeybindings => {
