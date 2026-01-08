@@ -393,7 +393,8 @@ fn update_edit_scroll(char_width: f32, csv: &mut CsvState) {
             // Calculate visible characters in the cell
             let col_width_px = (col_width as f32 * char_width + 12.0) as usize;
             let padding = 8; // 4px padding on each side
-            let visible_chars = ((col_width_px.saturating_sub(padding)) as f32 / char_width) as usize;
+            let visible_chars =
+                ((col_width_px.saturating_sub(padding)) as f32 / char_width) as usize;
 
             // Calculate scroll offset to keep cursor visible (with 2-char margin)
             let margin = 2;

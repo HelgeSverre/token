@@ -53,6 +53,11 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # For CLI argument parsing
 clap = { version = "4", features = ["derive"] }
 
+# For Markdown preview
+pulldown-cmark = "0.12"
+wry = "0.50"
+open = "5"  # For opening URLs in default browser
+
 # For user config directory detection
 dirs = "5"
 

@@ -286,6 +286,9 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             }
         }
         CommandId::ToggleCsvView => super::csv::update_csv(model, crate::messages::CsvMsg::Toggle),
+        CommandId::ToggleMarkdownPreview => {
+            super::preview::update_preview(model, crate::messages::PreviewMsg::Toggle)
+        }
         CommandId::OpenLogFile => {
             if let Some(log_path) = config_paths::log_file() {
                 // Ensure logs dir exists

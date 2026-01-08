@@ -31,7 +31,6 @@ fn main() -> Result<()> {
 
     let event_loop = EventLoop::new()?;
     let mut app = App::new(800, 600, startup_config);
-
     event_loop.run_app(&mut app)?;
 
     Ok(())

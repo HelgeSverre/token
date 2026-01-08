@@ -50,6 +50,7 @@ fn test_split_focused_horizontal() {
             assert_eq!(container.ratios[1], 0.5);
         }
         LayoutNode::Group(_) => panic!("Expected Split, got Group"),
+        _ => panic!("Unexpected layout node type"),
     }
 }
 
@@ -69,6 +70,7 @@ fn test_split_focused_vertical() {
             assert_eq!(container.direction, SplitDirection::Vertical);
         }
         LayoutNode::Group(_) => panic!("Expected Split, got Group"),
+        _ => panic!("Unexpected layout node type"),
     }
 }
 
@@ -162,6 +164,7 @@ fn test_close_group_removes_from_layout() {
             assert_eq!(*id, original_group_id);
         }
         LayoutNode::Split(_) => panic!("Expected Group, got Split"),
+        _ => panic!("Unexpected layout node type"),
     }
 
     // Focus moved to remaining group

@@ -123,7 +123,9 @@ pub struct RectDump {
 
 #[derive(Serialize)]
 pub enum LayoutNodeDump {
+    Empty,
     Group(u64),
+    Preview(u64),
     Split {
         direction: String,
         children: Vec<LayoutNodeDump>,
@@ -309,7 +311,9 @@ impl EditorAreaDump {
 
 fn layout_node_dump(node: &LayoutNode) -> LayoutNodeDump {
     match node {
+        LayoutNode::Empty => LayoutNodeDump::Empty,
         LayoutNode::Group(id) => LayoutNodeDump::Group(id.0),
+        LayoutNode::Preview(id) => LayoutNodeDump::Preview(id.0),
         LayoutNode::Split(container) => LayoutNodeDump::Split {
             direction: match container.direction {
                 SplitDirection::Horizontal => "horizontal".to_string(),

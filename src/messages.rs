@@ -398,6 +398,25 @@ pub enum SyntaxMsg {
     },
 }
 
+/// Markdown preview messages
+#[derive(Debug, Clone)]
+pub enum PreviewMsg {
+    /// Toggle preview for current document
+    Toggle,
+    /// Open preview to the side
+    Open,
+    /// Close preview
+    Close,
+    /// Update preview content (after document edit)
+    Refresh,
+    /// Scroll preview to line (from source scroll)
+    ScrollToLine(usize),
+    /// Scroll source to line (from preview scroll via IPC)
+    SyncFromPreview(usize),
+    /// Toggle scroll synchronization
+    ToggleSync,
+}
+
 /// CSV mode messages
 #[derive(Debug, Clone)]
 pub enum CsvMsg {
@@ -577,6 +596,8 @@ pub enum Msg {
     Syntax(SyntaxMsg),
     /// CSV mode messages
     Csv(CsvMsg),
+    /// Markdown preview messages
+    Preview(PreviewMsg),
     /// Workspace messages (file tree)
     Workspace(WorkspaceMsg),
     /// Unified text editing messages (Phase 2 - editable system)

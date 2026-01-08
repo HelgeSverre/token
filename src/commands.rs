@@ -58,6 +58,9 @@ pub enum CommandId {
     // CSV
     ToggleCsvView,
 
+    // Markdown
+    ToggleMarkdownPreview,
+
     // Debug/Troubleshooting
     OpenLogFile,
 
@@ -210,6 +213,11 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: None,
     },
     CommandDef {
+        id: CommandId::ToggleMarkdownPreview,
+        label: "Markdown: Toggle Preview",
+        keybinding: Some("⇧⌘V"),
+    },
+    CommandDef {
         id: CommandId::OpenLogFile,
         label: "Open Log File",
         keybinding: None,
@@ -353,6 +361,7 @@ impl CommandId {
             CommandId::OpenKeybindings => None,
             CommandId::ReloadConfiguration => None,
             CommandId::ToggleCsvView => Some(KeymapCommand::CsvToggle),
+            CommandId::ToggleMarkdownPreview => Some(KeymapCommand::MarkdownTogglePreview),
             CommandId::OpenLogFile => Some(KeymapCommand::OpenLogFile),
             CommandId::OpenFolder => None,
             CommandId::Quit => Some(KeymapCommand::Quit),

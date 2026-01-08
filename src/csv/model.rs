@@ -85,7 +85,12 @@ impl CellEditState {
     }
 
     /// Create new edit state starting with a character (replaces content)
-    pub fn with_char(position: CellPosition, original: String, ch: char, column_width: usize) -> Self {
+    pub fn with_char(
+        position: CellPosition,
+        original: String,
+        ch: char,
+        column_width: usize,
+    ) -> Self {
         let mut editable = EditableState::new(
             StringBuffer::from_text(&ch.to_string()),
             EditConstraints::csv_cell(),

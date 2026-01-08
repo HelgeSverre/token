@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use super::document::Document;
 use super::editor::{EditorState, ScrollRevealMode};
+use crate::markdown::PreviewPane;
 
 // ============================================================================
 // Identifiers
@@ -85,6 +86,8 @@ pub struct EditorGroup {
     pub active_tab_index: usize,
     /// Layout info (set by parent during layout computation)
     pub rect: Rect,
+    /// Preview pane attached to this group (if any)
+    pub attached_preview: Option<PreviewId>,
 }
 
 impl EditorGroup {
@@ -126,11 +129,18 @@ pub struct SplitContainer {
     pub min_sizes: Vec<f32>,
 }
 
-/// A node in the layout tree - either a group or a split container
-#[derive(Debug, Clone)]
+/// Unique identifier for a preview pane
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PreviewId(pub u64);
+
+/// A node in the layout tree - either a group, a split container, or a preview pane
+#[derive(Debug, Clone, Default)]
 pub enum LayoutNode {
+    #[default]
+    Empty,
     Group(GroupId),
     Split(SplitContainer),
+    Preview(PreviewId),
 }
 
 // ============================================================================
@@ -149,6 +159,9 @@ pub struct EditorArea {
     /// All editor groups (each contains tabs)
     pub groups: HashMap<GroupId, EditorGroup>,
 
+    /// All preview panes
+    pub previews: HashMap<PreviewId, PreviewPane>,
+
     /// The layout tree root
     pub layout: LayoutNode,
 
@@ -160,6 +173,7 @@ pub struct EditorArea {
     next_editor_id: u64,
     next_group_id: u64,
     next_tab_id: u64,
+    next_preview_id: u64,
 
     /// Counter for generating unique untitled document names
     next_untitled_number: u32,
@@ -203,6 +217,7 @@ impl EditorArea {
                 tabs: vec![tab],
                 active_tab_index: 0,
                 rect: Rect::default(),
+                attached_preview: None,
             },
         );
 
@@ -210,12 +225,14 @@ impl EditorArea {
             documents,
             editors,
             groups,
+            previews: HashMap::new(),
             layout: LayoutNode::Group(group_id),
             focused_group_id: group_id,
             next_document_id: 2,
             next_editor_id: 2,
             next_group_id: 2,
             next_tab_id: 2,
+            next_preview_id: 1,
             next_untitled_number: 1,
             last_layout_rect: None,
         }
@@ -320,6 +337,13 @@ impl EditorArea {
         id
     }
 
+    /// Generate a new preview ID
+    pub fn next_preview_id(&mut self) -> PreviewId {
+        let id = PreviewId(self.next_preview_id);
+        self.next_preview_id += 1;
+        id
+    }
+
     /// Generate the next untitled document name (e.g., "Untitled", "Untitled-2", etc.)
     pub fn next_untitled_name(&mut self) -> String {
         let n = self.next_untitled_number;
@@ -370,6 +394,204 @@ impl EditorArea {
     /// Check if a file is already open (quick check without returning details)
     pub fn is_file_open(&self, path: &std::path::Path) -> bool {
         self.find_open_file(path).is_some()
+    }
+
+    // =========================================================================
+    // Preview Pane Management (Group-Centric)
+    // =========================================================================
+
+    /// Check if a preview is open for a document
+    pub fn has_preview_for_document(&self, doc_id: DocumentId) -> bool {
+        self.previews.values().any(|p| p.document_id == doc_id)
+    }
+
+    /// Find preview pane for a document
+    pub fn find_preview_for_document(&self, doc_id: DocumentId) -> Option<PreviewId> {
+        self.previews
+            .iter()
+            .find(|(_, p)| p.document_id == doc_id)
+            .map(|(id, _)| *id)
+    }
+
+    /// Find preview attached to a group
+    pub fn find_preview_for_group(&self, group_id: GroupId) -> Option<PreviewId> {
+        self.groups.get(&group_id)?.attached_preview
+    }
+
+    /// Get preview for the focused group
+    pub fn focused_group_preview(&self) -> Option<PreviewId> {
+        self.find_preview_for_group(self.focused_group_id)
+    }
+
+    /// Get preview pane by ID
+    pub fn preview(&self, id: PreviewId) -> Option<&PreviewPane> {
+        self.previews.get(&id)
+    }
+
+    /// Get preview pane mutably by ID
+    pub fn preview_mut(&mut self, id: PreviewId) -> Option<&mut PreviewPane> {
+        self.previews.get_mut(&id)
+    }
+
+    /// Get mutable preview for a group
+    pub fn preview_for_group_mut(&mut self, group_id: GroupId) -> Option<&mut PreviewPane> {
+        let preview_id = self.groups.get(&group_id)?.attached_preview?;
+        self.previews.get_mut(&preview_id)
+    }
+
+    /// Open preview for the focused group's active document
+    pub fn open_preview_for_focused_group(&mut self) -> Option<PreviewId> {
+        let group_id = self.focused_group_id;
+        self.open_preview_for_group(group_id)
+    }
+
+    /// Open preview for a specific group's active document
+    pub fn open_preview_for_group(&mut self, group_id: GroupId) -> Option<PreviewId> {
+        let group = self.groups.get(&group_id)?;
+        let editor_id = group.active_editor_id()?;
+        let editor = self.editors.get(&editor_id)?;
+        let doc_id = editor.document_id?;
+
+        // If a preview is already attached to this group, retarget it
+        if let Some(existing_pid) = group.attached_preview {
+            if let Some(preview) = self.previews.get_mut(&existing_pid) {
+                preview.document_id = doc_id;
+                preview.last_revision = 0;
+                preview.scroll_offset = 0;
+            }
+            return Some(existing_pid);
+        }
+
+        // Create new preview pane
+        let preview_id = self.next_preview_id();
+        let preview = PreviewPane::new(preview_id, doc_id, group_id);
+        self.previews.insert(preview_id, preview);
+
+        // Attach to group
+        if let Some(group) = self.groups.get_mut(&group_id) {
+            group.attached_preview = Some(preview_id);
+        }
+
+        // Create a horizontal split with the group on the left and preview on the right
+        self.wrap_group_with_preview(group_id, preview_id);
+
+        Some(preview_id)
+    }
+
+    /// Close a preview pane and remove it from layout
+    pub fn close_preview(&mut self, preview_id: PreviewId) {
+        // Get group_id before removing
+        let group_id = self.previews.get(&preview_id).map(|p| p.group_id);
+
+        // Remove from previews map
+        self.previews.remove(&preview_id);
+
+        // Detach from group
+        if let Some(gid) = group_id {
+            if let Some(group) = self.groups.get_mut(&gid) {
+                if group.attached_preview == Some(preview_id) {
+                    group.attached_preview = None;
+                }
+            }
+        }
+
+        // Remove from layout
+        self.remove_preview_from_layout(preview_id);
+    }
+
+    /// Toggle preview for the focused group
+    /// Returns true if preview is now open, false if closed
+    pub fn toggle_focused_preview(&mut self) -> bool {
+        let group_id = self.focused_group_id;
+
+        if let Some(preview_id) = self.find_preview_for_group(group_id) {
+            self.close_preview(preview_id);
+            false
+        } else {
+            self.open_preview_for_focused_group();
+            true
+        }
+    }
+
+    /// Called when the active tab changes in a group.
+    /// Closes the preview if the new document is not the preview's document.
+    pub fn on_group_active_tab_changed(&mut self, group_id: GroupId) {
+        let preview_id = match self.find_preview_for_group(group_id) {
+            Some(id) => id,
+            None => return,
+        };
+
+        // Get the new active document
+        let group = match self.groups.get(&group_id) {
+            Some(g) => g,
+            None => return,
+        };
+        let editor_id = match group.active_editor_id() {
+            Some(id) => id,
+            None => return,
+        };
+        let new_doc_id = match self.editors.get(&editor_id).and_then(|e| e.document_id) {
+            Some(id) => id,
+            None => return,
+        };
+
+        // Get the preview's document
+        let preview_doc_id = match self.previews.get(&preview_id) {
+            Some(p) => p.document_id,
+            None => return,
+        };
+
+        // If the document changed, close the preview
+        if new_doc_id != preview_doc_id {
+            self.close_preview(preview_id);
+        }
+    }
+
+    /// Close all previews for a document (called when document is closed)
+    pub fn close_previews_for_document(&mut self, doc_id: DocumentId) {
+        let preview_ids: Vec<PreviewId> = self
+            .previews
+            .iter()
+            .filter_map(|(&pid, p)| {
+                if p.document_id == doc_id {
+                    Some(pid)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for pid in preview_ids {
+            self.close_preview(pid);
+        }
+    }
+
+    /// Find which group contains a document
+    #[allow(dead_code)]
+    fn find_group_for_document(&self, doc_id: DocumentId) -> Option<GroupId> {
+        for (group_id, group) in &self.groups {
+            for tab in &group.tabs {
+                if let Some(editor) = self.editors.get(&tab.editor_id) {
+                    if editor.document_id == Some(doc_id) {
+                        return Some(*group_id);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Wrap a group in a horizontal split with a preview pane
+    fn wrap_group_with_preview(&mut self, group_id: GroupId, preview_id: PreviewId) {
+        let layout = std::mem::take(&mut self.layout);
+        self.layout = replace_group_with_split(layout, group_id, preview_id);
+    }
+
+    /// Remove a preview pane from the layout, collapsing splits if needed
+    fn remove_preview_from_layout(&mut self, preview_id: PreviewId) {
+        let fallback_group = self.focused_group_id;
+        let layout = std::mem::take(&mut self.layout);
+        self.layout = remove_preview_node(layout, preview_id, fallback_group);
     }
 
     /// Adjust cursors in all editors (except the specified one) viewing the same document
@@ -507,9 +729,15 @@ impl EditorArea {
         splitter_width: f32,
     ) {
         match node {
+            LayoutNode::Empty => {}
             LayoutNode::Group(group_id) => {
                 if let Some(group) = self.groups.get_mut(group_id) {
                     group.rect = rect;
+                }
+            }
+            LayoutNode::Preview(preview_id) => {
+                if let Some(preview) = self.previews.get_mut(preview_id) {
+                    preview.rect = rect;
                 }
             }
             LayoutNode::Split(container) => {
@@ -587,6 +815,7 @@ impl EditorArea {
     /// Recursively search for group at point
     fn group_at_point_node(&self, node: &LayoutNode, x: f32, y: f32) -> Option<GroupId> {
         match node {
+            LayoutNode::Empty => None,
             LayoutNode::Group(group_id) => {
                 if let Some(group) = self.groups.get(group_id) {
                     if group.rect.contains(x, y) {
@@ -595,9 +824,42 @@ impl EditorArea {
                 }
                 None
             }
+            LayoutNode::Preview(_) => {
+                // Preview panes don't contain groups
+                None
+            }
             LayoutNode::Split(container) => {
                 for child in &container.children {
                     if let Some(id) = self.group_at_point_node(child, x, y) {
+                        return Some(id);
+                    }
+                }
+                None
+            }
+        }
+    }
+
+    /// Find preview pane at a given point
+    pub fn preview_at_point(&self, x: f32, y: f32) -> Option<PreviewId> {
+        self.preview_at_point_node(&self.layout, x, y)
+    }
+
+    /// Recursively search for preview at point
+    fn preview_at_point_node(&self, node: &LayoutNode, x: f32, y: f32) -> Option<PreviewId> {
+        match node {
+            LayoutNode::Empty => None,
+            LayoutNode::Group(_) => None,
+            LayoutNode::Preview(preview_id) => {
+                if let Some(preview) = self.previews.get(preview_id) {
+                    if preview.rect.contains(x, y) {
+                        return Some(*preview_id);
+                    }
+                }
+                None
+            }
+            LayoutNode::Split(container) => {
+                for child in &container.children {
+                    if let Some(id) = self.preview_at_point_node(child, x, y) {
                         return Some(id);
                     }
                 }
@@ -750,4 +1012,78 @@ impl EditorArea {
     #[cfg(not(debug_assertions))]
     #[inline]
     pub fn assert_invariants(&self) {}
+}
+
+// ============================================================================
+// Layout Helper Functions (standalone to avoid borrow issues)
+// ============================================================================
+
+/// Recursively find a group node and replace it with a split containing a preview
+fn replace_group_with_split(
+    node: LayoutNode,
+    target_group: GroupId,
+    preview_id: PreviewId,
+) -> LayoutNode {
+    match node {
+        LayoutNode::Empty => node,
+        LayoutNode::Group(gid) if gid == target_group => LayoutNode::Split(SplitContainer {
+            direction: SplitDirection::Horizontal,
+            children: vec![LayoutNode::Group(gid), LayoutNode::Preview(preview_id)],
+            ratios: vec![0.5, 0.5],
+            min_sizes: vec![200.0, 200.0],
+        }),
+        LayoutNode::Group(_) => node,
+        LayoutNode::Preview(_) => node,
+        LayoutNode::Split(mut container) => {
+            container.children = container
+                .children
+                .into_iter()
+                .map(|child| replace_group_with_split(child, target_group, preview_id))
+                .collect();
+            LayoutNode::Split(container)
+        }
+    }
+}
+
+/// Recursively remove a preview node, collapsing single-child splits
+fn remove_preview_node(node: LayoutNode, target: PreviewId, fallback_group: GroupId) -> LayoutNode {
+    match node {
+        LayoutNode::Empty => node,
+        LayoutNode::Group(_) => node,
+        LayoutNode::Preview(pid) if pid == target => {
+            // Return empty - parent will clean this up
+            LayoutNode::Empty
+        }
+        LayoutNode::Preview(_) => node,
+        LayoutNode::Split(mut container) => {
+            // Remove the target preview from children
+            container
+                .children
+                .retain(|child| !matches!(child, LayoutNode::Preview(pid) if *pid == target));
+
+            // Recursively process remaining children
+            container.children = container
+                .children
+                .into_iter()
+                .map(|child| remove_preview_node(child, target, fallback_group))
+                .filter(|child| !matches!(child, LayoutNode::Empty))
+                .collect();
+
+            // Adjust ratios
+            if !container.children.is_empty() {
+                let ratio = 1.0 / container.children.len() as f32;
+                container.ratios = vec![ratio; container.children.len()];
+                container.min_sizes = vec![200.0; container.children.len()];
+            }
+
+            // Collapse if only one child remains
+            if container.children.len() == 1 {
+                container.children.pop().unwrap()
+            } else if container.children.is_empty() {
+                LayoutNode::Group(fallback_group)
+            } else {
+                LayoutNode::Split(container)
+            }
+        }
+    }
 }

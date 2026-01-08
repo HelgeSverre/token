@@ -326,3 +326,9 @@ bindings:
   - key: "meta+shift+right"
     command: MoveCursorLineEndWithSelection
     platform: macos
+
+  # ===========================================================================
+  # Markdown Preview
+  # ===========================================================================
+  - key: "cmd+shift+v"
+    command: MarkdownTogglePreview

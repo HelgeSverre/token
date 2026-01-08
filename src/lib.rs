@@ -13,6 +13,7 @@ pub mod debug_overlay;
 pub mod editable;
 pub mod fs_watcher;
 pub mod keymap;
+pub mod markdown;
 pub mod messages;
 pub mod model;
 pub mod overlay;

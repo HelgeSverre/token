@@ -611,10 +611,12 @@ impl AppModel {
     }
 
     /// Ensure cursor is visible in viewport (minimal scroll)
-    /// Uses EditorArea helper to avoid cloning the document
+    /// Uses EditorArea helper to avoid cloning the document.
+    /// Also syncs any linked preview pane's scroll position.
     pub fn ensure_cursor_visible(&mut self) {
         self.editor_area
             .ensure_focused_cursor_visible(ScrollRevealMode::Minimal);
+        self.sync_preview_scroll();
     }
 
     /// Ensure cursor is visible with direction-aware alignment
@@ -622,7 +624,8 @@ impl AppModel {
     /// When moving up, cursor is revealed at the top of the safe zone.
     /// When moving down, cursor is revealed at the bottom of the safe zone.
     /// For horizontal movement or no hint, uses minimal scroll.
-    /// Uses EditorArea helper to avoid cloning the document
+    /// Uses EditorArea helper to avoid cloning the document.
+    /// Also syncs any linked preview pane's scroll position.
     pub fn ensure_cursor_visible_directional(&mut self, vertical_up: Option<bool>) {
         let mode = match vertical_up {
             Some(true) => ScrollRevealMode::TopAligned,
@@ -630,6 +633,23 @@ impl AppModel {
             None => ScrollRevealMode::Minimal,
         };
         self.editor_area.ensure_focused_cursor_visible(mode);
+        self.sync_preview_scroll();
+    }
+
+    /// Sync any linked preview pane's scroll position with the editor's viewport
+    pub fn sync_preview_scroll(&mut self) {
+        let Some(doc_id) = self.editor_area.focused_document_id() else {
+            return;
+        };
+        let top_line = self.editor().viewport.top_line;
+
+        if let Some(preview_id) = self.editor_area.find_preview_for_document(doc_id) {
+            if let Some(preview) = self.editor_area.preview_mut(preview_id) {
+                if preview.scroll_sync_enabled {
+                    preview.scroll_offset = top_line;
+                }
+            }
+        }
     }
 
     /// Reset cursor blink timer

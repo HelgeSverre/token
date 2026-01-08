@@ -91,6 +91,7 @@ fn test_horizontal_split_layout() {
             tabs: vec![tab2],
             active_tab_index: 0,
             rect: Rect::default(),
+            attached_preview: None,
         },
     );
 
@@ -150,6 +151,7 @@ fn test_vertical_split_layout() {
             tabs: vec![tab2],
             active_tab_index: 0,
             rect: Rect::default(),
+            attached_preview: None,
         },
     );
 
@@ -209,6 +211,7 @@ fn test_group_at_point_split() {
             tabs: vec![tab2],
             active_tab_index: 0,
             rect: Rect::default(),
+            attached_preview: None,
         },
     );
 
@@ -259,6 +262,7 @@ fn test_splitter_at_point() {
             tabs: vec![tab2],
             active_tab_index: 0,
             rect: Rect::default(),
+            attached_preview: None,
         },
     );
 

@@ -546,6 +546,321 @@ impl GroupLayout {
 }
 
 // ============================================================================
+// Pane Layout System
+// ============================================================================
+
+/// Border configuration for a pane.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PaneBorders {
+    /// Show border on top edge
+    pub top: bool,
+    /// Show border on bottom edge
+    pub bottom: bool,
+    /// Show border on left edge
+    pub left: bool,
+    /// Show border on right edge
+    pub right: bool,
+}
+
+impl PaneBorders {
+    /// No borders
+    pub const NONE: Self = Self {
+        top: false,
+        bottom: false,
+        left: false,
+        right: false,
+    };
+
+    /// All borders
+    #[allow(dead_code)]
+    pub const ALL: Self = Self {
+        top: true,
+        bottom: true,
+        left: true,
+        right: true,
+    };
+
+    /// Bottom border only (common for headers)
+    #[allow(dead_code)]
+    pub const BOTTOM: Self = Self {
+        top: false,
+        bottom: true,
+        left: false,
+        right: false,
+    };
+}
+
+/// Insets (padding) configuration for a pane.
+#[derive(Debug, Clone, Copy)]
+pub struct PaneInsets {
+    pub top: usize,
+    pub bottom: usize,
+    pub left: usize,
+    pub right: usize,
+}
+
+impl PaneInsets {
+    /// Create uniform insets
+    pub fn all(size: usize) -> Self {
+        Self {
+            top: size,
+            bottom: size,
+            left: size,
+            right: size,
+        }
+    }
+
+    /// Create horizontal/vertical insets
+    #[allow(dead_code)]
+    pub fn symmetric(horizontal: usize, vertical: usize) -> Self {
+        Self {
+            top: vertical,
+            bottom: vertical,
+            left: horizontal,
+            right: horizontal,
+        }
+    }
+
+    /// No insets
+    pub const NONE: Self = Self {
+        top: 0,
+        bottom: 0,
+        left: 0,
+        right: 0,
+    };
+}
+
+impl Default for PaneInsets {
+    fn default() -> Self {
+        Self::NONE
+    }
+}
+
+/// A reusable pane layout with optional header, borders, and content insets.
+///
+/// Panes are the building blocks for UI panels, preview panes, dialogs, etc.
+/// They provide consistent sizing and positioning across the application.
+///
+/// # Layout Structure
+/// ```text
+/// ┌─────────────────────────────────┐ ← outer_rect.y
+/// │ Header (optional)               │
+/// │─────────────────────────────────│ ← header border
+/// │ ┌─────────────────────────────┐ │ ← content_rect.y (with insets)
+/// │ │                             │ │
+/// │ │     Content Area            │ │
+/// │ │                             │ │
+/// │ └─────────────────────────────┘ │
+/// └─────────────────────────────────┘
+/// ```
+#[derive(Debug, Clone, Copy)]
+pub struct Pane {
+    /// Full outer rect of the pane
+    pub outer_rect: Rect,
+    /// Header height (0 if no header)
+    pub header_height: usize,
+    /// Whether to show header border
+    pub header_border: bool,
+    /// Content area insets
+    pub insets: PaneInsets,
+    /// Border configuration
+    pub borders: PaneBorders,
+    /// Border width in pixels
+    pub border_width: usize,
+}
+
+impl Pane {
+    /// Create a pane with a header (uses tab_bar_height).
+    pub fn with_header(rect: Rect, metrics: &token::model::ScaledMetrics) -> Self {
+        Self {
+            outer_rect: rect,
+            header_height: metrics.tab_bar_height,
+            header_border: true,
+            insets: PaneInsets::all(metrics.padding_large + metrics.padding_medium),
+            borders: PaneBorders::NONE,
+            border_width: metrics.border_width,
+        }
+    }
+
+    /// Create a pane without a header.
+    #[allow(dead_code)]
+    pub fn without_header(rect: Rect, metrics: &token::model::ScaledMetrics) -> Self {
+        Self {
+            outer_rect: rect,
+            header_height: 0,
+            header_border: false,
+            insets: PaneInsets::all(metrics.padding_large),
+            borders: PaneBorders::NONE,
+            border_width: metrics.border_width,
+        }
+    }
+
+    /// Set content insets
+    #[allow(dead_code)]
+    pub fn with_insets(mut self, insets: PaneInsets) -> Self {
+        self.insets = insets;
+        self
+    }
+
+    /// Set border configuration
+    #[allow(dead_code)]
+    pub fn with_borders(mut self, borders: PaneBorders) -> Self {
+        self.borders = borders;
+        self
+    }
+
+    // =========================================================================
+    // Outer rect accessors
+    // =========================================================================
+
+    /// Outer rect X position
+    #[inline]
+    pub fn x(&self) -> usize {
+        self.outer_rect.x.round() as usize
+    }
+
+    /// Outer rect Y position
+    #[inline]
+    pub fn y(&self) -> usize {
+        self.outer_rect.y.round() as usize
+    }
+
+    /// Outer rect width
+    #[inline]
+    pub fn width(&self) -> usize {
+        self.outer_rect.width.round() as usize
+    }
+
+    /// Outer rect height
+    #[inline]
+    pub fn height(&self) -> usize {
+        self.outer_rect.height.round() as usize
+    }
+
+    // =========================================================================
+    // Header accessors
+    // =========================================================================
+
+    /// Whether this pane has a header
+    #[inline]
+    pub fn has_header(&self) -> bool {
+        self.header_height > 0
+    }
+
+    /// Header rect (returns zero-height rect if no header)
+    #[inline]
+    #[allow(dead_code)]
+    pub fn header_rect(&self) -> Rect {
+        Rect::new(
+            self.outer_rect.x,
+            self.outer_rect.y,
+            self.outer_rect.width,
+            self.header_height as f32,
+        )
+    }
+
+    /// X position for header title text
+    #[inline]
+    pub fn header_title_x(&self) -> usize {
+        self.x() + self.insets.left
+    }
+
+    /// Y position for header title text (vertically centered)
+    #[inline]
+    pub fn header_title_y(&self, metrics: &token::model::ScaledMetrics) -> usize {
+        self.y() + metrics.padding_medium
+    }
+
+    /// Y position of header border line
+    #[inline]
+    pub fn header_border_y(&self) -> usize {
+        self.y() + self.header_height.saturating_sub(self.border_width)
+    }
+
+    // =========================================================================
+    // Content rect accessors
+    // =========================================================================
+
+    /// Content area rect (after header and insets)
+    #[allow(dead_code)]
+    pub fn content_rect(&self) -> Rect {
+        let y = self.outer_rect.y + self.header_height as f32;
+        let height = (self.outer_rect.height - self.header_height as f32).max(0.0);
+        Rect::new(self.outer_rect.x, y, self.outer_rect.width, height)
+    }
+
+    /// Content area X position (with left inset)
+    #[inline]
+    pub fn content_x(&self) -> usize {
+        self.x() + self.insets.left
+    }
+
+    /// Content area Y position (below header, with top inset)
+    #[inline]
+    pub fn content_y(&self) -> usize {
+        self.y() + self.header_height + self.insets.top
+    }
+
+    /// Content area width (with horizontal insets)
+    #[inline]
+    pub fn content_width(&self) -> usize {
+        self.width()
+            .saturating_sub(self.insets.left + self.insets.right)
+    }
+
+    /// Content area height (with vertical insets, after header)
+    #[inline]
+    pub fn content_height(&self) -> usize {
+        self.height()
+            .saturating_sub(self.header_height + self.insets.top + self.insets.bottom)
+    }
+
+    /// Inner content rect (with all insets applied)
+    #[allow(dead_code)]
+    pub fn inner_content_rect(&self) -> Rect {
+        Rect::new(
+            self.content_x() as f32,
+            self.content_y() as f32,
+            self.content_width() as f32,
+            self.content_height() as f32,
+        )
+    }
+
+    // =========================================================================
+    // Utility helpers
+    // =========================================================================
+
+    /// Calculate visible lines given line height
+    #[inline]
+    pub fn visible_lines(&self, line_height: usize) -> usize {
+        if line_height == 0 {
+            return 0;
+        }
+        self.content_height() / line_height
+    }
+
+    /// Calculate max text width (content width)
+    #[inline]
+    pub fn max_text_width(&self) -> usize {
+        self.content_width()
+    }
+
+    /// Check if a point is within the pane header area
+    #[inline]
+    pub fn is_in_header(&self, x: f64, y: f64) -> bool {
+        if !self.has_header() {
+            return false;
+        }
+        let px = x as f32;
+        let py = y as f32;
+        px >= self.outer_rect.x
+            && px < self.outer_rect.x + self.outer_rect.width
+            && py >= self.outer_rect.y
+            && py < self.outer_rect.y + self.header_height as f32
+    }
+}
+
+// ============================================================================
 // Modal Geometry
 // ============================================================================
 
@@ -576,6 +891,7 @@ pub fn modal_bounds(
 }
 
 /// Check if a point is inside the modal dialog
+#[allow(dead_code)]
 pub fn is_in_modal(
     x: f64,
     y: f64,

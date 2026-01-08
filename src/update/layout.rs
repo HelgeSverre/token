@@ -108,6 +108,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                     group.active_tab_index = (group.active_tab_index + 1) % group.tabs.len();
                 }
             }
+            close_preview_if_not_markdown(model);
             Some(Cmd::redraw_editor())
         }
 
@@ -121,6 +122,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                     };
                 }
             }
+            close_preview_if_not_markdown(model);
             Some(Cmd::redraw_editor())
         }
 
@@ -130,6 +132,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                     group.active_tab_index = index;
                 }
             }
+            close_preview_if_not_markdown(model);
             Some(Cmd::redraw_editor())
         }
 
@@ -335,6 +338,7 @@ fn split_group(model: &mut AppModel, group_id: GroupId, direction: SplitDirectio
         tabs: vec![new_tab],
         active_tab_index: 0,
         rect: Default::default(),
+        attached_preview: None,
     };
     model.editor_area.groups.insert(new_group_id, new_group);
 
@@ -358,6 +362,7 @@ fn insert_split_in_layout(
     direction: SplitDirection,
 ) {
     match layout {
+        LayoutNode::Empty => {}
         LayoutNode::Group(id) if *id == target_group => {
             // Replace this group with a split containing both groups
             *layout = LayoutNode::Split(SplitContainer {
@@ -372,6 +377,9 @@ fn insert_split_in_layout(
         }
         LayoutNode::Group(_) => {
             // Not the target group, nothing to do
+        }
+        LayoutNode::Preview(_) => {
+            // Preview panes are not split targets
         }
         LayoutNode::Split(container) => {
             // Recursively search children
@@ -415,10 +423,12 @@ fn close_group(model: &mut AppModel, group_id: GroupId) {
 /// Returns true if the group was found and removed
 fn remove_group_from_layout(layout: &mut LayoutNode, group_id: GroupId) -> bool {
     match layout {
+        LayoutNode::Empty => false,
         LayoutNode::Group(id) => {
             // Can't remove at this level - parent needs to handle it
             *id == group_id
         }
+        LayoutNode::Preview(_) => false,
         LayoutNode::Split(container) => {
             // Find and remove the group from children
             let mut found_index = None;
@@ -479,7 +489,9 @@ fn remove_group_from_layout(layout: &mut LayoutNode, group_id: GroupId) -> bool 
 /// Collect all group IDs from the layout tree (in order)
 fn collect_group_ids(layout: &LayoutNode) -> Vec<GroupId> {
     match layout {
+        LayoutNode::Empty => vec![],
         LayoutNode::Group(id) => vec![*id],
+        LayoutNode::Preview(_) => vec![],
         LayoutNode::Split(container) => container
             .children
             .iter()
@@ -604,8 +616,13 @@ fn close_tab(model: &mut AppModel, tab_id: TabId) {
         return;
     }
 
-    // Get editor_id before removing
+    // Get editor_id and doc_id before removing
     let editor_id = model.editor_area.groups[&group_id].tabs[tab_idx].editor_id;
+    let doc_id = model
+        .editor_area
+        .editors
+        .get(&editor_id)
+        .and_then(|e| e.document_id);
 
     // Remove the tab
     if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
@@ -617,6 +634,20 @@ fn close_tab(model: &mut AppModel, tab_id: TabId) {
 
     // Remove the editor
     model.editor_area.editors.remove(&editor_id);
+
+    // Close any preview attached to this group if it was for this document
+    if let Some(did) = doc_id {
+        if let Some(preview_id) = model.editor_area.find_preview_for_group(group_id) {
+            if model
+                .editor_area
+                .previews
+                .get(&preview_id)
+                .is_some_and(|p| p.document_id == did)
+            {
+                model.editor_area.close_preview(preview_id);
+            }
+        }
+    }
 
     // If the group is now empty, close it (unless it's the last group)
     if model
@@ -812,7 +843,9 @@ where
     F: FnMut(&mut SplitContainer, usize),
 {
     match layout {
+        LayoutNode::Empty => false,
         LayoutNode::Group(_) => false,
+        LayoutNode::Preview(_) => false,
         LayoutNode::Split(container) => {
             let splitter_count = container.children.len().saturating_sub(1);
 
@@ -849,7 +882,9 @@ fn find_container_for_splitter(
     rect: Rect,
 ) -> Option<(Vec<f32>, f32)> {
     match layout {
+        LayoutNode::Empty => None,
         LayoutNode::Group(_) => None,
+        LayoutNode::Preview(_) => None,
         LayoutNode::Split(container) => {
             let splitter_count = container.children.len().saturating_sub(1);
 
@@ -941,4 +976,11 @@ fn restore_container_ratios_by_splitter(
             container.ratios = original_ratios.to_vec();
         },
     )
+}
+
+/// Close preview pane if the focused group's active tab changed.
+/// Called when switching tabs to ensure preview stays relevant.
+fn close_preview_if_not_markdown(model: &mut AppModel) {
+    let group_id = model.editor_area.focused_group_id;
+    model.editor_area.on_group_active_tab_changed(group_id);
 }

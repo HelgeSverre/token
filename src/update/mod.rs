@@ -7,6 +7,7 @@ mod csv;
 mod document;
 mod editor;
 pub mod layout;
+mod preview;
 mod syntax;
 mod text_edit;
 mod ui;
@@ -27,6 +28,7 @@ pub use csv::update_csv;
 pub use document::update_document;
 pub use editor::update_editor;
 pub use layout::update_layout;
+pub use preview::update_preview;
 pub use syntax::{schedule_syntax_parse, update_syntax, SYNTAX_DEBOUNCE_MS};
 pub use text_edit::{apply_text_edit_msg, update_text_edit};
 pub use ui::update_ui;
@@ -88,6 +90,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::App(m) => app::update_app(model, m),
         Msg::Syntax(m) => syntax::update_syntax(model, m),
         Msg::Csv(m) => csv::update_csv(model, m),
+        Msg::Preview(m) => preview::update_preview(model, m),
         Msg::Workspace(m) => workspace::update_workspace(model, m),
         Msg::TextEdit(context, m) => text_edit::update_text_edit(model, context, m),
     };
@@ -210,6 +213,7 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::App(m) => format!("App::{:?}", m),
         Msg::Syntax(m) => format!("Syntax::{:?}", m),
         Msg::Csv(m) => format!("Csv::{:?}", m),
+        Msg::Preview(m) => format!("Preview::{:?}", m),
         Msg::Workspace(m) => format!("Workspace::{:?}", m),
         Msg::TextEdit(ctx, m) => format!("TextEdit::{:?}::{:?}", ctx, m),
     }

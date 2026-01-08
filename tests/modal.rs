@@ -398,9 +398,11 @@ fn test_find_replace_delete_backward() {
 #[test]
 fn test_theme_picker_select_next() {
     let mut model = test_model("hello\n", 0, 0);
-    model.ui.open_modal(ModalState::ThemePicker(
-        ThemePickerState::new("default-dark".to_string()),
-    ));
+    model
+        .ui
+        .open_modal(ModalState::ThemePicker(ThemePickerState::new(
+            "default-dark".to_string(),
+        )));
 
     let initial_index = if let Some(ModalState::ThemePicker(state)) = &model.ui.active_modal {
         state.selected_index

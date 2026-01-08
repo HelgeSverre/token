@@ -235,47 +235,47 @@ render()
 
 ### Finding Specific Rendering
 
-| What                               | File               | Function / Line                |
-| ---------------------------------- | ------------------ | ------------------------------ |
-| **Main render loop**               | `src/view/mod.rs`  | `render()` L2034               |
-| **Damage computation**             | `src/view/mod.rs`  | `compute_effective_damage()`   |
-| **Editor group rendering**         | `src/view/mod.rs`  | `render_editor_group()` L535   |
-| **Tab bar**                        | `src/view/mod.rs`  | `render_tab_bar()` L597        |
-| **Text area (main editor)**        | `src/view/mod.rs`  | `render_text_area()` L917      |
-| **Line numbers/gutter**            | `src/view/mod.rs`  | `render_gutter()` L858         |
-| **CSV grid**                       | `src/view/mod.rs`  | `render_csv_grid()` L1216      |
-| **CSV cell editor**                | `src/view/mod.rs`  | `render_csv_cell_editor()`     |
-| **Splitter bars**                  | `src/view/mod.rs`  | `render_splitters()` L654      |
-| **Status bar**                     | `src/view/mod.rs`  | `render_status_bar()` L1517    |
-| **Modals**                         | `src/view/mod.rs`  | `render_modals()` L1569        |
-| **Sidebar (file tree)**            | `src/view/mod.rs`  | `render_sidebar()` L663        |
-| **Drop overlay**                   | `src/view/mod.rs`  | `render_drop_overlay()` L1999  |
-| **Geometry calculations**          | `src/view/geometry.rs` | `GroupLayout`, helpers     |
-| **Text field (modal input)**       | `src/view/text_field.rs` | `TextFieldRenderer`      |
+| What                         | File                     | Function / Line               |
+| ---------------------------- | ------------------------ | ----------------------------- |
+| **Main render loop**         | `src/view/mod.rs`        | `render()` L2034              |
+| **Damage computation**       | `src/view/mod.rs`        | `compute_effective_damage()`  |
+| **Editor group rendering**   | `src/view/mod.rs`        | `render_editor_group()` L535  |
+| **Tab bar**                  | `src/view/mod.rs`        | `render_tab_bar()` L597       |
+| **Text area (main editor)**  | `src/view/mod.rs`        | `render_text_area()` L917     |
+| **Line numbers/gutter**      | `src/view/mod.rs`        | `render_gutter()` L858        |
+| **CSV grid**                 | `src/view/mod.rs`        | `render_csv_grid()` L1216     |
+| **CSV cell editor**          | `src/view/mod.rs`        | `render_csv_cell_editor()`    |
+| **Splitter bars**            | `src/view/mod.rs`        | `render_splitters()` L654     |
+| **Status bar**               | `src/view/mod.rs`        | `render_status_bar()` L1517   |
+| **Modals**                   | `src/view/mod.rs`        | `render_modals()` L1569       |
+| **Sidebar (file tree)**      | `src/view/mod.rs`        | `render_sidebar()` L663       |
+| **Drop overlay**             | `src/view/mod.rs`        | `render_drop_overlay()` L1999 |
+| **Geometry calculations**    | `src/view/geometry.rs`   | `GroupLayout`, helpers        |
+| **Text field (modal input)** | `src/view/text_field.rs` | `TextFieldRenderer`           |
 
 ### Finding Specific Logic
 
-| What                        | File                         | Function                                  |
-| --------------------------- | ---------------------------- | ----------------------------------------- |
-| **Event handling**          | `src/runtime/app.rs`         | `handle_event()` L393                     |
-| **Keyboard input routing**  | `src/runtime/input.rs`       | `handle_key()`                            |
-| **Modal key handling**      | `src/runtime/input.rs`       | `handle_modal_key()`                      |
-| **CSV key handling**        | `src/runtime/input.rs`       | `handle_csv_edit_key()`                   |
-| **Sidebar key handling**    | `src/runtime/input.rs`       | `handle_sidebar_key()`                    |
-| **Keymap system**           | `src/keymap/mod.rs`          | `Keymap::handle()`                        |
-| **Default keybindings**     | `src/keymap/bindings.rs`     | `load_default_keymap()`                   |
-| **Update dispatcher**       | `src/update/mod.rs`          | `update()`                                |
-| **Cursor movement**         | `src/update/editor.rs`       | `update_editor()`                         |
-| **Text insertion**          | `src/update/document.rs`     | `update_document()`                       |
-| **Split/tab operations**    | `src/update/layout.rs`       | `update_layout()`                         |
-| **Undo/redo**               | `src/update/document.rs`     | `handle_undo()`, `handle_redo()`          |
-| **Multi-cursor logic**      | `src/update/editor.rs`       | `add_cursor_*`, `merge_*`                 |
-| **Viewport scrolling**      | `src/update/editor.rs`       | `handle_scroll()`, `ensure_cursor_visible()` |
-| **Status bar sync**         | `src/model/status_bar.rs`    | `sync_status_bar()`                       |
-| **Syntax highlighting**     | `src/update/syntax.rs`       | `update_syntax()`, `schedule_parse()`     |
-| **CSV operations**          | `src/update/csv.rs`          | `update_csv()`                            |
-| **Workspace operations**    | `src/update/workspace.rs`    | `update_workspace()`                      |
-| **File tree navigation**    | `src/model/workspace.rs`     | `FileTree` methods                        |
+| What                       | File                      | Function                                     |
+| -------------------------- | ------------------------- | -------------------------------------------- |
+| **Event handling**         | `src/runtime/app.rs`      | `handle_event()` L393                        |
+| **Keyboard input routing** | `src/runtime/input.rs`    | `handle_key()`                               |
+| **Modal key handling**     | `src/runtime/input.rs`    | `handle_modal_key()`                         |
+| **CSV key handling**       | `src/runtime/input.rs`    | `handle_csv_edit_key()`                      |
+| **Sidebar key handling**   | `src/runtime/input.rs`    | `handle_sidebar_key()`                       |
+| **Keymap system**          | `src/keymap/mod.rs`       | `Keymap::handle()`                           |
+| **Default keybindings**    | `src/keymap/bindings.rs`  | `load_default_keymap()`                      |
+| **Update dispatcher**      | `src/update/mod.rs`       | `update()`                                   |
+| **Cursor movement**        | `src/update/editor.rs`    | `update_editor()`                            |
+| **Text insertion**         | `src/update/document.rs`  | `update_document()`                          |
+| **Split/tab operations**   | `src/update/layout.rs`    | `update_layout()`                            |
+| **Undo/redo**              | `src/update/document.rs`  | `handle_undo()`, `handle_redo()`             |
+| **Multi-cursor logic**     | `src/update/editor.rs`    | `add_cursor_*`, `merge_*`                    |
+| **Viewport scrolling**     | `src/update/editor.rs`    | `handle_scroll()`, `ensure_cursor_visible()` |
+| **Status bar sync**        | `src/model/status_bar.rs` | `sync_status_bar()`                          |
+| **Syntax highlighting**    | `src/update/syntax.rs`    | `update_syntax()`, `schedule_parse()`        |
+| **CSV operations**         | `src/update/csv.rs`       | `update_csv()`                               |
+| **Workspace operations**   | `src/update/workspace.rs` | `update_workspace()`                         |
+| **File tree navigation**   | `src/model/workspace.rs`  | `FileTree` methods                           |
 
 ## Data Flow Example: Typing a Character
 
@@ -417,35 +417,35 @@ ModalState (enum)
 
 ## Debug Tools
 
-| Key | Action                     | File                        |
-| --- | -------------------------- | --------------------------- |
-| F2  | Toggle performance overlay | `src/debug_overlay.rs`      |
-| F7  | Dump state to JSON         | `src/debug_dump.rs`         |
+| Key | Action                     | File                   |
+| --- | -------------------------- | ---------------------- |
+| F2  | Toggle performance overlay | `src/debug_overlay.rs` |
+| F7  | Dump state to JSON         | `src/debug_dump.rs`    |
 
 ## Theme Colors (where used)
 
-| Color                              | Usage                 | View.rs location     |
-| ---------------------------------- | --------------------- | -------------------- |
-| `theme.editor.background`          | Main background       | `render()` clear     |
-| `theme.editor.foreground`          | Text color            | `render_text_area()` |
-| `theme.editor.line_number`         | Gutter numbers        | `render_gutter()`    |
-| `theme.editor.current_line`        | Line highlight        | `render_text_area()` |
-| `theme.editor.selection`           | Selection bg          | `render_text_area()` |
-| `theme.editor.cursor_color`        | Cursor                | `render_text_area()` |
-| `theme.editor.gutter_border`       | Gutter separator      | `render_gutter()`    |
-| `theme.status_bar.background`      | Status bar bg         | `render_status_bar()` |
-| `theme.status_bar.foreground`      | Status bar text       | `render_status_bar()` |
-| `theme.tab_bar.background`         | Tab bar bg            | `render_tab_bar()`   |
-| `theme.tab_bar.active_background`  | Active tab bg         | `render_tab_bar()`   |
-| `theme.tab_bar.active_foreground`  | Active tab text       | `render_tab_bar()`   |
-| `theme.overlay.background`         | Modal dialog bg       | `render_modals()`    |
-| `theme.overlay.foreground`         | Modal text            | `render_modals()`    |
-| `theme.overlay.highlight`          | Modal highlights      | `render_modals()`    |
-| `theme.sidebar.background`         | Sidebar bg            | `render_sidebar()`   |
-| `theme.sidebar.foreground`         | File tree text        | `render_sidebar()`   |
-| `theme.sidebar.selection_background` | Selected file bg    | `render_sidebar()`   |
-| `theme.splitter.background`        | Split bars            | `render_splitters()` |
-| `theme.syntax.*`                   | Code highlighting     | `render_text_area()` |
+| Color                                | Usage             | View.rs location      |
+| ------------------------------------ | ----------------- | --------------------- |
+| `theme.editor.background`            | Main background   | `render()` clear      |
+| `theme.editor.foreground`            | Text color        | `render_text_area()`  |
+| `theme.editor.line_number`           | Gutter numbers    | `render_gutter()`     |
+| `theme.editor.current_line`          | Line highlight    | `render_text_area()`  |
+| `theme.editor.selection`             | Selection bg      | `render_text_area()`  |
+| `theme.editor.cursor_color`          | Cursor            | `render_text_area()`  |
+| `theme.editor.gutter_border`         | Gutter separator  | `render_gutter()`     |
+| `theme.status_bar.background`        | Status bar bg     | `render_status_bar()` |
+| `theme.status_bar.foreground`        | Status bar text   | `render_status_bar()` |
+| `theme.tab_bar.background`           | Tab bar bg        | `render_tab_bar()`    |
+| `theme.tab_bar.active_background`    | Active tab bg     | `render_tab_bar()`    |
+| `theme.tab_bar.active_foreground`    | Active tab text   | `render_tab_bar()`    |
+| `theme.overlay.background`           | Modal dialog bg   | `render_modals()`     |
+| `theme.overlay.foreground`           | Modal text        | `render_modals()`     |
+| `theme.overlay.highlight`            | Modal highlights  | `render_modals()`     |
+| `theme.sidebar.background`           | Sidebar bg        | `render_sidebar()`    |
+| `theme.sidebar.foreground`           | File tree text    | `render_sidebar()`    |
+| `theme.sidebar.selection_background` | Selected file bg  | `render_sidebar()`    |
+| `theme.splitter.background`          | Split bars        | `render_splitters()`  |
+| `theme.syntax.*`                     | Code highlighting | `render_text_area()`  |
 
 ## Key Subsystems
 

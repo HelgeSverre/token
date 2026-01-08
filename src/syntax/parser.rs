@@ -94,7 +94,8 @@ fn compute_incremental_edit(old_src: &str, new_src: &str) -> Option<InputEdit> {
 // Phase 1 languages
 const YAML_HIGHLIGHTS: &str = include_str!("../../queries/yaml/highlights.scm");
 const MARKDOWN_HIGHLIGHTS: &str = include_str!("../../queries/markdown/highlights.scm");
-const MARKDOWN_INLINE_HIGHLIGHTS: &str = include_str!("../../queries/markdown/inline-highlights.scm");
+const MARKDOWN_INLINE_HIGHLIGHTS: &str =
+    include_str!("../../queries/markdown/inline-highlights.scm");
 const RUST_HIGHLIGHTS: &str = tree_sitter_rust::HIGHLIGHTS_QUERY;
 
 // Phase 2 languages (web stack)
@@ -620,11 +621,7 @@ impl ParserState {
         highlights: &mut SyntaxHighlights,
     ) {
         // Node kinds that contain inline content
-        const INLINE_NODE_KINDS: &[&str] = &[
-            "paragraph",
-            "heading_content",
-            "pipe_table_cell",
-        ];
+        const INLINE_NODE_KINDS: &[&str] = &["paragraph", "heading_content", "pipe_table_cell"];
 
         let lines: Vec<&str> = source.lines().collect();
 
@@ -730,10 +727,7 @@ impl ParserState {
                 let actual_row = base_row + start.row;
                 let (actual_start_col, actual_end_col) = if start.row == 0 {
                     // First line: add base column offset
-                    let base_char = byte_to_char_col(
-                        inline_source.lines().next().unwrap_or(""),
-                        0,
-                    );
+                    let base_char = byte_to_char_col(inline_source.lines().next().unwrap_or(""), 0);
                     let _ = base_char; // base_col is already in chars for first line
                     (base_col + start_char, base_col + end_char)
                 } else {
@@ -2396,10 +2390,7 @@ fn main() {
         // Line 3 should have "fn" highlighted as keyword (rust code inside code block)
         // Note: Line 0 = "# Code Example", Line 1 = "", Line 2 = "```rust", Line 3 = "fn main..."
         let line3 = highlights.lines.get(&3);
-        assert!(
-            line3.is_some(),
-            "Line 3 (fn main) should have highlights"
-        );
+        assert!(line3.is_some(), "Line 3 (fn main) should have highlights");
 
         let line = line3.unwrap();
         let has_keyword = line.tokens.iter().any(|t| {
@@ -2465,37 +2456,76 @@ fn main() {}
 
         // Verify specific highlights exist
         // Line 0: # Heading - should have punctuation.special and text.title
-        let line0 = highlights.lines.get(&0).expect("Line 0 should have highlights");
-        assert!(line0.tokens.iter().any(|t| {
-            super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize) == Some(&"punctuation.special")
-        }), "Line 0 should have punctuation.special for #");
-        assert!(line0.tokens.iter().any(|t| {
-            super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize) == Some(&"text.title")
-        }), "Line 0 should have text.title for Heading");
+        let line0 = highlights
+            .lines
+            .get(&0)
+            .expect("Line 0 should have highlights");
+        assert!(
+            line0.tokens.iter().any(|t| {
+                super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize)
+                    == Some(&"punctuation.special")
+            }),
+            "Line 0 should have punctuation.special for #"
+        );
+        assert!(
+            line0.tokens.iter().any(|t| {
+                super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize)
+                    == Some(&"text.title")
+            }),
+            "Line 0 should have text.title for Heading"
+        );
 
         // Line 2: inline elements
-        let line2 = highlights.lines.get(&2).expect("Line 2 should have highlights");
-        let highlight_names: Vec<&str> = line2.tokens.iter()
-            .filter_map(|t| super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize).copied())
+        let line2 = highlights
+            .lines
+            .get(&2)
+            .expect("Line 2 should have highlights");
+        let highlight_names: Vec<&str> = line2
+            .tokens
+            .iter()
+            .filter_map(|t| {
+                super::super::highlights::HIGHLIGHT_NAMES
+                    .get(t.highlight as usize)
+                    .copied()
+            })
             .collect();
 
-        assert!(highlight_names.contains(&"text.emphasis"),
-            "Line 2 should have text.emphasis, found: {:?}", highlight_names);
-        assert!(highlight_names.contains(&"text.strong"),
-            "Line 2 should have text.strong, found: {:?}", highlight_names);
-        assert!(highlight_names.contains(&"string"),
-            "Line 2 should have string for code, found: {:?}", highlight_names);
+        assert!(
+            highlight_names.contains(&"text.emphasis"),
+            "Line 2 should have text.emphasis, found: {:?}",
+            highlight_names
+        );
+        assert!(
+            highlight_names.contains(&"text.strong"),
+            "Line 2 should have text.strong, found: {:?}",
+            highlight_names
+        );
+        assert!(
+            highlight_names.contains(&"string"),
+            "Line 2 should have string for code, found: {:?}",
+            highlight_names
+        );
 
         // Line 5: rust code block content should have keyword (line 4 is ```rust)
-        let line5 = highlights.lines.get(&5).expect("Line 5 (fn main) should have highlights");
+        let line5 = highlights
+            .lines
+            .get(&5)
+            .expect("Line 5 (fn main) should have highlights");
         let has_keyword = line5.tokens.iter().any(|t| {
-            let name = super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize).unwrap_or(&"");
+            let name = super::super::highlights::HIGHLIGHT_NAMES
+                .get(t.highlight as usize)
+                .unwrap_or(&"");
             name.starts_with("keyword")
         });
-        assert!(has_keyword, "Line 5 should have keyword for 'fn', got: {:?}",
-            line5.tokens.iter()
+        assert!(
+            has_keyword,
+            "Line 5 should have keyword for 'fn', got: {:?}",
+            line5
+                .tokens
+                .iter()
                 .filter_map(|t| super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize))
-                .collect::<Vec<_>>());
+                .collect::<Vec<_>>()
+        );
     }
 
     // HTML language injection tests
@@ -2521,7 +2551,10 @@ function hello() {
 
         // Line 4 should have "function" as keyword.function
         let line4 = highlights.lines.get(&4);
-        assert!(line4.is_some(), "Line 4 (function hello) should have highlights");
+        assert!(
+            line4.is_some(),
+            "Line 4 (function hello) should have highlights"
+        );
 
         let line = line4.unwrap();
         let has_keyword = line.tokens.iter().any(|t| {
@@ -2561,7 +2594,10 @@ function hello() {
 
         // Line 4 should have ".container" class highlighted as @type
         let line4 = highlights.lines.get(&4);
-        assert!(line4.is_some(), "Line 4 (.container) should have highlights");
+        assert!(
+            line4.is_some(),
+            "Line 4 (.container) should have highlights"
+        );
 
         let line = line4.unwrap();
         let has_type = line.tokens.iter().any(|t| {
@@ -2603,8 +2639,14 @@ function hello() {
         // Should have highlights for HTML tags
         assert!(highlights.lines.contains_key(&1), "Should highlight <html>");
         // Should have highlights for CSS inside style
-        assert!(highlights.lines.contains_key(&4), "Should highlight CSS body selector");
+        assert!(
+            highlights.lines.contains_key(&4),
+            "Should highlight CSS body selector"
+        );
         // Should have highlights for JavaScript inside script
-        assert!(highlights.lines.contains_key(&7), "Should highlight JS console.log");
+        assert!(
+            highlights.lines.contains_key(&7),
+            "Should highlight JS console.log"
+        );
     }
 }

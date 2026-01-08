@@ -205,6 +205,9 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                     .saturating_sub(delta.unsigned_abs() as usize);
             }
 
+            // Sync preview scroll if one exists for this document
+            model.sync_preview_scroll();
+
             Some(Cmd::redraw_editor())
         }
 

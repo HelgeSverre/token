@@ -4,7 +4,8 @@
 //! Each command maps to one or more `Msg` values for the Elm-style update loop.
 
 use crate::messages::{
-    AppMsg, CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, Msg, UiMsg, WorkspaceMsg,
+    AppMsg, CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, Msg, PreviewMsg, UiMsg,
+    WorkspaceMsg,
 };
 use crate::model::editor_area::SplitDirection;
 use crate::model::ModalId;
@@ -221,6 +222,14 @@ pub enum Command {
     OpenLogFile,
 
     // ========================================================================
+    // Markdown Preview
+    // ========================================================================
+    /// Toggle markdown preview pane
+    MarkdownTogglePreview,
+    /// Open markdown preview to the side
+    MarkdownOpenPreviewToSide,
+
+    // ========================================================================
     // CSV Mode
     // ========================================================================
     /// Toggle CSV view mode
@@ -406,6 +415,10 @@ impl Command {
                 }
             }
 
+            // Markdown preview
+            MarkdownTogglePreview => vec![Msg::Preview(PreviewMsg::Toggle)],
+            MarkdownOpenPreviewToSide => vec![Msg::Preview(PreviewMsg::Open)],
+
             // CSV mode
             CsvToggle => vec![Msg::Csv(CsvMsg::Toggle)],
             CsvMoveUp => vec![Msg::Csv(CsvMsg::MoveUp)],
@@ -547,6 +560,9 @@ impl Command {
             EscapeSmartClear => "Escape",
             Unbound => "Unbound",
             OpenLogFile => "Open Log File",
+
+            MarkdownTogglePreview => "Toggle Markdown Preview",
+            MarkdownOpenPreviewToSide => "Open Markdown Preview to Side",
 
             CsvToggle => "Toggle CSV View",
             CsvMoveUp => "CSV Move Up",

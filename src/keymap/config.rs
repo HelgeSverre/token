@@ -356,6 +356,10 @@ impl FromStr for Command {
             "FileTreeOpenOrToggle" => Ok(Command::FileTreeOpenOrToggle),
             "FileTreeRefresh" => Ok(Command::FileTreeRefresh),
 
+            // Markdown preview
+            "MarkdownTogglePreview" => Ok(Command::MarkdownTogglePreview),
+            "MarkdownOpenPreviewToSide" => Ok(Command::MarkdownOpenPreviewToSide),
+
             // Special
             "EscapeSmartClear" => Ok(Command::EscapeSmartClear),
             "Unbound" => Ok(Command::Unbound),

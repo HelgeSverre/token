@@ -5,6 +5,7 @@
 pub mod frame;
 pub mod geometry;
 pub mod helpers;
+pub mod hit_test;
 pub mod text_field;
 
 pub use frame::{Frame, TextPainter};
@@ -13,6 +14,14 @@ pub use text_field::{TextFieldContent, TextFieldOptions, TextFieldRenderer};
 
 // Re-export geometry helpers for backward compatibility
 pub use geometry::{char_col_to_visual_col, expand_tabs_for_display};
+
+// Re-export hit-test types and functions for use in runtime
+#[allow(unused_imports)]
+pub use hit_test::{
+    hit_test_groups, hit_test_modal, hit_test_previews, hit_test_sidebar,
+    hit_test_sidebar_resize, hit_test_splitters, hit_test_status_bar, hit_test_ui, EventResult,
+    HitTarget, MouseEvent, Point,
+};
 
 use anyhow::Result;
 use fontdue::{Font, FontSettings, LineMetrics, Metrics};
@@ -509,10 +518,11 @@ impl Renderer {
         }
     }
 
-    /// Render the entire editor area: all groups and splitters.
+    /// Render the entire editor area: all groups, preview panes, and splitters.
     ///
     /// This is the top-level widget that orchestrates rendering of:
     /// - All editor groups (each with tab bar, gutter, text area)
+    /// - All preview panes (markdown preview)
     /// - Splitter bars between groups
     fn render_editor_area(
         frame: &mut Frame,
@@ -525,7 +535,205 @@ impl Renderer {
             Self::render_editor_group(frame, painter, model, group_id, group.rect, is_focused);
         }
 
+        // Render preview panes
+        for (&preview_id, preview) in &model.editor_area.previews {
+            Self::render_preview_pane(frame, painter, model, preview_id, preview.rect);
+        }
+
         Self::render_splitters(frame, splitters, model);
+    }
+
+    /// Render a pane with optional header, background, and borders.
+    ///
+    /// This is a reusable widget for any UI element that needs a consistent
+    /// pane layout (preview panes, panels, dialogs, etc.).
+    fn render_pane(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        pane: &geometry::Pane,
+        title: Option<&str>,
+    ) {
+        let bg_color = model.theme.editor.background.to_argb_u32();
+        let header_bg = model.theme.tab_bar.background.to_argb_u32();
+        let header_fg = model.theme.tab_bar.active_foreground.to_argb_u32();
+        let border_color = model.theme.tab_bar.border.to_argb_u32();
+
+        // Pane background
+        frame.fill_rect_px(pane.x(), pane.y(), pane.width(), pane.height(), bg_color);
+
+        // Header (if present)
+        if pane.has_header() {
+            frame.fill_rect_px(
+                pane.x(),
+                pane.y(),
+                pane.width(),
+                pane.header_height,
+                header_bg,
+            );
+
+            if let Some(title) = title {
+                painter.draw(
+                    frame,
+                    pane.header_title_x(),
+                    pane.header_title_y(&model.metrics),
+                    title,
+                    header_fg,
+                );
+            }
+
+            // Header border
+            if pane.header_border {
+                frame.fill_rect_px(
+                    pane.x(),
+                    pane.header_border_y(),
+                    pane.width(),
+                    pane.border_width,
+                    border_color,
+                );
+            }
+        }
+
+        // Outer borders (if configured)
+        if pane.borders.top {
+            frame.fill_rect_px(
+                pane.x(),
+                pane.y(),
+                pane.width(),
+                pane.border_width,
+                border_color,
+            );
+        }
+        if pane.borders.bottom {
+            let y = pane.y() + pane.height().saturating_sub(pane.border_width);
+            frame.fill_rect_px(pane.x(), y, pane.width(), pane.border_width, border_color);
+        }
+        if pane.borders.left {
+            frame.fill_rect_px(
+                pane.x(),
+                pane.y(),
+                pane.border_width,
+                pane.height(),
+                border_color,
+            );
+        }
+        if pane.borders.right {
+            let x = pane.x() + pane.width().saturating_sub(pane.border_width);
+            frame.fill_rect_px(x, pane.y(), pane.border_width, pane.height(), border_color);
+        }
+    }
+
+    /// Render a markdown preview pane.
+    fn render_preview_pane(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        preview_id: token::model::editor_area::PreviewId,
+        rect: Rect,
+    ) {
+        use token::markdown::{markdown_to_html, PreviewTheme};
+
+        let preview = match model.editor_area.previews.get(&preview_id) {
+            Some(p) => p,
+            None => return,
+        };
+
+        let document = match model.editor_area.documents.get(&preview.document_id) {
+            Some(d) => d,
+            None => return,
+        };
+
+        let line_height = painter.line_height();
+        let char_width = painter.char_width();
+
+        // Create pane layout with header
+        let pane = geometry::Pane::with_header(rect, &model.metrics);
+
+        // Render pane chrome (background, header, borders)
+        Self::render_pane(frame, painter, model, &pane, Some("Preview"));
+
+        // Render markdown content
+        let visible_lines = pane.visible_lines(line_height);
+        let text_x = pane.content_x();
+        let max_width = pane.max_text_width();
+        let max_chars = if char_width > 0.0 {
+            (max_width as f32 / char_width) as usize
+        } else {
+            80
+        };
+
+        let text_color = model.theme.editor.foreground.to_argb_u32();
+        let heading_color = model.theme.syntax.keyword.to_argb_u32();
+        let code_bg = model.theme.gutter.background.to_argb_u32();
+        let link_color = model.theme.syntax.string.to_argb_u32();
+
+        // Simple markdown rendering: parse and display styled lines
+        let mut y = pane.content_y();
+        let mut in_code_block = false;
+
+        for line_num in 0..document.buffer.len_lines() {
+            if line_num >= preview.scroll_offset + visible_lines {
+                break;
+            }
+            if line_num < preview.scroll_offset {
+                continue;
+            }
+
+            let line_text = document.buffer.line(line_num).to_string();
+            let line_text = line_text.trim_end_matches('\n');
+
+            // Simple markdown parsing
+            let trimmed = line_text.trim();
+
+            // Code block detection
+            if trimmed.starts_with("```") {
+                in_code_block = !in_code_block;
+                y += line_height;
+                continue;
+            }
+
+            if in_code_block {
+                // Draw code block background
+                frame.fill_rect_px(
+                    text_x.saturating_sub(4),
+                    y,
+                    max_width + 8,
+                    line_height,
+                    code_bg,
+                );
+                let display_line: String = line_text.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display_line, text_color);
+            } else if let Some(heading) = trimmed.strip_prefix("# ") {
+                let display: String = heading.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display, heading_color);
+            } else if let Some(heading) = trimmed.strip_prefix("## ") {
+                let display: String = heading.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display, heading_color);
+            } else if let Some(heading) = trimmed.strip_prefix("### ") {
+                let display: String = heading.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display, heading_color);
+            } else if let Some(list_item) = trimmed.strip_prefix("- ") {
+                let bullet = format!("• {}", list_item);
+                let display: String = bullet.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display, text_color);
+            } else if let Some(list_item) = trimmed.strip_prefix("* ") {
+                let bullet = format!("• {}", list_item);
+                let display: String = bullet.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display, text_color);
+            } else if trimmed.starts_with('[') && trimmed.contains("](") {
+                // Simple link detection
+                let display: String = trimmed.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display, link_color);
+            } else {
+                let display: String = line_text.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display, text_color);
+            }
+
+            y += line_height;
+        }
+
+        // Suppress unused warning for HTML generation (used for webview in future)
+        let _ = (markdown_to_html, PreviewTheme::default);
     }
 
     /// Render an entire editor group: tab bar, gutter, text area, and focus dimming.
@@ -2542,6 +2750,7 @@ impl Renderer {
     /// Returns the tab index at the given x position within a group's tab bar.
     /// Returns None if the click is not on a tab.
     /// Delegates to geometry module for the actual calculation.
+    #[allow(dead_code)]
     pub fn tab_at_position(&self, x: f64, model: &AppModel, group: &EditorGroup) -> Option<usize> {
         geometry::tab_at_position(x, self.char_width, model, group)
     }

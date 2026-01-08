@@ -14,23 +14,25 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorIcon, Icon, Window};
 
 use token::cli::StartupConfig;
-use token::commands::{filter_commands, Cmd, Damage};
+use token::commands::{Cmd, Damage};
 use token::fs_watcher::{FileSystemEvent, FileSystemWatcher};
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
 };
 use token::messages::{
-    AppMsg, CsvMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg,
+    AppMsg, CsvMsg, EditorMsg, LayoutMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg,
 };
 use token::model::editor::Position;
 use token::model::editor_area::{Rect, SplitDirection};
-use token::model::{AppModel, ModalState};
+use token::model::AppModel;
 use token::syntax::{LanguageId, ParserState};
 use token::update::update;
 
-use crate::view::geometry::{is_in_group_tab_bar, is_in_modal, is_in_status_bar};
+use crate::view::geometry::is_in_group_tab_bar;
 
 use super::input::handle_key;
+use super::mouse::{handle_mouse_press, make_mouse_event, ClickTracker};
+use super::webview::WebviewManager;
 use crate::view::Renderer;
 
 use super::perf::PerfStats;
@@ -54,9 +56,6 @@ pub struct App {
     last_tick: Instant,
     modifiers: ModifiersState,
     mouse_position: Option<(f64, f64)>,
-    last_click_time: Instant,
-    last_click_position: Option<(usize, usize)>,
-    click_count: u32,
     last_option_press: Option<Instant>,
     option_double_tapped: bool,
     left_mouse_down: bool,
@@ -74,6 +73,10 @@ pub struct App {
     pending_damage: Damage,
     /// Flag to request application exit (set by Cmd::Quit)
     should_quit: bool,
+    /// Webview manager for markdown preview
+    webview_manager: WebviewManager,
+    /// Click tracker for unified mouse event handling
+    click_tracker: ClickTracker,
 }
 
 impl App {
@@ -129,9 +132,6 @@ impl App {
             last_tick: Instant::now(),
             modifiers: ModifiersState::empty(),
             mouse_position: None,
-            last_click_time: Instant::now(),
-            last_click_position: None,
-            click_count: 0,
             last_option_press: None,
             option_double_tapped: false,
             left_mouse_down: false,
@@ -145,6 +145,8 @@ impl App {
             fs_watcher,
             pending_damage: Damage::Full, // Start with full render
             should_quit: false,
+            webview_manager: WebviewManager::new(),
+            click_tracker: ClickTracker::default(),
         };
 
         // Trigger initial syntax parsing for all loaded documents
@@ -618,344 +620,26 @@ impl App {
                 ..
             } => {
                 if let Some((x, y)) = self.mouse_position {
-                    // Modal mouse blocking - click outside closes, click inside is consumed
-                    if self.model.ui.has_modal() {
-                        let (has_list, list_items) = match &self.model.ui.active_modal {
-                            Some(ModalState::CommandPalette(state)) => {
-                                let input_text = state.input();
-                                (true, filter_commands(&input_text).len())
-                            }
-                            _ => (false, 0),
-                        };
-                        let in_modal = is_in_modal(
+                    if let Some(renderer) = &mut self.renderer {
+                        let event = make_mouse_event(
                             x,
                             y,
-                            self.model.window_size.0 as usize,
-                            self.model.window_size.1 as usize,
-                            self.model.line_height,
-                            has_list,
-                            list_items,
+                            MouseButton::Left,
+                            ElementState::Pressed,
+                            1, // Click count computed inside handler
+                            self.modifiers,
                         );
+                        let result =
+                            handle_mouse_press(&mut self.model, renderer, event, &mut self.click_tracker);
 
-                        if in_modal {
-                            // Future: could handle clicking on list items here
-                            return Some(Cmd::Redraw);
-                        } else {
-                            // Click outside modal closes it
-                            return update(&mut self.model, Msg::Ui(UiMsg::Modal(ModalMsg::Close)));
-                        }
-                    }
-
-                    // Status bar has highest priority - "on top" of everything
-                    let line_height = self.model.line_height;
-                    let window_height = self.model.window_size.1;
-                    if is_in_status_bar(y, window_height, line_height) {
-                        return None;
-                    }
-
-                    // Check for sidebar resize border click first
-                    const SIDEBAR_RESIZE_HIT_ZONE: f64 = 4.0;
-                    if let Some(workspace) = &self.model.workspace {
-                        if workspace.sidebar_visible {
-                            let sidebar_width =
-                                workspace.sidebar_width(self.model.metrics.scale_factor) as f64;
-                            let resize_zone_start = sidebar_width - SIDEBAR_RESIZE_HIT_ZONE;
-                            let resize_zone_end = sidebar_width + SIDEBAR_RESIZE_HIT_ZONE;
-
-                            if x >= resize_zone_start && x <= resize_zone_end {
-                                return update(
-                                    &mut self.model,
-                                    Msg::Workspace(WorkspaceMsg::StartSidebarResize {
-                                        initial_x: x,
-                                    }),
-                                );
-                            }
-                        }
-                    }
-
-                    // Check for sidebar click before other interactions
-                    // Extract sidebar info without holding borrow across update() calls
-                    let sidebar_click_info = if let Some(workspace) = &self.model.workspace {
-                        if workspace.sidebar_visible {
-                            // Mouse coordinates are already in physical pixels (winit provides physical coords)
-                            // sidebar_width and file_tree_row_height are also in physical pixels (scaled)
-                            let sidebar_width =
-                                workspace.sidebar_width(self.model.metrics.scale_factor) as f64;
-
-                            if x < sidebar_width {
-                                let row_height = self.model.metrics.file_tree_row_height as f64;
-                                let indent = self.model.metrics.file_tree_indent as f64;
-                                let clicked_visual_row = (y / row_height) as usize;
-                                // Account for scroll offset when looking up the item
-                                let clicked_row =
-                                    workspace.scroll_offset.saturating_add(clicked_visual_row);
-
-                                // Find the item at this row and extract info including depth
-                                if let Some((node, depth)) =
-                                    workspace.file_tree.get_visible_item_with_depth(
-                                        clicked_row,
-                                        &workspace.expanded_folders,
-                                    )
-                                {
-                                    // Calculate chevron area: starts at (depth * indent + 8), width ~16px
-                                    let chevron_start = (depth as f64 * indent) + 8.0;
-                                    let chevron_end = chevron_start + 16.0;
-                                    let clicked_on_chevron =
-                                        node.is_dir && x >= chevron_start && x < chevron_end;
-                                    Some((
-                                        node.path.clone(),
-                                        node.is_dir,
-                                        clicked_row,
-                                        clicked_on_chevron,
-                                    ))
-                                } else {
-                                    Some((std::path::PathBuf::new(), false, clicked_row, false))
-                                    // Empty click in sidebar
-                                }
-                            } else {
-                                None // Not in sidebar
-                            }
-                        } else {
-                            None // Sidebar not visible
-                        }
-                    } else {
-                        None // No workspace
-                    };
-
-                    if let Some((path, is_dir, clicked_row, clicked_on_chevron)) =
-                        sidebar_click_info
-                    {
-                        // Any click in sidebar transfers focus to sidebar
-                        self.model.ui.focus_sidebar();
-
-                        if path.as_os_str().is_empty() {
-                            // Click in sidebar but not on an item
-                            return Some(Cmd::Redraw);
+                        // Update drag tracking state
+                        if result.start_drag_tracking {
+                            self.left_mouse_down = true;
+                            self.drag_start_position = Some((x, y));
+                            self.drag_active = false;
                         }
 
-                        // Single-click on chevron immediately toggles folder
-                        if clicked_on_chevron {
-                            update(
-                                &mut self.model,
-                                Msg::Workspace(WorkspaceMsg::SelectItem(path.clone())),
-                            );
-                            return update(
-                                &mut self.model,
-                                Msg::Workspace(WorkspaceMsg::ToggleFolder(path)),
-                            );
-                        }
-
-                        let now = Instant::now();
-                        let double_click_time = Duration::from_millis(300);
-                        let is_double_click = now.duration_since(self.last_click_time)
-                            < double_click_time
-                            && self.last_click_position == Some((clicked_row, 0));
-
-                        // Update click tracking for sidebar
-                        self.last_click_time = now;
-                        self.last_click_position = Some((clicked_row, 0));
-
-                        // Always select the item
-                        update(
-                            &mut self.model,
-                            Msg::Workspace(WorkspaceMsg::SelectItem(path.clone())),
-                        );
-
-                        // Only toggle folder or open file on double-click
-                        if is_double_click {
-                            if is_dir {
-                                return update(
-                                    &mut self.model,
-                                    Msg::Workspace(WorkspaceMsg::ToggleFolder(path)),
-                                );
-                            } else {
-                                return update(
-                                    &mut self.model,
-                                    Msg::Workspace(WorkspaceMsg::OpenFile {
-                                        path,
-                                        preview: false,
-                                    }),
-                                );
-                            }
-                        }
-                        return Some(Cmd::Redraw);
-                    }
-
-                    // Click outside sidebar - focus goes to editor
-                    self.model.ui.focus_editor();
-
-                    // Check for splitter hit before other interactions
-                    {
-                        // Calculate sidebar offset for fallback rect
-                        let sidebar_width = self
-                            .model
-                            .workspace
-                            .as_ref()
-                            .filter(|ws| ws.sidebar_visible)
-                            .map(|ws| ws.sidebar_width(self.model.metrics.scale_factor))
-                            .unwrap_or(0.0);
-
-                        let status_bar_height = self.model.line_height as f32;
-                        let available =
-                            self.model.editor_area.last_layout_rect.unwrap_or(Rect::new(
-                                sidebar_width,
-                                0.0,
-                                self.model.window_size.0 as f32 - sidebar_width,
-                                self.model.window_size.1 as f32 - status_bar_height,
-                            ));
-                        let splitters = self
-                            .model
-                            .editor_area
-                            .compute_layout_scaled(available, self.model.metrics.splitter_width);
-                        if let Some(idx) = self
-                            .model
-                            .editor_area
-                            .splitter_at_point(&splitters, x as f32, y as f32)
-                        {
-                            return update(
-                                &mut self.model,
-                                Msg::Layout(LayoutMsg::BeginSplitterDrag {
-                                    splitter_index: idx,
-                                    position: (x as f32, y as f32),
-                                }),
-                            );
-                        }
-                    }
-
-                    if let Some(renderer) = &mut self.renderer {
-                        // Per-group tab bar hit testing (handles splits correctly)
-                        // First, find the clicked group/tab without holding borrow
-                        let tab_bar_h = self.model.metrics.tab_bar_height;
-                        let tab_click_info: Option<(_, f64, Rect)> =
-                            self.model.editor_area.groups.iter().find_map(|(&gid, g)| {
-                                if is_in_group_tab_bar(y, &g.rect, tab_bar_h)
-                                    && x >= g.rect.x as f64
-                                    && x < (g.rect.x + g.rect.width) as f64
-                                {
-                                    Some((gid, x - g.rect.x as f64, g.rect))
-                                } else {
-                                    None
-                                }
-                            });
-
-                        if let Some((group_id, local_x, _rect)) = tab_click_info {
-                            // Focus the group if not already focused
-                            if group_id != self.model.editor_area.focused_group_id {
-                                update(
-                                    &mut self.model,
-                                    Msg::Layout(LayoutMsg::FocusGroup(group_id)),
-                                );
-                            }
-
-                            // Find which tab was clicked
-                            if let Some(group) = self.model.editor_area.groups.get(&group_id) {
-                                if let Some(tab_index) =
-                                    renderer.tab_at_position(local_x, &self.model, group)
-                                {
-                                    return update(
-                                        &mut self.model,
-                                        Msg::Layout(LayoutMsg::SwitchToTab(tab_index)),
-                                    );
-                                }
-                            }
-
-                            // Click in empty tab bar area - consume but don't click-through
-                            return None;
-                        }
-
-                        self.left_mouse_down = true;
-                        self.drag_start_position = Some((x, y));
-                        self.drag_active = false;
-
-                        if let Some(group_id) =
-                            self.model.editor_area.group_at_point(x as f32, y as f32)
-                        {
-                            if group_id != self.model.editor_area.focused_group_id {
-                                update(
-                                    &mut self.model,
-                                    Msg::Layout(LayoutMsg::FocusGroup(group_id)),
-                                );
-                            }
-                        }
-
-                        // Check if focused editor is in CSV mode - route click to CSV hit-testing
-                        let in_csv_mode = self
-                            .model
-                            .editor_area
-                            .focused_editor()
-                            .map(|e| e.view_mode.is_csv())
-                            .unwrap_or(false);
-
-                        if in_csv_mode {
-                            if let Some(cell) = renderer.pixel_to_csv_cell(x, y, &self.model) {
-                                return update(
-                                    &mut self.model,
-                                    Msg::Csv(CsvMsg::SelectCell {
-                                        row: cell.row,
-                                        col: cell.col,
-                                    }),
-                                );
-                            }
-                            return None;
-                        }
-
-                        let (line, column) = renderer.pixel_to_cursor(x, y, &self.model);
-                        let now = Instant::now();
-                        let double_click_time = Duration::from_millis(300);
-
-                        let is_rapid_click =
-                            now.duration_since(self.last_click_time) < double_click_time;
-                        let is_same_position = self.last_click_position == Some((line, column));
-
-                        if is_rapid_click && is_same_position {
-                            self.click_count += 1;
-                            if self.click_count > 3 {
-                                self.click_count = 1;
-                            }
-                        } else {
-                            self.click_count = 1;
-                        }
-
-                        self.last_click_time = now;
-                        self.last_click_position = Some((line, column));
-
-                        if self.modifiers.shift_key() {
-                            return update(
-                                &mut self.model,
-                                Msg::Editor(EditorMsg::ExtendSelectionToPosition { line, column }),
-                            );
-                        }
-
-                        if self.modifiers.alt_key() {
-                            return update(
-                                &mut self.model,
-                                Msg::Editor(EditorMsg::ToggleCursorAtPosition { line, column }),
-                            );
-                        }
-
-                        match self.click_count {
-                            2 => {
-                                update(
-                                    &mut self.model,
-                                    Msg::Editor(EditorMsg::SetCursorPosition { line, column }),
-                                );
-                                return update(&mut self.model, Msg::Editor(EditorMsg::SelectWord));
-                            }
-                            3 => {
-                                update(
-                                    &mut self.model,
-                                    Msg::Editor(EditorMsg::SetCursorPosition { line, column }),
-                                );
-                                return update(&mut self.model, Msg::Editor(EditorMsg::SelectLine));
-                            }
-                            _ => {
-                                self.model.editor_mut().clear_selection();
-                                return update(
-                                    &mut self.model,
-                                    Msg::Editor(EditorMsg::SetCursorPosition { line, column }),
-                                );
-                            }
-                        }
+                        return result.cmd;
                     }
                 }
                 None
@@ -991,56 +675,17 @@ impl App {
             } => {
                 if let Some((x, y)) = self.mouse_position {
                     if let Some(renderer) = &mut self.renderer {
-                        if renderer.is_in_status_bar(y) {
-                            return None;
-                        }
-
-                        // Middle-click on tab bar closes the clicked tab
-                        let tab_h = self.model.metrics.tab_bar_height;
-                        let tab_click_info: Option<(_, f64)> =
-                            self.model.editor_area.groups.iter().find_map(|(&gid, g)| {
-                                if is_in_group_tab_bar(y, &g.rect, tab_h)
-                                    && x >= g.rect.x as f64
-                                    && x < (g.rect.x + g.rect.width) as f64
-                                {
-                                    Some((gid, x - g.rect.x as f64))
-                                } else {
-                                    None
-                                }
-                            });
-
-                        if let Some((group_id, local_x)) = tab_click_info {
-                            // Find which tab was clicked and close it
-                            if let Some(group) = self.model.editor_area.groups.get(&group_id) {
-                                if let Some(tab_index) =
-                                    renderer.tab_at_position(local_x, &self.model, group)
-                                {
-                                    // Get the TabId from the group's tabs
-                                    if let Some(tab) = group.tabs.get(tab_index) {
-                                        let tab_id = tab.id;
-                                        // Focus the group first if needed
-                                        if group_id != self.model.editor_area.focused_group_id {
-                                            update(
-                                                &mut self.model,
-                                                Msg::Layout(LayoutMsg::FocusGroup(group_id)),
-                                            );
-                                        }
-                                        return update(
-                                            &mut self.model,
-                                            Msg::Layout(LayoutMsg::CloseTab(tab_id)),
-                                        );
-                                    }
-                                }
-                            }
-                            return None;
-                        }
-
-                        let (line, visual_col) =
-                            renderer.pixel_to_line_and_visual_column(x, y, &self.model);
-                        return update(
-                            &mut self.model,
-                            Msg::Editor(EditorMsg::StartRectangleSelection { line, visual_col }),
+                        let event = make_mouse_event(
+                            x,
+                            y,
+                            MouseButton::Middle,
+                            ElementState::Pressed,
+                            1,
+                            self.modifiers,
                         );
+                        let result =
+                            handle_mouse_press(&mut self.model, renderer, event, &mut self.click_tracker);
+                        return result.cmd;
                     }
                 }
                 None
@@ -1165,9 +810,111 @@ impl App {
             renderer.render(&mut self.model, &mut self.perf, &damage)?;
         }
 
+        // Sync webviews with preview panes
+        self.sync_webviews();
+
+        // Hide webviews when modals are active (so they don't render on top)
+        let show_webviews = self.model.ui.active_modal.is_none();
+        self.webview_manager.set_all_visible(show_webviews);
+
         self.perf.record_frame_time();
         self.perf.record_render_history();
         Ok(())
+    }
+
+    /// Synchronize webview instances with preview panes in the model.
+    /// Creates, updates, or destroys webviews as needed.
+    fn sync_webviews(&mut self) {
+        use token::markdown::{markdown_to_html, PreviewTheme};
+        use token::model::editor_area::PreviewId;
+
+        let Some(window) = &self.window else {
+            return;
+        };
+
+        // Get current preview IDs from the model
+        let model_preview_ids: std::collections::HashSet<_> =
+            self.model.editor_area.previews.keys().copied().collect();
+
+        // Get current webview preview IDs
+        let webview_preview_ids: std::collections::HashSet<_> =
+            self.webview_manager.active_previews().into_iter().collect();
+
+        // Remove webviews for closed previews
+        for preview_id in webview_preview_ids.difference(&model_preview_ids) {
+            self.webview_manager.close_webview(*preview_id);
+        }
+
+        // Collect info about previews that need updates (to avoid borrow issues)
+        let scale_factor = self.model.metrics.scale_factor;
+        let theme = PreviewTheme::from_editor_theme(&self.model.theme);
+
+        struct PreviewUpdate {
+            preview_id: PreviewId,
+            rect: token::model::editor_area::Rect,
+            html: String,
+            doc_revision: u64,
+            needs_content_update: bool,
+            needs_create: bool,
+        }
+
+        let updates: Vec<PreviewUpdate> = self
+            .model
+            .editor_area
+            .previews
+            .iter()
+            .filter_map(|(&preview_id, preview)| {
+                let document = self.model.editor_area.documents.get(&preview.document_id)?;
+                let markdown_content = document.buffer.to_string();
+                let html = markdown_to_html(&markdown_content, &theme);
+
+                let needs_create = !self.webview_manager.has_webview(preview_id);
+                let needs_content_update = preview.needs_refresh(document.revision);
+
+                Some(PreviewUpdate {
+                    preview_id,
+                    rect: preview.rect,
+                    html,
+                    doc_revision: document.revision,
+                    needs_content_update,
+                    needs_create,
+                })
+            })
+            .collect();
+
+        // Apply updates
+        for update in updates {
+            if update.needs_create {
+                // Create new webview
+                if let Err(e) = self.webview_manager.create_webview(
+                    update.preview_id,
+                    window,
+                    update.rect,
+                    &update.html,
+                ) {
+                    tracing::error!("Failed to create webview for preview: {}", e);
+                    continue;
+                }
+                // Update last_revision after successful creation
+                if let Some(preview) = self.model.editor_area.preview_mut(update.preview_id) {
+                    preview.last_revision = update.doc_revision;
+                }
+            } else {
+                // Update existing webview bounds
+                self.webview_manager
+                    .update_bounds(update.preview_id, update.rect, scale_factor);
+
+                // Update content if revision changed
+                if update.needs_content_update {
+                    self.webview_manager
+                        .update_content(update.preview_id, &update.html);
+                    // Update last_revision after content update
+                    if let Some(preview) = self.model.editor_area.preview_mut(update.preview_id) {
+                        preview.last_revision = update.doc_revision;
+                    }
+                }
+            }
+        }
     }
 
     fn tick(&mut self) -> Option<Cmd> {
