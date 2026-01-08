@@ -11,9 +11,6 @@
 //! This replaces ad-hoc if/else chains in app.rs with explicit priority ordering
 //! and shared hit-testing logic across left/middle/right clicks.
 
-// Allow dead code until we integrate these types in the event handling pipeline
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 
 use winit::event::{ElementState, MouseButton};
@@ -49,9 +46,11 @@ pub struct MouseEvent {
     pub pos: Point,
     /// Which mouse button
     pub button: MouseButton,
-    /// Pressed or released
+    /// Pressed or released (currently only press events are handled)
+    #[allow(dead_code)]
     pub state: ElementState,
-    /// Click count: 1=single, 2=double, 3=triple (computed centrally)
+    /// Click count: 1=single, 2=double, 3=triple (computed by ClickTracker, not used here)
+    #[allow(dead_code)]
     pub click_count: u8,
     /// Active keyboard modifiers
     pub modifiers: ModifiersState,
@@ -77,12 +76,14 @@ impl MouseEvent {
 
     /// Check if this is a press event
     #[inline]
+    #[allow(dead_code)]
     pub fn is_pressed(&self) -> bool {
         matches!(self.state, ElementState::Pressed)
     }
 
     /// Check if this is a release event
     #[inline]
+    #[allow(dead_code)]
     pub fn is_released(&self) -> bool {
         matches!(self.state, ElementState::Released)
     }
@@ -93,8 +94,9 @@ impl MouseEvent {
         self.modifiers.shift_key()
     }
 
-    /// Check if ctrl/cmd modifier is active
+    /// Check if ctrl/cmd modifier is active (for future context menus)
     #[inline]
+    #[allow(dead_code)]
     pub fn ctrl(&self) -> bool {
         self.modifiers.control_key()
     }
@@ -115,7 +117,11 @@ impl MouseEvent {
 /// These are returned by hit-testing and used by event handlers to dispatch
 /// behavior. The variants carry enough context to handle the event without
 /// re-querying the model.
+///
+/// Note: Some variant fields are not currently read but are populated for
+/// future use (e.g., context menus, detailed click handling).
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub enum HitTarget {
     /// Modal overlay (command palette, goto line, find/replace, etc.)
     /// `inside` indicates whether the click was inside or outside the modal bounds
@@ -182,6 +188,7 @@ pub enum HitTarget {
 
 impl HitTarget {
     /// Get the group ID if this target is associated with an editor group
+    #[allow(dead_code)]
     pub fn group_id(&self) -> Option<GroupId> {
         match self {
             HitTarget::GroupTab { group_id, .. }
@@ -194,6 +201,7 @@ impl HitTarget {
     }
 
     /// Get the suggested focus target for this hit
+    #[allow(dead_code)]
     pub fn suggested_focus(&self) -> Option<FocusTarget> {
         match self {
             HitTarget::Modal { .. } => Some(FocusTarget::Modal),
@@ -258,6 +266,7 @@ impl EventResult {
     }
 
     /// Check if this result requests a redraw
+    #[allow(dead_code)]
     pub fn needs_redraw(&self) -> bool {
         match self {
             Self::Consumed { redraw, .. } => *redraw,
