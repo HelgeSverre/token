@@ -414,7 +414,11 @@ pub fn hit_test_sidebar(model: &AppModel, pt: Point) -> Option<HitTarget> {
 /// Hit-test splitter bars between split panes.
 ///
 /// Requires the pre-computed splitters from `EditorArea::compute_layout_scaled()`.
-pub fn hit_test_splitters(_model: &AppModel, pt: Point, splitters: &[token::model::editor_area::SplitterBar]) -> Option<HitTarget> {
+pub fn hit_test_splitters(
+    _model: &AppModel,
+    pt: Point,
+    splitters: &[token::model::editor_area::SplitterBar],
+) -> Option<HitTarget> {
     for (i, splitter) in splitters.iter().enumerate() {
         if splitter.rect.contains(pt.x as f32, pt.y as f32) {
             return Some(HitTarget::Splitter { index: i });

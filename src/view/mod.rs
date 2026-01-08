@@ -18,9 +18,9 @@ pub use geometry::{char_col_to_visual_col, expand_tabs_for_display};
 // Re-export hit-test types and functions for use in runtime
 #[allow(unused_imports)]
 pub use hit_test::{
-    hit_test_groups, hit_test_modal, hit_test_previews, hit_test_sidebar,
-    hit_test_sidebar_resize, hit_test_splitters, hit_test_status_bar, hit_test_ui, EventResult,
-    HitTarget, MouseEvent, Point,
+    hit_test_groups, hit_test_modal, hit_test_previews, hit_test_sidebar, hit_test_sidebar_resize,
+    hit_test_splitters, hit_test_status_bar, hit_test_ui, EventResult, HitTarget, MouseEvent,
+    Point,
 };
 
 use anyhow::Result;

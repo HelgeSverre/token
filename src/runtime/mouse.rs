@@ -232,14 +232,20 @@ fn handle_left_click(
 
             // Chevron click immediately toggles folder
             if *clicked_on_chevron {
-                update(model, Msg::Workspace(WorkspaceMsg::ToggleFolder(path.clone())));
+                update(
+                    model,
+                    Msg::Workspace(WorkspaceMsg::ToggleFolder(path.clone())),
+                );
                 return EventResult::consumed_with_focus(FocusTarget::Sidebar);
             }
 
             // Double-click opens file or toggles folder
             if click_count >= 2 {
                 let cmd = if *is_dir {
-                    update(model, Msg::Workspace(WorkspaceMsg::ToggleFolder(path.clone())))
+                    update(
+                        model,
+                        Msg::Workspace(WorkspaceMsg::ToggleFolder(path.clone())),
+                    )
                 } else {
                     update(
                         model,
@@ -320,11 +326,11 @@ fn handle_left_click(
         // CSV cell click - use renderer to find actual cell
         HitTarget::CsvCell { group_id, .. } => {
             use token::messages::CsvMsg;
-            
+
             if *group_id != model.editor_area.focused_group_id {
                 update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
             }
-            
+
             // Use renderer to find the actual cell at this position
             if let Some(cell) = renderer.pixel_to_csv_cell(event.pos.x, event.pos.y, model) {
                 update(

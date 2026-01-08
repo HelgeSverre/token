@@ -19,9 +19,7 @@ use token::fs_watcher::{FileSystemEvent, FileSystemWatcher};
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
 };
-use token::messages::{
-    AppMsg, CsvMsg, EditorMsg, LayoutMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg,
-};
+use token::messages::{AppMsg, CsvMsg, EditorMsg, LayoutMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg};
 use token::model::editor::Position;
 use token::model::editor_area::{Rect, SplitDirection};
 use token::model::AppModel;
@@ -629,8 +627,12 @@ impl App {
                             1, // Click count computed inside handler
                             self.modifiers,
                         );
-                        let result =
-                            handle_mouse_press(&mut self.model, renderer, event, &mut self.click_tracker);
+                        let result = handle_mouse_press(
+                            &mut self.model,
+                            renderer,
+                            event,
+                            &mut self.click_tracker,
+                        );
 
                         // Update drag tracking state
                         if result.start_drag_tracking {
@@ -683,8 +685,12 @@ impl App {
                             1,
                             self.modifiers,
                         );
-                        let result =
-                            handle_mouse_press(&mut self.model, renderer, event, &mut self.click_tracker);
+                        let result = handle_mouse_press(
+                            &mut self.model,
+                            renderer,
+                            event,
+                            &mut self.click_tracker,
+                        );
                         return result.cmd;
                     }
                 }
