@@ -11,12 +11,15 @@ All notable changes to rust-editor are documented in this file.
 - Tests: Comprehensive damage computation tests added for redraw/damage logic.
 
 ### Changed
+- Refactor (mouse): Unified mouse event handling with new hit-test system in `src/view/hit_test.rs` and centralized dispatch in `src/runtime/mouse.rs`. Replaces ad-hoc if/else chains with explicit `HitTarget` enum and priority-ordered hit-testing.
 - Refactor (app): Introduced specific redraw helpers and tighter damage accumulation to reduce unnecessary full redraws; clearer separation between damage computation and command processing.
 - Refactor (layout): Added `redraw_editor`-style helpers to limit redraw scope when layout changes are localized.
 - Refactor (ui): Optimized cursor-blink related redraw behavior to prevent selection flicker and avoid unnecessary redraws of unrelated regions.
+- Cleanup: Removed dead code from view module (`is_in_tab_bar`, `is_in_modal`, unused Renderer getters, wrapper functions superseded by ViewportGeometry).
 
 ### Fixed
 - Rendering: Minor fixes to selection/cursor rendering behavior related to the cursor-blink optimization and partial redraws.
+- Sidebar: Fixed syntax highlighting not triggering when opening files via sidebar double-click. Commands from update() calls in mouse handlers are now properly propagated.
 
 ---
 
