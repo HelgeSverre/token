@@ -143,8 +143,9 @@ pub fn handle_mouse_press(
         }
     }
 
-    // Determine command
-    let cmd = match result {
+    // Determine command - use explicit cmd if present, otherwise fallback to redraw
+    let cmd = match &result {
+        EventResult::Consumed { cmd: Some(c), .. } => Some(c.clone()),
         EventResult::Consumed { redraw: true, .. } => Some(Cmd::Redraw),
         EventResult::Consumed { redraw: false, .. } => None,
         EventResult::Bubble => None,
@@ -237,8 +238,8 @@ fn handle_left_click(
 
             // Double-click opens file or toggles folder
             if click_count >= 2 {
-                if *is_dir {
-                    update(model, Msg::Workspace(WorkspaceMsg::ToggleFolder(path.clone())));
+                let cmd = if *is_dir {
+                    update(model, Msg::Workspace(WorkspaceMsg::ToggleFolder(path.clone())))
                 } else {
                     update(
                         model,
@@ -246,8 +247,10 @@ fn handle_left_click(
                             path: path.clone(),
                             preview: false,
                         }),
-                    );
-                }
+                    )
+                };
+                // Return the command from opening the file (includes syntax parse)
+                return EventResult::consumed_with_cmd(cmd, FocusTarget::Sidebar);
             }
 
             EventResult::consumed_with_focus(FocusTarget::Sidebar)

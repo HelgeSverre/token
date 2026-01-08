@@ -230,10 +230,12 @@ impl HitTarget {
 pub enum EventResult {
     /// Event was fully handled; stop propagation
     Consumed {
-        /// Whether a redraw is needed
+        /// Whether a redraw is needed (ignored if cmd is Some)
         redraw: bool,
         /// Optional focus change to apply
         focus: Option<FocusTarget>,
+        /// Optional command to execute (takes precedence over redraw flag)
+        cmd: Option<token::commands::Cmd>,
     },
 
     /// Event was not handled by this target; allow fallback handling
@@ -246,6 +248,7 @@ impl EventResult {
         Self::Consumed {
             redraw: true,
             focus: None,
+            cmd: None,
         }
     }
 
@@ -254,6 +257,7 @@ impl EventResult {
         Self::Consumed {
             redraw: true,
             focus: Some(focus),
+            cmd: None,
         }
     }
 
@@ -262,6 +266,16 @@ impl EventResult {
         Self::Consumed {
             redraw: false,
             focus: None,
+            cmd: None,
+        }
+    }
+
+    /// Create a consumed result with a command and focus change
+    pub fn consumed_with_cmd(cmd: Option<token::commands::Cmd>, focus: FocusTarget) -> Self {
+        Self::Consumed {
+            redraw: cmd.is_none(), // Only set redraw if no cmd
+            focus: Some(focus),
+            cmd,
         }
     }
 
@@ -269,8 +283,17 @@ impl EventResult {
     #[allow(dead_code)]
     pub fn needs_redraw(&self) -> bool {
         match self {
-            Self::Consumed { redraw, .. } => *redraw,
+            Self::Consumed { redraw, cmd, .. } => cmd.is_some() || *redraw,
             Self::Bubble => false,
+        }
+    }
+
+    /// Get the command from this result
+    #[allow(dead_code)]
+    pub fn cmd(&self) -> Option<&token::commands::Cmd> {
+        match self {
+            Self::Consumed { cmd, .. } => cmd.as_ref(),
+            Self::Bubble => None,
         }
     }
 }
