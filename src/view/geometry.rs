@@ -14,17 +14,6 @@ use token::model::{AppModel, Document, EditorState};
 // Layout Constants
 // ============================================================================
 
-/// Height of the tab bar in pixels (base value at scale factor 1.0)
-/// For actual rendering, use `model.metrics.tab_bar_height`
-pub const TAB_BAR_HEIGHT: usize = 28;
-
-/// Get tab bar height from model's scaled metrics
-#[inline]
-#[allow(dead_code)]
-pub fn tab_bar_height(model: &AppModel) -> usize {
-    model.metrics.tab_bar_height
-}
-
 // Re-export TABULATOR_WIDTH from util::text for single source of truth
 pub use token::util::text::TABULATOR_WIDTH;
 
@@ -36,26 +25,6 @@ pub use token::util::text::TABULATOR_WIDTH;
 #[inline]
 pub fn status_bar_height(line_height: usize) -> usize {
     line_height
-}
-
-/// Compute number of visible text lines given window height
-///
-/// Delegates to `ViewportGeometry::compute_visible_lines()` for the canonical calculation.
-/// Kept for API compatibility - prefer using `ViewportGeometry` directly.
-#[inline]
-#[allow(dead_code)]
-pub fn compute_visible_lines(window_height: u32, line_height: usize, status_bar_h: usize) -> usize {
-    token::model::ViewportGeometry::compute_visible_lines(window_height, line_height, status_bar_h)
-}
-
-/// Compute number of visible columns given window width
-///
-/// Delegates to `ViewportGeometry::compute_visible_columns()` for the canonical calculation.
-/// Kept for API compatibility - prefer using `ViewportGeometry` directly.
-#[inline]
-#[allow(dead_code)]
-pub fn compute_visible_columns(window_width: u32, char_width: f32) -> usize {
-    token::model::ViewportGeometry::compute_visible_columns(window_width, char_width)
 }
 
 // ============================================================================
@@ -194,15 +163,6 @@ fn focused_group_editor_document(
 pub fn is_in_status_bar(y: f64, window_height: u32, line_height: usize) -> bool {
     let status_bar_top = window_height as f64 - line_height as f64;
     y >= status_bar_top
-}
-
-/// Check if a y-coordinate is within the global tab bar region (top of window)
-/// Note: For split views, use `is_in_group_tab_bar` instead
-/// Uses the base TAB_BAR_HEIGHT constant (not scaled).
-#[inline]
-#[allow(dead_code)]
-pub fn is_in_tab_bar(y: f64) -> bool {
-    y < TAB_BAR_HEIGHT as f64
 }
 
 /// Check if a point is within a group's tab bar region
@@ -890,29 +850,6 @@ pub fn modal_bounds(
     (modal_x, modal_y, modal_width, modal_height)
 }
 
-/// Check if a point is inside the modal dialog
-#[allow(dead_code)]
-pub fn is_in_modal(
-    x: f64,
-    y: f64,
-    window_width: usize,
-    window_height: usize,
-    line_height: usize,
-    has_list: bool,
-    list_items: usize,
-) -> bool {
-    let (mx, my, mw, mh) = modal_bounds(
-        window_width,
-        window_height,
-        line_height,
-        has_list,
-        list_items,
-    );
-    let px = x as usize;
-    let py = y as usize;
-    px >= mx && px < mx + mw && py >= my && py < my + mh
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -923,30 +860,6 @@ mod tests {
         assert!(!is_in_status_bar(579.0, 600, 20));
         assert!(is_in_status_bar(580.0, 600, 20));
         assert!(is_in_status_bar(590.0, 600, 20));
-    }
-
-    #[test]
-    fn test_is_in_tab_bar() {
-        assert!(is_in_tab_bar(0.0));
-        assert!(is_in_tab_bar(27.0));
-        assert!(!is_in_tab_bar(28.0));
-        assert!(!is_in_tab_bar(100.0));
-    }
-
-    #[test]
-    fn test_compute_visible_lines() {
-        // 600px height, 20px line height, 20px status bar = 580 / 20 = 29 lines
-        assert_eq!(compute_visible_lines(600, 20, 20), 29);
-        // Edge case: zero line height
-        assert_eq!(compute_visible_lines(600, 0, 20), 25); // fallback
-    }
-
-    #[test]
-    fn test_compute_visible_columns() {
-        // Assume text_start_x returns ~60px for char_width=10
-        // So (800 - 60) / 10 = 74 columns
-        let cols = compute_visible_columns(800, 10.0);
-        assert!(cols > 0);
     }
 
     #[test]

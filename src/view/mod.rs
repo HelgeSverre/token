@@ -151,31 +151,10 @@ impl Renderer {
         self.char_width
     }
 
-    #[allow(dead_code)]
-    pub fn font(&self) -> &Font {
-        &self.font
-    }
-
-    #[allow(dead_code)]
-    pub fn font_size(&self) -> f32 {
-        self.font_size
-    }
-
     pub fn line_height(&self) -> usize {
         self.line_metrics.new_line_size.ceil() as usize
     }
 
-    #[allow(dead_code)]
-    pub fn ascent(&self) -> f32 {
-        self.line_metrics.ascent
-    }
-
-    #[allow(dead_code)]
-    pub fn line_metrics(&self) -> &LineMetrics {
-        &self.line_metrics
-    }
-
-    #[allow(dead_code)]
     pub fn dimensions(&self) -> (u32, u32) {
         (self.width, self.height)
     }
@@ -2745,14 +2724,6 @@ impl Renderer {
     pub fn is_in_status_bar(&self, y: f64) -> bool {
         let line_height = self.line_metrics.new_line_size.ceil() as usize;
         geometry::is_in_status_bar(y, self.height, line_height)
-    }
-
-    /// Returns the tab index at the given x position within a group's tab bar.
-    /// Returns None if the click is not on a tab.
-    /// Delegates to geometry module for the actual calculation.
-    #[allow(dead_code)]
-    pub fn tab_at_position(&self, x: f64, model: &AppModel, group: &EditorGroup) -> Option<usize> {
-        geometry::tab_at_position(x, self.char_width, model, group)
     }
 
     /// Hit-test a CSV cell given window coordinates.
