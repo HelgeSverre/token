@@ -50,7 +50,7 @@ uninstall:
 
 # Run release build with default samples file
 run: release
-	./target/release/token samples/sample_code.rs
+	./target/release/token samples/sample_code.rs README.md
 
 # Run debug build (faster compile, slower runtime)
 dev: build
