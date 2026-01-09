@@ -514,7 +514,8 @@ impl EditorArea {
     }
 
     /// Called when the active tab changes in a group.
-    /// Closes the preview if the new document is not the preview's document.
+    /// Updates the preview to show the new document if it supports preview,
+    /// otherwise closes the preview.
     pub fn on_group_active_tab_changed(&mut self, group_id: GroupId) {
         let preview_id = match self.find_preview_for_group(group_id) {
             Some(id) => id,
@@ -541,9 +542,26 @@ impl EditorArea {
             None => return,
         };
 
-        // If the document changed, close the preview
+        // If the document changed, either retarget or close the preview
         if new_doc_id != preview_doc_id {
-            self.close_preview(preview_id);
+            // Check if the new document supports preview
+            let supports_preview = self
+                .documents
+                .get(&new_doc_id)
+                .map(|doc| doc.language.supports_preview())
+                .unwrap_or(false);
+
+            if supports_preview {
+                // Retarget the preview to the new document
+                if let Some(preview) = self.previews.get_mut(&preview_id) {
+                    preview.document_id = new_doc_id;
+                    preview.last_revision = 0; // Force refresh
+                    preview.scroll_offset = 0;
+                }
+            } else {
+                // Close the preview for unsupported file types
+                self.close_preview(preview_id);
+            }
         }
     }
 

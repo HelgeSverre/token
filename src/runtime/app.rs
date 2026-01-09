@@ -903,8 +903,10 @@ impl App {
     /// Synchronize webview instances with preview panes in the model.
     /// Creates, updates, or destroys webviews as needed.
     fn sync_webviews(&mut self) {
+        use super::webview::PreviewContent;
         use token::markdown::{content_to_preview_html, PreviewTheme};
         use token::model::editor_area::PreviewId;
+        use token::syntax::LanguageId;
 
         let Some(window) = &self.window else {
             return;
@@ -936,7 +938,7 @@ impl App {
         struct PreviewUpdate {
             preview_id: PreviewId,
             rect: token::model::editor_area::Rect,
-            html: String,
+            content: PreviewContent,
             doc_revision: u64,
             needs_content_update: bool,
             needs_create: bool,
@@ -949,8 +951,26 @@ impl App {
             .iter()
             .filter_map(|(&preview_id, preview)| {
                 let document = self.model.editor_area.documents.get(&preview.document_id)?;
-                let content = document.buffer.to_string();
-                let html = content_to_preview_html(&content, document.language, &theme)?;
+                let buffer_content = document.buffer.to_string();
+                let html = content_to_preview_html(&buffer_content, document.language, &theme)?;
+
+                // For HTML files with a file path, enable local resource loading
+                let content = if document.language == LanguageId::Html {
+                    if let Some(file_path) = &document.file_path {
+                        if let Some(base_dir) = file_path.parent() {
+                            PreviewContent::HtmlFile {
+                                html,
+                                base_dir: base_dir.to_path_buf(),
+                            }
+                        } else {
+                            PreviewContent::Html(html)
+                        }
+                    } else {
+                        PreviewContent::Html(html)
+                    }
+                } else {
+                    PreviewContent::Html(html)
+                };
 
                 let needs_create = !self.webview_manager.has_webview(preview_id);
                 let needs_content_update = preview.needs_refresh(document.revision);
@@ -968,7 +988,7 @@ impl App {
                 Some(PreviewUpdate {
                     preview_id,
                     rect: webview_rect,
-                    html,
+                    content,
                     doc_revision: document.revision,
                     needs_content_update,
                     needs_create,
@@ -996,7 +1016,7 @@ impl App {
                     update.preview_id,
                     window,
                     update.rect,
-                    &update.html,
+                    update.content,
                 ) {
                     tracing::error!("Failed to create webview for preview: {}", e);
                     continue;
@@ -1014,7 +1034,7 @@ impl App {
                 // Update content if revision changed
                 if update.needs_content_update {
                     self.webview_manager
-                        .update_content(update.preview_id, &update.html);
+                        .update_content(update.preview_id, update.content);
                     // Update last_revision after content update
                     if let Some(preview) = self.model.editor_area.preview_mut(update.preview_id) {
                         preview.last_revision = update.doc_revision;

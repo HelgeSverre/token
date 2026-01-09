@@ -8,6 +8,8 @@ All notable changes to rust-editor are documented in this file.
 
 ### Added
 - Preview: HTML file preview support. Opening preview on `.html` files now displays the rendered HTML in the webview pane, reusing the existing markdown preview infrastructure.
+- Preview: Local resource loading for HTML preview. Images, CSS, and JS files are now served from the document's directory via a custom `token://` protocol handler.
+- Preview: Preview now updates to show the new file when switching tabs (if the new file supports preview), instead of closing.
 - API: Added `LanguageId::supports_preview()` method to check if a file type supports live preview.
 - API: Added `content_to_preview_html()` function that handles both Markdown and HTML content.
 
