@@ -102,6 +102,7 @@ mod tests {
             char_width: 10.0,
             metrics: token::model::ScaledMetrics::default(),
             workspace: None,
+            dock_layout: token::panel::DockLayout::default(),
             #[cfg(debug_assertions)]
             debug_overlay: None,
         }
@@ -681,6 +682,7 @@ mod tests {
             char_width: 10.0,
             metrics: token::model::ScaledMetrics::default(),
             workspace: None,
+            dock_layout: token::panel::DockLayout::default(),
             #[cfg(debug_assertions)]
             debug_overlay: None,
         };

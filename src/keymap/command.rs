@@ -4,9 +4,10 @@
 //! Each command maps to one or more `Msg` values for the Elm-style update loop.
 
 use crate::messages::{
-    AppMsg, CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, Msg, PreviewMsg, UiMsg,
+    AppMsg, CsvMsg, DockMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, Msg, PreviewMsg, UiMsg,
     WorkspaceMsg,
 };
+use crate::panel::PanelId;
 use crate::model::editor_area::SplitDirection;
 use crate::model::ModalId;
 
@@ -198,7 +199,7 @@ pub enum Command {
     // ========================================================================
     // Workspace (Sidebar/File Tree)
     // ========================================================================
-    /// Toggle sidebar visibility
+    /// Toggle sidebar visibility (legacy, use ToggleFileExplorer)
     ToggleSidebar,
     /// Reveal active file in sidebar
     RevealInSidebar,
@@ -210,6 +211,18 @@ pub enum Command {
     FileTreeOpenOrToggle,
     /// Refresh the file tree from disk
     FileTreeRefresh,
+
+    // ========================================================================
+    // Panels/Docks
+    // ========================================================================
+    /// Toggle file explorer panel (left dock)
+    ToggleFileExplorer,
+    /// Toggle terminal panel (bottom dock)
+    ToggleTerminal,
+    /// Toggle outline panel (right dock)
+    ToggleOutline,
+    /// Close the currently focused dock
+    CloseFocusedDock,
 
     // ========================================================================
     // Special
@@ -393,12 +406,18 @@ impl Command {
             FocusGroup4 => vec![Msg::Layout(LayoutMsg::FocusGroupByIndex(4))],
 
             // Workspace
-            ToggleSidebar => vec![Msg::Workspace(WorkspaceMsg::ToggleSidebar)],
+            ToggleSidebar => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::FILE_EXPLORER))],
             RevealInSidebar => vec![Msg::Workspace(WorkspaceMsg::RevealActiveFile)],
             FileTreeSelectPrevious => vec![Msg::Workspace(WorkspaceMsg::SelectPrevious)],
             FileTreeSelectNext => vec![Msg::Workspace(WorkspaceMsg::SelectNext)],
             FileTreeOpenOrToggle => vec![Msg::Workspace(WorkspaceMsg::OpenOrToggle)],
             FileTreeRefresh => vec![Msg::Workspace(WorkspaceMsg::Refresh)],
+
+            // Panels/Docks
+            ToggleFileExplorer => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::FILE_EXPLORER))],
+            ToggleTerminal => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::TERMINAL))],
+            ToggleOutline => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::OUTLINE))],
+            CloseFocusedDock => vec![Msg::Dock(DockMsg::CloseFocusedDock)],
 
             // Special - these need context-aware handling
             EscapeSmartClear => {
@@ -457,6 +476,10 @@ impl Command {
                 | Command::ToggleFindReplace
                 | Command::FuzzyFileFinder
                 | Command::ToggleSidebar
+                | Command::ToggleFileExplorer
+                | Command::ToggleTerminal
+                | Command::ToggleOutline
+                | Command::CloseFocusedDock
                 | Command::Quit
                 | Command::SaveFile
                 | Command::NewTab
@@ -556,6 +579,11 @@ impl Command {
             FileTreeSelectNext => "File Tree: Select Next",
             FileTreeOpenOrToggle => "File Tree: Open/Toggle",
             FileTreeRefresh => "File Tree: Refresh",
+
+            ToggleFileExplorer => "View: Toggle File Explorer",
+            ToggleTerminal => "View: Toggle Terminal",
+            ToggleOutline => "View: Toggle Outline",
+            CloseFocusedDock => "View: Close Panel",
 
             EscapeSmartClear => "Escape",
             Unbound => "Unbound",

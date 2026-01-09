@@ -314,10 +314,10 @@ impl App {
         }
 
         // Sidebar resize border (right edge, ~4px hit zone)
-        const SIDEBAR_RESIZE_HIT_ZONE: f64 = 4.0;
+        const RESIZE_HIT_ZONE: f64 = 4.0;
         if sidebar_width > 0.0 {
-            let resize_zone_start = sidebar_width as f64 - SIDEBAR_RESIZE_HIT_ZONE;
-            let resize_zone_end = sidebar_width as f64 + SIDEBAR_RESIZE_HIT_ZONE;
+            let resize_zone_start = sidebar_width as f64 - RESIZE_HIT_ZONE;
+            let resize_zone_end = sidebar_width as f64 + RESIZE_HIT_ZONE;
             if x >= resize_zone_start && x <= resize_zone_end {
                 self.model.ui.hover = HoverRegion::SidebarResize;
                 window.set_cursor(CursorIcon::ColResize);
@@ -327,6 +327,65 @@ impl App {
             // Sidebar file tree area
             if x < sidebar_width as f64 {
                 self.model.ui.hover = HoverRegion::Sidebar;
+                window.set_cursor(CursorIcon::Default);
+                return;
+            }
+        }
+
+        // Calculate dock dimensions
+        let scale_factor = self.model.metrics.scale_factor;
+        let right_dock_width = self.model.dock_layout.right.size(scale_factor) as f64;
+        let bottom_dock_height = self.model.dock_layout.bottom.size(scale_factor) as f64;
+        let content_height = (height as usize).saturating_sub(status_bar_height) as f64;
+
+        // Right dock resize handle (left edge)
+        if self.model.dock_layout.right.is_open && right_dock_width > 0.0 {
+            let right_dock_x = width as f64 - right_dock_width;
+            let resize_zone_start = right_dock_x - RESIZE_HIT_ZONE;
+            let resize_zone_end = right_dock_x + RESIZE_HIT_ZONE;
+            if x >= resize_zone_start && x <= resize_zone_end && y < content_height - bottom_dock_height {
+                self.model.ui.hover = HoverRegion::DockResize(token::panel::DockPosition::Right);
+                window.set_cursor(CursorIcon::ColResize);
+                return;
+            }
+        }
+
+        // Bottom dock resize handle (top edge)
+        if self.model.dock_layout.bottom.is_open && bottom_dock_height > 0.0 {
+            let bottom_dock_y = content_height - bottom_dock_height;
+            let resize_zone_start = bottom_dock_y - RESIZE_HIT_ZONE;
+            let resize_zone_end = bottom_dock_y + RESIZE_HIT_ZONE;
+            if y >= resize_zone_start && y <= resize_zone_end && x >= sidebar_width as f64 {
+                self.model.ui.hover = HoverRegion::DockResize(token::panel::DockPosition::Bottom);
+                window.set_cursor(CursorIcon::RowResize);
+                return;
+            }
+        }
+
+        // Right dock content area
+        if self.model.dock_layout.right.is_open && right_dock_width > 0.0 {
+            let right_dock_x = width as f64 - right_dock_width;
+            if x >= right_dock_x && y < content_height - bottom_dock_height {
+                self.model.ui.hover = HoverRegion::Dock(token::panel::DockPosition::Right);
+                window.set_cursor(CursorIcon::Default);
+                return;
+            }
+        }
+
+        // Bottom dock content area
+        if self.model.dock_layout.bottom.is_open && bottom_dock_height > 0.0 {
+            let bottom_dock_y = content_height - bottom_dock_height;
+            if y >= bottom_dock_y && x >= sidebar_width as f64 {
+                self.model.ui.hover = HoverRegion::Dock(token::panel::DockPosition::Bottom);
+                window.set_cursor(CursorIcon::Default);
+                return;
+            }
+        }
+
+        // Check preview panes
+        for preview in self.model.editor_area.previews.values() {
+            if preview.rect.contains(x as f32, y as f32) {
+                self.model.ui.hover = HoverRegion::Preview;
                 window.set_cursor(CursorIcon::Default);
                 return;
             }
@@ -736,12 +795,25 @@ impl App {
                         }
                     }
 
-                    // Modal/StatusBar/Splitter/TabBar: ignore scroll
+                    // Dock panels: consume scroll events but don't route to editor
+                    // Future: could route to panel-specific scroll handlers
+                    HoverRegion::Dock(_position) => {
+                        // Consume the scroll event to prevent bleeding into editor
+                        // TODO: Implement per-panel scroll handling when panels have scrollable content
+                        None
+                    }
+
+                    // Preview panes: consume scroll but don't route to editor
+                    // Webview handles its own scrolling
+                    HoverRegion::Preview => None,
+
+                    // Modal/StatusBar/Splitter/TabBar/DockResize: ignore scroll
                     HoverRegion::Modal
                     | HoverRegion::StatusBar
                     | HoverRegion::Splitter
                     | HoverRegion::EditorTabBar
                     | HoverRegion::SidebarResize
+                    | HoverRegion::DockResize(_)
                     | HoverRegion::None => None,
 
                     // Editor text area: scroll the editor (or CSV if in CSV mode)
@@ -842,6 +914,11 @@ impl App {
         let model_preview_ids: std::collections::HashSet<_> =
             self.model.editor_area.previews.keys().copied().collect();
 
+        // Debug: log preview count
+        if !model_preview_ids.is_empty() {
+            tracing::debug!("sync_webviews: {} preview(s) in model", model_preview_ids.len());
+        }
+
         // Get current webview preview IDs
         let webview_preview_ids: std::collections::HashSet<_> =
             self.webview_manager.active_previews().into_iter().collect();
@@ -854,6 +931,7 @@ impl App {
         // Collect info about previews that need updates (to avoid borrow issues)
         let scale_factor = self.model.metrics.scale_factor;
         let theme = PreviewTheme::from_editor_theme(&self.model.theme);
+        let metrics = &self.model.metrics;
 
         struct PreviewUpdate {
             preview_id: PreviewId,
@@ -877,9 +955,19 @@ impl App {
                 let needs_create = !self.webview_manager.has_webview(preview_id);
                 let needs_content_update = preview.needs_refresh(document.revision);
 
+                // Compute content-area rect for the webview (below the "Preview" header)
+                // preview.rect is the outer pane rect; we need to offset by header height
+                let header_height = metrics.tab_bar_height as f32;
+                let webview_rect = token::model::editor_area::Rect::new(
+                    preview.rect.x,
+                    preview.rect.y + header_height,
+                    preview.rect.width,
+                    (preview.rect.height - header_height).max(0.0),
+                );
+
                 Some(PreviewUpdate {
                     preview_id,
-                    rect: preview.rect,
+                    rect: webview_rect,
                     html,
                     doc_revision: document.revision,
                     needs_content_update,
@@ -890,6 +978,18 @@ impl App {
 
         // Apply updates
         for update in updates {
+            // Debug: log webview rect updates
+            tracing::debug!(
+                "Webview {:?}: rect=({:.0}, {:.0}, {:.0}x{:.0}) create={} content_update={}",
+                update.preview_id,
+                update.rect.x,
+                update.rect.y,
+                update.rect.width,
+                update.rect.height,
+                update.needs_create,
+                update.needs_content_update
+            );
+
             if update.needs_create {
                 // Create new webview
                 if let Err(e) = self.webview_manager.create_webview(
@@ -907,8 +1007,9 @@ impl App {
                 }
             } else {
                 // Update existing webview bounds
+                let window_height = window.inner_size().height;
                 self.webview_manager
-                    .update_bounds(update.preview_id, update.rect, scale_factor);
+                    .update_bounds(update.preview_id, update.rect, scale_factor, window_height);
 
                 // Update content if revision changed
                 if update.needs_content_update {

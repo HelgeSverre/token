@@ -139,6 +139,7 @@ pub fn handle_mouse_press(
         match focus_target {
             token::model::FocusTarget::Editor => model.ui.focus_editor(),
             token::model::FocusTarget::Sidebar => model.ui.focus_sidebar(),
+            token::model::FocusTarget::Dock(pos) => model.ui.focus_dock(*pos),
             token::model::FocusTarget::Modal => {}
         }
     }
@@ -343,6 +344,52 @@ fn handle_left_click(
             }
             EventResult::consumed_with_focus(FocusTarget::Editor)
         }
+
+        // Dock resize handle
+        HitTarget::DockResize { position } => {
+            update(
+                model,
+                Msg::Dock(token::messages::DockMsg::StartResize {
+                    position: *position,
+                    initial_coord: event.pos.x,
+                }),
+            );
+            EventResult::consumed_with_focus(FocusTarget::Editor)
+        }
+
+        // Dock tab click - focus/toggle panel
+        HitTarget::DockTab { panel_id, .. } => {
+            update(
+                model,
+                Msg::Dock(token::messages::DockMsg::FocusOrTogglePanel(*panel_id)),
+            );
+            EventResult::consumed_redraw()
+        }
+
+        // Dock tab bar empty area
+        HitTarget::DockTabBarEmpty { position } => {
+            // Focus the dock
+            update(
+                model,
+                Msg::Dock(token::messages::DockMsg::FocusDock(*position)),
+            );
+            EventResult::consumed_redraw()
+        }
+
+        // Dock content area - focus the dock
+        HitTarget::DockContent { position, .. } => {
+            update(
+                model,
+                Msg::Dock(token::messages::DockMsg::FocusDock(*position)),
+            );
+            // For left dock (file explorer), return sidebar focus
+            match position {
+                token::panel::DockPosition::Left => {
+                    EventResult::consumed_with_focus(FocusTarget::Sidebar)
+                }
+                _ => EventResult::consumed_redraw(),
+            }
+        }
     }
 }
 
@@ -494,6 +541,12 @@ fn handle_middle_click(
 
         // Sidebar resize and splitters - consume, no action
         HitTarget::SidebarResize | HitTarget::Splitter { .. } => EventResult::consumed_no_redraw(),
+
+        // Dock targets - consume, no special middle-click action
+        HitTarget::DockResize { .. }
+        | HitTarget::DockTab { .. }
+        | HitTarget::DockTabBarEmpty { .. }
+        | HitTarget::DockContent { .. } => EventResult::consumed_no_redraw(),
     }
 }
 

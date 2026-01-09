@@ -258,6 +258,7 @@ fn create_model(args: &Args) -> Result<token::model::AppModel> {
         char_width,
         metrics: token::model::ScaledMetrics::default(),
         workspace: None,
+        dock_layout: token::panel::DockLayout::default(),
         #[cfg(debug_assertions)]
         debug_overlay: None,
     };

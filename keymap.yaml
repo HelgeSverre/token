@@ -98,11 +98,22 @@ bindings:
     command: ToggleFindReplace
 
   # ===========================================================================
-  # Workspace (Sidebar/File Tree)
+  # Panels/Docks (IntelliJ-style Cmd+1/2/7)
   # ===========================================================================
   - key: "cmd+1"
-    command: ToggleSidebar
+    command: ToggleFileExplorer
 
+  - key: "cmd+2"
+    command: ToggleTerminal
+
+  - key: "cmd+7"
+    command: ToggleOutline
+
+
+
+  # ===========================================================================
+  # Workspace (File Tree Navigation)
+  # ===========================================================================
   - key: "cmd+shift+r"
     command: RevealInSidebar
 

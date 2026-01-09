@@ -17,6 +17,8 @@ pub mod markdown;
 pub mod messages;
 pub mod model;
 pub mod overlay;
+pub mod panel;
+pub mod panels;
 pub mod syntax;
 pub mod theme;
 pub mod tracing;

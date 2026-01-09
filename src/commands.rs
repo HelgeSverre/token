@@ -67,6 +67,12 @@ pub enum CommandId {
     // Workspace
     OpenFolder,
 
+    // Panels/Docks
+    ToggleFileExplorer,
+    ToggleTerminal,
+    ToggleOutline,
+    CloseFocusedDock,
+
     // Application
     Quit,
 
@@ -228,6 +234,26 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: None,
     },
     CommandDef {
+        id: CommandId::ToggleFileExplorer,
+        label: "View: Toggle File Explorer",
+        keybinding: Some("⌘1"),
+    },
+    CommandDef {
+        id: CommandId::ToggleTerminal,
+        label: "View: Toggle Terminal",
+        keybinding: Some("⌘2"),
+    },
+    CommandDef {
+        id: CommandId::ToggleOutline,
+        label: "View: Toggle Outline",
+        keybinding: Some("⌘7"),
+    },
+    CommandDef {
+        id: CommandId::CloseFocusedDock,
+        label: "View: Close Panel",
+        keybinding: None,
+    },
+    CommandDef {
         id: CommandId::Quit,
         label: "Quit",
         keybinding: Some("⌘Q"),
@@ -364,6 +390,10 @@ impl CommandId {
             CommandId::ToggleMarkdownPreview => Some(KeymapCommand::MarkdownTogglePreview),
             CommandId::OpenLogFile => Some(KeymapCommand::OpenLogFile),
             CommandId::OpenFolder => None,
+            CommandId::ToggleFileExplorer => Some(KeymapCommand::ToggleFileExplorer),
+            CommandId::ToggleTerminal => Some(KeymapCommand::ToggleTerminal),
+            CommandId::ToggleOutline => Some(KeymapCommand::ToggleOutline),
+            CommandId::CloseFocusedDock => Some(KeymapCommand::CloseFocusedDock),
             CommandId::Quit => Some(KeymapCommand::Quit),
             #[cfg(debug_assertions)]
             CommandId::TogglePerfOverlay => None,

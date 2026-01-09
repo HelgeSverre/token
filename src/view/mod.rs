@@ -603,6 +603,10 @@ impl Renderer {
     }
 
     /// Render a markdown preview pane.
+    ///
+    /// When webview is enabled (default), this only renders the pane chrome (background,
+    /// header, borders). The webview overlay handles the actual markdown content rendering.
+    /// The native markdown rendering is kept as a fallback but disabled by default.
     fn render_preview_pane(
         frame: &mut Frame,
         painter: &mut TextPainter,
@@ -610,8 +614,6 @@ impl Renderer {
         preview_id: token::model::editor_area::PreviewId,
         rect: Rect,
     ) {
-        use token::markdown::{markdown_to_html, PreviewTheme};
-
         let preview = match model.editor_area.previews.get(&preview_id) {
             Some(p) => p,
             None => return,
@@ -631,88 +633,97 @@ impl Renderer {
         // Render pane chrome (background, header, borders)
         Self::render_pane(frame, painter, model, &pane, Some("Preview"));
 
-        // Render markdown content
-        let visible_lines = pane.visible_lines(line_height);
-        let text_x = pane.content_x();
-        let max_width = pane.max_text_width();
-        let max_chars = if char_width > 0.0 {
-            (max_width as f32 / char_width) as usize
-        } else {
-            80
-        };
-
-        let text_color = model.theme.editor.foreground.to_argb_u32();
-        let heading_color = model.theme.syntax.keyword.to_argb_u32();
-        let code_bg = model.theme.gutter.background.to_argb_u32();
-        let link_color = model.theme.syntax.string.to_argb_u32();
-
-        // Simple markdown rendering: parse and display styled lines
-        let mut y = pane.content_y();
-        let mut in_code_block = false;
-
-        for line_num in 0..document.buffer.len_lines() {
-            if line_num >= preview.scroll_offset + visible_lines {
-                break;
-            }
-            if line_num < preview.scroll_offset {
-                continue;
-            }
-
-            let line_text = document.buffer.line(line_num).to_string();
-            let line_text = line_text.trim_end_matches('\n');
-
-            // Simple markdown parsing
-            let trimmed = line_text.trim();
-
-            // Code block detection
-            if trimmed.starts_with("```") {
-                in_code_block = !in_code_block;
-                y += line_height;
-                continue;
-            }
-
-            if in_code_block {
-                // Draw code block background
-                frame.fill_rect_px(
-                    text_x.saturating_sub(4),
-                    y,
-                    max_width + 8,
-                    line_height,
-                    code_bg,
-                );
-                let display_line: String = line_text.chars().take(max_chars).collect();
-                painter.draw(frame, text_x, y, &display_line, text_color);
-            } else if let Some(heading) = trimmed.strip_prefix("# ") {
-                let display: String = heading.chars().take(max_chars).collect();
-                painter.draw(frame, text_x, y, &display, heading_color);
-            } else if let Some(heading) = trimmed.strip_prefix("## ") {
-                let display: String = heading.chars().take(max_chars).collect();
-                painter.draw(frame, text_x, y, &display, heading_color);
-            } else if let Some(heading) = trimmed.strip_prefix("### ") {
-                let display: String = heading.chars().take(max_chars).collect();
-                painter.draw(frame, text_x, y, &display, heading_color);
-            } else if let Some(list_item) = trimmed.strip_prefix("- ") {
-                let bullet = format!("• {}", list_item);
-                let display: String = bullet.chars().take(max_chars).collect();
-                painter.draw(frame, text_x, y, &display, text_color);
-            } else if let Some(list_item) = trimmed.strip_prefix("* ") {
-                let bullet = format!("• {}", list_item);
-                let display: String = bullet.chars().take(max_chars).collect();
-                painter.draw(frame, text_x, y, &display, text_color);
-            } else if trimmed.starts_with('[') && trimmed.contains("](") {
-                // Simple link detection
-                let display: String = trimmed.chars().take(max_chars).collect();
-                painter.draw(frame, text_x, y, &display, link_color);
-            } else {
-                let display: String = line_text.chars().take(max_chars).collect();
-                painter.draw(frame, text_x, y, &display, text_color);
-            }
-
-            y += line_height;
+        // When using webview for preview, only render chrome - webview handles content.
+        // Set to false to use native markdown rendering as fallback.
+        const USE_WEBVIEW_PREVIEW: bool = true;
+        if USE_WEBVIEW_PREVIEW {
+            // Suppress unused warnings for webview mode
+            let _ = (document, line_height, char_width, &pane);
+            return;
         }
 
-        // Suppress unused warning for HTML generation (used for webview in future)
-        let _ = (markdown_to_html, PreviewTheme::default);
+        // Native markdown rendering fallback (disabled when webview is used)
+        #[allow(unreachable_code)]
+        {
+            let visible_lines = pane.visible_lines(line_height);
+            let text_x = pane.content_x();
+            let max_width = pane.max_text_width();
+            let max_chars = if char_width > 0.0 {
+                (max_width as f32 / char_width) as usize
+            } else {
+                80
+            };
+
+            let text_color = model.theme.editor.foreground.to_argb_u32();
+            let heading_color = model.theme.syntax.keyword.to_argb_u32();
+            let code_bg = model.theme.gutter.background.to_argb_u32();
+            let link_color = model.theme.syntax.string.to_argb_u32();
+
+            // Simple markdown rendering: parse and display styled lines
+            let mut y = pane.content_y();
+            let mut in_code_block = false;
+
+            for line_num in 0..document.buffer.len_lines() {
+                if line_num >= preview.scroll_offset + visible_lines {
+                    break;
+                }
+                if line_num < preview.scroll_offset {
+                    continue;
+                }
+
+                let line_text = document.buffer.line(line_num).to_string();
+                let line_text = line_text.trim_end_matches('\n');
+
+                // Simple markdown parsing
+                let trimmed = line_text.trim();
+
+                // Code block detection
+                if trimmed.starts_with("```") {
+                    in_code_block = !in_code_block;
+                    y += line_height;
+                    continue;
+                }
+
+                if in_code_block {
+                    // Draw code block background
+                    frame.fill_rect_px(
+                        text_x.saturating_sub(4),
+                        y,
+                        max_width + 8,
+                        line_height,
+                        code_bg,
+                    );
+                    let display_line: String = line_text.chars().take(max_chars).collect();
+                    painter.draw(frame, text_x, y, &display_line, text_color);
+                } else if let Some(heading) = trimmed.strip_prefix("# ") {
+                    let display: String = heading.chars().take(max_chars).collect();
+                    painter.draw(frame, text_x, y, &display, heading_color);
+                } else if let Some(heading) = trimmed.strip_prefix("## ") {
+                    let display: String = heading.chars().take(max_chars).collect();
+                    painter.draw(frame, text_x, y, &display, heading_color);
+                } else if let Some(heading) = trimmed.strip_prefix("### ") {
+                    let display: String = heading.chars().take(max_chars).collect();
+                    painter.draw(frame, text_x, y, &display, heading_color);
+                } else if let Some(list_item) = trimmed.strip_prefix("- ") {
+                    let bullet = format!("• {}", list_item);
+                    let display: String = bullet.chars().take(max_chars).collect();
+                    painter.draw(frame, text_x, y, &display, text_color);
+                } else if let Some(list_item) = trimmed.strip_prefix("* ") {
+                    let bullet = format!("• {}", list_item);
+                    let display: String = bullet.chars().take(max_chars).collect();
+                    painter.draw(frame, text_x, y, &display, text_color);
+                } else if trimmed.starts_with('[') && trimmed.contains("](") {
+                    // Simple link detection
+                    let display: String = trimmed.chars().take(max_chars).collect();
+                    painter.draw(frame, text_x, y, &display, link_color);
+                } else {
+                    let display: String = line_text.chars().take(max_chars).collect();
+                    painter.draw(frame, text_x, y, &display, text_color);
+                }
+
+                y += line_height;
+            }
+        }
     }
 
     /// Render an entire editor group: tab bar, gutter, text area, and focus dimming.
@@ -1035,6 +1046,79 @@ impl Renderer {
                 break;
             }
         }
+    }
+
+    /// Render a dock panel (right or bottom dock with placeholder content)
+    fn render_dock(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        position: token::panel::DockPosition,
+        rect: token::model::editor_area::Rect,
+    ) {
+        let dock = model.dock_layout.dock(position);
+        if !dock.is_open || dock.panel_ids.is_empty() {
+            return;
+        }
+
+        let theme = &model.theme.sidebar; // Use sidebar theme for now
+        let border_color = theme.border.to_argb_u32();
+        let text_color = theme.foreground.to_argb_u32();
+        let bg_color = theme.background.to_argb_u32();
+
+        // Fill background
+        frame.fill_rect(rect, bg_color);
+
+        // Draw border on edge facing the editor
+        match position {
+            token::panel::DockPosition::Left => {
+                // Border on right edge
+                frame.fill_rect(
+                    token::model::editor_area::Rect::new(
+                        rect.x + rect.width - 1.0,
+                        rect.y,
+                        1.0,
+                        rect.height,
+                    ),
+                    border_color,
+                );
+            }
+            token::panel::DockPosition::Right => {
+                // Border on left edge
+                frame.fill_rect(
+                    token::model::editor_area::Rect::new(rect.x, rect.y, 1.0, rect.height),
+                    border_color,
+                );
+            }
+            token::panel::DockPosition::Bottom => {
+                // Border on top edge
+                frame.fill_rect(
+                    token::model::editor_area::Rect::new(rect.x, rect.y, rect.width, 1.0),
+                    border_color,
+                );
+            }
+        }
+
+        // Get active panel info
+        let active_panel = dock.active_panel();
+        let placeholder = active_panel
+            .map(token::panels::PlaceholderPanel::new)
+            .unwrap_or_else(|| token::panels::PlaceholderPanel::new(token::panel::PanelId::TERMINAL));
+
+        // Draw panel title
+        let title = placeholder.title();
+        let title_x = rect.x + 8.0;
+        let title_y = rect.y + 8.0;
+        painter.draw(frame, title_x as usize, title_y as usize, title, text_color);
+
+        // Draw placeholder message centered
+        let message = placeholder.message();
+        let char_width = painter.char_width();
+        let line_height = painter.line_height();
+        let text_width = message.len() as f32 * char_width;
+        let text_x = rect.x + (rect.width - text_width) / 2.0;
+        let text_y = rect.y + (rect.height - line_height as f32) / 2.0;
+        painter.draw(frame, text_x as usize, text_y as usize, message, text_color);
     }
 
     /// Render the gutter (line numbers and border) for an editor group.
@@ -2264,12 +2348,20 @@ impl Renderer {
             .map(|ws| ws.sidebar_width(model.metrics.scale_factor))
             .unwrap_or(0.0);
 
-        // Editor area starts after sidebar
+        // Calculate dock sizes
+        let right_dock_width = model.dock_layout.right.size(model.metrics.scale_factor);
+        let bottom_dock_height = model.dock_layout.bottom.size(model.metrics.scale_factor);
+
+        // Editor area:
+        // - Starts after sidebar (left edge)
+        // - Ends before right dock (right edge)
+        // - Ends before status bar and bottom dock (bottom edge)
+        let content_height = (height as usize).saturating_sub(status_bar_height) as f32;
         let available_rect = Rect::new(
             sidebar_width,
             0.0,
-            (width as f32) - sidebar_width,
-            (height as usize).saturating_sub(status_bar_height) as f32,
+            (width as f32) - sidebar_width - right_dock_width,
+            content_height - bottom_dock_height,
         );
         let splitters = model
             .editor_area
@@ -2419,6 +2511,66 @@ impl Renderer {
             {
                 let stats = painter.cache_stats();
                 perf.add_cache_stats(stats.hits, stats.misses);
+            }
+        }
+
+        // Render right dock if open
+        if model.dock_layout.right.is_open && render_editor {
+            let right_width = model.dock_layout.right.size(model.metrics.scale_factor);
+            if right_width > 0.0 {
+                let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
+                let mut painter = TextPainter::new(
+                    &self.font,
+                    &mut self.glyph_cache,
+                    font_size,
+                    ascent,
+                    char_width,
+                    line_height,
+                );
+                let bottom_height = model.dock_layout.bottom.size(model.metrics.scale_factor);
+                let dock_rect = token::model::editor_area::Rect::new(
+                    width as f32 - right_width,
+                    0.0,
+                    right_width,
+                    height as f32 - status_bar_height as f32 - bottom_height,
+                );
+                Self::render_dock(
+                    &mut frame,
+                    &mut painter,
+                    model,
+                    token::panel::DockPosition::Right,
+                    dock_rect,
+                );
+            }
+        }
+
+        // Render bottom dock if open
+        // Bottom dock spans from sidebar to window right edge (under right dock)
+        if model.dock_layout.bottom.is_open && render_editor {
+            let bottom_height = model.dock_layout.bottom.size(model.metrics.scale_factor);
+            if bottom_height > 0.0 {
+                let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
+                let mut painter = TextPainter::new(
+                    &self.font,
+                    &mut self.glyph_cache,
+                    font_size,
+                    ascent,
+                    char_width,
+                    line_height,
+                );
+                let dock_rect = token::model::editor_area::Rect::new(
+                    sidebar_width,
+                    height as f32 - status_bar_height as f32 - bottom_height,
+                    width as f32 - sidebar_width, // spans full width under right dock
+                    bottom_height,
+                );
+                Self::render_dock(
+                    &mut frame,
+                    &mut painter,
+                    model,
+                    token::panel::DockPosition::Bottom,
+                    dock_rect,
+                );
             }
         }
 

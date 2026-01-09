@@ -3,6 +3,7 @@
 use super::editor_area::SplitDirection;
 use super::status_bar::{StatusBar, TransientMessage};
 use crate::editable::{EditConstraints, EditableState, StringBuffer};
+use crate::panel::DockPosition;
 use crate::theme::{list_available_themes, ThemeInfo};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -17,8 +18,10 @@ pub enum FocusTarget {
     /// Main editor text area (default)
     #[default]
     Editor,
-    /// File tree sidebar
+    /// File tree sidebar (left dock's file explorer)
     Sidebar,
+    /// A dock panel (right or bottom; left uses Sidebar for compatibility)
+    Dock(DockPosition),
     /// Modal dialog (command palette, goto line, find/replace, etc.)
     Modal,
 }
@@ -26,7 +29,7 @@ pub enum FocusTarget {
 /// Which UI region the mouse is currently hovering over
 ///
 /// Used for:
-/// - Determining scroll event targets (sidebar vs editor)
+/// - Determining scroll event targets (sidebar vs editor vs dock)
 /// - Setting appropriate cursor icons
 /// - Visual hover feedback
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -48,6 +51,12 @@ pub enum HoverRegion {
     Modal,
     /// Hovering over a splitter (split view resize handle)
     Splitter,
+    /// Hovering over a dock panel (right or bottom)
+    Dock(DockPosition),
+    /// Hovering over a dock resize handle
+    DockResize(DockPosition),
+    /// Hovering over a preview pane
+    Preview,
 }
 
 // ============================================================================
@@ -539,6 +548,24 @@ impl UiState {
         if self.focus != FocusTarget::Modal {
             tracing::trace!("Focus changed: {:?} -> Modal", self.focus);
             self.focus = FocusTarget::Modal;
+        }
+    }
+
+    /// Set focus to a dock (right or bottom; left dock uses focus_sidebar)
+    pub fn focus_dock(&mut self, position: DockPosition) {
+        let target = FocusTarget::Dock(position);
+        if self.focus != target {
+            tracing::trace!("Focus changed: {:?} -> Dock({:?})", self.focus, position);
+            self.focus = target;
+        }
+    }
+
+    /// Get the currently focused dock position, if any
+    pub fn focused_dock(&self) -> Option<DockPosition> {
+        match self.focus {
+            FocusTarget::Dock(pos) => Some(pos),
+            FocusTarget::Sidebar => Some(DockPosition::Left),
+            _ => None,
         }
     }
 

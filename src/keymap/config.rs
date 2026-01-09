@@ -356,6 +356,12 @@ impl FromStr for Command {
             "FileTreeOpenOrToggle" => Ok(Command::FileTreeOpenOrToggle),
             "FileTreeRefresh" => Ok(Command::FileTreeRefresh),
 
+            // Panels/Docks
+            "ToggleFileExplorer" => Ok(Command::ToggleFileExplorer),
+            "ToggleTerminal" => Ok(Command::ToggleTerminal),
+            "ToggleOutline" => Ok(Command::ToggleOutline),
+            "CloseFocusedDock" => Ok(Command::CloseFocusedDock),
+
             // Markdown preview
             "MarkdownTogglePreview" => Ok(Command::MarkdownTogglePreview),
             "MarkdownOpenPreviewToSide" => Ok(Command::MarkdownOpenPreviewToSide),

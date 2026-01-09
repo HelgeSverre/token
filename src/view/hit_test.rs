@@ -184,6 +184,28 @@ pub enum HitTarget {
         row: usize,
         col: usize,
     },
+
+    /// Dock resize handle (between dock and editor area)
+    DockResize {
+        position: token::panel::DockPosition,
+    },
+
+    /// A tab in a dock's tab bar
+    DockTab {
+        position: token::panel::DockPosition,
+        panel_id: token::panel::PanelId,
+    },
+
+    /// Empty area of a dock's tab bar (no specific tab)
+    DockTabBarEmpty {
+        position: token::panel::DockPosition,
+    },
+
+    /// Dock content area (the active panel's content)
+    DockContent {
+        position: token::panel::DockPosition,
+        active_panel_id: token::panel::PanelId,
+    },
 }
 
 impl HitTarget {
@@ -211,9 +233,20 @@ impl HitTarget {
             | HitTarget::EditorGutter { .. }
             | HitTarget::EditorContent { .. }
             | HitTarget::CsvCell { .. } => Some(FocusTarget::Editor),
+            // Dock content areas suggest sidebar focus for left dock (file explorer),
+            // editor focus for others (until we have FocusTarget::Dock)
+            HitTarget::DockTab { position, .. }
+            | HitTarget::DockTabBarEmpty { position }
+            | HitTarget::DockContent { position, .. } => {
+                match position {
+                    token::panel::DockPosition::Left => Some(FocusTarget::Sidebar),
+                    _ => Some(FocusTarget::Editor), // TODO: FocusTarget::Dock(position)
+                }
+            }
             // These don't change focus
             HitTarget::StatusBar
             | HitTarget::SidebarResize
+            | HitTarget::DockResize { .. }
             | HitTarget::Splitter { .. }
             | HitTarget::PreviewHeader { .. }
             | HitTarget::PreviewContent { .. } => None,

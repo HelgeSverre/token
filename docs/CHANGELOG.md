@@ -10,6 +10,13 @@ All notable changes to rust-editor are documented in this file.
 - Docs: Updated developer OVERVIEW and archived obsolete docs to reflect recent refactors and module moves.
 - Tests: Comprehensive damage computation tests added for redraw/damage logic.
 
+### Fixed
+- Layout: Editor viewport now correctly shrinks to accommodate dock panels (bottom/right). Fixed issue where dock panels would obscure part of the editor area because the logical viewport didn't account for dock sizes.
+- Layout: Viewport dimensions now recalculated when dock visibility or size changes.
+- Preview: Fixed dual rendering issue where both native markdown and webview were drawn. Native rendering is now properly disabled when webview is active.
+- Preview: Fixed webview misalignment by correctly converting physical pixel coordinates to logical points with proper Y-axis flipping for macOS.
+- Scroll: Scroll events over dock panels and preview panes are now properly consumed instead of bleeding into the editor.
+
 ### Changed
 - Refactor (mouse): Unified mouse event handling with new hit-test system in `src/view/hit_test.rs` and centralized dispatch in `src/runtime/mouse.rs`. Replaces ad-hoc if/else chains with explicit `HitTarget` enum and priority-ordered hit-testing.
 - Refactor (app): Introduced specific redraw helpers and tighter damage accumulation to reduce unnecessary full redraws; clearer separation between damage computation and command processing.

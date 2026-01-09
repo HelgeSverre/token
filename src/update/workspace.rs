@@ -14,6 +14,8 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
         WorkspaceMsg::ToggleSidebar => {
             if let Some(workspace) = &mut model.workspace {
                 workspace.sidebar_visible = !workspace.sidebar_visible;
+                // Sync with dock layout
+                model.dock_layout.left.is_open = workspace.sidebar_visible;
                 // If sidebar is hidden while focused, return focus to editor
                 if !workspace.sidebar_visible
                     && matches!(model.ui.focus, crate::model::FocusTarget::Sidebar)
@@ -139,6 +141,8 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
                     (resize_state.original_width + delta_logical).clamp(min_width, max_width);
 
                 workspace.sidebar_width_logical = new_width_logical;
+                // Sync with dock layout
+                model.dock_layout.left.size_logical = new_width_logical;
             }
             Some(Cmd::redraw_editor())
         }

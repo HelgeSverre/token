@@ -850,6 +850,186 @@ pub fn modal_bounds(
     (modal_x, modal_y, modal_width, modal_height)
 }
 
+// ============================================================================
+// Dock Geometry
+// ============================================================================
+
+use token::panel::{DockLayout, DockPosition};
+
+/// Computed rectangles for all dock areas
+///
+/// Used by both rendering and hit-testing to ensure consistent layout.
+/// Currently unused but will be integrated when dock rendering is implemented.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Default)]
+pub struct DockRects {
+    /// Left dock area (if visible)
+    pub left: Option<Rect>,
+    /// Right dock area (if visible)
+    pub right: Option<Rect>,
+    /// Bottom dock area (if visible)
+    pub bottom: Option<Rect>,
+    /// Remaining editor area after docks are subtracted
+    pub editor_area: Rect,
+}
+
+#[allow(dead_code)]
+impl DockRects {
+    /// Compute dock rectangles from current layout state
+    ///
+    /// The layout follows VS Code/IntelliJ style:
+    /// 1. Left dock spans full content height (sidebar to status bar)
+    /// 2. Right dock spans full content height (from top to above bottom dock)
+    /// 3. Bottom dock spans from left dock to window right edge (under right dock)
+    /// 4. Editor area is what remains (between left/right docks, above bottom dock)
+    pub fn compute(
+        dock_layout: &DockLayout,
+        window_width: u32,
+        window_height: u32,
+        status_bar_height: usize,
+        scale_factor: f64,
+    ) -> Self {
+        let w = window_width as f32;
+        let content_height = (window_height as usize).saturating_sub(status_bar_height) as f32;
+
+        let left_width = dock_layout.left.size(scale_factor);
+        let right_width = dock_layout.right.size(scale_factor);
+        let bottom_height = dock_layout.bottom.size(scale_factor);
+
+        // Side docks span content height minus bottom dock
+        let side_dock_height = content_height - bottom_height;
+
+        // Left dock: full height on left side
+        let left = if left_width > 0.0 {
+            Some(Rect::new(0.0, 0.0, left_width, side_dock_height))
+        } else {
+            None
+        };
+
+        // Right dock: full height on right side (above bottom dock)
+        let right = if right_width > 0.0 {
+            Some(Rect::new(w - right_width, 0.0, right_width, side_dock_height))
+        } else {
+            None
+        };
+
+        // Bottom dock: spans from left dock edge to window right edge (under right dock)
+        let bottom = if bottom_height > 0.0 {
+            Some(Rect::new(
+                left_width,
+                side_dock_height,
+                w - left_width, // spans under right dock to window edge
+                bottom_height,
+            ))
+        } else {
+            None
+        };
+
+        // Editor area: between left and right docks, above bottom dock
+        let editor_area = Rect::new(
+            left_width,
+            0.0,
+            w - left_width - right_width,
+            side_dock_height,
+        );
+
+        Self {
+            left,
+            right,
+            bottom,
+            editor_area,
+        }
+    }
+
+    /// Check if a point is in any dock resize handle
+    ///
+    /// Returns the dock position if the point is within the resize zone.
+    /// Resize zones are on the inner edge of each dock:
+    /// - Left dock: right edge
+    /// - Right dock: left edge
+    /// - Bottom dock: top edge
+    pub fn hit_test_resize(&self, x: f64, y: f64, resize_zone: f32) -> Option<DockPosition> {
+        let px = x as f32;
+        let py = y as f32;
+
+        // Left dock resize handle (right edge)
+        if let Some(rect) = &self.left {
+            let handle_x = rect.x + rect.width - resize_zone;
+            if px >= handle_x
+                && px < rect.x + rect.width + resize_zone
+                && py >= rect.y
+                && py < rect.y + rect.height
+            {
+                return Some(DockPosition::Left);
+            }
+        }
+
+        // Right dock resize handle (left edge)
+        if let Some(rect) = &self.right {
+            let handle_x = rect.x - resize_zone;
+            if px >= handle_x
+                && px < rect.x + resize_zone
+                && py >= rect.y
+                && py < rect.y + rect.height
+            {
+                return Some(DockPosition::Right);
+            }
+        }
+
+        // Bottom dock resize handle (top edge)
+        if let Some(rect) = &self.bottom {
+            let handle_y = rect.y - resize_zone;
+            if py >= handle_y
+                && py < rect.y + resize_zone
+                && px >= rect.x
+                && px < rect.x + rect.width
+            {
+                return Some(DockPosition::Bottom);
+            }
+        }
+
+        None
+    }
+
+    /// Check if a point is in a dock's content area (not resize handle)
+    pub fn hit_test_content(&self, x: f64, y: f64) -> Option<DockPosition> {
+        let px = x as f32;
+        let py = y as f32;
+
+        if let Some(rect) = &self.left {
+            if px >= rect.x
+                && px < rect.x + rect.width
+                && py >= rect.y
+                && py < rect.y + rect.height
+            {
+                return Some(DockPosition::Left);
+            }
+        }
+
+        if let Some(rect) = &self.right {
+            if px >= rect.x
+                && px < rect.x + rect.width
+                && py >= rect.y
+                && py < rect.y + rect.height
+            {
+                return Some(DockPosition::Right);
+            }
+        }
+
+        if let Some(rect) = &self.bottom {
+            if px >= rect.x
+                && px < rect.x + rect.width
+                && py >= rect.y
+                && py < rect.y + rect.height
+            {
+                return Some(DockPosition::Bottom);
+            }
+        }
+
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -400,6 +400,8 @@ pub struct AppModel {
     pub metrics: ScaledMetrics,
     /// Workspace with file tree sidebar (None if no directory opened)
     pub workspace: Option<Workspace>,
+    /// Dock layout state (left/right/bottom panels)
+    pub dock_layout: crate::panel::DockLayout,
     /// Debug overlay state (debug builds only)
     #[cfg(debug_assertions)]
     pub debug_overlay: Option<DebugOverlay>,
@@ -438,6 +440,7 @@ impl AppModel {
             char_width: geom.char_width,
             metrics,
             workspace: None,
+            dock_layout: crate::panel::DockLayout::default(),
             #[cfg(debug_assertions)]
             debug_overlay: Some(DebugOverlay::new()),
         }
@@ -447,6 +450,9 @@ impl AppModel {
     pub fn open_workspace(&mut self, root: PathBuf) {
         match Workspace::new(root.clone(), &self.metrics) {
             Ok(workspace) => {
+                // Sync dock layout with workspace sidebar state
+                self.dock_layout.left.is_open = workspace.sidebar_visible;
+                self.dock_layout.left.size_logical = workspace.sidebar_width_logical;
                 self.workspace = Some(workspace);
                 self.ui
                     .set_status(format!("Opened workspace: {}", root.display()));
@@ -461,6 +467,8 @@ impl AppModel {
     /// Close the current workspace
     pub fn close_workspace(&mut self) {
         self.workspace = None;
+        // Close left dock when workspace is closed
+        self.dock_layout.left.is_open = false;
     }
 
     /// Get workspace root directory (convenience accessor)
@@ -536,24 +544,48 @@ impl AppModel {
     pub fn resize(&mut self, width: u32, height: u32) {
         self.window_size = (width, height);
 
+        // Subtract sidebar and right dock from available width
+        let sidebar_width = self
+            .workspace
+            .as_ref()
+            .filter(|ws| ws.sidebar_visible)
+            .map(|ws| ws.sidebar_width(self.metrics.scale_factor))
+            .unwrap_or(0.0);
+        let right_dock_width = self.dock_layout.right.size(self.metrics.scale_factor);
+
         let text_x = text_start_x_scaled(self.char_width, &self.metrics).round();
-        let visible_columns = ((width as f32 - text_x) / self.char_width).floor() as usize;
-        // Subtract status bar height (1 line) and tab bar height from available height
+        let effective_width = (width as f32) - sidebar_width - right_dock_width;
+        let visible_columns = ((effective_width - text_x) / self.char_width)
+            .floor()
+            .max(1.0) as usize;
+
+        // Subtract status bar, tab bar, and bottom dock from available height
         let status_bar_height = self.line_height;
         let tab_bar_height = self.metrics.tab_bar_height;
+        let bottom_dock_height = self.dock_layout.bottom.size(self.metrics.scale_factor) as usize;
         let available_height = (height as usize)
             .saturating_sub(status_bar_height)
-            .saturating_sub(tab_bar_height);
+            .saturating_sub(tab_bar_height)
+            .saturating_sub(bottom_dock_height);
         let visible_lines = if self.line_height > 0 {
             available_height / self.line_height
         } else {
             0
         };
 
-        // FIX: Update ALL editors, not just the focused one
+        // Update ALL editors, not just the focused one
         for editor in self.editor_area.editors.values_mut() {
             editor.resize_viewport(visible_lines, visible_columns);
         }
+    }
+
+    /// Recalculate viewport dimensions based on current dock layout
+    ///
+    /// Call this after dock visibility or size changes to ensure the logical
+    /// viewport (used for scrolling/cursor) matches the visual layout.
+    pub fn recalculate_viewports(&mut self) {
+        let (width, height) = self.window_size;
+        self.resize(width, height);
     }
 
     /// Update char_width from actual font metrics

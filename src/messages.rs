@@ -520,6 +520,46 @@ pub enum CsvMsg {
     EditPaste,
 }
 
+/// Dock-level messages (panel switching, resizing, visibility)
+#[derive(Debug, Clone)]
+pub enum DockMsg {
+    /// Focus-then-toggle: If dock not focused, focus and open panel.
+    /// If dock already focused on this panel, close dock.
+    /// This is the primary keybinding action (Cmd+1, Cmd+2, etc.)
+    FocusOrTogglePanel(crate::panel::PanelId),
+
+    /// Pure toggle: Open if closed, close if open. Focus-agnostic.
+    /// Used by command palette where focus state is irrelevant.
+    TogglePanel(crate::panel::PanelId),
+
+    /// Close the currently focused dock and return focus to editor
+    CloseFocusedDock,
+
+    /// Start resizing a dock
+    StartResize {
+        position: crate::panel::DockPosition,
+        initial_coord: f64,
+    },
+
+    /// Update dock size during resize
+    UpdateResize { coord: f64 },
+
+    /// End dock resize
+    EndResize,
+
+    /// Cycle to next panel in focused dock
+    NextPanelInDock,
+
+    /// Cycle to previous panel in focused dock
+    PrevPanelInDock,
+
+    /// Focus a specific dock (without toggling)
+    FocusDock(crate::panel::DockPosition),
+
+    /// Toggle dock visibility at position
+    ToggleDock(crate::panel::DockPosition),
+}
+
 /// Workspace messages (file tree sidebar)
 #[derive(Debug, Clone)]
 pub enum WorkspaceMsg {
@@ -600,6 +640,8 @@ pub enum Msg {
     Preview(PreviewMsg),
     /// Workspace messages (file tree)
     Workspace(WorkspaceMsg),
+    /// Dock messages (panel visibility, focus, resize)
+    Dock(DockMsg),
     /// Unified text editing messages (Phase 2 - editable system)
     TextEdit(EditContext, TextEditMsg),
 }

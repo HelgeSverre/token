@@ -6,7 +6,8 @@ use crate::commands::{Cmd, CommandId};
 use crate::config::EditorConfig;
 use crate::config_paths;
 use crate::keymap::get_default_keymap_yaml;
-use crate::messages::{AppMsg, DocumentMsg, LayoutMsg, UiMsg};
+use crate::messages::{AppMsg, DockMsg, DocumentMsg, LayoutMsg, UiMsg};
+use crate::panel::PanelId;
 use crate::model::{AppModel, ModalId, SplitDirection};
 use crate::syntax::LanguageId;
 use crate::theme::{load_theme, Theme};
@@ -301,6 +302,19 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         }
         CommandId::ReloadConfiguration => update_app(model, AppMsg::ReloadConfiguration),
         CommandId::OpenFolder => update_app(model, AppMsg::OpenFolderDialog),
+        CommandId::ToggleFileExplorer => {
+            // Command palette uses focus-agnostic toggle (pure open/close)
+            super::dock::update_dock(model, DockMsg::TogglePanel(PanelId::FILE_EXPLORER))
+        }
+        CommandId::ToggleTerminal => {
+            // Command palette uses focus-agnostic toggle (pure open/close)
+            super::dock::update_dock(model, DockMsg::TogglePanel(PanelId::TERMINAL))
+        }
+        CommandId::ToggleOutline => {
+            // Command palette uses focus-agnostic toggle (pure open/close)
+            super::dock::update_dock(model, DockMsg::TogglePanel(PanelId::OUTLINE))
+        }
+        CommandId::CloseFocusedDock => super::dock::update_dock(model, DockMsg::CloseFocusedDock),
         CommandId::Quit => update_app(model, AppMsg::Quit),
         #[cfg(debug_assertions)]
         CommandId::TogglePerfOverlay => Some(Cmd::TogglePerfOverlay),

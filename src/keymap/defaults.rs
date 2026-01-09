@@ -181,6 +181,12 @@ pub fn default_bindings() -> Vec<Keybinding> {
         bind(KeyCode::NumpadAdd, none, Command::SplitVertical),
         bind(KeyCode::NumpadSubtract, none, Command::SplitHorizontal),
         // ====================================================================
+        // Panels/Docks (IntelliJ-style Cmd+1/2/7)
+        // ====================================================================
+        bind(KeyCode::Char('1'), cmd, Command::ToggleFileExplorer),
+        bind(KeyCode::Char('2'), cmd, Command::ToggleTerminal),
+        bind(KeyCode::Char('7'), cmd, Command::ToggleOutline),
+        // ====================================================================
         // Basic Navigation (no selection)
         // ====================================================================
         bind(KeyCode::Up, none, Command::MoveCursorUp),

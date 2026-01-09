@@ -36,9 +36,12 @@ impl WebviewManager {
             return Ok(());
         }
 
+        let scale_factor = window.scale_factor();
+        let window_height = window.inner_size().height;
+
         let webview = WebViewBuilder::new()
             .with_html(html)
-            .with_bounds(to_wry_rect(bounds, window.scale_factor()))
+            .with_bounds(to_wry_rect(bounds, scale_factor, window_height))
             .with_transparent(false)
             .with_navigation_handler(|url| {
                 // Open external links in the default browser
@@ -70,14 +73,18 @@ impl WebviewManager {
     }
 
     /// Update webview bounds (position and size)
+    ///
+    /// `window_height` is needed to convert from top-left to bottom-left coordinates on macOS.
     pub fn update_bounds(
         &self,
         preview_id: PreviewId,
         bounds: token::model::editor_area::Rect,
         scale_factor: f64,
+        window_height: u32,
     ) {
         if let Some(webview) = self.webviews.get(&preview_id) {
-            let _ = webview.set_bounds(to_wry_rect(bounds, scale_factor));
+            let wry_rect = to_wry_rect(bounds, scale_factor, window_height);
+            let _ = webview.set_bounds(wry_rect);
         }
     }
 
@@ -127,12 +134,30 @@ impl Default for WebviewManager {
     }
 }
 
-/// Convert our Rect to wry's Rect with proper DPI scaling
-fn to_wry_rect(bounds: token::model::editor_area::Rect, _scale_factor: f64) -> Rect {
+/// Convert our Rect to wry's Rect with proper DPI and coordinate system conversion.
+///
+/// Our editor coordinates (bounds) are in physical pixels with top-left origin
+/// (softbuffer and fontdue work in physical pixels, char_width/line_height include scale_factor).
+///
+/// On macOS, NSView uses bottom-left origin, so we need to flip the Y coordinate.
+/// We also convert to logical coordinates because wry's set_bounds expects logical points.
+fn to_wry_rect(bounds: token::model::editor_area::Rect, scale_factor: f64, window_height_px: u32) -> Rect {
     use wry::dpi::{LogicalPosition, LogicalSize};
 
+    // Convert physical pixels to logical points
+    let logical_x = bounds.x as f64 / scale_factor;
+    let logical_w = bounds.width as f64 / scale_factor;
+    let logical_h = bounds.height as f64 / scale_factor;
+
+    // Convert from top-left to bottom-left coordinate system (macOS)
+    // In top-left: y is distance from top
+    // In bottom-left: y is distance from bottom
+    // Formula: bottom_y = window_height - (top_y + height)
+    let window_height_logical = window_height_px as f64 / scale_factor;
+    let logical_y = window_height_logical - (bounds.y as f64 / scale_factor + logical_h);
+
     Rect {
-        position: LogicalPosition::new(bounds.x as f64, bounds.y as f64).into(),
-        size: LogicalSize::new(bounds.width as f64, bounds.height as f64).into(),
+        position: LogicalPosition::new(logical_x, logical_y).into(),
+        size: LogicalSize::new(logical_w, logical_h).into(),
     }
 }
