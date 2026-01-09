@@ -66,6 +66,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}-bundle
-          path: target/bundle/**/*
-          if-no-files-found: ignore
+          path: target/${{ matrix.target }}/release/bundle/**/*
+          if-no-files-found: warn
           retention-days: 7
