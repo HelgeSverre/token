@@ -6,6 +6,10 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+---
+
+## v0.3.14 - 2026-01-09
+
 ### Added
 - Docs: Updated developer OVERVIEW and archived obsolete docs to reflect recent refactors and module moves.
 - Tests: Comprehensive damage computation tests added for redraw/damage logic.
@@ -16,6 +20,8 @@ All notable changes to rust-editor are documented in this file.
 - Preview: Fixed dual rendering issue where both native markdown and webview were drawn. Native rendering is now properly disabled when webview is active.
 - Preview: Fixed webview misalignment by correctly converting physical pixel coordinates to logical points with proper Y-axis flipping for macOS.
 - Scroll: Scroll events over dock panels and preview panes are now properly consumed instead of bleeding into the editor.
+- Rendering: Minor fixes to selection/cursor rendering behavior related to the cursor-blink optimization and partial redraws.
+- Sidebar: Fixed syntax highlighting not triggering when opening files via sidebar double-click. Commands from update() calls in mouse handlers are now properly propagated.
 
 ### Changed
 - Refactor (mouse): Unified mouse event handling with new hit-test system in `src/view/hit_test.rs` and centralized dispatch in `src/runtime/mouse.rs`. Replaces ad-hoc if/else chains with explicit `HitTarget` enum and priority-ordered hit-testing.
@@ -24,12 +30,7 @@ All notable changes to rust-editor are documented in this file.
 - Refactor (ui): Optimized cursor-blink related redraw behavior to prevent selection flicker and avoid unnecessary redraws of unrelated regions.
 - Cleanup: Removed dead code from view module (`is_in_tab_bar`, `is_in_modal`, unused Renderer getters, wrapper functions superseded by ViewportGeometry).
 
-### Fixed
-- Rendering: Minor fixes to selection/cursor rendering behavior related to the cursor-blink optimization and partial redraws.
-- Sidebar: Fixed syntax highlighting not triggering when opening files via sidebar double-click. Commands from update() calls in mouse handlers are now properly propagated.
-
 ---
-
 
 ## v0.3.13 - 2026-01-07
 

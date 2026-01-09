@@ -1,6 +1,6 @@
 [package]
 name = "token"
-version = "0.3.13"
+version = "0.3.14"
 edition = "2021"
 default-run = "token"
 description = "A fast, minimal multi-cursor text editor with syntax highlighting"
