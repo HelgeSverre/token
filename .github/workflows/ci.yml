@@ -51,35 +51,30 @@ jobs:
             libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
       - run: cargo test --all-features
 
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
-    continue-on-error: true  # tiny-xlib has incompatible coverage attributes with Rust 1.74+
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-      
-      - uses: Swatinem/rust-cache@v2
-      
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-      
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libwayland-dev \
-            libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
-      
-      - name: Generate coverage report
-        run: cargo llvm-cov --codecov --output-path codecov.json
-      
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          file: codecov.json
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+  # Coverage disabled: tiny-xlib has incompatible coverage attributes with Rust 1.74+
+  # Re-enable once tiny-xlib is updated or replaced
+  # coverage:
+  #   name: Code Coverage
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         components: llvm-tools-preview
+  #     - uses: Swatinem/rust-cache@v2
+  #     - name: Install cargo-llvm-cov
+  #       uses: taiki-e/install-action@cargo-llvm-cov
+  #     - name: Install Linux dependencies
+  #       run: |
+  #         sudo apt-get update
+  #         sudo apt-get install -y libxkbcommon-dev libwayland-dev \
+  #           libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+  #     - name: Generate coverage report
+  #       run: cargo llvm-cov --codecov --output-path codecov.json
+  #     - name: Upload coverage to Codecov
+  #       uses: codecov/codecov-action@v4
+  #       with:
+  #         file: codecov.json
+  #         fail_ci_if_error: false
+  #       env:
+  #         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
