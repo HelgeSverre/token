@@ -903,7 +903,7 @@ impl App {
     /// Synchronize webview instances with preview panes in the model.
     /// Creates, updates, or destroys webviews as needed.
     fn sync_webviews(&mut self) {
-        use token::markdown::{markdown_to_html, PreviewTheme};
+        use token::markdown::{content_to_preview_html, PreviewTheme};
         use token::model::editor_area::PreviewId;
 
         let Some(window) = &self.window else {
@@ -949,8 +949,8 @@ impl App {
             .iter()
             .filter_map(|(&preview_id, preview)| {
                 let document = self.model.editor_area.documents.get(&preview.document_id)?;
-                let markdown_content = document.buffer.to_string();
-                let html = markdown_to_html(&markdown_content, &theme);
+                let content = document.buffer.to_string();
+                let html = content_to_preview_html(&content, document.language, &theme)?;
 
                 let needs_create = !self.webview_manager.has_webview(preview_id);
                 let needs_content_update = preview.needs_refresh(document.revision);

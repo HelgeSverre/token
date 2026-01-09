@@ -3,6 +3,7 @@
 use pulldown_cmark::{html, Event, Options, Parser, Tag, TagEnd};
 
 use super::PreviewTheme;
+use crate::syntax::LanguageId;
 
 /// Convert markdown to a complete HTML document with styling
 pub fn markdown_to_html(markdown: &str, theme: &PreviewTheme) -> String {
@@ -38,6 +39,51 @@ pub fn markdown_to_html(markdown: &str, theme: &PreviewTheme) -> String {
         html_output,
         SCROLL_SYNC_JS
     )
+}
+
+/// Convert content to preview HTML based on language type
+///
+/// For Markdown files, renders the markdown to styled HTML.
+/// For HTML files, displays the raw HTML content directly.
+/// Returns None for languages that don't support preview.
+pub fn content_to_preview_html(
+    content: &str,
+    language: LanguageId,
+    theme: &PreviewTheme,
+) -> Option<String> {
+    match language {
+        LanguageId::Markdown => Some(markdown_to_html(content, theme)),
+        LanguageId::Html => Some(html_to_preview(content)),
+        _ => None,
+    }
+}
+
+/// Wrap raw HTML content for preview display
+///
+/// For HTML files, we display the content as-is without additional styling.
+/// This allows the HTML's own styles to take effect.
+fn html_to_preview(html_content: &str) -> String {
+    // Check if the content is a complete HTML document
+    let trimmed = html_content.trim_start().to_lowercase();
+    if trimmed.starts_with("<!doctype") || trimmed.starts_with("<html") {
+        // Already a complete document - use as-is
+        html_content.to_string()
+    } else {
+        // Fragment - wrap in minimal document structure
+        format!(
+            r#"<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+{}
+</body>
+</html>"#,
+            html_content
+        )
+    }
 }
 
 /// Generate CSS from theme colors
@@ -378,5 +424,52 @@ mod tests {
         assert!(!theme.background.is_empty());
         assert!(!theme.text.is_empty());
         assert!(theme.background.starts_with('#'));
+    }
+
+    #[test]
+    fn test_content_to_preview_html_markdown() {
+        let md = "# Hello\n\nWorld";
+        let theme = PreviewTheme::default();
+        let result = content_to_preview_html(md, LanguageId::Markdown, &theme);
+
+        assert!(result.is_some());
+        let html = result.unwrap();
+        assert!(html.contains("<h1>"));
+        assert!(html.contains("Hello"));
+    }
+
+    #[test]
+    fn test_content_to_preview_html_complete_document() {
+        let html_content = "<!DOCTYPE html><html><head></head><body><h1>Test</h1></body></html>";
+        let theme = PreviewTheme::default();
+        let result = content_to_preview_html(html_content, LanguageId::Html, &theme);
+
+        assert!(result.is_some());
+        let html = result.unwrap();
+        // Complete documents should be used as-is
+        assert_eq!(html, html_content);
+    }
+
+    #[test]
+    fn test_content_to_preview_html_fragment() {
+        let html_fragment = "<h1>Hello</h1><p>World</p>";
+        let theme = PreviewTheme::default();
+        let result = content_to_preview_html(html_fragment, LanguageId::Html, &theme);
+
+        assert!(result.is_some());
+        let html = result.unwrap();
+        // Fragments should be wrapped in a document structure
+        assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("<body>"));
+        assert!(html.contains("<h1>Hello</h1>"));
+    }
+
+    #[test]
+    fn test_content_to_preview_html_unsupported() {
+        let rust_code = "fn main() {}";
+        let theme = PreviewTheme::default();
+        let result = content_to_preview_html(rust_code, LanguageId::Rust, &theme);
+
+        assert!(result.is_none());
     }
 }

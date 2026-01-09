@@ -128,6 +128,11 @@ impl LanguageId {
         !matches!(self, LanguageId::PlainText)
     }
 
+    /// Check if this language supports live preview
+    pub fn supports_preview(&self) -> bool {
+        matches!(self, LanguageId::Markdown | LanguageId::Html)
+    }
+
     /// Detect language from fenced code block info string (e.g., "rust", "python", "js")
     /// Used for language injection in markdown code blocks.
     pub fn from_code_fence_info(info: &str) -> Option<Self> {

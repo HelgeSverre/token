@@ -7,5 +7,5 @@ mod renderer;
 mod theme;
 
 pub use preview::{MarkdownStyle, PreviewPane, RenderedLine, StyledSegment};
-pub use renderer::markdown_to_html;
+pub use renderer::{content_to_preview_html, markdown_to_html};
 pub use theme::PreviewTheme;
