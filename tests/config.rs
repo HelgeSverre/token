@@ -72,9 +72,7 @@ fn test_log_file_returns_some_when_logs_dir_exists() {
 #[test]
 fn test_log_file_is_in_logs_dir_when_exists() {
     // Only test if both exist (may not on CI without prior runs)
-    if let (Some(logs_dir), Some(log_file)) =
-        (config_paths::logs_dir(), config_paths::log_file())
-    {
+    if let (Some(logs_dir), Some(log_file)) = (config_paths::logs_dir(), config_paths::log_file()) {
         assert!(log_file.starts_with(&logs_dir));
     }
 }
