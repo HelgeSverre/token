@@ -6,6 +6,10 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+---
+
+## v0.3.15 - 2026-01-09
+
 ### Added
 - Preview: HTML file preview support. Opening preview on `.html` files now displays the rendered HTML in the webview pane, reusing the existing markdown preview infrastructure.
 - Preview: Local resource loading for HTML preview. Images, CSS, and JS files are now served from the document's directory via a custom `token://` protocol handler.
