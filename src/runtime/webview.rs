@@ -228,7 +228,10 @@ fn handle_protocol_request(
 }
 
 /// Serve a local file from the base directory
-fn serve_local_file(base_dir: &std::path::Path, path: &str) -> wry::http::Response<Cow<'static, [u8]>> {
+fn serve_local_file(
+    base_dir: &std::path::Path,
+    path: &str,
+) -> wry::http::Response<Cow<'static, [u8]>> {
     use wry::http::Response;
 
     // Remove leading slash and decode URL

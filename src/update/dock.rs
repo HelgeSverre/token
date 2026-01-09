@@ -28,7 +28,9 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
                 }
             };
 
-            let (opened, position) = model.dock_layout.focus_or_toggle_panel(panel_id, is_dock_focused);
+            let (opened, position) = model
+                .dock_layout
+                .focus_or_toggle_panel(panel_id, is_dock_focused);
 
             // Update focus based on result
             if opened {
@@ -146,7 +148,10 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
 
-        DockMsg::StartResize { position, initial_coord } => {
+        DockMsg::StartResize {
+            position,
+            initial_coord,
+        } => {
             // Store resize state - we'll need to track this somewhere
             // For now, delegate to existing sidebar resize for left dock
             if position == DockPosition::Left {
@@ -164,8 +169,10 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
             if let Some(ref resize_state) = model.ui.sidebar_resize {
                 let delta = coord - resize_state.start_x;
                 let new_width = (resize_state.original_width as f64 + delta)
-                    .max(model.dock_layout.left.min_size() as f64) as f32;
-                let max_width = model.window_size.0 as f32 * model.dock_layout.left.max_size_fraction();
+                    .max(model.dock_layout.left.min_size() as f64)
+                    as f32;
+                let max_width =
+                    model.window_size.0 as f32 * model.dock_layout.left.max_size_fraction();
                 model.dock_layout.left.size_logical = new_width.min(max_width);
                 sync_workspace_with_dock(model);
                 model.recalculate_viewports();

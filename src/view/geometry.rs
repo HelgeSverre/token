@@ -908,7 +908,12 @@ impl DockRects {
 
         // Right dock: full height on right side (above bottom dock)
         let right = if right_width > 0.0 {
-            Some(Rect::new(w - right_width, 0.0, right_width, side_dock_height))
+            Some(Rect::new(
+                w - right_width,
+                0.0,
+                right_width,
+                side_dock_height,
+            ))
         } else {
             None
         };
@@ -997,30 +1002,21 @@ impl DockRects {
         let py = y as f32;
 
         if let Some(rect) = &self.left {
-            if px >= rect.x
-                && px < rect.x + rect.width
-                && py >= rect.y
-                && py < rect.y + rect.height
+            if px >= rect.x && px < rect.x + rect.width && py >= rect.y && py < rect.y + rect.height
             {
                 return Some(DockPosition::Left);
             }
         }
 
         if let Some(rect) = &self.right {
-            if px >= rect.x
-                && px < rect.x + rect.width
-                && py >= rect.y
-                && py < rect.y + rect.height
+            if px >= rect.x && px < rect.x + rect.width && py >= rect.y && py < rect.y + rect.height
             {
                 return Some(DockPosition::Right);
             }
         }
 
         if let Some(rect) = &self.bottom {
-            if px >= rect.x
-                && px < rect.x + rect.width
-                && py >= rect.y
-                && py < rect.y + rect.height
+            if px >= rect.x && px < rect.x + rect.width && py >= rect.y && py < rect.y + rect.height
             {
                 return Some(DockPosition::Bottom);
             }

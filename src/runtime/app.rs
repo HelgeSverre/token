@@ -343,7 +343,10 @@ impl App {
             let right_dock_x = width as f64 - right_dock_width;
             let resize_zone_start = right_dock_x - RESIZE_HIT_ZONE;
             let resize_zone_end = right_dock_x + RESIZE_HIT_ZONE;
-            if x >= resize_zone_start && x <= resize_zone_end && y < content_height - bottom_dock_height {
+            if x >= resize_zone_start
+                && x <= resize_zone_end
+                && y < content_height - bottom_dock_height
+            {
                 self.model.ui.hover = HoverRegion::DockResize(token::panel::DockPosition::Right);
                 window.set_cursor(CursorIcon::ColResize);
                 return;
@@ -918,7 +921,10 @@ impl App {
 
         // Debug: log preview count
         if !model_preview_ids.is_empty() {
-            tracing::debug!("sync_webviews: {} preview(s) in model", model_preview_ids.len());
+            tracing::debug!(
+                "sync_webviews: {} preview(s) in model",
+                model_preview_ids.len()
+            );
         }
 
         // Get current webview preview IDs
@@ -1028,8 +1034,12 @@ impl App {
             } else {
                 // Update existing webview bounds
                 let window_height = window.inner_size().height;
-                self.webview_manager
-                    .update_bounds(update.preview_id, update.rect, scale_factor, window_height);
+                self.webview_manager.update_bounds(
+                    update.preview_id,
+                    update.rect,
+                    scale_factor,
+                    window_height,
+                );
 
                 // Update content if revision changed
                 if update.needs_content_update {

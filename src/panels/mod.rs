@@ -26,10 +26,10 @@ pub fn panel_title(panel_id: PanelId) -> &'static str {
 pub fn panel_icon(panel_id: PanelId) -> &'static str {
     match panel_id {
         PanelId::FileExplorer => "󰙅", // file tree
-        PanelId::Outline => "", // list/outline
-        PanelId::Terminal => "", // terminal
-        PanelId::TaskRunner => "", // tasks/play
-        PanelId::AiChat => "", // chat/comment
-        PanelId::TodoList => "", // checklist
+        PanelId::Outline => "",       // list/outline
+        PanelId::Terminal => "",      // terminal
+        PanelId::TaskRunner => "",    // tasks/play
+        PanelId::AiChat => "",        // chat/comment
+        PanelId::TodoList => "",      // checklist
     }
 }

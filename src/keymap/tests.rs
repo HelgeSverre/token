@@ -285,21 +285,41 @@ bindings:
 fn test_dock_keybindings_exist() {
     use super::*;
     use crate::keymap::defaults::load_default_keymap;
-    
+
     let bindings = load_default_keymap();
     let keymap = Keymap::with_bindings(bindings.clone());
-    
+
     // Find bindings for dock commands
-    let file_explorer_binding = bindings.iter().find(|b| b.command == Command::ToggleFileExplorer);
-    let terminal_binding = bindings.iter().find(|b| b.command == Command::ToggleTerminal);
-    let outline_binding = bindings.iter().find(|b| b.command == Command::ToggleOutline);
-    
-    assert!(file_explorer_binding.is_some(), "ToggleFileExplorer binding should exist");
-    assert!(terminal_binding.is_some(), "ToggleTerminal binding should exist");
-    assert!(outline_binding.is_some(), "ToggleOutline binding should exist");
-    
+    let file_explorer_binding = bindings
+        .iter()
+        .find(|b| b.command == Command::ToggleFileExplorer);
+    let terminal_binding = bindings
+        .iter()
+        .find(|b| b.command == Command::ToggleTerminal);
+    let outline_binding = bindings
+        .iter()
+        .find(|b| b.command == Command::ToggleOutline);
+
+    assert!(
+        file_explorer_binding.is_some(),
+        "ToggleFileExplorer binding should exist"
+    );
+    assert!(
+        terminal_binding.is_some(),
+        "ToggleTerminal binding should exist"
+    );
+    assert!(
+        outline_binding.is_some(),
+        "ToggleOutline binding should exist"
+    );
+
     // Check that Cmd+1 (META on macOS, CTRL elsewhere) maps to ToggleFileExplorer
     let cmd_1 = Keystroke::new(KeyCode::Char('1'), Modifiers::cmd());
     let result = keymap.lookup(&cmd_1);
-    assert_eq!(result, Some(Command::ToggleFileExplorer), "Cmd+1 should map to ToggleFileExplorer, got {:?}", result);
+    assert_eq!(
+        result,
+        Some(Command::ToggleFileExplorer),
+        "Cmd+1 should map to ToggleFileExplorer, got {:?}",
+        result
+    );
 }

@@ -7,8 +7,8 @@ use crate::config::EditorConfig;
 use crate::config_paths;
 use crate::keymap::get_default_keymap_yaml;
 use crate::messages::{AppMsg, DockMsg, DocumentMsg, LayoutMsg, UiMsg};
-use crate::panel::PanelId;
 use crate::model::{AppModel, ModalId, SplitDirection};
+use crate::panel::PanelId;
 use crate::syntax::LanguageId;
 use crate::theme::{load_theme, Theme};
 

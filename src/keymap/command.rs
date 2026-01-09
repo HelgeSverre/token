@@ -4,12 +4,12 @@
 //! Each command maps to one or more `Msg` values for the Elm-style update loop.
 
 use crate::messages::{
-    AppMsg, CsvMsg, DockMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, Msg, PreviewMsg, UiMsg,
+    AppMsg, CsvMsg, Direction, DockMsg, DocumentMsg, EditorMsg, LayoutMsg, Msg, PreviewMsg, UiMsg,
     WorkspaceMsg,
 };
-use crate::panel::PanelId;
 use crate::model::editor_area::SplitDirection;
 use crate::model::ModalId;
+use crate::panel::PanelId;
 
 /// All executable editor commands that can be bound to keys
 ///
@@ -406,7 +406,9 @@ impl Command {
             FocusGroup4 => vec![Msg::Layout(LayoutMsg::FocusGroupByIndex(4))],
 
             // Workspace
-            ToggleSidebar => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::FILE_EXPLORER))],
+            ToggleSidebar => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(
+                PanelId::FILE_EXPLORER,
+            ))],
             RevealInSidebar => vec![Msg::Workspace(WorkspaceMsg::RevealActiveFile)],
             FileTreeSelectPrevious => vec![Msg::Workspace(WorkspaceMsg::SelectPrevious)],
             FileTreeSelectNext => vec![Msg::Workspace(WorkspaceMsg::SelectNext)],
@@ -414,7 +416,9 @@ impl Command {
             FileTreeRefresh => vec![Msg::Workspace(WorkspaceMsg::Refresh)],
 
             // Panels/Docks
-            ToggleFileExplorer => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::FILE_EXPLORER))],
+            ToggleFileExplorer => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(
+                PanelId::FILE_EXPLORER,
+            ))],
             ToggleTerminal => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::TERMINAL))],
             ToggleOutline => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::OUTLINE))],
             CloseFocusedDock => vec![Msg::Dock(DockMsg::CloseFocusedDock)],

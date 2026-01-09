@@ -445,9 +445,8 @@ mod tests {
         assert!(layout.left.is_open);
 
         // Toggle again when focused → closes
-        let (opened, pos) = layout.focus_or_toggle_panel(PanelId::FILE_EXPLORER, |p| {
-            p == DockPosition::Left
-        });
+        let (opened, pos) =
+            layout.focus_or_toggle_panel(PanelId::FILE_EXPLORER, |p| p == DockPosition::Left);
         assert!(!opened);
         assert_eq!(pos, None);
         assert!(!layout.left.is_open);

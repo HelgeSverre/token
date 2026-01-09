@@ -1103,7 +1103,9 @@ impl Renderer {
         let active_panel = dock.active_panel();
         let placeholder = active_panel
             .map(token::panels::PlaceholderPanel::new)
-            .unwrap_or_else(|| token::panels::PlaceholderPanel::new(token::panel::PanelId::TERMINAL));
+            .unwrap_or_else(|| {
+                token::panels::PlaceholderPanel::new(token::panel::PanelId::TERMINAL)
+            });
 
         // Draw panel title
         let title = placeholder.title();
