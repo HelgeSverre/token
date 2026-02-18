@@ -1,6 +1,6 @@
 # Makefile for token
 
-.PHONY: build release dist debugging run dev csv damage-debug test-syntax trace test clean fmt format lint help samples-files ci \
+.PHONY: build release dist debugging run dev csv damage-debug test-syntax trace test clean fmt format lint help samples-files ci screenshots \
         build-prof flamegraph profile-samply profile-memory \
         bench bench-rope bench-render bench-glyph \
         coverage coverage-html coverage-ci \
@@ -155,6 +155,10 @@ samples/large_data.csv:
 		day=$$(printf "%02d" $$((1 + RANDOM % 28))); \
 		echo "$$i,$$fn,$$ln,$$fn.$$ln@company.com,Company$$i,$$dept,$$dept Manager,$$salary,$$year-$$month-$$day,$$country,$$city,+1-555-$$((1000 + i)),$$status,$$age,$$score"; \
 	done >> samples/large_data.csv
+
+# Generate screenshots from scenario YAML files
+screenshots:
+	cargo run --release --bin screenshot -- --all --out-dir website/v4/public
 
 # Help
 help:

@@ -200,17 +200,22 @@ fn create_model_from_scenario(
         let file_content = std::fs::read_to_string(&file.path)
             .with_context(|| format!("reading {}", file.path.display()))?;
 
+        // Split creates a new group with an editor pointing to the same document.
         update(
             &mut model,
             Msg::Layout(LayoutMsg::SplitFocused(direction)),
         );
 
-        if let Some(doc) = model.editor_area.focused_document_mut() {
-            doc.buffer = ropey::Rope::from_str(&file_content);
-            doc.file_path = Some(file.path.clone());
-        }
+        // Create a NEW document for this split (splits share by default).
+        let new_doc_id = model.editor_area.next_document_id();
+        let mut new_doc = Document::with_text(&file_content);
+        new_doc.id = Some(new_doc_id);
+        new_doc.file_path = Some(file.path.clone());
+        model.editor_area.documents.insert(new_doc_id, new_doc);
 
+        // Point the focused editor to the new document
         if let Some(editor) = model.editor_area.focused_editor_mut() {
+            editor.document_id = Some(new_doc_id);
             apply_cursor_and_scroll(editor, file);
         }
     }
