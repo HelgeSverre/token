@@ -1,8 +1,9 @@
 [package]
 name = "token"
-version = "0.3.16"
+version = "0.3.17"
 edition = "2021"
 default-run = "token"
+autobins = false
 description = "A fast, minimal multi-cursor text editor with syntax highlighting"
 homepage = "https://token-editor.com"
 repository = "https://github.com/HelgeSverre/token"
@@ -12,6 +13,10 @@ readme = "README.md"
 keywords = ["editor", "text-editor", "syntax-highlighting", "terminal", "rust"]
 categories = ["text-editors", "development-tools"]
 exclude = ["samples/", "docs/", "*.md", "Makefile", "assets/icon.png"]
+
+[[bin]]
+name = "token"
+path = "src/main.rs"
 
 [features]
 default = []

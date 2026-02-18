@@ -15,3 +15,11 @@ tap = "helgesverre/homebrew-tap"
 publish-jobs = ["homebrew"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+# System dependencies for Linux builds
+[dist.dependencies.apt]
+libxkbcommon-dev = { version = "*" }
+libwayland-dev = { version = "*" }
+libgtk-3-dev = { version = "*" }
+libwebkit2gtk-4.1-dev = { version = "*" }
+libayatana-appindicator3-dev = { version = "*" }
+librsvg2-dev = { version = "*" }
