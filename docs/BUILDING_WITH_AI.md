@@ -1,6 +1,6 @@
 # AI-Assisted Development: Building Token
 
-Token is a multi-cursor text editor written in Rust—around 15,000 lines of code built primarily through 116 conversations with [Amp Code](https://ampcode.com/@helgesverre).
+Token is a multi-cursor text editor written in Rust—around 15,000 lines of code built primarily through 167+ conversations with [Amp Code](https://ampcode.com/@helgesverre).
 
 This document describes the methodology that made sustained AI collaboration work on a project that doesn't fit in a single context window. It's not about what AI can do in a demo; it's about what actually works across months of development.
 
@@ -140,6 +140,16 @@ Token's development followed distinct phases, each with focused objectives:
 | HiDPI Fixes          | Dec 16         | Display switching, ScaledMetrics system               |
 | Workspace Management | Dec 17         | Sidebar file tree, focus system, global shortcuts     |
 | Unified Text Editing | Dec 19         | EditableState system, modal/CSV clipboard & selection |
+| Perf & Find/Replace  | Dec 19-20      | Event loop fix (7→60 FPS), find/replace modal         |
+| File Dialogs         | Jan 6-7        | Native open/save dialogs, config hot-reload           |
+| Markdown Preview     | Jan 7-8        | Docked panels, webview preview, HTML preview          |
+| Mouse Refactor       | Jan 8          | Hit-test system, unified mouse event handling         |
+| Dock Panels          | Jan 8-9        | Editor area resizing, scroll isolation, z-order fixes |
+| v0.3.15 Release      | Jan 9          | HTML preview, dock fixes, viewport layout             |
+| Sema Language        | Feb 17         | Custom sema-lisp syntax support                       |
+| Website v4           | Feb 17-18      | Complete website redesign with Astro                  |
+| New Themes           | Feb 18         | Dracula, Catppuccin, Nord, Tokyo Night, Gruvbox Dark  |
+| Bracket Matching     | Feb 18         | Auto-surround selection, bracket highlighting         |
 
 ---
 
@@ -525,9 +535,118 @@ pub enum TextEditMsg {
 
 </details>
 
+<details>
+<summary><strong>Event Loop Spinning: 7 FPS → 60 FPS</strong> | <a href="https://ampcode.com/threads/T-019b3bbd-d4fd-75df-81a0-c94a5e693227">T-019b3bbd</a></summary>
+
+**Date**: 2025-12-20
+
+**Problem**: Multi-split view caused ~7 FPS with 100% CPU usage even when idle.
+
+**Root Cause**: `ControlFlow::Poll` was spinning the event loop constantly.
+
+**The Fix**:
+
+```rust
+// Before: spinning at 100% CPU
+ControlFlow::Poll
+
+// After: sleep until next event or cursor blink
+ControlFlow::WaitUntil(next_cursor_blink)
+```
+
+**Performance Profile (30-second live session)**:
+| Category | Time |
+|----------|------|
+| Idle/Waiting | 77.6% |
+| Event Handling | 21.5% |
+| Rendering | ~0.9% |
+
+**Key Insight**: Investigate the event loop first when debugging rendering performance — it's often not the rendering that's slow.
+
+**Threads in this feature**: T-019b3bbd, T-019b3bd7, T-019b3c03
+
+</details>
+
+<details>
+<summary><strong>Markdown Preview & Docked Panels</strong> | <a href="https://ampcode.com/threads/T-019b9893-43cd-72ea-bcb4-9e0e1494e517">T-019b9893</a></summary>
+
+**Date**: 2026-01-07
+
+**Problem**: No way to preview markdown or HTML files within the editor.
+
+**Solution**: Full docked panel system with webview-based preview:
+
+- **DockPanel abstraction**: `DockPosition` enum (Bottom, Right), resizable panels
+- **Webview integration**: WKWebView on macOS with custom `token://` protocol for local resources
+- **HTML preview**: Both markdown-to-HTML rendering and direct HTML file preview
+- **Live updates**: Preview refreshes on tab switch if new file supports preview
+
+**Architecture**:
+
+```rust
+struct Dock {
+    panels: Vec<DockPanel>,
+    position: DockPosition,
+    size: f32,
+    visible: bool,
+}
+```
+
+**Key Insight**: Building a docked panel abstraction first (rather than hardcoding markdown preview) made it trivial to add HTML preview later — just implement `supports_preview()`.
+
+**Threads in this feature**: T-019b9856, T-019b9893, T-019b98ae, T-019b98be, T-019b98dd, T-019b9eec, T-019b9efa, T-019b9f4b, T-019ba01a
+
+</details>
+
+<details>
+<summary><strong>Mouse Event Handling Refactor</strong> | <a href="https://ampcode.com/threads/T-019b9d40-e7f7-760c-81ce-7dcc1796705e">T-019b9d40</a></summary>
+
+**Date**: 2026-01-08
+
+**Problem**: Mouse event handling was ad-hoc if/else chains checking pixel coordinates. Adding new clickable regions (dock panels, sidebar, tabs) required modifying a growing chain of conditionals.
+
+**Solution**: Priority-ordered hit-test system:
+
+```rust
+enum HitTarget {
+    DockResizeHandle,
+    DockPanel,
+    Modal,
+    TabBar(EditorId),
+    Sidebar,
+    EditorGutter(EditorId),
+    Editor(EditorId),
+    StatusBar,
+}
+```
+
+**Key Insight**: A `HitTarget` enum + priority-ordered hit testing replaces coordinate-checking spaghetti. Each target knows its bounds, and the first match wins.
+
+**Threads in this feature**: T-019b9cbb, T-019b9d40
+
+</details>
+
+<details>
+<summary><strong>Bracket Matching & Auto-Surround</strong> | <a href="https://ampcode.com/threads/T-019c7293-f967-73f6-b6b4-e3c2e946dfad">T-019c7293</a></summary>
+
+**Date**: 2026-02-18
+
+**Problem**: No visual feedback for matching brackets, and no auto-surround when typing brackets with selected text.
+
+**Solution**: Two complementary features:
+
+- **Bracket matching**: When cursor is adjacent to `()`, `[]`, or `{}`, both brackets are highlighted
+- **Auto-surround**: Select text and type `(`, `[`, `{`, `"`, `'`, or `` ` `` to wrap it. Works with multi-cursor.
+
+Both features are configurable (`auto_surround`, `bracket_matching` in config.yaml) and have theme support (`bracket_match_background`).
+
+**Key Insight**: Auto-surround with multi-cursor required careful reverse-order processing — same pattern as multi-cursor text insertion.
+
+</details>
+
 ---
 
-## Full Thread Reference (116 threads)
+## Full Thread Reference (167+ threads)
 
 All conversations are public. Sorted by timestamp (oldest first).
 
@@ -644,6 +763,58 @@ All conversations are public. Sorted by timestamp (oldest first).
 | 2025-12-19 12:14 | [Unified Editing Milestone 3](https://ampcode.com/threads/T-019b3688-6a6f-70cf-9978-6f6214b6366d) | Feature | Unified text editing system milestone 3 (CSV cell migration)                                           |
 | 2025-12-19 12:21 | [Main Editor Bridge](https://ampcode.com/threads/T-019b368e-76e6-73f0-9bdc-55889e4a801a)        | Feature  | Main editor bridge for unified text editing                                                            |
 | 2025-12-19 12:34 | [Implementation Gaps](https://ampcode.com/threads/T-019b369a-6bd2-76de-9d1c-121e3bd78e2c)       | Feature  | Fix sidebar symbols and identify stubbed methods                                                       |
+| 2025-12-19 12:48 | [Workspace Docs Review](https://ampcode.com/threads/T-019b36a9-87ed-71be-b624-ac38c44c5186)     | Docs     | Review workspace management docs and implementation                                                    |
+| 2025-12-19 13:02 | [Tests & Benchmarks](https://ampcode.com/threads/T-019b36b4-071f-715c-9c40-e838c331c5a3)        | Feature  | Add tests and benchmarks for new features                                                              |
+| 2025-12-19 19:25 | [Documentation Review](https://ampcode.com/threads/T-019b37f4-c1c2-7415-aa0e-e0591b1d09ae)      | Docs     | Review new documentation for codebase accuracy                                                         |
+| 2025-12-19 19:50 | [Blog Post Adaptation](https://ampcode.com/threads/T-019b381d-d35f-7200-92b0-1aa8c548a507)      | Docs     | Adapt blog post to MDX with humanized tone                                                             |
+| 2025-12-19 20:07 | [Release Build Mode](https://ampcode.com/threads/T-019b3837-05a1-7408-91fd-e34c87b02d55)        | Setup    | Go build release mode                                                                                  |
+| 2025-12-20 11:17 | [Macro System Design](https://ampcode.com/threads/T-019b3b6c-b844-7795-946e-9efe7d9023ae)       | Feature  | Sketch macro system feature design doc                                                                 |
+| 2025-12-20 11:45 | [Release Links](https://ampcode.com/threads/T-019b3b86-0660-738e-b71a-768b93a1f404)             | Feature  | Link to latest releases automatically                                                                  |
+| 2025-12-20 11:48 | [Terminal & Indent Design](https://ampcode.com/threads/T-019b3b95-6389-74aa-a273-ddaa5fa57da1)   | Feature  | Feature design for terminal panel and indent visualization                                             |
+| 2025-12-20 12:11 | [Benchmark Gaps](https://ampcode.com/threads/T-019b3bab-48e9-710e-9849-9bf4a2a94d24)            | Research | Investigate benchmark gaps and optimize performance                                                    |
+| 2025-12-20 12:31 | [Perf Degradation](https://ampcode.com/threads/T-019b3bbd-d4fd-75df-81a0-c94a5e693227)          | Bugfix   | Multi-split rendering performance degradation investigation                                            |
+| 2025-12-20 13:40 | [Perf Optimization](https://ampcode.com/threads/T-019b3bd7-8ecb-7506-b600-29c1acfe818d)         | Bugfix   | Multi-split rendering optimization performance analysis                                                |
+| 2025-12-20 14:06 | [Profiling Docs](https://ampcode.com/threads/T-019b3c03-2f5c-774f-9cfb-7e322874dbb7)            | Docs     | Performance optimization pass and profiling workflow documentation                                     |
+| 2025-12-20 16:26 | [Find/Replace Review](https://ampcode.com/threads/T-019b3c4f-763e-765e-a805-52778800fd5a)       | Feature  | Check find implementation with oracle                                                                  |
+| 2026-01-06 21:53 | [Cursor Blink Config](https://ampcode.com/threads/T-019b9547-b9f5-773a-b13a-0e0b381759c4)       | Feature  | Cursor blink interval configuration                                                                    |
+| 2026-01-07 00:29 | [File Dialog Merge](https://ampcode.com/threads/T-019b95c6-b857-75cc-9cb8-d73f77125980)          | Feature  | Combine open file and folder dialogs                                                                   |
+| 2026-01-07 01:43 | [File Dialogs](https://ampcode.com/threads/T-019b95e4-e674-71af-8851-ac2c0f33d83a)              | Feature  | Implement file dialogs feature                                                                         |
+| 2026-01-07 12:39 | [Context Menu Spec](https://ampcode.com/threads/T-019b9869-8a1a-75db-ad80-8aba2e37d6cb)          | Feature  | Context menu abstraction spec and implementation                                                       |
+| 2026-01-07 13:14 | [Dock Panel Design](https://ampcode.com/threads/T-019b9856-c43e-75b8-b946-2a5011617081)          | Feature  | Design docked panels UI abstraction for workspace                                                      |
+| 2026-01-07 13:36 | [Markdown Preview](https://ampcode.com/threads/T-019b9893-43cd-72ea-bcb4-9e0e1494e517)           | Feature  | Implement markdown preview feature                                                                     |
+| 2026-01-07 13:47 | [Website v2 Redesign](https://ampcode.com/threads/T-019b98aa-170b-726b-8380-c3c4b52a21d8)        | Feature  | Redesign website inspired by modern dev tools                                                          |
+| 2026-01-07 13:57 | [MSI Bundle Fix](https://ampcode.com/threads/T-019b9897-f550-7128-b305-40e861733e89)             | Bugfix   | MSI bundle build fails with resource file error                                                        |
+| 2026-01-07 14:20 | [Preview Cont.](https://ampcode.com/threads/T-019b98be-6e9a-745b-bb1d-3285f1ec1460)              | Feature  | Continue markdown preview implementation                                                               |
+| 2026-01-07 15:04 | [Pane Widget](https://ampcode.com/threads/T-019b98dd-95f9-742a-b1e3-654662ebd344)                | Refactor | Extract reusable pane widget from preview                                                              |
+| 2026-01-08 09:42 | [Click Handling Review](https://ampcode.com/threads/T-019b9cbb-c371-7048-b075-b5b202595bfd)      | Refactor | Review markdown preview and propose click handling abstraction                                         |
+| 2026-01-08 13:37 | [Mouse Refactor](https://ampcode.com/threads/T-019b9d40-e7f7-760c-81ce-7dcc1796705e)             | Refactor | Mouse event handling system refactoring complete                                                       |
+| 2026-01-08 18:26 | [Panel Abstraction](https://ampcode.com/threads/T-019b98ae-4cd9-752a-99ac-a07571944a38)           | Feature  | Implement panel UI abstraction with commit review                                                      |
+| 2026-01-08 18:44 | [Preview Keybindings](https://ampcode.com/threads/T-019b9eec-b4b2-7369-a1fb-80c1a2dc4d69)        | Bugfix   | Debug keybindings and refactor markdown preview rendering                                              |
+| 2026-01-08 20:03 | [Dock Toggle Fix](https://ampcode.com/threads/T-019b9efa-2028-711b-9fd0-9739b34832e6)            | Bugfix   | Fix dock toggle, preview z-order, and editor area sizing                                               |
+| 2026-01-08 23:46 | [Dock Scroll Fix](https://ampcode.com/threads/T-019b9f4b-9090-766e-b6f4-d494ada06e87)            | Bugfix   | Fix markdown preview and dock scroll event leaking                                                     |
+| 2026-01-09 03:50 | [Editor Area Sizing](https://ampcode.com/threads/T-019ba01a-cde5-759e-ada6-216faba0e70b)          | Bugfix   | Editor area not shrinking for terminal dock                                                            |
+| 2026-01-09 05:43 | [v0.3.15 Release](https://ampcode.com/threads/T-019ba0ed-dfdb-71cf-8dec-291fcca7a783)             | Setup    | Update docs and tag patch release v0.3.15                                                              |
+| 2026-02-17 18:52 | [Sema Language](https://ampcode.com/threads/T-019c6c9a-ee2a-74cc-81b3-c189a725500e)              | Feature  | Add language support for sema lisp                                                                     |
+| 2026-02-17 18:14 | [Website v4](https://ampcode.com/threads/T-019c6cb5-43bb-7490-8480-0f76d1372a6f)                 | Feature  | Redesign v3 website to v4 with improved styling                                                        |
+| 2026-02-18 10:56 | [Keybindings Viewer Fix](https://ampcode.com/threads/T-019c6cf3-ecb6-72cb-8af0-d69f8d562206)     | Bugfix   | Keybindings viewer broken in Astro v4                                                                  |
+| 2026-02-18 10:57 | [Screenshot Pipeline](https://ampcode.com/threads/T-019c7065-499e-7489-a60e-dc4beea24ac2)         | Feature  | Execute screenshot pipeline and homepage redesign plan                                                 |
+| 2026-02-18 13:17 | [Reveal in Finder](https://ampcode.com/threads/T-019c6fef-7f25-7798-b5b9-ac7bb537f73e)           | Feature  | Reveal file in finder and copy path actions                                                            |
+| 2026-02-18 15:39 | [Screenshot Fixes](https://ampcode.com/threads/T-019c708b-a2bb-70f6-a62b-27f9005c95a8)           | Bugfix   | Fix screenshot syntax highlighting and CSV viewer mode                                                 |
+| 2026-02-18 15:55 | [Hero Layout](https://ampcode.com/threads/T-019c7168-8448-7204-85b1-649d05d97a65)                 | Feature  | Hero section screenshot layout styling                                                                 |
+| 2026-02-18 16:26 | [Astro Syntax Fix](https://ampcode.com/threads/T-019c7178-4034-778a-b7fd-660267f87de8)            | Bugfix   | Fix Astro template curly brace syntax error                                                            |
+| 2026-02-18 16:39 | [WASM Feasibility](https://ampcode.com/threads/T-019c7199-18ea-7381-ba20-66b1a9ae4898)            | Research | Feasibility of compiling token to WASM                                                                 |
+| 2026-02-18 17:25 | [Docs Verification](https://ampcode.com/threads/T-019c7193-e8a5-7462-93e6-95cce054e7a8)           | Docs     | Verify docs accuracy for keybindings and themes                                                        |
+| 2026-02-18 19:07 | [Theme Research](https://ampcode.com/threads/T-019c720c-21c5-703a-8403-d5410ff72006)              | Research | Research editor themes and suggest new ones                                                            |
+| 2026-02-18 19:20 | [OpenGraph Image](https://ampcode.com/threads/T-019c7212-52b0-77cb-bb71-f619c7e6ca43)             | Feature  | Generate opengraph image with website branding                                                         |
+| 2026-02-18 20:10 | [Status Bar Mirror](https://ampcode.com/threads/T-019c7228-2bde-77e1-bef0-ab2b38afb197)           | Feature  | Mirror token editor status bar layout                                                                  |
+| 2026-02-18 20:21 | [Tab Overflow Fix](https://ampcode.com/threads/T-019c7265-e37a-712e-ab03-408801ac7cb9)             | Bugfix   | Fix YAML tab overflow and duplicate scrollbars                                                         |
+| 2026-02-18 20:52 | [Gallery Pages](https://ampcode.com/threads/T-019c726b-c3fd-72c8-be61-06cdc86e123b)               | Feature  | Website pages and screenshots gallery ideas                                                            |
+| 2026-02-18 20:54 | [LinkedIn Blurb](https://ampcode.com/threads/T-019c7286-7786-71d9-8437-6021fb6646fc)              | Docs     | Create LinkedIn blurb for AI building content                                                          |
+| 2026-02-18 21:25 | [Pagination & Nav](https://ampcode.com/threads/T-019c728c-6859-7749-be87-ff6ef98ee8c9)             | Feature  | Remove pagination, add text-pretty, keyboard navigation                                                |
+| 2026-02-18 21:41 | [Website Infrastructure](https://ampcode.com/threads/T-019c7289-a2ff-762d-bbde-80da4e731a2d)       | Feature  | Expanding website and screenshot infrastructure                                                        |
+| 2026-02-18 22:11 | [Bracket Matching](https://ampcode.com/threads/T-019c7293-f967-73f6-b6b4-e3c2e946dfad)            | Feature  | Character wrapping and bracket matching features                                                       |
+| 2026-02-18 22:45 | [Image Optimization](https://ampcode.com/threads/T-019c72ca-af84-70be-a5ad-2471b923288c)           | Feature  | Astro image optimization for screenshot gallery                                                        |
+| 2026-02-18 22:51 | [Thread Audit](https://ampcode.com/threads/T-019c72f2-0c78-756c-ab6c-9e1eead1c641)                | Docs     | Audit and publish project threads securely                                                             |
 
 ---
 

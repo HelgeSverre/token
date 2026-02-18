@@ -2,10 +2,10 @@
 import SiteLayout from '../layouts/SiteLayout.astro';
 
 const stats = [
-  { value: '116+', label: 'Conversations' },
+  { value: '167+', label: 'Conversations' },
   { value: '15k+', label: 'Lines of code' },
   { value: '700+', label: 'Tests passing' },
-  { value: '17', label: 'Languages' },
+  { value: '20', label: 'Languages' },
 ];
 
 const timeline = [
@@ -17,6 +17,9 @@ const timeline = [
   { phase: 'CSV Editor', dates: 'Dec 16', focus: 'Spreadsheet view with cell editing (Phases 1-2)' },
   { phase: 'Workspace', dates: 'Dec 17', focus: 'Sidebar file tree, focus system, global shortcuts' },
   { phase: 'Unified Edit', dates: 'Dec 19', focus: 'EditableState system, modal/CSV clipboard & selection' },
+  { phase: 'Perf & Find', dates: 'Dec 19–20', focus: 'Event loop fix (7→60 FPS), find/replace modal' },
+  { phase: 'Panels & Preview', dates: 'Jan 6–9', focus: 'Docked panels, markdown/HTML preview, file dialogs' },
+  { phase: 'Website v4', dates: 'Feb 17–18', focus: 'Complete redesign, 5 new themes, bracket matching' },
 ];
 
 const threads = [
@@ -62,6 +65,27 @@ const threads = [
     summary: 'Five separate text editing implementations (main editor, command palette, go-to-line, find/replace, CSV cells) with duplicated logic. Solved by creating a unified EditableState<B: TextBuffer> abstraction that shares editing logic across all contexts. All modals gained full cursor navigation, selection, and clipboard support.',
     lesson: 'Abstract buffer operations behind traits to share editing logic across all contexts.',
   },
+  {
+    title: 'Event Loop Spinning: 7 → 60 FPS',
+    id: 'T-019b3bbd-d4fd-75df-81a0-c94a5e693227',
+    type: 'Bugfix',
+    summary: 'Multi-split view caused ~7 FPS with 100% CPU even when idle. Root cause: ControlFlow::Poll was spinning the event loop constantly. Fixed by switching to ControlFlow::WaitUntil — idle CPU dropped from 100% to 0%, FPS jumped to 60.',
+    lesson: 'Investigate the event loop first when debugging rendering performance.',
+  },
+  {
+    title: 'Markdown Preview & Docked Panels',
+    id: 'T-019b9893-43cd-72ea-bcb4-9e0e1494e517',
+    type: 'Feature',
+    summary: 'Built a full docked panel system with webview-based markdown/HTML preview across 9 sessions. DockPanel abstraction with resizable panels, WKWebView on macOS with custom token:// protocol for local resources, and live preview updates on tab switch.',
+    lesson: 'Building an abstraction first (DockPanel) made adding HTML preview trivial later.',
+  },
+  {
+    title: 'Mouse Event Handling Refactor',
+    id: 'T-019b9d40-e7f7-760c-81ce-7dcc1796705e',
+    type: 'Feature',
+    summary: 'Mouse handling was ad-hoc if/else chains checking pixel coordinates. Replaced with a priority-ordered HitTarget enum and hit-test system. Each target knows its bounds, first match wins — clean, extensible, and testable.',
+    lesson: 'A HitTarget enum + priority-ordered hit testing replaces coordinate spaghetti.',
+  },
 ];
 
 const modes = [
@@ -79,16 +103,16 @@ const lessons = [
 ];
 ---
 
-<SiteLayout title="Built with AI — Token" description="How Token was built through 116+ conversations with AI coding assistants. The methodology, the threads, and the lessons learned.">
+<SiteLayout title="Built with AI — Token" description="How Token was built through 167+ conversations with AI coding assistants. The methodology, the threads, and the lessons learned.">
 
 <!-- Hero -->
 <section class="ai-hero">
-  <p class="ai-tag">Open development / Amp Code / 116+ threads</p>
+  <p class="ai-tag">Open development / Amp Code / 167+ threads</p>
   <h1>
     <span>Built with AI,</span>
     <span class="accent">in the open</span>
   </h1>
-  <p class="ai-hero-desc">Token is a multi-cursor text editor written in Rust — around 15,000 lines of code built primarily through conversations with <a href="https://ampcode.com" target="_blank">Amp Code</a>. Every feature, every bug fix, every architectural decision is documented publicly.</p>
+  <p class="ai-hero-desc">Token is a multi-cursor text editor written in Rust — around 15,000 lines of code built primarily through 167+ conversations with <a href="https://ampcode.com" target="_blank">Amp Code</a>. Every feature, every bug fix, every architectural decision is documented publicly.</p>
   <div class="ai-hero-actions">
     <a href="https://ampcode.com/@helgesverre" class="btn-primary" target="_blank">View all threads →</a>
     <a href="https://github.com/helgesverre/token" class="btn-ghost" target="_blank">View source →</a>
@@ -159,7 +183,7 @@ const lessons = [
 <!-- Notable Threads -->
 <section class="threads-section">
   <h2 class="section-title">Notable threads</h2>
-  <p class="section-desc">Highlights from 116+ conversations. Each links to the full Amp Code thread.</p>
+  <p class="section-desc">Highlights from 167+ conversations. Each links to the full Amp Code thread.</p>
 
   <div class="threads-list">
     {threads.map((t) => (
@@ -203,7 +227,7 @@ const lessons = [
 <section class="ai-cta">
   <div class="ai-cta-inner">
     <h2>Want to see the conversations?</h2>
-    <p>All 116+ threads are public. See how every feature was planned, implemented, and debugged.</p>
+    <p>All 167+ threads are public. See how every feature was planned, implemented, and debugged.</p>
     <a href="https://ampcode.com/@helgesverre" class="btn-primary" target="_blank">Browse threads on Amp →</a>
   </div>
 </section>
