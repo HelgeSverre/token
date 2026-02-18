@@ -29,6 +29,14 @@ pub struct EditorConfig {
     /// Cursor blink interval in milliseconds (default: 600)
     #[serde(default = "default_cursor_blink_ms")]
     pub cursor_blink_ms: u64,
+
+    /// Automatically surround selected text when typing brackets/quotes (default: true)
+    #[serde(default = "default_true")]
+    pub auto_surround: bool,
+
+    /// Highlight matching bracket when cursor is adjacent to one (default: true)
+    #[serde(default = "default_true")]
+    pub bracket_matching: bool,
 }
 
 fn default_theme() -> String {
@@ -39,11 +47,17 @@ fn default_cursor_blink_ms() -> u64 {
     600
 }
 
+fn default_true() -> bool {
+    true
+}
+
 impl Default for EditorConfig {
     fn default() -> Self {
         Self {
             theme: default_theme(),
             cursor_blink_ms: default_cursor_blink_ms(),
+            auto_surround: true,
+            bracket_matching: true,
         }
     }
 }

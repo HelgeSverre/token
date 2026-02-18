@@ -24,6 +24,7 @@ Configuration and usage guides for end users.
 
 | Document | Description |
 |----------|-------------|
+| [config-editor.md](user/config-editor.md) | Editor settings reference |
 | [config-keymap.md](user/config-keymap.md) | Keymap configuration reference |
 | [config-theme.md](user/config-theme.md) | Theme configuration reference |
 

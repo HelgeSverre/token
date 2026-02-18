@@ -60,6 +60,7 @@ ui:
     cursor_color: "#FCE146"
     selection_background: "#264F78"
     secondary_cursor_color: "#FFFFFF80"
+    bracket_match_background: "#58A6FF40"  # optional
 
   gutter:
     background: "#1E1E1E"
@@ -161,6 +162,7 @@ secondary_cursor_color: "#FFFFFF40"  # 25% opacity
 | `cursor_color` | Cursor/caret color |
 | `selection_background` | Selected text background |
 | `secondary_cursor_color` | Multi-cursor secondary cursors |
+| `bracket_match_background` | Matching bracket highlight (optional, default: `#58A6FF40`) |
 
 ### Gutter
 

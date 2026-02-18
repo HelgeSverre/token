@@ -11,6 +11,20 @@ use super::editor::{
 };
 use super::syntax::schedule_syntax_parse;
 
+/// Returns the matching closing character for an opening surround character.
+/// Used to wrap selected text when typing an opening bracket/quote.
+fn surround_pair(open: char) -> Option<char> {
+    Some(match open {
+        '(' => ')',
+        '[' => ']',
+        '{' => '}',
+        '"' => '"',
+        '\'' => '\'',
+        '`' => '`',
+        _ => return None,
+    })
+}
+
 /// Returns a Cmd that redraws and schedules syntax parsing for the current document
 fn redraw_with_syntax_parse(model: &mut AppModel) -> Cmd {
     if let Some(doc_id) = model.document().id {
@@ -78,6 +92,12 @@ fn word_end_after(buffer: &ropey::Rope, offset: usize) -> usize {
 
 /// Handle document messages (text editing, undo/redo)
 pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
+    let result = update_document_inner(model, msg);
+    super::editor::compute_matched_brackets(model);
+    result
+}
+
+fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
     // Clear occurrence selection state on any editing operation
     // (except Copy which doesn't modify the document)
     if !matches!(msg, DocumentMsg::Copy) {
@@ -90,40 +110,84 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 
             // Multi-cursor: process all cursors in reverse document order
             if model.editor().has_multiple_cursors() {
+                let close = surround_pair(ch);
+                let any_has_selection = model.editor().selections.iter().any(|s| !s.is_empty());
+                let do_surround =
+                    model.config.auto_surround && close.is_some() && any_has_selection;
+
                 let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
                 let indices = cursors_in_reverse_order(model);
                 let mut operations = Vec::new();
 
                 for idx in indices {
-                    // Get cursor position and convert to buffer offset
                     let cursor = model.editor().cursors[idx];
-                    let pos = model
-                        .document()
-                        .cursor_to_offset(cursor.line, cursor.column);
+                    let selection = model.editor().selections[idx];
 
-                    // Insert character
-                    model.document_mut().buffer.insert_char(pos, ch);
+                    if do_surround && !selection.is_empty() {
+                        let close = close.unwrap();
+                        let sel_start = selection.start();
+                        let sel_end = selection.end();
+                        let start_offset = model
+                            .document()
+                            .cursor_to_offset(sel_start.line, sel_start.column);
+                        let end_offset = model
+                            .document()
+                            .cursor_to_offset(sel_end.line, sel_end.column);
+                        let selected_text: String = model
+                            .document()
+                            .buffer
+                            .slice(start_offset..end_offset)
+                            .chars()
+                            .collect();
 
-                    // Record individual operation (positions are at time of insert)
-                    operations.push(EditOperation::Insert {
-                        position: pos,
-                        text: ch.to_string(),
-                        cursor_before: cursor,
-                        cursor_after: Cursor::at(cursor.line, cursor.column + 1),
-                    });
+                        model
+                            .document_mut()
+                            .buffer
+                            .remove(start_offset..end_offset);
+                        let wrapped = format!("{ch}{selected_text}{close}");
+                        model
+                            .document_mut()
+                            .buffer
+                            .insert(start_offset, &wrapped);
 
-                    // Update this cursor's position (move right by 1)
-                    model.editor_mut().cursors[idx].column += 1;
-                    model.editor_mut().cursors[idx].desired_column = None;
+                        let new_offset = start_offset + wrapped.len();
+                        let (new_line, new_col) = model.document().offset_to_cursor(new_offset);
 
-                    // Clear this cursor's selection
-                    let new_pos = model.editor().cursors[idx].to_position();
-                    model.editor_mut().selections[idx] = Selection::new(new_pos);
+                        operations.push(EditOperation::Replace {
+                            position: start_offset,
+                            deleted_text: selected_text,
+                            inserted_text: wrapped,
+                            cursor_before: cursor,
+                            cursor_after: Cursor::at(new_line, new_col),
+                        });
+
+                        model.editor_mut().cursors[idx] = Cursor::at(new_line, new_col);
+                        model.editor_mut().cursors[idx].desired_column = None;
+                        let new_pos = Position::new(new_line, new_col);
+                        model.editor_mut().selections[idx] = Selection::new(new_pos);
+                    } else {
+                        let pos = model
+                            .document()
+                            .cursor_to_offset(cursor.line, cursor.column);
+
+                        model.document_mut().buffer.insert_char(pos, ch);
+
+                        operations.push(EditOperation::Insert {
+                            position: pos,
+                            text: ch.to_string(),
+                            cursor_before: cursor,
+                            cursor_after: Cursor::at(cursor.line, cursor.column + 1),
+                        });
+
+                        model.editor_mut().cursors[idx].column += 1;
+                        model.editor_mut().cursors[idx].desired_column = None;
+
+                        let new_pos = model.editor().cursors[idx].to_position();
+                        model.editor_mut().selections[idx] = Selection::new(new_pos);
+                    }
                 }
 
                 // Record batch for proper multi-cursor undo
-                // Operations are stored in application order (reverse document order)
-                // Undo will iterate .rev() to process in forward document order
                 let cursors_after: Vec<Cursor> = model.editor().cursors.clone();
                 model.document_mut().push_edit(EditOperation::Batch {
                     operations,
@@ -137,8 +201,57 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
                 return Some(redraw_with_syntax_parse(model));
             }
 
-            // Single cursor: existing behavior
-            // If there's a selection, delete it first and use Replace for atomic undo
+            // Single cursor: check for surround-selection behavior
+            let selection = *model.editor().primary_selection();
+            if model.config.auto_surround && !selection.is_empty() {
+                if let Some(close) = surround_pair(ch) {
+                    // Surround selection: wrap selected text with open/close pair
+                    let sel_start = selection.start();
+                    let sel_end = selection.end();
+                    let start_offset = model
+                        .document()
+                        .cursor_to_offset(sel_start.line, sel_start.column);
+                    let end_offset = model
+                        .document()
+                        .cursor_to_offset(sel_end.line, sel_end.column);
+                    let selected_text: String = model
+                        .document()
+                        .buffer
+                        .slice(start_offset..end_offset)
+                        .chars()
+                        .collect();
+
+                    // Remove selected text, insert open + text + close
+                    model
+                        .document_mut()
+                        .buffer
+                        .remove(start_offset..end_offset);
+                    let wrapped = format!("{ch}{selected_text}{close}");
+                    model
+                        .document_mut()
+                        .buffer
+                        .insert(start_offset, &wrapped);
+
+                    // Position cursor after the closing char
+                    let new_offset = start_offset + wrapped.len();
+                    model.set_cursor_from_position(new_offset);
+                    model.ensure_cursor_visible();
+
+                    let cursor_after = *model.editor().primary_cursor();
+                    model.document_mut().push_edit(EditOperation::Replace {
+                        position: start_offset,
+                        deleted_text: selected_text,
+                        inserted_text: wrapped,
+                        cursor_before,
+                        cursor_after,
+                    });
+
+                    model.reset_cursor_blink();
+                    return Some(redraw_with_syntax_parse(model));
+                }
+            }
+
+            // If there's a selection (non-surround char), delete it first and use Replace for atomic undo
             if let Some((pos, deleted_text)) = delete_selection(model) {
                 // Insert at selection start
                 model.document_mut().buffer.insert_char(pos, ch);

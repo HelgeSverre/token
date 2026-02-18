@@ -63,6 +63,15 @@ pub type GlyphCacheKey = (char, u32);
 
 pub type GlyphCache = HashMap<GlyphCacheKey, (Metrics, Vec<u8>)>;
 
+/// Controls how preview panes render their content
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewRenderMode {
+    /// Only render pane chrome (header, borders); webview handles content
+    WebviewChromeOnly,
+    /// Render native markdown content (for headless/screenshot use)
+    NativeMarkdown,
+}
+
 pub struct Renderer {
     font: Font,
     surface: Surface<Rc<Window>, Rc<Window>>,
@@ -399,6 +408,27 @@ impl Renderer {
                 }
             }
 
+            // 1d. Render matching bracket highlights for this line
+            if let Some((pos_a, pos_b)) = editor.matched_brackets {
+                let bracket_bg = model.theme.editor.bracket_match_background.to_argb_u32();
+                for &pos in &[pos_a, pos_b] {
+                    if pos.line == doc_line {
+                        let line_text = document.get_line_cow(doc_line).unwrap_or_default();
+                        let visual_col = char_col_to_visual_col(&line_text, pos.column);
+                        let visible_col =
+                            visual_col.saturating_sub(editor.viewport.left_column);
+                        if visual_col >= editor.viewport.left_column
+                            && visible_col < visible_columns
+                        {
+                            let x = group_text_start_x
+                                + (visible_col as f32 * char_width).round() as usize;
+                            let w = char_width.round() as usize;
+                            frame.blend_rect_px(x, y, w, line_height, bracket_bg);
+                        }
+                    }
+                }
+            }
+
             // 2. Render gutter (line number)
             let line_num_str = format!("{}", doc_line + 1);
             let text_width_px = (line_num_str.len() as f32 * char_width).round() as usize;
@@ -509,6 +539,22 @@ impl Renderer {
         model: &AppModel,
         splitters: &[SplitterBar],
     ) {
+        Self::render_editor_area_with_preview_mode(
+            frame,
+            painter,
+            model,
+            splitters,
+            PreviewRenderMode::WebviewChromeOnly,
+        )
+    }
+
+    pub fn render_editor_area_with_preview_mode(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        splitters: &[SplitterBar],
+        preview_mode: PreviewRenderMode,
+    ) {
         for (&group_id, group) in &model.editor_area.groups {
             let is_focused = group_id == model.editor_area.focused_group_id;
             Self::render_editor_group(frame, painter, model, group_id, group.rect, is_focused);
@@ -516,7 +562,7 @@ impl Renderer {
 
         // Render preview panes
         for (&preview_id, preview) in &model.editor_area.previews {
-            Self::render_preview_pane(frame, painter, model, preview_id, preview.rect);
+            Self::render_preview_pane(frame, painter, model, preview_id, preview.rect, preview_mode);
         }
 
         Self::render_splitters(frame, splitters, model);
@@ -604,15 +650,16 @@ impl Renderer {
 
     /// Render a markdown preview pane.
     ///
-    /// When webview is enabled (default), this only renders the pane chrome (background,
-    /// header, borders). The webview overlay handles the actual markdown content rendering.
-    /// The native markdown rendering is kept as a fallback but disabled by default.
+    /// When `preview_mode` is `WebviewChromeOnly`, this only renders the pane chrome
+    /// (background, header, borders) — the webview overlay handles content rendering.
+    /// When `NativeMarkdown`, renders markdown content natively (for headless screenshots).
     fn render_preview_pane(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
         preview_id: crate::model::editor_area::PreviewId,
         rect: Rect,
+        preview_mode: PreviewRenderMode,
     ) {
         let preview = match model.editor_area.previews.get(&preview_id) {
             Some(p) => p,
@@ -633,17 +680,12 @@ impl Renderer {
         // Render pane chrome (background, header, borders)
         Self::render_pane(frame, painter, model, &pane, Some("Preview"));
 
-        // When using webview for preview, only render chrome - webview handles content.
-        // Set to false to use native markdown rendering as fallback.
-        const USE_WEBVIEW_PREVIEW: bool = true;
-        if USE_WEBVIEW_PREVIEW {
-            // Suppress unused warnings for webview mode
+        if preview_mode == PreviewRenderMode::WebviewChromeOnly {
             let _ = (document, line_height, char_width, &pane);
             return;
         }
 
-        // Native markdown rendering fallback (disabled when webview is used)
-        #[allow(unreachable_code)]
+        // Native markdown rendering (used for headless screenshots)
         {
             let visible_lines = pane.visible_lines(line_height);
             let text_x = pane.content_x();
@@ -1337,6 +1379,31 @@ impl Renderer {
             }
         }
 
+        // Matching bracket highlights
+        if let Some((pos_a, pos_b)) = editor.matched_brackets {
+            let bracket_bg = model.theme.editor.bracket_match_background.to_argb_u32();
+            for &pos in &[pos_a, pos_b] {
+                if pos.line >= editor.viewport.top_line && pos.line < end_line {
+                    let screen_line = pos.line - editor.viewport.top_line;
+                    let y_start = content_y + screen_line * line_height;
+                    let y_end = (y_start + line_height).min(content_y + content_h);
+                    let line_text = document.get_line_cow(pos.line).unwrap_or_default();
+                    let visual_col = char_col_to_visual_col(&line_text, pos.column);
+                    let visible_col = visual_col.saturating_sub(editor.viewport.left_column);
+                    if visual_col >= editor.viewport.left_column
+                        && visible_col < visible_columns
+                    {
+                        let x = group_text_start_x
+                            + (visible_col as f32 * char_width).round() as usize;
+                        let w = char_width.round() as usize;
+                        frame.blend_rect_px(
+                            x, y_start, w, y_end.saturating_sub(y_start), bracket_bg,
+                        );
+                    }
+                }
+            }
+        }
+
         // Text content with syntax highlighting
         // Reuse buffers to avoid per-line allocations
         let text_color = model.theme.editor.foreground.to_argb_u32();
@@ -1839,7 +1906,7 @@ impl Renderer {
     /// - Dimmed background over entire window
     /// - Modal dialog box (centered)
     /// - Modal content (title, input field, command list for palette)
-    fn render_modals(
+    pub fn render_modals(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
@@ -2102,8 +2169,15 @@ impl Renderer {
             }
 
             ModalState::FindReplace(state) => {
-                let (modal_x, modal_y, modal_width, modal_height) =
+                // Calculate modal height: taller when replace mode is active
+                let extra_height = if state.replace_mode {
+                    line_height + 12 + line_height + 4 // label + spacing + replace field
+                } else {
+                    0
+                };
+                let (modal_x, modal_y, modal_width, base_modal_height) =
                     geometry::modal_bounds(window_width, window_height, line_height, false, 0);
+                let modal_height = base_modal_height + extra_height;
 
                 frame.draw_bordered_rect(
                     modal_x,
@@ -2117,32 +2191,106 @@ impl Renderer {
                 // Title
                 let title_x = modal_x + 12;
                 let title_y = modal_y + 8;
-                painter.draw(frame, title_x, title_y, "Find", fg_color);
+                let title = if state.replace_mode {
+                    "Find and Replace"
+                } else {
+                    "Find"
+                };
+                painter.draw(frame, title_x, title_y, title, fg_color);
 
-                // Input field background
                 let input_x = modal_x + 12;
-                let input_y = title_y + line_height + 4;
                 let input_width = modal_width - 24;
                 let input_height = line_height + 8;
-                frame.fill_rect_px(input_x, input_y, input_width, input_height, input_bg);
 
-                // Render text field using unified renderer
-                let text_x = input_x + 8;
-                let text_y = input_y + 4;
+                // "Find" label
+                let find_label_y = title_y + line_height + 8;
+                let label_color = if state.replace_mode {
+                    // Dim the label for the unfocused field
+                    match state.focused_field {
+                        crate::model::ui::FindReplaceField::Query => fg_color,
+                        crate::model::ui::FindReplaceField::Replace => dim_color,
+                    }
+                } else {
+                    fg_color
+                };
+                painter.draw(frame, input_x, find_label_y, "Find:", label_color);
+
+                // Find input field
+                let find_input_y = find_label_y + line_height + 4;
+                frame.fill_rect_px(input_x, find_input_y, input_width, input_height, input_bg);
+
+                let find_text_x = input_x + 8;
+                let find_text_y = find_input_y + 4;
                 let text_width = input_width - 16;
-                let opts = TextFieldOptions {
-                    x: text_x,
-                    y: text_y,
+                let find_cursor_visible = model.ui.cursor_visible
+                    && matches!(
+                        state.focused_field,
+                        crate::model::ui::FindReplaceField::Query
+                    );
+                let find_opts = TextFieldOptions {
+                    x: find_text_x,
+                    y: find_text_y,
                     width: text_width,
                     height: line_height,
                     char_width,
                     text_color: fg_color,
                     cursor_color: highlight_color,
                     selection_color: selection_bg,
-                    cursor_visible: model.ui.cursor_visible,
+                    cursor_visible: find_cursor_visible,
                     scroll_x: 0,
                 };
-                TextFieldRenderer::render(frame, painter, state.focused_editable(), &opts);
+                TextFieldRenderer::render(frame, painter, &state.query_editable, &find_opts);
+
+                // Replace field (only when replace_mode is active)
+                if state.replace_mode {
+                    let replace_label_y = find_input_y + input_height + 8;
+                    let replace_label_color = match state.focused_field {
+                        crate::model::ui::FindReplaceField::Replace => fg_color,
+                        crate::model::ui::FindReplaceField::Query => dim_color,
+                    };
+                    painter.draw(
+                        frame,
+                        input_x,
+                        replace_label_y,
+                        "Replace:",
+                        replace_label_color,
+                    );
+
+                    let replace_input_y = replace_label_y + line_height + 4;
+                    frame.fill_rect_px(
+                        input_x,
+                        replace_input_y,
+                        input_width,
+                        input_height,
+                        input_bg,
+                    );
+
+                    let replace_text_x = input_x + 8;
+                    let replace_text_y = replace_input_y + 4;
+                    let replace_cursor_visible = model.ui.cursor_visible
+                        && matches!(
+                            state.focused_field,
+                            crate::model::ui::FindReplaceField::Replace
+                        );
+                    let replace_opts = TextFieldOptions {
+                        x: replace_text_x,
+                        y: replace_text_y,
+                        width: text_width,
+                        height: line_height,
+                        char_width,
+                        text_color: fg_color,
+                        cursor_color: highlight_color,
+                        selection_color: selection_bg,
+                        cursor_visible: replace_cursor_visible,
+                        scroll_x: 0,
+                    };
+                    TextFieldRenderer::render(
+                        frame,
+                        painter,
+                        &state.replace_editable,
+                        &replace_opts,
+                    );
+                }
             }
 
             ModalState::FileFinder(state) => {

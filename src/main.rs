@@ -89,6 +89,7 @@ mod tests {
             occurrence_state: None,
             selection_history: Vec::new(),
             view_mode: ViewMode::default(),
+            matched_brackets: None,
         };
         let editor_area = EditorArea::single_document(document, editor);
         AppModel {
@@ -669,6 +670,7 @@ mod tests {
             occurrence_state: None,
             selection_history: Vec::new(),
             view_mode: ViewMode::default(),
+            matched_brackets: None,
         };
         let editor_area = EditorArea::single_document(document, editor);
         let mut model = AppModel {

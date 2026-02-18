@@ -12,6 +12,12 @@ use crate::util::{char_type, CharType};
 
 /// Handle editor messages (cursor movement, viewport scrolling)
 pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
+    let result = update_editor_inner(model, msg);
+    compute_matched_brackets(model);
+    result
+}
+
+fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
     // Clear occurrence selection state and selection history on non-selection cursor movements
     // and selection-clearing operations (but NOT on ExpandSelection/ShrinkSelection)
     match &msg {
@@ -1263,4 +1269,135 @@ pub(crate) fn lines_covered_by_all_cursors(model: &AppModel) -> Vec<usize> {
 
     // Return in reverse document order (highest line first) for safe deletion
     lines.into_iter().rev().collect()
+}
+
+/// Compute matching bracket for the cursor position.
+/// Checks the character at and before the cursor for bracket characters,
+/// then scans forward/backward tracking nesting to find the match.
+pub(crate) fn compute_matched_brackets(model: &mut AppModel) {
+    if !model.config.bracket_matching {
+        model.editor_mut().matched_brackets = None;
+        return;
+    }
+
+    let cursor = *model.editor().active_cursor();
+    let doc = model.document();
+    let total_chars = doc.buffer.len_chars();
+
+    // Check char at cursor and char before cursor
+    let at_offset = doc.cursor_to_offset(cursor.line, cursor.column);
+    let char_at = if at_offset < total_chars {
+        Some(doc.buffer.char(at_offset))
+    } else {
+        None
+    };
+    let char_before = if at_offset > 0 {
+        Some(doc.buffer.char(at_offset - 1))
+    } else {
+        None
+    };
+
+    // Try char at cursor first, then char before cursor
+    let (bracket_char, bracket_offset) = if let Some(ch) = char_at {
+        if is_bracket(ch) {
+            (ch, at_offset)
+        } else if let Some(ch) = char_before {
+            if is_bracket(ch) {
+                (ch, at_offset - 1)
+            } else {
+                model.editor_mut().matched_brackets = None;
+                return;
+            }
+        } else {
+            model.editor_mut().matched_brackets = None;
+            return;
+        }
+    } else if let Some(ch) = char_before {
+        if is_bracket(ch) {
+            (ch, at_offset - 1)
+        } else {
+            model.editor_mut().matched_brackets = None;
+            return;
+        }
+    } else {
+        model.editor_mut().matched_brackets = None;
+        return;
+    };
+
+    let match_offset = if is_opening_bracket(bracket_char) {
+        let close = matching_bracket(bracket_char);
+        find_matching_forward(doc, bracket_char, close, bracket_offset, total_chars)
+    } else {
+        let open = matching_bracket(bracket_char);
+        find_matching_backward(doc, open, bracket_char, bracket_offset)
+    };
+
+    model.editor_mut().matched_brackets = match_offset.map(|m_offset| {
+        let (line_a, col_a) = doc.offset_to_cursor(bracket_offset);
+        let (line_b, col_b) = doc.offset_to_cursor(m_offset);
+        (Position::new(line_a, col_a), Position::new(line_b, col_b))
+    });
+}
+
+fn is_bracket(ch: char) -> bool {
+    matches!(ch, '(' | ')' | '[' | ']' | '{' | '}')
+}
+
+fn is_opening_bracket(ch: char) -> bool {
+    matches!(ch, '(' | '[' | '{')
+}
+
+fn matching_bracket(ch: char) -> char {
+    match ch {
+        '(' => ')',
+        ')' => '(',
+        '[' => ']',
+        ']' => '[',
+        '{' => '}',
+        '}' => '{',
+        _ => ch,
+    }
+}
+
+fn find_matching_forward(
+    doc: &crate::model::Document,
+    open: char,
+    close: char,
+    start: usize,
+    total: usize,
+) -> Option<usize> {
+    let mut depth = 0i32;
+    for i in start..total {
+        let ch = doc.buffer.char(i);
+        if ch == open {
+            depth += 1;
+        } else if ch == close {
+            depth -= 1;
+            if depth == 0 {
+                return Some(i);
+            }
+        }
+    }
+    None
+}
+
+fn find_matching_backward(
+    doc: &crate::model::Document,
+    open: char,
+    close: char,
+    start: usize,
+) -> Option<usize> {
+    let mut depth = 0i32;
+    for i in (0..=start).rev() {
+        let ch = doc.buffer.char(i);
+        if ch == close {
+            depth += 1;
+        } else if ch == open {
+            depth -= 1;
+            if depth == 0 {
+                return Some(i);
+            }
+        }
+    }
+    None
 }

@@ -38,6 +38,7 @@ pub fn test_model(text: &str, line: usize, column: usize) -> AppModel {
         occurrence_state: None,
         selection_history: Vec::new(),
         view_mode: ViewMode::default(),
+        matched_brackets: None,
     };
 
     let editor_area = EditorArea::single_document(document, editor);
@@ -100,6 +101,7 @@ pub fn test_model_with_selection(
         occurrence_state: None,
         selection_history: Vec::new(),
         view_mode: ViewMode::default(),
+        matched_brackets: None,
     };
 
     let editor_area = EditorArea::single_document(document, editor);
@@ -159,6 +161,7 @@ pub fn test_model_multi_cursor(text: &str, positions: &[(usize, usize)]) -> AppM
         occurrence_state: None,
         selection_history: Vec::new(),
         view_mode: ViewMode::default(),
+        matched_brackets: None,
     };
 
     let editor_area = EditorArea::single_document(document, editor);

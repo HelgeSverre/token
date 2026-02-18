@@ -102,6 +102,8 @@ fn test_config_serialize_deserialize() {
     let config = EditorConfig {
         theme: "fleet-dark".to_string(),
         cursor_blink_ms: 600,
+        auto_surround: true,
+        bracket_matching: true,
     };
     let yaml = serde_yaml::to_string(&config).unwrap();
     let parsed: EditorConfig = serde_yaml::from_str(&yaml).unwrap();

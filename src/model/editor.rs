@@ -334,6 +334,8 @@ pub struct EditorState {
     pub selection_history: Vec<Selection>,
     /// Current view mode (Text or CSV)
     pub view_mode: ViewMode,
+    /// Matching bracket pair positions (if cursor is adjacent to a bracket)
+    pub matched_brackets: Option<(Position, Position)>,
 }
 
 impl EditorState {
@@ -353,6 +355,7 @@ impl EditorState {
             occurrence_state: None,
             selection_history: Vec::new(),
             view_mode: ViewMode::default(),
+            matched_brackets: None,
         }
     }
 
@@ -372,6 +375,7 @@ impl EditorState {
             occurrence_state: None,
             selection_history: Vec::new(),
             view_mode: ViewMode::default(),
+            matched_brackets: None,
         }
     }
 

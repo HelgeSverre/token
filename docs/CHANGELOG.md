@@ -9,6 +9,11 @@ All notable changes to rust-editor are documented in this file.
 ### Added
 - Themes: 5 new builtin themes — Dracula, Catppuccin Mocha, Nord, Tokyo Night, Gruvbox Dark
 - Syntax: Added sema-lisp syntax sample file
+- Editing: Auto-surround selection — select text and type `(`, `[`, `{`, `"`, `'`, or `` ` `` to wrap it (e.g., `hello` → `(hello)`). Works with multi-cursor.
+- Editing: Matching bracket highlighting — when cursor is adjacent to `()`, `[]`, or `{}`, both brackets are highlighted with a colored background.
+- Config: `auto_surround` setting to enable/disable auto-surround behavior (default: `true`)
+- Config: `bracket_matching` setting to enable/disable bracket match highlighting (default: `true`)
+- Themes: `bracket_match_background` editor color for customizing bracket highlight appearance
 
 ---
 
