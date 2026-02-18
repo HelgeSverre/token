@@ -32,6 +32,9 @@ ui:
     file_icon: "#83A598"
     border: "#3C3836"
 
+  splitter:
+    background: "#3C3836"
+
   tab_bar:
     background: "#1D2021"
     active_background: "#282828"

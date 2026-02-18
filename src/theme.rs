@@ -271,6 +271,8 @@ pub struct UiThemeData {
     #[serde(default)]
     pub overlay: OverlayThemeData,
     #[serde(default)]
+    pub splitter: SplitterThemeData,
+    #[serde(default)]
     pub sidebar: SidebarThemeData,
     #[serde(default)]
     pub tab_bar: TabBarThemeData,
@@ -330,6 +332,13 @@ pub struct OverlayThemeData {
     pub warning: Option<String>,
     #[serde(default)]
     pub error: Option<String>,
+}
+
+/// Splitter bar colors (all optional for backward compatibility)
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SplitterThemeData {
+    #[serde(default)]
+    pub background: Option<String>,
 }
 
 /// Sidebar theme colors (all optional for backward compatibility)
@@ -986,7 +995,21 @@ impl Theme {
                         .unwrap_or(defaults.modified_indicator),
                 }
             },
-            splitter: SplitterTheme::default_dark(),
+            splitter: {
+                let defaults = SplitterTheme::default_dark();
+                SplitterTheme {
+                    background: data
+                        .ui
+                        .splitter
+                        .background
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.background),
+                    hover: defaults.hover,
+                    active: defaults.active,
+                }
+            },
             sidebar: {
                 let defaults = SidebarTheme::default_dark();
                 SidebarTheme {
