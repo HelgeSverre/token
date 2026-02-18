@@ -1,0 +1,24 @@
+name: showcase-sidebar-splits
+width: 2880
+height: 1800
+scale: 2.0
+theme: fleet-dark
+split_direction: horizontal
+files:
+  - path: samples/syntax/sample.rs
+    scroll_to: 0
+    cursor_line: 12
+    cursor_column: 4
+  - path: samples/syntax/sample.ts
+    scroll_to: 0
+    cursor_line: 8
+    cursor_column: 0
+workspace:
+  root: "."
+  sidebar_visible: true
+  sidebar_width: 220
+  expanded:
+    - src
+    - samples
+    - samples/syntax
+  selected: samples/syntax/sample.rs

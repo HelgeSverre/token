@@ -1,0 +1,19 @@
+name: showcase-multicursor-ts
+width: 2880
+height: 1800
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: samples/syntax/sample.ts
+    scroll_to: 6
+    cursor_line: 14
+    cursor_column: 4
+    extra_cursors:
+      - line: 15
+        column: 4
+      - line: 16
+        column: 4
+      - line: 17
+        column: 4
+      - line: 18
+        column: 4

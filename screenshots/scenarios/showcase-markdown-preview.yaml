@@ -1,0 +1,12 @@
+name: showcase-markdown-preview
+width: 2880
+height: 1800
+scale: 2.0
+theme: fleet-dark
+files:
+  # Markdown file with preview pane
+  - path: samples/syntax/sample.md
+    scroll_to: 0
+    cursor_line: 5
+    cursor_column: 0
+    preview: true

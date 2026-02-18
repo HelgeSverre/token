@@ -1,0 +1,10 @@
+name: showcase-tokyo-night
+width: 2880
+height: 1800
+scale: 2.0
+theme: tokyo-night
+files:
+  - path: samples/syntax/sample.ts
+    scroll_to: 0
+    cursor_line: 14
+    cursor_column: 18

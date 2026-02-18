@@ -1,0 +1,19 @@
+name: showcase-polyglot
+width: 2880
+height: 1800
+scale: 2.0
+theme: fleet-dark
+split_direction: horizontal
+files:
+  - path: samples/syntax/sample.go
+    scroll_to: 0
+    cursor_line: 20
+    cursor_column: 18
+  - path: samples/syntax/sample.java
+    scroll_to: 0
+    cursor_line: 15
+    cursor_column: 20
+  - path: samples/syntax/sample.c
+    scroll_to: 0
+    cursor_line: 17
+    cursor_column: 22

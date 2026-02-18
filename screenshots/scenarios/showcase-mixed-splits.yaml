@@ -1,0 +1,23 @@
+name: showcase-mixed-splits
+width: 2880
+height: 1800
+scale: 2.0
+theme: fleet-dark
+files:
+  # Left pane: Rust (larger, uses default horizontal split)
+  - path: samples/syntax/sample.rs
+    scroll_to: 5
+    cursor_line: 18
+    cursor_column: 12
+  # Right-top pane: TypeScript (horizontal split from file 1)
+  - path: samples/syntax/sample.ts
+    split: horizontal
+    scroll_to: 0
+    cursor_line: 6
+    cursor_column: 4
+  # Right-bottom pane: YAML (vertical split from file 2)
+  - path: samples/syntax/sample.yaml
+    split: vertical
+    scroll_to: 0
+    cursor_line: 3
+    cursor_column: 8

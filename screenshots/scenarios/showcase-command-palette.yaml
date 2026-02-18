@@ -1,0 +1,13 @@
+name: showcase-command-palette
+width: 2880
+height: 1800
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: samples/syntax/sample.rs
+    scroll_to: 0
+    cursor_line: 18
+    cursor_column: 10
+modal:
+  id: theme_picker
+  selected_index: 5

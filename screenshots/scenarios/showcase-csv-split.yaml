@@ -1,0 +1,15 @@
+name: showcase-csv-split
+width: 2880
+height: 1800
+scale: 2.0
+theme: fleet-dark
+files:
+  # Left pane: CSV data in spreadsheet view
+  - path: samples/large_data.csv
+    view_mode: csv
+  # Right pane: Rust code
+  - path: samples/syntax/sample.rs
+    split: horizontal
+    scroll_to: 0
+    cursor_line: 12
+    cursor_column: 4

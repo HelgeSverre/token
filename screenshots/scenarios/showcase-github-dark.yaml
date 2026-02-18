@@ -1,0 +1,15 @@
+name: showcase-github-dark
+width: 2880
+height: 1800
+scale: 2.0
+theme: github-dark
+split_direction: vertical
+files:
+  - path: samples/syntax/sample.html
+    scroll_to: 0
+    cursor_line: 7
+    cursor_column: 30
+  - path: samples/syntax/sample.css
+    scroll_to: 0
+    cursor_line: 10
+    cursor_column: 25

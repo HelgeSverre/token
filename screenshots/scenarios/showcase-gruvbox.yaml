@@ -1,0 +1,10 @@
+name: showcase-gruvbox
+width: 2880
+height: 1800
+scale: 2.0
+theme: gruvbox-dark
+files:
+  - path: samples/syntax/sample.java
+    scroll_to: 0
+    cursor_line: 21
+    cursor_column: 24

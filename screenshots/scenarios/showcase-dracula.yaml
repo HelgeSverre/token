@@ -1,0 +1,10 @@
+name: showcase-dracula
+width: 2880
+height: 1800
+scale: 2.0
+theme: dracula
+files:
+  - path: samples/syntax/sample.go
+    scroll_to: 0
+    cursor_line: 18
+    cursor_column: 5

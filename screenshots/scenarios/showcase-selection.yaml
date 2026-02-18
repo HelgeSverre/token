@@ -1,0 +1,34 @@
+name: showcase-selection
+width: 2880
+height: 1800
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: samples/syntax/sample.rs
+    scroll_to: 0
+    selections:
+      # "name" in struct field: pub name: String,
+      - anchor_line: 10
+        anchor_column: 8
+        head_line: 10
+        head_column: 12
+      # "name" in fn parameter: pub fn new(name: impl Into<String>
+      - anchor_line: 17
+        anchor_column: 15
+        head_line: 17
+        head_column: 19
+      # "name" in assignment: name: name.into(),
+      - anchor_line: 19
+        anchor_column: 12
+        head_line: 19
+        head_column: 16
+      # "name" second usage on same line: name: name.into(),
+      - anchor_line: 19
+        anchor_column: 18
+        head_line: 19
+        head_column: 22
+      # "name" in Display impl: self.name
+      - anchor_line: 39
+        anchor_column: 34
+        head_line: 39
+        head_column: 38

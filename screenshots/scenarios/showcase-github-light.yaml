@@ -1,0 +1,10 @@
+name: showcase-github-light
+width: 2880
+height: 1800
+scale: 2.0
+theme: github-light
+files:
+  - path: samples/syntax/sample.js
+    scroll_to: 0
+    cursor_line: 14
+    cursor_column: 22

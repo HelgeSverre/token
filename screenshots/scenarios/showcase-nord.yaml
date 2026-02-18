@@ -1,0 +1,10 @@
+name: showcase-nord
+width: 2880
+height: 1800
+scale: 2.0
+theme: nord
+files:
+  - path: samples/syntax/sample.py
+    scroll_to: 0
+    cursor_line: 17
+    cursor_column: 15

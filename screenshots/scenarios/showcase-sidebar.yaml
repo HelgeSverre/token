@@ -1,0 +1,21 @@
+name: showcase-sidebar
+width: 2880
+height: 1800
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: samples/syntax/sample.rs
+    scroll_to: 0
+    cursor_line: 12
+    cursor_column: 20
+workspace:
+  root: "."
+  sidebar_visible: true
+  sidebar_width: 250
+  expanded:
+    - src
+    - src/model
+    - src/view
+    - samples
+    - samples/syntax
+  selected: samples/syntax/sample.rs

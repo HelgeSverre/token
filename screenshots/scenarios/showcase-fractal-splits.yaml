@@ -1,0 +1,41 @@
+name: showcase-fractal-splits
+width: 3840
+height: 2160
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: samples/syntax/sample.rs
+    scroll_to: 5
+    cursor_line: 10
+    cursor_column: 0
+  - path: samples/syntax/sample.ts
+    split: horizontal
+    split_ratio: 0.75
+    scroll_to: 0
+  - path: samples/syntax/sample.py
+    split: vertical
+    scroll_to: 0
+  - path: samples/syntax/sample.go
+    split: horizontal
+    scroll_to: 0
+  - path: samples/syntax/sample.java
+    split: vertical
+    scroll_to: 0
+  - path: samples/syntax/sample.c
+    split: horizontal
+    scroll_to: 0
+  - path: samples/syntax/sample.html
+    split: vertical
+    scroll_to: 0
+  - path: samples/syntax/sample.css
+    split: horizontal
+    scroll_to: 0
+  - path: samples/syntax/sample.json
+    split: vertical
+    scroll_to: 0
+  - path: samples/syntax/sample.yaml
+    split: horizontal
+    scroll_to: 0
+  - path: samples/syntax/sample.sh
+    split: vertical
+    scroll_to: 0
