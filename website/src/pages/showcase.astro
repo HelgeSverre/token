@@ -1,13 +1,32 @@
 ---
+import { Picture, getImage } from 'astro:assets';
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { showcase } from '../data/showcase';
 
-const tags = ['All', 'Multi-cursor', 'Splits', 'CSV', 'Themes', 'Languages', 'Workspace', 'UI'];
+const tags = ['All', 'Multi-cursor', 'Splits', 'CSV', 'Preview', 'Themes', 'Languages', 'Workspace', 'UI'];
+
+// Pre-generate optimized full-size images for the lightbox
+const lightboxImages = await Promise.all(
+  showcase.map(async (item) => {
+    const optimized = await getImage({ src: item.src, format: 'webp', quality: 85 });
+    return { id: item.id, src: optimized.src };
+  })
+);
+
+// Build client-side data with optimized lightbox URLs
+const clientItems = showcase.map((item) => ({
+  id: item.id,
+  src: lightboxImages.find((img) => img.id === item.id)!.src,
+  title: item.title,
+  description: item.description,
+  tags: item.tags,
+  feature: item.feature,
+}));
 ---
 
 <SiteLayout title="Showcase — Token" description="Token editor in action — screenshots of themes, multi-cursor editing, split views, and more.">
 
-<section class="showcase-page" data-items={JSON.stringify(showcase)}>
+<section class="showcase-page" data-items={JSON.stringify(clientItems)}>
 
   <!-- Header -->
   <div class="sc-header">
@@ -44,7 +63,7 @@ const tags = ['All', 'Multi-cursor', 'Splits', 'CSV', 'Themes', 'Languages', 'Wo
             <span class="dot yellow"></span>
             <span class="dot green"></span>
           </div>
-          <img src={item.src} alt={item.title} loading="lazy" />
+          <Picture src={item.src} alt={item.title} formats={['avif', 'webp']} loading="lazy" widths={[400, 600, 800]} />
         </div>
         <div class="sc-card-info">
           <span class="sc-card-title">{item.title}</span>
@@ -356,7 +375,8 @@ const tags = ['All', 'Multi-cursor', 'Splits', 'CSV', 'Themes', 'Languages', 'Wo
   .dot.yellow { background: #FEBC2E; }
   .dot.green { background: #28C840; }
 
-  .sc-frame img {
+  .sc-frame img,
+  .sc-frame picture img {
     display: block;
     width: 100%;
     height: auto;

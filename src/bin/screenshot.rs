@@ -17,15 +17,19 @@ use serde::Deserialize;
 use token::csv::{detect_delimiter, parse_csv, CsvState, Delimiter};
 use token::messages::{LayoutMsg, Msg};
 use token::model::document::Document;
-use token::model::editor::{EditorState, ViewMode};
+use token::model::editor::{EditorState, Position, Selection, ViewMode};
 use token::model::editor_area::{EditorArea, Rect, SplitDirection};
-use token::model::ui::UiState;
+use token::model::ui::{
+    CommandPaletteState, FindReplaceState, GotoLineState, ModalState,
+    ThemePickerState, UiState,
+};
+use token::model::workspace::Workspace;
 use token::model::AppModel;
 use token::model::ScaledMetrics;
 use token::syntax::{LanguageId, ParserState};
 use token::theme::Theme;
 use token::update::update;
-use token::view::{Frame, GlyphCache, Renderer, TextPainter};
+use token::view::{Frame, GlyphCache, PreviewRenderMode, Renderer, TextPainter};
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -44,7 +48,7 @@ struct Args {
     #[arg(long, default_value = "screenshots/scenarios")]
     scenarios_dir: PathBuf,
     /// Directory for output PNG files
-    #[arg(long, default_value = "screenshots/output")]
+    #[arg(long, default_value = "website/src/assets/screenshots")]
     out_dir: PathBuf,
     /// Override theme (file path or builtin id)
     #[arg(long)]
@@ -75,6 +79,10 @@ struct Scenario {
     files: Vec<ScenarioFile>,
     #[serde(default)]
     split_direction: SplitDir,
+    #[serde(default)]
+    workspace: Option<WorkspaceConfig>,
+    #[serde(default)]
+    modal: Option<ModalConfig>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -89,7 +97,18 @@ struct ScenarioFile {
     #[serde(default)]
     extra_cursors: Vec<CursorPos>,
     #[serde(default)]
+    selections: Vec<SelectionRange>,
+    #[serde(default)]
     view_mode: Option<ScenarioViewMode>,
+    /// Per-file split direction override (defaults to scenario-level split_direction)
+    #[serde(default)]
+    split: Option<SplitDir>,
+    /// Ratio for this file's side of the split (0.0-1.0, default 0.5)
+    #[serde(default)]
+    split_ratio: Option<f32>,
+    /// Open a preview pane (markdown/HTML) next to this file's editor
+    #[serde(default)]
+    preview: bool,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -104,12 +123,77 @@ struct CursorPos {
     column: usize,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug)]
+struct SelectionRange {
+    anchor_line: usize,
+    anchor_column: usize,
+    head_line: usize,
+    head_column: usize,
+}
+
+#[derive(Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "lowercase")]
 enum SplitDir {
     #[default]
     Horizontal,
     Vertical,
+}
+
+// ---------------------------------------------------------------------------
+// Workspace config
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize, Debug)]
+struct WorkspaceConfig {
+    root: PathBuf,
+    #[serde(default = "default_sidebar_visible")]
+    sidebar_visible: bool,
+    #[serde(default)]
+    sidebar_width: Option<f32>,
+    #[serde(default)]
+    expanded: Vec<PathBuf>,
+    #[serde(default)]
+    selected: Option<PathBuf>,
+    #[serde(default)]
+    scroll_offset: usize,
+}
+
+fn default_sidebar_visible() -> bool {
+    true
+}
+
+// ---------------------------------------------------------------------------
+// Modal config
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize, Debug)]
+struct ModalConfig {
+    id: ModalId,
+    #[serde(default)]
+    input: Option<String>,
+    #[serde(default)]
+    selected_index: Option<usize>,
+    #[serde(default)]
+    query: Option<String>,
+    #[serde(default)]
+    replacement: Option<String>,
+    #[serde(default = "default_true")]
+    replace_mode: bool,
+    #[serde(default)]
+    case_sensitive: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+enum ModalId {
+    CommandPalette,
+    GotoLine,
+    FindReplace,
+    ThemePicker,
 }
 
 fn default_width() -> u32 {
@@ -202,7 +286,7 @@ fn create_model_from_scenario(
     };
 
     // Add additional files as splits
-    let direction = match scenario.split_direction {
+    let default_direction = match scenario.split_direction {
         SplitDir::Horizontal => SplitDirection::Horizontal,
         SplitDir::Vertical => SplitDirection::Vertical,
     };
@@ -211,11 +295,27 @@ fn create_model_from_scenario(
         let file_content = std::fs::read_to_string(&file.path)
             .with_context(|| format!("reading {}", file.path.display()))?;
 
+        // Use per-file split direction if specified, otherwise use scenario default
+        let direction = file
+            .split
+            .as_ref()
+            .map(|d| match d {
+                SplitDir::Horizontal => SplitDirection::Horizontal,
+                SplitDir::Vertical => SplitDirection::Vertical,
+            })
+            .unwrap_or(default_direction);
+
         // Split creates a new group with an editor pointing to the same document.
         update(
             &mut model,
             Msg::Layout(LayoutMsg::SplitFocused(direction)),
         );
+
+        // Adjust split ratio if specified (the new group is the second child)
+        if let Some(ratio) = file.split_ratio {
+            let ratio = ratio.clamp(0.05, 0.95);
+            set_parent_ratio(&mut model.editor_area.layout, model.editor_area.focused_group_id, ratio);
+        }
 
         // Create a NEW document for this split (splits share by default).
         let new_doc_id = model.editor_area.next_document_id();
@@ -237,6 +337,19 @@ fn create_model_from_scenario(
 
     // Apply view modes (e.g., CSV)
     apply_view_modes(&mut model, scenario);
+
+    // Open preview panes for files that request them
+    apply_previews(&mut model, scenario);
+
+    // Set up workspace/sidebar if configured
+    if let Some(ws_config) = &scenario.workspace {
+        apply_workspace(&mut model, ws_config, scenario.scale);
+    }
+
+    // Set up modal if configured
+    if let Some(modal_config) = &scenario.modal {
+        apply_modal(&mut model, modal_config);
+    }
 
     Ok(model)
 }
@@ -320,6 +433,157 @@ fn apply_view_modes(model: &mut AppModel, scenario: &Scenario) {
     }
 }
 
+/// Open preview panes for files that have `preview: true`
+fn apply_previews(model: &mut AppModel, scenario: &Scenario) {
+    for sf in &scenario.files {
+        if !sf.preview {
+            continue;
+        }
+
+        // Find groups whose active editor points to this file
+        let group_ids: Vec<_> = model
+            .editor_area
+            .groups
+            .iter()
+            .filter_map(|(&gid, group)| {
+                let editor_id = group.active_editor_id()?;
+                let editor = model.editor_area.editors.get(&editor_id)?;
+                let doc_id = editor.document_id?;
+                let doc = model.editor_area.documents.get(&doc_id)?;
+                (doc.file_path.as_ref() == Some(&sf.path)).then_some(gid)
+            })
+            .collect();
+
+        for gid in group_ids {
+            model.editor_area.open_preview_for_group(gid);
+        }
+    }
+}
+
+fn apply_workspace(model: &mut AppModel, config: &WorkspaceConfig, scale: f64) {
+    let root = if config.root.is_absolute() {
+        config.root.clone()
+    } else {
+        std::env::current_dir()
+            .unwrap_or_default()
+            .join(&config.root)
+    };
+
+    match Workspace::new(root.clone(), &model.metrics) {
+        Ok(mut ws) => {
+            ws.sidebar_visible = config.sidebar_visible;
+            if let Some(width) = config.sidebar_width {
+                ws.set_sidebar_width(width * scale as f32, scale);
+            }
+            ws.scroll_offset = config.scroll_offset;
+
+            // Expand requested folders
+            let canon_root = std::fs::canonicalize(&root).unwrap_or(root);
+            for rel in &config.expanded {
+                ws.expand_folder(&canon_root.join(rel));
+            }
+
+            // Select item
+            if let Some(sel) = &config.selected {
+                ws.selected_item = Some(canon_root.join(sel));
+            }
+
+            model.workspace = Some(ws);
+        }
+        Err(e) => {
+            eprintln!("Warning: failed to set up workspace '{}': {}", config.root.display(), e);
+        }
+    }
+}
+
+fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
+    let modal_state = match config.id {
+        ModalId::CommandPalette => {
+            let mut state = CommandPaletteState::default();
+            if let Some(ref input) = config.input {
+                state.set_input(input);
+            }
+            if let Some(idx) = config.selected_index {
+                state.selected_index = idx;
+            }
+            ModalState::CommandPalette(state)
+        }
+        ModalId::GotoLine => {
+            let mut state = GotoLineState::default();
+            if let Some(ref input) = config.input {
+                state.set_input(input);
+            }
+            ModalState::GotoLine(state)
+        }
+        ModalId::FindReplace => {
+            let mut state = FindReplaceState::default();
+            if let Some(ref q) = config.query {
+                state.set_query(q);
+            }
+            if let Some(ref r) = config.replacement {
+                state.set_replacement(r);
+            }
+            state.replace_mode = config.replace_mode;
+            state.case_sensitive = config.case_sensitive;
+            ModalState::FindReplace(state)
+        }
+        ModalId::ThemePicker => {
+            let current_id = model.config.theme.clone();
+            let mut state = ThemePickerState::new(current_id);
+            if let Some(idx) = config.selected_index {
+                state.selected_index = idx;
+                // Apply live preview: load the highlighted theme so the editor
+                // background reflects the selected theme (matches runtime behavior)
+                if let Some(theme_info) = state.themes.get(idx) {
+                    if let Ok(preview_theme) = token::theme::load_theme(&theme_info.id) {
+                        model.theme = preview_theme;
+                    }
+                }
+            }
+            ModalState::ThemePicker(state)
+        }
+    };
+    model.ui.open_modal(modal_state);
+}
+
+/// Walk the layout tree to find the SplitContainer holding `group_id` and set
+/// its ratio so the child containing that group gets `ratio` of the space.
+fn set_parent_ratio(
+    node: &mut token::model::editor_area::LayoutNode,
+    group_id: token::model::editor_area::GroupId,
+    ratio: f32,
+) -> bool {
+    use token::model::editor_area::LayoutNode;
+    match node {
+        LayoutNode::Split(container) => {
+            for (i, child) in container.children.iter().enumerate() {
+                let contains = match child {
+                    LayoutNode::Group(gid) => *gid == group_id,
+                    LayoutNode::Split(_) => false, // check recursively below
+                    _ => false,
+                };
+                if contains {
+                    // This child is the group — set ratios
+                    let n = container.ratios.len();
+                    let other = 1.0 - ratio;
+                    for (j, r) in container.ratios.iter_mut().enumerate() {
+                        *r = if j == i { ratio } else { other / (n - 1) as f32 };
+                    }
+                    return true;
+                }
+            }
+            // Recurse into children
+            for child in &mut container.children {
+                if set_parent_ratio(child, group_id, ratio) {
+                    return true;
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
 fn apply_cursor_and_scroll(editor: &mut EditorState, file: &ScenarioFile) {
     use token::model::editor::Cursor;
 
@@ -330,9 +594,27 @@ fn apply_cursor_and_scroll(editor: &mut EditorState, file: &ScenarioFile) {
     let line = file.cursor_line.unwrap_or(0);
     let column = file.cursor_column.unwrap_or(0);
     editor.cursors = vec![Cursor::at(line, column)];
+    editor.selections = vec![Selection::new(Position::new(line, column))];
 
     for extra in &file.extra_cursors {
         editor.cursors.push(Cursor::at(extra.line, extra.column));
+        editor
+            .selections
+            .push(Selection::new(Position::new(extra.line, extra.column)));
+    }
+
+    // Apply explicit selections (overrides default empty selections)
+    if !file.selections.is_empty() {
+        editor.selections.clear();
+        editor.cursors.clear();
+        for sel in &file.selections {
+            let anchor = Position::new(sel.anchor_line, sel.anchor_column);
+            let head = Position::new(sel.head_line, sel.head_column);
+            editor
+                .selections
+                .push(Selection::from_anchor_head(anchor, head));
+            editor.cursors.push(Cursor::at(head.line, head.column));
+        }
     }
 }
 
@@ -390,15 +672,29 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
     let mut glyph_cache: GlyphCache = HashMap::new();
 
     let status_bar_height = font_info.line_height;
+
+    // Calculate sidebar width (matches real renderer pipeline)
+    let sidebar_width = model
+        .workspace
+        .as_ref()
+        .filter(|ws| ws.sidebar_visible)
+        .map(|ws| ws.sidebar_width(model.metrics.scale_factor))
+        .unwrap_or(0.0);
+
     let available_rect = Rect::new(
+        sidebar_width,
         0.0,
-        0.0,
-        width as f32,
+        width as f32 - sidebar_width,
         (height - status_bar_height) as f32,
     );
     let splitters = model
         .editor_area
         .compute_layout_scaled(available_rect, model.metrics.splitter_width);
+
+    // Sync viewports to actual group rects (critical for splits/previews)
+    model
+        .editor_area
+        .sync_all_viewports(font_info.line_height, font_info.char_width);
 
     {
         let mut frame = Frame::new(&mut buffer, width, height);
@@ -411,9 +707,33 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
             font_info.line_height,
         );
 
-        Renderer::render_editor_area(&mut frame, &mut painter, model, &splitters);
-        Renderer::render_splitters(&mut frame, &splitters, model);
+        // 1. Editor area + splitters (render_editor_area_with_preview_mode includes splitters)
+        Renderer::render_editor_area_with_preview_mode(
+            &mut frame,
+            &mut painter,
+            model,
+            &splitters,
+            PreviewRenderMode::NativeMarkdown,
+        );
+
+        // 2. Sidebar (if workspace is open)
+        if sidebar_width > 0.0 {
+            Renderer::render_sidebar(
+                &mut frame,
+                &mut painter,
+                model,
+                sidebar_width as usize,
+                height.saturating_sub(status_bar_height),
+            );
+        }
+
+        // 3. Status bar
         Renderer::render_status_bar(&mut frame, &mut painter, model, width, height);
+
+        // 4. Modals (on top of everything)
+        if model.ui.active_modal.is_some() {
+            Renderer::render_modals(&mut frame, &mut painter, model, width, height);
+        }
     }
 
     buffer

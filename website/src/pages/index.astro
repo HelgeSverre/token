@@ -1,5 +1,8 @@
 ---
+import { Picture } from 'astro:assets';
 import SiteLayout from '../layouts/SiteLayout.astro';
+import imgHero from '../assets/screenshots/screenshot-hero.png';
+import imgSplits from '../assets/screenshots/screenshot-splits.png';
 ---
 
 <SiteLayout title="Token — A fast, minimal code editor" description="A fast, minimal text editor built in Rust with multi-cursor editing, Tree-sitter syntax highlighting, and split views.">
@@ -33,7 +36,7 @@ import SiteLayout from '../layouts/SiteLayout.astro';
           <span class="dot yellow"></span>
           <span class="dot green"></span>
         </div>
-        <img src="/screenshot-hero.png" alt="Token editor showing Rust code with multi-cursor editing and split views" loading="eager" />
+        <Picture src={imgHero} alt="Token editor showing Rust code with multi-cursor editing and split views" formats={['avif', 'webp']} loading="eager" />
       </div>
     </div>
 </section>
@@ -131,7 +134,7 @@ import SiteLayout from '../layouts/SiteLayout.astro';
       <span class="dot yellow"></span>
       <span class="dot green"></span>
     </div>
-    <img src="/screenshot-splits.png" alt="Token editor with three split views" />
+    <Picture src={imgSplits} alt="Token editor with three split views" formats={['avif', 'webp']} loading="lazy" />
   </div>
 </section>
 
