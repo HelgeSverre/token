@@ -1,9 +1,0 @@
-name: card-csv
-width: 1400
-height: 1200
-scale: 2.0
-theme: fleet-dark
-files:
-  - path: samples/large_data.csv
-    scroll_to: 0
-    view_mode: csv
