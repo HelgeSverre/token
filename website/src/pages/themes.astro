@@ -2,32 +2,32 @@
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { themes } from '../data/themes';
 
-const codePreview = `<span class="kw">use</span> <span class="ty">std</span><span class="op">::</span><span class="ty">collections</span><span class="op">::</span><span class="ty">HashMap</span>;
+const codePreview = `<span class="kw">use</span> <span class="ty">std</span><span class="pn">::</span><span class="ty">collections</span><span class="pn">::</span><span class="ty">HashMap</span><span class="pn">;</span>
 
 <span class="cm">/// A configuration manager</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ty">Config</span> {
-    <span class="vr">values</span>: <span class="ty">HashMap</span><span class="op">&lt;</span><span class="ty">String</span>, <span class="ty">String</span><span class="op">&gt;</span>,
-    <span class="vr">readonly</span>: <span class="ty">bool</span>,
-}
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ty">Config</span> <span class="pn">{</span>
+    <span class="vr">values</span><span class="pn">:</span> <span class="ty">HashMap</span><span class="pn">&lt;</span><span class="ty">String</span><span class="pn">,</span> <span class="ty">String</span><span class="pn">&gt;,</span>
+    <span class="vr">readonly</span><span class="pn">:</span> <span class="ty">bool</span><span class="pn">,</span>
+<span class="pn">}</span>
 
-<span class="kw">impl</span> <span class="ty">Config</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">new</span>() <span class="op">-&gt;</span> <span class="ty">Self</span> {
-        <span class="ty">Self</span> {
-            <span class="vr">values</span>: <span class="ty">HashMap</span><span class="op">::</span><span class="fn">new</span>(),
-            <span class="vr">readonly</span>: <span class="ct">false</span>,
-        }
-    }
+<span class="kw">impl</span> <span class="ty">Config</span> <span class="pn">{</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">new</span><span class="pn">()</span> <span class="op">-&gt;</span> <span class="ty">Self</span> <span class="pn">{</span>
+        <span class="ty">Self</span> <span class="pn">{</span>
+            <span class="vr">values</span><span class="pn">:</span> <span class="ty">HashMap</span><span class="pn">::</span><span class="fn">new</span><span class="pn">(),</span>
+            <span class="vr">readonly</span><span class="pn">:</span> <span class="ct">false</span><span class="pn">,</span>
+        <span class="pn">}</span>
+    <span class="pn">}</span>
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">get</span>(<span class="op">&amp;</span><span class="kw">self</span>, <span class="vr">key</span>: <span class="op">&amp;</span><span class="ty">str</span>) <span class="op">-&gt;</span> <span class="ty">Option</span><span class="op">&lt;&amp;</span><span class="ty">String</span><span class="op">&gt;</span> {
-        <span class="kw">self</span>.<span class="vr">values</span>.<span class="fn">get</span>(<span class="vr">key</span>) <span class="cm">// lookup</span>
-    }
-}
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">get</span><span class="pn">(</span><span class="op">&amp;</span><span class="kw">self</span><span class="pn">,</span> <span class="vr">key</span><span class="pn">:</span> <span class="op">&amp;</span><span class="ty">str</span><span class="pn">)</span> <span class="op">-&gt;</span> <span class="ty">Option</span><span class="pn">&lt;&amp;</span><span class="ty">String</span><span class="pn">&gt;</span> <span class="pn">{</span>
+        <span class="kw">self</span><span class="pn">.</span><span class="vr">values</span><span class="pn">.</span><span class="fn">get</span><span class="pn">(</span><span class="vr">key</span><span class="pn">)</span> <span class="cm">// lookup</span>
+    <span class="pn">}</span>
+<span class="pn">}</span>
 
-<span class="kw">fn</span> <span class="fn">main</span>() {
-    <span class="kw">let</span> <span class="vr">config</span> <span class="op">=</span> <span class="ty">Config</span><span class="op">::</span><span class="fn">new</span>();
-    <span class="kw">let</span> <span class="vr">count</span>: <span class="ty">u32</span> <span class="op">=</span> <span class="nm">42</span>;
-    <span class="fn">println!</span>(<span class="st">"Ready: {}"</span>, <span class="vr">count</span>);
-}`;
+<span class="kw">fn</span> <span class="fn">main</span><span class="pn">()</span> <span class="pn">{</span>
+    <span class="kw">let</span> <span class="vr">config</span> <span class="op">=</span> <span class="ty">Config</span><span class="pn">::</span><span class="fn">new</span><span class="pn">();</span>
+    <span class="kw">let</span> <span class="vr">count</span><span class="pn">:</span> <span class="ty">u32</span> <span class="op">=</span> <span class="nm">42</span><span class="pn">;</span>
+    <span class="fn">println!</span><span class="pn">(</span><span class="st">"Ready: {}"</span><span class="pn">,</span> <span class="vr">count</span><span class="pn">);</span>
+<span class="pn">}</span>`;
 ---
 
 <SiteLayout title="Themes — Token" description="Browse and preview color themes for Token editor.">
@@ -369,15 +369,16 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     transition: color var(--duration-normal) var(--ease-out);
   }
 
-  .editor-code .kw { color: var(--theme-keyword, var(--syn-keyword)); }
-  .editor-code .fn { color: var(--theme-function, var(--syn-function)); }
-  .editor-code .ty { color: var(--theme-type, var(--syn-type)); }
-  .editor-code .st { color: var(--theme-string, var(--syn-string)); }
-  .editor-code .nm { color: var(--theme-number, var(--syn-number)); }
-  .editor-code .cm { color: var(--theme-comment, var(--syn-comment)); }
-  .editor-code .vr { color: var(--theme-variable, var(--syn-variable)); }
-  .editor-code .op { color: var(--theme-operator, var(--syn-operator)); }
-  .editor-code .ct { color: var(--theme-constant, var(--syn-constant)); }
+  .editor-code :global(.kw) { color: var(--theme-keyword, var(--syn-keyword)); }
+  .editor-code :global(.fn) { color: var(--theme-function, var(--syn-function)); }
+  .editor-code :global(.ty) { color: var(--theme-type, var(--syn-type)); }
+  .editor-code :global(.st) { color: var(--theme-string, var(--syn-string)); }
+  .editor-code :global(.nm) { color: var(--theme-number, var(--syn-number)); }
+  .editor-code :global(.cm) { color: var(--theme-comment, var(--syn-comment)); }
+  .editor-code :global(.vr) { color: var(--theme-variable, var(--syn-variable)); }
+  .editor-code :global(.op) { color: var(--theme-operator, var(--syn-operator)); }
+  .editor-code :global(.ct) { color: var(--theme-constant, var(--syn-constant)); }
+  .editor-code :global(.pn) { color: var(--theme-operator, var(--syn-punctuation)); }
 
   /* ── Detail pane ────────────────────────────────────────── */
   .detail-pane {
