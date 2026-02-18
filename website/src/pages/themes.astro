@@ -363,7 +363,7 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     padding: 6px 12px;
     border: none;
     background: none;
-    color: var(--fg-muted);
+    color: var(--theme-gutter-fg, var(--fg-muted));
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     cursor: pointer;
@@ -373,14 +373,14 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
   }
 
   .sidebar-file:hover {
-    color: var(--fg);
-    background: var(--bg-hover);
+    color: var(--theme-fg, var(--fg));
+    background: color-mix(in srgb, var(--theme-fg, var(--fg)) 8%, var(--theme-sidebar-bg, var(--bg)));
   }
 
   .sidebar-file.active {
-    color: var(--fg-bright);
-    background: var(--bg-active);
-    border-left-color: var(--syn-keyword);
+    color: var(--theme-fg, var(--fg-bright));
+    background: color-mix(in srgb, var(--theme-fg, var(--fg)) 12%, var(--theme-sidebar-bg, var(--bg)));
+    border-left-color: var(--theme-keyword, var(--syn-keyword));
   }
 
   .file-icon {
@@ -390,7 +390,7 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
 
   .sidebar-file.active .file-icon {
     opacity: 1;
-    color: var(--syn-keyword);
+    color: var(--theme-keyword, var(--syn-keyword));
   }
 
   .file-name {
