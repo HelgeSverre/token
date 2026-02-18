@@ -1,0 +1,517 @@
+---
+import SiteLayout from '../layouts/SiteLayout.astro';
+import { themes } from '../data/themes';
+---
+
+<SiteLayout title="Themes — Token" description="Browse and preview color themes for Token editor.">
+
+<section class="themes-page">
+  <div class="ide-frame">
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <span class="toolbar-title">themes/</span>
+      <span class="toolbar-count">{themes.length} themes</span>
+    </div>
+
+    <div class="ide-body">
+
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        {themes.map((theme, i) => (
+          <button
+            class={`sidebar-file ${i === 0 ? 'active' : ''}`}
+            data-theme-id={theme.id}
+          >
+            <svg class="file-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <rect x="2" y="1" width="12" height="14" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+            </svg>
+            <span class="file-name">{theme.fileName}</span>
+          </button>
+        ))}
+      </aside>
+
+      <!-- Editor pane -->
+      <div class="editor-pane" id="editor-pane">
+        <div class="editor-gutter">
+          {Array.from({ length: 28 }, (_, i) => (
+            <span class="line-num">{i + 1}</span>
+          ))}
+        </div>
+        <pre class="editor-code"><code><span class="kw">use</span> <span class="ty">std</span><span class="op">::</span><span class="ty">collections</span><span class="op">::</span><span class="ty">HashMap</span>;
+{'\n'}<span class="cm">/// A configuration manager</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ty">Config</span> {'{'}{'\n'}    <span class="vr">values</span>: <span class="ty">HashMap</span><span class="op">&lt;</span><span class="ty">String</span>, <span class="ty">String</span><span class="op">&gt;</span>,
+    <span class="vr">readonly</span>: <span class="ty">bool</span>,
+{'}'}
+{'\n'}<span class="kw">impl</span> <span class="ty">Config</span> {'{'}{'\n'}    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">new</span>() <span class="op">-&gt;</span> <span class="ty">Self</span> {'{'}{'\n'}        <span class="ty">Self</span> {'{'}{'\n'}            <span class="vr">values</span>: <span class="ty">HashMap</span><span class="op">::</span><span class="fn">new</span>(),
+            <span class="vr">readonly</span>: <span class="ct">false</span>,
+        {'}'}
+    {'}'}
+{'\n'}    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">get</span>(<span class="op">&amp;</span><span class="kw">self</span>, <span class="vr">key</span>: <span class="op">&amp;</span><span class="ty">str</span>) <span class="op">-&gt;</span> <span class="ty">Option</span><span class="op">&lt;&amp;</span><span class="ty">String</span><span class="op">&gt;</span> {'{'}{'\n'}        <span class="kw">self</span>.<span class="vr">values</span>.<span class="fn">get</span>(<span class="vr">key</span>) <span class="cm">// lookup</span>
+    {'}'}
+{'}'}
+{'\n'}<span class="kw">fn</span> <span class="fn">main</span>() {'{'}{'\n'}    <span class="kw">let</span> <span class="vr">config</span> <span class="op">=</span> <span class="ty">Config</span><span class="op">::</span><span class="fn">new</span>();
+    <span class="kw">let</span> <span class="vr">count</span>: <span class="ty">u32</span> <span class="op">=</span> <span class="nm">42</span>;
+    <span class="fn">println!</span>(<span class="st">"Ready: {'{}'}"</span>, <span class="vr">count</span>);
+{'}'}</code></pre>
+      </div>
+
+      <!-- Detail pane -->
+      <aside class="detail-pane" id="detail-pane">
+        <div class="detail-header">
+          <h2 class="detail-name" id="detail-name">{themes[0].name}</h2>
+          <span class="detail-badge" id="detail-badge">{themes[0].isLight ? 'light' : 'dark'}</span>
+        </div>
+        <p class="detail-author" id="detail-author">by {themes[0].author}</p>
+        <p class="detail-desc" id="detail-desc">{themes[0].description}</p>
+
+        <div class="swatch-section">
+          <h3 class="swatch-heading">UI Colors</h3>
+          <div class="swatch-grid" id="swatches-ui">
+            {Object.entries({
+              bg: themes[0].colors.bg,
+              fg: themes[0].colors.fg,
+              cursor: themes[0].colors.cursor,
+              selection: themes[0].colors.selection,
+              currentLine: themes[0].colors.currentLine,
+              gutterBg: themes[0].colors.gutterBg,
+              gutterFg: themes[0].colors.gutterFg,
+              sidebarBg: themes[0].colors.sidebarBg,
+              statusBg: themes[0].colors.statusBg,
+              statusFg: themes[0].colors.statusFg,
+            }).map(([key, val]) => (
+              <div class="swatch-row" data-color-key={key}>
+                <span class="swatch-dot" style={`background:${val}`}></span>
+                <span class="swatch-label">{key}</span>
+                <span class="swatch-hex">{val}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div class="swatch-section">
+          <h3 class="swatch-heading">Syntax Colors</h3>
+          <div class="swatch-grid" id="swatches-syntax">
+            {Object.entries({
+              keyword: themes[0].colors.keyword,
+              function: themes[0].colors.function,
+              string: themes[0].colors.string,
+              number: themes[0].colors.number,
+              comment: themes[0].colors.comment,
+              type: themes[0].colors.type,
+              variable: themes[0].colors.variable,
+              operator: themes[0].colors.operator,
+              constant: themes[0].colors.constant,
+              tag: themes[0].colors.tag,
+              attribute: themes[0].colors.attribute,
+            }).map(([key, val]) => (
+              <div class="swatch-row" data-color-key={key}>
+                <span class="swatch-dot" style={`background:${val}`}></span>
+                <span class="swatch-label">{key}</span>
+                <span class="swatch-hex">{val}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </aside>
+
+    </div>
+
+    <!-- Status bar -->
+    <div class="statusbar">
+      <span class="statusbar-left" id="status-name">{themes[0].name}</span>
+      <span class="statusbar-right" id="status-file">{themes[0].fileName}</span>
+    </div>
+
+  </div>
+</section>
+
+</SiteLayout>
+
+<div id="theme-data" data-themes={JSON.stringify(themes)} style="display:none"></div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const dataEl = document.getElementById('theme-data');
+    const themes = JSON.parse(dataEl?.getAttribute('data-themes') || '[]');
+    const buttons = document.querySelectorAll<HTMLButtonElement>('.sidebar-file');
+    const editorPane = document.getElementById('editor-pane')!;
+    const detailName = document.getElementById('detail-name')!;
+    const detailBadge = document.getElementById('detail-badge')!;
+    const detailAuthor = document.getElementById('detail-author')!;
+    const detailDesc = document.getElementById('detail-desc')!;
+    const statusName = document.getElementById('status-name')!;
+    const statusFile = document.getElementById('status-file')!;
+    const swatchesUi = document.getElementById('swatches-ui')!;
+    const swatchesSyntax = document.getElementById('swatches-syntax')!;
+
+    function applyTheme(theme: any) {
+      const c = theme.colors;
+
+      // Set CSS custom properties on editor pane
+      editorPane.style.setProperty('--theme-bg', c.bg);
+      editorPane.style.setProperty('--theme-fg', c.fg);
+      editorPane.style.setProperty('--theme-current-line', c.currentLine);
+      editorPane.style.setProperty('--theme-cursor', c.cursor);
+      editorPane.style.setProperty('--theme-selection', c.selection);
+      editorPane.style.setProperty('--theme-gutter-bg', c.gutterBg);
+      editorPane.style.setProperty('--theme-gutter-fg', c.gutterFg);
+      editorPane.style.setProperty('--theme-keyword', c.keyword);
+      editorPane.style.setProperty('--theme-function', c.function);
+      editorPane.style.setProperty('--theme-string', c.string);
+      editorPane.style.setProperty('--theme-number', c.number);
+      editorPane.style.setProperty('--theme-comment', c.comment);
+      editorPane.style.setProperty('--theme-type', c.type);
+      editorPane.style.setProperty('--theme-variable', c.variable);
+      editorPane.style.setProperty('--theme-operator', c.operator);
+      editorPane.style.setProperty('--theme-constant', c.constant);
+
+      // Update detail pane
+      detailName.textContent = theme.name;
+      detailBadge.textContent = theme.isLight ? 'light' : 'dark';
+      detailAuthor.textContent = `by ${theme.author}`;
+      detailDesc.textContent = theme.description;
+
+      // Update status bar
+      statusName.textContent = theme.name;
+      statusFile.textContent = theme.fileName;
+
+      // Update swatches
+      const uiKeys = ['bg', 'fg', 'cursor', 'selection', 'currentLine', 'gutterBg', 'gutterFg', 'sidebarBg', 'statusBg', 'statusFg'];
+      const synKeys = ['keyword', 'function', 'string', 'number', 'comment', 'type', 'variable', 'operator', 'constant', 'tag', 'attribute'];
+
+      function updateSwatches(container: HTMLElement, keys: string[]) {
+        const rows = container.querySelectorAll('.swatch-row');
+        rows.forEach((row) => {
+          const key = (row as HTMLElement).dataset.colorKey;
+          if (key && key in c) {
+            const dot = row.querySelector('.swatch-dot') as HTMLElement;
+            const hex = row.querySelector('.swatch-hex') as HTMLElement;
+            dot.style.background = c[key];
+            hex.textContent = c[key];
+          }
+        });
+      }
+
+      updateSwatches(swatchesUi, uiKeys);
+      updateSwatches(swatchesSyntax, synKeys);
+
+      // Update active sidebar
+      buttons.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.themeId === theme.id);
+      });
+    }
+
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const theme = themes.find((t: any) => t.id === btn.dataset.themeId);
+        if (theme) applyTheme(theme);
+      });
+    });
+  });
+</script>
+
+<style>
+  .themes-page {
+    padding: 80px 48px 40px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  .ide-frame {
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 160px);
+    min-height: 500px;
+    background: var(--bg-deep);
+  }
+
+  /* ── Toolbar ────────────────────────────────────────────── */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    height: 40px;
+    background: var(--bg-raised);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .toolbar-title {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--syn-function);
+  }
+
+  .toolbar-count {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+  }
+
+  /* ── IDE body ───────────────────────────────────────────── */
+  .ide-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ── Sidebar ────────────────────────────────────────────── */
+  .sidebar {
+    width: 200px;
+    flex-shrink: 0;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+
+  .sidebar-file {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 12px;
+    border: none;
+    background: none;
+    color: var(--fg-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    cursor: pointer;
+    text-align: left;
+    border-left: 2px solid transparent;
+    transition: all var(--duration-fast) var(--ease-out);
+  }
+
+  .sidebar-file:hover {
+    color: var(--fg);
+    background: var(--bg-hover);
+  }
+
+  .sidebar-file.active {
+    color: var(--fg-bright);
+    background: var(--bg-active);
+    border-left-color: var(--syn-keyword);
+  }
+
+  .file-icon {
+    flex-shrink: 0;
+    opacity: 0.5;
+  }
+
+  .sidebar-file.active .file-icon {
+    opacity: 1;
+    color: var(--syn-keyword);
+  }
+
+  .file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── Editor pane ────────────────────────────────────────── */
+  .editor-pane {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    overflow: auto;
+    background: var(--theme-bg, var(--bg));
+    transition: background var(--duration-normal) var(--ease-out);
+  }
+
+  .editor-gutter {
+    display: flex;
+    flex-direction: column;
+    padding: 16px 12px 16px 16px;
+    text-align: right;
+    user-select: none;
+    background: var(--theme-gutter-bg, var(--bg));
+    transition: background var(--duration-normal) var(--ease-out);
+  }
+
+  .line-num {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.7;
+    color: var(--theme-gutter-fg, var(--fg-muted));
+    transition: color var(--duration-normal) var(--ease-out);
+  }
+
+  .editor-code {
+    flex: 1;
+    padding: 16px;
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.7;
+    color: var(--theme-fg, var(--fg));
+    white-space: pre;
+    overflow-x: auto;
+    transition: color var(--duration-normal) var(--ease-out);
+  }
+
+  .editor-code .kw { color: var(--theme-keyword, var(--syn-keyword)); }
+  .editor-code .fn { color: var(--theme-function, var(--syn-function)); }
+  .editor-code .ty { color: var(--theme-type, var(--syn-type)); }
+  .editor-code .st { color: var(--theme-string, var(--syn-string)); }
+  .editor-code .nm { color: var(--theme-number, var(--syn-number)); }
+  .editor-code .cm { color: var(--theme-comment, var(--syn-comment)); }
+  .editor-code .vr { color: var(--theme-variable, var(--syn-variable)); }
+  .editor-code .op { color: var(--theme-operator, var(--syn-operator)); }
+  .editor-code .ct { color: var(--theme-constant, var(--syn-constant)); }
+
+  /* ── Detail pane ────────────────────────────────────────── */
+  .detail-pane {
+    width: 320px;
+    flex-shrink: 0;
+    background: var(--bg);
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 20px;
+  }
+
+  .detail-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+
+  .detail-name {
+    font-family: var(--font-sans);
+    font-size: var(--text-lg);
+    font-weight: 700;
+    color: var(--fg-bright);
+    letter-spacing: -0.02em;
+  }
+
+  .detail-badge {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 2px 8px;
+    border-radius: var(--r-full);
+    background: var(--bg-active);
+    color: var(--fg-muted);
+    border: 1px solid var(--border);
+  }
+
+  .detail-author {
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+    margin-bottom: 8px;
+  }
+
+  .detail-desc {
+    font-size: var(--text-sm);
+    color: var(--fg-dim);
+    line-height: 1.5;
+    margin-bottom: 24px;
+  }
+
+  /* ── Swatch sections ────────────────────────────────────── */
+  .swatch-section {
+    margin-bottom: 20px;
+  }
+
+  .swatch-heading {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--syn-string);
+    font-weight: 600;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .swatch-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .swatch-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .swatch-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    transition: background var(--duration-fast) var(--ease-out);
+  }
+
+  .swatch-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-muted);
+    flex: 1;
+    min-width: 0;
+  }
+
+  .swatch-hex {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+  }
+
+  /* ── Status bar ─────────────────────────────────────────── */
+  .statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    height: 28px;
+    background: var(--status-bg);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .statusbar-left,
+  .statusbar-right {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-muted);
+  }
+
+  /* ── Responsive ─────────────────────────────────────────── */
+  @media (max-width: 1024px) {
+    .detail-pane {
+      display: none;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .themes-page {
+      padding: 70px 16px 24px;
+    }
+
+    .ide-frame {
+      height: calc(100vh - 120px);
+    }
+
+    .sidebar {
+      width: 160px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .sidebar {
+      width: 120px;
+    }
+  }
+</style>

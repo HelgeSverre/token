@@ -1,1 +1,7 @@
 .vercel
+dist/
+.astro/
+node_modules/
+.DS_Store
+.env
+.env.production

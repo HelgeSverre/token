@@ -1,0 +1,272 @@
+---
+import SiteLayout from '../layouts/SiteLayout.astro';
+import { keybindings } from '../data/keybindings';
+
+const allItems = keybindings.flatMap((cat) =>
+  cat.items.map((item) => ({ ...item, category: cat.label, categoryIcon: cat.icon }))
+);
+---
+
+<SiteLayout title="Keybindings – Token" description="Keyboard shortcut reference for Token editor">
+  <div class="kb-page" data-keybindings={JSON.stringify(keybindings)}>
+    <div class="kb-toolbar">
+      <div class="kb-toolbar-left">
+        <span class="kb-toolbar-title">keybindings.csv</span>
+        <span class="kb-toolbar-count">{allItems.length} bindings</span>
+      </div>
+      <div class="kb-toolbar-right">
+        <div class="kb-search-wrap">
+          <svg class="kb-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" class="kb-search" id="kb-search" placeholder="Search actions, keys, commands…" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="kb-view-toggle" id="kb-view-toggle">
+          <button class="kb-toggle-btn active" data-view="table" title="Table view">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+          </button>
+          <button class="kb-toggle-btn" data-view="yaml" title="YAML view">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="kb-table-wrap" id="kb-table-view">
+      <table class="kb-table">
+        <thead>
+          <tr>
+            <th class="kb-th kb-th-row">#</th>
+            <th class="kb-th kb-th-cat">Category</th>
+            <th class="kb-th kb-th-action">Action</th>
+            <th class="kb-th kb-th-keys">Keys</th>
+            <th class="kb-th kb-th-command">Command</th>
+            <th class="kb-th kb-th-when">When</th>
+            <th class="kb-th kb-th-notes">Notes</th>
+          </tr>
+        </thead>
+        <tbody id="kb-tbody">
+          {allItems.map((item, i) => (
+            <tr class="kb-row" data-index={i}>
+              <td class="kb-td kb-td-row">{i + 1}</td>
+              <td class="kb-td kb-td-cat">
+                <span class="kb-cat-icon">{item.categoryIcon}</span>
+                <span>{item.category}</span>
+              </td>
+              <td class="kb-td kb-td-action">{item.action}</td>
+              <td class="kb-td kb-td-keys">
+                <span class="kb-keys-inline">{item.keys}</span>
+              </td>
+              <td class="kb-td kb-td-command"><code>{item.command}</code></td>
+              <td class="kb-td kb-td-when">
+                {item.when ? item.when.map((w: string) => (
+                  <span class="kb-badge">{w}</span>
+                )) : <span class="kb-empty">—</span>}
+              </td>
+              <td class="kb-td kb-td-notes">
+                {item.notes ? <span class="kb-note-text">{item.notes}</span> : <span class="kb-empty">—</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="kb-yaml-wrap" id="kb-yaml-view" style="display:none">
+      <div class="kb-yaml-content" id="kb-yaml-content">
+        {keybindings.map((cat) => (
+          <div class="kb-yaml-category" data-cat-id={cat.id}>
+            <div class="kb-yaml-line kb-yaml-comment">
+              <span class="kb-ln"></span>
+              <span class="kb-syn-comment"># ── {cat.label} ──────────────────────────────────</span>
+            </div>
+            {cat.items.map((item) => (
+              <div class="kb-yaml-entry" data-action={item.action} data-keys={item.keys} data-command={item.command}>
+                <div class="kb-yaml-line">
+                  <span class="kb-ln"></span>
+                  <span class="kb-syn-punctuation">-</span> <span class="kb-syn-key">action</span><span class="kb-syn-punctuation">:</span> <span class="kb-syn-string">"{item.action}"</span>
+                </div>
+                <div class="kb-yaml-line">
+                  <span class="kb-ln"></span>
+                  <span>&nbsp;&nbsp;</span><span class="kb-syn-key">keys</span><span class="kb-syn-punctuation">:</span> <span class="kb-syn-string">"{item.keys}"</span>
+                </div>
+                <div class="kb-yaml-line">
+                  <span class="kb-ln"></span>
+                  <span>&nbsp;&nbsp;</span><span class="kb-syn-key">command</span><span class="kb-syn-punctuation">:</span> <span class="kb-syn-value">{item.command}</span>
+                </div>
+                {item.when && (
+                  <div class="kb-yaml-line">
+                    <span class="kb-ln"></span>
+                    <span>&nbsp;&nbsp;</span><span class="kb-syn-key">when</span><span class="kb-syn-punctuation">:</span> <span class="kb-syn-punctuation">[</span><span class="kb-syn-string">{item.when.map((w: string, i: number) => `"${w}"${i < item.when!.length - 1 ? ', ' : ''}`).join('')}</span><span class="kb-syn-punctuation">]</span>
+                  </div>
+                )}
+                {item.notes && (
+                  <div class="kb-yaml-line">
+                    <span class="kb-ln"></span>
+                    <span>&nbsp;&nbsp;</span><span class="kb-syn-key">notes</span><span class="kb-syn-punctuation">:</span> <span class="kb-syn-comment"># {item.notes}</span>
+                  </div>
+                )}
+                <div class="kb-yaml-line kb-yaml-blank"><span class="kb-ln"></span></div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <footer class="kb-statusbar">
+      <span class="kb-status-left" id="kb-status-left">
+        {allItems.length} keybindings · {keybindings.length} categories
+      </span>
+      <span class="kb-status-right" id="kb-status-right">
+        Table View
+      </span>
+    </footer>
+  </div>
+</SiteLayout>
+
+<script>
+  const page = document.querySelector('.kb-page') as HTMLElement;
+  const data = JSON.parse(page.dataset.keybindings || '[]');
+  const searchInput = document.getElementById('kb-search') as HTMLInputElement;
+  const tableView = document.getElementById('kb-table-view')!;
+  const yamlView = document.getElementById('kb-yaml-view')!;
+  const tbody = document.getElementById('kb-tbody')!;
+  const yamlContent = document.getElementById('kb-yaml-content')!;
+  const statusLeft = document.getElementById('kb-status-left')!;
+  const statusRight = document.getElementById('kb-status-right')!;
+
+  const allItems = data.flatMap((cat: any) =>
+    cat.items.map((item: any) => ({ ...item, category: cat.label }))
+  );
+
+  let currentView: 'table' | 'yaml' = 'table';
+
+  document.querySelectorAll('.kb-toggle-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const view = (btn as HTMLElement).dataset.view as 'table' | 'yaml';
+      if (view === currentView) return;
+      currentView = view;
+      document.querySelectorAll('.kb-toggle-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      tableView.style.display = view === 'table' ? '' : 'none';
+      yamlView.style.display = view === 'yaml' ? '' : 'none';
+      statusRight.textContent = view === 'table' ? 'Table View' : 'YAML View';
+      applyFilter(searchInput.value);
+    });
+  });
+
+  searchInput.addEventListener('input', () => applyFilter(searchInput.value));
+
+  function applyFilter(query: string) {
+    const q = query.toLowerCase().trim();
+    let visibleCount = 0;
+
+    if (currentView === 'table') {
+      const rows = tbody.querySelectorAll('.kb-row');
+      rows.forEach((row) => {
+        const text = (row as HTMLElement).textContent?.toLowerCase() || '';
+        const match = !q || text.includes(q);
+        (row as HTMLElement).style.display = match ? '' : 'none';
+        if (match) visibleCount++;
+      });
+      let num = 1;
+      rows.forEach((row) => {
+        if ((row as HTMLElement).style.display !== 'none') {
+          const numCell = row.querySelector('.kb-td-row');
+          if (numCell) numCell.textContent = String(num++);
+        }
+      });
+    } else {
+      const entries = yamlContent.querySelectorAll('.kb-yaml-entry');
+      entries.forEach((entry) => {
+        const el = entry as HTMLElement;
+        const text = el.textContent?.toLowerCase() || '';
+        const match = !q || text.includes(q);
+        el.style.display = match ? '' : 'none';
+        if (match) visibleCount++;
+      });
+      yamlContent.querySelectorAll('.kb-yaml-category').forEach((cat) => {
+        const entries = cat.querySelectorAll('.kb-yaml-entry');
+        const anyVisible = Array.from(entries).some((e) => (e as HTMLElement).style.display !== 'none');
+        (cat as HTMLElement).style.display = anyVisible ? '' : 'none';
+      });
+      let lineNum = 1;
+      yamlContent.querySelectorAll('.kb-yaml-category').forEach((cat) => {
+        if ((cat as HTMLElement).style.display === 'none') return;
+        cat.querySelectorAll('.kb-ln').forEach((ln) => {
+          const entry = ln.closest('.kb-yaml-entry') as HTMLElement;
+          if (entry && entry.style.display === 'none') return;
+          ln.textContent = String(lineNum++);
+        });
+      });
+    }
+
+    if (!q) visibleCount = allItems.length;
+    statusLeft.textContent = q
+      ? `${visibleCount} of ${allItems.length} keybindings · "${q}"`
+      : `${allItems.length} keybindings · ${data.length} categories`;
+  }
+
+  applyFilter('');
+</script>
+
+<style>
+  .kb-page { display: flex; flex-direction: column; height: calc(100vh - 48px); overflow: hidden; }
+  .kb-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: 0 var(--space-4); height: 40px; min-height: 40px; background: var(--panel-bg); border-bottom: 1px solid var(--border); }
+  .kb-toolbar-left { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+  .kb-toolbar-title { font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 600; color: var(--fg-bright); white-space: nowrap; }
+  .kb-toolbar-count { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); white-space: nowrap; }
+  .kb-toolbar-right { display: flex; align-items: center; gap: var(--space-3); }
+  .kb-search-wrap { position: relative; display: flex; align-items: center; }
+  .kb-search-icon { position: absolute; left: 8px; color: var(--fg-muted); pointer-events: none; }
+  .kb-search { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg); background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 5px var(--space-3) 5px 28px; width: 280px; outline: none; transition: border-color var(--duration-fast) var(--ease-out); }
+  .kb-search::placeholder { color: var(--fg-muted); }
+  .kb-search:focus { border-color: var(--accent); }
+  .kb-view-toggle { display: flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+  .kb-toggle-btn { display: flex; align-items: center; justify-content: center; width: 30px; height: 26px; background: var(--bg-deep); color: var(--fg-muted); border: none; cursor: pointer; transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out); }
+  .kb-toggle-btn:not(:last-child) { border-right: 1px solid var(--border); }
+  .kb-toggle-btn:hover { color: var(--fg); background: var(--bg-hover); }
+  .kb-toggle-btn.active { background: var(--bg-active); color: var(--syn-function); }
+  .kb-table-wrap { flex: 1; overflow: auto; }
+  .kb-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: var(--text-xs); table-layout: fixed; }
+  .kb-th { position: sticky; top: 0; z-index: 2; background: var(--bg-raised); color: var(--fg-muted); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; text-align: left; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-strong); white-space: nowrap; user-select: none; }
+  .kb-th-row { width: 44px; text-align: right; }
+  .kb-th-cat { width: 120px; }
+  .kb-th-action { width: 180px; }
+  .kb-th-keys { width: 110px; }
+  .kb-th-command { width: 200px; }
+  .kb-th-when { width: 160px; }
+  .kb-th-notes { min-width: 140px; }
+  .kb-td { padding: var(--space-1) var(--space-3); border-bottom: 1px solid var(--border-subtle); vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); height: 32px; }
+  .kb-td-row { text-align: right; color: var(--fg-muted); opacity: 0.5; font-size: 11px; user-select: none; }
+  .kb-td-cat { color: var(--fg-dim); display: flex; align-items: center; gap: var(--space-1); }
+  .kb-cat-icon { font-size: 11px; }
+  .kb-td-action { color: var(--fg-bright); font-weight: 500; }
+  .kb-td-keys { color: var(--syn-function); font-weight: 600; letter-spacing: 0.04em; }
+  .kb-keys-inline { background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 1px 6px; font-size: 11px; box-shadow: 0 1px 0 var(--border); }
+  .kb-td-command code { color: var(--syn-type); font-family: var(--font-mono); font-size: inherit; }
+  .kb-td-when { font-size: 11px; }
+  .kb-td-notes { font-size: 11px; color: var(--fg-dim); white-space: normal; line-height: 1.4; }
+  .kb-note-text { color: var(--syn-comment); font-style: italic; }
+  .kb-empty { color: var(--border-strong); }
+  .kb-badge { display: inline-block; padding: 1px 6px; background: color-mix(in srgb, var(--syn-keyword) 12%, transparent); color: var(--syn-keyword); font-family: var(--font-mono); font-size: 10px; border-radius: var(--r-full); border: 1px solid color-mix(in srgb, var(--syn-keyword) 25%, transparent); margin-right: 2px; }
+  .kb-row { transition: background var(--duration-fast) var(--ease-out); }
+  .kb-row:hover { background: var(--bg-hover); }
+  .kb-yaml-wrap { flex: 1; overflow: auto; background: var(--bg-deep); }
+  .kb-yaml-content { padding: var(--space-2) 0; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.9; }
+  .kb-yaml-line { display: flex; align-items: baseline; gap: var(--space-3); padding: 0 var(--space-4); min-height: 22px; }
+  .kb-yaml-line:hover { background: var(--bg-hover); }
+  .kb-yaml-blank:hover { background: transparent; }
+  .kb-ln { color: var(--fg-muted); opacity: 0.4; min-width: 28px; text-align: right; font-size: 11px; user-select: none; flex-shrink: 0; }
+  .kb-syn-punctuation { color: var(--syn-punctuation); }
+  .kb-syn-key { color: var(--syn-function); }
+  .kb-syn-string { color: var(--syn-string); }
+  .kb-syn-value { color: var(--syn-type); }
+  .kb-syn-comment { color: var(--syn-comment); font-style: italic; }
+  .kb-yaml-comment { margin-top: var(--space-2); }
+  .kb-statusbar { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-4); height: 24px; min-height: 24px; background: var(--status-bg); border-top: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); user-select: none; }
+  @media (max-width: 1024px) { .kb-th-when, .kb-td-when, .kb-th-notes, .kb-td-notes { display: none; } }
+  @media (max-width: 768px) { .kb-toolbar { flex-wrap: wrap; height: auto; padding: var(--space-2) var(--space-3); gap: var(--space-2); } .kb-search { width: 100%; } .kb-toolbar-right { width: 100%; } .kb-search-wrap { flex: 1; } .kb-th-cat, .kb-td-cat, .kb-th-command, .kb-td-command { display: none; } .kb-table { table-layout: auto; } }
+  @media (max-width: 480px) { .kb-th-row, .kb-td-row { display: none; } }
+</style>

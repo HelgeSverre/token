@@ -6,36 +6,36 @@ import SiteLayout from '../layouts/SiteLayout.astro';
 
 <!-- Hero -->
 <section class="hero">
-  <div class="hero-text">
-    <p class="hero-tag">Text editor / Rust / MIT</p>
-    <h1>
-      <span>Multi-cursor.</span>
-      <span>Syntax aware.</span>
-      <span class="accent">Absurdly fast.</span>
-    </h1>
-    <p class="hero-desc">Token is a minimal code editor with multi-cursor editing, split views, and Tree-sitter syntax highlighting. No Electron. No bloat. Just code.</p>
-    <div class="hero-actions">
-      <a href="#download" class="btn-primary">Download <span class="arrow">↓</span></a>
-      <a href="https://github.com/HelgeSverre/token" class="btn-ghost" target="_blank">View source →</a>
-    </div>
-    <div class="hero-trust">
-      <span class="trust-item">MIT Licensed</span>
-      <span class="trust-sep">·</span>
-      <span class="trust-item">No Telemetry</span>
-      <span class="trust-sep">·</span>
-      <span class="trust-item">Open Source</span>
-    </div>
-  </div>
-  <div class="hero-editor">
-    <div class="editor-frame">
-      <div class="editor-window-chrome">
-        <span class="dot red"></span>
-        <span class="dot yellow"></span>
-        <span class="dot green"></span>
+    <div class="hero-text">
+      <p class="hero-tag">Text editor / Rust / MIT</p>
+      <h1>
+        <span>Multi-cursor.</span>
+        <span>Syntax aware.</span>
+        <span class="accent">Absurdly fast.</span>
+      </h1>
+      <p class="hero-desc">Token is a minimal code editor with multi-cursor editing, split views, and Tree-sitter syntax highlighting. No Electron. No bloat. Just code.</p>
+      <div class="hero-actions">
+        <a href="#download" class="btn-primary">Download <span class="arrow">↓</span></a>
+        <a href="https://github.com/HelgeSverre/token" class="btn-ghost" target="_blank">View source →</a>
       </div>
-      <img src="/screenshot-hero.png" alt="Token editor showing Rust code with multi-cursor editing and split views" loading="eager" />
+      <div class="hero-trust">
+        <span class="trust-item">MIT Licensed</span>
+        <span class="trust-sep">·</span>
+        <span class="trust-item">No Telemetry</span>
+        <span class="trust-sep">·</span>
+        <span class="trust-item">Open Source</span>
+      </div>
     </div>
-  </div>
+    <div class="hero-editor">
+      <div class="editor-frame">
+        <div class="editor-window-chrome">
+          <span class="dot red"></span>
+          <span class="dot yellow"></span>
+          <span class="dot green"></span>
+        </div>
+        <img src="/screenshot-hero.png" alt="Token editor showing Rust code with multi-cursor editing and split views" loading="eager" />
+      </div>
+    </div>
 </section>
 
 <!-- Stats -->
@@ -231,11 +231,22 @@ import SiteLayout from '../layouts/SiteLayout.astro';
   min-height: 100vh;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 80px;
+  gap: 120px;
   align-items: center;
+  overflow: hidden;
+}
+
+.hero-text {
   padding: 120px 48px 80px;
-  max-width: 1400px;
-  margin: 0 auto;
+  justify-self: end;
+  max-width: 700px;
+  width: 100%;
+}
+
+.hero-editor {
+  align-self: center;
+  transform: scale(1.25);
+  transform-origin: right center;
 }
 
 .hero-tag {
@@ -329,12 +340,20 @@ import SiteLayout from '../layouts/SiteLayout.astro';
 }
 
 .hero-editor .editor-frame {
+  border-radius: var(--r-lg) 0 0 var(--r-lg);
+  border-right: none;
   transition: box-shadow var(--duration-normal) var(--ease-out);
 }
 .hero-editor .editor-frame:hover {
   box-shadow: 0 25px 60px -12px rgba(0,0,0,0.5),
               0 0 0 1px rgba(255,255,255,0.04),
               var(--shadow-glow);
+}
+
+.hero-editor .editor-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .hero-trust {
@@ -871,8 +890,10 @@ import SiteLayout from '../layouts/SiteLayout.astro';
 
 /* Responsive */
 @media (max-width: 1024px) {
-  .hero { grid-template-columns: 1fr; gap: 60px; padding: 120px 32px 80px; }
-  .hero-editor { order: -1; }
+  .hero { grid-template-columns: 1fr; }
+  .hero-text { justify-self: start; max-width: none; padding: 120px 32px 0; }
+  .hero-editor { order: -1; padding: 120px 32px 0; transform: none; }
+  .hero-editor .editor-frame { border-radius: var(--r-lg); border-right: 1px solid var(--border-strong); }
   .feature-grid { grid-template-columns: repeat(2, 1fr); }
   .feature-card.wide { grid-column: span 2; }
   .keys-columns { grid-template-columns: repeat(2, 1fr); }
@@ -880,7 +901,8 @@ import SiteLayout from '../layouts/SiteLayout.astro';
 }
 
 @media (max-width: 768px) {
-  .hero { padding: 100px 24px 60px; }
+  .hero-text { padding: 100px 24px 0; }
+  .hero-editor { padding: 60px 24px 0; }
   .features { padding: 80px 24px; }
   .feature-grid { grid-template-columns: 1fr; }
   .feature-card.wide { grid-column: span 1; }

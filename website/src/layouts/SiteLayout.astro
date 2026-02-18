@@ -1,0 +1,117 @@
+---
+import Navbar from '../components/Navbar.astro';
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = 'A fast, GPU-rendered code editor built in Rust.' } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+
+    <link rel="icon" type="image/png" href="/icon.png" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <title>{title}</title>
+  </head>
+  <body>
+    <Navbar />
+    <main>
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span class="footer-logo">Token</span>
+          <span class="footer-license">MIT License</span>
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/helgesverre/token" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a href="/keybindings">Keys</a>
+          <a href="/themes">Themes</a>
+          <a href="https://x.com/HelgeSverre" target="_blank" rel="noopener noreferrer">@HelgeSverre</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
+
+<style>
+  main {
+    padding-top: 48px;
+  }
+
+  .site-footer {
+    border-top: 1px solid var(--border);
+    padding: var(--space-8) var(--space-5);
+    margin-top: var(--space-20);
+  }
+
+  .footer-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+  }
+
+  .footer-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .footer-logo {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: var(--text-sm);
+    color: var(--syn-function);
+  }
+
+  .footer-license {
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+  }
+
+  .footer-links {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+  }
+
+  .footer-links a {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+    text-decoration: none;
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+
+  .footer-links a:hover {
+    color: var(--fg-bright);
+  }
+
+  @media (max-width: 768px) {
+    .footer-inner {
+      flex-direction: column;
+      gap: var(--space-4);
+      text-align: center;
+    }
+  }
+</style>
