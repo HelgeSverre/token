@@ -1,11 +1,11 @@
-name: multi-cursor
-width: 2880
-height: 1800
+name: card-multicursor
+width: 1800
+height: 1200
 scale: 2.0
 theme: fleet-dark
 files:
   - path: samples/syntax/sample.rs
-    scroll_to: 0
+    scroll_to: 15
     cursor_line: 19
     cursor_column: 12
     extra_cursors:

@@ -14,13 +14,15 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use serde::Deserialize;
 
+use token::csv::{detect_delimiter, parse_csv, CsvState, Delimiter};
 use token::messages::{LayoutMsg, Msg};
 use token::model::document::Document;
-use token::model::editor::EditorState;
+use token::model::editor::{EditorState, ViewMode};
 use token::model::editor_area::{EditorArea, Rect, SplitDirection};
 use token::model::ui::UiState;
 use token::model::AppModel;
 use token::model::ScaledMetrics;
+use token::syntax::{LanguageId, ParserState};
 use token::theme::Theme;
 use token::update::update;
 use token::view::{Frame, GlyphCache, Renderer, TextPainter};
@@ -86,6 +88,14 @@ struct ScenarioFile {
     cursor_column: Option<usize>,
     #[serde(default)]
     extra_cursors: Vec<CursorPos>,
+    #[serde(default)]
+    view_mode: Option<ScenarioViewMode>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "lowercase")]
+enum ScenarioViewMode {
+    Csv,
 }
 
 #[derive(Deserialize, Debug)]
@@ -169,6 +179,7 @@ fn create_model_from_scenario(
 
     let mut document = Document::with_text(&content);
     document.file_path = Some(first.path.clone());
+    document.language = LanguageId::from_path(&first.path);
 
     let mut editor = EditorState::with_viewport(visible_lines, visible_columns);
     apply_cursor_and_scroll(&mut editor, first);
@@ -211,6 +222,7 @@ fn create_model_from_scenario(
         let mut new_doc = Document::with_text(&file_content);
         new_doc.id = Some(new_doc_id);
         new_doc.file_path = Some(file.path.clone());
+        new_doc.language = LanguageId::from_path(&file.path);
         model.editor_area.documents.insert(new_doc_id, new_doc);
 
         // Point the focused editor to the new document
@@ -220,7 +232,92 @@ fn create_model_from_scenario(
         }
     }
 
+    // Apply syntax highlighting synchronously
+    apply_syntax_highlighting(&mut model);
+
+    // Apply view modes (e.g., CSV)
+    apply_view_modes(&mut model, scenario);
+
     Ok(model)
+}
+
+/// Run tree-sitter syntax highlighting on all documents synchronously
+fn apply_syntax_highlighting(model: &mut AppModel) {
+    let mut parser = ParserState::new();
+    for (doc_id, doc) in &mut model.editor_area.documents {
+        if doc.language == LanguageId::PlainText {
+            continue;
+        }
+        let source = doc.buffer.to_string();
+        let highlights =
+            parser.parse_and_highlight(&source, doc.language, *doc_id, doc.revision);
+        doc.syntax_highlights = Some(highlights);
+    }
+}
+
+/// Apply view modes (CSV grid, etc.) based on scenario file settings
+fn apply_view_modes(model: &mut AppModel, scenario: &Scenario) {
+    for scenario_file in &scenario.files {
+        let wants_csv = matches!(scenario_file.view_mode, Some(ScenarioViewMode::Csv));
+        if !wants_csv {
+            continue;
+        }
+
+        // Find the editor pointing at this file and switch it to CSV mode
+        let editor_ids: Vec<_> = model
+            .editor_area
+            .editors
+            .iter()
+            .filter_map(|(&eid, editor)| {
+                let doc_id = editor.document_id?;
+                let doc = model.editor_area.documents.get(&doc_id)?;
+                if doc.file_path.as_ref() == Some(&scenario_file.path) {
+                    Some((eid, doc_id))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for (editor_id, doc_id) in editor_ids {
+            let content = model
+                .editor_area
+                .documents
+                .get(&doc_id)
+                .map(|d| {
+                    let delimiter = d
+                        .file_path
+                        .as_ref()
+                        .and_then(|p| p.extension())
+                        .and_then(|e| e.to_str())
+                        .map(Delimiter::from_extension)
+                        .unwrap_or_else(|| detect_delimiter(&d.buffer.to_string()));
+                    (d.buffer.to_string(), delimiter)
+                });
+
+            if let Some((text, delimiter)) = content {
+                if let Ok(data) = parse_csv(&text, delimiter) {
+                    if !data.is_empty() && data.column_count() > 0 {
+                        let line_height = model.line_height.max(1);
+                        let tab_bar_height = model.metrics.tab_bar_height;
+                        let status_bar_height = line_height;
+                        let col_header_height = line_height;
+                        let content_height = (model.window_size.1 as usize)
+                            .saturating_sub(tab_bar_height)
+                            .saturating_sub(status_bar_height)
+                            .saturating_sub(col_header_height);
+                        let visible_rows = content_height / line_height;
+                        let mut csv_state = CsvState::new(data, delimiter);
+                        csv_state.set_viewport_size(visible_rows.max(1), 10);
+
+                        if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
+                            editor.view_mode = ViewMode::Csv(Box::new(csv_state));
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn apply_cursor_and_scroll(editor: &mut EditorState, file: &ScenarioFile) {
@@ -448,7 +545,12 @@ fn main() -> Result<()> {
         let out_path = args.out_dir.join(format!("screenshot-{}.png", scenario.name));
 
         save_png(&buffer, scenario.width, scenario.height, &out_path)?;
-        eprintln!(" saved {}", out_path.display());
+        let display_path = out_path.display().to_string();
+        if !display_path.starts_with('/') && !display_path.starts_with('.') {
+            eprintln!(" saved ./{}", display_path);
+        } else {
+            eprintln!(" saved {}", display_path);
+        }
     }
 
     eprintln!("Done!");

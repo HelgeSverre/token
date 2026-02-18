@@ -158,7 +158,7 @@ samples/large_data.csv:
 
 # Generate screenshots from scenario YAML files
 screenshots:
-	cargo run --release --bin screenshot -- --all --out-dir website/v4/public
+	cargo run --release --bin screenshot -- --all --out-dir website/public
 
 # Help
 help:

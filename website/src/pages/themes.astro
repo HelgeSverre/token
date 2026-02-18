@@ -1,6 +1,33 @@
 ---
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { themes } from '../data/themes';
+
+const codePreview = `<span class="kw">use</span> <span class="ty">std</span><span class="op">::</span><span class="ty">collections</span><span class="op">::</span><span class="ty">HashMap</span>;
+
+<span class="cm">/// A configuration manager</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ty">Config</span> {
+    <span class="vr">values</span>: <span class="ty">HashMap</span><span class="op">&lt;</span><span class="ty">String</span>, <span class="ty">String</span><span class="op">&gt;</span>,
+    <span class="vr">readonly</span>: <span class="ty">bool</span>,
+}
+
+<span class="kw">impl</span> <span class="ty">Config</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">new</span>() <span class="op">-&gt;</span> <span class="ty">Self</span> {
+        <span class="ty">Self</span> {
+            <span class="vr">values</span>: <span class="ty">HashMap</span><span class="op">::</span><span class="fn">new</span>(),
+            <span class="vr">readonly</span>: <span class="ct">false</span>,
+        }
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">get</span>(<span class="op">&amp;</span><span class="kw">self</span>, <span class="vr">key</span>: <span class="op">&amp;</span><span class="ty">str</span>) <span class="op">-&gt;</span> <span class="ty">Option</span><span class="op">&lt;&amp;</span><span class="ty">String</span><span class="op">&gt;</span> {
+        <span class="kw">self</span>.<span class="vr">values</span>.<span class="fn">get</span>(<span class="vr">key</span>) <span class="cm">// lookup</span>
+    }
+}
+
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">let</span> <span class="vr">config</span> <span class="op">=</span> <span class="ty">Config</span><span class="op">::</span><span class="fn">new</span>();
+    <span class="kw">let</span> <span class="vr">count</span>: <span class="ty">u32</span> <span class="op">=</span> <span class="nm">42</span>;
+    <span class="fn">println!</span>(<span class="st">"Ready: {}"</span>, <span class="vr">count</span>);
+}`;
 ---
 
 <SiteLayout title="Themes — Token" description="Browse and preview color themes for Token editor.">
@@ -39,22 +66,7 @@ import { themes } from '../data/themes';
             <span class="line-num">{i + 1}</span>
           ))}
         </div>
-        <pre class="editor-code"><code><span class="kw">use</span> <span class="ty">std</span><span class="op">::</span><span class="ty">collections</span><span class="op">::</span><span class="ty">HashMap</span>;
-{'\n'}<span class="cm">/// A configuration manager</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ty">Config</span> {'{'}{'\n'}    <span class="vr">values</span>: <span class="ty">HashMap</span><span class="op">&lt;</span><span class="ty">String</span>, <span class="ty">String</span><span class="op">&gt;</span>,
-    <span class="vr">readonly</span>: <span class="ty">bool</span>,
-{'}'}
-{'\n'}<span class="kw">impl</span> <span class="ty">Config</span> {'{'}{'\n'}    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">new</span>() <span class="op">-&gt;</span> <span class="ty">Self</span> {'{'}{'\n'}        <span class="ty">Self</span> {'{'}{'\n'}            <span class="vr">values</span>: <span class="ty">HashMap</span><span class="op">::</span><span class="fn">new</span>(),
-            <span class="vr">readonly</span>: <span class="ct">false</span>,
-        {'}'}
-    {'}'}
-{'\n'}    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">get</span>(<span class="op">&amp;</span><span class="kw">self</span>, <span class="vr">key</span>: <span class="op">&amp;</span><span class="ty">str</span>) <span class="op">-&gt;</span> <span class="ty">Option</span><span class="op">&lt;&amp;</span><span class="ty">String</span><span class="op">&gt;</span> {'{'}{'\n'}        <span class="kw">self</span>.<span class="vr">values</span>.<span class="fn">get</span>(<span class="vr">key</span>) <span class="cm">// lookup</span>
-    {'}'}
-{'}'}
-{'\n'}<span class="kw">fn</span> <span class="fn">main</span>() {'{'}{'\n'}    <span class="kw">let</span> <span class="vr">config</span> <span class="op">=</span> <span class="ty">Config</span><span class="op">::</span><span class="fn">new</span>();
-    <span class="kw">let</span> <span class="vr">count</span>: <span class="ty">u32</span> <span class="op">=</span> <span class="nm">42</span>;
-    <span class="fn">println!</span>(<span class="st">"Ready: {'{}'}"</span>, <span class="vr">count</span>);
-{'}'}</code></pre>
+        <pre class="editor-code"><code set:html={codePreview} /></pre>
       </div>
 
       <!-- Detail pane -->

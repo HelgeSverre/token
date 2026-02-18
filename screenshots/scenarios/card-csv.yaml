@@ -1,6 +1,6 @@
-name: csv
-width: 2880
-height: 1800
+name: card-csv
+width: 1400
+height: 1200
 scale: 2.0
 theme: fleet-dark
 files:

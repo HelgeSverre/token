@@ -123,6 +123,7 @@ const BASH_HIGHLIGHTS: &str = tree_sitter_bash::HIGHLIGHT_QUERY;
 const SCHEME_HIGHLIGHTS: &str = tree_sitter_racket::HIGHLIGHTS_QUERY;
 const INI_HIGHLIGHTS: &str = tree_sitter_ini::HIGHLIGHTS_QUERY;
 const XML_HIGHLIGHTS: &str = tree_sitter_xml::XML_HIGHLIGHT_QUERY;
+const SEMA_HIGHLIGHTS: &str = include_str!("../../queries/sema/highlights.scm");
 
 /// Thread-local parser state (tree-sitter parsers are !Sync)
 pub struct ParserState {
@@ -180,6 +181,7 @@ impl ParserState {
         state.init_language(LanguageId::Scheme);
         state.init_language(LanguageId::Ini);
         state.init_language(LanguageId::Xml);
+        state.init_language(LanguageId::Sema);
 
         // Initialize markdown inline parser for two-pass parsing
         state.init_markdown_inline();
@@ -247,6 +249,7 @@ impl ParserState {
             LanguageId::Bash => (tree_sitter_bash::LANGUAGE.into(), BASH_HIGHLIGHTS),
             // Phase 6 languages (specialized)
             LanguageId::Scheme => (tree_sitter_racket::LANGUAGE.into(), SCHEME_HIGHLIGHTS),
+            LanguageId::Sema => (tree_sitter_racket::LANGUAGE.into(), SEMA_HIGHLIGHTS),
             LanguageId::Ini => (tree_sitter_ini::LANGUAGE.into(), INI_HIGHLIGHTS),
             LanguageId::Xml => (tree_sitter_xml::LANGUAGE_XML.into(), XML_HIGHLIGHTS),
             // No highlighting for plain text
@@ -1935,6 +1938,32 @@ fi"#;
         let highlights = state.parse_and_highlight(source, LanguageId::Scheme, doc_id, 1);
 
         assert_eq!(highlights.language, LanguageId::Scheme);
+        assert!(!highlights.lines.is_empty());
+    }
+
+    #[test]
+    fn test_sema_parsing() {
+        let mut state = ParserState::new();
+        let source = r#";; hello.sema — Basic Sema demo
+
+(define (factorial n)
+  (if (<= n 1) 1 (* n (factorial (- n 1)))))
+
+(display "Factorial of 10: ")
+(println (factorial 10))
+
+(define numbers (range 1 11))
+(define squares (map (lambda (x) (* x x)) numbers))
+(println squares)
+
+(let ((x 10)
+      (y 20))
+  (println (+ x y)))
+"#;
+        let doc_id = DocumentId(52);
+        let highlights = state.parse_and_highlight(source, LanguageId::Sema, doc_id, 1);
+
+        assert_eq!(highlights.language, LanguageId::Sema);
         assert!(!highlights.lines.is_empty());
     }
 

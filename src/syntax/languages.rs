@@ -35,6 +35,7 @@ pub enum LanguageId {
     Scheme,
     Ini,
     Xml,
+    Sema,
 }
 
 impl LanguageId {
@@ -64,6 +65,7 @@ impl LanguageId {
             "java" => LanguageId::Java,
             "sh" | "bash" | "zsh" | "ksh" => LanguageId::Bash,
             // Phase 6 (specialized)
+            "sema" => LanguageId::Sema,
             "scm" | "rkt" | "ss" => LanguageId::Scheme,
             "ini" | "cfg" | "conf" => LanguageId::Ini,
             "xml" | "xsd" | "xsl" | "xslt" | "svg" | "plist" => LanguageId::Xml,
@@ -120,6 +122,7 @@ impl LanguageId {
             LanguageId::Scheme => "Scheme",
             LanguageId::Ini => "INI",
             LanguageId::Xml => "XML",
+            LanguageId::Sema => "Sema",
         }
     }
 
@@ -155,6 +158,7 @@ impl LanguageId {
             "cpp" | "c++" | "cxx" => Some(LanguageId::Cpp),
             "php" => Some(LanguageId::Php),
             "bash" | "sh" | "shell" | "zsh" => Some(LanguageId::Bash),
+            "sema" => Some(LanguageId::Sema),
             "scheme" | "scm" | "racket" | "rkt" => Some(LanguageId::Scheme),
             "xml" | "svg" => Some(LanguageId::Xml),
             "ini" | "conf" => Some(LanguageId::Ini),

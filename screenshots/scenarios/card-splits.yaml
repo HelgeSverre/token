@@ -1,0 +1,13 @@
+name: card-splits
+width: 1400
+height: 1200
+scale: 2.0
+theme: fleet-dark
+split_direction: horizontal
+files:
+  - path: samples/syntax/sample.rs
+    scroll_to: 8
+    cursor_line: 18
+    cursor_column: 0
+  - path: samples/syntax/sample.ts
+    scroll_to: 11
