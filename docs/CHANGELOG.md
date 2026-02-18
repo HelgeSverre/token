@@ -4,7 +4,11 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## Unreleased
+## v0.3.17 - 2026-02-18
+
+### Added
+- Themes: 5 new builtin themes — Dracula, Catppuccin Mocha, Nord, Tokyo Night, Gruvbox Dark
+- Syntax: Added sema-lisp syntax sample file
 
 ---
 
