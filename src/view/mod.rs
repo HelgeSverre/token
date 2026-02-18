@@ -2032,39 +2032,29 @@ impl Renderer {
                 let filtered_commands = filter_commands(&input_text);
                 let max_visible_items = 8;
 
-                let (modal_x, modal_y, modal_width, modal_height) = geometry::modal_bounds(
+                let (layout, w) = geometry::command_palette_layout(
                     window_width,
                     window_height,
                     line_height,
-                    true,
                     filtered_commands.len(),
                 );
 
                 frame.draw_bordered_rect(
-                    modal_x,
-                    modal_y,
-                    modal_width,
-                    modal_height,
-                    bg_color,
-                    border_color,
+                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
                 );
 
                 // Title
-                let title_x = modal_x + 12;
-                let title_y = modal_y + 8;
-                painter.draw(frame, title_x, title_y, "Command Palette", fg_color);
+                let title_r = layout.widget(w.title);
+                painter.draw(frame, title_r.x, title_r.y, "Command Palette", fg_color);
 
-                // Input field background
-                let input_x = modal_x + 12;
-                let input_y = title_y + line_height + 4;
-                let input_width = modal_width - 24;
-                let input_height = line_height + 8;
-                frame.fill_rect_px(input_x, input_y, input_width, input_height, input_bg);
+                // Input field
+                let input_r = layout.widget(w.input);
+                frame.fill_rect_px(input_r.x, input_r.y, input_r.w, input_r.h, input_bg);
 
-                // Render text field using unified renderer
-                let text_x = input_x + 8;
-                let text_y = input_y + 4;
-                let text_width = input_width - 16;
+                let ipad = geometry::ModalSpacing::INPUT_PAD_X;
+                let text_x = input_r.x + ipad;
+                let text_y = input_r.y + ipad / 2;
+                let text_width = input_r.w.saturating_sub(ipad * 2);
                 let opts = TextFieldOptions {
                     x: text_x,
                     y: text_y,
@@ -2080,12 +2070,11 @@ impl Renderer {
                 TextFieldRenderer::render(frame, painter, &state.editable, &opts);
 
                 // Command list
-                if !filtered_commands.is_empty() {
-                    let list_y = input_y + input_height + 8;
+                if let Some(list_idx) = w.list {
+                    let list_r = layout.widget(list_idx);
                     let total_items = filtered_commands.len();
                     let clamped_selected = state.selected_index.min(total_items.saturating_sub(1));
 
-                    // Compute scroll offset to keep selected item visible
                     let scroll_offset = if clamped_selected >= max_visible_items {
                         clamped_selected + 1 - max_visible_items
                     } else {
@@ -2099,68 +2088,58 @@ impl Renderer {
                         .enumerate()
                     {
                         let actual_index = scroll_offset + i;
-                        let item_y = list_y + i * line_height;
+                        let item_y = list_r.y + i * line_height;
                         let is_selected = actual_index == clamped_selected;
 
                         if is_selected {
                             frame.fill_rect_px(
-                                modal_x + 4,
+                                layout.x + 4,
                                 item_y,
-                                modal_width - 8,
+                                layout.w - 8,
                                 line_height,
                                 selection_bg,
                             );
                         }
 
-                        painter.draw(frame, modal_x + 16, item_y, cmd.label, fg_color);
+                        painter.draw(frame, layout.x + 16, item_y, cmd.label, fg_color);
 
                         if let Some(kb) = cmd.keybinding {
                             let kb_width =
                                 (kb.chars().count() as f32 * char_width).round() as usize;
-                            let kb_x = modal_x + modal_width - kb_width - 16;
+                            let kb_x = layout.x + layout.w - kb_width - 16;
                             painter.draw(frame, kb_x, item_y, kb, dim_color);
                         }
                     }
 
-                    // Show "and X more" for items after the visible window
                     let items_after = total_items.saturating_sub(scroll_offset + max_visible_items);
                     if items_after > 0 {
-                        let more_y = list_y + max_visible_items * line_height;
+                        let more_y = list_r.y + max_visible_items * line_height;
                         let more_text = format!("... and {} more", items_after);
-                        painter.draw(frame, modal_x + 16, more_y, &more_text, dim_color);
+                        painter.draw(frame, layout.x + 16, more_y, &more_text, dim_color);
                     }
                 }
             }
 
             ModalState::GotoLine(state) => {
-                let (modal_x, modal_y, modal_width, modal_height) =
-                    geometry::modal_bounds(window_width, window_height, line_height, false, 0);
+                let (layout, w) =
+                    geometry::goto_line_layout(window_width, window_height, line_height);
 
                 frame.draw_bordered_rect(
-                    modal_x,
-                    modal_y,
-                    modal_width,
-                    modal_height,
-                    bg_color,
-                    border_color,
+                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
                 );
 
                 // Title
-                let title_x = modal_x + 12;
-                let title_y = modal_y + 8;
-                painter.draw(frame, title_x, title_y, "Go to Line", fg_color);
+                let title_r = layout.widget(w.title);
+                painter.draw(frame, title_r.x, title_r.y, "Go to Line", fg_color);
 
-                // Input field background
-                let input_x = modal_x + 12;
-                let input_y = title_y + line_height + 4;
-                let input_width = modal_width - 24;
-                let input_height = line_height + 8;
-                frame.fill_rect_px(input_x, input_y, input_width, input_height, input_bg);
+                // Input field
+                let input_r = layout.widget(w.input);
+                frame.fill_rect_px(input_r.x, input_r.y, input_r.w, input_r.h, input_bg);
 
-                // Render text field using unified renderer
-                let text_x = input_x + 8;
-                let text_y = input_y + 4;
-                let text_width = input_width - 16;
+                let ipad = geometry::ModalSpacing::INPUT_PAD_X;
+                let text_x = input_r.x + ipad;
+                let text_y = input_r.y + ipad / 2;
+                let text_width = input_r.w.saturating_sub(ipad * 2);
                 let opts = TextFieldOptions {
                     x: text_x,
                     y: text_y,
@@ -2177,68 +2156,51 @@ impl Renderer {
             }
 
             ModalState::FindReplace(state) => {
-                // Calculate modal height: taller when replace mode is active
-                let extra_height = if state.replace_mode {
-                    line_height + 12 + line_height + 4 // label + spacing + replace field
-                } else {
-                    0
-                };
-                let (modal_x, modal_y, modal_width, base_modal_height) =
-                    geometry::modal_bounds(window_width, window_height, line_height, false, 0);
-                let modal_height = base_modal_height + extra_height;
+                let (layout, w) = geometry::find_replace_layout(
+                    window_width,
+                    window_height,
+                    line_height,
+                    state.replace_mode,
+                );
 
                 frame.draw_bordered_rect(
-                    modal_x,
-                    modal_y,
-                    modal_width,
-                    modal_height,
-                    bg_color,
-                    border_color,
+                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
                 );
 
                 // Title
-                let title_x = modal_x + 12;
-                let title_y = modal_y + 8;
+                let title_r = layout.widget(w.title);
                 let title = if state.replace_mode {
                     "Find and Replace"
                 } else {
                     "Find"
                 };
-                painter.draw(frame, title_x, title_y, title, fg_color);
+                painter.draw(frame, title_r.x, title_r.y, title, fg_color);
 
-                let input_x = modal_x + 12;
-                let input_width = modal_width - 24;
-                let input_height = line_height + 8;
+                let ipad = geometry::ModalSpacing::INPUT_PAD_X;
 
-                // "Find" label
-                let find_label_y = title_y + line_height + 8;
-                let label_color = if state.replace_mode {
-                    // Dim the label for the unfocused field
-                    match state.focused_field {
+                // Find label (only in replace mode)
+                if let Some(label_idx) = w.find_label {
+                    let label_r = layout.widget(label_idx);
+                    let label_color = match state.focused_field {
                         crate::model::ui::FindReplaceField::Query => fg_color,
                         crate::model::ui::FindReplaceField::Replace => dim_color,
-                    }
-                } else {
-                    fg_color
-                };
-                painter.draw(frame, input_x, find_label_y, "Find:", label_color);
+                    };
+                    painter.draw(frame, label_r.x, label_r.y, "Find:", label_color);
+                }
 
-                // Find input field
-                let find_input_y = find_label_y + line_height + 4;
-                frame.fill_rect_px(input_x, find_input_y, input_width, input_height, input_bg);
+                // Find input
+                let find_r = layout.widget(w.find_input);
+                frame.fill_rect_px(find_r.x, find_r.y, find_r.w, find_r.h, input_bg);
 
-                let find_text_x = input_x + 8;
-                let find_text_y = find_input_y + 4;
-                let text_width = input_width - 16;
                 let find_cursor_visible = model.ui.cursor_visible
                     && matches!(
                         state.focused_field,
                         crate::model::ui::FindReplaceField::Query
                     );
                 let find_opts = TextFieldOptions {
-                    x: find_text_x,
-                    y: find_text_y,
-                    width: text_width,
+                    x: find_r.x + ipad,
+                    y: find_r.y + ipad / 2,
+                    width: find_r.w.saturating_sub(ipad * 2),
                     height: line_height,
                     char_width,
                     text_color: fg_color,
@@ -2249,41 +2211,28 @@ impl Renderer {
                 };
                 TextFieldRenderer::render(frame, painter, &state.query_editable, &find_opts);
 
-                // Replace field (only when replace_mode is active)
-                if state.replace_mode {
-                    let replace_label_y = find_input_y + input_height + 8;
-                    let replace_label_color = match state.focused_field {
+                // Replace label + input (only in replace mode)
+                if let Some(label_idx) = w.replace_label {
+                    let label_r = layout.widget(label_idx);
+                    let label_color = match state.focused_field {
                         crate::model::ui::FindReplaceField::Replace => fg_color,
                         crate::model::ui::FindReplaceField::Query => dim_color,
                     };
-                    painter.draw(
-                        frame,
-                        input_x,
-                        replace_label_y,
-                        "Replace:",
-                        replace_label_color,
-                    );
+                    painter.draw(frame, label_r.x, label_r.y, "Replace:", label_color);
+                }
+                if let Some(input_idx) = w.replace_input {
+                    let repl_r = layout.widget(input_idx);
+                    frame.fill_rect_px(repl_r.x, repl_r.y, repl_r.w, repl_r.h, input_bg);
 
-                    let replace_input_y = replace_label_y + line_height + 4;
-                    frame.fill_rect_px(
-                        input_x,
-                        replace_input_y,
-                        input_width,
-                        input_height,
-                        input_bg,
-                    );
-
-                    let replace_text_x = input_x + 8;
-                    let replace_text_y = replace_input_y + 4;
                     let replace_cursor_visible = model.ui.cursor_visible
                         && matches!(
                             state.focused_field,
                             crate::model::ui::FindReplaceField::Replace
                         );
                     let replace_opts = TextFieldOptions {
-                        x: replace_text_x,
-                        y: replace_text_y,
-                        width: text_width,
+                        x: repl_r.x + ipad,
+                        y: repl_r.y + ipad / 2,
+                        width: repl_r.w.saturating_sub(ipad * 2),
                         height: line_height,
                         char_width,
                         text_color: fg_color,
@@ -2302,47 +2251,32 @@ impl Renderer {
             }
 
             ModalState::FileFinder(state) => {
-                // File finder modal: input field + results list
-                // Use a wider modal than other dialogs to fit file paths
                 let results = &state.results;
                 let max_visible_items = 10;
-                let visible_count = results.len().min(max_visible_items);
 
-                // Custom wider bounds for file finder (70% of window, min 500, max 900)
-                let modal_width = (window_width as f32 * 0.7).clamp(500.0, 900.0) as usize;
-                let base_height = line_height * 3 + 20;
-                let list_height = visible_count * line_height + 8;
-                let modal_height = base_height + list_height;
-                let modal_x = (window_width - modal_width) / 2;
-                let modal_y = (window_height / 4).min(100);
+                let (layout, w) = geometry::file_finder_layout(
+                    window_width,
+                    window_height,
+                    line_height,
+                    results.len(),
+                );
 
-                // Background
                 frame.draw_bordered_rect(
-                    modal_x,
-                    modal_y,
-                    modal_width,
-                    modal_height,
-                    bg_color,
-                    border_color,
+                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
                 );
 
                 // Title
-                let title_x = modal_x + 12;
-                let title_y = modal_y + 8;
-                painter.draw(frame, title_x, title_y, "Go to File", fg_color);
+                let title_r = layout.widget(w.title);
+                painter.draw(frame, title_r.x, title_r.y, "Go to File", fg_color);
 
                 // Input field
-                let input_y = title_y + line_height + 8;
-                let input_x = modal_x + 8;
-                let input_width = modal_width - 16;
-                let input_height = line_height + 8;
+                let input_r = layout.widget(w.input);
+                frame.fill_rect_px(input_r.x, input_r.y, input_r.w, input_r.h, input_bg);
 
-                frame.fill_rect_px(input_x, input_y, input_width, input_height, input_bg);
-
-                // Input text
-                let text_x = input_x + 8;
-                let text_y = input_y + 4;
-                let text_width = input_width - 16;
+                let ipad = geometry::ModalSpacing::INPUT_PAD_X;
+                let text_x = input_r.x + ipad;
+                let text_y = input_r.y + ipad / 2;
+                let text_width = input_r.w.saturating_sub(ipad * 2);
                 let opts = TextFieldOptions {
                     x: text_x,
                     y: text_y,
@@ -2358,7 +2292,11 @@ impl Renderer {
                 TextFieldRenderer::render(frame, painter, &state.editable, &opts);
 
                 // Results list
-                let results_y = input_y + input_height + 8;
+                let results_y = if let Some(list_idx) = w.list {
+                    layout.widget(list_idx).y
+                } else {
+                    input_r.y + input_r.h + geometry::ModalSpacing::GAP_MD
+                };
                 let clamped_selected = state.selected_index.min(results.len().saturating_sub(1));
                 let dim_color = 0xFF888888; // Dimmed color for relative path
 
@@ -2369,9 +2307,9 @@ impl Renderer {
                     // Selection highlight
                     if is_selected {
                         frame.fill_rect_px(
-                            modal_x + 4,
+                            layout.x + 4,
                             item_y,
-                            modal_width - 8,
+                            layout.w - 8,
                             line_height,
                             selection_bg,
                         );
@@ -2379,23 +2317,22 @@ impl Renderer {
 
                     // File icon
                     let icon = crate::model::FileExtension::from_path(&file_match.path).icon();
-                    let icon_x = modal_x + 12;
+                    let icon_x = layout.x + 12;
                     painter.draw(frame, icon_x, item_y, icon, fg_color);
 
                     // Filename
-                    let name_x = modal_x + 36;
+                    let name_x = layout.x + 36;
                     painter.draw(frame, name_x, item_y, &file_match.filename, fg_color);
 
                     // Relative path (dimmed, after filename) - truncate if needed
                     let filename_width = (file_match.filename.len() as f32 * char_width) as usize;
                     let path_x = name_x + filename_width + (char_width as usize * 2);
-                    let available_width = (modal_x + modal_width).saturating_sub(path_x + 16);
+                    let available_width = (layout.x + layout.w).saturating_sub(path_x + 16);
                     let max_path_chars = (available_width as f32 / char_width) as usize;
 
                     if max_path_chars > 5 {
                         let path_display =
                             if file_match.relative_path.chars().count() > max_path_chars {
-                                // Truncate with ellipsis
                                 let truncated: String = file_match
                                     .relative_path
                                     .chars()
@@ -2411,11 +2348,10 @@ impl Renderer {
 
                 // Show "No matches" if results are empty and query is not empty
                 if results.is_empty() && !state.input().is_empty() {
-                    let no_match_y = results_y;
                     painter.draw(
                         frame,
-                        modal_x + 12,
-                        no_match_y,
+                        layout.x + 12,
+                        results_y,
                         "No files match your query",
                         dim_color,
                     );

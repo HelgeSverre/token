@@ -20,7 +20,7 @@ use crate::commands::filter_commands;
 use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, TabId};
 use crate::model::{AppModel, FocusTarget, ModalState};
 
-use super::geometry::{is_in_group_tab_bar, is_in_status_bar, modal_bounds, Pane};
+use super::geometry::{is_in_group_tab_bar, is_in_status_bar, Pane};
 
 // ============================================================================
 // Core Types
@@ -346,29 +346,55 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
         return None;
     }
 
-    let (has_list, list_items) = match &model.ui.active_modal {
+    let ww = model.window_size.0 as usize;
+    let wh = model.window_size.1 as usize;
+    let lh = model.line_height;
+
+    // Use the same layout functions as rendering — single source of truth
+    let layout = match &model.ui.active_modal {
         Some(ModalState::CommandPalette(state)) => {
             let input_text = state.input();
-            (true, filter_commands(&input_text).len())
+            let (l, _) =
+                super::geometry::command_palette_layout(ww, wh, lh, filter_commands(&input_text).len());
+            l
         }
-        Some(ModalState::FileFinder(state)) => (true, state.results.len()),
-        Some(ModalState::ThemePicker(state)) => (true, state.themes.len()),
-        Some(ModalState::GotoLine(_)) => (false, 0),
-        Some(ModalState::FindReplace(_)) => (false, 0),
+        Some(ModalState::FileFinder(state)) => {
+            let (l, _) = super::geometry::file_finder_layout(ww, wh, lh, state.results.len());
+            l
+        }
+        Some(ModalState::ThemePicker(state)) => {
+            // ThemePicker still uses custom layout — compute bounds inline
+            use crate::theme::ThemeSource;
+            let themes = &state.themes;
+            let has_user = themes.iter().any(|t| t.source == ThemeSource::User);
+            let has_builtin = themes.iter().any(|t| t.source == ThemeSource::Builtin);
+            let section_count = has_user as usize + has_builtin as usize;
+            let total_rows = themes.len() + section_count;
+            let list_height = total_rows * lh;
+            let modal_height = 8 + lh + 8 + list_height + 8;
+            let modal_width = 400;
+            let modal_x = ww.saturating_sub(modal_width) / 2;
+            let modal_y = wh / 4;
+            super::geometry::ModalLayout {
+                x: modal_x,
+                y: modal_y,
+                w: modal_width,
+                h: modal_height,
+                widgets: Vec::new(),
+            }
+        }
+        Some(ModalState::GotoLine(_)) => {
+            let (l, _) = super::geometry::goto_line_layout(ww, wh, lh);
+            l
+        }
+        Some(ModalState::FindReplace(state)) => {
+            let (l, _) = super::geometry::find_replace_layout(ww, wh, lh, state.replace_mode);
+            l
+        }
         None => return None,
     };
 
-    let (mx, my, mw, mh) = modal_bounds(
-        model.window_size.0 as usize,
-        model.window_size.1 as usize,
-        model.line_height,
-        has_list,
-        list_items,
-    );
-
-    let px = pt.x as usize;
-    let py = pt.y as usize;
-    let inside = px >= mx && px < mx + mw && py >= my && py < my + mh;
+    let inside = layout.contains(pt.x as usize, pt.y as usize);
 
     Some(HitTarget::Modal { inside })
 }

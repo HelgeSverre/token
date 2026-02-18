@@ -824,30 +824,312 @@ impl Pane {
 // Modal Geometry
 // ============================================================================
 
-/// Calculate the modal bounds for hit-testing.
-/// Returns (x, y, width, height) of the modal dialog.
-pub fn modal_bounds(
+/// Standard padding/spacing constants for modal dialogs
+pub struct ModalSpacing;
+
+impl ModalSpacing {
+    /// Outer padding inside the modal border
+    pub const PAD: usize = 12;
+    /// Small gap (e.g., title to input, label to input)
+    pub const GAP_SM: usize = 4;
+    /// Medium gap (e.g., between sections)
+    pub const GAP_MD: usize = 8;
+    /// Input field internal vertical padding (total top+bottom)
+    pub const INPUT_PAD_Y: usize = 8;
+    /// Input field internal horizontal padding (each side)
+    pub const INPUT_PAD_X: usize = 8;
+}
+
+/// A positioned widget within a modal layout
+#[derive(Clone, Copy, Debug)]
+pub struct WidgetRect {
+    pub x: usize,
+    pub y: usize,
+    pub w: usize,
+    pub h: usize,
+}
+
+/// Vertical stack layout builder for modal dialogs.
+///
+/// Tracks a cursor position that advances as widgets are pushed.
+/// Height is derived automatically from the content that's actually laid out.
+pub struct VStack {
+    cursor_y: usize,
+    content_width: usize,
+    widgets: Vec<WidgetRect>,
+}
+
+impl VStack {
+    pub fn new(content_width: usize) -> Self {
+        Self {
+            cursor_y: 0,
+            content_width,
+            widgets: Vec::new(),
+        }
+    }
+
+    /// Add vertical spacing
+    pub fn gap(&mut self, h: usize) {
+        self.cursor_y += h;
+    }
+
+    /// Push a widget with the given height, spanning the full content width.
+    /// Returns the index into `widgets` for later retrieval.
+    pub fn push(&mut self, h: usize) -> usize {
+        let idx = self.widgets.len();
+        self.widgets.push(WidgetRect {
+            x: 0,
+            y: self.cursor_y,
+            w: self.content_width,
+            h,
+        });
+        self.cursor_y += h;
+        idx
+    }
+
+    /// Total height consumed by all widgets and gaps
+    pub fn height(&self) -> usize {
+        self.cursor_y
+    }
+}
+
+/// Computed layout for a modal dialog.
+///
+/// Single source of truth for modal positioning — used by both rendering
+/// and hit-testing. The outer rect defines the modal border/background,
+/// and widgets are positioned absolutely within the window.
+#[derive(Clone, Debug)]
+pub struct ModalLayout {
+    /// Modal outer bounds (background + border)
+    pub x: usize,
+    pub y: usize,
+    pub w: usize,
+    pub h: usize,
+    /// Absolutely-positioned widget rects (indices from VStack::push)
+    pub widgets: Vec<WidgetRect>,
+}
+
+impl ModalLayout {
+    /// Build a modal layout from a VStack and positioning parameters.
+    pub fn build(
+        vstack: VStack,
+        modal_width: usize,
+        window_width: usize,
+        window_height: usize,
+    ) -> Self {
+        let pad = ModalSpacing::PAD;
+        let content_height = vstack.height();
+        let modal_height = content_height + pad * 2;
+        let modal_x = (window_width.saturating_sub(modal_width)) / 2;
+        let modal_y = (window_height / 4).min(100);
+        let content_x = modal_x + pad;
+        let content_y = modal_y + pad;
+
+        // Translate widget rects from local to absolute coordinates
+        let widgets = vstack
+            .widgets
+            .into_iter()
+            .map(|w| WidgetRect {
+                x: content_x + w.x,
+                y: content_y + w.y,
+                w: w.w,
+                h: w.h,
+            })
+            .collect();
+
+        Self {
+            x: modal_x,
+            y: modal_y,
+            w: modal_width,
+            h: modal_height,
+            widgets,
+        }
+    }
+
+    /// Check if a point is inside the modal bounds
+    pub fn contains(&self, px: usize, py: usize) -> bool {
+        px >= self.x && px < self.x + self.w && py >= self.y && py < self.y + self.h
+    }
+
+    /// Get a widget rect by index
+    pub fn widget(&self, idx: usize) -> &WidgetRect {
+        &self.widgets[idx]
+    }
+
+    /// Height of an input field (line_height + padding)
+    pub fn input_height(line_height: usize) -> usize {
+        line_height + ModalSpacing::INPUT_PAD_Y
+    }
+}
+
+// ============================================================================
+// Per-Modal Layout Functions
+// ============================================================================
+
+/// Layout indices for the Find/Replace modal widgets
+pub struct FindReplaceWidgets {
+    pub title: usize,
+    pub find_label: Option<usize>,
+    pub find_input: usize,
+    pub replace_label: Option<usize>,
+    pub replace_input: Option<usize>,
+}
+
+/// Compute layout for the Find/Replace modal.
+///
+/// Height is derived automatically from the content. In find-only mode,
+/// no "Find:" label is shown (the title says "Find"). In replace mode,
+/// both "Find:" and "Replace:" labels are shown.
+pub fn find_replace_layout(
     window_width: usize,
     window_height: usize,
     line_height: usize,
-    has_list: bool,
-    list_items: usize,
-) -> (usize, usize, usize, usize) {
-    let max_visible_items = 8;
-    let visible_items = list_items.min(max_visible_items);
-
+    replace_mode: bool,
+) -> (ModalLayout, FindReplaceWidgets) {
     let modal_width = (window_width as f32 * 0.5).clamp(300.0, 500.0) as usize;
-    let base_height = line_height * 3 + 20;
-    let list_height = if has_list {
-        visible_items * line_height + 8
-    } else {
-        0
-    };
-    let modal_height = base_height + list_height;
-    let modal_x = (window_width - modal_width) / 2;
-    let modal_y = (window_height / 4).min(100);
+    let pad = ModalSpacing::PAD;
+    let content_width = modal_width.saturating_sub(pad * 2);
+    let input_height = ModalLayout::input_height(line_height);
 
-    (modal_x, modal_y, modal_width, modal_height)
+    let mut v = VStack::new(content_width);
+
+    let title = v.push(line_height);
+
+    let (find_label, find_input, replace_label, replace_input);
+
+    if replace_mode {
+        v.gap(ModalSpacing::GAP_MD);
+        find_label = Some(v.push(line_height));
+        v.gap(ModalSpacing::GAP_SM);
+        find_input = v.push(input_height);
+        v.gap(ModalSpacing::GAP_MD);
+        replace_label = Some(v.push(line_height));
+        v.gap(ModalSpacing::GAP_SM);
+        replace_input = Some(v.push(input_height));
+    } else {
+        v.gap(ModalSpacing::GAP_SM);
+        find_label = None;
+        find_input = v.push(input_height);
+        replace_label = None;
+        replace_input = None;
+    }
+
+    let layout = ModalLayout::build(v, modal_width, window_width, window_height);
+    let widgets = FindReplaceWidgets {
+        title,
+        find_label,
+        find_input,
+        replace_label,
+        replace_input,
+    };
+
+    (layout, widgets)
+}
+
+/// Layout indices for GotoLine modal widgets
+pub struct GotoLineWidgets {
+    pub title: usize,
+    pub input: usize,
+}
+
+/// Compute layout for the Go to Line modal.
+pub fn goto_line_layout(
+    window_width: usize,
+    window_height: usize,
+    line_height: usize,
+) -> (ModalLayout, GotoLineWidgets) {
+    let modal_width = (window_width as f32 * 0.5).clamp(300.0, 500.0) as usize;
+    let pad = ModalSpacing::PAD;
+    let content_width = modal_width.saturating_sub(pad * 2);
+    let input_height = ModalLayout::input_height(line_height);
+
+    let mut v = VStack::new(content_width);
+    let title = v.push(line_height);
+    v.gap(ModalSpacing::GAP_SM);
+    let input = v.push(input_height);
+
+    let layout = ModalLayout::build(v, modal_width, window_width, window_height);
+    (layout, GotoLineWidgets { title, input })
+}
+
+/// Layout indices for CommandPalette modal widgets
+pub struct CommandPaletteWidgets {
+    pub title: usize,
+    pub input: usize,
+    pub list: Option<usize>,
+}
+
+/// Compute layout for the Command Palette modal.
+pub fn command_palette_layout(
+    window_width: usize,
+    window_height: usize,
+    line_height: usize,
+    list_items: usize,
+) -> (ModalLayout, CommandPaletteWidgets) {
+    let modal_width = (window_width as f32 * 0.5).clamp(300.0, 500.0) as usize;
+    let pad = ModalSpacing::PAD;
+    let content_width = modal_width.saturating_sub(pad * 2);
+    let input_height = ModalLayout::input_height(line_height);
+
+    let mut v = VStack::new(content_width);
+    let title = v.push(line_height);
+    v.gap(ModalSpacing::GAP_SM);
+    let input = v.push(input_height);
+
+    let max_visible = 8;
+    let visible = list_items.min(max_visible);
+    let has_overflow = list_items > max_visible;
+    let list = if visible > 0 {
+        v.gap(ModalSpacing::GAP_MD);
+        // Add extra line for "... and X more" overflow indicator
+        let list_rows = if has_overflow { visible + 1 } else { visible };
+        Some(v.push(list_rows * line_height))
+    } else {
+        None
+    };
+
+    let layout = ModalLayout::build(v, modal_width, window_width, window_height);
+    (
+        layout,
+        CommandPaletteWidgets { title, input, list },
+    )
+}
+
+/// Layout indices for FileFinder modal widgets
+pub struct FileFinderWidgets {
+    pub title: usize,
+    pub input: usize,
+    pub list: Option<usize>,
+}
+
+/// Compute layout for the File Finder modal.
+pub fn file_finder_layout(
+    window_width: usize,
+    window_height: usize,
+    line_height: usize,
+    list_items: usize,
+) -> (ModalLayout, FileFinderWidgets) {
+    let modal_width = (window_width as f32 * 0.7).clamp(500.0, 900.0) as usize;
+    let pad = ModalSpacing::PAD;
+    let content_width = modal_width.saturating_sub(pad * 2);
+    let input_height = ModalLayout::input_height(line_height);
+
+    let mut v = VStack::new(content_width);
+    let title = v.push(line_height);
+    v.gap(ModalSpacing::GAP_MD);
+    let input = v.push(input_height);
+
+    let max_visible = 10;
+    let visible = list_items.min(max_visible);
+    let list = if visible > 0 {
+        v.gap(ModalSpacing::GAP_MD);
+        Some(v.push(visible * line_height))
+    } else {
+        None
+    };
+
+    let layout = ModalLayout::build(v, modal_width, window_width, window_height);
+    (layout, FileFinderWidgets { title, input, list })
 }
 
 // ============================================================================

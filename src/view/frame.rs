@@ -248,18 +248,24 @@ impl<'a> Frame<'a> {
         fill_color: u32,
         border_color: u32,
     ) {
-        // Fill background
-        self.fill_rect_px(x, y, w, h, fill_color);
+        // Fill background (blend to handle semi-transparent overlay backgrounds)
+        let alpha = (fill_color >> 24) & 0xFF;
+        if alpha == 0xFF {
+            self.fill_rect_px(x, y, w, h, fill_color);
+        } else {
+            self.blend_rect_px(x, y, w, h, fill_color);
+        }
 
-        // Draw border (1px on each edge)
+        // Draw border (1px on each edge, always opaque)
+        let opaque_border = border_color | 0xFF000000;
         // Top
-        self.fill_rect_px(x, y, w, 1, border_color);
+        self.fill_rect_px(x, y, w, 1, opaque_border);
         // Bottom
-        self.fill_rect_px(x, y + h.saturating_sub(1), w, 1, border_color);
+        self.fill_rect_px(x, y + h.saturating_sub(1), w, 1, opaque_border);
         // Left
-        self.fill_rect_px(x, y, 1, h, border_color);
+        self.fill_rect_px(x, y, 1, h, opaque_border);
         // Right
-        self.fill_rect_px(x + w.saturating_sub(1), y, 1, h, border_color);
+        self.fill_rect_px(x + w.saturating_sub(1), y, 1, h, opaque_border);
     }
 
     /// Draw a sparkline chart (used by perf overlay)
