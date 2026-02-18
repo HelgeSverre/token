@@ -59,14 +59,40 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
         ))}
       </aside>
 
-      <!-- Editor pane -->
-      <div class="editor-pane" id="editor-pane">
-        <div class="editor-gutter">
-          {Array.from({ length: 28 }, (_, i) => (
-            <span class="line-num">{i + 1}</span>
-          ))}
+      <!-- Splitter between sidebar and editor -->
+      <div class="splitter"></div>
+
+      <!-- Editor area (tab bar + editor pane) -->
+      <div class="editor-area">
+
+        <!-- Tab bar -->
+        <div class="tab-bar">
+          <div class="tab active">
+            <span class="tab-name">main.rs</span>
+          </div>
+          <div class="tab">
+            <span class="tab-name">config.rs</span>
+            <span class="tab-modified">●</span>
+          </div>
+          <div class="tab">
+            <span class="tab-name">lib.rs</span>
+          </div>
         </div>
-        <pre class="editor-code"><code set:html={codePreview} /></pre>
+
+        <!-- Editor pane -->
+        <div class="editor-pane" id="editor-pane">
+          <div class="editor-gutter">
+            {Array.from({ length: 28 }, (_, i) => (
+              <span class={`line-num ${i === 17 ? 'active' : ''}`} data-line={i + 1}>{i + 1}</span>
+            ))}
+          </div>
+          <div class="editor-gutter-border"></div>
+          <div class="editor-code-wrap">
+            <pre class="editor-code"><code set:html={codePreview} /></pre>
+            <div class="editor-cursor"></div>
+          </div>
+        </div>
+
       </div>
 
       <!-- Detail pane -->
@@ -79,19 +105,14 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
         <p class="detail-desc" id="detail-desc">{themes[0].description}</p>
 
         <div class="swatch-section">
-          <h3 class="swatch-heading">UI Colors</h3>
-          <div class="swatch-grid" id="swatches-ui">
+          <h3 class="swatch-heading">Editor</h3>
+          <div class="swatch-grid" id="swatches-editor">
             {Object.entries({
               bg: themes[0].colors.bg,
               fg: themes[0].colors.fg,
               cursor: themes[0].colors.cursor,
               selection: themes[0].colors.selection,
               currentLine: themes[0].colors.currentLine,
-              gutterBg: themes[0].colors.gutterBg,
-              gutterFg: themes[0].colors.gutterFg,
-              sidebarBg: themes[0].colors.sidebarBg,
-              statusBg: themes[0].colors.statusBg,
-              statusFg: themes[0].colors.statusFg,
             }).map(([key, val]) => (
               <div class="swatch-row" data-color-key={key}>
                 <span class="swatch-dot" style={`background:${val}`}></span>
@@ -103,7 +124,34 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
         </div>
 
         <div class="swatch-section">
-          <h3 class="swatch-heading">Syntax Colors</h3>
+          <h3 class="swatch-heading">Chrome</h3>
+          <div class="swatch-grid" id="swatches-chrome">
+            {Object.entries({
+              gutterBg: themes[0].colors.gutterBg,
+              gutterFg: themes[0].colors.gutterFg,
+              gutterFgActive: themes[0].colors.gutterFgActive,
+              gutterBorder: themes[0].colors.gutterBorder,
+              sidebarBg: themes[0].colors.sidebarBg,
+              statusBg: themes[0].colors.statusBg,
+              statusFg: themes[0].colors.statusFg,
+              tabBarBg: themes[0].colors.tabBarBg,
+              tabBarActiveBg: themes[0].colors.tabBarActiveBg,
+              tabBarActiveFg: themes[0].colors.tabBarActiveFg,
+              tabBarInactiveFg: themes[0].colors.tabBarInactiveFg,
+              tabBarBorder: themes[0].colors.tabBarBorder,
+              splitterBg: themes[0].colors.splitterBg,
+            }).map(([key, val]) => (
+              <div class="swatch-row" data-color-key={key}>
+                <span class="swatch-dot" style={`background:${val}`}></span>
+                <span class="swatch-label">{key}</span>
+                <span class="swatch-hex">{val}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div class="swatch-section">
+          <h3 class="swatch-heading">Syntax</h3>
           <div class="swatch-grid" id="swatches-syntax">
             {Object.entries({
               keyword: themes[0].colors.keyword,
@@ -114,6 +162,7 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
               type: themes[0].colors.type,
               variable: themes[0].colors.variable,
               operator: themes[0].colors.operator,
+              punctuation: themes[0].colors.punctuation,
               constant: themes[0].colors.constant,
               tag: themes[0].colors.tag,
               attribute: themes[0].colors.attribute,
@@ -148,36 +197,59 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     const dataEl = document.getElementById('theme-data');
     const themes = JSON.parse(dataEl?.getAttribute('data-themes') || '[]');
     const buttons = document.querySelectorAll<HTMLButtonElement>('.sidebar-file');
-    const editorPane = document.getElementById('editor-pane')!;
     const detailName = document.getElementById('detail-name')!;
     const detailBadge = document.getElementById('detail-badge')!;
     const detailAuthor = document.getElementById('detail-author')!;
     const detailDesc = document.getElementById('detail-desc')!;
     const statusName = document.getElementById('status-name')!;
     const statusFile = document.getElementById('status-file')!;
-    const swatchesUi = document.getElementById('swatches-ui')!;
+    const swatchesEditor = document.getElementById('swatches-editor')!;
+    const swatchesChrome = document.getElementById('swatches-chrome')!;
     const swatchesSyntax = document.getElementById('swatches-syntax')!;
+
+    const ideFrame = document.querySelector('.ide-frame') as HTMLElement;
 
     function applyTheme(theme: any) {
       const c = theme.colors;
 
-      // Set CSS custom properties on editor pane
-      editorPane.style.setProperty('--theme-bg', c.bg);
-      editorPane.style.setProperty('--theme-fg', c.fg);
-      editorPane.style.setProperty('--theme-current-line', c.currentLine);
-      editorPane.style.setProperty('--theme-cursor', c.cursor);
-      editorPane.style.setProperty('--theme-selection', c.selection);
-      editorPane.style.setProperty('--theme-gutter-bg', c.gutterBg);
-      editorPane.style.setProperty('--theme-gutter-fg', c.gutterFg);
-      editorPane.style.setProperty('--theme-keyword', c.keyword);
-      editorPane.style.setProperty('--theme-function', c.function);
-      editorPane.style.setProperty('--theme-string', c.string);
-      editorPane.style.setProperty('--theme-number', c.number);
-      editorPane.style.setProperty('--theme-comment', c.comment);
-      editorPane.style.setProperty('--theme-type', c.type);
-      editorPane.style.setProperty('--theme-variable', c.variable);
-      editorPane.style.setProperty('--theme-operator', c.operator);
-      editorPane.style.setProperty('--theme-constant', c.constant);
+      // Set all CSS custom properties on the IDE frame
+      const el = ideFrame;
+      const props: Record<string, string> = {
+        '--theme-bg': c.bg,
+        '--theme-fg': c.fg,
+        '--theme-current-line': c.currentLine,
+        '--theme-cursor': c.cursor,
+        '--theme-selection': c.selection,
+        '--theme-gutter-bg': c.gutterBg,
+        '--theme-gutter-fg': c.gutterFg,
+        '--theme-gutter-fg-active': c.gutterFgActive,
+        '--theme-gutter-border': c.gutterBorder,
+        '--theme-sidebar-bg': c.sidebarBg,
+        '--theme-status-bg': c.statusBg,
+        '--theme-status-fg': c.statusFg,
+        '--theme-tab-bar-bg': c.tabBarBg,
+        '--theme-tab-bar-active-bg': c.tabBarActiveBg,
+        '--theme-tab-bar-active-fg': c.tabBarActiveFg,
+        '--theme-tab-bar-inactive-bg': c.tabBarInactiveBg,
+        '--theme-tab-bar-inactive-fg': c.tabBarInactiveFg,
+        '--theme-tab-bar-border': c.tabBarBorder,
+        '--theme-splitter-bg': c.splitterBg,
+        '--theme-keyword': c.keyword,
+        '--theme-function': c.function,
+        '--theme-string': c.string,
+        '--theme-number': c.number,
+        '--theme-comment': c.comment,
+        '--theme-type': c.type,
+        '--theme-variable': c.variable,
+        '--theme-operator': c.operator,
+        '--theme-punctuation': c.punctuation,
+        '--theme-constant': c.constant,
+        '--theme-tag': c.tag,
+        '--theme-attribute': c.attribute,
+      };
+      for (const [prop, val] of Object.entries(props)) {
+        el.style.setProperty(prop, val);
+      }
 
       // Update detail pane
       detailName.textContent = theme.name;
@@ -190,10 +262,7 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
       statusFile.textContent = theme.fileName;
 
       // Update swatches
-      const uiKeys = ['bg', 'fg', 'cursor', 'selection', 'currentLine', 'gutterBg', 'gutterFg', 'sidebarBg', 'statusBg', 'statusFg'];
-      const synKeys = ['keyword', 'function', 'string', 'number', 'comment', 'type', 'variable', 'operator', 'constant', 'tag', 'attribute'];
-
-      function updateSwatches(container: HTMLElement, keys: string[]) {
+      function updateSwatches(container: HTMLElement) {
         const rows = container.querySelectorAll('.swatch-row');
         rows.forEach((row) => {
           const key = (row as HTMLElement).dataset.colorKey;
@@ -206,8 +275,9 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
         });
       }
 
-      updateSwatches(swatchesUi, uiKeys);
-      updateSwatches(swatchesSyntax, synKeys);
+      updateSwatches(swatchesEditor);
+      updateSwatches(swatchesChrome);
+      updateSwatches(swatchesSyntax);
 
       // Update active sidebar
       buttons.forEach(btn => {
@@ -278,10 +348,11 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
   .sidebar {
     width: 200px;
     flex-shrink: 0;
-    background: var(--bg);
+    background: var(--theme-sidebar-bg, var(--bg));
     border-right: 1px solid var(--border);
     overflow-y: auto;
     padding: 8px 0;
+    transition: background var(--duration-normal) var(--ease-out);
   }
 
   .sidebar-file {
@@ -328,6 +399,63 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     white-space: nowrap;
   }
 
+  /* ── Splitter ─────────────────────────────────────────── */
+  .splitter {
+    width: 3px;
+    flex-shrink: 0;
+    background: var(--theme-splitter-bg, var(--border));
+    cursor: col-resize;
+    transition: background var(--duration-normal) var(--ease-out);
+  }
+
+  /* ── Editor area (tabs + editor) ────────────────────────── */
+  .editor-area {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Tab bar ────────────────────────────────────────────── */
+  .tab-bar {
+    display: flex;
+    align-items: flex-end;
+    height: 36px;
+    background: var(--theme-tab-bar-bg, var(--bg-raised));
+    border-bottom: 1px solid var(--theme-tab-bar-border, var(--border));
+    flex-shrink: 0;
+    padding: 0 8px;
+    gap: 1px;
+    transition: background var(--duration-normal) var(--ease-out),
+                border-color var(--duration-normal) var(--ease-out);
+  }
+
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    border-radius: 4px 4px 0 0;
+    cursor: default;
+    user-select: none;
+    background: var(--theme-tab-bar-inactive-bg, var(--bg-raised));
+    color: var(--theme-tab-bar-inactive-fg, var(--fg-muted));
+    transition: background var(--duration-normal) var(--ease-out),
+                color var(--duration-normal) var(--ease-out);
+  }
+
+  .tab.active {
+    background: var(--theme-tab-bar-active-bg, var(--bg));
+    color: var(--theme-tab-bar-active-fg, var(--fg-bright));
+  }
+
+  .tab-modified {
+    font-size: 8px;
+    opacity: 0.7;
+  }
+
   /* ── Editor pane ────────────────────────────────────────── */
   .editor-pane {
     flex: 1;
@@ -356,17 +484,75 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     transition: color var(--duration-normal) var(--ease-out);
   }
 
-  .editor-code {
+  .line-num.active {
+    color: var(--theme-gutter-fg-active, var(--fg-bright));
+  }
+
+  .editor-gutter-border {
+    width: 1px;
+    flex-shrink: 0;
+    background: var(--theme-gutter-border, var(--border));
+    transition: background var(--duration-normal) var(--ease-out);
+  }
+
+  .editor-code-wrap {
     flex: 1;
-    padding: 16px;
-    margin: 0;
+    position: relative;
+    min-width: 0;
+    overflow-x: auto;
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     line-height: 1.7;
+  }
+
+  .editor-code {
+    position: relative;
+    z-index: 1;
+    padding: 16px;
+    margin: 0;
+    font: inherit;
     color: var(--theme-fg, var(--fg));
     white-space: pre;
-    overflow-x: auto;
     transition: color var(--duration-normal) var(--ease-out);
+  }
+
+  /* Current line highlight — line 7 (0-indexed 6) */
+  .editor-code-wrap::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(16px + 17lh);
+    height: 1lh;
+    background: var(--theme-current-line, var(--bg-hover));
+    pointer-events: none;
+    z-index: 0;
+    transition: background var(--duration-normal) var(--ease-out);
+  }
+
+  /* Cursor — blinking bar on line 7 */
+  .editor-cursor {
+    position: absolute;
+    width: 2px;
+    height: 1lh;
+    top: calc(16px + 17lh);
+    left: calc(16px + 38ch);
+    background: var(--theme-cursor, var(--fg-bright));
+    pointer-events: none;
+    animation: cursor-blink 1s step-end infinite;
+    transition: background var(--duration-normal) var(--ease-out);
+  }
+
+  @keyframes cursor-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  /* Selection uses the theme's selection color, text keeps syntax color */
+  .editor-code ::selection,
+  .editor-code :global(span)::selection {
+    background: color-mix(in srgb, var(--theme-selection, var(--syn-keyword)) 60%, transparent);
+    color: inherit;
   }
 
   .editor-code :global(.kw) { color: var(--theme-keyword, var(--syn-keyword)); }
@@ -378,7 +564,7 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
   .editor-code :global(.vr) { color: var(--theme-variable, var(--syn-variable)); }
   .editor-code :global(.op) { color: var(--theme-operator, var(--syn-operator)); }
   .editor-code :global(.ct) { color: var(--theme-constant, var(--syn-constant)); }
-  .editor-code :global(.pn) { color: var(--theme-operator, var(--syn-punctuation)); }
+  .editor-code :global(.pn) { color: var(--theme-punctuation, var(--syn-punctuation)); }
 
   /* ── Detail pane ────────────────────────────────────────── */
   .detail-pane {
@@ -489,16 +675,18 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     justify-content: space-between;
     padding: 0 16px;
     height: 28px;
-    background: var(--status-bg);
+    background: var(--theme-status-bg, var(--status-bg));
     border-top: 1px solid var(--border);
     flex-shrink: 0;
+    transition: background var(--duration-normal) var(--ease-out);
   }
 
   .statusbar-left,
   .statusbar-right {
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--fg-muted);
+    color: var(--theme-status-fg, var(--fg-muted));
+    transition: color var(--duration-normal) var(--ease-out);
   }
 
   /* ── Responsive ─────────────────────────────────────────── */
