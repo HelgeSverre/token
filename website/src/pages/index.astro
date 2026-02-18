@@ -217,10 +217,48 @@ import SiteLayout from '../layouts/SiteLayout.astro';
 
 <!-- AI -->
 <section class="ai-section">
-  <span class="ai-badge">100+ conversations</span>
-  <h2>Built with AI</h2>
-  <p>Token was built through conversations with AI coding assistants. The entire development process—architecture, debugging, features—is documented publicly on Amp Code.</p>
-  <a href="https://ampcode.com/@helgesverre" class="btn-outline" target="_blank">View the threads →</a>
+  <div class="ai-content">
+    <div class="ai-text">
+      <span class="ai-badge">100+ conversations</span>
+      <h2>Built with AI,<br/><span class="ai-accent">in the open</span></h2>
+      <p>Every feature, every bug fix, every architectural decision — built through conversations with AI coding assistants. The entire development process is documented publicly.</p>
+      <a href="https://ampcode.com/@helgesverre" class="btn-primary" target="_blank">View the threads →</a>
+    </div>
+    <div class="ai-terminal">
+      <div class="ai-terminal-chrome">
+        <span class="dot red"></span>
+        <span class="dot yellow"></span>
+        <span class="dot green"></span>
+        <span class="ai-terminal-title">amp — token-editor</span>
+      </div>
+      <div class="ai-terminal-body">
+        <div class="ai-thread">
+          <div class="ai-msg human"><span class="ai-role">you</span><span class="ai-text-line">add multi-cursor support with Opt+Click</span></div>
+          <div class="ai-msg assistant"><span class="ai-role">amp</span><span class="ai-text-line">I'll implement this in 3 steps: cursor storage, click handling, and synchronized editing…</span></div>
+          <div class="ai-msg files">
+            <span class="ai-file changed">src/model/cursor.rs</span>
+            <span class="ai-file changed">src/update/text_edit.rs</span>
+            <span class="ai-file new">src/model/selection.rs</span>
+          </div>
+          <div class="ai-msg result"><span class="ai-check">✓</span> 12 tests passing · 3 files changed</div>
+        </div>
+        <div class="ai-thread">
+          <div class="ai-msg human"><span class="ai-role">you</span><span class="ai-text-line">implement CSV spreadsheet view mode</span></div>
+          <div class="ai-msg assistant"><span class="ai-role">amp</span><span class="ai-text-line">I'll add a grid renderer with cell navigation, parsing, and inline editing…</span></div>
+          <div class="ai-msg files">
+            <span class="ai-file changed">src/view/mod.rs</span>
+            <span class="ai-file new">src/model/csv.rs</span>
+            <span class="ai-file new">src/update/csv.rs</span>
+          </div>
+          <div class="ai-msg result"><span class="ai-check">✓</span> 8 tests passing · 4 files changed</div>
+        </div>
+        <div class="ai-thread">
+          <div class="ai-msg human"><span class="ai-role">you</span><span class="ai-text-line">add Tree-sitter syntax highlighting</span></div>
+          <div class="ai-msg assistant typing"><span class="ai-role">amp</span><span class="ai-text-line">Analyzing parser integration<span class="ai-cursor">▊</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </section>
 
 </SiteLayout>
@@ -864,9 +902,17 @@ import SiteLayout from '../layouts/SiteLayout.astro';
 /* AI */
 .ai-section {
   padding: 120px 48px;
-  max-width: 700px;
+  max-width: 1200px;
   margin: 0 auto;
-  text-align: center;
+}
+.ai-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: center;
+}
+.ai-text {
+  max-width: 440px;
 }
 .ai-badge {
   display: inline-block;
@@ -879,13 +925,143 @@ import SiteLayout from '../layouts/SiteLayout.astro';
   margin-bottom: 24px;
 }
 .ai-section h2 {
-  font-size: 2rem;
+  font-size: 2.5rem;
   margin-bottom: 16px;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+.ai-accent {
+  background: linear-gradient(135deg, var(--syn-keyword), var(--syn-function));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 .ai-section p {
   color: var(--fg-muted);
   line-height: 1.7;
   margin-bottom: 32px;
+}
+
+/* AI Terminal */
+.ai-terminal {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--bg-deep);
+  box-shadow: var(--shadow-lg), 0 0 60px color-mix(in srgb, var(--syn-keyword) 8%, transparent);
+}
+.ai-terminal-chrome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+}
+.ai-terminal-title {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--fg-muted);
+}
+.ai-terminal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-height: 400px;
+  overflow: hidden;
+}
+
+/* Thread */
+.ai-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.ai-thread:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.ai-msg {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+.ai-role {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  min-width: 28px;
+}
+.ai-msg.human .ai-role {
+  color: var(--syn-function);
+}
+.ai-msg.assistant .ai-role {
+  color: var(--syn-keyword);
+}
+.ai-msg.human .ai-text-line {
+  color: var(--fg-bright);
+}
+.ai-msg.assistant .ai-text-line {
+  color: var(--fg-muted);
+}
+
+/* Files */
+.ai-msg.files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 38px;
+}
+.ai-file {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  background: var(--bg-active);
+  border: 1px solid var(--border);
+}
+.ai-file.changed {
+  color: var(--syn-function);
+}
+.ai-file.new {
+  color: var(--syn-string);
+}
+.ai-file.new::before {
+  content: '+ ';
+  opacity: 0.6;
+}
+.ai-file.changed::before {
+  content: '~ ';
+  opacity: 0.6;
+}
+
+/* Result */
+.ai-msg.result {
+  padding-left: 38px;
+  font-size: 0.72rem;
+  color: var(--success);
+}
+.ai-check {
+  margin-right: 2px;
+}
+
+/* Typing cursor */
+.ai-cursor {
+  animation: cursor-blink 1s step-end infinite;
+  color: var(--syn-keyword);
+}
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 /* Responsive */
@@ -898,6 +1074,8 @@ import SiteLayout from '../layouts/SiteLayout.astro';
   .feature-card.wide { grid-column: span 2; }
   .keys-columns { grid-template-columns: repeat(2, 1fr); }
   .download-grid { grid-template-columns: repeat(2, 1fr); }
+  .ai-content { grid-template-columns: 1fr; gap: 48px; }
+  .ai-text { max-width: none; }
 }
 
 @media (max-width: 768px) {

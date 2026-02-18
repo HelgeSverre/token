@@ -2,5 +2,12 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-  "framework": "astro"
+  "framework": "astro",
+  "redirects": [
+    {
+      "source": "/install.sh",
+      "destination": "https://github.com/HelgeSverre/token/releases/latest/download/token-installer.sh",
+      "statusCode": 302
+    }
+  ]
 }
