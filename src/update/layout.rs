@@ -25,13 +25,19 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
     match msg {
         LayoutMsg::NewTab => {
             new_tab_in_focused_group(model);
+            sync_viewports(model);
             Some(Cmd::Redraw)
         }
 
-        LayoutMsg::OpenFileInNewTab(path) => open_file_in_new_tab(model, path),
+        LayoutMsg::OpenFileInNewTab(path) => {
+            let cmd = open_file_in_new_tab(model, path);
+            sync_viewports(model);
+            cmd
+        }
 
         LayoutMsg::SplitFocused(direction) => {
             split_focused_group(model, direction);
+            sync_viewports(model);
             Some(Cmd::Redraw)
         }
 
@@ -40,6 +46,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
             direction,
         } => {
             split_group(model, group_id, direction);
+            sync_viewports(model);
             Some(Cmd::Redraw)
         }
 
@@ -983,4 +990,15 @@ fn restore_container_ratios_by_splitter(
 fn close_preview_if_not_markdown(model: &mut AppModel) {
     let group_id = model.editor_area.focused_group_id;
     model.editor_area.on_group_active_tab_changed(group_id);
+}
+
+/// Sync all editor viewports to their group's actual dimensions.
+/// Call after creating new editors or changing group layout.
+fn sync_viewports(model: &mut AppModel) {
+    let line_height = model.line_height;
+    let char_width = model.char_width;
+    let tab_bar_height = model.metrics.tab_bar_height;
+    model
+        .editor_area
+        .sync_all_viewports(line_height, char_width, tab_bar_height);
 }

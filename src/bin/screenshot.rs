@@ -696,7 +696,7 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
     // Sync viewports to actual group rects (critical for splits/previews)
     model
         .editor_area
-        .sync_all_viewports(font_info.line_height, font_info.char_width);
+        .sync_all_viewports(font_info.line_height, font_info.char_width, model.metrics.tab_bar_height);
 
     {
         let mut frame = Frame::new(&mut buffer, width, height);

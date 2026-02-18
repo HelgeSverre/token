@@ -706,6 +706,57 @@ impl EditorState {
         self.ensure_cursor_visible_with_mode(document, ScrollRevealMode::Minimal);
     }
 
+    /// Ensure the active cursor is visible without applying scroll padding.
+    ///
+    /// Use this for mouse clicks where the target position is already visible on screen.
+    /// Only scrolls if the cursor is completely outside the viewport bounds.
+    pub fn ensure_cursor_visible_no_padding(&mut self, document: &Document) {
+        let cursor = &self.cursors[self.active_cursor_index];
+        let total_lines = document.line_count();
+
+        // Vertical scrolling - only if cursor is fully outside viewport
+        if total_lines > self.viewport.visible_lines && self.viewport.visible_lines > 0 {
+            let max_top = total_lines.saturating_sub(self.viewport.visible_lines);
+            let viewport_bottom = self
+                .viewport
+                .top_line
+                .saturating_add(self.viewport.visible_lines)
+                .saturating_sub(1);
+
+            if cursor.line < self.viewport.top_line {
+                // Cursor above viewport: scroll up to put cursor at top
+                self.viewport.top_line = cursor.line.min(max_top);
+            } else if cursor.line > viewport_bottom {
+                // Cursor below viewport: scroll down to put cursor at bottom
+                self.viewport.top_line = (cursor.line + 1)
+                    .saturating_sub(self.viewport.visible_lines)
+                    .min(max_top);
+            }
+            // Cursor within viewport: no scroll
+        } else {
+            self.viewport.top_line = 0;
+        }
+
+        // Horizontal scrolling (same as normal - always check)
+        const HORIZONTAL_MARGIN: usize = 4;
+        let left_safe = self.viewport.left_column.saturating_add(HORIZONTAL_MARGIN);
+        let right_safe = self
+            .viewport
+            .left_column
+            .saturating_add(self.viewport.visible_columns)
+            .saturating_sub(HORIZONTAL_MARGIN);
+
+        if cursor.column < left_safe {
+            self.viewport.left_column = cursor.column.saturating_sub(HORIZONTAL_MARGIN);
+        } else if cursor.column >= right_safe {
+            self.viewport.left_column = cursor
+                .column
+                .saturating_add(HORIZONTAL_MARGIN)
+                .saturating_add(1)
+                .saturating_sub(self.viewport.visible_columns);
+        }
+    }
+
     /// Ensure the active cursor is visible using the specified reveal strategy
     ///
     /// - `Minimal`: scroll just enough to bring cursor into safe zone

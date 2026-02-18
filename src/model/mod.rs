@@ -651,6 +651,14 @@ impl AppModel {
         self.sync_preview_scroll();
     }
 
+    /// Ensure cursor is visible without scroll padding (for mouse clicks).
+    /// Only scrolls if cursor is completely outside the viewport.
+    pub fn ensure_cursor_visible_no_padding(&mut self) {
+        self.editor_area
+            .ensure_focused_cursor_visible_no_padding();
+        self.sync_preview_scroll();
+    }
+
     /// Ensure cursor is visible with direction-aware alignment
     ///
     /// When moving up, cursor is revealed at the top of the safe zone.

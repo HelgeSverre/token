@@ -309,6 +309,24 @@ impl EditorArea {
         editor.ensure_cursor_visible_with_mode(doc, mode);
     }
 
+    /// Ensure the focused editor's cursor is visible without applying scroll padding.
+    /// Use for mouse clicks where the clicked position is already on screen.
+    pub fn ensure_focused_cursor_visible_no_padding(&mut self) {
+        let doc_id = match self.focused_document_id() {
+            Some(id) => id,
+            None => return,
+        };
+        let editor_id = match self.focused_editor_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let doc_ptr = self.documents.get(&doc_id).unwrap() as *const Document;
+        let editor = self.editors.get_mut(&editor_id).unwrap();
+        let doc = unsafe { &*doc_ptr };
+        editor.ensure_cursor_visible_no_padding(doc);
+    }
+
     /// Generate a new document ID
     pub fn next_document_id(&mut self) -> DocumentId {
         let id = DocumentId(self.next_document_id);
@@ -680,7 +698,12 @@ impl EditorArea {
     ///
     /// Uses `ViewportGeometry` methods for canonical calculations to ensure
     /// consistent viewport sizing across the codebase.
-    pub fn sync_all_viewports(&mut self, line_height: usize, char_width: f32) {
+    pub fn sync_all_viewports(
+        &mut self,
+        line_height: usize,
+        char_width: f32,
+        tab_bar_height: usize,
+    ) {
         use super::ViewportGeometry;
 
         // Collect group rects and their editor IDs
@@ -699,8 +722,10 @@ impl EditorArea {
 
         // Update each editor's viewport based on its group's dimensions
         for (editor_ids, width, height) in group_info {
-            // Use canonical ViewportGeometry methods for consistent calculations
-            let visible_lines = ViewportGeometry::compute_visible_lines(height, line_height, 0);
+            // Subtract tab_bar_height because group rect includes the tab bar area,
+            // but visible_lines should only count the text content area.
+            let visible_lines =
+                ViewportGeometry::compute_visible_lines(height, line_height, tab_bar_height);
             let visible_columns = ViewportGeometry::compute_visible_columns(width, char_width);
 
             for editor_id in editor_ids {

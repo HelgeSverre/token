@@ -186,7 +186,10 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             model.editor_mut().primary_cursor_mut().column = column;
             model.editor_mut().primary_cursor_mut().desired_column = None;
             model.editor_mut().collapse_selections_to_cursors();
-            model.ensure_cursor_visible();
+            // Use no-padding scroll: mouse clicks target visible positions,
+            // so only scroll if cursor is completely outside the viewport.
+            // This prevents unwanted scrolling when clicking near viewport edges.
+            model.ensure_cursor_visible_no_padding();
             model.reset_cursor_blink();
             Some(Cmd::redraw_editor())
         }

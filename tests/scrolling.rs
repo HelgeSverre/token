@@ -905,3 +905,231 @@ fn test_page_up_to_short_line_clamps_column() {
         .line_length(model.editor().primary_cursor().line);
     assert_eq!(model.editor().primary_cursor().column, 30.min(line_len));
 }
+
+// ========================================================================
+// Mouse click (SetCursorPosition) should not scroll viewport
+// ========================================================================
+
+#[test]
+fn test_click_on_visible_line_does_not_scroll() {
+    // Simulate clicking on a visible line in the lower half of the viewport.
+    // This should NEVER cause the viewport to scroll - the clicked line is
+    // already visible, so ensure_cursor_visible should be a no-op.
+    let text = (0..100)
+        .map(|i| format!("line{}", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut model = test_model(&text, 0, 0);
+    model.editor_mut().viewport.visible_lines = 40;
+    model.editor_mut().viewport.top_line = 0;
+    model.editor_mut().scroll_padding = 1;
+
+    // Click on line 35 (well within the viewport of 40 visible lines)
+    // This is in the lower half but not the last line.
+    let top_before = model.editor().viewport.top_line;
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::SetCursorPosition {
+            line: 35,
+            column: 0,
+        }),
+    );
+
+    assert_eq!(
+        model.editor().viewport.top_line, top_before,
+        "Viewport should not scroll when clicking on a visible line (line 35 of 40 visible)"
+    );
+    assert_eq!(model.editor().primary_cursor().line, 35);
+}
+
+#[test]
+fn test_click_on_last_visible_line_does_not_scroll() {
+    // Clicking on the very last visible line should not scroll either.
+    // Scroll padding should NOT apply to mouse clicks.
+    let text = (0..100)
+        .map(|i| format!("line{}", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut model = test_model(&text, 0, 0);
+    model.editor_mut().viewport.visible_lines = 40;
+    model.editor_mut().viewport.top_line = 0;
+    model.editor_mut().scroll_padding = 1;
+
+    // Click on line 39 (the very last visible line: top_line=0, visible_lines=40)
+    let top_before = model.editor().viewport.top_line;
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::SetCursorPosition {
+            line: 39,
+            column: 0,
+        }),
+    );
+
+    assert_eq!(
+        model.editor().viewport.top_line, top_before,
+        "Viewport should not scroll when clicking on the last visible line"
+    );
+    assert_eq!(model.editor().primary_cursor().line, 39);
+}
+
+#[test]
+fn test_click_on_first_visible_line_does_not_scroll() {
+    // Clicking on the first visible line (which is inside the scroll padding zone)
+    // should not scroll when done via mouse click.
+    let text = (0..100)
+        .map(|i| format!("line{}", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut model = test_model(&text, 50, 0);
+    model.editor_mut().viewport.visible_lines = 40;
+    model.editor_mut().viewport.top_line = 40;
+    model.editor_mut().scroll_padding = 3;
+
+    // Click on line 40 (the very first visible line, within padding zone)
+    let top_before = model.editor().viewport.top_line;
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::SetCursorPosition {
+            line: 40,
+            column: 0,
+        }),
+    );
+
+    assert_eq!(
+        model.editor().viewport.top_line, top_before,
+        "Viewport should not scroll when clicking on the first visible line"
+    );
+    assert_eq!(model.editor().primary_cursor().line, 40);
+}
+
+#[test]
+fn test_click_off_screen_below_does_scroll() {
+    // If SetCursorPosition places cursor BELOW the viewport (e.g., programmatic
+    // cursor movement, not a real mouse click on a visible line), it should scroll.
+    let text = (0..100)
+        .map(|i| format!("line{}", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut model = test_model(&text, 0, 0);
+    model.editor_mut().viewport.visible_lines = 40;
+    model.editor_mut().viewport.top_line = 0;
+    model.editor_mut().scroll_padding = 1;
+
+    // "Click" on line 50, which is completely outside the viewport (0..39)
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::SetCursorPosition {
+            line: 50,
+            column: 0,
+        }),
+    );
+
+    // Should scroll to reveal line 50
+    assert_eq!(model.editor().primary_cursor().line, 50);
+    assert!(
+        model.editor().viewport.top_line > 0,
+        "Viewport should scroll when cursor is placed outside the visible area"
+    );
+    // Cursor should be within the visible range
+    let top = model.editor().viewport.top_line;
+    let vis = model.editor().viewport.visible_lines;
+    assert!(
+        50 >= top && 50 < top + vis,
+        "Cursor should be within visible range after scroll"
+    );
+}
+
+#[test]
+fn test_click_off_screen_above_does_scroll() {
+    // Cursor placed above the viewport should trigger scroll
+    let text = (0..100)
+        .map(|i| format!("line{}", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut model = test_model(&text, 50, 0);
+    model.editor_mut().viewport.visible_lines = 40;
+    model.editor_mut().viewport.top_line = 30;
+    model.editor_mut().scroll_padding = 1;
+
+    // "Click" on line 5, which is above the viewport (30..69)
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::SetCursorPosition {
+            line: 5,
+            column: 0,
+        }),
+    );
+
+    assert_eq!(model.editor().primary_cursor().line, 5);
+    assert!(
+        model.editor().viewport.top_line <= 5,
+        "Viewport should scroll up when cursor is placed above visible area"
+    );
+}
+
+// ========================================================================
+// sync_all_viewports correctness
+// ========================================================================
+
+#[test]
+fn test_sync_all_viewports_subtracts_tab_bar_height() {
+    // sync_all_viewports should compute visible_lines by subtracting
+    // tab_bar_height from the group rect height, since the group rect
+    // includes the tab bar area.
+    let text = (0..100)
+        .map(|i| format!("line{}", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut model = test_model(&text, 0, 0);
+
+    let line_height = model.line_height; // 20
+    let tab_bar_height = model.metrics.tab_bar_height; // 28 at scale 1.0
+
+    // Set group rect to simulate a 600px-tall group (includes tab bar)
+    let group_id = model.editor_area.focused_group_id;
+    model.editor_area.groups.get_mut(&group_id).unwrap().rect =
+        token::model::Rect::new(0.0, 0.0, 800.0, 600.0);
+
+    model
+        .editor_area
+        .sync_all_viewports(line_height, model.char_width, tab_bar_height);
+
+    // Expected: (600 - 28) / 20 = 572 / 20 = 28 lines
+    let expected_visible = (600 - tab_bar_height) / line_height;
+    assert_eq!(
+        model.editor().viewport.visible_lines, expected_visible,
+        "sync_all_viewports should subtract tab_bar_height from group height"
+    );
+}
+
+#[test]
+fn test_new_editor_gets_correct_viewport_after_open() {
+    // When opening a new file in a new tab, the new editor's viewport
+    // should be sized correctly, not stuck at the default 25 lines.
+    let text = "initial content";
+    let mut model = test_model(text, 0, 0);
+    model.editor_mut().viewport.visible_lines = 40;
+    model.editor_mut().viewport.visible_columns = 100;
+
+    // Set the group rect so sync_all_viewports can work
+    let group_id = model.editor_area.focused_group_id;
+    let line_height = model.line_height;
+    let tab_bar_height = model.metrics.tab_bar_height;
+    let group_height = (40 * line_height + tab_bar_height) as f32;
+    model.editor_area.groups.get_mut(&group_id).unwrap().rect =
+        token::model::Rect::new(0.0, 0.0, 800.0, group_height);
+
+    // Open a new tab (creating a new editor)
+    update(
+        &mut model,
+        Msg::Layout(token::messages::LayoutMsg::NewTab),
+    );
+
+    // The new editor should have visible_lines matching the group, NOT the default 25
+    assert!(
+        model.editor().viewport.visible_lines > 25,
+        "New editor should have correct viewport size (got {}), not default 25",
+        model.editor().viewport.visible_lines
+    );
+    assert_eq!(model.editor().viewport.visible_lines, 40);
+}
