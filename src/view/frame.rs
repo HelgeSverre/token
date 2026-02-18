@@ -4,7 +4,7 @@
 //! direct buffer indexing scattered throughout rendering code.
 
 use fontdue::Font;
-use token::model::editor_area::Rect;
+use crate::model::editor_area::Rect;
 
 use super::GlyphCache;
 
@@ -455,8 +455,8 @@ impl<'a> TextPainter<'a> {
         x: usize,
         y: usize,
         text: &str,
-        tokens: &[token::syntax::HighlightToken],
-        syntax_theme: &token::theme::SyntaxTheme,
+        tokens: &[crate::syntax::HighlightToken],
+        syntax_theme: &crate::theme::SyntaxTheme,
         default_color: u32,
     ) {
         if tokens.is_empty() {

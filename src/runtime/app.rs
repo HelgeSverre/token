@@ -26,12 +26,12 @@ use token::model::AppModel;
 use token::syntax::{LanguageId, ParserState};
 use token::update::update;
 
-use crate::view::geometry::is_in_group_tab_bar;
+use token::view::geometry::is_in_group_tab_bar;
 
 use super::input::handle_key;
 use super::mouse::{handle_mouse_press, make_mouse_event, ClickTracker};
 use super::webview::WebviewManager;
-use crate::view::Renderer;
+use token::view::Renderer;
 
 use super::perf::PerfStats;
 
@@ -1095,6 +1095,30 @@ impl App {
                 #[cfg(target_os = "linux")]
                 {
                     let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
+                }
+            }
+            Cmd::RevealFileInFinder { path } => {
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = std::process::Command::new("open")
+                        .arg("-R")
+                        .arg(&path)
+                        .spawn();
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    if let Some(parent) = path.parent() {
+                        let _ = std::process::Command::new("xdg-open")
+                            .arg(parent)
+                            .spawn();
+                    }
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    let _ = std::process::Command::new("explorer")
+                        .arg("/select,")
+                        .arg(&path)
+                        .spawn();
                 }
             }
             Cmd::OpenFileInEditor { path } => {

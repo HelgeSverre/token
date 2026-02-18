@@ -4,7 +4,7 @@
 //! and proper text display. Used by modals, CSV cell editor, and potentially
 //! other single-line input contexts.
 
-use token::editable::{Cursor, EditableState, Position, Selection, StringBuffer};
+use crate::editable::{Cursor, EditableState, Position, Selection, StringBuffer};
 
 use super::frame::Frame;
 use super::TextPainter;

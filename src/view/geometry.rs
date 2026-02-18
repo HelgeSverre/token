@@ -7,15 +7,15 @@
 //! All functions here are pure (no I/O, no side effects) and can be
 //! tested independently of the rendering infrastructure.
 
-use token::model::editor_area::{EditorGroup, Rect};
-use token::model::{AppModel, Document, EditorState};
+use crate::model::editor_area::{EditorGroup, Rect};
+use crate::model::{AppModel, Document, EditorState};
 
 // ============================================================================
 // Layout Constants
 // ============================================================================
 
 // Re-export TABULATOR_WIDTH from util::text for single source of truth
-pub use token::util::text::TABULATOR_WIDTH;
+pub use crate::util::text::TABULATOR_WIDTH;
 
 // ============================================================================
 // Viewport Sizing Helpers
@@ -278,7 +278,7 @@ pub fn pixel_to_line_and_visual_column_in_group(
     let local_x = x - group_rect.x as f64;
     let local_y = y - group_rect.y as f64;
 
-    let text_x = token::model::text_start_x_scaled(char_width, &model.metrics).round() as f64;
+    let text_x = crate::model::text_start_x_scaled(char_width, &model.metrics).round() as f64;
 
     let text_start_y = model.metrics.tab_bar_height as f64;
     let adjusted_y = (local_y - text_start_y).max(0.0);
@@ -315,7 +315,7 @@ pub fn pixel_to_cursor_in_group(
     let local_x = x - group_rect.x as f64;
     let local_y = y - group_rect.y as f64;
 
-    let text_x = token::model::text_start_x_scaled(char_width, &model.metrics).round() as f64;
+    let text_x = crate::model::text_start_x_scaled(char_width, &model.metrics).round() as f64;
     let text_start_y = model.metrics.tab_bar_height as f64;
     let adjusted_y = (local_y - text_start_y).max(0.0);
     let visual_line = (adjusted_y / line_height).floor() as usize;
@@ -387,9 +387,9 @@ impl GroupLayout {
 
         let rect_x = group_rect.x.round() as usize;
         let gutter_right_x =
-            rect_x + token::model::gutter_border_x_scaled(char_width, metrics).round() as usize;
+            rect_x + crate::model::gutter_border_x_scaled(char_width, metrics).round() as usize;
         let text_start_x =
-            rect_x + token::model::text_start_x_scaled(char_width, metrics).round() as usize;
+            rect_x + crate::model::text_start_x_scaled(char_width, metrics).round() as usize;
 
         Self {
             group_rect,
@@ -631,7 +631,7 @@ pub struct Pane {
 
 impl Pane {
     /// Create a pane with a header (uses tab_bar_height).
-    pub fn with_header(rect: Rect, metrics: &token::model::ScaledMetrics) -> Self {
+    pub fn with_header(rect: Rect, metrics: &crate::model::ScaledMetrics) -> Self {
         Self {
             outer_rect: rect,
             header_height: metrics.tab_bar_height,
@@ -644,7 +644,7 @@ impl Pane {
 
     /// Create a pane without a header.
     #[allow(dead_code)]
-    pub fn without_header(rect: Rect, metrics: &token::model::ScaledMetrics) -> Self {
+    pub fn without_header(rect: Rect, metrics: &crate::model::ScaledMetrics) -> Self {
         Self {
             outer_rect: rect,
             header_height: 0,
@@ -727,7 +727,7 @@ impl Pane {
 
     /// Y position for header title text (vertically centered)
     #[inline]
-    pub fn header_title_y(&self, metrics: &token::model::ScaledMetrics) -> usize {
+    pub fn header_title_y(&self, metrics: &crate::model::ScaledMetrics) -> usize {
         self.y() + metrics.padding_medium
     }
 
@@ -854,7 +854,7 @@ pub fn modal_bounds(
 // Dock Geometry
 // ============================================================================
 
-use token::panel::{DockLayout, DockPosition};
+use crate::panel::{DockLayout, DockPosition};
 
 /// Computed rectangles for all dock areas
 ///

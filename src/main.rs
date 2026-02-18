@@ -11,7 +11,6 @@ use token::cli::CliArgs;
 #[cfg(debug_assertions)]
 mod debug_dump;
 mod runtime;
-mod view;
 
 use runtime::App;
 

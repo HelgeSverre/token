@@ -19,11 +19,13 @@ pub mod model;
 pub mod overlay;
 pub mod panel;
 pub mod panels;
+pub mod perf;
 pub mod syntax;
 pub mod theme;
 pub mod tracing;
 pub mod update;
 pub mod util;
+pub mod view;
 
 pub mod rendering {
     //! Rendering utilities exposed for benchmarks

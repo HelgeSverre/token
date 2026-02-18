@@ -16,8 +16,8 @@ use token::messages::{LayoutMsg, ModalMsg, Msg, PreviewMsg, UiMsg, WorkspaceMsg}
 use token::model::AppModel;
 use token::update::update;
 
-use crate::view::hit_test::{hit_test_ui, EventResult, HitTarget, MouseEvent};
-use crate::view::Renderer;
+use token::view::hit_test::{hit_test_ui, EventResult, HitTarget, MouseEvent};
+use token::view::Renderer;
 
 /// Click tracking state for double/triple click detection
 pub struct ClickTracker {

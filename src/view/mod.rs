@@ -31,8 +31,8 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use winit::window::Window;
 
-use token::commands::{Damage, DamageArea};
-use token::model::editor_area::{EditorGroup, GroupId, Rect, SplitterBar};
+use crate::commands::{Damage, DamageArea};
+use crate::model::editor_area::{EditorGroup, GroupId, Rect, SplitterBar};
 
 /// Check if the damage contains cursor lines (free function to avoid borrow issues)
 fn has_cursor_lines_damage(damage: &Damage) -> bool {
@@ -43,7 +43,7 @@ fn has_cursor_lines_damage(damage: &Damage) -> bool {
             .any(|a| matches!(a, DamageArea::CursorLines(_))),
     }
 }
-use token::model::AppModel;
+use crate::model::AppModel;
 
 /// Context for sidebar rendering, holding constant values throughout tree traversal.
 struct SidebarRenderContext {
@@ -173,7 +173,7 @@ impl Renderer {
         &self,
         damage: &Damage,
         model: &AppModel,
-        #[allow(unused_variables)] perf: &crate::runtime::perf::PerfStats,
+        #[allow(unused_variables)] perf: &crate::perf::PerfStats,
     ) -> Damage {
         // Force full redraw for complex overlays
         if model.ui.active_modal.is_some() {
@@ -270,7 +270,7 @@ impl Renderer {
         let max_chars = visible_columns;
 
         // Reusable buffers
-        let mut adjusted_tokens: Vec<token::syntax::HighlightToken> = Vec::with_capacity(32);
+        let mut adjusted_tokens: Vec<crate::syntax::HighlightToken> = Vec::with_capacity(32);
         let mut display_text_buf = String::with_capacity(max_chars + 16);
 
         for &doc_line in dirty_lines {
@@ -435,7 +435,7 @@ impl Renderer {
                     let end = visual_end.saturating_sub(editor.viewport.left_column);
 
                     if end > 0 && start < max_chars {
-                        adjusted_tokens.push(token::syntax::HighlightToken {
+                        adjusted_tokens.push(crate::syntax::HighlightToken {
                             start_col: start,
                             end_col: end.min(max_chars),
                             highlight: t.highlight,
@@ -503,7 +503,7 @@ impl Renderer {
     /// - All editor groups (each with tab bar, gutter, text area)
     /// - All preview panes (markdown preview)
     /// - Splitter bars between groups
-    fn render_editor_area(
+    pub fn render_editor_area(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
@@ -611,7 +611,7 @@ impl Renderer {
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
-        preview_id: token::model::editor_area::PreviewId,
+        preview_id: crate::model::editor_area::PreviewId,
         rect: Rect,
     ) {
         let preview = match model.editor_area.previews.get(&preview_id) {
@@ -730,7 +730,7 @@ impl Renderer {
     ///
     /// This is the main orchestrator that calls individual widget functions.
     /// Uses GroupLayout for all positioning to ensure DPI-aware, consistent rendering.
-    fn render_editor_group(
+    pub fn render_editor_group(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
@@ -849,7 +849,7 @@ impl Renderer {
         }
     }
 
-    fn render_splitters(frame: &mut Frame, splitters: &[SplitterBar], model: &AppModel) {
+    pub fn render_splitters(frame: &mut Frame, splitters: &[SplitterBar], model: &AppModel) {
         let splitter_color = model.theme.splitter.background.to_argb_u32();
 
         for splitter in splitters {
@@ -858,7 +858,7 @@ impl Renderer {
     }
 
     /// Render the sidebar (file tree) for a workspace.
-    fn render_sidebar(
+    pub fn render_sidebar(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
@@ -911,8 +911,8 @@ impl Renderer {
         fn render_node(
             frame: &mut Frame,
             painter: &mut TextPainter,
-            node: &token::model::FileNode,
-            workspace: &token::model::Workspace,
+            node: &crate::model::FileNode,
+            workspace: &crate::model::Workspace,
             ctx: &SidebarRenderContext,
             y: &mut usize,
             visible_index: &mut usize,
@@ -1053,8 +1053,8 @@ impl Renderer {
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
-        position: token::panel::DockPosition,
-        rect: token::model::editor_area::Rect,
+        position: crate::panel::DockPosition,
+        rect: crate::model::editor_area::Rect,
     ) {
         let dock = model.dock_layout.dock(position);
         if !dock.is_open || dock.panel_ids.is_empty() {
@@ -1071,10 +1071,10 @@ impl Renderer {
 
         // Draw border on edge facing the editor
         match position {
-            token::panel::DockPosition::Left => {
+            crate::panel::DockPosition::Left => {
                 // Border on right edge
                 frame.fill_rect(
-                    token::model::editor_area::Rect::new(
+                    crate::model::editor_area::Rect::new(
                         rect.x + rect.width - 1.0,
                         rect.y,
                         1.0,
@@ -1083,17 +1083,17 @@ impl Renderer {
                     border_color,
                 );
             }
-            token::panel::DockPosition::Right => {
+            crate::panel::DockPosition::Right => {
                 // Border on left edge
                 frame.fill_rect(
-                    token::model::editor_area::Rect::new(rect.x, rect.y, 1.0, rect.height),
+                    crate::model::editor_area::Rect::new(rect.x, rect.y, 1.0, rect.height),
                     border_color,
                 );
             }
-            token::panel::DockPosition::Bottom => {
+            crate::panel::DockPosition::Bottom => {
                 // Border on top edge
                 frame.fill_rect(
-                    token::model::editor_area::Rect::new(rect.x, rect.y, rect.width, 1.0),
+                    crate::model::editor_area::Rect::new(rect.x, rect.y, rect.width, 1.0),
                     border_color,
                 );
             }
@@ -1102,9 +1102,9 @@ impl Renderer {
         // Get active panel info
         let active_panel = dock.active_panel();
         let placeholder = active_panel
-            .map(token::panels::PlaceholderPanel::new)
+            .map(crate::panels::PlaceholderPanel::new)
             .unwrap_or_else(|| {
-                token::panels::PlaceholderPanel::new(token::panel::PanelId::TERMINAL)
+                crate::panels::PlaceholderPanel::new(crate::panel::PanelId::TERMINAL)
             });
 
         // Draw panel title
@@ -1132,8 +1132,8 @@ impl Renderer {
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
-        editor: &token::model::EditorState,
-        document: &token::model::Document,
+        editor: &crate::model::EditorState,
+        document: &crate::model::Document,
         layout: &geometry::GroupLayout,
     ) {
         let gutter_bg_color = model.theme.gutter.background.to_argb_u32();
@@ -1191,8 +1191,8 @@ impl Renderer {
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
-        editor: &token::model::EditorState,
-        document: &token::model::Document,
+        editor: &crate::model::EditorState,
+        document: &crate::model::Document,
         layout: &geometry::GroupLayout,
         is_focused: bool,
     ) {
@@ -1341,7 +1341,7 @@ impl Renderer {
         // Reuse buffers to avoid per-line allocations
         let text_color = model.theme.editor.foreground.to_argb_u32();
         let max_chars = visible_columns;
-        let mut adjusted_tokens: Vec<token::syntax::HighlightToken> = Vec::with_capacity(32); // Reused across lines
+        let mut adjusted_tokens: Vec<crate::syntax::HighlightToken> = Vec::with_capacity(32); // Reused across lines
         let mut display_text_buf = String::with_capacity(max_chars + 16); // Reused for display
 
         for (screen_line, doc_line) in (editor.viewport.top_line..end_line).enumerate() {
@@ -1380,7 +1380,7 @@ impl Renderer {
                     let end = visual_end.saturating_sub(editor.viewport.left_column);
 
                     if end > 0 && start < max_chars {
-                        adjusted_tokens.push(token::syntax::HighlightToken {
+                        adjusted_tokens.push(crate::syntax::HighlightToken {
                             start_col: start,
                             end_col: end.min(max_chars),
                             highlight: t.highlight,
@@ -1490,11 +1490,11 @@ impl Renderer {
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
-        csv: &token::csv::CsvState,
+        csv: &crate::csv::CsvState,
         layout: &geometry::GroupLayout,
         is_focused: bool,
     ) {
-        use token::csv::render::{column_to_letters, truncate_text, CsvRenderLayout};
+        use crate::csv::render::{column_to_letters, truncate_text, CsvRenderLayout};
 
         let char_width = painter.char_width();
         let line_height = painter.line_height();
@@ -1655,7 +1655,7 @@ impl Renderer {
                 let display_text = truncate_text(cell_value, col_width_chars);
 
                 // Determine color and alignment
-                let (text_color, align_right) = if token::csv::render::is_number(cell_value) {
+                let (text_color, align_right) = if crate::csv::render::is_number(cell_value) {
                     (number_color, true)
                 } else {
                     (fg_color, false)
@@ -1714,9 +1714,9 @@ impl Renderer {
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
-        csv: &token::csv::CsvState,
-        layout: &token::csv::render::CsvRenderLayout,
-        edit_state: &token::csv::CellEditState,
+        csv: &crate::csv::CsvState,
+        layout: &crate::csv::render::CsvRenderLayout,
+        edit_state: &crate::csv::CellEditState,
         line_height: usize,
         char_width: f32,
     ) {
@@ -1787,7 +1787,7 @@ impl Renderer {
     /// - Left-aligned segments (mode, filename, position, etc.)
     /// - Right-aligned segments
     /// - Separators between segments
-    fn render_status_bar(
+    pub fn render_status_bar(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
@@ -1846,9 +1846,9 @@ impl Renderer {
         window_width: usize,
         window_height: usize,
     ) {
-        use token::commands::filter_commands;
-        use token::model::ModalState;
-        use token::theme::ThemeSource;
+        use crate::commands::filter_commands;
+        use crate::model::ModalState;
+        use crate::theme::ThemeSource;
         let char_width = painter.char_width();
         let line_height = painter.line_height();
 
@@ -2222,7 +2222,7 @@ impl Renderer {
                     }
 
                     // File icon
-                    let icon = token::model::FileExtension::from_path(&file_match.path).icon();
+                    let icon = crate::model::FileExtension::from_path(&file_match.path).icon();
                     let icon_x = modal_x + 12;
                     painter.draw(frame, icon_x, item_y, icon, fg_color);
 
@@ -2307,7 +2307,7 @@ impl Renderer {
     pub fn render(
         &mut self,
         model: &mut AppModel,
-        perf: &mut crate::runtime::perf::PerfStats,
+        perf: &mut crate::perf::PerfStats,
         damage: &Damage,
     ) -> Result<()> {
         // Skip rendering entirely if no damage
@@ -2530,7 +2530,7 @@ impl Renderer {
                     line_height,
                 );
                 let bottom_height = model.dock_layout.bottom.size(model.metrics.scale_factor);
-                let dock_rect = token::model::editor_area::Rect::new(
+                let dock_rect = crate::model::editor_area::Rect::new(
                     width as f32 - right_width,
                     0.0,
                     right_width,
@@ -2540,7 +2540,7 @@ impl Renderer {
                     &mut frame,
                     &mut painter,
                     model,
-                    token::panel::DockPosition::Right,
+                    crate::panel::DockPosition::Right,
                     dock_rect,
                 );
             }
@@ -2560,7 +2560,7 @@ impl Renderer {
                     char_width,
                     line_height,
                 );
-                let dock_rect = token::model::editor_area::Rect::new(
+                let dock_rect = crate::model::editor_area::Rect::new(
                     sidebar_width,
                     height as f32 - status_bar_height as f32 - bottom_height,
                     width as f32 - sidebar_width, // spans full width under right dock
@@ -2570,7 +2570,7 @@ impl Renderer {
                     &mut frame,
                     &mut painter,
                     model,
-                    token::panel::DockPosition::Bottom,
+                    crate::panel::DockPosition::Bottom,
                     dock_rect,
                 );
             }
@@ -2647,7 +2647,7 @@ impl Renderer {
                 char_width,
                 line_height,
             );
-            crate::runtime::perf::render_perf_overlay(&mut frame, &mut painter, perf, &model.theme);
+            crate::perf::render_perf_overlay(&mut frame, &mut painter, perf, &model.theme);
         }
 
         #[cfg(debug_assertions)]
@@ -2887,14 +2887,14 @@ impl Renderer {
         x: f64,
         y: f64,
         model: &AppModel,
-    ) -> Option<token::csv::CellPosition> {
+    ) -> Option<crate::csv::CellPosition> {
         let group = model.editor_area.focused_group()?;
         let editor = model.editor_area.focused_editor()?;
         let csv = editor.view_mode.as_csv()?;
 
         let line_height = self.line_metrics.new_line_size.ceil() as usize;
 
-        token::csv::render::pixel_to_csv_cell(
+        crate::csv::render::pixel_to_csv_cell(
             csv,
             &group.rect,
             x,

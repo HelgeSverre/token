@@ -3,8 +3,8 @@
 //! This module contains utility functions used across multiple view components
 //! to avoid code duplication.
 
-use token::model::editor_area::Tab;
-use token::model::AppModel;
+use crate::model::editor_area::Tab;
+use crate::model::AppModel;
 
 /// Get the display title for a tab.
 ///

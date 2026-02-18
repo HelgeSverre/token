@@ -16,9 +16,9 @@ use std::path::PathBuf;
 use winit::event::{ElementState, MouseButton};
 use winit::keyboard::ModifiersState;
 
-use token::commands::filter_commands;
-use token::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, TabId};
-use token::model::{AppModel, FocusTarget, ModalState};
+use crate::commands::filter_commands;
+use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, TabId};
+use crate::model::{AppModel, FocusTarget, ModalState};
 
 use super::geometry::{is_in_group_tab_bar, is_in_status_bar, modal_bounds, Pane};
 
@@ -187,24 +187,24 @@ pub enum HitTarget {
 
     /// Dock resize handle (between dock and editor area)
     DockResize {
-        position: token::panel::DockPosition,
+        position: crate::panel::DockPosition,
     },
 
     /// A tab in a dock's tab bar
     DockTab {
-        position: token::panel::DockPosition,
-        panel_id: token::panel::PanelId,
+        position: crate::panel::DockPosition,
+        panel_id: crate::panel::PanelId,
     },
 
     /// Empty area of a dock's tab bar (no specific tab)
     DockTabBarEmpty {
-        position: token::panel::DockPosition,
+        position: crate::panel::DockPosition,
     },
 
     /// Dock content area (the active panel's content)
     DockContent {
-        position: token::panel::DockPosition,
-        active_panel_id: token::panel::PanelId,
+        position: crate::panel::DockPosition,
+        active_panel_id: crate::panel::PanelId,
     },
 }
 
@@ -239,7 +239,7 @@ impl HitTarget {
             | HitTarget::DockTabBarEmpty { position }
             | HitTarget::DockContent { position, .. } => {
                 match position {
-                    token::panel::DockPosition::Left => Some(FocusTarget::Sidebar),
+                    crate::panel::DockPosition::Left => Some(FocusTarget::Sidebar),
                     _ => Some(FocusTarget::Editor), // TODO: FocusTarget::Dock(position)
                 }
             }
@@ -268,7 +268,7 @@ pub enum EventResult {
         /// Optional focus change to apply
         focus: Option<FocusTarget>,
         /// Optional command to execute (takes precedence over redraw flag)
-        cmd: Option<token::commands::Cmd>,
+        cmd: Option<crate::commands::Cmd>,
     },
 
     /// Event was not handled by this target; allow fallback handling
@@ -304,7 +304,7 @@ impl EventResult {
     }
 
     /// Create a consumed result with a command and focus change
-    pub fn consumed_with_cmd(cmd: Option<token::commands::Cmd>, focus: FocusTarget) -> Self {
+    pub fn consumed_with_cmd(cmd: Option<crate::commands::Cmd>, focus: FocusTarget) -> Self {
         Self::Consumed {
             redraw: cmd.is_none(), // Only set redraw if no cmd
             focus: Some(focus),
@@ -323,7 +323,7 @@ impl EventResult {
 
     /// Get the command from this result
     #[allow(dead_code)]
-    pub fn cmd(&self) -> Option<&token::commands::Cmd> {
+    pub fn cmd(&self) -> Option<&crate::commands::Cmd> {
         match self {
             Self::Consumed { cmd, .. } => cmd.as_ref(),
             Self::Bubble => None,
@@ -450,7 +450,7 @@ pub fn hit_test_sidebar(model: &AppModel, pt: Point) -> Option<HitTarget> {
 pub fn hit_test_splitters(
     _model: &AppModel,
     pt: Point,
-    splitters: &[token::model::editor_area::SplitterBar],
+    splitters: &[crate::model::editor_area::SplitterBar],
 ) -> Option<HitTarget> {
     for (i, splitter) in splitters.iter().enumerate() {
         if splitter.rect.contains(pt.x as f32, pt.y as f32) {
@@ -530,7 +530,7 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     }
 
     // Check if in gutter area
-    let gutter_width = token::model::gutter_border_x_scaled(char_width, &model.metrics) as f64;
+    let gutter_width = crate::model::gutter_border_x_scaled(char_width, &model.metrics) as f64;
     let gutter_x_end = group.rect.x as f64 + gutter_width;
     let content_y_start = group.rect.y as f64 + tab_bar_height as f64;
 
