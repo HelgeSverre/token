@@ -90,19 +90,22 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
 
         <!-- Tab bar -->
         <div class="tab-bar">
-          <div class="tab active">
+          <div class="tab active" data-tab="code">
             <span class="tab-name">main.rs</span>
           </div>
-          <div class="tab">
+          <div class="tab" data-tab="code">
             <span class="tab-name">config.rs</span>
             <span class="tab-modified">●</span>
           </div>
-          <div class="tab">
+          <div class="tab" data-tab="code">
             <span class="tab-name">lib.rs</span>
+          </div>
+          <div class="tab" data-tab="yaml" id="tab-yaml">
+            <span class="tab-name">theme.yaml</span>
           </div>
         </div>
 
-        <!-- Editor pane -->
+        <!-- Editor pane (code preview) -->
         <div class="editor-pane" id="editor-pane">
           <div class="editor-gutter">
             {Array.from({ length: 28 }, (_, i) => (
@@ -113,6 +116,15 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
           <div class="editor-code-wrap">
             <pre class="editor-code"><code set:html={codePreview} /></pre>
             <div class="editor-cursor"></div>
+          </div>
+        </div>
+
+        <!-- Editor pane (YAML view) -->
+        <div class="editor-pane editor-pane-yaml" id="editor-pane-yaml" style="display:none">
+          <div class="editor-gutter" id="yaml-gutter"></div>
+          <div class="editor-gutter-border"></div>
+          <div class="editor-code-wrap">
+            <pre class="editor-code editor-code-yaml" id="yaml-content"></pre>
           </div>
         </div>
 
@@ -364,6 +376,7 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     const swatchesSyntax = document.getElementById('swatches-syntax')!;
 
     const ideFrame = document.querySelector('.ide-frame') as HTMLElement;
+    let currentTheme: any = themes[0];
 
     function applyTheme(theme: any) {
       const c = theme.colors;
@@ -439,6 +452,10 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
       buttons.forEach(btn => {
         btn.classList.toggle('active', btn.dataset.themeId === theme.id);
       });
+
+      // Track current theme for YAML view
+      currentTheme = theme;
+      if (activeView === 'yaml') updateYamlContent();
     }
 
     buttons.forEach(btn => {
@@ -448,6 +465,84 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
         if (theme) {
           if (editMode) exitEditMode();
           applyTheme(theme);
+        }
+      });
+    });
+
+    // ── YAML tab view ──────────────────────────────────────
+    const editorPaneCode = document.getElementById('editor-pane')!;
+    const editorPaneYaml = document.getElementById('editor-pane-yaml')!;
+    const yamlGutter = document.getElementById('yaml-gutter')!;
+    const yamlContent = document.getElementById('yaml-content')!;
+    const tabs = document.querySelectorAll<HTMLElement>('.tab-bar .tab');
+    let activeView: 'code' | 'yaml' = 'code';
+
+    function showYamlView() {
+      activeView = 'yaml';
+      editorPaneCode.style.display = 'none';
+      editorPaneYaml.style.display = 'flex';
+      tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === 'yaml'));
+      updateYamlContent();
+    }
+
+    function showCodeView() {
+      activeView = 'code';
+      editorPaneCode.style.display = 'flex';
+      editorPaneYaml.style.display = 'none';
+      // Re-activate first code tab
+      tabs.forEach(t => t.classList.remove('active'));
+      tabs[0]?.classList.add('active');
+    }
+
+    function updateYamlContent() {
+      const yamlStr = currentTheme.yaml || '';
+      const lines = yamlStr.split('\n');
+
+      // Build gutter
+      yamlGutter.innerHTML = lines
+        .map((_: string, i: number) => `<span class="line-num">${i + 1}</span>`)
+        .join('');
+
+      // Build syntax-highlighted YAML
+      yamlContent.innerHTML = lines
+        .map((line: string) => highlightYamlLine(line))
+        .join('\n');
+    }
+
+    function highlightYamlLine(line: string): string {
+      // Comment lines
+      if (line.trimStart().startsWith('#')) {
+        return `<span class="cm">${escapeHtml(line)}</span>`;
+      }
+      // Key-value lines
+      const match = line.match(/^(\s*)([\w_]+)(:)(.*)/);
+      if (match) {
+        const [, indent, key, colon, rest] = match;
+        let valuePart = '';
+        const trimmed = rest.trim();
+        if (trimmed.startsWith('"') || trimmed.startsWith("'")) {
+          valuePart = ` <span class="st">${escapeHtml(trimmed)}</span>`;
+        } else if (/^\d+$/.test(trimmed)) {
+          valuePart = ` <span class="nm">${escapeHtml(trimmed)}</span>`;
+        } else if (trimmed) {
+          valuePart = ` <span class="vr">${escapeHtml(trimmed)}</span>`;
+        }
+        return `${escapeHtml(indent)}<span class="kw">${escapeHtml(key)}</span><span class="pn">${escapeHtml(colon)}</span>${valuePart}`;
+      }
+      return escapeHtml(line);
+    }
+
+    function escapeHtml(s: string): string {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Tab click handlers
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        if (tab.dataset.tab === 'yaml') {
+          showYamlView();
+        } else {
+          showCodeView();
         }
       });
     });
@@ -474,6 +569,13 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     }
 
     function applyCustomTheme() {
+      const base = themes.find((t: any) => t.id === baseThemeId) || themes[0];
+      const baseYamlObj = YAML.parse(base.yaml);
+      const yamlObj = buildYamlObject(baseYamlObj, customColors, {
+        name: nameInput.value || 'Custom Theme',
+        author: authorInput.value || 'Unknown',
+        description: '',
+      });
       const customTheme = {
         id: 'custom',
         name: nameInput.value,
@@ -482,6 +584,7 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
         fileName: 'custom-theme.yaml',
         isLight: isLightTheme(customColors.bg || '#1E1E1E'),
         colors: customColors,
+        yaml: YAML.stringify(yamlObj, { indent: 2, lineWidth: 0 }),
       };
       applyTheme(customTheme);
     }
@@ -865,7 +968,7 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     font-family: var(--font-mono);
     font-size: 11px;
     border-radius: 4px 4px 0 0;
-    cursor: default;
+    cursor: pointer;
     user-select: none;
     background: var(--theme-tab-bar-inactive-bg, var(--bg-raised));
     color: var(--theme-tab-bar-inactive-fg, var(--fg-muted));
@@ -941,6 +1044,16 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     color: var(--theme-fg, var(--fg));
     white-space: pre;
     transition: color var(--duration-normal) var(--ease-out);
+  }
+
+  /* YAML pane — selectable, no decorations */
+  .editor-pane-yaml .editor-code {
+    user-select: text;
+    cursor: text;
+  }
+
+  .editor-pane-yaml .editor-code-wrap::before {
+    display: none;
   }
 
   /* Current line highlight — line 7 (0-indexed 6) */
