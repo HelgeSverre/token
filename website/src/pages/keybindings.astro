@@ -9,6 +9,7 @@ const allItems = keybindings.flatMap((cat) =>
 
 <SiteLayout title="Keybindings – Token" description="Keyboard shortcut reference for Token editor">
   <div class="kb-page" data-keybindings={JSON.stringify(keybindings)}>
+    <div class="kb-frame">
     <div class="kb-toolbar">
       <div class="kb-toolbar-left">
         <span class="kb-toolbar-title">keybindings.csv</span>
@@ -122,6 +123,7 @@ const allItems = keybindings.flatMap((cat) =>
         Table View
       </span>
     </footer>
+    </div>
   </div>
 </SiteLayout>
 
@@ -212,10 +214,11 @@ const allItems = keybindings.flatMap((cat) =>
 </script>
 
 <style>
-  .kb-page { display: flex; flex-direction: column; height: calc(100vh - 48px); overflow: hidden; }
-  .kb-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: 0 var(--space-4); height: 40px; min-height: 40px; background: var(--panel-bg); border-bottom: 1px solid var(--border); }
+  .kb-page { max-width: 1400px; margin: 0 auto; padding: 80px 48px 40px; }
+  .kb-frame { display: flex; flex-direction: column; height: calc(100vh - 160px); min-height: 500px; border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; background: var(--bg-deep); }
+  .kb-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: 0 var(--space-4); height: 40px; min-height: 40px; background: var(--bg-raised); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .kb-toolbar-left { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
-  .kb-toolbar-title { font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 600; color: var(--fg-bright); white-space: nowrap; }
+  .kb-toolbar-title { font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 600; color: var(--syn-function); white-space: nowrap; }
   .kb-toolbar-count { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); white-space: nowrap; }
   .kb-toolbar-right { display: flex; align-items: center; gap: var(--space-3); }
   .kb-search-wrap { position: relative; display: flex; align-items: center; }
@@ -265,8 +268,8 @@ const allItems = keybindings.flatMap((cat) =>
   .kb-syn-value { color: var(--syn-type); }
   .kb-syn-comment { color: var(--syn-comment); font-style: italic; }
   .kb-yaml-comment { margin-top: var(--space-2); }
-  .kb-statusbar { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-4); height: 24px; min-height: 24px; background: var(--status-bg); border-top: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); user-select: none; }
+  .kb-statusbar { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-4); height: 28px; min-height: 28px; background: var(--status-bg); border-top: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); user-select: none; flex-shrink: 0; }
   @media (max-width: 1024px) { .kb-th-when, .kb-td-when, .kb-th-notes, .kb-td-notes { display: none; } }
-  @media (max-width: 768px) { .kb-toolbar { flex-wrap: wrap; height: auto; padding: var(--space-2) var(--space-3); gap: var(--space-2); } .kb-search { width: 100%; } .kb-toolbar-right { width: 100%; } .kb-search-wrap { flex: 1; } .kb-th-cat, .kb-td-cat, .kb-th-command, .kb-td-command { display: none; } .kb-table { table-layout: auto; } }
+  @media (max-width: 768px) { .kb-page { padding: 70px 16px 24px; } .kb-frame { height: calc(100vh - 120px); } .kb-toolbar { flex-wrap: wrap; height: auto; padding: var(--space-2) var(--space-3); gap: var(--space-2); } .kb-search { width: 100%; } .kb-toolbar-right { width: 100%; } .kb-search-wrap { flex: 1; } .kb-th-cat, .kb-td-cat, .kb-th-command, .kb-td-command { display: none; } .kb-table { table-layout: auto; } }
   @media (max-width: 480px) { .kb-th-row, .kb-td-row { display: none; } }
 </style>
