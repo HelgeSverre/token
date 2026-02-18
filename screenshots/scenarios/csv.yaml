@@ -1,0 +1,8 @@
+name: csv
+width: 2880
+height: 1800
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: samples/large_data.csv
+    scroll_to: 0

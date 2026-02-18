@@ -1,0 +1,17 @@
+name: multi-cursor
+width: 2880
+height: 1800
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: samples/syntax/sample.rs
+    scroll_to: 0
+    cursor_line: 5
+    cursor_column: 8
+    extra_cursors:
+      - line: 6
+        column: 8
+      - line: 7
+        column: 8
+      - line: 8
+        column: 8

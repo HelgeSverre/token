@@ -1,0 +1,13 @@
+name: hero
+width: 2880
+height: 1800
+scale: 2.0
+theme: fleet-dark
+split_direction: horizontal
+files:
+  - path: samples/syntax/sample.rs
+    scroll_to: 0
+    cursor_line: 12
+    cursor_column: 20
+  - path: samples/syntax/sample.yaml
+    scroll_to: 0

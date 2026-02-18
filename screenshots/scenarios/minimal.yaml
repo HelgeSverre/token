@@ -1,0 +1,10 @@
+name: minimal
+width: 2880
+height: 1800
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: samples/syntax/sample.rs
+    scroll_to: 10
+    cursor_line: 18
+    cursor_column: 0
