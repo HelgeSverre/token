@@ -1108,9 +1108,7 @@ impl App {
                 #[cfg(target_os = "linux")]
                 {
                     if let Some(parent) = path.parent() {
-                        let _ = std::process::Command::new("xdg-open")
-                            .arg(parent)
-                            .spawn();
+                        let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
                     }
                 }
                 #[cfg(target_os = "windows")]

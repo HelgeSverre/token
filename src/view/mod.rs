@@ -415,8 +415,7 @@ impl Renderer {
                     if pos.line == doc_line {
                         let line_text = document.get_line_cow(doc_line).unwrap_or_default();
                         let visual_col = char_col_to_visual_col(&line_text, pos.column);
-                        let visible_col =
-                            visual_col.saturating_sub(editor.viewport.left_column);
+                        let visible_col = visual_col.saturating_sub(editor.viewport.left_column);
                         if visual_col >= editor.viewport.left_column
                             && visible_col < visible_columns
                         {
@@ -562,7 +561,14 @@ impl Renderer {
 
         // Render preview panes
         for (&preview_id, preview) in &model.editor_area.previews {
-            Self::render_preview_pane(frame, painter, model, preview_id, preview.rect, preview_mode);
+            Self::render_preview_pane(
+                frame,
+                painter,
+                model,
+                preview_id,
+                preview.rect,
+                preview_mode,
+            );
         }
 
         Self::render_splitters(frame, splitters, model);
@@ -1390,14 +1396,16 @@ impl Renderer {
                     let line_text = document.get_line_cow(pos.line).unwrap_or_default();
                     let visual_col = char_col_to_visual_col(&line_text, pos.column);
                     let visible_col = visual_col.saturating_sub(editor.viewport.left_column);
-                    if visual_col >= editor.viewport.left_column
-                        && visible_col < visible_columns
-                    {
-                        let x = group_text_start_x
-                            + (visible_col as f32 * char_width).round() as usize;
+                    if visual_col >= editor.viewport.left_column && visible_col < visible_columns {
+                        let x =
+                            group_text_start_x + (visible_col as f32 * char_width).round() as usize;
                         let w = char_width.round() as usize;
                         frame.blend_rect_px(
-                            x, y_start, w, y_end.saturating_sub(y_start), bracket_bg,
+                            x,
+                            y_start,
+                            w,
+                            y_end.saturating_sub(y_start),
+                            bracket_bg,
                         );
                     }
                 }

@@ -20,8 +20,7 @@ use token::model::document::Document;
 use token::model::editor::{EditorState, Position, Selection, ViewMode};
 use token::model::editor_area::{EditorArea, Rect, SplitDirection};
 use token::model::ui::{
-    CommandPaletteState, FindReplaceState, GotoLineState, ModalState,
-    ThemePickerState, UiState,
+    CommandPaletteState, FindReplaceState, GotoLineState, ModalState, ThemePickerState, UiState,
 };
 use token::model::workspace::Workspace;
 use token::model::AppModel;
@@ -226,7 +225,10 @@ fn load_theme_for_scenario(theme_override: Option<&str>, scenario_theme: Option<
             match token::theme::load_theme(t) {
                 Ok(theme) => theme,
                 Err(e) => {
-                    eprintln!("Warning: failed to load theme '{}': {}, using default", t, e);
+                    eprintln!(
+                        "Warning: failed to load theme '{}': {}, using default",
+                        t, e
+                    );
                     Theme::default()
                 }
             }
@@ -239,18 +241,14 @@ fn load_theme_for_scenario(theme_override: Option<&str>, scenario_theme: Option<
 // Model creation
 // ---------------------------------------------------------------------------
 
-fn create_model_from_scenario(
-    scenario: &Scenario,
-    theme: Theme,
-) -> Result<AppModel> {
+fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppModel> {
     let scale = scenario.scale;
     let font = setup_font(scale);
     let line_height = font.line_height;
     let char_width = font.char_width;
 
     let status_bar_height = line_height;
-    let visible_lines =
-        (scenario.height as usize).saturating_sub(status_bar_height) / line_height;
+    let visible_lines = (scenario.height as usize).saturating_sub(status_bar_height) / line_height;
     let visible_columns = ((scenario.width as f32 - 60.0) / char_width).floor() as usize;
 
     // Load first file
@@ -306,15 +304,16 @@ fn create_model_from_scenario(
             .unwrap_or(default_direction);
 
         // Split creates a new group with an editor pointing to the same document.
-        update(
-            &mut model,
-            Msg::Layout(LayoutMsg::SplitFocused(direction)),
-        );
+        update(&mut model, Msg::Layout(LayoutMsg::SplitFocused(direction)));
 
         // Adjust split ratio if specified (the new group is the second child)
         if let Some(ratio) = file.split_ratio {
             let ratio = ratio.clamp(0.05, 0.95);
-            set_parent_ratio(&mut model.editor_area.layout, model.editor_area.focused_group_id, ratio);
+            set_parent_ratio(
+                &mut model.editor_area.layout,
+                model.editor_area.focused_group_id,
+                ratio,
+            );
         }
 
         // Create a NEW document for this split (splits share by default).
@@ -362,8 +361,7 @@ fn apply_syntax_highlighting(model: &mut AppModel) {
             continue;
         }
         let source = doc.buffer.to_string();
-        let highlights =
-            parser.parse_and_highlight(&source, doc.language, *doc_id, doc.revision);
+        let highlights = parser.parse_and_highlight(&source, doc.language, *doc_id, doc.revision);
         doc.syntax_highlights = Some(highlights);
     }
 }
@@ -393,20 +391,16 @@ fn apply_view_modes(model: &mut AppModel, scenario: &Scenario) {
             .collect();
 
         for (editor_id, doc_id) in editor_ids {
-            let content = model
-                .editor_area
-                .documents
-                .get(&doc_id)
-                .map(|d| {
-                    let delimiter = d
-                        .file_path
-                        .as_ref()
-                        .and_then(|p| p.extension())
-                        .and_then(|e| e.to_str())
-                        .map(Delimiter::from_extension)
-                        .unwrap_or_else(|| detect_delimiter(&d.buffer.to_string()));
-                    (d.buffer.to_string(), delimiter)
-                });
+            let content = model.editor_area.documents.get(&doc_id).map(|d| {
+                let delimiter = d
+                    .file_path
+                    .as_ref()
+                    .and_then(|p| p.extension())
+                    .and_then(|e| e.to_str())
+                    .map(Delimiter::from_extension)
+                    .unwrap_or_else(|| detect_delimiter(&d.buffer.to_string()));
+                (d.buffer.to_string(), delimiter)
+            });
 
             if let Some((text, delimiter)) = content {
                 if let Ok(data) = parse_csv(&text, delimiter) {
@@ -491,7 +485,11 @@ fn apply_workspace(model: &mut AppModel, config: &WorkspaceConfig, scale: f64) {
             model.workspace = Some(ws);
         }
         Err(e) => {
-            eprintln!("Warning: failed to set up workspace '{}': {}", config.root.display(), e);
+            eprintln!(
+                "Warning: failed to set up workspace '{}': {}",
+                config.root.display(),
+                e
+            );
         }
     }
 }
@@ -567,7 +565,11 @@ fn set_parent_ratio(
                     let n = container.ratios.len();
                     let other = 1.0 - ratio;
                     for (j, r) in container.ratios.iter_mut().enumerate() {
-                        *r = if j == i { ratio } else { other / (n - 1) as f32 };
+                        *r = if j == i {
+                            ratio
+                        } else {
+                            other / (n - 1) as f32
+                        };
                     }
                     return true;
                 }
@@ -797,9 +799,7 @@ fn collect_scenarios(args: &Args) -> Result<Vec<(PathBuf, Scenario)>> {
             );
         }
         let mut entries: Vec<_> = std::fs::read_dir(&args.scenarios_dir)
-            .with_context(|| {
-                format!("reading scenarios dir {}", args.scenarios_dir.display())
-            })?
+            .with_context(|| format!("reading scenarios dir {}", args.scenarios_dir.display()))?
             .filter_map(|e| e.ok())
             .filter(|e| {
                 e.path()
@@ -862,7 +862,9 @@ fn main() -> Result<()> {
         let mut model = create_model_from_scenario(&scenario, theme)?;
         let buffer = render_to_buffer(&mut model, &font_info);
 
-        let out_path = args.out_dir.join(format!("screenshot-{}.png", scenario.name));
+        let out_path = args
+            .out_dir
+            .join(format!("screenshot-{}.png", scenario.name));
 
         save_png(&buffer, scenario.width, scenario.height, &out_path)?;
         let display_path = out_path.display().to_string();

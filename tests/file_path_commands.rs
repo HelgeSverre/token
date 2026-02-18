@@ -16,7 +16,9 @@ use token::update::execute_command;
 fn test_reveal_in_finder_appears_in_palette() {
     let results = filter_commands("Reveal");
     assert!(
-        results.iter().any(|cmd| cmd.id == CommandId::RevealInFinder),
+        results
+            .iter()
+            .any(|cmd| cmd.id == CommandId::RevealInFinder),
         "RevealInFinder should appear when searching 'Reveal'"
     );
 }
@@ -170,7 +172,10 @@ fn test_reveal_returns_reveal_cmd_with_correct_path() {
                 Cmd::RevealFileInFinder { path: p } => *p == path,
                 _ => false,
             });
-            assert!(has_reveal, "Batch should contain RevealFileInFinder with the correct path");
+            assert!(
+                has_reveal,
+                "Batch should contain RevealFileInFinder with the correct path"
+            );
         }
         _ => panic!("Expected Cmd::Batch"),
     }

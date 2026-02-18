@@ -3,8 +3,8 @@
 //! Provides a simple, safe API for pixel buffer operations instead of
 //! direct buffer indexing scattered throughout rendering code.
 
-use fontdue::Font;
 use crate::model::editor_area::Rect;
+use fontdue::Font;
 
 use super::GlyphCache;
 

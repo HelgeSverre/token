@@ -140,15 +140,9 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                             .chars()
                             .collect();
 
-                        model
-                            .document_mut()
-                            .buffer
-                            .remove(start_offset..end_offset);
+                        model.document_mut().buffer.remove(start_offset..end_offset);
                         let wrapped = format!("{ch}{selected_text}{close}");
-                        model
-                            .document_mut()
-                            .buffer
-                            .insert(start_offset, &wrapped);
+                        model.document_mut().buffer.insert(start_offset, &wrapped);
 
                         let new_offset = start_offset + wrapped.len();
                         let (new_line, new_col) = model.document().offset_to_cursor(new_offset);
@@ -222,15 +216,9 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                         .collect();
 
                     // Remove selected text, insert open + text + close
-                    model
-                        .document_mut()
-                        .buffer
-                        .remove(start_offset..end_offset);
+                    model.document_mut().buffer.remove(start_offset..end_offset);
                     let wrapped = format!("{ch}{selected_text}{close}");
-                    model
-                        .document_mut()
-                        .buffer
-                        .insert(start_offset, &wrapped);
+                    model.document_mut().buffer.insert(start_offset, &wrapped);
 
                     // Position cursor after the closing char
                     let new_offset = start_offset + wrapped.len();

@@ -18,6 +18,14 @@ exclude = ["samples/", "docs/", "*.md", "Makefile", "assets/icon.png"]
 name = "token"
 path = "src/main.rs"
 
+[[bin]]
+name = "screenshot"
+path = "src/bin/screenshot.rs"
+
+[[bin]]
+name = "profile_render"
+path = "src/bin/profile_render.rs"
+
 [features]
 default = []
 dhat-heap = ["dhat"]
