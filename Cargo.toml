@@ -1,6 +1,6 @@
 [package]
 name = "token"
-version = "0.3.17"
+version = "0.3.16"
 edition = "2021"
 default-run = "token"
 autobins = false
