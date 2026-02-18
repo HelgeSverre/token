@@ -16,6 +16,11 @@ pub const DEFAULT_DARK_YAML: &str = include_str!("../themes/dark.yaml");
 pub const FLEET_DARK_YAML: &str = include_str!("../themes/fleet-dark.yaml");
 pub const GITHUB_DARK_YAML: &str = include_str!("../themes/github-dark.yaml");
 pub const GITHUB_LIGHT_YAML: &str = include_str!("../themes/github-light.yaml");
+pub const DRACULA_YAML: &str = include_str!("../themes/dracula.yaml");
+pub const MOCHA_YAML: &str = include_str!("../themes/mocha.yaml");
+pub const NORD_YAML: &str = include_str!("../themes/nord.yaml");
+pub const TOKYO_NIGHT_YAML: &str = include_str!("../themes/tokyo-night.yaml");
+pub const GRUVBOX_DARK_YAML: &str = include_str!("../themes/gruvbox-dark.yaml");
 
 /// A built-in theme entry
 pub struct BuiltinTheme {
@@ -42,6 +47,26 @@ pub const BUILTIN_THEMES: &[BuiltinTheme] = &[
     BuiltinTheme {
         id: "github-light",
         yaml: GITHUB_LIGHT_YAML,
+    },
+    BuiltinTheme {
+        id: "dracula",
+        yaml: DRACULA_YAML,
+    },
+    BuiltinTheme {
+        id: "mocha",
+        yaml: MOCHA_YAML,
+    },
+    BuiltinTheme {
+        id: "nord",
+        yaml: NORD_YAML,
+    },
+    BuiltinTheme {
+        id: "tokyo-night",
+        yaml: TOKYO_NIGHT_YAML,
+    },
+    BuiltinTheme {
+        id: "gruvbox-dark",
+        yaml: GRUVBOX_DARK_YAML,
     },
 ];
 

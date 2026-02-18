@@ -37,7 +37,7 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
 
     <!-- Toolbar -->
     <div class="toolbar">
-      <span class="toolbar-title">themes/</span>
+      <span class="toolbar-title" id="toolbar-title">themes/{themes[0].fileName}</span>
       <span class="toolbar-count">{themes.length} themes</span>
     </div>
 
@@ -257,9 +257,10 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
       detailAuthor.textContent = `by ${theme.author}`;
       detailDesc.textContent = theme.description;
 
-      // Update status bar
+      // Update status bar and toolbar
       statusName.textContent = theme.name;
       statusFile.textContent = theme.fileName;
+      document.getElementById('toolbar-title')!.textContent = `themes/${theme.fileName}`;
 
       // Update swatches
       function updateSwatches(container: HTMLElement) {

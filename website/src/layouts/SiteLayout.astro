@@ -20,6 +20,19 @@ const { title, description = 'A fast, GPU-rendered code editor built in Rust.' }
 
     <link rel="icon" type="image/png" href="/icon.png" />
 
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content="https://token-editor.com/og-image.png" />
+    <meta property="og:url" content={Astro.url.href} />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content="https://token-editor.com/og-image.png" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

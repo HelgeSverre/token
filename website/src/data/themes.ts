@@ -208,11 +208,11 @@ syntax:
   comment: "#6272A4"`,
   },
   {
-    id: "catppuccin-mocha",
+    id: "mocha",
     name: "Catppuccin Mocha",
     author: "Token",
     description: "Soothing pastel theme with warm, cozy colors",
-    fileName: "catppuccin-mocha.yaml",
+    fileName: "mocha.yaml",
     isLight: false,
     colors: {
       bg: "#1E1E2E", fg: "#CDD6F4", currentLine: "#28283D", cursor: "#F5E0DC",

@@ -154,6 +154,7 @@ const allItems = keybindings.flatMap((cat) =>
       tableView.style.display = view === 'table' ? '' : 'none';
       yamlView.style.display = view === 'yaml' ? '' : 'none';
       statusRight.textContent = view === 'table' ? 'Table View' : 'YAML View';
+      document.querySelector('.kb-toolbar-title')!.textContent = view === 'table' ? 'keybindings.csv' : 'keybindings.yaml';
       applyFilter(searchInput.value);
     });
   });
