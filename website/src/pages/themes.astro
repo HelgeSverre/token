@@ -991,9 +991,13 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     flex: 1;
     min-width: 0;
     display: flex;
-    overflow: auto;
+    overflow: hidden;
     background: var(--theme-bg, var(--bg));
     transition: background var(--duration-normal) var(--ease-out);
+  }
+
+  .editor-pane-yaml {
+    overflow: auto;
   }
 
   .editor-gutter {
@@ -1009,7 +1013,7 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
   .line-num {
     font-family: var(--font-mono);
     font-size: var(--text-xs);
-    line-height: 1.7;
+    line-height: 1.5;
     color: var(--theme-gutter-fg, var(--fg-muted));
     transition: color var(--duration-normal) var(--ease-out);
   }
@@ -1032,7 +1036,7 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     overflow-x: auto;
     font-family: var(--font-mono);
     font-size: var(--text-xs);
-    line-height: 1.7;
+    line-height: 1.5;
   }
 
   .editor-code {
@@ -1052,6 +1056,10 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     cursor: text;
   }
 
+  .editor-pane-yaml .editor-code-wrap {
+    overflow: visible;
+  }
+
   .editor-pane-yaml .editor-code-wrap::before {
     display: none;
   }
@@ -1060,7 +1068,7 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
   .editor-pane-yaml :global(.line-num) {
     font-family: var(--font-mono);
     font-size: var(--text-xs);
-    line-height: 1.7;
+    line-height: 1.5;
     color: var(--theme-gutter-fg, var(--fg-muted));
   }
 
@@ -1474,5 +1482,51 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     .sidebar {
       width: 120px;
     }
+  }
+
+  /* ── Scrollbars ──────────────────────────────────────────── */
+  .sidebar,
+  .detail-pane,
+  .editor-pane-yaml,
+  .editor-code-wrap {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+  }
+
+  .sidebar::-webkit-scrollbar,
+  .detail-pane::-webkit-scrollbar,
+  .editor-pane-yaml::-webkit-scrollbar,
+  .editor-code-wrap::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .sidebar::-webkit-scrollbar-track,
+  .detail-pane::-webkit-scrollbar-track,
+  .editor-pane-yaml::-webkit-scrollbar-track,
+  .editor-code-wrap::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .sidebar::-webkit-scrollbar-thumb,
+  .detail-pane::-webkit-scrollbar-thumb,
+  .editor-pane-yaml::-webkit-scrollbar-thumb,
+  .editor-code-wrap::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.15);
+    border-radius: 3px;
+  }
+
+  .sidebar::-webkit-scrollbar-thumb:hover,
+  .detail-pane::-webkit-scrollbar-thumb:hover,
+  .editor-pane-yaml::-webkit-scrollbar-thumb:hover,
+  .editor-code-wrap::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.25);
+  }
+
+  .sidebar::-webkit-scrollbar-corner,
+  .detail-pane::-webkit-scrollbar-corner,
+  .editor-pane-yaml::-webkit-scrollbar-corner,
+  .editor-code-wrap::-webkit-scrollbar-corner {
+    background: transparent;
   }
 </style>
