@@ -1132,9 +1132,18 @@ const optimizedSlides = await Promise.all(
   padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  max-height: 400px;
-  overflow: hidden;
+  gap: 16px;
+  position: relative;
+}
+.ai-terminal-body::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: linear-gradient(transparent, var(--bg-deep));
+  pointer-events: none;
 }
 
 /* Thread */
@@ -1167,6 +1176,11 @@ const optimizedSlides = await Promise.all(
 }
 .ai-msg.human .ai-role {
   color: var(--syn-function);
+}
+.ai-msg.human .ai-role::before {
+  content: '$ ';
+  color: var(--fg-muted);
+  font-weight: 400;
 }
 .ai-msg.assistant .ai-role {
   color: var(--syn-keyword);
