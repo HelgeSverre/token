@@ -1,0 +1,84 @@
+version: 1
+name: "Nord"
+author: "Built-in"
+description: "Arctic, north-bluish color palette with dimmed pastels"
+
+ui:
+  editor:
+    background: "#2E3440"
+    foreground: "#D8DEE9"
+    current_line_background: "#3B4252"
+    cursor_color: "#D8DEE9"
+    selection_background: "#434C5E"
+    secondary_cursor_color: "#D8DEE980"
+
+  gutter:
+    background: "#2E3440"
+    foreground: "#4C566A"
+    foreground_active: "#D8DEE9"
+    border_color: "#3B4252"
+
+  status_bar:
+    background: "#3B4252"
+    foreground: "#D8DEE9"
+
+  sidebar:
+    background: "#2E3440"
+    foreground: "#D8DEE9"
+    selection_background: "#3B4252"
+    selection_foreground: "#ECEFF4"
+    hover_background: "#FFFFFF0D"
+    folder_icon: "#EBCB8B"
+    file_icon: "#81A1C1"
+    border: "#3B4252"
+
+  tab_bar:
+    background: "#2E3440"
+    active_background: "#3B4252"
+    active_foreground: "#ECEFF4"
+    inactive_background: "#2E3440"
+    inactive_foreground: "#4C566A"
+    border: "#3B4252"
+    modified_indicator: "#ECEFF4"
+
+  overlay:
+    border: "#4C566A"
+    background: "#3B4252"
+    foreground: "#D8DEE9"
+    input_background: "#2E3440"
+    selection_background: "#434C5E"
+    highlight: "#A3BE8C"
+    warning: "#EBCB8B"
+    error: "#BF616A"
+
+  csv:
+    header_background: "#3B4252"
+    header_foreground: "#D8DEE9"
+    grid_line: "#434C5E"
+    selected_cell_background: "#434C5E80"
+    selected_cell_border: "#88C0D0"
+    number_foreground: "#B48EAD"
+
+  syntax:
+    keyword: "#81A1C1"
+    function: "#88C0D0"
+    function_builtin: "#88C0D0"
+    string: "#A3BE8C"
+    number: "#B48EAD"
+    comment: "#4C566A"
+    type: "#8FBCBB"
+    variable: "#D8DEE9"
+    variable_builtin: "#81A1C1"
+    property: "#D8DEE9"
+    operator: "#81A1C1"
+    punctuation: "#ECEFF4"
+    constant: "#5E81AC"
+    tag: "#81A1C1"
+    attribute: "#8FBCBB"
+    escape: "#EBCB8B"
+    label: "#D08770"
+    text: "#D8DEE9"
+    text_emphasis: "#D8DEE9"
+    text_strong: "#D8DEE9"
+    text_title: "#88C0D0"
+    text_uri: "#5E81AC"

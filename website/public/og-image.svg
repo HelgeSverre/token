@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&amp;family=Space+Mono&amp;display=swap');
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#181818"/>
+
+  <!-- Subtle grid/noise texture lines -->
+  <line x1="0" y1="1" x2="1200" y2="1" stroke="#1E1E1E" stroke-width="1" opacity="0.5"/>
+  <line x1="0" y1="629" x2="1200" y2="629" stroke="#2B2B2B" stroke-width="1"/>
+
+  <!-- Geometric "T" logo mark -->
+  <!-- Crossbar -->
+  <rect x="500" y="100" width="200" height="36" rx="0" fill="#BCBEC4"/>
+  <!-- Stem -->
+  <rect x="572" y="100" width="56" height="200" rx="0" fill="#BCBEC4"/>
+
+  <!-- "Token" text -->
+  <text x="600" y="380" text-anchor="middle" font-family="'Space Grotesk', system-ui, sans-serif" font-weight="700" font-size="72" fill="#FFFEF8" letter-spacing="-0.02em">Token</text>
+
+  <!-- Tagline -->
+  <text x="600" y="430" text-anchor="middle" font-family="'Space Grotesk', system-ui, sans-serif" font-weight="400" font-size="26" fill="#808080">A fast, minimal code editor</text>
+
+  <!-- Orange accent line -->
+  <rect x="200" y="480" width="800" height="2" rx="1" fill="#CC7832"/>
+
+  <!-- Footer -->
+  <text x="600" y="540" text-anchor="middle" font-family="'Space Mono', ui-monospace, monospace" font-weight="400" font-size="16" fill="#606366" letter-spacing="0.04em">Rust · MIT License</text>
+</svg>

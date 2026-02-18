@@ -1,0 +1,84 @@
+version: 1
+name: "Catppuccin Mocha"
+author: "Built-in"
+description: "Soothing pastel theme with warm, cozy colors"
+
+ui:
+  editor:
+    background: "#1E1E2E"
+    foreground: "#CDD6F4"
+    current_line_background: "#28283D"
+    cursor_color: "#F5E0DC"
+    selection_background: "#45475A"
+    secondary_cursor_color: "#F5E0DC80"
+
+  gutter:
+    background: "#1E1E2E"
+    foreground: "#6C7086"
+    foreground_active: "#CDD6F4"
+    border_color: "#313244"
+
+  status_bar:
+    background: "#181825"
+    foreground: "#BAC2DE"
+
+  sidebar:
+    background: "#181825"
+    foreground: "#CDD6F4"
+    selection_background: "#45475A"
+    selection_foreground: "#CDD6F4"
+    hover_background: "#FFFFFF0D"
+    folder_icon: "#F9E2AF"
+    file_icon: "#89B4FA"
+    border: "#313244"
+
+  tab_bar:
+    background: "#181825"
+    active_background: "#1E1E2E"
+    active_foreground: "#CDD6F4"
+    inactive_background: "#181825"
+    inactive_foreground: "#6C7086"
+    border: "#313244"
+    modified_indicator: "#CDD6F4"
+
+  overlay:
+    border: "#45475A"
+    background: "#1E1E2E"
+    foreground: "#CDD6F4"
+    input_background: "#181825"
+    selection_background: "#45475A"
+    highlight: "#A6E3A1"
+    warning: "#F9E2AF"
+    error: "#F38BA8"
+
+  csv:
+    header_background: "#181825"
+    header_foreground: "#CDD6F4"
+    grid_line: "#313244"
+    selected_cell_background: "#45475A80"
+    selected_cell_border: "#89B4FA"
+    number_foreground: "#FAB387"
+
+  syntax:
+    keyword: "#CBA6F7"
+    function: "#89B4FA"
+    function_builtin: "#89B4FA"
+    string: "#A6E3A1"
+    number: "#FAB387"
+    comment: "#6C7086"
+    type: "#F9E2AF"
+    variable: "#CDD6F4"
+    variable_builtin: "#F38BA8"
+    property: "#89DCEB"
+    operator: "#94E2D5"
+    punctuation: "#BAC2DE"
+    constant: "#FAB387"
+    tag: "#CBA6F7"
+    attribute: "#89DCEB"
+    escape: "#F2CDCD"
+    label: "#F9E2AF"
+    text: "#CDD6F4"
+    text_emphasis: "#CDD6F4"
+    text_strong: "#CDD6F4"
+    text_title: "#89B4FA"
+    text_uri: "#F5C2E7"

@@ -1,0 +1,84 @@
+version: 1
+name: "Gruvbox Dark"
+author: "Built-in"
+description: "Retro groove color scheme with warm, earthy tones"
+
+ui:
+  editor:
+    background: "#282828"
+    foreground: "#EBDBB2"
+    current_line_background: "#32302F"
+    cursor_color: "#EBDBB2"
+    selection_background: "#504945"
+    secondary_cursor_color: "#EBDBB280"
+
+  gutter:
+    background: "#282828"
+    foreground: "#665C54"
+    foreground_active: "#EBDBB2"
+    border_color: "#3C3836"
+
+  status_bar:
+    background: "#504945"
+    foreground: "#EBDBB2"
+
+  sidebar:
+    background: "#1D2021"
+    foreground: "#EBDBB2"
+    selection_background: "#3C3836"
+    selection_foreground: "#EBDBB2"
+    hover_background: "#FFFFFF0D"
+    folder_icon: "#FABD2F"
+    file_icon: "#83A598"
+    border: "#3C3836"
+
+  tab_bar:
+    background: "#1D2021"
+    active_background: "#282828"
+    active_foreground: "#EBDBB2"
+    inactive_background: "#1D2021"
+    inactive_foreground: "#928374"
+    border: "#3C3836"
+    modified_indicator: "#EBDBB2"
+
+  overlay:
+    border: "#504945"
+    background: "#282828"
+    foreground: "#EBDBB2"
+    input_background: "#1D2021"
+    selection_background: "#504945"
+    highlight: "#B8BB26"
+    warning: "#FABD2F"
+    error: "#FB4934"
+
+  csv:
+    header_background: "#3C3836"
+    header_foreground: "#EBDBB2"
+    grid_line: "#504945"
+    selected_cell_background: "#50494580"
+    selected_cell_border: "#FABD2F"
+    number_foreground: "#D3869B"
+
+  syntax:
+    keyword: "#FB4934"
+    function: "#FABD2F"
+    function_builtin: "#FABD2F"
+    string: "#B8BB26"
+    number: "#D3869B"
+    comment: "#928374"
+    type: "#83A598"
+    variable: "#EBDBB2"
+    variable_builtin: "#FE8019"
+    property: "#83A598"
+    operator: "#EBDBB2"
+    punctuation: "#EBDBB2"
+    constant: "#D3869B"
+    tag: "#FB4934"
+    attribute: "#B8BB26"
+    escape: "#FE8019"
+    label: "#FABD2F"
+    text: "#EBDBB2"
+    text_emphasis: "#EBDBB2"
+    text_strong: "#EBDBB2"
+    text_title: "#FABD2F"
+    text_uri: "#83A598"

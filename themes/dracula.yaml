@@ -1,0 +1,84 @@
+version: 1
+name: "Dracula"
+author: "Built-in"
+description: "The iconic dark theme with bold purples, pinks, and cyans"
+
+ui:
+  editor:
+    background: "#282A36"
+    foreground: "#F8F8F2"
+    current_line_background: "#44475A"
+    cursor_color: "#F8F8F2"
+    selection_background: "#44475A"
+    secondary_cursor_color: "#F8F8F280"
+
+  gutter:
+    background: "#282A36"
+    foreground: "#6272A4"
+    foreground_active: "#F8F8F2"
+    border_color: "#343746"
+
+  status_bar:
+    background: "#191A21"
+    foreground: "#F8F8F2"
+
+  sidebar:
+    background: "#21222C"
+    foreground: "#F8F8F2"
+    selection_background: "#44475A"
+    selection_foreground: "#F8F8F2"
+    hover_background: "#FFFFFF0D"
+    folder_icon: "#F1FA8C"
+    file_icon: "#8BE9FD"
+    border: "#343746"
+
+  tab_bar:
+    background: "#21222C"
+    active_background: "#282A36"
+    active_foreground: "#F8F8F2"
+    inactive_background: "#21222C"
+    inactive_foreground: "#6272A4"
+    border: "#343746"
+    modified_indicator: "#F8F8F2"
+
+  overlay:
+    border: "#6272A4"
+    background: "#282A36"
+    foreground: "#F8F8F2"
+    input_background: "#21222C"
+    selection_background: "#44475A"
+    highlight: "#50FA7B"
+    warning: "#F1FA8C"
+    error: "#FF5555"
+
+  csv:
+    header_background: "#21222C"
+    header_foreground: "#F8F8F2"
+    grid_line: "#44475A"
+    selected_cell_background: "#44475A80"
+    selected_cell_border: "#BD93F9"
+    number_foreground: "#BD93F9"
+
+  syntax:
+    keyword: "#FF79C6"
+    function: "#50FA7B"
+    function_builtin: "#8BE9FD"
+    string: "#F1FA8C"
+    number: "#BD93F9"
+    comment: "#6272A4"
+    type: "#8BE9FD"
+    variable: "#F8F8F2"
+    variable_builtin: "#BD93F9"
+    property: "#F8F8F2"
+    operator: "#FF79C6"
+    punctuation: "#F8F8F2"
+    constant: "#BD93F9"
+    tag: "#FF79C6"
+    attribute: "#50FA7B"
+    escape: "#FF79C6"
+    label: "#8BE9FD"
+    text: "#F8F8F2"
+    text_emphasis: "#F1FA8C"
+    text_strong: "#FFB86C"
+    text_title: "#BD93F9"
+    text_uri: "#8BE9FD"

@@ -1,0 +1,84 @@
+version: 1
+name: "Tokyo Night"
+author: "Built-in"
+description: "Neon lights of downtown Tokyo at night"
+
+ui:
+  editor:
+    background: "#1A1B26"
+    foreground: "#A9B1D6"
+    current_line_background: "#24283B"
+    cursor_color: "#C0CAF5"
+    selection_background: "#33467C"
+    secondary_cursor_color: "#C0CAF580"
+
+  gutter:
+    background: "#1A1B26"
+    foreground: "#3B4261"
+    foreground_active: "#A9B1D6"
+    border_color: "#24283B"
+
+  status_bar:
+    background: "#15161E"
+    foreground: "#7982A9"
+
+  sidebar:
+    background: "#15161E"
+    foreground: "#A9B1D6"
+    selection_background: "#33467C"
+    selection_foreground: "#C0CAF5"
+    hover_background: "#FFFFFF0D"
+    folder_icon: "#E0AF68"
+    file_icon: "#7AA2F7"
+    border: "#24283B"
+
+  tab_bar:
+    background: "#15161E"
+    active_background: "#1A1B26"
+    active_foreground: "#C0CAF5"
+    inactive_background: "#15161E"
+    inactive_foreground: "#565F89"
+    border: "#24283B"
+    modified_indicator: "#C0CAF5"
+
+  overlay:
+    border: "#3B4261"
+    background: "#1A1B26"
+    foreground: "#C0CAF5"
+    input_background: "#15161E"
+    selection_background: "#33467C"
+    highlight: "#9ECE6A"
+    warning: "#E0AF68"
+    error: "#F7768E"
+
+  csv:
+    header_background: "#24283B"
+    header_foreground: "#C0CAF5"
+    grid_line: "#3B4261"
+    selected_cell_background: "#33467C80"
+    selected_cell_border: "#7AA2F7"
+    number_foreground: "#FF9E64"
+
+  syntax:
+    keyword: "#F7768E"
+    function: "#7AA2F7"
+    function_builtin: "#7AA2F7"
+    string: "#9ECE6A"
+    number: "#FF9E64"
+    comment: "#565F89"
+    type: "#E0AF68"
+    variable: "#C0CAF5"
+    variable_builtin: "#F7768E"
+    property: "#7DCFFF"
+    operator: "#89DDFF"
+    punctuation: "#A9B1D6"
+    constant: "#FF9E64"
+    tag: "#F7768E"
+    attribute: "#7DCFFF"
+    escape: "#BB9AF7"
+    label: "#E0AF68"
+    text: "#A9B1D6"
+    text_emphasis: "#A9B1D6"
+    text_strong: "#A9B1D6"
+    text_title: "#7AA2F7"
+    text_uri: "#7DCFFF"
