@@ -639,7 +639,7 @@ Alternative: Use `nix` crate directly for Unix PTY control.
 
 - VT100 escape sequences: https://vt100.net/docs/vt100-ug/chapter3.html
 - ANSI escape codes: https://en.wikipedia.org/wiki/ANSI_escape_code
-- `portable-pty`: https://docs.rs/portable-pty/
-- `vte` parser: https://docs.rs/vte/
+- `portable-pty`: https://docs.rs/portable-pty/latest/portable_pty/
+- `vte` parser: https://docs.rs/vte/latest/vte/
 - Alacritty terminal: https://github.com/alacritty/alacritty (reference)
-- WezTerm: https://github.com/wez/wezterm (reference)
+- WezTerm: https://github.com/wezterm/wezterm (reference)

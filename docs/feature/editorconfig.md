@@ -715,4 +715,4 @@ globset = "0.4"
 
 - EditorConfig specification: https://editorconfig.org/
 - EditorConfig core library: https://github.com/editorconfig/editorconfig-core-rust
-- `globset` crate: https://docs.rs/globset/
+- `globset` crate: https://docs.rs/globset/latest/globset/

@@ -729,6 +729,6 @@ file_change_detection:
 
 - VS Code file watcher: https://code.visualstudio.com/docs/editor/codebasics#_hot-exit
 - notify crate: https://docs.rs/notify/latest/notify/
-- notify-debouncer-mini: https://docs.rs/notify-debouncer-mini/latest/
+- notify-debouncer-mini: https://docs.rs/notify-debouncer-mini/latest/notify_debouncer_mini/
 - Existing workspace watcher: `src/fs_watcher.rs`
 - Auto-save integration: `docs/feature/auto-save.md` (F-100)

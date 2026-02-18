@@ -609,8 +609,8 @@ objc2-app-kit = "0.2"
 
 ## References
 
-- **rfd crate:** https://docs.rs/rfd - Current file dialog solution
+- **rfd crate:** https://docs.rs/rfd/latest/rfd/ - Current file dialog solution
 - **NSOpenPanel:** https://developer.apple.com/documentation/appkit/nsopenpanel
-- **objc2 crate:** https://docs.rs/objc2 - Safe Rust bindings for Objective-C
+- **objc2 crate:** https://docs.rs/objc2/latest/objc2/ - Safe Rust bindings for Objective-C
 - **VS Code behavior:** Separate "Open File" and "Open Folder" commands
 - **Zed implementation:** Uses GPUI's `PathPromptOptions { files: true, directories: true }`

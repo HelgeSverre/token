@@ -2269,7 +2269,7 @@ pub fn from_file(path: PathBuf) -> Result<Self, std::io::Error> {
 
 ## Appendix B: References
 
-- [RFC 4180 - Common Format and MIME Type for CSV Files](https://tools.ietf.org/html/rfc4180)
+- [RFC 4180 - Common Format and MIME Type for CSV Files](https://datatracker.ietf.org/doc/html/rfc4180)
 - [Tablecruncher Source](https://github.com/Tablecruncher/tablecruncher)
 - [Rust `csv` crate](https://docs.rs/csv/latest/csv/)
 - [EDITOR_UI_REFERENCE.md](../EDITOR_UI_REFERENCE.md) - Viewport and coordinate systems

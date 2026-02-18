@@ -17,7 +17,7 @@ And some ~~strikethrough~~ text.
 
 ## Links and Images
 
-[Link to Rust](https://www.rust-lang.org)
+[Link to Rust](https://rust-lang.org)
 [Link with title](https://example.com "Example Site")
 
 ![Alt text for image](https://example.com/image.png)

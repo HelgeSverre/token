@@ -1,6 +1,6 @@
 # "Subagent Summer" (The Ampcode Anthem)
 
-> Song: https://suno.com/s/ntKPw0tWIsRLBSz2
+> Song: https://suno.com/song/5950d433-59fc-4372-aba0-36763aef2102?sh=ntKPw0tWIsRLBSz2
 
 [Verse 1]
 Spawned fifteen subagents at the break of dawn

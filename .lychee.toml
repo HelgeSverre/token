@@ -22,4 +22,8 @@ exclude = [
   "^chrome://",
   # Absolute file:// links to old repo name (rust-editor)
   "file:///.*rust-editor/",
+  # Absolute file:// links to local paths
+  "file:///.*token-editor/",
+  # gnu.org rate-limits CI runners
+  "^https://www\\.gnu\\.org/",
 ]
