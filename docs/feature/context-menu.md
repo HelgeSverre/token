@@ -1221,7 +1221,6 @@ fn test_shortcut_hint_provider() {
 ### Internal Docs
 
 - [Panel UI Abstraction](./panel-ui-abstraction.md) - Related overlay/popup patterns
-- [Keymap System](../dev/keymap.md) - Command and keybinding architecture
 
 ### External Resources
 

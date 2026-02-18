@@ -84,7 +84,7 @@ Fixed hard-coded pixel values in `src/runtime/perf.rs` that didn't scale on Reti
 
 ## Profiling Workflow
 
-See [profiling-guide.md](profiling-guide.md) for detailed commands. Quick reference:
+See [profiling-guide.md](../profiling-guide.md) for detailed commands. Quick reference:
 
 ```bash
 # Build with profiling symbols

@@ -204,8 +204,8 @@ Enhanced [docs/profiling-guide.md](profiling-guide.md) with recommended workflow
 
 ### Changed
 
-- Archived detailed allocation analysis to [performance-analysis-v1.md](performance-analysis-v1.md)
-- Created new [performance-analysis.md](performance-analysis.md) with summary of all optimizations
+- Archived detailed allocation analysis to [performance-analysis-v1.md](archived/performance-analysis-v1.md)
+- Created new [performance-analysis.md](archived/performance-analysis.md) with summary of all optimizations
 
 ---
 
@@ -452,7 +452,7 @@ Spreadsheet-like view for CSV, TSV, and PSV files with full navigation support:
 **Messages added:**
 - `CsvMsg` enum with Toggle, Move*, NextCell, PrevCell, FirstCell, LastCell, RowStart, RowEnd, PageUp, PageDown, Exit, SelectCell, ScrollVertical, ScrollHorizontal
 
-**Documentation:** See [docs/feature/csv-editor.md](feature/csv-editor.md)
+**Documentation:** See [docs/feature/csv-editor.md](archived/csv-editor.md)
 
 ---
 

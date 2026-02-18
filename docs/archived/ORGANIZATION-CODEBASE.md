@@ -344,7 +344,7 @@ src/app.rs                   # Handle WindowEvent::DroppedFile/HoveredFile (afte
 themes/*.yaml                # Add drop_zone colors
 ```
 
-### Workspace Management (docs/feature/workspace-management.md)
+### Workspace Management (docs/archived/workspace-management.md)
 
 New files:
 

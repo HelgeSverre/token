@@ -318,4 +318,4 @@ If file changes externally and user has undo history:
 - `src/model/document.rs` - Document and EditOperation definitions
 - `src/update/document.rs` - Undo/redo implementation
 - `tests/text_editing.rs` - Undo/redo test suite
-- [Undo Coalescing feature doc](../feature/undo-coalescing.md) (when available)
+

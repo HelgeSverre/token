@@ -249,7 +249,7 @@ secondary_cursor_color: "#FFFFFF40"  # 25% opacity
 | `text_emphasis` | *Italic text* |
 | `text_strong` | **Bold text** |
 | `text_title` | # Headings |
-| `text_uri` | [Links](url) |
+| `text_uri` | Links |
 
 ---
 

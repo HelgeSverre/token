@@ -866,4 +866,4 @@ Baseline content doubles memory usage per document. For very large files:
 - [similar crate](https://crates.io/crates/similar) - Diffing library
 - [VS Code SCM Decorations](https://code.visualstudio.com/docs/sourcecontrol/overview#_scm-decorations) - Visual reference
 - [Myers Diff Algorithm](https://blog.jcoglan.com/2017/02/12/the-myers-diff-algorithm-part-1/) - Algorithm explanation
-- [Feature: Workspace Management](workspace-management.md) - File system watching dependency
+- [Feature: Workspace Management](../archived/workspace-management.md) - File system watching dependency

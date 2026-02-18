@@ -5,7 +5,7 @@
 **Updated:** 2025-12-15  
 **Effort:** L (1-2 weeks for MVP, ongoing for languages)
 
-**See also:** [Adding Languages Guide](adding-languages.md)
+**See also:** [Adding Languages Guide](../feature/adding-languages.md)
 
 ---
 
@@ -1058,7 +1058,7 @@ Merge with syntactic → Store in document → Cmd::Redraw
 
 ### Phase 3: More Languages (Ready for Implementation)
 
-See [Adding Languages Guide](adding-languages.md) for step-by-step instructions.
+See [Adding Languages Guide](../feature/adding-languages.md) for step-by-step instructions.
 
 **Priority languages:**
 - [ ] TypeScript (`tree-sitter-typescript`)
@@ -1212,4 +1212,4 @@ fn test_edit_triggers_reparse() {
 - [tree-sitter-highlight crate](https://crates.io/crates/tree-sitter-highlight)
 - [tree-sitter-php](https://github.com/tree-sitter/tree-sitter-php)
 - [nvim-treesitter queries](https://github.com/nvim-treesitter/nvim-treesitter/tree/master/queries) (high-quality highlight queries)
-- Our async pattern: [src/app.rs](../src/app.rs) `process_cmd()` + `msg_tx`/`msg_rx` channels
+- Our async pattern: `src/runtime/app.rs` `process_cmd()` + `msg_tx`/`msg_rx` channels

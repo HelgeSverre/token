@@ -1,0 +1,25 @@
+# lychee link checker configuration
+# https://lychee.cli.rs/usage/config/
+
+# Exclude source directories from scanning
+exclude_path = [
+  "website/v4/dist",
+  "website/v4/node_modules",
+  "website/v4/src",
+  "target",
+  "node_modules",
+  "docs/templates",
+  "docs/archived/analysis",
+  "benches",
+  "samples/syntax/sample.html",
+]
+
+# Exclude URLs/paths that are expected to fail or aren't real links
+exclude = [
+  # ampcode thread links (private/auth-required)
+  "^https://ampcode\\.com/threads/",
+  # chrome:// protocol links
+  "^chrome://",
+  # Absolute file:// links to old repo name (rust-editor)
+  "file:///.*rust-editor/",
+]

@@ -10,7 +10,7 @@ For completed work, see [CHANGELOG.md](CHANGELOG.md).
 
 ### Workspace Management Improvements ✅
 
-**Design:** [feature/workspace-management.md](feature/workspace-management.md) | **Completed:** 2025-12-17 (v0.3.7)
+**Design:** [feature/workspace-management.md](archived/workspace-management.md) | **Completed:** 2025-12-17 (v0.3.7)
 
 Sidebar resize, file tree keyboard navigation, and focus management:
 
@@ -36,7 +36,7 @@ Remaining: Phase 7 (file system watching), Phase 8 (tab integration, preview tab
 
 ### CSV Viewer/Editor Phases 1-2 ✅
 
-**Design:** [feature/csv-editor.md](feature/csv-editor.md) | **Completed:** 2025-12-16 (v0.3.6)
+**Design:** [feature/csv-editor.md](archived/csv-editor.md) | **Completed:** 2025-12-16 (v0.3.6)
 
 Spreadsheet-like view for CSV/TSV/PSV files with grid rendering, cell navigation, and editing:
 
@@ -82,7 +82,7 @@ Key implementation:
 
 ### Benchmark Suite Improvements ✅
 
-**Design:** [feature/benchmark-improvements.md](feature/benchmark-improvements.md) | **Completed:** 2025-12-15
+**Design:** [feature/benchmark-improvements.md](archived/benchmark-improvements.md) | **Completed:** 2025-12-15
 
 Comprehensive audit and improvement of the benchmark suite in `benches/`:
 
@@ -100,7 +100,7 @@ Remaining: Phase 3 (criterion throughput metrics for CI), syntax highlighting be
 
 ### Syntax Highlighting MVP ✅
 
-**Design:** [feature/syntax-highlighting.md](feature/syntax-highlighting.md) | **Completed:** 2025-12-15
+**Design:** [feature/syntax-highlighting.md](archived/syntax-highlighting.md) | **Completed:** 2025-12-15
 
 Tree-sitter based syntax highlighting with async background parsing:
 
@@ -149,7 +149,7 @@ Future phases: Language injection for PHP/HTML/Vue, semantic highlighting via LS
 
 ### File Operations – Phases 1-5 Complete ✅
 
-**Design:** [feature/file-operations.md](feature/file-operations.md) | **Completed:** 2025-12-15
+**Design:** [feature/file-operations.md](archived/file-operations.md) | **Completed:** 2025-12-15
 
 Comprehensive file handling with dialogs, CLI arguments, and drag-drop feedback:
 
@@ -314,7 +314,7 @@ All cursor movement operations now work with multiple cursors:
 
 ### Workspace Management - Remaining Phases
 
-**Design:** [feature/workspace-management.md](feature/workspace-management.md)
+**Design:** [feature/workspace-management.md](archived/workspace-management.md)
 
 Phases 0-6 complete. Remaining work:
 
@@ -370,7 +370,7 @@ Group rapid consecutive edits into single undo entries:
 |---------|------------|
 | Gesture Bindings (alt+alt+key) | [feature/gesture-bindings.md](feature/gesture-bindings.md) |
 | Keymap Hot-Reload & Chords | [future/keymap-enhancements.md](future/keymap-enhancements.md) |
-| Syntax Highlighting Phase 2+ | [feature/syntax-highlighting.md](feature/syntax-highlighting.md) |
+| Syntax Highlighting Phase 2+ | [feature/syntax-highlighting.md](archived/syntax-highlighting.md) |
 
 ---
 
@@ -378,7 +378,7 @@ Group rapid consecutive edits into single undo entries:
 
 | Feature                     | Status      | Design Doc                                                                               |
 | --------------------------- | ----------- |------------------------------------------------------------------------------------------|
-| File Operations             | ✅ P1-5     | [feature/file-operations.md](feature/file-operations.md)                                 |
+| File Operations             | ✅ P1-5     | [feature/file-operations.md](archived/file-operations.md)                                 |
 | GUI Cleanup (Frame/Painter) | ✅ Phase 1  | [GUI-CLEANUP.md](archived/GUI-CLEANUP.md)                                                |
 | Debug Tracing               | ✅ Complete | [tracing-instrumentation.md](archived/tracing-instrumentation.md)                        |
 | Codebase Organization       | ✅ Complete | [archived/ORGANIZATION-CODEBASE.md](archived/ORGANIZATION-CODEBASE.md)                   |
@@ -392,9 +392,9 @@ Group rapid consecutive edits into single undo entries:
 | Configurable Keymapping     | ✅ Complete | [archived/KEYMAPPING_IMPLEMENTATION_PLAN.md](archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) |
 | Gesture Bindings            | Planned     | [feature/gesture-bindings.md](feature/gesture-bindings.md)                               |
 | Keymap Enhancements         | Future      | [future/keymap-enhancements.md](future/keymap-enhancements.md)                           |
-| Workspace Management        | ✅ P0-6     | [feature/workspace-management.md](feature/workspace-management.md)                       |
-| Syntax Highlighting         | ✅ MVP      | [feature/syntax-highlighting.md](feature/syntax-highlighting.md)                         |
-| CSV Viewer/Editor           | ✅ P1-2     | [feature/csv-editor.md](feature/csv-editor.md)                                           |
+| Workspace Management        | ✅ P0-6     | [feature/workspace-management.md](archived/workspace-management.md)                       |
+| Syntax Highlighting         | ✅ MVP      | [feature/syntax-highlighting.md](archived/syntax-highlighting.md)                         |
+| CSV Viewer/Editor           | ✅ P1-2     | [feature/csv-editor.md](archived/csv-editor.md)                                           |
 
 ---
 

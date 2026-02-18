@@ -537,6 +537,6 @@ Until then, this phased plan keeps the system simple, testable, and incremental.
 
 ## References
 
-- [GUI-REVIEW-FINDINGS.md](archived/GUI-REVIEW-FINDINGS.md) – Original comprehensive analysis (archived)
-- [EDITOR_UI_REFERENCE.md](EDITOR_UI_REFERENCE.md) – Text editor UI geometry reference
-- [ORGANIZATION-CODEBASE.md](archived/ORGANIZATION-CODEBASE.md) – Previous restructuring work
+- [GUI-REVIEW-FINDINGS.md](GUI-REVIEW-FINDINGS.md) – Original comprehensive analysis (archived)
+- [EDITOR_UI_REFERENCE.md](../EDITOR_UI_REFERENCE.md) – Text editor UI geometry reference
+- [ORGANIZATION-CODEBASE.md](ORGANIZATION-CODEBASE.md) – Previous restructuring work

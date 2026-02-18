@@ -489,9 +489,8 @@ fn test_scaled_metrics_fractional() {
 
 ### Internal Documentation
 
-- [EDITOR_UI_REFERENCE.md](./EDITOR_UI_REFERENCE.md) - Chapter 10.6 covers High-DPI
-- [DAMAGE-TRACKING.md](./feature/DAMAGE-TRACKING.md) - Related rendering optimization
-- [TEXT_PHYSICS_LAYER.md](./feature/TEXT_PHYSICS_LAYER.md) - Coordinate systems for cursor/viewport
+- [EDITOR_UI_REFERENCE.md](../EDITOR_UI_REFERENCE.md) - Chapter 10.6 covers High-DPI
+- [TEXT_PHYSICS_LAYER.md](./TEXT_PHYSICS_LAYER.md) - Coordinate systems for cursor/viewport
 
 ---
 

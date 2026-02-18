@@ -186,7 +186,7 @@ The Oracle performed a comprehensive technical review of EDITOR_UI_REFERENCE.md 
 
 **Key Finding**: Two dominant patterns - **trie-based** for modal editors (Helix) vs **flat vector with indexing** for context-rich editors (Zed, VSCode).
 
-**Outcome**: Created [docs/feature/KEYMAPPING.md](feature/KEYMAPPING.md) design doc with data structures, TOML config format, and phased implementation plan.
+**Outcome**: Created [docs/feature/KEYMAPPING.md](archived/KEYMAPPING.md) design doc with data structures, TOML config format, and phased implementation plan.
 
 </details>
 

@@ -124,4 +124,4 @@ Move selection-clearing logic from `input.rs` into editor movement handlers:
 ## See Also
 
 - [Configurable Keymapping (archived)](../archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) - Original implementation plan
-- [KEYMAPPING.md](../feature/KEYMAPPING.md) - User-facing keymapping documentation (if exists)
+- [KEYMAPPING.md](../archived/KEYMAPPING.md) - User-facing keymapping documentation (if exists)

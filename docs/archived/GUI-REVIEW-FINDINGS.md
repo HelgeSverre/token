@@ -1335,8 +1335,7 @@ Modal Layer    → render_modals()         → Command palette, goto line, find
 ## References
 
 - [ORGANIZATION-CODEBASE.md](ORGANIZATION-CODEBASE.md) - Existing refactoring plan
-- [EDITOR_UI_REFERENCE.md](EDITOR_UI_REFERENCE.md) - Text editor UI concepts
-- [GUI-REVIEW-FINDINGS-v1.md](GUI-REVIEW-FINDINGS-v1.md) - Original version without modals
+- [EDITOR_UI_REFERENCE.md](../EDITOR_UI_REFERENCE.md) - Text editor UI concepts
 - [areweguiyet.com](https://areweguiyet.com) - Rust GUI framework comparison
 - [GPUI docs](https://gpui.rs/) - Production code editor GUI framework
 - [Zed command_palette](https://github.com/zed-industries/zed/blob/main/crates/command_palette/src/command_palette.rs) - Command palette implementation

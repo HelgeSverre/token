@@ -1182,7 +1182,6 @@ fn test_multi_cursor_macro() {
 
 - [Feature: Snippets](./snippets.md) - Similar expansion pattern
 - [Keymapping System](../archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) - Command enum integration
-- [Message Architecture](../dev/contracts-update.md) - Msg/Cmd pattern
 
 ### External Resources
 

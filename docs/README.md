@@ -58,29 +58,29 @@ Detailed specifications for major features, located in `docs/feature/`:
 
 | Feature | Status | Design Doc |
 |---------|--------|------------|
-| Syntax Highlighting | ✅ MVP | [syntax-highlighting.md](feature/syntax-highlighting.md) |
-| Workspace Management | ✅ P0-6 | [workspace-management.md](feature/workspace-management.md) |
-| CSV Viewer/Editor | ✅ P1-2 | [csv-editor.md](feature/csv-editor.md) |
+| Syntax Highlighting | ✅ MVP | [syntax-highlighting.md](archived/syntax-highlighting.md) |
+| Workspace Management | ✅ P0-6 | [workspace-management.md](archived/workspace-management.md) |
+| CSV Viewer/Editor | ✅ P1-2 | [csv-editor.md](archived/csv-editor.md) |
 
 ### Planned Features
 
 | Feature | Milestone | Design Doc |
 |---------|-----------|------------|
-| Command Palette Enhancements | 1 - Navigation | [command-palette-enhancements.md](feature/command-palette-enhancements.md) |
-| Quick Open | 1 - Navigation | [quick-open.md](feature/quick-open.md) |
-| Go to Line Enhancements | 1 - Navigation | [goto-line-enhancements.md](feature/goto-line-enhancements.md) |
+| Command Palette Enhancements | 1 - Navigation | [command-palette-enhancements.md](future/command-palette-enhancements.md) |
+| Quick Open | 1 - Navigation | planned |
+| Go to Line Enhancements | 1 - Navigation | [goto-line-enhancements.md](future/goto-line-enhancements.md) |
 | Recent Files | 1 - Navigation | [recent-files.md](feature/recent-files.md) |
 | Find Enhancements | 2 - Search & Editing | [find-enhancements.md](feature/find-enhancements.md) |
 | Replace Enhancements | 2 - Search & Editing | [replace-enhancements.md](feature/replace-enhancements.md) |
-| Select Next Occurrence | 2 - Search & Editing | [select-next-occurrence.md](feature/select-next-occurrence.md) |
-| Line Operations | 2 - Search & Editing | [line-operations.md](feature/line-operations.md) |
-| Whitespace Rendering | 2 - Search & Editing | [whitespace-rendering.md](feature/whitespace-rendering.md) |
+| Select Next Occurrence | 2 - Search & Editing | [select-next-occurrence.md](archived/select-next-occurrence.md) |
+| Line Operations | 2 - Search & Editing | [line-operations.md](archived/line-operations.md) |
+| Whitespace Rendering | 2 - Search & Editing | [whitespace-rendering.md](future/whitespace-rendering.md) |
 | Auto-Save | 3 - File Lifecycle | [auto-save.md](feature/auto-save.md) |
 | File Change Detection | 3 - File Lifecycle | [file-change-detection.md](feature/file-change-detection.md) |
 | Session Restore | 3 - File Lifecycle | [session-restore.md](feature/session-restore.md) |
-| Column Selection | 4 - Hard Problems | [column-selection.md](feature/column-selection.md) |
+| Column Selection | 4 - Hard Problems | [column-selection.md](archived/column-selection.md) |
 | Soft Wrap | 4 - Hard Problems | [soft-wrap.md](feature/soft-wrap.md) |
-| Code Folding | 4 - Hard Problems | [folding.md](feature/folding.md) |
+| Code Folding | 4 - Hard Problems | planned |
 | Diff Gutter | 5 - Insight Tools | [diff-gutter.md](feature/diff-gutter.md) |
 | Markdown Preview | 5 - Insight Tools | [markdown-preview.md](feature/markdown-preview.md) |
 | Snippets | 6 - Productivity | [snippets.md](feature/snippets.md) |
