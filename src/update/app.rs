@@ -315,6 +315,53 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             super::dock::update_dock(model, DockMsg::TogglePanel(PanelId::OUTLINE))
         }
         CommandId::CloseFocusedDock => super::dock::update_dock(model, DockMsg::CloseFocusedDock),
+        CommandId::RevealInFinder => {
+            if let Some(path) = model.document().file_path.clone() {
+                Some(Cmd::Batch(vec![
+                    Cmd::RevealFileInFinder { path },
+                    Cmd::Redraw,
+                ]))
+            } else {
+                model.ui.set_status("No file path (unsaved)");
+                Some(Cmd::Redraw)
+            }
+        }
+        CommandId::CopyAbsolutePath => {
+            if let Some(path) = model.document().file_path.clone() {
+                let text = path.display().to_string();
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(&text);
+                    model.ui.set_status(format!("Copied: {}", text));
+                } else {
+                    model.ui.set_status("Failed to access clipboard");
+                }
+                Some(Cmd::Redraw)
+            } else {
+                model.ui.set_status("No file path (unsaved)");
+                Some(Cmd::Redraw)
+            }
+        }
+        CommandId::CopyRelativePath => {
+            if let Some(path) = model.document().file_path.clone() {
+                let text = if let Some(root) = model.workspace_root() {
+                    path.strip_prefix(root)
+                        .map(|rel| rel.display().to_string())
+                        .unwrap_or_else(|_| path.display().to_string())
+                } else {
+                    path.display().to_string()
+                };
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(&text);
+                    model.ui.set_status(format!("Copied: {}", text));
+                } else {
+                    model.ui.set_status("Failed to access clipboard");
+                }
+                Some(Cmd::Redraw)
+            } else {
+                model.ui.set_status("No file path (unsaved)");
+                Some(Cmd::Redraw)
+            }
+        }
         CommandId::Quit => update_app(model, AppMsg::Quit),
         #[cfg(debug_assertions)]
         CommandId::TogglePerfOverlay => Some(Cmd::TogglePerfOverlay),

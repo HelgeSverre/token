@@ -73,6 +73,11 @@ pub enum CommandId {
     ToggleOutline,
     CloseFocusedDock,
 
+    // File path operations
+    RevealInFinder,
+    CopyAbsolutePath,
+    CopyRelativePath,
+
     // Application
     Quit,
 
@@ -254,6 +259,21 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: None,
     },
     CommandDef {
+        id: CommandId::RevealInFinder,
+        label: "Reveal Current File in Finder",
+        keybinding: None,
+    },
+    CommandDef {
+        id: CommandId::CopyAbsolutePath,
+        label: "Copy Absolute Path",
+        keybinding: None,
+    },
+    CommandDef {
+        id: CommandId::CopyRelativePath,
+        label: "Copy Relative Path",
+        keybinding: None,
+    },
+    CommandDef {
         id: CommandId::Quit,
         label: "Quit",
         keybinding: Some("⌘Q"),
@@ -394,6 +414,9 @@ impl CommandId {
             CommandId::ToggleTerminal => Some(KeymapCommand::ToggleTerminal),
             CommandId::ToggleOutline => Some(KeymapCommand::ToggleOutline),
             CommandId::CloseFocusedDock => Some(KeymapCommand::CloseFocusedDock),
+            CommandId::RevealInFinder => None,
+            CommandId::CopyAbsolutePath => None,
+            CommandId::CopyRelativePath => None,
             CommandId::Quit => Some(KeymapCommand::Quit),
             #[cfg(debug_assertions)]
             CommandId::TogglePerfOverlay => None,
@@ -590,6 +613,8 @@ pub enum Cmd {
     LoadFile { path: PathBuf },
     /// Open a path in the system file explorer/finder
     OpenInExplorer { path: PathBuf },
+    /// Reveal a file in the system file manager (select it)
+    RevealFileInFinder { path: PathBuf },
     /// Open a file in a new tab for editing
     OpenFileInEditor { path: PathBuf },
     /// Execute multiple commands
@@ -660,6 +685,7 @@ impl Cmd {
             Cmd::SaveFile { .. } => true,
             Cmd::LoadFile { .. } => true,
             Cmd::OpenInExplorer { .. } => true,
+            Cmd::RevealFileInFinder { .. } => false,
             Cmd::OpenFileInEditor { .. } => true,
             Cmd::Batch(cmds) => cmds.iter().any(|c| c.needs_redraw()),
             // Dialogs don't need immediate redraw - they'll trigger messages when done
@@ -698,6 +724,7 @@ impl Cmd {
             Cmd::SaveFile { .. } => Damage::Full,
             Cmd::LoadFile { .. } => Damage::Full,
             Cmd::OpenInExplorer { .. } => Damage::Full,
+            Cmd::RevealFileInFinder { .. } => Damage::Areas(vec![]),
             Cmd::OpenFileInEditor { .. } => Damage::Full,
             // Batch: merge all damages
             Cmd::Batch(cmds) => {

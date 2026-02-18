@@ -24,7 +24,7 @@ use crate::tracing::CursorSnapshot;
 #[cfg(debug_assertions)]
 use tracing::{debug, span, Level};
 
-pub use app::update_app;
+pub use app::{execute_command, update_app};
 pub use csv::update_csv;
 pub use dock::update_dock;
 pub use document::update_document;
