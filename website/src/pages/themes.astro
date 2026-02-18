@@ -181,8 +181,14 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
 
     <!-- Status bar -->
     <div class="statusbar">
-      <span class="statusbar-left" id="status-name">{themes[0].name}</span>
-      <span class="statusbar-right" id="status-file">{themes[0].fileName}</span>
+      <div class="statusbar-left">
+        <span id="status-name">{themes[0].name}</span>
+      </div>
+      <div class="statusbar-right">
+        <span id="status-cursor">Ln 18, Col 39</span>
+        <span class="statusbar-sep"></span>
+        <span id="status-lines">30 Ln</span>
+      </div>
     </div>
 
   </div>
@@ -202,7 +208,6 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     const detailAuthor = document.getElementById('detail-author')!;
     const detailDesc = document.getElementById('detail-desc')!;
     const statusName = document.getElementById('status-name')!;
-    const statusFile = document.getElementById('status-file')!;
     const swatchesEditor = document.getElementById('swatches-editor')!;
     const swatchesChrome = document.getElementById('swatches-chrome')!;
     const swatchesSyntax = document.getElementById('swatches-syntax')!;
@@ -259,7 +264,6 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
 
       // Update status bar and toolbar
       statusName.textContent = theme.name;
-      statusFile.textContent = theme.fileName;
       document.getElementById('toolbar-title')!.textContent = `themes/${theme.fileName}`;
 
       // Update swatches
@@ -684,10 +688,29 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
 
   .statusbar-left,
   .statusbar-right {
+    display: flex;
+    align-items: center;
+    gap: 0;
     font-family: var(--font-mono);
     font-size: 11px;
     color: var(--theme-status-fg, var(--fg-muted));
     transition: color var(--duration-normal) var(--ease-out);
+  }
+
+  .statusbar-right {
+    gap: 0;
+  }
+
+  .statusbar-right span:not(.statusbar-sep) {
+    padding: 0 8px;
+  }
+
+  .statusbar-sep {
+    width: 1px;
+    height: 14px;
+    background: var(--theme-status-fg, var(--fg-muted));
+    opacity: 0.4;
+    flex-shrink: 0;
   }
 
   /* ── Responsive ─────────────────────────────────────────── */
