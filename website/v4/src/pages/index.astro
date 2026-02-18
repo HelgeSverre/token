@@ -1,0 +1,907 @@
+---
+import SiteLayout from '../layouts/SiteLayout.astro';
+---
+
+<SiteLayout title="Token — A fast, minimal code editor" description="A fast, minimal text editor built in Rust with multi-cursor editing, Tree-sitter syntax highlighting, and split views.">
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-text">
+    <p class="hero-tag">Text editor / Rust / MIT</p>
+    <h1>
+      <span>Multi-cursor.</span>
+      <span>Syntax aware.</span>
+      <span class="accent">Absurdly fast.</span>
+    </h1>
+    <p class="hero-desc">Token is a minimal code editor with multi-cursor editing, split views, and Tree-sitter syntax highlighting. No Electron. No bloat. Just code.</p>
+    <div class="hero-actions">
+      <a href="#download" class="btn-primary">Download <span class="arrow">↓</span></a>
+      <a href="https://github.com/HelgeSverre/token" class="btn-ghost" target="_blank">View source →</a>
+    </div>
+    <div class="hero-trust">
+      <span class="trust-item">MIT Licensed</span>
+      <span class="trust-sep">·</span>
+      <span class="trust-item">No Telemetry</span>
+      <span class="trust-sep">·</span>
+      <span class="trust-item">Open Source</span>
+    </div>
+  </div>
+  <div class="hero-editor">
+    <div class="editor-frame">
+      <div class="editor-window-chrome">
+        <span class="dot red"></span>
+        <span class="dot yellow"></span>
+        <span class="dot green"></span>
+      </div>
+      <img src="/screenshot-hero.png" alt="Token editor showing Rust code with multi-cursor editing and split views" loading="eager" />
+    </div>
+  </div>
+</section>
+
+<!-- Stats -->
+<section class="stats">
+  <div class="stat"><span class="stat-val">20+</span><span class="stat-label">Languages</span></div>
+  <div class="stat-div"></div>
+  <div class="stat"><span class="stat-val">&lt;50ms</span><span class="stat-label">Startup</span></div>
+  <div class="stat-div"></div>
+  <div class="stat"><span class="stat-val">∞</span><span class="stat-label">Cursors</span></div>
+  <div class="stat-div"></div>
+  <div class="stat"><span class="stat-val">0</span><span class="stat-label">Electron</span></div>
+</section>
+
+<!-- Features -->
+<section class="features">
+  <h2 class="section-title">Built for speed</h2>
+  <div class="feature-grid">
+    <div class="feature-card wide">
+      <span class="feature-num">01</span>
+      <h3>Multi-cursor editing</h3>
+      <p>Add cursors anywhere with Option+Click. All cursors move and edit simultaneously. Overlapping cursors merge automatically.</p>
+      <div class="feature-demo">
+        <div class="demo-line"><span class="ln">12</span><span class="kw">let</span> <span class="var">name</span> = <span class="str">"alice"</span>;<span class="cursor-block">█</span></div>
+        <div class="demo-line"><span class="ln">13</span><span class="kw">let</span> <span class="var">name</span> = <span class="str">"bob"</span>;<span class="cursor-block">█</span></div>
+        <div class="demo-line"><span class="ln">14</span><span class="kw">let</span> <span class="var">name</span> = <span class="str">"carol"</span>;<span class="cursor-block">█</span></div>
+      </div>
+      <div class="feature-keys"><kbd>⌥</kbd>+<kbd>Click</kbd> add cursor &nbsp; <kbd>⌘</kbd>+<kbd>J</kbd> select next match</div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-num">02</span>
+      <h3>Split views</h3>
+      <p>Horizontal and vertical splits with independent viewports. Same file, different positions.</p>
+      <div class="split-demo">
+        <div class="split-pane"><div class="split-lines"></div></div>
+        <div class="split-divider"></div>
+        <div class="split-pane"><div class="split-lines"></div></div>
+      </div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-num">03</span>
+      <h3>Tree-sitter syntax</h3>
+      <p>Incremental parsing with real AST understanding. Not regex. Accurate highlighting.</p>
+      <div class="feature-demo compact">
+        <div class="demo-line"><span class="kw">fn</span> <span class="fn">parse</span>(<span class="var">input</span>: &amp;<span class="typ">str</span>)</div>
+        <div class="demo-line">  -> <span class="typ">Result</span>&lt;<span class="typ">AST</span>, <span class="typ">Error</span>&gt;</div>
+      </div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-num">04</span>
+      <h3>CSV spreadsheet</h3>
+      <p>View CSV and TSV as proper tables. Navigate with arrow keys. Edit cells in place.</p>
+      <div class="csv-demo">
+        <div class="csv-row csv-header"><span>Name</span><span>Age</span><span>City</span></div>
+        <div class="csv-row"><span>Alice</span><span class="num">32</span><span>Oslo</span></div>
+        <div class="csv-row selected"><span>Bob</span><span class="num">28</span><span>London</span></div>
+        <div class="csv-row"><span>Carol</span><span class="num">25</span><span>Berlin</span></div>
+      </div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-num">05</span>
+      <h3>YAML config</h3>
+      <p>Keymaps and themes in plain YAML. No JSON schema. No settings UI maze.</p>
+      <div class="feature-demo compact">
+        <div class="demo-line"><span class="kw">bindings</span>:</div>
+        <div class="demo-line">  - <span class="var">key</span>: <span class="str">"cmd+s"</span></div>
+        <div class="demo-line">    <span class="var">command</span>: <span class="fn">SaveFile</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Languages -->
+<section class="languages">
+  <h3>Languages</h3>
+  <div class="marquee">
+    <div class="marquee-track">
+      <span>Rust</span><span>TypeScript</span><span>JavaScript</span><span>Python</span>
+      <span>Go</span><span>Java</span><span>C</span><span>C++</span><span>PHP</span>
+      <span>HTML</span><span>CSS</span><span>JSON</span><span>YAML</span><span>TOML</span>
+      <span>Markdown</span><span>Bash</span><span>Scheme</span><span>XML</span>
+      <span>Rust</span><span>TypeScript</span><span>JavaScript</span><span>Python</span>
+      <span>Go</span><span>Java</span><span>C</span><span>C++</span><span>PHP</span>
+      <span>HTML</span><span>CSS</span><span>JSON</span><span>YAML</span><span>TOML</span>
+    </div>
+  </div>
+</section>
+
+<!-- Screenshot -->
+<section class="showcase">
+  <div class="editor-frame showcase-frame">
+    <div class="editor-window-chrome">
+      <span class="dot red"></span>
+      <span class="dot yellow"></span>
+      <span class="dot green"></span>
+    </div>
+    <img src="/screenshot-splits.png" alt="Token editor with three split views" />
+  </div>
+</section>
+
+<!-- Download -->
+<section id="download" class="download">
+  <h2 class="section-title">Get Token</h2>
+  <p class="section-desc">Auto-detects your platform. One command.</p>
+
+  <div class="install-hero">
+    <div class="install-oneliner">
+      <span class="install-prompt">$</span>
+      <code class="install-cmd"><span class="fn">curl</span> -fsSL token-editor.com/install.sh | <span class="fn">sh</span></code>
+      <button class="copy-btn" id="copy-install" aria-label="Copy">⎘</button>
+    </div>
+    <p class="install-note">Detects macOS (ARM/Intel), Linux, and Windows. Downloads the latest release and installs to <code>/usr/local/bin</code>.</p>
+  </div>
+
+  <div class="install-alt">
+    <details class="install-details">
+      <summary>Or build from source</summary>
+      <div class="install-source-block">
+        <div class="line"><span class="fn">git</span> clone https://github.com/HelgeSverre/token</div>
+        <div class="line"><span class="fn">cd</span> token && <span class="fn">make</span> release</div>
+        <div class="line"><span class="fn">sudo</span> <span class="fn">mv</span> target/release/token /usr/local/bin/</div>
+      </div>
+    </details>
+  </div>
+
+  <div class="download-grid">
+    <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-macos-aarch64.tar.gz" class="dl-card">
+      <span class="dl-platform">macOS</span><span class="dl-arch">Apple Silicon</span><span class="dl-ext">.tar.gz</span>
+    </a>
+    <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-macos-x86_64.tar.gz" class="dl-card">
+      <span class="dl-platform">macOS</span><span class="dl-arch">Intel</span><span class="dl-ext">.tar.gz</span>
+    </a>
+    <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-linux-x86_64.tar.gz" class="dl-card">
+      <span class="dl-platform">Linux</span><span class="dl-arch">x86_64</span><span class="dl-ext">.tar.gz</span>
+    </a>
+    <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-windows-x86_64.zip" class="dl-card">
+      <span class="dl-platform">Windows</span><span class="dl-arch">x86_64</span><span class="dl-ext">.zip</span>
+    </a>
+  </div>
+</section>
+
+<!-- Keys Preview -->
+<section class="keys-section">
+  <h2 class="section-title">Keyboard-first editing</h2>
+  <p class="section-desc">Token is designed to keep your hands on the keyboard.</p>
+  <div class="keys-columns">
+    <div class="keys-group">
+      <h4>Files</h4>
+      <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>S</kbd></span><span>Save</span></div>
+      <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>O</kbd></span><span>Open file</span></div>
+      <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>O</kbd></span><span>Open folder</span></div>
+      <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>W</kbd></span><span>Close tab</span></div>
+    </div>
+    <div class="keys-group">
+      <h4>Navigation</h4>
+      <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>A</kbd></span><span>Command palette</span></div>
+      <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>L</kbd></span><span>Go to line</span></div>
+      <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>F</kbd></span><span>Find & replace</span></div>
+      <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>1</kbd></span><span>Toggle sidebar</span></div>
+    </div>
+    <div class="keys-group">
+      <h4>Multi-cursor</h4>
+      <div class="key-row"><span class="key-combo"><kbd>⌥</kbd>+<kbd>Click</kbd></span><span>Add cursor</span></div>
+      <div class="key-row"><span class="key-combo"><kbd>⌥</kbd><kbd>⌥</kbd><kbd>↓</kbd></span><span>Cursor below</span></div>
+      <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>J</kbd></span><span>Select next</span></div>
+      <div class="key-row"><span class="key-combo"><kbd>Esc</kbd></span><span>Single cursor</span></div>
+    </div>
+    <div class="keys-group">
+      <h4>Editing</h4>
+      <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>D</kbd></span><span>Duplicate line</span></div>
+      <div class="key-row"><span class="key-combo"><kbd>⌘</kbd><kbd>⌫</kbd></span><span>Delete line</span></div>
+      <div class="key-row"><span class="key-combo"><kbd>⌥</kbd><kbd>↑</kbd></span><span>Expand selection</span></div>
+      <div class="key-row"><span class="key-combo"><kbd>⇧</kbd><kbd>Tab</kbd></span><span>Unindent</span></div>
+    </div>
+  </div>
+  <div class="keys-cta">
+    <a href="/keybindings" class="btn-outline">View all keybindings →</a>
+  </div>
+</section>
+
+<!-- AI -->
+<section class="ai-section">
+  <span class="ai-badge">100+ conversations</span>
+  <h2>Built with AI</h2>
+  <p>Token was built through conversations with AI coding assistants. The entire development process—architecture, debugging, features—is documented publicly on Amp Code.</p>
+  <a href="https://ampcode.com/@helgesverre" class="btn-outline" target="_blank">View the threads →</a>
+</section>
+
+</SiteLayout>
+
+<style>
+/* Hero */
+.hero {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: center;
+  padding: 120px 48px 80px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.hero-tag {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  margin-bottom: 32px;
+}
+
+.hero h1 {
+  font-size: clamp(2.5rem, 5vw, 4.5rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  margin-bottom: 32px;
+}
+
+.hero h1 span { display: block; }
+.hero h1 .accent { color: var(--syn-function); }
+
+.hero-desc {
+  font-size: 1.1rem;
+  color: var(--fg-muted);
+  max-width: 480px;
+  margin-bottom: 48px;
+  line-height: 1.7;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  background: var(--syn-function);
+  color: var(--bg-deep);
+  font-family: var(--font-btn);
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: var(--r-sm);
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+.btn-primary:hover { opacity: 0.85; }
+.btn-primary .arrow {
+  display: inline-block;
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+.btn-primary:hover .arrow {
+  transform: translateY(3px);
+}
+
+.btn-ghost {
+  font-family: var(--font-btn);
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--fg-muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.btn-ghost:hover { color: var(--fg); }
+
+.btn-outline {
+  display: inline-block;
+  padding: 12px 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  color: var(--fg);
+  font-family: var(--font-btn);
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: border-color 0.15s, color 0.15s;
+}
+.btn-outline:hover { border-color: var(--syn-function); color: var(--syn-function); }
+
+/* Editor Frame */
+.editor-frame {
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: 0 25px 60px -12px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04);
+}
+
+.hero-editor .editor-frame {
+  transition: box-shadow var(--duration-normal) var(--ease-out);
+}
+.hero-editor .editor-frame:hover {
+  box-shadow: 0 25px 60px -12px rgba(0,0,0,0.5),
+              0 0 0 1px rgba(255,255,255,0.04),
+              var(--shadow-glow);
+}
+
+.hero-trust {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 24px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--fg-muted);
+}
+.trust-sep {
+  opacity: 0.4;
+}
+
+.editor-window-chrome {
+  display: flex;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+}
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.dot.red { background: #FF5F57; }
+.dot.yellow { background: #FEBC2E; }
+.dot.green { background: #28C840; }
+
+.editor-tabs {
+  display: flex;
+  align-items: center;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 0;
+  height: 36px;
+  gap: 0;
+}
+
+.editor-tabs .tab {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--fg-muted);
+  padding: 0 16px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  border-right: 1px solid var(--border);
+  background: none;
+  border-top: none;
+  border-bottom: none;
+  border-left: none;
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+.editor-tabs .tab:hover { color: var(--fg); }
+.editor-tabs .tab.active {
+  color: var(--fg);
+  background: var(--bg);
+  border-bottom: 2px solid var(--syn-keyword);
+}
+
+.editor-body {
+  padding: 16px 0;
+}
+
+.editor-content .line,
+.install-body .line,
+.feature-demo .demo-line {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.7;
+  padding: 0 20px;
+  white-space: pre;
+  color: var(--fg);
+}
+
+.editor-content .line.hl {
+  background: rgba(255,255,255,0.04);
+}
+
+.ln { color: var(--fg-muted); margin-right: 16px; user-select: none; display: inline-block; width: 2ch; text-align: right; }
+.kw { color: var(--syn-keyword); }
+.fn { color: var(--syn-function); }
+.var { color: var(--syn-variable); }
+.str { color: var(--syn-string); }
+.typ { color: var(--syn-type); }
+.cmt { color: var(--syn-comment); font-style: italic; }
+.punc { color: var(--syn-punctuation); }
+.num { color: var(--syn-number); }
+.cursor-block { color: var(--cursor); animation: blink 1s steps(1) infinite; }
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.editor-status {
+  display: flex;
+  gap: 24px;
+  padding: 0 16px;
+  height: 24px;
+  align-items: center;
+  background: var(--status-bg);
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--fg-muted);
+}
+
+/* Stats */
+.stats {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 48px;
+  padding: 48px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-deep);
+}
+
+.stat { text-align: center; }
+.stat-val {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--syn-function);
+  margin-bottom: 4px;
+}
+.stat-label {
+  font-size: 0.7rem;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.stat-div { width: 1px; height: 40px; background: var(--border-strong); }
+
+/* Features */
+.features {
+  padding: 120px 48px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.section-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 16px;
+}
+
+.section-desc {
+  color: var(--fg-muted);
+  font-size: 1.1rem;
+  margin-bottom: 48px;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.feature-card {
+  padding: 40px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  transition: border-color 0.2s, transform 0.2s var(--ease-out);
+}
+.feature-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
+}
+.feature-card.wide { grid-column: span 2; }
+
+.feature-num {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--syn-string);
+  margin-bottom: 20px;
+  display: block;
+}
+
+.feature-card h3 {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  letter-spacing: -0.01em;
+}
+
+.feature-card p {
+  color: var(--fg-muted);
+  line-height: 1.6;
+  font-size: 0.9rem;
+  margin-bottom: 20px;
+}
+
+.feature-demo {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 12px 0;
+  margin-top: 16px;
+}
+.feature-demo.compact { padding: 10px 16px; }
+.feature-demo.compact .demo-line { padding: 0; }
+
+.feature-keys {
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+}
+.feature-keys kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}
+
+/* Split demo */
+.split-demo {
+  display: flex;
+  gap: 2px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  height: 80px;
+  margin-top: 16px;
+}
+.split-pane {
+  flex: 1;
+  background: var(--bg);
+  padding: 8px 12px;
+}
+.split-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.split-lines::before,
+.split-lines::after,
+.split-pane .split-lines {
+  content: '';
+}
+.split-pane:first-child .split-lines::before { content: ''; display: block; height: 6px; width: 60%; background: var(--syn-keyword); opacity: 0.3; border-radius: 2px; }
+.split-pane:first-child .split-lines::after { content: ''; display: block; height: 6px; width: 80%; background: var(--syn-string); opacity: 0.3; border-radius: 2px; margin-top: 4px; }
+.split-pane:last-child .split-lines::before { content: ''; display: block; height: 6px; width: 70%; background: var(--syn-function); opacity: 0.3; border-radius: 2px; }
+.split-pane:last-child .split-lines::after { content: ''; display: block; height: 6px; width: 50%; background: var(--syn-type); opacity: 0.3; border-radius: 2px; margin-top: 4px; }
+.split-divider { width: 2px; background: var(--border-strong); }
+
+/* CSV demo */
+.csv-demo {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}
+.csv-row {
+  display: grid;
+  grid-template-columns: 1fr 0.5fr 1fr;
+  border-bottom: 1px solid var(--border);
+}
+.csv-row:last-child { border-bottom: none; }
+.csv-row span { padding: 6px 10px; color: var(--fg); }
+.csv-header { background: var(--panel-bg); }
+.csv-header span { color: var(--fg-muted); font-weight: 600; }
+.csv-row.selected { background: rgba(38,79,120,0.3); }
+.csv-row .num { color: var(--syn-number); }
+
+/* Languages */
+.languages {
+  padding: 60px 0;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.languages h3 {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  margin-bottom: 24px;
+  font-weight: 400;
+}
+.marquee { overflow: hidden; white-space: nowrap; }
+.marquee-track {
+  display: inline-flex;
+  gap: 48px;
+  animation: marquee 30s linear infinite;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* Showcase */
+.showcase {
+  padding: 80px 48px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.showcase-frame img {
+  width: 100%;
+  display: block;
+}
+
+/* Download */
+.download {
+  padding: 120px 48px;
+  max-width: 1000px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.install-hero {
+  margin: 48px 0 32px;
+}
+
+.install-oneliner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  padding: 20px 24px;
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  text-align: left;
+  position: relative;
+}
+
+.install-prompt {
+  color: var(--syn-keyword);
+  font-weight: 700;
+  user-select: none;
+}
+
+.install-cmd {
+  color: var(--fg);
+  flex: 1;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.install-note {
+  margin-top: 16px;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+  line-height: 1.6;
+}
+.install-note code {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  background: var(--bg-deep);
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--fg);
+}
+
+.install-alt {
+  margin-bottom: 48px;
+  text-align: left;
+}
+
+.install-details summary {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 8px 0;
+  transition: color 0.15s;
+  list-style: none;
+}
+.install-details summary::-webkit-details-marker { display: none; }
+.install-details summary::before { content: '▸ '; color: var(--syn-keyword); }
+.install-details[open] summary::before { content: '▾ '; }
+.install-details summary:hover { color: var(--fg); }
+
+.install-source-block {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 16px 20px;
+  margin-top: 8px;
+}
+.install-source-block .line {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.8;
+  color: var(--fg);
+  white-space: pre;
+}
+
+.copy-btn {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-strong);
+  color: var(--fg-muted);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.copy-btn:hover { color: var(--fg); border-color: var(--fg-muted); }
+
+.download-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.dl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 20px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+.dl-card:hover { border-color: var(--syn-keyword); }
+.dl-platform { font-weight: 600; font-size: 1rem; color: var(--fg); }
+.dl-arch { font-size: 0.8rem; color: var(--fg-muted); }
+.dl-ext { font-family: var(--font-mono); font-size: 0.7rem; color: var(--syn-comment); }
+
+/* Keys */
+.keys-section {
+  padding: 120px 48px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.keys-columns {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 32px;
+  margin-top: 48px;
+}
+
+.keys-group h4 {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--syn-string);
+  margin-bottom: 16px;
+}
+
+.key-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.key-combo {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.key-combo kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--fg);
+}
+
+.keys-cta {
+  text-align: center;
+  margin-top: 48px;
+}
+
+/* AI */
+.ai-section {
+  padding: 120px 48px;
+  max-width: 700px;
+  margin: 0 auto;
+  text-align: center;
+}
+.ai-badge {
+  display: inline-block;
+  padding: 6px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--syn-comment);
+  margin-bottom: 24px;
+}
+.ai-section h2 {
+  font-size: 2rem;
+  margin-bottom: 16px;
+}
+.ai-section p {
+  color: var(--fg-muted);
+  line-height: 1.7;
+  margin-bottom: 32px;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .hero { grid-template-columns: 1fr; gap: 60px; padding: 120px 32px 80px; }
+  .hero-editor { order: -1; }
+  .feature-grid { grid-template-columns: repeat(2, 1fr); }
+  .feature-card.wide { grid-column: span 2; }
+  .keys-columns { grid-template-columns: repeat(2, 1fr); }
+  .download-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+  .hero { padding: 100px 24px 60px; }
+  .features { padding: 80px 24px; }
+  .feature-grid { grid-template-columns: 1fr; }
+  .feature-card.wide { grid-column: span 1; }
+  .stats { flex-wrap: wrap; gap: 32px; }
+  .stat-div { display: none; }
+  .keys-columns { grid-template-columns: 1fr; }
+  .download-grid { grid-template-columns: 1fr; }
+  .showcase { padding: 40px 24px; }
+  .download { padding: 80px 24px; }
+  .keys-section { padding: 80px 24px; }
+  .ai-section { padding: 80px 24px; }
+  .section-title { font-size: 2rem; }
+  .hero-actions { flex-direction: column; align-items: flex-start; gap: 16px; }
+}
+</style>
+
+<script>
+  document.getElementById('copy-install')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget as HTMLElement;
+    await navigator.clipboard.writeText('curl -fsSL token-editor.com/install.sh | sh');
+    btn.textContent = '✓';
+    setTimeout(() => btn.textContent = '⎘', 1500);
+  });
+</script>
