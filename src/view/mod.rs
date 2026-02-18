@@ -1951,53 +1951,44 @@ impl Renderer {
         // Handle different modal types
         match modal {
             ModalState::ThemePicker(state) => {
-                // Theme picker: sectioned list (User / Builtin)
                 let themes = &state.themes;
 
-                // Count themes by source for section headers
                 let has_user = themes.iter().any(|t| t.source == ThemeSource::User);
                 let has_builtin = themes.iter().any(|t| t.source == ThemeSource::Builtin);
                 let section_count = has_user as usize + has_builtin as usize;
-
-                // Calculate visible rows: themes + section headers
                 let total_rows = themes.len() + section_count;
-                let list_height = total_rows * line_height;
-                let modal_height = 8 + line_height + 8 + list_height + 8; // title + gap + list + padding
-                let modal_width = 400;
-                let modal_x = (window_width.saturating_sub(modal_width)) / 2;
-                let modal_y = window_height / 4;
+
+                let (layout, w) = geometry::theme_picker_layout(
+                    window_width,
+                    window_height,
+                    line_height,
+                    total_rows,
+                );
 
                 frame.draw_bordered_rect(
-                    modal_x,
-                    modal_y,
-                    modal_width,
-                    modal_height,
-                    bg_color,
-                    border_color,
+                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
                 );
 
                 // Title
-                let title_x = modal_x + 12;
-                let title_y = modal_y + 8;
-                painter.draw(frame, title_x, title_y, "Switch Theme", fg_color);
+                let title_r = layout.widget(w.title);
+                painter.draw(frame, title_r.x, title_r.y, "Switch Theme", fg_color);
 
                 // Theme list with sections
-                let list_y = title_y + line_height + 8;
+                let list_r = layout.widget(w.list);
                 let clamped_selected = state.selected_index.min(themes.len().saturating_sub(1));
 
-                let mut current_y = list_y;
+                let mut current_y = list_r.y;
                 let mut current_source: Option<ThemeSource> = None;
-                let dim_color = 0xFF666666; // Dimmed color for section headers
+                let dim_color = 0xFF666666;
 
                 for (i, theme_info) in themes.iter().enumerate() {
-                    // Draw section header when source changes
                     if current_source != Some(theme_info.source) {
                         current_source = Some(theme_info.source);
                         let header = match theme_info.source {
                             ThemeSource::User => "User Themes",
                             ThemeSource::Builtin => "Built-in Themes",
                         };
-                        painter.draw(frame, modal_x + 12, current_y, header, dim_color);
+                        painter.draw(frame, layout.x + 12, current_y, header, dim_color);
                         current_y += line_height;
                     }
 
@@ -2005,21 +1996,19 @@ impl Renderer {
 
                     if is_selected {
                         frame.fill_rect_px(
-                            modal_x + 4,
+                            layout.x + 4,
                             current_y,
-                            modal_width - 8,
+                            layout.w - 8,
                             line_height,
                             selection_bg,
                         );
                     }
 
-                    // Draw theme name with indent
-                    let label_x = modal_x + 24;
+                    let label_x = layout.x + 24;
                     painter.draw(frame, label_x, current_y, &theme_info.name, fg_color);
 
-                    // Show checkmark for current theme
                     if model.theme.name == theme_info.name || model.config.theme == theme_info.id {
-                        let check_x = modal_x + modal_width - 30;
+                        let check_x = layout.x + layout.w - 30;
                         painter.draw(frame, check_x, current_y, "✓", highlight_color);
                     }
 
@@ -2051,10 +2040,10 @@ impl Renderer {
                 let input_r = layout.widget(w.input);
                 frame.fill_rect_px(input_r.x, input_r.y, input_r.w, input_r.h, input_bg);
 
-                let ipad = geometry::ModalSpacing::INPUT_PAD_X;
-                let text_x = input_r.x + ipad;
-                let text_y = input_r.y + ipad / 2;
-                let text_width = input_r.w.saturating_sub(ipad * 2);
+                let padx = geometry::ModalSpacing::INPUT_PAD_X;
+                let text_x = input_r.x + padx;
+                let text_y = input_r.y + (input_r.h.saturating_sub(line_height)) / 2;
+                let text_width = input_r.w.saturating_sub(padx * 2);
                 let opts = TextFieldOptions {
                     x: text_x,
                     y: text_y,
@@ -2136,10 +2125,10 @@ impl Renderer {
                 let input_r = layout.widget(w.input);
                 frame.fill_rect_px(input_r.x, input_r.y, input_r.w, input_r.h, input_bg);
 
-                let ipad = geometry::ModalSpacing::INPUT_PAD_X;
-                let text_x = input_r.x + ipad;
-                let text_y = input_r.y + ipad / 2;
-                let text_width = input_r.w.saturating_sub(ipad * 2);
+                let padx = geometry::ModalSpacing::INPUT_PAD_X;
+                let text_x = input_r.x + padx;
+                let text_y = input_r.y + (input_r.h.saturating_sub(line_height)) / 2;
+                let text_width = input_r.w.saturating_sub(padx * 2);
                 let opts = TextFieldOptions {
                     x: text_x,
                     y: text_y,
@@ -2176,7 +2165,7 @@ impl Renderer {
                 };
                 painter.draw(frame, title_r.x, title_r.y, title, fg_color);
 
-                let ipad = geometry::ModalSpacing::INPUT_PAD_X;
+                let padx = geometry::ModalSpacing::INPUT_PAD_X;
 
                 // Find label (only in replace mode)
                 if let Some(label_idx) = w.find_label {
@@ -2198,9 +2187,9 @@ impl Renderer {
                         crate::model::ui::FindReplaceField::Query
                     );
                 let find_opts = TextFieldOptions {
-                    x: find_r.x + ipad,
-                    y: find_r.y + ipad / 2,
-                    width: find_r.w.saturating_sub(ipad * 2),
+                    x: find_r.x + padx,
+                    y: find_r.y + (find_r.h.saturating_sub(line_height)) / 2,
+                    width: find_r.w.saturating_sub(padx * 2),
                     height: line_height,
                     char_width,
                     text_color: fg_color,
@@ -2230,9 +2219,9 @@ impl Renderer {
                             crate::model::ui::FindReplaceField::Replace
                         );
                     let replace_opts = TextFieldOptions {
-                        x: repl_r.x + ipad,
-                        y: repl_r.y + ipad / 2,
-                        width: repl_r.w.saturating_sub(ipad * 2),
+                        x: repl_r.x + padx,
+                        y: repl_r.y + (repl_r.h.saturating_sub(line_height)) / 2,
+                        width: repl_r.w.saturating_sub(padx * 2),
                         height: line_height,
                         char_width,
                         text_color: fg_color,
@@ -2259,6 +2248,7 @@ impl Renderer {
                     window_height,
                     line_height,
                     results.len(),
+                    !state.input().is_empty(),
                 );
 
                 frame.draw_bordered_rect(
@@ -2273,10 +2263,10 @@ impl Renderer {
                 let input_r = layout.widget(w.input);
                 frame.fill_rect_px(input_r.x, input_r.y, input_r.w, input_r.h, input_bg);
 
-                let ipad = geometry::ModalSpacing::INPUT_PAD_X;
-                let text_x = input_r.x + ipad;
-                let text_y = input_r.y + ipad / 2;
-                let text_width = input_r.w.saturating_sub(ipad * 2);
+                let padx = geometry::ModalSpacing::INPUT_PAD_X;
+                let text_x = input_r.x + padx;
+                let text_y = input_r.y + (input_r.h.saturating_sub(line_height)) / 2;
+                let text_width = input_r.w.saturating_sub(padx * 2);
                 let opts = TextFieldOptions {
                     x: text_x,
                     y: text_y,
@@ -2300,9 +2290,22 @@ impl Renderer {
                 let clamped_selected = state.selected_index.min(results.len().saturating_sub(1));
                 let dim_color = 0xFF888888; // Dimmed color for relative path
 
-                for (i, file_match) in results.iter().take(max_visible_items).enumerate() {
+                // Compute scroll offset to keep selected item visible
+                let scroll_offset = if clamped_selected >= max_visible_items {
+                    clamped_selected + 1 - max_visible_items
+                } else {
+                    0
+                };
+
+                for (i, file_match) in results
+                    .iter()
+                    .skip(scroll_offset)
+                    .take(max_visible_items)
+                    .enumerate()
+                {
+                    let actual_index = scroll_offset + i;
                     let item_y = results_y + i * line_height;
-                    let is_selected = i == clamped_selected;
+                    let is_selected = actual_index == clamped_selected;
 
                     // Selection highlight
                     if is_selected {

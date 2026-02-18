@@ -1103,11 +1103,15 @@ pub struct FileFinderWidgets {
 }
 
 /// Compute layout for the File Finder modal.
+///
+/// `has_query` should be true when the input is non-empty, so we reserve
+/// space for the "No files match" message even when `list_items` is 0.
 pub fn file_finder_layout(
     window_width: usize,
     window_height: usize,
     line_height: usize,
     list_items: usize,
+    has_query: bool,
 ) -> (ModalLayout, FileFinderWidgets) {
     let modal_width = (window_width as f32 * 0.7).clamp(500.0, 900.0) as usize;
     let pad = ModalSpacing::PAD;
@@ -1121,15 +1125,76 @@ pub fn file_finder_layout(
 
     let max_visible = 10;
     let visible = list_items.min(max_visible);
-    let list = if visible > 0 {
+    // Always reserve at least 1 row when there's a query (for "No files match" message)
+    let list_rows = if visible > 0 {
+        visible
+    } else if has_query {
+        1
+    } else {
+        0
+    };
+    let list = if list_rows > 0 {
         v.gap(ModalSpacing::GAP_MD);
-        Some(v.push(visible * line_height))
+        Some(v.push(list_rows * line_height))
     } else {
         None
     };
 
     let layout = ModalLayout::build(v, modal_width, window_width, window_height);
     (layout, FileFinderWidgets { title, input, list })
+}
+
+/// Layout indices for ThemePicker modal widgets
+pub struct ThemePickerWidgets {
+    pub title: usize,
+    pub list: usize,
+}
+
+/// Compute layout for the Theme Picker modal.
+///
+/// `total_rows` should include section headers (User Themes / Built-in Themes).
+pub fn theme_picker_layout(
+    window_width: usize,
+    window_height: usize,
+    line_height: usize,
+    total_rows: usize,
+) -> (ModalLayout, ThemePickerWidgets) {
+    let modal_width = 400;
+    let pad = ModalSpacing::PAD;
+    let content_width = modal_width - pad * 2;
+
+    let mut v = VStack::new(content_width);
+    let title = v.push(line_height);
+    v.gap(ModalSpacing::GAP_MD);
+    let list = v.push(total_rows * line_height);
+
+    // ThemePicker uses window_height/4 without the min(100) cap
+    let modal_x = window_width.saturating_sub(modal_width) / 2;
+    let modal_y = window_height / 4;
+    let content_height = v.height();
+    let modal_height = content_height + pad * 2;
+    let content_x = modal_x + pad;
+    let content_y = modal_y + pad;
+
+    let widgets: Vec<WidgetRect> = v
+        .widgets
+        .into_iter()
+        .map(|w| WidgetRect {
+            x: content_x + w.x,
+            y: content_y + w.y,
+            w: w.w,
+            h: w.h,
+        })
+        .collect();
+
+    let layout = ModalLayout {
+        x: modal_x,
+        y: modal_y,
+        w: modal_width,
+        h: modal_height,
+        widgets,
+    };
+    (layout, ThemePickerWidgets { title, list })
 }
 
 // ============================================================================
@@ -1337,5 +1402,196 @@ mod tests {
     fn test_visual_col_to_char_col() {
         assert_eq!(visual_col_to_char_col("abc", 2), 2);
         assert_eq!(visual_col_to_char_col("a\tb", 4), 2); // visual 4 is 'b' which is char 2
+    }
+
+    // ====================================================================
+    // VStack / ModalLayout tests
+    // ====================================================================
+
+    #[test]
+    fn test_vstack_empty() {
+        let v = VStack::new(200);
+        assert_eq!(v.height(), 0);
+    }
+
+    #[test]
+    fn test_vstack_push_and_gap() {
+        let mut v = VStack::new(200);
+        let a = v.push(30);
+        v.gap(10);
+        let b = v.push(20);
+
+        assert_eq!(a, 0);
+        assert_eq!(b, 1);
+        assert_eq!(v.widgets[a].y, 0);
+        assert_eq!(v.widgets[a].h, 30);
+        assert_eq!(v.widgets[b].y, 40); // 30 + 10 gap
+        assert_eq!(v.widgets[b].h, 20);
+        assert_eq!(v.height(), 60); // 30 + 10 + 20
+    }
+
+    #[test]
+    fn test_modal_layout_build_translation() {
+        let mut v = VStack::new(200);
+        v.push(30); // widget 0
+        v.gap(8);
+        v.push(20); // widget 1
+
+        let layout = ModalLayout::build(v, 224, 1000, 800);
+        let pad = ModalSpacing::PAD;
+
+        // Modal is centered: (1000 - 224) / 2 = 388
+        assert_eq!(layout.x, 388);
+        // Modal y: min(800/4, 100) = 100
+        assert_eq!(layout.y, 100);
+        // Modal height: content(30+8+20) + 2*pad
+        assert_eq!(layout.h, 58 + pad * 2);
+
+        // Widget 0: translated to (388+pad, 100+pad)
+        let w0 = layout.widget(0);
+        assert_eq!(w0.x, 388 + pad);
+        assert_eq!(w0.y, 100 + pad);
+        assert_eq!(w0.h, 30);
+
+        // Widget 1: translated, y = 100+pad+30+8 = 100+pad+38
+        let w1 = layout.widget(1);
+        assert_eq!(w1.y, 100 + pad + 38);
+    }
+
+    #[test]
+    fn test_modal_layout_contains_boundary() {
+        let layout = ModalLayout {
+            x: 100,
+            y: 50,
+            w: 200,
+            h: 100,
+            widgets: vec![],
+        };
+
+        // Corners: inclusive at (x,y), exclusive at (x+w, y+h)
+        assert!(layout.contains(100, 50));
+        assert!(layout.contains(299, 149));
+        assert!(!layout.contains(300, 50));
+        assert!(!layout.contains(100, 150));
+        assert!(!layout.contains(99, 50));
+        assert!(!layout.contains(100, 49));
+    }
+
+    #[test]
+    fn test_input_height() {
+        assert_eq!(ModalLayout::input_height(20), 20 + ModalSpacing::INPUT_PAD_Y);
+    }
+
+    // ====================================================================
+    // Per-modal layout tests
+    // ====================================================================
+
+    #[test]
+    fn test_goto_line_layout() {
+        let lh = 20;
+        let (layout, w) = goto_line_layout(1000, 800, lh);
+
+        // Has title + input
+        assert_eq!(layout.widgets.len(), 2);
+        let title = layout.widget(w.title);
+        let input = layout.widget(w.input);
+        assert_eq!(title.h, lh);
+        assert_eq!(input.h, ModalLayout::input_height(lh));
+        // Input starts below title + gap
+        assert!(input.y > title.y + title.h);
+    }
+
+    #[test]
+    fn test_find_replace_layout_find_only() {
+        let lh = 20;
+        let (layout, w) = find_replace_layout(1000, 800, lh, false);
+
+        // Find-only: title + find_input (no labels)
+        assert!(w.find_label.is_none());
+        assert!(w.replace_label.is_none());
+        assert!(w.replace_input.is_none());
+        assert_eq!(layout.widgets.len(), 2);
+    }
+
+    #[test]
+    fn test_find_replace_layout_replace_mode() {
+        let lh = 20;
+        let (layout, w) = find_replace_layout(1000, 800, lh, true);
+
+        // Replace mode: title + find_label + find_input + replace_label + replace_input
+        assert!(w.find_label.is_some());
+        assert!(w.replace_label.is_some());
+        assert!(w.replace_input.is_some());
+        assert_eq!(layout.widgets.len(), 5);
+
+        // Replace input is below find input
+        let find_input = layout.widget(w.find_input);
+        let repl_input = layout.widget(w.replace_input.unwrap());
+        assert!(repl_input.y > find_input.y + find_input.h);
+    }
+
+    #[test]
+    fn test_command_palette_layout_empty_list() {
+        let lh = 20;
+        let (layout, w) = command_palette_layout(1000, 800, lh, 0);
+
+        assert!(w.list.is_none());
+        // Only title + input
+        assert_eq!(layout.widgets.len(), 2);
+    }
+
+    #[test]
+    fn test_command_palette_layout_with_overflow() {
+        let lh = 20;
+        // 15 items > max_visible(8) -> should have overflow row
+        let (layout, w) = command_palette_layout(1000, 800, lh, 15);
+
+        assert!(w.list.is_some());
+        let list = layout.widget(w.list.unwrap());
+        // 8 visible + 1 overflow row = 9 * lh
+        assert_eq!(list.h, 9 * lh);
+    }
+
+    #[test]
+    fn test_command_palette_layout_no_overflow() {
+        let lh = 20;
+        // 5 items <= max_visible(8) -> no overflow row
+        let (_, w) = command_palette_layout(1000, 800, lh, 5);
+
+        let list = &w.list;
+        assert!(list.is_some());
+    }
+
+    #[test]
+    fn test_file_finder_layout_empty_no_query() {
+        let lh = 20;
+        let (_, w) = file_finder_layout(1000, 800, lh, 0, false);
+
+        // No query, no results -> no list area
+        assert!(w.list.is_none());
+    }
+
+    #[test]
+    fn test_file_finder_layout_empty_with_query() {
+        let lh = 20;
+        let (layout, w) = file_finder_layout(1000, 800, lh, 0, true);
+
+        // Has query but no results -> 1 row for "No files match" message
+        assert!(w.list.is_some());
+        let list = layout.widget(w.list.unwrap());
+        assert_eq!(list.h, lh);
+    }
+
+    #[test]
+    fn test_theme_picker_layout() {
+        let lh = 20;
+        let (layout, w) = theme_picker_layout(1000, 800, lh, 10);
+
+        let title = layout.widget(w.title);
+        let list = layout.widget(w.list);
+        assert_eq!(title.h, lh);
+        assert_eq!(list.h, 10 * lh);
+        // Modal width is always 400
+        assert_eq!(layout.w, 400);
     }
 }

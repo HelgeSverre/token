@@ -359,29 +359,20 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
             l
         }
         Some(ModalState::FileFinder(state)) => {
-            let (l, _) = super::geometry::file_finder_layout(ww, wh, lh, state.results.len());
+            let (l, _) = super::geometry::file_finder_layout(
+                ww, wh, lh, state.results.len(), !state.input().is_empty(),
+            );
             l
         }
         Some(ModalState::ThemePicker(state)) => {
-            // ThemePicker still uses custom layout — compute bounds inline
             use crate::theme::ThemeSource;
             let themes = &state.themes;
             let has_user = themes.iter().any(|t| t.source == ThemeSource::User);
             let has_builtin = themes.iter().any(|t| t.source == ThemeSource::Builtin);
             let section_count = has_user as usize + has_builtin as usize;
             let total_rows = themes.len() + section_count;
-            let list_height = total_rows * lh;
-            let modal_height = 8 + lh + 8 + list_height + 8;
-            let modal_width = 400;
-            let modal_x = ww.saturating_sub(modal_width) / 2;
-            let modal_y = wh / 4;
-            super::geometry::ModalLayout {
-                x: modal_x,
-                y: modal_y,
-                w: modal_width,
-                h: modal_height,
-                widgets: Vec::new(),
-            }
+            let (l, _) = super::geometry::theme_picker_layout(ww, wh, lh, total_rows);
+            l
         }
         Some(ModalState::GotoLine(_)) => {
             let (l, _) = super::geometry::goto_line_layout(ww, wh, lh);
