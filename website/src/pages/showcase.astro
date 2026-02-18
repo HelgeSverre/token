@@ -1,0 +1,559 @@
+---
+import SiteLayout from '../layouts/SiteLayout.astro';
+import { showcase } from '../data/showcase';
+
+const tags = ['All', 'Multi-cursor', 'Splits', 'CSV', 'Themes', 'Languages', 'Workspace', 'UI'];
+---
+
+<SiteLayout title="Showcase — Token" description="Token editor in action — screenshots of themes, multi-cursor editing, split views, and more.">
+
+<section class="showcase-page" data-items={JSON.stringify(showcase)}>
+
+  <!-- Header -->
+  <div class="sc-header">
+    <div class="sc-header-left">
+      <h1 class="sc-title">Showcase</h1>
+      <span class="sc-subtitle">Token in action</span>
+    </div>
+    <span class="sc-count">{showcase.length} screenshots</span>
+  </div>
+
+  <!-- Tag filter bar -->
+  <div class="sc-filters">
+    {tags.map((tag) => (
+      <button
+        class={`sc-tag-btn ${tag === 'All' ? 'active' : ''}`}
+        data-tag={tag}
+      >
+        {tag}
+      </button>
+    ))}
+  </div>
+
+  <!-- Screenshot grid -->
+  <div class="sc-grid" id="sc-grid">
+    {showcase.map((item) => (
+      <button
+        class="sc-card"
+        data-id={item.id}
+        data-tags={JSON.stringify(item.tags)}
+      >
+        <div class="sc-frame">
+          <div class="sc-window-chrome">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+          </div>
+          <img src={item.src} alt={item.title} loading="lazy" />
+        </div>
+        <div class="sc-card-info">
+          <span class="sc-card-title">{item.title}</span>
+          <div class="sc-card-tags">
+            {item.tags.map((t) => (
+              <span class="sc-badge">{t}</span>
+            ))}
+          </div>
+        </div>
+      </button>
+    ))}
+  </div>
+
+  <!-- Empty state -->
+  <div class="sc-empty" id="sc-empty" style="display:none">
+    <span class="sc-empty-icon">∅</span>
+    <span class="sc-empty-text">No screenshots match this filter.</span>
+  </div>
+
+  <!-- Lightbox modal -->
+  <div class="sc-lightbox" id="sc-lightbox">
+    <div class="sc-lightbox-backdrop" id="sc-lightbox-backdrop"></div>
+    <div class="sc-lightbox-content">
+      <button class="sc-lightbox-close" id="sc-lightbox-close" aria-label="Close">✕</button>
+      <div class="sc-lightbox-frame">
+        <div class="sc-window-chrome">
+          <span class="dot red"></span>
+          <span class="dot yellow"></span>
+          <span class="dot green"></span>
+        </div>
+        <img id="sc-lightbox-img" src="" alt="" />
+      </div>
+      <div class="sc-lightbox-meta">
+        <h2 class="sc-lightbox-title" id="sc-lightbox-title"></h2>
+        <p class="sc-lightbox-desc" id="sc-lightbox-desc"></p>
+        <div class="sc-lightbox-tags" id="sc-lightbox-tags"></div>
+        <span class="sc-lightbox-feature" id="sc-lightbox-feature"></span>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+</SiteLayout>
+
+<script>
+  const page = document.querySelector('.showcase-page') as HTMLElement;
+  const items: {
+    id: string;
+    src: string;
+    title: string;
+    description: string;
+    tags: string[];
+    feature?: string;
+  }[] = JSON.parse(page.dataset.items || '[]');
+
+  const grid = document.getElementById('sc-grid')!;
+  const empty = document.getElementById('sc-empty')!;
+  const cards = grid.querySelectorAll('.sc-card');
+  const tagButtons = document.querySelectorAll('.sc-tag-btn');
+
+  // --- Tag filtering ---
+  let activeTag = 'All';
+
+  tagButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      activeTag = (btn as HTMLElement).dataset.tag || 'All';
+      tagButtons.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyFilter();
+    });
+  });
+
+  function applyFilter() {
+    let visible = 0;
+    cards.forEach((card) => {
+      const tags: string[] = JSON.parse((card as HTMLElement).dataset.tags || '[]');
+      const match = activeTag === 'All' || tags.includes(activeTag);
+      (card as HTMLElement).style.display = match ? '' : 'none';
+      if (match) visible++;
+    });
+    empty.style.display = visible === 0 ? '' : 'none';
+  }
+
+  // --- Lightbox ---
+  const lightbox = document.getElementById('sc-lightbox')!;
+  const lightboxImg = document.getElementById('sc-lightbox-img') as HTMLImageElement;
+  const lightboxTitle = document.getElementById('sc-lightbox-title')!;
+  const lightboxDesc = document.getElementById('sc-lightbox-desc')!;
+  const lightboxTags = document.getElementById('sc-lightbox-tags')!;
+  const lightboxFeature = document.getElementById('sc-lightbox-feature')!;
+
+  let currentIndex = -1;
+
+  function getVisibleIds(): string[] {
+    return Array.from(cards)
+      .filter((c) => (c as HTMLElement).style.display !== 'none')
+      .map((c) => (c as HTMLElement).dataset.id!);
+  }
+
+  function openLightbox(id: string) {
+    const item = items.find((i) => i.id === id);
+    if (!item) return;
+
+    const visibleIds = getVisibleIds();
+    currentIndex = visibleIds.indexOf(id);
+
+    lightboxImg.src = item.src;
+    lightboxImg.alt = item.title;
+    lightboxTitle.textContent = item.title;
+    lightboxDesc.textContent = item.description;
+    lightboxTags.innerHTML = item.tags
+      .map((t) => `<span class="sc-badge">${t}</span>`)
+      .join('');
+
+    if (item.feature) {
+      lightboxFeature.textContent = item.feature;
+      lightboxFeature.style.display = '';
+    } else {
+      lightboxFeature.style.display = 'none';
+    }
+
+    lightbox.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeLightbox() {
+    lightbox.classList.remove('open');
+    document.body.style.overflow = '';
+    currentIndex = -1;
+  }
+
+  function navigate(dir: number) {
+    const visibleIds = getVisibleIds();
+    if (visibleIds.length === 0) return;
+    currentIndex = (currentIndex + dir + visibleIds.length) % visibleIds.length;
+    const id = visibleIds[currentIndex];
+    const item = items.find((i) => i.id === id);
+    if (!item) return;
+
+    lightboxImg.src = item.src;
+    lightboxImg.alt = item.title;
+    lightboxTitle.textContent = item.title;
+    lightboxDesc.textContent = item.description;
+    lightboxTags.innerHTML = item.tags
+      .map((t) => `<span class="sc-badge">${t}</span>`)
+      .join('');
+
+    if (item.feature) {
+      lightboxFeature.textContent = item.feature;
+      lightboxFeature.style.display = '';
+    } else {
+      lightboxFeature.style.display = 'none';
+    }
+  }
+
+  // Event listeners
+  cards.forEach((card) => {
+    card.addEventListener('click', () => {
+      openLightbox((card as HTMLElement).dataset.id!);
+    });
+  });
+
+  document.getElementById('sc-lightbox-backdrop')!.addEventListener('click', closeLightbox);
+  document.getElementById('sc-lightbox-close')!.addEventListener('click', closeLightbox);
+
+  document.addEventListener('keydown', (e) => {
+    if (!lightbox.classList.contains('open')) return;
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowLeft') navigate(-1);
+    if (e.key === 'ArrowRight') navigate(1);
+  });
+</script>
+
+<style>
+  /* ── Page layout ────────────────────────────────────────── */
+  .showcase-page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 80px 48px 40px;
+  }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  .sc-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: var(--space-6);
+  }
+
+  .sc-header-left {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-4);
+  }
+
+  .sc-title {
+    font-family: var(--font-sans);
+    font-size: var(--text-3xl);
+    font-weight: 700;
+    color: var(--fg-bright);
+    letter-spacing: -0.03em;
+  }
+
+  .sc-subtitle {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+
+  .sc-count {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+  }
+
+  /* ── Tag filter bar ─────────────────────────────────────── */
+  .sc-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-8);
+  }
+
+  .sc-tag-btn {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    border-radius: var(--r-full);
+    padding: 5px 14px;
+    cursor: pointer;
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      background var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+  }
+
+  .sc-tag-btn:hover {
+    color: var(--fg);
+    border-color: var(--border-strong);
+  }
+
+  .sc-tag-btn.active {
+    color: var(--syn-function);
+    background: color-mix(in srgb, var(--syn-function) 10%, transparent);
+    border-color: color-mix(in srgb, var(--syn-function) 30%, transparent);
+  }
+
+  /* ── Screenshot grid ────────────────────────────────────── */
+  .sc-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-5);
+  }
+
+  /* ── Card ────────────────────────────────────────────────── */
+  .sc-card {
+    display: flex;
+    flex-direction: column;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+    border-radius: var(--r-lg);
+    transition: transform var(--duration-normal) var(--ease-out);
+  }
+
+  .sc-card:hover {
+    transform: translateY(-2px);
+  }
+
+  .sc-card:hover .sc-frame {
+    border-color: var(--border-strong);
+    box-shadow:
+      0 12px 32px -8px rgba(0, 0, 0, 0.5),
+      0 0 0 1px rgba(255, 255, 255, 0.06);
+  }
+
+  .sc-frame {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    box-shadow:
+      0 4px 12px -4px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(255, 255, 255, 0.03);
+    transition:
+      border-color var(--duration-normal) var(--ease-out),
+      box-shadow var(--duration-normal) var(--ease-out);
+  }
+
+  .sc-window-chrome {
+    display: flex;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+  .dot.red { background: #FF5F57; }
+  .dot.yellow { background: #FEBC2E; }
+  .dot.green { background: #28C840; }
+
+  .sc-frame img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .sc-card-info {
+    padding: var(--space-3) var(--space-1) 0;
+  }
+
+  .sc-card-title {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--fg);
+    margin-bottom: var(--space-1);
+  }
+
+  .sc-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .sc-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    background: color-mix(in srgb, var(--syn-keyword) 12%, transparent);
+    color: var(--syn-keyword);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    border-radius: var(--r-full);
+    border: 1px solid color-mix(in srgb, var(--syn-keyword) 25%, transparent);
+  }
+
+  /* ── Empty state ────────────────────────────────────────── */
+  .sc-empty {
+    text-align: center;
+    padding: var(--space-20) 0;
+  }
+
+  .sc-empty-icon {
+    display: block;
+    font-size: var(--text-3xl);
+    color: var(--fg-muted);
+    margin-bottom: var(--space-3);
+    opacity: 0.4;
+  }
+
+  .sc-empty-text {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+
+  /* ── Lightbox ───────────────────────────────────────────── */
+  .sc-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--duration-normal) var(--ease-out);
+  }
+
+  .sc-lightbox.open {
+    pointer-events: auto;
+    opacity: 1;
+  }
+
+  .sc-lightbox-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  .sc-lightbox-content {
+    position: relative;
+    max-width: 1100px;
+    width: calc(100% - 96px);
+    max-height: calc(100vh - 96px);
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .sc-lightbox-close {
+    position: absolute;
+    top: -36px;
+    right: 0;
+    background: none;
+    border: none;
+    color: var(--fg-muted);
+    font-size: var(--text-xl);
+    cursor: pointer;
+    padding: var(--space-2);
+    line-height: 1;
+    transition: color var(--duration-fast) var(--ease-out);
+    z-index: 2;
+  }
+
+  .sc-lightbox-close:hover {
+    color: var(--fg-bright);
+  }
+
+  .sc-lightbox-frame {
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    background: var(--bg);
+    box-shadow: var(--shadow-xl);
+  }
+
+  .sc-lightbox-frame img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .sc-lightbox-meta {
+    padding: var(--space-5) var(--space-1);
+  }
+
+  .sc-lightbox-title {
+    font-family: var(--font-sans);
+    font-size: var(--text-lg);
+    font-weight: 700;
+    color: var(--fg-bright);
+    margin-bottom: var(--space-2);
+    letter-spacing: -0.02em;
+    text-wrap: pretty;
+  }
+
+  .sc-lightbox-desc {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+    line-height: var(--leading-normal);
+    margin-bottom: var(--space-3);
+    text-wrap: pretty;
+  }
+
+  .sc-lightbox-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: var(--space-2);
+  }
+
+  .sc-lightbox-feature {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--syn-function);
+    background: color-mix(in srgb, var(--syn-function) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--syn-function) 25%, transparent);
+    border-radius: var(--r-sm);
+    padding: 2px 8px;
+  }
+
+  /* ── Responsive ─────────────────────────────────────────── */
+  @media (max-width: 1024px) {
+    .sc-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .sc-lightbox-content {
+      width: calc(100% - 48px);
+    }
+  }
+
+  @media (max-width: 768px) {
+    .showcase-page {
+      padding: 70px 16px 24px;
+    }
+
+    .sc-header {
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+
+    .sc-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .sc-lightbox-content {
+      width: calc(100% - 32px);
+      max-height: calc(100vh - 48px);
+    }
+
+    .sc-lightbox-close {
+      top: -32px;
+      right: -4px;
+    }
+  }
+</style>
