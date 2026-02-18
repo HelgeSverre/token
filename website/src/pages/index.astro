@@ -1,8 +1,30 @@
 ---
 import { Picture } from 'astro:assets';
 import SiteLayout from '../layouts/SiteLayout.astro';
+import { getImage } from 'astro:assets';
 import imgHero from '../assets/screenshots/screenshot-hero.png';
+import imgMarkdownPreview from '../assets/screenshots/screenshot-showcase-markdown-preview.png';
+import imgCommandPalette from '../assets/screenshots/screenshot-showcase-command-palette.png';
+import imgFindReplace from '../assets/screenshots/screenshot-showcase-find-replace.png';
+import imgSidebarSplits from '../assets/screenshots/screenshot-showcase-sidebar-splits.png';
+import imgCsvSplit from '../assets/screenshots/screenshot-showcase-csv-split.png';
 import imgSplits from '../assets/screenshots/screenshot-splits.png';
+
+const showcaseSlides = [
+  { id: 'splits', label: 'Split views', desc: 'Side-by-side editing with independent viewports. Horizontal, vertical, or nested.', key: '⌘+\\', img: imgSplits },
+  { id: 'preview', label: 'Live preview', desc: 'Markdown and HTML render in real time alongside your source.', key: '⌘+⇧+P', img: imgMarkdownPreview },
+  { id: 'workspace', label: 'Workspace', desc: 'File tree, splits, and sidebar — all in one view for real projects.', key: '⌘+1', img: imgSidebarSplits },
+  { id: 'palette', label: 'Command palette', desc: 'Fuzzy search for any action. Switch themes, open files, run commands.', key: '⌘+⇧+A', img: imgCommandPalette },
+  { id: 'csv', label: 'CSV + Code', desc: 'Spreadsheet view beside your source. Navigate cells with arrow keys.', key: null, img: imgCsvSplit },
+  { id: 'find', label: 'Find & replace', desc: 'Regex, case-sensitive, whole-word matching. Replace one or all.', key: '⌘+F', img: imgFindReplace },
+];
+
+const optimizedSlides = await Promise.all(
+  showcaseSlides.map(async (s) => {
+    const optimized = await getImage({ src: s.img, format: 'webp', quality: 90, width: 1920 });
+    return { id: s.id, label: s.label, desc: s.desc, key: s.key, src: optimized.src };
+  })
+);
 ---
 
 <SiteLayout title="Token — A fast, minimal code editor" description="A fast, minimal text editor built in Rust with multi-cursor editing, Tree-sitter syntax highlighting, and split views.">
@@ -126,15 +148,38 @@ import imgSplits from '../assets/screenshots/screenshot-splits.png';
   </div>
 </section>
 
-<!-- Screenshot -->
-<section class="showcase">
-  <div class="editor-frame showcase-frame">
-    <div class="editor-window-chrome">
-      <span class="dot red"></span>
-      <span class="dot yellow"></span>
-      <span class="dot green"></span>
+<!-- Showcase -->
+<section class="showcase-hero" id="showcase-hero" data-slides={JSON.stringify(optimizedSlides)}>
+  <div class="showcase-frame">
+    <div class="showcase-chrome">
+      <div class="showcase-dots">
+        <span class="dot red"></span>
+        <span class="dot yellow"></span>
+        <span class="dot green"></span>
+      </div>
+      <span class="showcase-chrome-title" id="showcase-chrome-title">{optimizedSlides[0].label}</span>
+      <span class="showcase-chrome-brand">Token</span>
     </div>
-    <Picture src={imgSplits} alt="Token editor with three split views" formats={['avif', 'webp']} loading="lazy" />
+    <div class="showcase-viewport">
+      <div class="showcase-img-wrap" id="showcase-img-wrap">
+        <img id="showcase-img" src={optimizedSlides[0].src} alt="Token editor screenshot" loading="lazy" />
+      </div>
+      <div class="showcase-panel">
+        <div class="showcase-nav">
+          {optimizedSlides.map((s, i) => (
+            <button class={`showcase-pill ${i === 0 ? 'active' : ''}`} data-slide={s.id}>
+              <span class="pill-label">{s.label}</span>
+            </button>
+          ))}
+        </div>
+        <div class="showcase-detail" id="showcase-detail">
+          <p class="showcase-desc" id="showcase-desc">{optimizedSlides[0].desc}</p>
+          {optimizedSlides[0].key && (
+            <span class="showcase-key" id="showcase-key">{optimizedSlides[0].key}</span>
+          )}
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -708,14 +753,130 @@ import imgSplits from '../assets/screenshots/screenshot-splits.png';
 }
 
 /* Showcase */
-.showcase {
-  padding: 80px 48px;
-  max-width: 1200px;
+.showcase-hero {
+  padding: 80px 48px 0;
+  max-width: 1400px;
   margin: 0 auto;
 }
-.showcase-frame img {
-  width: 100%;
+.showcase-frame {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--bg-deep);
+  box-shadow:
+    0 24px 80px -12px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+.showcase-chrome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+}
+.showcase-dots {
+  display: flex;
+  gap: 6px;
+}
+.showcase-chrome-title {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--fg-muted);
+  transition: opacity 0.2s ease;
+}
+.showcase-chrome-brand {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--syn-function);
+  opacity: 0.5;
+}
+.showcase-viewport {
+  display: flex;
+  position: relative;
+}
+.showcase-img-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.showcase-img-wrap img {
   display: block;
+  width: 100%;
+  height: auto;
+  transition: opacity 0.25s ease;
+}
+.showcase-img-wrap.loading img {
+  opacity: 0.3;
+}
+.showcase-panel {
+  display: flex;
+  flex-direction: column;
+  width: 200px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--bg-deep) 85%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-left: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.showcase-nav {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.showcase-pill {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+.showcase-pill:last-child {
+  border-bottom: none;
+}
+.showcase-pill:hover {
+  color: var(--fg-bright);
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+.showcase-pill.active {
+  color: var(--syn-function);
+  background: color-mix(in srgb, var(--syn-function) 6%, transparent);
+  box-shadow: inset 2px 0 0 var(--syn-function);
+}
+.pill-label {
+  white-space: nowrap;
+}
+.showcase-detail {
+  padding: 16px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+}
+.showcase-desc {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--fg-muted);
+  line-height: 1.6;
+  margin: 0;
+  transition: opacity 0.2s ease;
+}
+.showcase-key {
+  display: inline-block;
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--syn-function);
+  background: color-mix(in srgb, var(--syn-function) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--syn-function) 20%, transparent);
+  border-radius: var(--r-sm);
+  padding: 2px 8px;
 }
 
 /* Download */
@@ -1089,9 +1250,15 @@ import imgSplits from '../assets/screenshots/screenshot-splits.png';
   .feature-card.wide { grid-column: span 1; }
   .stats { flex-wrap: wrap; gap: 32px; }
   .stat-div { display: none; }
+  .showcase-hero { padding: 40px 16px 0; }
+  .showcase-viewport { flex-direction: column; }
+  .showcase-panel { width: 100%; flex-direction: column; border-left: none; border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+  .showcase-nav { flex-direction: row; flex-wrap: wrap; }
+  .showcase-pill { flex: 1; justify-content: center; text-align: center; padding: 10px 8px; font-size: 0.65rem; border-bottom: none; border-right: 1px solid color-mix(in srgb, var(--border) 40%, transparent); }
+  .showcase-pill:last-child { border-right: none; }
+  .showcase-detail { text-align: center; }
   .keys-columns { grid-template-columns: 1fr; }
   .download-grid { grid-template-columns: 1fr; }
-  .showcase { padding: 40px 24px; }
   .download { padding: 80px 24px; }
   .keys-section { padding: 80px 24px; }
   .ai-section { padding: 80px 24px; }
@@ -1107,4 +1274,45 @@ import imgSplits from '../assets/screenshots/screenshot-splits.png';
     btn.textContent = '✓';
     setTimeout(() => btn.textContent = '⎘', 1500);
   });
+
+  // Showcase image swapper
+  const showcaseEl = document.getElementById('showcase-hero');
+  if (showcaseEl) {
+    const slides: { id: string; label: string; desc: string; key: string | null; src: string }[] = JSON.parse(showcaseEl.dataset.slides || '[]');
+    const img = document.getElementById('showcase-img') as HTMLImageElement;
+    const imgWrap = document.getElementById('showcase-img-wrap') as HTMLElement;
+    const titleEl = document.getElementById('showcase-chrome-title') as HTMLElement;
+    const descEl = document.getElementById('showcase-desc') as HTMLElement;
+    const keyEl = document.getElementById('showcase-key') as HTMLElement;
+    const pills = showcaseEl.querySelectorAll('.showcase-pill');
+
+    pills.forEach((pill) => {
+      pill.addEventListener('click', () => {
+        const slideId = (pill as HTMLElement).dataset.slide;
+        const slide = slides.find((s) => s.id === slideId);
+        if (!slide || img.src.endsWith(slide.src)) return;
+
+        pills.forEach((p) => p.classList.remove('active'));
+        pill.classList.add('active');
+        titleEl.textContent = slide.label;
+        descEl.textContent = slide.desc;
+
+        if (slide.key) {
+          keyEl.textContent = slide.key;
+          keyEl.style.display = '';
+        } else {
+          keyEl.style.display = 'none';
+        }
+
+        imgWrap.classList.add('loading');
+        const next = new Image();
+        next.onload = () => {
+          img.src = slide.src;
+          img.alt = `Token editor — ${slide.label}`;
+          imgWrap.classList.remove('loading');
+        };
+        next.src = slide.src;
+      });
+    });
+  }
 </script>
