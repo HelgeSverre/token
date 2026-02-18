@@ -1056,6 +1056,14 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
     display: none;
   }
 
+  /* Line numbers injected via JS need :global since they lack Astro's scoping attribute */
+  .editor-pane-yaml :global(.line-num) {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.7;
+    color: var(--theme-gutter-fg, var(--fg-muted));
+  }
+
   /* Current line highlight — line 7 (0-indexed 6) */
   .editor-code-wrap::before {
     content: '';
