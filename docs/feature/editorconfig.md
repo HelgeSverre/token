@@ -714,5 +714,5 @@ globset = "0.4"
 ## References
 
 - EditorConfig specification: https://editorconfig.org/
-- EditorConfig core library: https://github.com/editorconfig/editorconfig-core-rust
+- EditorConfig core library (ec4rs): https://github.com/TheDaemoness/ec4rs
 - `globset` crate: https://docs.rs/globset/latest/globset/

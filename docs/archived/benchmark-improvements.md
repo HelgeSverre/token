@@ -438,6 +438,6 @@ harness = false         # criterion for CI tracking
 
 - [Zed benchmarks](https://github.com/zed-industries/zed/tree/main/crates) — Comprehensive suite with throughput metrics
 - [xi-editor benchmarks](https://github.com/xi-editor/xi-editor/tree/master/rust/rope/benches) — Realistic editing scenarios
-- [Lapce visual_line.rs](https://github.com/lapce/lapce/blob/main/lapce-app/benches/visual_line.rs) — Text layout focus
+- [Lapce visual_line.rs](https://github.com/lapce/lapce/blob/ba703dd4aabb264e359385db12baaa266a697a2e/lapce-app/benches/visual_line.rs) — Text layout focus
 - [divan documentation](https://docs.rs/divan/latest/divan/)
 - [criterion documentation](https://bheisler.github.io/criterion.rs/book/)

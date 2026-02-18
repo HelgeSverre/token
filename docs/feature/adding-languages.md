@@ -215,7 +215,7 @@ Create `queries/python/highlights.scm`:
 **Tips for writing queries:**
 - Use nvim-treesitter queries as reference: https://github.com/nvim-treesitter/nvim-treesitter/tree/master/queries
 - Run `tree-sitter parse <file>` to see the syntax tree structure
-- Test queries with tree-sitter playground: https://tree-sitter.github.io/tree-sitter/playground
+- Test queries with tree-sitter playground: https://tree-sitter.github.io/tree-sitter/7-playground.html
 
 ### Step 4: Register the language in ParserState
 
@@ -470,4 +470,4 @@ If parsing is slow:
 - [Tree-sitter Documentation](https://tree-sitter.github.io/tree-sitter/)
 - [Tree-sitter Query Syntax](https://tree-sitter.github.io/tree-sitter/using-parsers#pattern-matching-with-queries)
 - [nvim-treesitter queries](https://github.com/nvim-treesitter/nvim-treesitter/tree/master/queries) - High-quality reference queries
-- [Tree-sitter Playground](https://tree-sitter.github.io/tree-sitter/playground) - Test queries interactively
+- [Tree-sitter Playground](https://tree-sitter.github.io/tree-sitter/7-playground.html) - Test queries interactively
