@@ -22,6 +22,24 @@ fn test_color_from_hex_8() {
 }
 
 #[test]
+fn test_color_from_hex_3() {
+    let color = Color::from_hex("#F50").unwrap();
+    assert_eq!(color.r, 0xFF);
+    assert_eq!(color.g, 0x55);
+    assert_eq!(color.b, 0x00);
+    assert_eq!(color.a, 255);
+}
+
+#[test]
+fn test_color_from_hex_4() {
+    let color = Color::from_hex("#F508").unwrap();
+    assert_eq!(color.r, 0xFF);
+    assert_eq!(color.g, 0x55);
+    assert_eq!(color.b, 0x00);
+    assert_eq!(color.a, 0x88);
+}
+
+#[test]
 fn test_color_to_argb_u32() {
     let color = Color::rgb(0x1E, 0x1E, 0x1E);
     assert_eq!(color.to_argb_u32(), 0xFF1E1E1E);

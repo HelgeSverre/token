@@ -196,6 +196,18 @@ impl Color {
     pub fn from_hex(s: &str) -> Result<Self, String> {
         let s = s.trim_start_matches('#');
         match s.len() {
+            3 => Ok(Color {
+                r: u8::from_str_radix(&s[0..1].repeat(2), 16).map_err(|e| e.to_string())?,
+                g: u8::from_str_radix(&s[1..2].repeat(2), 16).map_err(|e| e.to_string())?,
+                b: u8::from_str_radix(&s[2..3].repeat(2), 16).map_err(|e| e.to_string())?,
+                a: 255,
+            }),
+            4 => Ok(Color {
+                r: u8::from_str_radix(&s[0..1].repeat(2), 16).map_err(|e| e.to_string())?,
+                g: u8::from_str_radix(&s[1..2].repeat(2), 16).map_err(|e| e.to_string())?,
+                b: u8::from_str_radix(&s[2..3].repeat(2), 16).map_err(|e| e.to_string())?,
+                a: u8::from_str_radix(&s[3..4].repeat(2), 16).map_err(|e| e.to_string())?,
+            }),
             6 => Ok(Color {
                 r: u8::from_str_radix(&s[0..2], 16).map_err(|e| e.to_string())?,
                 g: u8::from_str_radix(&s[2..4], 16).map_err(|e| e.to_string())?,

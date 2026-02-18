@@ -102,7 +102,10 @@ Bindings can be conditional using the `when` field:
 | `no_selection` | No cursor has selection |
 | `has_multiple_cursors` | More than one cursor active |
 | `single_cursor` | Exactly one cursor |
-| `in_editor` | Focus is in the editor pane |
+| `modal_active` | A modal dialog is open |
+| `modal_inactive` | No modal dialog is open |
+| `editor_focused` | Focus is in the editor pane |
+| `sidebar_focused` | Focus is in the sidebar file tree |
 
 ### Example: Context-Aware Tab
 
@@ -163,9 +166,11 @@ bindings:
 | `SaveFile` | Save current file |
 | `SaveFileAs` | Save with new name |
 | `OpenFile` | Open file dialog |
-| `OpenFolder` | Open folder dialog |
+| `FuzzyFileFinder` | Search workspace files |
+| `NewFile` | Create new file |
 | `NewTab` | Create new tab |
 | `CloseTab` | Close current tab |
+| `Quit` | Quit application |
 
 ### Undo/Redo
 
@@ -267,8 +272,28 @@ All navigation commands have `*WithSelection` variants that extend the selection
 
 | Command | Description |
 |---------|-------------|
-| `ToggleSidebar` | Show/hide sidebar |
+| `ToggleSidebar` | Show/hide sidebar (legacy, use `ToggleFileExplorer`) |
 | `RevealInSidebar` | Show current file in tree |
+| `FileTreeSelectPrevious` | Select previous item in file tree |
+| `FileTreeSelectNext` | Select next item in file tree |
+| `FileTreeOpenOrToggle` | Open selected file or toggle folder |
+| `FileTreeRefresh` | Refresh the file tree from disk |
+
+### Panels/Docks
+
+| Command | Description |
+|---------|-------------|
+| `ToggleFileExplorer` | Toggle file explorer panel |
+| `ToggleTerminal` | Toggle terminal panel |
+| `ToggleOutline` | Toggle outline panel |
+| `CloseFocusedDock` | Close the currently focused dock |
+
+### Markdown Preview
+
+| Command | Description |
+|---------|-------------|
+| `MarkdownTogglePreview` | Toggle markdown preview pane |
+| `MarkdownOpenPreviewToSide` | Open markdown preview to the side |
 
 ### Special
 
@@ -276,6 +301,7 @@ All navigation commands have `*WithSelection` variants that extend the selection
 |---------|-------------|
 | `EscapeSmartClear` | Smart escape cascade |
 | `Unbound` | Disable a binding |
+| `OpenLogFile` | Open the log file in the editor |
 
 ---
 
@@ -288,7 +314,7 @@ All navigation commands have `*WithSelection` variants that extend the selection
 | Save | Cmd+S | Ctrl+S |
 | Save As | Cmd+Shift+S | Ctrl+Shift+S |
 | Open File | Cmd+O | Ctrl+O |
-| Open Folder | Cmd+Shift+O | Ctrl+Shift+O |
+| Go to File | Cmd+Shift+O | Ctrl+Shift+O |
 | New Tab | Cmd+Shift+N | Ctrl+Shift+N |
 | Close Tab | Cmd+W | Ctrl+W |
 
@@ -336,7 +362,9 @@ All navigation commands have `*WithSelection` variants that extend the selection
 
 | Action | Mac | Windows/Linux |
 |--------|-----|---------------|
-| Toggle Sidebar | Cmd+1 | Ctrl+1 |
+| Toggle File Explorer | Cmd+1 | Ctrl+1 |
+| Toggle Terminal | Cmd+2 | Ctrl+2 |
+| Toggle Outline | Cmd+7 | Ctrl+7 |
 | Split Horizontal | Cmd+Shift+Alt+H | Ctrl+Shift+Alt+H |
 | Split Vertical | Cmd+Shift+Alt+V | Ctrl+Shift+Alt+V |
 | Next Tab | Cmd+Alt+Right | Ctrl+Alt+Right |
@@ -364,9 +392,9 @@ bindings:
   - key: "cmd+p"
     command: ToggleCommandPalette
 
-  # Remap Cmd+Shift+P to quick open
+  # Remap Cmd+Shift+P to fuzzy file finder
   - key: "cmd+shift+p"
-    command: QuickOpen
+    command: FuzzyFileFinder
 
   # Disable duplicate (I never use it)
   - key: "cmd+d"
@@ -378,15 +406,6 @@ bindings:
 
   - key: "cmd+shift+\\"
     command: SplitHorizontal
-
-  # Vim-style j/k navigation in command palette
-  - key: "ctrl+j"
-    command: PaletteNext
-    when: ["in_palette"]
-
-  - key: "ctrl+k"
-    command: PalettePrev
-    when: ["in_palette"]
 ```
 
 ---

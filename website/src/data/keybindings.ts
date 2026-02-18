@@ -23,7 +23,7 @@ export const keybindings: KeybindingCategory[] = [
       { action: "Save", keys: "⌘S", command: "SaveFile" },
       { action: "Save As", keys: "⌘⇧S", command: "SaveFileAs" },
       { action: "Open File", keys: "⌘O", command: "OpenFile" },
-      { action: "Open Folder", keys: "⌘⇧O", command: "FuzzyFileFinder" },
+      { action: "Go to File", keys: "⌘⇧O", command: "FuzzyFileFinder" },
       { action: "New Tab", keys: "⌘⇧N", command: "NewTab" },
       { action: "Close Tab", keys: "⌘W", command: "CloseTab" },
     ],
@@ -54,8 +54,6 @@ export const keybindings: KeybindingCategory[] = [
     icon: "🔤",
     items: [
       { action: "Add Cursor", keys: "⌥+Click", command: "AddCursor", notes: "Click while holding Option to add a cursor" },
-      { action: "Add Cursor Above", keys: "⌥⌥↑", command: "AddCursorAbove", notes: "Double-tap Option then Up arrow" },
-      { action: "Add Cursor Below", keys: "⌥⌥↓", command: "AddCursorBelow", notes: "Double-tap Option then Down arrow" },
       { action: "Select Next Occurrence", keys: "⌘J", command: "SelectNextOccurrence" },
       { action: "Unselect Last", keys: "⌘⇧J", command: "UnselectOccurrence" },
       { action: "Expand Selection", keys: "⌥↑", command: "ExpandSelection" },
@@ -87,7 +85,7 @@ export const keybindings: KeybindingCategory[] = [
     label: "Workspace",
     icon: "🪟",
     items: [
-      { action: "Toggle Sidebar", keys: "⌘1", command: "ToggleFileExplorer" },
+      { action: "Toggle File Explorer", keys: "⌘1", command: "ToggleFileExplorer" },
       { action: "Reveal in Sidebar", keys: "⌘⇧R", command: "RevealInSidebar" },
       { action: "Split Horizontal", keys: "⌘⇧⌥H", command: "SplitHorizontal" },
       { action: "Split Vertical", keys: "⌘⇧⌥V", command: "SplitVertical" },

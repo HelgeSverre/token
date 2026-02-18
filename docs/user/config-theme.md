@@ -135,7 +135,8 @@ Colors can be specified in multiple formats:
 |--------|---------|-------------|
 | Hex (6-digit) | `#FF5500` | RGB in hexadecimal |
 | Hex (8-digit) | `#FF550080` | RGBA with alpha |
-| Hex (3-digit) | `#F50` | Shorthand RGB |
+| Hex (3-digit) | `#F50` | Shorthand RGB (`#FF5500`) |
+| Hex (4-digit) | `#F508` | Shorthand RGBA (`#FF550088`) |
 
 ### Alpha Channel
 

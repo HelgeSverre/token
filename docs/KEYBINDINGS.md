@@ -36,7 +36,7 @@ The `cmd` modifier is the recommended cross-platform modifier. It maps to Comman
 | Save            | Cmd+S             | `SaveFile`      |
 | Save As         | Cmd+Shift+S       | `SaveFileAs`    |
 | Open File       | Cmd+O             | `OpenFile`      |
-| Open Folder     | Cmd+Shift+O       | `OpenFolder`    |
+| Go to File      | Cmd+Shift+O       | `FuzzyFileFinder` |
 | New Tab         | Cmd+Shift+N       | `NewTab`        |
 | Close Tab       | Cmd+W             | `CloseTab`      |
 
@@ -73,11 +73,18 @@ The `cmd` modifier is the recommended cross-platform modifier. It maps to Comman
 | Go to Line          | Cmd+L         | `ToggleGotoLine`       |
 | Find/Replace        | Cmd+F         | `ToggleFindReplace`    |
 
+### Panels/Docks
+
+| Action               | Shortcut      | Command              |
+|----------------------|---------------|----------------------|
+| Toggle File Explorer | Cmd+1         | `ToggleFileExplorer` |
+| Toggle Terminal      | Cmd+2         | `ToggleTerminal`     |
+| Toggle Outline       | Cmd+7         | `ToggleOutline`      |
+
 ### Workspace
 
 | Action            | Shortcut      | Command           |
 |-------------------|---------------|-------------------|
-| Toggle Sidebar    | Cmd+1         | `ToggleSidebar`   |
 | Reveal in Sidebar | Cmd+Shift+R   | `RevealInSidebar` |
 
 ### Layout: Splits
@@ -133,12 +140,12 @@ The `cmd` modifier is the recommended cross-platform modifier. It maps to Comman
 | Document Start       | Ctrl+Home     | `MoveCursorDocumentStart`  |
 | Document End         | Ctrl+End      | `MoveCursorDocumentEnd`    |
 
-**macOS-specific** (using Command key):
+**macOS-specific** (using Meta/Command key):
 
-| Action     | Shortcut   | Command                |
-|------------|------------|------------------------|
-| Line Start | Cmd+Left   | `MoveCursorLineStart`  |
-| Line End   | Cmd+Right  | `MoveCursorLineEnd`    |
+| Action     | Shortcut    | Command                |
+|------------|-------------|------------------------|
+| Line Start | Meta+Left   | `MoveCursorLineStart`  |
+| Line End   | Meta+Right  | `MoveCursorLineEnd`    |
 
 ### Selection Navigation
 
@@ -159,12 +166,12 @@ All navigation commands work with Shift to extend selection:
 | Select to Document Start      | Ctrl+Shift+Home     | `MoveCursorDocumentStartWithSelection` |
 | Select to Document End        | Ctrl+Shift+End      | `MoveCursorDocumentEndWithSelection` |
 
-**macOS-specific** (using Command key):
+**macOS-specific** (using Meta/Command key):
 
-| Action               | Shortcut         | Command                            |
-|----------------------|------------------|------------------------------------|
-| Select to Line Start | Cmd+Shift+Left   | `MoveCursorLineStartWithSelection` |
-| Select to Line End   | Cmd+Shift+Right  | `MoveCursorLineEndWithSelection`   |
+| Action               | Shortcut          | Command                            |
+|----------------------|-------------------|------------------------------------|
+| Select to Line Start | Meta+Shift+Left   | `MoveCursorLineStartWithSelection` |
+| Select to Line End   | Meta+Shift+Right  | `MoveCursorLineEndWithSelection`   |
 
 ### Editing
 
@@ -186,6 +193,12 @@ All navigation commands work with Shift to extend selection:
 |------------------|-----------|-------------------|
 | Expand Selection | Alt+Up    | `ExpandSelection` |
 | Shrink Selection | Alt+Down  | `ShrinkSelection` |
+
+### Markdown Preview
+
+| Action                  | Shortcut      | Command                  |
+|-------------------------|---------------|--------------------------|
+| Toggle Markdown Preview | Cmd+Shift+V   | `MarkdownTogglePreview`  |
 
 ### Escape (Smart Clear)
 
@@ -210,6 +223,9 @@ Some bindings only activate in specific contexts. Use the `when` field to specif
 | `has_multiple_cursors` | More than one cursor is active           |
 | `single_cursor`        | Exactly one cursor is active             |
 | `modal_active`         | A modal dialog is open                   |
+| `modal_inactive`       | No modal dialog is open                  |
+| `editor_focused`       | The editor pane has focus                |
+| `sidebar_focused`      | The sidebar file tree has focus          |
 
 Example:
 ```yaml

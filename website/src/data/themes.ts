@@ -42,7 +42,7 @@ export const themes: ThemeData[] = [
     colors: {
       bg: "#181818", fg: "#BCBEC4", currentLine: "#1E1E1E", cursor: "#FFFEF8",
       selection: "#214283", gutterBg: "#181818", gutterFg: "#606366",
-      sidebarBg: "#181818", statusBg: "#1E1E1E", statusFg: "#606366",
+      sidebarBg: "#181818", statusBg: "#1E1E1E", statusFg: "#787A80",
       keyword: "#CC7832", function: "#FFC66D", string: "#6A8759",
       number: "#6897BB", comment: "#808080", type: "#CC7832",
       variable: "#BCBEC4", operator: "#A9B7C6", constant: "#6897BB",
@@ -65,30 +65,30 @@ syntax:
     id: "dark",
     name: "Default Dark",
     author: "Token",
-    description: "A balanced dark theme with blue accents",
+    description: "VS Code-inspired dark theme",
     fileName: "dark.yaml",
     isLight: false,
     colors: {
-      bg: "#1E1E2E", fg: "#CDD6F4", currentLine: "#313244", cursor: "#F5E0DC",
-      selection: "#45475A", gutterBg: "#1E1E2E", gutterFg: "#6C7086",
-      sidebarBg: "#1E1E2E", statusBg: "#007ACC", statusFg: "#FFFFFF",
-      keyword: "#CBA6F7", function: "#89B4FA", string: "#A6E3A1",
-      number: "#FAB387", comment: "#6C7086", type: "#89DCEB",
-      variable: "#CDD6F4", operator: "#94E2D5", constant: "#F38BA8",
-      tag: "#89B4FA", attribute: "#F9E2AF",
+      bg: "#1E1E1E", fg: "#D4D4D4", currentLine: "#2A2A2A", cursor: "#FCE146",
+      selection: "#264F78", gutterBg: "#1E1E1E", gutterFg: "#858585",
+      sidebarBg: "#252526", statusBg: "#007ACC", statusFg: "#FFFFFF",
+      keyword: "#C586C0", function: "#DCDCAA", string: "#CE9178",
+      number: "#B5CEA8", comment: "#6A9955", type: "#4EC9B0",
+      variable: "#9CDCFE", operator: "#D4D4D4", constant: "#569CD6",
+      tag: "#569CD6", attribute: "#9CDCFE",
     },
     yaml: `name: "Default Dark"
 editor:
-  background: "#1E1E2E"
-  foreground: "#CDD6F4"
-  cursor: "#F5E0DC"
-  selection: "#45475A"
+  background: "#1E1E1E"
+  foreground: "#D4D4D4"
+  cursor: "#FCE146"
+  selection: "#264F78"
 syntax:
-  keyword: "#CBA6F7"
-  function: "#89B4FA"
-  string: "#A6E3A1"
-  number: "#FAB387"
-  comment: "#6C7086"`,
+  keyword: "#C586C0"
+  function: "#DCDCAA"
+  string: "#CE9178"
+  number: "#B5CEA8"
+  comment: "#6A9955"`,
   },
   {
     id: "github-dark",
@@ -99,8 +99,8 @@ syntax:
     isLight: false,
     colors: {
       bg: "#0D1117", fg: "#C9D1D9", currentLine: "#161B22", cursor: "#58A6FF",
-      selection: "#1F3A5F", gutterBg: "#0D1117", gutterFg: "#484F58",
-      sidebarBg: "#0D1117", statusBg: "#161B22", statusFg: "#8B949E",
+      selection: "#264F78", gutterBg: "#0D1117", gutterFg: "#484F58",
+      sidebarBg: "#010409", statusBg: "#161B22", statusFg: "#8B949E",
       keyword: "#FF7B72", function: "#D2A8FF", string: "#A5D6FF",
       number: "#79C0FF", comment: "#8B949E", type: "#FFA657",
       variable: "#C9D1D9", operator: "#C9D1D9", constant: "#79C0FF",
@@ -111,7 +111,7 @@ editor:
   background: "#0D1117"
   foreground: "#C9D1D9"
   cursor: "#58A6FF"
-  selection: "#1F3A5F"
+  selection: "#264F78"
 syntax:
   keyword: "#FF7B72"
   function: "#D2A8FF"
@@ -128,7 +128,7 @@ syntax:
     isLight: true,
     colors: {
       bg: "#FFFFFF", fg: "#24292F", currentLine: "#F6F8FA", cursor: "#0969DA",
-      selection: "#B6D7FF", gutterBg: "#FFFFFF", gutterFg: "#8C959F",
+      selection: "#ADD6FF", gutterBg: "#FFFFFF", gutterFg: "#8C959F",
       sidebarBg: "#F6F8FA", statusBg: "#F6F8FA", statusFg: "#57606A",
       keyword: "#CF222E", function: "#8250DF", string: "#0A3069",
       number: "#0550AE", comment: "#6E7781", type: "#953800",
@@ -140,7 +140,7 @@ editor:
   background: "#FFFFFF"
   foreground: "#24292F"
   cursor: "#0969DA"
-  selection: "#B6D7FF"
+  selection: "#ADD6FF"
 syntax:
   keyword: "#CF222E"
   function: "#8250DF"
