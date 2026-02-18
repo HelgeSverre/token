@@ -1,0 +1,641 @@
+---
+import SiteLayout from '../layouts/SiteLayout.astro';
+
+const stats = [
+  { value: '116+', label: 'Conversations' },
+  { value: '15k+', label: 'Lines of code' },
+  { value: '700+', label: 'Tests passing' },
+  { value: '17', label: 'Languages' },
+];
+
+const timeline = [
+  { phase: 'Foundation', dates: 'Sep 26 – Dec 5', focus: 'Setup, reference docs, Elm Architecture in Rust' },
+  { phase: 'Feature Dev', dates: 'Dec 5–6', focus: 'Split view, undo/redo, multi-cursor selection' },
+  { phase: 'Refactor', dates: 'Dec 6', focus: 'Extract modules from main.rs (3100→20 lines)' },
+  { phase: 'Keymapping', dates: 'Dec 15', focus: 'Configurable YAML keybindings, 74 default bindings' },
+  { phase: 'Syntax', dates: 'Dec 15', focus: 'Tree-sitter integration, 17 languages supported' },
+  { phase: 'CSV Editor', dates: 'Dec 16', focus: 'Spreadsheet view with cell editing (Phases 1-2)' },
+  { phase: 'Workspace', dates: 'Dec 17', focus: 'Sidebar file tree, focus system, global shortcuts' },
+  { phase: 'Unified Edit', dates: 'Dec 19', focus: 'EditableState system, modal/CSV clipboard & selection' },
+];
+
+const threads = [
+  {
+    title: 'Oracle: UI Reference Deep Review',
+    id: 'T-7b92a860-a2f7-4397-985c-73b2fa3e9582',
+    type: 'Research',
+    summary: 'The Oracle performed a deep review of EDITOR_UI_REFERENCE.md and caught 15+ bugs — off-by-one errors in viewport calculations, division-by-zero edge cases in scrollbar math, and mismatched struct field semantics — before any of them became code bugs.',
+    lesson: 'Always have oracle review reference docs before implementation.',
+  },
+  {
+    title: 'Critical Bug: Cmd+Z Was Typing \'z\'!',
+    id: 'T-519a8c9d-b94f-45e5-98e0-5bfc34c77cbf',
+    type: 'Bugfix',
+    summary: 'Undo/redo was completely broken on macOS. Pressing Cmd+Z inserted the letter \'z\' into the document. Root cause: the key handler only checked control_key(), not super_key() (macOS Command key). A one-line fix.',
+    lesson: 'Always handle both control_key() AND super_key() for cross-platform shortcuts.',
+  },
+  {
+    title: 'Split View: EditorArea Architecture',
+    id: 'T-29b1dd08-eee1-44fb-abd5-eb982d6bcd52',
+    type: 'Feature',
+    summary: 'Implementing multi-pane editing required a shared-documents/independent-editors architecture. Documents live in a HashMap, multiple editors can view the same document with independent cursors and viewports. Migration helpers like single_document() enabled phased refactoring.',
+    lesson: 'Migration helpers are crucial for phased refactoring of core data structures.',
+  },
+  {
+    title: 'Multi-Cursor: Only Primary Cursor Moved!',
+    id: 'T-d4c75d42-c0c1-4746-a609-593bff88db6d',
+    type: 'Bugfix',
+    summary: 'Arrow keys and all movement operations only affected the primary cursor — secondary cursors were frozen. Every movement handler assumed cursor_mut() returned the only cursor, but it was actually cursors[0]. Fixed by creating per-cursor primitives and all-cursor wrappers.',
+    lesson: 'Per-item primitives + wrappers scale reliably from single to multi.',
+  },
+  {
+    title: 'CSV Spreadsheet Mode',
+    id: 'T-019b22bd-974e-72e4-9c1e-86526b4b55d0',
+    type: 'Feature',
+    summary: 'A complete spreadsheet UI for CSV/TSV files built across 6 sessions: RFC 4180 parsing, grid rendering with column headers, arrow key navigation, Tab/Shift+Tab cell movement, inline cell editing with proper CSV escaping, and Enter to confirm + move down.',
+    lesson: 'Complex features work best as phased builds with working software at each step.',
+  },
+  {
+    title: 'Unified Text Editing System',
+    id: 'T-019b3643-79af-7573-bb69-18dac832eb94',
+    type: 'Feature',
+    summary: 'Five separate text editing implementations (main editor, command palette, go-to-line, find/replace, CSV cells) with duplicated logic. Solved by creating a unified EditableState<B: TextBuffer> abstraction that shares editing logic across all contexts. All modals gained full cursor navigation, selection, and clipboard support.',
+    lesson: 'Abstract buffer operations behind traits to share editing logic across all contexts.',
+  },
+];
+
+const modes = [
+  { name: 'Build', purpose: 'New behavior that didn\'t exist', example: '"Implement split view (Phase 3)"', color: 'var(--syn-string)' },
+  { name: 'Improve', purpose: 'Better architecture, same behavior', example: '"Extract modules from main.rs"', color: 'var(--syn-function)' },
+  { name: 'Sweep', purpose: 'Fix a cluster of related bugs', example: '"Multi-cursor selection bugs"', color: 'var(--syn-keyword)' },
+];
+
+const lessons = [
+  { title: 'Structure enables autonomy', desc: 'The more explicit your documentation, the more independently AI agents can work.' },
+  { title: 'Modes prevent scope creep', desc: 'Declaring Build/Improve/Sweep at session start keeps both human and AI focused.' },
+  { title: 'Gap docs are underrated', desc: 'When a feature is "mostly done," a gap document transforms fuzzy incompleteness into a concrete checklist.' },
+  { title: 'Review docs before code', desc: 'Having AI review reference documentation catches algorithmic bugs before they become code bugs.' },
+  { title: 'Per-item primitives scale', desc: 'When extending single-item code to multi-item, the "primitive + wrapper" pattern works reliably.' },
+];
+---
+
+<SiteLayout title="Built with AI — Token" description="How Token was built through 116+ conversations with AI coding assistants. The methodology, the threads, and the lessons learned.">
+
+<!-- Hero -->
+<section class="ai-hero">
+  <p class="ai-tag">Open development / Amp Code / 116+ threads</p>
+  <h1>
+    <span>Built with AI,</span>
+    <span class="accent">in the open</span>
+  </h1>
+  <p class="ai-hero-desc">Token is a multi-cursor text editor written in Rust — around 15,000 lines of code built primarily through conversations with <a href="https://ampcode.com" target="_blank">Amp Code</a>. Every feature, every bug fix, every architectural decision is documented publicly.</p>
+  <div class="ai-hero-actions">
+    <a href="https://ampcode.com/@helgesverre" class="btn-primary" target="_blank">View all threads →</a>
+    <a href="https://github.com/helgesverre/token" class="btn-ghost" target="_blank">View source →</a>
+  </div>
+</section>
+
+<!-- Stats -->
+<section class="ai-stats">
+  {stats.map((s) => (
+    <div class="ai-stat">
+      <span class="ai-stat-val">{s.value}</span>
+      <span class="ai-stat-label">{s.label}</span>
+    </div>
+  ))}
+</section>
+
+<!-- Framework -->
+<section class="framework">
+  <h2 class="section-title">The framework</h2>
+  <p class="section-desc">Before each session, explicitly state which mode you're in. This prevents scope creep and keeps AI contributions coherent across sessions.</p>
+
+  <div class="modes-grid">
+    {modes.map((m) => (
+      <div class="mode-card">
+        <span class="mode-name" style={`color: ${m.color}`}>{m.name}</span>
+        <p class="mode-purpose">{m.purpose}</p>
+        <div class="mode-example">
+          <span class="mode-example-label">Example</span>
+          <code>{m.example}</code>
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <div class="framework-principles">
+    <div class="principle">
+      <h3>Design before code</h3>
+      <p>Complex features get upfront specification. <strong>Reference docs</strong> define cross-cutting concerns like viewport math. <strong>Feature specs</strong> define data structures, invariants, and phased plans. <strong>Gap docs</strong> list what's missing when a feature is 60-90% complete.</p>
+    </div>
+    <div class="principle">
+      <h3>Research → Synthesize → Implement</h3>
+      <p>Use <strong>Librarian</strong> to research how VSCode/Zed/Helix solve a problem. Use <strong>Oracle</strong> to review findings and produce a design doc. Implement in phases with tests.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Timeline -->
+<section class="timeline-section">
+  <h2 class="section-title">Development timeline</h2>
+  <p class="section-desc">Token's development followed distinct phases, each with focused objectives.</p>
+
+  <div class="timeline">
+    {timeline.map((t, i) => (
+      <div class="timeline-row">
+        <span class="timeline-num">{String(i + 1).padStart(2, '0')}</span>
+        <div class="timeline-content">
+          <div class="timeline-header">
+            <span class="timeline-phase">{t.phase}</span>
+            <span class="timeline-dates">{t.dates}</span>
+          </div>
+          <p class="timeline-focus">{t.focus}</p>
+        </div>
+      </div>
+    ))}
+  </div>
+</section>
+
+<!-- Notable Threads -->
+<section class="threads-section">
+  <h2 class="section-title">Notable threads</h2>
+  <p class="section-desc">Highlights from 116+ conversations. Each links to the full Amp Code thread.</p>
+
+  <div class="threads-list">
+    {threads.map((t) => (
+      <details class="thread-card">
+        <summary class="thread-summary">
+          <div class="thread-meta">
+            <span class={`thread-type thread-type--${t.type.toLowerCase()}`}>{t.type}</span>
+            <h3 class="thread-title">{t.title}</h3>
+          </div>
+          <svg class="thread-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div class="thread-body">
+          <p class="thread-desc">{t.summary}</p>
+          <div class="thread-footer">
+            <span class="thread-lesson"><strong>Lesson:</strong> {t.lesson}</span>
+            <a href={`https://ampcode.com/threads/${t.id}`} class="thread-link" target="_blank" rel="noopener noreferrer">View thread →</a>
+          </div>
+        </div>
+      </details>
+    ))}
+  </div>
+</section>
+
+<!-- Lessons -->
+<section class="lessons-section">
+  <h2 class="section-title">Lessons learned</h2>
+  <p class="section-desc">Key takeaways from building Token with AI assistance.</p>
+
+  <div class="lessons-grid">
+    {lessons.map((l, i) => (
+      <div class="lesson-card">
+        <span class="lesson-num">{String(i + 1).padStart(2, '0')}</span>
+        <h3>{l.title}</h3>
+        <p>{l.desc}</p>
+      </div>
+    ))}
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="ai-cta">
+  <div class="ai-cta-inner">
+    <h2>Want to see the conversations?</h2>
+    <p>All 116+ threads are public. See how every feature was planned, implemented, and debugged.</p>
+    <a href="https://ampcode.com/@helgesverre" class="btn-primary" target="_blank">Browse threads on Amp →</a>
+  </div>
+</section>
+
+</SiteLayout>
+
+<style>
+/* ── Hero ──────────────────────────────────────────────── */
+.ai-hero {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 120px 48px 60px;
+  text-align: center;
+}
+.ai-tag {
+  display: inline-block;
+  padding: 6px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--syn-comment);
+  margin-bottom: 32px;
+}
+.ai-hero h1 {
+  font-family: var(--font-sans);
+  font-size: 3.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+  margin-bottom: 24px;
+}
+.ai-hero h1 span { display: block; }
+.accent {
+  background: linear-gradient(135deg, var(--syn-keyword), var(--syn-function));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.ai-hero-desc {
+  font-size: 1.1rem;
+  color: var(--fg-muted);
+  line-height: 1.7;
+  margin-bottom: 32px;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.ai-hero-desc a {
+  color: var(--syn-function);
+  text-decoration: none;
+}
+.ai-hero-desc a:hover { text-decoration: underline; }
+.ai-hero-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: var(--syn-keyword);
+  color: var(--bg-deep);
+  font-family: var(--font-btn);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: var(--r-sm);
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.btn-primary:hover { opacity: 0.85; }
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  color: var(--fg-muted);
+  font-family: var(--font-btn);
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  transition: color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
+}
+.btn-ghost:hover { color: var(--fg); border-color: var(--fg-muted); }
+
+/* ── Stats ─────────────────────────────────────────────── */
+.ai-stats {
+  display: flex;
+  justify-content: center;
+  gap: 64px;
+  padding: 48px;
+  max-width: 800px;
+  margin: 0 auto;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.ai-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.ai-stat-val {
+  font-family: var(--font-sans);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--fg-bright);
+  letter-spacing: -0.03em;
+}
+.ai-stat-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ── Section shared ────────────────────────────────────── */
+.section-title {
+  font-family: var(--font-sans);
+  font-size: 2.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 12px;
+}
+.section-desc {
+  color: var(--fg-muted);
+  line-height: 1.7;
+  margin-bottom: 48px;
+  max-width: 600px;
+}
+
+/* ── Framework ─────────────────────────────────────────── */
+.framework {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 100px 48px 60px;
+}
+.modes-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 48px;
+}
+.mode-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 24px;
+  background: var(--bg-deep);
+}
+.mode-name {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.mode-purpose {
+  color: var(--fg);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin-top: 8px;
+}
+.mode-example {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.mode-example-label {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--fg-muted);
+  display: block;
+  margin-bottom: 4px;
+}
+.mode-example code {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--syn-string);
+}
+.framework-principles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+}
+.principle h3 {
+  font-family: var(--font-sans);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--fg-bright);
+  margin-bottom: 8px;
+}
+.principle p {
+  font-size: 0.9rem;
+  color: var(--fg-muted);
+  line-height: 1.7;
+}
+.principle strong { color: var(--syn-function); }
+
+/* ── Timeline ──────────────────────────────────────────── */
+.timeline-section {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 100px 48px 60px;
+}
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.timeline-row {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.timeline-num {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+  opacity: 0.5;
+  min-width: 24px;
+  padding-top: 2px;
+  user-select: none;
+}
+.timeline-content { flex: 1; }
+.timeline-header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+.timeline-phase {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--syn-function);
+}
+.timeline-dates {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+}
+.timeline-focus {
+  font-size: 0.9rem;
+  color: var(--fg-dim);
+  line-height: 1.5;
+}
+
+/* ── Threads ───────────────────────────────────────────── */
+.threads-section {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 100px 48px 60px;
+}
+.threads-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.thread-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--bg-deep);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.thread-card:hover { border-color: var(--border-strong); }
+.thread-card[open] { border-color: var(--border-strong); }
+.thread-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.thread-summary::-webkit-details-marker { display: none; }
+.thread-summary::marker { display: none; content: ''; }
+.thread-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.thread-type {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  border: 1px solid;
+  flex-shrink: 0;
+}
+.thread-type--research { color: var(--syn-number); border-color: color-mix(in srgb, var(--syn-number) 30%, transparent); }
+.thread-type--bugfix { color: var(--error); border-color: color-mix(in srgb, var(--error) 30%, transparent); }
+.thread-type--feature { color: var(--syn-string); border-color: color-mix(in srgb, var(--syn-string) 30%, transparent); }
+.thread-title {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--fg-bright);
+}
+.thread-chevron {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.thread-card[open] .thread-chevron { transform: rotate(180deg); }
+.thread-body {
+  padding: 0 20px 20px;
+  border-top: 1px solid var(--border);
+  margin-top: 0;
+  padding-top: 16px;
+}
+.thread-desc {
+  font-size: 0.9rem;
+  color: var(--fg-muted);
+  line-height: 1.7;
+  margin-bottom: 16px;
+}
+.thread-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.thread-lesson {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fg-dim);
+  line-height: 1.5;
+}
+.thread-lesson strong { color: var(--syn-keyword); }
+.thread-link {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--syn-function);
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.thread-link:hover { text-decoration: underline; }
+
+/* ── Lessons ───────────────────────────────────────────── */
+.lessons-section {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 100px 48px 60px;
+}
+.lessons-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.lesson-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 24px;
+  background: var(--bg-deep);
+}
+.lesson-num {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--fg-muted);
+  opacity: 0.5;
+}
+.lesson-card h3 {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--fg-bright);
+  margin: 8px 0;
+}
+.lesson-card p {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  line-height: 1.6;
+}
+
+/* ── CTA ───────────────────────────────────────────────── */
+.ai-cta {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 60px 48px 100px;
+}
+.ai-cta-inner {
+  text-align: center;
+  padding: 64px 48px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--bg-deep);
+}
+.ai-cta h2 {
+  font-family: var(--font-sans);
+  font-size: 1.8rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 12px;
+}
+.ai-cta p {
+  color: var(--fg-muted);
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+/* ── Responsive ────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .ai-hero { padding: 100px 24px 40px; }
+  .ai-hero h1 { font-size: 2.2rem; }
+  .ai-hero-actions { flex-direction: column; align-items: center; }
+  .ai-stats { flex-wrap: wrap; gap: 32px; padding: 32px 24px; }
+  .framework { padding: 60px 24px 40px; }
+  .modes-grid { grid-template-columns: 1fr; }
+  .framework-principles { grid-template-columns: 1fr; }
+  .timeline-section { padding: 60px 24px 40px; }
+  .threads-section { padding: 60px 24px 40px; }
+  .lessons-section { padding: 60px 24px 40px; }
+  .lessons-grid { grid-template-columns: 1fr; }
+  .section-title { font-size: 2rem; }
+  .ai-cta { padding: 40px 24px 60px; }
+  .ai-cta-inner { padding: 40px 24px; }
+  .thread-footer { flex-direction: column; }
+}
+</style>

@@ -3,8 +3,10 @@ const currentPath = Astro.url.pathname;
 
 const navLinks = [
   { href: '/', label: 'Home' },
+  { href: '/showcase', label: 'Showcase' },
   { href: '/keybindings', label: 'Keys' },
   { href: '/themes', label: 'Themes' },
+  { href: '/built-with-ai', label: 'AI' },
 ];
 
 function isActive(href: string): boolean {
