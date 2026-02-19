@@ -547,3 +547,79 @@ fn highlights_memory_rust_large() {
 
     divan::black_box((line_count, token_count));
 }
+
+// ============================================================================
+// Rope to String snapshot cost (bottleneck profiling)
+// ============================================================================
+
+#[divan::bench(args = [100, 1000, 5000, 10000])]
+fn rope_to_string_snapshot(bencher: divan::Bencher, lines: usize) {
+    let source = generate_large_rust(lines);
+    let rope = ropey::Rope::from_str(&source);
+
+    bencher.bench_local(|| {
+        let snapshot = rope.to_string();
+        divan::black_box(snapshot)
+    });
+}
+
+// ============================================================================
+// Highlight shift cost (new: measures shift_for_edit performance)
+// ============================================================================
+
+#[divan::bench(args = [100, 500, 1000, 5000])]
+fn highlight_shift_for_insert(bencher: divan::Bencher, lines: usize) {
+    use token::syntax::SyntaxHighlights;
+
+    let mut state = ParserState::new();
+    let doc_id = DocumentId(1);
+    let source = generate_large_rust(lines);
+    let highlights = state.parse_and_highlight(&source, LanguageId::Rust, doc_id, 1);
+
+    bencher.bench_local(|| {
+        let mut h = highlights.clone();
+        // Simulate inserting a newline in the middle
+        h.shift_for_edit(lines / 2, lines, lines + 1);
+        divan::black_box(h)
+    });
+}
+
+#[divan::bench(args = [100, 500, 1000, 5000])]
+fn highlight_shift_for_delete(bencher: divan::Bencher, lines: usize) {
+    use token::syntax::SyntaxHighlights;
+
+    let mut state = ParserState::new();
+    let doc_id = DocumentId(1);
+    let source = generate_large_rust(lines);
+    let highlights = state.parse_and_highlight(&source, LanguageId::Rust, doc_id, 1);
+
+    bencher.bench_local(|| {
+        let mut h = highlights.clone();
+        // Simulate deleting a line in the middle
+        h.shift_for_edit(lines / 2, lines, lines - 1);
+        divan::black_box(h)
+    });
+}
+
+// ============================================================================
+// End-to-end edit latency simulation
+// ============================================================================
+
+#[divan::bench(args = [100, 500, 1000, 5000])]
+fn edit_to_highlight_latency(bencher: divan::Bencher, lines: usize) {
+    let mut state = ParserState::new();
+    let doc_id = DocumentId(1);
+    let source = generate_large_rust(lines);
+
+    // Initial parse
+    state.parse_and_highlight(&source, LanguageId::Rust, doc_id, 0);
+
+    bencher.bench_local(|| {
+        // Simulate: edit (insert char in middle) → snapshot → incremental parse
+        let mut modified = source.clone();
+        let mid = modified.len() / 2;
+        modified.insert(mid, 'x');
+        let highlights = state.parse_and_highlight(&modified, LanguageId::Rust, doc_id, 1);
+        divan::black_box(highlights)
+    });
+}

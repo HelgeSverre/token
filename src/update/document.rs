@@ -27,7 +27,23 @@ fn surround_pair(open: char) -> Option<char> {
 
 /// Returns a Cmd that redraws and schedules syntax parsing for the current document
 fn redraw_with_syntax_parse(model: &mut AppModel) -> Cmd {
+    redraw_with_syntax_parse_shift(model, None)
+}
+
+/// Returns a Cmd that redraws and schedules syntax parsing, shifting highlights
+/// if edit info is provided as (edit_line, old_line_count, new_line_count).
+fn redraw_with_syntax_parse_shift(
+    model: &mut AppModel,
+    edit_info: Option<(usize, usize, usize)>,
+) -> Cmd {
     if let Some(doc_id) = model.document().id {
+        if let Some((edit_line, old_count, new_count)) = edit_info {
+            if let Some(doc) = model.editor_area.documents.get_mut(&doc_id) {
+                if let Some(ref mut highlights) = doc.syntax_highlights {
+                    highlights.shift_for_edit(edit_line, old_count, new_count);
+                }
+            }
+        }
         if let Some(parse_cmd) = schedule_syntax_parse(model, doc_id) {
             return Cmd::Batch(vec![Cmd::redraw_editor(), parse_cmd]);
         }
@@ -282,6 +298,8 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
 
         DocumentMsg::InsertNewline => {
             let cursor_before = *model.editor().primary_cursor();
+            let edit_line = cursor_before.line;
+            let old_line_count = model.document().line_count();
 
             // Multi-cursor: process all cursors in reverse document order
             if model.editor().has_multiple_cursors() {
@@ -342,7 +360,11 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(redraw_with_syntax_parse(model));
+                let new_line_count = model.document().line_count();
+                return Some(redraw_with_syntax_parse_shift(
+                    model,
+                    Some((edit_line, old_line_count, new_line_count)),
+                ));
             }
 
             // Single cursor: check for selection first
@@ -360,7 +382,6 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                     cursor_after,
                 });
             } else {
-                let edit_line = cursor_before.line;
                 let edit_column = cursor_before.column;
                 let pos = model.cursor_buffer_position();
                 model.document_mut().buffer.insert_char(pos, '\n');
@@ -380,11 +401,16 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
             }
 
             model.reset_cursor_blink();
-            Some(redraw_with_syntax_parse(model))
+            let new_line_count = model.document().line_count();
+            Some(redraw_with_syntax_parse_shift(
+                model,
+                Some((edit_line, old_line_count, new_line_count)),
+            ))
         }
 
         DocumentMsg::DeleteBackward => {
             let cursor_before = *model.editor().primary_cursor();
+            let old_line_count = model.document().line_count();
 
             // Multi-cursor: process all cursors in reverse document order
             if model.editor().has_multiple_cursors() {
@@ -574,7 +600,12 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
             }
 
             model.reset_cursor_blink();
-            Some(redraw_with_syntax_parse(model))
+            let new_line_count = model.document().line_count();
+            let edit_line = cursor_before.line.min(new_line_count.saturating_sub(1));
+            Some(redraw_with_syntax_parse_shift(
+                model,
+                Some((edit_line, old_line_count, new_line_count)),
+            ))
         }
 
         DocumentMsg::DeleteWordBackward => {
@@ -1408,6 +1439,8 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 }
 
                 let cursor_before = *model.editor().primary_cursor();
+                let paste_edit_line = cursor_before.line;
+                let old_line_count = model.document().line_count();
 
                 if model.editor().has_multiple_cursors() {
                     let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
@@ -1546,6 +1579,11 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 model.ui.set_status(format!("Pasted {} chars", text.len()));
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
+                let new_line_count = model.document().line_count();
+                return Some(redraw_with_syntax_parse_shift(
+                    model,
+                    Some((paste_edit_line, old_line_count, new_line_count)),
+                ));
             }
 
             Some(redraw_with_syntax_parse(model))

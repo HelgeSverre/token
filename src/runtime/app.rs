@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
@@ -75,6 +76,8 @@ pub struct App {
     webview_manager: WebviewManager,
     /// Click tracker for unified mouse event handling
     click_tracker: ClickTracker,
+    /// Syntax highlight debounce deadlines: document_id → (deadline, revision)
+    syntax_deadlines: HashMap<token::model::editor_area::DocumentId, (Instant, u64)>,
 }
 
 impl App {
@@ -145,6 +148,7 @@ impl App {
             should_quit: false,
             webview_manager: WebviewManager::new(),
             click_tracker: ClickTracker::default(),
+            syntax_deadlines: HashMap::new(),
         };
 
         // Trigger initial syntax parsing for all loaded documents
@@ -1201,17 +1205,12 @@ impl App {
                     revision,
                     delay_ms
                 );
-                let tx = self.msg_tx.clone();
-                std::thread::spawn(move || {
-                    if delay_ms > 0 {
-                        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
-                    }
-                    tracing::debug!("Sending ParseReady: doc={} rev={}", document_id.0, revision);
-                    let _ = tx.send(Msg::Syntax(SyntaxMsg::ParseReady {
-                        document_id,
-                        revision,
-                    }));
-                });
+                let deadline = if delay_ms > 0 {
+                    Instant::now() + Duration::from_millis(delay_ms)
+                } else {
+                    Instant::now() // Immediate
+                };
+                self.syntax_deadlines.insert(document_id, (deadline, revision));
             }
 
             Cmd::RunSyntaxParse {
@@ -1345,6 +1344,11 @@ impl ApplicationHandler for App {
             needs_redraw = true;
         }
 
+        // Check syntax debounce deadlines
+        if self.check_syntax_deadlines() {
+            needs_redraw = true;
+        }
+
         if needs_redraw {
             if let Some(window) = &self.window {
                 window.request_redraw();
@@ -1370,12 +1374,54 @@ impl ApplicationHandler for App {
         // Use WaitUntil to wake up for the next cursor blink
         // This avoids spinning the event loop constantly (Poll mode)
         // while still handling async messages, fs changes, and cursor blinks
-        let next_blink = self.last_tick + blink_interval;
-        event_loop.set_control_flow(ControlFlow::WaitUntil(next_blink));
+        // Calculate next wake time: earliest of blink timer and syntax deadlines
+        let mut next_wake = self.last_tick + blink_interval;
+        if let Some(earliest_deadline) = self.syntax_deadlines.values().map(|(d, _)| *d).min() {
+            next_wake = next_wake.min(earliest_deadline);
+        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(next_wake));
     }
 }
 
 impl App {
+    /// Check syntax debounce deadlines and fire ParseReady for expired ones
+    fn check_syntax_deadlines(&mut self) -> bool {
+        if self.syntax_deadlines.is_empty() {
+            return false;
+        }
+        let now = Instant::now();
+        let expired: Vec<_> = self
+            .syntax_deadlines
+            .iter()
+            .filter(|(_, (deadline, _))| now >= *deadline)
+            .map(|(&doc_id, &(_, revision))| (doc_id, revision))
+            .collect();
+
+        if expired.is_empty() {
+            return false;
+        }
+
+        let mut needs_redraw = false;
+        for (document_id, revision) in expired {
+            self.syntax_deadlines.remove(&document_id);
+            tracing::debug!("Syntax deadline fired: doc={} rev={}", document_id.0, revision);
+            if let Some(cmd) = update(
+                &mut self.model,
+                Msg::Syntax(SyntaxMsg::ParseReady {
+                    document_id,
+                    revision,
+                }),
+            ) {
+                if cmd.needs_redraw() {
+                    needs_redraw = true;
+                }
+                self.pending_damage.merge(cmd.damage());
+                self.process_cmd(cmd);
+            }
+        }
+        needs_redraw
+    }
+
     /// Poll file system watcher and dispatch events
     /// Returns true if any events were processed
     fn poll_fs_watcher(&mut self) -> bool {
