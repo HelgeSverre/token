@@ -4,16 +4,33 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## v0.3.17 - 2026-02-18
+## v0.3.18 - 2026-02-19
 
 ### Added
-- Themes: 5 new builtin themes — Dracula, Catppuccin Mocha, Nord, Tokyo Night, Gruvbox Dark
-- Syntax: Added sema-lisp syntax sample file
 - Editing: Auto-surround selection — select text and type `(`, `[`, `{`, `"`, `'`, or `` ` `` to wrap it (e.g., `hello` → `(hello)`). Works with multi-cursor.
 - Editing: Matching bracket highlighting — when cursor is adjacent to `()`, `[]`, or `{}`, both brackets are highlighted with a colored background.
 - Config: `auto_surround` setting to enable/disable auto-surround behavior (default: `true`)
 - Config: `bracket_matching` setting to enable/disable bracket match highlighting (default: `true`)
 - Themes: `bracket_match_background` editor color for customizing bracket highlight appearance
+
+### Performance
+- Syntax highlighting pipeline rewritten: replaced thread-per-debounce with event-loop deadline timers for lower latency.
+- Immediate highlight shifting on edits (InsertNewline, DeleteBackward, Paste, DeleteForward, DeleteWordBackward, DeleteWordForward, DeleteLine) eliminates highlight flashing on keystrokes.
+
+### Fixed
+- Viewport no longer scrolls unexpectedly when clicking near viewport edges or past the midpoint on newly opened editors.
+- Modal layout bugs (geometry, hit-testing) fixed with comprehensive test coverage.
+
+### Changed
+- Refactored modal layout system: replaced ad-hoc layout code with VStack-based `ModalLayout` for cleaner, testable geometry.
+
+---
+
+## v0.3.17 - 2026-02-18
+
+### Added
+- Themes: 5 new builtin themes — Dracula, Catppuccin Mocha, Nord, Tokyo Night, Gruvbox Dark
+- Syntax: Added sema-lisp syntax sample file
 
 ---
 

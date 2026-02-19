@@ -33,7 +33,7 @@ Key structures: Rope (ropey) for text buffer, Cursor, EditOperation for undo/red
 
 ## Releasing a New Version
 
-When releasing a new version, follow these steps:
+Releases are automated via **cargo-dist**. Pushing a tag triggers CI to build binaries, create the GitHub release, and publish to Homebrew.
 
 1. **Update version** in `Cargo.toml`
 2. **Update `docs/CHANGELOG.md`** with release notes under new version header
@@ -42,18 +42,13 @@ When releasing a new version, follow these steps:
    ```bash
    git add -A && git commit -m "chore: release vX.Y.Z"
    ```
-5. **Create annotated tag**:
+5. **Create annotated tag and push**:
    ```bash
    git tag -a vX.Y.Z -m "vX.Y.Z - Brief description"
-   ```
-6. **Push commits and tags**:
-   ```bash
    git push && git push --tags
    ```
-7. **Create GitHub release**:
-   ```bash
-   gh release create vX.Y.Z --title "vX.Y.Z - Title" --notes "Release notes here"
-   ```
+
+cargo-dist CI will handle building platform binaries, creating the GitHub release, and publishing the Homebrew formula.
 
 ### Version Numbering
 
