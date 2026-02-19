@@ -10,7 +10,7 @@ All notable changes to rust-editor are documented in this file.
 - Code Outline: Tree-sitter based symbol extraction panel in the right dock. Supports 10 languages (Rust, TypeScript, JavaScript, Python, Go, Java, PHP, C/C++, Markdown, YAML). Collapsible tree with click-to-select, double-click-to-jump, and scroll support.
 - Code Outline: Dock panel hit-testing fix — clicks on dock panels no longer fall through to the editor.
 - Code Outline: Added HTML outline support — shows structural/semantic elements (`html`, `body`, `nav`, `section`, `div`, `form`, `table`, etc.) with enriched labels (e.g. `div#app`, `section.hero`).
-- Code Outline: Added Blade outline support — shows `@section`, `@fragment`, `@push` with parameter names, block directives (`@if`, `@foreach`, `@switch`), and Blade components (`<x-*>`).
+- Code Outline: Added Blade outline support — shows structural directives (`@section`, `@fragment`, `@push`, `@verbatim`, `@once`, `@livewire`, etc.) with parameter names, and Blade components (`<x-*>`). Control flow directives (`@if`, `@foreach`, `@switch`) are excluded to reduce noise.
 - Syntax: Added Laravel Blade (`.blade.php`) language support with syntax highlighting for directives, comments, echo delimiters, components, and HTML structure. Uses [tree-sitter-blade](https://github.com/EmranMR/tree-sitter-blade) by [Emran MR](https://github.com/EmranMR).
 
 ### Improved
