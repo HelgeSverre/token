@@ -1,0 +1,13 @@
+id,name,email,role,department,salary,start_date,status
+1,Alice Chen,alice@company.io,admin,Engineering,125000,2023-01-15,active
+2,Bob Smith,bob@company.io,editor,Design,98000,2023-03-22,active
+3,Carol Wu,carol@company.io,viewer,Marketing,87000,2023-06-01,active
+4,David Park,david@company.io,editor,Engineering,115000,2023-02-14,active
+5,Eva Garcia,eva@company.io,admin,Product,130000,2022-11-30,active
+6,Frank Liu,frank@company.io,viewer,Sales,92000,2023-07-10,active
+7,Grace Kim,grace@company.io,editor,Engineering,118000,2023-04-05,active
+8,Henry Patel,henry@company.io,viewer,Support,78000,2023-08-20,active
+9,Iris Tanaka,iris@company.io,editor,Design,102000,2023-05-12,active
+10,Jack Wilson,jack@company.io,admin,Engineering,135000,2022-09-01,active
+11,Kate Brown,kate@company.io,viewer,Marketing,85000,2023-09-15,active
+12,Leo Russo,leo@company.io,editor,Product,110000,2023-01-28,active

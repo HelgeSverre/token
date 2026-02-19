@@ -1,0 +1,219 @@
+{
+  "fps": 30,
+  "size": {
+    "w": 1920,
+    "h": 1080
+  },
+  "durationSec": 34.413,
+  "inputs": {
+    "video": "recordings/raw.mp4"
+  },
+  "segments": [
+    {
+      "kind": "card",
+      "text": "Token",
+      "subtext": "a minimal text editor",
+      "start": 0.0,
+      "end": 1.2
+    },
+    {
+      "kind": "clip",
+      "label": "open",
+      "in": 0.016,
+      "out": 5.016,
+      "start": 1.2,
+      "end": 6.2,
+      "motion": {
+        "scaleFrom": 1.0,
+        "scaleTo": 1.02
+      }
+    },
+    {
+      "kind": "card",
+      "text": "multi-cursor",
+      "start": 6.2,
+      "end": 6.9
+    },
+    {
+      "kind": "clip",
+      "label": "multicursor_start",
+      "in": 15.389,
+      "out": 20.389,
+      "start": 6.9,
+      "end": 11.9,
+      "motion": {
+        "scaleFrom": 1.0,
+        "scaleTo": 1.02
+      }
+    },
+    {
+      "kind": "card",
+      "text": "split view",
+      "start": 11.9,
+      "end": 12.6
+    },
+    {
+      "kind": "clip",
+      "label": "split_view",
+      "in": 20.799,
+      "out": 25.15,
+      "start": 12.6,
+      "end": 16.951,
+      "motion": {
+        "scaleFrom": 1.0,
+        "scaleTo": 1.02
+      }
+    },
+    {
+      "kind": "card",
+      "text": "csv editor",
+      "start": 16.951,
+      "end": 17.651
+    },
+    {
+      "kind": "clip",
+      "label": "csv_view",
+      "in": 25.15,
+      "out": 29.897,
+      "start": 17.651,
+      "end": 22.398,
+      "motion": {
+        "scaleFrom": 1.0,
+        "scaleTo": 1.02
+      }
+    },
+    {
+      "kind": "card",
+      "text": "search",
+      "start": 22.398,
+      "end": 23.098
+    },
+    {
+      "kind": "clip",
+      "label": "search",
+      "in": 29.897,
+      "out": 31.915,
+      "start": 23.098,
+      "end": 25.116,
+      "motion": {
+        "scaleFrom": 1.0,
+        "scaleTo": 1.02
+      }
+    },
+    {
+      "kind": "card",
+      "text": "outline",
+      "start": 25.116,
+      "end": 25.816
+    },
+    {
+      "kind": "clip",
+      "label": "outline",
+      "in": 31.915,
+      "out": 36.681,
+      "start": 25.816,
+      "end": 30.582,
+      "motion": {
+        "scaleFrom": 1.0,
+        "scaleTo": 1.02
+      }
+    },
+    {
+      "kind": "card",
+      "text": "command palette",
+      "start": 30.582,
+      "end": 31.282
+    },
+    {
+      "kind": "clip",
+      "label": "command_palette",
+      "in": 36.681,
+      "out": 38.312,
+      "start": 31.282,
+      "end": 32.913,
+      "motion": {
+        "scaleFrom": 1.0,
+        "scaleTo": 1.02
+      }
+    },
+    {
+      "kind": "card",
+      "text": "token-editor.com",
+      "subtext": "",
+      "start": 32.913,
+      "end": 34.413
+    }
+  ],
+  "transitions": [
+    {
+      "type": "fade",
+      "at": 1.2,
+      "dur": 0.2
+    },
+    {
+      "type": "fade",
+      "at": 6.2,
+      "dur": 0.2
+    },
+    {
+      "type": "fade",
+      "at": 6.9,
+      "dur": 0.2
+    },
+    {
+      "type": "fade",
+      "at": 11.9,
+      "dur": 0.2
+    },
+    {
+      "type": "fade",
+      "at": 12.6,
+      "dur": 0.2
+    },
+    {
+      "type": "fade",
+      "at": 16.951,
+      "dur": 0.2
+    },
+    {
+      "type": "fade",
+      "at": 17.651,
+      "dur": 0.2
+    },
+    {
+      "type": "fade",
+      "at": 22.398,
+      "dur": 0.2
+    },
+    {
+      "type": "fade",
+      "at": 23.098,
+      "dur": 0.2
+    },
+    {
+      "type": "fade",
+      "at": 25.116,
+      "dur": 0.2
+    },
+    {
+      "type": "fade",
+      "at": 25.816,
+      "dur": 0.2
+    },
+    {
+      "type": "fade",
+      "at": 30.582,
+      "dur": 0.2
+    },
+    {
+      "type": "fade",
+      "at": 31.282,
+      "dur": 0.2
+    },
+    {
+      "type": "fade",
+      "at": 32.913,
+      "dur": 0.2
+    }
+  ]
+}

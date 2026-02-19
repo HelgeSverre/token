@@ -1,0 +1,32 @@
+# Token Editor — Project Configuration
+# YAML-configurable, minimal, fast.
+
+project:
+  name: "token-demo"
+  version: "1.0.0"
+  description: "A fast, minimal text editor"
+
+server:
+  host: localhost
+  port: 3000
+  workers: 4
+  timeout: 30s
+
+database:
+  driver: sqlite
+  path: "./data/app.db"
+  pool_size: 10
+  migrations: "./migrations"
+
+logging:
+  level: info
+  format: json
+  output: stdout
+
+features:
+  syntax_highlighting: true
+  multi_cursor: true
+  split_view: true
+  csv_editor: true
+  code_outline: true
+  theme_switcher: true
