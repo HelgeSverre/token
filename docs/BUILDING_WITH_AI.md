@@ -1,6 +1,6 @@
 # AI-Assisted Development: Building Token
 
-Token is a multi-cursor text editor written in Rust—around 15,000 lines of code built primarily through 167+ conversations with [Amp Code](https://ampcode.com/@helgesverre).
+Token is a multi-cursor text editor written in Rust—around 15,000 lines of code built primarily through 173+ conversations with [Amp Code](https://ampcode.com/@helgesverre).
 
 This document describes the methodology that made sustained AI collaboration work on a project that doesn't fit in a single context window. It's not about what AI can do in a demo; it's about what actually works across months of development.
 
@@ -150,6 +150,9 @@ Token's development followed distinct phases, each with focused objectives:
 | Website v4           | Feb 17-18      | Complete website redesign with Astro                  |
 | New Themes           | Feb 18         | Dracula, Catppuccin, Nord, Tokyo Night, Gruvbox Dark  |
 | Bracket Matching     | Feb 18         | Auto-surround selection, bracket highlighting         |
+| Syntax Perf          | Feb 19         | Highlight pipeline rewrite, deadline timers, shift-on-edit |
+| Recent Files         | Feb 19         | Cmd+E modal, persistent MRU list, fuzzy filtering     |
+| Code Outline Panel   | Feb 19         | Tree-sitter symbol extraction, 10 languages, dock panel |
 
 ---
 
@@ -685,9 +688,89 @@ flowchart TD
 
 </details>
 
+<details>
+<summary><strong>Syntax Perf: Pipeline Rewrite</strong> | <a href="https://ampcode.com/threads/T-019c7326-f328-7330-b888-426528b60efe">T-019c7326</a></summary>
+
+**Date**: 2026-02-19
+
+**Problem**: Every keystroke spawned a new thread for syntax highlighting debouncing. This was wasteful and caused visible highlight flashing — old highlights were cleared before new ones arrived.
+
+**Solution**: Two complementary fixes:
+
+1. **Event-loop deadline timers**: Replaced thread-per-debounce with `ControlFlow::WaitUntil` deadline timers integrated into the existing event loop. No new threads spawned per keystroke.
+
+2. **Immediate highlight shifting**: On edits like `InsertNewline`, `DeleteBackward`, or `Paste`, existing highlights are immediately shifted by the edit delta before the background parse completes. This eliminates the flash of unstyled text.
+
+```rust
+// Before: spawn a thread per keystroke
+std::thread::spawn(move || {
+    std::thread::sleep(Duration::from_millis(50));
+    // send parse request
+});
+
+// After: set a deadline in the event loop
+self.syntax_deadline = Some(Instant::now() + Duration::from_millis(50));
+// ControlFlow::WaitUntil(deadline) handles the rest
+```
+
+**Key Insight**: When you already have an event loop with `WaitUntil` support, use it for debouncing instead of spawning threads. Shifting existing highlights by the edit delta provides instant visual feedback while the real parse runs in the background.
+
+</details>
+
+<details>
+<summary><strong>Recent Files: Cmd+E Modal</strong> | <a href="https://ampcode.com/threads/T-019c736c-b9dd-7227-a190-de497ef7f2d0">T-019c736c</a></summary>
+
+**Date**: 2026-02-19
+
+**Problem**: No way to quickly switch between recently opened files. Users had to use the file tree or Cmd+O every time.
+
+**Solution**: Persistent recent files list with a dedicated modal (Cmd+E), implemented across 5 phases:
+
+- **Persistence**: `RecentFiles` struct saved to `~/.config/token-editor/recent.json`, tracking up to 50 entries with open counts and timestamps
+- **Modal UI**: Reuses the existing `file_finder_layout` for consistent fuzzy-search UX with file type icons and "time ago" timestamps
+- **MRU ordering**: Most recently used files appear first; pressing Cmd+E then Enter instantly swaps to the previous file
+- **Tracking**: Files opened via any method (CLI, file dialog, quick open, drag-and-drop, sidebar) are automatically tracked
+
+**Key Insight**: Reusing the existing modal infrastructure (`ModalState`, `file_finder_layout`) meant the UI was consistent with other modals and required minimal new rendering code. The feature was mostly about state management and persistence.
+
+**Threads in this feature**: T-019c7344, T-019c736c, T-019c737e
+
+</details>
+
+<details>
+<summary><strong>Code Outline Panel</strong> | <a href="https://ampcode.com/threads/T-019c736a-5e58-75bc-978d-9f6a6f1ee57a">T-019c736a</a></summary>
+
+**Date**: 2026-02-19
+
+**Problem**: No structural overview of the current file. Navigating large files required scrolling or using find.
+
+**Solution**: Tree-sitter-based symbol extraction rendered as a collapsible tree in the right dock panel:
+
+- **Symbol extraction**: Walks the tree-sitter AST using a range-containment algorithm for code languages and level-based hierarchy for Markdown headings
+- **10 languages**: Rust, TypeScript, JavaScript, Python, Go, Java, PHP, C, C++, Markdown, YAML
+- **Dock integration**: Rendered in the existing right dock panel system with scroll support, click-to-navigate, and collapsible nodes
+- **Worker thread**: Outline extraction runs alongside syntax highlighting on the syntax worker thread — `OutlineData` is returned with `SyntaxHighlights` in `ParseCompleted`
+
+```rust
+pub struct OutlineNode {
+    pub name: String,
+    pub kind: OutlineKind,  // Function, Struct, Enum, Method, ...
+    pub range: OutlineRange,
+    pub children: Vec<OutlineNode>,
+}
+```
+
+**Critical Bug Found**: Clicks on the dock panel fell through to the editor because editor group rectangles overlapped the dock area in coordinate space. Fixed by adding `hit_test_docks` before `hit_test_editor` in the priority chain.
+
+**Key Insight**: UI regions that overlap in coordinate space (like docks over editors) must be hit-tested in strict priority order. The existing `HitTarget` system made this a clean fix — just add the dock check before the editor check.
+
+**Threads in this feature**: T-019c7342, T-019c736a
+
+</details>
+
 ---
 
-## Full Thread Reference (167+ threads)
+## Full Thread Reference (173+ threads)
 
 All conversations are public. Sorted by timestamp (oldest first).
 
@@ -858,6 +941,12 @@ All conversations are public. Sorted by timestamp (oldest first).
 | 2026-02-18 22:51 | [Thread Audit](https://ampcode.com/threads/T-019c72f2-0c78-756c-ab6c-9e1eead1c641)                | Docs     | Audit and publish project threads securely                                                             |
 | 2026-02-18 23:47 | [Find Modal Fixes](https://ampcode.com/threads/T-019c7304-3f79-72ed-ab9d-22122cd4ad71)             | Bugfix   | Find modal rendering issues and scroll offset fixes                                                    |
 | 2026-02-18 23:47 | [Scroll Into View Bug](https://ampcode.com/threads/T-019c7311-dbee-7068-b3cc-ecc6f22d04af)         | Bugfix   | Viewport thought it was half-size — Mermaid diagram diagnosis                                          |
+| 2026-02-19 00:07 | [Syntax Perf](https://ampcode.com/threads/T-019c7326-f328-7330-b888-426528b60efe)               | Perf     | Rewrite syntax highlighting pipeline with deadline timers and highlight shifting                        |
+| 2026-02-19 00:37 | [Outline Panel Design](https://ampcode.com/threads/T-019c7342-a5df-7201-86ae-198e1c9aebb4)      | Feature  | Review outline panel design against codebase                                                           |
+| 2026-02-19 01:00 | [Release v0.3.18](https://ampcode.com/threads/T-019c7344-1f23-716e-be3f-442b8d29a8a1)           | Setup    | Update changelog and prepare release v0.3.18                                                           |
+| 2026-02-19 01:07 | [Outline Panel](https://ampcode.com/threads/T-019c736a-5e58-75bc-978d-9f6a6f1ee57a)             | Feature  | Code outline panel with tree-sitter symbol extraction                                                  |
+| 2026-02-19 01:17 | [Recent Files](https://ampcode.com/threads/T-019c736c-b9dd-7227-a190-de497ef7f2d0)              | Feature  | Recent files list with Cmd+E modal (Phases 1-5)                                                        |
+| 2026-02-19 01:36 | [Recent Files Tests](https://ampcode.com/threads/T-019c737e-2714-7069-8ed7-071d7b19ffa5)        | Feature  | Test coverage and deduplication for recent files                                                        |
 
 ---
 

@@ -2,7 +2,7 @@
 import SiteLayout from '../layouts/SiteLayout.astro';
 
 const stats = [
-  { value: '167+', label: 'Conversations' },
+  { value: '173+', label: 'Conversations' },
   { value: '15k+', label: 'Lines of code' },
   { value: '700+', label: 'Tests passing' },
   { value: '20', label: 'Languages' },
@@ -20,6 +20,10 @@ const timeline = [
   { phase: 'Perf & Find', dates: 'Dec 19–20', focus: 'Event loop fix (7→60 FPS), find/replace modal' },
   { phase: 'Panels & Preview', dates: 'Jan 6–9', focus: 'Docked panels, markdown/HTML preview, file dialogs' },
   { phase: 'Website v4', dates: 'Feb 17–18', focus: 'Complete redesign, 5 new themes, bracket matching' },
+  { phase: 'Bracket Match', dates: 'Feb 18', focus: 'Auto-surround selection, bracket highlighting' },
+  { phase: 'Syntax Perf', dates: 'Feb 19', focus: 'Highlight pipeline rewrite, deadline timers, shift-on-edit' },
+  { phase: 'Recent Files', dates: 'Feb 19', focus: 'Cmd+E modal, persistent MRU list, fuzzy filtering' },
+  { phase: 'Code Outline', dates: 'Feb 19', focus: 'Tree-sitter symbol extraction, 10 languages, dock panel' },
 ];
 
 const threads = [
@@ -93,6 +97,27 @@ const threads = [
     summary: 'Clicking below the midpoint of the editor caused unwanted scrolling. A Mermaid diagram revealed the root cause: new editors initialized with visible_lines=25 (hardcoded default) but the actual viewport showed ~45 lines. The model thought line 30 was "off-screen" and scrolled to compensate. Fixed by syncing viewport dimensions on tab/split creation and adding no-padding scroll for clicks.',
     lesson: 'Diagrams that visualize model state vs. rendered state make viewport bugs obvious.',
   },
+  {
+    title: 'Syntax Perf: Pipeline Rewrite',
+    id: 'T-019c7326-f328-7330-b888-426528b60efe',
+    type: 'Bugfix',
+    summary: 'Every keystroke spawned a new thread for syntax highlighting debouncing, causing visible highlight flashing. Fixed with two changes: replaced thread-per-debounce with event-loop deadline timers (no new threads per keystroke), and added immediate highlight shifting that adjusts existing highlights by the edit delta before the background parse completes.',
+    lesson: 'When you already have an event loop with WaitUntil, use it for debouncing instead of spawning threads.',
+  },
+  {
+    title: 'Recent Files: Cmd+E Modal',
+    id: 'T-019c736c-b9dd-7227-a190-de497ef7f2d0',
+    type: 'Feature',
+    summary: 'No way to quickly switch between recently opened files. Built a persistent MRU list with Cmd+E modal across 5 phases: JSON persistence for up to 50 entries, fuzzy filtering with file type icons and "time ago" timestamps, and automatic tracking from all file-open methods (CLI, dialog, sidebar, drag-and-drop).',
+    lesson: 'Reusing existing modal infrastructure means consistent UX with minimal new rendering code.',
+  },
+  {
+    title: 'Code Outline Panel',
+    id: 'T-019c736a-5e58-75bc-978d-9f6a6f1ee57a',
+    type: 'Feature',
+    summary: 'Built a tree-sitter-based code outline panel supporting 10 languages (Rust, TypeScript, JavaScript, Python, Go, Java, PHP, C/C++, Markdown, YAML). Uses range-containment algorithm for code and level-based hierarchy for Markdown. Runs on the syntax worker thread alongside highlighting. Critical bug: dock clicks fell through to the editor because hit-test priority didn\'t include docks.',
+    lesson: 'UI regions that overlap in coordinate space must be hit-tested in strict priority order.',
+  },
 ];
 
 const modes = [
@@ -110,16 +135,16 @@ const lessons = [
 ];
 ---
 
-<SiteLayout title="Built with AI — Token" description="How Token was built through 167+ conversations with AI coding assistants. The methodology, the threads, and the lessons learned.">
+<SiteLayout title="Built with AI — Token" description="How Token was built through 173+ conversations with AI coding assistants. The methodology, the threads, and the lessons learned.">
 
 <!-- Hero -->
 <section class="ai-hero">
-  <p class="ai-tag">Open development / Amp Code / 167+ threads</p>
+  <p class="ai-tag">Open development / Amp Code / 173+ threads</p>
   <h1>
     <span>Built with AI,</span>
     <span class="accent">in the open</span>
   </h1>
-  <p class="ai-hero-desc">Token is a multi-cursor text editor written in Rust — around 15,000 lines of code built primarily through 167+ conversations with <a href="https://ampcode.com" target="_blank">Amp Code</a>. Every feature, every bug fix, every architectural decision is documented publicly.</p>
+  <p class="ai-hero-desc">Token is a multi-cursor text editor written in Rust — around 15,000 lines of code built primarily through 173+ conversations with <a href="https://ampcode.com" target="_blank">Amp Code</a>. Every feature, every bug fix, every architectural decision is documented publicly.</p>
   <div class="ai-hero-actions">
     <a href="https://ampcode.com/@helgesverre" class="btn-primary" target="_blank">View all threads →</a>
     <a href="https://github.com/helgesverre/token" class="btn-ghost" target="_blank">View source →</a>
@@ -190,7 +215,7 @@ const lessons = [
 <!-- Notable Threads -->
 <section class="threads-section">
   <h2 class="section-title">Notable threads</h2>
-  <p class="section-desc">Highlights from 167+ conversations. Each links to the full Amp Code thread.</p>
+  <p class="section-desc">Highlights from 173+ conversations. Each links to the full Amp Code thread.</p>
 
   <div class="threads-list">
     {threads.map((t) => (
@@ -234,7 +259,7 @@ const lessons = [
 <section class="ai-cta">
   <div class="ai-cta-inner">
     <h2>Want to see the conversations?</h2>
-    <p>All 167+ threads are public. See how every feature was planned, implemented, and debugged.</p>
+    <p>All 173+ threads are public. See how every feature was planned, implemented, and debugged.</p>
     <a href="https://ampcode.com/@helgesverre" class="btn-primary" target="_blank">Browse threads on Amp →</a>
   </div>
 </section>
