@@ -9,12 +9,14 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Command;
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use serde::Deserialize;
 
 use token::csv::{detect_delimiter, parse_csv, CsvState, Delimiter};
+use token::markdown::{content_to_preview_html, PreviewTheme};
 use token::messages::{LayoutMsg, Msg};
 use token::model::document::Document;
 use token::model::editor::{EditorState, Position, Selection, ViewMode};
@@ -834,6 +836,184 @@ fn collect_scenarios(args: &Args) -> Result<Vec<(PathBuf, Scenario)>> {
 }
 
 // ---------------------------------------------------------------------------
+// Chrome headless HTML preview rendering
+// ---------------------------------------------------------------------------
+
+/// Find a Chrome/Chromium binary on the system.
+fn find_chrome_binary() -> Option<PathBuf> {
+    // macOS
+    let mac_chrome = PathBuf::from("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
+    if mac_chrome.exists() {
+        return Some(mac_chrome);
+    }
+
+    // Linux / PATH-based
+    for name in ["google-chrome-stable", "google-chrome", "chromium-browser", "chromium"] {
+        if let Ok(output) = Command::new("which").arg(name).output() {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() {
+                    return Some(PathBuf::from(path));
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Render HTML content to a PNG via Chrome headless.
+///
+/// `viewport_width` and `viewport_height` are in CSS pixels.
+/// `scale` is the device scale factor (e.g. 2.0 for retina).
+/// Returns ARGB pixel data at (viewport_width * scale) × (viewport_height * scale).
+fn render_html_with_chrome(
+    chrome_bin: &std::path::Path,
+    html: &str,
+    viewport_width: u32,
+    viewport_height: u32,
+    scale: f64,
+) -> Option<(Vec<u32>, u32, u32)> {
+    let tmp_dir = std::env::temp_dir().join("token-screenshot");
+    std::fs::create_dir_all(&tmp_dir).ok()?;
+
+    let html_path = tmp_dir.join("preview.html");
+    let png_path = tmp_dir.join("preview.png");
+
+    std::fs::write(&html_path, html).ok()?;
+
+    let status = Command::new(chrome_bin)
+        .arg("--headless")
+        .arg(format!("--screenshot={}", png_path.display()))
+        .arg(format!("--window-size={},{}", viewport_width, viewport_height))
+        .arg(format!("--force-device-scale-factor={}", scale))
+        .arg("--hide-scrollbars")
+        .arg("--disable-gpu")
+        .arg("--no-sandbox")
+        .arg("--disable-extensions")
+        .arg("--disable-background-networking")
+        .arg(format!("file://{}", html_path.display()))
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .ok()?;
+
+    if !status.success() {
+        return None;
+    }
+
+    // Load the PNG and convert to ARGB u32 pixels
+    let img = image::open(&png_path).ok()?.into_rgba8();
+    let (img_w, img_h) = img.dimensions();
+
+    let pixels: Vec<u32> = img
+        .pixels()
+        .map(|p| {
+            let [r, g, b, a] = p.0;
+            (a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | b as u32
+        })
+        .collect();
+
+    // Clean up temp files
+    let _ = std::fs::remove_file(&html_path);
+    let _ = std::fs::remove_file(&png_path);
+
+    Some((pixels, img_w, img_h))
+}
+
+/// Blit source pixels onto the destination buffer at (dst_x, dst_y).
+#[allow(clippy::too_many_arguments)]
+fn blit_pixels(
+    dst: &mut [u32],
+    dst_stride: usize,
+    src: &[u32],
+    src_w: u32,
+    src_h: u32,
+    dst_x: usize,
+    dst_y: usize,
+    clip_w: usize,
+    clip_h: usize,
+) {
+    let copy_w = (src_w as usize).min(clip_w);
+    let copy_h = (src_h as usize).min(clip_h);
+
+    for row in 0..copy_h {
+        let dst_row_start = (dst_y + row) * dst_stride + dst_x;
+        let src_row_start = row * src_w as usize;
+
+        if dst_row_start + copy_w > dst.len() {
+            break;
+        }
+
+        dst[dst_row_start..dst_row_start + copy_w]
+            .copy_from_slice(&src[src_row_start..src_row_start + copy_w]);
+    }
+}
+
+/// Composite Chrome-rendered HTML previews into the frame buffer.
+fn composite_html_previews(buffer: &mut [u32], model: &AppModel, scale: f64) {
+    let chrome_bin = match find_chrome_binary() {
+        Some(bin) => bin,
+        None => {
+            // No Chrome available — native fallback already rendered
+            return;
+        }
+    };
+
+    let preview_theme = PreviewTheme::from_editor_theme(&model.theme);
+    let buf_width = model.window_size.0 as usize;
+
+    for preview in model.editor_area.previews.values() {
+        let document = match model.editor_area.documents.get(&preview.document_id) {
+            Some(d) => d,
+            None => continue,
+        };
+
+        // Only use Chrome for HTML files; markdown uses the native renderer
+        if document.language != LanguageId::Html {
+            continue;
+        }
+
+        let content = document.buffer.to_string();
+        let html = match content_to_preview_html(&content, document.language, &preview_theme) {
+            Some(h) => h,
+            None => continue,
+        };
+
+        // Calculate the content area rect (below the "Preview" header)
+        let header_height = model.metrics.tab_bar_height as f32;
+        let content_x = preview.rect.x.round() as usize;
+        let content_y = (preview.rect.y + header_height).round() as usize;
+        let content_w = preview.rect.width.round() as usize;
+        let content_h = (preview.rect.height - header_height).max(0.0).round() as usize;
+
+        if content_w == 0 || content_h == 0 {
+            continue;
+        }
+
+        // Chrome viewport in CSS pixels; scale factor produces physical pixel output
+        let viewport_w = (content_w as f64 / scale).round() as u32;
+        let viewport_h = (content_h as f64 / scale).round() as u32;
+
+        if viewport_w == 0 || viewport_h == 0 {
+            continue;
+        }
+
+        match render_html_with_chrome(&chrome_bin, &html, viewport_w, viewport_h, scale) {
+            Some((pixels, img_w, img_h)) => {
+                blit_pixels(
+                    buffer, buf_width, &pixels, img_w, img_h, content_x, content_y, content_w,
+                    content_h,
+                );
+            }
+            None => {
+                eprintln!(" (Chrome render failed, using native fallback)");
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -862,7 +1042,10 @@ fn main() -> Result<()> {
         eprint!("  {} ...", scenario.name);
 
         let mut model = create_model_from_scenario(&scenario, theme)?;
-        let buffer = render_to_buffer(&mut model, &font_info);
+        let mut buffer = render_to_buffer(&mut model, &font_info);
+
+        // Composite Chrome-rendered HTML previews on top of native fallback
+        composite_html_previews(&mut buffer, &model, scenario.scale);
 
         let out_path = args
             .out_dir
