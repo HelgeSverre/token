@@ -644,6 +644,47 @@ Both features are configurable (`auto_surround`, `bracket_matching` in config.ya
 
 </details>
 
+<details>
+<summary><strong>Scroll Bug: Viewport Thought It Was Half-Size</strong> | <a href="https://ampcode.com/threads/T-019c7311-dbee-7068-b3cc-ecc6f22d04af">T-019c7311</a></summary>
+
+**Date**: 2026-02-18
+
+**Problem**: Clicking below the midpoint of the editor caused the viewport to scroll unexpectedly, centering the cursor. Should only scroll when clicking the last visible line or when cursor is outside the viewport.
+
+**Root Cause**: New editors initialized with `visible_lines = 25` (hardcoded default) but the actual viewport showed ~45 lines on a Retina display. The model thought line 30 was "off-screen" and scrolled to compensate.
+
+**Diagnosis via Mermaid Diagram**:
+
+```mermaid
+flowchart TD
+    subgraph "Bug: New Editor Created"
+        A[EditorState::new\nvisible_lines = 25 default] --> B[No resize called]
+        B --> C[Editor rendered with group.rect\nshowing ~45 actual lines]
+        C --> D[User clicks on line 30\nvisually in lower half]
+    end
+
+    subgraph "Safe Zone Check"
+        D --> E[ensure_cursor_visible\nsafe_bottom = 0 + 25 - 1 - 1 = 23]
+        E --> F{line 30 > safe_bottom 23?}
+        F -->|Yes| G[SCROLL TRIGGERED]
+    end
+
+    subgraph "Expected Behavior"
+        I[visible_lines should be ~45] --> J[safe_bottom = 43]
+        J --> K{line 30 > 43?}
+        K -->|No| L[No scroll - correct!]
+    end
+```
+
+**The Fix**:
+1. `ensure_cursor_visible_no_padding()` for mouse clicks — only scroll if cursor is strictly outside viewport
+2. `sync_viewports` called after tab/split creation so new editors inherit correct dimensions
+3. Fixed `sync_all_viewports` to subtract `tab_bar_height` from group height
+
+**Key Insight**: Visualizing model state vs. rendered state with a diagram made the mismatch immediately obvious — the model "saw" 25 lines while the screen showed 45.
+
+</details>
+
 ---
 
 ## Full Thread Reference (167+ threads)
@@ -815,6 +856,8 @@ All conversations are public. Sorted by timestamp (oldest first).
 | 2026-02-18 22:11 | [Bracket Matching](https://ampcode.com/threads/T-019c7293-f967-73f6-b6b4-e3c2e946dfad)            | Feature  | Character wrapping and bracket matching features                                                       |
 | 2026-02-18 22:45 | [Image Optimization](https://ampcode.com/threads/T-019c72ca-af84-70be-a5ad-2471b923288c)           | Feature  | Astro image optimization for screenshot gallery                                                        |
 | 2026-02-18 22:51 | [Thread Audit](https://ampcode.com/threads/T-019c72f2-0c78-756c-ab6c-9e1eead1c641)                | Docs     | Audit and publish project threads securely                                                             |
+| 2026-02-18 23:47 | [Find Modal Fixes](https://ampcode.com/threads/T-019c7304-3f79-72ed-ab9d-22122cd4ad71)             | Bugfix   | Find modal rendering issues and scroll offset fixes                                                    |
+| 2026-02-18 23:47 | [Scroll Into View Bug](https://ampcode.com/threads/T-019c7311-dbee-7068-b3cc-ecc6f22d04af)         | Bugfix   | Viewport thought it was half-size — Mermaid diagram diagnosis                                          |
 
 ---
 

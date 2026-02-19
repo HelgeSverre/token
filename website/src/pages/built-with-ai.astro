@@ -86,6 +86,13 @@ const threads = [
     summary: 'Mouse handling was ad-hoc if/else chains checking pixel coordinates. Replaced with a priority-ordered HitTarget enum and hit-test system. Each target knows its bounds, first match wins — clean, extensible, and testable.',
     lesson: 'A HitTarget enum + priority-ordered hit testing replaces coordinate spaghetti.',
   },
+  {
+    title: 'Scroll Bug: Viewport Thought It Was Half-Size',
+    id: 'T-019c7311-dbee-7068-b3cc-ecc6f22d04af',
+    type: 'Bugfix',
+    summary: 'Clicking below the midpoint of the editor caused unwanted scrolling. A Mermaid diagram revealed the root cause: new editors initialized with visible_lines=25 (hardcoded default) but the actual viewport showed ~45 lines. The model thought line 30 was "off-screen" and scrolled to compensate. Fixed by syncing viewport dimensions on tab/split creation and adding no-padding scroll for clicks.',
+    lesson: 'Diagrams that visualize model state vs. rendered state make viewport bugs obvious.',
+  },
 ];
 
 const modes = [
