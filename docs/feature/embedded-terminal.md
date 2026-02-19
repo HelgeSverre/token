@@ -4,8 +4,9 @@ Integrated terminal panel at the bottom of the editor
 
 > **Status:** Planned
 > **Priority:** P2
-> **Effort:** XXL
+> **Effort:** L (8–14 days)
 > **Created:** 2025-12-20
+> **Updated:** 2026-02-19
 > **Milestone:** 5 - Future
 
 ---
@@ -15,10 +16,13 @@ Integrated terminal panel at the bottom of the editor
 1. [Overview](#overview)
 2. [Architecture](#architecture)
 3. [Data Structures](#data-structures)
-4. [Keybindings](#keybindings)
-5. [Implementation Plan](#implementation-plan)
-6. [Testing Strategy](#testing-strategy)
-7. [References](#references)
+4. [Messages](#messages)
+5. [Keybindings](#keybindings)
+6. [Implementation Plan](#implementation-plan)
+7. [Testing Strategy](#testing-strategy)
+8. [Platform Considerations](#platform-considerations)
+9. [Dependencies](#dependencies)
+10. [References](#references)
 
 ---
 
@@ -26,78 +30,96 @@ Integrated terminal panel at the bottom of the editor
 
 ### Current State
 
-The editor currently:
-- Has no terminal integration
-- Requires switching to external terminal for command execution
-- No shell output capture or display
+The editor has a **full dock panel system** already built:
+
+- ✅ `DockLayout` with Left/Right/Bottom docks (`src/panel/dock.rs`)
+- ✅ `PanelId::Terminal` registered in bottom dock, `Cmd+2` keybinding wired
+- ✅ Dock resize handles with mouse drag
+- ✅ `DockRects` in `geometry.rs` for layout calculation
+- ✅ `FocusTarget::Dock(DockPosition)` for keyboard focus routing
+- ✅ `HitTarget` variants for dock resize, tabs, and content
+- ⏳ Currently renders `PlaceholderPanel` with "Terminal panel coming soon..."
 
 ### Goals
 
-1. **Bottom panel terminal**: Collapsible panel docked at bottom
-2. **PTY integration**: Real pseudo-terminal with full escape sequence support
-3. **Multiple terminal tabs**: Support for multiple terminal instances
-4. **Resizable panel**: Drag handle to adjust terminal height
-5. **Shell integration**: Detect user's default shell
-6. **Output buffer**: Scrollable history with configurable limit
-7. **Copy/paste support**: Full clipboard integration
+1. **Real terminal emulation**: Full VT100/ANSI support via `alacritty_terminal` crate
+2. **PTY integration**: Spawn user's default shell with proper escape sequences
+3. **Rendering**: Grid of cells with colors, attributes, cursor — using existing fontdue renderer
+4. **Input routing**: When dock is focused, keyboard input goes to PTY
+5. **Scrollback**: Mouse wheel scrolls terminal history
+6. **Copy/paste**: Clipboard integration
 
-### Non-Goals
+### Non-Goals (MVP)
 
-- Split terminal views (horizontal splits within the panel)
-- Remote terminal/SSH integration (first iteration)
+- Multiple terminal tabs within the panel (post-MVP)
+- Split terminal views
+- Remote terminal/SSH integration
 - Terminal multiplexer features (tmux-like)
 - Custom shell prompt injection
+- Text selection in terminal (post-MVP)
+- Link detection / clickable URLs (post-MVP)
+- Windows ConPTY support (follow-on)
 
 ---
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Terminal Panel Architecture                        │
-│                                                                              │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                         Editor Area (existing)                          │ │
-│  │  ┌────────────────────┐  ┌────────────────────────────────────────┐   │ │
-│  │  │     Gutter         │  │              Text Area                   │   │ │
-│  │  │                    │  │                                          │   │ │
-│  │  └────────────────────┘  └────────────────────────────────────────┘   │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                                                              │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │ ═══════════════════════ Drag Handle (3px) ═══════════════════════════ │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                                                              │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  Terminal Panel                                                        │ │
-│  │  ┌──────────────────────────────────────────────────────────────────┐ │ │
-│  │  │ Tab Bar: [zsh] [npm run dev] [+]                          [x]    │ │ │
-│  │  └──────────────────────────────────────────────────────────────────┘ │ │
-│  │  ┌──────────────────────────────────────────────────────────────────┐ │ │
-│  │  │ user@machine:~/project$ cargo build                              │ │ │
-│  │  │    Compiling token v0.1.0                                        │ │ │
-│  │  │    Finished dev [unoptimized + debuginfo] target(s)              │ │ │
-│  │  │ user@machine:~/project$ █                                        │ │ │
-│  │  │                                                                   │ │ │
-│  │  └──────────────────────────────────────────────────────────────────┘ │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+### Integration with Existing Dock System
 
-### Component Flow
+The terminal plugs into the existing dock infrastructure. **No new panel UI code needed.**
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Keyboard   │────▶│  Terminal   │────▶│     PTY     │────▶│    Shell    │
-│   Input     │     │   Panel     │     │   Master    │     │   Process   │
-└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
-                           ▲                   │
-                           │                   ▼
-                    ┌──────┴──────┐     ┌─────────────┐
-                    │   Render    │◀────│   VT100     │
-                    │   Buffer    │     │   Parser    │
-                    └─────────────┘     └─────────────┘
+┌─────────────────────────────────────────────────┐
+│  Existing Infrastructure (already built)         │
+│  ┌────────────┐  ┌──────────┐  ┌─────────────┐ │
+│  │ DockLayout │  │ DockRects│  │  HitTarget  │ │
+│  │ + Dock     │  │ geometry │  │  hit_test   │ │
+│  └────────────┘  └──────────┘  └─────────────┘ │
+│  ┌────────────┐  ┌──────────┐  ┌─────────────┐ │
+│  │ FocusTarget│  │ DockMsg  │  │ Resize drag │ │
+│  │ + routing  │  │ handling │  │  + borders  │ │
+│  └────────────┘  └──────────┘  └─────────────┘ │
+└─────────────────────────────────────────────────┘
+                      │
+          ┌───────────▼───────────┐
+          │  New: Terminal Engine  │
+          │  ┌─────────────────┐  │
+          │  │ TerminalSession │  │
+          │  │ (alacritty_term)│  │
+          │  └────────┬────────┘  │
+          │           │           │
+          │  ┌────────▼────────┐  │
+          │  │  PTY Worker     │  │
+          │  │  Thread (mpsc)  │  │
+          │  └─────────────────┘  │
+          └───────────────────────┘
+```
+
+### Event Flow
+
+Matches Token's existing Elm architecture (`Message → Update → Command → Render`):
+
+```
+Keyboard Input (when dock focused)
+    │
+    ▼
+translate_keys.rs: KeyEvent → bytes
+    │
+    ▼
+pty_tx.send(bytes) → PTY Worker Thread → Shell Process
+                                              │
+                              PTY read loop ◄─┘
+                                   │
+                                   ▼
+                     Msg::Terminal(PtyOutput { bytes })
+                                   │
+                                   ▼
+                     update_terminal(): feed bytes into
+                     alacritty_terminal Term → Cmd::Redraw
+                                   │
+                                   ▼
+                     render_dock(): iterate term.grid cells
+                     → fontdue glyph rendering with colors
 ```
 
 ### Module Structure
@@ -105,444 +127,265 @@ The editor currently:
 ```
 src/
 ├── terminal/
-│   ├── mod.rs            # Terminal module exports
-│   ├── pty.rs            # PTY spawning and management
-│   ├── parser.rs         # VT100/ANSI escape sequence parser
-│   ├── buffer.rs         # Terminal output buffer (ring buffer)
-│   ├── grid.rs           # Character grid with attributes
-│   └── renderer.rs       # Terminal content rendering
-├── model/
-│   └── app.rs            # Add TerminalPanel to AppModel
-├── view/
-│   └── terminal.rs       # Terminal panel rendering
-└── update/
-    └── terminal.rs       # Terminal message handling
+│   ├── mod.rs              # TerminalState, TerminalSession exports
+│   ├── session.rs          # Wrapper around alacritty_terminal Term
+│   ├── pty.rs              # portable-pty spawn + read/write threads
+│   └── translate_keys.rs   # winit KeyEvent → terminal escape sequences
+├── panels/
+│   ├── terminal.rs         # Terminal panel rendering (replaces placeholder)
+│   └── ...
+├── update/
+│   └── terminal.rs         # TerminalMsg handler
+└── messages.rs             # TerminalMsg variants
 ```
 
 ---
 
 ## Data Structures
 
-### TerminalPanel
+### TerminalState (in AppModel)
+
+Terminal-specific state only. Visibility, height, and resizing are **owned by `Dock`**.
 
 ```rust
 // In src/terminal/mod.rs
 
-/// The terminal panel containing multiple terminal tabs
-#[derive(Debug)]
-pub struct TerminalPanel {
-    /// List of terminal instances
-    pub terminals: Vec<Terminal>,
-    
-    /// Currently active terminal index
-    pub active_index: usize,
-    
-    /// Whether the panel is visible
-    pub visible: bool,
-    
-    /// Panel height in pixels
-    pub height: u32,
-    
-    /// Minimum panel height
-    pub min_height: u32,
-    
-    /// Maximum panel height (percentage of window)
-    pub max_height_percent: f32,
-    
-    /// Whether panel is being resized
-    pub resizing: bool,
+/// Terminal state — lives in AppModel alongside dock_layout
+pub struct TerminalState {
+    /// Active terminal sessions
+    pub sessions: Vec<TerminalSession>,
+
+    /// Index of the active session
+    pub active: usize,
 }
 
-impl Default for TerminalPanel {
+impl Default for TerminalState {
     fn default() -> Self {
         Self {
-            terminals: Vec::new(),
-            active_index: 0,
-            visible: false,
-            height: 200,
-            min_height: 100,
-            max_height_percent: 0.6,
-            resizing: false,
+            sessions: Vec::new(),
+            active: 0,
         }
     }
 }
 ```
 
-### Terminal Instance
+### TerminalSession
 
 ```rust
-// In src/terminal/mod.rs
+// In src/terminal/session.rs
 
-/// A single terminal instance
-#[derive(Debug)]
-pub struct Terminal {
-    /// Unique identifier
-    pub id: usize,
-    
-    /// Display title (shell name or running command)
+/// A single terminal session wrapping alacritty_terminal
+pub struct TerminalSession {
+    /// Display title (from shell or OSC title sequence)
     pub title: String,
-    
-    /// PTY handle
-    pub pty: PtyHandle,
-    
-    /// Character grid
-    pub grid: TerminalGrid,
-    
-    /// Cursor position (row, col)
-    pub cursor: (usize, usize),
-    
-    /// Scroll offset (lines scrolled up from bottom)
+
+    /// Channel to send bytes to the PTY write thread
+    pub pty_tx: mpsc::Sender<Vec<u8>>,
+
+    /// Terminal emulator core (parser + grid + scrollback)
+    pub term: alacritty_terminal::Term<EventListener>,
+
+    /// Scrollback view offset (lines scrolled up from bottom)
     pub scroll_offset: usize,
-    
-    /// Scrollback buffer
-    pub scrollback: Vec<TerminalRow>,
-    
-    /// Max scrollback lines
-    pub scrollback_limit: usize,
-    
-    /// Current working directory
-    pub cwd: PathBuf,
-    
-    /// Whether terminal has exited
+
+    /// Whether the shell process has exited
     pub exited: bool,
-    
+
     /// Exit code if exited
     pub exit_code: Option<i32>,
-}
 
-/// Character grid for visible terminal area
-#[derive(Debug, Clone)]
-pub struct TerminalGrid {
-    /// Grid dimensions (rows, cols)
+    /// Last known grid dimensions (rows, cols)
     pub size: (usize, usize),
-    
-    /// Character cells
-    pub cells: Vec<Vec<Cell>>,
-}
-
-/// A single cell in the terminal grid
-#[derive(Debug, Clone, Default)]
-pub struct Cell {
-    /// Character (space if empty)
-    pub char: char,
-    
-    /// Foreground color
-    pub fg: Color,
-    
-    /// Background color
-    pub bg: Color,
-    
-    /// Text attributes
-    pub attrs: CellAttributes,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct CellAttributes {
-    pub bold: bool,
-    pub italic: bool,
-    pub underline: bool,
-    pub strikethrough: bool,
-    pub inverse: bool,
-    pub dim: bool,
 }
 ```
 
-### PTY Handle
+### PTY Worker
 
 ```rust
 // In src/terminal/pty.rs
 
-use std::process::Child;
-use std::os::fd::OwnedFd;
-
-/// PTY master handle for communication with shell
-pub struct PtyHandle {
-    /// Master file descriptor
-    master_fd: OwnedFd,
-    
-    /// Child shell process
-    child: Child,
-    
-    /// Read buffer
-    read_buffer: Vec<u8>,
-}
-
-impl PtyHandle {
-    /// Spawn a new PTY with the user's default shell
-    pub fn spawn_shell(cwd: &Path, size: (u16, u16)) -> io::Result<Self> {
-        // Use nix or portable-pty crate
-        todo!()
-    }
-    
-    /// Write bytes to the terminal (user input)
-    pub fn write(&mut self, data: &[u8]) -> io::Result<()> {
-        todo!()
-    }
-    
-    /// Read available output from the terminal
-    pub fn read(&mut self) -> io::Result<Vec<u8>> {
-        todo!()
-    }
-    
-    /// Resize the PTY
-    pub fn resize(&mut self, cols: u16, rows: u16) -> io::Result<()> {
-        todo!()
-    }
-    
-    /// Check if process has exited
-    pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
-        self.child.try_wait()
-    }
+/// Spawn a PTY and return channels for communication
+pub fn spawn_pty(
+    cwd: &Path,
+    rows: u16,
+    cols: u16,
+    msg_tx: mpsc::Sender<Msg>,
+    session_id: usize,
+) -> io::Result<mpsc::Sender<Vec<u8>>> {
+    // 1. Detect shell: $SHELL or /bin/zsh (macOS) or /bin/sh
+    // 2. Spawn via portable-pty
+    // 3. Start read thread: blocking read → coalesce → Msg::Terminal(PtyOutput)
+    // 4. Start write thread: recv from channel → write to PTY
+    // 5. Return the write channel sender
 }
 ```
 
-### VT100 Parser
+---
+
+## Messages
 
 ```rust
-// In src/terminal/parser.rs
-
-/// VT100/ANSI escape sequence parser
-pub struct VtParser {
-    /// Current parser state
-    state: ParserState,
-    
-    /// Accumulated parameter bytes
-    params: Vec<u8>,
-    
-    /// Intermediate bytes
-    intermediates: Vec<u8>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum ParserState {
-    Ground,
-    Escape,
-    EscapeIntermediate,
-    CsiEntry,
-    CsiParam,
-    CsiIntermediate,
-    OscString,
-}
-
-/// Parsed terminal action
-#[derive(Debug, Clone)]
-pub enum TerminalAction {
-    /// Print a character
-    Print(char),
-    
-    /// Execute control character (C0/C1)
-    Execute(u8),
-    
-    /// CSI sequence (cursor movement, colors, etc.)
-    CsiDispatch { params: Vec<u16>, intermediates: Vec<u8>, final_byte: u8 },
-    
-    /// ESC sequence
-    EscDispatch { intermediates: Vec<u8>, final_byte: u8 },
-    
-    /// OSC sequence (window title, etc.)
-    OscDispatch(Vec<Vec<u8>>),
-}
-
-impl VtParser {
-    pub fn new() -> Self {
-        Self {
-            state: ParserState::Ground,
-            params: Vec::new(),
-            intermediates: Vec::new(),
-        }
-    }
-    
-    /// Parse bytes and return actions
-    pub fn parse(&mut self, data: &[u8]) -> Vec<TerminalAction> {
-        // Implement VT100 state machine
-        todo!()
-    }
-}
-```
-
-### Messages
-
-```rust
-// In src/messages.rs
+// In src/messages.rs — add to existing Msg enum
 
 pub enum TerminalMsg {
-    /// Toggle terminal panel visibility
-    Toggle,
-    
-    /// Focus the terminal panel
-    Focus,
-    
-    /// Create a new terminal tab
-    NewTerminal,
-    
-    /// Close the active terminal
-    CloseTerminal,
-    
-    /// Switch to terminal tab by index
-    SwitchTab(usize),
-    
-    /// Next terminal tab
-    NextTab,
-    
-    /// Previous terminal tab
-    PrevTab,
-    
-    /// Process keyboard input
+    /// Spawn a new terminal session
+    NewSession,
+
+    /// Close the active terminal session
+    CloseSession,
+
+    /// Raw bytes received from PTY (sent by worker thread)
+    PtyOutput { session_id: usize, data: Vec<u8> },
+
+    /// PTY process exited
+    ProcessExited { session_id: usize, code: i32 },
+
+    /// Keyboard input to send to PTY
     KeyInput(KeyEvent),
-    
-    /// Paste from clipboard
+
+    /// Paste text into terminal
     Paste(String),
-    
-    /// Process PTY output
-    PtyOutput { terminal_id: usize, data: Vec<u8> },
-    
-    /// Terminal process exited
-    ProcessExited { terminal_id: usize, code: i32 },
-    
-    /// Resize panel (delta pixels)
-    ResizePanel(i32),
-    
-    /// Start panel resize drag
-    StartResize,
-    
-    /// End panel resize drag
-    EndResize,
-    
-    /// Scroll up
+
+    /// Scroll terminal scrollback
     ScrollUp(usize),
-    
-    /// Scroll down
     ScrollDown(usize),
-    
-    /// Scroll to bottom
     ScrollToBottom,
-    
-    /// Clear terminal
+
+    /// Clear terminal buffer
     Clear,
-    
-    /// Run command in new terminal
-    RunCommand(String),
+
+    /// Resize terminal grid (triggered by dock resize)
+    Resize { rows: u16, cols: u16 },
 }
 ```
+
+**Note**: Toggle/focus/panel switching is handled by existing `DockMsg` — not duplicated here.
 
 ---
 
 ## Keybindings
 
-| Action | Mac | Windows/Linux | Message |
+| Action | Mac | Windows/Linux | Handler |
 |--------|-----|---------------|---------|
-| Toggle terminal | Ctrl+` | Ctrl+` | `TerminalMsg::Toggle` |
-| New terminal | Ctrl+Shift+` | Ctrl+Shift+` | `TerminalMsg::NewTerminal` |
-| Close terminal | Ctrl+W (in terminal) | Ctrl+W (in terminal) | `TerminalMsg::CloseTerminal` |
-| Next terminal | Ctrl+Tab (in terminal) | Ctrl+Tab (in terminal) | `TerminalMsg::NextTab` |
-| Previous terminal | Ctrl+Shift+Tab | Ctrl+Shift+Tab | `TerminalMsg::PrevTab` |
-| Clear terminal | Cmd+K | Ctrl+L | `TerminalMsg::Clear` |
+| Toggle terminal | Cmd+2 | Ctrl+2 | `DockMsg::FocusOrTogglePanel(PanelId::TERMINAL)` (existing) |
+| New terminal | Ctrl+Shift+\` | Ctrl+Shift+\` | `TerminalMsg::NewSession` |
+| Close terminal | — | — | `TerminalMsg::CloseSession` |
+| Clear terminal | Cmd+K (in terminal) | Ctrl+L | `TerminalMsg::Clear` |
 | Scroll up | Shift+PageUp | Shift+PageUp | `TerminalMsg::ScrollUp` |
 | Scroll down | Shift+PageDown | Shift+PageDown | `TerminalMsg::ScrollDown` |
-| Focus terminal | Ctrl+` | Ctrl+` | `TerminalMsg::Focus` |
-| Return to editor | Escape | Escape | `UiMsg::FocusEditor` |
+| Return to editor | Escape | Escape | `UiMsg::FocusEditor` (existing) |
+
+All other keys (when terminal is focused) are sent directly to the PTY as escape sequences.
 
 ---
 
 ## Implementation Plan
 
-### Phase 1: PTY Foundation
+### Phase 1: PTY Foundation + Terminal Core (3–4 days)
 
-**Estimated effort: 4-5 days**
+**Goal**: Spawn a shell, send/receive bytes, parse into a grid.
 
-1. [ ] Add `portable-pty` or `nix` crate as dependency
-2. [ ] Implement `PtyHandle` for spawning shells
-3. [ ] Detect user's default shell (`$SHELL` or `/bin/sh`)
-4. [ ] Set up async read loop for PTY output
-5. [ ] Handle PTY resize signals (`SIGWINCH`)
+1. [ ] Add `portable-pty` and `alacritty_terminal` to `Cargo.toml`
+2. [ ] Create `src/terminal/mod.rs` with `TerminalState` and `TerminalSession`
+3. [ ] Implement `src/terminal/pty.rs`:
+   - Detect default shell (`$SHELL` → `/bin/zsh` → `/bin/sh`)
+   - Spawn PTY via `portable-pty`
+   - Read thread: blocking read → coalesce into chunks → `Msg::Terminal(PtyOutput)`
+   - Write channel for keyboard input
+   - Process exit detection → `Msg::Terminal(ProcessExited)`
+4. [ ] Implement `src/terminal/session.rs`:
+   - Wrapper around `alacritty_terminal::Term`
+   - `apply_bytes(&mut self, data: &[u8])` — feed to parser
+   - `resize(&mut self, rows: u16, cols: u16)` — update grid + PTY
+5. [ ] Add `TerminalMsg` to `src/messages.rs` and `Msg::Terminal` variant
+6. [ ] Add `TerminalState` to `AppModel`
+7. [ ] Implement `src/update/terminal.rs`:
+   - Handle `PtyOutput` → feed bytes to session → `Cmd::Redraw`
+   - Handle `ProcessExited` → mark session exited
+   - Handle `NewSession` → spawn PTY + create session
 
-**Dependencies:** None
+**Verification**: `make build` compiles. Unit test spawns a PTY, sends `echo hello\n`, receives output.
 
-### Phase 2: VT100 Parser
+### Phase 2: Terminal Rendering (3–4 days)
 
-**Estimated effort: 5-6 days**
+**Goal**: See actual terminal output in the dock panel.
 
-1. [ ] Implement VT100 state machine
-2. [ ] Parse cursor movement sequences (CUU, CUD, CUF, CUB)
-3. [ ] Parse erase sequences (ED, EL)
-4. [ ] Parse SGR (Select Graphic Rendition) for colors
-5. [ ] Parse scroll region sequences
-6. [ ] Handle OSC sequences (window title)
+1. [ ] Create `src/panels/terminal.rs` — terminal panel renderer
+2. [ ] Replace `PlaceholderPanel` rendering for `PanelId::Terminal` in `src/view/mod.rs`
+3. [ ] Render terminal grid:
+   - Iterate `alacritty_terminal` grid cells
+   - Map cell colors → theme colors (16-color palette + default fg/bg)
+   - Render each character via existing `TextPainter`/fontdue
+   - Render block cursor at terminal cursor position
+4. [ ] Compute rows/cols from dock rect + `char_width`/`line_height`
+5. [ ] Auto-spawn terminal session when panel first opens
+6. [ ] Handle dock resize → `TerminalMsg::Resize` → PTY resize
 
-**Dependencies:** Phase 1
+**Verification**: Open terminal (Cmd+2), see shell prompt rendered in dock panel.
 
-### Phase 3: Terminal Grid & Buffer
+### Phase 3: Input Routing (2–3 days)
 
-**Estimated effort: 3-4 days**
+**Goal**: Type in the terminal and interact with the shell.
 
-1. [ ] Implement `TerminalGrid` with cell storage
-2. [ ] Implement cursor movement within grid
-3. [ ] Implement line wrapping
-4. [ ] Implement scrollback buffer (ring buffer)
-5. [ ] Handle terminal resize (reflow content)
+1. [ ] Implement `src/terminal/translate_keys.rs`:
+   - Map winit `KeyEvent` → terminal escape sequences
+   - Regular characters → UTF-8 bytes
+   - Arrow keys → `\x1b[A/B/C/D`
+   - Enter → `\r`, Backspace → `\x7f`
+   - Ctrl+C → `\x03`, Ctrl+D → `\x04`, Ctrl+Z → `\x1a`
+   - Function keys, Home/End/PgUp/PgDn
+2. [ ] Route keyboard input when `FocusTarget::Dock(Bottom)` + active panel is Terminal
+3. [ ] Implement paste: `TerminalMsg::Paste(text)` → send text bytes to PTY
+4. [ ] Handle Escape → return focus to editor (existing `UiMsg::FocusEditor`)
 
-**Dependencies:** Phase 2
+**Verification**: Can type `ls`, `cargo build`, `vim` (cursor-based apps work).
 
-### Phase 4: Panel UI
+### Phase 4: Scrollback + Polish (2–3 days)
 
-**Estimated effort: 3-4 days**
+**Goal**: Scroll through terminal history, handle edge cases.
 
-1. [ ] Add `TerminalPanel` to `AppModel`
-2. [ ] Implement panel visibility toggle
-3. [ ] Render drag handle between editor and terminal
-4. [ ] Implement panel resizing
-5. [ ] Layout recalculation when panel opens/closes
+1. [ ] Mouse wheel over terminal dock → scroll terminal scrollback
+2. [ ] Auto-scroll to bottom on new output (unless user scrolled up)
+3. [ ] Render scrollback indicator (e.g. line count or scrollbar)
+4. [ ] Handle `TerminalMsg::Clear` — reset terminal buffer
+5. [ ] SGR color support: 256-color + true color (24-bit)
+6. [ ] Text attributes: bold, italic, underline, dim, inverse
+7. [ ] Handle terminal bell (flash or ignore)
+8. [ ] OSC title updates → update `TerminalSession.title`
 
-**Dependencies:** Phase 3
+**Verification**: Run `cargo build` with colored output, scroll up through build log, scroll back down.
 
-### Phase 5: Terminal Rendering
+### Post-MVP: Multiple Terminal Tabs
 
-**Estimated effort: 4-5 days**
+**Not part of initial implementation.** When needed:
 
-1. [ ] Render terminal grid characters
-2. [ ] Render cursor (block, underline, bar)
-3. [ ] Render text attributes (bold, italic, underline)
-4. [ ] Render 16-color palette
-5. [ ] Render 256-color palette
-6. [ ] Render true color (24-bit)
+1. [ ] Add tab bar rendering inside terminal panel
+2. [ ] Tab switching (Ctrl+Tab within terminal)
+3. [ ] New terminal button / Ctrl+Shift+\`
+4. [ ] Show running command in tab title
+5. [ ] Close individual terminals
 
-**Dependencies:** Phase 4
+---
 
-### Phase 6: Input Handling
+## Eventing Model
 
-**Estimated effort: 3-4 days**
+Terminal I/O integrates with Token's existing async pattern (same as syntax highlighting worker, fs watcher):
 
-1. [ ] Route keyboard input to terminal when focused
-2. [ ] Convert key events to escape sequences
-3. [ ] Handle special keys (arrows, function keys)
-4. [ ] Implement paste (Cmd+V)
-5. [ ] Handle Ctrl+C, Ctrl+D, Ctrl+Z
+```
+                    ┌─────────────────────┐
+                    │   Main Thread       │
+                    │                     │
+                    │  msg_rx.try_recv()  │◄─── PTY read thread sends
+                    │  → update_terminal  │     Msg::Terminal(PtyOutput)
+                    │  → Cmd::Redraw      │
+                    │                     │
+                    │  pty_tx.send(bytes) ─┼──► PTY write thread
+                    └─────────────────────┘
+```
 
-**Dependencies:** Phase 5
+**Backpressure**: PTY read thread coalesces output into chunks (up to 32KB or flush every 16ms) to avoid flooding the message queue during large builds.
 
-### Phase 7: Tab Management
-
-**Estimated effort: 2-3 days**
-
-1. [ ] Implement tab bar rendering
-2. [ ] Implement tab switching
-3. [ ] Implement new terminal creation
-4. [ ] Implement terminal close
-5. [ ] Show running command in tab title
-
-**Dependencies:** Phase 6
-
-### Phase 8: Polish & Integration
-
-**Estimated effort: 3-4 days**
-
-1. [ ] Scroll support (mouse wheel, keyboard)
-2. [ ] Text selection in terminal (future)
-3. [ ] Link detection and clickable URLs (future)
-4. [ ] Shell integration (directory tracking)
-5. [ ] Performance optimization for large outputs
-
-**Dependencies:** Phase 7
+**Wakeup**: If `ControlFlow::WaitUntil` causes latency, add `EventLoopProxy::send_event()` to wake the loop immediately on PTY output. Start without this — only add if needed.
 
 ---
 
@@ -552,25 +395,22 @@ pub enum TerminalMsg {
 
 ```rust
 #[test]
-fn test_vt_parser_cursor_movement() {
-    let mut parser = VtParser::new();
-    let actions = parser.parse(b"\x1b[5A"); // Move up 5
-    assert_eq!(actions.len(), 1);
-    // Verify CsiDispatch with correct params
+fn test_key_translation_arrows() {
+    assert_eq!(translate_key(Key::ArrowUp, Modifiers::empty()), b"\x1b[A");
+    assert_eq!(translate_key(Key::ArrowDown, Modifiers::empty()), b"\x1b[B");
 }
 
 #[test]
-fn test_grid_scroll() {
-    let mut grid = TerminalGrid::new(24, 80);
-    grid.scroll_up(5);
-    // Verify first 5 rows are empty
+fn test_key_translation_ctrl() {
+    assert_eq!(translate_key(Key::Character("c"), Modifiers::CONTROL), b"\x03");
+    assert_eq!(translate_key(Key::Character("d"), Modifiers::CONTROL), b"\x04");
 }
 
 #[test]
-fn test_sgr_colors() {
-    let mut parser = VtParser::new();
-    let actions = parser.parse(b"\x1b[31mRed\x1b[0m");
-    // Verify color change and reset
+fn test_terminal_session_resize() {
+    let mut session = create_test_session(80, 24);
+    session.resize(120, 40);
+    assert_eq!(session.size, (40, 120));
 }
 ```
 
@@ -578,48 +418,44 @@ fn test_sgr_colors() {
 
 ```rust
 #[test]
-fn test_terminal_spawn() {
-    let pty = PtyHandle::spawn_shell(Path::new("/tmp"), (80, 24)).unwrap();
-    // Verify process is running
-}
-
-#[test]
-fn test_terminal_echo() {
-    let mut pty = PtyHandle::spawn_shell(Path::new("/tmp"), (80, 24)).unwrap();
-    pty.write(b"echo hello\n").unwrap();
-    // Wait and verify output contains "hello"
+fn test_pty_spawn_and_echo() {
+    let (msg_tx, msg_rx) = mpsc::channel();
+    let pty_tx = spawn_pty(Path::new("/tmp"), 24, 80, msg_tx, 0).unwrap();
+    pty_tx.send(b"echo hello\n".to_vec()).unwrap();
+    // Wait for PtyOutput message containing "hello"
 }
 ```
 
 ### Manual Testing Checklist
 
-- [ ] Toggle terminal with Ctrl+`
-- [ ] Type commands and see output
-- [ ] Cursor movement works correctly
-- [ ] Colors render properly
-- [ ] Scrollback works (Shift+PageUp/Down)
-- [ ] Multiple terminals work
-- [ ] Tab switching works
-- [ ] Panel resize works
+- [ ] Cmd+2 opens terminal with shell prompt
+- [ ] Type commands, see output with colors
+- [ ] Arrow keys work (shell history, cursor movement)
 - [ ] Ctrl+C interrupts running process
-- [ ] Terminal respects window resize
-- [ ] Clear terminal works
+- [ ] Ctrl+D sends EOF
+- [ ] Scrollback works (Shift+PageUp/Down, mouse wheel)
+- [ ] Resize dock → terminal reflows correctly
+- [ ] Escape returns focus to editor
+- [ ] Paste works (Cmd+V)
+- [ ] `vim`/`nano` work (alternate screen apps)
+- [ ] Long build output renders without lag
 
 ---
 
 ## Platform Considerations
 
-### macOS
-- Use `/bin/zsh` as default shell
-- PTY via `posix_openpt` / `nix` crate
+### macOS (MVP target)
+- Default shell: `/bin/zsh` (via `$SHELL`)
+- PTY via `portable-pty` (wraps `posix_openpt`)
 
 ### Linux
-- Use `$SHELL` or `/bin/bash`
-- PTY via `openpty` / `nix` crate
+- Default shell: `$SHELL` or `/bin/bash`
+- PTY via `portable-pty` (wraps `openpty`)
 
-### Windows (Future)
-- Use ConPTY for pseudo-terminal
+### Windows (Follow-on)
+- ConPTY via `portable-pty` (has Windows support)
 - PowerShell or cmd.exe as default
+- May need additional escape sequence handling
 
 ---
 
@@ -627,19 +463,21 @@ fn test_terminal_echo() {
 
 ```toml
 # Cargo.toml additions
-portable-pty = "0.8"      # Cross-platform PTY (or use nix directly)
-vte = "0.13"              # VT100 parser (or implement custom)
+portable-pty = "0.8"              # Cross-platform PTY spawning
+alacritty_terminal = "0.24"       # Terminal emulator core (parser + grid + scrollback)
 ```
 
-Alternative: Use `nix` crate directly for Unix PTY control.
+Pin versions and wrap `alacritty_terminal` behind `TerminalSession` so the dependency can be swapped if needed.
+
+**Why not `vte` + custom grid?** Building a correct VT100 state machine with cursor modes, scroll regions, wrapping, and scrollback is 2–3 weeks of work. `alacritty_terminal` provides all of this battle-tested. Token only needs to render the resulting cell grid.
 
 ---
 
 ## References
 
+- `portable-pty`: https://docs.rs/portable-pty/latest/portable_pty/
+- `alacritty_terminal`: https://docs.rs/alacritty_terminal/latest/alacritty_terminal/
 - VT100 escape sequences: https://vt100.net/docs/vt100-ug/chapter3.html
 - ANSI escape codes: https://en.wikipedia.org/wiki/ANSI_escape_code
-- `portable-pty`: https://docs.rs/portable-pty/latest/portable_pty/
-- `vte` parser: https://docs.rs/vte/latest/vte/
-- Alacritty terminal: https://github.com/alacritty/alacritty (reference)
-- WezTerm: https://github.com/wezterm/wezterm (reference)
+- Alacritty source: https://github.com/alacritty/alacritty (reference implementation)
+- WezTerm source: https://github.com/wezterm/wezterm (alternative reference)
