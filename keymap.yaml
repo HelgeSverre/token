@@ -88,6 +88,9 @@ bindings:
   # ===========================================================================
   # Modals/Dialogs
   # ===========================================================================
+  - key: "cmd+e"
+    command: OpenRecentFiles
+
   - key: "cmd+shift+a"
     command: ToggleCommandPalette
 

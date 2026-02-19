@@ -333,6 +333,7 @@ impl FromStr for Command {
             "ToggleCommandPalette" => Ok(Command::ToggleCommandPalette),
             "ToggleGotoLine" => Ok(Command::ToggleGotoLine),
             "ToggleFindReplace" => Ok(Command::ToggleFindReplace),
+            "OpenRecentFiles" => Ok(Command::OpenRecentFiles),
 
             // Layout
             "NewTab" => Ok(Command::NewTab),

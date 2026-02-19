@@ -84,6 +84,7 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
             document_id,
             revision,
             highlights,
+            outline,
         } => {
             tracing::debug!(
                 "update_syntax: ParseCompleted received for doc={} rev={}",
@@ -133,6 +134,7 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
             };
 
             doc.syntax_highlights = Some(highlights);
+            doc.outline = outline;
             tracing::debug!(
                 "Applied syntax highlights for document {:?}, revision {}",
                 document_id,
@@ -345,6 +347,7 @@ mod tests {
                 document_id: doc_id,
                 revision: 7,
                 highlights: highlights.clone(),
+                outline: None,
             },
         );
 
@@ -377,6 +380,7 @@ mod tests {
                 document_id: doc_id,
                 revision: 5,
                 highlights,
+                outline: None,
             },
         );
 
@@ -429,6 +433,7 @@ mod tests {
                 document_id: doc_id,
                 revision: 1,
                 highlights,
+                outline: None,
             },
         );
         assert!(redraw_cmd.is_some());
@@ -551,6 +556,7 @@ mod tests {
                 document_id: doc_id,
                 revision: 1,
                 highlights: new_highlights,
+                outline: None,
             },
         );
         assert!(redraw_cmd.is_some());

@@ -129,6 +129,7 @@ pub fn default_bindings() -> Vec<Keybinding> {
         bind(KeyCode::Char('o'), cmd_shift, Command::FuzzyFileFinder),
         bind(KeyCode::Char('n'), cmd_shift, Command::NewTab), // Shift+Cmd+N
         bind(KeyCode::Char('w'), cmd, Command::CloseTab),
+        bind(KeyCode::Char('e'), cmd, Command::OpenRecentFiles), // Cmd+E
         // ====================================================================
         // Undo/Redo
         // ====================================================================

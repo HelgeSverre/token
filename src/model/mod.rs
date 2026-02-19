@@ -24,8 +24,8 @@ pub use status_bar::{
 };
 pub use ui::{
     CommandPaletteState, DropState, FileFinderState, FileMatch, FindReplaceField, FindReplaceState,
-    FocusTarget, GotoLineState, HoverRegion, ModalId, ModalState, SidebarResizeState,
-    ThemePickerState, UiState,
+    FocusTarget, GotoLineState, HoverRegion, ModalId, ModalState, OutlinePanelState,
+    RecentFilesState, SidebarResizeState, ThemePickerState, UiState,
 };
 pub use workspace::{FileExtension, FileNode, FileTree, Workspace};
 
@@ -33,6 +33,7 @@ use crate::config::EditorConfig;
 use crate::config_paths;
 #[cfg(debug_assertions)]
 use crate::debug_overlay::DebugOverlay;
+use crate::recent_files::RecentFiles;
 use crate::theme::{load_theme, Theme};
 use crate::util::{is_likely_binary, validate_file_for_opening, FileOpenError};
 use std::path::PathBuf;
@@ -402,6 +403,10 @@ pub struct AppModel {
     pub workspace: Option<Workspace>,
     /// Dock layout state (left/right/bottom panels)
     pub dock_layout: crate::panel::DockLayout,
+    /// Outline panel UI state (expand/collapse, selection, scroll)
+    pub outline_panel: crate::model::ui::OutlinePanelState,
+    /// Recent files list (persistent across sessions)
+    pub recent_files: RecentFiles,
     /// Debug overlay state (debug builds only)
     #[cfg(debug_assertions)]
     pub debug_overlay: Option<DebugOverlay>,
@@ -424,6 +429,9 @@ impl AppModel {
         // Load config and theme
         let (config, theme) = load_config_and_theme();
 
+        // Load recent files from disk
+        let recent_files = RecentFiles::load();
+
         // Create initial session with documents
         let InitialSession {
             editor_area,
@@ -441,6 +449,8 @@ impl AppModel {
             metrics,
             workspace: None,
             dock_layout: crate::panel::DockLayout::default(),
+            outline_panel: crate::model::ui::OutlinePanelState::default(),
+            recent_files,
             #[cfg(debug_assertions)]
             debug_overlay: Some(DebugOverlay::new()),
         }
@@ -462,6 +472,20 @@ impl AppModel {
                     .set_status(format!("Failed to open workspace: {}", e));
             }
         }
+    }
+
+    /// Record that a file was opened (adds to recent files list)
+    pub fn record_file_opened(&mut self, path: PathBuf) {
+        let workspace = self.workspace.as_ref().map(|ws| ws.root.clone());
+        self.recent_files.add(path, workspace);
+
+        // Save in background (fire and forget)
+        let recent = self.recent_files.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = recent.save() {
+                tracing::warn!("Failed to save recent files: {}", e);
+            }
+        });
     }
 
     /// Close the current workspace

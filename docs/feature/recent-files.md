@@ -2,7 +2,7 @@
 
 Persistent recent files list with quick access menu and integration with Quick Open.
 
-> **Status:** Planned
+> **Status:** Done (Phases 1–5)
 > **Priority:** P1
 > **Effort:** M
 > **Created:** 2025-12-19

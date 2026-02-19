@@ -382,6 +382,13 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
             let (l, _) = super::geometry::find_replace_layout(ww, wh, lh, state.replace_mode);
             l
         }
+        Some(ModalState::RecentFiles(state)) => {
+            let filtered = state.filtered_entries();
+            let (l, _) = super::geometry::file_finder_layout(
+                ww, wh, lh, filtered.len(), !state.input().is_empty(),
+            );
+            l
+        }
         None => return None,
     };
 

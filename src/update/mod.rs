@@ -6,6 +6,7 @@ mod app;
 mod csv;
 mod dock;
 mod document;
+mod outline;
 mod editor;
 pub mod layout;
 mod preview;
@@ -27,6 +28,7 @@ use tracing::{debug, span, Level};
 pub use app::{execute_command, update_app};
 pub use csv::update_csv;
 pub use dock::update_dock;
+pub use outline::update_outline;
 pub use document::update_document;
 pub use editor::update_editor;
 pub use layout::update_layout;
@@ -95,6 +97,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::Preview(m) => preview::update_preview(model, m),
         Msg::Workspace(m) => workspace::update_workspace(model, m),
         Msg::Dock(m) => dock::update_dock(model, m),
+        Msg::Outline(m) => outline::update_outline(model, m),
         Msg::TextEdit(context, m) => text_edit::update_text_edit(model, context, m),
     };
 
@@ -219,6 +222,7 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Preview(m) => format!("Preview::{:?}", m),
         Msg::Workspace(m) => format!("Workspace::{:?}", m),
         Msg::Dock(m) => format!("Dock::{:?}", m),
+        Msg::Outline(m) => format!("Outline::{:?}", m),
         Msg::TextEdit(ctx, m) => format!("TextEdit::{:?}::{:?}", ctx, m),
     }
 }

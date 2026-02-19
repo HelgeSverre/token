@@ -6,8 +6,8 @@ use crate::commands::{filter_commands, Cmd};
 use crate::messages::LayoutMsg;
 use crate::messages::{ModalMsg, UiMsg};
 use crate::model::{
-    AppModel, FileFinderState, GotoLineState, ModalId, ModalState, SegmentContent, SegmentId,
-    ThemePickerState, TransientMessage,
+    AppModel, FileFinderState, GotoLineState, ModalId, ModalState, RecentFilesState,
+    SegmentContent, SegmentId, ThemePickerState, TransientMessage,
 };
 use crate::theme::load_theme;
 use crate::update::layout::update_layout;
@@ -121,6 +121,16 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                         return Some(Cmd::Redraw);
                     }
                 }
+                ModalId::RecentFiles => {
+                    let current_file = model
+                        .editor_area
+                        .focused_document()
+                        .and_then(|doc| doc.file_path.clone());
+                    ModalState::RecentFiles(RecentFilesState::new(
+                        &model.recent_files,
+                        current_file.as_deref(),
+                    ))
+                }
             };
             model.ui.open_modal(state);
             Some(Cmd::Redraw)
@@ -209,6 +219,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                         state.set_input(&text);
                         update_file_finder_results(state);
                     }
+                    ModalState::RecentFiles(state) => {
+                        state.editable.set_content(&text);
+                        state.selected_index = 0;
+                    }
                 }
                 Some(Cmd::Redraw)
             } else {
@@ -235,6 +249,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                         state.editable.insert_char(ch);
                         update_file_finder_results(state);
                     }
+                    ModalState::RecentFiles(state) => {
+                        state.editable.insert_char(ch);
+                        state.selected_index = 0;
+                    }
                 }
                 Some(Cmd::Redraw)
             } else {
@@ -259,6 +277,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     ModalState::FileFinder(state) => {
                         state.editable.delete_backward();
                         update_file_finder_results(state);
+                    }
+                    ModalState::RecentFiles(state) => {
+                        state.editable.delete_backward();
+                        state.selected_index = 0;
                     }
                 }
                 Some(Cmd::Redraw)
@@ -285,6 +307,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                         state.editable.delete_word_backward();
                         update_file_finder_results(state);
                     }
+                    ModalState::RecentFiles(state) => {
+                        state.editable.delete_word_backward();
+                        state.selected_index = 0;
+                    }
                 }
                 Some(Cmd::Redraw)
             } else {
@@ -302,6 +328,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     }
                     ModalState::FileFinder(state) => state.editable.move_word_left(false),
                     ModalState::ThemePicker(_) => {}
+                    ModalState::RecentFiles(state) => state.editable.move_word_left(false),
                 }
             }
             Some(Cmd::Redraw)
@@ -317,6 +344,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     }
                     ModalState::FileFinder(state) => state.editable.move_word_right(false),
                     ModalState::ThemePicker(_) => {}
+                    ModalState::RecentFiles(state) => state.editable.move_word_right(false),
                 }
             }
             Some(Cmd::Redraw)
@@ -330,6 +358,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     ModalState::FindReplace(state) => state.focused_editable_mut().move_left(false),
                     ModalState::FileFinder(state) => state.editable.move_left(false),
                     ModalState::ThemePicker(_) => {}
+                    ModalState::RecentFiles(state) => state.editable.move_left(false),
                 }
             }
             Some(Cmd::Redraw)
@@ -345,6 +374,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     }
                     ModalState::FileFinder(state) => state.editable.move_right(false),
                     ModalState::ThemePicker(_) => {}
+                    ModalState::RecentFiles(state) => state.editable.move_right(false),
                 }
             }
             Some(Cmd::Redraw)
@@ -360,6 +390,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     }
                     ModalState::FileFinder(state) => state.editable.move_line_start(false),
                     ModalState::ThemePicker(_) => {}
+                    ModalState::RecentFiles(state) => state.editable.move_line_start(false),
                 }
             }
             Some(Cmd::Redraw)
@@ -375,6 +406,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     }
                     ModalState::FileFinder(state) => state.editable.move_line_end(false),
                     ModalState::ThemePicker(_) => {}
+                    ModalState::RecentFiles(state) => state.editable.move_line_end(false),
                 }
             }
             Some(Cmd::Redraw)
@@ -388,6 +420,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     ModalState::FindReplace(state) => state.focused_editable_mut().move_left(true),
                     ModalState::FileFinder(state) => state.editable.move_left(true),
                     ModalState::ThemePicker(_) => {}
+                    ModalState::RecentFiles(state) => state.editable.move_left(true),
                 }
             }
             Some(Cmd::Redraw)
@@ -401,6 +434,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     ModalState::FindReplace(state) => state.focused_editable_mut().move_right(true),
                     ModalState::FileFinder(state) => state.editable.move_right(true),
                     ModalState::ThemePicker(_) => {}
+                    ModalState::RecentFiles(state) => state.editable.move_right(true),
                 }
             }
             Some(Cmd::Redraw)
@@ -416,6 +450,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     }
                     ModalState::FileFinder(state) => state.editable.move_line_start(true),
                     ModalState::ThemePicker(_) => {}
+                    ModalState::RecentFiles(state) => state.editable.move_line_start(true),
                 }
             }
             Some(Cmd::Redraw)
@@ -431,6 +466,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     }
                     ModalState::FileFinder(state) => state.editable.move_line_end(true),
                     ModalState::ThemePicker(_) => {}
+                    ModalState::RecentFiles(state) => state.editable.move_line_end(true),
                 }
             }
             Some(Cmd::Redraw)
@@ -446,6 +482,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     }
                     ModalState::FileFinder(state) => state.editable.move_word_left(true),
                     ModalState::ThemePicker(_) => {}
+                    ModalState::RecentFiles(state) => state.editable.move_word_left(true),
                 }
             }
             Some(Cmd::Redraw)
@@ -461,6 +498,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     }
                     ModalState::FileFinder(state) => state.editable.move_word_right(true),
                     ModalState::ThemePicker(_) => {}
+                    ModalState::RecentFiles(state) => state.editable.move_word_right(true),
                 }
             }
             Some(Cmd::Redraw)
@@ -474,6 +512,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     ModalState::FindReplace(state) => state.focused_editable_mut().select_all(),
                     ModalState::FileFinder(state) => state.editable.select_all(),
                     ModalState::ThemePicker(_) => {}
+                    ModalState::RecentFiles(state) => state.editable.select_all(),
                 }
             }
             Some(Cmd::Redraw)
@@ -487,6 +526,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     ModalState::FindReplace(state) => state.focused_editable_mut().selected_text(),
                     ModalState::FileFinder(state) => state.editable.selected_text(),
                     ModalState::ThemePicker(_) => String::new(),
+                    ModalState::RecentFiles(state) => state.editable.selected_text(),
                 };
                 if !text.is_empty() {
                     if let Ok(mut clipboard) = arboard::Clipboard::new() {
@@ -532,6 +572,14 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                         t
                     }
                     ModalState::ThemePicker(_) => String::new(),
+                    ModalState::RecentFiles(state) => {
+                        let t = state.editable.selected_text();
+                        if !t.is_empty() {
+                            state.editable.delete_backward();
+                            state.selected_index = 0;
+                        }
+                        t
+                    }
                 };
                 if !text.is_empty() {
                     if let Ok(mut clipboard) = arboard::Clipboard::new() {
@@ -573,6 +621,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                                 update_file_finder_results(state);
                             }
                             ModalState::ThemePicker(_) => {}
+                            ModalState::RecentFiles(state) => {
+                                state.editable.insert_text(&filtered);
+                                state.selected_index = 0;
+                            }
                         }
                     }
                 }
@@ -598,6 +650,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                         update_file_finder_results(state);
                     }
                     ModalState::ThemePicker(_) => {}
+                    ModalState::RecentFiles(state) => {
+                        state.editable.delete_forward();
+                        state.selected_index = 0;
+                    }
                 }
                 Some(Cmd::Redraw)
             } else {
@@ -617,6 +673,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                         state.themes.get(state.selected_index).map(|t| t.id.clone())
                     }
                     ModalState::FileFinder(state) => {
+                        state.selected_index = state.selected_index.saturating_sub(1);
+                        None
+                    }
+                    ModalState::RecentFiles(state) => {
                         state.selected_index = state.selected_index.saturating_sub(1);
                         None
                     }
@@ -653,6 +713,13 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     }
                     ModalState::FileFinder(state) => {
                         let max_index = state.results.len().saturating_sub(1);
+                        state.selected_index =
+                            state.selected_index.saturating_add(1).min(max_index);
+                        None
+                    }
+                    ModalState::RecentFiles(state) => {
+                        let filtered = state.filtered_entries();
+                        let max_index = filtered.len().saturating_sub(1);
                         state.selected_index =
                             state.selected_index.saturating_add(1).min(max_index);
                         None
@@ -761,6 +828,16 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                         // Open selected file
                         if let Some(file_match) = state.results.get(state.selected_index) {
                             let path = file_match.path.clone();
+                            model.ui.close_modal();
+                            return update_layout(model, LayoutMsg::OpenFileInNewTab(path));
+                        }
+                        model.ui.close_modal();
+                        Some(Cmd::Redraw)
+                    }
+                    ModalState::RecentFiles(state) => {
+                        let filtered = state.filtered_entries();
+                        if let Some(entry) = filtered.get(state.selected_index) {
+                            let path = entry.path.clone();
                             model.ui.close_modal();
                             return update_layout(model, LayoutMsg::OpenFileInNewTab(path));
                         }

@@ -53,6 +53,11 @@ pub fn keymap_file() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("keymap.yaml"))
 }
 
+/// `~/.config/token-editor/recent.json`
+pub fn recent_files_path() -> Option<PathBuf> {
+    config_dir().map(|dir| dir.join("recent.json"))
+}
+
 /// `~/.config/token-editor/logs/`
 pub fn logs_dir() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("logs"))

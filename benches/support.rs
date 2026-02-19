@@ -38,6 +38,8 @@ pub fn make_model(lines: usize) -> AppModel {
         metrics: token::model::ScaledMetrics::default(),
         workspace: None,
         dock_layout: token::panel::DockLayout::default(),
+        outline_panel: token::model::OutlinePanelState::default(),
+        recent_files: token::recent_files::RecentFiles::default(),
         #[cfg(debug_assertions)]
         debug_overlay: None,
     }

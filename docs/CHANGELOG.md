@@ -7,6 +7,7 @@ All notable changes to rust-editor are documented in this file.
 ## v0.3.18 - 2026-02-19
 
 ### Added
+- Recent Files: Persistent recent files list (Cmd+E) — tracks files opened via any method (CLI, file dialog, quick open, drag-and-drop) and persists to `~/.config/token-editor/recent.json`. MRU-ordered list of up to 50 entries with fuzzy filtering, file type icons, and "time ago" timestamps. Pressing Cmd+E then Enter instantly swaps to the previously active file.
 - Editing: Auto-surround selection — select text and type `(`, `[`, `{`, `"`, `'`, or `` ` `` to wrap it (e.g., `hello` → `(hello)`). Works with multi-cursor.
 - Editing: Matching bracket highlighting — when cursor is adjacent to `()`, `[]`, or `{}`, both brackets are highlighted with a colored background.
 - Config: `auto_surround` setting to enable/disable auto-surround behavior (default: `true`)

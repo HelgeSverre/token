@@ -59,6 +59,21 @@ struct SidebarRenderContext {
     folder_icon_color: u32,
 }
 
+/// Context for outline panel rendering, holding constant values throughout tree traversal.
+struct OutlineRenderContext<'a> {
+    rect: crate::model::editor_area::Rect,
+    max_y: usize,
+    row_height: usize,
+    indent: f32,
+    scroll_offset: usize,
+    selected_index: Option<usize>,
+    text_color: u32,
+    selection_bg: u32,
+    selection_fg: u32,
+    icon_color: u32,
+    outline_panel: &'a crate::model::OutlinePanelState,
+}
+
 pub type GlyphCacheKey = (char, u32);
 
 pub type GlyphCache = HashMap<GlyphCacheKey, (Metrics, Vec<u8>)>;
@@ -1147,28 +1162,209 @@ impl Renderer {
             }
         }
 
-        // Get active panel info
         let active_panel = dock.active_panel();
-        let placeholder = active_panel
-            .map(crate::panels::PlaceholderPanel::new)
-            .unwrap_or_else(|| {
-                crate::panels::PlaceholderPanel::new(crate::panel::PanelId::TERMINAL)
-            });
 
-        // Draw panel title
-        let title = placeholder.title();
-        let title_x = rect.x + 8.0;
-        let title_y = rect.y + 8.0;
-        painter.draw(frame, title_x as usize, title_y as usize, title, text_color);
+        // Dispatch to panel-specific rendering
+        if active_panel == Some(crate::panel::PanelId::Outline) {
+            Self::render_outline_panel(frame, painter, model, rect, text_color, bg_color);
+        } else {
+            // Placeholder for other panels
+            let placeholder = active_panel
+                .map(crate::panels::PlaceholderPanel::new)
+                .unwrap_or_else(|| {
+                    crate::panels::PlaceholderPanel::new(crate::panel::PanelId::TERMINAL)
+                });
 
-        // Draw placeholder message centered
-        let message = placeholder.message();
-        let char_width = painter.char_width();
+            let title = placeholder.title();
+            let title_x = rect.x + 8.0;
+            let title_y = rect.y + 8.0;
+            painter.draw(frame, title_x as usize, title_y as usize, title, text_color);
+
+            let message = placeholder.message();
+            let char_width = painter.char_width();
+            let line_height = painter.line_height();
+            let text_width = message.len() as f32 * char_width;
+            let text_x = rect.x + (rect.width - text_width) / 2.0;
+            let text_y = rect.y + (rect.height - line_height as f32) / 2.0;
+            painter.draw(frame, text_x as usize, text_y as usize, message, text_color);
+        }
+    }
+
+    /// Render the outline panel showing document symbols as a tree
+    fn render_outline_panel(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        rect: crate::model::editor_area::Rect,
+        text_color: u32,
+        _bg_color: u32,
+    ) {
+        let theme = &model.theme.sidebar;
+        let selection_bg = theme.selection_background.to_argb_u32();
+        let selection_fg = theme.selection_foreground.to_argb_u32();
+        let folder_icon_color = theme.folder_icon.to_argb_u32();
+
         let line_height = painter.line_height();
-        let text_width = message.len() as f32 * char_width;
-        let text_x = rect.x + (rect.width - text_width) / 2.0;
-        let text_y = rect.y + (rect.height - line_height as f32) / 2.0;
-        painter.draw(frame, text_x as usize, text_y as usize, message, text_color);
+        let row_height = model.metrics.file_tree_row_height;
+        let indent = model.metrics.file_tree_indent;
+
+        // Title bar
+        let title_x = rect.x + 8.0;
+        let title_y = rect.y + 4.0;
+        painter.draw(frame, title_x as usize, title_y as usize, "Outline", text_color);
+
+        let content_y = rect.y + row_height as f32 + 4.0;
+        let content_height = rect.height - row_height as f32 - 4.0;
+
+        // Get outline from the focused document
+        let outline = model
+            .editor_area
+            .focused_document()
+            .and_then(|doc| doc.outline.as_ref());
+
+        let outline = match outline {
+            Some(o) if !o.is_empty() => o,
+            _ => {
+                // Show "No outline available" centered
+                let msg = "No outline available";
+                let char_width = painter.char_width();
+                let text_width = msg.len() as f32 * char_width;
+                let text_x = rect.x + (rect.width - text_width) / 2.0;
+                let text_y = content_y + (content_height - line_height as f32) / 2.0;
+                painter.draw(frame, text_x as usize, text_y as usize, msg, text_color);
+                return;
+            }
+        };
+
+        let scroll_offset = model.outline_panel.scroll_offset;
+        let selected_index = model.outline_panel.selected_index;
+
+        let mut y = content_y as usize;
+        let mut visible_index: usize = 0;
+        let max_y = (content_y + content_height) as usize;
+
+        // Recursive render function for outline nodes
+        fn render_outline_node(
+            frame: &mut Frame,
+            painter: &mut TextPainter,
+            node: &crate::outline::OutlineNode,
+            ctx: &OutlineRenderContext,
+            y: &mut usize,
+            visible_index: &mut usize,
+            depth: usize,
+        ) {
+            if *visible_index >= ctx.scroll_offset && *y >= ctx.max_y {
+                return;
+            }
+
+            let idx = *visible_index;
+            *visible_index += 1;
+
+            let is_visible_row = idx >= ctx.scroll_offset;
+
+            if is_visible_row {
+                if *y >= ctx.max_y {
+                    return;
+                }
+
+                let x_offset = (depth as f32 * ctx.indent) as usize + ctx.rect.x as usize + 8;
+                let is_selected = ctx.selected_index == Some(idx);
+
+                if is_selected {
+                    frame.fill_rect_blended(
+                        Rect::new(
+                            ctx.rect.x,
+                            *y as f32,
+                            ctx.rect.width,
+                            ctx.row_height as f32,
+                        ),
+                        ctx.selection_bg,
+                    );
+                }
+
+                // Draw expand/collapse indicator for collapsible nodes
+                let icon_x = x_offset;
+                let text_x = x_offset + 14; // Space for indicator (or alignment)
+                let text_y = *y + 2;
+
+                if node.is_collapsible() {
+                    let is_collapsed = ctx.outline_panel.is_collapsed(node);
+                    let indicator = if is_collapsed { "+" } else { "-" };
+                    let icon_color = if is_selected { ctx.selection_fg } else { ctx.icon_color };
+                    painter.draw(frame, icon_x, text_y, indicator, icon_color);
+                }
+
+                // Draw kind label + name
+                let fg = if is_selected { ctx.selection_fg } else { ctx.text_color };
+                let label = node.kind.label();
+
+                // Draw label in dimmer color, then name
+                let label_color = if is_selected { ctx.selection_fg } else { ctx.icon_color };
+                painter.draw(frame, text_x, text_y, label, label_color);
+
+                let name_x = text_x + (label.len() + 1) * painter.char_width() as usize;
+
+                // Truncate name if needed
+                let right_padding = 8;
+                let available = (ctx.rect.x as usize + ctx.rect.width as usize).saturating_sub(name_x + right_padding);
+                let char_w = painter.char_width() as usize;
+                let max_chars = if char_w > 0 { available / char_w } else { 80 };
+
+                let name_chars: usize = node.name.chars().count();
+                if name_chars > max_chars && max_chars > 1 {
+                    let display: String = node.name.chars().take(max_chars.saturating_sub(1)).chain(std::iter::once('…')).collect();
+                    painter.draw(frame, name_x, text_y, &display, fg);
+                } else {
+                    painter.draw(frame, name_x, text_y, &node.name, fg);
+                }
+
+                *y += ctx.row_height;
+            }
+
+            // Recurse into children if expanded
+            if node.is_collapsible() && !ctx.outline_panel.is_collapsed(node) {
+                for child in &node.children {
+                    render_outline_node(
+                        frame,
+                        painter,
+                        child,
+                        ctx,
+                        y,
+                        visible_index,
+                        depth + 1,
+                    );
+                }
+            }
+        }
+
+        let ctx = OutlineRenderContext {
+            rect,
+            max_y,
+            row_height,
+            indent,
+            scroll_offset,
+            selected_index,
+            text_color,
+            selection_bg,
+            selection_fg,
+            icon_color: folder_icon_color,
+            outline_panel: &model.outline_panel,
+        };
+
+        for node in &outline.roots {
+            render_outline_node(
+                frame,
+                painter,
+                node,
+                &ctx,
+                &mut y,
+                &mut visible_index,
+                0,
+            );
+            if visible_index >= scroll_offset && y >= max_y {
+                break;
+            }
+        }
     }
 
     /// Render the gutter (line numbers and border) for an editor group.
@@ -2356,6 +2552,109 @@ impl Renderer {
                         layout.x + 12,
                         results_y,
                         "No files match your query",
+                        dim_color,
+                    );
+                }
+            }
+
+            ModalState::RecentFiles(state) => {
+                let filtered = state.filtered_entries();
+                let max_visible_items = 10;
+
+                let (layout, w) = geometry::file_finder_layout(
+                    window_width,
+                    window_height,
+                    line_height,
+                    filtered.len(),
+                    !state.input().is_empty(),
+                );
+
+                frame.draw_bordered_rect(
+                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
+                );
+
+                // Title
+                let title_r = layout.widget(w.title);
+                painter.draw(frame, title_r.x, title_r.y, "Recent Files", fg_color);
+
+                // Input field
+                let input_r = layout.widget(w.input);
+                frame.fill_rect_px(input_r.x, input_r.y, input_r.w, input_r.h, input_bg);
+
+                let padx = geometry::ModalSpacing::INPUT_PAD_X;
+                let text_x = input_r.x + padx;
+                let text_y = input_r.y + (input_r.h.saturating_sub(line_height)) / 2;
+                let text_width = input_r.w.saturating_sub(padx * 2);
+                let opts = TextFieldOptions {
+                    x: text_x,
+                    y: text_y,
+                    width: text_width,
+                    height: line_height,
+                    char_width,
+                    text_color: fg_color,
+                    cursor_color: highlight_color,
+                    selection_color: selection_bg,
+                    cursor_visible: model.ui.cursor_visible,
+                    scroll_x: 0,
+                };
+                TextFieldRenderer::render(frame, painter, &state.editable, &opts);
+
+                // Results list
+                let results_y = if let Some(list_idx) = w.list {
+                    layout.widget(list_idx).y
+                } else {
+                    input_r.y + input_r.h + geometry::ModalSpacing::GAP_MD
+                };
+                let clamped_selected = state.selected_index.min(filtered.len().saturating_sub(1));
+                let dim_color = 0xFF888888;
+
+                let scroll_offset = if clamped_selected >= max_visible_items {
+                    clamped_selected + 1 - max_visible_items
+                } else {
+                    0
+                };
+
+                for (i, entry) in filtered
+                    .iter()
+                    .skip(scroll_offset)
+                    .take(max_visible_items)
+                    .enumerate()
+                {
+                    let actual_index = scroll_offset + i;
+                    let item_y = results_y + i * line_height;
+                    let is_selected = actual_index == clamped_selected;
+
+                    if is_selected {
+                        frame.fill_rect_px(
+                            layout.x + 4,
+                            item_y,
+                            layout.w - 8,
+                            line_height,
+                            selection_bg,
+                        );
+                    }
+
+                    let icon = crate::model::FileExtension::from_path(&entry.path).icon();
+                    let icon_x = layout.x + 12;
+                    painter.draw(frame, icon_x, item_y, icon, fg_color);
+
+                    let display = entry.display_path();
+                    let name_x = layout.x + 36;
+                    painter.draw(frame, name_x, item_y, &display, fg_color);
+
+                    // Time ago (right-aligned, dimmed)
+                    let time_str = entry.time_ago();
+                    let time_width = (time_str.len() as f32 * char_width) as usize;
+                    let time_x = (layout.x + layout.w).saturating_sub(time_width + 12);
+                    painter.draw(frame, time_x, item_y, &time_str, dim_color);
+                }
+
+                if filtered.is_empty() && !state.input().is_empty() {
+                    painter.draw(
+                        frame,
+                        layout.x + 12,
+                        results_y,
+                        "No recent files match your query",
                         dim_color,
                     );
                 }

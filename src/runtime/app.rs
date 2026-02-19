@@ -99,6 +99,17 @@ impl App {
 
         let mut model = AppModel::new(window_width, window_height, 1.0, file_paths);
 
+        // Record CLI-opened files in recent files list
+        let cli_paths: Vec<_> = model
+            .editor_area
+            .documents
+            .values()
+            .filter_map(|doc| doc.file_path.clone())
+            .collect();
+        for path in cli_paths {
+            model.record_file_opened(path);
+        }
+
         // Open workspace if specified and start file watcher
         let fs_watcher = if let Some(root) = workspace_root {
             model.open_workspace(root.clone());
@@ -804,10 +815,21 @@ impl App {
 
                     // Dock panels: consume scroll events but don't route to editor
                     // Future: could route to panel-specific scroll handlers
-                    HoverRegion::Dock(_position) => {
-                        // Consume the scroll event to prevent bleeding into editor
-                        // TODO: Implement per-panel scroll handling when panels have scrollable content
-                        None
+                    HoverRegion::Dock(position) => {
+                        // Route scroll to outline panel if it's the active panel
+                        let active_panel = match position {
+                            token::panel::DockPosition::Left => self.model.dock_layout.left.active_panel(),
+                            token::panel::DockPosition::Right => self.model.dock_layout.right.active_panel(),
+                            token::panel::DockPosition::Bottom => self.model.dock_layout.bottom.active_panel(),
+                        };
+                        if active_panel == Some(token::panel::PanelId::Outline) && v_delta != 0 {
+                            update(
+                                &mut self.model,
+                                Msg::Outline(token::messages::OutlineMsg::Scroll { lines: v_delta }),
+                            )
+                        } else {
+                            None
+                        }
                     }
 
                     // Preview panes: consume scroll but don't route to editor
@@ -1517,21 +1539,30 @@ fn syntax_worker_loop(rx: Receiver<SyntaxParseRequest>, msg_tx: Sender<Msg>) {
                 req.revision,
             );
 
+            // Extract outline from the cached tree (just parsed above)
+            let outline = parser_state
+                .get_cached_tree(req.document_id)
+                .map(|(tree, lang)| {
+                    token::outline::extract_outline(tree, &req.source, lang, req.revision)
+                });
+
             let line_count = highlights.lines.len();
             let token_count: usize = highlights.lines.values().map(|lh| lh.tokens.len()).sum();
 
             tracing::debug!(
-                "Worker sending ParseCompleted: doc={} rev={} lines={} tokens={}",
+                "Worker sending ParseCompleted: doc={} rev={} lines={} tokens={} outline={}",
                 req.document_id.0,
                 req.revision,
                 line_count,
-                token_count
+                token_count,
+                outline.as_ref().map(|o| o.roots.len()).unwrap_or(0)
             );
 
             let _ = msg_tx.send(Msg::Syntax(SyntaxMsg::ParseCompleted {
                 document_id: req.document_id,
                 revision: req.revision,
                 highlights,
+                outline,
             }));
         }
     }

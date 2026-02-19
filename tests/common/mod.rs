@@ -54,6 +54,8 @@ pub fn test_model(text: &str, line: usize, column: usize) -> AppModel {
         metrics: token::model::ScaledMetrics::default(),
         workspace: None,
         dock_layout: token::panel::DockLayout::default(),
+        outline_panel: token::model::OutlinePanelState::default(),
+        recent_files: token::recent_files::RecentFiles::default(),
         #[cfg(debug_assertions)]
         debug_overlay: None,
     }
@@ -117,6 +119,8 @@ pub fn test_model_with_selection(
         metrics: token::model::ScaledMetrics::default(),
         workspace: None,
         dock_layout: token::panel::DockLayout::default(),
+        outline_panel: token::model::OutlinePanelState::default(),
+        recent_files: token::recent_files::RecentFiles::default(),
         #[cfg(debug_assertions)]
         debug_overlay: None,
     }
@@ -177,6 +181,8 @@ pub fn test_model_multi_cursor(text: &str, positions: &[(usize, usize)]) -> AppM
         metrics: token::model::ScaledMetrics::default(),
         workspace: None,
         dock_layout: token::panel::DockLayout::default(),
+        outline_panel: token::model::OutlinePanelState::default(),
+        recent_files: token::recent_files::RecentFiles::default(),
         #[cfg(debug_assertions)]
         debug_overlay: None,
     }

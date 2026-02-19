@@ -78,6 +78,9 @@ pub enum CommandId {
     CopyAbsolutePath,
     CopyRelativePath,
 
+    // Recent files
+    OpenRecentFiles,
+
     // Application
     Quit,
 
@@ -274,6 +277,11 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: None,
     },
     CommandDef {
+        id: CommandId::OpenRecentFiles,
+        label: "Open Recent Files",
+        keybinding: Some("⌘E"),
+    },
+    CommandDef {
         id: CommandId::Quit,
         label: "Quit",
         keybinding: Some("⌘Q"),
@@ -417,6 +425,7 @@ impl CommandId {
             CommandId::RevealInFinder => None,
             CommandId::CopyAbsolutePath => None,
             CommandId::CopyRelativePath => None,
+            CommandId::OpenRecentFiles => Some(KeymapCommand::OpenRecentFiles),
             CommandId::Quit => Some(KeymapCommand::Quit),
             #[cfg(debug_assertions)]
             CommandId::TogglePerfOverlay => None,

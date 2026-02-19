@@ -109,6 +109,9 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                     model.editor_mut().collapse_to_primary();
                     model.ui.set_status(format!("Loaded: {}", path.display()));
 
+                    // Record in recent files
+                    model.record_file_opened(path.clone());
+
                     // Trigger syntax parsing if language has highlighting
                     if language.has_highlighting() {
                         if let Some(doc_id) = model.document().id {
@@ -361,6 +364,9 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
                 model.ui.set_status("No file path (unsaved)");
                 Some(Cmd::Redraw)
             }
+        }
+        CommandId::OpenRecentFiles => {
+            update_ui(model, UiMsg::ToggleModal(ModalId::RecentFiles))
         }
         CommandId::Quit => update_app(model, AppMsg::Quit),
         #[cfg(debug_assertions)]

@@ -390,6 +390,7 @@ pub enum SyntaxMsg {
         document_id: crate::model::editor_area::DocumentId,
         revision: u64,
         highlights: crate::syntax::SyntaxHighlights,
+        outline: Option<crate::outline::OutlineData>,
     },
     /// Language changed for a document (triggers re-parse)
     LanguageChanged {
@@ -520,6 +521,29 @@ pub enum CsvMsg {
     EditPaste,
 }
 
+/// Outline panel messages
+#[derive(Debug, Clone)]
+pub enum OutlineMsg {
+    /// Jump to a symbol at the given line
+    JumpToSymbol { line: usize, col: usize },
+    /// Toggle expand/collapse of a node
+    ToggleNode { line: usize, name: String },
+    /// Click on a row in the outline panel
+    ClickRow { index: usize, click_count: u8, on_chevron: bool },
+    /// Navigate up in the outline
+    SelectPrevious,
+    /// Navigate down in the outline
+    SelectNext,
+    /// Expand selected node
+    ExpandSelected,
+    /// Collapse selected node (or go to parent)
+    CollapseSelected,
+    /// Jump to the selected node
+    OpenSelected,
+    /// Scroll the outline panel
+    Scroll { lines: i32 },
+}
+
 /// Dock-level messages (panel switching, resizing, visibility)
 #[derive(Debug, Clone)]
 pub enum DockMsg {
@@ -642,6 +666,8 @@ pub enum Msg {
     Workspace(WorkspaceMsg),
     /// Dock messages (panel visibility, focus, resize)
     Dock(DockMsg),
+    /// Outline panel messages
+    Outline(OutlineMsg),
     /// Unified text editing messages (Phase 2 - editable system)
     TextEdit(EditContext, TextEditMsg),
 }

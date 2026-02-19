@@ -65,6 +65,8 @@ pub struct Document {
     pub language: LanguageId,
     /// Current syntax highlights (updated asynchronously)
     pub syntax_highlights: Option<SyntaxHighlights>,
+    /// Parsed outline data (functions, structs, etc.)
+    pub outline: Option<crate::outline::OutlineData>,
     /// Document revision counter (incremented on each edit)
     /// Used for staleness checking in async parsing
     pub revision: u64,
@@ -83,6 +85,7 @@ impl Document {
             redo_stack: Vec::new(),
             language: LanguageId::PlainText,
             syntax_highlights: None,
+            outline: None,
             revision: 0,
         }
     }
@@ -99,6 +102,7 @@ impl Document {
             redo_stack: Vec::new(),
             language: LanguageId::PlainText,
             syntax_highlights: None,
+            outline: None,
             revision: 0,
         }
     }
@@ -117,6 +121,7 @@ impl Document {
             redo_stack: Vec::new(),
             language,
             syntax_highlights: None,
+            outline: None,
             revision: 0,
         })
     }
@@ -137,6 +142,7 @@ impl Document {
             redo_stack: Vec::new(),
             language,
             syntax_highlights: None,
+            outline: None,
             revision: 0,
         }
     }

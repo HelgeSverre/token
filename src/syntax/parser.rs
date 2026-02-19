@@ -140,6 +140,13 @@ pub struct ParserState {
 }
 
 impl ParserState {
+    /// Get cached tree for a document (for outline extraction on worker thread)
+    pub fn get_cached_tree(&self, doc_id: DocumentId) -> Option<(&tree_sitter::Tree, LanguageId)> {
+        self.doc_cache
+            .get(&doc_id)
+            .map(|state| (&state.tree, state.language))
+    }
+
     /// Create a new parser state with initialized languages
     pub fn new() -> Self {
         let mut state = Self {

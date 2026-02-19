@@ -76,6 +76,8 @@ pub enum ModalId {
     ThemePicker,
     /// File finder (Shift+Cmd+O) - fuzzy search files in workspace
     FileFinder,
+    /// Recent files list (Cmd+E)
+    RecentFiles,
 }
 
 /// State for the command palette modal
@@ -320,6 +322,63 @@ impl FileFinderState {
     }
 }
 
+/// State for the recent files modal
+#[derive(Debug, Clone)]
+pub struct RecentFilesState {
+    /// Index of selected file
+    pub selected_index: usize,
+    /// Cached entries for display
+    pub entries: Vec<crate::recent_files::RecentEntry>,
+    /// Editable state for optional filter input
+    pub editable: EditableState<StringBuffer>,
+}
+
+impl RecentFilesState {
+    /// Create from the current recent files list, excluding the current file
+    ///
+    /// The current file is excluded so that the topmost entry is the *previous*
+    /// file — pressing Cmd+E then Enter immediately swaps to it.
+    pub fn new(
+        recent: &crate::recent_files::RecentFiles,
+        current_file: Option<&std::path::Path>,
+    ) -> Self {
+        let entries = if let Some(current) = current_file {
+            recent
+                .entries
+                .iter()
+                .filter(|e| e.path != current)
+                .cloned()
+                .collect()
+        } else {
+            recent.entries.clone()
+        };
+        Self {
+            selected_index: 0,
+            entries,
+            editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
+        }
+    }
+
+    /// Get the filter text
+    pub fn input(&self) -> String {
+        self.editable.text()
+    }
+
+    /// Get filtered entries based on current input
+    pub fn filtered_entries(&self) -> Vec<&crate::recent_files::RecentEntry> {
+        let filter = self.input();
+        if filter.is_empty() {
+            self.entries.iter().collect()
+        } else {
+            let filter_lower = filter.to_lowercase();
+            self.entries
+                .iter()
+                .filter(|e| e.display_path().to_lowercase().contains(&filter_lower))
+                .collect()
+        }
+    }
+}
+
 /// Union of all modal states
 #[derive(Debug, Clone)]
 pub enum ModalState {
@@ -328,6 +387,7 @@ pub enum ModalState {
     FindReplace(FindReplaceState),
     ThemePicker(ThemePickerState),
     FileFinder(FileFinderState),
+    RecentFiles(RecentFilesState),
 }
 
 impl ModalState {
@@ -339,6 +399,7 @@ impl ModalState {
             ModalState::FindReplace(_) => ModalId::FindReplace,
             ModalState::ThemePicker(_) => ModalId::ThemePicker,
             ModalState::FileFinder(_) => ModalId::FileFinder,
+            ModalState::RecentFiles(_) => ModalId::RecentFiles,
         }
     }
 }
@@ -421,6 +482,37 @@ pub struct SidebarResizeState {
     pub start_x: f64,
     /// Original sidebar width (logical pixels) before drag started
     pub original_width: f32,
+}
+
+/// UI state for the outline panel
+#[derive(Debug, Clone, Default)]
+pub struct OutlinePanelState {
+    /// Index of selected item in flattened visible list
+    pub selected_index: Option<usize>,
+    /// Scroll offset (in items)
+    pub scroll_offset: usize,
+    /// Collapsed node keys: (kind, range) for unique identification
+    pub collapsed: std::collections::HashSet<(crate::outline::OutlineKind, crate::outline::OutlineRange)>,
+}
+
+impl OutlinePanelState {
+    /// Get a stable key for a node (for tracking collapse state)
+    pub fn node_key(node: &crate::outline::OutlineNode) -> (crate::outline::OutlineKind, crate::outline::OutlineRange) {
+        (node.kind, node.range)
+    }
+
+    /// Check if a node is collapsed
+    pub fn is_collapsed(&self, node: &crate::outline::OutlineNode) -> bool {
+        self.collapsed.contains(&Self::node_key(node))
+    }
+
+    /// Toggle collapse state of a node
+    pub fn toggle_collapsed(&mut self, node: &crate::outline::OutlineNode) {
+        let key = Self::node_key(node);
+        if !self.collapsed.remove(&key) {
+            self.collapsed.insert(key);
+        }
+    }
 }
 
 /// UI state - status messages and cursor animation
@@ -601,5 +693,97 @@ impl UiState {
 impl Default for UiState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::recent_files::{RecentEntry, RecentFiles};
+
+    fn make_entry(path: &str, workspace: Option<&str>) -> RecentEntry {
+        RecentEntry {
+            path: PathBuf::from(path),
+            opened_at: 0,
+            workspace: workspace.map(PathBuf::from),
+            open_count: 1,
+        }
+    }
+
+    fn make_recent(entries: Vec<RecentEntry>) -> RecentFiles {
+        RecentFiles {
+            version: 1,
+            entries,
+        }
+    }
+
+    #[test]
+    fn test_recent_files_state_excludes_current_file() {
+        let recent = make_recent(vec![
+            make_entry("/a.rs", None),
+            make_entry("/b.rs", None),
+            make_entry("/c.rs", None),
+        ]);
+        let state = RecentFilesState::new(&recent, Some(std::path::Path::new("/a.rs")));
+        assert_eq!(state.entries.len(), 2);
+        assert_eq!(state.entries[0].path, PathBuf::from("/b.rs"));
+        assert_eq!(state.entries[1].path, PathBuf::from("/c.rs"));
+    }
+
+    #[test]
+    fn test_recent_files_state_no_current_file() {
+        let recent = make_recent(vec![
+            make_entry("/a.rs", None),
+            make_entry("/b.rs", None),
+        ]);
+        let state = RecentFilesState::new(&recent, None);
+        assert_eq!(state.entries.len(), 2);
+    }
+
+    #[test]
+    fn test_recent_files_state_filter() {
+        let recent = make_recent(vec![
+            make_entry("/project/src/main.rs", Some("/project")),
+            make_entry("/project/Cargo.toml", Some("/project")),
+            make_entry("/other/README.md", None),
+        ]);
+        let mut state = RecentFilesState::new(&recent, None);
+
+        // No filter — all entries
+        assert_eq!(state.filtered_entries().len(), 3);
+
+        // Filter by "main"
+        state.editable.set_content("main");
+        let filtered = state.filtered_entries();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].path, PathBuf::from("/project/src/main.rs"));
+    }
+
+    #[test]
+    fn test_recent_files_state_filter_case_insensitive() {
+        let recent = make_recent(vec![
+            make_entry("/project/src/Main.rs", Some("/project")),
+        ]);
+        let mut state = RecentFilesState::new(&recent, None);
+        state.editable.set_content("main");
+        assert_eq!(state.filtered_entries().len(), 1);
+    }
+
+    #[test]
+    fn test_recent_files_state_empty() {
+        let recent = RecentFiles::default();
+        let state = RecentFilesState::new(&recent, None);
+        assert!(state.entries.is_empty());
+        assert_eq!(state.selected_index, 0);
+    }
+
+    #[test]
+    fn test_recent_files_state_initial_selection() {
+        let recent = make_recent(vec![
+            make_entry("/a.rs", None),
+            make_entry("/b.rs", None),
+        ]);
+        let state = RecentFilesState::new(&recent, None);
+        assert_eq!(state.selected_index, 0);
     }
 }

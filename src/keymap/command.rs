@@ -170,6 +170,8 @@ pub enum Command {
     ToggleGotoLine,
     /// Toggle find/replace dialog
     ToggleFindReplace,
+    /// Open recent files modal
+    OpenRecentFiles,
 
     // ========================================================================
     // Layout (Tabs/Splits)
@@ -382,6 +384,7 @@ impl Command {
             }
             ToggleGotoLine => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::GotoLine))],
             ToggleFindReplace => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::FindReplace))],
+            OpenRecentFiles => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::RecentFiles))],
 
             // Layout
             NewTab => vec![Msg::Layout(LayoutMsg::NewTab)],
@@ -478,6 +481,7 @@ impl Command {
             Command::ToggleCommandPalette
                 | Command::ToggleGotoLine
                 | Command::ToggleFindReplace
+                | Command::OpenRecentFiles
                 | Command::FuzzyFileFinder
                 | Command::ToggleSidebar
                 | Command::ToggleFileExplorer
@@ -563,6 +567,7 @@ impl Command {
             ToggleCommandPalette => "Command Palette",
             ToggleGotoLine => "Go to Line",
             ToggleFindReplace => "Find and Replace",
+            OpenRecentFiles => "Open Recent Files",
 
             NewTab => "New Tab",
             CloseTab => "Close Tab",

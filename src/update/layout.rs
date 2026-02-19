@@ -65,6 +65,8 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
             if model.editor_area.groups.contains_key(&group_id) {
                 model.editor_area.focused_group_id = group_id;
             }
+            model.outline_panel.scroll_offset = 0;
+            model.outline_panel.selected_index = None;
             Some(Cmd::redraw_editor())
         }
 
@@ -116,6 +118,8 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                 }
             }
             close_preview_if_not_markdown(model);
+            model.outline_panel.scroll_offset = 0;
+            model.outline_panel.selected_index = None;
             Some(Cmd::redraw_editor())
         }
 
@@ -130,6 +134,8 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                 }
             }
             close_preview_if_not_markdown(model);
+            model.outline_panel.scroll_offset = 0;
+            model.outline_panel.selected_index = None;
             Some(Cmd::redraw_editor())
         }
 
@@ -140,6 +146,8 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                 }
             }
             close_preview_if_not_markdown(model);
+            model.outline_panel.scroll_offset = 0;
+            model.outline_panel.selected_index = None;
             Some(Cmd::redraw_editor())
         }
 
@@ -262,6 +270,9 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
         }
     };
     model.editor_area.documents.insert(doc_id, document);
+
+    // Record in recent files
+    model.record_file_opened(path);
 
     // 4. Create new editor state for this document
     let editor_id = model.editor_area.next_editor_id();
