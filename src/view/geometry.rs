@@ -1089,10 +1089,7 @@ pub fn command_palette_layout(
     };
 
     let layout = ModalLayout::build(v, modal_width, window_width, window_height);
-    (
-        layout,
-        CommandPaletteWidgets { title, input, list },
-    )
+    (layout, CommandPaletteWidgets { title, input, list })
 }
 
 /// Layout indices for FileFinder modal widgets
@@ -1479,7 +1476,10 @@ mod tests {
 
     #[test]
     fn test_input_height() {
-        assert_eq!(ModalLayout::input_height(20), 20 + ModalSpacing::INPUT_PAD_Y);
+        assert_eq!(
+            ModalLayout::input_height(20),
+            20 + ModalSpacing::INPUT_PAD_Y
+        );
     }
 
     // ====================================================================

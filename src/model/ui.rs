@@ -492,12 +492,15 @@ pub struct OutlinePanelState {
     /// Scroll offset (in items)
     pub scroll_offset: usize,
     /// Collapsed node keys: (kind, range) for unique identification
-    pub collapsed: std::collections::HashSet<(crate::outline::OutlineKind, crate::outline::OutlineRange)>,
+    pub collapsed:
+        std::collections::HashSet<(crate::outline::OutlineKind, crate::outline::OutlineRange)>,
 }
 
 impl OutlinePanelState {
     /// Get a stable key for a node (for tracking collapse state)
-    pub fn node_key(node: &crate::outline::OutlineNode) -> (crate::outline::OutlineKind, crate::outline::OutlineRange) {
+    pub fn node_key(
+        node: &crate::outline::OutlineNode,
+    ) -> (crate::outline::OutlineKind, crate::outline::OutlineRange) {
         (node.kind, node.range)
     }
 
@@ -732,10 +735,7 @@ mod tests {
 
     #[test]
     fn test_recent_files_state_no_current_file() {
-        let recent = make_recent(vec![
-            make_entry("/a.rs", None),
-            make_entry("/b.rs", None),
-        ]);
+        let recent = make_recent(vec![make_entry("/a.rs", None), make_entry("/b.rs", None)]);
         let state = RecentFilesState::new(&recent, None);
         assert_eq!(state.entries.len(), 2);
     }
@@ -761,9 +761,7 @@ mod tests {
 
     #[test]
     fn test_recent_files_state_filter_case_insensitive() {
-        let recent = make_recent(vec![
-            make_entry("/project/src/Main.rs", Some("/project")),
-        ]);
+        let recent = make_recent(vec![make_entry("/project/src/Main.rs", Some("/project"))]);
         let mut state = RecentFilesState::new(&recent, None);
         state.editable.set_content("main");
         assert_eq!(state.filtered_entries().len(), 1);
@@ -779,10 +777,7 @@ mod tests {
 
     #[test]
     fn test_recent_files_state_initial_selection() {
-        let recent = make_recent(vec![
-            make_entry("/a.rs", None),
-            make_entry("/b.rs", None),
-        ]);
+        let recent = make_recent(vec![make_entry("/a.rs", None), make_entry("/b.rs", None)]);
         let state = RecentFilesState::new(&recent, None);
         assert_eq!(state.selected_index, 0);
     }

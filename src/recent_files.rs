@@ -289,10 +289,7 @@ mod tests {
         recent.add(PathBuf::from("/a.rs"), None);
         assert!(recent.entries[0].workspace.is_none());
 
-        recent.add(
-            PathBuf::from("/a.rs"),
-            Some(PathBuf::from("/workspace")),
-        );
+        recent.add(PathBuf::from("/a.rs"), Some(PathBuf::from("/workspace")));
         assert_eq!(
             recent.entries[0].workspace,
             Some(PathBuf::from("/workspace"))
@@ -302,10 +299,7 @@ mod tests {
     #[test]
     fn test_workspace_preserved_on_reopen_without_workspace() {
         let mut recent = RecentFiles::default();
-        recent.add(
-            PathBuf::from("/a.rs"),
-            Some(PathBuf::from("/workspace")),
-        );
+        recent.add(PathBuf::from("/a.rs"), Some(PathBuf::from("/workspace")));
         // Reopen without workspace — original workspace should be kept
         recent.add(PathBuf::from("/a.rs"), None);
         assert_eq!(
@@ -329,10 +323,7 @@ mod tests {
         assert_eq!(loaded.entries.len(), 2);
         assert_eq!(loaded.entries[0].path, PathBuf::from("/b.rs"));
         assert_eq!(loaded.entries[1].path, PathBuf::from("/a.rs"));
-        assert_eq!(
-            loaded.entries[1].workspace,
-            Some(PathBuf::from("/project"))
-        );
+        assert_eq!(loaded.entries[1].workspace, Some(PathBuf::from("/project")));
         assert_eq!(loaded.version, 1);
     }
 

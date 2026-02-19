@@ -377,7 +377,10 @@ fn handle_left_click(
         }
 
         // Dock content area - handle panel-specific interactions
-        HitTarget::DockContent { position, active_panel_id } => {
+        HitTarget::DockContent {
+            position,
+            active_panel_id,
+        } => {
             // Focus the dock first
             update(
                 model,

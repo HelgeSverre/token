@@ -529,7 +529,11 @@ pub enum OutlineMsg {
     /// Toggle expand/collapse of a node
     ToggleNode { line: usize, name: String },
     /// Click on a row in the outline panel
-    ClickRow { index: usize, click_count: u8, on_chevron: bool },
+    ClickRow {
+        index: usize,
+        click_count: u8,
+        on_chevron: bool,
+    },
     /// Navigate up in the outline
     SelectPrevious,
     /// Navigate down in the outline

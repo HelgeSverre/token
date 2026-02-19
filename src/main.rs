@@ -104,7 +104,7 @@ mod tests {
             workspace: None,
             dock_layout: token::panel::DockLayout::default(),
             outline_panel: token::model::OutlinePanelState::default(),
-        recent_files: token::recent_files::RecentFiles::default(),
+            recent_files: token::recent_files::RecentFiles::default(),
             #[cfg(debug_assertions)]
             debug_overlay: None,
         }
@@ -687,7 +687,7 @@ mod tests {
             workspace: None,
             dock_layout: token::panel::DockLayout::default(),
             outline_panel: token::model::OutlinePanelState::default(),
-        recent_files: token::recent_files::RecentFiles::default(),
+            recent_files: token::recent_files::RecentFiles::default(),
             #[cfg(debug_assertions)]
             debug_overlay: None,
         };

@@ -354,13 +354,21 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
     let layout = match &model.ui.active_modal {
         Some(ModalState::CommandPalette(state)) => {
             let input_text = state.input();
-            let (l, _) =
-                super::geometry::command_palette_layout(ww, wh, lh, filter_commands(&input_text).len());
+            let (l, _) = super::geometry::command_palette_layout(
+                ww,
+                wh,
+                lh,
+                filter_commands(&input_text).len(),
+            );
             l
         }
         Some(ModalState::FileFinder(state)) => {
             let (l, _) = super::geometry::file_finder_layout(
-                ww, wh, lh, state.results.len(), !state.input().is_empty(),
+                ww,
+                wh,
+                lh,
+                state.results.len(),
+                !state.input().is_empty(),
             );
             l
         }
@@ -385,7 +393,11 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
         Some(ModalState::RecentFiles(state)) => {
             let filtered = state.filtered_entries();
             let (l, _) = super::geometry::file_finder_layout(
-                ww, wh, lh, filtered.len(), !state.input().is_empty(),
+                ww,
+                wh,
+                lh,
+                filtered.len(),
+                !state.input().is_empty(),
             );
             l
         }

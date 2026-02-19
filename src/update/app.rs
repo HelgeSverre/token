@@ -365,9 +365,7 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
                 Some(Cmd::Redraw)
             }
         }
-        CommandId::OpenRecentFiles => {
-            update_ui(model, UiMsg::ToggleModal(ModalId::RecentFiles))
-        }
+        CommandId::OpenRecentFiles => update_ui(model, UiMsg::ToggleModal(ModalId::RecentFiles)),
         CommandId::Quit => update_app(model, AppMsg::Quit),
         #[cfg(debug_assertions)]
         CommandId::TogglePerfOverlay => Some(Cmd::TogglePerfOverlay),

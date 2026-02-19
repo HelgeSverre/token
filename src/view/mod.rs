@@ -710,10 +710,28 @@ impl Renderer {
         // Branch by document language for appropriate rendering
         match document.language {
             crate::syntax::LanguageId::Html => {
-                Self::render_native_html_preview(frame, painter, model, document, preview, &pane, line_height, char_width);
+                Self::render_native_html_preview(
+                    frame,
+                    painter,
+                    model,
+                    document,
+                    preview,
+                    &pane,
+                    line_height,
+                    char_width,
+                );
             }
             _ => {
-                Self::render_native_markdown_preview(frame, painter, model, document, preview, &pane, line_height, char_width);
+                Self::render_native_markdown_preview(
+                    frame,
+                    painter,
+                    model,
+                    document,
+                    preview,
+                    &pane,
+                    line_height,
+                    char_width,
+                );
             }
         }
     }
@@ -1279,7 +1297,13 @@ impl Renderer {
         // Title bar
         let title_x = rect.x + 8.0;
         let title_y = rect.y + 4.0;
-        painter.draw(frame, title_x as usize, title_y as usize, "Outline", text_color);
+        painter.draw(
+            frame,
+            title_x as usize,
+            title_y as usize,
+            "Outline",
+            text_color,
+        );
 
         let content_y = rect.y + row_height as f32 + 4.0;
         let content_height = rect.height - row_height as f32 - 4.0;
@@ -1340,12 +1364,7 @@ impl Renderer {
 
                 if is_selected {
                     frame.fill_rect_blended(
-                        Rect::new(
-                            ctx.rect.x,
-                            *y as f32,
-                            ctx.rect.width,
-                            ctx.row_height as f32,
-                        ),
+                        Rect::new(ctx.rect.x, *y as f32, ctx.rect.width, ctx.row_height as f32),
                         ctx.selection_bg,
                     );
                 }
@@ -1358,29 +1377,47 @@ impl Renderer {
                 if node.is_collapsible() {
                     let is_collapsed = ctx.outline_panel.is_collapsed(node);
                     let indicator = if is_collapsed { "+" } else { "-" };
-                    let icon_color = if is_selected { ctx.selection_fg } else { ctx.icon_color };
+                    let icon_color = if is_selected {
+                        ctx.selection_fg
+                    } else {
+                        ctx.icon_color
+                    };
                     painter.draw(frame, icon_x, text_y, indicator, icon_color);
                 }
 
                 // Draw kind label + name
-                let fg = if is_selected { ctx.selection_fg } else { ctx.text_color };
+                let fg = if is_selected {
+                    ctx.selection_fg
+                } else {
+                    ctx.text_color
+                };
                 let label = node.kind.label();
 
                 // Draw label in dimmer color, then name
-                let label_color = if is_selected { ctx.selection_fg } else { ctx.icon_color };
+                let label_color = if is_selected {
+                    ctx.selection_fg
+                } else {
+                    ctx.icon_color
+                };
                 painter.draw(frame, text_x, text_y, label, label_color);
 
                 let name_x = text_x + (label.len() + 1) * painter.char_width() as usize;
 
                 // Truncate name if needed
                 let right_padding = 8;
-                let available = (ctx.rect.x as usize + ctx.rect.width as usize).saturating_sub(name_x + right_padding);
+                let available = (ctx.rect.x as usize + ctx.rect.width as usize)
+                    .saturating_sub(name_x + right_padding);
                 let char_w = painter.char_width() as usize;
                 let max_chars = if char_w > 0 { available / char_w } else { 80 };
 
                 let name_chars: usize = node.name.chars().count();
                 if name_chars > max_chars && max_chars > 1 {
-                    let display: String = node.name.chars().take(max_chars.saturating_sub(1)).chain(std::iter::once('…')).collect();
+                    let display: String = node
+                        .name
+                        .chars()
+                        .take(max_chars.saturating_sub(1))
+                        .chain(std::iter::once('…'))
+                        .collect();
                     painter.draw(frame, name_x, text_y, &display, fg);
                 } else {
                     painter.draw(frame, name_x, text_y, &node.name, fg);
@@ -1392,15 +1429,7 @@ impl Renderer {
             // Recurse into children if expanded
             if node.is_collapsible() && !ctx.outline_panel.is_collapsed(node) {
                 for child in &node.children {
-                    render_outline_node(
-                        frame,
-                        painter,
-                        child,
-                        ctx,
-                        y,
-                        visible_index,
-                        depth + 1,
-                    );
+                    render_outline_node(frame, painter, child, ctx, y, visible_index, depth + 1);
                 }
             }
         }
@@ -1420,15 +1449,7 @@ impl Renderer {
         };
 
         for node in &outline.roots {
-            render_outline_node(
-                frame,
-                painter,
-                node,
-                &ctx,
-                &mut y,
-                &mut visible_index,
-                0,
-            );
+            render_outline_node(frame, painter, node, &ctx, &mut y, &mut visible_index, 0);
             if visible_index >= scroll_offset && y >= max_y {
                 break;
             }
@@ -2230,7 +2251,12 @@ impl Renderer {
                 );
 
                 frame.draw_bordered_rect(
-                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
+                    layout.x,
+                    layout.y,
+                    layout.w,
+                    layout.h,
+                    bg_color,
+                    border_color,
                 );
 
                 // Title
@@ -2293,7 +2319,12 @@ impl Renderer {
                 );
 
                 frame.draw_bordered_rect(
-                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
+                    layout.x,
+                    layout.y,
+                    layout.w,
+                    layout.h,
+                    bg_color,
+                    border_color,
                 );
 
                 // Title
@@ -2378,7 +2409,12 @@ impl Renderer {
                     geometry::goto_line_layout(window_width, window_height, line_height);
 
                 frame.draw_bordered_rect(
-                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
+                    layout.x,
+                    layout.y,
+                    layout.w,
+                    layout.h,
+                    bg_color,
+                    border_color,
                 );
 
                 // Title
@@ -2417,7 +2453,12 @@ impl Renderer {
                 );
 
                 frame.draw_bordered_rect(
-                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
+                    layout.x,
+                    layout.y,
+                    layout.w,
+                    layout.h,
+                    bg_color,
+                    border_color,
                 );
 
                 // Title
@@ -2516,7 +2557,12 @@ impl Renderer {
                 );
 
                 frame.draw_bordered_rect(
-                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
+                    layout.x,
+                    layout.y,
+                    layout.w,
+                    layout.h,
+                    bg_color,
+                    border_color,
                 );
 
                 // Title
@@ -2638,7 +2684,12 @@ impl Renderer {
                 );
 
                 frame.draw_bordered_rect(
-                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
+                    layout.x,
+                    layout.y,
+                    layout.w,
+                    layout.h,
+                    bg_color,
+                    border_color,
                 );
 
                 // Title
