@@ -23,7 +23,7 @@ pub fn extract_outline(
             let flat = extract_rust_symbols(root, source);
             build_tree_by_containment(flat)
         }
-        LanguageId::TypeScript | LanguageId::Tsx | LanguageId::JavaScript => {
+        LanguageId::TypeScript | LanguageId::Tsx | LanguageId::JavaScript | LanguageId::Jsx => {
             let flat = extract_js_ts_symbols(root, source);
             build_tree_by_containment(flat)
         }
@@ -57,6 +57,10 @@ pub fn extract_outline(
         }
         LanguageId::Blade => {
             let flat = extract_blade_symbols(root, source);
+            build_tree_by_containment(flat)
+        }
+        LanguageId::Vue => {
+            let flat = extract_vue_symbols(root, source);
             build_tree_by_containment(flat)
         }
         _ => Vec::new(),
@@ -1051,6 +1055,57 @@ fn blade_block_label(node: &Node, source: &str) -> String {
         }
     }
     "@?".to_string()
+}
+
+// =============================================================================
+// Vue SFC symbol extraction
+// =============================================================================
+
+fn extract_vue_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
+    let mut symbols = Vec::new();
+    collect_vue_symbols(root, source, &mut symbols);
+    symbols
+}
+
+fn collect_vue_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
+    match node.kind() {
+        "element" | "script_element" | "style_element" => {
+            if let Some(tag_name) = vue_element_tag_name(node, source) {
+                match tag_name.as_str() {
+                    "template" | "script" | "style" => {
+                        symbols.push(flat_sym(
+                            OutlineKind::Section,
+                            &format!("<{}>", tag_name),
+                            &node,
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_vue_symbols(child, source, symbols);
+    }
+}
+
+/// Get the tag name from an HTML element node (element, script_element, style_element)
+fn vue_element_tag_name(node: Node, source: &str) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "start_tag" {
+            let mut tag_cursor = child.walk();
+            for tag_child in child.children(&mut tag_cursor) {
+                if tag_child.kind() == "tag_name" {
+                    return node_name(&tag_child, source).map(|s| s.to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
