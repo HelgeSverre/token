@@ -706,86 +706,154 @@ impl Renderer {
             return;
         }
 
-        // Native markdown rendering (used for headless screenshots)
-        {
-            let visible_lines = pane.visible_lines(line_height);
-            let text_x = pane.content_x();
-            let max_width = pane.max_text_width();
-            let max_chars = if char_width > 0.0 {
-                (max_width as f32 / char_width) as usize
-            } else {
-                80
-            };
-
-            let text_color = model.theme.editor.foreground.to_argb_u32();
-            let heading_color = model.theme.syntax.keyword.to_argb_u32();
-            let code_bg = model.theme.gutter.background.to_argb_u32();
-            let link_color = model.theme.syntax.string.to_argb_u32();
-
-            // Simple markdown rendering: parse and display styled lines
-            let mut y = pane.content_y();
-            let mut in_code_block = false;
-
-            for line_num in 0..document.buffer.len_lines() {
-                if line_num >= preview.scroll_offset + visible_lines {
-                    break;
-                }
-                if line_num < preview.scroll_offset {
-                    continue;
-                }
-
-                let line_text = document.buffer.line(line_num).to_string();
-                let line_text = line_text.trim_end_matches('\n');
-
-                // Simple markdown parsing
-                let trimmed = line_text.trim();
-
-                // Code block detection
-                if trimmed.starts_with("```") {
-                    in_code_block = !in_code_block;
-                    y += line_height;
-                    continue;
-                }
-
-                if in_code_block {
-                    // Draw code block background
-                    frame.fill_rect_px(
-                        text_x.saturating_sub(4),
-                        y,
-                        max_width + 8,
-                        line_height,
-                        code_bg,
-                    );
-                    let display_line: String = line_text.chars().take(max_chars).collect();
-                    painter.draw(frame, text_x, y, &display_line, text_color);
-                } else if let Some(heading) = trimmed.strip_prefix("# ") {
-                    let display: String = heading.chars().take(max_chars).collect();
-                    painter.draw(frame, text_x, y, &display, heading_color);
-                } else if let Some(heading) = trimmed.strip_prefix("## ") {
-                    let display: String = heading.chars().take(max_chars).collect();
-                    painter.draw(frame, text_x, y, &display, heading_color);
-                } else if let Some(heading) = trimmed.strip_prefix("### ") {
-                    let display: String = heading.chars().take(max_chars).collect();
-                    painter.draw(frame, text_x, y, &display, heading_color);
-                } else if let Some(list_item) = trimmed.strip_prefix("- ") {
-                    let bullet = format!("• {}", list_item);
-                    let display: String = bullet.chars().take(max_chars).collect();
-                    painter.draw(frame, text_x, y, &display, text_color);
-                } else if let Some(list_item) = trimmed.strip_prefix("* ") {
-                    let bullet = format!("• {}", list_item);
-                    let display: String = bullet.chars().take(max_chars).collect();
-                    painter.draw(frame, text_x, y, &display, text_color);
-                } else if trimmed.starts_with('[') && trimmed.contains("](") {
-                    // Simple link detection
-                    let display: String = trimmed.chars().take(max_chars).collect();
-                    painter.draw(frame, text_x, y, &display, link_color);
-                } else {
-                    let display: String = line_text.chars().take(max_chars).collect();
-                    painter.draw(frame, text_x, y, &display, text_color);
-                }
-
-                y += line_height;
+        // Native preview rendering (used for headless screenshots)
+        // Branch by document language for appropriate rendering
+        match document.language {
+            crate::syntax::LanguageId::Html => {
+                Self::render_native_html_preview(frame, painter, model, document, preview, &pane, line_height, char_width);
             }
+            _ => {
+                Self::render_native_markdown_preview(frame, painter, model, document, preview, &pane, line_height, char_width);
+            }
+        }
+    }
+
+    /// Native HTML preview: extract visible text content from HTML source and render it
+    /// with basic styling (headings, paragraphs, lists) by stripping tags.
+    #[allow(clippy::too_many_arguments)]
+    fn render_native_html_preview(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        document: &crate::model::document::Document,
+        preview: &crate::markdown::PreviewPane,
+        pane: &geometry::Pane,
+        line_height: usize,
+        char_width: f32,
+    ) {
+        let visible_lines = pane.visible_lines(line_height);
+        let text_x = pane.content_x();
+        let max_width = pane.max_text_width();
+        let max_chars = if char_width > 0.0 {
+            (max_width as f32 / char_width) as usize
+        } else {
+            80
+        };
+
+        let text_color = model.theme.editor.foreground.to_argb_u32();
+        let heading_color = model.theme.syntax.keyword.to_argb_u32();
+        let link_color = model.theme.syntax.string.to_argb_u32();
+        let muted_color = model.theme.gutter.foreground.to_argb_u32();
+
+        // Extract visible text from HTML by stripping tags and rendering text content
+        let source = document.buffer.to_string();
+        let lines = extract_html_text_lines(&source);
+
+        let mut y = pane.content_y();
+        for (i, line) in lines.iter().enumerate() {
+            if i >= preview.scroll_offset + visible_lines {
+                break;
+            }
+            if i < preview.scroll_offset {
+                continue;
+            }
+
+            let display: String = line.text.chars().take(max_chars).collect();
+            let color = match line.style {
+                HtmlTextStyle::Heading => heading_color,
+                HtmlTextStyle::Link => link_color,
+                HtmlTextStyle::Muted => muted_color,
+                HtmlTextStyle::Normal => text_color,
+            };
+            painter.draw(frame, text_x, y, &display, color);
+            y += line_height;
+        }
+    }
+
+    /// Native markdown preview: simple line-by-line markdown rendering.
+    #[allow(clippy::too_many_arguments)]
+    fn render_native_markdown_preview(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        document: &crate::model::document::Document,
+        preview: &crate::markdown::PreviewPane,
+        pane: &geometry::Pane,
+        line_height: usize,
+        char_width: f32,
+    ) {
+        let visible_lines = pane.visible_lines(line_height);
+        let text_x = pane.content_x();
+        let max_width = pane.max_text_width();
+        let max_chars = if char_width > 0.0 {
+            (max_width as f32 / char_width) as usize
+        } else {
+            80
+        };
+
+        let text_color = model.theme.editor.foreground.to_argb_u32();
+        let heading_color = model.theme.syntax.keyword.to_argb_u32();
+        let code_bg = model.theme.gutter.background.to_argb_u32();
+        let link_color = model.theme.syntax.string.to_argb_u32();
+
+        let mut y = pane.content_y();
+        let mut in_code_block = false;
+
+        for line_num in 0..document.buffer.len_lines() {
+            if line_num >= preview.scroll_offset + visible_lines {
+                break;
+            }
+            if line_num < preview.scroll_offset {
+                continue;
+            }
+
+            let line_text = document.buffer.line(line_num).to_string();
+            let line_text = line_text.trim_end_matches('\n');
+
+            let trimmed = line_text.trim();
+
+            if trimmed.starts_with("```") {
+                in_code_block = !in_code_block;
+                y += line_height;
+                continue;
+            }
+
+            if in_code_block {
+                frame.fill_rect_px(
+                    text_x.saturating_sub(4),
+                    y,
+                    max_width + 8,
+                    line_height,
+                    code_bg,
+                );
+                let display_line: String = line_text.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display_line, text_color);
+            } else if let Some(heading) = trimmed.strip_prefix("# ") {
+                let display: String = heading.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display, heading_color);
+            } else if let Some(heading) = trimmed.strip_prefix("## ") {
+                let display: String = heading.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display, heading_color);
+            } else if let Some(heading) = trimmed.strip_prefix("### ") {
+                let display: String = heading.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display, heading_color);
+            } else if let Some(list_item) = trimmed.strip_prefix("- ") {
+                let bullet = format!("• {}", list_item);
+                let display: String = bullet.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display, text_color);
+            } else if let Some(list_item) = trimmed.strip_prefix("* ") {
+                let bullet = format!("• {}", list_item);
+                let display: String = bullet.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display, text_color);
+            } else if trimmed.starts_with('[') && trimmed.contains("](") {
+                let display: String = trimmed.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display, link_color);
+            } else {
+                let display: String = line_text.chars().take(max_chars).collect();
+                painter.draw(frame, text_x, y, &display, text_color);
+            }
+
+            y += line_height;
         }
     }
 
@@ -3298,4 +3366,166 @@ impl Renderer {
             model.metrics.tab_bar_height,
         )
     }
+}
+
+// ---------------------------------------------------------------------------
+// HTML text extraction for native preview
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy)]
+enum HtmlTextStyle {
+    Normal,
+    Heading,
+    Link,
+    Muted,
+}
+
+struct HtmlTextLine {
+    text: String,
+    style: HtmlTextStyle,
+}
+
+/// Extract visible text lines from HTML source by stripping tags.
+/// Produces styled lines for headings (`<h1>`–`<h6>`), links (`<a>`),
+/// and regular paragraph/list text. Skips `<script>`, `<style>`, and `<head>` content.
+fn extract_html_text_lines(html: &str) -> Vec<HtmlTextLine> {
+    let mut lines = Vec::new();
+    let mut current_text = String::new();
+    let mut current_style = HtmlTextStyle::Normal;
+    let mut skip_content = false;
+    let mut in_body = false;
+    let mut has_body_tag = false;
+
+    // Check if document has a <body> tag; if not, treat everything as body
+    let lower = html.to_lowercase();
+    if lower.contains("<body") {
+        has_body_tag = true;
+    } else {
+        in_body = true;
+    }
+
+    let mut chars = html.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '<' {
+            // Collect tag name
+            let mut tag = String::new();
+            while let Some(&c) = chars.peek() {
+                if c == '>' || c == ' ' {
+                    break;
+                }
+                tag.push(c);
+                chars.next();
+            }
+            // Skip to end of tag
+            while let Some(&c) = chars.peek() {
+                if c == '>' {
+                    chars.next();
+                    break;
+                }
+                chars.next();
+            }
+
+            let tag_lower = tag.to_lowercase();
+
+            match tag_lower.as_str() {
+                "body" => {
+                    in_body = true;
+                }
+                "/body" => {
+                    in_body = false;
+                }
+                "script" | "style" => {
+                    skip_content = true;
+                }
+                "/script" | "/style" => {
+                    skip_content = false;
+                }
+                "head" if has_body_tag => {
+                    skip_content = true;
+                }
+                "/head" => {
+                    skip_content = false;
+                }
+                "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+                    flush_line(&mut current_text, current_style, &mut lines);
+                    current_style = HtmlTextStyle::Heading;
+                }
+                "/h1" | "/h2" | "/h3" | "/h4" | "/h5" | "/h6" => {
+                    flush_line(&mut current_text, current_style, &mut lines);
+                    current_style = HtmlTextStyle::Normal;
+                }
+                "a" => {
+                    current_style = HtmlTextStyle::Link;
+                }
+                "/a" => {
+                    current_style = HtmlTextStyle::Normal;
+                }
+                "br" | "br/" => {
+                    flush_line(&mut current_text, current_style, &mut lines);
+                }
+                "p" | "/p" | "div" | "/div" | "li" | "tr" | "hr" | "hr/" => {
+                    flush_line(&mut current_text, current_style, &mut lines);
+                    if tag_lower == "li" {
+                        current_text.push_str("• ");
+                    } else if tag_lower == "hr" || tag_lower == "hr/" {
+                        lines.push(HtmlTextLine {
+                            text: "───────────────────────────────".to_string(),
+                            style: HtmlTextStyle::Muted,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        } else if !skip_content && in_body {
+            // Handle HTML entities
+            if ch == '&' {
+                let mut entity = String::new();
+                while let Some(&c) = chars.peek() {
+                    if c == ';' {
+                        chars.next();
+                        break;
+                    }
+                    if c == '<' || c == ' ' || entity.len() > 8 {
+                        break;
+                    }
+                    entity.push(c);
+                    chars.next();
+                }
+                match entity.as_str() {
+                    "amp" => current_text.push('&'),
+                    "lt" => current_text.push('<'),
+                    "gt" => current_text.push('>'),
+                    "quot" => current_text.push('"'),
+                    "apos" => current_text.push('\''),
+                    "nbsp" => current_text.push(' '),
+                    _ => {
+                        current_text.push('&');
+                        current_text.push_str(&entity);
+                    }
+                }
+            } else if ch == '\n' {
+                // Collapse whitespace - newlines become spaces unless we're between block elements
+                if !current_text.is_empty() && !current_text.ends_with(' ') {
+                    current_text.push(' ');
+                }
+            } else {
+                current_text.push(ch);
+            }
+        }
+    }
+
+    flush_line(&mut current_text, current_style, &mut lines);
+    lines
+}
+
+fn flush_line(text: &mut String, style: HtmlTextStyle, lines: &mut Vec<HtmlTextLine>) {
+    let trimmed = text.trim().to_string();
+    if !trimmed.is_empty() {
+        lines.push(HtmlTextLine {
+            text: trimmed,
+            style,
+        });
+    }
+    text.clear();
 }
