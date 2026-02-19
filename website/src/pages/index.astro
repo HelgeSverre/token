@@ -1244,9 +1244,12 @@ const optimizedSlides = await Promise.all(
 
 /* Responsive */
 @media (max-width: 1024px) {
-  .hero { grid-template-columns: 1fr; }
-  .hero-text { justify-self: start; max-width: none; padding: 120px 32px 0; }
-  .hero-editor { order: -1; padding: 120px 32px 0; transform: none; }
+  .hero { grid-template-columns: 1fr; gap: 64px; min-height: auto; justify-items: center; }
+  .hero-text { justify-self: center; max-width: 700px; width: 100%; padding: 120px 32px 0; text-align: center; }
+  .hero-desc { margin-left: auto; margin-right: auto; }
+  .hero-actions { justify-content: center; }
+  .hero-trust { justify-content: center; flex-wrap: wrap; }
+  .hero-editor { order: 0; justify-self: center; padding: 0 32px 80px; transform: none; }
   .hero-editor .editor-frame { border-radius: var(--r-lg); border-right: 1px solid var(--border-strong); }
   .feature-grid { grid-template-columns: repeat(2, 1fr); }
   .feature-card.wide { grid-column: span 2; }
@@ -1257,8 +1260,13 @@ const optimizedSlides = await Promise.all(
 }
 
 @media (max-width: 768px) {
-  .hero-text { padding: 100px 24px 0; }
-  .hero-editor { padding: 60px 24px 0; }
+  .hero { gap: 40px; }
+  .hero-text { padding: 96px 20px 0; text-align: center; }
+  .hero-editor { padding: 0 20px 64px; }
+  .hero-actions { flex-direction: column; align-items: center; gap: 14px; }
+  .hero-actions a { width: 100%; max-width: 320px; justify-content: center; }
+  .hero-trust { justify-content: center; flex-wrap: wrap; }
+  .trust-sep { display: none; }
   .features { padding: 80px 24px; }
   .feature-grid { grid-template-columns: 1fr; }
   .feature-card.wide { grid-column: span 1; }
@@ -1277,7 +1285,6 @@ const optimizedSlides = await Promise.all(
   .keys-section { padding: 80px 24px; }
   .ai-section { padding: 80px 24px; }
   .section-title { font-size: 2rem; }
-  .hero-actions { flex-direction: column; align-items: flex-start; gap: 16px; }
 }
 </style>
 
