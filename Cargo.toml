@@ -111,6 +111,9 @@ tree-sitter-racket = "0.24"
 tree-sitter-ini = "1.4"
 tree-sitter-xml = "0.7"
 
+# Phase 7 languages (Template)
+tree-sitter-blade = { git = "https://github.com/EmranMR/tree-sitter-blade", tag = "v0.12.3" }
+
 streaming-iterator = "0.1"
 
 # For fuzzy file finder

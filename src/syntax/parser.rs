@@ -125,6 +125,9 @@ const INI_HIGHLIGHTS: &str = tree_sitter_ini::HIGHLIGHTS_QUERY;
 const XML_HIGHLIGHTS: &str = tree_sitter_xml::XML_HIGHLIGHT_QUERY;
 const SEMA_HIGHLIGHTS: &str = include_str!("../../queries/sema/highlights.scm");
 
+// Phase 7 languages (template)
+const BLADE_HIGHLIGHTS: &str = include_str!("../../queries/blade/highlights.scm");
+
 /// Thread-local parser state (tree-sitter parsers are !Sync)
 pub struct ParserState {
     /// Parser instances per language
@@ -189,6 +192,9 @@ impl ParserState {
         state.init_language(LanguageId::Ini);
         state.init_language(LanguageId::Xml);
         state.init_language(LanguageId::Sema);
+
+        // Initialize Phase 7 languages (template)
+        state.init_language(LanguageId::Blade);
 
         // Initialize markdown inline parser for two-pass parsing
         state.init_markdown_inline();
@@ -259,6 +265,8 @@ impl ParserState {
             LanguageId::Sema => (tree_sitter_racket::LANGUAGE.into(), SEMA_HIGHLIGHTS),
             LanguageId::Ini => (tree_sitter_ini::LANGUAGE.into(), INI_HIGHLIGHTS),
             LanguageId::Xml => (tree_sitter_xml::LANGUAGE_XML.into(), XML_HIGHLIGHTS),
+            // Phase 7 languages (template)
+            LanguageId::Blade => (tree_sitter_blade::LANGUAGE.into(), BLADE_HIGHLIGHTS),
             // No highlighting for plain text
             LanguageId::PlainText => return,
         };
@@ -1390,6 +1398,8 @@ enabled: true
             LanguageId::Scheme,
             LanguageId::Ini,
             LanguageId::Xml,
+            // Phase 7
+            LanguageId::Blade,
         ];
 
         for lang in languages_with_queries {
@@ -1581,6 +1591,17 @@ enabled: true
         #[test]
         fn test_xml_query_compiles() {
             assert_query_compiles("XML", tree_sitter_xml::LANGUAGE_XML.into(), XML_HIGHLIGHTS);
+        }
+
+        // Phase 7 languages
+
+        #[test]
+        fn test_blade_query_compiles() {
+            assert_query_compiles(
+                "Blade",
+                tree_sitter_blade::LANGUAGE.into(),
+                BLADE_HIGHLIGHTS,
+            );
         }
     }
 

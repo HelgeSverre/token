@@ -9,6 +9,12 @@ All notable changes to rust-editor are documented in this file.
 ### Added
 - Code Outline: Tree-sitter based symbol extraction panel in the right dock. Supports 10 languages (Rust, TypeScript, JavaScript, Python, Go, Java, PHP, C/C++, Markdown, YAML). Collapsible tree with click-to-select, double-click-to-jump, and scroll support.
 - Code Outline: Dock panel hit-testing fix — clicks on dock panels no longer fall through to the editor.
+- Code Outline: Added HTML outline support — shows structural/semantic elements (`html`, `body`, `nav`, `section`, `div`, `form`, `table`, etc.) with enriched labels (e.g. `div#app`, `section.hero`).
+- Code Outline: Added Blade outline support — shows `@section`, `@fragment`, `@push` with parameter names, block directives (`@if`, `@foreach`, `@switch`), and Blade components (`<x-*>`).
+- Syntax: Added Laravel Blade (`.blade.php`) language support with syntax highlighting for directives, comments, echo delimiters, components, and HTML structure. Uses [tree-sitter-blade](https://github.com/EmranMR/tree-sitter-blade) by [Emran MR](https://github.com/EmranMR).
+
+### Improved
+- Code Outline: Jumping to a symbol (double-click or Enter) now centers the target line in the viewport instead of minimal scrolling, for better orientation.
 
 ### Fixed
 - Icons: Fixed all Nerd Font file type icons (were empty strings — PUA codepoints lost during copy/paste). Now using explicit Unicode escapes with codepoints from nvim-web-devicons. Also fixed folder/folder_open icons and improved Markdown/YAML icon variants.

@@ -675,11 +675,18 @@ impl AppModel {
         self.sync_preview_scroll();
     }
 
+    /// Ensure cursor is visible by centering it in the viewport.
+    /// Used for outline jumps and similar "go to" navigation.
+    pub fn ensure_cursor_visible_centered(&mut self) {
+        self.editor_area
+            .ensure_focused_cursor_visible(ScrollRevealMode::Centered);
+        self.sync_preview_scroll();
+    }
+
     /// Ensure cursor is visible without scroll padding (for mouse clicks).
     /// Only scrolls if cursor is completely outside the viewport.
     pub fn ensure_cursor_visible_no_padding(&mut self) {
-        self.editor_area
-            .ensure_focused_cursor_visible_no_padding();
+        self.editor_area.ensure_focused_cursor_visible_no_padding();
         self.sync_preview_scroll();
     }
 

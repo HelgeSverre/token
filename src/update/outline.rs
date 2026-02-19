@@ -6,10 +6,7 @@ use crate::model::AppModel;
 use crate::outline::OutlineNode;
 
 /// Count total visible items in the outline tree (for navigation bounds)
-fn count_visible_items(
-    nodes: &[OutlineNode],
-    panel: &crate::model::OutlinePanelState,
-) -> usize {
+fn count_visible_items(nodes: &[OutlineNode], panel: &crate::model::OutlinePanelState) -> usize {
     let mut count = 0;
     for node in nodes {
         count += 1;
@@ -51,7 +48,7 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
             editor.cursors[0].column = col;
             editor.cursors[0].desired_column = None;
             editor.clear_selection();
-            model.ensure_cursor_visible();
+            model.ensure_cursor_visible_centered();
             model.ui.focus_editor();
             Some(Cmd::Redraw)
         }
@@ -136,8 +133,10 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                         }
                     }
                     let total = count_visible_items(&outline.roots, &model.outline_panel);
-                    model.outline_panel.scroll_offset =
-                        model.outline_panel.scroll_offset.min(total.saturating_sub(1));
+                    model.outline_panel.scroll_offset = model
+                        .outline_panel
+                        .scroll_offset
+                        .min(total.saturating_sub(1));
                 }
             }
             Some(Cmd::Redraw)
@@ -161,8 +160,10 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                         }
                     }
                     let total = count_visible_items(&outline.roots, &model.outline_panel);
-                    model.outline_panel.scroll_offset =
-                        model.outline_panel.scroll_offset.min(total.saturating_sub(1));
+                    model.outline_panel.scroll_offset = model
+                        .outline_panel
+                        .scroll_offset
+                        .min(total.saturating_sub(1));
                 }
             }
             Some(Cmd::Redraw)
@@ -188,7 +189,7 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                         editor.cursors[0].column = col;
                         editor.cursors[0].desired_column = None;
                         editor.clear_selection();
-                        model.ensure_cursor_visible();
+                        model.ensure_cursor_visible_centered();
                         model.ui.focus_editor();
                     }
                 }
@@ -213,9 +214,9 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                 let total = count_visible_items(&outline.roots, &model.outline_panel);
                 let dock_height = model.dock_layout.right.size(model.metrics.scale_factor);
                 let title_height = model.metrics.file_tree_row_height as f32 + 4.0;
-                let visible_capacity =
-                    ((dock_height - title_height) / model.metrics.file_tree_row_height as f32)
-                        .max(0.0) as usize;
+                let visible_capacity = ((dock_height - title_height)
+                    / model.metrics.file_tree_row_height as f32)
+                    .max(0.0) as usize;
                 model.outline_panel.scroll_offset = model
                     .outline_panel
                     .scroll_offset
@@ -254,7 +255,7 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                         editor.cursors[0].column = col;
                         editor.cursors[0].desired_column = None;
                         editor.clear_selection();
-                        model.ensure_cursor_visible();
+                        model.ensure_cursor_visible_centered();
                         model.ui.focus_editor();
                     }
                 }

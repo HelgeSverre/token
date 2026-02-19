@@ -51,10 +51,21 @@ pub fn extract_outline(
             let flat = extract_yaml_symbols(root, source);
             build_tree_by_containment(flat)
         }
+        LanguageId::Html => {
+            let flat = extract_html_symbols(root, source);
+            build_tree_by_containment(flat)
+        }
+        LanguageId::Blade => {
+            let flat = extract_blade_symbols(root, source);
+            build_tree_by_containment(flat)
+        }
         _ => Vec::new(),
     };
 
-    OutlineData { revision, roots: nodes }
+    OutlineData {
+        revision,
+        roots: nodes,
+    }
 }
 
 // =============================================================================
@@ -444,9 +455,7 @@ fn collect_js_ts_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>
                         if let Some(name) = node_name(&name_node, source) {
                             let kind = if child
                                 .child_by_field_name("value")
-                                .map(|v| {
-                                    v.kind() == "arrow_function" || v.kind() == "function"
-                                })
+                                .map(|v| v.kind() == "arrow_function" || v.kind() == "function")
                                 .unwrap_or(false)
                             {
                                 OutlineKind::Function
@@ -806,10 +815,7 @@ fn collect_yaml_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>)
         "block_mapping_pair" | "flow_pair" => {
             if let Some(key_node) = child_by_field(&node, "key") {
                 if let Some(key_text) = node_name(&key_node, source) {
-                    let name = key_text
-                        .trim()
-                        .trim_matches('"')
-                        .trim_matches('\'');
+                    let name = key_text.trim().trim_matches('"').trim_matches('\'');
                     if !name.is_empty() {
                         symbols.push(flat_sym(OutlineKind::Property, name, &node));
                     }
@@ -823,6 +829,228 @@ fn collect_yaml_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>)
     for child in node.children(&mut cursor) {
         collect_yaml_symbols(child, source, symbols);
     }
+}
+
+// =============================================================================
+// HTML symbol extraction
+// =============================================================================
+
+/// Tags worth showing in the outline (structural/semantic elements)
+const HTML_OUTLINE_TAGS: &[&str] = &[
+    "html", "head", "body", "header", "footer", "nav", "main", "aside", "section", "article",
+    "div", "form", "table", "thead", "tbody", "tfoot", "ul", "ol", "dl", "details", "dialog",
+    "fieldset", "figure", "template", "slot",
+];
+
+fn extract_html_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
+    let mut symbols = Vec::new();
+    collect_html_symbols(root, source, &mut symbols);
+    symbols
+}
+
+fn collect_html_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
+    if node.kind() == "element" {
+        if let Some(start_tag) = node.child_by_field_name("start_tag").or_else(|| {
+            node.children(&mut node.walk())
+                .find(|c| c.kind() == "start_tag")
+        }) {
+            if let Some(tag_name_node) = start_tag
+                .children(&mut start_tag.walk())
+                .find(|c| c.kind() == "tag_name")
+            {
+                if let Some(tag_name) = node_name(&tag_name_node, source) {
+                    let tag_lower = tag_name.to_lowercase();
+                    if HTML_OUTLINE_TAGS.contains(&tag_lower.as_str()) {
+                        let label = html_element_label(&tag_lower, &start_tag, source);
+                        symbols.push(flat_sym(OutlineKind::Element, &label, &node));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_html_symbols(child, source, symbols);
+    }
+}
+
+/// Build a display label like `div#app` or `section.hero` from attributes
+fn html_element_label(tag_name: &str, start_tag: &Node, source: &str) -> String {
+    let mut id = None;
+    let mut class = None;
+
+    let mut cursor = start_tag.walk();
+    for attr in start_tag.children(&mut cursor) {
+        if attr.kind() != "attribute" {
+            continue;
+        }
+        let attr_name = attr
+            .children(&mut attr.walk())
+            .find(|c| c.kind() == "attribute_name")
+            .and_then(|n| node_name(&n, source));
+        let attr_val = attr
+            .children(&mut attr.walk())
+            .find(|c| c.kind() == "quoted_attribute_value" || c.kind() == "attribute_value")
+            .and_then(|n| node_name(&n, source))
+            .map(|v| v.trim_matches('"').trim_matches('\''));
+
+        match attr_name {
+            Some("id") => id = attr_val.map(|s| s.to_string()),
+            Some("class") => class = attr_val.map(|s| s.to_string()),
+            _ => {}
+        }
+    }
+
+    let mut label = tag_name.to_string();
+    if let Some(id_val) = id {
+        label.push('#');
+        label.push_str(&id_val);
+    } else if let Some(class_val) = class {
+        // Use first class only to keep labels short
+        if let Some(first_class) = class_val.split_whitespace().next() {
+            label.push('.');
+            label.push_str(first_class);
+        }
+    }
+    label
+}
+
+// =============================================================================
+// Blade symbol extraction
+// =============================================================================
+
+fn extract_blade_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
+    let mut symbols = Vec::new();
+    collect_blade_symbols(root, source, &mut symbols);
+    symbols
+}
+
+fn collect_blade_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
+    match node.kind() {
+        // HTML elements (reuse HTML logic)
+        "element" => {
+            if let Some(start_tag) = node
+                .children(&mut node.walk())
+                .find(|c| c.kind() == "start_tag")
+            {
+                if let Some(tag_name_node) = start_tag
+                    .children(&mut start_tag.walk())
+                    .find(|c| c.kind() == "tag_name")
+                {
+                    if let Some(tag_name) = node_name(&tag_name_node, source) {
+                        let tag_lower = tag_name.to_lowercase();
+                        if HTML_OUTLINE_TAGS.contains(&tag_lower.as_str())
+                            || tag_name.starts_with("x-")
+                        {
+                            let label = if tag_name.starts_with("x-") {
+                                format!("<{}>", tag_name)
+                            } else {
+                                html_element_label(&tag_lower, &start_tag, source)
+                            };
+                            symbols.push(flat_sym(OutlineKind::Element, &label, &node));
+                        }
+                    }
+                }
+            }
+        }
+        // Blade sections: @section('name') ... @endsection
+        "section" => {
+            let name =
+                blade_directive_name(&node, source).unwrap_or_else(|| "@section".to_string());
+            symbols.push(flat_sym(OutlineKind::Section, &name, &node));
+        }
+        // Blade fragments: @fragment('name') ... @endfragment
+        "fragment" => {
+            let name =
+                blade_directive_name(&node, source).unwrap_or_else(|| "@fragment".to_string());
+            symbols.push(flat_sym(OutlineKind::Section, &name, &node));
+        }
+        // Blade stacks: @push('scripts') ... @endpush
+        "stack" => {
+            let name = blade_directive_name(&node, source).unwrap_or_else(|| "@push".to_string());
+            symbols.push(flat_sym(OutlineKind::Section, &name, &node));
+        }
+        // Block directives with bodies
+        "conditional" | "loop" | "switch" => {
+            let name = blade_block_label(&node, source);
+            symbols.push(flat_sym(OutlineKind::Directive, &name, &node));
+        }
+        "once" => {
+            symbols.push(flat_sym(OutlineKind::Directive, "@once", &node));
+        }
+        "verbatim" => {
+            symbols.push(flat_sym(OutlineKind::Directive, "@verbatim", &node));
+        }
+        "livewire" => {
+            let name = blade_block_label(&node, source);
+            symbols.push(flat_sym(OutlineKind::Directive, &name, &node));
+        }
+        "envoy" => {
+            let name = blade_block_label(&node, source);
+            symbols.push(flat_sym(OutlineKind::Directive, &name, &node));
+        }
+        _ => {}
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_blade_symbols(child, source, symbols);
+    }
+}
+
+/// Extract the parameter text for named directives like @section('content')
+fn blade_directive_name(node: &Node, source: &str) -> Option<String> {
+    let mut cursor = node.walk();
+
+    // Find directive_start text
+    let directive_text = node
+        .children(&mut cursor)
+        .find(|c| c.kind() == "directive_start" || c.kind() == "directive")
+        .and_then(|d| node_name(&d, source))
+        .unwrap_or("");
+
+    // Find parameter text
+    let param = node
+        .children(&mut node.walk())
+        .find(|c| c.kind() == "parameter")
+        .and_then(|p| node_name(&p, source));
+
+    if let Some(param_text) = param {
+        // Extract first string argument: ('name') -> name
+        let cleaned = param_text
+            .trim_matches(|c: char| c == '(' || c == ')')
+            .trim()
+            .split(',')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .trim_matches(|c: char| c == '\'' || c == '"');
+        if !cleaned.is_empty() {
+            return Some(format!("{}('{}')", directive_text, cleaned));
+        }
+    }
+
+    if !directive_text.is_empty() {
+        Some(directive_text.to_string())
+    } else {
+        None
+    }
+}
+
+/// Extract the opening directive keyword for block nodes
+fn blade_block_label(node: &Node, source: &str) -> String {
+    let mut cursor = node.walk();
+    // Get the directive_start child text (e.g. "@if", "@foreach")
+    if let Some(dir) = node
+        .children(&mut cursor)
+        .find(|c| c.kind() == "directive_start" || c.kind() == "directive")
+    {
+        if let Some(text) = node_name(&dir, source) {
+            return text.to_string();
+        }
+    }
+    "@?".to_string()
 }
 
 #[cfg(test)]

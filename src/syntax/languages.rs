@@ -36,10 +36,15 @@ pub enum LanguageId {
     Ini,
     Xml,
     Sema,
+    // Phase 7 languages (template)
+    Blade,
 }
 
 impl LanguageId {
     /// Detect language from file extension
+    ///
+    /// Note: `.blade.php` files are detected in `from_path()` before this is called,
+    /// since `.blade.php` is a compound extension that would otherwise match `.php`.
     pub fn from_extension(ext: &str) -> Self {
         match ext.to_lowercase().as_str() {
             // Phase 1
@@ -78,6 +83,11 @@ impl LanguageId {
     pub fn from_path(path: &Path) -> Self {
         // Check for special filenames first
         if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+            // Compound extensions (must be checked before simple extension matching)
+            if filename.ends_with(".blade.php") {
+                return LanguageId::Blade;
+            }
+
             match filename {
                 "Makefile" | "makefile" | "GNUmakefile" => return LanguageId::Bash,
                 "Dockerfile" => return LanguageId::Bash,
@@ -123,6 +133,7 @@ impl LanguageId {
             LanguageId::Ini => "INI",
             LanguageId::Xml => "XML",
             LanguageId::Sema => "Sema",
+            LanguageId::Blade => "Blade",
         }
     }
 
@@ -162,6 +173,7 @@ impl LanguageId {
             "scheme" | "scm" | "racket" | "rkt" => Some(LanguageId::Scheme),
             "xml" | "svg" => Some(LanguageId::Xml),
             "ini" | "conf" => Some(LanguageId::Ini),
+            "blade" => Some(LanguageId::Blade),
             // Don't inject markdown into markdown
             "markdown" | "md" => None,
             _ => None,
@@ -210,6 +222,7 @@ mod tests {
         assert_eq!(LanguageId::from_extension("xml"), LanguageId::Xml);
         assert_eq!(LanguageId::from_extension("plist"), LanguageId::Xml);
         assert_eq!(LanguageId::from_extension("svg"), LanguageId::Xml);
+        // Note: Blade is detected via from_path() not from_extension()
         // Unknown
         assert_eq!(LanguageId::from_extension("txt"), LanguageId::PlainText);
         assert_eq!(LanguageId::from_extension("unknown"), LanguageId::PlainText);
@@ -277,6 +290,17 @@ mod tests {
             LanguageId::from_path(Path::new(".gitconfig")),
             LanguageId::Ini
         );
+        // Blade templates (compound extension)
+        assert_eq!(
+            LanguageId::from_path(Path::new("welcome.blade.php")),
+            LanguageId::Blade
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new("/resources/views/layout.blade.php")),
+            LanguageId::Blade
+        );
+        // Regular PHP files should still be PHP
+        assert_eq!(LanguageId::from_path(Path::new("app.php")), LanguageId::Php);
     }
 
     #[test]
@@ -295,5 +319,6 @@ mod tests {
         assert_eq!(LanguageId::Scheme.display_name(), "Scheme");
         assert_eq!(LanguageId::Ini.display_name(), "INI");
         assert_eq!(LanguageId::Xml.display_name(), "XML");
+        assert_eq!(LanguageId::Blade.display_name(), "Blade");
     }
 }

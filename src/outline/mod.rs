@@ -25,6 +25,9 @@ pub enum OutlineKind {
     EnumVariant,
     Impl,
     Namespace,
+    Element,
+    Section,
+    Directive,
 }
 
 impl OutlineKind {
@@ -52,6 +55,9 @@ impl OutlineKind {
             OutlineKind::EnumVariant => "var",
             OutlineKind::Impl => "impl",
             OutlineKind::Namespace => "ns",
+            OutlineKind::Element => "tag",
+            OutlineKind::Section => "sect",
+            OutlineKind::Directive => "dir",
         }
     }
 }
