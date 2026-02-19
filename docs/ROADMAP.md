@@ -8,6 +8,30 @@ For completed work, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Recently Completed
 
+### Code Outline Panel ✅
+
+**Design:** [feature/code-outline.md](archived/code-outline.md) | **Completed:** 2026-02-19 (v0.3.19)
+
+Tree-sitter based code outline in the right dock panel:
+
+- **Symbol extraction**: Walks tree-sitter ASTs using range-containment algorithm for code languages, level-based hierarchy for Markdown headings
+- **10 languages**: Rust, TypeScript, JavaScript, Python, Go, Java, PHP, C/C++, Markdown, YAML
+- **Dock integration**: Rendered in right dock with collapsible nodes, scroll support, click-to-select, double-click-to-jump
+- **Worker thread**: Runs alongside syntax highlighting on the syntax worker thread — `OutlineData` returned with `SyntaxHighlights`
+- **State management**: `OutlinePanelState` tracks selection, scroll offset, collapsed nodes using `(OutlineKind, OutlineRange)` keys
+- **Hit-test fix**: Added `hit_test_docks` before `hit_test_editor` to prevent click-through
+
+### Recent Files ✅
+
+**Completed:** 2026-02-19 (v0.3.19)
+
+Persistent recent files list with Cmd+E modal:
+
+- **Persistence**: `RecentFiles` saved to `~/.config/token-editor/recent.json`, up to 50 entries
+- **Modal UI**: Fuzzy filtering with file type icons and "time ago" timestamps
+- **MRU ordering**: Most recently used first; Cmd+E then Enter swaps to previous file
+- **Tracking**: Files opened via CLI, file dialog, quick open, drag-and-drop, sidebar automatically tracked
+
 ### Workspace Management Improvements ✅
 
 **Design:** [feature/workspace-management.md](archived/workspace-management.md) | **Completed:** 2025-12-17 (v0.3.7)
@@ -395,6 +419,8 @@ Group rapid consecutive edits into single undo entries:
 | Workspace Management        | ✅ P0-6     | [feature/workspace-management.md](archived/workspace-management.md)                       |
 | Syntax Highlighting         | ✅ MVP      | [feature/syntax-highlighting.md](archived/syntax-highlighting.md)                         |
 | CSV Viewer/Editor           | ✅ P1-2     | [feature/csv-editor.md](archived/csv-editor.md)                                           |
+| Code Outline Panel          | ✅ Complete | [feature/code-outline.md](archived/code-outline.md)                                       |
+| Recent Files                | ✅ Complete | —                                                                                         |
 
 ---
 
@@ -426,15 +452,28 @@ src/
 │   ├── document.rs      # Text editing, undo/redo
 │   ├── layout.rs        # Split views, tabs, groups
 │   ├── app.rs           # File operations, window resize
-│   └── ui.rs            # Status bar, cursor blink
+│   ├── ui.rs            # Status bar, cursor blink
+│   ├── csv.rs           # CSV cell editing
+│   ├── dock.rs          # Dock panel toggle, resize
+│   ├── outline.rs       # Outline panel selection, navigation
+│   ├── preview.rs       # Markdown/HTML preview
+│   ├── syntax.rs        # Syntax highlighting updates
+│   ├── text_edit.rs     # Unified text editing dispatch
+│   └── workspace.rs     # File tree operations
 ├── view/
 │   ├── mod.rs           # Renderer struct, render functions
-│   └── frame.rs         # Frame (pixel buffer) + TextPainter abstractions
+│   ├── frame.rs         # Frame (pixel buffer) + TextPainter abstractions
+│   ├── geometry.rs      # ViewportGeometry, GroupLayout, Rect helpers
+│   ├── helpers.rs       # Drawing helper functions
+│   ├── hit_test.rs      # HitTarget enum, priority-ordered hit testing
+│   └── text_field.rs    # Text field rendering utilities
 ├── runtime/
 │   ├── mod.rs           # Module exports
 │   ├── app.rs           # App struct, ApplicationHandler impl
 │   ├── input.rs         # handle_key, keyboard→Msg mapping (~220 lines)
-│   └── perf.rs          # PerfStats, debug overlay (debug only)
+│   ├── mouse.rs         # Mouse event handling, hit-test dispatch
+│   ├── perf.rs          # PerfStats, debug overlay (debug only)
+│   └── webview.rs       # WKWebView integration for preview
 ├── messages.rs          # Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg, AppMsg
 ├── commands.rs          # Cmd enum (Redraw, SaveFile, LoadFile, Batch)
 ├── keymap/              # Configurable keybinding system
@@ -460,6 +499,31 @@ src/
 │   ├── viewport.rs      # CsvViewport for scrolling
 │   ├── navigation.rs    # Cell navigation logic
 │   └── render.rs        # Grid rendering helpers
+├── editable/            # Unified text editing system
+│   ├── mod.rs           # Module exports
+│   ├── state.rs         # EditableState<B: TextBuffer>
+│   ├── buffer.rs        # StringBuffer implementation
+│   ├── cursor.rs        # Cursor operations
+│   ├── selection.rs     # Selection operations
+│   ├── messages.rs      # TextEditMsg enum
+│   ├── history.rs       # EditHistory, undo/redo
+│   ├── constraints.rs   # EditConstraints
+│   └── context.rs       # EditContext
+├── outline/             # Code outline panel
+│   ├── mod.rs           # OutlineData, OutlineNode, OutlineKind
+│   └── extract.rs       # Tree-sitter AST walking, symbol extraction
+├── panel/               # Dock panel system
+│   ├── mod.rs           # Module exports
+│   └── dock.rs          # DockLayout, DockPanel, PanelId
+├── panels/              # Panel implementations
+│   ├── mod.rs           # Panel registry
+│   └── placeholder.rs   # Placeholder panel rendering
+├── markdown/            # Markdown rendering
+├── recent_files.rs      # RecentFiles, RecentEntry, persistence
+├── fs_watcher.rs        # File system watcher integration
+├── debug_dump.rs        # Debug state dumping
+├── debug_overlay.rs     # Debug overlay rendering
+├── tracing.rs           # Tracing instrumentation
 ├── config.rs            # EditorConfig, theme persistence
 ├── config_paths.rs      # Centralized config directory paths
 ├── theme.rs             # Theme, Color, ThemeInfo, load_theme(), SyntaxTheme
@@ -471,28 +535,36 @@ src/
 
 themes/
 ├── dark.yaml            # Default dark theme (VS Code-inspired)
+├── dracula.yaml         # Dracula theme
 ├── fleet-dark.yaml      # JetBrains Fleet dark theme
 ├── github-dark.yaml     # GitHub dark theme
-└── github-light.yaml    # GitHub light theme
+├── github-light.yaml    # GitHub light theme
+├── gruvbox-dark.yaml    # Gruvbox dark theme
+├── mocha.yaml           # Catppuccin Mocha theme
+├── nord.yaml            # Nord theme
+└── tokyo-night.yaml     # Tokyo Night theme
 
 tests/                   # Integration tests
 ├── common/mod.rs        # Shared test helpers (test_model, etc.)
-├── config.rs            # 22 tests (config paths, editor config, keymap merge)
-├── cursor_movement.rs   # 48 tests
-├── document_cursor.rs   # 32 tests
-├── edge_cases.rs        # 9 tests
-├── editor_area.rs       # 7 tests (layout, hit testing)
-├── expand_shrink_selection.rs # 23 tests
-├── layout.rs            # 55 tests (split view)
-├── modal.rs             # 32 tests (command palette, goto line, find/replace)
-├── monkey_tests.rs      # 34 tests (resize edge cases)
-├── multi_cursor.rs      # 41 tests (1 ignored)
-├── overlay.rs           # 7 tests (anchor, blending)
-├── scrolling.rs         # 33 tests
-├── selection.rs         # 47 tests
-├── status_bar.rs        # 47 tests
-├── text_editing.rs      # 47 tests (includes multi-cursor undo)
-└── theme.rs             # 15 tests (Color, YAML parsing, theme loading)
+├── config.rs            # Config paths, editor config, keymap merge
+├── cursor_movement.rs   # Cursor movement tests
+├── document_cursor.rs   # Document-level cursor tests
+├── edge_cases.rs        # Edge case tests
+├── editor_area.rs       # Layout, hit testing
+├── expand_shrink_selection.rs # Selection expansion tests
+├── file_path_commands.rs # File path command tests
+├── geometry.rs          # Geometry/viewport tests
+├── layout.rs            # Split view tests
+├── modal.rs             # Command palette, goto line, find/replace
+├── monkey_tests.rs      # Resize edge cases
+├── multi_cursor.rs      # Multi-cursor tests
+├── overlay.rs           # Anchor, blending
+├── scrolling.rs         # Scrolling tests
+├── selection.rs         # Selection tests
+├── status_bar.rs        # Status bar tests
+├── text_editing.rs      # Text editing, multi-cursor undo
+├── theme.rs             # Color, YAML parsing, theme loading
+└── workspace.rs         # Workspace/file tree tests
 ```
 
-**Test count:** 703 total (74 lib + 33 main + 596 integration, 1 ignored)
+**Test count:** 1,049 total

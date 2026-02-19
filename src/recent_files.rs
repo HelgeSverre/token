@@ -316,8 +316,10 @@ mod tests {
 
     #[test]
     fn test_serialization_roundtrip() {
-        let mut recent = RecentFiles::default();
-        recent.version = RecentFiles::CURRENT_VERSION;
+        let mut recent = RecentFiles {
+            version: RecentFiles::CURRENT_VERSION,
+            ..Default::default()
+        };
         recent.add(PathBuf::from("/a.rs"), Some(PathBuf::from("/project")));
         recent.add(PathBuf::from("/b.rs"), None);
 

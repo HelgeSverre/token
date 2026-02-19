@@ -4,6 +4,17 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
+## v0.3.19 - 2026-02-19
+
+### Added
+- Code Outline: Tree-sitter based symbol extraction panel in the right dock. Supports 10 languages (Rust, TypeScript, JavaScript, Python, Go, Java, PHP, C/C++, Markdown, YAML). Collapsible tree with click-to-select, double-click-to-jump, and scroll support.
+- Code Outline: Dock panel hit-testing fix — clicks on dock panels no longer fall through to the editor.
+
+### Fixed
+- Icons: Fixed all Nerd Font file type icons (were empty strings — PUA codepoints lost during copy/paste). Now using explicit Unicode escapes with codepoints from nvim-web-devicons. Also fixed folder/folder_open icons and improved Markdown/YAML icon variants.
+
+---
+
 ## v0.3.18 - 2026-02-19
 
 ### Added
