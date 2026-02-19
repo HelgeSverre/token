@@ -577,6 +577,59 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     })
 }
 
+/// Hit-test dock panels (right and bottom docks).
+///
+/// Computes dock rectangles and checks if the point falls within any open dock.
+/// Returns `DockContent` with the active panel ID for content clicks.
+pub fn hit_test_docks(model: &AppModel, pt: Point) -> Option<HitTarget> {
+    let scale = model.metrics.scale_factor;
+    let w = model.window_size.0 as f32;
+    let status_bar_h = model.line_height as f32;
+    let content_h = model.window_size.1 as f32 - status_bar_h;
+    let bottom_h = model.dock_layout.bottom.size(scale);
+    let side_h = content_h - bottom_h;
+
+    // Right dock
+    if model.dock_layout.right.is_open {
+        let right_w = model.dock_layout.right.size(scale);
+        if right_w > 0.0 {
+            let right_rect = Rect::new(w - right_w, 0.0, right_w, side_h);
+            if right_rect.contains(pt.x as f32, pt.y as f32) {
+                let dock = &model.dock_layout.right;
+                if let Some(panel_id) = dock.active_panel() {
+                    return Some(HitTarget::DockContent {
+                        position: crate::panel::DockPosition::Right,
+                        active_panel_id: panel_id,
+                    });
+                }
+                return Some(HitTarget::DockTabBarEmpty {
+                    position: crate::panel::DockPosition::Right,
+                });
+            }
+        }
+    }
+
+    // Bottom dock
+    if model.dock_layout.bottom.is_open && bottom_h > 0.0 {
+        let left_w = model.dock_layout.left.size(scale);
+        let bottom_rect = Rect::new(left_w, side_h, w - left_w, bottom_h);
+        if bottom_rect.contains(pt.x as f32, pt.y as f32) {
+            let dock = &model.dock_layout.bottom;
+            if let Some(panel_id) = dock.active_panel() {
+                return Some(HitTarget::DockContent {
+                    position: crate::panel::DockPosition::Bottom,
+                    active_panel_id: panel_id,
+                });
+            }
+            return Some(HitTarget::DockTabBarEmpty {
+                position: crate::panel::DockPosition::Bottom,
+            });
+        }
+    }
+
+    None
+}
+
 /// Main hit-testing function that checks all UI regions in priority order.
 ///
 /// Returns the highest-priority `HitTarget` at the given point, or `None`
@@ -587,9 +640,10 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
 /// 2. Status bar (always on top at bottom of window)
 /// 3. Sidebar resize handle
 /// 4. Sidebar file tree
-/// 5. Splitter bars
-/// 6. Preview panes (header and content)
-/// 7. Editor groups (tab bar, gutter, content)
+/// 5. Dock panels (right, bottom)
+/// 6. Splitter bars
+/// 7. Preview panes (header and content)
+/// 8. Editor groups (tab bar, gutter, content)
 pub fn hit_test_ui(model: &AppModel, pt: Point, char_width: f32) -> Option<HitTarget> {
     // 1. Modal overlay (highest priority)
     if let Some(target) = hit_test_modal(model, pt) {
@@ -611,7 +665,12 @@ pub fn hit_test_ui(model: &AppModel, pt: Point, char_width: f32) -> Option<HitTa
         return Some(target);
     }
 
-    // 5. Splitter bars (need to compute layout first)
+    // 5. Dock panels (must be checked before editor groups, which may overlap)
+    if let Some(target) = hit_test_docks(model, pt) {
+        return Some(target);
+    }
+
+    // 6. Splitter bars (need to compute layout first)
     let sidebar_width = model
         .workspace
         .as_ref()
@@ -638,12 +697,12 @@ pub fn hit_test_ui(model: &AppModel, pt: Point, char_width: f32) -> Option<HitTa
         return Some(target);
     }
 
-    // 6. Preview panes
+    // 7. Preview panes
     if let Some(target) = hit_test_previews(model, pt) {
         return Some(target);
     }
 
-    // 7. Editor groups
+    // 8. Editor groups
     hit_test_groups(model, pt, char_width)
 }
 
