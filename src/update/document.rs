@@ -610,6 +610,7 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
 
         DocumentMsg::DeleteWordBackward => {
             let cursor_before = *model.editor().primary_cursor();
+            let old_line_count = model.document().line_count();
 
             // Multi-cursor: process all cursors in reverse document order
             if model.editor().has_multiple_cursors() {
@@ -695,7 +696,12 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(redraw_with_syntax_parse(model));
+                let new_line_count = model.document().line_count();
+                let edit_line = cursor_before.line.min(new_line_count.saturating_sub(1));
+                return Some(redraw_with_syntax_parse_shift(
+                    model,
+                    Some((edit_line, old_line_count, new_line_count)),
+                ));
             }
 
             // Single cursor: check for selection
@@ -710,7 +716,12 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(redraw_with_syntax_parse(model));
+                let new_line_count = model.document().line_count();
+                let edit_line = cursor_before.line.min(new_line_count.saturating_sub(1));
+                return Some(redraw_with_syntax_parse_shift(
+                    model,
+                    Some((edit_line, old_line_count, new_line_count)),
+                ));
             }
 
             // No selection: delete word to the left
@@ -741,11 +752,17 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
             }
 
             model.reset_cursor_blink();
-            Some(redraw_with_syntax_parse(model))
+            let new_line_count = model.document().line_count();
+            let edit_line = cursor_before.line.min(new_line_count.saturating_sub(1));
+            Some(redraw_with_syntax_parse_shift(
+                model,
+                Some((edit_line, old_line_count, new_line_count)),
+            ))
         }
 
         DocumentMsg::DeleteWordForward => {
             let cursor_before = *model.editor().primary_cursor();
+            let old_line_count = model.document().line_count();
 
             // Multi-cursor: process all cursors in reverse document order
             if model.editor().has_multiple_cursors() {
@@ -829,7 +846,12 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(redraw_with_syntax_parse(model));
+                let new_line_count = model.document().line_count();
+                let edit_line = cursor_before.line.min(new_line_count.saturating_sub(1));
+                return Some(redraw_with_syntax_parse_shift(
+                    model,
+                    Some((edit_line, old_line_count, new_line_count)),
+                ));
             }
 
             // Single cursor: check for selection
@@ -844,7 +866,12 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 model.document_mut().is_modified = true;
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(redraw_with_syntax_parse(model));
+                let new_line_count = model.document().line_count();
+                let edit_line = cursor_before.line.min(new_line_count.saturating_sub(1));
+                return Some(redraw_with_syntax_parse_shift(
+                    model,
+                    Some((edit_line, old_line_count, new_line_count)),
+                ));
             }
 
             // No selection: delete word to the right
@@ -876,11 +903,17 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
             }
 
             model.reset_cursor_blink();
-            Some(redraw_with_syntax_parse(model))
+            let new_line_count = model.document().line_count();
+            let edit_line = cursor_before.line.min(new_line_count.saturating_sub(1));
+            Some(redraw_with_syntax_parse_shift(
+                model,
+                Some((edit_line, old_line_count, new_line_count)),
+            ))
         }
 
         DocumentMsg::DeleteForward => {
             let cursor_before = *model.editor().primary_cursor();
+            let old_line_count = model.document().line_count();
 
             // Multi-cursor: process all cursors in reverse document order
             if model.editor().has_multiple_cursors() {
@@ -950,7 +983,12 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
 
                 model.document_mut().is_modified = true;
                 model.reset_cursor_blink();
-                return Some(redraw_with_syntax_parse(model));
+                let new_line_count = model.document().line_count();
+                let edit_line = cursor_before.line.min(new_line_count.saturating_sub(1));
+                return Some(redraw_with_syntax_parse_shift(
+                    model,
+                    Some((edit_line, old_line_count, new_line_count)),
+                ));
             }
 
             // Single cursor: check for selection
@@ -964,7 +1002,12 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 });
                 model.document_mut().is_modified = true;
                 model.reset_cursor_blink();
-                return Some(redraw_with_syntax_parse(model));
+                let new_line_count = model.document().line_count();
+                let edit_line = cursor_before.line.min(new_line_count.saturating_sub(1));
+                return Some(redraw_with_syntax_parse_shift(
+                    model,
+                    Some((edit_line, old_line_count, new_line_count)),
+                ));
             }
 
             let pos = model.cursor_buffer_position();
@@ -1002,11 +1045,17 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
             }
 
             model.reset_cursor_blink();
-            Some(redraw_with_syntax_parse(model))
+            let new_line_count = model.document().line_count();
+            let edit_line = cursor_before.line.min(new_line_count.saturating_sub(1));
+            Some(redraw_with_syntax_parse_shift(
+                model,
+                Some((edit_line, old_line_count, new_line_count)),
+            ))
         }
 
         DocumentMsg::DeleteLine => {
             let total_lines = model.document().line_count();
+            let old_line_count = total_lines;
             if total_lines == 0 {
                 return Some(redraw_with_syntax_parse(model));
             }
@@ -1150,7 +1199,13 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
 
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
-                return Some(redraw_with_syntax_parse(model));
+                let new_line_count = model.document().line_count();
+                let min_line = covered_lines.iter().copied().min().unwrap_or(0);
+                let edit_line = min_line.min(new_line_count.saturating_sub(1));
+                return Some(redraw_with_syntax_parse_shift(
+                    model,
+                    Some((edit_line, old_line_count, new_line_count)),
+                ));
             }
 
             let cursor_before = *model.editor().primary_cursor();
@@ -1221,7 +1276,11 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
 
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(redraw_with_syntax_parse(model))
+            let new_line_count = model.document().line_count();
+            Some(redraw_with_syntax_parse_shift(
+                model,
+                Some((line_idx.min(new_line_count.saturating_sub(1)), old_line_count, new_line_count)),
+            ))
         }
 
         DocumentMsg::Undo => {

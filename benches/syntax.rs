@@ -569,8 +569,6 @@ fn rope_to_string_snapshot(bencher: divan::Bencher, lines: usize) {
 
 #[divan::bench(args = [100, 500, 1000, 5000])]
 fn highlight_shift_for_insert(bencher: divan::Bencher, lines: usize) {
-    use token::syntax::SyntaxHighlights;
-
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
     let source = generate_large_rust(lines);
@@ -586,8 +584,6 @@ fn highlight_shift_for_insert(bencher: divan::Bencher, lines: usize) {
 
 #[divan::bench(args = [100, 500, 1000, 5000])]
 fn highlight_shift_for_delete(bencher: divan::Bencher, lines: usize) {
-    use token::syntax::SyntaxHighlights;
-
     let mut state = ParserState::new();
     let doc_id = DocumentId(1);
     let source = generate_large_rust(lines);
