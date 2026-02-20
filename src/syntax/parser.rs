@@ -102,9 +102,11 @@ const RUST_HIGHLIGHTS: &str = tree_sitter_rust::HIGHLIGHTS_QUERY;
 const HTML_HIGHLIGHTS: &str = include_str!("../../queries/html/highlights.scm");
 const CSS_HIGHLIGHTS: &str = include_str!("../../queries/css/highlights.scm");
 const JAVASCRIPT_HIGHLIGHTS: &str = include_str!("../../queries/javascript/highlights.scm");
+const JSX_HIGHLIGHTS: &str = tree_sitter_javascript::JSX_HIGHLIGHT_QUERY;
 
 // Phase 3 languages (priority)
 const TYPESCRIPT_HIGHLIGHTS: &str = include_str!("../../queries/typescript/highlights.scm");
+const TSX_HIGHLIGHTS: &str = include_str!("../../queries/tsx/highlights.scm");
 const JSON_HIGHLIGHTS: &str = include_str!("../../queries/json/highlights.scm");
 const TOML_HIGHLIGHTS: &str = include_str!("../../queries/toml/highlights.scm");
 
@@ -173,6 +175,7 @@ impl ParserState {
         // Initialize Phase 3 languages (priority)
         state.init_language(LanguageId::TypeScript);
         state.init_language(LanguageId::Tsx);
+        state.init_language(LanguageId::Jsx);
         state.init_language(LanguageId::Json);
         state.init_language(LanguageId::Toml);
 
@@ -195,6 +198,9 @@ impl ParserState {
 
         // Initialize Phase 7 languages (template)
         state.init_language(LanguageId::Blade);
+
+        // Initialize Phase 8 languages (framework)
+        state.init_language(LanguageId::Vue);
 
         // Initialize markdown inline parser for two-pass parsing
         state.init_markdown_inline();
@@ -228,6 +234,29 @@ impl ParserState {
 
     /// Initialize a language's parser and query
     fn init_language(&mut self, lang: LanguageId) {
+        // JSX needs combined JS + JSX highlight queries
+        if lang == LanguageId::Jsx {
+            let ts_lang: tree_sitter::Language = tree_sitter_javascript::LANGUAGE.into();
+            let combined = format!("{}\n{}", JAVASCRIPT_HIGHLIGHTS, JSX_HIGHLIGHTS);
+
+            let mut parser = Parser::new();
+            if let Err(e) = parser.set_language(&ts_lang) {
+                tracing::error!("Failed to set language for JSX: {}", e);
+                return;
+            }
+            self.parsers.insert(lang, parser);
+
+            match Query::new(&ts_lang, &combined) {
+                Ok(query) => {
+                    self.queries.insert(lang, query);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to compile query for JSX: {:?}", e);
+                }
+            }
+            return;
+        }
+
         let (ts_lang, highlights_scm) = match lang {
             // Phase 1 languages
             LanguageId::Yaml => (tree_sitter_yaml::language(), YAML_HIGHLIGHTS),
@@ -245,9 +274,9 @@ impl ParserState {
                 tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
                 TYPESCRIPT_HIGHLIGHTS,
             ),
-            LanguageId::Tsx => (
+            LanguageId::Tsx | LanguageId::Jsx => (
                 tree_sitter_typescript::LANGUAGE_TSX.into(),
-                TYPESCRIPT_HIGHLIGHTS, // TSX uses same highlights as TypeScript
+                TSX_HIGHLIGHTS,
             ),
             LanguageId::Json => (tree_sitter_json::LANGUAGE.into(), JSON_HIGHLIGHTS),
             LanguageId::Toml => (tree_sitter_toml_ng::LANGUAGE.into(), TOML_HIGHLIGHTS),
@@ -267,6 +296,8 @@ impl ParserState {
             LanguageId::Xml => (tree_sitter_xml::LANGUAGE_XML.into(), XML_HIGHLIGHTS),
             // Phase 7 languages (template)
             LanguageId::Blade => (tree_sitter_blade::LANGUAGE.into(), BLADE_HIGHLIGHTS),
+            // Phase 8 languages (framework) — Vue uses HTML grammar
+            LanguageId::Vue => (tree_sitter_html::LANGUAGE.into(), HTML_HIGHLIGHTS),
             // No highlighting for plain text
             LanguageId::PlainText => return,
         };
@@ -312,6 +343,11 @@ impl ParserState {
         // Use specialized parsing with language injection for HTML
         if language == LanguageId::Html {
             return self.parse_and_highlight_html(source, doc_id, revision);
+        }
+
+        // Use specialized parsing with language injection for Vue SFC
+        if language == LanguageId::Vue {
+            return self.parse_and_highlight_vue(source, doc_id, revision);
         }
 
         let parser = match self.parsers.get_mut(&language) {
@@ -1197,6 +1233,174 @@ impl ParserState {
         self.inject_html_language_highlights(raw_text, source, LanguageId::Css, highlights);
     }
 
+    /// Specialized Vue SFC parsing - HTML structure with smart script language detection
+    fn parse_and_highlight_vue(
+        &mut self,
+        source: &str,
+        doc_id: DocumentId,
+        revision: u64,
+    ) -> SyntaxHighlights {
+        let language = LanguageId::Vue;
+
+        // Step 1: Parse with HTML grammar (Vue SFC is structurally valid HTML)
+        let parser = match self.parsers.get_mut(&language) {
+            Some(p) => p,
+            None => {
+                tracing::warn!("No parser for Vue");
+                return SyntaxHighlights::new(language, revision);
+            }
+        };
+
+        // Try incremental parsing if cached
+        let tree = if let Some(cached) = self.doc_cache.get_mut(&doc_id) {
+            if cached.language == language {
+                if let Some(edit) = compute_incremental_edit(&cached.source, source) {
+                    cached.tree.edit(&edit);
+                    match parser.parse(source, Some(&cached.tree)) {
+                        Some(new_tree) => {
+                            cached.tree = new_tree.clone();
+                            cached.source = source.to_owned();
+                            new_tree
+                        }
+                        None => {
+                            self.doc_cache.remove(&doc_id);
+                            match parser.parse(source, None) {
+                                Some(t) => {
+                                    self.doc_cache.insert(
+                                        doc_id,
+                                        DocParseState {
+                                            language,
+                                            tree: t.clone(),
+                                            source: source.to_owned(),
+                                        },
+                                    );
+                                    t
+                                }
+                                None => return SyntaxHighlights::new(language, revision),
+                            }
+                        }
+                    }
+                } else {
+                    cached.tree.clone()
+                }
+            } else {
+                self.doc_cache.remove(&doc_id);
+                match parser.parse(source, None) {
+                    Some(t) => {
+                        self.doc_cache.insert(
+                            doc_id,
+                            DocParseState {
+                                language,
+                                tree: t.clone(),
+                                source: source.to_owned(),
+                            },
+                        );
+                        t
+                    }
+                    None => return SyntaxHighlights::new(language, revision),
+                }
+            }
+        } else {
+            match parser.parse(source, None) {
+                Some(t) => {
+                    self.doc_cache.insert(
+                        doc_id,
+                        DocParseState {
+                            language,
+                            tree: t.clone(),
+                            source: source.to_owned(),
+                        },
+                    );
+                    t
+                }
+                None => return SyntaxHighlights::new(language, revision),
+            }
+        };
+
+        // Step 2: Extract HTML-level highlights (Vue uses same query as HTML)
+        let mut highlights = self.extract_highlights(source, &tree, language, revision);
+
+        // Step 3: Language injection for script/style with Vue-aware lang detection
+        self.extract_vue_embedded_highlights(source, &tree, &mut highlights);
+
+        // Re-sort tokens after adding injected highlights
+        for line_highlights in highlights.lines.values_mut() {
+            line_highlights
+                .tokens
+                .sort_by_key(|t| (t.start_col, t.end_col));
+        }
+
+        highlights
+    }
+
+    /// Extract highlights for embedded script/style content in Vue SFC
+    fn extract_vue_embedded_highlights(
+        &mut self,
+        source: &str,
+        tree: &Tree,
+        highlights: &mut SyntaxHighlights,
+    ) {
+        let mut cursor = tree.walk();
+        self.visit_vue_embedded_elements(&mut cursor, source, highlights);
+    }
+
+    /// Recursively visit nodes to find script/style elements in Vue SFC
+    fn visit_vue_embedded_elements(
+        &mut self,
+        cursor: &mut TreeCursor,
+        source: &str,
+        highlights: &mut SyntaxHighlights,
+    ) {
+        loop {
+            let node = cursor.node();
+
+            match node.kind() {
+                "script_element" => {
+                    self.process_vue_script_element(node, source, highlights);
+                }
+                "style_element" => {
+                    // Style injection is identical to HTML
+                    self.process_style_element(node, source, highlights);
+                }
+                _ => {}
+            }
+
+            if cursor.goto_first_child() {
+                self.visit_vue_embedded_elements(cursor, source, highlights);
+                cursor.goto_parent();
+            }
+
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+    }
+
+    /// Process Vue <script> element - detect lang attribute for TypeScript support
+    fn process_vue_script_element(
+        &mut self,
+        node: tree_sitter::Node,
+        source: &str,
+        highlights: &mut SyntaxHighlights,
+    ) {
+        let lang_id = detect_vue_script_language(node, source);
+
+        // Find raw_text child (the script content)
+        let mut child_cursor = node.walk();
+        if child_cursor.goto_first_child() {
+            loop {
+                let child = child_cursor.node();
+                if child.kind() == "raw_text" {
+                    self.inject_html_language_highlights(child, source, lang_id, highlights);
+                    break;
+                }
+                if !child_cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
+    }
+
     /// Inject language highlights for HTML embedded content
     fn inject_html_language_highlights(
         &mut self,
@@ -1307,6 +1511,66 @@ impl ParserState {
             }
         }
     }
+}
+
+/// Detect the script language from a Vue SFC `<script>` element's `lang` attribute.
+/// Returns TypeScript for `lang="ts"` or `lang="typescript"`, TSX for `lang="tsx"`,
+/// and JavaScript as default.
+fn detect_vue_script_language(script_node: tree_sitter::Node, source: &str) -> LanguageId {
+    let mut cursor = script_node.walk();
+    if !cursor.goto_first_child() {
+        return LanguageId::JavaScript;
+    }
+    loop {
+        let child = cursor.node();
+        if child.kind() == "start_tag" {
+            let mut attr_cursor = child.walk();
+            if attr_cursor.goto_first_child() {
+                loop {
+                    let attr = attr_cursor.node();
+                    if attr.kind() == "attribute" {
+                        let mut ac = attr.walk();
+                        let mut is_lang = false;
+                        let mut value = None;
+                        if ac.goto_first_child() {
+                            loop {
+                                let n = ac.node();
+                                if n.kind() == "attribute_name" {
+                                    let name = &source[n.start_byte()..n.end_byte()];
+                                    is_lang = name == "lang";
+                                } else if n.kind() == "quoted_attribute_value"
+                                    || n.kind() == "attribute_value"
+                                {
+                                    let v = &source[n.start_byte()..n.end_byte()];
+                                    value = Some(v.trim_matches('"').trim_matches('\''));
+                                }
+                                if !ac.goto_next_sibling() {
+                                    break;
+                                }
+                            }
+                        }
+                        if is_lang {
+                            if let Some(v) = value {
+                                return match v {
+                                    "ts" | "typescript" => LanguageId::TypeScript,
+                                    "tsx" => LanguageId::Tsx,
+                                    _ => LanguageId::JavaScript,
+                                };
+                            }
+                        }
+                    }
+                    if !attr_cursor.goto_next_sibling() {
+                        break;
+                    }
+                }
+            }
+            break;
+        }
+        if !cursor.goto_next_sibling() {
+            break;
+        }
+    }
+    LanguageId::JavaScript
 }
 
 impl Default for ParserState {
@@ -1511,7 +1775,7 @@ enabled: true
             assert_query_compiles(
                 "TSX",
                 tree_sitter_typescript::LANGUAGE_TSX.into(),
-                TYPESCRIPT_HIGHLIGHTS,
+                TSX_HIGHLIGHTS,
             );
         }
 
@@ -2670,6 +2934,68 @@ function hello() {
                 .iter()
                 .filter_map(|t| super::super::highlights::HIGHLIGHT_NAMES.get(t.highlight as usize))
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_vue_sfc_highlighting() {
+        let mut state = ParserState::new();
+        let source = r#"<template>
+  <div>{{ message }}</div>
+</template>
+
+<script lang="ts">
+export default {
+  data() {
+    return { message: "Hello" }
+  }
+}
+</script>
+
+<style>
+.container {
+  color: red;
+}
+</style>"#;
+        let doc_id = DocumentId(400);
+        let highlights = state.parse_and_highlight(source, LanguageId::Vue, doc_id, 1);
+
+        assert_eq!(highlights.language, LanguageId::Vue);
+        // Should have HTML highlights in template
+        assert!(
+            highlights.lines.contains_key(&1),
+            "Should highlight template div"
+        );
+        // Should have TypeScript highlights in script (lang="ts")
+        assert!(
+            highlights.lines.contains_key(&5),
+            "Should highlight export default"
+        );
+        // Should have CSS highlights in style
+        assert!(
+            highlights.lines.contains_key(&15),
+            "Should highlight .container"
+        );
+    }
+
+    #[test]
+    fn test_vue_sfc_javascript_default() {
+        let mut state = ParserState::new();
+        let source = r#"<script>
+export default {
+  data() {
+    return {}
+  }
+}
+</script>"#;
+        let doc_id = DocumentId(401);
+        let highlights = state.parse_and_highlight(source, LanguageId::Vue, doc_id, 1);
+
+        assert_eq!(highlights.language, LanguageId::Vue);
+        // Should have JavaScript highlights in script (default, no lang attr)
+        assert!(
+            highlights.lines.contains_key(&1),
+            "Should highlight export default"
         );
     }
 
