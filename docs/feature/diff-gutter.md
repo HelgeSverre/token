@@ -2,7 +2,7 @@
 
 Mini diff markers in the gutter showing changed/added/deleted lines vs disk
 
-> **Status:** Planning
+> **Status:** Planned
 > **Priority:** P2
 > **Effort:** M
 > **Created:** 2025-12-19
