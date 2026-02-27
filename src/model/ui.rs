@@ -57,6 +57,8 @@ pub enum HoverRegion {
     DockResize(DockPosition),
     /// Hovering over a preview pane
     Preview,
+    /// Hovering over a button control
+    Button,
 }
 
 // ============================================================================

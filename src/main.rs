@@ -47,7 +47,7 @@ mod tests {
     use token::messages::{DocumentMsg, EditorMsg, Msg};
     use token::model::{
         AppModel, Cursor, Document, EditorArea, EditorState, Position, RectangleSelectionState,
-        Selection, UiState, ViewMode, Viewport,
+        Selection, TabContent, UiState, ViewMode, Viewport,
     };
     use token::theme::Theme;
     use token::update::update;
@@ -89,6 +89,7 @@ mod tests {
             occurrence_state: None,
             selection_history: Vec::new(),
             view_mode: ViewMode::default(),
+            tab_content: TabContent::default(),
             matched_brackets: None,
         };
         let editor_area = EditorArea::single_document(document, editor);
@@ -672,6 +673,7 @@ mod tests {
             occurrence_state: None,
             selection_history: Vec::new(),
             view_mode: ViewMode::default(),
+            tab_content: TabContent::default(),
             matched_brackets: None,
         };
         let editor_area = EditorArea::single_document(document, editor);

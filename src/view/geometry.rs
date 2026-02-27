@@ -1370,6 +1370,60 @@ impl DockRects {
     }
 }
 
+// ============================================================================
+// Binary Placeholder Layout
+// ============================================================================
+
+/// Button label used for binary placeholder tabs.
+pub const BINARY_PLACEHOLDER_BUTTON_LABEL: &str = "Open with Default Application";
+
+/// Layout positions for the binary file placeholder screen.
+///
+/// Pre-computes all vertical positions and the button rect so rendering
+/// and hit-testing use the exact same geometry.
+pub struct BinaryPlaceholderLayout {
+    /// Horizontal center of the content area
+    pub center_x: usize,
+    /// Y position for the filename text
+    pub name_y: usize,
+    /// Y position for the file size text
+    pub size_y: usize,
+    /// The button's bounding rect
+    pub button_rect: Rect,
+}
+
+/// Compute binary placeholder layout from the content area dimensions.
+///
+/// Used by both the renderer and hit-test code to ensure consistent positioning.
+pub fn binary_placeholder_layout(
+    content_rect: Rect,
+    line_height: usize,
+    char_width: f32,
+    padding_large: usize,
+    padding_medium: usize,
+    button_label: &str,
+) -> BinaryPlaceholderLayout {
+    let center_x = content_rect.x as usize + content_rect.width as usize / 2;
+    let center_y = content_rect.y as usize + content_rect.height as usize / 2;
+
+    let name_y = center_y.saturating_sub(line_height * 2);
+    let size_y = name_y + line_height + line_height / 2;
+    let btn_y = size_y + line_height * 3;
+
+    let padding_h = padding_large * 2;
+    let padding_v = padding_medium;
+    let button_rect = super::button::button_rect(
+        center_x, btn_y, button_label, char_width, line_height, padding_h, padding_v,
+    );
+
+    BinaryPlaceholderLayout {
+        center_x,
+        name_y,
+        size_y,
+        button_rect,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

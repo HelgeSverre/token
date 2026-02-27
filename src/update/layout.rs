@@ -9,8 +9,10 @@ use crate::model::{
     AppModel, Document, EditorGroup, EditorState, GroupId, LayoutNode, Rect, SplitContainer,
     SplitDirection, Tab, TabId,
 };
+use crate::model::editor::{BinaryPlaceholderState, ImageTabState, TabContent};
 use crate::util::{
-    filename_for_display, is_likely_binary, validate_file_for_opening, FileOpenError,
+    filename_for_display, is_likely_binary, is_supported_image, validate_file_for_opening,
+    FileOpenError,
 };
 
 use super::syntax::schedule_syntax_parse;
@@ -34,6 +36,8 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
             sync_viewports(model);
             cmd
         }
+
+        LayoutMsg::OpenWithDefaultApp(path) => Some(Cmd::OpenInExplorer { path }),
 
         LayoutMsg::SplitFocused(direction) => {
             split_focused_group(model, direction);
@@ -235,14 +239,98 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
     let doc_id = model.editor_area.next_document_id();
     let document = match validate_file_for_opening(&path) {
         Ok(()) => {
-            // File exists - check for binary content
-            if is_likely_binary(&path) {
+            // File exists - check for image files first
+            if is_supported_image(&path) {
+                // TODO: image::open() blocks the main thread during decode. For large images or slow
+                // drives this freezes the UI. Fix: add Cmd::LoadImage to spawn decode on a background
+                // thread, post Msg::ImageLoaded back via EventLoopProxy, and show a loading state.
+                let img = match image::open(&path) {
+                    Ok(img) => img.to_rgba8(),
+                    Err(e) => {
+                        model
+                            .ui
+                            .set_status(format!("Error opening image {}: {}", filename, e));
+                        return Some(Cmd::Redraw);
+                    }
+                };
+                let (width, height) = img.dimensions();
+                let pixels = img.into_raw();
+
+                let mut doc = Document::new();
+                doc.id = Some(doc_id);
+                doc.file_path = Some(path.clone());
+                model.editor_area.documents.insert(doc_id, doc);
+                model.record_file_opened(path.clone());
+
+                let editor_id = model.editor_area.next_editor_id();
+                let mut editor = EditorState::new();
+                editor.id = Some(editor_id);
+                editor.document_id = Some(doc_id);
+                editor.tab_content = TabContent::Image(ImageTabState {
+                    path,
+                    pixels,
+                    width,
+                    height,
+                });
+                model.editor_area.editors.insert(editor_id, editor);
+
+                let tab_id = model.editor_area.next_tab_id();
+                let tab = Tab {
+                    id: tab_id,
+                    editor_id,
+                    is_pinned: false,
+                    is_preview: false,
+                };
+                if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
+                    group.tabs.push(tab);
+                    group.active_tab_index = group.tabs.len() - 1;
+                }
+
                 model
                     .ui
-                    .set_status(format!("Cannot open binary file: {}", filename));
+                    .set_status(format!("Opened image: {} ({}×{})", filename, width, height));
                 return Some(Cmd::Redraw);
             }
-            // Load document from file
+
+            // Check for binary content
+            if is_likely_binary(&path) {
+                let size_bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+
+                let mut doc = Document::new();
+                doc.id = Some(doc_id);
+                doc.file_path = Some(path.clone());
+                model.editor_area.documents.insert(doc_id, doc);
+                model.record_file_opened(path.clone());
+
+                let editor_id = model.editor_area.next_editor_id();
+                let mut editor = EditorState::new();
+                editor.id = Some(editor_id);
+                editor.document_id = Some(doc_id);
+                editor.tab_content = TabContent::BinaryPlaceholder(BinaryPlaceholderState {
+                    path,
+                    size_bytes,
+                });
+                model.editor_area.editors.insert(editor_id, editor);
+
+                let tab_id = model.editor_area.next_tab_id();
+                let tab = Tab {
+                    id: tab_id,
+                    editor_id,
+                    is_pinned: false,
+                    is_preview: false,
+                };
+                if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
+                    group.tabs.push(tab);
+                    group.active_tab_index = group.tabs.len() - 1;
+                }
+
+                model
+                    .ui
+                    .set_status(format!("Opened binary file: {}", filename));
+                return Some(Cmd::Redraw);
+            }
+
+            // Load text document from file
             match Document::from_file(path.clone()) {
                 Ok(mut doc) => {
                     doc.id = Some(doc_id);

@@ -7,7 +7,7 @@
 use token::config::EditorConfig;
 use token::model::{
     AppModel, Cursor, Document, EditorArea, EditorState, Position, RectangleSelectionState,
-    Selection, UiState, ViewMode, Viewport,
+    Selection, TabContent, UiState, ViewMode, Viewport,
 };
 use token::theme::Theme;
 
@@ -38,6 +38,7 @@ pub fn test_model(text: &str, line: usize, column: usize) -> AppModel {
         occurrence_state: None,
         selection_history: Vec::new(),
         view_mode: ViewMode::default(),
+        tab_content: TabContent::default(),
         matched_brackets: None,
     };
 
@@ -103,6 +104,7 @@ pub fn test_model_with_selection(
         occurrence_state: None,
         selection_history: Vec::new(),
         view_mode: ViewMode::default(),
+        tab_content: TabContent::default(),
         matched_brackets: None,
     };
 
@@ -165,6 +167,7 @@ pub fn test_model_multi_cursor(text: &str, positions: &[(usize, usize)]) -> AppM
         occurrence_state: None,
         selection_history: Vec::new(),
         view_mode: ViewMode::default(),
+        tab_content: TabContent::default(),
         matched_brackets: None,
     };
 

@@ -94,6 +94,18 @@ pub fn validate_file_for_opening(path: &Path) -> Result<(), FileOpenError> {
     Ok(())
 }
 
+/// Check if a file path has a supported image extension
+pub fn is_supported_image(path: &Path) -> bool {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase());
+    matches!(
+        ext.as_deref(),
+        Some("png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "ico")
+    )
+}
+
 /// Check if a file is likely binary by scanning for null bytes
 ///
 /// Reads the first 8KB of the file and checks for null bytes,
@@ -165,6 +177,20 @@ mod tests {
         temp.flush().unwrap();
 
         assert!(is_likely_binary(temp.path()));
+    }
+
+    #[test]
+    fn test_is_supported_image() {
+        assert!(is_supported_image(Path::new("photo.png")));
+        assert!(is_supported_image(Path::new("photo.JPG")));
+        assert!(is_supported_image(Path::new("photo.jpeg")));
+        assert!(is_supported_image(Path::new("animation.gif")));
+        assert!(is_supported_image(Path::new("icon.ico")));
+        assert!(is_supported_image(Path::new("photo.webp")));
+        assert!(is_supported_image(Path::new("photo.bmp")));
+        assert!(!is_supported_image(Path::new("code.rs")));
+        assert!(!is_supported_image(Path::new("doc.pdf")));
+        assert!(!is_supported_image(Path::new("noext")));
     }
 
     #[test]

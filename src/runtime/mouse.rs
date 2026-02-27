@@ -345,6 +345,20 @@ fn handle_left_click(
             EventResult::consumed_with_focus(FocusTarget::Editor)
         }
 
+        // Binary placeholder "Open with Default Application" button
+        HitTarget::BinaryPlaceholderButton { group_id } => {
+            if *group_id != model.editor_area.focused_group_id {
+                update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
+            }
+            if let Some(editor) = model.editor_area.focused_editor() {
+                if let token::model::TabContent::BinaryPlaceholder(ref state) = editor.tab_content {
+                    let path = state.path.clone();
+                    update(model, Msg::Layout(LayoutMsg::OpenWithDefaultApp(path)));
+                }
+            }
+            EventResult::consumed_with_focus(FocusTarget::Editor)
+        }
+
         // Dock resize handle
         HitTarget::DockResize { position } => {
             update(
@@ -454,6 +468,24 @@ fn handle_editor_content_click(
     // Focus group if needed
     if group_id != model.editor_area.focused_group_id {
         update(model, Msg::Layout(LayoutMsg::FocusGroup(group_id)));
+    }
+
+    // Non-text tabs: double-click opens binary placeholder with default app, ignore other clicks
+    if let Some(editor) = model.editor_area.focused_editor() {
+        match &editor.tab_content {
+            token::model::TabContent::BinaryPlaceholder(state) => {
+                let click_count = click_tracker.track_click(0, 0);
+                if click_count >= 2 {
+                    let path = state.path.clone();
+                    update(model, Msg::Layout(LayoutMsg::OpenWithDefaultApp(path)));
+                }
+                return EventResult::consumed_with_focus(FocusTarget::Editor);
+            }
+            token::model::TabContent::Image(_) => {
+                return EventResult::consumed_with_focus(FocusTarget::Editor);
+            }
+            token::model::TabContent::Text => {}
+        }
     }
 
     // Convert pixel to cursor position
@@ -594,6 +626,9 @@ fn handle_middle_click(
         | HitTarget::DockTab { .. }
         | HitTarget::DockTabBarEmpty { .. }
         | HitTarget::DockContent { .. } => EventResult::consumed_no_redraw(),
+
+        // Binary placeholder button - no middle-click action
+        HitTarget::BinaryPlaceholderButton { .. } => EventResult::consumed_no_redraw(),
     }
 }
 

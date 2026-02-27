@@ -44,6 +44,8 @@ const COLOR_MAP = {
   constant: "ui.syntax.constant",
   tag: "ui.syntax.tag",
   attribute: "ui.syntax.attribute",
+  checkerboardLight: "ui.image_preview.checkerboard_light",
+  checkerboardDark: "ui.image_preview.checkerboard_dark",
 };
 
 function resolve(obj, dotPath) {

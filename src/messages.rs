@@ -318,6 +318,9 @@ pub enum LayoutMsg {
     /// Switch to tab by index in focused group (0-indexed)
     SwitchToTab(usize),
 
+    /// Open the focused file with the system's default application
+    OpenWithDefaultApp(PathBuf),
+
     // === Splitter Dragging ===
     /// Mouse pressed on a splitter - begin potential drag
     BeginSplitterDrag {

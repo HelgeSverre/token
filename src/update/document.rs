@@ -114,6 +114,11 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 }
 
 fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
+    // Skip text operations for non-text tabs
+    if !matches!(model.editor().tab_content, crate::model::TabContent::Text) {
+        return None;
+    }
+
     // Clear occurrence selection state on any editing operation
     // (except Copy which doesn't modify the document)
     if !matches!(msg, DocumentMsg::Copy) {
