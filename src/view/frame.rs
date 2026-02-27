@@ -264,6 +264,17 @@ impl<'a> Frame<'a> {
         self.buffer[idx] = blend_colors(self.buffer[idx], color, alpha);
     }
 
+    /// Blend a pixel with a given alpha value (0.0-1.0), respecting clip rect.
+    /// Optimized for text rendering where alpha comes from glyph bitmap.
+    #[inline]
+    pub fn blend_text_pixel(&mut self, x: usize, y: usize, color: u32, alpha: f32) {
+        if x < self.min_x() || x >= self.max_x() || y < self.min_y() || y >= self.max_y() {
+            return;
+        }
+        let idx = y * self.width + x;
+        self.buffer[idx] = blend_colors(self.buffer[idx], color, alpha);
+    }
+
     /// Fill a rectangle with alpha blending
     pub fn blend_rect(&mut self, rect: Rect, color: u32) {
         let x0 = (rect.x.max(0.0) as usize).min(self.width).max(self.min_x());
@@ -534,15 +545,12 @@ impl<'a> TextPainter<'a> {
                             let py = (glyph_top + bitmap_y as f32) as isize;
 
                             if px >= 0 && py >= 0 {
-                                let px = px as usize;
-                                let py = py as usize;
-
-                                if px < frame.width && py < frame.height {
-                                    let alpha_f = alpha as f32 / 255.0;
-                                    let idx = py * frame.width + px;
-                                    frame.buffer[idx] =
-                                        blend_colors(frame.buffer[idx], color, alpha_f);
-                                }
+                                frame.blend_text_pixel(
+                                    px as usize,
+                                    py as usize,
+                                    color,
+                                    alpha as f32 / 255.0,
+                                );
                             }
                         }
                     }
@@ -642,15 +650,12 @@ impl<'a> TextPainter<'a> {
                             let py = (glyph_top + bitmap_y as f32) as isize;
 
                             if px >= 0 && py >= 0 {
-                                let px = px as usize;
-                                let py = py as usize;
-
-                                if px < frame.width && py < frame.height {
-                                    let alpha_f = alpha as f32 / 255.0;
-                                    let idx = py * frame.width + px;
-                                    frame.buffer[idx] =
-                                        blend_colors(frame.buffer[idx], color, alpha_f);
-                                }
+                                frame.blend_text_pixel(
+                                    px as usize,
+                                    py as usize,
+                                    color,
+                                    alpha as f32 / 255.0,
+                                );
                             }
                         }
                     }
