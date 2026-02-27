@@ -1242,10 +1242,7 @@ mod tests {
             parse_directive_ident("\n\n@forelse"),
             Some("forelse".into())
         );
-        assert_eq!(
-            parse_directive_ident("  \t@push"),
-            Some("push".into())
-        );
+        assert_eq!(parse_directive_ident("  \t@push"), Some("push".into()));
 
         // With parameters after
         assert_eq!(

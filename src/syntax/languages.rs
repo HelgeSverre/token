@@ -38,6 +38,8 @@ pub enum LanguageId {
     Sema,
     // Phase 7 languages (template)
     Blade,
+    // Phase 8 languages (build tooling)
+    Just,
 }
 
 impl LanguageId {
@@ -69,6 +71,7 @@ impl LanguageId {
             "cpp" | "cc" | "cxx" | "c++" | "hpp" | "hh" | "hxx" | "h++" => LanguageId::Cpp,
             "java" => LanguageId::Java,
             "sh" | "bash" | "zsh" | "ksh" => LanguageId::Bash,
+            "just" => LanguageId::Just,
             // Phase 6 (specialized)
             "sema" => LanguageId::Sema,
             "scm" | "rkt" | "ss" => LanguageId::Scheme,
@@ -86,6 +89,12 @@ impl LanguageId {
             // Compound extensions (must be checked before simple extension matching)
             if filename.ends_with(".blade.php") {
                 return LanguageId::Blade;
+            }
+
+            if filename.eq_ignore_ascii_case("justfile")
+                || filename.eq_ignore_ascii_case(".justfile")
+            {
+                return LanguageId::Just;
             }
 
             match filename {
@@ -134,6 +143,7 @@ impl LanguageId {
             LanguageId::Xml => "XML",
             LanguageId::Sema => "Sema",
             LanguageId::Blade => "Blade",
+            LanguageId::Just => "Just",
         }
     }
 
@@ -174,6 +184,7 @@ impl LanguageId {
             "xml" | "svg" => Some(LanguageId::Xml),
             "ini" | "conf" => Some(LanguageId::Ini),
             "blade" => Some(LanguageId::Blade),
+            "just" | "justfile" => Some(LanguageId::Just),
             // Don't inject markdown into markdown
             "markdown" | "md" => None,
             _ => None,
@@ -212,6 +223,7 @@ mod tests {
         assert_eq!(LanguageId::from_extension("java"), LanguageId::Java);
         assert_eq!(LanguageId::from_extension("sh"), LanguageId::Bash);
         assert_eq!(LanguageId::from_extension("bash"), LanguageId::Bash);
+        assert_eq!(LanguageId::from_extension("just"), LanguageId::Just);
         // Phase 6
         assert_eq!(LanguageId::from_extension("scm"), LanguageId::Scheme);
         assert_eq!(LanguageId::from_extension("rkt"), LanguageId::Scheme);
@@ -254,6 +266,26 @@ mod tests {
         assert_eq!(
             LanguageId::from_path(Path::new(".bashrc")),
             LanguageId::Bash
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new("justfile")),
+            LanguageId::Just
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new("Justfile")),
+            LanguageId::Just
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new(".justfile")),
+            LanguageId::Just
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new(".Justfile")),
+            LanguageId::Just
+        );
+        assert_eq!(
+            LanguageId::from_path(Path::new("build.just")),
+            LanguageId::Just
         );
         // Lock files (TOML)
         assert_eq!(
@@ -320,5 +352,6 @@ mod tests {
         assert_eq!(LanguageId::Ini.display_name(), "INI");
         assert_eq!(LanguageId::Xml.display_name(), "XML");
         assert_eq!(LanguageId::Blade.display_name(), "Blade");
+        assert_eq!(LanguageId::Just.display_name(), "Just");
     }
 }

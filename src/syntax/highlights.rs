@@ -175,18 +175,18 @@ impl SyntaxHighlights {
 
 /// Look up highlight ID by capture name
 pub fn highlight_id_for_name(name: &str) -> Option<HighlightId> {
-    // Handle hierarchical names: "keyword.function" should match "keyword.function",
-    // but "keyword" should also match as a fallback
-    if let Some(pos) = HIGHLIGHT_NAMES.iter().position(|&n| n == name) {
-        return Some(pos as HighlightId);
-    }
-
-    // Try parent capture (e.g., "keyword.function" -> "keyword")
-    if let Some(dot_pos) = name.rfind('.') {
-        let parent = &name[..dot_pos];
-        if let Some(pos) = HIGHLIGHT_NAMES.iter().position(|&n| n == parent) {
+    // Handle hierarchical names: try exact match first, then progressively shorter
+    // parents (e.g. "keyword.control.import" -> "keyword.control" -> "keyword").
+    let mut current = name;
+    loop {
+        if let Some(pos) = HIGHLIGHT_NAMES.iter().position(|&n| n == current) {
             return Some(pos as HighlightId);
         }
+
+        let Some(dot_pos) = current.rfind('.') else {
+            break;
+        };
+        current = &current[..dot_pos];
     }
 
     None
@@ -200,6 +200,7 @@ mod tests {
     fn test_highlight_id_lookup() {
         assert!(highlight_id_for_name("keyword").is_some());
         assert!(highlight_id_for_name("keyword.function").is_some());
+        assert!(highlight_id_for_name("keyword.control.import").is_some());
         assert!(highlight_id_for_name("string").is_some());
         assert!(highlight_id_for_name("nonexistent").is_none());
     }

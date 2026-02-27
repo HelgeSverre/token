@@ -128,6 +128,9 @@ const SEMA_HIGHLIGHTS: &str = include_str!("../../queries/sema/highlights.scm");
 // Phase 7 languages (template)
 const BLADE_HIGHLIGHTS: &str = include_str!("../../queries/blade/highlights.scm");
 
+// Phase 8 languages (build tooling)
+const JUST_HIGHLIGHTS: &str = tree_sitter_just::HIGHLIGHTS_QUERY;
+
 /// Thread-local parser state (tree-sitter parsers are !Sync)
 pub struct ParserState {
     /// Parser instances per language
@@ -195,6 +198,9 @@ impl ParserState {
 
         // Initialize Phase 7 languages (template)
         state.init_language(LanguageId::Blade);
+
+        // Initialize Phase 8 languages (build tooling)
+        state.init_language(LanguageId::Just);
 
         // Initialize markdown inline parser for two-pass parsing
         state.init_markdown_inline();
@@ -267,6 +273,8 @@ impl ParserState {
             LanguageId::Xml => (tree_sitter_xml::LANGUAGE_XML.into(), XML_HIGHLIGHTS),
             // Phase 7 languages (template)
             LanguageId::Blade => (tree_sitter_blade::LANGUAGE.into(), BLADE_HIGHLIGHTS),
+            // Phase 8 languages (build tooling)
+            LanguageId::Just => (tree_sitter_just::LANGUAGE.into(), JUST_HIGHLIGHTS),
             // No highlighting for plain text
             LanguageId::PlainText => return,
         };
@@ -1400,6 +1408,8 @@ enabled: true
             LanguageId::Xml,
             // Phase 7
             LanguageId::Blade,
+            // Phase 8
+            LanguageId::Just,
         ];
 
         for lang in languages_with_queries {
@@ -1602,6 +1612,13 @@ enabled: true
                 tree_sitter_blade::LANGUAGE.into(),
                 BLADE_HIGHLIGHTS,
             );
+        }
+
+        // Phase 8 languages
+
+        #[test]
+        fn test_just_query_compiles() {
+            assert_query_compiles("Just", tree_sitter_just::LANGUAGE.into(), JUST_HIGHLIGHTS);
         }
     }
 
@@ -2027,6 +2044,24 @@ number = 42
         let highlights = state.parse_and_highlight(source, LanguageId::Xml, doc_id, 1);
 
         assert_eq!(highlights.language, LanguageId::Xml);
+        assert!(!highlights.lines.is_empty());
+    }
+
+    #[test]
+    fn test_just_parsing() {
+        let mut state = ParserState::new();
+        let source = r#"set shell := ["bash", "-cu"]
+
+build target="release":
+    cargo build --{{target}}
+
+test:
+    cargo test
+"#;
+        let doc_id = DocumentId(53);
+        let highlights = state.parse_and_highlight(source, LanguageId::Just, doc_id, 1);
+
+        assert_eq!(highlights.language, LanguageId::Just);
         assert!(!highlights.lines.is_empty());
     }
 
