@@ -18,6 +18,11 @@ pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 }
 
 fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
+    // Skip cursor/selection operations for non-text tabs
+    if !matches!(model.editor().tab_content, crate::model::TabContent::Text) {
+        return None;
+    }
+
     // Clear occurrence selection state and selection history on non-selection cursor movements
     // and selection-clearing operations (but NOT on ExpandSelection/ShrinkSelection)
     match &msg {

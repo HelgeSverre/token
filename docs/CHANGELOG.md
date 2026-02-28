@@ -4,13 +4,31 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
+## Unreleased
+
+### Added
+- Image Viewer: Open image files (PNG, JPG, GIF, BMP, WebP, ICO) inline in editor tabs with aspect-ratio-preserving scaling and checkerboard transparency background.
+- Binary Placeholder: Unsupported binary files now open a tab with a centered placeholder showing filename, file size, and a clickable "Open with Default Application" button.
+- Syntax: Added Just/Justfile language support with syntax highlighting via tree-sitter-just. Detects `justfile`, `Justfile`, `.justfile`, and `*.just` files.
+- Themes: `image_preview` section with `checkerboard_light`, `checkerboard_dark`, and `checkerboard_size` for customizing the image viewer transparency background. Per-theme values in all 9 builtin themes.
+- Themes: `button` section with 6 color properties (background, background_hover, background_pressed, foreground, border, focus_ring) for UI button styling.
+
+### Improved
+- Rendering: Frame clipping system — sidebar and other panels no longer render outside their bounds. TextPainter pixel writes are routed through the Frame clip rectangle.
+- Syntax: Hierarchical highlight name resolution now walks the full capture name chain (e.g. `keyword.control.import` → `keyword.control` → `keyword`) instead of only trying one parent level.
+
+### Fixed
+- Sidebar text no longer overflows into the editor area on long filenames.
+
+---
+
 ## v0.3.19 - 2026-02-19
 
 ### Added
 - Code Outline: Tree-sitter based symbol extraction panel in the right dock. Supports 10 languages (Rust, TypeScript, JavaScript, Python, Go, Java, PHP, C/C++, Markdown, YAML). Collapsible tree with click-to-select, double-click-to-jump, and scroll support.
 - Code Outline: Dock panel hit-testing fix — clicks on dock panels no longer fall through to the editor.
 - Code Outline: Added HTML outline support — shows structural/semantic elements (`html`, `body`, `nav`, `section`, `div`, `form`, `table`, etc.) with enriched labels (e.g. `div#app`, `section.hero`).
-- Code Outline: Added Blade outline support — shows `@section`, `@fragment`, `@push` with parameter names, block directives (`@if`, `@foreach`, `@switch`), and Blade components (`<x-*>`).
+- Code Outline: Added Blade outline support — shows structural directives (`@section`, `@fragment`, `@push`, `@verbatim`, `@once`, `@livewire`, etc.) with parameter names, and Blade components (`<x-*>`). Control flow directives (`@if`, `@foreach`, `@switch`) are excluded to reduce noise.
 - Syntax: Added Laravel Blade (`.blade.php`) language support with syntax highlighting for directives, comments, echo delimiters, components, and HTML structure. Uses [tree-sitter-blade](https://github.com/EmranMR/tree-sitter-blade) by [Emran MR](https://github.com/EmranMR).
 
 ### Improved

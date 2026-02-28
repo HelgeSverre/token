@@ -2,12 +2,14 @@
 //!
 //! Contains the Renderer struct and all rendering-related functionality.
 
+pub mod button;
 pub mod frame;
 pub mod geometry;
 pub mod helpers;
 pub mod hit_test;
 pub mod text_field;
 
+pub use button::{button_rect, render_button, ButtonState};
 pub use frame::{Frame, TextPainter};
 pub use helpers::get_tab_display_name;
 pub use text_field::{TextFieldContent, TextFieldOptions, TextFieldRenderer};
@@ -52,6 +54,7 @@ struct SidebarRenderContext {
     row_height: usize,
     indent: f32,
     scroll_offset: usize,
+    char_width: usize,
     // Colors
     text_color: u32,
     selection_bg: u32,
@@ -710,10 +713,28 @@ impl Renderer {
         // Branch by document language for appropriate rendering
         match document.language {
             crate::syntax::LanguageId::Html => {
-                Self::render_native_html_preview(frame, painter, model, document, preview, &pane, line_height, char_width);
+                Self::render_native_html_preview(
+                    frame,
+                    painter,
+                    model,
+                    document,
+                    preview,
+                    &pane,
+                    line_height,
+                    char_width,
+                );
             }
             _ => {
-                Self::render_native_markdown_preview(frame, painter, model, document, preview, &pane, line_height, char_width);
+                Self::render_native_markdown_preview(
+                    frame,
+                    painter,
+                    model,
+                    document,
+                    preview,
+                    &pane,
+                    line_height,
+                    char_width,
+                );
             }
         }
     }
@@ -902,18 +923,24 @@ impl Renderer {
         // Tab bar
         Self::render_tab_bar(frame, painter, model, group, &layout);
 
-        // Check view mode and dispatch to appropriate renderer
-        if let Some(csv_state) = editor.view_mode.as_csv() {
-            // CSV mode: render grid
-            Self::render_csv_grid(frame, painter, model, csv_state, &layout, is_focused);
-        } else {
-            // Text mode: render normal text area
-
-            // Text area (background highlights, text, cursors)
-            Self::render_text_area(frame, painter, model, editor, document, &layout, is_focused);
-
-            // Gutter (line numbers, border) - drawn on top of text area background
-            Self::render_gutter(frame, painter, model, editor, document, &layout);
+        // Dispatch based on tab content type
+        match &editor.tab_content {
+            crate::model::editor::TabContent::Image(img_state) => {
+                Self::render_image_tab(frame, painter, model, img_state, &layout);
+            }
+            crate::model::editor::TabContent::BinaryPlaceholder(placeholder) => {
+                Self::render_binary_placeholder(frame, painter, model, placeholder, &layout);
+            }
+            crate::model::editor::TabContent::Text => {
+                if let Some(csv_state) = editor.view_mode.as_csv() {
+                    Self::render_csv_grid(frame, painter, model, csv_state, &layout, is_focused);
+                } else {
+                    Self::render_text_area(
+                        frame, painter, model, editor, document, &layout, is_focused,
+                    );
+                    Self::render_gutter(frame, painter, model, editor, document, &layout);
+                }
+            }
         }
 
         // Dim non-focused groups when multiple groups exist (4% black overlay)
@@ -921,6 +948,101 @@ impl Renderer {
             let dim_color = 0x0A000000_u32; // 4% opacity black (alpha = 10/255 ≈ 4%)
             frame.blend_rect(group_rect, dim_color);
         }
+    }
+
+    /// Render an image viewer tab
+    fn render_image_tab(
+        frame: &mut Frame,
+        _painter: &mut TextPainter,
+        model: &AppModel,
+        img_state: &crate::model::editor::ImageTabState,
+        layout: &geometry::GroupLayout,
+    ) {
+        let content_rect = layout.content_rect;
+        let bg = model.theme.editor.background.to_argb_u32();
+        frame.fill_rect(content_rect, bg);
+
+        let padding = model.metrics.padding_large * 2;
+        let dest_x = content_rect.x as usize + padding;
+        let dest_y = content_rect.y as usize + padding;
+        let dest_w = (content_rect.width as usize).saturating_sub(padding * 2);
+        let dest_h = (content_rect.height as usize).saturating_sub(padding * 2);
+
+        if dest_w > 0 && dest_h > 0 {
+            // Draw checkerboard pattern for transparency
+            let ip = &model.theme.image_preview;
+            let check_size = ip.checkerboard_size;
+            let light = ip.checkerboard_light.to_argb_u32();
+            let dark = ip.checkerboard_dark.to_argb_u32();
+            for cy in 0..dest_h {
+                for cx in 0..dest_w {
+                    let px = dest_x + cx;
+                    let py = dest_y + cy;
+                    let checker = ((cx / check_size) + (cy / check_size)).is_multiple_of(2);
+                    frame.set_pixel(px, py, if checker { light } else { dark });
+                }
+            }
+
+            frame.blit_rgba_scaled(
+                &img_state.pixels,
+                img_state.width,
+                img_state.height,
+                dest_x,
+                dest_y,
+                dest_w,
+                dest_h,
+            );
+        }
+    }
+
+    /// Render a binary file placeholder tab
+    fn render_binary_placeholder(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        placeholder: &crate::model::editor::BinaryPlaceholderState,
+        layout: &geometry::GroupLayout,
+    ) {
+        let content_rect = layout.content_rect;
+        let bg = model.theme.editor.background.to_argb_u32();
+        let fg = model.theme.editor.foreground.to_argb_u32();
+        let dim_fg = model.theme.gutter.foreground.to_argb_u32();
+        frame.fill_rect(content_rect, bg);
+
+        let char_width = painter.char_width();
+        let line_height = painter.line_height();
+        let btn_label = geometry::BINARY_PLACEHOLDER_BUTTON_LABEL;
+        let bp_layout = geometry::binary_placeholder_layout(
+            content_rect, line_height, char_width,
+            model.metrics.padding_large, model.metrics.padding_medium, btn_label,
+        );
+
+        // Filename
+        let filename = placeholder
+            .path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
+        let name_x =
+            bp_layout.center_x.saturating_sub((filename.len() as f32 * char_width / 2.0) as usize);
+        painter.draw(frame, name_x, bp_layout.name_y, &filename, fg);
+
+        // File size
+        let size_str = format_file_size(placeholder.size_bytes);
+        let size_x =
+            bp_layout.center_x.saturating_sub((size_str.len() as f32 * char_width / 2.0) as usize);
+        painter.draw(frame, size_x, bp_layout.size_y, &size_str, dim_fg);
+
+        // "Open with Default Application" button
+        let btn_rect = bp_layout.button_rect;
+
+        let btn_state = if model.ui.hover == crate::model::ui::HoverRegion::Button {
+            button::ButtonState::Hovered
+        } else {
+            button::ButtonState::Normal
+        };
+
+        button::render_button(frame, painter, &model.theme, btn_rect, btn_label, btn_state, true);
     }
 
     fn render_tab_bar(
@@ -1018,6 +1140,14 @@ impl Renderer {
             border_color,
         );
 
+        // Clip all subsequent drawing to the sidebar bounds
+        frame.set_clip(Rect::new(
+            0.0,
+            0.0,
+            sidebar_width as f32,
+            sidebar_height as f32,
+        ));
+
         // Build render context with all constant values
         let ctx = SidebarRenderContext {
             sidebar_width,
@@ -1025,6 +1155,7 @@ impl Renderer {
             row_height: metrics.file_tree_row_height,
             indent: metrics.file_tree_indent,
             scroll_offset: workspace.scroll_offset,
+            char_width: painter.char_width().ceil() as usize,
             text_color: theme.foreground.to_argb_u32(),
             selection_bg: theme.selection_background.to_argb_u32(),
             selection_fg: theme.selection_foreground.to_argb_u32(),
@@ -1116,25 +1247,34 @@ impl Renderer {
                     ctx.text_color
                 };
 
-                // Calculate available width for text (sidebar_width minus text_x and right padding)
+                // Calculate available width for text
                 let right_padding = 8;
                 let available_width = ctx.sidebar_width.saturating_sub(text_x + right_padding);
 
-                // Truncate the name if it's too long (estimate char width as ~8px for now)
-                // Use Cow to avoid allocation when no truncation needed
-                let estimated_char_width = 8;
-                let max_chars = available_width / estimated_char_width;
-                let needs_truncation = node.name.len() > max_chars && max_chars > 3;
+                // Use actual char width from font metrics
+                let max_chars = if ctx.char_width > 0 {
+                    available_width / ctx.char_width
+                } else {
+                    available_width / 8
+                };
+
+                let name_chars = node.name.chars().count();
+                let needs_truncation = name_chars > max_chars && max_chars > 3;
 
                 if needs_truncation {
-                    // Only allocate when truncation is needed
-                    let truncated = &node.name[..max_chars.saturating_sub(2)];
-                    let mut display_name = String::with_capacity(truncated.len() + 3);
-                    display_name.push_str(truncated);
-                    display_name.push('…');
+                    // Use char_indices for safe UTF-8 boundary slicing
+                    let truncate_at = max_chars.saturating_sub(1);
+                    let byte_end = node
+                        .name
+                        .char_indices()
+                        .nth(truncate_at)
+                        .map(|(i, _)| i)
+                        .unwrap_or(node.name.len());
+                    let mut display_name = String::with_capacity(byte_end + 3);
+                    display_name.push_str(&node.name[..byte_end]);
+                    display_name.push('\u{2026}');
                     painter.draw(frame, text_x, text_y, &display_name, fg);
                 } else {
-                    // No allocation - use the name directly
                     painter.draw(frame, text_x, text_y, &node.name, fg);
                 }
 
@@ -1177,6 +1317,8 @@ impl Renderer {
                 break;
             }
         }
+
+        frame.clear_clip();
     }
 
     /// Render a dock panel (right or bottom dock with placeholder content)
@@ -1279,7 +1421,13 @@ impl Renderer {
         // Title bar
         let title_x = rect.x + 8.0;
         let title_y = rect.y + 4.0;
-        painter.draw(frame, title_x as usize, title_y as usize, "Outline", text_color);
+        painter.draw(
+            frame,
+            title_x as usize,
+            title_y as usize,
+            "Outline",
+            text_color,
+        );
 
         let content_y = rect.y + row_height as f32 + 4.0;
         let content_height = rect.height - row_height as f32 - 4.0;
@@ -1340,12 +1488,7 @@ impl Renderer {
 
                 if is_selected {
                     frame.fill_rect_blended(
-                        Rect::new(
-                            ctx.rect.x,
-                            *y as f32,
-                            ctx.rect.width,
-                            ctx.row_height as f32,
-                        ),
+                        Rect::new(ctx.rect.x, *y as f32, ctx.rect.width, ctx.row_height as f32),
                         ctx.selection_bg,
                     );
                 }
@@ -1358,29 +1501,47 @@ impl Renderer {
                 if node.is_collapsible() {
                     let is_collapsed = ctx.outline_panel.is_collapsed(node);
                     let indicator = if is_collapsed { "+" } else { "-" };
-                    let icon_color = if is_selected { ctx.selection_fg } else { ctx.icon_color };
+                    let icon_color = if is_selected {
+                        ctx.selection_fg
+                    } else {
+                        ctx.icon_color
+                    };
                     painter.draw(frame, icon_x, text_y, indicator, icon_color);
                 }
 
                 // Draw kind label + name
-                let fg = if is_selected { ctx.selection_fg } else { ctx.text_color };
+                let fg = if is_selected {
+                    ctx.selection_fg
+                } else {
+                    ctx.text_color
+                };
                 let label = node.kind.label();
 
                 // Draw label in dimmer color, then name
-                let label_color = if is_selected { ctx.selection_fg } else { ctx.icon_color };
+                let label_color = if is_selected {
+                    ctx.selection_fg
+                } else {
+                    ctx.icon_color
+                };
                 painter.draw(frame, text_x, text_y, label, label_color);
 
                 let name_x = text_x + (label.len() + 1) * painter.char_width() as usize;
 
                 // Truncate name if needed
                 let right_padding = 8;
-                let available = (ctx.rect.x as usize + ctx.rect.width as usize).saturating_sub(name_x + right_padding);
+                let available = (ctx.rect.x as usize + ctx.rect.width as usize)
+                    .saturating_sub(name_x + right_padding);
                 let char_w = painter.char_width() as usize;
                 let max_chars = if char_w > 0 { available / char_w } else { 80 };
 
                 let name_chars: usize = node.name.chars().count();
                 if name_chars > max_chars && max_chars > 1 {
-                    let display: String = node.name.chars().take(max_chars.saturating_sub(1)).chain(std::iter::once('…')).collect();
+                    let display: String = node
+                        .name
+                        .chars()
+                        .take(max_chars.saturating_sub(1))
+                        .chain(std::iter::once('…'))
+                        .collect();
                     painter.draw(frame, name_x, text_y, &display, fg);
                 } else {
                     painter.draw(frame, name_x, text_y, &node.name, fg);
@@ -1392,15 +1553,7 @@ impl Renderer {
             // Recurse into children if expanded
             if node.is_collapsible() && !ctx.outline_panel.is_collapsed(node) {
                 for child in &node.children {
-                    render_outline_node(
-                        frame,
-                        painter,
-                        child,
-                        ctx,
-                        y,
-                        visible_index,
-                        depth + 1,
-                    );
+                    render_outline_node(frame, painter, child, ctx, y, visible_index, depth + 1);
                 }
             }
         }
@@ -1420,15 +1573,7 @@ impl Renderer {
         };
 
         for node in &outline.roots {
-            render_outline_node(
-                frame,
-                painter,
-                node,
-                &ctx,
-                &mut y,
-                &mut visible_index,
-                0,
-            );
+            render_outline_node(frame, painter, node, &ctx, &mut y, &mut visible_index, 0);
             if visible_index >= scroll_offset && y >= max_y {
                 break;
             }
@@ -2230,7 +2375,12 @@ impl Renderer {
                 );
 
                 frame.draw_bordered_rect(
-                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
+                    layout.x,
+                    layout.y,
+                    layout.w,
+                    layout.h,
+                    bg_color,
+                    border_color,
                 );
 
                 // Title
@@ -2293,7 +2443,12 @@ impl Renderer {
                 );
 
                 frame.draw_bordered_rect(
-                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
+                    layout.x,
+                    layout.y,
+                    layout.w,
+                    layout.h,
+                    bg_color,
+                    border_color,
                 );
 
                 // Title
@@ -2378,7 +2533,12 @@ impl Renderer {
                     geometry::goto_line_layout(window_width, window_height, line_height);
 
                 frame.draw_bordered_rect(
-                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
+                    layout.x,
+                    layout.y,
+                    layout.w,
+                    layout.h,
+                    bg_color,
+                    border_color,
                 );
 
                 // Title
@@ -2417,7 +2577,12 @@ impl Renderer {
                 );
 
                 frame.draw_bordered_rect(
-                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
+                    layout.x,
+                    layout.y,
+                    layout.w,
+                    layout.h,
+                    bg_color,
+                    border_color,
                 );
 
                 // Title
@@ -2516,7 +2681,12 @@ impl Renderer {
                 );
 
                 frame.draw_bordered_rect(
-                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
+                    layout.x,
+                    layout.y,
+                    layout.w,
+                    layout.h,
+                    bg_color,
+                    border_color,
                 );
 
                 // Title
@@ -2638,7 +2808,12 @@ impl Renderer {
                 );
 
                 frame.draw_bordered_rect(
-                    layout.x, layout.y, layout.w, layout.h, bg_color, border_color,
+                    layout.x,
+                    layout.y,
+                    layout.w,
+                    layout.h,
+                    bg_color,
+                    border_color,
                 );
 
                 // Title
@@ -2895,20 +3070,22 @@ impl Renderer {
 
         // Render editor area if needed
         // Check for cursor-lines-only damage for optimized rendering
-        // Note: cursor-lines optimization only works for text mode, not CSV mode
-        let is_csv_mode = model
+        // Note: cursor-lines optimization only works for text mode (not CSV, Image, or BinaryPlaceholder)
+        let is_text_mode = model
             .editor_area
             .groups
             .get(&model.editor_area.focused_group_id)
             .and_then(|g| g.active_editor_id())
             .and_then(|id| model.editor_area.editors.get(&id))
-            .map(|e| e.view_mode.is_csv())
+            .map(|e| {
+                matches!(e.tab_content, crate::model::TabContent::Text) && !e.view_mode.is_csv()
+            })
             .unwrap_or(false);
 
-        let cursor_lines_only = if is_csv_mode {
-            None // Skip optimization for CSV mode
-        } else {
+        let cursor_lines_only = if is_text_mode {
             effective_damage.cursor_lines_only()
+        } else {
+            None // Non-text tabs have no cursor to blink
         };
 
         if let Some(dirty_lines) = cursor_lines_only {
@@ -3528,4 +3705,16 @@ fn flush_line(text: &mut String, style: HtmlTextStyle, lines: &mut Vec<HtmlTextL
         });
     }
     text.clear();
+}
+
+fn format_file_size(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{} B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else if bytes < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
 }

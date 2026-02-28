@@ -698,9 +698,11 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
         .compute_layout_scaled(available_rect, model.metrics.splitter_width);
 
     // Sync viewports to actual group rects (critical for splits/previews)
-    model
-        .editor_area
-        .sync_all_viewports(font_info.line_height, font_info.char_width, model.metrics.tab_bar_height);
+    model.editor_area.sync_all_viewports(
+        font_info.line_height,
+        font_info.char_width,
+        model.metrics.tab_bar_height,
+    );
 
     {
         let mut frame = Frame::new(&mut buffer, width, height);
@@ -848,7 +850,12 @@ fn find_chrome_binary() -> Option<PathBuf> {
     }
 
     // Linux / PATH-based
-    for name in ["google-chrome-stable", "google-chrome", "chromium-browser", "chromium"] {
+    for name in [
+        "google-chrome-stable",
+        "google-chrome",
+        "chromium-browser",
+        "chromium",
+    ] {
         if let Ok(output) = Command::new("which").arg(name).output() {
             if output.status.success() {
                 let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -885,7 +892,10 @@ fn render_html_with_chrome(
     let status = Command::new(chrome_bin)
         .arg("--headless")
         .arg(format!("--screenshot={}", png_path.display()))
-        .arg(format!("--window-size={},{}", viewport_width, viewport_height))
+        .arg(format!(
+            "--window-size={},{}",
+            viewport_width, viewport_height
+        ))
         .arg(format!("--force-device-scale-factor={}", scale))
         .arg("--hide-scrollbars")
         .arg("--disable-gpu")

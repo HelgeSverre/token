@@ -464,6 +464,19 @@ impl App {
             }
         }
 
+        // Binary placeholder button
+        if let Some(target) = token::view::hit_test::hit_test_groups(
+            &self.model,
+            token::view::hit_test::Point::new(x, y),
+            renderer.char_width(),
+        ) {
+            if matches!(target, token::view::hit_test::HitTarget::BinaryPlaceholderButton { .. }) {
+                self.model.ui.hover = HoverRegion::Button;
+                window.set_cursor(CursorIcon::Pointer);
+                return;
+            }
+        }
+
         // Editor text area
         self.model.ui.hover = HoverRegion::EditorText;
         window.set_cursor(CursorIcon::Text);
@@ -818,14 +831,22 @@ impl App {
                     HoverRegion::Dock(position) => {
                         // Route scroll to outline panel if it's the active panel
                         let active_panel = match position {
-                            token::panel::DockPosition::Left => self.model.dock_layout.left.active_panel(),
-                            token::panel::DockPosition::Right => self.model.dock_layout.right.active_panel(),
-                            token::panel::DockPosition::Bottom => self.model.dock_layout.bottom.active_panel(),
+                            token::panel::DockPosition::Left => {
+                                self.model.dock_layout.left.active_panel()
+                            }
+                            token::panel::DockPosition::Right => {
+                                self.model.dock_layout.right.active_panel()
+                            }
+                            token::panel::DockPosition::Bottom => {
+                                self.model.dock_layout.bottom.active_panel()
+                            }
                         };
                         if active_panel == Some(token::panel::PanelId::Outline) && v_delta != 0 {
                             update(
                                 &mut self.model,
-                                Msg::Outline(token::messages::OutlineMsg::Scroll { lines: v_delta }),
+                                Msg::Outline(token::messages::OutlineMsg::Scroll {
+                                    lines: v_delta,
+                                }),
                             )
                         } else {
                             None
@@ -836,13 +857,14 @@ impl App {
                     // Webview handles its own scrolling
                     HoverRegion::Preview => None,
 
-                    // Modal/StatusBar/Splitter/TabBar/DockResize: ignore scroll
+                    // Modal/StatusBar/Splitter/TabBar/DockResize/Button: ignore scroll
                     HoverRegion::Modal
                     | HoverRegion::StatusBar
                     | HoverRegion::Splitter
                     | HoverRegion::EditorTabBar
                     | HoverRegion::SidebarResize
                     | HoverRegion::DockResize(_)
+                    | HoverRegion::Button
                     | HoverRegion::None => None,
 
                     // Editor text area: scroll the editor (or CSV if in CSV mode)
@@ -1232,7 +1254,8 @@ impl App {
                 } else {
                     Instant::now() // Immediate
                 };
-                self.syntax_deadlines.insert(document_id, (deadline, revision));
+                self.syntax_deadlines
+                    .insert(document_id, (deadline, revision));
             }
 
             Cmd::RunSyntaxParse {
@@ -1426,7 +1449,11 @@ impl App {
         let mut needs_redraw = false;
         for (document_id, revision) in expired {
             self.syntax_deadlines.remove(&document_id);
-            tracing::debug!("Syntax deadline fired: doc={} rev={}", document_id.0, revision);
+            tracing::debug!(
+                "Syntax deadline fired: doc={} rev={}",
+                document_id.0,
+                revision
+            );
             if let Some(cmd) = update(
                 &mut self.model,
                 Msg::Syntax(SyntaxMsg::ParseReady {

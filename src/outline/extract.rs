@@ -924,6 +924,40 @@ fn html_element_label(tag_name: &str, start_tag: &Node, source: &str) -> String 
 // Blade symbol extraction
 // =============================================================================
 
+/// Structural directives worth showing in the outline.
+/// Control flow (@if, @foreach, etc.) and attribute helpers (@class, @checked, etc.)
+/// are excluded to reduce noise — they are implementation details, not document structure.
+const BLADE_OUTLINE_DIRECTIVES: &[&str] = &[
+    // Layout / composition
+    "extends",
+    "include",
+    "includeIf",
+    "includeWhen",
+    "includeUnless",
+    "includeFirst",
+    "each",
+    // Sections / slots
+    "section",
+    "yield",
+    "fragment",
+    // Stacks
+    "stack",
+    "push",
+    "pushOnce",
+    "prepend",
+    "prependOnce",
+    // Special blocks
+    "verbatim",
+    "once",
+    // Livewire
+    "livewire",
+    "persist",
+    "teleport",
+    "volt",
+    "script",
+    "assets",
+];
+
 fn extract_blade_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
     let mut symbols = Vec::new();
     collect_blade_symbols(root, source, &mut symbols);
@@ -958,42 +992,29 @@ fn collect_blade_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>
                 }
             }
         }
-        // Blade sections: @section('name') ... @endsection
-        "section" => {
-            let name =
-                blade_directive_name(&node, source).unwrap_or_else(|| "@section".to_string());
-            symbols.push(flat_sym(OutlineKind::Section, &name, &node));
+        // Blade sections: @section, @fragment, @stack, and other structural block directives
+        "section" | "fragment" | "stack" | "once" | "verbatim" | "livewire" => {
+            let ident = blade_directive_ident(&node, source);
+            if let Some(ref name) = ident {
+                if !BLADE_OUTLINE_DIRECTIVES.contains(&name.as_str()) {
+                    // Not structural — skip but still recurse into children
+                    let mut cursor = node.walk();
+                    for child in node.children(&mut cursor) {
+                        collect_blade_symbols(child, source, symbols);
+                    }
+                    return;
+                }
+            }
+            let kind = match node.kind() {
+                "section" | "fragment" | "stack" => OutlineKind::Section,
+                _ => OutlineKind::Directive,
+            };
+            let label = blade_directive_label(&node, source);
+            symbols.push(flat_sym(kind, &label, &node));
         }
-        // Blade fragments: @fragment('name') ... @endfragment
-        "fragment" => {
-            let name =
-                blade_directive_name(&node, source).unwrap_or_else(|| "@fragment".to_string());
-            symbols.push(flat_sym(OutlineKind::Section, &name, &node));
-        }
-        // Blade stacks: @push('scripts') ... @endpush
-        "stack" => {
-            let name = blade_directive_name(&node, source).unwrap_or_else(|| "@push".to_string());
-            symbols.push(flat_sym(OutlineKind::Section, &name, &node));
-        }
-        // Block directives with bodies
-        "conditional" | "loop" | "switch" => {
-            let name = blade_block_label(&node, source);
-            symbols.push(flat_sym(OutlineKind::Directive, &name, &node));
-        }
-        "once" => {
-            symbols.push(flat_sym(OutlineKind::Directive, "@once", &node));
-        }
-        "verbatim" => {
-            symbols.push(flat_sym(OutlineKind::Directive, "@verbatim", &node));
-        }
-        "livewire" => {
-            let name = blade_block_label(&node, source);
-            symbols.push(flat_sym(OutlineKind::Directive, &name, &node));
-        }
-        "envoy" => {
-            let name = blade_block_label(&node, source);
-            symbols.push(flat_sym(OutlineKind::Directive, &name, &node));
-        }
+        // Control flow (conditional, loop, switch) — skip entirely, these are
+        // implementation details not document structure. Still recurse for nested elements.
+        "conditional" | "loop" | "switch" => {}
         _ => {}
     }
 
@@ -1003,25 +1024,45 @@ fn collect_blade_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>
     }
 }
 
-/// Extract the parameter text for named directives like @section('content')
-fn blade_directive_name(node: &Node, source: &str) -> Option<String> {
+/// Extract the directive identifier from a node's raw text by scanning for `@`.
+/// Returns just the identifier (e.g. "section", "foreach") without the `@` prefix.
+/// This is robust against node ranges that include leading whitespace or control characters.
+fn blade_directive_ident(node: &Node, source: &str) -> Option<String> {
     let mut cursor = node.walk();
-
-    // Find directive_start text
-    let directive_text = node
+    let raw = node
         .children(&mut cursor)
         .find(|c| c.kind() == "directive_start" || c.kind() == "directive")
-        .and_then(|d| node_name(&d, source))
-        .unwrap_or("");
+        .and_then(|d| node_name(&d, source))?;
 
-    // Find parameter text
+    parse_directive_ident(raw)
+}
+
+/// Parse a directive identifier from raw node text.
+/// Finds the first `@` and reads the alphanumeric identifier after it.
+fn parse_directive_ident(raw: &str) -> Option<String> {
+    let at = raw.find('@')?;
+    let s = &raw[at + 1..];
+    let end = s
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .unwrap_or(s.len());
+    if end == 0 {
+        return None;
+    }
+    Some(s[..end].to_string())
+}
+
+/// Build a display label for a directive node, e.g. `@section('content')` or `@verbatim`.
+fn blade_directive_label(node: &Node, source: &str) -> String {
+    let ident = blade_directive_ident(node, source).unwrap_or_else(|| "?".to_string());
+    let directive = format!("@{}", ident);
+
+    // Try to extract the first string parameter for named directives
     let param = node
         .children(&mut node.walk())
         .find(|c| c.kind() == "parameter")
         .and_then(|p| node_name(&p, source));
 
     if let Some(param_text) = param {
-        // Extract first string argument: ('name') -> name
         let cleaned = param_text
             .trim_matches(|c: char| c == '(' || c == ')')
             .trim()
@@ -1031,30 +1072,11 @@ fn blade_directive_name(node: &Node, source: &str) -> Option<String> {
             .trim()
             .trim_matches(|c: char| c == '\'' || c == '"');
         if !cleaned.is_empty() {
-            return Some(format!("{}('{}')", directive_text, cleaned));
+            return format!("{}('{}')", directive, cleaned);
         }
     }
 
-    if !directive_text.is_empty() {
-        Some(directive_text.to_string())
-    } else {
-        None
-    }
-}
-
-/// Extract the opening directive keyword for block nodes
-fn blade_block_label(node: &Node, source: &str) -> String {
-    let mut cursor = node.walk();
-    // Get the directive_start child text (e.g. "@if", "@foreach")
-    if let Some(dir) = node
-        .children(&mut cursor)
-        .find(|c| c.kind() == "directive_start" || c.kind() == "directive")
-    {
-        if let Some(text) = node_name(&dir, source) {
-            return text.to_string();
-        }
-    }
-    "@?".to_string()
+    directive
 }
 
 // =============================================================================
@@ -1257,5 +1279,36 @@ mod tests {
         assert_eq!(tree[0].children.len(), 1, "Struct should contain field_a");
         assert_eq!(tree[0].children[0].name, "field_a");
         assert_eq!(tree[1].name, "standalone");
+    }
+
+    #[test]
+    fn test_parse_directive_ident() {
+        // Normal case
+        assert_eq!(parse_directive_ident("@section"), Some("section".into()));
+        assert_eq!(parse_directive_ident("@foreach"), Some("foreach".into()));
+        assert_eq!(parse_directive_ident("@if"), Some("if".into()));
+
+        // With leading whitespace/newlines (the bug case)
+        assert_eq!(
+            parse_directive_ident("\n        @class"),
+            Some("class".into())
+        );
+        assert_eq!(
+            parse_directive_ident("\n\n@forelse"),
+            Some("forelse".into())
+        );
+        assert_eq!(parse_directive_ident("  \t@push"), Some("push".into()));
+
+        // With parameters after
+        assert_eq!(
+            parse_directive_ident("@section('content')"),
+            Some("section".into())
+        );
+
+        // No @ sign
+        assert_eq!(parse_directive_ident("noatsign"), None);
+
+        // Empty after @
+        assert_eq!(parse_directive_ident("@"), None);
     }
 }

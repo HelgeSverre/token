@@ -62,6 +62,11 @@ ui:
     selected_cell_border: "#0969DA"
     number_foreground: "#0550AE"
 
+  image_preview:
+    checkerboard_light: "#FFFFFF"
+    checkerboard_dark: "#F0F0F0"
+    checkerboard_size: 8
+
   syntax:
     keyword: "#CF222E"
     function: "#8250DF"

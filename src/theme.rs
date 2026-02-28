@@ -279,6 +279,10 @@ pub struct UiThemeData {
     #[serde(default)]
     pub csv: CsvThemeData,
     #[serde(default)]
+    pub button: ButtonThemeData,
+    #[serde(default)]
+    pub image_preview: ImagePreviewThemeData,
+    #[serde(default)]
     pub syntax: SyntaxThemeData,
 }
 
@@ -398,6 +402,34 @@ pub struct CsvThemeData {
     pub number_foreground: Option<String>,
 }
 
+/// Button control colors (all optional — derived from editor colors if not specified)
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ButtonThemeData {
+    #[serde(default)]
+    pub background: Option<String>,
+    #[serde(default)]
+    pub background_hover: Option<String>,
+    #[serde(default)]
+    pub background_pressed: Option<String>,
+    #[serde(default)]
+    pub foreground: Option<String>,
+    #[serde(default)]
+    pub border: Option<String>,
+    #[serde(default)]
+    pub focus_ring: Option<String>,
+}
+
+/// Image preview appearance (all optional — derived from editor colors if not specified)
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ImagePreviewThemeData {
+    #[serde(default)]
+    pub checkerboard_light: Option<String>,
+    #[serde(default)]
+    pub checkerboard_dark: Option<String>,
+    #[serde(default)]
+    pub checkerboard_size: Option<usize>,
+}
+
 /// Syntax highlighting colors (all optional for backward compatibility)
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct SyntaxThemeData {
@@ -459,6 +491,8 @@ pub struct Theme {
     pub splitter: SplitterTheme,
     pub sidebar: SidebarTheme,
     pub csv: CsvTheme,
+    pub button: ButtonTheme,
+    pub image_preview: ImagePreviewTheme,
     pub syntax: SyntaxTheme,
 }
 
@@ -686,6 +720,53 @@ impl CsvTheme {
                 .and_then(|d| d.number_foreground.as_ref())
                 .and_then(|s| Color::from_hex(s).ok())
                 .unwrap_or(default.number_foreground),
+        }
+    }
+}
+
+/// Button control colors (resolved)
+#[derive(Debug, Clone)]
+pub struct ButtonTheme {
+    pub background: Color,
+    pub background_hover: Color,
+    pub background_pressed: Color,
+    pub foreground: Color,
+    pub border: Color,
+    pub focus_ring: Color,
+}
+
+impl ButtonTheme {
+    /// Default dark button theme, derived from typical editor colors
+    pub fn default_dark() -> Self {
+        Self {
+            background: Color::rgb(0x3C, 0x3C, 0x3C),
+            background_hover: Color::rgb(0x4A, 0x4A, 0x4A),
+            background_pressed: Color::rgb(0x2A, 0x2A, 0x2A),
+            foreground: Color::rgb(0xE0, 0xE0, 0xE0),
+            border: Color::rgb(0x50, 0x50, 0x50),
+            focus_ring: Color::rgb(0x00, 0x7A, 0xCC),
+        }
+    }
+}
+
+/// Image preview appearance (resolved)
+#[derive(Debug, Clone)]
+pub struct ImagePreviewTheme {
+    /// Lighter checkerboard square color
+    pub checkerboard_light: Color,
+    /// Darker checkerboard square color
+    pub checkerboard_dark: Color,
+    /// Checkerboard cell size in pixels
+    pub checkerboard_size: usize,
+}
+
+impl ImagePreviewTheme {
+    /// Default for dark themes
+    pub fn default_dark() -> Self {
+        Self {
+            checkerboard_light: Color::rgb(0x3A, 0x3A, 0x3A),
+            checkerboard_dark: Color::rgb(0x2E, 0x2E, 0x2E),
+            checkerboard_size: 8,
         }
     }
 }
@@ -1080,6 +1161,35 @@ impl Theme {
                 }
             },
             csv,
+            button: {
+                let defaults = ButtonTheme::default_dark();
+                ButtonTheme {
+                    background: data.ui.button.background.as_ref()
+                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.background),
+                    background_hover: data.ui.button.background_hover.as_ref()
+                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.background_hover),
+                    background_pressed: data.ui.button.background_pressed.as_ref()
+                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.background_pressed),
+                    foreground: data.ui.button.foreground.as_ref()
+                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.foreground),
+                    border: data.ui.button.border.as_ref()
+                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.border),
+                    focus_ring: data.ui.button.focus_ring.as_ref()
+                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.focus_ring),
+                }
+            },
+            image_preview: {
+                let defaults = ImagePreviewTheme::default_dark();
+                ImagePreviewTheme {
+                    checkerboard_light: data.ui.image_preview.checkerboard_light.as_ref()
+                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.checkerboard_light),
+                    checkerboard_dark: data.ui.image_preview.checkerboard_dark.as_ref()
+                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.checkerboard_dark),
+                    checkerboard_size: data.ui.image_preview.checkerboard_size
+                        .unwrap_or(defaults.checkerboard_size)
+                        .clamp(2, 64),
+                }
+            },
             syntax: {
                 let defaults = SyntaxTheme::default_dark();
                 SyntaxTheme {
@@ -1296,6 +1406,8 @@ impl Theme {
                     splitter: SplitterTheme::default_dark(),
                     sidebar: SidebarTheme::default_dark(),
                     csv: CsvTheme::default_dark(),
+                    button: ButtonTheme::default_dark(),
+                    image_preview: ImagePreviewTheme::default_dark(),
                     syntax: SyntaxTheme::default_dark(),
                 }
             }

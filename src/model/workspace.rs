@@ -97,29 +97,29 @@ impl FileExtension {
     /// Font Awesome, Codicons). Requires a Nerd Font patched font (e.g. JetBrainsMono NF).
     pub fn icon(&self) -> &'static str {
         match self {
-            Self::Rust => "\u{F1617}",       // 󱘗 nf-md-language_rust
-            Self::JavaScript => "\u{E74E}",  //  nf-dev-javascript
-            Self::TypeScript => "\u{E628}",  //  nf-seti-typescript
-            Self::Python => "\u{E73C}",      //  nf-dev-python
-            Self::Go => "\u{E627}",          //  nf-seti-go2
-            Self::C => "\u{E61E}",           //  nf-custom-c
-            Self::Cpp => "\u{E61D}",         //  nf-custom-cpp
-            Self::Header => "\u{E61E}",      //  nf-custom-c (header)
-            Self::Json => "\u{E60B}",        //  nf-seti-json
-            Self::Yaml => "\u{E8EB}",        //  nf-dev-yaml
-            Self::Toml => "\u{E6B2}",        //  nf-seti-config
-            Self::Markdown => "\u{E609}",    //  nf-seti-markdown
-            Self::Html => "\u{E736}",        //  nf-dev-html5
-            Self::Css => "\u{E749}",         //  nf-dev-css3
-            Self::Scss => "\u{E603}",        //  nf-seti-sass
-            Self::Sql => "\u{E706}",         //  nf-dev-database
-            Self::Shell => "\u{F489}",       //  nf-oct-terminal
-            Self::Git => "\u{E702}",         //  nf-dev-git
-            Self::Lock => "\u{F023}",        //  nf-fa-lock
-            Self::Config => "\u{E615}",      //  nf-seti-config
-            Self::Text => "\u{F0219}",       // 󰈙 nf-md-file_document
-            Self::Binary => "\u{EAE8}",      //  nf-cod-file_binary
-            Self::Unknown => "\u{EA7B}",     //  nf-cod-file
+            Self::Rust => "\u{F1617}",      // 󱘗 nf-md-language_rust
+            Self::JavaScript => "\u{E74E}", //  nf-dev-javascript
+            Self::TypeScript => "\u{E628}", //  nf-seti-typescript
+            Self::Python => "\u{E73C}",     //  nf-dev-python
+            Self::Go => "\u{E627}",         //  nf-seti-go2
+            Self::C => "\u{E61E}",          //  nf-custom-c
+            Self::Cpp => "\u{E61D}",        //  nf-custom-cpp
+            Self::Header => "\u{E61E}",     //  nf-custom-c (header)
+            Self::Json => "\u{E60B}",       //  nf-seti-json
+            Self::Yaml => "\u{E8EB}",       //  nf-dev-yaml
+            Self::Toml => "\u{E6B2}",       //  nf-seti-config
+            Self::Markdown => "\u{E609}",   //  nf-seti-markdown
+            Self::Html => "\u{E736}",       //  nf-dev-html5
+            Self::Css => "\u{E749}",        //  nf-dev-css3
+            Self::Scss => "\u{E603}",       //  nf-seti-sass
+            Self::Sql => "\u{E706}",        //  nf-dev-database
+            Self::Shell => "\u{F489}",      //  nf-oct-terminal
+            Self::Git => "\u{E702}",        //  nf-dev-git
+            Self::Lock => "\u{F023}",       //  nf-fa-lock
+            Self::Config => "\u{E615}",     //  nf-seti-config
+            Self::Text => "\u{F0219}",      // 󰈙 nf-md-file_document
+            Self::Binary => "\u{EAE8}",     //  nf-cod-file_binary
+            Self::Unknown => "\u{EA7B}",    //  nf-cod-file
         }
     }
 }

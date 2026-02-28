@@ -936,7 +936,8 @@ fn test_click_on_visible_line_does_not_scroll() {
     );
 
     assert_eq!(
-        model.editor().viewport.top_line, top_before,
+        model.editor().viewport.top_line,
+        top_before,
         "Viewport should not scroll when clicking on a visible line (line 35 of 40 visible)"
     );
     assert_eq!(model.editor().primary_cursor().line, 35);
@@ -966,7 +967,8 @@ fn test_click_on_last_visible_line_does_not_scroll() {
     );
 
     assert_eq!(
-        model.editor().viewport.top_line, top_before,
+        model.editor().viewport.top_line,
+        top_before,
         "Viewport should not scroll when clicking on the last visible line"
     );
     assert_eq!(model.editor().primary_cursor().line, 39);
@@ -996,7 +998,8 @@ fn test_click_on_first_visible_line_does_not_scroll() {
     );
 
     assert_eq!(
-        model.editor().viewport.top_line, top_before,
+        model.editor().viewport.top_line,
+        top_before,
         "Viewport should not scroll when clicking on the first visible line"
     );
     assert_eq!(model.editor().primary_cursor().line, 40);
@@ -1054,10 +1057,7 @@ fn test_click_off_screen_above_does_scroll() {
     // "Click" on line 5, which is above the viewport (30..69)
     update(
         &mut model,
-        Msg::Editor(EditorMsg::SetCursorPosition {
-            line: 5,
-            column: 0,
-        }),
+        Msg::Editor(EditorMsg::SetCursorPosition { line: 5, column: 0 }),
     );
 
     assert_eq!(model.editor().primary_cursor().line, 5);
@@ -1097,7 +1097,8 @@ fn test_sync_all_viewports_subtracts_tab_bar_height() {
     // Expected: (600 - 28) / 20 = 572 / 20 = 28 lines
     let expected_visible = (600 - tab_bar_height) / line_height;
     assert_eq!(
-        model.editor().viewport.visible_lines, expected_visible,
+        model.editor().viewport.visible_lines,
+        expected_visible,
         "sync_all_viewports should subtract tab_bar_height from group height"
     );
 }
@@ -1120,10 +1121,7 @@ fn test_new_editor_gets_correct_viewport_after_open() {
         token::model::Rect::new(0.0, 0.0, 800.0, group_height);
 
     // Open a new tab (creating a new editor)
-    update(
-        &mut model,
-        Msg::Layout(token::messages::LayoutMsg::NewTab),
-    );
+    update(&mut model, Msg::Layout(token::messages::LayoutMsg::NewTab));
 
     // The new editor should have visible_lines matching the group, NOT the default 25
     assert!(

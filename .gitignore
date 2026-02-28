@@ -47,3 +47,6 @@ wip/*
 dumps/*
 threads/
 draft.README.md
+
+# Git worktrees
+.worktrees/

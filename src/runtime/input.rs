@@ -61,6 +61,13 @@ pub fn handle_key(
         return handle_sidebar_key(model, &key, ctrl).or(Some(Cmd::Redraw));
     }
 
+    // Binary placeholder: Enter opens file with default app
+    if let Key::Named(NamedKey::Enter) = key {
+        if let Some(path) = get_binary_placeholder_path(model) {
+            return update(model, Msg::Layout(LayoutMsg::OpenWithDefaultApp(path)));
+        }
+    }
+
     match key {
         // =====================================================================
         // Multi-cursor: Option double-tap + Arrow
@@ -555,5 +562,15 @@ fn handle_sidebar_key(model: &mut AppModel, key: &Key, ctrl: bool) -> Option<Cmd
 
         // Don't consume other keys - let them fall through to normal handling
         _ => None,
+    }
+}
+
+/// If the focused editor is a binary placeholder tab, return its path
+fn get_binary_placeholder_path(model: &AppModel) -> Option<std::path::PathBuf> {
+    let editor = model.editor_area.focused_editor()?;
+    if let token::model::TabContent::BinaryPlaceholder(ref state) = editor.tab_content {
+        Some(state.path.clone())
+    } else {
+        None
     }
 }

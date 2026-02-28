@@ -61,7 +61,7 @@ arboard = "3.4"
 rfd = "0.15"
 
 # For window icon loading
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "ico"] }
 
 # For CLI argument parsing
 clap = { version = "4", features = ["derive"] }
@@ -113,6 +113,9 @@ tree-sitter-xml = "0.7"
 
 # Phase 7 languages (Template)
 tree-sitter-blade = { git = "https://github.com/EmranMR/tree-sitter-blade", tag = "v0.12.3" }
+
+# Phase 8 languages (Build tooling)
+tree-sitter-just = { git = "https://github.com/casey/tree-sitter-just", rev = "60df3d5b3fda2a22fdb3621226cafab50b763663" }
 
 streaming-iterator = "0.1"
 

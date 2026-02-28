@@ -267,6 +267,40 @@ pub struct OccurrenceState {
 
 /// View mode for the editor
 ///
+/// What kind of content this tab displays
+#[derive(Debug, Clone, Default)]
+pub enum TabContent {
+    /// Normal text/code editing (uses Document rope + ViewMode)
+    #[default]
+    Text,
+    /// Image viewer (decoded RGBA pixels)
+    Image(ImageTabState),
+    /// Placeholder for unsupported binary files
+    BinaryPlaceholder(BinaryPlaceholderState),
+}
+
+/// State for an image viewer tab
+#[derive(Debug, Clone)]
+pub struct ImageTabState {
+    /// Path to the image file
+    pub path: std::path::PathBuf,
+    /// Decoded RGBA8 pixel data
+    pub pixels: Vec<u8>,
+    /// Image width in pixels
+    pub width: u32,
+    /// Image height in pixels
+    pub height: u32,
+}
+
+/// State for a binary file placeholder tab
+#[derive(Debug, Clone)]
+pub struct BinaryPlaceholderState {
+    /// Path to the binary file
+    pub path: std::path::PathBuf,
+    /// File size in bytes
+    pub size_bytes: u64,
+}
+
 /// Allows switching between normal text editing and specialized views
 /// like CSV grid mode. The underlying Document is shared.
 #[derive(Debug, Clone, Default)]
@@ -334,6 +368,8 @@ pub struct EditorState {
     pub selection_history: Vec<Selection>,
     /// Current view mode (Text or CSV)
     pub view_mode: ViewMode,
+    /// What kind of content this tab displays (text, image, binary placeholder)
+    pub tab_content: TabContent,
     /// Matching bracket pair positions (if cursor is adjacent to a bracket)
     pub matched_brackets: Option<(Position, Position)>,
 }
@@ -355,6 +391,7 @@ impl EditorState {
             occurrence_state: None,
             selection_history: Vec::new(),
             view_mode: ViewMode::default(),
+            tab_content: TabContent::default(),
             matched_brackets: None,
         }
     }
@@ -375,6 +412,7 @@ impl EditorState {
             occurrence_state: None,
             selection_history: Vec::new(),
             view_mode: ViewMode::default(),
+            tab_content: TabContent::default(),
             matched_brackets: None,
         }
     }

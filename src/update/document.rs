@@ -114,6 +114,11 @@ pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
 }
 
 fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
+    // Skip text operations for non-text tabs
+    if !matches!(model.editor().tab_content, crate::model::TabContent::Text) {
+        return None;
+    }
+
     // Clear occurrence selection state on any editing operation
     // (except Copy which doesn't modify the document)
     if !matches!(msg, DocumentMsg::Copy) {
@@ -1279,7 +1284,11 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
             let new_line_count = model.document().line_count();
             Some(redraw_with_syntax_parse_shift(
                 model,
-                Some((line_idx.min(new_line_count.saturating_sub(1)), old_line_count, new_line_count)),
+                Some((
+                    line_idx.min(new_line_count.saturating_sub(1)),
+                    old_line_count,
+                    new_line_count,
+                )),
             ))
         }
 

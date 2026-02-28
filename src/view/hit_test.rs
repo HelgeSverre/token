@@ -206,6 +206,9 @@ pub enum HitTarget {
         position: crate::panel::DockPosition,
         active_panel_id: crate::panel::PanelId,
     },
+
+    /// "Open with Default Application" button on binary placeholder tab
+    BinaryPlaceholderButton { group_id: GroupId },
 }
 
 impl HitTarget {
@@ -217,7 +220,8 @@ impl HitTarget {
             | HitTarget::GroupTabBarEmpty { group_id }
             | HitTarget::EditorGutter { group_id, .. }
             | HitTarget::EditorContent { group_id, .. }
-            | HitTarget::CsvCell { group_id, .. } => Some(*group_id),
+            | HitTarget::CsvCell { group_id, .. }
+            | HitTarget::BinaryPlaceholderButton { group_id } => Some(*group_id),
             _ => None,
         }
     }
@@ -232,7 +236,8 @@ impl HitTarget {
             | HitTarget::GroupTabBarEmpty { .. }
             | HitTarget::EditorGutter { .. }
             | HitTarget::EditorContent { .. }
-            | HitTarget::CsvCell { .. } => Some(FocusTarget::Editor),
+            | HitTarget::CsvCell { .. }
+            | HitTarget::BinaryPlaceholderButton { .. } => Some(FocusTarget::Editor),
             // Dock content areas suggest sidebar focus for left dock (file explorer),
             // editor focus for others (until we have FocusTarget::Dock)
             HitTarget::DockTab { position, .. }
@@ -354,13 +359,21 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
     let layout = match &model.ui.active_modal {
         Some(ModalState::CommandPalette(state)) => {
             let input_text = state.input();
-            let (l, _) =
-                super::geometry::command_palette_layout(ww, wh, lh, filter_commands(&input_text).len());
+            let (l, _) = super::geometry::command_palette_layout(
+                ww,
+                wh,
+                lh,
+                filter_commands(&input_text).len(),
+            );
             l
         }
         Some(ModalState::FileFinder(state)) => {
             let (l, _) = super::geometry::file_finder_layout(
-                ww, wh, lh, state.results.len(), !state.input().is_empty(),
+                ww,
+                wh,
+                lh,
+                state.results.len(),
+                !state.input().is_empty(),
             );
             l
         }
@@ -385,7 +398,11 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
         Some(ModalState::RecentFiles(state)) => {
             let filtered = state.filtered_entries();
             let (l, _) = super::geometry::file_finder_layout(
-                ww, wh, lh, filtered.len(), !state.input().is_empty(),
+                ww,
+                wh,
+                lh,
+                filtered.len(),
+                !state.input().is_empty(),
             );
             l
         }
@@ -539,6 +556,27 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     // Get the active editor for this group
     let editor_id = group.active_editor_id()?;
     let editor = model.editor_area.editors.get(&editor_id)?;
+
+    // For BinaryPlaceholder tabs, check button hit area
+    if let crate::model::TabContent::BinaryPlaceholder(_) = &editor.tab_content {
+        let line_height = model.line_height;
+        let content_rect = Rect::new(
+            group.rect.x,
+            group.rect.y + model.metrics.tab_bar_height as f32,
+            group.rect.width,
+            group.rect.height - model.metrics.tab_bar_height as f32,
+        );
+        let bp_layout = super::geometry::binary_placeholder_layout(
+            content_rect, line_height, char_width,
+            model.metrics.padding_large, model.metrics.padding_medium,
+            super::geometry::BINARY_PLACEHOLDER_BUTTON_LABEL,
+        );
+
+        if bp_layout.button_rect.contains(pt.x as f32, pt.y as f32) {
+            return Some(HitTarget::BinaryPlaceholderButton { group_id });
+        }
+    }
+
     let doc_id = editor.document_id?;
 
     // Check if in CSV mode

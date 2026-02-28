@@ -1,8 +1,8 @@
 # Adding New Languages to Syntax Highlighting
 
-**Status:** Ready for Implementation  
-**Created:** 2025-12-15  
-**Prerequisites:** Familiarity with tree-sitter and Scheme-like query syntax
+> **Status:** Ready for Implementation
+> **Created:** 2025-12-15
+> **Prerequisites:** Familiarity with tree-sitter and Scheme-like query syntax
 
 ---
 
@@ -10,7 +10,7 @@
 
 This document describes how to add support for new programming languages to the syntax highlighting system. The architecture is designed to make adding languages straightforward.
 
-### Current Languages (20)
+### Current Languages (21)
 
 | Language | Tree-sitter Crate | Query Source |
 |----------|-------------------|--------------|
@@ -34,6 +34,7 @@ This document describes how to add support for new programming languages to the 
 | Scheme | `tree-sitter-racket` | Built-in: `HIGHLIGHTS_QUERY` |
 | INI | `tree-sitter-ini` | Built-in: `HIGHLIGHTS_QUERY` |
 | XML | `tree-sitter-xml` | Built-in: `XML_HIGHLIGHT_QUERY` |
+| Just | `tree-sitter-just` | Built-in: `HIGHLIGHTS_QUERY` |
 
 ### Future Languages
 
@@ -55,7 +56,7 @@ Edit `Cargo.toml`:
 ```toml
 [dependencies]
 # ... existing deps ...
-tree-sitter-python = "0.23"  # Check crates.io for latest version
+tree-sitter-python = "0.25"  # Align with versions already used in Cargo.toml
 ```
 
 ### Step 2: Add the LanguageId variant
@@ -106,6 +107,18 @@ pub fn display_name(&self) -> &'static str {
 ```
 
 Update `has_highlighting()` if needed (defaults to true for non-PlainText).
+
+### Filename Detection Policy
+
+When adding a language, define and document both extension-based and special-filename detection in `LanguageId::from_path()`.
+
+For Just syntax support, the editor recognizes:
+
+- `justfile` / `Justfile`
+- `.justfile` / `.Justfile`
+- `*.just`
+
+Use this pattern for future languages that rely on canonical filenames (for example, `Makefile`, `Dockerfile`, or dotfile-based configs).
 
 ### Step 3: Create the highlights query file
 

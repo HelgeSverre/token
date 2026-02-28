@@ -318,6 +318,9 @@ pub enum LayoutMsg {
     /// Switch to tab by index in focused group (0-indexed)
     SwitchToTab(usize),
 
+    /// Open the focused file with the system's default application
+    OpenWithDefaultApp(PathBuf),
+
     // === Splitter Dragging ===
     /// Mouse pressed on a splitter - begin potential drag
     BeginSplitterDrag {
@@ -529,7 +532,11 @@ pub enum OutlineMsg {
     /// Toggle expand/collapse of a node
     ToggleNode { line: usize, name: String },
     /// Click on a row in the outline panel
-    ClickRow { index: usize, click_count: u8, on_chevron: bool },
+    ClickRow {
+        index: usize,
+        click_count: u8,
+        on_chevron: bool,
+    },
     /// Navigate up in the outline
     SelectPrevious,
     /// Navigate down in the outline
