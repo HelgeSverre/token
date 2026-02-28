@@ -33,6 +33,21 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                         .saturating_sub(col_header_height);
                     let visible_rows = content_height / line_height;
                     csv.set_viewport_size(visible_rows.max(1), csv.viewport.visible_cols);
+                } else if let Some(image) = editor.view_mode.as_image_mut() {
+                    // Recompute fit scale for new viewport size
+                    if !image.user_zoomed {
+                        let tab_bar_height = model.metrics.tab_bar_height;
+                        let content_height =
+                            (height as usize).saturating_sub(tab_bar_height) as u32;
+                        image.scale = crate::image::ImageState::compute_fit_scale(
+                            image.width,
+                            image.height,
+                            width,
+                            content_height,
+                        );
+                        image.offset_x = 0.0;
+                        image.offset_y = 0.0;
+                    }
                 }
             }
 

@@ -88,7 +88,7 @@ pub fn render_image(
                 && (img_x as u32) < img_w
                 && (img_y as u32) < img_h
             {
-                let src_idx = ((img_y as u32 * img_w + img_x as u32) * 4) as usize;
+                let src_idx = (img_y as usize * img_w as usize + img_x as usize) * 4;
 
                 if src_idx + 3 < image.pixels.len() {
                     let r = image.pixels[src_idx] as u32;

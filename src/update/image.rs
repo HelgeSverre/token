@@ -22,21 +22,43 @@ pub fn update_image(model: &mut AppModel, msg: ImageMsg) -> Option<Cmd> {
             mouse_x,
             mouse_y,
         } => {
+            // Get content area origin (group rect + tab bar offset)
+            let group_id = model.editor_area.focused_group_id;
+            let group = model.editor_area.groups.get(&group_id)?;
+            let area_x = group.rect.x as f64;
+            let area_y = group.rect.y as f64 + model.metrics.tab_bar_height as f64;
+
             let editor = model.editor_area.editors.get_mut(&editor_id)?;
             let state = editor.view_mode.as_image_mut()?;
 
+            // For keyboard zoom (0,0), anchor at last known mouse position
+            let raw_x = if mouse_x == 0.0 && mouse_y == 0.0 {
+                state.last_mouse_x
+            } else {
+                mouse_x
+            };
+            let raw_y = if mouse_x == 0.0 && mouse_y == 0.0 {
+                state.last_mouse_y
+            } else {
+                mouse_y
+            };
+
+            // Convert window coords to content-area-local coords
+            let anchor_x = raw_x - area_x;
+            let anchor_y = raw_y - area_y;
+
             // Compute the image-space point under the cursor before zoom
-            let img_x = state.offset_x + mouse_x / state.scale;
-            let img_y = state.offset_y + mouse_y / state.scale;
+            let img_x = state.offset_x + anchor_x / state.scale;
+            let img_y = state.offset_y + anchor_y / state.scale;
 
             // Apply zoom
             let factor = 1.0 + delta * ZOOM_FACTOR;
             let new_scale = (state.scale * factor).clamp(MIN_SCALE, MAX_SCALE);
             state.scale = new_scale;
 
-            // Adjust offset so the cursor-point stays stationary
-            state.offset_x = img_x - mouse_x / new_scale;
-            state.offset_y = img_y - mouse_y / new_scale;
+            // Adjust offset so the anchor point stays stationary
+            state.offset_x = img_x - anchor_x / new_scale;
+            state.offset_y = img_y - anchor_y / new_scale;
 
             state.user_zoomed = true;
             Some(Cmd::redraw_editor())
@@ -103,10 +125,16 @@ pub fn update_image(model: &mut AppModel, msg: ImageMsg) -> Option<Cmd> {
         }
 
         ImageMsg::MouseMove { x, y } => {
+            // Convert window coords to content-area-local coords
+            let group_id = model.editor_area.focused_group_id;
+            let group = model.editor_area.groups.get(&group_id)?;
+            let area_x = group.rect.x as f64;
+            let area_y = group.rect.y as f64 + model.metrics.tab_bar_height as f64;
+
             let editor = model.editor_area.editors.get_mut(&editor_id)?;
             let state = editor.view_mode.as_image_mut()?;
-            state.last_mouse_x = x;
-            state.last_mouse_y = y;
+            state.last_mouse_x = x - area_x;
+            state.last_mouse_y = y - area_y;
             None
         }
 

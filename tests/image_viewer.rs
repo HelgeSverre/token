@@ -82,3 +82,16 @@ fn test_image_state_no_upscale() {
     let state = ImageState::new(vec![0; 400], 10, 10, 400, "PNG".into(), 800, 600);
     assert!((state.scale - 1.0).abs() < f64::EPSILON);
 }
+
+#[test]
+fn test_compute_fit_scale_zero_dimension_image() {
+    // Zero-width or zero-height image should return 1.0, not infinity
+    let scale = ImageState::compute_fit_scale(0, 100, 800, 600);
+    assert!((scale - 1.0).abs() < f64::EPSILON);
+
+    let scale = ImageState::compute_fit_scale(100, 0, 800, 600);
+    assert!((scale - 1.0).abs() < f64::EPSILON);
+
+    let scale = ImageState::compute_fit_scale(0, 0, 800, 600);
+    assert!((scale - 1.0).abs() < f64::EPSILON);
+}

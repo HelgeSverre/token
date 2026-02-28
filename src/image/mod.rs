@@ -85,7 +85,7 @@ impl ImageState {
         viewport_width: u32,
         viewport_height: u32,
     ) -> f64 {
-        if viewport_width == 0 || viewport_height == 0 {
+        if viewport_width == 0 || viewport_height == 0 || img_width == 0 || img_height == 0 {
             return 1.0;
         }
         let scale_x = viewport_width as f64 / img_width as f64;
