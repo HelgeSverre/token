@@ -336,26 +336,29 @@ pub struct RecentFilesState {
 }
 
 impl RecentFilesState {
-    /// Create from the current recent files list, excluding the current file
+    /// Create from the current recent files list.
     ///
-    /// The current file is excluded so that the topmost entry is the *previous*
-    /// file — pressing Cmd+E then Enter immediately swaps to it.
+    /// Keeps MRU ordering intact (including the currently open file) but, when
+    /// the current file is at the top, preselects the next item to preserve
+    /// quick-switch behavior on immediate confirm.
     pub fn new(
         recent: &crate::recent_files::RecentFiles,
         current_file: Option<&std::path::Path>,
     ) -> Self {
-        let entries = if let Some(current) = current_file {
-            recent
-                .entries
-                .iter()
-                .filter(|e| e.path != current)
-                .cloned()
-                .collect()
-        } else {
-            recent.entries.clone()
+        let entries = recent.entries.clone();
+        let selected_index = match current_file {
+            Some(current)
+                if entries.len() > 1
+                    && entries
+                        .first()
+                        .is_some_and(|entry| entry.path.as_path() == current) =>
+            {
+                1
+            }
+            _ => 0,
         };
         Self {
-            selected_index: 0,
+            selected_index,
             entries,
             editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
         }
@@ -723,16 +726,46 @@ mod tests {
     }
 
     #[test]
-    fn test_recent_files_state_excludes_current_file() {
+    fn test_recent_files_state_includes_current_file() {
         let recent = make_recent(vec![
             make_entry("/a.rs", None),
             make_entry("/b.rs", None),
             make_entry("/c.rs", None),
         ]);
         let state = RecentFilesState::new(&recent, Some(std::path::Path::new("/a.rs")));
-        assert_eq!(state.entries.len(), 2);
-        assert_eq!(state.entries[0].path, PathBuf::from("/b.rs"));
-        assert_eq!(state.entries[1].path, PathBuf::from("/c.rs"));
+        assert_eq!(state.entries.len(), 3);
+        assert_eq!(state.entries[0].path, PathBuf::from("/a.rs"));
+        assert_eq!(state.entries[1].path, PathBuf::from("/b.rs"));
+        assert_eq!(state.entries[2].path, PathBuf::from("/c.rs"));
+    }
+
+    #[test]
+    fn test_recent_files_state_preselects_previous_file_when_current_is_first() {
+        let recent = make_recent(vec![
+            make_entry("/a.rs", None),
+            make_entry("/b.rs", None),
+            make_entry("/c.rs", None),
+        ]);
+        let state = RecentFilesState::new(&recent, Some(std::path::Path::new("/a.rs")));
+        assert_eq!(state.selected_index, 1);
+    }
+
+    #[test]
+    fn test_recent_files_state_keeps_default_selection_when_current_is_only_entry() {
+        let recent = make_recent(vec![make_entry("/a.rs", None)]);
+        let state = RecentFilesState::new(&recent, Some(std::path::Path::new("/a.rs")));
+        assert_eq!(state.selected_index, 0);
+    }
+
+    #[test]
+    fn test_recent_files_state_keeps_default_selection_when_current_not_first() {
+        let recent = make_recent(vec![
+            make_entry("/b.rs", None),
+            make_entry("/a.rs", None),
+            make_entry("/c.rs", None),
+        ]);
+        let state = RecentFilesState::new(&recent, Some(std::path::Path::new("/a.rs")));
+        assert_eq!(state.selected_index, 0);
     }
 
     #[test]
