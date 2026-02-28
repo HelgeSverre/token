@@ -20,6 +20,7 @@ pub enum LanguageId {
     // Phase 3 languages (priority)
     TypeScript,
     Tsx,
+    Jsx,
     Json,
     Toml,
     // Phase 4 languages (common)
@@ -38,6 +39,8 @@ pub enum LanguageId {
     Sema,
     // Phase 7 languages (template)
     Blade,
+    // Phase 8 languages (framework)
+    Vue,
     // Phase 8 languages (build tooling)
     Just,
 }
@@ -60,6 +63,7 @@ impl LanguageId {
             // Phase 3 (priority)
             "ts" | "mts" | "cts" => LanguageId::TypeScript,
             "tsx" => LanguageId::Tsx,
+            "jsx" => LanguageId::Jsx,
             "json" | "jsonc" => LanguageId::Json,
             "toml" => LanguageId::Toml,
             // Phase 4 (common)
@@ -77,6 +81,8 @@ impl LanguageId {
             "scm" | "rkt" | "ss" => LanguageId::Scheme,
             "ini" | "cfg" | "conf" => LanguageId::Ini,
             "xml" | "xsd" | "xsl" | "xslt" | "svg" | "plist" => LanguageId::Xml,
+            // Phase 8 (framework)
+            "vue" => LanguageId::Vue,
             // Default
             _ => LanguageId::PlainText,
         }
@@ -129,6 +135,7 @@ impl LanguageId {
             LanguageId::JavaScript => "JavaScript",
             LanguageId::TypeScript => "TypeScript",
             LanguageId::Tsx => "TSX",
+            LanguageId::Jsx => "JSX",
             LanguageId::Json => "JSON",
             LanguageId::Toml => "TOML",
             LanguageId::Python => "Python",
@@ -143,6 +150,7 @@ impl LanguageId {
             LanguageId::Xml => "XML",
             LanguageId::Sema => "Sema",
             LanguageId::Blade => "Blade",
+            LanguageId::Vue => "Vue",
             LanguageId::Just => "Just",
         }
     }
@@ -168,6 +176,7 @@ impl LanguageId {
             "javascript" | "js" => Some(LanguageId::JavaScript),
             "typescript" | "ts" => Some(LanguageId::TypeScript),
             "tsx" => Some(LanguageId::Tsx),
+            "jsx" => Some(LanguageId::Jsx),
             "html" => Some(LanguageId::Html),
             "css" => Some(LanguageId::Css),
             "json" | "jsonc" => Some(LanguageId::Json),
@@ -184,6 +193,7 @@ impl LanguageId {
             "xml" | "svg" => Some(LanguageId::Xml),
             "ini" | "conf" => Some(LanguageId::Ini),
             "blade" => Some(LanguageId::Blade),
+            "vue" => Some(LanguageId::Vue),
             "just" | "justfile" => Some(LanguageId::Just),
             // Don't inject markdown into markdown
             "markdown" | "md" => None,
@@ -211,6 +221,7 @@ mod tests {
         // Phase 3
         assert_eq!(LanguageId::from_extension("ts"), LanguageId::TypeScript);
         assert_eq!(LanguageId::from_extension("tsx"), LanguageId::Tsx);
+        assert_eq!(LanguageId::from_extension("jsx"), LanguageId::Jsx);
         assert_eq!(LanguageId::from_extension("json"), LanguageId::Json);
         assert_eq!(LanguageId::from_extension("toml"), LanguageId::Toml);
         // Phase 4
@@ -234,6 +245,8 @@ mod tests {
         assert_eq!(LanguageId::from_extension("xml"), LanguageId::Xml);
         assert_eq!(LanguageId::from_extension("plist"), LanguageId::Xml);
         assert_eq!(LanguageId::from_extension("svg"), LanguageId::Xml);
+        // Phase 8
+        assert_eq!(LanguageId::from_extension("vue"), LanguageId::Vue);
         // Note: Blade is detected via from_path() not from_extension()
         // Unknown
         assert_eq!(LanguageId::from_extension("txt"), LanguageId::PlainText);
@@ -339,6 +352,7 @@ mod tests {
     fn test_display_names() {
         assert_eq!(LanguageId::TypeScript.display_name(), "TypeScript");
         assert_eq!(LanguageId::Tsx.display_name(), "TSX");
+        assert_eq!(LanguageId::Jsx.display_name(), "JSX");
         assert_eq!(LanguageId::Json.display_name(), "JSON");
         assert_eq!(LanguageId::Toml.display_name(), "TOML");
         assert_eq!(LanguageId::Python.display_name(), "Python");
@@ -352,6 +366,7 @@ mod tests {
         assert_eq!(LanguageId::Ini.display_name(), "INI");
         assert_eq!(LanguageId::Xml.display_name(), "XML");
         assert_eq!(LanguageId::Blade.display_name(), "Blade");
+        assert_eq!(LanguageId::Vue.display_name(), "Vue");
         assert_eq!(LanguageId::Just.display_name(), "Just");
     }
 }
