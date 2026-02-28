@@ -4,6 +4,24 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
+## Unreleased
+
+### Added
+- Image Viewer: Open image files (PNG, JPG, GIF, BMP, WebP, ICO) inline in editor tabs with aspect-ratio-preserving scaling and checkerboard transparency background.
+- Binary Placeholder: Unsupported binary files now open a tab with a centered placeholder showing filename, file size, and a clickable "Open with Default Application" button.
+- Syntax: Added Just/Justfile language support with syntax highlighting via tree-sitter-just. Detects `justfile`, `Justfile`, `.justfile`, and `*.just` files.
+- Themes: `image_preview` section with `checkerboard_light`, `checkerboard_dark`, and `checkerboard_size` for customizing the image viewer transparency background. Per-theme values in all 9 builtin themes.
+- Themes: `button` section with 6 color properties (background, background_hover, background_pressed, foreground, border, focus_ring) for UI button styling.
+
+### Improved
+- Rendering: Frame clipping system — sidebar and other panels no longer render outside their bounds. TextPainter pixel writes are routed through the Frame clip rectangle.
+- Syntax: Hierarchical highlight name resolution now walks the full capture name chain (e.g. `keyword.control.import` → `keyword.control` → `keyword`) instead of only trying one parent level.
+
+### Fixed
+- Sidebar text no longer overflows into the editor area on long filenames.
+
+---
+
 ## v0.3.19 - 2026-02-19
 
 ### Added
