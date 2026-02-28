@@ -4,8 +4,8 @@
 //! Each command maps to one or more `Msg` values for the Elm-style update loop.
 
 use crate::messages::{
-    AppMsg, CsvMsg, Direction, DockMsg, DocumentMsg, EditorMsg, LayoutMsg, Msg, PreviewMsg, UiMsg,
-    WorkspaceMsg,
+    AppMsg, CsvMsg, Direction, DockMsg, DocumentMsg, EditorMsg, ImageMsg, LayoutMsg, Msg,
+    PreviewMsg, UiMsg, WorkspaceMsg,
 };
 use crate::model::editor_area::SplitDirection;
 use crate::model::ModalId;
@@ -263,6 +263,16 @@ pub enum Command {
     CsvPageUp,
     CsvPageDown,
     CsvExit,
+
+    // Image viewer
+    /// Zoom in (image mode)
+    ImageZoomIn,
+    /// Zoom out (image mode)
+    ImageZoomOut,
+    /// Fit image to window
+    ImageFitToWindow,
+    /// Show image at actual size (1:1)
+    ImageActualSize,
 }
 
 impl Command {
@@ -460,6 +470,20 @@ impl Command {
             CsvPageUp => vec![Msg::Csv(CsvMsg::PageUp)],
             CsvPageDown => vec![Msg::Csv(CsvMsg::PageDown)],
             CsvExit => vec![Msg::Csv(CsvMsg::Exit)],
+
+            // Image viewer
+            ImageZoomIn => vec![Msg::Image(ImageMsg::Zoom {
+                delta: 1.0,
+                mouse_x: 0.0,
+                mouse_y: 0.0,
+            })],
+            ImageZoomOut => vec![Msg::Image(ImageMsg::Zoom {
+                delta: -1.0,
+                mouse_x: 0.0,
+                mouse_y: 0.0,
+            })],
+            ImageFitToWindow => vec![Msg::Image(ImageMsg::FitToWindow)],
+            ImageActualSize => vec![Msg::Image(ImageMsg::ActualSize)],
         }
     }
 
@@ -615,6 +639,12 @@ impl Command {
             CsvPageUp => "CSV Page Up",
             CsvPageDown => "CSV Page Down",
             CsvExit => "Exit CSV View",
+
+            // Image viewer
+            ImageZoomIn => "Image: Zoom In",
+            ImageZoomOut => "Image: Zoom Out",
+            ImageFitToWindow => "Image: Fit to Window",
+            ImageActualSize => "Image: Actual Size",
         }
     }
 }
