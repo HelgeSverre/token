@@ -94,6 +94,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::App(m) => app::update_app(model, m),
         Msg::Syntax(m) => syntax::update_syntax(model, m),
         Msg::Csv(m) => csv::update_csv(model, m),
+        Msg::Image(_m) => None, // TODO: wire up in Task 5
         Msg::Preview(m) => preview::update_preview(model, m),
         Msg::Workspace(m) => workspace::update_workspace(model, m),
         Msg::Dock(m) => dock::update_dock(model, m),
@@ -219,6 +220,7 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::App(m) => format!("App::{:?}", m),
         Msg::Syntax(m) => format!("Syntax::{:?}", m),
         Msg::Csv(m) => format!("Csv::{:?}", m),
+        Msg::Image(m) => format!("Image::{:?}", m),
         Msg::Preview(m) => format!("Preview::{:?}", m),
         Msg::Workspace(m) => format!("Workspace::{:?}", m),
         Msg::Dock(m) => format!("Dock::{:?}", m),

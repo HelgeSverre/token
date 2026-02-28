@@ -521,6 +521,31 @@ pub enum CsvMsg {
     EditPaste,
 }
 
+/// Image viewer messages (pan, zoom)
+#[derive(Debug, Clone)]
+pub enum ImageMsg {
+    /// Zoom in/out by delta, centered on cursor position
+    Zoom {
+        delta: f64,
+        mouse_x: f64,
+        mouse_y: f64,
+    },
+    /// Start drag-pan at screen position
+    StartPan { x: f64, y: f64 },
+    /// Update drag-pan to new screen position
+    UpdatePan { x: f64, y: f64 },
+    /// End drag-pan
+    EndPan,
+    /// Fit image to viewport
+    FitToWindow,
+    /// Show at actual size (1:1 pixels)
+    ActualSize,
+    /// Track mouse position for zoom-toward-cursor
+    MouseMove { x: f64, y: f64 },
+    /// Viewport was resized — recalculate fit if in auto-fit mode
+    ViewportResized { width: u32, height: u32 },
+}
+
 /// Outline panel messages
 #[derive(Debug, Clone)]
 pub enum OutlineMsg {
@@ -664,6 +689,8 @@ pub enum Msg {
     Syntax(SyntaxMsg),
     /// CSV mode messages
     Csv(CsvMsg),
+    /// Image viewer messages
+    Image(ImageMsg),
     /// Markdown preview messages
     Preview(PreviewMsg),
     /// Workspace messages (file tree)
