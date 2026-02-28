@@ -123,7 +123,9 @@ pub fn handle_mouse_press(
     // Track if we're clicking on editor content (for drag tracking)
     let is_editor_content = matches!(
         target,
-        HitTarget::EditorContent { .. } | HitTarget::EditorGutter { .. }
+        HitTarget::EditorContent { .. }
+            | HitTarget::EditorGutter { .. }
+            | HitTarget::ImageContent { .. }
     );
     let is_left_click = matches!(event.button, MouseButton::Left);
 
@@ -343,6 +345,21 @@ fn handle_left_click(
                 );
             }
             EventResult::consumed_with_focus(FocusTarget::Editor)
+        }
+
+        // Image content click - start pan
+        HitTarget::ImageContent { group_id, .. } => {
+            if *group_id != model.editor_area.focused_group_id {
+                update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
+            }
+            let cmd = update(
+                model,
+                Msg::Image(token::messages::ImageMsg::StartPan {
+                    x: event.pos.x,
+                    y: event.pos.y,
+                }),
+            );
+            EventResult::consumed_with_cmd(cmd, FocusTarget::Editor)
         }
 
         // Dock resize handle
@@ -575,8 +592,10 @@ fn handle_middle_click(
             EventResult::consumed_redraw()
         }
 
-        // CSV cell - no middle-click behavior
-        HitTarget::CsvCell { .. } => EventResult::consumed_no_redraw(),
+        // CSV cell / Image content - no middle-click behavior
+        HitTarget::CsvCell { .. } | HitTarget::ImageContent { .. } => {
+            EventResult::consumed_no_redraw()
+        }
 
         // Modal - consume, no action
         HitTarget::Modal { .. } => EventResult::consumed_no_redraw(),

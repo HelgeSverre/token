@@ -185,6 +185,12 @@ pub enum HitTarget {
         col: usize,
     },
 
+    /// Image content area (for pan/zoom)
+    ImageContent {
+        group_id: GroupId,
+        editor_id: EditorId,
+    },
+
     /// Dock resize handle (between dock and editor area)
     DockResize {
         position: crate::panel::DockPosition,
@@ -217,7 +223,8 @@ impl HitTarget {
             | HitTarget::GroupTabBarEmpty { group_id }
             | HitTarget::EditorGutter { group_id, .. }
             | HitTarget::EditorContent { group_id, .. }
-            | HitTarget::CsvCell { group_id, .. } => Some(*group_id),
+            | HitTarget::CsvCell { group_id, .. }
+            | HitTarget::ImageContent { group_id, .. } => Some(*group_id),
             _ => None,
         }
     }
@@ -232,7 +239,8 @@ impl HitTarget {
             | HitTarget::GroupTabBarEmpty { .. }
             | HitTarget::EditorGutter { .. }
             | HitTarget::EditorContent { .. }
-            | HitTarget::CsvCell { .. } => Some(FocusTarget::Editor),
+            | HitTarget::CsvCell { .. }
+            | HitTarget::ImageContent { .. } => Some(FocusTarget::Editor),
             // Dock content areas suggest sidebar focus for left dock (file explorer),
             // editor focus for others (until we have FocusTarget::Dock)
             HitTarget::DockTab { position, .. }
@@ -552,6 +560,14 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     let editor_id = group.active_editor_id()?;
     let editor = model.editor_area.editors.get(&editor_id)?;
     let doc_id = editor.document_id?;
+
+    // Check if in image mode
+    if editor.view_mode.is_image() {
+        return Some(HitTarget::ImageContent {
+            group_id,
+            editor_id,
+        });
+    }
 
     // Check if in CSV mode
     if editor.view_mode.is_csv() {

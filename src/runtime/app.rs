@@ -20,7 +20,9 @@ use token::fs_watcher::{FileSystemEvent, FileSystemWatcher};
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
 };
-use token::messages::{AppMsg, CsvMsg, EditorMsg, LayoutMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg};
+use token::messages::{
+    AppMsg, CsvMsg, EditorMsg, ImageMsg, LayoutMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg,
+};
 use token::model::editor::Position;
 use token::model::editor_area::{Rect, SplitDirection};
 use token::model::AppModel;
@@ -639,6 +641,27 @@ impl App {
                     );
                 }
 
+                // Handle image panning drag
+                if self.left_mouse_down {
+                    let is_image_panning = self
+                        .model
+                        .editor_area
+                        .focused_editor()
+                        .and_then(|e| e.view_mode.as_image())
+                        .map(|s| s.drag.is_some())
+                        .unwrap_or(false);
+
+                    if is_image_panning {
+                        return update(
+                            &mut self.model,
+                            Msg::Image(ImageMsg::UpdatePan {
+                                x: position.x,
+                                y: position.y,
+                            }),
+                        );
+                    }
+                }
+
                 if self.model.editor().rectangle_selection.active {
                     if let Some(renderer) = &mut self.renderer {
                         // Use visual column (screen position) for rectangle selection
@@ -736,6 +759,21 @@ impl App {
                 // End splitter drag if active
                 if self.model.ui.splitter_drag.is_some() {
                     return update(&mut self.model, Msg::Layout(LayoutMsg::EndSplitterDrag));
+                }
+
+                // End image pan if active
+                {
+                    let is_image_panning = self
+                        .model
+                        .editor_area
+                        .focused_editor()
+                        .and_then(|e| e.view_mode.as_image())
+                        .map(|s| s.drag.is_some())
+                        .unwrap_or(false);
+
+                    if is_image_panning {
+                        return update(&mut self.model, Msg::Image(ImageMsg::EndPan));
+                    }
                 }
 
                 // End sidebar resize drag if active
@@ -853,8 +891,31 @@ impl App {
                     | HoverRegion::DockResize(_)
                     | HoverRegion::None => None,
 
-                    // Editor text area: scroll the editor (or CSV if in CSV mode)
+                    // Editor text area: scroll the editor (or CSV/image if in special mode)
                     HoverRegion::EditorText => {
+                        // Check if focused editor is in image mode — scroll = zoom
+                        let in_image_mode = self
+                            .model
+                            .editor_area
+                            .focused_editor()
+                            .map(|e| e.view_mode.is_image())
+                            .unwrap_or(false);
+
+                        if in_image_mode {
+                            if v_delta != 0 {
+                                let (mx, my) = self.mouse_position.unwrap_or((0.0, 0.0));
+                                return update(
+                                    &mut self.model,
+                                    Msg::Image(ImageMsg::Zoom {
+                                        delta: v_delta as f64,
+                                        mouse_x: mx,
+                                        mouse_y: my,
+                                    }),
+                                );
+                            }
+                            return None;
+                        }
+
                         // Check if focused editor is in CSV mode
                         let in_csv_mode = self
                             .model
