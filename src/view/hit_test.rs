@@ -209,6 +209,12 @@ pub enum HitTarget {
 
     /// "Open with Default Application" button on binary placeholder tab
     BinaryPlaceholderButton { group_id: GroupId },
+
+    /// Image content area (pan/zoom viewer)
+    ImageContent {
+        group_id: GroupId,
+        editor_id: EditorId,
+    },
 }
 
 impl HitTarget {
@@ -221,7 +227,8 @@ impl HitTarget {
             | HitTarget::EditorGutter { group_id, .. }
             | HitTarget::EditorContent { group_id, .. }
             | HitTarget::CsvCell { group_id, .. }
-            | HitTarget::BinaryPlaceholderButton { group_id } => Some(*group_id),
+            | HitTarget::BinaryPlaceholderButton { group_id }
+            | HitTarget::ImageContent { group_id, .. } => Some(*group_id),
             _ => None,
         }
     }
@@ -237,7 +244,8 @@ impl HitTarget {
             | HitTarget::EditorGutter { .. }
             | HitTarget::EditorContent { .. }
             | HitTarget::CsvCell { .. }
-            | HitTarget::BinaryPlaceholderButton { .. } => Some(FocusTarget::Editor),
+            | HitTarget::BinaryPlaceholderButton { .. }
+            | HitTarget::ImageContent { .. } => Some(FocusTarget::Editor),
             // Dock content areas suggest sidebar focus for left dock (file explorer),
             // editor focus for others (until we have FocusTarget::Dock)
             HitTarget::DockTab { position, .. }
@@ -556,6 +564,14 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     // Get the active editor for this group
     let editor_id = group.active_editor_id()?;
     let editor = model.editor_area.editors.get(&editor_id)?;
+
+    // For image mode, return ImageContent for the whole content area
+    if editor.view_mode.is_image() {
+        return Some(HitTarget::ImageContent {
+            group_id,
+            editor_id,
+        });
+    }
 
     // For BinaryPlaceholder tabs, check button hit area
     if let crate::model::TabContent::BinaryPlaceholder(_) = &editor.tab_content {

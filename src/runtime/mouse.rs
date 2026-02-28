@@ -12,7 +12,7 @@ use winit::event::{ElementState, MouseButton};
 use winit::keyboard::ModifiersState;
 
 use token::commands::Cmd;
-use token::messages::{LayoutMsg, ModalMsg, Msg, PreviewMsg, UiMsg, WorkspaceMsg};
+use token::messages::{ImageMsg, LayoutMsg, ModalMsg, Msg, PreviewMsg, UiMsg, WorkspaceMsg};
 use token::model::AppModel;
 use token::update::update;
 
@@ -123,7 +123,7 @@ pub fn handle_mouse_press(
     // Track if we're clicking on editor content (for drag tracking)
     let is_editor_content = matches!(
         target,
-        HitTarget::EditorContent { .. } | HitTarget::EditorGutter { .. }
+        HitTarget::EditorContent { .. } | HitTarget::EditorGutter { .. } | HitTarget::ImageContent { .. }
     );
     let is_left_click = matches!(event.button, MouseButton::Left);
 
@@ -345,6 +345,21 @@ fn handle_left_click(
             EventResult::consumed_with_focus(FocusTarget::Editor)
         }
 
+        // Image content - start panning
+        HitTarget::ImageContent { group_id, .. } => {
+            if *group_id != model.editor_area.focused_group_id {
+                update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
+            }
+            update(
+                model,
+                Msg::Image(ImageMsg::StartPan {
+                    x: event.pos.x,
+                    y: event.pos.y,
+                }),
+            );
+            EventResult::consumed_with_focus(FocusTarget::Editor)
+        }
+
         // Binary placeholder "Open with Default Application" button
         HitTarget::BinaryPlaceholderButton { group_id } => {
             if *group_id != model.editor_area.focused_group_id {
@@ -479,9 +494,6 @@ fn handle_editor_content_click(
                     let path = state.path.clone();
                     update(model, Msg::Layout(LayoutMsg::OpenWithDefaultApp(path)));
                 }
-                return EventResult::consumed_with_focus(FocusTarget::Editor);
-            }
-            token::model::TabContent::Image(_) => {
                 return EventResult::consumed_with_focus(FocusTarget::Editor);
             }
             token::model::TabContent::Text => {}
@@ -629,6 +641,9 @@ fn handle_middle_click(
 
         // Binary placeholder button - no middle-click action
         HitTarget::BinaryPlaceholderButton { .. } => EventResult::consumed_no_redraw(),
+
+        // Image content - no middle-click action
+        HitTarget::ImageContent { .. } => EventResult::consumed_no_redraw(),
     }
 }
 

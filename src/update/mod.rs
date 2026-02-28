@@ -7,6 +7,7 @@ mod csv;
 mod dock;
 mod document;
 mod editor;
+mod image;
 pub mod layout;
 mod outline;
 mod preview;
@@ -58,6 +59,15 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
 fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     let result = match msg {
         Msg::Editor(m) => {
+            // Block editor messages in image mode and binary placeholder mode
+            let is_non_text = model.editor_area.focused_editor().is_some_and(|e| {
+                e.view_mode.is_image()
+                    || matches!(e.tab_content, crate::model::editor::TabContent::BinaryPlaceholder(_))
+            });
+            if is_non_text {
+                return None;
+            }
+
             // When in CSV mode, intercept navigation messages and route to CSV
             let csv_info = model
                 .editor_area
@@ -68,12 +78,20 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
                 if let Some(csv_msg) = map_editor_to_csv(&m, is_editing) {
                     return csv::update_csv(model, csv_msg);
                 }
-                // For other editor messages in CSV mode, ignore them
                 return None;
             }
             editor::update_editor(model, m)
         }
         Msg::Document(m) => {
+            // Block document messages in image mode and binary placeholder mode
+            let is_non_text = model.editor_area.focused_editor().is_some_and(|e| {
+                e.view_mode.is_image()
+                    || matches!(e.tab_content, crate::model::editor::TabContent::BinaryPlaceholder(_))
+            });
+            if is_non_text {
+                return None;
+            }
+
             // When in CSV mode, intercept document messages for cell editing
             let csv_info = model
                 .editor_area
@@ -84,7 +102,6 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
                 if let Some(csv_msg) = map_document_to_csv(&m, is_editing) {
                     return csv::update_csv(model, csv_msg);
                 }
-                // Block other document messages in CSV mode
                 return None;
             }
             document::update_document(model, m)
@@ -94,6 +111,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::App(m) => app::update_app(model, m),
         Msg::Syntax(m) => syntax::update_syntax(model, m),
         Msg::Csv(m) => csv::update_csv(model, m),
+        Msg::Image(m) => image::update_image(model, m),
         Msg::Preview(m) => preview::update_preview(model, m),
         Msg::Workspace(m) => workspace::update_workspace(model, m),
         Msg::Dock(m) => dock::update_dock(model, m),
@@ -219,6 +237,7 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::App(m) => format!("App::{:?}", m),
         Msg::Syntax(m) => format!("Syntax::{:?}", m),
         Msg::Csv(m) => format!("Csv::{:?}", m),
+        Msg::Image(m) => format!("Image::{:?}", m),
         Msg::Preview(m) => format!("Preview::{:?}", m),
         Msg::Workspace(m) => format!("Workspace::{:?}", m),
         Msg::Dock(m) => format!("Dock::{:?}", m),

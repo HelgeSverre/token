@@ -346,3 +346,15 @@ bindings:
   # ===========================================================================
   - key: "cmd+shift+v"
     command: MarkdownTogglePreview
+
+  # ===========================================================================
+  # Image Viewer
+  # ===========================================================================
+  - key: "cmd+="
+    command: ImageZoomIn
+  - key: "cmd+-"
+    command: ImageZoomOut
+  - key: "cmd+0"
+    command: ImageFitToWindow
+  - key: "cmd+shift+0"
+    command: ImageActualSize

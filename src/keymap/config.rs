@@ -367,6 +367,12 @@ impl FromStr for Command {
             "MarkdownTogglePreview" => Ok(Command::MarkdownTogglePreview),
             "MarkdownOpenPreviewToSide" => Ok(Command::MarkdownOpenPreviewToSide),
 
+            // Image viewer
+            "ImageZoomIn" => Ok(Command::ImageZoomIn),
+            "ImageZoomOut" => Ok(Command::ImageZoomOut),
+            "ImageFitToWindow" => Ok(Command::ImageFitToWindow),
+            "ImageActualSize" => Ok(Command::ImageActualSize),
+
             // Special
             "EscapeSmartClear" => Ok(Command::EscapeSmartClear),
             "Unbound" => Ok(Command::Unbound),

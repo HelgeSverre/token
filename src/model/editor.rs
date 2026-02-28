@@ -265,31 +265,14 @@ pub struct OccurrenceState {
     pub last_search_offset: usize,
 }
 
-/// View mode for the editor
-///
 /// What kind of content this tab displays
 #[derive(Debug, Clone, Default)]
 pub enum TabContent {
     /// Normal text/code editing (uses Document rope + ViewMode)
     #[default]
     Text,
-    /// Image viewer (decoded RGBA pixels)
-    Image(ImageTabState),
     /// Placeholder for unsupported binary files
     BinaryPlaceholder(BinaryPlaceholderState),
-}
-
-/// State for an image viewer tab
-#[derive(Debug, Clone)]
-pub struct ImageTabState {
-    /// Path to the image file
-    pub path: std::path::PathBuf,
-    /// Decoded RGBA8 pixel data
-    pub pixels: Vec<u8>,
-    /// Image width in pixels
-    pub width: u32,
-    /// Image height in pixels
-    pub height: u32,
 }
 
 /// State for a binary file placeholder tab
@@ -310,6 +293,8 @@ pub enum ViewMode {
     Text,
     /// CSV spreadsheet view mode
     Csv(Box<CsvState>),
+    /// Image viewer mode
+    Image(Box<crate::image::ImageState>),
 }
 
 impl ViewMode {
@@ -330,6 +315,27 @@ impl ViewMode {
     pub fn as_csv_mut(&mut self) -> Option<&mut CsvState> {
         match self {
             ViewMode::Csv(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    /// Check if in image mode
+    pub fn is_image(&self) -> bool {
+        matches!(self, ViewMode::Image(_))
+    }
+
+    /// Get image state if in image mode
+    pub fn as_image(&self) -> Option<&crate::image::ImageState> {
+        match self {
+            ViewMode::Image(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    /// Get mutable image state if in image mode
+    pub fn as_image_mut(&mut self) -> Option<&mut crate::image::ImageState> {
+        match self {
+            ViewMode::Image(state) => Some(state),
             _ => None,
         }
     }
