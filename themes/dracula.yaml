@@ -62,6 +62,11 @@ ui:
     selected_cell_border: "#BD93F9"
     number_foreground: "#BD93F9"
 
+  image:
+    checkerboard_light: "#FFFFFF"
+    checkerboard_dark: "#CCCCCC"
+    checkerboard_cell_size: 8
+
   syntax:
     keyword: "#FF79C6"
     function: "#50FA7B"

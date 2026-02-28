@@ -279,6 +279,8 @@ pub struct UiThemeData {
     #[serde(default)]
     pub csv: CsvThemeData,
     #[serde(default)]
+    pub image: ImageThemeData,
+    #[serde(default)]
     pub syntax: SyntaxThemeData,
 }
 
@@ -398,6 +400,20 @@ pub struct CsvThemeData {
     pub number_foreground: Option<String>,
 }
 
+/// Image viewer theme data (raw strings from YAML)
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ImageThemeData {
+    /// Light checkerboard color (default: #FFFFFF)
+    #[serde(default)]
+    pub checkerboard_light: Option<String>,
+    /// Dark checkerboard color (default: #CCCCCC)
+    #[serde(default)]
+    pub checkerboard_dark: Option<String>,
+    /// Checkerboard cell size in pixels (default: 8)
+    #[serde(default)]
+    pub checkerboard_cell_size: Option<u32>,
+}
+
 /// Syntax highlighting colors (all optional for backward compatibility)
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct SyntaxThemeData {
@@ -459,6 +475,7 @@ pub struct Theme {
     pub splitter: SplitterTheme,
     pub sidebar: SidebarTheme,
     pub csv: CsvTheme,
+    pub image: ImageTheme,
     pub syntax: SyntaxTheme,
 }
 
@@ -686,6 +703,24 @@ impl CsvTheme {
                 .and_then(|d| d.number_foreground.as_ref())
                 .and_then(|s| Color::from_hex(s).ok())
                 .unwrap_or(default.number_foreground),
+        }
+    }
+}
+
+/// Image viewer theme (resolved colors)
+#[derive(Debug, Clone)]
+pub struct ImageTheme {
+    pub checkerboard_light: Color,
+    pub checkerboard_dark: Color,
+    pub checkerboard_cell_size: u32,
+}
+
+impl Default for ImageTheme {
+    fn default() -> Self {
+        Self {
+            checkerboard_light: Color::rgb(255, 255, 255),
+            checkerboard_dark: Color::rgb(204, 204, 204),
+            checkerboard_cell_size: 8,
         }
     }
 }
@@ -1080,6 +1115,32 @@ impl Theme {
                 }
             },
             csv,
+            image: {
+                let defaults = ImageTheme::default();
+                ImageTheme {
+                    checkerboard_light: data
+                        .ui
+                        .image
+                        .checkerboard_light
+                        .as_deref()
+                        .map(Color::from_hex)
+                        .transpose()?
+                        .unwrap_or(defaults.checkerboard_light),
+                    checkerboard_dark: data
+                        .ui
+                        .image
+                        .checkerboard_dark
+                        .as_deref()
+                        .map(Color::from_hex)
+                        .transpose()?
+                        .unwrap_or(defaults.checkerboard_dark),
+                    checkerboard_cell_size: data
+                        .ui
+                        .image
+                        .checkerboard_cell_size
+                        .unwrap_or(defaults.checkerboard_cell_size),
+                }
+            },
             syntax: {
                 let defaults = SyntaxTheme::default_dark();
                 SyntaxTheme {
@@ -1296,6 +1357,7 @@ impl Theme {
                     splitter: SplitterTheme::default_dark(),
                     sidebar: SidebarTheme::default_dark(),
                     csv: CsvTheme::default_dark(),
+                    image: ImageTheme::default(),
                     syntax: SyntaxTheme::default_dark(),
                 }
             }
