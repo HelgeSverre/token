@@ -276,6 +276,8 @@ pub enum ViewMode {
     Text,
     /// CSV spreadsheet view mode
     Csv(Box<CsvState>),
+    /// Image viewer mode (decoded image with pan/zoom)
+    Image(Box<crate::image::ImageState>),
 }
 
 impl ViewMode {
@@ -296,6 +298,27 @@ impl ViewMode {
     pub fn as_csv_mut(&mut self) -> Option<&mut CsvState> {
         match self {
             ViewMode::Csv(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    /// Check if in image mode
+    pub fn is_image(&self) -> bool {
+        matches!(self, ViewMode::Image(_))
+    }
+
+    /// Get image state if in image mode
+    pub fn as_image(&self) -> Option<&crate::image::ImageState> {
+        match self {
+            ViewMode::Image(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    /// Get mutable image state if in image mode
+    pub fn as_image_mut(&mut self) -> Option<&mut crate::image::ImageState> {
+        match self {
+            ViewMode::Image(state) => Some(state),
             _ => None,
         }
     }
