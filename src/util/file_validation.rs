@@ -115,6 +115,17 @@ pub fn is_likely_binary(path: &Path) -> bool {
     buffer[..bytes_read].contains(&0)
 }
 
+/// Image file extensions supported by the viewer
+const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "bmp", "webp"];
+
+/// Check if a file path has an image extension
+pub fn is_image_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| IMAGE_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
 /// Get the filename from a path for display in error messages
 pub fn filename_for_display(path: &Path) -> String {
     path.file_name()
@@ -181,5 +192,32 @@ mod tests {
             FileOpenError::BinaryFile.user_message("image.png"),
             "Cannot open binary file: image.png"
         );
+    }
+
+    #[test]
+    fn test_is_image_file_png() {
+        assert!(is_image_file(Path::new("photo.png")));
+        assert!(is_image_file(Path::new("photo.PNG")));
+    }
+
+    #[test]
+    fn test_is_image_file_jpeg() {
+        assert!(is_image_file(Path::new("photo.jpg")));
+        assert!(is_image_file(Path::new("photo.jpeg")));
+    }
+
+    #[test]
+    fn test_is_image_file_other_formats() {
+        assert!(is_image_file(Path::new("image.gif")));
+        assert!(is_image_file(Path::new("image.bmp")));
+        assert!(is_image_file(Path::new("image.webp")));
+    }
+
+    #[test]
+    fn test_is_not_image_file() {
+        assert!(!is_image_file(Path::new("code.rs")));
+        assert!(!is_image_file(Path::new("data.csv")));
+        assert!(!is_image_file(Path::new("readme.md")));
+        assert!(!is_image_file(Path::new("noextension")));
     }
 }

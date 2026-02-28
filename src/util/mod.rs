@@ -8,5 +8,6 @@ pub use text::{char_type, is_punctuation, is_word_boundary, CharType};
 
 // Re-export file validation utilities
 pub use file_validation::{
-    filename_for_display, is_likely_binary, validate_file_for_opening, FileOpenError, MAX_FILE_SIZE,
+    filename_for_display, is_image_file, is_likely_binary, validate_file_for_opening, FileOpenError,
+    MAX_FILE_SIZE,
 };
