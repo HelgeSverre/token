@@ -28,6 +28,9 @@ pub fn update_image(model: &mut AppModel, msg: ImageMsg) -> Option<Cmd> {
             let area_x = group.rect.x as f64;
             let area_y = group.rect.y as f64 + model.metrics.tab_bar_height as f64;
 
+            let area_w = group.rect.width as f64;
+            let area_h = group.rect.height as f64 - model.metrics.tab_bar_height as f64;
+
             let editor = model.editor_area.editors.get_mut(&editor_id)?;
             let state = editor.view_mode.as_image_mut()?;
 
@@ -44,8 +47,17 @@ pub fn update_image(model: &mut AppModel, msg: ImageMsg) -> Option<Cmd> {
             };
 
             // Convert window coords to content-area-local coords
-            let anchor_x = raw_x - area_x;
-            let anchor_y = raw_y - area_y;
+            let local_x = raw_x - area_x;
+            let local_y = raw_y - area_y;
+
+            // Account for centering offset (matches render.rs logic)
+            let scaled_w = state.width as f64 * state.scale;
+            let scaled_h = state.height as f64 * state.scale;
+            let center_x = if scaled_w < area_w { (area_w - scaled_w) / 2.0 } else { 0.0 };
+            let center_y = if scaled_h < area_h { (area_h - scaled_h) / 2.0 } else { 0.0 };
+
+            let anchor_x = local_x - center_x;
+            let anchor_y = local_y - center_y;
 
             // Compute the image-space point under the cursor before zoom
             let img_x = state.offset_x + anchor_x / state.scale;
@@ -56,9 +68,17 @@ pub fn update_image(model: &mut AppModel, msg: ImageMsg) -> Option<Cmd> {
             let new_scale = (state.scale * factor).clamp(MIN_SCALE, MAX_SCALE);
             state.scale = new_scale;
 
+            // Recompute centering for the new scale
+            let new_scaled_w = state.width as f64 * new_scale;
+            let new_scaled_h = state.height as f64 * new_scale;
+            let new_center_x = if new_scaled_w < area_w { (area_w - new_scaled_w) / 2.0 } else { 0.0 };
+            let new_center_y = if new_scaled_h < area_h { (area_h - new_scaled_h) / 2.0 } else { 0.0 };
+
             // Adjust offset so the anchor point stays stationary
-            state.offset_x = img_x - anchor_x / new_scale;
-            state.offset_y = img_y - anchor_y / new_scale;
+            let new_anchor_x = local_x - new_center_x;
+            let new_anchor_y = local_y - new_center_y;
+            state.offset_x = img_x - new_anchor_x / new_scale;
+            state.offset_y = img_y - new_anchor_y / new_scale;
 
             state.user_zoomed = true;
             Some(Cmd::redraw_editor())
@@ -125,16 +145,11 @@ pub fn update_image(model: &mut AppModel, msg: ImageMsg) -> Option<Cmd> {
         }
 
         ImageMsg::MouseMove { x, y } => {
-            // Convert window coords to content-area-local coords
-            let group_id = model.editor_area.focused_group_id;
-            let group = model.editor_area.groups.get(&group_id)?;
-            let area_x = group.rect.x as f64;
-            let area_y = group.rect.y as f64 + model.metrics.tab_bar_height as f64;
-
+            // Store raw window coords (zoom handler does its own conversion)
             let editor = model.editor_area.editors.get_mut(&editor_id)?;
             let state = editor.view_mode.as_image_mut()?;
-            state.last_mouse_x = x - area_x;
-            state.last_mouse_y = y - area_y;
+            state.last_mouse_x = x;
+            state.last_mouse_y = y;
             None
         }
 
