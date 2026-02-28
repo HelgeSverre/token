@@ -373,6 +373,36 @@ pub fn sync_status_bar(model: &mut AppModel) {
         .status_bar
         .update_segment(SegmentId::FileName, SegmentContent::Text(filename));
 
+    // Check if in image mode — show image-specific info
+    let image_info = model
+        .editor_area
+        .focused_editor()
+        .and_then(|e| e.view_mode.as_image().cloned());
+
+    if let Some(img) = image_info {
+        model.ui.status_bar.update_segment(
+            SegmentId::ModifiedIndicator,
+            SegmentContent::Empty,
+        );
+        model.ui.status_bar.update_segment(
+            SegmentId::CursorPosition,
+            SegmentContent::Text(format!("{}×{}", img.width, img.height)),
+        );
+        model.ui.status_bar.update_segment(
+            SegmentId::LineCount,
+            SegmentContent::Text(format!("{}%", img.zoom_percent())),
+        );
+        model.ui.status_bar.update_segment(
+            SegmentId::Selection,
+            SegmentContent::Text(img.file_size_display()),
+        );
+        model.ui.status_bar.update_segment(
+            SegmentId::CaretCount,
+            SegmentContent::Text(img.format.clone()),
+        );
+        return;
+    }
+
     // ModifiedIndicator segment
     let modified = if model.document().is_modified {
         SegmentContent::Text("*".to_string())
