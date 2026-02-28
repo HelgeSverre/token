@@ -61,7 +61,7 @@ arboard = "3.4"
 rfd = "0.15"
 
 # For window icon loading
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"] }
 
 # For CLI argument parsing
 clap = { version = "4", features = ["derive"] }
