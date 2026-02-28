@@ -921,7 +921,19 @@ impl Renderer {
         Self::render_tab_bar(frame, painter, model, group, &layout);
 
         // Check view mode and dispatch to appropriate renderer
-        if let Some(csv_state) = editor.view_mode.as_csv() {
+        if let Some(image_state) = editor.view_mode.as_image() {
+            // Image mode: render image with checkerboard
+            let cr = &layout.content_rect;
+            crate::image::render::render_image(
+                frame,
+                image_state,
+                &model.theme.image,
+                cr.x as usize,
+                cr.y as usize,
+                cr.width as usize,
+                cr.height as usize,
+            );
+        } else if let Some(csv_state) = editor.view_mode.as_csv() {
             // CSV mode: render grid
             Self::render_csv_grid(frame, painter, model, csv_state, &layout, is_focused);
         } else {
