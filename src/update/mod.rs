@@ -7,6 +7,7 @@ mod csv;
 mod dock;
 mod document;
 mod editor;
+mod image;
 pub mod layout;
 mod outline;
 mod preview;
@@ -28,6 +29,7 @@ use tracing::{debug, span, Level};
 pub use app::{execute_command, update_app};
 pub use csv::update_csv;
 pub use dock::update_dock;
+pub use image::update_image;
 pub use document::update_document;
 pub use editor::update_editor;
 pub use layout::update_layout;
@@ -71,6 +73,17 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
                 // For other editor messages in CSV mode, ignore them
                 return None;
             }
+
+            // When in image mode, block all editor messages
+            if model
+                .editor_area
+                .focused_editor()
+                .map(|e| e.view_mode.is_image())
+                .unwrap_or(false)
+            {
+                return None;
+            }
+
             editor::update_editor(model, m)
         }
         Msg::Document(m) => {
@@ -87,6 +100,17 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
                 // Block other document messages in CSV mode
                 return None;
             }
+
+            // When in image mode, block all document messages
+            if model
+                .editor_area
+                .focused_editor()
+                .map(|e| e.view_mode.is_image())
+                .unwrap_or(false)
+            {
+                return None;
+            }
+
             document::update_document(model, m)
         }
         Msg::Ui(m) => ui::update_ui(model, m),
@@ -94,7 +118,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::App(m) => app::update_app(model, m),
         Msg::Syntax(m) => syntax::update_syntax(model, m),
         Msg::Csv(m) => csv::update_csv(model, m),
-        Msg::Image(_m) => None, // TODO: wire up in Task 5
+        Msg::Image(m) => image::update_image(model, m),
         Msg::Preview(m) => preview::update_preview(model, m),
         Msg::Workspace(m) => workspace::update_workspace(model, m),
         Msg::Dock(m) => dock::update_dock(model, m),
