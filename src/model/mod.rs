@@ -35,7 +35,7 @@ use crate::config_paths;
 use crate::debug_overlay::DebugOverlay;
 use crate::recent_files::RecentFiles;
 use crate::theme::{load_theme, Theme};
-use crate::util::{is_likely_binary, validate_file_for_opening, FileOpenError};
+use crate::util::{is_image_file, is_likely_binary, validate_file_for_opening, FileOpenError};
 use std::path::PathBuf;
 
 // ============================================================================
@@ -136,13 +136,29 @@ fn load_config_and_theme() -> (EditorConfig, Theme) {
 
 /// Create initial session with documents and editor area
 fn create_initial_session(file_paths: Vec<PathBuf>, geom: &ViewportGeometry) -> InitialSession {
+    // Track image state for the first file (set on editor after creation)
+    let mut first_image_state: Option<crate::image::ImageState> = None;
+
     // Load first file or create empty document
     let (first_document, status_message) = if let Some(first_path) = file_paths.first() {
         // Validate and load the first file
         match validate_file_for_opening(first_path) {
             Ok(()) => {
-                // File exists and is valid - check for binary
-                if is_likely_binary(first_path) {
+                // Check for image files before binary rejection
+                if is_image_file(first_path) {
+                    match crate::image::load_image(first_path, 800, 600) {
+                        Some(image_state) => {
+                            first_image_state = Some(image_state);
+                            let msg = format!("Opened image: {}", first_path.display());
+                            (Document::new_with_path(first_path.clone()), msg)
+                        }
+                        None => {
+                            let msg =
+                                format!("Failed to decode image: {}", first_path.display());
+                            (Document::new(), msg)
+                        }
+                    }
+                } else if is_likely_binary(first_path) {
                     let msg = format!("Cannot open binary file: {}", first_path.display());
                     (Document::new(), msg)
                 } else {
@@ -179,7 +195,12 @@ fn create_initial_session(file_paths: Vec<PathBuf>, geom: &ViewportGeometry) -> 
     };
 
     // Create editor state with viewport
-    let editor = EditorState::with_viewport(geom.visible_lines, geom.visible_columns);
+    let mut editor = EditorState::with_viewport(geom.visible_lines, geom.visible_columns);
+
+    // If the first file was an image, set ViewMode::Image
+    if let Some(image_state) = first_image_state {
+        editor.view_mode = editor::ViewMode::Image(Box::new(image_state));
+    }
 
     // Create editor area with first document
     let mut editor_area = EditorArea::single_document(first_document, editor);
@@ -187,24 +208,33 @@ fn create_initial_session(file_paths: Vec<PathBuf>, geom: &ViewportGeometry) -> 
     // Open additional files as tabs
     for path in file_paths.into_iter().skip(1) {
         // Validate before attempting to open
-        let doc = match validate_file_for_opening(&path) {
+        let (doc, image_state) = match validate_file_for_opening(&path) {
             Ok(()) => {
-                // File exists - check for binary
-                if is_likely_binary(&path) {
+                // Check for image files before binary rejection
+                if is_image_file(&path) {
+                    match crate::image::load_image(&path, 800, 600) {
+                        Some(img) => (Document::new_with_path(path.clone()), Some(img)),
+                        None => {
+                            tracing::warn!("Failed to decode image: {}", path.display());
+                            continue;
+                        }
+                    }
+                } else if is_likely_binary(&path) {
                     tracing::warn!("Skipping binary file: {}", path.display());
                     continue;
-                }
-                match Document::from_file(path.clone()) {
-                    Ok(doc) => doc,
-                    Err(e) => {
-                        tracing::warn!("Failed to open {}: {}", path.display(), e);
-                        continue;
+                } else {
+                    match Document::from_file(path.clone()) {
+                        Ok(doc) => (doc, None),
+                        Err(e) => {
+                            tracing::warn!("Failed to open {}: {}", path.display(), e);
+                            continue;
+                        }
                     }
                 }
             }
             Err(FileOpenError::NotFound) => {
                 // File doesn't exist - create new document with this path
-                Document::new_with_path(path.clone())
+                (Document::new_with_path(path.clone()), None)
             }
             Err(e) => {
                 tracing::warn!("Skipping {}: {}", path.display(), e);
@@ -222,6 +252,9 @@ fn create_initial_session(file_paths: Vec<PathBuf>, geom: &ViewportGeometry) -> 
         let mut editor = EditorState::with_viewport(geom.visible_lines, geom.visible_columns);
         editor.id = Some(editor_id);
         editor.document_id = Some(doc_id);
+        if let Some(img) = image_state {
+            editor.view_mode = editor::ViewMode::Image(Box::new(img));
+        }
         editor_area.editors.insert(editor_id, editor);
 
         // Create tab in focused group

@@ -9,8 +9,9 @@ use crate::model::{
     AppModel, Document, EditorGroup, EditorState, GroupId, LayoutNode, Rect, SplitContainer,
     SplitDirection, Tab, TabId,
 };
+use crate::model::editor::ViewMode;
 use crate::util::{
-    filename_for_display, is_likely_binary, validate_file_for_opening, FileOpenError,
+    filename_for_display, is_image_file, is_likely_binary, validate_file_for_opening, FileOpenError,
 };
 
 use super::syntax::schedule_syntax_parse;
@@ -231,7 +232,62 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
 
     let group_id = model.editor_area.focused_group_id;
 
-    // 1. Validate file and load/create document
+    // 1. Check if this is an image file — handle before binary rejection
+    if is_image_file(&path) {
+        if let Err(e) = validate_file_for_opening(&path) {
+            model.ui.set_status(e.user_message(&filename));
+            return Some(Cmd::Redraw);
+        }
+
+        let group = model.editor_area.groups.get(&group_id);
+        let (vw, vh) = group
+            .map(|g| (g.rect.width as u32, g.rect.height as u32))
+            .unwrap_or((800, 600));
+
+        return match crate::image::load_image(&path, vw, vh) {
+            Some(image_state) => {
+                let doc_id = model.editor_area.next_document_id();
+                let mut doc = Document::new_with_path(path.clone());
+                doc.id = Some(doc_id);
+                model.editor_area.documents.insert(doc_id, doc);
+
+                model.record_file_opened(path.clone());
+
+                let editor_id = model.editor_area.next_editor_id();
+                let mut editor = EditorState::new();
+                editor.id = Some(editor_id);
+                editor.document_id = Some(doc_id);
+                editor.view_mode = ViewMode::Image(Box::new(image_state));
+                model.editor_area.editors.insert(editor_id, editor);
+
+                let tab_id = model.editor_area.next_tab_id();
+                let tab = Tab {
+                    id: tab_id,
+                    editor_id,
+                    is_pinned: false,
+                    is_preview: false,
+                };
+
+                if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
+                    group.tabs.push(tab);
+                    group.active_tab_index = group.tabs.len() - 1;
+                }
+
+                model
+                    .ui
+                    .set_status(format!("Opened image: {}", path.display()));
+                Some(Cmd::Redraw)
+            }
+            None => {
+                model
+                    .ui
+                    .set_status(format!("Failed to decode image: {}", filename));
+                Some(Cmd::Redraw)
+            }
+        };
+    }
+
+    // 2. Validate file and load/create document (non-image path)
     let doc_id = model.editor_area.next_document_id();
     let document = match validate_file_for_opening(&path) {
         Ok(()) => {
@@ -274,14 +330,14 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
     // Record in recent files
     model.record_file_opened(path);
 
-    // 4. Create new editor state for this document
+    // 3. Create new editor state for this document
     let editor_id = model.editor_area.next_editor_id();
     let mut editor = EditorState::new();
     editor.id = Some(editor_id);
     editor.document_id = Some(doc_id);
     model.editor_area.editors.insert(editor_id, editor);
 
-    // 5. Create tab in focused group
+    // 4. Create tab in focused group
     let tab_id = model.editor_area.next_tab_id();
     let tab = Tab {
         id: tab_id,
@@ -295,7 +351,7 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
         group.active_tab_index = group.tabs.len() - 1;
     }
 
-    // 6. Schedule syntax parsing for the new document
+    // 5. Schedule syntax parsing for the new document
     if let Some(parse_cmd) = schedule_syntax_parse(model, doc_id) {
         Some(Cmd::Batch(vec![Cmd::Redraw, parse_cmd]))
     } else {
