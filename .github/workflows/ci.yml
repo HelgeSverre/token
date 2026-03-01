@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Rewrite SSH URLs to HTTPS
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -42,6 +44,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Rewrite SSH URLs to HTTPS
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install Linux dependencies

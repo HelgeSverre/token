@@ -60,6 +60,8 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Rewrite SSH URLs to HTTPS
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - name: Install dist
         # we specify bash to get pipefail; it guards against the `curl` command
         # failing. otherwise `sh` won't catch that `curl` returned non-0
@@ -120,6 +122,8 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Rewrite SSH URLs to HTTPS
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - name: Install Rust non-interactively if not already installed
         if: ${{ matrix.container }}
         run: |
@@ -179,6 +183,8 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Rewrite SSH URLs to HTTPS
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - name: Install cached dist
         uses: actions/download-artifact@v7
         with:
@@ -229,6 +235,8 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Rewrite SSH URLs to HTTPS
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - name: Install cached dist
         uses: actions/download-artifact@v7
         with:
