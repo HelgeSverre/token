@@ -20,7 +20,7 @@ use token::fs_watcher::{FileSystemEvent, FileSystemWatcher};
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
 };
-use token::messages::{AppMsg, CsvMsg, EditorMsg, LayoutMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg};
+use token::messages::{AppMsg, CsvMsg, EditorMsg, ImageMsg, LayoutMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg};
 use token::model::editor::Position;
 use token::model::editor_area::{Rect, SplitDirection};
 use token::model::AppModel;
@@ -652,6 +652,35 @@ impl App {
                     );
                 }
 
+                // Handle image panning and mouse tracking
+                if let Some(editor) = self.model.editor_area.focused_editor() {
+                    if editor.view_mode.is_image() {
+                        let has_drag = editor.view_mode.as_image()
+                            .map(|img| img.drag.is_some())
+                            .unwrap_or(false);
+
+                        if self.left_mouse_down && has_drag {
+                            update(
+                                &mut self.model,
+                                Msg::Image(ImageMsg::UpdatePan {
+                                    x: position.x,
+                                    y: position.y,
+                                }),
+                            );
+                        }
+
+                        update(
+                            &mut self.model,
+                            Msg::Image(ImageMsg::MouseMove {
+                                x: position.x,
+                                y: position.y,
+                            }),
+                        );
+
+                        return Some(Cmd::Redraw);
+                    }
+                }
+
                 if self.model.editor().rectangle_selection.active {
                     if let Some(renderer) = &mut self.renderer {
                         // Use visual column (screen position) for rectangle selection
@@ -757,6 +786,16 @@ impl App {
                         &mut self.model,
                         Msg::Workspace(WorkspaceMsg::EndSidebarResize),
                     );
+                }
+
+                // End image pan if active
+                if let Some(editor) = self.model.editor_area.focused_editor() {
+                    if editor.view_mode.as_image()
+                        .map(|img| img.drag.is_some())
+                        .unwrap_or(false)
+                    {
+                        return update(&mut self.model, Msg::Image(ImageMsg::EndPan));
+                    }
                 }
                 None
             }
@@ -867,8 +906,31 @@ impl App {
                     | HoverRegion::Button
                     | HoverRegion::None => None,
 
-                    // Editor text area: scroll the editor (or CSV if in CSV mode)
+                    // Editor text area: scroll the editor (or CSV/Image if in those modes)
                     HoverRegion::EditorText => {
+                        // Check if focused editor is in image mode
+                        let in_image_mode = self
+                            .model
+                            .editor_area
+                            .focused_editor()
+                            .map(|e| e.view_mode.is_image())
+                            .unwrap_or(false);
+
+                        if in_image_mode {
+                            if v_delta != 0 {
+                                let (mouse_x, mouse_y) = self.mouse_position.unwrap_or((0.0, 0.0));
+                                return update(
+                                    &mut self.model,
+                                    Msg::Image(ImageMsg::Zoom {
+                                        delta: v_delta as f64,
+                                        mouse_x,
+                                        mouse_y,
+                                    }),
+                                );
+                            }
+                            return None;
+                        }
+
                         // Check if focused editor is in CSV mode
                         let in_csv_mode = self
                             .model

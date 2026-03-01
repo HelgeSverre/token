@@ -359,6 +359,38 @@ use super::AppModel;
 
 /// Synchronize status bar segments with current document/editor state
 pub fn sync_status_bar(model: &mut AppModel) {
+    // Image mode: show image-specific info in status bar
+    if let Some(image_state) = model.editor_area.focused_editor()
+        .and_then(|e| e.view_mode.as_image())
+    {
+        let dims = format!("{}x{}", image_state.width, image_state.height);
+        let zoom = format!("{}%", image_state.zoom_percent());
+        let file_size = image_state.file_size_display();
+        let format = image_state.format.clone();
+
+        model.ui.status_bar.update_segment(
+            SegmentId::CursorPosition,
+            SegmentContent::Text(dims),
+        );
+        model.ui.status_bar.update_segment(
+            SegmentId::LineCount,
+            SegmentContent::Text(zoom),
+        );
+        model.ui.status_bar.update_segment(
+            SegmentId::Selection,
+            SegmentContent::Text(file_size),
+        );
+        model.ui.status_bar.update_segment(
+            SegmentId::CaretCount,
+            SegmentContent::Text(format),
+        );
+        model.ui.status_bar.update_segment(
+            SegmentId::ModifiedIndicator,
+            SegmentContent::Empty,
+        );
+        return;
+    }
+
     // FileName segment
     let filename = model
         .document()

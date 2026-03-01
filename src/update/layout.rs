@@ -9,7 +9,7 @@ use crate::model::{
     AppModel, Document, EditorGroup, EditorState, GroupId, LayoutNode, Rect, SplitContainer,
     SplitDirection, Tab, TabId,
 };
-use crate::model::editor::{BinaryPlaceholderState, ImageTabState, TabContent};
+use crate::model::editor::{BinaryPlaceholderState, TabContent, ViewMode};
 use crate::util::{
     filename_for_display, is_likely_binary, is_supported_image, validate_file_for_opening,
     FileOpenError,
@@ -241,55 +241,56 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
         Ok(()) => {
             // File exists - check for image files first
             if is_supported_image(&path) {
-                // TODO: image::open() blocks the main thread during decode. For large images or slow
-                // drives this freezes the UI. Fix: add Cmd::LoadImage to spawn decode on a background
-                // thread, post Msg::ImageLoaded back via EventLoopProxy, and show a loading state.
-                let img = match image::open(&path) {
-                    Ok(img) => img.to_rgba8(),
-                    Err(e) => {
-                        model
-                            .ui
-                            .set_status(format!("Error opening image {}: {}", filename, e));
+                let group = model.editor_area.groups.get(&group_id);
+                let vw = group.map(|g| g.rect.width as u32).unwrap_or(800);
+                let vh = group
+                    .map(|g| (g.rect.height as usize).saturating_sub(model.metrics.tab_bar_height) as u32)
+                    .unwrap_or(600);
+
+                match crate::image::load_image(&path, vw, vh) {
+                    Some(image_state) => {
+                        let w = image_state.width;
+                        let h = image_state.height;
+
+                        let mut doc = Document::new();
+                        doc.id = Some(doc_id);
+                        doc.file_path = Some(path.clone());
+                        model.editor_area.documents.insert(doc_id, doc);
+                        model.record_file_opened(path.clone());
+
+                        let editor_id = model.editor_area.next_editor_id();
+                        let mut editor = EditorState::new();
+                        editor.id = Some(editor_id);
+                        editor.document_id = Some(doc_id);
+                        editor.view_mode = ViewMode::Image(Box::new(image_state));
+                        model.editor_area.editors.insert(editor_id, editor);
+
+                        let tab_id = model.editor_area.next_tab_id();
+                        let tab = Tab {
+                            id: tab_id,
+                            editor_id,
+                            is_pinned: false,
+                            is_preview: false,
+                        };
+                        if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
+                            group.tabs.push(tab);
+                            group.active_tab_index = group.tabs.len() - 1;
+                        }
+
+                        model.ui.set_status(format!(
+                            "Opened image: {} ({}×{})",
+                            filename, w, h
+                        ));
                         return Some(Cmd::Redraw);
                     }
-                };
-                let (width, height) = img.dimensions();
-                let pixels = img.into_raw();
-
-                let mut doc = Document::new();
-                doc.id = Some(doc_id);
-                doc.file_path = Some(path.clone());
-                model.editor_area.documents.insert(doc_id, doc);
-                model.record_file_opened(path.clone());
-
-                let editor_id = model.editor_area.next_editor_id();
-                let mut editor = EditorState::new();
-                editor.id = Some(editor_id);
-                editor.document_id = Some(doc_id);
-                editor.tab_content = TabContent::Image(ImageTabState {
-                    path,
-                    pixels,
-                    width,
-                    height,
-                });
-                model.editor_area.editors.insert(editor_id, editor);
-
-                let tab_id = model.editor_area.next_tab_id();
-                let tab = Tab {
-                    id: tab_id,
-                    editor_id,
-                    is_pinned: false,
-                    is_preview: false,
-                };
-                if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
-                    group.tabs.push(tab);
-                    group.active_tab_index = group.tabs.len() - 1;
+                    None => {
+                        model.ui.set_status(format!(
+                            "Error opening image: {}",
+                            filename
+                        ));
+                        return Some(Cmd::Redraw);
+                    }
                 }
-
-                model
-                    .ui
-                    .set_status(format!("Opened image: {} ({}×{})", filename, width, height));
-                return Some(Cmd::Redraw);
             }
 
             // Check for binary content

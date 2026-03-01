@@ -923,75 +923,35 @@ impl Renderer {
         // Tab bar
         Self::render_tab_bar(frame, painter, model, group, &layout);
 
-        // Dispatch based on tab content type
-        match &editor.tab_content {
-            crate::model::editor::TabContent::Image(img_state) => {
-                Self::render_image_tab(frame, painter, model, img_state, &layout);
-            }
-            crate::model::editor::TabContent::BinaryPlaceholder(placeholder) => {
+        // Dispatch based on tab content and view mode
+        if matches!(editor.tab_content, crate::model::editor::TabContent::BinaryPlaceholder(_)) {
+            if let crate::model::editor::TabContent::BinaryPlaceholder(ref placeholder) = editor.tab_content {
                 Self::render_binary_placeholder(frame, painter, model, placeholder, &layout);
             }
-            crate::model::editor::TabContent::Text => {
-                if let Some(csv_state) = editor.view_mode.as_csv() {
-                    Self::render_csv_grid(frame, painter, model, csv_state, &layout, is_focused);
-                } else {
-                    Self::render_text_area(
-                        frame, painter, model, editor, document, &layout, is_focused,
-                    );
-                    Self::render_gutter(frame, painter, model, editor, document, &layout);
-                }
-            }
+        } else if let Some(image_state) = editor.view_mode.as_image() {
+            let cr = &layout.content_rect;
+            crate::image::render::render_image(
+                frame,
+                image_state,
+                &model.theme.image_preview,
+                cr.x as usize,
+                cr.y as usize,
+                cr.width as usize,
+                cr.height as usize,
+            );
+        } else if let Some(csv_state) = editor.view_mode.as_csv() {
+            Self::render_csv_grid(frame, painter, model, csv_state, &layout, is_focused);
+        } else {
+            Self::render_text_area(
+                frame, painter, model, editor, document, &layout, is_focused,
+            );
+            Self::render_gutter(frame, painter, model, editor, document, &layout);
         }
 
         // Dim non-focused groups when multiple groups exist (4% black overlay)
         if !is_focused && model.editor_area.groups.len() > 1 {
             let dim_color = 0x0A000000_u32; // 4% opacity black (alpha = 10/255 ≈ 4%)
             frame.blend_rect(group_rect, dim_color);
-        }
-    }
-
-    /// Render an image viewer tab
-    fn render_image_tab(
-        frame: &mut Frame,
-        _painter: &mut TextPainter,
-        model: &AppModel,
-        img_state: &crate::model::editor::ImageTabState,
-        layout: &geometry::GroupLayout,
-    ) {
-        let content_rect = layout.content_rect;
-        let bg = model.theme.editor.background.to_argb_u32();
-        frame.fill_rect(content_rect, bg);
-
-        let padding = model.metrics.padding_large * 2;
-        let dest_x = content_rect.x as usize + padding;
-        let dest_y = content_rect.y as usize + padding;
-        let dest_w = (content_rect.width as usize).saturating_sub(padding * 2);
-        let dest_h = (content_rect.height as usize).saturating_sub(padding * 2);
-
-        if dest_w > 0 && dest_h > 0 {
-            // Draw checkerboard pattern for transparency
-            let ip = &model.theme.image_preview;
-            let check_size = ip.checkerboard_size;
-            let light = ip.checkerboard_light.to_argb_u32();
-            let dark = ip.checkerboard_dark.to_argb_u32();
-            for cy in 0..dest_h {
-                for cx in 0..dest_w {
-                    let px = dest_x + cx;
-                    let py = dest_y + cy;
-                    let checker = ((cx / check_size) + (cy / check_size)).is_multiple_of(2);
-                    frame.set_pixel(px, py, if checker { light } else { dark });
-                }
-            }
-
-            frame.blit_rgba_scaled(
-                &img_state.pixels,
-                img_state.width,
-                img_state.height,
-                dest_x,
-                dest_y,
-                dest_w,
-                dest_h,
-            );
         }
     }
 

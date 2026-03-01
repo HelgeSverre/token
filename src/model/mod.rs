@@ -11,7 +11,7 @@ pub mod workspace;
 
 pub use document::{Document, EditOperation};
 pub use editor::{
-    BinaryPlaceholderState, Cursor, EditorState, ImageTabState, OccurrenceState, Position,
+    BinaryPlaceholderState, Cursor, EditorState, OccurrenceState, Position,
     RectangleSelectionState, ScrollRevealMode, Selection, TabContent, ViewMode, Viewport,
 };
 pub use editor_area::{
