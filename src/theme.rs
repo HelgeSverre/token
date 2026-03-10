@@ -284,6 +284,8 @@ pub struct UiThemeData {
     pub image_preview: ImagePreviewThemeData,
     #[serde(default)]
     pub syntax: SyntaxThemeData,
+    #[serde(default)]
+    pub scrollbar: ScrollbarThemeData,
 }
 
 /// Editor area colors
@@ -430,6 +432,17 @@ pub struct ImagePreviewThemeData {
     pub checkerboard_size: Option<usize>,
 }
 
+/// Scrollbar colors (all optional for backward compatibility)
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ScrollbarThemeData {
+    #[serde(default)]
+    pub track: Option<String>,
+    #[serde(default)]
+    pub thumb: Option<String>,
+    #[serde(default)]
+    pub thumb_hover: Option<String>,
+}
+
 /// Syntax highlighting colors (all optional for backward compatibility)
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct SyntaxThemeData {
@@ -494,6 +507,7 @@ pub struct Theme {
     pub button: ButtonTheme,
     pub image_preview: ImagePreviewTheme,
     pub syntax: SyntaxTheme,
+    pub scrollbar: ScrollbarTheme,
 }
 
 /// Editor colors (resolved)
@@ -767,6 +781,47 @@ impl ImagePreviewTheme {
             checkerboard_light: Color::rgb(0x3A, 0x3A, 0x3A),
             checkerboard_dark: Color::rgb(0x2E, 0x2E, 0x2E),
             checkerboard_size: 8,
+        }
+    }
+}
+
+/// Scrollbar colors (resolved)
+#[derive(Debug, Clone)]
+pub struct ScrollbarTheme {
+    /// Track background color
+    pub track: Color,
+    /// Thumb color (idle)
+    pub thumb: Color,
+    /// Thumb color when hovered
+    pub thumb_hover: Color,
+}
+
+impl ScrollbarTheme {
+    /// Default dark scrollbar theme
+    pub fn default_dark() -> Self {
+        Self {
+            track: Color::rgb(0x1E, 0x1E, 0x1E),
+            thumb: Color::rgb(0x42, 0x42, 0x42),
+            thumb_hover: Color::rgb(0x5A, 0x5A, 0x5A),
+        }
+    }
+
+    /// Build from optional data, falling back to defaults
+    pub fn from_data(data: Option<&ScrollbarThemeData>) -> Self {
+        let default = Self::default_dark();
+        Self {
+            track: data
+                .and_then(|d| d.track.as_ref())
+                .and_then(|s| Color::from_hex(s).ok())
+                .unwrap_or(default.track),
+            thumb: data
+                .and_then(|d| d.thumb.as_ref())
+                .and_then(|s| Color::from_hex(s).ok())
+                .unwrap_or(default.thumb),
+            thumb_hover: data
+                .and_then(|d| d.thumb_hover.as_ref())
+                .and_then(|s| Color::from_hex(s).ok())
+                .unwrap_or(default.thumb_hover),
         }
     }
 }
@@ -1164,28 +1219,79 @@ impl Theme {
             button: {
                 let defaults = ButtonTheme::default_dark();
                 ButtonTheme {
-                    background: data.ui.button.background.as_ref()
-                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.background),
-                    background_hover: data.ui.button.background_hover.as_ref()
-                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.background_hover),
-                    background_pressed: data.ui.button.background_pressed.as_ref()
-                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.background_pressed),
-                    foreground: data.ui.button.foreground.as_ref()
-                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.foreground),
-                    border: data.ui.button.border.as_ref()
-                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.border),
-                    focus_ring: data.ui.button.focus_ring.as_ref()
-                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.focus_ring),
+                    background: data
+                        .ui
+                        .button
+                        .background
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.background),
+                    background_hover: data
+                        .ui
+                        .button
+                        .background_hover
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.background_hover),
+                    background_pressed: data
+                        .ui
+                        .button
+                        .background_pressed
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.background_pressed),
+                    foreground: data
+                        .ui
+                        .button
+                        .foreground
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.foreground),
+                    border: data
+                        .ui
+                        .button
+                        .border
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.border),
+                    focus_ring: data
+                        .ui
+                        .button
+                        .focus_ring
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.focus_ring),
                 }
             },
             image_preview: {
                 let defaults = ImagePreviewTheme::default_dark();
                 ImagePreviewTheme {
-                    checkerboard_light: data.ui.image_preview.checkerboard_light.as_ref()
-                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.checkerboard_light),
-                    checkerboard_dark: data.ui.image_preview.checkerboard_dark.as_ref()
-                        .map(|s| Color::from_hex(s)).transpose()?.unwrap_or(defaults.checkerboard_dark),
-                    checkerboard_size: data.ui.image_preview.checkerboard_size
+                    checkerboard_light: data
+                        .ui
+                        .image_preview
+                        .checkerboard_light
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.checkerboard_light),
+                    checkerboard_dark: data
+                        .ui
+                        .image_preview
+                        .checkerboard_dark
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?
+                        .unwrap_or(defaults.checkerboard_dark),
+                    checkerboard_size: data
+                        .ui
+                        .image_preview
+                        .checkerboard_size
                         .unwrap_or(defaults.checkerboard_size)
                         .clamp(2, 64),
                 }
@@ -1371,6 +1477,7 @@ impl Theme {
                         .unwrap_or(defaults.text_uri),
                 }
             },
+            scrollbar: ScrollbarTheme::from_data(Some(&data.ui.scrollbar)),
         })
     }
 
@@ -1409,6 +1516,7 @@ impl Theme {
                     button: ButtonTheme::default_dark(),
                     image_preview: ImagePreviewTheme::default_dark(),
                     syntax: SyntaxTheme::default_dark(),
+                    scrollbar: ScrollbarTheme::default_dark(),
                 }
             }
         }

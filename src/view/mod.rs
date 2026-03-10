@@ -3,10 +3,14 @@
 //! Contains the Renderer struct and all rendering-related functionality.
 
 pub mod button;
+pub mod editor;
 pub mod frame;
 pub mod geometry;
 pub mod helpers;
 pub mod hit_test;
+pub mod modal;
+pub mod panels;
+pub mod scrollbar;
 pub mod text_field;
 
 pub use button::{button_rect, render_button, ButtonState};
@@ -46,36 +50,6 @@ fn has_cursor_lines_damage(damage: &Damage) -> bool {
     }
 }
 use crate::model::AppModel;
-
-/// Context for sidebar rendering, holding constant values throughout tree traversal.
-struct SidebarRenderContext {
-    sidebar_width: usize,
-    sidebar_height: usize,
-    row_height: usize,
-    indent: f32,
-    scroll_offset: usize,
-    char_width: usize,
-    // Colors
-    text_color: u32,
-    selection_bg: u32,
-    selection_fg: u32,
-    folder_icon_color: u32,
-}
-
-/// Context for outline panel rendering, holding constant values throughout tree traversal.
-struct OutlineRenderContext<'a> {
-    rect: crate::model::editor_area::Rect,
-    max_y: usize,
-    row_height: usize,
-    indent: f32,
-    scroll_offset: usize,
-    selected_index: Option<usize>,
-    text_color: u32,
-    selection_bg: u32,
-    selection_fg: u32,
-    icon_color: u32,
-    outline_panel: &'a crate::model::OutlinePanelState,
-}
 
 pub type GlyphCacheKey = (char, u32);
 
@@ -227,321 +201,13 @@ impl Renderer {
         damage.clone()
     }
 
-    /// Render only specific cursor lines (optimized path for cursor blink)
-    ///
-    /// This function redraws only the specified line numbers, which is much faster
-    /// than redrawing the entire editor area. Used for cursor blink optimization.
-    ///
-    /// For each dirty line, renders:
-    /// - Line background (editor bg or current line highlight)
-    /// - Gutter (line number)
-    /// - Text content with syntax highlighting
-    /// - Cursor (if visible and on this line)
     fn render_cursor_lines_only(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
         dirty_lines: &[usize],
     ) {
-        let char_width = painter.char_width();
-        let line_height = painter.line_height();
-
-        // Get the focused group and its document
-        let focused_group_id = model.editor_area.focused_group_id;
-        let Some(group) = model.editor_area.groups.get(&focused_group_id) else {
-            return;
-        };
-
-        let Some(editor_id) = group.active_editor_id() else {
-            return;
-        };
-
-        let Some(editor) = model.editor_area.editors.get(&editor_id) else {
-            return;
-        };
-
-        let Some(doc_id) = editor.document_id else {
-            return;
-        };
-
-        let Some(document) = model.editor_area.documents.get(&doc_id) else {
-            return;
-        };
-
-        // Use GroupLayout for all positioning (DPI-aware, single source of truth)
-        let layout = geometry::GroupLayout::new(group, model, char_width);
-
-        let visible_lines = layout.visible_lines(line_height);
-        let end_line = (editor.viewport.top_line + visible_lines).min(document.buffer.len_lines());
-
-        // Colors
-        let bg_color = model.theme.editor.background.to_argb_u32();
-        let current_line_color = model.theme.editor.current_line_background.to_argb_u32();
-        let gutter_bg_color = model.theme.gutter.background.to_argb_u32();
-        let line_num_color = model.theme.gutter.foreground.to_argb_u32();
-        let line_num_active_color = model.theme.gutter.foreground_active.to_argb_u32();
-        let text_color = model.theme.editor.foreground.to_argb_u32();
-        let primary_cursor_color = model.theme.editor.cursor_color.to_argb_u32();
-        let secondary_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
-
-        // Layout-derived values
-        let rect_x = layout.rect_x();
-        let rect_w = layout.rect_w();
-        let gutter_right_x = layout.gutter_right_x;
-        let gutter_width = layout.gutter_width();
-        let group_text_start_x = layout.text_start_x;
-
-        let text_start_x_offset = layout.text_start_x - rect_x;
-        let visible_columns =
-            ((rect_w as f32 - text_start_x_offset as f32) / char_width).floor() as usize;
-        let max_chars = visible_columns;
-
-        // Reusable buffers
-        let mut adjusted_tokens: Vec<crate::syntax::HighlightToken> = Vec::with_capacity(32);
-        let mut display_text_buf = String::with_capacity(max_chars + 16);
-
-        for &doc_line in dirty_lines {
-            // Skip lines outside viewport
-            if doc_line < editor.viewport.top_line || doc_line >= end_line {
-                continue;
-            }
-
-            // Use layout helper for line Y position
-            let Some(y) = layout.line_to_screen_y(doc_line, editor.viewport.top_line, line_height)
-            else {
-                continue;
-            };
-
-            // 1. Clear line background (gutter + text area)
-            let is_cursor_line = doc_line == editor.active_cursor().line;
-
-            // Clear gutter area for this line
-            frame.fill_rect_px(rect_x, y, gutter_width, line_height, gutter_bg_color);
-
-            // Clear text area for this line
-            let text_area_x = gutter_right_x + 1; // After gutter border
-            let text_area_w = rect_w.saturating_sub(gutter_width + 1);
-            if is_cursor_line {
-                frame.fill_rect_px(text_area_x, y, text_area_w, line_height, current_line_color);
-            } else {
-                frame.fill_rect_px(text_area_x, y, text_area_w, line_height, bg_color);
-            }
-
-            // 1b. Render selection highlights for this line
-            let selection_color = model.theme.editor.selection_background.to_argb_u32();
-            for selection in &editor.selections {
-                if selection.is_empty() {
-                    continue;
-                }
-
-                let sel_start = selection.start();
-                let sel_end = selection.end();
-
-                // Check if this line is within the selection range
-                if doc_line < sel_start.line || doc_line > sel_end.line {
-                    continue;
-                }
-
-                let line_len = document.line_length(doc_line);
-                let line_text = document.get_line_cow(doc_line).unwrap_or_default();
-
-                let start_col = if doc_line == sel_start.line {
-                    sel_start.column
-                } else {
-                    0
-                };
-                let end_col = if doc_line == sel_end.line {
-                    sel_end.column
-                } else {
-                    line_len
-                };
-
-                let visual_start_col = char_col_to_visual_col(&line_text, start_col);
-                let visual_end_col = char_col_to_visual_col(&line_text, end_col);
-
-                let visible_start_col =
-                    visual_start_col.saturating_sub(editor.viewport.left_column);
-                let visible_end_col = visual_end_col.saturating_sub(editor.viewport.left_column);
-
-                let x_start =
-                    group_text_start_x + (visible_start_col as f32 * char_width).round() as usize;
-                let x_end = (group_text_start_x
-                    + (visible_end_col as f32 * char_width).round() as usize)
-                    .min(rect_x + rect_w);
-
-                if x_end > x_start {
-                    frame.fill_rect_px(
-                        x_start,
-                        y,
-                        x_end.saturating_sub(x_start),
-                        line_height,
-                        selection_color,
-                    );
-                }
-            }
-
-            // 1c. Render rectangle selection highlight for this line
-            if editor.rectangle_selection.active {
-                let rect_sel = &editor.rectangle_selection;
-                let top_line = rect_sel.top_line();
-                let bottom_line = rect_sel.bottom_line();
-
-                if doc_line >= top_line && doc_line <= bottom_line {
-                    let left_visual_col = rect_sel.left_visual_col();
-                    let right_visual_col = rect_sel.right_visual_col();
-                    let current_visual_col = rect_sel.current_visual_col;
-
-                    let line_text = document.get_line_cow(doc_line).unwrap_or_default();
-                    let line_visual_len =
-                        char_col_to_visual_col(&line_text, line_text.chars().count());
-
-                    // Only show highlight if current position is within the line's visual width
-                    if current_visual_col <= line_visual_len {
-                        let start_visual = left_visual_col.min(line_visual_len);
-                        let end_visual = right_visual_col.min(line_visual_len);
-
-                        if start_visual < end_visual {
-                            let visible_start_col =
-                                start_visual.saturating_sub(editor.viewport.left_column);
-                            let visible_end_col =
-                                end_visual.saturating_sub(editor.viewport.left_column);
-
-                            let x_start = group_text_start_x
-                                + (visible_start_col as f32 * char_width).round() as usize;
-                            let x_end = (group_text_start_x
-                                + (visible_end_col as f32 * char_width).round() as usize)
-                                .min(rect_x + rect_w);
-
-                            if x_end > x_start {
-                                frame.fill_rect_px(
-                                    x_start,
-                                    y,
-                                    x_end.saturating_sub(x_start),
-                                    line_height,
-                                    selection_color,
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 1d. Render matching bracket highlights for this line
-            if let Some((pos_a, pos_b)) = editor.matched_brackets {
-                let bracket_bg = model.theme.editor.bracket_match_background.to_argb_u32();
-                for &pos in &[pos_a, pos_b] {
-                    if pos.line == doc_line {
-                        let line_text = document.get_line_cow(doc_line).unwrap_or_default();
-                        let visual_col = char_col_to_visual_col(&line_text, pos.column);
-                        let visible_col = visual_col.saturating_sub(editor.viewport.left_column);
-                        if visual_col >= editor.viewport.left_column
-                            && visible_col < visible_columns
-                        {
-                            let x = group_text_start_x
-                                + (visible_col as f32 * char_width).round() as usize;
-                            let w = char_width.round() as usize;
-                            frame.blend_rect_px(x, y, w, line_height, bracket_bg);
-                        }
-                    }
-                }
-            }
-
-            // 2. Render gutter (line number)
-            let line_num_str = format!("{}", doc_line + 1);
-            let text_width_px = (line_num_str.len() as f32 * char_width).round() as usize;
-            let gutter_text_x = gutter_right_x.saturating_sub(4 + text_width_px);
-            let line_color = if is_cursor_line {
-                line_num_active_color
-            } else {
-                line_num_color
-            };
-            painter.draw(frame, gutter_text_x, y, &line_num_str, line_color);
-
-            // 3. Render text content with syntax highlighting
-            if let Some(line_text) = document.get_line_cow(doc_line) {
-                let expanded_text = expand_tabs_for_display(&line_text);
-
-                display_text_buf.clear();
-                for ch in expanded_text
-                    .chars()
-                    .skip(editor.viewport.left_column)
-                    .take(max_chars)
-                {
-                    display_text_buf.push(ch);
-                }
-
-                // Get syntax highlights
-                let line_tokens = document.get_line_highlights(doc_line);
-
-                adjusted_tokens.clear();
-                for t in line_tokens.iter() {
-                    let visual_start = char_col_to_visual_col(&line_text, t.start_col);
-                    let visual_end = char_col_to_visual_col(&line_text, t.end_col);
-
-                    let start = visual_start.saturating_sub(editor.viewport.left_column);
-                    let end = visual_end.saturating_sub(editor.viewport.left_column);
-
-                    if end > 0 && start < max_chars {
-                        adjusted_tokens.push(crate::syntax::HighlightToken {
-                            start_col: start,
-                            end_col: end.min(max_chars),
-                            highlight: t.highlight,
-                        });
-                    }
-                }
-
-                if adjusted_tokens.is_empty() {
-                    painter.draw(frame, group_text_start_x, y, &display_text_buf, text_color);
-                } else {
-                    painter.draw_with_highlights(
-                        frame,
-                        group_text_start_x,
-                        y,
-                        &display_text_buf,
-                        &adjusted_tokens,
-                        &model.theme.syntax,
-                        text_color,
-                    );
-                }
-            }
-
-            // 4. Render cursors on this line (if visible)
-            if model.ui.cursor_visible {
-                for (idx, cursor) in editor.cursors.iter().enumerate() {
-                    if cursor.line != doc_line {
-                        continue;
-                    }
-
-                    let line_text = document.get_line_cow(cursor.line).unwrap_or_default();
-                    let visual_cursor_col = char_col_to_visual_col(&line_text, cursor.column);
-
-                    let cursor_in_horizontal_view = visual_cursor_col
-                        >= editor.viewport.left_column
-                        && visual_cursor_col < editor.viewport.left_column + visible_columns;
-
-                    if cursor_in_horizontal_view {
-                        let cursor_visual_column = visual_cursor_col - editor.viewport.left_column;
-                        let cursor_x = (group_text_start_x as f32
-                            + cursor_visual_column as f32 * char_width)
-                            .round() as usize;
-
-                        let cursor_color = if idx == 0 {
-                            primary_cursor_color
-                        } else {
-                            secondary_cursor_color
-                        };
-
-                        frame.fill_rect_px(
-                            cursor_x,
-                            y + 1,
-                            2,
-                            line_height.saturating_sub(2),
-                            cursor_color,
-                        );
-                    }
-                }
-            }
-        }
+        editor::render_cursor_lines_only(frame, painter, model, dirty_lines);
     }
 
     /// Render the entire editor area: all groups, preview panes, and splitters.
@@ -929,16 +595,7 @@ impl Renderer {
                 Self::render_binary_placeholder(frame, painter, model, placeholder, &layout);
             }
         } else if let Some(image_state) = editor.view_mode.as_image() {
-            let cr = &layout.content_rect;
-            crate::image::render::render_image(
-                frame,
-                image_state,
-                &model.theme.image_preview,
-                cr.x as usize,
-                cr.y as usize,
-                cr.width as usize,
-                cr.height as usize,
-            );
+            Self::render_image_tab(frame, painter, model, image_state, &layout);
         } else if let Some(csv_state) = editor.view_mode.as_csv() {
             Self::render_csv_grid(frame, painter, model, csv_state, &layout, is_focused);
         } else {
@@ -948,6 +605,16 @@ impl Renderer {
             Self::render_gutter(frame, painter, model, editor, document, &layout);
         }
 
+        // Scrollbars (rendered on top of content, below the unfocused dim)
+        if model.config.show_scrollbar {
+            // Only render for text editors (not image/binary/CSV tabs)
+            if matches!(editor.tab_content, crate::model::editor::TabContent::Text)
+                && editor.view_mode.as_csv().is_none()
+            {
+                Self::render_editor_scrollbars(frame, model, editor, document, &layout);
+            }
+        }
+
         // Dim non-focused groups when multiple groups exist (4% black overlay)
         if !is_focused && model.editor_area.groups.len() > 1 {
             let dim_color = 0x0A000000_u32; // 4% opacity black (alpha = 10/255 ≈ 4%)
@@ -955,7 +622,26 @@ impl Renderer {
         }
     }
 
-    /// Render a binary file placeholder tab
+    fn render_editor_scrollbars(
+        frame: &mut Frame,
+        model: &AppModel,
+        editor_state: &crate::model::editor::EditorState,
+        document: &crate::model::document::Document,
+        layout: &geometry::GroupLayout,
+    ) {
+        editor::render_editor_scrollbars(frame, model, editor_state, document, layout);
+    }
+
+    fn render_image_tab(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        img_state: &crate::image::ImageState,
+        layout: &geometry::GroupLayout,
+    ) {
+        editor::render_image_tab(frame, painter, model, img_state, layout);
+    }
+
     fn render_binary_placeholder(
         frame: &mut Frame,
         painter: &mut TextPainter,
@@ -963,46 +649,7 @@ impl Renderer {
         placeholder: &crate::model::editor::BinaryPlaceholderState,
         layout: &geometry::GroupLayout,
     ) {
-        let content_rect = layout.content_rect;
-        let bg = model.theme.editor.background.to_argb_u32();
-        let fg = model.theme.editor.foreground.to_argb_u32();
-        let dim_fg = model.theme.gutter.foreground.to_argb_u32();
-        frame.fill_rect(content_rect, bg);
-
-        let char_width = painter.char_width();
-        let line_height = painter.line_height();
-        let btn_label = geometry::BINARY_PLACEHOLDER_BUTTON_LABEL;
-        let bp_layout = geometry::binary_placeholder_layout(
-            content_rect, line_height, char_width,
-            model.metrics.padding_large, model.metrics.padding_medium, btn_label,
-        );
-
-        // Filename
-        let filename = placeholder
-            .path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy();
-        let name_x =
-            bp_layout.center_x.saturating_sub((filename.len() as f32 * char_width / 2.0) as usize);
-        painter.draw(frame, name_x, bp_layout.name_y, &filename, fg);
-
-        // File size
-        let size_str = format_file_size(placeholder.size_bytes);
-        let size_x =
-            bp_layout.center_x.saturating_sub((size_str.len() as f32 * char_width / 2.0) as usize);
-        painter.draw(frame, size_x, bp_layout.size_y, &size_str, dim_fg);
-
-        // "Open with Default Application" button
-        let btn_rect = bp_layout.button_rect;
-
-        let btn_state = if model.ui.hover == crate::model::ui::HoverRegion::Button {
-            button::ButtonState::Hovered
-        } else {
-            button::ButtonState::Normal
-        };
-
-        button::render_button(frame, painter, &model.theme, btn_rect, btn_label, btn_state, true);
+        editor::render_binary_placeholder(frame, painter, model, placeholder, layout);
     }
 
     fn render_tab_bar(
@@ -1070,7 +717,6 @@ impl Renderer {
         }
     }
 
-    /// Render the sidebar (file tree) for a workspace.
     pub fn render_sidebar(
         frame: &mut Frame,
         painter: &mut TextPainter,
@@ -1078,210 +724,9 @@ impl Renderer {
         sidebar_width: usize,
         sidebar_height: usize,
     ) {
-        let Some(workspace) = &model.workspace else {
-            return;
-        };
-
-        let theme = &model.theme.sidebar;
-        let metrics = &model.metrics;
-
-        // Draw sidebar background
-        let bg_color = theme.background.to_argb_u32();
-        frame.fill_rect(
-            Rect::new(0.0, 0.0, sidebar_width as f32, sidebar_height as f32),
-            bg_color,
-        );
-
-        // Draw resize border on the right edge
-        let border_color = theme.border.to_argb_u32();
-        let border_x = sidebar_width.saturating_sub(1);
-        frame.fill_rect(
-            Rect::new(border_x as f32, 0.0, 1.0, sidebar_height as f32),
-            border_color,
-        );
-
-        // Clip all subsequent drawing to the sidebar bounds
-        frame.set_clip(Rect::new(
-            0.0,
-            0.0,
-            sidebar_width as f32,
-            sidebar_height as f32,
-        ));
-
-        // Build render context with all constant values
-        let ctx = SidebarRenderContext {
-            sidebar_width,
-            sidebar_height,
-            row_height: metrics.file_tree_row_height,
-            indent: metrics.file_tree_indent,
-            scroll_offset: workspace.scroll_offset,
-            char_width: painter.char_width().ceil() as usize,
-            text_color: theme.foreground.to_argb_u32(),
-            selection_bg: theme.selection_background.to_argb_u32(),
-            selection_fg: theme.selection_foreground.to_argb_u32(),
-            folder_icon_color: theme.folder_icon.to_argb_u32(),
-        };
-
-        let mut y = 0usize;
-        let mut visible_index = 0usize;
-
-        // Helper function to render a tree node recursively.
-        // visible_index tracks the global flattened index of items.
-        // Items before scroll_offset are counted but not drawn.
-        // y only advances for items that are actually drawn.
-        #[allow(clippy::too_many_arguments)]
-        fn render_node(
-            frame: &mut Frame,
-            painter: &mut TextPainter,
-            node: &crate::model::FileNode,
-            workspace: &crate::model::Workspace,
-            ctx: &SidebarRenderContext,
-            y: &mut usize,
-            visible_index: &mut usize,
-            depth: usize,
-        ) {
-            // If we've started rendering and filled the viewport, bail out
-            if *visible_index >= ctx.scroll_offset && *y >= ctx.sidebar_height {
-                return;
-            }
-
-            // Capture this node's global index, then advance the counter
-            let idx = *visible_index;
-            *visible_index += 1;
-
-            // Only draw if this item is at or after scroll_offset
-            let is_visible_row = idx >= ctx.scroll_offset;
-
-            if is_visible_row {
-                // If we're beyond the viewport height, stop drawing
-                if *y >= ctx.sidebar_height {
-                    return;
-                }
-
-                let x_offset = (depth as f32 * ctx.indent) as usize + 8; // 8px left padding
-
-                // Check if this item is selected
-                let is_selected = workspace
-                    .selected_item
-                    .as_ref()
-                    .map(|p| p == &node.path)
-                    .unwrap_or(false);
-
-                // Draw selection background with alpha blending
-                if is_selected {
-                    frame.fill_rect_blended(
-                        Rect::new(
-                            0.0,
-                            *y as f32,
-                            ctx.sidebar_width as f32,
-                            ctx.row_height as f32,
-                        ),
-                        ctx.selection_bg,
-                    );
-                }
-
-                // Draw expand/collapse indicator for directories
-                let icon_x = x_offset;
-                let text_x = x_offset + 20; // Space for +/- indicator plus gap
-
-                // Text is positioned with y as the top of the text area
-                // Add small vertical padding to center text in the row
-                let text_y = *y + 2; // Small top padding
-
-                if node.is_dir {
-                    let is_expanded = workspace.is_expanded(&node.path);
-                    // Use +/- indicators: - for expanded, + for collapsed
-                    let indicator = if is_expanded { "-" } else { "+" };
-                    let icon_color = if is_selected {
-                        ctx.selection_fg
-                    } else {
-                        ctx.folder_icon_color
-                    };
-                    painter.draw(frame, icon_x, text_y, indicator, icon_color);
-                }
-
-                // Draw file/folder name, truncating if too long
-                let fg = if is_selected {
-                    ctx.selection_fg
-                } else {
-                    ctx.text_color
-                };
-
-                // Calculate available width for text
-                let right_padding = 8;
-                let available_width = ctx.sidebar_width.saturating_sub(text_x + right_padding);
-
-                // Use actual char width from font metrics
-                let max_chars = if ctx.char_width > 0 {
-                    available_width / ctx.char_width
-                } else {
-                    available_width / 8
-                };
-
-                let name_chars = node.name.chars().count();
-                let needs_truncation = name_chars > max_chars && max_chars > 3;
-
-                if needs_truncation {
-                    // Use char_indices for safe UTF-8 boundary slicing
-                    let truncate_at = max_chars.saturating_sub(1);
-                    let byte_end = node
-                        .name
-                        .char_indices()
-                        .nth(truncate_at)
-                        .map(|(i, _)| i)
-                        .unwrap_or(node.name.len());
-                    let mut display_name = String::with_capacity(byte_end + 3);
-                    display_name.push_str(&node.name[..byte_end]);
-                    display_name.push('\u{2026}');
-                    painter.draw(frame, text_x, text_y, &display_name, fg);
-                } else {
-                    painter.draw(frame, text_x, text_y, &node.name, fg);
-                }
-
-                // Only advance y for items that are actually drawn
-                *y += ctx.row_height;
-            }
-
-            // Always recurse into children if expanded (even if parent is above viewport)
-            // Children may scroll into view even when their parent folder header is not visible
-            if node.is_dir && workspace.is_expanded(&node.path) {
-                for child in &node.children {
-                    render_node(
-                        frame,
-                        painter,
-                        child,
-                        workspace,
-                        ctx,
-                        y,
-                        visible_index,
-                        depth + 1,
-                    );
-                }
-            }
-        }
-
-        // Render all root nodes
-        for node in &workspace.file_tree.roots {
-            render_node(
-                frame,
-                painter,
-                node,
-                workspace,
-                &ctx,
-                &mut y,
-                &mut visible_index,
-                0,
-            );
-            // Early exit if viewport is filled
-            if visible_index >= ctx.scroll_offset && y >= ctx.sidebar_height {
-                break;
-            }
-        }
-
-        frame.clear_clip();
+        panels::render_sidebar(frame, painter, model, sidebar_width, sidebar_height);
     }
 
-    /// Render a dock panel (right or bottom dock with placeholder content)
     fn render_dock(
         frame: &mut Frame,
         painter: &mut TextPainter,
@@ -1289,255 +734,7 @@ impl Renderer {
         position: crate::panel::DockPosition,
         rect: crate::model::editor_area::Rect,
     ) {
-        let dock = model.dock_layout.dock(position);
-        if !dock.is_open || dock.panel_ids.is_empty() {
-            return;
-        }
-
-        let theme = &model.theme.sidebar; // Use sidebar theme for now
-        let border_color = theme.border.to_argb_u32();
-        let text_color = theme.foreground.to_argb_u32();
-        let bg_color = theme.background.to_argb_u32();
-
-        // Fill background
-        frame.fill_rect(rect, bg_color);
-
-        // Draw border on edge facing the editor
-        match position {
-            crate::panel::DockPosition::Left => {
-                // Border on right edge
-                frame.fill_rect(
-                    crate::model::editor_area::Rect::new(
-                        rect.x + rect.width - 1.0,
-                        rect.y,
-                        1.0,
-                        rect.height,
-                    ),
-                    border_color,
-                );
-            }
-            crate::panel::DockPosition::Right => {
-                // Border on left edge
-                frame.fill_rect(
-                    crate::model::editor_area::Rect::new(rect.x, rect.y, 1.0, rect.height),
-                    border_color,
-                );
-            }
-            crate::panel::DockPosition::Bottom => {
-                // Border on top edge
-                frame.fill_rect(
-                    crate::model::editor_area::Rect::new(rect.x, rect.y, rect.width, 1.0),
-                    border_color,
-                );
-            }
-        }
-
-        let active_panel = dock.active_panel();
-
-        // Dispatch to panel-specific rendering
-        if active_panel == Some(crate::panel::PanelId::Outline) {
-            Self::render_outline_panel(frame, painter, model, rect, text_color, bg_color);
-        } else {
-            // Placeholder for other panels
-            let placeholder = active_panel
-                .map(crate::panels::PlaceholderPanel::new)
-                .unwrap_or_else(|| {
-                    crate::panels::PlaceholderPanel::new(crate::panel::PanelId::TERMINAL)
-                });
-
-            let title = placeholder.title();
-            let title_x = rect.x + 8.0;
-            let title_y = rect.y + 8.0;
-            painter.draw(frame, title_x as usize, title_y as usize, title, text_color);
-
-            let message = placeholder.message();
-            let char_width = painter.char_width();
-            let line_height = painter.line_height();
-            let text_width = message.len() as f32 * char_width;
-            let text_x = rect.x + (rect.width - text_width) / 2.0;
-            let text_y = rect.y + (rect.height - line_height as f32) / 2.0;
-            painter.draw(frame, text_x as usize, text_y as usize, message, text_color);
-        }
-    }
-
-    /// Render the outline panel showing document symbols as a tree
-    fn render_outline_panel(
-        frame: &mut Frame,
-        painter: &mut TextPainter,
-        model: &AppModel,
-        rect: crate::model::editor_area::Rect,
-        text_color: u32,
-        _bg_color: u32,
-    ) {
-        let theme = &model.theme.sidebar;
-        let selection_bg = theme.selection_background.to_argb_u32();
-        let selection_fg = theme.selection_foreground.to_argb_u32();
-        let folder_icon_color = theme.folder_icon.to_argb_u32();
-
-        let line_height = painter.line_height();
-        let row_height = model.metrics.file_tree_row_height;
-        let indent = model.metrics.file_tree_indent;
-
-        // Title bar
-        let title_x = rect.x + 8.0;
-        let title_y = rect.y + 4.0;
-        painter.draw(
-            frame,
-            title_x as usize,
-            title_y as usize,
-            "Outline",
-            text_color,
-        );
-
-        let content_y = rect.y + row_height as f32 + 4.0;
-        let content_height = rect.height - row_height as f32 - 4.0;
-
-        // Get outline from the focused document
-        let outline = model
-            .editor_area
-            .focused_document()
-            .and_then(|doc| doc.outline.as_ref());
-
-        let outline = match outline {
-            Some(o) if !o.is_empty() => o,
-            _ => {
-                // Show "No outline available" centered
-                let msg = "No outline available";
-                let char_width = painter.char_width();
-                let text_width = msg.len() as f32 * char_width;
-                let text_x = rect.x + (rect.width - text_width) / 2.0;
-                let text_y = content_y + (content_height - line_height as f32) / 2.0;
-                painter.draw(frame, text_x as usize, text_y as usize, msg, text_color);
-                return;
-            }
-        };
-
-        let scroll_offset = model.outline_panel.scroll_offset;
-        let selected_index = model.outline_panel.selected_index;
-
-        let mut y = content_y as usize;
-        let mut visible_index: usize = 0;
-        let max_y = (content_y + content_height) as usize;
-
-        // Recursive render function for outline nodes
-        fn render_outline_node(
-            frame: &mut Frame,
-            painter: &mut TextPainter,
-            node: &crate::outline::OutlineNode,
-            ctx: &OutlineRenderContext,
-            y: &mut usize,
-            visible_index: &mut usize,
-            depth: usize,
-        ) {
-            if *visible_index >= ctx.scroll_offset && *y >= ctx.max_y {
-                return;
-            }
-
-            let idx = *visible_index;
-            *visible_index += 1;
-
-            let is_visible_row = idx >= ctx.scroll_offset;
-
-            if is_visible_row {
-                if *y >= ctx.max_y {
-                    return;
-                }
-
-                let x_offset = (depth as f32 * ctx.indent) as usize + ctx.rect.x as usize + 8;
-                let is_selected = ctx.selected_index == Some(idx);
-
-                if is_selected {
-                    frame.fill_rect_blended(
-                        Rect::new(ctx.rect.x, *y as f32, ctx.rect.width, ctx.row_height as f32),
-                        ctx.selection_bg,
-                    );
-                }
-
-                // Draw expand/collapse indicator for collapsible nodes
-                let icon_x = x_offset;
-                let text_x = x_offset + 14; // Space for indicator (or alignment)
-                let text_y = *y + 2;
-
-                if node.is_collapsible() {
-                    let is_collapsed = ctx.outline_panel.is_collapsed(node);
-                    let indicator = if is_collapsed { "+" } else { "-" };
-                    let icon_color = if is_selected {
-                        ctx.selection_fg
-                    } else {
-                        ctx.icon_color
-                    };
-                    painter.draw(frame, icon_x, text_y, indicator, icon_color);
-                }
-
-                // Draw kind label + name
-                let fg = if is_selected {
-                    ctx.selection_fg
-                } else {
-                    ctx.text_color
-                };
-                let label = node.kind.label();
-
-                // Draw label in dimmer color, then name
-                let label_color = if is_selected {
-                    ctx.selection_fg
-                } else {
-                    ctx.icon_color
-                };
-                painter.draw(frame, text_x, text_y, label, label_color);
-
-                let name_x = text_x + (label.len() + 1) * painter.char_width() as usize;
-
-                // Truncate name if needed
-                let right_padding = 8;
-                let available = (ctx.rect.x as usize + ctx.rect.width as usize)
-                    .saturating_sub(name_x + right_padding);
-                let char_w = painter.char_width() as usize;
-                let max_chars = if char_w > 0 { available / char_w } else { 80 };
-
-                let name_chars: usize = node.name.chars().count();
-                if name_chars > max_chars && max_chars > 1 {
-                    let display: String = node
-                        .name
-                        .chars()
-                        .take(max_chars.saturating_sub(1))
-                        .chain(std::iter::once('…'))
-                        .collect();
-                    painter.draw(frame, name_x, text_y, &display, fg);
-                } else {
-                    painter.draw(frame, name_x, text_y, &node.name, fg);
-                }
-
-                *y += ctx.row_height;
-            }
-
-            // Recurse into children if expanded
-            if node.is_collapsible() && !ctx.outline_panel.is_collapsed(node) {
-                for child in &node.children {
-                    render_outline_node(frame, painter, child, ctx, y, visible_index, depth + 1);
-                }
-            }
-        }
-
-        let ctx = OutlineRenderContext {
-            rect,
-            max_y,
-            row_height,
-            indent,
-            scroll_offset,
-            selected_index,
-            text_color,
-            selection_bg,
-            selection_fg,
-            icon_color: folder_icon_color,
-            outline_panel: &model.outline_panel,
-        };
-
-        for node in &outline.roots {
-            render_outline_node(frame, painter, node, &ctx, &mut y, &mut visible_index, 0);
-            if visible_index >= scroll_offset && y >= max_y {
-                break;
-            }
-        }
+        panels::render_dock(frame, painter, model, position, rect);
     }
 
     /// Render the gutter (line numbers and border) for an editor group.
@@ -1549,378 +746,31 @@ impl Renderer {
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
-        editor: &crate::model::EditorState,
+        editor_state: &crate::model::EditorState,
         document: &crate::model::Document,
         layout: &geometry::GroupLayout,
     ) {
-        let gutter_bg_color = model.theme.gutter.background.to_argb_u32();
-        let line_num_color = model.theme.gutter.foreground.to_argb_u32();
-        let line_num_active_color = model.theme.gutter.foreground_active.to_argb_u32();
-        let char_width = painter.char_width();
-        let line_height = painter.line_height();
-
-        let rect_x = layout.rect_x();
-        let content_y = layout.content_y();
-        let content_h = layout.content_h();
-        let gutter_right_x = layout.gutter_right_x;
-        let gutter_width = layout.gutter_width();
-
-        let visible_lines = layout.visible_lines(line_height);
-        let end_line = (editor.viewport.top_line + visible_lines).min(document.buffer.len_lines());
-
-        let gutter_border_color = model.theme.gutter.border_color.to_argb_u32();
-
-        // Draw gutter background
-        frame.fill_rect_px(rect_x, content_y, gutter_width, content_h, gutter_bg_color);
-
-        for (screen_line, doc_line) in (editor.viewport.top_line..end_line).enumerate() {
-            let y = content_y + screen_line * line_height;
-            if y >= content_y + content_h {
-                break;
-            }
-
-            // Right-align line numbers so they sit just left of the gutter border.
-            let line_num_str = format!("{}", doc_line + 1);
-            let text_width_px = (line_num_str.len() as f32 * char_width).round() as usize;
-            // 4px padding from the border
-            let text_x = gutter_right_x.saturating_sub(4 + text_width_px);
-
-            let line_color = if doc_line == editor.active_cursor().line {
-                line_num_active_color
-            } else {
-                line_num_color
-            };
-            painter.draw(frame, text_x, y, &line_num_str, line_color);
-        }
-
-        // Gutter border
-        frame.fill_rect_px(gutter_right_x, content_y, 1, content_h, gutter_border_color);
+        editor::render_gutter(frame, painter, model, editor_state, document, layout);
     }
 
-    /// Render text content (lines, selections, cursors) for an editor group.
-    ///
-    /// Draws:
-    /// - Current line highlight
-    /// - Selection highlights
-    /// - Text content
-    /// - Cursors (only if group is focused)
     fn render_text_area(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
-        editor: &crate::model::EditorState,
+        editor_state: &crate::model::EditorState,
         document: &crate::model::Document,
         layout: &geometry::GroupLayout,
         is_focused: bool,
     ) {
-        let char_width = painter.char_width();
-        let line_height = painter.line_height();
-        let rect_x = layout.rect_x();
-        let rect_w = layout.rect_w();
-        let content_y = layout.content_y();
-        let content_h = layout.content_h();
-        let group_text_start_x = layout.text_start_x;
-
-        let text_start_x_offset = layout.text_start_x - rect_x;
-        let visible_lines = layout.visible_lines(line_height);
-        let visible_columns =
-            ((rect_w as f32 - text_start_x_offset as f32) / char_width).floor() as usize;
-        let end_line = (editor.viewport.top_line + visible_lines).min(document.buffer.len_lines());
-
-        // Current line highlight
-        let current_line_color = model.theme.editor.current_line_background.to_argb_u32();
-        if editor.active_cursor().line >= editor.viewport.top_line
-            && editor.active_cursor().line < end_line
-        {
-            let screen_line = editor.active_cursor().line - editor.viewport.top_line;
-            let highlight_y = content_y + screen_line * line_height;
-            let highlight_h = line_height.min(content_y + content_h - highlight_y);
-            frame.fill_rect_px(rect_x, highlight_y, rect_w, highlight_h, current_line_color);
-        }
-
-        // Selection highlights
-        let selection_color = model.theme.editor.selection_background.to_argb_u32();
-        for selection in &editor.selections {
-            if selection.is_empty() {
-                continue;
-            }
-
-            let sel_start = selection.start();
-            let sel_end = selection.end();
-
-            for doc_line in editor.viewport.top_line..end_line {
-                if doc_line < sel_start.line || doc_line > sel_end.line {
-                    continue;
-                }
-
-                let screen_line = doc_line - editor.viewport.top_line;
-                let y_start = content_y + screen_line * line_height;
-                let y_end = (y_start + line_height).min(content_y + content_h);
-
-                let line_len = document.line_length(doc_line);
-
-                // Use get_line_cow for zero-allocation when line is contiguous
-                let line_text = document.get_line_cow(doc_line).unwrap_or_default();
-
-                let start_col = if doc_line == sel_start.line {
-                    sel_start.column
-                } else {
-                    0
-                };
-                let end_col = if doc_line == sel_end.line {
-                    sel_end.column
-                } else {
-                    line_len
-                };
-
-                let visual_start_col = char_col_to_visual_col(&line_text, start_col);
-                let visual_end_col = char_col_to_visual_col(&line_text, end_col);
-
-                let visible_start_col =
-                    visual_start_col.saturating_sub(editor.viewport.left_column);
-                let visible_end_col = visual_end_col.saturating_sub(editor.viewport.left_column);
-
-                let x_start =
-                    group_text_start_x + (visible_start_col as f32 * char_width).round() as usize;
-                let x_end = (group_text_start_x
-                    + (visible_end_col as f32 * char_width).round() as usize)
-                    .min(rect_x + rect_w);
-
-                frame.fill_rect_px(
-                    x_start,
-                    y_start,
-                    x_end.saturating_sub(x_start),
-                    y_end.saturating_sub(y_start),
-                    selection_color,
-                );
-            }
-        }
-
-        // Rectangle selection highlight (middle mouse drag preview)
-        // Uses visual columns (screen position) for consistent behavior across lines
-        if editor.rectangle_selection.active {
-            let rect_sel = &editor.rectangle_selection;
-            let top_line = rect_sel.top_line();
-            let bottom_line = rect_sel.bottom_line();
-            let left_visual_col = rect_sel.left_visual_col();
-            let right_visual_col = rect_sel.right_visual_col();
-            let current_visual_col = rect_sel.current_visual_col;
-
-            let visible_start = top_line.max(editor.viewport.top_line);
-            let visible_end = (bottom_line + 1).min(end_line);
-
-            for doc_line in visible_start..visible_end {
-                // Use get_line_cow for zero-allocation when line is contiguous
-                let line_text = document.get_line_cow(doc_line).unwrap_or_default();
-                let line_visual_len = char_col_to_visual_col(&line_text, line_text.chars().count());
-
-                // Only show highlight if current position is within the line's visual width
-                // (not dragging past line end)
-                if current_visual_col > line_visual_len {
-                    continue;
-                }
-
-                // Clamp visual columns to line's visual width
-                let start_visual = left_visual_col.min(line_visual_len);
-                let end_visual = right_visual_col.min(line_visual_len);
-
-                // Skip lines where selection would be empty
-                if start_visual >= end_visual {
-                    continue;
-                }
-
-                let screen_line = doc_line - editor.viewport.top_line;
-                let y_start = content_y + screen_line * line_height;
-                let y_end = (y_start + line_height).min(content_y + content_h);
-
-                let visible_start_col = start_visual.saturating_sub(editor.viewport.left_column);
-                let visible_end_col = end_visual.saturating_sub(editor.viewport.left_column);
-
-                let x_start =
-                    group_text_start_x + (visible_start_col as f32 * char_width).round() as usize;
-                let x_end = (group_text_start_x
-                    + (visible_end_col as f32 * char_width).round() as usize)
-                    .min(rect_x + rect_w);
-
-                if x_end > x_start {
-                    frame.fill_rect_px(
-                        x_start,
-                        y_start,
-                        x_end.saturating_sub(x_start),
-                        y_end.saturating_sub(y_start),
-                        selection_color,
-                    );
-                }
-            }
-        }
-
-        // Matching bracket highlights
-        if let Some((pos_a, pos_b)) = editor.matched_brackets {
-            let bracket_bg = model.theme.editor.bracket_match_background.to_argb_u32();
-            for &pos in &[pos_a, pos_b] {
-                if pos.line >= editor.viewport.top_line && pos.line < end_line {
-                    let screen_line = pos.line - editor.viewport.top_line;
-                    let y_start = content_y + screen_line * line_height;
-                    let y_end = (y_start + line_height).min(content_y + content_h);
-                    let line_text = document.get_line_cow(pos.line).unwrap_or_default();
-                    let visual_col = char_col_to_visual_col(&line_text, pos.column);
-                    let visible_col = visual_col.saturating_sub(editor.viewport.left_column);
-                    if visual_col >= editor.viewport.left_column && visible_col < visible_columns {
-                        let x =
-                            group_text_start_x + (visible_col as f32 * char_width).round() as usize;
-                        let w = char_width.round() as usize;
-                        frame.blend_rect_px(
-                            x,
-                            y_start,
-                            w,
-                            y_end.saturating_sub(y_start),
-                            bracket_bg,
-                        );
-                    }
-                }
-            }
-        }
-
-        // Text content with syntax highlighting
-        // Reuse buffers to avoid per-line allocations
-        let text_color = model.theme.editor.foreground.to_argb_u32();
-        let max_chars = visible_columns;
-        let mut adjusted_tokens: Vec<crate::syntax::HighlightToken> = Vec::with_capacity(32); // Reused across lines
-        let mut display_text_buf = String::with_capacity(max_chars + 16); // Reused for display
-
-        for (screen_line, doc_line) in (editor.viewport.top_line..end_line).enumerate() {
-            // Use get_line_cow for zero-allocation when line is contiguous
-            if let Some(line_text) = document.get_line_cow(doc_line) {
-                let y = content_y + screen_line * line_height;
-                if y >= content_y + content_h {
-                    break;
-                }
-
-                // expand_tabs_for_display returns Cow - no allocation if no tabs
-                let expanded_text = expand_tabs_for_display(&line_text);
-
-                // Reuse display_text buffer instead of allocating new String each line
-                display_text_buf.clear();
-                for ch in expanded_text
-                    .chars()
-                    .skip(editor.viewport.left_column)
-                    .take(max_chars)
-                {
-                    display_text_buf.push(ch);
-                }
-
-                // Get syntax highlights for this line
-                let line_tokens = document.get_line_highlights(doc_line);
-
-                // Reuse adjusted_tokens buffer instead of allocating new Vec each line
-                adjusted_tokens.clear();
-                for t in line_tokens.iter() {
-                    // Convert character columns to visual columns (accounting for tabs)
-                    let visual_start = char_col_to_visual_col(&line_text, t.start_col);
-                    let visual_end = char_col_to_visual_col(&line_text, t.end_col);
-
-                    // Adjust for horizontal scroll
-                    let start = visual_start.saturating_sub(editor.viewport.left_column);
-                    let end = visual_end.saturating_sub(editor.viewport.left_column);
-
-                    if end > 0 && start < max_chars {
-                        adjusted_tokens.push(crate::syntax::HighlightToken {
-                            start_col: start,
-                            end_col: end.min(max_chars),
-                            highlight: t.highlight,
-                        });
-                    }
-                }
-
-                if adjusted_tokens.is_empty() {
-                    painter.draw(frame, group_text_start_x, y, &display_text_buf, text_color);
-                } else {
-                    painter.draw_with_highlights(
-                        frame,
-                        group_text_start_x,
-                        y,
-                        &display_text_buf,
-                        &adjusted_tokens,
-                        &model.theme.syntax,
-                        text_color,
-                    );
-                }
-            }
-        }
-
-        // Cursors: only show in focused group when blink state is visible
-        if is_focused && model.ui.cursor_visible {
-            let primary_cursor_color = model.theme.editor.cursor_color.to_argb_u32();
-            let secondary_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
-
-            for (idx, cursor) in editor.cursors.iter().enumerate() {
-                let cursor_in_vertical_view = cursor.line >= editor.viewport.top_line
-                    && cursor.line < editor.viewport.top_line + visible_lines;
-
-                // Use get_line_cow for zero-allocation when line is contiguous
-                let line_text = document.get_line_cow(cursor.line).unwrap_or_default();
-                let visual_cursor_col = char_col_to_visual_col(&line_text, cursor.column);
-
-                let cursor_in_horizontal_view = visual_cursor_col >= editor.viewport.left_column
-                    && visual_cursor_col < editor.viewport.left_column + visible_columns;
-
-                if cursor_in_vertical_view && cursor_in_horizontal_view {
-                    let screen_line = cursor.line - editor.viewport.top_line;
-                    let cursor_visual_column = visual_cursor_col - editor.viewport.left_column;
-                    let x = (group_text_start_x as f32 + cursor_visual_column as f32 * char_width)
-                        .round() as usize;
-                    let y = content_y + screen_line * line_height;
-
-                    let cursor_color = if idx == 0 {
-                        primary_cursor_color
-                    } else {
-                        secondary_cursor_color
-                    };
-
-                    // Cursor: 2px wide, line_height - 2 tall, offset by 1px from top
-                    frame.fill_rect_px(x, y + 1, 2, line_height.saturating_sub(2), cursor_color);
-                }
-            }
-        }
-
-        // Preview cursors for rectangle selection (always visible during drag, no blink)
-        if is_focused && editor.rectangle_selection.active {
-            let secondary_cursor_color = model.theme.editor.secondary_cursor_color.to_argb_u32();
-
-            for preview_pos in &editor.rectangle_selection.preview_cursors {
-                let cursor_in_vertical_view = preview_pos.line >= editor.viewport.top_line
-                    && preview_pos.line < editor.viewport.top_line + visible_lines;
-
-                if !cursor_in_vertical_view {
-                    continue;
-                }
-
-                // Use get_line_cow for zero-allocation when line is contiguous
-                let line_text = document.get_line_cow(preview_pos.line).unwrap_or_default();
-                let visual_cursor_col = char_col_to_visual_col(&line_text, preview_pos.column);
-
-                let cursor_in_horizontal_view = visual_cursor_col >= editor.viewport.left_column
-                    && visual_cursor_col < editor.viewport.left_column + visible_columns;
-
-                if !cursor_in_horizontal_view {
-                    continue;
-                }
-
-                let screen_line = preview_pos.line - editor.viewport.top_line;
-                let cursor_visual_column = visual_cursor_col - editor.viewport.left_column;
-                let x = (group_text_start_x as f32 + cursor_visual_column as f32 * char_width)
-                    .round() as usize;
-                let y = content_y + screen_line * line_height;
-
-                frame.fill_rect_px(
-                    x,
-                    y + 1,
-                    2,
-                    line_height.saturating_sub(2),
-                    secondary_cursor_color,
-                );
-            }
-        }
+        editor::render_text_area(
+            frame,
+            painter,
+            model,
+            editor_state,
+            document,
+            layout,
+            is_focused,
+        );
     }
 
     /// Render CSV grid view
@@ -2244,6 +1094,7 @@ impl Renderer {
         let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
         let status_bar_h = geometry::status_bar_height(line_height);
         let status_y = window_height.saturating_sub(status_bar_h);
+        let text_offset_y = model.metrics.padding_small;
 
         // Background
         frame.fill_rect_px(0, status_y, window_width, status_bar_h, status_bar_bg);
@@ -2255,13 +1106,25 @@ impl Renderer {
         // Left segments
         for seg in &layout.left {
             let x_px = (seg.x as f32 * char_width).round() as usize;
-            painter.draw(frame, x_px, status_y + 2, &seg.text, status_bar_fg);
+            painter.draw(
+                frame,
+                x_px,
+                status_y + text_offset_y,
+                &seg.text,
+                status_bar_fg,
+            );
         }
 
         // Right segments
         for seg in &layout.right {
             let x_px = (seg.x as f32 * char_width).round() as usize;
-            painter.draw(frame, x_px, status_y + 2, &seg.text, status_bar_fg);
+            painter.draw(
+                frame,
+                x_px,
+                status_y + text_offset_y,
+                &seg.text,
+                status_bar_fg,
+            );
         }
 
         // Separators
@@ -2277,12 +1140,6 @@ impl Renderer {
         }
     }
 
-    /// Render the active modal overlay.
-    ///
-    /// Draws:
-    /// - Dimmed background over entire window
-    /// - Modal dialog box (centered)
-    /// - Modal content (title, input field, command list for palette)
     pub fn render_modals(
         frame: &mut Frame,
         painter: &mut TextPainter,
@@ -2290,582 +1147,9 @@ impl Renderer {
         window_width: usize,
         window_height: usize,
     ) {
-        use crate::commands::filter_commands;
-        use crate::model::ModalState;
-        use crate::theme::ThemeSource;
-        let char_width = painter.char_width();
-        let line_height = painter.line_height();
-
-        let Some(ref modal) = model.ui.active_modal else {
-            return;
-        };
-
-        // 1. Dim background (40% black overlay)
-        frame.dim(0x66); // 102/255 ≈ 40% opacity
-
-        // Theme colors
-        let bg_color = model.theme.overlay.background.to_argb_u32();
-        let fg_color = model.theme.overlay.foreground.to_argb_u32();
-        let highlight_color = model.theme.overlay.highlight.to_argb_u32();
-        let dim_color = model.theme.overlay.foreground.with_alpha(128).to_argb_u32();
-        let selection_bg = model.theme.overlay.selection_background.to_argb_u32();
-        let input_bg = model.theme.overlay.input_background.to_argb_u32();
-        let border_color = model
-            .theme
-            .overlay
-            .border
-            .map(|c| c.to_argb_u32())
-            .unwrap_or(0xFF444444);
-
-        // Handle different modal types
-        match modal {
-            ModalState::ThemePicker(state) => {
-                let themes = &state.themes;
-
-                let has_user = themes.iter().any(|t| t.source == ThemeSource::User);
-                let has_builtin = themes.iter().any(|t| t.source == ThemeSource::Builtin);
-                let section_count = has_user as usize + has_builtin as usize;
-                let total_rows = themes.len() + section_count;
-
-                let (layout, w) = geometry::theme_picker_layout(
-                    window_width,
-                    window_height,
-                    line_height,
-                    total_rows,
-                );
-
-                frame.draw_bordered_rect(
-                    layout.x,
-                    layout.y,
-                    layout.w,
-                    layout.h,
-                    bg_color,
-                    border_color,
-                );
-
-                // Title
-                let title_r = layout.widget(w.title);
-                painter.draw(frame, title_r.x, title_r.y, "Switch Theme", fg_color);
-
-                // Theme list with sections
-                let list_r = layout.widget(w.list);
-                let clamped_selected = state.selected_index.min(themes.len().saturating_sub(1));
-
-                let mut current_y = list_r.y;
-                let mut current_source: Option<ThemeSource> = None;
-                let dim_color = 0xFF666666;
-
-                for (i, theme_info) in themes.iter().enumerate() {
-                    if current_source != Some(theme_info.source) {
-                        current_source = Some(theme_info.source);
-                        let header = match theme_info.source {
-                            ThemeSource::User => "User Themes",
-                            ThemeSource::Builtin => "Built-in Themes",
-                        };
-                        painter.draw(frame, layout.x + 12, current_y, header, dim_color);
-                        current_y += line_height;
-                    }
-
-                    let is_selected = i == clamped_selected;
-
-                    if is_selected {
-                        frame.fill_rect_px(
-                            layout.x + 4,
-                            current_y,
-                            layout.w - 8,
-                            line_height,
-                            selection_bg,
-                        );
-                    }
-
-                    let label_x = layout.x + 24;
-                    painter.draw(frame, label_x, current_y, &theme_info.name, fg_color);
-
-                    if model.theme.name == theme_info.name || model.config.theme == theme_info.id {
-                        let check_x = layout.x + layout.w - 30;
-                        painter.draw(frame, check_x, current_y, "✓", highlight_color);
-                    }
-
-                    current_y += line_height;
-                }
-            }
-
-            ModalState::CommandPalette(state) => {
-                let input_text = state.input();
-                let filtered_commands = filter_commands(&input_text);
-                let max_visible_items = 8;
-
-                let (layout, w) = geometry::command_palette_layout(
-                    window_width,
-                    window_height,
-                    line_height,
-                    filtered_commands.len(),
-                );
-
-                frame.draw_bordered_rect(
-                    layout.x,
-                    layout.y,
-                    layout.w,
-                    layout.h,
-                    bg_color,
-                    border_color,
-                );
-
-                // Title
-                let title_r = layout.widget(w.title);
-                painter.draw(frame, title_r.x, title_r.y, "Command Palette", fg_color);
-
-                // Input field
-                let input_r = layout.widget(w.input);
-                frame.fill_rect_px(input_r.x, input_r.y, input_r.w, input_r.h, input_bg);
-
-                let padx = geometry::ModalSpacing::INPUT_PAD_X;
-                let text_x = input_r.x + padx;
-                let text_y = input_r.y + (input_r.h.saturating_sub(line_height)) / 2;
-                let text_width = input_r.w.saturating_sub(padx * 2);
-                let opts = TextFieldOptions {
-                    x: text_x,
-                    y: text_y,
-                    width: text_width,
-                    height: line_height,
-                    char_width,
-                    text_color: fg_color,
-                    cursor_color: highlight_color,
-                    selection_color: selection_bg,
-                    cursor_visible: model.ui.cursor_visible,
-                    scroll_x: 0,
-                };
-                TextFieldRenderer::render(frame, painter, &state.editable, &opts);
-
-                // Command list
-                if let Some(list_idx) = w.list {
-                    let list_r = layout.widget(list_idx);
-                    let total_items = filtered_commands.len();
-                    let clamped_selected = state.selected_index.min(total_items.saturating_sub(1));
-
-                    let scroll_offset = if clamped_selected >= max_visible_items {
-                        clamped_selected + 1 - max_visible_items
-                    } else {
-                        0
-                    };
-
-                    for (i, cmd) in filtered_commands
-                        .iter()
-                        .skip(scroll_offset)
-                        .take(max_visible_items)
-                        .enumerate()
-                    {
-                        let actual_index = scroll_offset + i;
-                        let item_y = list_r.y + i * line_height;
-                        let is_selected = actual_index == clamped_selected;
-
-                        if is_selected {
-                            frame.fill_rect_px(
-                                layout.x + 4,
-                                item_y,
-                                layout.w - 8,
-                                line_height,
-                                selection_bg,
-                            );
-                        }
-
-                        painter.draw(frame, layout.x + 16, item_y, cmd.label, fg_color);
-
-                        if let Some(kb) = cmd.keybinding {
-                            let kb_width =
-                                (kb.chars().count() as f32 * char_width).round() as usize;
-                            let kb_x = layout.x + layout.w - kb_width - 16;
-                            painter.draw(frame, kb_x, item_y, kb, dim_color);
-                        }
-                    }
-
-                    let items_after = total_items.saturating_sub(scroll_offset + max_visible_items);
-                    if items_after > 0 {
-                        let more_y = list_r.y + max_visible_items * line_height;
-                        let more_text = format!("... and {} more", items_after);
-                        painter.draw(frame, layout.x + 16, more_y, &more_text, dim_color);
-                    }
-                }
-            }
-
-            ModalState::GotoLine(state) => {
-                let (layout, w) =
-                    geometry::goto_line_layout(window_width, window_height, line_height);
-
-                frame.draw_bordered_rect(
-                    layout.x,
-                    layout.y,
-                    layout.w,
-                    layout.h,
-                    bg_color,
-                    border_color,
-                );
-
-                // Title
-                let title_r = layout.widget(w.title);
-                painter.draw(frame, title_r.x, title_r.y, "Go to Line", fg_color);
-
-                // Input field
-                let input_r = layout.widget(w.input);
-                frame.fill_rect_px(input_r.x, input_r.y, input_r.w, input_r.h, input_bg);
-
-                let padx = geometry::ModalSpacing::INPUT_PAD_X;
-                let text_x = input_r.x + padx;
-                let text_y = input_r.y + (input_r.h.saturating_sub(line_height)) / 2;
-                let text_width = input_r.w.saturating_sub(padx * 2);
-                let opts = TextFieldOptions {
-                    x: text_x,
-                    y: text_y,
-                    width: text_width,
-                    height: line_height,
-                    char_width,
-                    text_color: fg_color,
-                    cursor_color: highlight_color,
-                    selection_color: selection_bg,
-                    cursor_visible: model.ui.cursor_visible,
-                    scroll_x: 0,
-                };
-                TextFieldRenderer::render(frame, painter, &state.editable, &opts);
-            }
-
-            ModalState::FindReplace(state) => {
-                let (layout, w) = geometry::find_replace_layout(
-                    window_width,
-                    window_height,
-                    line_height,
-                    state.replace_mode,
-                );
-
-                frame.draw_bordered_rect(
-                    layout.x,
-                    layout.y,
-                    layout.w,
-                    layout.h,
-                    bg_color,
-                    border_color,
-                );
-
-                // Title
-                let title_r = layout.widget(w.title);
-                let title = if state.replace_mode {
-                    "Find and Replace"
-                } else {
-                    "Find"
-                };
-                painter.draw(frame, title_r.x, title_r.y, title, fg_color);
-
-                let padx = geometry::ModalSpacing::INPUT_PAD_X;
-
-                // Find label (only in replace mode)
-                if let Some(label_idx) = w.find_label {
-                    let label_r = layout.widget(label_idx);
-                    let label_color = match state.focused_field {
-                        crate::model::ui::FindReplaceField::Query => fg_color,
-                        crate::model::ui::FindReplaceField::Replace => dim_color,
-                    };
-                    painter.draw(frame, label_r.x, label_r.y, "Find:", label_color);
-                }
-
-                // Find input
-                let find_r = layout.widget(w.find_input);
-                frame.fill_rect_px(find_r.x, find_r.y, find_r.w, find_r.h, input_bg);
-
-                let find_cursor_visible = model.ui.cursor_visible
-                    && matches!(
-                        state.focused_field,
-                        crate::model::ui::FindReplaceField::Query
-                    );
-                let find_opts = TextFieldOptions {
-                    x: find_r.x + padx,
-                    y: find_r.y + (find_r.h.saturating_sub(line_height)) / 2,
-                    width: find_r.w.saturating_sub(padx * 2),
-                    height: line_height,
-                    char_width,
-                    text_color: fg_color,
-                    cursor_color: highlight_color,
-                    selection_color: selection_bg,
-                    cursor_visible: find_cursor_visible,
-                    scroll_x: 0,
-                };
-                TextFieldRenderer::render(frame, painter, &state.query_editable, &find_opts);
-
-                // Replace label + input (only in replace mode)
-                if let Some(label_idx) = w.replace_label {
-                    let label_r = layout.widget(label_idx);
-                    let label_color = match state.focused_field {
-                        crate::model::ui::FindReplaceField::Replace => fg_color,
-                        crate::model::ui::FindReplaceField::Query => dim_color,
-                    };
-                    painter.draw(frame, label_r.x, label_r.y, "Replace:", label_color);
-                }
-                if let Some(input_idx) = w.replace_input {
-                    let repl_r = layout.widget(input_idx);
-                    frame.fill_rect_px(repl_r.x, repl_r.y, repl_r.w, repl_r.h, input_bg);
-
-                    let replace_cursor_visible = model.ui.cursor_visible
-                        && matches!(
-                            state.focused_field,
-                            crate::model::ui::FindReplaceField::Replace
-                        );
-                    let replace_opts = TextFieldOptions {
-                        x: repl_r.x + padx,
-                        y: repl_r.y + (repl_r.h.saturating_sub(line_height)) / 2,
-                        width: repl_r.w.saturating_sub(padx * 2),
-                        height: line_height,
-                        char_width,
-                        text_color: fg_color,
-                        cursor_color: highlight_color,
-                        selection_color: selection_bg,
-                        cursor_visible: replace_cursor_visible,
-                        scroll_x: 0,
-                    };
-                    TextFieldRenderer::render(
-                        frame,
-                        painter,
-                        &state.replace_editable,
-                        &replace_opts,
-                    );
-                }
-            }
-
-            ModalState::FileFinder(state) => {
-                let results = &state.results;
-                let max_visible_items = 10;
-
-                let (layout, w) = geometry::file_finder_layout(
-                    window_width,
-                    window_height,
-                    line_height,
-                    results.len(),
-                    !state.input().is_empty(),
-                );
-
-                frame.draw_bordered_rect(
-                    layout.x,
-                    layout.y,
-                    layout.w,
-                    layout.h,
-                    bg_color,
-                    border_color,
-                );
-
-                // Title
-                let title_r = layout.widget(w.title);
-                painter.draw(frame, title_r.x, title_r.y, "Go to File", fg_color);
-
-                // Input field
-                let input_r = layout.widget(w.input);
-                frame.fill_rect_px(input_r.x, input_r.y, input_r.w, input_r.h, input_bg);
-
-                let padx = geometry::ModalSpacing::INPUT_PAD_X;
-                let text_x = input_r.x + padx;
-                let text_y = input_r.y + (input_r.h.saturating_sub(line_height)) / 2;
-                let text_width = input_r.w.saturating_sub(padx * 2);
-                let opts = TextFieldOptions {
-                    x: text_x,
-                    y: text_y,
-                    width: text_width,
-                    height: line_height,
-                    char_width,
-                    text_color: fg_color,
-                    cursor_color: highlight_color,
-                    selection_color: selection_bg,
-                    cursor_visible: model.ui.cursor_visible,
-                    scroll_x: 0,
-                };
-                TextFieldRenderer::render(frame, painter, &state.editable, &opts);
-
-                // Results list
-                let results_y = if let Some(list_idx) = w.list {
-                    layout.widget(list_idx).y
-                } else {
-                    input_r.y + input_r.h + geometry::ModalSpacing::GAP_MD
-                };
-                let clamped_selected = state.selected_index.min(results.len().saturating_sub(1));
-                let dim_color = 0xFF888888; // Dimmed color for relative path
-
-                // Compute scroll offset to keep selected item visible
-                let scroll_offset = if clamped_selected >= max_visible_items {
-                    clamped_selected + 1 - max_visible_items
-                } else {
-                    0
-                };
-
-                for (i, file_match) in results
-                    .iter()
-                    .skip(scroll_offset)
-                    .take(max_visible_items)
-                    .enumerate()
-                {
-                    let actual_index = scroll_offset + i;
-                    let item_y = results_y + i * line_height;
-                    let is_selected = actual_index == clamped_selected;
-
-                    // Selection highlight
-                    if is_selected {
-                        frame.fill_rect_px(
-                            layout.x + 4,
-                            item_y,
-                            layout.w - 8,
-                            line_height,
-                            selection_bg,
-                        );
-                    }
-
-                    // File icon
-                    let icon = crate::model::FileExtension::from_path(&file_match.path).icon();
-                    let icon_x = layout.x + 12;
-                    painter.draw(frame, icon_x, item_y, icon, fg_color);
-
-                    // Filename
-                    let name_x = layout.x + 36;
-                    painter.draw(frame, name_x, item_y, &file_match.filename, fg_color);
-
-                    // Relative path (dimmed, after filename) - truncate if needed
-                    let filename_width = (file_match.filename.len() as f32 * char_width) as usize;
-                    let path_x = name_x + filename_width + (char_width as usize * 2);
-                    let available_width = (layout.x + layout.w).saturating_sub(path_x + 16);
-                    let max_path_chars = (available_width as f32 / char_width) as usize;
-
-                    if max_path_chars > 5 {
-                        let path_display =
-                            if file_match.relative_path.chars().count() > max_path_chars {
-                                let truncated: String = file_match
-                                    .relative_path
-                                    .chars()
-                                    .take(max_path_chars - 1)
-                                    .collect();
-                                format!("{}…", truncated)
-                            } else {
-                                file_match.relative_path.clone()
-                            };
-                        painter.draw(frame, path_x, item_y, &path_display, dim_color);
-                    }
-                }
-
-                // Show "No matches" if results are empty and query is not empty
-                if results.is_empty() && !state.input().is_empty() {
-                    painter.draw(
-                        frame,
-                        layout.x + 12,
-                        results_y,
-                        "No files match your query",
-                        dim_color,
-                    );
-                }
-            }
-
-            ModalState::RecentFiles(state) => {
-                let filtered = state.filtered_entries();
-                let max_visible_items = 10;
-
-                let (layout, w) = geometry::file_finder_layout(
-                    window_width,
-                    window_height,
-                    line_height,
-                    filtered.len(),
-                    !state.input().is_empty(),
-                );
-
-                frame.draw_bordered_rect(
-                    layout.x,
-                    layout.y,
-                    layout.w,
-                    layout.h,
-                    bg_color,
-                    border_color,
-                );
-
-                // Title
-                let title_r = layout.widget(w.title);
-                painter.draw(frame, title_r.x, title_r.y, "Recent Files", fg_color);
-
-                // Input field
-                let input_r = layout.widget(w.input);
-                frame.fill_rect_px(input_r.x, input_r.y, input_r.w, input_r.h, input_bg);
-
-                let padx = geometry::ModalSpacing::INPUT_PAD_X;
-                let text_x = input_r.x + padx;
-                let text_y = input_r.y + (input_r.h.saturating_sub(line_height)) / 2;
-                let text_width = input_r.w.saturating_sub(padx * 2);
-                let opts = TextFieldOptions {
-                    x: text_x,
-                    y: text_y,
-                    width: text_width,
-                    height: line_height,
-                    char_width,
-                    text_color: fg_color,
-                    cursor_color: highlight_color,
-                    selection_color: selection_bg,
-                    cursor_visible: model.ui.cursor_visible,
-                    scroll_x: 0,
-                };
-                TextFieldRenderer::render(frame, painter, &state.editable, &opts);
-
-                // Results list
-                let results_y = if let Some(list_idx) = w.list {
-                    layout.widget(list_idx).y
-                } else {
-                    input_r.y + input_r.h + geometry::ModalSpacing::GAP_MD
-                };
-                let clamped_selected = state.selected_index.min(filtered.len().saturating_sub(1));
-                let dim_color = 0xFF888888;
-
-                let scroll_offset = if clamped_selected >= max_visible_items {
-                    clamped_selected + 1 - max_visible_items
-                } else {
-                    0
-                };
-
-                for (i, entry) in filtered
-                    .iter()
-                    .skip(scroll_offset)
-                    .take(max_visible_items)
-                    .enumerate()
-                {
-                    let actual_index = scroll_offset + i;
-                    let item_y = results_y + i * line_height;
-                    let is_selected = actual_index == clamped_selected;
-
-                    if is_selected {
-                        frame.fill_rect_px(
-                            layout.x + 4,
-                            item_y,
-                            layout.w - 8,
-                            line_height,
-                            selection_bg,
-                        );
-                    }
-
-                    let icon = crate::model::FileExtension::from_path(&entry.path).icon();
-                    let icon_x = layout.x + 12;
-                    painter.draw(frame, icon_x, item_y, icon, fg_color);
-
-                    let display = entry.display_path();
-                    let name_x = layout.x + 36;
-                    painter.draw(frame, name_x, item_y, &display, fg_color);
-
-                    // Time ago (right-aligned, dimmed)
-                    let time_str = entry.time_ago();
-                    let time_width = (time_str.len() as f32 * char_width) as usize;
-                    let time_x = (layout.x + layout.w).saturating_sub(time_width + 12);
-                    painter.draw(frame, time_x, item_y, &time_str, dim_color);
-                }
-
-                if filtered.is_empty() && !state.input().is_empty() {
-                    painter.draw(
-                        frame,
-                        layout.x + 12,
-                        results_y,
-                        "No recent files match your query",
-                        dim_color,
-                    );
-                }
-            }
-        }
+        modal::render_modals(frame, painter, model, window_width, window_height);
     }
 
-    /// Render the file drop overlay when files are being dragged over the window.
     fn render_drop_overlay(
         frame: &mut Frame,
         painter: &mut TextPainter,
@@ -2873,32 +1157,7 @@ impl Renderer {
         window_width: usize,
         window_height: usize,
     ) {
-        let char_width = painter.char_width();
-        let line_height = painter.line_height();
-
-        // Semi-transparent overlay covering the entire window
-        frame.dim(0x80); // 50% dim
-
-        // Draw centered drop zone
-        let text = model.ui.drop_state.display_text();
-        let text_len = text.chars().count();
-
-        let box_width = ((text_len as f32 + 4.0) * char_width).round() as usize;
-        let box_height = line_height * 3;
-        let box_x = (window_width.saturating_sub(box_width)) / 2;
-        let box_y = (window_height.saturating_sub(box_height)) / 2;
-
-        let bg_color = model.theme.overlay.background.to_argb_u32();
-        let border_color = model.theme.overlay.highlight.to_argb_u32();
-        let fg_color = model.theme.overlay.foreground.to_argb_u32();
-
-        frame.draw_bordered_rect(box_x, box_y, box_width, box_height, bg_color, border_color);
-
-        // Centered text
-        let text_x = box_x + (box_width - (text_len as f32 * char_width).round() as usize) / 2;
-        let text_y = box_y + line_height;
-
-        painter.draw(frame, text_x, text_y, &text, fg_color);
+        modal::render_drop_overlay(frame, painter, model, window_width, window_height);
     }
 
     pub fn render(
@@ -2937,34 +1196,15 @@ impl Renderer {
         let width = self.width;
         let height = self.height;
 
+        #[cfg(feature = "damage-debug")]
         let status_bar_height = line_height;
-
-        // Calculate sidebar offset if workspace is open and sidebar is visible
-        let sidebar_width = model
-            .workspace
-            .as_ref()
-            .filter(|ws| ws.sidebar_visible)
-            .map(|ws| ws.sidebar_width(model.metrics.scale_factor))
-            .unwrap_or(0.0);
-
-        // Calculate dock sizes
-        let right_dock_width = model.dock_layout.right.size(model.metrics.scale_factor);
-        let bottom_dock_height = model.dock_layout.bottom.size(model.metrics.scale_factor);
-
-        // Editor area:
-        // - Starts after sidebar (left edge)
-        // - Ends before right dock (right edge)
-        // - Ends before status bar and bottom dock (bottom edge)
-        let content_height = (height as usize).saturating_sub(status_bar_height) as f32;
-        let available_rect = Rect::new(
-            sidebar_width,
-            0.0,
-            (width as f32) - sidebar_width - right_dock_width,
-            content_height - bottom_dock_height,
-        );
+        let window_layout = geometry::WindowLayout::compute(model, line_height);
         let splitters = model
             .editor_area
-            .compute_layout_scaled(available_rect, model.metrics.splitter_width);
+            .compute_layout_scaled(window_layout.editor_area_rect, model.metrics.splitter_width);
+        model
+            .editor_area
+            .sync_all_viewports(line_height, char_width, &model.metrics);
 
         // Create Frame wrapper for cleaner drawing API
         // Note: We use Frame for new code; legacy code still uses raw buffer slices
@@ -3006,25 +1246,13 @@ impl Renderer {
 
             if render_editor {
                 // Clear editor area (everything except status bar)
-                let editor_rect = Rect::new(
-                    0.0,
-                    0.0,
-                    width as f32,
-                    height_usize.saturating_sub(status_bar_height) as f32,
-                );
-                frame.fill_rect(editor_rect, bg_color);
+                frame.fill_rect(window_layout.content_rect, bg_color);
             }
 
             if render_status_bar {
                 // Clear status bar area
                 let status_bg = model.theme.status_bar.background.to_argb_u32();
-                let status_rect = Rect::new(
-                    0.0,
-                    height_usize.saturating_sub(status_bar_height) as f32,
-                    width as f32,
-                    status_bar_height as f32,
-                );
-                frame.fill_rect(status_rect, status_bg);
+                frame.fill_rect(window_layout.status_bar_rect, status_bg);
             }
         }
 
@@ -3091,7 +1319,7 @@ impl Renderer {
         }
 
         // Render sidebar if workspace is open and editor is being rendered
-        if sidebar_width > 0.0 && render_editor {
+        if let Some(sidebar_rect) = window_layout.sidebar_rect.filter(|_| render_editor) {
             let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
             let mut painter = TextPainter::new(
                 &self.font,
@@ -3105,8 +1333,8 @@ impl Renderer {
                 &mut frame,
                 &mut painter,
                 model,
-                sidebar_width as usize,
-                height_usize.saturating_sub(status_bar_height),
+                sidebar_rect.width.round() as usize,
+                sidebar_rect.height.round() as usize,
             );
             #[cfg(debug_assertions)]
             {
@@ -3116,63 +1344,44 @@ impl Renderer {
         }
 
         // Render right dock if open
-        if model.dock_layout.right.is_open && render_editor {
-            let right_width = model.dock_layout.right.size(model.metrics.scale_factor);
-            if right_width > 0.0 {
-                let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
-                let mut painter = TextPainter::new(
-                    &self.font,
-                    &mut self.glyph_cache,
-                    font_size,
-                    ascent,
-                    char_width,
-                    line_height,
-                );
-                let bottom_height = model.dock_layout.bottom.size(model.metrics.scale_factor);
-                let dock_rect = crate::model::editor_area::Rect::new(
-                    width as f32 - right_width,
-                    0.0,
-                    right_width,
-                    height as f32 - status_bar_height as f32 - bottom_height,
-                );
-                Self::render_dock(
-                    &mut frame,
-                    &mut painter,
-                    model,
-                    crate::panel::DockPosition::Right,
-                    dock_rect,
-                );
-            }
+        if let Some(dock_rect) = window_layout.right_dock_rect.filter(|_| render_editor) {
+            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
+            let mut painter = TextPainter::new(
+                &self.font,
+                &mut self.glyph_cache,
+                font_size,
+                ascent,
+                char_width,
+                line_height,
+            );
+            Self::render_dock(
+                &mut frame,
+                &mut painter,
+                model,
+                crate::panel::DockPosition::Right,
+                dock_rect,
+            );
         }
 
         // Render bottom dock if open
         // Bottom dock spans from sidebar to window right edge (under right dock)
-        if model.dock_layout.bottom.is_open && render_editor {
-            let bottom_height = model.dock_layout.bottom.size(model.metrics.scale_factor);
-            if bottom_height > 0.0 {
-                let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
-                let mut painter = TextPainter::new(
-                    &self.font,
-                    &mut self.glyph_cache,
-                    font_size,
-                    ascent,
-                    char_width,
-                    line_height,
-                );
-                let dock_rect = crate::model::editor_area::Rect::new(
-                    sidebar_width,
-                    height as f32 - status_bar_height as f32 - bottom_height,
-                    width as f32 - sidebar_width, // spans full width under right dock
-                    bottom_height,
-                );
-                Self::render_dock(
-                    &mut frame,
-                    &mut painter,
-                    model,
-                    crate::panel::DockPosition::Bottom,
-                    dock_rect,
-                );
-            }
+        if let Some(dock_rect) = window_layout.bottom_dock_rect.filter(|_| render_editor) {
+            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
+            let mut painter = TextPainter::new(
+                &self.font,
+                &mut self.glyph_cache,
+                font_size,
+                ascent,
+                char_width,
+                line_height,
+            );
+            Self::render_dock(
+                &mut frame,
+                &mut painter,
+                model,
+                crate::panel::DockPosition::Bottom,
+                dock_rect,
+            );
         }
 
         // Render status bar if needed
@@ -3665,16 +1874,4 @@ fn flush_line(text: &mut String, style: HtmlTextStyle, lines: &mut Vec<HtmlTextL
         });
     }
     text.clear();
-}
-
-fn format_file_size(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{} B", bytes)
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else if bytes < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
-    }
 }

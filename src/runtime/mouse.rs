@@ -12,7 +12,10 @@ use winit::event::{ElementState, MouseButton};
 use winit::keyboard::ModifiersState;
 
 use token::commands::Cmd;
-use token::messages::{ImageMsg, LayoutMsg, ModalMsg, Msg, PreviewMsg, UiMsg, WorkspaceMsg};
+use token::messages::{
+    CsvMsg, EditorMsg, ImageMsg, LayoutMsg, ModalMsg, Msg, OutlineMsg, PreviewMsg, UiMsg,
+    WorkspaceMsg,
+};
 use token::model::AppModel;
 use token::update::update;
 
@@ -72,6 +75,93 @@ impl ClickTracker {
     pub fn reset(&mut self) {
         self.click_count = 0;
         self.last_click_position = None;
+    }
+}
+
+/// Tracks drag state for text selection (left mouse button drag).
+///
+/// Encapsulates the state machine: idle → mouse down → threshold exceeded → dragging.
+/// Also handles auto-scroll throttling during drag.
+#[derive(Default)]
+pub struct DragState {
+    left_mouse_down: bool,
+    start_position: Option<(f64, f64)>,
+    active: bool,
+    last_auto_scroll: Option<Instant>,
+}
+
+impl DragState {
+    /// Whether the left mouse button is currently held down.
+    pub fn is_down(&self) -> bool {
+        self.left_mouse_down
+    }
+
+    /// Start tracking a potential drag from the given position.
+    pub fn begin(&mut self, x: f64, y: f64) {
+        self.left_mouse_down = true;
+        self.start_position = Some((x, y));
+        self.active = false;
+    }
+
+    /// End the drag (mouse released).
+    pub fn end(&mut self) {
+        self.left_mouse_down = false;
+        self.start_position = None;
+        self.active = false;
+        self.last_auto_scroll = None;
+    }
+
+    /// Whether a drag is currently active (threshold exceeded).
+    pub fn is_active(&self) -> bool {
+        self.left_mouse_down && self.active
+    }
+
+    /// Check if mouse movement exceeds the drag threshold (4px).
+    /// Returns the start position if the threshold was just crossed, None otherwise.
+    pub fn check_threshold(&mut self, x: f64, y: f64) -> Option<(f64, f64)> {
+        const DRAG_THRESHOLD_PIXELS: f64 = 4.0;
+
+        if self.active || !self.left_mouse_down {
+            return None;
+        }
+
+        if let Some((start_x, start_y)) = self.start_position {
+            let dx = x - start_x;
+            let dy = y - start_y;
+            let distance = (dx * dx + dy * dy).sqrt();
+
+            if distance >= DRAG_THRESHOLD_PIXELS {
+                self.active = true;
+                return Some((start_x, start_y));
+            }
+        }
+        None
+    }
+
+    /// Attempt auto-scroll during drag. Returns a scroll direction (+1 or -1)
+    /// if the cursor is outside the visible area and enough time has passed.
+    pub fn try_auto_scroll(&mut self, y: f64, status_bar_top: f64) -> Option<i32> {
+        const AUTO_SCROLL_INTERVAL_MS: u64 = 80;
+
+        let direction = if y < 0.0 {
+            Some(-1)
+        } else if y >= status_bar_top {
+            Some(1)
+        } else {
+            None
+        };
+
+        let direction = direction?;
+
+        let now = Instant::now();
+        if let Some(last) = self.last_auto_scroll {
+            if now.duration_since(last) < Duration::from_millis(AUTO_SCROLL_INTERVAL_MS) {
+                return None;
+            }
+        }
+
+        self.last_auto_scroll = Some(now);
+        Some(direction)
     }
 }
 
@@ -264,7 +354,7 @@ fn handle_left_click(
         }
 
         // Splitter drag
-        HitTarget::Splitter { index } => {
+        HitTarget::Splitter { index, .. } => {
             update(
                 model,
                 Msg::Layout(LayoutMsg::BeginSplitterDrag {
@@ -361,6 +451,106 @@ fn handle_left_click(
         }
 
         // Binary placeholder "Open with Default Application" button
+        // Scrollbar thumb: begin drag
+        HitTarget::ScrollbarThumbVertical {
+            editor_id,
+            grab_offset,
+            track_y,
+            track_h,
+            thumb_h,
+            max_scroll,
+            ..
+        } => {
+            update(
+                model,
+                Msg::Ui(UiMsg::ScrollbarThumbPressedVertical {
+                    editor_id: *editor_id,
+                    grab_offset: *grab_offset,
+                    track_start: *track_y,
+                    track_size: *track_h,
+                    thumb_size: *thumb_h,
+                    max_scroll: *max_scroll,
+                }),
+            );
+            EventResult::consumed_redraw()
+        }
+
+        HitTarget::ScrollbarThumbHorizontal {
+            editor_id,
+            grab_offset,
+            track_x,
+            track_w,
+            thumb_w,
+            max_scroll,
+            ..
+        } => {
+            update(
+                model,
+                Msg::Ui(UiMsg::ScrollbarThumbPressedHorizontal {
+                    editor_id: *editor_id,
+                    grab_offset: *grab_offset,
+                    track_start: *track_x,
+                    track_size: *track_w,
+                    thumb_size: *thumb_w,
+                    max_scroll: *max_scroll,
+                }),
+            );
+            EventResult::consumed_redraw()
+        }
+
+        // Scrollbar track: click to jump
+        HitTarget::ScrollbarTrackVertical {
+            editor_id,
+            coord,
+            track_y,
+            track_h,
+            thumb_h,
+            max_scroll,
+            ..
+        } => {
+            let new_position = token::view::scrollbar::position_from_track_click(
+                *coord,
+                *track_y,
+                *track_h,
+                *thumb_h,
+                *max_scroll,
+            );
+            update(
+                model,
+                Msg::Ui(UiMsg::ScrollbarTrackClickedVertical {
+                    editor_id: *editor_id,
+                    new_position,
+                }),
+            );
+            EventResult::consumed_redraw()
+        }
+
+        HitTarget::ScrollbarTrackHorizontal {
+            editor_id,
+            coord,
+            track_x,
+            track_w,
+            thumb_w,
+            max_scroll,
+            ..
+        } => {
+            let new_position = token::view::scrollbar::position_from_track_click(
+                *coord,
+                *track_x,
+                *track_w,
+                *thumb_w,
+                *max_scroll,
+            );
+            update(
+                model,
+                Msg::Ui(UiMsg::ScrollbarTrackClickedHorizontal {
+                    editor_id: *editor_id,
+                    new_position,
+                }),
+            );
+            EventResult::consumed_redraw()
+        }
+
         HitTarget::BinaryPlaceholderButton { group_id } => {
             if *group_id != model.editor_area.focused_group_id {
                 update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
@@ -642,8 +832,12 @@ fn handle_middle_click(
         // Binary placeholder button - no middle-click action
         HitTarget::BinaryPlaceholderButton { .. } => EventResult::consumed_no_redraw(),
 
-        // Image content - no middle-click action
-        HitTarget::ImageContent { .. } => EventResult::consumed_no_redraw(),
+        // Image content and scrollbars - no middle-click action
+        HitTarget::ImageContent { .. }
+        | HitTarget::ScrollbarThumbVertical { .. }
+        | HitTarget::ScrollbarTrackVertical { .. }
+        | HitTarget::ScrollbarThumbHorizontal { .. }
+        | HitTarget::ScrollbarTrackHorizontal { .. } => EventResult::consumed_no_redraw(),
     }
 }
 
@@ -655,4 +849,112 @@ fn handle_right_click(
 ) -> EventResult {
     // Future: show context menus based on target
     EventResult::Bubble
+}
+
+/// Handle mouse wheel scroll events, routing to the appropriate target
+/// based on the current hover region.
+pub fn handle_mouse_wheel(
+    model: &mut AppModel,
+    mouse_position: Option<(f64, f64)>,
+    h_delta: i32,
+    v_delta: i32,
+) -> Option<Cmd> {
+    use token::model::HoverRegion;
+
+    match model.ui.hover {
+        // Sidebar: scroll the file tree
+        HoverRegion::Sidebar => {
+            if v_delta != 0 {
+                update(
+                    model,
+                    Msg::Workspace(WorkspaceMsg::Scroll { lines: v_delta }),
+                )
+            } else {
+                None
+            }
+        }
+
+        // Dock panels: route to panel-specific scroll handlers
+        HoverRegion::Dock(position) => {
+            let active_panel = match position {
+                token::panel::DockPosition::Left => model.dock_layout.left.active_panel(),
+                token::panel::DockPosition::Right => model.dock_layout.right.active_panel(),
+                token::panel::DockPosition::Bottom => model.dock_layout.bottom.active_panel(),
+            };
+            if active_panel == Some(token::panel::PanelId::Outline) && v_delta != 0 {
+                update(model, Msg::Outline(OutlineMsg::Scroll { lines: v_delta }))
+            } else {
+                None
+            }
+        }
+
+        // Preview panes: webview handles its own scrolling
+        HoverRegion::Preview => None,
+
+        // Modal/StatusBar/Splitter/TabBar/DockResize/Button: ignore scroll
+        HoverRegion::Modal
+        | HoverRegion::StatusBar
+        | HoverRegion::Splitter
+        | HoverRegion::EditorTabBar
+        | HoverRegion::SidebarResize
+        | HoverRegion::DockResize(_)
+        | HoverRegion::Button
+        | HoverRegion::None => None,
+
+        // Editor text area: scroll the editor or delegate to specialized modes.
+        HoverRegion::EditorText => {
+            let in_image_mode = model
+                .editor_area
+                .focused_editor()
+                .map(|e| e.view_mode.is_image())
+                .unwrap_or(false);
+
+            if in_image_mode {
+                if v_delta != 0 {
+                    let (mouse_x, mouse_y) = mouse_position.unwrap_or((0.0, 0.0));
+                    return update(
+                        model,
+                        Msg::Image(ImageMsg::Zoom {
+                            delta: v_delta as f64,
+                            mouse_x,
+                            mouse_y,
+                        }),
+                    );
+                }
+                return None;
+            }
+
+            let in_csv_mode = model
+                .editor_area
+                .focused_editor()
+                .map(|e| e.view_mode.is_csv())
+                .unwrap_or(false);
+
+            if in_csv_mode {
+                let v_cmd = if v_delta != 0 {
+                    update(model, Msg::Csv(CsvMsg::ScrollVertical(v_delta)))
+                } else {
+                    None
+                };
+                let h_cmd = if h_delta != 0 {
+                    update(model, Msg::Csv(CsvMsg::ScrollHorizontal(h_delta)))
+                } else {
+                    None
+                };
+                return v_cmd.or(h_cmd);
+            }
+
+            let v_cmd = if v_delta != 0 {
+                update(model, Msg::Editor(EditorMsg::Scroll(v_delta)))
+            } else {
+                None
+            };
+            let h_cmd = if h_delta != 0 {
+                update(model, Msg::Editor(EditorMsg::ScrollHorizontal(h_delta)))
+            } else {
+                None
+            };
+            v_cmd.or(h_cmd)
+        }
+    }
 }

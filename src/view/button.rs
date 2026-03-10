@@ -39,7 +39,10 @@ pub fn render_button(
     let (bg, border) = match state {
         ButtonState::Normal => (btn.background.to_argb_u32(), btn.border.to_argb_u32()),
         ButtonState::Hovered => (btn.background_hover.to_argb_u32(), btn.border.to_argb_u32()),
-        ButtonState::Pressed => (btn.background_pressed.to_argb_u32(), btn.border.to_argb_u32()),
+        ButtonState::Pressed => (
+            btn.background_pressed.to_argb_u32(),
+            btn.border.to_argb_u32(),
+        ),
     };
     let fg = btn.foreground.to_argb_u32();
 

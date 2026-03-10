@@ -20,7 +20,7 @@ use crate::commands::filter_commands;
 use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, TabId};
 use crate::model::{AppModel, FocusTarget, ModalState};
 
-use super::geometry::{is_in_group_tab_bar, is_in_status_bar, Pane};
+use super::geometry::{is_in_group_tab_bar, is_in_status_bar, Pane, WindowLayout};
 
 // ============================================================================
 // Core Types
@@ -145,7 +145,10 @@ pub enum HitTarget {
     },
 
     /// A splitter bar between split panes
-    Splitter { index: usize },
+    Splitter {
+        index: usize,
+        direction: crate::model::editor_area::SplitDirection,
+    },
 
     /// Header area of a preview pane (can be middle-clicked to close)
     PreviewHeader { preview_id: PreviewId },
@@ -215,6 +218,53 @@ pub enum HitTarget {
         group_id: GroupId,
         editor_id: EditorId,
     },
+
+    /// Vertical scrollbar thumb (drag to scroll)
+    ScrollbarThumbVertical {
+        group_id: GroupId,
+        editor_id: EditorId,
+        /// Where within the thumb the user clicked (pixels from thumb top)
+        grab_offset: f32,
+        /// Geometry needed for drag computation (stored as raw values)
+        track_y: f32,
+        track_h: f32,
+        thumb_h: f32,
+        max_scroll: usize,
+    },
+
+    /// Vertical scrollbar track (click to jump)
+    ScrollbarTrackVertical {
+        group_id: GroupId,
+        editor_id: EditorId,
+        /// Y coordinate of the click
+        coord: f32,
+        track_y: f32,
+        track_h: f32,
+        thumb_h: f32,
+        max_scroll: usize,
+    },
+
+    /// Horizontal scrollbar thumb (drag to scroll)
+    ScrollbarThumbHorizontal {
+        group_id: GroupId,
+        editor_id: EditorId,
+        grab_offset: f32,
+        track_x: f32,
+        track_w: f32,
+        thumb_w: f32,
+        max_scroll: usize,
+    },
+
+    /// Horizontal scrollbar track (click to jump)
+    ScrollbarTrackHorizontal {
+        group_id: GroupId,
+        editor_id: EditorId,
+        coord: f32,
+        track_x: f32,
+        track_w: f32,
+        thumb_w: f32,
+        max_scroll: usize,
+    },
 }
 
 impl HitTarget {
@@ -228,7 +278,11 @@ impl HitTarget {
             | HitTarget::EditorContent { group_id, .. }
             | HitTarget::CsvCell { group_id, .. }
             | HitTarget::BinaryPlaceholderButton { group_id }
-            | HitTarget::ImageContent { group_id, .. } => Some(*group_id),
+            | HitTarget::ImageContent { group_id, .. }
+            | HitTarget::ScrollbarThumbVertical { group_id, .. }
+            | HitTarget::ScrollbarTrackVertical { group_id, .. }
+            | HitTarget::ScrollbarThumbHorizontal { group_id, .. }
+            | HitTarget::ScrollbarTrackHorizontal { group_id, .. } => Some(*group_id),
             _ => None,
         }
     }
@@ -245,7 +299,11 @@ impl HitTarget {
             | HitTarget::EditorContent { .. }
             | HitTarget::CsvCell { .. }
             | HitTarget::BinaryPlaceholderButton { .. }
-            | HitTarget::ImageContent { .. } => Some(FocusTarget::Editor),
+            | HitTarget::ImageContent { .. }
+            | HitTarget::ScrollbarThumbVertical { .. }
+            | HitTarget::ScrollbarTrackVertical { .. }
+            | HitTarget::ScrollbarThumbHorizontal { .. }
+            | HitTarget::ScrollbarTrackHorizontal { .. } => Some(FocusTarget::Editor),
             // Dock content areas suggest sidebar focus for left dock (file explorer),
             // editor focus for others (until we have FocusTarget::Dock)
             HitTarget::DockTab { position, .. }
@@ -263,6 +321,62 @@ impl HitTarget {
             | HitTarget::Splitter { .. }
             | HitTarget::PreviewHeader { .. }
             | HitTarget::PreviewContent { .. } => None,
+        }
+    }
+
+    /// Get the appropriate mouse cursor icon for this hit target
+    pub fn cursor_icon(&self) -> winit::window::CursorIcon {
+        use crate::model::editor_area::SplitDirection;
+        use winit::window::CursorIcon;
+
+        match self {
+            HitTarget::EditorContent { .. } | HitTarget::CsvCell { .. } => CursorIcon::Text,
+            HitTarget::BinaryPlaceholderButton { .. } => CursorIcon::Pointer,
+            HitTarget::SidebarResize => CursorIcon::ColResize,
+            HitTarget::DockResize { position } => match position {
+                crate::panel::DockPosition::Right | crate::panel::DockPosition::Left => {
+                    CursorIcon::ColResize
+                }
+                crate::panel::DockPosition::Bottom => CursorIcon::RowResize,
+            },
+            HitTarget::Splitter { direction, .. } => match direction {
+                SplitDirection::Horizontal => CursorIcon::ColResize,
+                SplitDirection::Vertical => CursorIcon::RowResize,
+            },
+            _ => CursorIcon::Default,
+        }
+    }
+
+    /// Get the hover region for this hit target (used for input routing)
+    pub fn hover_region(&self) -> crate::model::HoverRegion {
+        use crate::model::HoverRegion;
+
+        match self {
+            HitTarget::Modal { .. } => HoverRegion::Modal,
+            HitTarget::StatusBar => HoverRegion::StatusBar,
+            HitTarget::SidebarResize => HoverRegion::SidebarResize,
+            HitTarget::SidebarEmpty | HitTarget::SidebarItem { .. } => HoverRegion::Sidebar,
+            HitTarget::Splitter { .. } => HoverRegion::Splitter,
+            HitTarget::PreviewHeader { .. } | HitTarget::PreviewContent { .. } => {
+                HoverRegion::Preview
+            }
+            HitTarget::GroupTab { .. } | HitTarget::GroupTabBarEmpty { .. } => {
+                HoverRegion::EditorTabBar
+            }
+            HitTarget::DockResize { position } => HoverRegion::DockResize(*position),
+            HitTarget::DockTab { position, .. }
+            | HitTarget::DockTabBarEmpty { position }
+            | HitTarget::DockContent { position, .. } => HoverRegion::Dock(*position),
+            HitTarget::BinaryPlaceholderButton { .. } => HoverRegion::Button,
+            // Editor content, gutter, image content, CSV cells, and scrollbars map to EditorText.
+            HitTarget::EditorGutter { .. }
+            | HitTarget::EditorContent { .. }
+            | HitTarget::ImageContent { .. }
+            | HitTarget::CsvCell { .. }
+            | HitTarget::ScrollbarThumbVertical { .. }
+            | HitTarget::ScrollbarTrackVertical { .. }
+            | HitTarget::ScrollbarThumbHorizontal { .. }
+            | HitTarget::ScrollbarTrackHorizontal { .. } => HoverRegion::EditorText,
         }
     }
 }
@@ -503,7 +617,10 @@ pub fn hit_test_splitters(
 ) -> Option<HitTarget> {
     for (i, splitter) in splitters.iter().enumerate() {
         if splitter.rect.contains(pt.x as f32, pt.y as f32) {
-            return Some(HitTarget::Splitter { index: i });
+            return Some(HitTarget::Splitter {
+                index: i,
+                direction: splitter.direction,
+            });
         }
     }
     None
@@ -583,8 +700,11 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
             group.rect.height - model.metrics.tab_bar_height as f32,
         );
         let bp_layout = super::geometry::binary_placeholder_layout(
-            content_rect, line_height, char_width,
-            model.metrics.padding_large, model.metrics.padding_medium,
+            content_rect,
+            line_height,
+            char_width,
+            model.metrics.padding_large,
+            model.metrics.padding_medium,
             super::geometry::BINARY_PLACEHOLDER_BUTTON_LABEL,
         );
 
@@ -594,6 +714,91 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     }
 
     let doc_id = editor.document_id?;
+    let document = model.editor_area.documents.get(&doc_id)?;
+
+    // Check scrollbar hit areas (before gutter/content, since they overlay the right edge)
+    if model.config.show_scrollbar
+        && matches!(editor.tab_content, crate::model::TabContent::Text)
+        && !editor.view_mode.is_csv()
+    {
+        use super::scrollbar::{ScrollbarGeometry, ScrollbarState};
+        let layout = super::geometry::GroupLayout::new(group, model, char_width);
+        let sw = model.metrics.scrollbar_width;
+        let viewport = &editor.viewport;
+        let visible_lines = layout.visible_lines(model.line_height);
+        let visible_columns = layout.visible_columns(char_width);
+        let x = pt.x as f32;
+        let y = pt.y as f32;
+
+        // Vertical scrollbar
+        if let Some(v_track) = layout.v_scrollbar_rect(sw) {
+            if v_track.contains(x, y) {
+                let line_count = document.line_count();
+                let v_state = ScrollbarState::new(line_count, visible_lines, viewport.top_line);
+                let v_geo = ScrollbarGeometry::vertical(v_track, &v_state);
+                if v_geo.needed && v_geo.hits_thumb(x, y) {
+                    let grab_offset = y - v_geo.thumb_rect.y;
+                    return Some(HitTarget::ScrollbarThumbVertical {
+                        group_id,
+                        editor_id,
+                        grab_offset,
+                        track_y: v_track.y,
+                        track_h: v_track.height,
+                        thumb_h: v_geo.thumb_rect.height,
+                        max_scroll: v_state.max_position(),
+                    });
+                }
+                if v_geo.hits_track(x, y) {
+                    return Some(HitTarget::ScrollbarTrackVertical {
+                        group_id,
+                        editor_id,
+                        coord: y,
+                        track_y: v_track.y,
+                        track_h: v_track.height,
+                        thumb_h: v_geo.thumb_rect.height,
+                        max_scroll: v_state.max_position(),
+                    });
+                }
+            }
+        }
+
+        // Horizontal scrollbar
+        if let Some(h_track) = layout.h_scrollbar_rect(sw) {
+            if h_track.contains(x, y) {
+                let top = viewport.top_line;
+                let bottom = (top + visible_lines).min(document.line_count());
+                let max_len = (top..bottom)
+                    .map(|i| document.line_length(i))
+                    .max()
+                    .unwrap_or(0);
+                let h_state = ScrollbarState::new(max_len, visible_columns, viewport.left_column);
+                if h_state.needs_scroll() {
+                    let h_geo = ScrollbarGeometry::horizontal(h_track, &h_state);
+                    if h_geo.hits_thumb(x, y) {
+                        let grab_offset = x - h_geo.thumb_rect.x;
+                        return Some(HitTarget::ScrollbarThumbHorizontal {
+                            group_id,
+                            editor_id,
+                            grab_offset,
+                            track_x: h_track.x,
+                            track_w: h_track.width,
+                            thumb_w: h_geo.thumb_rect.width,
+                            max_scroll: h_state.max_position(),
+                        });
+                    }
+                    return Some(HitTarget::ScrollbarTrackHorizontal {
+                        group_id,
+                        editor_id,
+                        coord: x,
+                        track_x: h_track.x,
+                        track_w: h_track.width,
+                        thumb_w: h_geo.thumb_rect.width,
+                        max_scroll: h_state.max_position(),
+                    });
+                }
+            }
+        }
+    }
 
     // Check if in CSV mode
     if editor.view_mode.is_csv() {
@@ -636,37 +841,24 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
 /// Computes dock rectangles and checks if the point falls within any open dock.
 /// Returns `DockContent` with the active panel ID for content clicks.
 pub fn hit_test_docks(model: &AppModel, pt: Point) -> Option<HitTarget> {
-    let scale = model.metrics.scale_factor;
-    let w = model.window_size.0 as f32;
-    let status_bar_h = model.line_height as f32;
-    let content_h = model.window_size.1 as f32 - status_bar_h;
-    let bottom_h = model.dock_layout.bottom.size(scale);
-    let side_h = content_h - bottom_h;
+    let window_layout = WindowLayout::compute(model, model.line_height);
 
-    // Right dock
-    if model.dock_layout.right.is_open {
-        let right_w = model.dock_layout.right.size(scale);
-        if right_w > 0.0 {
-            let right_rect = Rect::new(w - right_w, 0.0, right_w, side_h);
-            if right_rect.contains(pt.x as f32, pt.y as f32) {
-                let dock = &model.dock_layout.right;
-                if let Some(panel_id) = dock.active_panel() {
-                    return Some(HitTarget::DockContent {
-                        position: crate::panel::DockPosition::Right,
-                        active_panel_id: panel_id,
-                    });
-                }
-                return Some(HitTarget::DockTabBarEmpty {
+    if let Some(right_rect) = window_layout.right_dock_rect {
+        if right_rect.contains(pt.x as f32, pt.y as f32) {
+            let dock = &model.dock_layout.right;
+            if let Some(panel_id) = dock.active_panel() {
+                return Some(HitTarget::DockContent {
                     position: crate::panel::DockPosition::Right,
+                    active_panel_id: panel_id,
                 });
             }
+            return Some(HitTarget::DockTabBarEmpty {
+                position: crate::panel::DockPosition::Right,
+            });
         }
     }
 
-    // Bottom dock
-    if model.dock_layout.bottom.is_open && bottom_h > 0.0 {
-        let left_w = model.dock_layout.left.size(scale);
-        let bottom_rect = Rect::new(left_w, side_h, w - left_w, bottom_h);
+    if let Some(bottom_rect) = window_layout.bottom_dock_rect {
         if bottom_rect.contains(pt.x as f32, pt.y as f32) {
             let dock = &model.dock_layout.bottom;
             if let Some(panel_id) = dock.active_panel() {
@@ -725,27 +917,14 @@ pub fn hit_test_ui(model: &AppModel, pt: Point, char_width: f32) -> Option<HitTa
     }
 
     // 6. Splitter bars (need to compute layout first)
-    let sidebar_width = model
-        .workspace
-        .as_ref()
-        .filter(|ws| ws.sidebar_visible)
-        .map(|ws| ws.sidebar_width(model.metrics.scale_factor))
-        .unwrap_or(0.0);
-
-    let status_bar_height = model.line_height as f32;
-    let available = model.editor_area.last_layout_rect.unwrap_or(Rect::new(
-        sidebar_width,
-        0.0,
-        model.window_size.0 as f32 - sidebar_width,
-        model.window_size.1 as f32 - status_bar_height,
-    ));
+    let window_layout = WindowLayout::compute(model, model.line_height);
 
     // Note: This creates a temporary copy of splitters; in production code
     // the splitters should be passed in or cached
     let splitters = model
         .editor_area
         .clone() // Avoid borrow issues
-        .compute_layout_scaled(available, model.metrics.splitter_width);
+        .compute_layout_scaled(window_layout.editor_area_rect, model.metrics.splitter_width);
 
     if let Some(target) = hit_test_splitters(model, pt, &splitters) {
         return Some(target);
@@ -796,7 +975,10 @@ mod tests {
         let sidebar = HitTarget::SidebarEmpty;
         assert_eq!(sidebar.suggested_focus(), Some(FocusTarget::Sidebar));
 
-        let splitter = HitTarget::Splitter { index: 0 };
+        let splitter = HitTarget::Splitter {
+            index: 0,
+            direction: crate::model::editor_area::SplitDirection::Horizontal,
+        };
         assert_eq!(splitter.suggested_focus(), None);
     }
 

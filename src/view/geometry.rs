@@ -182,17 +182,19 @@ pub fn tab_at_position(
     model: &AppModel,
     group: &EditorGroup,
 ) -> Option<usize> {
-    let mut tab_x = 4.0; // Initial padding
+    let metrics = &model.metrics;
+    let mut tab_x = metrics.padding_medium as f64;
 
     for (idx, tab) in group.tabs.iter().enumerate() {
         let title = get_tab_display_name(model, tab);
-        let tab_width = (title.len() as f32 * char_width).round() as f64 + 16.0;
+        let tab_width =
+            (title.len() as f32 * char_width).round() as f64 + (metrics.padding_large * 2) as f64;
 
         if x >= tab_x && x < tab_x + tab_width {
             return Some(idx);
         }
 
-        tab_x += tab_width + 2.0; // tab width + gap
+        tab_x += tab_width + metrics.padding_small as f64;
     }
 
     None
@@ -502,6 +504,56 @@ impl GroupLayout {
     #[inline]
     pub fn visible_lines(&self, line_height: usize) -> usize {
         self.content_h() / line_height
+    }
+
+    /// Calculate visible text columns for this group.
+    #[inline]
+    pub fn visible_columns(&self, char_width: f32) -> usize {
+        if char_width <= 0.0 {
+            return 0;
+        }
+
+        let text_start_x_offset = self.text_start_x.saturating_sub(self.rect_x());
+        ((self.rect_w() as f32 - text_start_x_offset as f32) / char_width)
+            .floor()
+            .max(0.0) as usize
+    }
+
+    // =========================================================================
+    // Scrollbar rects (overlay-style: rendered on top of content right/bottom edge)
+    // =========================================================================
+
+    /// Get the vertical scrollbar track rect (right edge of content area).
+    ///
+    /// Returns `None` if scrollbars are disabled (`show_scrollbar` is false).
+    /// The scrollbar is rendered as an overlay over the content area's right edge.
+    #[inline]
+    pub fn v_scrollbar_rect(&self, scrollbar_width: usize) -> Option<Rect> {
+        if scrollbar_width == 0 {
+            return None;
+        }
+        let sw = scrollbar_width as f32;
+        let cr = self.content_rect;
+        Some(Rect::new(cr.x + cr.width - sw, cr.y, sw, cr.height))
+    }
+
+    /// Get the horizontal scrollbar track rect (bottom edge of content area).
+    ///
+    /// Returns `None` if scrollbars are disabled (`show_scrollbar` is false).
+    /// Only shown when content is wider than the viewport.
+    #[inline]
+    pub fn h_scrollbar_rect(&self, scrollbar_width: usize) -> Option<Rect> {
+        if scrollbar_width == 0 {
+            return None;
+        }
+        let sw = scrollbar_width as f32;
+        let cr = self.content_rect;
+        Some(Rect::new(
+            cr.x,
+            cr.y + cr.height - sw,
+            cr.width - sw, // leave corner for vertical scrollbar
+            sw,
+        ))
     }
 }
 
@@ -1200,6 +1252,86 @@ pub fn theme_picker_layout(
 
 use crate::panel::{DockLayout, DockPosition};
 
+/// Shared top-level window layout used by rendering and hit-testing.
+#[derive(Debug, Clone, Copy)]
+pub struct WindowLayout {
+    /// Full content area above the status bar.
+    pub content_rect: Rect,
+    /// Status bar rectangle.
+    pub status_bar_rect: Rect,
+    /// Sidebar rectangle (if visible).
+    pub sidebar_rect: Option<Rect>,
+    /// Remaining editor area after sidebar/right/bottom panels are subtracted.
+    pub editor_area_rect: Rect,
+    /// Right dock rectangle (if open).
+    pub right_dock_rect: Option<Rect>,
+    /// Bottom dock rectangle (if open).
+    pub bottom_dock_rect: Option<Rect>,
+}
+
+impl WindowLayout {
+    /// Compute the current top-level window layout from the app model.
+    pub fn compute(model: &AppModel, line_height: usize) -> Self {
+        let window_width = model.window_size.0 as f32;
+        let window_height = model.window_size.1 as f32;
+        let status_bar_h = status_bar_height(line_height) as f32;
+        let content_height = (window_height - status_bar_h).max(0.0);
+
+        let sidebar_width = model
+            .workspace
+            .as_ref()
+            .filter(|ws| ws.sidebar_visible)
+            .map(|ws| ws.sidebar_width(model.metrics.scale_factor))
+            .unwrap_or(0.0);
+        let right_dock_width = model.dock_layout.right.size(model.metrics.scale_factor);
+        let bottom_dock_height = model.dock_layout.bottom.size(model.metrics.scale_factor);
+        let side_panel_height = (content_height - bottom_dock_height).max(0.0);
+
+        let content_rect = Rect::new(0.0, 0.0, window_width, content_height);
+        let status_bar_rect = Rect::new(0.0, content_height, window_width, status_bar_h);
+        let sidebar_rect = if sidebar_width > 0.0 {
+            Some(Rect::new(0.0, 0.0, sidebar_width, content_height))
+        } else {
+            None
+        };
+        let right_dock_rect = if right_dock_width > 0.0 {
+            Some(Rect::new(
+                window_width - right_dock_width,
+                0.0,
+                right_dock_width,
+                side_panel_height,
+            ))
+        } else {
+            None
+        };
+        let bottom_dock_rect = if bottom_dock_height > 0.0 {
+            Some(Rect::new(
+                sidebar_width,
+                side_panel_height,
+                (window_width - sidebar_width).max(0.0),
+                bottom_dock_height,
+            ))
+        } else {
+            None
+        };
+        let editor_area_rect = Rect::new(
+            sidebar_width,
+            0.0,
+            (window_width - sidebar_width - right_dock_width).max(0.0),
+            side_panel_height,
+        );
+
+        Self {
+            content_rect,
+            status_bar_rect,
+            sidebar_rect,
+            editor_area_rect,
+            right_dock_rect,
+            bottom_dock_rect,
+        }
+    }
+}
+
 /// Computed rectangles for all dock areas
 ///
 /// Used by both rendering and hit-testing to ensure consistent layout.
@@ -1413,7 +1545,13 @@ pub fn binary_placeholder_layout(
     let padding_h = padding_large * 2;
     let padding_v = padding_medium;
     let button_rect = super::button::button_rect(
-        center_x, btn_y, button_label, char_width, line_height, padding_h, padding_v,
+        center_x,
+        btn_y,
+        button_label,
+        char_width,
+        line_height,
+        padding_h,
+        padding_v,
     );
 
     BinaryPlaceholderLayout {
@@ -1440,6 +1578,43 @@ mod tests {
     fn test_expand_tabs() {
         assert_eq!(expand_tabs_for_display("a\tb"), "a   b"); // tab at col 1 -> 3 spaces
         assert_eq!(expand_tabs_for_display("\t"), "    "); // tab at col 0 -> 4 spaces
+    }
+
+    #[test]
+    fn test_group_layout_visible_columns_respects_text_start() {
+        let layout = GroupLayout {
+            group_rect: Rect::new(0.0, 0.0, 200.0, 120.0),
+            content_rect: Rect::new(0.0, 24.0, 200.0, 96.0),
+            tab_bar_height: 24,
+            gutter_right_x: 48,
+            text_start_x: 60,
+        };
+
+        assert_eq!(layout.visible_columns(10.0), 14);
+    }
+
+    #[test]
+    fn test_window_layout_editor_area_accounts_for_docks() {
+        use crate::panel::DockPosition;
+
+        let mut model = crate::model::AppModel::new(1000, 700, 1.0, vec![]);
+        model.line_height = 20;
+        model.dock_layout.dock_mut(DockPosition::Right).is_open = true;
+        model.dock_layout.dock_mut(DockPosition::Right).size_logical = 180.0;
+        model.dock_layout.dock_mut(DockPosition::Bottom).is_open = true;
+        model
+            .dock_layout
+            .dock_mut(DockPosition::Bottom)
+            .size_logical = 140.0;
+
+        let layout = WindowLayout::compute(&model, model.line_height);
+
+        assert_eq!(layout.content_rect.height, 680.0);
+        assert_eq!(layout.status_bar_rect.y, 680.0);
+        assert_eq!(layout.right_dock_rect.unwrap().width, 180.0);
+        assert_eq!(layout.bottom_dock_rect.unwrap().height, 140.0);
+        assert_eq!(layout.editor_area_rect.width, 820.0);
+        assert_eq!(layout.editor_area_rect.height, 540.0);
     }
 
     #[test]
@@ -1647,5 +1822,99 @@ mod tests {
         assert_eq!(list.h, 10 * lh);
         // Modal width is always 400
         assert_eq!(layout.w, 400);
+    }
+
+    #[test]
+    fn test_tree_list_layout_positions() {
+        use crate::model::ScaledMetrics;
+        let metrics = ScaledMetrics::new(1.0);
+        let tl = TreeListLayout::from_metrics(&metrics);
+
+        // Depth 0: just left_padding
+        let pos = tl.node_position(0, 100);
+        assert_eq!(pos.icon_x, tl.left_padding);
+        assert_eq!(pos.text_x, tl.left_padding + tl.indicator_width);
+        assert_eq!(pos.text_y, 100 + tl.text_top_padding);
+
+        // Depth 1: left_padding + indent
+        let pos1 = tl.node_position(1, 100);
+        assert!(pos1.icon_x > pos.icon_x);
+    }
+}
+
+// ============================================================================
+// Tree List Layout
+// ============================================================================
+
+/// Reusable layout parameters for scrollable tree-list widgets (sidebar, outline).
+///
+/// Encapsulates the padding, indent, and spacing calculations that are shared
+/// between the sidebar file tree and the outline panel, providing a single
+/// source of truth for tree-node positioning.
+#[derive(Debug, Clone)]
+pub struct TreeListLayout {
+    /// Left padding from container edge to first-level icons
+    pub left_padding: usize,
+    /// Width reserved for the expand/collapse indicator
+    pub indicator_width: usize,
+    /// Vertical padding from row top to text baseline
+    pub text_top_padding: usize,
+    /// Horizontal indent per nesting level
+    pub indent: f32,
+}
+
+/// Computed positions for a single tree node at a given depth and y.
+#[derive(Debug, Clone, Copy)]
+pub struct TreeNodePosition {
+    /// X coordinate for the expand/collapse icon
+    pub icon_x: usize,
+    /// X coordinate for the text label
+    pub text_x: usize,
+    /// Y coordinate for the text (row y + top padding)
+    pub text_y: usize,
+}
+
+impl TreeListLayout {
+    /// Create a tree list layout from scaled metrics.
+    pub fn from_metrics(metrics: &crate::model::ScaledMetrics) -> Self {
+        Self {
+            left_padding: metrics.padding_large,
+            indicator_width: metrics.padding_large + metrics.padding_large / 2,
+            text_top_padding: metrics.padding_small,
+            indent: metrics.file_tree_indent,
+        }
+    }
+
+    /// Create a tree list layout for the outline panel (slightly smaller indicator).
+    pub fn outline_from_metrics(metrics: &crate::model::ScaledMetrics) -> Self {
+        Self {
+            left_padding: metrics.padding_large,
+            indicator_width: metrics.padding_large + metrics.padding_medium,
+            text_top_padding: metrics.padding_small,
+            indent: metrics.file_tree_indent,
+        }
+    }
+
+    /// Compute the x-offset for a node at the given depth.
+    #[inline]
+    pub fn x_offset(&self, depth: usize) -> usize {
+        (depth as f32 * self.indent) as usize + self.left_padding
+    }
+
+    /// Compute icon_x, text_x, and text_y for a node at the given depth and row y.
+    #[inline]
+    pub fn node_position(&self, depth: usize, row_y: usize) -> TreeNodePosition {
+        let x_offset = self.x_offset(depth);
+        TreeNodePosition {
+            icon_x: x_offset,
+            text_x: x_offset + self.indicator_width,
+            text_y: row_y + self.text_top_padding,
+        }
+    }
+
+    /// Compute the available width for text given container width and text_x.
+    #[inline]
+    pub fn available_text_width(&self, container_width: usize, text_x: usize) -> usize {
+        container_width.saturating_sub(text_x + self.left_padding)
     }
 }

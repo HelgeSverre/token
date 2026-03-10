@@ -148,7 +148,9 @@ impl<'a> Frame<'a> {
     /// Fill a rectangle with a solid color (no alpha blending)
     pub fn fill_rect(&mut self, rect: Rect, color: u32) {
         let x0 = (rect.x.max(0.0) as usize).min(self.width).max(self.min_x());
-        let y0 = (rect.y.max(0.0) as usize).min(self.height).max(self.min_y());
+        let y0 = (rect.y.max(0.0) as usize)
+            .min(self.height)
+            .max(self.min_y());
         let x1 = ((rect.x + rect.width) as usize).min(self.max_x());
         let y1 = ((rect.y + rect.height) as usize).min(self.max_y());
 
@@ -211,7 +213,9 @@ impl<'a> Frame<'a> {
         }
 
         let x0 = (rect.x.max(0.0) as usize).min(self.width).max(self.min_x());
-        let y0 = (rect.y.max(0.0) as usize).min(self.height).max(self.min_y());
+        let y0 = (rect.y.max(0.0) as usize)
+            .min(self.height)
+            .max(self.min_y());
         let x1 = ((rect.x + rect.width) as usize).min(self.max_x());
         let y1 = ((rect.y + rect.height) as usize).min(self.max_y());
 
@@ -278,7 +282,9 @@ impl<'a> Frame<'a> {
     /// Fill a rectangle with alpha blending
     pub fn blend_rect(&mut self, rect: Rect, color: u32) {
         let x0 = (rect.x.max(0.0) as usize).min(self.width).max(self.min_x());
-        let y0 = (rect.y.max(0.0) as usize).min(self.height).max(self.min_y());
+        let y0 = (rect.y.max(0.0) as usize)
+            .min(self.height)
+            .max(self.min_y());
         let x1 = ((rect.x + rect.width) as usize).min(self.max_x());
         let y1 = ((rect.y + rect.height) as usize).min(self.max_y());
 

@@ -20,17 +20,16 @@ use token::fs_watcher::{FileSystemEvent, FileSystemWatcher};
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
 };
-use token::messages::{AppMsg, CsvMsg, EditorMsg, ImageMsg, LayoutMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg};
+use token::messages::{AppMsg, EditorMsg, ImageMsg, LayoutMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg};
 use token::model::editor::Position;
-use token::model::editor_area::{Rect, SplitDirection};
 use token::model::AppModel;
 use token::syntax::{LanguageId, ParserState};
 use token::update::update;
 
-use token::view::geometry::is_in_group_tab_bar;
-
-use super::input::handle_key;
-use super::mouse::{handle_mouse_press, make_mouse_event, ClickTracker};
+use super::input::{handle_key, OptionKeyGesture};
+use super::mouse::{
+    handle_mouse_press, handle_mouse_wheel, make_mouse_event, ClickTracker, DragState,
+};
 use super::webview::WebviewManager;
 use token::view::Renderer;
 
@@ -55,12 +54,8 @@ pub struct App {
     last_tick: Instant,
     modifiers: ModifiersState,
     mouse_position: Option<(f64, f64)>,
-    last_option_press: Option<Instant>,
-    option_double_tapped: bool,
-    left_mouse_down: bool,
-    last_auto_scroll: Option<Instant>,
-    drag_start_position: Option<(f64, f64)>,
-    drag_active: bool,
+    option_gesture: OptionKeyGesture,
+    drag: DragState,
     msg_tx: Sender<Msg>,
     msg_rx: Receiver<Msg>,
     perf: PerfStats,
@@ -144,12 +139,8 @@ impl App {
             last_tick: Instant::now(),
             modifiers: ModifiersState::empty(),
             mouse_position: None,
-            last_option_press: None,
-            option_double_tapped: false,
-            left_mouse_down: false,
-            last_auto_scroll: None,
-            drag_start_position: None,
-            drag_active: false,
+            option_gesture: OptionKeyGesture::default(),
+            drag: DragState::default(),
             msg_tx,
             msg_rx,
             perf: PerfStats::default(),
@@ -258,228 +249,41 @@ impl App {
     }
 
     fn try_auto_scroll_for_drag(&mut self, y: f64) -> Option<Cmd> {
-        const AUTO_SCROLL_INTERVAL_MS: u64 = 80;
-
         let line_height = self.model.line_height as f64;
         let window_height = self.model.window_size.1 as f64;
         let status_bar_top = window_height - line_height;
 
-        let scroll_direction = if y < 0.0 {
-            Some(-1)
-        } else if y >= status_bar_top {
-            Some(1)
-        } else {
-            None
-        };
-
-        let direction = scroll_direction?;
-
-        let now = Instant::now();
-        if let Some(last) = self.last_auto_scroll {
-            if now.duration_since(last) < Duration::from_millis(AUTO_SCROLL_INTERVAL_MS) {
-                return None;
-            }
-        }
-
-        self.last_auto_scroll = Some(now);
+        let direction = self.drag.try_auto_scroll(y, status_bar_top)?;
         update(&mut self.model, Msg::Editor(EditorMsg::Scroll(direction)))
     }
 
     /// Update both hover region tracking and cursor icon based on mouse position.
-    /// This ensures hover state and cursor icons are always in sync.
+    /// Delegates to `hit_test_ui()` for unified hit-testing, then maps the result
+    /// to the appropriate cursor icon and hover region.
     fn update_cursor_icon(&mut self, x: f64, y: f64) {
         use token::model::HoverRegion;
+        use token::view::hit_test::{hit_test_ui, Point};
 
         let Some(window) = &self.window else { return };
         let Some(renderer) = &self.renderer else {
             return;
         };
 
-        let status_bar_height = renderer.line_height();
-        let (width, height) = renderer.dimensions();
-
-        // Calculate sidebar dimensions
-        let sidebar_width = self
-            .model
-            .workspace
-            .as_ref()
-            .filter(|ws| ws.sidebar_visible)
-            .map(|ws| ws.sidebar_width(self.model.metrics.scale_factor))
-            .unwrap_or(0.0);
-
-        // Sidebar resize in progress → always show ColResize, keep current hover
+        // In-progress sidebar resize overrides all hit-testing
         if self.model.ui.sidebar_resize.is_some() {
             self.model.ui.hover = HoverRegion::SidebarResize;
             window.set_cursor(CursorIcon::ColResize);
             return;
         }
 
-        // Modal overlay → Modal hover region
-        if self.model.ui.has_modal() {
-            self.model.ui.hover = HoverRegion::Modal;
+        let pt = Point::new(x, y);
+        if let Some(target) = hit_test_ui(&self.model, pt, renderer.char_width()) {
+            window.set_cursor(target.cursor_icon());
+            self.model.ui.hover = target.hover_region();
+        } else {
+            self.model.ui.hover = HoverRegion::None;
             window.set_cursor(CursorIcon::Default);
-            return;
         }
-
-        // Status bar has highest priority - "on top" of everything
-        if renderer.is_in_status_bar(y) {
-            self.model.ui.hover = HoverRegion::StatusBar;
-            window.set_cursor(CursorIcon::Default);
-            return;
-        }
-
-        // Sidebar resize border (right edge, ~4px hit zone)
-        const RESIZE_HIT_ZONE: f64 = 4.0;
-        if sidebar_width > 0.0 {
-            let resize_zone_start = sidebar_width as f64 - RESIZE_HIT_ZONE;
-            let resize_zone_end = sidebar_width as f64 + RESIZE_HIT_ZONE;
-            if x >= resize_zone_start && x <= resize_zone_end {
-                self.model.ui.hover = HoverRegion::SidebarResize;
-                window.set_cursor(CursorIcon::ColResize);
-                return;
-            }
-
-            // Sidebar file tree area
-            if x < sidebar_width as f64 {
-                self.model.ui.hover = HoverRegion::Sidebar;
-                window.set_cursor(CursorIcon::Default);
-                return;
-            }
-        }
-
-        // Calculate dock dimensions
-        let scale_factor = self.model.metrics.scale_factor;
-        let right_dock_width = self.model.dock_layout.right.size(scale_factor) as f64;
-        let bottom_dock_height = self.model.dock_layout.bottom.size(scale_factor) as f64;
-        let content_height = (height as usize).saturating_sub(status_bar_height) as f64;
-
-        // Right dock resize handle (left edge)
-        if self.model.dock_layout.right.is_open && right_dock_width > 0.0 {
-            let right_dock_x = width as f64 - right_dock_width;
-            let resize_zone_start = right_dock_x - RESIZE_HIT_ZONE;
-            let resize_zone_end = right_dock_x + RESIZE_HIT_ZONE;
-            if x >= resize_zone_start
-                && x <= resize_zone_end
-                && y < content_height - bottom_dock_height
-            {
-                self.model.ui.hover = HoverRegion::DockResize(token::panel::DockPosition::Right);
-                window.set_cursor(CursorIcon::ColResize);
-                return;
-            }
-        }
-
-        // Bottom dock resize handle (top edge)
-        if self.model.dock_layout.bottom.is_open && bottom_dock_height > 0.0 {
-            let bottom_dock_y = content_height - bottom_dock_height;
-            let resize_zone_start = bottom_dock_y - RESIZE_HIT_ZONE;
-            let resize_zone_end = bottom_dock_y + RESIZE_HIT_ZONE;
-            if y >= resize_zone_start && y <= resize_zone_end && x >= sidebar_width as f64 {
-                self.model.ui.hover = HoverRegion::DockResize(token::panel::DockPosition::Bottom);
-                window.set_cursor(CursorIcon::RowResize);
-                return;
-            }
-        }
-
-        // Right dock content area
-        if self.model.dock_layout.right.is_open && right_dock_width > 0.0 {
-            let right_dock_x = width as f64 - right_dock_width;
-            if x >= right_dock_x && y < content_height - bottom_dock_height {
-                self.model.ui.hover = HoverRegion::Dock(token::panel::DockPosition::Right);
-                window.set_cursor(CursorIcon::Default);
-                return;
-            }
-        }
-
-        // Bottom dock content area
-        if self.model.dock_layout.bottom.is_open && bottom_dock_height > 0.0 {
-            let bottom_dock_y = content_height - bottom_dock_height;
-            if y >= bottom_dock_y && x >= sidebar_width as f64 {
-                self.model.ui.hover = HoverRegion::Dock(token::panel::DockPosition::Bottom);
-                window.set_cursor(CursorIcon::Default);
-                return;
-            }
-        }
-
-        // Check preview panes
-        for preview in self.model.editor_area.previews.values() {
-            if preview.rect.contains(x as f32, y as f32) {
-                self.model.ui.hover = HoverRegion::Preview;
-                window.set_cursor(CursorIcon::Default);
-                return;
-            }
-        }
-
-        // Compute splitter layout for hit testing
-        let available_rect = Rect::new(
-            sidebar_width,
-            0.0,
-            (width as f32) - sidebar_width,
-            (height as usize).saturating_sub(status_bar_height) as f32,
-        );
-        let splitter_width = self.model.metrics.splitter_width;
-        let splitters = self
-            .model
-            .editor_area
-            .compute_layout_scaled(available_rect, splitter_width);
-
-        // Splitter bars
-        if let Some(idx) = self
-            .model
-            .editor_area
-            .splitter_at_point(&splitters, x as f32, y as f32)
-        {
-            self.model.ui.hover = HoverRegion::Splitter;
-            let icon = match splitters[idx].direction {
-                SplitDirection::Horizontal => CursorIcon::ColResize,
-                SplitDirection::Vertical => CursorIcon::RowResize,
-            };
-            window.set_cursor(icon);
-            return;
-        }
-
-        // Tab bars
-        let tab_bar_height = self.model.metrics.tab_bar_height;
-        for group in self.model.editor_area.groups.values() {
-            if is_in_group_tab_bar(y, &group.rect, tab_bar_height)
-                && x >= group.rect.x as f64
-                && x < (group.rect.x + group.rect.width) as f64
-            {
-                self.model.ui.hover = HoverRegion::EditorTabBar;
-                window.set_cursor(CursorIcon::Default);
-                return;
-            }
-        }
-
-        // Gutter area (line numbers)
-        let gutter_width =
-            token::model::gutter_border_x_scaled(renderer.char_width(), &self.model.metrics) as f64;
-        if let Some(group) = self.model.editor_area.focused_group() {
-            let gutter_x_end = group.rect.x as f64 + gutter_width;
-            let content_y_start = group.rect.y as f64 + tab_bar_height as f64;
-            if x >= group.rect.x as f64 && x < gutter_x_end && y >= content_y_start {
-                // Gutter is part of the editor, but use default pointer
-                self.model.ui.hover = HoverRegion::EditorText;
-                window.set_cursor(CursorIcon::Default);
-                return;
-            }
-        }
-
-        // Binary placeholder button
-        if let Some(target) = token::view::hit_test::hit_test_groups(
-            &self.model,
-            token::view::hit_test::Point::new(x, y),
-            renderer.char_width(),
-        ) {
-            if matches!(target, token::view::hit_test::HitTarget::BinaryPlaceholderButton { .. }) {
-                self.model.ui.hover = HoverRegion::Button;
-                window.set_cursor(CursorIcon::Pointer);
-                return;
-            }
-        }
-
-        // Editor text area
-        self.model.ui.hover = HoverRegion::EditorText;
-        window.set_cursor(CursorIcon::Text);
     }
 
     fn handle_event(&mut self, event: &WindowEvent) -> Option<Cmd> {
@@ -504,15 +308,9 @@ impl App {
 
                 if is_option_key {
                     if event.state == ElementState::Pressed && !event.repeat {
-                        let now = Instant::now();
-                        if let Some(last) = self.last_option_press {
-                            if now.duration_since(last) < Duration::from_millis(300) {
-                                self.option_double_tapped = true;
-                            }
-                        }
-                        self.last_option_press = Some(now);
+                        self.option_gesture.on_press();
                     } else if event.state == ElementState::Released {
-                        self.option_double_tapped = false;
+                        self.option_gesture.on_release();
                     }
                 }
 
@@ -577,7 +375,7 @@ impl App {
                     let sidebar_focused =
                         matches!(self.model.ui.focus, token::model::FocusTarget::Sidebar);
                     let skip_keymap = self.model.ui.has_modal()
-                        || (self.option_double_tapped && alt)
+                        || (self.option_gesture.double_tapped && alt)
                         || sidebar_focused
                         || self.model.is_csv_editing();
 
@@ -618,7 +416,7 @@ impl App {
                         shift,
                         alt,
                         logo,
-                        self.option_double_tapped,
+                        self.option_gesture.double_tapped,
                     )
                 } else {
                     None
@@ -644,6 +442,19 @@ impl App {
                     );
                 }
 
+                // Handle scrollbar thumb drag
+                if let Some(drag) = &self.model.ui.scrollbar_drag {
+                    use token::model::ui::ScrollbarDragAxis;
+                    let coord = match drag.axis {
+                        ScrollbarDragAxis::Vertical => position.y as f32,
+                        ScrollbarDragAxis::Horizontal => position.x as f32,
+                    };
+                    return update(
+                        &mut self.model,
+                        Msg::Ui(UiMsg::ScrollbarDragUpdate { mouse_coord: coord }),
+                    );
+                }
+
                 // Handle sidebar resize drag
                 if self.model.ui.sidebar_resize.is_some() {
                     return update(
@@ -659,7 +470,7 @@ impl App {
                             .map(|img| img.drag.is_some())
                             .unwrap_or(false);
 
-                        if self.left_mouse_down && has_drag {
+                        if self.drag.is_down() && has_drag {
                             update(
                                 &mut self.model,
                                 Msg::Image(ImageMsg::UpdatePan {
@@ -694,27 +505,19 @@ impl App {
                             Msg::Editor(EditorMsg::UpdateRectangleSelection { line, visual_col }),
                         );
                     }
-                } else if self.left_mouse_down {
-                    const DRAG_THRESHOLD_PIXELS: f64 = 4.0;
-
+                } else if self.drag.is_down() {
                     if let Some(renderer) = &mut self.renderer {
-                        if !self.drag_active {
-                            if let Some((start_x, start_y)) = self.drag_start_position {
-                                let dx = position.x - start_x;
-                                let dy = position.y - start_y;
-                                let distance = (dx * dx + dy * dy).sqrt();
-
-                                if distance >= DRAG_THRESHOLD_PIXELS {
-                                    self.drag_active = true;
-                                    let (start_line, start_col) =
-                                        renderer.pixel_to_cursor(start_x, start_y, &self.model);
-                                    self.model.editor_mut().primary_selection_mut().anchor =
-                                        Position::new(start_line, start_col);
-                                }
-                            }
+                        // Check if drag threshold was just crossed
+                        if let Some((start_x, start_y)) =
+                            self.drag.check_threshold(position.x, position.y)
+                        {
+                            let (start_line, start_col) =
+                                renderer.pixel_to_cursor(start_x, start_y, &self.model);
+                            self.model.editor_mut().primary_selection_mut().anchor =
+                                Position::new(start_line, start_col);
                         }
 
-                        if self.drag_active {
+                        if self.drag.is_active() {
                             let (line, column) =
                                 renderer.pixel_to_cursor(position.x, position.y, &self.model);
 
@@ -755,9 +558,7 @@ impl App {
 
                         // Update drag tracking state
                         if result.start_drag_tracking {
-                            self.left_mouse_down = true;
-                            self.drag_start_position = Some((x, y));
-                            self.drag_active = false;
+                            self.drag.begin(x, y);
                         }
 
                         return result.cmd;
@@ -770,14 +571,16 @@ impl App {
                 button: MouseButton::Left,
                 ..
             } => {
-                self.left_mouse_down = false;
-                self.last_auto_scroll = None;
-                self.drag_start_position = None;
-                self.drag_active = false;
+                self.drag.end();
 
                 // End splitter drag if active
                 if self.model.ui.splitter_drag.is_some() {
                     return update(&mut self.model, Msg::Layout(LayoutMsg::EndSplitterDrag));
+                }
+
+                // End scrollbar drag if active
+                if self.model.ui.scrollbar_drag.is_some() {
+                    return update(&mut self.model, Msg::Ui(UiMsg::ScrollbarDragEnd));
                 }
 
                 // End sidebar resize drag if active
@@ -839,7 +642,6 @@ impl App {
                 None
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                use token::model::HoverRegion;
                 use winit::event::MouseScrollDelta;
 
                 let (h_delta, v_delta) = match delta {
@@ -851,128 +653,7 @@ impl App {
                     }
                 };
 
-                // Route scroll based on hover region
-                match self.model.ui.hover {
-                    // Sidebar: scroll the file tree
-                    HoverRegion::Sidebar => {
-                        if v_delta != 0 {
-                            update(
-                                &mut self.model,
-                                Msg::Workspace(WorkspaceMsg::Scroll { lines: v_delta }),
-                            )
-                        } else {
-                            None
-                        }
-                    }
-
-                    // Dock panels: consume scroll events but don't route to editor
-                    // Future: could route to panel-specific scroll handlers
-                    HoverRegion::Dock(position) => {
-                        // Route scroll to outline panel if it's the active panel
-                        let active_panel = match position {
-                            token::panel::DockPosition::Left => {
-                                self.model.dock_layout.left.active_panel()
-                            }
-                            token::panel::DockPosition::Right => {
-                                self.model.dock_layout.right.active_panel()
-                            }
-                            token::panel::DockPosition::Bottom => {
-                                self.model.dock_layout.bottom.active_panel()
-                            }
-                        };
-                        if active_panel == Some(token::panel::PanelId::Outline) && v_delta != 0 {
-                            update(
-                                &mut self.model,
-                                Msg::Outline(token::messages::OutlineMsg::Scroll {
-                                    lines: v_delta,
-                                }),
-                            )
-                        } else {
-                            None
-                        }
-                    }
-
-                    // Preview panes: consume scroll but don't route to editor
-                    // Webview handles its own scrolling
-                    HoverRegion::Preview => None,
-
-                    // Modal/StatusBar/Splitter/TabBar/DockResize/Button: ignore scroll
-                    HoverRegion::Modal
-                    | HoverRegion::StatusBar
-                    | HoverRegion::Splitter
-                    | HoverRegion::EditorTabBar
-                    | HoverRegion::SidebarResize
-                    | HoverRegion::DockResize(_)
-                    | HoverRegion::Button
-                    | HoverRegion::None => None,
-
-                    // Editor text area: scroll the editor (or CSV/Image if in those modes)
-                    HoverRegion::EditorText => {
-                        // Check if focused editor is in image mode
-                        let in_image_mode = self
-                            .model
-                            .editor_area
-                            .focused_editor()
-                            .map(|e| e.view_mode.is_image())
-                            .unwrap_or(false);
-
-                        if in_image_mode {
-                            if v_delta != 0 {
-                                let (mouse_x, mouse_y) = self.mouse_position.unwrap_or((0.0, 0.0));
-                                return update(
-                                    &mut self.model,
-                                    Msg::Image(ImageMsg::Zoom {
-                                        delta: v_delta as f64,
-                                        mouse_x,
-                                        mouse_y,
-                                    }),
-                                );
-                            }
-                            return None;
-                        }
-
-                        // Check if focused editor is in CSV mode
-                        let in_csv_mode = self
-                            .model
-                            .editor_area
-                            .focused_editor()
-                            .map(|e| e.view_mode.is_csv())
-                            .unwrap_or(false);
-
-                        if in_csv_mode {
-                            let v_cmd = if v_delta != 0 {
-                                update(&mut self.model, Msg::Csv(CsvMsg::ScrollVertical(v_delta)))
-                            } else {
-                                None
-                            };
-
-                            let h_cmd = if h_delta != 0 {
-                                update(&mut self.model, Msg::Csv(CsvMsg::ScrollHorizontal(h_delta)))
-                            } else {
-                                None
-                            };
-
-                            return v_cmd.or(h_cmd);
-                        }
-
-                        let v_cmd = if v_delta != 0 {
-                            update(&mut self.model, Msg::Editor(EditorMsg::Scroll(v_delta)))
-                        } else {
-                            None
-                        };
-
-                        let h_cmd = if h_delta != 0 {
-                            update(
-                                &mut self.model,
-                                Msg::Editor(EditorMsg::ScrollHorizontal(h_delta)),
-                            )
-                        } else {
-                            None
-                        };
-
-                        v_cmd.or(h_cmd)
-                    }
-                }
+                handle_mouse_wheel(&mut self.model, self.mouse_position, h_delta, v_delta)
             }
             WindowEvent::DroppedFile(path) => {
                 // Clear hover state first

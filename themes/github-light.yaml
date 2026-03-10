@@ -67,6 +67,11 @@ ui:
     checkerboard_dark: "#F0F0F0"
     checkerboard_size: 8
 
+  scrollbar:
+    track: "#F6F8FA"
+    thumb: "#D0D7DE"
+    thumb_hover: "#B1BAC4"
+
   syntax:
     keyword: "#CF222E"
     function: "#8250DF"

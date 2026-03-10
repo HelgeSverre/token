@@ -1092,7 +1092,7 @@ fn test_sync_all_viewports_subtracts_tab_bar_height() {
 
     model
         .editor_area
-        .sync_all_viewports(line_height, model.char_width, tab_bar_height);
+        .sync_all_viewports(line_height, model.char_width, &model.metrics);
 
     // Expected: (600 - 28) / 20 = 572 / 20 = 28 lines
     let expected_visible = (600 - tab_bar_height) / line_height;

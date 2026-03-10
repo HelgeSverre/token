@@ -4,12 +4,12 @@ use std::path::PathBuf;
 
 use crate::commands::Cmd;
 use crate::messages::LayoutMsg;
+use crate::model::editor::{BinaryPlaceholderState, TabContent, ViewMode};
 use crate::model::ui::SplitterDragState;
 use crate::model::{
     AppModel, Document, EditorGroup, EditorState, GroupId, LayoutNode, Rect, SplitContainer,
     SplitDirection, Tab, TabId,
 };
-use crate::model::editor::{BinaryPlaceholderState, TabContent, ViewMode};
 use crate::util::{
     filename_for_display, is_likely_binary, is_supported_image, validate_file_for_opening,
     FileOpenError,
@@ -307,10 +307,8 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
                 let mut editor = EditorState::new();
                 editor.id = Some(editor_id);
                 editor.document_id = Some(doc_id);
-                editor.tab_content = TabContent::BinaryPlaceholder(BinaryPlaceholderState {
-                    path,
-                    size_bytes,
-                });
+                editor.tab_content =
+                    TabContent::BinaryPlaceholder(BinaryPlaceholderState { path, size_bytes });
                 model.editor_area.editors.insert(editor_id, editor);
 
                 let tab_id = model.editor_area.next_tab_id();
@@ -1097,8 +1095,7 @@ fn close_preview_if_not_markdown(model: &mut AppModel) {
 fn sync_viewports(model: &mut AppModel) {
     let line_height = model.line_height;
     let char_width = model.char_width;
-    let tab_bar_height = model.metrics.tab_bar_height;
     model
         .editor_area
-        .sync_all_viewports(line_height, char_width, tab_bar_height);
+        .sync_all_viewports(line_height, char_width, &model.metrics);
 }

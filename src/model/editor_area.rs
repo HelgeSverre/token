@@ -696,16 +696,14 @@ impl EditorArea {
     /// Sync all editor viewports based on their group's rect.
     /// Should be called after compute_layout() or after split/close operations.
     ///
-    /// Uses `ViewportGeometry` methods for canonical calculations to ensure
-    /// consistent viewport sizing across the codebase.
+    /// Uses the active scaled metrics so viewport sizing matches the actual
+    /// rendered gutter/text geometry for each group.
     pub fn sync_all_viewports(
         &mut self,
         line_height: usize,
         char_width: f32,
-        tab_bar_height: usize,
+        metrics: &crate::model::ScaledMetrics,
     ) {
-        use super::ViewportGeometry;
-
         // Collect group rects and their editor IDs
         let group_info: Vec<(Vec<EditorId>, u32, u32)> = self
             .groups
@@ -722,11 +720,20 @@ impl EditorArea {
 
         // Update each editor's viewport based on its group's dimensions
         for (editor_ids, width, height) in group_info {
-            // Subtract tab_bar_height because group rect includes the tab bar area,
+            // Subtract tab bar height because group rect includes the tab bar area,
             // but visible_lines should only count the text content area.
-            let visible_lines =
-                ViewportGeometry::compute_visible_lines(height, line_height, tab_bar_height);
-            let visible_columns = ViewportGeometry::compute_visible_columns(width, char_width);
+            let visible_lines = if line_height > 0 {
+                (height as usize).saturating_sub(metrics.tab_bar_height) / line_height
+            } else {
+                0
+            };
+
+            let text_x = crate::model::text_start_x_scaled(char_width, metrics).round();
+            let visible_columns = if char_width > 0.0 {
+                ((width as f32 - text_x) / char_width).floor().max(1.0) as usize
+            } else {
+                0
+            };
 
             for editor_id in editor_ids {
                 if let Some(editor) = self.editors.get_mut(&editor_id) {

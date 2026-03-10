@@ -172,6 +172,92 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             model.ui.drop_state.cancel_hover();
             Some(Cmd::Redraw)
         }
+
+        // === Scrollbar interaction ===
+        UiMsg::ScrollbarTrackClickedVertical {
+            editor_id,
+            new_position,
+        } => {
+            if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
+                editor.viewport.top_line = new_position;
+            }
+            Some(Cmd::redraw_editor())
+        }
+
+        UiMsg::ScrollbarTrackClickedHorizontal {
+            editor_id,
+            new_position,
+        } => {
+            if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
+                editor.viewport.left_column = new_position;
+            }
+            Some(Cmd::redraw_editor())
+        }
+
+        UiMsg::ScrollbarThumbPressedVertical {
+            editor_id,
+            grab_offset,
+            track_start,
+            track_size,
+            thumb_size,
+            max_scroll,
+        } => {
+            model.ui.scrollbar_drag = Some(crate::model::ui::ScrollbarDragState {
+                editor_id,
+                axis: crate::model::ui::ScrollbarDragAxis::Vertical,
+                grab_offset,
+                track_start,
+                track_size,
+                thumb_size,
+                max_scroll,
+            });
+            None
+        }
+
+        UiMsg::ScrollbarThumbPressedHorizontal {
+            editor_id,
+            grab_offset,
+            track_start,
+            track_size,
+            thumb_size,
+            max_scroll,
+        } => {
+            model.ui.scrollbar_drag = Some(crate::model::ui::ScrollbarDragState {
+                editor_id,
+                axis: crate::model::ui::ScrollbarDragAxis::Horizontal,
+                grab_offset,
+                track_start,
+                track_size,
+                thumb_size,
+                max_scroll,
+            });
+            None
+        }
+
+        UiMsg::ScrollbarDragUpdate { mouse_coord } => {
+            let Some(drag) = &model.ui.scrollbar_drag else {
+                return None;
+            };
+            let new_pos = drag.position_from_mouse(mouse_coord);
+            let editor_id = drag.editor_id;
+            let axis = drag.axis;
+            if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
+                match axis {
+                    crate::model::ui::ScrollbarDragAxis::Vertical => {
+                        editor.viewport.top_line = new_pos.min(drag.max_scroll);
+                    }
+                    crate::model::ui::ScrollbarDragAxis::Horizontal => {
+                        editor.viewport.left_column = new_pos.min(drag.max_scroll);
+                    }
+                }
+            }
+            Some(Cmd::redraw_editor())
+        }
+
+        UiMsg::ScrollbarDragEnd => {
+            model.ui.scrollbar_drag = None;
+            None
+        }
     }
 }
 

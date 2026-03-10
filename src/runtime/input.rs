@@ -11,14 +11,46 @@
 //! - Navigation with selection collapse (moving clears selection first)
 //! - Character input (regular typing)
 
+use std::time::{Duration, Instant};
+
 use winit::keyboard::{Key, NamedKey};
 
 use token::commands::Cmd;
 use token::messages::{
-    CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, UiMsg, WorkspaceMsg,
+    CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, OutlineMsg, UiMsg,
+    WorkspaceMsg,
 };
 use token::model::AppModel;
+use token::panel::{DockPosition, PanelId};
 use token::update::update;
+
+/// Detects Option key double-tap gesture for multi-cursor mode.
+///
+/// When the Option key is pressed twice within 300ms, `double_tapped` is set to true.
+/// It resets when the key is released.
+#[derive(Default)]
+pub struct OptionKeyGesture {
+    last_press: Option<Instant>,
+    pub double_tapped: bool,
+}
+
+impl OptionKeyGesture {
+    /// Call when the Option key is pressed (non-repeat).
+    pub fn on_press(&mut self) {
+        let now = Instant::now();
+        if let Some(last) = self.last_press {
+            if now.duration_since(last) < Duration::from_millis(300) {
+                self.double_tapped = true;
+            }
+        }
+        self.last_press = Some(now);
+    }
+
+    /// Call when the Option key is released.
+    pub fn on_release(&mut self) {
+        self.double_tapped = false;
+    }
+}
 
 /// Handle keyboard input for special cases not covered by keymap
 ///
@@ -59,6 +91,11 @@ pub fn handle_key(
     // Keys that sidebar doesn't handle are consumed (not passed to editor)
     if is_sidebar_focused(model) {
         return handle_sidebar_key(model, &key, ctrl).or(Some(Cmd::Redraw));
+    }
+
+    // Focus capture: route keys to outline panel when right dock outline has focus
+    if is_outline_dock_focused(model) {
+        return handle_outline_dock_key(model, &key).or(Some(Cmd::Redraw));
     }
 
     // Binary placeholder: Enter opens file with default app
@@ -561,6 +598,34 @@ fn handle_sidebar_key(model: &mut AppModel, key: &Key, ctrl: bool) -> Option<Cmd
         }
 
         // Don't consume other keys - let them fall through to normal handling
+        _ => None,
+    }
+}
+
+/// Check if the outline panel (right dock) has keyboard focus
+fn is_outline_dock_focused(model: &AppModel) -> bool {
+    if model.ui.focused_dock() != Some(DockPosition::Right) {
+        return false;
+    }
+
+    let right_dock = model.dock_layout.dock(DockPosition::Right);
+    right_dock.is_open && right_dock.active_panel() == Some(PanelId::Outline)
+}
+
+/// Handle keyboard input when outline panel is focused
+fn handle_outline_dock_key(model: &mut AppModel, key: &Key) -> Option<Cmd> {
+    match key {
+        Key::Named(NamedKey::ArrowUp) => update(model, Msg::Outline(OutlineMsg::SelectPrevious)),
+        Key::Named(NamedKey::ArrowDown) => update(model, Msg::Outline(OutlineMsg::SelectNext)),
+        Key::Named(NamedKey::ArrowRight) => update(model, Msg::Outline(OutlineMsg::ExpandSelected)),
+        Key::Named(NamedKey::ArrowLeft) => {
+            update(model, Msg::Outline(OutlineMsg::CollapseSelected))
+        }
+        Key::Named(NamedKey::Enter) => update(model, Msg::Outline(OutlineMsg::OpenSelected)),
+        Key::Named(NamedKey::Escape) => {
+            model.ui.focus_editor();
+            Some(Cmd::Redraw)
+        }
         _ => None,
     }
 }

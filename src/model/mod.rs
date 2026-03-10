@@ -25,7 +25,8 @@ pub use status_bar::{
 pub use ui::{
     CommandPaletteState, DropState, FileFinderState, FileMatch, FindReplaceField, FindReplaceState,
     FocusTarget, GotoLineState, HoverRegion, ModalId, ModalState, OutlinePanelState,
-    RecentFilesState, SidebarResizeState, ThemePickerState, UiState,
+    RecentFilesState, ScrollbarDragAxis, ScrollbarDragState, SidebarResizeState, ThemePickerState,
+    UiState,
 };
 pub use workspace::{FileExtension, FileNode, FileTree, Workspace};
 
@@ -289,6 +290,8 @@ pub struct ScaledMetrics {
     pub sidebar_max_width_logical: f32,
     /// Resize handle hit zone in physical pixels
     pub resize_handle_zone: usize,
+    /// Scrollbar width in physical pixels
+    pub scrollbar_width: usize,
 }
 
 impl ScaledMetrics {
@@ -322,6 +325,8 @@ impl ScaledMetrics {
     const BASE_SIDEBAR_MAX_WIDTH: f32 = 500.0;
     /// Base resize handle zone at scale factor 1.0
     const BASE_RESIZE_HANDLE_ZONE: f64 = 4.0;
+    /// Base scrollbar width at scale factor 1.0
+    const BASE_SCROLLBAR_WIDTH: f64 = 12.0;
 
     /// Create scaled metrics for the given display scale factor
     pub fn new(scale_factor: f64) -> Self {
@@ -344,6 +349,7 @@ impl ScaledMetrics {
             resize_handle_zone: (Self::BASE_RESIZE_HANDLE_ZONE * scale_factor)
                 .round()
                 .max(2.0) as usize,
+            scrollbar_width: (Self::BASE_SCROLLBAR_WIDTH * scale_factor).round() as usize,
         }
     }
 }

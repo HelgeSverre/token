@@ -701,7 +701,7 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
     model.editor_area.sync_all_viewports(
         font_info.line_height,
         font_info.char_width,
-        model.metrics.tab_bar_height,
+        &model.metrics,
     );
 
     {

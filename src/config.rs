@@ -37,6 +37,12 @@ pub struct EditorConfig {
     /// Highlight matching bracket when cursor is adjacent to one (default: true)
     #[serde(default = "default_true")]
     pub bracket_matching: bool,
+
+    /// Show scrollbars in editor panes (default: true)
+    ///
+    /// When false, no scrollbars are rendered and no space is reserved for them.
+    #[serde(default = "default_true")]
+    pub show_scrollbar: bool,
 }
 
 fn default_theme() -> String {
@@ -58,6 +64,7 @@ impl Default for EditorConfig {
             cursor_blink_ms: default_cursor_blink_ms(),
             auto_surround: true,
             bracket_matching: true,
+            show_scrollbar: true,
         }
     }
 }

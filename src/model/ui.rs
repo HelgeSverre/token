@@ -489,6 +489,43 @@ pub struct SidebarResizeState {
     pub original_width: f32,
 }
 
+/// Which axis a scrollbar drag applies to
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollbarDragAxis {
+    Vertical,
+    Horizontal,
+}
+
+/// State for scrollbar thumb dragging
+#[derive(Debug, Clone)]
+pub struct ScrollbarDragState {
+    /// Which editor's scrollbar is being dragged
+    pub editor_id: crate::model::editor_area::EditorId,
+    /// Whether dragging the vertical or horizontal scrollbar
+    pub axis: ScrollbarDragAxis,
+    /// Where within the thumb the user clicked (pixels from thumb origin)
+    pub grab_offset: f32,
+    /// Track origin on the drag axis (y for vertical, x for horizontal)
+    pub track_start: f32,
+    /// Track length on the drag axis
+    pub track_size: f32,
+    /// Thumb size on the drag axis
+    pub thumb_size: f32,
+    /// Maximum scroll position for this axis
+    pub max_scroll: usize,
+}
+
+impl ScrollbarDragState {
+    /// Compute the scroll position from the current mouse coordinate during drag.
+    pub fn position_from_mouse(&self, mouse_coord: f32) -> usize {
+        let thumb_travel = (self.track_size - self.thumb_size).max(1.0);
+        let thumb_pos =
+            (mouse_coord - self.grab_offset - self.track_start).clamp(0.0, thumb_travel);
+        let ratio = thumb_pos / thumb_travel;
+        (ratio * self.max_scroll as f32).round() as usize
+    }
+}
+
 /// UI state for the outline panel
 #[derive(Debug, Clone, Default)]
 pub struct OutlinePanelState {
@@ -552,6 +589,8 @@ pub struct UiState {
     pub splitter_drag: Option<SplitterDragState>,
     /// Sidebar resize drag state
     pub sidebar_resize: Option<SidebarResizeState>,
+    /// Scrollbar thumb drag state
+    pub scrollbar_drag: Option<ScrollbarDragState>,
     /// Which UI region has keyboard focus
     pub focus: FocusTarget,
     /// Which UI region the mouse is currently hovering over
@@ -578,6 +617,7 @@ impl UiState {
             drop_state: DropState::default(),
             splitter_drag: None,
             sidebar_resize: None,
+            scrollbar_drag: None,
             focus: FocusTarget::Editor,
             hover: HoverRegion::None,
             previous_cursor_lines: Vec::new(),
@@ -600,6 +640,7 @@ impl UiState {
             drop_state: DropState::default(),
             splitter_drag: None,
             sidebar_resize: None,
+            scrollbar_drag: None,
             focus: FocusTarget::Editor,
             hover: HoverRegion::None,
             previous_cursor_lines: Vec::new(),
