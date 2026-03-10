@@ -714,6 +714,106 @@ impl AppModel {
         self.sync_preview_scroll();
     }
 
+    /// Set the vertical scroll position for a specific editor, clamped to its document.
+    pub fn set_editor_vertical_scroll(&mut self, editor_id: EditorId, top_line: usize) -> bool {
+        let Some(doc_id) = self
+            .editor_area
+            .editors
+            .get(&editor_id)
+            .and_then(|editor| editor.document_id)
+        else {
+            return false;
+        };
+
+        let Some(doc_ptr) = self
+            .editor_area
+            .documents
+            .get(&doc_id)
+            .map(|doc| doc as *const Document)
+        else {
+            return false;
+        };
+
+        let changed = {
+            let editor = self.editor_area.editors.get_mut(&editor_id).unwrap();
+            let document = unsafe { &*doc_ptr };
+            editor.set_top_line_clamped(document, top_line)
+        };
+
+        if changed && self.editor_area.focused_editor_id() == Some(editor_id) {
+            self.sync_preview_scroll();
+        }
+
+        changed
+    }
+
+    /// Set the horizontal scroll position for a specific editor, clamped to its visible window.
+    pub fn set_editor_horizontal_scroll(
+        &mut self,
+        editor_id: EditorId,
+        left_column: usize,
+    ) -> bool {
+        let Some(doc_id) = self
+            .editor_area
+            .editors
+            .get(&editor_id)
+            .and_then(|editor| editor.document_id)
+        else {
+            return false;
+        };
+
+        let Some(doc_ptr) = self
+            .editor_area
+            .documents
+            .get(&doc_id)
+            .map(|doc| doc as *const Document)
+        else {
+            return false;
+        };
+
+        let editor = self.editor_area.editors.get_mut(&editor_id).unwrap();
+        let document = unsafe { &*doc_ptr };
+        editor.set_left_column_clamped(document, left_column)
+    }
+
+    /// Scroll the focused editor vertically, clamped to its current document.
+    pub fn scroll_focused_editor_vertical_by(&mut self, delta: isize) -> bool {
+        let Some(doc_id) = self.editor_area.focused_document_id() else {
+            return false;
+        };
+        let Some(editor_id) = self.editor_area.focused_editor_id() else {
+            return false;
+        };
+
+        let doc_ptr = self.editor_area.documents.get(&doc_id).unwrap() as *const Document;
+        let changed = {
+            let editor = self.editor_area.editors.get_mut(&editor_id).unwrap();
+            let document = unsafe { &*doc_ptr };
+            editor.scroll_vertical_by(document, delta)
+        };
+
+        if changed {
+            self.sync_preview_scroll();
+        }
+
+        changed
+    }
+
+    /// Scroll the focused editor horizontally within its visible window.
+    pub fn scroll_focused_editor_horizontal_by(&mut self, delta: isize) -> bool {
+        let Some(doc_id) = self.editor_area.focused_document_id() else {
+            return false;
+        };
+        let Some(editor_id) = self.editor_area.focused_editor_id() else {
+            return false;
+        };
+
+        let doc_ptr = self.editor_area.documents.get(&doc_id).unwrap() as *const Document;
+        let editor = self.editor_area.editors.get_mut(&editor_id).unwrap();
+        let document = unsafe { &*doc_ptr };
+        editor.scroll_horizontal_visible_window_by(document, delta)
+    }
+
     /// Sync any linked preview pane's scroll position with the editor's viewport
     pub fn sync_preview_scroll(&mut self) {
         let Some(doc_id) = self.editor_area.focused_document_id() else {
@@ -776,6 +876,7 @@ impl AppModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ropey::Rope;
 
     #[test]
     fn test_scaled_metrics_standard() {
@@ -844,5 +945,22 @@ mod tests {
         let result = gutter_border_x_scaled(char_width, &metrics);
         let expected = char_width * LINE_NUMBER_GUTTER_CHARS as f32 + 8.0;
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn set_editor_vertical_scroll_syncs_linked_preview_for_focused_editor() {
+        let mut model = AppModel::new(120, 80, 1.0, vec![]);
+        model.document_mut().buffer = Rope::from("a\nb\nc\nd\ne\nf\n");
+        model.editor_mut().resize_viewport(2, 20);
+
+        let preview_id = model.editor_area.open_preview_for_focused_group().unwrap();
+        let editor_id = model.editor_area.focused_editor_id().unwrap();
+
+        assert!(model.set_editor_vertical_scroll(editor_id, 3));
+        assert_eq!(model.editor().viewport.top_line, 3);
+        assert_eq!(
+            model.editor_area.preview(preview_id).unwrap().scroll_offset,
+            3
+        );
     }
 }

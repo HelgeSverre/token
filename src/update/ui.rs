@@ -177,22 +177,16 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
         UiMsg::ScrollbarTrackClickedVertical {
             editor_id,
             new_position,
-        } => {
-            if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
-                editor.viewport.top_line = new_position;
-            }
-            Some(Cmd::redraw_editor())
-        }
+        } => model
+            .set_editor_vertical_scroll(editor_id, new_position)
+            .then_some(Cmd::redraw_editor()),
 
         UiMsg::ScrollbarTrackClickedHorizontal {
             editor_id,
             new_position,
-        } => {
-            if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
-                editor.viewport.left_column = new_position;
-            }
-            Some(Cmd::redraw_editor())
-        }
+        } => model
+            .set_editor_horizontal_scroll(editor_id, new_position)
+            .then_some(Cmd::redraw_editor()),
 
         UiMsg::ScrollbarThumbPressedVertical {
             editor_id,
@@ -241,17 +235,19 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             let new_pos = drag.position_from_mouse(mouse_coord);
             let editor_id = drag.editor_id;
             let axis = drag.axis;
-            if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
-                match axis {
-                    crate::model::ui::ScrollbarDragAxis::Vertical => {
-                        editor.viewport.top_line = new_pos.min(drag.max_scroll);
-                    }
-                    crate::model::ui::ScrollbarDragAxis::Horizontal => {
-                        editor.viewport.left_column = new_pos.min(drag.max_scroll);
-                    }
+            let changed = match axis {
+                crate::model::ui::ScrollbarDragAxis::Vertical => {
+                    model.set_editor_vertical_scroll(editor_id, new_pos.min(drag.max_scroll))
                 }
+                crate::model::ui::ScrollbarDragAxis::Horizontal => {
+                    model.set_editor_horizontal_scroll(editor_id, new_pos.min(drag.max_scroll))
+                }
+            };
+            if changed {
+                Some(Cmd::redraw_editor())
+            } else {
+                None
             }
-            Some(Cmd::redraw_editor())
         }
 
         UiMsg::ScrollbarDragEnd => {

@@ -109,9 +109,10 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 
         EditorMsg::MoveCursorDocumentStart => {
             {
+                let doc = model.document().clone();
                 let editor = model.editor_mut();
                 editor.move_all_cursors_document_start();
-                editor.viewport.top_line = 0;
+                editor.set_top_line_clamped(&doc, 0);
                 editor.collapse_selections_to_cursors();
             }
             model.ensure_cursor_visible();
@@ -125,10 +126,10 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 let editor = model.editor_mut();
                 editor.move_all_cursors_document_end(&doc);
                 let cursor_line = editor.active_cursor().line;
-                let visible_lines = editor.viewport.visible_lines;
-                if cursor_line >= visible_lines {
-                    editor.viewport.top_line = cursor_line - visible_lines + 1;
-                }
+                let bottom_top_line = cursor_line
+                    .saturating_add(1)
+                    .saturating_sub(editor.viewport.visible_lines);
+                editor.set_top_line_clamped(&doc, bottom_top_line);
                 editor.collapse_selections_to_cursors();
             }
             model.ensure_cursor_visible();
@@ -158,7 +159,8 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 let doc = model.document().clone();
                 let editor = model.editor_mut();
                 editor.page_up_all_cursors(&doc, jump);
-                editor.viewport.top_line = editor.viewport.top_line.saturating_sub(jump);
+                let next_top_line = editor.viewport.top_line.saturating_sub(jump);
+                editor.set_top_line_clamped(&doc, next_top_line);
                 editor.collapse_selections_to_cursors();
             }
             model.ensure_cursor_visible_directional(Some(true));
@@ -176,8 +178,8 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 let top_line = editor.viewport.top_line;
                 let visible_lines = editor.viewport.visible_lines;
                 if cursor_line >= top_line + visible_lines {
-                    editor.viewport.top_line =
-                        cursor_line.saturating_sub(visible_lines.saturating_sub(1));
+                    let next_top_line = cursor_line.saturating_sub(visible_lines.saturating_sub(1));
+                    editor.set_top_line_clamped(&doc, next_top_line);
                 }
                 editor.collapse_selections_to_cursors();
             }
@@ -199,68 +201,13 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             Some(Cmd::redraw_editor())
         }
 
-        EditorMsg::Scroll(delta) => {
-            let total_lines = model.document().line_count();
-            let visible_lines = model.editor().viewport.visible_lines;
-            if total_lines <= visible_lines {
-                return None;
-            }
+        EditorMsg::Scroll(delta) => model
+            .scroll_focused_editor_vertical_by(delta as isize)
+            .then_some(Cmd::redraw_editor()),
 
-            let max_top = total_lines.saturating_sub(visible_lines);
-
-            if delta > 0 {
-                model.editor_mut().viewport.top_line =
-                    (model.editor().viewport.top_line + delta as usize).min(max_top);
-            } else if delta < 0 {
-                model.editor_mut().viewport.top_line = model
-                    .editor()
-                    .viewport
-                    .top_line
-                    .saturating_sub(delta.unsigned_abs() as usize);
-            }
-
-            // Sync preview scroll if one exists for this document
-            model.sync_preview_scroll();
-
-            Some(Cmd::redraw_editor())
-        }
-
-        EditorMsg::ScrollHorizontal(delta) => {
-            let top_line = model.editor().viewport.top_line;
-            let visible_lines = model.editor().viewport.visible_lines;
-            let line_count = model.document().line_count();
-            let max_line_len = (top_line..top_line + visible_lines)
-                .filter_map(|i| {
-                    if i < line_count {
-                        Some(model.document().line_length(i))
-                    } else {
-                        None
-                    }
-                })
-                .max()
-                .unwrap_or(0);
-
-            let visible_columns = model.editor().viewport.visible_columns;
-            if max_line_len <= visible_columns {
-                model.editor_mut().viewport.left_column = 0;
-                return None;
-            }
-
-            let max_left = max_line_len.saturating_sub(visible_columns);
-
-            if delta > 0 {
-                model.editor_mut().viewport.left_column =
-                    (model.editor().viewport.left_column + delta as usize).min(max_left);
-            } else if delta < 0 {
-                model.editor_mut().viewport.left_column = model
-                    .editor()
-                    .viewport
-                    .left_column
-                    .saturating_sub(delta.unsigned_abs() as usize);
-            }
-
-            Some(Cmd::redraw_editor())
-        }
+        EditorMsg::ScrollHorizontal(delta) => model
+            .scroll_focused_editor_horizontal_by(delta as isize)
+            .then_some(Cmd::redraw_editor()),
 
         // === Selection Movement (Shift+key) ===
         EditorMsg::MoveCursorWithSelection(direction) => {
@@ -308,9 +255,10 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 
         EditorMsg::MoveCursorDocumentStartWithSelection => {
             {
+                let doc = model.document().clone();
                 let editor = model.editor_mut();
                 editor.move_all_cursors_document_start_with_selection();
-                editor.viewport.top_line = 0;
+                editor.set_top_line_clamped(&doc, 0);
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
@@ -323,10 +271,10 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 let editor = model.editor_mut();
                 editor.move_all_cursors_document_end_with_selection(&doc);
                 let cursor_line = editor.active_cursor().line;
-                let visible_lines = editor.viewport.visible_lines;
-                if cursor_line >= visible_lines {
-                    editor.viewport.top_line = cursor_line - visible_lines + 1;
-                }
+                let bottom_top_line = cursor_line
+                    .saturating_add(1)
+                    .saturating_sub(editor.viewport.visible_lines);
+                editor.set_top_line_clamped(&doc, bottom_top_line);
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
@@ -354,7 +302,8 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 let doc = model.document().clone();
                 let editor = model.editor_mut();
                 editor.page_up_all_cursors_with_selection(&doc, jump);
-                editor.viewport.top_line = editor.viewport.top_line.saturating_sub(jump);
+                let next_top_line = editor.viewport.top_line.saturating_sub(jump);
+                editor.set_top_line_clamped(&doc, next_top_line);
             }
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
@@ -371,8 +320,8 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 let top_line = editor.viewport.top_line;
                 let visible_lines = editor.viewport.visible_lines;
                 if cursor_line >= top_line + visible_lines {
-                    editor.viewport.top_line =
-                        cursor_line.saturating_sub(visible_lines.saturating_sub(1));
+                    let next_top_line = cursor_line.saturating_sub(visible_lines.saturating_sub(1));
+                    editor.set_top_line_clamped(&doc, next_top_line);
                 }
             }
             model.ensure_cursor_visible();

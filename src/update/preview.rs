@@ -44,8 +44,11 @@ pub fn update_preview(model: &mut AppModel, msg: PreviewMsg) -> Option<Cmd> {
             if let Some(preview_id) = model.editor_area.find_preview_for_group(group_id) {
                 if let Some(preview) = model.editor_area.preview(preview_id) {
                     if preview.scroll_sync_enabled {
-                        model.editor_mut().viewport.top_line = line;
-                        return Some(Cmd::Redraw);
+                        if let Some(editor_id) = model.editor_area.focused_editor_id() {
+                            return model
+                                .set_editor_vertical_scroll(editor_id, line)
+                                .then_some(Cmd::Redraw);
+                        }
                     }
                 }
             }

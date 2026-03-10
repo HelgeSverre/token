@@ -40,11 +40,13 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 - `DockHeaderLayout` now owns dock header/content geometry for rendering, hit-testing, and outline interaction.
 - `TextEditorRenderer` now has an explicit visible-line pipeline with staged background, decoration, glyph, and cursor-line redraw paths.
 - `TextViewportMap` now lives in `src/model/editor.rs` and owns the current no-wrap visible-row/column mapping used by text rendering, hit-testing, and cursor reveal logic.
+- `EditorState` now owns clamped viewport mutation for vertical and horizontal text scrolling, and `AppModel` now owns the scroll paths that also need preview-sync side effects.
+- editor scroll wheel handling, scrollbar interaction, and preview-to-editor scroll sync now route through the shared viewport mutation seam instead of writing viewport fields ad hoc.
 
 ### What Still Remains
 
 - popup geometry contracts are still missing if context-menu work begins before a narrower overlay contract is enough.
-- the text renderer still needs more feature-specific decoration inputs, and the new text-viewport seam still needs to reach the remaining editor update/scroll paths before soft wrap work starts.
+- the text renderer still needs more feature-specific decoration inputs, and the new text-viewport seam still needs to reach remaining document-edit viewport adjustments before soft wrap work starts.
 - older docs and transitional seams still need a cleanup pass once the architecture settles.
 
 ## Decision
@@ -481,6 +483,7 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 - keep new text-renderer helpers expressed in terms that could later come from wrapped visual rows
 - avoid spreading new direct uses of `viewport.top_line + screen_line -> doc_line`
 - leave room for folded visual-line mapping, gutter continuation markers, and reveal logic to share the same viewport abstraction
+- move viewport mutation/clamping onto `EditorState` so render, update, scrollbars, and preview sync do not each write viewport fields independently
 
 **Expected benefit:**
 

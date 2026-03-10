@@ -265,6 +265,15 @@ impl TextViewportMap {
     }
 
     #[inline]
+    pub fn clamp_top_line(&self, top_line: usize) -> usize {
+        if !self.has_vertical_scroll() {
+            0
+        } else {
+            top_line.min(self.max_top_line())
+        }
+    }
+
+    #[inline]
     pub fn end_line(&self) -> usize {
         self.top_line
             .saturating_add(self.visible_lines)
@@ -394,6 +403,16 @@ impl TextViewportMap {
                 .saturating_sub(self.visible_columns)
         } else {
             self.left_column
+        }
+    }
+
+    pub fn scroll_vertical_by(&self, delta: isize) -> usize {
+        if delta > 0 {
+            self.clamp_top_line(self.top_line.saturating_add(delta as usize))
+        } else if delta < 0 {
+            self.top_line.saturating_sub(delta.unsigned_abs())
+        } else {
+            self.top_line
         }
     }
 }
@@ -939,6 +958,75 @@ impl EditorState {
         self.viewport.visible_columns = visible_columns;
     }
 
+    /// Build the current no-wrap text viewport map for this editor/document pair.
+    pub fn viewport_map(&self, document: &Document) -> TextViewportMap {
+        TextViewportMap::new(&self.viewport, document.line_count())
+    }
+
+    /// Clamp the viewport's top line against the current document.
+    pub fn set_top_line_clamped(&mut self, document: &Document, top_line: usize) -> bool {
+        let new_top_line = self.viewport_map(document).clamp_top_line(top_line);
+        let changed = self.viewport.top_line != new_top_line;
+        self.viewport.top_line = new_top_line;
+        changed
+    }
+
+    /// Scroll the viewport vertically while respecting the current document bounds.
+    pub fn scroll_vertical_by(&mut self, document: &Document, delta: isize) -> bool {
+        let new_top_line = self.viewport_map(document).scroll_vertical_by(delta);
+        let changed = self.viewport.top_line != new_top_line;
+        self.viewport.top_line = new_top_line;
+        changed
+    }
+
+    /// Return the longest logical line visible in the current viewport window.
+    pub fn max_visible_line_length(&self, document: &Document) -> usize {
+        let viewport = self.viewport_map(document);
+        (viewport.top_line()..viewport.end_line())
+            .map(|line| document.line_length(line))
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Return the maximum horizontal scroll position for the visible viewport window.
+    pub fn max_left_column_for_visible_window(&self, document: &Document) -> usize {
+        self.max_visible_line_length(document)
+            .saturating_sub(self.viewport.visible_columns)
+    }
+
+    /// Clamp the viewport's left column against the visible viewport window.
+    pub fn set_left_column_clamped(&mut self, document: &Document, left_column: usize) -> bool {
+        let new_left_column = left_column.min(self.max_left_column_for_visible_window(document));
+        let changed = self.viewport.left_column != new_left_column;
+        self.viewport.left_column = new_left_column;
+        changed
+    }
+
+    /// Scroll horizontally within the currently visible viewport window.
+    pub fn scroll_horizontal_visible_window_by(
+        &mut self,
+        document: &Document,
+        delta: isize,
+    ) -> bool {
+        let max_left = self.max_left_column_for_visible_window(document);
+        let new_left_column = if delta > 0 {
+            self.viewport
+                .left_column
+                .saturating_add(delta as usize)
+                .min(max_left)
+        } else if delta < 0 {
+            self.viewport
+                .left_column
+                .saturating_sub(delta.unsigned_abs())
+        } else {
+            self.viewport.left_column
+        };
+
+        let changed = self.viewport.left_column != new_left_column;
+        self.viewport.left_column = new_left_column;
+        changed
+    }
+
     /// Ensure the active cursor is visible within the viewport with padding (minimal scroll)
     pub fn ensure_cursor_visible(&mut self, document: &Document) {
         self.ensure_cursor_visible_with_mode(document, ScrollRevealMode::Minimal);
@@ -950,8 +1038,7 @@ impl EditorState {
     /// Only scrolls if the cursor is completely outside the viewport bounds.
     pub fn ensure_cursor_visible_no_padding(&mut self, document: &Document) {
         let cursor = &self.cursors[self.active_cursor_index];
-        let total_lines = document.line_count();
-        let viewport = TextViewportMap::new(&self.viewport, total_lines);
+        let viewport = self.viewport_map(document);
 
         self.viewport.top_line = viewport.reveal_line_no_padding(cursor.line);
 
@@ -969,8 +1056,7 @@ impl EditorState {
     pub fn ensure_cursor_visible_with_mode(&mut self, document: &Document, mode: ScrollRevealMode) {
         let cursor = &self.cursors[self.active_cursor_index];
         let padding = self.scroll_padding;
-        let total_lines = document.line_count();
-        let viewport = TextViewportMap::new(&self.viewport, total_lines);
+        let viewport = self.viewport_map(document);
 
         self.viewport.top_line = viewport.reveal_line_with_mode(cursor.line, padding, mode);
 
@@ -1594,5 +1680,39 @@ mod tests {
         assert_eq!(viewport.reveal_column(6, 4), 2);
         assert_eq!(viewport.reveal_column(12, 4), 8);
         assert_eq!(viewport.reveal_column(30, 4), 15);
+    }
+
+    #[test]
+    fn text_viewport_map_clamps_and_scrolls_top_line() {
+        let mut editor = EditorState::with_viewport(3, 20);
+        editor.viewport.top_line = 2;
+        let document = Document::with_text("a\nb\nc\nd\ne\n");
+        let viewport = editor.viewport_map(&document);
+
+        assert_eq!(viewport.clamp_top_line(99), 3);
+        assert_eq!(viewport.scroll_vertical_by(2), 3);
+        assert_eq!(viewport.scroll_vertical_by(-2), 0);
+    }
+
+    #[test]
+    fn editor_scroll_methods_clamp_to_document_and_visible_window() {
+        let mut editor = EditorState::with_viewport(3, 5);
+        editor.viewport.top_line = 1;
+        let document = Document::with_text("abc\nabcdefghij\nxy\n1234567\nzz\n");
+
+        assert!(editor.set_top_line_clamped(&document, 99));
+        assert_eq!(editor.viewport.top_line, 3);
+
+        assert!(editor.scroll_vertical_by(&document, -1));
+        assert_eq!(editor.viewport.top_line, 2);
+
+        assert_eq!(editor.max_visible_line_length(&document), 7);
+        assert_eq!(editor.max_left_column_for_visible_window(&document), 2);
+
+        assert!(editor.set_left_column_clamped(&document, 99));
+        assert_eq!(editor.viewport.left_column, 2);
+
+        assert!(editor.scroll_horizontal_visible_window_by(&document, -2));
+        assert_eq!(editor.viewport.left_column, 0);
     }
 }
