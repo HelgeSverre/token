@@ -132,12 +132,16 @@ src/
 │   ├── pty.rs              # portable-pty spawn + read/write threads
 │   └── translate_keys.rs   # winit KeyEvent → terminal escape sequences
 ├── panels/
-│   ├── terminal.rs         # Terminal panel rendering (replaces placeholder)
+│   ├── terminal.rs         # Terminal dock-content rendering
 │   └── ...
+├── view/
+│   └── mod.rs              # DockPaneScene / DockContentKind dispatch
 ├── update/
 │   └── terminal.rs         # TerminalMsg handler
 └── messages.rs             # TerminalMsg variants
 ```
+
+The exact renderer file can live in `src/panels/terminal.rs` or alongside other view code, but the important architectural rule is that terminal content should slot into dock scene dispatch (`DockPaneScene` / `DockContentKind`) rather than invent a new panel framework.
 
 ---
 
@@ -311,13 +315,13 @@ All other keys (when terminal is focused) are sent directly to the PTY as escape
 **Goal**: See actual terminal output in the dock panel.
 
 1. [ ] Create `src/panels/terminal.rs` — terminal panel renderer
-2. [ ] Replace `PlaceholderPanel` rendering for `PanelId::Terminal` in `src/view/mod.rs`
+2. [ ] Add terminal content to dock scene dispatch and replace the placeholder content
 3. [ ] Render terminal grid:
    - Iterate `alacritty_terminal` grid cells
    - Map cell colors → theme colors (16-color palette + default fg/bg)
    - Render each character via existing `TextPainter`/fontdue
    - Render block cursor at terminal cursor position
-4. [ ] Compute rows/cols from dock rect + `char_width`/`line_height`
+4. [ ] Compute rows/cols from the resolved dock content rect + `char_width`/`line_height`
 5. [ ] Auto-spawn terminal session when panel first opens
 6. [ ] Handle dock resize → `TerminalMsg::Resize` → PTY resize
 

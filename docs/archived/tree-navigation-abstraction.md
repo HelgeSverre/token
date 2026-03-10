@@ -1,5 +1,7 @@
 # Tree Navigation Abstraction
 
+> Archived 2026-03-10: the immediate outline-navigation gap is implemented, and the remaining generic trait direction is superseded by shared tree utilities plus the rendering-consolidation plan.
+
 Unified keyboard/mouse navigation for tree-style panels: outline, file explorer, todo list, and future tree views.
 
 > **Status:** Planned
@@ -135,4 +137,4 @@ Extract `render_tree_panel()` that takes a `TreeDataSource` + `TreeNavState` and
 - Current sidebar update: `src/update/workspace.rs`
 - Sidebar rendering context: `SidebarRenderContext` in `src/view/mod.rs`
 - Outline rendering context: `OutlineRenderContext` in `src/view/mod.rs`
-- Panel UI abstraction doc: `docs/feature/panel-ui-abstraction.md`
+- Panel UI abstraction doc: `docs/archived/panel-ui-abstraction.md`

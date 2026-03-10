@@ -531,6 +531,8 @@ fn handle_open_target(model: &mut AppModel, target: OpenTarget) -> Cmd {
 - [ ] Implement `open_with_kind()` function
 - [ ] Wire up prompt result to rfd dialogs
 
+The in-app prompt should reuse existing modal primitives instead of introducing a special-case dialog renderer.
+
 **Test:** On Windows/Linux, user is prompted then shown appropriate dialog.
 
 ### Phase 5: Menu Integration

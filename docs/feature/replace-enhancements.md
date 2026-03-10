@@ -616,6 +616,8 @@ impl FindReplaceState {
 - [ ] Show replacement preview on hover/focus
 - [ ] Show confirmation dialog for large replacements
 
+This should reuse the shared modal shell, input, and selectable-list primitives rather than introduce a separate replace-specific dialog framework.
+
 **Test:** Replace All button shows match count.
 
 ### Phase 7: Selection Scope

@@ -107,8 +107,13 @@ src/
 ├── update/
 │   └── folding.rs               # NEW: Fold message handler
 └── view/
-    └── mod.rs                   # + render fold indicators, skip hidden lines
+    ├── editor_text.rs           # TextEditorRenderer renders folded rows / placeholders
+    └── geometry.rs              # GutterLayout fold hit targets
 ```
+
+Basic folding should share the same future text viewport abstraction as soft wrap.
+
+`FoldingState` owns fold regions and collapse state, but visual row iteration, gutter hit-testing, cursor reveal, and scroll capacity should eventually flow through shared viewport state rather than a separate render-only mapping.
 
 ---
 
@@ -442,40 +447,19 @@ pub struct FoldIndicatorTheme {
 }
 ```
 
-### Skip Hidden Lines in Render
+### Folded Rows In Text Rendering
 
 ```rust
-// In view/mod.rs - modify render_document()
+// High-level shape inside TextEditorRenderer
+let viewport = editor.text_viewport(); // future shared visual-line provider
 
-fn render_document(/* ... */) {
-    // ...existing setup...
-
-    let folding = &editor_state.folding_state;
-    let mut visual_line = 0;
-
-    for doc_line in viewport.top_line..viewport.bottom_line() {
-        // Skip hidden lines
-        if folding.is_hidden(doc_line) {
-            continue;
-        }
-
-        let y = y_offset + visual_line * line_height;
-
-        // Render line content
-        render_line(frame, document, doc_line, x, y, /* ... */);
-
-        // If this line starts a collapsed fold, add placeholder
-        if let Some(region) = folding.region_at(doc_line) {
-            if region.collapsed {
-                let line_end_x = /* calculate end of line text */;
-                render_fold_placeholder(frame, region, line_end_x, y, theme, painter);
-            }
-        }
-
-        visual_line += 1;
-    }
+for row in viewport.visible_rows() {
+    render_fold_indicator_if_needed(...); // via GutterLayout
+    render_text_or_fold_placeholder(...); // via TextEditorRenderer
 }
 ```
+
+This should not be implemented as a one-off `render_document()` branch. The same visual-line mapping must eventually serve soft wrap, cursor movement, hit-testing, and scrolling.
 
 ---
 
@@ -575,11 +559,11 @@ pub enum FoldMsg {
 
 **Effort:** M (2-3 days)
 
-- [ ] Implement `render_fold_indicators()` in gutter
-- [ ] Modify `render_document()` to skip hidden lines
-- [ ] Implement `render_fold_placeholder()`
-- [ ] Update viewport calculations for visual lines
-- [ ] Handle scrolling with collapsed folds
+- [ ] Implement `render_fold_indicators()` against shared gutter layout
+- [ ] Make the text renderer consume visible rows from folded viewport mapping
+- [ ] Implement `render_fold_placeholder()` as part of the text rendering pipeline
+- [ ] Update viewport calculations through shared text viewport state
+- [ ] Handle scrolling and visible-row capacity through the same mapping
 
 **Test:** Collapse fold, verify hidden lines don't render, placeholder shown.
 
@@ -588,7 +572,7 @@ pub enum FoldMsg {
 **Effort:** S (1 day)
 
 - [ ] When cursor moves into hidden line, expand containing fold
-- [ ] When clicking gutter indicator, toggle fold
+- [ ] When clicking gutter indicator, toggle fold via shared gutter hit targets
 - [ ] Update cursor position after fold/unfold
 
 **Test:** Arrow down into collapsed region, verify it expands.

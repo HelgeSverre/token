@@ -111,14 +111,23 @@ Conversion:
 
 ```
 src/
-├── wrap.rs                   # NEW: WrapCache, wrap computation
+├── wrap.rs                   # Wrap algorithms and visual-line cache helpers
 ├── model/
-│   └── editor.rs             # Add soft_wrap: bool, wrap_cache: WrapCache
-├── view.rs                   # Use wrap cache for rendering
+│   └── editor.rs             # Add soft_wrap: bool and future text viewport state
 ├── update/
-│   └── editor.rs             # Coordinate conversion in cursor movement
-└── input.rs                  # Mouse position conversion
+│   └── editor.rs             # Cursor movement / scrolling via visual-line mapping
+├── view/
+│   ├── editor_text.rs        # TextEditorRenderer consumes visual rows
+│   └── geometry.rs           # Shared cursor / hit-test conversion
+└── runtime/
+    └── input.rs              # Mouse routing uses the same visual mapping
 ```
+
+### Alignment With Current Renderer Plan
+
+Soft wrap should not be implemented as a render-only cache bolted onto one draw loop.
+
+The wrap data should either become, or feed, the future shared text viewport abstraction (`TextViewportModel`, `VisualLineMap`, or equivalent) so render, cursor reveal, scrolling, gutter presentation, and hit-testing all use the same mapping.
 
 ---
 
@@ -502,52 +511,17 @@ When soft wrap is enabled:
 
 **Test:** Toggle works, cache invalidates on edit
 
-### Phase 3: Rendering with Wrap
+### Phase 3: Text Viewport + Rendering
 
 **Estimated effort: 4-5 days**
 
-1. [ ] Modify `render_document()` to iterate visual lines
-2. [ ] For each visual line, render the correct segment of the logical line
-3. [ ] Calculate `visible_visual_lines` for viewport
-4. [ ] Update gutter to show logical line numbers correctly
-5. [ ] Show continuation indicator (e.g., no line number, or `...`)
+1. [ ] Make `TextEditorRenderer` iterate visible visual rows rather than raw document lines
+2. [ ] Drive scrolling, cursor reveal, and hit-testing from the same visual-line provider
+3. [ ] Use shared gutter geometry for logical line numbers and continuation markers
+4. [ ] Keep selections, cursors, and bracket highlights expressed in visual-row terms
+5. [ ] Update scrollbar sizing and viewport capacity calculations to visual rows
 
-```rust
-// Rendering pseudocode
-fn render_with_wrap(
-    &mut self,
-    editor: &EditorState,
-    document: &Document,
-    viewport_visual_start: usize,
-    viewport_visual_count: usize,
-) {
-    for visual_line in viewport_visual_start..(viewport_visual_start + viewport_visual_count) {
-        let logical_line = editor.wrap_cache.visual_line_to_logical(visual_line);
-        let is_continuation = editor.wrap_cache.is_continuation(visual_line);
-
-        // Find which segment of the logical line this visual line represents
-        if let Some(segments) = editor.wrap_cache.get_segments(logical_line) {
-            for seg in segments {
-                if seg.visual_line == visual_line {
-                    let line_text = document.get_line(logical_line).unwrap_or_default();
-                    let segment_text = &line_text[seg.start_col..seg.start_col + seg.len];
-
-                    // Render line number (only for first segment)
-                    if !is_continuation {
-                        self.draw_line_number(logical_line + 1, y);
-                    } else {
-                        self.draw_continuation_marker(y);
-                    }
-
-                    // Render text segment
-                    self.draw_text(segment_text, x, y, ...);
-                    break;
-                }
-            }
-        }
-    }
-}
-```
+**Implementation note:** This phase should plug into the future shared text viewport seam from the rendering-consolidation plan rather than add one-off `render_document()` logic.
 
 **Test:** Long lines wrap visually, line numbers are correct
 
@@ -836,4 +810,5 @@ fn test_cursor_movement_with_wrap() {
 - VS Code word wrap: https://code.visualstudio.com/docs/editor/codebasics#_how-do-i-turn-on-word-wrap
 - Ropey line operations: https://docs.rs/ropey/latest/ropey/
 - Existing viewport: `src/model/editor.rs` (Viewport struct)
-- Existing rendering: `src/view.rs`
+- Existing text rendering: `src/view/editor_text.rs`
+- Existing shared geometry: `src/view/geometry.rs`

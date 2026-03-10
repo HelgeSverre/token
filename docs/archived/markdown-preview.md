@@ -1,5 +1,7 @@
 # Markdown Preview
 
+> Archived 2026-03-10: implemented feature. Kept as historical design/reference.
+
 Live preview pane for Markdown files with synchronized scrolling
 
 > **Status:** ✅ Implemented (Native + Webview)

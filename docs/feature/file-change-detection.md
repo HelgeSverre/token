@@ -511,6 +511,8 @@ Show indicator in tab when external change is pending:
 4. [ ] Handle `KeepLocal`: dismiss modal, clear `external_change`
 5. [ ] Handle `ShowDiff`: (defer to future diff feature)
 
+This modal should be built from the shared modal shell/actions path, not as a one-off dialog renderer.
+
 **Test:** Complete flow from external change to user choice
 
 ### Phase 5: Auto-Save Integration

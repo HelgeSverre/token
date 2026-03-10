@@ -62,6 +62,8 @@ Detailed specifications for major features, located in `docs/feature/`:
 | Syntax Highlighting | ✅ MVP | [syntax-highlighting.md](archived/syntax-highlighting.md) |
 | Workspace Management | ✅ P0-6 | [workspace-management.md](archived/workspace-management.md) |
 | CSV Viewer/Editor | ✅ P1-2 | [csv-editor.md](archived/csv-editor.md) |
+| Recent Files | ✅ MVP | [recent-files.md](archived/recent-files.md) |
+| Markdown Preview | ✅ | [markdown-preview.md](archived/markdown-preview.md) |
 
 ### Planned Features
 
@@ -70,7 +72,6 @@ Detailed specifications for major features, located in `docs/feature/`:
 | Command Palette Enhancements | 1 - Navigation | [command-palette-enhancements.md](future/command-palette-enhancements.md) |
 | Quick Open | 1 - Navigation | planned |
 | Go to Line Enhancements | 1 - Navigation | [goto-line-enhancements.md](future/goto-line-enhancements.md) |
-| Recent Files | 1 - Navigation | [recent-files.md](feature/recent-files.md) |
 | Find Enhancements | 2 - Search & Editing | [find-enhancements.md](feature/find-enhancements.md) |
 | Replace Enhancements | 2 - Search & Editing | [replace-enhancements.md](feature/replace-enhancements.md) |
 | Select Next Occurrence | 2 - Search & Editing | [select-next-occurrence.md](archived/select-next-occurrence.md) |
@@ -83,7 +84,6 @@ Detailed specifications for major features, located in `docs/feature/`:
 | Soft Wrap | 4 - Hard Problems | [soft-wrap.md](feature/soft-wrap.md) |
 | Code Folding | 4 - Hard Problems | planned |
 | Diff Gutter | 5 - Insight Tools | [diff-gutter.md](feature/diff-gutter.md) |
-| Markdown Preview | 5 - Insight Tools | [markdown-preview.md](feature/markdown-preview.md) |
 | Snippets | 6 - Productivity | [snippets.md](feature/snippets.md) |
 
 ---

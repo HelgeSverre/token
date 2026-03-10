@@ -93,9 +93,15 @@ src/
 ├── runtime/
 │   └── app.rs                 # Right-click handling, keyboard interception
 └── view/
-    ├── mod.rs                 # Menu rendering
-    └── geometry.rs            # Menu hit-testing
+    ├── mod.rs                 # Overlay-phase menu rendering
+    └── geometry.rs            # PopupMenuLayout + tab/menu hit-testing
 ```
+
+In the current renderer plan, this feature should align with three shared seams:
+
+- `PopupMenuLayout` for menu bounds and item rects
+- `TabBarLayout` for tab-specific context targets
+- the shared overlay policy for z-order, click-away consume rules, and keyboard capture
 
 ### Message Flow
 
@@ -736,7 +742,7 @@ Mouse coordinates from winit are already in physical pixels. Sidebar width, row 
 For V1, context menus force full redraws, same as modals:
 
 ```rust
-// In Renderer::compute_effective_damage
+// During RenderPlan / effective-damage evaluation
 fn compute_effective_damage(&self, model: &AppModel, requested: Damage) -> Damage {
     // Force full redraw for overlays
     if model.ui.has_modal() 
@@ -749,7 +755,7 @@ fn compute_effective_damage(&self, model: &AppModel, requested: Damage) -> Damag
 }
 ```
 
-This is simple and correct. Partial redraw optimization for menus can be added later if needed.
+This is simple and correct. Partial redraw optimization for menus can be added later if needed, but the policy should live in the shared overlay/render-plan path rather than a context-menu-only special case.
 
 ### Z-Order
 
@@ -1059,14 +1065,14 @@ For V1:
 
 **Effort:** M (3-5 days)
 
-- [ ] Implement menu rendering in `view/mod.rs`:
+- [ ] Implement menu rendering in the overlay phase of `view/mod.rs`:
   - Draw background panel with border/shadow
   - Render menu items with labels
   - Highlight active/hovered item
   - Render shortcut hints right-aligned
   - Render separators as horizontal lines
 - [ ] Implement menu geometry helpers in `view/geometry.rs`:
-  - `compute_menu_rect(anchor, items, metrics) -> Rect`
+  - `PopupMenuLayout` for anchor/menu/item rects
   - `hit_test_menu_item(menu_state, x, y, metrics) -> Option<usize>`
   - Clamp menu position to window bounds
 - [ ] Wire up mouse hover → `ContextMenuMsg::HoverItem`
@@ -1220,7 +1226,7 @@ fn test_shortcut_hint_provider() {
 
 ### Internal Docs
 
-- [Panel UI Abstraction](./panel-ui-abstraction.md) - Related overlay/popup patterns
+- [Panel UI Abstraction](../archived/panel-ui-abstraction.md) - Historical reference only; the current renderer plan intentionally avoids that trait-based direction
 
 ### External Resources
 
@@ -1299,11 +1305,11 @@ Resolved during spec:
 ### View Layer
 
 - [ ] `src/view/mod.rs`:
-  - [ ] Add `render_context_menu()` function
-  - [ ] Call it in main render path after editor/status bar, before modals
+  - [ ] Add `render_context_menu()` in the overlay phase
+  - [ ] Call it after editor/status bar, before modals
 
 - [ ] `src/view/geometry.rs`:
-  - [ ] Add `compute_menu_rect()` function
+  - [ ] Add `PopupMenuLayout` / `compute_menu_rect()` function
   - [ ] Add `hit_test_menu_item()` function
   - [ ] Add `TabHitResult` struct
   - [ ] Add `hit_test_tab()` function (reusable for left-click too)

@@ -609,10 +609,10 @@ impl Default for SearchHighlightTheme {
 
 ### Phase 4: Match Highlighting
 
-**Files:** `src/view/editor.rs`, `src/theme.rs`
+**Files:** `src/view/editor_text.rs`, `src/theme.rs`
 
 - [ ] Add `SearchHighlightTheme` to theme
-- [ ] Render match highlights in visible viewport
+- [ ] Render match highlights in visible viewport through the text decoration pipeline
 - [ ] Distinguish current match from other matches
 - [ ] Use semi-transparent overlays for readability
 
@@ -784,4 +784,4 @@ fn test_selection_only_scope() {
 - **VS Code:** Find bar with options and highlighting
 - **Sublime Text:** Incremental search with regex support
 - **Theme:** `src/theme.rs` - Color definitions
-- **Rendering:** `src/view/editor.rs` - Text rendering
+- **Rendering:** `src/view/editor_text.rs` - Text rendering / viewport highlights

@@ -1,5 +1,7 @@
 # Panel UI Abstraction
 
+> Archived 2026-03-10: superseded by the existing dock system and the rendering-consolidation plan. Kept as historical context only.
+
 A unified docking panel system for workspace sidebar, terminal, outline, and future panels.
 
 > **Status:** 📋 Planned

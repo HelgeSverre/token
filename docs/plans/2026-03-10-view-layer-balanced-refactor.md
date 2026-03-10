@@ -17,9 +17,9 @@ The goal is to land this in small, low-risk slices that also fix known UI incons
 ## Existing Docs To Fold In
 
 - [`docs/POTENTIAL-REFACTORS.md`](../POTENTIAL-REFACTORS.md)
-- [`docs/feature/panel-ui-abstraction.md`](../feature/panel-ui-abstraction.md)
-- [`docs/feature/tree-navigation-abstraction.md`](../feature/tree-navigation-abstraction.md)
-- [`docs/feature/damage-tracking.md`](../feature/damage-tracking.md)
+- [`docs/archived/panel-ui-abstraction.md`](../archived/panel-ui-abstraction.md)
+- [`docs/archived/tree-navigation-abstraction.md`](../archived/tree-navigation-abstraction.md)
+- [`docs/feature/DAMAGE-TRACKING.md`](../feature/DAMAGE-TRACKING.md)
 - [`docs/plans/2026-02-27-sidebar-clipping.md`](./2026-02-27-sidebar-clipping.md)
 
 These already point toward the same direction: layout should be shared, trees should be unified, and render work should be split into reusable building blocks instead of feature-local ad hoc code.

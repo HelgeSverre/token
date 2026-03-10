@@ -90,6 +90,17 @@ impl Frame {
 
 ## Proposed Design
 
+### Alignment With Current Renderer Plan
+
+This document should now be read together with the rendering-consolidation plan.
+
+The key alignment points are:
+
+- damage evaluation belongs in the frame-level render plan, not in scattered per-feature conditionals
+- overlay policy decides when damage is forced to `Full`
+- initial partial redraw should stay coarse and conservative
+- modal, popup menu, drop overlay, and debug/perf overlays should continue to force `Damage::Full` until their invalidation rules stabilize
+
 ### Damage Granularity
 
 Two high-level regions aligned with render structure:
@@ -100,6 +111,8 @@ Two high-level regions aligned with render structure:
 | `StatusBar` | Bottom status line | Status text changes |
 
 **Why coarse?** Fine-grained (per-line, per-group) adds complexity with diminishing returns for a lightweight editor. The common case (cursor blink, typing) only needs EditorArea.
+
+Overlays are intentionally not a partial-redraw target in the first version. They should stay on the `Damage::Full` path until the overlay policy and redraw ownership are stable.
 
 ### Damage Types
 
@@ -196,38 +209,26 @@ impl Cmd {
 
 **Files:** `src/view/mod.rs`
 
-1. Compute effective damage (force Full for modals, overlays, etc.)
+1. Build a frame-level render plan and compute effective damage there
 2. Implement conditional rendering paths
 3. Only clear damaged regions, not full frame
 
 ```rust
 pub fn render(&mut self, model: &mut AppModel, perf: &mut PerfStats, damage: &Damage) -> Result<()> {
-    // ... existing resize/layout logic ...
-    
-    // Force full redraw for complex cases
-    let effective_damage = if model.ui.active_modal.is_some() {
-        Damage::Full
-    } else {
-        damage.clone()
-    };
-    
-    #[cfg(debug_assertions)]
-    let effective_damage = if perf.should_show_overlay() || model.debug_overlay.is_some() {
-        Damage::Full
-    } else {
-        effective_damage
-    };
-    
-    match effective_damage {
+    let plan = self.build_render_plan(model, perf, damage);
+
+    match plan.effective_damage {
         Damage::Full => {
-            // Current full render path
+            self.render_full_frame(model, perf, &plan)
         }
         Damage::Areas(ref areas) => {
-            // Partial render path - only clear and render damaged areas
+            self.render_partial_frame(model, perf, &plan, areas)
         }
     }
 }
 ```
+
+`build_render_plan()` is where overlay policy applies. If a modal, popup menu, file-drop overlay, or debug/perf overlay is active, the effective damage should remain `Full` until those layers have stable invalidation rules.
 
 ### Phase 4: Wire Up Update Functions (1-2 hours)
 
@@ -386,7 +387,7 @@ fn test_cmd_damage_computation() {
 
 **Problem:** `frame.dim()` darkens existing pixels. Re-applying it compounds the effect.
 
-**Guardrail:** Always use `Damage::Full` when modal is active.
+**Guardrail:** Always use `Damage::Full` when modal, popup menu, file-drop overlay, or debug/perf overlay is active.
 
 ### Risk: Overlapping Regions
 

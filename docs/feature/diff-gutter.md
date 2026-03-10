@@ -100,8 +100,13 @@ src/
 ├── update/
 │   └── document.rs              # + trigger diff recompute after edits
 └── view/
-    └── mod.rs                   # + render_diff_gutter()
+    ├── editor_text.rs           # TextEditorRenderer gutter/chrome pass
+    └── geometry.rs              # GutterLayout for marker lanes and hit targets
 ```
+
+Diff computation can stay feature-local, but rendering should align with the shared gutter contract.
+
+The important seam is: diff state answers "what changed on this logical line?", while `GutterLayout` and the text rendering pipeline answer "where does that marker draw in the current viewport?".
 
 ### Message Flow
 
@@ -565,6 +570,8 @@ fn render_delete_marker(
 }
 ```
 
+Alignment note: in the current renderer direction, the marker draw call should be driven by shared gutter geometry and visible rows from the text viewport. Wrapped or folded views should still draw one marker per logical line, usually on the first visible visual row.
+
 ---
 
 ## Keybindings
@@ -639,10 +646,10 @@ fn render_delete_marker(
 
 **Effort:** M (2-3 days)
 
-- [ ] Implement `render_diff_gutter()` in diff/gutter.rs
-- [ ] Integrate into main render loop
-- [ ] Adjust gutter width calculations to include diff marker
-- [ ] Handle scrolling and viewport correctly
+- [ ] Implement diff marker rendering in `diff/gutter.rs`
+- [ ] Integrate into the text renderer's gutter/chrome pass
+- [ ] Adjust gutter width calculations to include a diff marker lane
+- [ ] Handle scrolling, wrap, and folding through the shared viewport mapping
 - [ ] Test with various theme colors
 
 **Test:** Modified line shows yellow marker in gutter.

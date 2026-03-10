@@ -1,5 +1,7 @@
 # Recent Files
 
+> Archived 2026-03-10: implemented feature. Kept as historical design/reference.
+
 Persistent recent files list with quick access menu and integration with Quick Open.
 
 > **Status:** Done (MVP: Phases 1–5)

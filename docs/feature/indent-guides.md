@@ -97,10 +97,14 @@ src/
 │   ├── scope.rs         # Active scope detection (tree-sitter)
 │   └── renderer.rs      # Guide line rendering
 ├── view/
-│   └── editor.rs        # Integrate guide rendering
+│   └── editor_text.rs   # Integrate guides into the text decoration pipeline
 └── model/
     └── editor.rs        # IndentGuideConfig
 ```
+
+Indent guides should land as a text-decoration pass, not as one more ad hoc editor draw hook.
+
+The renderer-specific job is "draw vertical guides for these visible rows"; line/depth detection can remain feature-local.
 
 ---
 
@@ -383,19 +387,14 @@ fn is_scope_node(node: &tree_sitter::Node) -> bool {
 ```rust
 // In src/indent_guides/renderer.rs
 
-use crate::view::RenderContext;
-
-/// Render indent guides for visible lines
+/// Render indent guides for visible rows inside TextEditorRenderer
 pub fn render_indent_guides(
     ctx: &mut RenderContext,
     config: &IndentGuideConfig,
     indent_infos: &[IndentInfo],
     active_scopes: &[ScopeInfo],
-    viewport_top: usize,
-    indent_size: usize,
-    char_width: f32,
-    line_height: f32,
-    gutter_width: f32,
+    viewport: &TextViewportModel,
+    metrics: &TextMetrics,
 ) {
     if !config.enabled {
         return;
@@ -407,12 +406,12 @@ pub fn render_indent_guides(
         .map(|s| s.start_line..=s.end_line);
     
     for (visual_idx, info) in indent_infos.iter().enumerate() {
-        let line_idx = viewport_top + visual_idx;
-        let y = visual_idx as f32 * line_height;
+        let line_idx = viewport.row(visual_idx).logical_line;
+        let y = viewport.row(visual_idx).y;
         
         // Draw guide for each depth level
         for depth in config.min_depth..=info.depth.min(config.max_depth) {
-            let x = gutter_width + (depth * indent_size) as f32 * char_width;
+            let x = metrics.text_origin_x + (depth * metrics.indent_width) as f32;
             
             // Determine if this is the active scope guide
             let is_active = config.highlight_active 
@@ -432,7 +431,7 @@ pub fn render_indent_guides(
             // Draw vertical line
             ctx.draw_line(
                 x, y,
-                x, y + line_height,
+                x, y + metrics.line_height,
                 color,
                 thickness,
             );
@@ -490,7 +489,7 @@ fn guide_color(depth: usize, config: &IndentGuideConfig) -> Color {
 
 1. [ ] Add `IndentGuideConfig` to `EditorState`
 2. [ ] Implement basic vertical line rendering
-3. [ ] Render guides in editor view (after gutter, before text)
+3. [ ] Render guides in the text decoration pipeline (after backgrounds, before glyphs)
 4. [ ] Basic opacity gradient coloring
 5. [ ] Toggle keybinding
 
@@ -647,4 +646,4 @@ fn main() {
 - Sublime Text "indent_guide_options"
 - JetBrains IDEs: Scope highlighting feature
 - Tree-sitter: https://tree-sitter.github.io/tree-sitter/
-- Existing highlighting: `src/view/editor.rs`
+- Existing text rendering: `src/view/editor_text.rs`

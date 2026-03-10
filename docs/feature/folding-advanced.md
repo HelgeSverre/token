@@ -21,7 +21,9 @@ This document covers **advanced folding features** that build on the basic inden
 Before implementing this phase:
 - ✅ Basic indentation-based folding working
 - ✅ Fold regions, toggle, and rendering complete
-- ✅ Visual line mapping for collapsed folds
+- ✅ Shared text viewport / visual-line mapping for collapsed folds
+
+Advanced folding should build on the same shared viewport abstraction used by soft wrap and basic folding. It should not introduce a second visual mapping path.
 
 ### Goals (This Phase)
 
