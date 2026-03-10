@@ -46,8 +46,8 @@ impl EditorPalette {
 }
 
 /// Shared layout-derived values for editor text rendering.
-struct EditorRenderContext<'a> {
-    layout: &'a geometry::GroupLayout,
+struct EditorRenderContext {
+    viewport: geometry::TextViewportMap,
     char_width: f32,
     line_height: usize,
     rect_x: usize,
@@ -59,22 +59,22 @@ struct EditorRenderContext<'a> {
     text_start_x: usize,
     visible_lines: usize,
     visible_columns: usize,
-    end_line: usize,
 }
 
-impl<'a> EditorRenderContext<'a> {
+impl EditorRenderContext {
     fn new(
-        layout: &'a geometry::GroupLayout,
+        layout: &geometry::GroupLayout,
         editor: &EditorState,
         document: &Document,
         char_width: f32,
         line_height: usize,
     ) -> Self {
+        let viewport = geometry::TextViewportMap::new(editor, document);
         let visible_lines = layout.visible_lines(line_height);
         let visible_columns = layout.visible_columns(char_width);
 
         Self {
-            layout,
+            viewport,
             char_width,
             line_height,
             rect_x: layout.rect_x(),
@@ -86,18 +86,14 @@ impl<'a> EditorRenderContext<'a> {
             text_start_x: layout.text_start_x,
             visible_lines,
             visible_columns,
-            end_line: editor
-                .viewport
-                .top_line
-                .saturating_add(visible_lines)
-                .min(document.buffer.len_lines()),
         }
     }
 
     #[inline]
-    fn line_y(&self, doc_line: usize, viewport_top: usize) -> Option<usize> {
-        self.layout
-            .line_to_screen_y(doc_line, viewport_top, self.line_height)
+    fn line_y(&self, doc_line: usize) -> Option<usize> {
+        self.viewport
+            .visible_row_for_doc_line(doc_line, self.visible_lines)
+            .map(|visible_row| self.content_y + visible_row * self.line_height)
     }
 
     #[inline]
@@ -175,7 +171,7 @@ struct TextEditorRenderer<'a> {
     model: &'a AppModel,
     editor: &'a EditorState,
     document: &'a Document,
-    ctx: EditorRenderContext<'a>,
+    ctx: EditorRenderContext,
     palette: EditorPalette,
     text_buffers: EditorTextBuffers,
 }
@@ -205,22 +201,17 @@ impl<'a> TextEditorRenderer<'a> {
 
     #[inline]
     fn viewport_left(&self) -> usize {
-        self.editor.viewport.left_column
-    }
-
-    #[inline]
-    fn viewport_top(&self) -> usize {
-        self.editor.viewport.top_line
+        self.ctx.viewport.left_column()
     }
 
     #[inline]
     fn line_screen_y(&self, doc_line: usize) -> Option<usize> {
-        self.ctx.line_y(doc_line, self.viewport_top())
+        self.ctx.line_y(doc_line)
     }
 
     fn selection_span_for_line(
         document: &Document,
-        ctx: &EditorRenderContext<'_>,
+        ctx: &EditorRenderContext,
         viewport_left: usize,
         selection: &Selection,
         doc_line: usize,
@@ -254,7 +245,7 @@ impl<'a> TextEditorRenderer<'a> {
     }
 
     fn rectangle_selection_span_for_line(
-        ctx: &EditorRenderContext<'_>,
+        ctx: &EditorRenderContext,
         viewport_left: usize,
         rect_sel: &crate::model::editor::RectangleSelectionState,
         doc_line: usize,
@@ -325,13 +316,13 @@ impl<'a> TextEditorRenderer<'a> {
     }
 
     fn render_current_line_background_stage(&self, frame: &mut Frame) {
-        if self.editor.active_cursor().line < self.viewport_top()
-            || self.editor.active_cursor().line >= self.ctx.end_line
-        {
+        let Some(screen_line) = self
+            .ctx
+            .viewport
+            .visible_row_for_doc_line(self.editor.active_cursor().line, self.ctx.visible_lines)
+        else {
             return;
-        }
-
-        let screen_line = self.editor.active_cursor().line - self.viewport_top();
+        };
         let highlight_y = self.ctx.content_y + screen_line * self.ctx.line_height;
         let highlight_h = self
             .ctx
@@ -569,13 +560,13 @@ impl<'a> TextEditorRenderer<'a> {
         }
 
         for (idx, cursor) in self.editor.cursors.iter().enumerate() {
-            let cursor_in_vertical_view = cursor.line >= self.viewport_top()
-                && cursor.line < self.viewport_top() + self.ctx.visible_lines;
-            if !cursor_in_vertical_view {
+            let Some(screen_line) = self
+                .ctx
+                .viewport
+                .visible_row_for_doc_line(cursor.line, self.ctx.visible_lines)
+            else {
                 continue;
-            }
-
-            let screen_line = cursor.line - self.viewport_top();
+            };
             let y = self.ctx.content_y + screen_line * self.ctx.line_height;
             let cursor_color = if idx == 0 {
                 self.palette.primary_cursor
@@ -592,13 +583,13 @@ impl<'a> TextEditorRenderer<'a> {
         }
 
         for preview_pos in &self.editor.rectangle_selection.preview_cursors {
-            let cursor_in_vertical_view = preview_pos.line >= self.viewport_top()
-                && preview_pos.line < self.viewport_top() + self.ctx.visible_lines;
-            if !cursor_in_vertical_view {
+            let Some(screen_line) = self
+                .ctx
+                .viewport
+                .visible_row_for_doc_line(preview_pos.line, self.ctx.visible_lines)
+            else {
                 continue;
-            }
-
-            let screen_line = preview_pos.line - self.viewport_top();
+            };
             let y = self.ctx.content_y + screen_line * self.ctx.line_height;
             self.render_cursor_at(
                 frame,
@@ -632,7 +623,11 @@ impl<'a> TextEditorRenderer<'a> {
         dirty_lines: &[usize],
     ) {
         for &doc_line in dirty_lines {
-            if doc_line < self.viewport_top() || doc_line >= self.ctx.end_line {
+            if !self
+                .ctx
+                .viewport
+                .contains_doc_line(doc_line, self.ctx.visible_lines)
+            {
                 continue;
             }
 
@@ -651,7 +646,10 @@ impl<'a> TextEditorRenderer<'a> {
     fn render_text_area(&mut self, frame: &mut Frame, painter: &mut TextPainter, is_focused: bool) {
         self.render_current_line_background_stage(frame);
 
-        for (screen_line, doc_line) in (self.viewport_top()..self.ctx.end_line).enumerate() {
+        for screen_line in 0..self.ctx.visible_lines {
+            let Some(doc_line) = self.ctx.viewport.doc_line_for_visible_row(screen_line) else {
+                break;
+            };
             let y = self.ctx.content_y + screen_line * self.ctx.line_height;
             if y >= self.ctx.content_y + self.ctx.content_h {
                 break;
@@ -676,7 +674,10 @@ impl<'a> TextEditorRenderer<'a> {
             self.palette.gutter_background,
         );
 
-        for (screen_line, doc_line) in (self.viewport_top()..self.ctx.end_line).enumerate() {
+        for screen_line in 0..self.ctx.visible_lines {
+            let Some(doc_line) = self.ctx.viewport.doc_line_for_visible_row(screen_line) else {
+                break;
+            };
             let y = self.ctx.content_y + screen_line * self.ctx.line_height;
             if y >= self.ctx.content_y + self.ctx.content_h {
                 break;

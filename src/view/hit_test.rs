@@ -21,7 +21,8 @@ use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, 
 use crate::model::{AppModel, FocusTarget, ModalState};
 
 use super::geometry::{
-    is_in_status_bar, DockHeaderLayout, PreviewPaneLayout, TabBarLayout, WindowLayout,
+    is_in_status_bar, DockHeaderLayout, PreviewPaneLayout, TabBarLayout, TextViewportMap,
+    WindowLayout,
 };
 
 // ============================================================================
@@ -812,7 +813,8 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     if pt.x >= group.rect.x as f64 && pt.x < gutter_x_end && pt.y >= content_y_start {
         // Compute which line was clicked
         let local_y = pt.y - content_y_start;
-        let line = (local_y / model.line_height as f64) as usize + editor.viewport.top_line;
+        let viewport = TextViewportMap::new(editor, document);
+        let line = viewport.doc_line_for_pixel_y(local_y, model.line_height as f64);
         return Some(HitTarget::EditorGutter {
             group_id,
             editor_id,

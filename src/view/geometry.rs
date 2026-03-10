@@ -27,6 +27,93 @@ pub fn status_bar_height(line_height: usize) -> usize {
     line_height
 }
 
+/// No-wrap mapping between viewport rows/columns and logical document positions.
+///
+/// This is the current seam for text rendering and hit-testing code that needs
+/// to answer "which logical line/column does this visible row or pixel map
+/// to?". Soft wrap and folding can later replace or extend this mapping
+/// without forcing each caller to open-code `top_line + visual_row`.
+#[derive(Debug, Clone, Copy)]
+pub struct TextViewportMap {
+    top_line: usize,
+    left_column: usize,
+    line_count: usize,
+}
+
+impl TextViewportMap {
+    pub fn new(editor: &EditorState, document: &Document) -> Self {
+        Self {
+            top_line: editor.viewport.top_line,
+            left_column: editor.viewport.left_column,
+            line_count: document.buffer.len_lines(),
+        }
+    }
+
+    #[inline]
+    pub fn top_line(&self) -> usize {
+        self.top_line
+    }
+
+    #[inline]
+    pub fn left_column(&self) -> usize {
+        self.left_column
+    }
+
+    #[inline]
+    pub fn last_line(&self) -> usize {
+        self.line_count.saturating_sub(1)
+    }
+
+    #[inline]
+    pub fn end_line(&self, visible_lines: usize) -> usize {
+        self.top_line
+            .saturating_add(visible_lines)
+            .min(self.line_count)
+    }
+
+    #[inline]
+    pub fn doc_line_for_visible_row(&self, visible_row: usize) -> Option<usize> {
+        let doc_line = self.top_line.saturating_add(visible_row);
+        (doc_line < self.line_count).then_some(doc_line)
+    }
+
+    #[inline]
+    pub fn visible_row_for_doc_line(&self, doc_line: usize, visible_lines: usize) -> Option<usize> {
+        if doc_line < self.top_line || doc_line >= self.line_count {
+            return None;
+        }
+
+        let visible_row = doc_line - self.top_line;
+        (visible_row < visible_lines).then_some(visible_row)
+    }
+
+    #[inline]
+    pub fn contains_doc_line(&self, doc_line: usize, visible_lines: usize) -> bool {
+        self.visible_row_for_doc_line(doc_line, visible_lines)
+            .is_some()
+    }
+
+    #[inline]
+    pub fn doc_line_for_pixel_y(&self, adjusted_y: f64, line_height: f64) -> usize {
+        if line_height <= 0.0 {
+            return self.top_line.min(self.last_line());
+        }
+
+        let visible_row = (adjusted_y.max(0.0) / line_height).floor() as usize;
+        self.doc_line_for_visible_row(visible_row)
+            .unwrap_or_else(|| self.last_line())
+    }
+
+    #[inline]
+    pub fn visual_column_for_x_offset(&self, x_offset: f64, char_width: f32) -> usize {
+        if x_offset > 0.0 {
+            self.left_column + (x_offset / char_width as f64).round() as usize
+        } else {
+            self.left_column
+        }
+    }
+}
+
 // ============================================================================
 // Tab Expansion Helpers
 // ============================================================================
@@ -467,6 +554,7 @@ pub fn pixel_to_line_and_visual_column_in_group(
     editor: &EditorState,
     document: &Document,
 ) -> (usize, usize) {
+    let viewport = TextViewportMap::new(editor, document);
     let local_x = x - group_rect.x as f64;
     let local_y = y - group_rect.y as f64;
 
@@ -474,16 +562,10 @@ pub fn pixel_to_line_and_visual_column_in_group(
 
     let text_start_y = model.metrics.tab_bar_height as f64;
     let adjusted_y = (local_y - text_start_y).max(0.0);
-    let visual_line = (adjusted_y / line_height).floor() as usize;
-    let line = editor.viewport.top_line + visual_line;
-    let line = line.min(document.buffer.len_lines().saturating_sub(1));
+    let line = viewport.doc_line_for_pixel_y(adjusted_y, line_height);
 
     let x_offset = local_x - text_x;
-    let visual_column = if x_offset > 0.0 {
-        editor.viewport.left_column + (x_offset / char_width as f64).round() as usize
-    } else {
-        editor.viewport.left_column
-    };
+    let visual_column = viewport.visual_column_for_x_offset(x_offset, char_width);
 
     (line, visual_column)
 }
@@ -504,22 +586,17 @@ pub fn pixel_to_cursor_in_group(
     editor: &EditorState,
     document: &Document,
 ) -> (usize, usize) {
+    let viewport = TextViewportMap::new(editor, document);
     let local_x = x - group_rect.x as f64;
     let local_y = y - group_rect.y as f64;
 
     let text_x = crate::model::text_start_x_scaled(char_width, &model.metrics).round() as f64;
     let text_start_y = model.metrics.tab_bar_height as f64;
     let adjusted_y = (local_y - text_start_y).max(0.0);
-    let visual_line = (adjusted_y / line_height).floor() as usize;
-    let line = editor.viewport.top_line + visual_line;
-    let line = line.min(document.buffer.len_lines().saturating_sub(1));
+    let line = viewport.doc_line_for_pixel_y(adjusted_y, line_height);
 
     let x_offset = local_x - text_x;
-    let visual_column = if x_offset > 0.0 {
-        editor.viewport.left_column + (x_offset / char_width as f64).round() as usize
-    } else {
-        editor.viewport.left_column
-    };
+    let visual_column = viewport.visual_column_for_x_offset(x_offset, char_width);
 
     let line_text = document.get_line(line).unwrap_or_default();
     let line_text_trimmed = super::helpers::trim_line_ending(&line_text);
@@ -1791,6 +1868,7 @@ pub fn binary_placeholder_layout(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{Document, EditorState};
 
     #[test]
     fn test_is_in_status_bar() {
@@ -1804,6 +1882,45 @@ mod tests {
     fn test_expand_tabs() {
         assert_eq!(expand_tabs_for_display("a\tb"), "a   b"); // tab at col 1 -> 3 spaces
         assert_eq!(expand_tabs_for_display("\t"), "    "); // tab at col 0 -> 4 spaces
+    }
+
+    #[test]
+    fn text_viewport_map_maps_visible_rows_and_doc_lines() {
+        let mut editor = EditorState::with_viewport(3, 80);
+        editor.viewport.top_line = 2;
+        editor.viewport.left_column = 5;
+        let document = Document::with_text("a\nb\nc\nd\ne\n");
+        let viewport = TextViewportMap::new(&editor, &document);
+
+        assert_eq!(viewport.top_line(), 2);
+        assert_eq!(viewport.left_column(), 5);
+        assert_eq!(viewport.doc_line_for_visible_row(0), Some(2));
+        assert_eq!(viewport.doc_line_for_visible_row(2), Some(4));
+        assert_eq!(viewport.doc_line_for_visible_row(3), Some(5));
+        assert_eq!(viewport.end_line(editor.viewport.visible_lines), 5);
+        assert_eq!(
+            viewport.visible_row_for_doc_line(1, editor.viewport.visible_lines),
+            None
+        );
+        assert_eq!(
+            viewport.visible_row_for_doc_line(4, editor.viewport.visible_lines),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn text_viewport_map_clamps_pixel_and_column_conversion() {
+        let mut editor = EditorState::with_viewport(3, 80);
+        editor.viewport.top_line = 1;
+        editor.viewport.left_column = 4;
+        let document = Document::with_text("a\nb\nc\n");
+        let viewport = TextViewportMap::new(&editor, &document);
+
+        assert_eq!(viewport.doc_line_for_pixel_y(0.0, 20.0), 1);
+        assert_eq!(viewport.doc_line_for_pixel_y(41.0, 20.0), 3);
+        assert_eq!(viewport.doc_line_for_pixel_y(400.0, 20.0), 3);
+        assert_eq!(viewport.visual_column_for_x_offset(-3.0, 8.0), 4);
+        assert_eq!(viewport.visual_column_for_x_offset(17.0, 8.0), 6);
     }
 
     #[test]

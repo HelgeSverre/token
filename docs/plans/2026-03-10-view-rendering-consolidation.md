@@ -25,8 +25,9 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 - `Phase 1` is complete.
 - `Phase 2` is complete.
 - `Phase 3` is complete.
-- `Phase 4` is in progress.
-- `Phase 4.5` through `Phase 5` have not started.
+- `Phase 4` is complete.
+- `Phase 4.5` is in progress.
+- `Phase 5` has not started.
 
 ### What Has Landed
 
@@ -38,11 +39,12 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 - `PreviewPaneLayout` now owns preview header/content geometry for rendering, hit-testing, and hosted webview placement.
 - `DockHeaderLayout` now owns dock header/content geometry for rendering, hit-testing, and outline interaction.
 - `TextEditorRenderer` now has an explicit visible-line pipeline with staged background, decoration, glyph, and cursor-line redraw paths.
+- `TextViewportMap` now owns the current no-wrap visible-row/column mapping used by text rendering and cursor hit-testing.
 
 ### What Still Remains
 
 - popup geometry contracts are still missing if context-menu work begins before a narrower overlay contract is enough.
-- the text renderer still needs future text-viewport seam work for soft wrap readiness and more feature-specific decoration inputs.
+- the text renderer still needs more feature-specific decoration inputs, and the new text-viewport seam still needs to reach scroll/reveal paths before soft wrap work starts.
 - older docs and transitional seams still need a cleanup pass once the architecture settles.
 
 ## Decision
@@ -438,7 +440,7 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 
 ### Phase 4: Text Decoration Pipeline
 
-**Status:** In Progress
+**Status:** Complete
 
 **Goal:** make the text renderer the clear home for future editor features.
 
@@ -461,7 +463,7 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 
 ### Phase 4.5: Text Viewport Readiness
 
-**Status:** Not Started
+**Status:** In Progress
 
 **Goal:** prepare the text rendering path for future soft wrap and folding without implementing either feature here.
 
