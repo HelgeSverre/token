@@ -23,8 +23,9 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 ### Current Snapshot
 
 - `Phase 1` is complete.
-- `Phase 2` is in progress.
-- `Phase 3` through `Phase 5` have not started.
+- `Phase 2` is complete.
+- `Phase 3` is in progress.
+- `Phase 4` through `Phase 5` have not started.
 
 ### What Has Landed
 
@@ -32,11 +33,11 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 - `EditorGroupScene` and `EditorContentKind` now own editor-group content resolution and local render order.
 - `PreviewPaneScene` now owns preview content resolution for hosted vs native preview rendering.
 - `DockPaneScene` and `DockContentKind` now own active dock-content resolution for outline vs placeholder dock panels.
+- `TabBarLayout` now owns group-tab geometry for both rendering and hit-testing.
 
 ### What Still Remains
 
-- `Phase 2` still needs broader pane-content follow-through where future hosted/native pane behavior can share more lifecycle and interaction ownership instead of staying render-only.
-- tab-strip, preview-chrome, dock-header, and popup geometry contracts are still missing.
+- preview-chrome, dock-header, and popup geometry contracts are still missing.
 - the text renderer still needs a deliberate decoration pipeline and future text-viewport seam work for soft wrap readiness.
 - older docs and transitional seams still need a cleanup pass once the architecture settles.
 
@@ -375,7 +376,7 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 
 ### Phase 2: Editor Group Scene
 
-**Status:** In Progress
+**Status:** Completed
 
 **Goal:** make group rendering data-first and remove inline content dispatch complexity.
 
@@ -404,7 +405,7 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 
 ### Phase 3: Shared Layout Contracts For Tabs And Preview/Dock Chrome
 
-**Status:** Not Started
+**Status:** In Progress
 
 **Goal:** stop adding new interactive geometry as feature-local math.
 

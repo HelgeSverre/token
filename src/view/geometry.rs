@@ -7,7 +7,7 @@
 //! All functions here are pure (no I/O, no side effects) and can be
 //! tested independently of the rendering infrastructure.
 
-use crate::model::editor_area::{EditorGroup, Rect};
+use crate::model::editor_area::{EditorGroup, Rect, TabId};
 use crate::model::{AppModel, Document, EditorState, ScaledMetrics};
 
 // ============================================================================
@@ -180,39 +180,104 @@ pub fn is_in_status_bar(y: f64, window_height: u32, line_height: usize) -> bool 
     y >= status_bar_top
 }
 
-/// Check if a point is within a group's tab bar region
-#[inline]
-pub fn is_in_group_tab_bar(y: f64, group_rect: &Rect, tab_bar_height: usize) -> bool {
-    let local_y = y - group_rect.y as f64;
-    local_y >= 0.0 && local_y < tab_bar_height as f64
-}
-
 use super::helpers::get_tab_display_name;
 
-/// Find which tab index is at the given x position within a group's tab bar.
-/// Returns None if the click is not on any tab.
-pub fn tab_at_position(
-    x: f64,
-    char_width: f32,
-    model: &AppModel,
-    group: &EditorGroup,
-) -> Option<usize> {
-    let metrics = &model.metrics;
-    let mut tab_x = metrics.padding_medium as f64;
+#[derive(Debug, Clone)]
+pub struct TabBarTab {
+    pub index: usize,
+    pub tab_id: TabId,
+    pub title: String,
+    pub x: usize,
+    pub y: usize,
+    pub width: usize,
+    pub height: usize,
+    pub text_x: usize,
+    pub text_y: usize,
+    pub is_active: bool,
+}
 
-    for (idx, tab) in group.tabs.iter().enumerate() {
-        let title = get_tab_display_name(model, tab);
-        let tab_width =
-            (title.len() as f32 * char_width).round() as f64 + (metrics.padding_large * 2) as f64;
+#[derive(Debug, Clone)]
+pub struct TabBarLayout {
+    pub rect_x: usize,
+    pub rect_y: usize,
+    pub rect_w: usize,
+    pub rect_h: usize,
+    pub border_y: usize,
+    pub tabs: Vec<TabBarTab>,
+}
 
-        if x >= tab_x && x < tab_x + tab_width {
-            return Some(idx);
+impl TabBarLayout {
+    pub fn new(group: &EditorGroup, model: &AppModel, char_width: f32) -> Self {
+        let metrics = &model.metrics;
+        let rect_x = group.rect.x.round() as usize;
+        let rect_y = group.rect.y.round() as usize;
+        let rect_w = group.rect.width.round() as usize;
+        let rect_h = metrics.tab_bar_height;
+        let border_y = (rect_y + rect_h).saturating_sub(1);
+        let tab_y = rect_y + metrics.padding_small;
+        let tab_height = rect_h.saturating_sub(metrics.padding_medium);
+        let right_edge = rect_x + rect_w;
+
+        let mut tabs = Vec::with_capacity(group.tabs.len());
+        let mut tab_x = rect_x + metrics.padding_medium;
+
+        for (index, tab) in group.tabs.iter().enumerate() {
+            if tab_x >= right_edge {
+                break;
+            }
+
+            let title = get_tab_display_name(model, tab);
+            let title_chars = title.chars().count();
+            let ideal_width =
+                (title_chars as f32 * char_width).round() as usize + metrics.padding_large * 2;
+            let width = ideal_width.min(right_edge.saturating_sub(tab_x));
+
+            tabs.push(TabBarTab {
+                index,
+                tab_id: tab.id,
+                title,
+                x: tab_x,
+                y: tab_y,
+                width,
+                height: tab_height,
+                text_x: tab_x + metrics.padding_large,
+                text_y: tab_y + metrics.padding_medium,
+                is_active: index == group.active_tab_index,
+            });
+
+            tab_x += ideal_width + metrics.padding_small;
         }
 
-        tab_x += tab_width + metrics.padding_small as f64;
+        Self {
+            rect_x,
+            rect_y,
+            rect_w,
+            rect_h,
+            border_y,
+            tabs,
+        }
     }
 
-    None
+    #[inline]
+    pub fn contains(&self, x: f64, y: f64) -> bool {
+        x >= self.rect_x as f64
+            && x < (self.rect_x + self.rect_w) as f64
+            && y >= self.rect_y as f64
+            && y < (self.rect_y + self.rect_h) as f64
+    }
+
+    pub fn tab_at(&self, x: f64, y: f64) -> Option<&TabBarTab> {
+        if !self.contains(x, y) {
+            return None;
+        }
+
+        self.tabs.iter().find(|tab| {
+            x >= tab.x as f64
+                && x < (tab.x + tab.width) as f64
+                && y >= tab.y as f64
+                && y < (tab.y + tab.height) as f64
+        })
+    }
 }
 
 /// Convert pixel coordinates to document line and column for the focused editor.
@@ -1606,6 +1671,64 @@ mod tests {
         };
 
         assert_eq!(layout.visible_columns(10.0), 14);
+    }
+
+    #[test]
+    fn test_tab_bar_layout_hits_tabs_and_empty_space() {
+        let mut model = crate::model::AppModel::new(400, 300, 1.0, vec![]);
+        let group_id = model.editor_area.focused_group_id;
+
+        {
+            let group = model.editor_area.groups.get_mut(&group_id).unwrap();
+            group.rect = Rect::new(10.0, 20.0, 260.0, 120.0);
+
+            let mut second_tab = group.tabs[0].clone();
+            second_tab.id = crate::model::editor_area::TabId(999);
+            group.tabs.push(second_tab);
+        }
+
+        let group = model.editor_area.groups.get(&group_id).unwrap();
+        let layout = TabBarLayout::new(group, &model, 8.0);
+
+        assert_eq!(layout.tabs.len(), 2);
+        assert!(layout.contains(11.0, 21.0));
+        assert!(layout
+            .tab_at((layout.rect_x + 1) as f64, (layout.rect_y + 1) as f64)
+            .is_none());
+
+        let first = layout
+            .tab_at((layout.tabs[0].x + 1) as f64, (layout.tabs[0].y + 1) as f64)
+            .unwrap();
+        assert_eq!(first.index, 0);
+        assert_eq!(first.tab_id, group.tabs[0].id);
+
+        let second = layout
+            .tab_at((layout.tabs[1].x + 1) as f64, (layout.tabs[1].y + 1) as f64)
+            .unwrap();
+        assert_eq!(second.index, 1);
+        assert_eq!(second.tab_id, group.tabs[1].id);
+    }
+
+    #[test]
+    fn test_tab_bar_layout_clips_tabs_at_group_edge() {
+        let mut model = crate::model::AppModel::new(400, 300, 1.0, vec![]);
+        let group_id = model.editor_area.focused_group_id;
+
+        {
+            let group = model.editor_area.groups.get_mut(&group_id).unwrap();
+            group.rect = Rect::new(10.0, 20.0, 70.0, 120.0);
+
+            let mut second_tab = group.tabs[0].clone();
+            second_tab.id = crate::model::editor_area::TabId(999);
+            group.tabs.push(second_tab);
+        }
+
+        let group = model.editor_area.groups.get(&group_id).unwrap();
+        let layout = TabBarLayout::new(group, &model, 8.0);
+        let right_edge = layout.rect_x + layout.rect_w;
+
+        assert_eq!(layout.tabs.len(), 1);
+        assert_eq!(layout.tabs[0].x + layout.tabs[0].width, right_edge);
     }
 
     #[test]

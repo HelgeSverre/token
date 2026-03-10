@@ -1077,33 +1077,31 @@ impl Renderer {
         painter: &mut TextPainter,
         model: &AppModel,
         group: &EditorGroup,
-        layout: &geometry::GroupLayout,
+        _layout: &geometry::GroupLayout,
     ) {
         let metrics = &model.metrics;
-        let char_width = painter.char_width();
-        let rect_x = layout.rect_x();
-        let rect_y = layout.rect_y();
-        let rect_w = layout.rect_w();
-        let tab_bar_height = layout.tab_bar_height;
+        let tab_bar = geometry::TabBarLayout::new(group, model, painter.char_width());
 
         let tab_bar_bg = model.theme.tab_bar.background.to_argb_u32();
-        frame.fill_rect_px(rect_x, rect_y, rect_w, tab_bar_height, tab_bar_bg);
+        frame.fill_rect_px(
+            tab_bar.rect_x,
+            tab_bar.rect_y,
+            tab_bar.rect_w,
+            tab_bar.rect_h,
+            tab_bar_bg,
+        );
 
         let border_color = model.theme.tab_bar.border.to_argb_u32();
-        let border_y = (rect_y + tab_bar_height).saturating_sub(1);
-        frame.fill_rect_px(rect_x, border_y, rect_w, metrics.border_width, border_color);
+        frame.fill_rect_px(
+            tab_bar.rect_x,
+            tab_bar.border_y,
+            tab_bar.rect_w,
+            metrics.border_width,
+            border_color,
+        );
 
-        let mut tab_x = rect_x + metrics.padding_medium;
-        let tab_height = tab_bar_height.saturating_sub(metrics.padding_medium);
-        let tab_y = rect_y + metrics.padding_small;
-
-        for (idx, tab) in group.tabs.iter().enumerate() {
-            let is_active = idx == group.active_tab_index;
-            let display_name = get_tab_display_name(model, tab);
-            let tab_width = (display_name.len() as f32 * char_width).round() as usize
-                + metrics.padding_large * 2;
-
-            let (bg_color, fg_color) = if is_active {
+        for tab in &tab_bar.tabs {
+            let (bg_color, fg_color) = if tab.is_active {
                 (
                     model.theme.tab_bar.active_background.to_argb_u32(),
                     model.theme.tab_bar.active_foreground.to_argb_u32(),
@@ -1115,17 +1113,8 @@ impl Renderer {
                 )
             };
 
-            let actual_tab_width = tab_width.min(rect_x + rect_w - tab_x);
-            frame.fill_rect_px(tab_x, tab_y, actual_tab_width, tab_height, bg_color);
-
-            let text_x = tab_x + metrics.padding_large;
-            let text_y = tab_y + metrics.padding_medium;
-            painter.draw(frame, text_x, text_y, &display_name, fg_color);
-
-            tab_x += tab_width + metrics.padding_small;
-            if tab_x >= rect_x + rect_w {
-                break;
-            }
+            frame.fill_rect_px(tab.x, tab.y, tab.width, tab.height, bg_color);
+            painter.draw(frame, tab.text_x, tab.text_y, &tab.title, fg_color);
         }
     }
 

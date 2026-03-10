@@ -20,7 +20,7 @@ use crate::commands::filter_commands;
 use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, TabId};
 use crate::model::{AppModel, FocusTarget, ModalState};
 
-use super::geometry::{is_in_group_tab_bar, is_in_status_bar, Pane, WindowLayout};
+use super::geometry::{is_in_status_bar, Pane, TabBarLayout, WindowLayout};
 
 // ============================================================================
 // Core Types
@@ -650,29 +650,19 @@ pub fn hit_test_previews(model: &AppModel, pt: Point) -> Option<HitTarget> {
 /// clicking in the tab bar but not on a tab, or `EditorContent`/`CsvCell`
 /// if clicking in the editor content area.
 pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<HitTarget> {
-    let tab_bar_height = model.metrics.tab_bar_height;
-
     // First check which group contains the point
     let group_id = model.editor_area.group_at_point(pt.x as f32, pt.y as f32)?;
     let group = model.editor_area.groups.get(&group_id)?;
+    let tab_bar = TabBarLayout::new(group, model, char_width);
 
     // Check if in tab bar
-    if is_in_group_tab_bar(pt.y, &group.rect, tab_bar_height)
-        && pt.x >= group.rect.x as f64
-        && pt.x < (group.rect.x + group.rect.width) as f64
-    {
-        let local_x = pt.x - group.rect.x as f64;
-
-        // Find which tab was clicked using geometry
-        if let Some(tab_index) = super::geometry::tab_at_position(local_x, char_width, model, group)
-        {
-            if let Some(tab) = group.tabs.get(tab_index) {
-                return Some(HitTarget::GroupTab {
-                    group_id,
-                    tab_index,
-                    tab_id: tab.id,
-                });
-            }
+    if tab_bar.contains(pt.x, pt.y) {
+        if let Some(tab) = tab_bar.tab_at(pt.x, pt.y) {
+            return Some(HitTarget::GroupTab {
+                group_id,
+                tab_index: tab.index,
+                tab_id: tab.tab_id,
+            });
         }
 
         return Some(HitTarget::GroupTabBarEmpty { group_id });
@@ -815,7 +805,7 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     // Check if in gutter area
     let gutter_width = crate::model::gutter_border_x_scaled(char_width, &model.metrics) as f64;
     let gutter_x_end = group.rect.x as f64 + gutter_width;
-    let content_y_start = group.rect.y as f64 + tab_bar_height as f64;
+    let content_y_start = (tab_bar.rect_y + tab_bar.rect_h) as f64;
 
     if pt.x >= group.rect.x as f64 && pt.x < gutter_x_end && pt.y >= content_y_start {
         // Compute which line was clicked
