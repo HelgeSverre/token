@@ -7,6 +7,137 @@ use super::frame::{Frame, TextPainter};
 use super::geometry::{OutlinePanelLayout, TreeListLayout};
 use super::tree_view::{render_tree, TreeRenderLayout};
 
+enum DockContentKind {
+    Outline,
+    Placeholder {
+        title: &'static str,
+        message: &'static str,
+    },
+}
+
+struct DockPaneScene {
+    position: crate::panel::DockPosition,
+    rect: Rect,
+    border_color: u32,
+    text_color: u32,
+    bg_color: u32,
+    content: DockContentKind,
+}
+
+impl DockPaneScene {
+    fn resolve(model: &AppModel, position: crate::panel::DockPosition, rect: Rect) -> Option<Self> {
+        let dock = model.dock_layout.dock(position);
+        if !dock.is_open || dock.panel_ids.is_empty() {
+            return None;
+        }
+
+        let theme = &model.theme.sidebar;
+        let active_panel = dock
+            .active_panel()
+            .unwrap_or(crate::panel::PanelId::TERMINAL);
+        let content = if active_panel == crate::panel::PanelId::Outline {
+            DockContentKind::Outline
+        } else {
+            let placeholder = crate::panels::PlaceholderPanel::new(active_panel);
+            DockContentKind::Placeholder {
+                title: placeholder.title(),
+                message: placeholder.message(),
+            }
+        };
+
+        Some(Self {
+            position,
+            rect,
+            border_color: theme.border.to_argb_u32(),
+            text_color: theme.foreground.to_argb_u32(),
+            bg_color: theme.background.to_argb_u32(),
+            content,
+        })
+    }
+
+    fn render(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
+        self.render_chrome(frame);
+
+        match &self.content {
+            DockContentKind::Outline => {
+                render_outline_panel(
+                    frame,
+                    painter,
+                    model,
+                    self.rect,
+                    self.text_color,
+                    self.bg_color,
+                );
+            }
+            DockContentKind::Placeholder { title, message } => {
+                self.render_placeholder_content(frame, painter, model, title, message);
+            }
+        }
+    }
+
+    fn render_chrome(&self, frame: &mut Frame) {
+        frame.fill_rect(self.rect, self.bg_color);
+
+        match self.position {
+            crate::panel::DockPosition::Left => {
+                frame.fill_rect(
+                    Rect::new(
+                        self.rect.x + self.rect.width - 1.0,
+                        self.rect.y,
+                        1.0,
+                        self.rect.height,
+                    ),
+                    self.border_color,
+                );
+            }
+            crate::panel::DockPosition::Right => {
+                frame.fill_rect(
+                    Rect::new(self.rect.x, self.rect.y, 1.0, self.rect.height),
+                    self.border_color,
+                );
+            }
+            crate::panel::DockPosition::Bottom => {
+                frame.fill_rect(
+                    Rect::new(self.rect.x, self.rect.y, self.rect.width, 1.0),
+                    self.border_color,
+                );
+            }
+        }
+    }
+
+    fn render_placeholder_content(
+        &self,
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        title: &str,
+        message: &str,
+    ) {
+        let title_x = self.rect.x + model.metrics.padding_large as f32;
+        let title_y = self.rect.y + model.metrics.padding_large as f32;
+        painter.draw(
+            frame,
+            title_x as usize,
+            title_y as usize,
+            title,
+            self.text_color,
+        );
+
+        let char_width = painter.char_width();
+        let line_height = painter.line_height();
+        let text_width = message.len() as f32 * char_width;
+        let text_x = self.rect.x + (self.rect.width - text_width) / 2.0;
+        let text_y = self.rect.y + (self.rect.height - line_height as f32) / 2.0;
+        painter.draw(
+            frame,
+            text_x as usize,
+            text_y as usize,
+            message,
+            self.text_color,
+        );
+    }
+}
+
 /// Context for sidebar rendering, holding constant values throughout tree traversal.
 struct SidebarRenderContext {
     sidebar_width: usize,
@@ -170,64 +301,11 @@ pub fn render_dock(
     position: crate::panel::DockPosition,
     rect: Rect,
 ) {
-    let dock = model.dock_layout.dock(position);
-    if !dock.is_open || dock.panel_ids.is_empty() {
+    let Some(scene) = DockPaneScene::resolve(model, position, rect) else {
         return;
-    }
+    };
 
-    let theme = &model.theme.sidebar; // Use sidebar theme for now
-    let border_color = theme.border.to_argb_u32();
-    let text_color = theme.foreground.to_argb_u32();
-    let bg_color = theme.background.to_argb_u32();
-
-    // Fill background
-    frame.fill_rect(rect, bg_color);
-
-    // Draw border on edge facing the editor
-    match position {
-        crate::panel::DockPosition::Left => {
-            // Border on right edge
-            frame.fill_rect(
-                Rect::new(rect.x + rect.width - 1.0, rect.y, 1.0, rect.height),
-                border_color,
-            );
-        }
-        crate::panel::DockPosition::Right => {
-            // Border on left edge
-            frame.fill_rect(Rect::new(rect.x, rect.y, 1.0, rect.height), border_color);
-        }
-        crate::panel::DockPosition::Bottom => {
-            // Border on top edge
-            frame.fill_rect(Rect::new(rect.x, rect.y, rect.width, 1.0), border_color);
-        }
-    }
-
-    let active_panel = dock.active_panel();
-
-    // Dispatch to panel-specific rendering
-    if active_panel == Some(crate::panel::PanelId::Outline) {
-        render_outline_panel(frame, painter, model, rect, text_color, bg_color);
-    } else {
-        // Placeholder for other panels
-        let placeholder = active_panel
-            .map(crate::panels::PlaceholderPanel::new)
-            .unwrap_or_else(|| {
-                crate::panels::PlaceholderPanel::new(crate::panel::PanelId::TERMINAL)
-            });
-
-        let title = placeholder.title();
-        let title_x = rect.x + model.metrics.padding_large as f32;
-        let title_y = rect.y + model.metrics.padding_large as f32;
-        painter.draw(frame, title_x as usize, title_y as usize, title, text_color);
-
-        let message = placeholder.message();
-        let char_width = painter.char_width();
-        let line_height = painter.line_height();
-        let text_width = message.len() as f32 * char_width;
-        let text_x = rect.x + (rect.width - text_width) / 2.0;
-        let text_y = rect.y + (rect.height - line_height as f32) / 2.0;
-        painter.draw(frame, text_x as usize, text_y as usize, message, text_color);
-    }
+    scene.render(frame, painter, model);
 }
 
 /// Render the outline panel showing document symbols as a tree
