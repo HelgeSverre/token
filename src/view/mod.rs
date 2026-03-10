@@ -353,7 +353,7 @@ impl<'a> EditorGroupScene<'a> {
     fn render_content(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
         match &self.content {
             EditorContentKind::Text { document } => {
-                Renderer::render_text_area(
+                editor_text::render_text_area(
                     frame,
                     painter,
                     model,
@@ -362,7 +362,14 @@ impl<'a> EditorGroupScene<'a> {
                     &self.layout,
                     self.is_focused,
                 );
-                Renderer::render_gutter(frame, painter, model, self.editor, document, &self.layout);
+                editor_text::render_gutter(
+                    frame,
+                    painter,
+                    model,
+                    self.editor,
+                    document,
+                    &self.layout,
+                );
             }
             EditorContentKind::Csv { state } => {
                 Renderer::render_csv_grid(
@@ -710,15 +717,6 @@ impl Renderer {
             let status_bg = model.theme.status_bar.background.to_argb_u32();
             frame.fill_rect(plan.window_layout.status_bar_rect, status_bg);
         }
-    }
-
-    fn render_cursor_lines_only(
-        frame: &mut Frame,
-        painter: &mut TextPainter,
-        model: &AppModel,
-        dirty_lines: &[usize],
-    ) {
-        editor_text::render_cursor_lines_only(frame, painter, model, dirty_lines);
     }
 
     /// Render the entire editor area: all groups, preview panes, and splitters.
@@ -1141,42 +1139,6 @@ impl Renderer {
         rect: crate::model::editor_area::Rect,
     ) {
         panels::render_dock(frame, painter, model, position, rect);
-    }
-
-    /// Render the gutter (line numbers and border) for an editor group.
-    ///
-    /// Draws:
-    /// - Line numbers (highlighted for current line)
-    /// - Gutter border line
-    fn render_gutter(
-        frame: &mut Frame,
-        painter: &mut TextPainter,
-        model: &AppModel,
-        editor_state: &crate::model::EditorState,
-        document: &crate::model::Document,
-        layout: &geometry::GroupLayout,
-    ) {
-        editor_text::render_gutter(frame, painter, model, editor_state, document, layout);
-    }
-
-    fn render_text_area(
-        frame: &mut Frame,
-        painter: &mut TextPainter,
-        model: &AppModel,
-        editor_state: &crate::model::EditorState,
-        document: &crate::model::Document,
-        layout: &geometry::GroupLayout,
-        is_focused: bool,
-    ) {
-        editor_text::render_text_area(
-            frame,
-            painter,
-            model,
-            editor_state,
-            document,
-            layout,
-            is_focused,
-        );
     }
 
     /// Render CSV grid view
@@ -1634,7 +1596,7 @@ impl Renderer {
             );
             {
                 let _timer = perf.time_text();
-                Self::render_cursor_lines_only(&mut frame, &mut painter, model, dirty_lines);
+                editor_text::render_cursor_lines_only(&mut frame, &mut painter, model, dirty_lines);
             }
             #[cfg(debug_assertions)]
             {

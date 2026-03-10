@@ -1,7 +1,9 @@
 # View Layer Redesign
 
-**Status:** Proposed  
+**Status:** Superseded by `2026-03-10-view-rendering-consolidation.md`
 **Created:** 2026-03-10
+
+> Historical note: this redesign option was considered but not chosen. The active direction is now [`2026-03-10-view-rendering-consolidation.md`](./2026-03-10-view-rendering-consolidation.md), which keeps the renderer monolithic at the top and only adds domain seams where they clearly reduce real feature work.
 
 ## Summary
 

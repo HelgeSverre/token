@@ -1,6 +1,6 @@
 # View Rendering Consolidation Plan
 
-**Status:** In Progress
+**Status:** Complete
 **Created:** 2026-03-10
 **Last Updated:** 2026-03-10
 
@@ -27,7 +27,7 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 - `Phase 3` is complete.
 - `Phase 4` is complete.
 - `Phase 4.5` is complete.
-- `Phase 5` has not started.
+- `Phase 5` is complete.
 
 ### What Has Landed
 
@@ -44,11 +44,11 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 - editor scroll wheel handling, scrollbar interaction, and preview-to-editor scroll sync now route through the shared viewport mutation seam instead of writing viewport fields ad hoc.
 - document-edit viewport adjustments now route through the same vertical scroll seam, so viewport writes are isolated to `EditorState` itself.
 
-### What Still Remains
+### Follow-On Work
 
 - popup geometry contracts are still missing if context-menu work begins before a narrower overlay contract is enough.
 - the text renderer still needs more feature-specific decoration inputs before text features like diff gutter, indent guides, or folding land cleanly.
-- older docs and transitional seams still need a cleanup pass once the architecture settles.
+- future feature docs should continue to target the seams established here rather than older ad hoc render entry points.
 
 ## Decision
 
@@ -494,7 +494,7 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 
 ### Phase 5: Cleanup Old Seams And Update Docs
 
-**Status:** Not Started
+**Status:** Complete
 
 **Goal:** retire transitional abstractions that no longer earn their keep.
 

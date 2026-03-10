@@ -1,7 +1,9 @@
 # View Layer Balanced Refactor
 
-**Status:** In progress  
+**Status:** Completed, then superseded by `2026-03-10-view-rendering-consolidation.md`
 **Created:** 2026-03-10
+
+> Historical note: this plan was the active direction early on 2026-03-10. Its layout, modal, tree, and renderer-cleanup slices were largely implemented, and the follow-on renderer work continued in [`2026-03-10-view-rendering-consolidation.md`](./2026-03-10-view-rendering-consolidation.md). Keep this document as context for what was completed, not as the active plan.
 
 ## Summary
 
