@@ -25,7 +25,7 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 - `Phase 1` is complete.
 - `Phase 2` is complete.
 - `Phase 3` is complete.
-- `Phase 4` has not started.
+- `Phase 4` is in progress.
 - `Phase 4.5` through `Phase 5` have not started.
 
 ### What Has Landed
@@ -37,11 +37,12 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 - `TabBarLayout` now owns group-tab geometry for both rendering and hit-testing.
 - `PreviewPaneLayout` now owns preview header/content geometry for rendering, hit-testing, and hosted webview placement.
 - `DockHeaderLayout` now owns dock header/content geometry for rendering, hit-testing, and outline interaction.
+- `TextEditorRenderer` now has an explicit visible-line pipeline with staged background, decoration, glyph, and cursor-line redraw paths.
 
 ### What Still Remains
 
 - popup geometry contracts are still missing if context-menu work begins before a narrower overlay contract is enough.
-- the text renderer still needs a deliberate decoration pipeline and future text-viewport seam work for soft wrap readiness.
+- the text renderer still needs future text-viewport seam work for soft wrap readiness and more feature-specific decoration inputs.
 - older docs and transitional seams still need a cleanup pass once the architecture settles.
 
 ## Decision
@@ -437,7 +438,7 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 
 ### Phase 4: Text Decoration Pipeline
 
-**Status:** Not Started
+**Status:** In Progress
 
 **Goal:** make the text renderer the clear home for future editor features.
 
