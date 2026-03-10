@@ -278,6 +278,140 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
     }
 }
 
+enum EditorContentKind<'a> {
+    Text {
+        document: &'a crate::model::Document,
+    },
+    Csv {
+        state: &'a crate::csv::CsvState,
+    },
+    Image {
+        state: &'a crate::image::ImageState,
+    },
+    BinaryPlaceholder {
+        placeholder: &'a crate::model::editor::BinaryPlaceholderState,
+    },
+}
+
+struct EditorGroupScene<'a> {
+    group: &'a EditorGroup,
+    group_rect: Rect,
+    editor: &'a crate::model::EditorState,
+    layout: geometry::GroupLayout,
+    is_focused: bool,
+    content: EditorContentKind<'a>,
+}
+
+impl<'a> EditorGroupScene<'a> {
+    fn resolve(
+        model: &'a AppModel,
+        group_id: GroupId,
+        group_rect: Rect,
+        is_focused: bool,
+        char_width: f32,
+    ) -> Option<Self> {
+        let group = model.editor_area.groups.get(&group_id)?;
+        let editor_id = group.active_editor_id()?;
+        let editor = model.editor_area.editors.get(&editor_id)?;
+        let layout = geometry::GroupLayout::new(group, model, char_width);
+
+        let content = if let crate::model::editor::TabContent::BinaryPlaceholder(ref placeholder) =
+            editor.tab_content
+        {
+            EditorContentKind::BinaryPlaceholder { placeholder }
+        } else if let Some(state) = editor.view_mode.as_image() {
+            EditorContentKind::Image { state }
+        } else if let Some(state) = editor.view_mode.as_csv() {
+            EditorContentKind::Csv { state }
+        } else {
+            let doc_id = editor.document_id?;
+            let document = model.editor_area.documents.get(&doc_id)?;
+            EditorContentKind::Text { document }
+        };
+
+        Some(Self {
+            group,
+            group_rect,
+            editor,
+            layout,
+            is_focused,
+            content,
+        })
+    }
+
+    fn render(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
+        Renderer::render_tab_bar(frame, painter, model, self.group, &self.layout);
+        self.render_content(frame, painter, model);
+
+        if self.should_render_scrollbars(model) {
+            self.render_scrollbars(frame, model);
+        }
+
+        self.render_unfocused_dim(frame, model);
+    }
+
+    fn render_content(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
+        match &self.content {
+            EditorContentKind::Text { document } => {
+                Renderer::render_text_area(
+                    frame,
+                    painter,
+                    model,
+                    self.editor,
+                    document,
+                    &self.layout,
+                    self.is_focused,
+                );
+                Renderer::render_gutter(frame, painter, model, self.editor, document, &self.layout);
+            }
+            EditorContentKind::Csv { state } => {
+                Renderer::render_csv_grid(
+                    frame,
+                    painter,
+                    model,
+                    state,
+                    &self.layout,
+                    self.is_focused,
+                );
+            }
+            EditorContentKind::Image { state } => {
+                Renderer::render_image_tab(frame, painter, model, state, &self.layout);
+            }
+            EditorContentKind::BinaryPlaceholder { placeholder } => {
+                Renderer::render_binary_placeholder(
+                    frame,
+                    painter,
+                    model,
+                    placeholder,
+                    &self.layout,
+                );
+            }
+        }
+    }
+
+    fn should_render_scrollbars(&self, model: &AppModel) -> bool {
+        model.config.show_scrollbar && matches!(&self.content, EditorContentKind::Text { .. })
+    }
+
+    fn render_scrollbars(&self, frame: &mut Frame, model: &AppModel) {
+        let document = match &self.content {
+            EditorContentKind::Text { document } => *document,
+            _ => return,
+        };
+
+        Renderer::render_editor_scrollbars(frame, model, self.editor, document, &self.layout);
+    }
+
+    fn render_unfocused_dim(&self, frame: &mut Frame, model: &AppModel) {
+        if self.is_focused || model.editor_area.groups.len() <= 1 {
+            return;
+        }
+
+        let dim_color = 0x0A000000_u32;
+        frame.blend_rect(self.group_rect, dim_color);
+    }
+}
+
 pub struct Renderer {
     font: Font,
     surface: Surface<Rc<Window>, Rc<Window>>,
@@ -854,73 +988,17 @@ impl Renderer {
         group_rect: Rect,
         is_focused: bool,
     ) {
-        let char_width = painter.char_width();
-
-        let group = match model.editor_area.groups.get(&group_id) {
-            Some(g) => g,
-            None => return,
+        let Some(scene) = EditorGroupScene::resolve(
+            model,
+            group_id,
+            group_rect,
+            is_focused,
+            painter.char_width(),
+        ) else {
+            return;
         };
 
-        let editor_id = match group.active_editor_id() {
-            Some(id) => id,
-            None => return,
-        };
-
-        let editor = match model.editor_area.editors.get(&editor_id) {
-            Some(e) => e,
-            None => return,
-        };
-
-        let doc_id = match editor.document_id {
-            Some(id) => id,
-            None => return,
-        };
-
-        let document = match model.editor_area.documents.get(&doc_id) {
-            Some(d) => d,
-            None => return,
-        };
-
-        // Create GroupLayout - single source of truth for all positioning
-        let layout = geometry::GroupLayout::new(group, model, char_width);
-
-        // Tab bar
-        Self::render_tab_bar(frame, painter, model, group, &layout);
-
-        // Dispatch based on tab content and view mode
-        if matches!(
-            editor.tab_content,
-            crate::model::editor::TabContent::BinaryPlaceholder(_)
-        ) {
-            if let crate::model::editor::TabContent::BinaryPlaceholder(ref placeholder) =
-                editor.tab_content
-            {
-                Self::render_binary_placeholder(frame, painter, model, placeholder, &layout);
-            }
-        } else if let Some(image_state) = editor.view_mode.as_image() {
-            Self::render_image_tab(frame, painter, model, image_state, &layout);
-        } else if let Some(csv_state) = editor.view_mode.as_csv() {
-            Self::render_csv_grid(frame, painter, model, csv_state, &layout, is_focused);
-        } else {
-            Self::render_text_area(frame, painter, model, editor, document, &layout, is_focused);
-            Self::render_gutter(frame, painter, model, editor, document, &layout);
-        }
-
-        // Scrollbars (rendered on top of content, below the unfocused dim)
-        if model.config.show_scrollbar {
-            // Only render for text editors (not image/binary/CSV tabs)
-            if matches!(editor.tab_content, crate::model::editor::TabContent::Text)
-                && editor.view_mode.as_csv().is_none()
-            {
-                Self::render_editor_scrollbars(frame, model, editor, document, &layout);
-            }
-        }
-
-        // Dim non-focused groups when multiple groups exist (4% black overlay)
-        if !is_focused && model.editor_area.groups.len() > 1 {
-            let dim_color = 0x0A000000_u32; // 4% opacity black (alpha = 10/255 ≈ 4%)
-            frame.blend_rect(group_rect, dim_color);
-        }
+        scene.render(frame, painter, model);
     }
 
     fn render_editor_scrollbars(
