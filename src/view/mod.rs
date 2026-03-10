@@ -412,6 +412,87 @@ impl<'a> EditorGroupScene<'a> {
     }
 }
 
+enum PreviewContentKind<'a> {
+    Hosted,
+    NativeHtml {
+        document: &'a crate::model::Document,
+        preview: &'a crate::markdown::PreviewPane,
+    },
+    NativeMarkdown {
+        document: &'a crate::model::Document,
+        preview: &'a crate::markdown::PreviewPane,
+    },
+}
+
+struct PreviewPaneScene<'a> {
+    pane: geometry::Pane,
+    line_height: usize,
+    char_width: f32,
+    content: PreviewContentKind<'a>,
+}
+
+impl<'a> PreviewPaneScene<'a> {
+    fn resolve(
+        model: &'a AppModel,
+        preview_id: crate::model::editor_area::PreviewId,
+        rect: Rect,
+        preview_mode: PreviewRenderMode,
+        line_height: usize,
+        char_width: f32,
+    ) -> Option<Self> {
+        let preview = model.editor_area.previews.get(&preview_id)?;
+        let document = model.editor_area.documents.get(&preview.document_id)?;
+        let pane = geometry::Pane::with_header(rect, &model.metrics);
+
+        let content = if preview_mode == PreviewRenderMode::WebviewChromeOnly {
+            PreviewContentKind::Hosted
+        } else if document.language == crate::syntax::LanguageId::Html {
+            PreviewContentKind::NativeHtml { document, preview }
+        } else {
+            PreviewContentKind::NativeMarkdown { document, preview }
+        };
+
+        Some(Self {
+            pane,
+            line_height,
+            char_width,
+            content,
+        })
+    }
+
+    fn render(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
+        Renderer::render_pane(frame, painter, model, &self.pane, Some("Preview"));
+
+        match &self.content {
+            PreviewContentKind::Hosted => {}
+            PreviewContentKind::NativeHtml { document, preview } => {
+                Renderer::render_native_html_preview(
+                    frame,
+                    painter,
+                    model,
+                    document,
+                    preview,
+                    &self.pane,
+                    self.line_height,
+                    self.char_width,
+                );
+            }
+            PreviewContentKind::NativeMarkdown { document, preview } => {
+                Renderer::render_native_markdown_preview(
+                    frame,
+                    painter,
+                    model,
+                    document,
+                    preview,
+                    &self.pane,
+                    self.line_height,
+                    self.char_width,
+                );
+            }
+        }
+    }
+}
+
 pub struct Renderer {
     font: Font,
     surface: Surface<Rc<Window>, Rc<Window>>,
@@ -783,58 +864,18 @@ impl Renderer {
         rect: Rect,
         preview_mode: PreviewRenderMode,
     ) {
-        let preview = match model.editor_area.previews.get(&preview_id) {
-            Some(p) => p,
-            None => return,
-        };
-
-        let document = match model.editor_area.documents.get(&preview.document_id) {
-            Some(d) => d,
-            None => return,
-        };
-
-        let line_height = painter.line_height();
-        let char_width = painter.char_width();
-
-        // Create pane layout with header
-        let pane = geometry::Pane::with_header(rect, &model.metrics);
-
-        // Render pane chrome (background, header, borders)
-        Self::render_pane(frame, painter, model, &pane, Some("Preview"));
-
-        if preview_mode == PreviewRenderMode::WebviewChromeOnly {
-            let _ = (document, line_height, char_width, &pane);
+        let Some(scene) = PreviewPaneScene::resolve(
+            model,
+            preview_id,
+            rect,
+            preview_mode,
+            painter.line_height(),
+            painter.char_width(),
+        ) else {
             return;
-        }
+        };
 
-        // Native preview rendering (used for headless screenshots)
-        // Branch by document language for appropriate rendering
-        match document.language {
-            crate::syntax::LanguageId::Html => {
-                Self::render_native_html_preview(
-                    frame,
-                    painter,
-                    model,
-                    document,
-                    preview,
-                    &pane,
-                    line_height,
-                    char_width,
-                );
-            }
-            _ => {
-                Self::render_native_markdown_preview(
-                    frame,
-                    painter,
-                    model,
-                    document,
-                    preview,
-                    &pane,
-                    line_height,
-                    char_width,
-                );
-            }
-        }
+        scene.render(frame, painter, model);
     }
 
     /// Native HTML preview: extract visible text content from HTML source and render it

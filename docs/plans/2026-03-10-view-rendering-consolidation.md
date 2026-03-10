@@ -1,7 +1,8 @@
 # View Rendering Consolidation Plan
 
-**Status:** Proposed  
+**Status:** In Progress
 **Created:** 2026-03-10
+**Last Updated:** 2026-03-10
 
 ## Summary
 
@@ -16,6 +17,28 @@ The goal is not "smaller files" and not a generic UI framework. The goal is:
 - avoid baking current no-wrap assumptions so future soft wrap can slot into the text pipeline without another broad rewrite
 
 This plan is intentionally conservative. It treats the renderer as an editor UI, not a reusable widget toolkit.
+
+## Implementation Status
+
+### Current Snapshot
+
+- `Phase 1` is complete.
+- `Phase 2` is in progress.
+- `Phase 3` through `Phase 5` have not started.
+
+### What Has Landed
+
+- `RenderPlan` and `RenderSession` now drive the top-level render pipeline in `src/view/mod.rs`.
+- `EditorGroupScene` and `EditorContentKind` now own editor-group content resolution and local render order.
+- `PreviewPaneScene` now owns preview content resolution for hosted vs native preview rendering.
+- `DockPaneScene` and `DockContentKind` now own active dock-content resolution for outline vs placeholder dock panels.
+
+### What Still Remains
+
+- `Phase 2` still needs broader pane-content follow-through where future hosted/native pane behavior can share more lifecycle and interaction ownership instead of staying render-only.
+- tab-strip, preview-chrome, dock-header, and popup geometry contracts are still missing.
+- the text renderer still needs a deliberate decoration pipeline and future text-viewport seam work for soft wrap readiness.
+- older docs and transitional seams still need a cleanup pass once the architecture settles.
 
 ## Decision
 
@@ -324,6 +347,8 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 
 ### Phase 1: Render Plan And Session
 
+**Status:** Completed
+
 **Goal:** make the top-level render path readable and stop rebuilding the same rendering setup for every layer block.
 
 **Files:**
@@ -349,6 +374,8 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 - popup menus and future overlays have explicit interaction rules instead of imperative special cases scattered across runtime and view code
 
 ### Phase 2: Editor Group Scene
+
+**Status:** In Progress
 
 **Goal:** make group rendering data-first and remove inline content dispatch complexity.
 
@@ -377,6 +404,8 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 
 ### Phase 3: Shared Layout Contracts For Tabs And Preview/Dock Chrome
 
+**Status:** Not Started
+
 **Goal:** stop adding new interactive geometry as feature-local math.
 
 **Files:**
@@ -404,6 +433,8 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 
 ### Phase 4: Text Decoration Pipeline
 
+**Status:** Not Started
+
 **Goal:** make the text renderer the clear home for future editor features.
 
 **Files:**
@@ -424,6 +455,8 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 - lower change cost for editor-focused work
 
 ### Phase 4.5: Text Viewport Readiness
+
+**Status:** Not Started
 
 **Goal:** prepare the text rendering path for future soft wrap and folding without implementing either feature here.
 
@@ -449,6 +482,8 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 - mouse hit-testing and cursor reveal logic have a clearer future integration point
 
 ### Phase 5: Cleanup Old Seams And Update Docs
+
+**Status:** Not Started
 
 **Goal:** retire transitional abstractions that no longer earn their keep.
 
