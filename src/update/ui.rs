@@ -1223,7 +1223,11 @@ fn replace_all(
 fn get_current_cursor_lines(model: &AppModel) -> Vec<usize> {
     // Get the focused editor's cursors
     if let Some(editor) = model.focused_editor() {
-        editor.cursors.iter().map(|c| c.line).collect()
+        if editor.is_plain_text_mode() {
+            editor.cursors.iter().map(|c| c.line).collect()
+        } else {
+            Vec::new()
+        }
     } else {
         Vec::new()
     }
@@ -1294,4 +1298,36 @@ fn fuzzy_match_files(
     // Limit results
     results.truncate(50);
     results
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_current_cursor_lines;
+    use crate::image::ImageState;
+    use crate::model::{AppModel, ViewMode};
+
+    #[test]
+    fn current_cursor_lines_are_reported_for_plain_text_editors() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        model.editor_mut().cursors[0].line = 7;
+
+        assert_eq!(get_current_cursor_lines(&model), vec![7]);
+    }
+
+    #[test]
+    fn current_cursor_lines_are_ignored_for_image_editors() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        model.editor_mut().view_mode = ViewMode::Image(Box::new(ImageState::new(
+            vec![255, 255, 255, 255],
+            1,
+            1,
+            0,
+            "PNG".into(),
+            80,
+            60,
+        )));
+        model.editor_mut().cursors[0].line = 7;
+
+        assert!(get_current_cursor_lines(&model).is_empty());
+    }
 }

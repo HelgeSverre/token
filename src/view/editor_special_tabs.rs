@@ -9,45 +9,20 @@ use super::{button, geometry};
 /// Render an image viewer tab.
 pub fn render_image_tab(
     frame: &mut Frame,
-    _painter: &mut TextPainter,
     model: &AppModel,
     img_state: &crate::image::ImageState,
     layout: &geometry::GroupLayout,
 ) {
     let content_rect = layout.content_rect;
-    let bg = model.theme.editor.background.to_argb_u32();
-    frame.fill_rect(content_rect, bg);
-
-    let padding = model.metrics.padding_large * 2;
-    let dest_x = content_rect.x as usize + padding;
-    let dest_y = content_rect.y as usize + padding;
-    let dest_w = (content_rect.width as usize).saturating_sub(padding * 2);
-    let dest_h = (content_rect.height as usize).saturating_sub(padding * 2);
-
-    if dest_w > 0 && dest_h > 0 {
-        let ip = &model.theme.image_preview;
-        let check_size = ip.checkerboard_size;
-        let light = ip.checkerboard_light.to_argb_u32();
-        let dark = ip.checkerboard_dark.to_argb_u32();
-        for cy in 0..dest_h {
-            for cx in 0..dest_w {
-                let px = dest_x + cx;
-                let py = dest_y + cy;
-                let checker = ((cx / check_size) + (cy / check_size)).is_multiple_of(2);
-                frame.set_pixel(px, py, if checker { light } else { dark });
-            }
-        }
-
-        frame.blit_rgba_scaled(
-            &img_state.pixels,
-            img_state.width,
-            img_state.height,
-            dest_x,
-            dest_y,
-            dest_w,
-            dest_h,
-        );
-    }
+    crate::image::render::render_image(
+        frame,
+        img_state,
+        &model.theme.image_preview,
+        content_rect.x as usize,
+        content_rect.y as usize,
+        content_rect.width as usize,
+        content_rect.height as usize,
+    );
 }
 
 /// Render a binary file placeholder tab.
@@ -123,7 +98,72 @@ fn format_file_size(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::format_file_size;
+    use super::{format_file_size, render_image_tab};
+    use crate::commands::Cmd;
+    use crate::image::ImageState;
+    use crate::messages::{ImageMsg, Msg};
+    use crate::model::{AppModel, Rect, ViewMode};
+    use crate::update::update;
+    use crate::view::frame::Frame;
+    use crate::view::geometry::GroupLayout;
+
+    fn make_image_model(content_width: u32, content_height: u32) -> AppModel {
+        let mut model = AppModel::new(content_width, content_height, 1.0, vec![]);
+        let tab_bar_height = model.metrics.tab_bar_height as f32;
+        let group_id = model.editor_area.focused_group_id;
+        model.editor_area.groups.get_mut(&group_id).unwrap().rect = Rect::new(
+            0.0,
+            0.0,
+            content_width as f32,
+            content_height as f32 + tab_bar_height,
+        );
+
+        let mut pixels = Vec::with_capacity(8 * 8 * 4);
+        for y in 0..8 {
+            for x in 0..8 {
+                pixels.extend_from_slice(&[
+                    (x * 31) as u8,
+                    (y * 29) as u8,
+                    ((x + y) * 17) as u8,
+                    255,
+                ]);
+            }
+        }
+        model.editor_mut().view_mode = ViewMode::Image(Box::new(ImageState::new(
+            pixels,
+            8,
+            8,
+            0,
+            "PNG".into(),
+            content_width,
+            content_height,
+        )));
+
+        model
+    }
+
+    fn render_image_buffer(model: &AppModel) -> Vec<u32> {
+        let width = model.window_size.0 as usize;
+        let height = model.window_size.1 as usize;
+        let mut buffer = vec![0; width * height];
+        let mut frame = Frame::new(&mut buffer, width, height);
+        let group = model
+            .editor_area
+            .groups
+            .get(&model.editor_area.focused_group_id)
+            .unwrap();
+        let image = model
+            .editor_area
+            .focused_editor()
+            .unwrap()
+            .view_mode
+            .as_image()
+            .unwrap();
+        let layout = GroupLayout::new(group, model, 8.0);
+
+        render_image_tab(&mut frame, model, image, &layout);
+        buffer
+    }
 
     #[test]
     fn formats_small_file_sizes() {
@@ -135,5 +175,69 @@ mod tests {
     fn formats_large_file_sizes() {
         assert_eq!(format_file_size(3 * 1024 * 1024), "3.0 MB");
         assert_eq!(format_file_size(5 * 1024 * 1024 * 1024), "5.0 GB");
+    }
+
+    #[test]
+    fn image_tab_render_changes_when_zoom_changes() {
+        let mut model = make_image_model(80, 60);
+        let before = render_image_buffer(&model);
+
+        let mouse_x = 40.0;
+        let mouse_y = model.metrics.tab_bar_height as f64 + 30.0;
+        let cmd = update(
+            &mut model,
+            Msg::Image(ImageMsg::Zoom {
+                delta: 1.0,
+                mouse_x,
+                mouse_y,
+            }),
+        );
+
+        assert!(cmd.as_ref().is_some_and(Cmd::needs_redraw));
+
+        let after = render_image_buffer(&model);
+        assert_ne!(
+            before, after,
+            "zoom state must change rendered pixels, not just status-bar state"
+        );
+    }
+
+    #[test]
+    fn image_tab_render_changes_when_panned() {
+        let mut model = make_image_model(80, 60);
+        let mouse_x = 40.0;
+        let mouse_y = model.metrics.tab_bar_height as f64 + 30.0;
+        update(
+            &mut model,
+            Msg::Image(ImageMsg::Zoom {
+                delta: 1.0,
+                mouse_x,
+                mouse_y,
+            }),
+        );
+        update(
+            &mut model,
+            Msg::Image(ImageMsg::StartPan {
+                x: mouse_x,
+                y: mouse_y,
+            }),
+        );
+        let before = render_image_buffer(&model);
+
+        let cmd = update(
+            &mut model,
+            Msg::Image(ImageMsg::UpdatePan {
+                x: mouse_x + 12.0,
+                y: mouse_y + 8.0,
+            }),
+        );
+
+        assert!(cmd.as_ref().is_some_and(Cmd::needs_redraw));
+
+        let after = render_image_buffer(&model);
+        assert_ne!(
+            before, after,
+            "pan state must change rendered pixels, not just internal offsets"
+        );
     }
 }

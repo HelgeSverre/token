@@ -707,6 +707,7 @@ impl App {
         use token::markdown::{content_to_preview_html, PreviewTheme};
         use token::model::editor_area::PreviewId;
         use token::syntax::LanguageId;
+        use token::view::geometry::PreviewPaneLayout;
 
         let Some(window) = &self.window else {
             return;
@@ -778,15 +779,8 @@ impl App {
                 let needs_create = !self.webview_manager.has_webview(preview_id);
                 let needs_content_update = preview.needs_refresh(document.revision);
 
-                // Compute content-area rect for the webview (below the "Preview" header)
-                // preview.rect is the outer pane rect; we need to offset by header height
-                let header_height = metrics.tab_bar_height as f32;
-                let webview_rect = token::model::editor_area::Rect::new(
-                    preview.rect.x,
-                    preview.rect.y + header_height,
-                    preview.rect.width,
-                    (preview.rect.height - header_height).max(0.0),
-                );
+                let webview_rect =
+                    PreviewPaneLayout::new(preview.rect, metrics).hosted_content_rect();
 
                 Some(PreviewUpdate {
                     preview_id,

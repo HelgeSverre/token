@@ -952,6 +952,42 @@ impl Pane {
     }
 }
 
+/// Shared geometry contract for preview panes.
+///
+/// Preview panes have two distinct consumers:
+/// - the renderer, which paints the preview chrome and native fallback content
+/// - hosted preview content, which needs the exact content rect below the header
+///
+/// This keeps header/content split and hit-testing aligned across render,
+/// hit-test, and hosted preview layout.
+#[derive(Debug, Clone, Copy)]
+pub struct PreviewPaneLayout {
+    pub pane: Pane,
+}
+
+impl PreviewPaneLayout {
+    pub fn new(rect: Rect, metrics: &crate::model::ScaledMetrics) -> Self {
+        Self {
+            pane: Pane::with_header(rect, metrics),
+        }
+    }
+
+    #[inline]
+    pub fn hosted_content_rect(&self) -> Rect {
+        self.pane.content_rect()
+    }
+
+    #[inline]
+    pub fn is_in_header(&self, x: f64, y: f64) -> bool {
+        self.pane.is_in_header(x, y)
+    }
+
+    #[inline]
+    pub fn is_in_content(&self, x: f64, y: f64) -> bool {
+        self.hosted_content_rect().contains(x as f32, y as f32)
+    }
+}
+
 // ============================================================================
 // Modal Geometry
 // ============================================================================
@@ -2022,6 +2058,31 @@ mod tests {
 
         assert!(layout.is_on_chevron(0, 708.0));
         assert!(!layout.is_on_chevron(0, 725.0));
+    }
+
+    #[test]
+    fn test_preview_pane_layout_splits_header_and_hosted_content() {
+        let metrics = ScaledMetrics::new(1.0);
+        let layout = PreviewPaneLayout::new(Rect::new(100.0, 40.0, 320.0, 240.0), &metrics);
+        let hosted = layout.hosted_content_rect();
+
+        assert_eq!(hosted.x, 100.0);
+        assert_eq!(hosted.y, 40.0 + metrics.tab_bar_height as f32);
+        assert_eq!(hosted.width, 320.0);
+        assert_eq!(hosted.height, 240.0 - metrics.tab_bar_height as f32);
+    }
+
+    #[test]
+    fn test_preview_pane_layout_hit_testing() {
+        let metrics = ScaledMetrics::new(1.0);
+        let layout = PreviewPaneLayout::new(Rect::new(100.0, 40.0, 320.0, 240.0), &metrics);
+        let header_y = 40.0 + (metrics.tab_bar_height as f64 / 2.0);
+        let content_y = 40.0 + metrics.tab_bar_height as f64 + 10.0;
+
+        assert!(layout.is_in_header(120.0, header_y));
+        assert!(!layout.is_in_content(120.0, header_y));
+        assert!(!layout.is_in_header(120.0, content_y));
+        assert!(layout.is_in_content(120.0, content_y));
     }
 }
 

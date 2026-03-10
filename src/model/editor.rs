@@ -491,6 +491,15 @@ impl EditorState {
         self.cursors.len() > 1
     }
 
+    /// Whether this editor is in the normal plain-text rendering path.
+    ///
+    /// Image, CSV, and binary-placeholder tabs all use specialized renderers
+    /// and must not opt into text-specific fast paths such as cursor-line-only
+    /// redraws.
+    pub fn is_plain_text_mode(&self) -> bool {
+        matches!(self.tab_content, TabContent::Text) && matches!(self.view_mode, ViewMode::Text)
+    }
+
     /// Get the number of cursors
     pub fn cursor_count(&self) -> usize {
         self.cursors.len()
@@ -1385,5 +1394,50 @@ impl EditorState {
 impl Default for EditorState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::csv::{CsvData, CsvState, Delimiter};
+
+    use super::{BinaryPlaceholderState, EditorState, TabContent, ViewMode};
+
+    #[test]
+    fn plain_text_mode_requires_text_tab_and_text_view_mode() {
+        let editor = EditorState::new();
+        assert!(editor.is_plain_text_mode());
+    }
+
+    #[test]
+    fn plain_text_mode_excludes_image_and_csv_view_modes() {
+        let mut editor = EditorState::new();
+        editor.view_mode = ViewMode::Image(Box::new(crate::image::ImageState::new(
+            vec![255, 255, 255, 255],
+            1,
+            1,
+            0,
+            "PNG".into(),
+            10,
+            10,
+        )));
+        assert!(!editor.is_plain_text_mode());
+
+        let csv = CsvState::new(
+            CsvData::from_rows(vec![vec!["value".into()]]),
+            Delimiter::Comma,
+        );
+        editor.view_mode = ViewMode::Csv(Box::new(csv));
+        assert!(!editor.is_plain_text_mode());
+    }
+
+    #[test]
+    fn plain_text_mode_excludes_binary_placeholder_tabs() {
+        let mut editor = EditorState::new();
+        editor.tab_content = TabContent::BinaryPlaceholder(BinaryPlaceholderState {
+            path: std::path::PathBuf::from("image.bin"),
+            size_bytes: 128,
+        });
+        assert!(!editor.is_plain_text_mode());
     }
 }

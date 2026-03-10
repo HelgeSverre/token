@@ -20,7 +20,7 @@ use crate::commands::filter_commands;
 use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, TabId};
 use crate::model::{AppModel, FocusTarget, ModalState};
 
-use super::geometry::{is_in_status_bar, Pane, TabBarLayout, WindowLayout};
+use super::geometry::{is_in_status_bar, PreviewPaneLayout, TabBarLayout, WindowLayout};
 
 // ============================================================================
 // Core Types
@@ -633,10 +633,10 @@ pub fn hit_test_splitters(
 pub fn hit_test_previews(model: &AppModel, pt: Point) -> Option<HitTarget> {
     for (&preview_id, preview) in &model.editor_area.previews {
         if preview.rect.contains(pt.x as f32, pt.y as f32) {
-            let pane = Pane::with_header(preview.rect, &model.metrics);
-            if pane.is_in_header(pt.x, pt.y) {
+            let layout = PreviewPaneLayout::new(preview.rect, &model.metrics);
+            if layout.is_in_header(pt.x, pt.y) {
                 return Some(HitTarget::PreviewHeader { preview_id });
-            } else {
+            } else if layout.is_in_content(pt.x, pt.y) {
                 return Some(HitTarget::PreviewContent { preview_id });
             }
         }

@@ -34,10 +34,11 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 - `PreviewPaneScene` now owns preview content resolution for hosted vs native preview rendering.
 - `DockPaneScene` and `DockContentKind` now own active dock-content resolution for outline vs placeholder dock panels.
 - `TabBarLayout` now owns group-tab geometry for both rendering and hit-testing.
+- `PreviewPaneLayout` now owns preview header/content geometry for rendering, hit-testing, and hosted webview placement.
 
 ### What Still Remains
 
-- preview-chrome, dock-header, and popup geometry contracts are still missing.
+- dock-header and popup geometry contracts are still missing.
 - the text renderer still needs a deliberate decoration pipeline and future text-viewport seam work for soft wrap readiness.
 - older docs and transitional seams still need a cleanup pass once the architecture settles.
 

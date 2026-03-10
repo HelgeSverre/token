@@ -375,7 +375,7 @@ impl<'a> EditorGroupScene<'a> {
                 );
             }
             EditorContentKind::Image { state } => {
-                Renderer::render_image_tab(frame, painter, model, state, &self.layout);
+                Renderer::render_image_tab(frame, model, state, &self.layout);
             }
             EditorContentKind::BinaryPlaceholder { placeholder } => {
                 Renderer::render_binary_placeholder(
@@ -425,7 +425,7 @@ enum PreviewContentKind<'a> {
 }
 
 struct PreviewPaneScene<'a> {
-    pane: geometry::Pane,
+    layout: geometry::PreviewPaneLayout,
     line_height: usize,
     char_width: f32,
     content: PreviewContentKind<'a>,
@@ -442,7 +442,7 @@ impl<'a> PreviewPaneScene<'a> {
     ) -> Option<Self> {
         let preview = model.editor_area.previews.get(&preview_id)?;
         let document = model.editor_area.documents.get(&preview.document_id)?;
-        let pane = geometry::Pane::with_header(rect, &model.metrics);
+        let layout = geometry::PreviewPaneLayout::new(rect, &model.metrics);
 
         let content = if preview_mode == PreviewRenderMode::WebviewChromeOnly {
             PreviewContentKind::Hosted
@@ -453,7 +453,7 @@ impl<'a> PreviewPaneScene<'a> {
         };
 
         Some(Self {
-            pane,
+            layout,
             line_height,
             char_width,
             content,
@@ -461,7 +461,7 @@ impl<'a> PreviewPaneScene<'a> {
     }
 
     fn render(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
-        Renderer::render_pane(frame, painter, model, &self.pane, Some("Preview"));
+        Renderer::render_pane(frame, painter, model, &self.layout.pane, Some("Preview"));
 
         match &self.content {
             PreviewContentKind::Hosted => {}
@@ -472,7 +472,7 @@ impl<'a> PreviewPaneScene<'a> {
                     model,
                     document,
                     preview,
-                    &self.pane,
+                    &self.layout.pane,
                     self.line_height,
                     self.char_width,
                 );
@@ -484,7 +484,7 @@ impl<'a> PreviewPaneScene<'a> {
                     model,
                     document,
                     preview,
-                    &self.pane,
+                    &self.layout.pane,
                     self.line_height,
                     self.char_width,
                 );
@@ -662,9 +662,7 @@ impl Renderer {
             .get(&model.editor_area.focused_group_id)
             .and_then(|g| g.active_editor_id())
             .and_then(|id| model.editor_area.editors.get(&id))
-            .map(|e| {
-                matches!(e.tab_content, crate::model::TabContent::Text) && !e.view_mode.is_csv()
-            })
+            .map(crate::model::editor::EditorState::is_plain_text_mode)
             .unwrap_or(false);
 
         let cursor_lines_only = if is_text_mode {
@@ -1054,12 +1052,11 @@ impl Renderer {
 
     fn render_image_tab(
         frame: &mut Frame,
-        painter: &mut TextPainter,
         model: &AppModel,
         img_state: &crate::image::ImageState,
         layout: &geometry::GroupLayout,
     ) {
-        editor_special_tabs::render_image_tab(frame, painter, model, img_state, layout);
+        editor_special_tabs::render_image_tab(frame, model, img_state, layout);
     }
 
     fn render_binary_placeholder(
