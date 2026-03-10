@@ -564,7 +564,9 @@ fn test_preview_theme_from_editor_theme() {
 }
 ```
 
-### Manual Testing
+### Regression Checklist (Post-Implementation)
+
+These checks are kept as a regression checklist for future refactors and platform changes.
 
 - [ ] Toggle preview opens/closes pane
 - [ ] Preview renders headings, lists, code blocks, links

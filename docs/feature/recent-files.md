@@ -2,7 +2,7 @@
 
 Persistent recent files list with quick access menu and integration with Quick Open.
 
-> **Status:** Done (Phases 1–5)
+> **Status:** Done (MVP: Phases 1–5)
 > **Priority:** P1
 > **Effort:** M
 > **Created:** 2025-12-19
@@ -531,6 +531,8 @@ Note: Cmd+P (Quick Open) also shows recent files when query is empty.
 
 ### Phase 6: Quick Open Integration
 
+**Post-MVP Backlog:** Deferred items tracked after core recent-files functionality shipped in phases 1-5.
+
 **Files:** `src/model/ui.rs` (QuickOpenState), `src/file_index.rs`
 
 - [ ] Pass recent files to `QuickOpenState::update_results()`
@@ -542,7 +544,6 @@ Note: Cmd+P (Quick Open) also shows recent files when query is empty.
 
 ### Phase 7: Polish
 
-- [ ] Add "Clear Recent" command to command palette
 - [ ] Add workspace-scoped recent files view
 - [ ] Handle concurrent access (file locking or ignore errors)
 - [ ] Prune files older than 30 days

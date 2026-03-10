@@ -7,7 +7,7 @@ A context-sensitive popup menu system triggered by right-click, providing quick 
 > **Effort:** L (1-2 weeks)
 > **Created:** 2026-01-07
 > **Updated:** 2026-01-07
-> **Milestone:** TBD
+> **Milestone:** 3 - Workspace Features
 
 ---
 
