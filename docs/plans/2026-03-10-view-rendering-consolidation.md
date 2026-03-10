@@ -39,12 +39,12 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 - `PreviewPaneLayout` now owns preview header/content geometry for rendering, hit-testing, and hosted webview placement.
 - `DockHeaderLayout` now owns dock header/content geometry for rendering, hit-testing, and outline interaction.
 - `TextEditorRenderer` now has an explicit visible-line pipeline with staged background, decoration, glyph, and cursor-line redraw paths.
-- `TextViewportMap` now owns the current no-wrap visible-row/column mapping used by text rendering and cursor hit-testing.
+- `TextViewportMap` now lives in `src/model/editor.rs` and owns the current no-wrap visible-row/column mapping used by text rendering, hit-testing, and cursor reveal logic.
 
 ### What Still Remains
 
 - popup geometry contracts are still missing if context-menu work begins before a narrower overlay contract is enough.
-- the text renderer still needs more feature-specific decoration inputs, and the new text-viewport seam still needs to reach scroll/reveal paths before soft wrap work starts.
+- the text renderer still needs more feature-specific decoration inputs, and the new text-viewport seam still needs to reach the remaining editor update/scroll paths before soft wrap work starts.
 - older docs and transitional seams still need a cleanup pass once the architecture settles.
 
 ## Decision
@@ -486,7 +486,7 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 
 - soft wrap and folding become text-viewport projects instead of renderer-wide rewrites
 - future text features added before soft wrap are more likely to survive that transition cleanly
-- mouse hit-testing and cursor reveal logic have a clearer future integration point
+- mouse hit-testing, cursor reveal logic, and editor update code have a clearer future integration point
 
 ### Phase 5: Cleanup Old Seams And Update Docs
 

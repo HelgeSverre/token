@@ -213,6 +213,191 @@ impl Default for Viewport {
     }
 }
 
+/// No-wrap mapping between viewport rows/columns and logical document positions.
+///
+/// This is the current shared seam for both rendering and editor-state logic
+/// that needs to answer "which logical line/column does this visible row or
+/// pixel map to?". Soft wrap and folding can later replace or extend this
+/// mapping without forcing each caller to open-code `top_line + visual_row`.
+#[derive(Debug, Clone, Copy)]
+pub struct TextViewportMap {
+    top_line: usize,
+    left_column: usize,
+    visible_lines: usize,
+    visible_columns: usize,
+    line_count: usize,
+}
+
+impl TextViewportMap {
+    pub fn new(viewport: &Viewport, line_count: usize) -> Self {
+        Self {
+            top_line: viewport.top_line,
+            left_column: viewport.left_column,
+            visible_lines: viewport.visible_lines,
+            visible_columns: viewport.visible_columns,
+            line_count,
+        }
+    }
+
+    #[inline]
+    pub fn top_line(&self) -> usize {
+        self.top_line
+    }
+
+    #[inline]
+    pub fn left_column(&self) -> usize {
+        self.left_column
+    }
+
+    #[inline]
+    pub fn visible_lines(&self) -> usize {
+        self.visible_lines
+    }
+
+    #[inline]
+    pub fn last_line(&self) -> usize {
+        self.line_count.saturating_sub(1)
+    }
+
+    #[inline]
+    pub fn max_top_line(&self) -> usize {
+        self.line_count.saturating_sub(self.visible_lines)
+    }
+
+    #[inline]
+    pub fn end_line(&self) -> usize {
+        self.top_line
+            .saturating_add(self.visible_lines)
+            .min(self.line_count)
+    }
+
+    #[inline]
+    pub fn bottom_line(&self) -> usize {
+        self.top_line
+            .saturating_add(self.visible_lines.saturating_sub(1))
+            .min(self.last_line())
+    }
+
+    #[inline]
+    pub fn doc_line_for_visible_row(&self, visible_row: usize) -> Option<usize> {
+        let doc_line = self.top_line.saturating_add(visible_row);
+        (doc_line < self.line_count).then_some(doc_line)
+    }
+
+    #[inline]
+    pub fn visible_row_for_doc_line(&self, doc_line: usize) -> Option<usize> {
+        if doc_line < self.top_line || doc_line >= self.line_count {
+            return None;
+        }
+
+        let visible_row = doc_line - self.top_line;
+        (visible_row < self.visible_lines).then_some(visible_row)
+    }
+
+    #[inline]
+    pub fn contains_doc_line(&self, doc_line: usize) -> bool {
+        self.visible_row_for_doc_line(doc_line).is_some()
+    }
+
+    #[inline]
+    pub fn doc_line_for_pixel_y(&self, adjusted_y: f64, line_height: f64) -> usize {
+        if line_height <= 0.0 {
+            return self.top_line.min(self.last_line());
+        }
+
+        let visible_row = (adjusted_y.max(0.0) / line_height).floor() as usize;
+        self.doc_line_for_visible_row(visible_row)
+            .unwrap_or_else(|| self.last_line())
+    }
+
+    #[inline]
+    pub fn visual_column_for_x_offset(&self, x_offset: f64, char_width: f32) -> usize {
+        if x_offset > 0.0 {
+            self.left_column + (x_offset / char_width as f64).round() as usize
+        } else {
+            self.left_column
+        }
+    }
+
+    #[inline]
+    fn has_vertical_scroll(&self) -> bool {
+        self.visible_lines > 0 && self.line_count > self.visible_lines
+    }
+
+    pub fn reveal_line_no_padding(&self, line: usize) -> usize {
+        if !self.has_vertical_scroll() {
+            return 0;
+        }
+
+        if line < self.top_line {
+            line.min(self.max_top_line())
+        } else if line > self.bottom_line() {
+            (line + 1)
+                .saturating_sub(self.visible_lines)
+                .min(self.max_top_line())
+        } else {
+            self.top_line
+        }
+    }
+
+    pub fn reveal_line_with_mode(
+        &self,
+        line: usize,
+        padding: usize,
+        mode: ScrollRevealMode,
+    ) -> usize {
+        if !self.has_vertical_scroll() {
+            return 0;
+        }
+
+        let safe_top = self.top_line + padding;
+        let safe_bottom = self
+            .top_line
+            .saturating_add(self.visible_lines.saturating_sub(padding).saturating_sub(1));
+        let off_above = line < safe_top;
+        let off_below = line > safe_bottom;
+
+        if !off_above && !off_below {
+            return self.top_line;
+        }
+
+        match mode {
+            ScrollRevealMode::Minimal => {
+                if off_above {
+                    line.saturating_sub(padding)
+                } else {
+                    line + padding + 1 - self.visible_lines
+                }
+            }
+            ScrollRevealMode::TopAligned => line.saturating_sub(padding),
+            ScrollRevealMode::BottomAligned => {
+                (line + padding + 1).saturating_sub(self.visible_lines)
+            }
+            ScrollRevealMode::Centered => line.saturating_sub(self.visible_lines / 2),
+        }
+        .min(self.max_top_line())
+    }
+
+    pub fn reveal_column(&self, column: usize, margin: usize) -> usize {
+        let left_safe = self.left_column.saturating_add(margin);
+        let right_safe = self
+            .left_column
+            .saturating_add(self.visible_columns)
+            .saturating_sub(margin);
+
+        if column < left_safe {
+            column.saturating_sub(margin)
+        } else if column >= right_safe {
+            column
+                .saturating_add(margin)
+                .saturating_add(1)
+                .saturating_sub(self.visible_columns)
+        } else {
+            self.left_column
+        }
+    }
+}
+
 /// State for an in-progress rectangle selection (middle mouse drag)
 /// Uses VISUAL columns (screen position) rather than character columns
 /// so rectangle selection works consistently across lines of different lengths.
@@ -766,48 +951,13 @@ impl EditorState {
     pub fn ensure_cursor_visible_no_padding(&mut self, document: &Document) {
         let cursor = &self.cursors[self.active_cursor_index];
         let total_lines = document.line_count();
+        let viewport = TextViewportMap::new(&self.viewport, total_lines);
 
-        // Vertical scrolling - only if cursor is fully outside viewport
-        if total_lines > self.viewport.visible_lines && self.viewport.visible_lines > 0 {
-            let max_top = total_lines.saturating_sub(self.viewport.visible_lines);
-            let viewport_bottom = self
-                .viewport
-                .top_line
-                .saturating_add(self.viewport.visible_lines)
-                .saturating_sub(1);
-
-            if cursor.line < self.viewport.top_line {
-                // Cursor above viewport: scroll up to put cursor at top
-                self.viewport.top_line = cursor.line.min(max_top);
-            } else if cursor.line > viewport_bottom {
-                // Cursor below viewport: scroll down to put cursor at bottom
-                self.viewport.top_line = (cursor.line + 1)
-                    .saturating_sub(self.viewport.visible_lines)
-                    .min(max_top);
-            }
-            // Cursor within viewport: no scroll
-        } else {
-            self.viewport.top_line = 0;
-        }
+        self.viewport.top_line = viewport.reveal_line_no_padding(cursor.line);
 
         // Horizontal scrolling (same as normal - always check)
         const HORIZONTAL_MARGIN: usize = 4;
-        let left_safe = self.viewport.left_column.saturating_add(HORIZONTAL_MARGIN);
-        let right_safe = self
-            .viewport
-            .left_column
-            .saturating_add(self.viewport.visible_columns)
-            .saturating_sub(HORIZONTAL_MARGIN);
-
-        if cursor.column < left_safe {
-            self.viewport.left_column = cursor.column.saturating_sub(HORIZONTAL_MARGIN);
-        } else if cursor.column >= right_safe {
-            self.viewport.left_column = cursor
-                .column
-                .saturating_add(HORIZONTAL_MARGIN)
-                .saturating_add(1)
-                .saturating_sub(self.viewport.visible_columns);
-        }
+        self.viewport.left_column = viewport.reveal_column(cursor.column, HORIZONTAL_MARGIN);
     }
 
     /// Ensure the active cursor is visible using the specified reveal strategy
@@ -820,75 +970,13 @@ impl EditorState {
         let cursor = &self.cursors[self.active_cursor_index];
         let padding = self.scroll_padding;
         let total_lines = document.line_count();
+        let viewport = TextViewportMap::new(&self.viewport, total_lines);
 
-        // Vertical scrolling
-        if total_lines > self.viewport.visible_lines && self.viewport.visible_lines > 0 {
-            let max_top = total_lines.saturating_sub(self.viewport.visible_lines);
-
-            // Current safe-zone boundaries (use saturating_sub to avoid overflow)
-            let safe_top = self.viewport.top_line + padding;
-            let safe_bottom = self.viewport.top_line
-                + self
-                    .viewport
-                    .visible_lines
-                    .saturating_sub(padding)
-                    .saturating_sub(1);
-
-            let line = cursor.line;
-            let off_above = line < safe_top;
-            let off_below = line > safe_bottom;
-
-            if off_above || off_below {
-                self.viewport.top_line = match mode {
-                    ScrollRevealMode::Minimal => {
-                        if off_above {
-                            // Cursor above safe zone: scroll up to put cursor at top margin
-                            line.saturating_sub(padding)
-                        } else {
-                            // Cursor below safe zone: scroll down to put cursor at bottom margin
-                            line + padding + 1 - self.viewport.visible_lines
-                        }
-                    }
-                    ScrollRevealMode::TopAligned => {
-                        // Put cursor at top of safe zone (respecting top padding)
-                        line.saturating_sub(padding)
-                    }
-                    ScrollRevealMode::BottomAligned => {
-                        // Put cursor at bottom of safe zone (respecting bottom padding)
-                        (line + padding + 1).saturating_sub(self.viewport.visible_lines)
-                    }
-                    ScrollRevealMode::Centered => {
-                        // Place cursor in the middle of the viewport
-                        line.saturating_sub(self.viewport.visible_lines / 2)
-                    }
-                }
-                .min(max_top);
-            }
-            // If cursor is already in safe zone, don't scroll (preserves smooth movement)
-        } else {
-            self.viewport.top_line = 0;
-        }
+        self.viewport.top_line = viewport.reveal_line_with_mode(cursor.line, padding, mode);
 
         // Horizontal scrolling (always check, independent of vertical)
         const HORIZONTAL_MARGIN: usize = 4;
-        let left_safe = self.viewport.left_column.saturating_add(HORIZONTAL_MARGIN);
-        let right_safe = self
-            .viewport
-            .left_column
-            .saturating_add(self.viewport.visible_columns)
-            .saturating_sub(HORIZONTAL_MARGIN);
-
-        if cursor.column < left_safe {
-            // Scroll left: put cursor exactly at left safe boundary
-            self.viewport.left_column = cursor.column.saturating_sub(HORIZONTAL_MARGIN);
-        } else if cursor.column >= right_safe {
-            // Scroll right: put cursor exactly at right safe boundary
-            self.viewport.left_column = cursor
-                .column
-                .saturating_add(HORIZONTAL_MARGIN)
-                .saturating_add(1)
-                .saturating_sub(self.viewport.visible_columns);
-        }
+        self.viewport.left_column = viewport.reveal_column(cursor.column, HORIZONTAL_MARGIN);
     }
 
     /// Set primary cursor position from buffer offset (clears selection)
@@ -1400,8 +1488,12 @@ impl Default for EditorState {
 #[cfg(test)]
 mod tests {
     use crate::csv::{CsvData, CsvState, Delimiter};
+    use crate::model::Document;
 
-    use super::{BinaryPlaceholderState, EditorState, TabContent, ViewMode};
+    use super::{
+        BinaryPlaceholderState, EditorState, ScrollRevealMode, TabContent, TextViewportMap,
+        ViewMode,
+    };
 
     #[test]
     fn plain_text_mode_requires_text_tab_and_text_view_mode() {
@@ -1439,5 +1531,68 @@ mod tests {
             size_bytes: 128,
         });
         assert!(!editor.is_plain_text_mode());
+    }
+
+    #[test]
+    fn text_viewport_map_maps_visible_rows_and_doc_lines() {
+        let mut editor = EditorState::with_viewport(3, 80);
+        editor.viewport.top_line = 2;
+        editor.viewport.left_column = 5;
+        let document = Document::with_text("a\nb\nc\nd\ne\n");
+        let viewport = TextViewportMap::new(&editor.viewport, document.line_count());
+
+        assert_eq!(viewport.top_line(), 2);
+        assert_eq!(viewport.left_column(), 5);
+        assert_eq!(viewport.doc_line_for_visible_row(0), Some(2));
+        assert_eq!(viewport.doc_line_for_visible_row(2), Some(4));
+        assert_eq!(viewport.doc_line_for_visible_row(3), Some(5));
+        assert_eq!(viewport.end_line(), 5);
+        assert_eq!(viewport.visible_row_for_doc_line(1), None);
+        assert_eq!(viewport.visible_row_for_doc_line(4), Some(2));
+        assert!(!viewport.contains_doc_line(5));
+    }
+
+    #[test]
+    fn text_viewport_map_clamps_pixel_and_column_conversion() {
+        let mut editor = EditorState::with_viewport(3, 80);
+        editor.viewport.top_line = 1;
+        editor.viewport.left_column = 4;
+        let document = Document::with_text("a\nb\nc\n");
+        let viewport = TextViewportMap::new(&editor.viewport, document.line_count());
+
+        assert_eq!(viewport.doc_line_for_pixel_y(0.0, 20.0), 1);
+        assert_eq!(viewport.doc_line_for_pixel_y(41.0, 20.0), 3);
+        assert_eq!(viewport.doc_line_for_pixel_y(400.0, 20.0), 3);
+        assert_eq!(viewport.visual_column_for_x_offset(-3.0, 8.0), 4);
+        assert_eq!(viewport.visual_column_for_x_offset(17.0, 8.0), 6);
+    }
+
+    #[test]
+    fn text_viewport_map_reveals_line_and_column() {
+        let mut editor = EditorState::with_viewport(4, 20);
+        editor.viewport.top_line = 10;
+        editor.viewport.left_column = 8;
+        let viewport = TextViewportMap::new(&editor.viewport, 40);
+
+        assert_eq!(viewport.reveal_line_no_padding(8), 8);
+        assert_eq!(viewport.reveal_line_no_padding(12), 10);
+        assert_eq!(viewport.reveal_line_no_padding(15), 12);
+
+        assert_eq!(
+            viewport.reveal_line_with_mode(9, 1, ScrollRevealMode::Minimal),
+            8
+        );
+        assert_eq!(
+            viewport.reveal_line_with_mode(15, 1, ScrollRevealMode::BottomAligned),
+            13
+        );
+        assert_eq!(
+            viewport.reveal_line_with_mode(20, 1, ScrollRevealMode::Centered),
+            18
+        );
+
+        assert_eq!(viewport.reveal_column(6, 4), 2);
+        assert_eq!(viewport.reveal_column(12, 4), 8);
+        assert_eq!(viewport.reveal_column(30, 4), 15);
     }
 }

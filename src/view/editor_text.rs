@@ -1,7 +1,7 @@
 //! Text editor content rendering (text area, gutter, cursors).
 
 use crate::model::editor::Selection;
-use crate::model::{AppModel, Document, EditorState};
+use crate::model::{AppModel, Document, EditorState, TextViewportMap};
 
 use super::frame::{Frame, TextPainter};
 use super::geometry::{self, char_col_to_visual_col, column_to_pixel_x, expand_tabs_for_display};
@@ -47,7 +47,7 @@ impl EditorPalette {
 
 /// Shared layout-derived values for editor text rendering.
 struct EditorRenderContext {
-    viewport: geometry::TextViewportMap,
+    viewport: TextViewportMap,
     char_width: f32,
     line_height: usize,
     rect_x: usize,
@@ -69,7 +69,7 @@ impl EditorRenderContext {
         char_width: f32,
         line_height: usize,
     ) -> Self {
-        let viewport = geometry::TextViewportMap::new(editor, document);
+        let viewport = TextViewportMap::new(&editor.viewport, document.line_count());
         let visible_lines = layout.visible_lines(line_height);
         let visible_columns = layout.visible_columns(char_width);
 
@@ -92,7 +92,7 @@ impl EditorRenderContext {
     #[inline]
     fn line_y(&self, doc_line: usize) -> Option<usize> {
         self.viewport
-            .visible_row_for_doc_line(doc_line, self.visible_lines)
+            .visible_row_for_doc_line(doc_line)
             .map(|visible_row| self.content_y + visible_row * self.line_height)
     }
 
@@ -319,7 +319,7 @@ impl<'a> TextEditorRenderer<'a> {
         let Some(screen_line) = self
             .ctx
             .viewport
-            .visible_row_for_doc_line(self.editor.active_cursor().line, self.ctx.visible_lines)
+            .visible_row_for_doc_line(self.editor.active_cursor().line)
         else {
             return;
         };
@@ -560,11 +560,7 @@ impl<'a> TextEditorRenderer<'a> {
         }
 
         for (idx, cursor) in self.editor.cursors.iter().enumerate() {
-            let Some(screen_line) = self
-                .ctx
-                .viewport
-                .visible_row_for_doc_line(cursor.line, self.ctx.visible_lines)
-            else {
+            let Some(screen_line) = self.ctx.viewport.visible_row_for_doc_line(cursor.line) else {
                 continue;
             };
             let y = self.ctx.content_y + screen_line * self.ctx.line_height;
@@ -583,10 +579,7 @@ impl<'a> TextEditorRenderer<'a> {
         }
 
         for preview_pos in &self.editor.rectangle_selection.preview_cursors {
-            let Some(screen_line) = self
-                .ctx
-                .viewport
-                .visible_row_for_doc_line(preview_pos.line, self.ctx.visible_lines)
+            let Some(screen_line) = self.ctx.viewport.visible_row_for_doc_line(preview_pos.line)
             else {
                 continue;
             };
@@ -623,11 +616,7 @@ impl<'a> TextEditorRenderer<'a> {
         dirty_lines: &[usize],
     ) {
         for &doc_line in dirty_lines {
-            if !self
-                .ctx
-                .viewport
-                .contains_doc_line(doc_line, self.ctx.visible_lines)
-            {
+            if !self.ctx.viewport.contains_doc_line(doc_line) {
                 continue;
             }
 

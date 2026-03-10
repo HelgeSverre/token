@@ -18,11 +18,10 @@ use winit::keyboard::ModifiersState;
 
 use crate::commands::filter_commands;
 use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, TabId};
-use crate::model::{AppModel, FocusTarget, ModalState};
+use crate::model::{AppModel, FocusTarget, ModalState, TextViewportMap};
 
 use super::geometry::{
-    is_in_status_bar, DockHeaderLayout, PreviewPaneLayout, TabBarLayout, TextViewportMap,
-    WindowLayout,
+    is_in_status_bar, DockHeaderLayout, PreviewPaneLayout, TabBarLayout, WindowLayout,
 };
 
 // ============================================================================
@@ -813,7 +812,7 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     if pt.x >= group.rect.x as f64 && pt.x < gutter_x_end && pt.y >= content_y_start {
         // Compute which line was clicked
         let local_y = pt.y - content_y_start;
-        let viewport = TextViewportMap::new(editor, document);
+        let viewport = TextViewportMap::new(&editor.viewport, document.line_count());
         let line = viewport.doc_line_for_pixel_y(local_y, model.line_height as f64);
         return Some(HitTarget::EditorGutter {
             group_id,
