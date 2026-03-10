@@ -244,7 +244,9 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
                 let group = model.editor_area.groups.get(&group_id);
                 let vw = group.map(|g| g.rect.width as u32).unwrap_or(800);
                 let vh = group
-                    .map(|g| (g.rect.height as usize).saturating_sub(model.metrics.tab_bar_height) as u32)
+                    .map(|g| {
+                        (g.rect.height as usize).saturating_sub(model.metrics.tab_bar_height) as u32
+                    })
                     .unwrap_or(600);
 
                 match crate::image::load_image(&path, vw, vh) {
@@ -277,17 +279,15 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
                             group.active_tab_index = group.tabs.len() - 1;
                         }
 
-                        model.ui.set_status(format!(
-                            "Opened image: {} ({}×{})",
-                            filename, w, h
-                        ));
+                        model
+                            .ui
+                            .set_status(format!("Opened image: {} ({}×{})", filename, w, h));
                         return Some(Cmd::Redraw);
                     }
                     None => {
-                        model.ui.set_status(format!(
-                            "Error opening image: {}",
-                            filename
-                        ));
+                        model
+                            .ui
+                            .set_status(format!("Error opening image: {}", filename));
                         return Some(Cmd::Redraw);
                     }
                 }

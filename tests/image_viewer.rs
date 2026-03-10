@@ -1,5 +1,9 @@
+mod common;
+
+use common::test_model;
 use std::path::Path;
 use token::image::ImageState;
+use token::model::{Rect, ViewMode};
 use token::util::is_supported_image;
 
 #[test]
@@ -94,4 +98,52 @@ fn test_image_state_no_upscale() {
     // Small image should not be scaled up
     let state = ImageState::new(vec![0; 400], 10, 10, 400, "PNG".into(), 800, 600);
     assert!((state.scale - 1.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn test_sync_all_viewports_auto_fits_image_to_group_content_rect() {
+    let mut model = test_model("", 0, 0);
+    model.editor_area.focused_group_mut().unwrap().rect = Rect::new(0.0, 0.0, 400.0, 300.0);
+    model.editor_mut().view_mode = ViewMode::Image(Box::new(ImageState::new(
+        vec![0; 1000 * 500 * 4],
+        1000,
+        500,
+        0,
+        "PNG".into(),
+        1000,
+        500,
+    )));
+
+    model
+        .editor_area
+        .sync_all_viewports(model.line_height, model.char_width, &model.metrics);
+
+    let image = model.editor().view_mode.as_image().unwrap();
+    assert!((image.scale - 0.4).abs() < 1e-9);
+}
+
+#[test]
+fn test_sync_all_viewports_does_not_override_user_zoomed_image_scale() {
+    let mut model = test_model("", 0, 0);
+    model.editor_area.focused_group_mut().unwrap().rect = Rect::new(0.0, 0.0, 400.0, 300.0);
+
+    let mut image = ImageState::new(
+        vec![0; 1000 * 500 * 4],
+        1000,
+        500,
+        0,
+        "PNG".into(),
+        1000,
+        500,
+    );
+    image.scale = 2.0;
+    image.user_zoomed = true;
+    model.editor_mut().view_mode = ViewMode::Image(Box::new(image));
+
+    model
+        .editor_area
+        .sync_all_viewports(model.line_height, model.char_width, &model.metrics);
+
+    let image = model.editor().view_mode.as_image().unwrap();
+    assert!((image.scale - 2.0).abs() < 1e-9);
 }

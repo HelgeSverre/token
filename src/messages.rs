@@ -689,7 +689,11 @@ pub enum WorkspaceMsg {
 #[derive(Debug, Clone)]
 pub enum ImageMsg {
     /// Zoom by delta at mouse position (scroll wheel or keyboard)
-    Zoom { delta: f64, mouse_x: f64, mouse_y: f64 },
+    Zoom {
+        delta: f64,
+        mouse_x: f64,
+        mouse_y: f64,
+    },
     /// Start panning (mouse down)
     StartPan { x: f64, y: f64 },
     /// Update pan position (mouse drag)
@@ -702,8 +706,6 @@ pub enum ImageMsg {
     ActualSize,
     /// Track mouse position for zoom-toward-cursor
     MouseMove { x: f64, y: f64 },
-    /// Viewport was resized
-    ViewportResized { width: u32, height: u32 },
 }
 
 /// Top-level message type

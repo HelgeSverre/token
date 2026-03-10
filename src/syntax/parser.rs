@@ -279,10 +279,9 @@ impl ParserState {
                 tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
                 TYPESCRIPT_HIGHLIGHTS,
             ),
-            LanguageId::Tsx | LanguageId::Jsx => (
-                tree_sitter_typescript::LANGUAGE_TSX.into(),
-                TSX_HIGHLIGHTS,
-            ),
+            LanguageId::Tsx | LanguageId::Jsx => {
+                (tree_sitter_typescript::LANGUAGE_TSX.into(), TSX_HIGHLIGHTS)
+            }
             LanguageId::Json => (tree_sitter_json::LANGUAGE.into(), JSON_HIGHLIGHTS),
             LanguageId::Toml => (tree_sitter_toml_ng::LANGUAGE.into(), TOML_HIGHLIGHTS),
             // Phase 4 languages (common)

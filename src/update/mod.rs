@@ -62,7 +62,10 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
             // Block editor messages in image mode and binary placeholder mode
             let is_non_text = model.editor_area.focused_editor().is_some_and(|e| {
                 e.view_mode.is_image()
-                    || matches!(e.tab_content, crate::model::editor::TabContent::BinaryPlaceholder(_))
+                    || matches!(
+                        e.tab_content,
+                        crate::model::editor::TabContent::BinaryPlaceholder(_)
+                    )
             });
             if is_non_text {
                 return None;
@@ -86,7 +89,10 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
             // Block document messages in image mode and binary placeholder mode
             let is_non_text = model.editor_area.focused_editor().is_some_and(|e| {
                 e.view_mode.is_image()
-                    || matches!(e.tab_content, crate::model::editor::TabContent::BinaryPlaceholder(_))
+                    || matches!(
+                        e.tab_content,
+                        crate::model::editor::TabContent::BinaryPlaceholder(_)
+                    )
             });
             if is_non_text {
                 return None;

@@ -53,8 +53,16 @@ pub fn update_image(model: &mut AppModel, msg: ImageMsg) -> Option<Cmd> {
             // Account for centering offset (matches render.rs logic)
             let scaled_w = state.width as f64 * state.scale;
             let scaled_h = state.height as f64 * state.scale;
-            let center_x = if scaled_w < area_w { (area_w - scaled_w) / 2.0 } else { 0.0 };
-            let center_y = if scaled_h < area_h { (area_h - scaled_h) / 2.0 } else { 0.0 };
+            let center_x = if scaled_w < area_w {
+                (area_w - scaled_w) / 2.0
+            } else {
+                0.0
+            };
+            let center_y = if scaled_h < area_h {
+                (area_h - scaled_h) / 2.0
+            } else {
+                0.0
+            };
 
             let anchor_x = local_x - center_x;
             let anchor_y = local_y - center_y;
@@ -71,8 +79,16 @@ pub fn update_image(model: &mut AppModel, msg: ImageMsg) -> Option<Cmd> {
             // Recompute centering for the new scale
             let new_scaled_w = state.width as f64 * new_scale;
             let new_scaled_h = state.height as f64 * new_scale;
-            let new_center_x = if new_scaled_w < area_w { (area_w - new_scaled_w) / 2.0 } else { 0.0 };
-            let new_center_y = if new_scaled_h < area_h { (area_h - new_scaled_h) / 2.0 } else { 0.0 };
+            let new_center_x = if new_scaled_w < area_w {
+                (area_w - new_scaled_w) / 2.0
+            } else {
+                0.0
+            };
+            let new_center_y = if new_scaled_h < area_h {
+                (area_h - new_scaled_h) / 2.0
+            } else {
+                0.0
+            };
 
             // Adjust offset so the anchor point stays stationary
             let new_anchor_x = local_x - new_center_x;
@@ -121,8 +137,8 @@ pub fn update_image(model: &mut AppModel, msg: ImageMsg) -> Option<Cmd> {
             let group_id = model.editor_area.focused_group_id;
             let group = model.editor_area.groups.get(&group_id)?;
             let vw = group.rect.width as u32;
-            let vh = (group.rect.height as usize)
-                .saturating_sub(model.metrics.tab_bar_height) as u32;
+            let vh =
+                (group.rect.height as usize).saturating_sub(model.metrics.tab_bar_height) as u32;
 
             let editor = model.editor_area.editors.get_mut(&editor_id)?;
             let state = editor.view_mode.as_image_mut()?;
@@ -152,21 +168,126 @@ pub fn update_image(model: &mut AppModel, msg: ImageMsg) -> Option<Cmd> {
             state.last_mouse_y = y;
             None
         }
+    }
+}
 
-        ImageMsg::ViewportResized { width, height } => {
-            let editor = model.editor_area.editors.get_mut(&editor_id)?;
-            let state = editor.view_mode.as_image_mut()?;
-            if !state.user_zoomed {
-                state.scale = crate::image::ImageState::compute_fit_scale(
-                    state.width,
-                    state.height,
-                    width,
-                    height,
-                );
-                state.offset_x = 0.0;
-                state.offset_y = 0.0;
-            }
-            Some(Cmd::redraw_editor())
-        }
+#[cfg(test)]
+mod tests {
+    use super::update_image;
+    use crate::commands::Cmd;
+    use crate::image::ImageState;
+    use crate::messages::ImageMsg;
+    use crate::model::{AppModel, Rect, ViewMode};
+
+    fn make_image_model(
+        group_x: f32,
+        group_y: f32,
+        content_width: u32,
+        content_height: u32,
+        image_width: u32,
+        image_height: u32,
+    ) -> AppModel {
+        let mut model = AppModel::new(content_width, content_height, 1.0, vec![]);
+        let tab_bar_height = model.metrics.tab_bar_height as f32;
+        let group_id = model.editor_area.focused_group_id;
+        model.editor_area.groups.get_mut(&group_id).unwrap().rect = Rect::new(
+            group_x,
+            group_y,
+            content_width as f32,
+            content_height as f32 + tab_bar_height,
+        );
+
+        let pixels = vec![0; (image_width * image_height * 4) as usize];
+        model.editor_mut().view_mode = ViewMode::Image(Box::new(ImageState::new(
+            pixels,
+            image_width,
+            image_height,
+            0,
+            "PNG".into(),
+            content_width,
+            content_height,
+        )));
+
+        model
+    }
+
+    fn focused_image(model: &AppModel) -> &ImageState {
+        model
+            .editor_area
+            .focused_editor()
+            .unwrap()
+            .view_mode
+            .as_image()
+            .unwrap()
+    }
+
+    #[test]
+    fn zoom_from_center_of_centered_image_keeps_offsets_stable() {
+        let mut model = make_image_model(0.0, 0.0, 800, 600, 100, 100);
+        let mouse_x = 400.0;
+        let mouse_y = model.metrics.tab_bar_height as f64 + 300.0;
+
+        let cmd = update_image(
+            &mut model,
+            ImageMsg::Zoom {
+                delta: 1.0,
+                mouse_x,
+                mouse_y,
+            },
+        );
+
+        assert!(cmd.as_ref().is_some_and(Cmd::needs_redraw));
+
+        let image = focused_image(&model);
+        assert!((image.scale - 1.1).abs() < 1e-9);
+        assert!(image.offset_x.abs() < 1e-9);
+        assert!(image.offset_y.abs() < 1e-9);
+        assert!(image.user_zoomed);
+    }
+
+    #[test]
+    fn keyboard_zoom_uses_last_window_mouse_position() {
+        let group_x = 100.0;
+        let group_y = 20.0;
+        let mut explicit = make_image_model(group_x, group_y, 800, 600, 100, 100);
+        let tab_bar_height = explicit.metrics.tab_bar_height as f64;
+        let mouse_x = group_x as f64 + 400.0;
+        let mouse_y = group_y as f64 + tab_bar_height + 300.0;
+
+        update_image(
+            &mut explicit,
+            ImageMsg::Zoom {
+                delta: 1.0,
+                mouse_x,
+                mouse_y,
+            },
+        );
+
+        let explicit_state = focused_image(&explicit).clone();
+
+        let mut keyboard = make_image_model(group_x, group_y, 800, 600, 100, 100);
+        assert!(update_image(
+            &mut keyboard,
+            ImageMsg::MouseMove {
+                x: mouse_x,
+                y: mouse_y,
+            },
+        )
+        .is_none());
+
+        let zoom_cmd = update_image(
+            &mut keyboard,
+            ImageMsg::Zoom {
+                delta: 1.0,
+                mouse_x: 0.0,
+                mouse_y: 0.0,
+            },
+        );
+        assert!(zoom_cmd.as_ref().is_some_and(Cmd::needs_redraw));
+
+        let keyboard_state = focused_image(&keyboard);
+        assert!((keyboard_state.scale - explicit_state.scale).abs() < 1e-9);
+        assert!((keyboard_state.offset_x - explicit_state.offset_x).abs() < 1e-9);
+        assert!((keyboard_state.offset_y - explicit_state.offset_y).abs() < 1e-9);
     }
 }

@@ -697,29 +697,30 @@ impl EditorArea {
     /// Should be called after compute_layout() or after split/close operations.
     ///
     /// Uses the active scaled metrics so viewport sizing matches the actual
-    /// rendered gutter/text geometry for each group.
+    /// rendered gutter/text geometry for each group. Image editors that remain
+    /// in auto-fit mode also recompute their scale from the same content rect.
     pub fn sync_all_viewports(
         &mut self,
         line_height: usize,
         char_width: f32,
         metrics: &crate::model::ScaledMetrics,
     ) {
-        // Collect group rects and their editor IDs
-        let group_info: Vec<(Vec<EditorId>, u32, u32)> = self
+        // Collect group rects and their editor IDs.
+        let group_info: Vec<(Vec<EditorId>, u32, u32, u32)> = self
             .groups
             .values()
             .map(|group| {
                 let editor_ids: Vec<EditorId> = group.tabs.iter().map(|t| t.editor_id).collect();
-                (
-                    editor_ids,
-                    group.rect.width as u32,
-                    group.rect.height as u32,
-                )
+                let width = group.rect.width as u32;
+                let height = group.rect.height as u32;
+                let content_height =
+                    (height as usize).saturating_sub(metrics.tab_bar_height) as u32;
+                (editor_ids, width, height, content_height)
             })
             .collect();
 
-        // Update each editor's viewport based on its group's dimensions
-        for (editor_ids, width, height) in group_info {
+        // Update each editor's viewport based on its group's dimensions.
+        for (editor_ids, width, height, content_height) in group_info {
             // Subtract tab bar height because group rect includes the tab bar area,
             // but visible_lines should only count the text content area.
             let visible_lines = if line_height > 0 {
@@ -738,6 +739,17 @@ impl EditorArea {
             for editor_id in editor_ids {
                 if let Some(editor) = self.editors.get_mut(&editor_id) {
                     editor.resize_viewport(visible_lines, visible_columns);
+
+                    if let Some(image) = editor.view_mode.as_image_mut() {
+                        if !image.user_zoomed {
+                            image.scale = crate::image::ImageState::compute_fit_scale(
+                                image.width,
+                                image.height,
+                                width,
+                                content_height,
+                            );
+                        }
+                    }
                 }
             }
         }

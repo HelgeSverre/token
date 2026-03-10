@@ -20,7 +20,9 @@ use token::fs_watcher::{FileSystemEvent, FileSystemWatcher};
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
 };
-use token::messages::{AppMsg, EditorMsg, ImageMsg, LayoutMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg};
+use token::messages::{
+    AppMsg, EditorMsg, ImageMsg, LayoutMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg,
+};
 use token::model::editor::Position;
 use token::model::AppModel;
 use token::syntax::{LanguageId, ParserState};
@@ -466,7 +468,9 @@ impl App {
                 // Handle image panning and mouse tracking
                 if let Some(editor) = self.model.editor_area.focused_editor() {
                     if editor.view_mode.is_image() {
-                        let has_drag = editor.view_mode.as_image()
+                        let has_drag = editor
+                            .view_mode
+                            .as_image()
                             .map(|img| img.drag.is_some())
                             .unwrap_or(false);
 
@@ -593,7 +597,9 @@ impl App {
 
                 // End image pan if active
                 if let Some(editor) = self.model.editor_area.focused_editor() {
-                    if editor.view_mode.as_image()
+                    if editor
+                        .view_mode
+                        .as_image()
                         .map(|img| img.drag.is_some())
                         .unwrap_or(false)
                     {

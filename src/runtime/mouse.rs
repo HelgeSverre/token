@@ -213,7 +213,9 @@ pub fn handle_mouse_press(
     // Track if we're clicking on editor content (for drag tracking)
     let is_editor_content = matches!(
         target,
-        HitTarget::EditorContent { .. } | HitTarget::EditorGutter { .. } | HitTarget::ImageContent { .. }
+        HitTarget::EditorContent { .. }
+            | HitTarget::EditorGutter { .. }
+            | HitTarget::ImageContent { .. }
     );
     let is_left_click = matches!(event.button, MouseButton::Left);
 

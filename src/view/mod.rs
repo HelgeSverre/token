@@ -590,8 +590,13 @@ impl Renderer {
         Self::render_tab_bar(frame, painter, model, group, &layout);
 
         // Dispatch based on tab content and view mode
-        if matches!(editor.tab_content, crate::model::editor::TabContent::BinaryPlaceholder(_)) {
-            if let crate::model::editor::TabContent::BinaryPlaceholder(ref placeholder) = editor.tab_content {
+        if matches!(
+            editor.tab_content,
+            crate::model::editor::TabContent::BinaryPlaceholder(_)
+        ) {
+            if let crate::model::editor::TabContent::BinaryPlaceholder(ref placeholder) =
+                editor.tab_content
+            {
                 Self::render_binary_placeholder(frame, painter, model, placeholder, &layout);
             }
         } else if let Some(image_state) = editor.view_mode.as_image() {
@@ -599,9 +604,7 @@ impl Renderer {
         } else if let Some(csv_state) = editor.view_mode.as_csv() {
             Self::render_csv_grid(frame, painter, model, csv_state, &layout, is_focused);
         } else {
-            Self::render_text_area(
-                frame, painter, model, editor, document, &layout, is_focused,
-            );
+            Self::render_text_area(frame, painter, model, editor, document, &layout, is_focused);
             Self::render_gutter(frame, painter, model, editor, document, &layout);
         }
 

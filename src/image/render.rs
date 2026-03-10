@@ -83,11 +83,7 @@ pub fn render_image(
             let img_x = img_x_f as i64;
             let img_y = img_y_f as i64;
 
-            if img_x >= 0
-                && img_y >= 0
-                && (img_x as u32) < img_w
-                && (img_y as u32) < img_h
-            {
+            if img_x >= 0 && img_y >= 0 && (img_x as u32) < img_w && (img_y as u32) < img_h {
                 let src_idx = (img_y as usize * img_w as usize + img_x as usize) * 4;
 
                 if src_idx + 3 < image.pixels.len() {

@@ -27,9 +27,9 @@ pub struct ImageState {
     pub offset_y: f64,
     /// Whether the user has manually zoomed (disables auto-fit on resize)
     pub user_zoomed: bool,
-    /// Last known mouse position (content-local coords, for zoom-toward-cursor)
+    /// Last known mouse position in window coords, for keyboard zoom anchoring.
     pub last_mouse_x: f64,
-    /// Last known mouse position (content-local coords, for zoom-toward-cursor)
+    /// Last known mouse position in window coords, for keyboard zoom anchoring.
     pub last_mouse_y: f64,
     /// Active drag state for panning
     pub drag: Option<DragState>,
