@@ -47,6 +47,11 @@ struct SyntaxParseRequest {
     language: LanguageId,
 }
 
+enum SyntaxWorkerRequest {
+    Parse(SyntaxParseRequest),
+    ClearDocument(token::model::editor_area::DocumentId),
+}
+
 pub struct App {
     model: AppModel,
     keymap: Keymap,
@@ -62,7 +67,7 @@ pub struct App {
     msg_rx: Receiver<Msg>,
     perf: PerfStats,
     /// Channel to send parse requests to syntax worker
-    syntax_tx: Sender<SyntaxParseRequest>,
+    syntax_tx: Sender<SyntaxWorkerRequest>,
     /// File system watcher for workspace directory (if workspace is open)
     fs_watcher: Option<FileSystemWatcher>,
     /// Pending damage for the next render (accumulated from commands)
@@ -83,7 +88,7 @@ impl App {
         let keymap = Keymap::with_bindings(load_default_keymap());
 
         // Spawn syntax highlighting worker thread
-        let (syntax_tx, syntax_rx) = mpsc::channel::<SyntaxParseRequest>();
+        let (syntax_tx, syntax_rx) = mpsc::channel::<SyntaxWorkerRequest>();
         {
             let msg_tx_clone = msg_tx.clone();
             std::thread::spawn(move || syntax_worker_loop(syntax_rx, msg_tx_clone));
@@ -175,12 +180,14 @@ impl App {
 
         // Send parse requests for each document
         for (doc_id, revision, source, language) in docs_to_parse {
-            let _ = self.syntax_tx.send(SyntaxParseRequest {
-                document_id: doc_id,
-                revision,
-                source,
-                language,
-            });
+            let _ = self
+                .syntax_tx
+                .send(SyntaxWorkerRequest::Parse(SyntaxParseRequest {
+                    document_id: doc_id,
+                    revision,
+                    source,
+                    language,
+                }));
         }
     }
 
@@ -1015,12 +1022,20 @@ impl App {
                     source.len()
                 );
                 let syntax_tx = self.syntax_tx.clone();
-                let _ = syntax_tx.send(SyntaxParseRequest {
+                let _ = syntax_tx.send(SyntaxWorkerRequest::Parse(SyntaxParseRequest {
                     document_id,
                     revision,
                     source,
                     language,
-                });
+                }));
+            }
+
+            Cmd::ClearSyntaxState { document_id } => {
+                tracing::debug!("ClearSyntaxState: doc={}", document_id.0);
+                self.syntax_deadlines.remove(&document_id);
+                let _ = self
+                    .syntax_tx
+                    .send(SyntaxWorkerRequest::ClearDocument(document_id));
             }
 
             // =====================================================================
@@ -1254,7 +1269,7 @@ impl App {
 }
 
 /// Syntax highlighting worker thread loop
-fn syntax_worker_loop(rx: Receiver<SyntaxParseRequest>, msg_tx: Sender<Msg>) {
+fn syntax_worker_loop(rx: Receiver<SyntaxWorkerRequest>, msg_tx: Sender<Msg>) {
     use std::collections::HashMap;
 
     tracing::info!("Syntax worker thread started");
@@ -1265,32 +1280,18 @@ fn syntax_worker_loop(rx: Receiver<SyntaxParseRequest>, msg_tx: Sender<Msg>) {
 
     loop {
         // Wait for first request (blocking)
-        let request = match rx.recv() {
-            Ok(req) => {
-                tracing::debug!(
-                    "Worker received request: doc={} rev={} lang={:?}",
-                    req.document_id.0,
-                    req.revision,
-                    req.language
-                );
-                req
-            }
+        match rx.recv() {
+            Ok(req) => handle_syntax_worker_request(&mut pending, &mut parser_state, req),
             Err(_) => {
                 tracing::info!("Syntax worker channel closed, exiting");
                 return;
             }
-        };
-        pending.insert(request.document_id, request);
+        }
 
         // Drain any additional pending requests (non-blocking)
         // Keep only the latest request per document
         while let Ok(req) = rx.try_recv() {
-            tracing::debug!(
-                "Worker draining request: doc={} rev={}",
-                req.document_id.0,
-                req.revision
-            );
-            pending.insert(req.document_id, req);
+            handle_syntax_worker_request(&mut pending, &mut parser_state, req);
         }
 
         // Process all pending requests
@@ -1334,6 +1335,29 @@ fn syntax_worker_loop(rx: Receiver<SyntaxParseRequest>, msg_tx: Sender<Msg>) {
                 highlights,
                 outline,
             }));
+        }
+    }
+}
+
+fn handle_syntax_worker_request(
+    pending: &mut HashMap<token::model::editor_area::DocumentId, SyntaxParseRequest>,
+    parser_state: &mut ParserState,
+    request: SyntaxWorkerRequest,
+) {
+    match request {
+        SyntaxWorkerRequest::Parse(req) => {
+            tracing::debug!(
+                "Worker queued parse request: doc={} rev={} lang={:?}",
+                req.document_id.0,
+                req.revision,
+                req.language
+            );
+            pending.insert(req.document_id, req);
+        }
+        SyntaxWorkerRequest::ClearDocument(document_id) => {
+            tracing::debug!("Worker clearing cached syntax state: doc={}", document_id.0);
+            pending.remove(&document_id);
+            parser_state.clear_doc_cache(document_id);
         }
     }
 }

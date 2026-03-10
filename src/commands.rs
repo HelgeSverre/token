@@ -664,6 +664,8 @@ pub enum Cmd {
         source: String,
         language: LanguageId,
     },
+    /// Drop debounced parse state and worker-side cached parse trees for a document.
+    ClearSyntaxState { document_id: DocumentId },
 
     // === Display Commands ===
     /// Reinitialize the renderer (e.g., after scale factor change)
@@ -704,6 +706,7 @@ impl Cmd {
             // Syntax commands don't need immediate redraw - ParseCompleted triggers redraw
             Cmd::DebouncedSyntaxParse { .. } => false,
             Cmd::RunSyntaxParse { .. } => false,
+            Cmd::ClearSyntaxState { .. } => false,
             // Reinitialize triggers a full redraw after renderer is recreated
             Cmd::ReinitializeRenderer => true,
             // Quit doesn't need redraw - app is exiting
@@ -754,6 +757,7 @@ impl Cmd {
             // Syntax commands don't need immediate redraw
             Cmd::DebouncedSyntaxParse { .. } => Damage::Areas(vec![]),
             Cmd::RunSyntaxParse { .. } => Damage::Areas(vec![]),
+            Cmd::ClearSyntaxState { .. } => Damage::Areas(vec![]),
             // Reinitialize triggers full redraw
             Cmd::ReinitializeRenderer => Damage::Full,
             // Quit doesn't need redraw - app is exiting

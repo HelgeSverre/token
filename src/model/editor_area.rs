@@ -721,6 +721,10 @@ impl EditorArea {
 
         // Update each editor's viewport based on its group's dimensions.
         for (editor_ids, width, height, content_height) in group_info {
+            if width == 0 || height == 0 {
+                continue;
+            }
+
             // Subtract tab bar height because group rect includes the tab bar area,
             // but visible_lines should only count the text content area.
             let visible_lines = if line_height > 0 {

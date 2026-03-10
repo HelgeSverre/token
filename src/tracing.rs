@@ -28,8 +28,7 @@ use crate::model::EditorState;
 ///
 /// File logging writes to `~/.config/token-editor/logs/token.log` with daily rotation.
 pub fn init() {
-    let console_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
+    let console_filter = default_filter_from_env("RUST_LOG");
 
     // Console layer - respects RUST_LOG
     let console_layer = fmt::layer()
@@ -37,7 +36,9 @@ pub fn init() {
         .with_line_number(true)
         .with_filter(console_filter);
 
-    // File layer - always debug level for troubleshooting
+    // File layer - follows TOKEN_FILE_LOG when set, otherwise falls back to RUST_LOG.
+    // This avoids always-on hot-path debug logging in normal development sessions.
+    let file_filter = filter_from_env_or("TOKEN_FILE_LOG", || default_filter_from_env("RUST_LOG"));
     let file_layer = match crate::config_paths::ensure_logs_dir() {
         Ok(logs_dir) => {
             let file_appender = tracing_appender::rolling::daily(logs_dir, "token.log");
@@ -47,7 +48,7 @@ pub fn init() {
                     .with_ansi(false)
                     .with_target(true)
                     .with_line_number(true)
-                    .with_filter(EnvFilter::new("debug")),
+                    .with_filter(file_filter),
             )
         }
         Err(e) => {
@@ -60,6 +61,17 @@ pub fn init() {
         .with(console_layer)
         .with(file_layer)
         .init();
+}
+
+fn default_filter_from_env(env_var: &str) -> EnvFilter {
+    filter_from_env_or(env_var, || EnvFilter::new("warn"))
+}
+
+fn filter_from_env_or(env_var: &str, fallback: impl FnOnce() -> EnvFilter) -> EnvFilter {
+    std::env::var(env_var)
+        .ok()
+        .and_then(|value| EnvFilter::try_new(value).ok())
+        .unwrap_or_else(fallback)
 }
 
 /// Lightweight snapshot of cursor/selection state for diffing

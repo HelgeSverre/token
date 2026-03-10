@@ -3,6 +3,7 @@
 mod common;
 
 use common::test_model;
+use token::commands::Cmd;
 use token::messages::{LayoutMsg, Msg};
 use token::model::{GroupId, LayoutNode, Position, Selection, SplitDirection};
 use token::update::update;
@@ -745,6 +746,68 @@ fn test_close_tab_removes_editor() {
 }
 
 #[test]
+fn test_close_tab_removes_unreferenced_document_and_clears_syntax_state() {
+    let mut model = test_model("hello\nworld\n", 0, 0);
+    let original_group_id = model.editor_area.focused_group_id;
+    let original_doc_id = model.editor_area.focused_document_id().unwrap();
+
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
+    );
+
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::FocusGroup(original_group_id)),
+    );
+    update(&mut model, Msg::Layout(LayoutMsg::NewTab));
+
+    let new_doc_id = model.editor_area.focused_document_id().unwrap();
+    assert_ne!(new_doc_id, original_doc_id);
+    assert_eq!(model.editor_area.documents.len(), 2);
+
+    let tab_id = model
+        .editor_area
+        .focused_group()
+        .unwrap()
+        .active_tab()
+        .unwrap()
+        .id;
+
+    let cmd = update(&mut model, Msg::Layout(LayoutMsg::CloseTab(tab_id)));
+
+    assert!(!model.editor_area.documents.contains_key(&new_doc_id));
+    assert_eq!(model.editor_area.documents.len(), 1);
+
+    let Some(Cmd::Batch(cmds)) = cmd else {
+        panic!("Expected batch command");
+    };
+    assert!(cmds.iter().any(
+        |cmd| matches!(cmd, Cmd::ClearSyntaxState { document_id } if *document_id == new_doc_id)
+    ));
+}
+
+#[test]
+fn test_close_shared_document_tab_keeps_document() {
+    let mut model = test_model("hello\nworld\n", 0, 0);
+    let shared_doc_id = model.editor_area.focused_document_id().unwrap();
+
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
+    );
+
+    let group2 = model.editor_area.focused_group_id;
+    let tab_id = model.editor_area.groups.get(&group2).unwrap().tabs[0].id;
+    let cmd = update(&mut model, Msg::Layout(LayoutMsg::CloseTab(tab_id)));
+
+    assert!(model.editor_area.documents.contains_key(&shared_doc_id));
+    assert_eq!(model.editor_area.documents.len(), 1);
+
+    assert!(!matches!(cmd, Some(Cmd::Batch(_))));
+}
+
+#[test]
 fn test_close_focused_tab() {
     let mut model = test_model("hello\nworld\n", 0, 0);
 
@@ -852,6 +915,34 @@ fn test_close_middle_group_collapses_correctly() {
     // Both remaining groups should still be in layout
     assert!(model.editor_area.groups.contains_key(&group1));
     assert!(model.editor_area.groups.contains_key(&group3));
+}
+
+#[test]
+fn test_close_group_releases_only_unreferenced_documents() {
+    let mut model = test_model("hello\nworld\n", 0, 0);
+    let shared_doc_id = model.editor_area.focused_document_id().unwrap();
+
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
+    );
+    let group2 = model.editor_area.focused_group_id;
+
+    update(&mut model, Msg::Layout(LayoutMsg::NewTab));
+    let unique_doc_id = model.editor_area.focused_document_id().unwrap();
+    assert_ne!(shared_doc_id, unique_doc_id);
+
+    let cmd = update(&mut model, Msg::Layout(LayoutMsg::CloseGroup(group2)));
+
+    assert!(model.editor_area.documents.contains_key(&shared_doc_id));
+    assert!(!model.editor_area.documents.contains_key(&unique_doc_id));
+
+    let Some(Cmd::Batch(cmds)) = cmd else {
+        panic!("Expected batch command");
+    };
+    assert!(cmds.iter().any(
+        |cmd| matches!(cmd, Cmd::ClearSyntaxState { document_id } if *document_id == unique_doc_id)
+    ));
 }
 
 #[test]

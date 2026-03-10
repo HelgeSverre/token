@@ -55,14 +55,14 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
         }
 
         LayoutMsg::CloseGroup(group_id) => {
-            close_group(model, group_id);
-            Some(Cmd::Redraw)
+            let released_documents = close_group(model, group_id);
+            Some(with_released_documents(Cmd::Redraw, released_documents))
         }
 
         LayoutMsg::CloseFocusedGroup => {
             let group_id = model.editor_area.focused_group_id;
-            close_group(model, group_id);
-            Some(Cmd::Redraw)
+            let released_documents = close_group(model, group_id);
+            Some(with_released_documents(Cmd::Redraw, released_documents))
         }
 
         LayoutMsg::FocusGroup(group_id) => {
@@ -99,8 +99,11 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
         }
 
         LayoutMsg::CloseTab(tab_id) => {
-            close_tab(model, tab_id);
-            Some(Cmd::redraw_editor())
+            let released_documents = close_tab(model, tab_id);
+            Some(with_released_documents(
+                Cmd::redraw_editor(),
+                released_documents,
+            ))
         }
 
         LayoutMsg::CloseFocusedTab => {
@@ -110,7 +113,11 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                 .and_then(|g| g.active_tab())
             {
                 let tab_id = tab.id;
-                close_tab(model, tab_id);
+                let released_documents = close_tab(model, tab_id);
+                return Some(with_released_documents(
+                    Cmd::redraw_editor(),
+                    released_documents,
+                ));
             }
             Some(Cmd::redraw_editor())
         }
@@ -496,22 +503,44 @@ fn insert_split_in_layout(
 }
 
 /// Close a group and remove it from the layout
-fn close_group(model: &mut AppModel, group_id: GroupId) {
+fn close_group(
+    model: &mut AppModel,
+    group_id: GroupId,
+) -> Vec<crate::model::editor_area::DocumentId> {
     // Don't close the last group
     if model.editor_area.groups.len() <= 1 {
-        return;
+        return vec![];
+    }
+
+    if let Some(preview_id) = model.editor_area.find_preview_for_group(group_id) {
+        model.editor_area.close_preview(preview_id);
     }
 
     // Remove the group from the layout tree
     let removed = remove_group_from_layout(&mut model.editor_area.layout, group_id);
     if !removed {
-        return;
+        return vec![];
     }
 
     // Clean up the group's tabs and editors
+    let mut released_documents = Vec::new();
     if let Some(group) = model.editor_area.groups.remove(&group_id) {
+        let mut candidate_docs = Vec::new();
         for tab in group.tabs {
-            model.editor_area.editors.remove(&tab.editor_id);
+            if let Some(editor) = model.editor_area.editors.remove(&tab.editor_id) {
+                if let Some(doc_id) = editor.document_id {
+                    candidate_docs.push(doc_id);
+                }
+            }
+        }
+
+        candidate_docs.sort_by_key(|doc_id| doc_id.0);
+        candidate_docs.dedup_by_key(|doc_id| doc_id.0);
+
+        for doc_id in candidate_docs {
+            if release_document_if_unreferenced(model, doc_id) {
+                released_documents.push(doc_id);
+            }
         }
     }
 
@@ -522,6 +551,8 @@ fn close_group(model: &mut AppModel, group_id: GroupId) {
             model.editor_area.focused_group_id = new_focus;
         }
     }
+
+    released_documents
 }
 
 /// Remove a group from the layout tree, collapsing splits as needed
@@ -695,7 +726,7 @@ fn move_tab(model: &mut AppModel, tab_id: TabId, to_group: GroupId) {
 }
 
 /// Close a specific tab
-fn close_tab(model: &mut AppModel, tab_id: TabId) {
+fn close_tab(model: &mut AppModel, tab_id: TabId) -> Vec<crate::model::editor_area::DocumentId> {
     // Find the tab and its group
     let mut found = None;
     for (gid, group) in &model.editor_area.groups {
@@ -707,18 +738,18 @@ fn close_tab(model: &mut AppModel, tab_id: TabId) {
 
     let (group_id, tab_idx) = match found {
         Some(f) => f,
-        None => return,
+        None => return vec![],
     };
 
     // Check if this is the last tab in the last group - don't allow closing it
     let group = match model.editor_area.groups.get(&group_id) {
         Some(g) => g,
-        None => return,
+        None => return vec![],
     };
 
     if group.tabs.len() == 1 && model.editor_area.groups.len() == 1 {
         // Can't close the last tab in the last group
-        return;
+        return vec![];
     }
 
     // Get editor_id and doc_id before removing
@@ -740,17 +771,10 @@ fn close_tab(model: &mut AppModel, tab_id: TabId) {
     // Remove the editor
     model.editor_area.editors.remove(&editor_id);
 
-    // Close any preview attached to this group if it was for this document
-    if let Some(did) = doc_id {
-        if let Some(preview_id) = model.editor_area.find_preview_for_group(group_id) {
-            if model
-                .editor_area
-                .previews
-                .get(&preview_id)
-                .is_some_and(|p| p.document_id == did)
-            {
-                model.editor_area.close_preview(preview_id);
-            }
+    let mut released_documents = Vec::new();
+    if let Some(doc_id) = doc_id {
+        if release_document_if_unreferenced(model, doc_id) {
+            released_documents.push(doc_id);
         }
     }
 
@@ -762,8 +786,12 @@ fn close_tab(model: &mut AppModel, tab_id: TabId) {
         .is_some_and(|g| g.tabs.is_empty())
         && model.editor_area.groups.len() > 1
     {
-        close_group(model, group_id);
+        released_documents.extend(close_group(model, group_id));
+    } else {
+        model.editor_area.on_group_active_tab_changed(group_id);
     }
+
+    released_documents
 }
 
 // ============================================================================
@@ -1088,6 +1116,36 @@ fn restore_container_ratios_by_splitter(
 fn close_preview_if_not_markdown(model: &mut AppModel) {
     let group_id = model.editor_area.focused_group_id;
     model.editor_area.on_group_active_tab_changed(group_id);
+}
+
+fn with_released_documents(
+    base: Cmd,
+    released_documents: Vec<crate::model::editor_area::DocumentId>,
+) -> Cmd {
+    if released_documents.is_empty() {
+        return base;
+    }
+
+    let mut cmds = Vec::with_capacity(1 + released_documents.len());
+    cmds.push(base);
+    cmds.extend(
+        released_documents
+            .into_iter()
+            .map(|document_id| Cmd::ClearSyntaxState { document_id }),
+    );
+    Cmd::Batch(cmds)
+}
+
+fn release_document_if_unreferenced(
+    model: &mut AppModel,
+    doc_id: crate::model::editor_area::DocumentId,
+) -> bool {
+    if !model.editor_area.editors_for_document(doc_id).is_empty() {
+        return false;
+    }
+
+    model.editor_area.close_previews_for_document(doc_id);
+    model.editor_area.documents.remove(&doc_id).is_some()
 }
 
 /// Sync all editor viewports to their group's actual dimensions.
