@@ -1195,11 +1195,14 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                     .filter(|&&l| l < model.editor().viewport.top_line)
                     .count();
                 if deleted_above_viewport > 0 {
-                    model.editor_mut().viewport.top_line = model
-                        .editor()
-                        .viewport
-                        .top_line
-                        .saturating_sub(deleted_above_viewport);
+                    if let Some(editor_id) = model.editor_area.focused_editor_id() {
+                        let next_top_line = model
+                            .editor()
+                            .viewport
+                            .top_line
+                            .saturating_sub(deleted_above_viewport);
+                        model.set_editor_vertical_scroll(editor_id, next_top_line);
+                    }
                 }
 
                 model.ensure_cursor_visible();
@@ -1274,8 +1277,9 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
 
                 model.document_mut().is_modified = true;
 
-                if model.editor().viewport.top_line > 0 {
-                    model.editor_mut().viewport.top_line -= 1;
+                if let Some(editor_id) = model.editor_area.focused_editor_id() {
+                    let next_top_line = model.editor().viewport.top_line.saturating_sub(1);
+                    model.set_editor_vertical_scroll(editor_id, next_top_line);
                 }
             }
 

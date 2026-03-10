@@ -26,7 +26,7 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 - `Phase 2` is complete.
 - `Phase 3` is complete.
 - `Phase 4` is complete.
-- `Phase 4.5` is in progress.
+- `Phase 4.5` is complete.
 - `Phase 5` has not started.
 
 ### What Has Landed
@@ -42,11 +42,12 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 - `TextViewportMap` now lives in `src/model/editor.rs` and owns the current no-wrap visible-row/column mapping used by text rendering, hit-testing, and cursor reveal logic.
 - `EditorState` now owns clamped viewport mutation for vertical and horizontal text scrolling, and `AppModel` now owns the scroll paths that also need preview-sync side effects.
 - editor scroll wheel handling, scrollbar interaction, and preview-to-editor scroll sync now route through the shared viewport mutation seam instead of writing viewport fields ad hoc.
+- document-edit viewport adjustments now route through the same vertical scroll seam, so viewport writes are isolated to `EditorState` itself.
 
 ### What Still Remains
 
 - popup geometry contracts are still missing if context-menu work begins before a narrower overlay contract is enough.
-- the text renderer still needs more feature-specific decoration inputs, and the new text-viewport seam still needs to reach remaining document-edit viewport adjustments before soft wrap work starts.
+- the text renderer still needs more feature-specific decoration inputs before text features like diff gutter, indent guides, or folding land cleanly.
 - older docs and transitional seams still need a cleanup pass once the architecture settles.
 
 ## Decision
@@ -465,7 +466,7 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 
 ### Phase 4.5: Text Viewport Readiness
 
-**Status:** In Progress
+**Status:** Complete
 
 **Goal:** prepare the text rendering path for future soft wrap and folding without implementing either feature here.
 
