@@ -8,7 +8,7 @@
 //! tested independently of the rendering infrastructure.
 
 use crate::model::editor_area::{EditorGroup, Rect};
-use crate::model::{AppModel, Document, EditorState};
+use crate::model::{AppModel, Document, EditorState, ScaledMetrics};
 
 // ============================================================================
 // Layout Constants
@@ -133,6 +133,21 @@ pub fn visual_col_to_char_col(text: &str, visual_col: usize) -> usize {
     }
 
     char_col
+}
+
+/// Convert a visual column into a viewport-relative pixel x-coordinate.
+///
+/// The returned x-position is clamped to the left edge of the text area when
+/// the target column is scrolled offscreen.
+#[inline]
+pub fn column_to_pixel_x(
+    visual_col: usize,
+    viewport_left: usize,
+    text_start_x: usize,
+    char_width: f32,
+) -> usize {
+    let visible_col = visual_col.saturating_sub(viewport_left);
+    text_start_x + (visible_col as f32 * char_width).round() as usize
 }
 
 // ============================================================================
@@ -1630,6 +1645,14 @@ mod tests {
         assert_eq!(visual_col_to_char_col("a\tb", 4), 2); // visual 4 is 'b' which is char 2
     }
 
+    #[test]
+    fn test_column_to_pixel_x() {
+        assert_eq!(column_to_pixel_x(2, 0, 100, 8.0), 116);
+        assert_eq!(column_to_pixel_x(6, 4, 100, 8.0), 116);
+        assert_eq!(column_to_pixel_x(2, 4, 100, 8.0), 100);
+        assert_eq!(column_to_pixel_x(3, 1, 100, 7.5), 115);
+    }
+
     // ====================================================================
     // VStack / ModalLayout tests
     // ====================================================================
@@ -1840,6 +1863,43 @@ mod tests {
         let pos1 = tl.node_position(1, 100);
         assert!(pos1.icon_x > pos.icon_x);
     }
+
+    #[test]
+    fn test_outline_panel_layout_content_geometry() {
+        let metrics = ScaledMetrics::new(1.0);
+        let layout = OutlinePanelLayout::new(Rect::new(700.0, 0.0, 300.0, 540.0), &metrics);
+
+        assert_eq!(layout.title_x, 708);
+        assert_eq!(layout.title_y, 4);
+        assert_eq!(
+            layout.content_rect.y,
+            metrics.file_tree_row_height as f32 + metrics.padding_medium as f32
+        );
+        assert_eq!(
+            layout.content_rect.height,
+            540.0 - metrics.file_tree_row_height as f32 - metrics.padding_medium as f32
+        );
+        assert_eq!(
+            layout.visible_capacity(),
+            (layout.content_rect.height / metrics.file_tree_row_height as f32) as usize
+        );
+    }
+
+    #[test]
+    fn test_outline_panel_layout_row_and_chevron_hit_testing() {
+        let metrics = ScaledMetrics::new(1.0);
+        let layout = OutlinePanelLayout::new(Rect::new(700.0, 0.0, 300.0, 540.0), &metrics);
+        let row_start = layout.content_rect.y;
+        let next_row = row_start + metrics.file_tree_row_height as f32;
+
+        assert_eq!(layout.row_index_at_y(row_start - 0.1, 3), None);
+        assert_eq!(layout.row_index_at_y(row_start, 3), Some(3));
+        assert_eq!(layout.row_index_at_y(next_row - 0.1, 3), Some(3));
+        assert_eq!(layout.row_index_at_y(next_row, 3), Some(4));
+
+        assert!(layout.is_on_chevron(0, 708.0));
+        assert!(!layout.is_on_chevron(0, 725.0));
+    }
 }
 
 // ============================================================================
@@ -1851,7 +1911,7 @@ mod tests {
 /// Encapsulates the padding, indent, and spacing calculations that are shared
 /// between the sidebar file tree and the outline panel, providing a single
 /// source of truth for tree-node positioning.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct TreeListLayout {
     /// Left padding from container edge to first-level icons
     pub left_padding: usize,
@@ -1861,6 +1921,79 @@ pub struct TreeListLayout {
     pub text_top_padding: usize,
     /// Horizontal indent per nesting level
     pub indent: f32,
+}
+
+/// Shared layout for the outline dock panel.
+///
+/// Centralizes the title/content split and row hit-test geometry so render,
+/// scroll logic, and mouse handling all use the same measurements.
+#[derive(Debug, Clone, Copy)]
+pub struct OutlinePanelLayout {
+    /// Full dock panel rectangle.
+    pub rect: Rect,
+    /// Precomputed title x position.
+    pub title_x: usize,
+    /// Precomputed title y position.
+    pub title_y: usize,
+    /// Scrollable content area below the title bar.
+    pub content_rect: Rect,
+    /// Tree row height in pixels.
+    pub row_height: usize,
+    /// Tree indentation/padding rules for the outline panel.
+    pub tree: TreeListLayout,
+}
+
+impl OutlinePanelLayout {
+    /// Build outline panel geometry from the dock rectangle and scaled metrics.
+    pub fn new(rect: Rect, metrics: &ScaledMetrics) -> Self {
+        let row_height = metrics.file_tree_row_height;
+        let title_x = (rect.x + metrics.padding_large as f32) as usize;
+        let title_y = (rect.y + metrics.padding_medium as f32) as usize;
+        let content_y = rect.y + row_height as f32 + metrics.padding_medium as f32;
+        let content_height =
+            (rect.height - row_height as f32 - metrics.padding_medium as f32).max(0.0);
+
+        Self {
+            rect,
+            title_x,
+            title_y,
+            content_rect: Rect::new(rect.x, content_y, rect.width, content_height),
+            row_height,
+            tree: TreeListLayout::outline_from_metrics(metrics),
+        }
+    }
+
+    /// Number of whole outline rows that fit in the content area.
+    #[inline]
+    pub fn visible_capacity(&self) -> usize {
+        if self.row_height == 0 {
+            0
+        } else {
+            (self.content_rect.height / self.row_height as f32).max(0.0) as usize
+        }
+    }
+
+    /// Resolve a mouse y-coordinate to a flattened visible row index.
+    #[inline]
+    pub fn row_index_at_y(&self, y: f32, scroll_offset: usize) -> Option<usize> {
+        if self.row_height == 0
+            || y < self.content_rect.y
+            || y >= self.content_rect.y + self.content_rect.height
+        {
+            return None;
+        }
+
+        let visual_row = ((y - self.content_rect.y) / self.row_height as f32) as usize;
+        Some(scroll_offset.saturating_add(visual_row))
+    }
+
+    /// Whether the x-coordinate lands on the collapse/expand indicator for a row depth.
+    #[inline]
+    pub fn is_on_chevron(&self, depth: usize, x: f32) -> bool {
+        let start = self.rect.x + self.tree.x_offset(depth) as f32;
+        let end = start + self.tree.indicator_width as f32;
+        x >= start && x < end
+    }
 }
 
 /// Computed positions for a single tree node at a given depth and y.

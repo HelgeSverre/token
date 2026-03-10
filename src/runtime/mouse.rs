@@ -18,7 +18,9 @@ use token::messages::{
 };
 use token::model::AppModel;
 use token::update::update;
+use token::util::visible_tree_row_at_index;
 
+use token::view::geometry::{OutlinePanelLayout, WindowLayout};
 use token::view::hit_test::{hit_test_ui, EventResult, HitTarget, MouseEvent};
 use token::view::Renderer;
 
@@ -612,39 +614,43 @@ fn handle_left_click(
             if *active_panel_id == token::panel::PanelId::Outline {
                 use token::messages::OutlineMsg;
 
-                let scale_factor = model.metrics.scale_factor;
-                let dock_width = model.dock_layout.right.size(scale_factor);
-                let bottom_height = model.dock_layout.bottom.size(scale_factor);
-                let window_height = model.window_size.1 as f32;
-                let status_bar_height = model.line_height as f32;
-                let dock_height = window_height - status_bar_height - bottom_height;
-                let dock_x = model.window_size.0 as f32 - dock_width;
+                let window_layout = WindowLayout::compute(model, model.line_height);
+                let Some(dock_rect) = window_layout.right_dock_rect else {
+                    return EventResult::consumed_with_focus(FocusTarget::Dock(*position));
+                };
+                let outline_layout = OutlinePanelLayout::new(dock_rect, &model.metrics);
 
-                let row_height = model.metrics.file_tree_row_height;
-                let content_y = 0.0 + row_height as f32 + 4.0; // title bar offset
+                if let Some(clicked_index) = outline_layout
+                    .row_index_at_y(event.pos.y as f32, model.outline_panel.scroll_offset)
+                {
+                    let outline = model
+                        .editor_area
+                        .focused_document()
+                        .and_then(|doc| doc.outline.as_ref());
 
-                let local_y = event.pos.y as f32 - content_y;
-                if local_y >= 0.0 && (event.pos.y as f32) < dock_height {
-                    let clicked_visual_row = (local_y / row_height as f32) as usize;
-                    let clicked_index = model.outline_panel.scroll_offset + clicked_visual_row;
+                    if let Some(outline) = outline {
+                        if let Some(row) = visible_tree_row_at_index(
+                            &outline.roots,
+                            clicked_index,
+                            |node: &token::outline::OutlineNode| {
+                                node.is_collapsible() && !model.outline_panel.is_collapsed(node)
+                            },
+                        ) {
+                            let on_chevron = row.node.is_collapsible()
+                                && outline_layout.is_on_chevron(row.depth, event.pos.x as f32);
 
-                    // Determine if click was on the chevron/indicator area
-                    let local_x = event.pos.x as f32 - dock_x - 8.0;
-                    let indent = model.metrics.file_tree_indent;
-                    // We approximate: consider clicks in the first 14px of the row as chevron clicks
-                    // A more precise check would need the node's depth, but this is sufficient
-                    let on_chevron = local_x >= 0.0 && local_x < 14.0 + indent;
+                            let click_count = click_tracker.track_row_click(clicked_index);
 
-                    let click_count = click_tracker.track_row_click(clicked_index);
-
-                    update(
-                        model,
-                        Msg::Outline(OutlineMsg::ClickRow {
-                            index: clicked_index,
-                            click_count,
-                            on_chevron,
-                        }),
-                    );
+                            update(
+                                model,
+                                Msg::Outline(OutlineMsg::ClickRow {
+                                    index: clicked_index,
+                                    click_count,
+                                    on_chevron,
+                                }),
+                            );
+                        }
+                    }
                 }
 
                 return EventResult::consumed_with_focus(FocusTarget::Dock(*position));

@@ -8,6 +8,8 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use crate::util::{visible_tree_count, visible_tree_row_at_index, visible_tree_row_matching};
+
 use super::ScaledMetrics;
 
 // ============================================================================
@@ -423,33 +425,17 @@ impl FileTree {
 
     /// Count total visible items (for scrolling calculations)
     pub fn count_visible(&self, expanded: &HashSet<PathBuf>) -> usize {
-        self.roots
-            .iter()
-            .map(|node| Self::count_visible_node(node, expanded))
-            .sum()
-    }
-
-    fn count_visible_node(node: &FileNode, expanded: &HashSet<PathBuf>) -> usize {
-        let mut count = 1; // This node
-
-        if node.is_dir && expanded.contains(&node.path) {
-            for child in &node.children {
-                count += Self::count_visible_node(child, expanded);
-            }
-        }
-
-        count
+        visible_tree_count(&self.roots, |node: &FileNode| {
+            node.is_dir && expanded.contains(&node.path)
+        })
     }
 
     /// Get the nth visible item (for hit testing)
     pub fn get_visible_item(&self, index: usize, expanded: &HashSet<PathBuf>) -> Option<&FileNode> {
-        let mut current = 0;
-        for node in &self.roots {
-            if let Some(found) = Self::get_visible_item_node(node, index, &mut current, expanded) {
-                return Some(found);
-            }
-        }
-        None
+        visible_tree_row_at_index(&self.roots, index, |node: &FileNode| {
+            node.is_dir && expanded.contains(&node.path)
+        })
+        .map(|row| row.node)
     }
 
     /// Get the nth visible item with its depth (for hit testing with chevron area detection)
@@ -458,15 +444,10 @@ impl FileTree {
         index: usize,
         expanded: &HashSet<PathBuf>,
     ) -> Option<(&FileNode, usize)> {
-        let mut current = 0;
-        for node in &self.roots {
-            if let Some(found) =
-                Self::get_visible_item_node_with_depth(node, index, &mut current, 0, expanded)
-            {
-                return Some(found);
-            }
-        }
-        None
+        visible_tree_row_at_index(&self.roots, index, |node: &FileNode| {
+            node.is_dir && expanded.contains(&node.path)
+        })
+        .map(|row| (row.node, row.depth))
     }
 
     /// Get a visible item by its path (for parent navigation)
@@ -478,84 +459,12 @@ impl FileTree {
         path: &PathBuf,
         expanded: &HashSet<PathBuf>,
     ) -> Option<&FileNode> {
-        for node in &self.roots {
-            if let Some(found) = Self::get_visible_item_by_path_node(node, path, expanded) {
-                return Some(found);
-            }
-        }
-        None
-    }
-
-    fn get_visible_item_by_path_node<'a>(
-        node: &'a FileNode,
-        target: &PathBuf,
-        expanded: &HashSet<PathBuf>,
-    ) -> Option<&'a FileNode> {
-        if &node.path == target {
-            return Some(node);
-        }
-
-        // Only recurse into expanded directories
-        if node.is_dir && expanded.contains(&node.path) {
-            for child in &node.children {
-                if let Some(found) = Self::get_visible_item_by_path_node(child, target, expanded) {
-                    return Some(found);
-                }
-            }
-        }
-
-        None
-    }
-
-    fn get_visible_item_node<'a>(
-        node: &'a FileNode,
-        target: usize,
-        current: &mut usize,
-        expanded: &HashSet<PathBuf>,
-    ) -> Option<&'a FileNode> {
-        if *current == target {
-            return Some(node);
-        }
-        *current += 1;
-
-        if node.is_dir && expanded.contains(&node.path) {
-            for child in &node.children {
-                if let Some(found) = Self::get_visible_item_node(child, target, current, expanded) {
-                    return Some(found);
-                }
-            }
-        }
-
-        None
-    }
-
-    fn get_visible_item_node_with_depth<'a>(
-        node: &'a FileNode,
-        target: usize,
-        current: &mut usize,
-        depth: usize,
-        expanded: &HashSet<PathBuf>,
-    ) -> Option<(&'a FileNode, usize)> {
-        if *current == target {
-            return Some((node, depth));
-        }
-        *current += 1;
-
-        if node.is_dir && expanded.contains(&node.path) {
-            for child in &node.children {
-                if let Some(found) = Self::get_visible_item_node_with_depth(
-                    child,
-                    target,
-                    current,
-                    depth + 1,
-                    expanded,
-                ) {
-                    return Some(found);
-                }
-            }
-        }
-
-        None
+        visible_tree_row_matching(
+            &self.roots,
+            |node: &FileNode| node.is_dir && expanded.contains(&node.path),
+            |node: &FileNode| &node.path == path,
+        )
+        .map(|row| row.node)
     }
 }
 

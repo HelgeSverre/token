@@ -3,7 +3,9 @@
 //! Contains the Renderer struct and all rendering-related functionality.
 
 pub mod button;
-pub mod editor;
+pub mod editor_scrollbars;
+pub mod editor_special_tabs;
+pub mod editor_text;
 pub mod frame;
 pub mod geometry;
 pub mod helpers;
@@ -11,7 +13,9 @@ pub mod hit_test;
 pub mod modal;
 pub mod panels;
 pub mod scrollbar;
+pub mod selectable_list;
 pub mod text_field;
+pub mod tree_view;
 
 pub use button::{button_rect, render_button, ButtonState};
 pub use frame::{Frame, TextPainter};
@@ -207,7 +211,7 @@ impl Renderer {
         model: &AppModel,
         dirty_lines: &[usize],
     ) {
-        editor::render_cursor_lines_only(frame, painter, model, dirty_lines);
+        editor_text::render_cursor_lines_only(frame, painter, model, dirty_lines);
     }
 
     /// Render the entire editor area: all groups, preview panes, and splitters.
@@ -632,7 +636,7 @@ impl Renderer {
         document: &crate::model::document::Document,
         layout: &geometry::GroupLayout,
     ) {
-        editor::render_editor_scrollbars(frame, model, editor_state, document, layout);
+        editor_scrollbars::render_editor_scrollbars(frame, model, editor_state, document, layout);
     }
 
     fn render_image_tab(
@@ -642,7 +646,7 @@ impl Renderer {
         img_state: &crate::image::ImageState,
         layout: &geometry::GroupLayout,
     ) {
-        editor::render_image_tab(frame, painter, model, img_state, layout);
+        editor_special_tabs::render_image_tab(frame, painter, model, img_state, layout);
     }
 
     fn render_binary_placeholder(
@@ -652,7 +656,7 @@ impl Renderer {
         placeholder: &crate::model::editor::BinaryPlaceholderState,
         layout: &geometry::GroupLayout,
     ) {
-        editor::render_binary_placeholder(frame, painter, model, placeholder, layout);
+        editor_special_tabs::render_binary_placeholder(frame, painter, model, placeholder, layout);
     }
 
     fn render_tab_bar(
@@ -753,7 +757,7 @@ impl Renderer {
         document: &crate::model::Document,
         layout: &geometry::GroupLayout,
     ) {
-        editor::render_gutter(frame, painter, model, editor_state, document, layout);
+        editor_text::render_gutter(frame, painter, model, editor_state, document, layout);
     }
 
     fn render_text_area(
@@ -765,7 +769,7 @@ impl Renderer {
         layout: &geometry::GroupLayout,
         is_focused: bool,
     ) {
-        editor::render_text_area(
+        editor_text::render_text_area(
             frame,
             painter,
             model,

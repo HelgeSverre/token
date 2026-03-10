@@ -1,10 +1,9 @@
 //! Workspace message handlers (file tree sidebar)
 
-use std::path::PathBuf;
-
 use crate::commands::Cmd;
 use crate::messages::{LayoutMsg, WorkspaceMsg};
 use crate::model::AppModel;
+use crate::util::visible_tree_index_of;
 
 use super::layout::update_layout;
 
@@ -237,9 +236,13 @@ fn ensure_selection_visible(model: &mut AppModel) {
     };
 
     // Find the visible index of the selected item
-    let Some(selected_index) =
-        find_visible_index(&workspace.file_tree, selected, &workspace.expanded_folders)
-    else {
+    let Some(selected_index) = visible_tree_index_of(
+        &workspace.file_tree.roots,
+        |node: &crate::model::FileNode| {
+            node.is_dir && workspace.expanded_folders.contains(&node.path)
+        },
+        |node: &crate::model::FileNode| &node.path == selected,
+    ) else {
         return;
     };
 
@@ -332,7 +335,13 @@ fn select_adjacent_item(model: &mut AppModel, delta: i32) {
 
     // Find current selection index
     let current_index = if let Some(selected) = &workspace.selected_item {
-        find_visible_index(&workspace.file_tree, selected, &workspace.expanded_folders)
+        visible_tree_index_of(
+            &workspace.file_tree.roots,
+            |node: &crate::model::FileNode| {
+                node.is_dir && workspace.expanded_folders.contains(&node.path)
+            },
+            |node: &crate::model::FileNode| &node.path == selected,
+        )
     } else {
         None
     };
@@ -359,43 +368,6 @@ fn select_adjacent_item(model: &mut AppModel, delta: i32) {
     {
         workspace.selected_item = Some(node.path.clone());
     }
-}
-
-/// Find the visible index of a path in the file tree
-fn find_visible_index(
-    tree: &crate::model::FileTree,
-    target: &PathBuf,
-    expanded: &std::collections::HashSet<PathBuf>,
-) -> Option<usize> {
-    let mut current = 0;
-    for node in &tree.roots {
-        if let Some(idx) = find_visible_index_node(node, target, &mut current, expanded) {
-            return Some(idx);
-        }
-    }
-    None
-}
-
-fn find_visible_index_node(
-    node: &crate::model::FileNode,
-    target: &PathBuf,
-    current: &mut usize,
-    expanded: &std::collections::HashSet<PathBuf>,
-) -> Option<usize> {
-    if &node.path == target {
-        return Some(*current);
-    }
-    *current += 1;
-
-    if node.is_dir && expanded.contains(&node.path) {
-        for child in &node.children {
-            if let Some(idx) = find_visible_index_node(child, target, current, expanded) {
-                return Some(idx);
-            }
-        }
-    }
-
-    None
 }
 
 /// Reveal the currently active file in the tree
@@ -429,6 +401,7 @@ fn reveal_active_file(model: &mut AppModel) {
 mod tests {
     use super::*;
     use crate::model::{ScaledMetrics, Workspace};
+    use std::path::PathBuf;
 
     fn test_workspace() -> Workspace {
         let metrics = ScaledMetrics::new(1.0);

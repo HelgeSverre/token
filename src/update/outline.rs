@@ -4,38 +4,24 @@ use crate::commands::Cmd;
 use crate::messages::OutlineMsg;
 use crate::model::AppModel;
 use crate::outline::OutlineNode;
+use crate::util::{visible_tree_count, visible_tree_row_at_index};
+use crate::view::geometry::{OutlinePanelLayout, WindowLayout};
 
-/// Count total visible items in the outline tree (for navigation bounds)
 fn count_visible_items(nodes: &[OutlineNode], panel: &crate::model::OutlinePanelState) -> usize {
-    let mut count = 0;
-    for node in nodes {
-        count += 1;
-        if node.is_collapsible() && !panel.is_collapsed(node) {
-            count += count_visible_items(&node.children, panel);
-        }
-    }
-    count
+    visible_tree_count(nodes, |node: &OutlineNode| {
+        node.is_collapsible() && !panel.is_collapsed(node)
+    })
 }
 
-/// Get the node at a given flattened visible index
-fn node_at_index<'a>(
+fn visible_node_at_index<'a>(
     nodes: &'a [OutlineNode],
     panel: &crate::model::OutlinePanelState,
     target: usize,
-    current: &mut usize,
 ) -> Option<&'a OutlineNode> {
-    for node in nodes {
-        if *current == target {
-            return Some(node);
-        }
-        *current += 1;
-        if node.is_collapsible() && !panel.is_collapsed(node) {
-            if let Some(found) = node_at_index(&node.children, panel, target, current) {
-                return Some(found);
-            }
-        }
-    }
-    None
+    visible_tree_row_at_index(nodes, target, |node: &OutlineNode| {
+        node.is_collapsible() && !panel.is_collapsed(node)
+    })
+    .map(|row| row.node)
 }
 
 /// Handle outline panel messages
@@ -123,9 +109,8 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                     .and_then(|doc| doc.outline.as_ref());
 
                 if let Some(outline) = outline {
-                    let mut current = 0;
                     if let Some(node) =
-                        node_at_index(&outline.roots, &model.outline_panel, idx, &mut current)
+                        visible_node_at_index(&outline.roots, &model.outline_panel, idx)
                     {
                         if node.is_collapsible() {
                             let key = crate::model::OutlinePanelState::node_key(node);
@@ -150,9 +135,8 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                     .and_then(|doc| doc.outline.as_ref());
 
                 if let Some(outline) = outline {
-                    let mut current = 0;
                     if let Some(node) =
-                        node_at_index(&outline.roots, &model.outline_panel, idx, &mut current)
+                        visible_node_at_index(&outline.roots, &model.outline_panel, idx)
                     {
                         if node.is_collapsible() {
                             let key = crate::model::OutlinePanelState::node_key(node);
@@ -177,9 +161,8 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                     .and_then(|doc| doc.outline.as_ref());
 
                 if let Some(outline) = outline {
-                    let mut current = 0;
                     if let Some(node) =
-                        node_at_index(&outline.roots, &model.outline_panel, idx, &mut current)
+                        visible_node_at_index(&outline.roots, &model.outline_panel, idx)
                     {
                         let line = node.range.start_line;
                         let col = node.range.start_col;
@@ -212,15 +195,19 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
 
             if let Some(outline) = outline {
                 let total = count_visible_items(&outline.roots, &model.outline_panel);
-                let dock_height = model.dock_layout.right.size(model.metrics.scale_factor);
-                let title_height = model.metrics.file_tree_row_height as f32 + 4.0;
-                let visible_capacity = ((dock_height - title_height)
-                    / model.metrics.file_tree_row_height as f32)
-                    .max(0.0) as usize;
-                model.outline_panel.scroll_offset = model
-                    .outline_panel
-                    .scroll_offset
-                    .min(total.saturating_sub(visible_capacity));
+                let visible_capacity = WindowLayout::compute(model, model.line_height)
+                    .right_dock_rect
+                    .map(|rect| OutlinePanelLayout::new(rect, &model.metrics).visible_capacity())
+                    .unwrap_or(0);
+
+                model.outline_panel.scroll_offset = if visible_capacity == 0 {
+                    0
+                } else {
+                    model
+                        .outline_panel
+                        .scroll_offset
+                        .min(total.saturating_sub(visible_capacity))
+                };
             } else {
                 model.outline_panel.scroll_offset = 0;
             }
@@ -233,18 +220,16 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
             click_count,
             on_chevron,
         } => {
-            model.outline_panel.selected_index = Some(index);
-
             let outline = model
                 .editor_area
                 .focused_document()
                 .and_then(|doc| doc.outline.as_ref());
 
             if let Some(outline) = outline {
-                let mut current = 0;
                 if let Some(node) =
-                    node_at_index(&outline.roots, &model.outline_panel, index, &mut current)
+                    visible_node_at_index(&outline.roots, &model.outline_panel, index)
                 {
+                    model.outline_panel.selected_index = Some(index);
                     if on_chevron && node.is_collapsible() {
                         model.outline_panel.toggle_collapsed(node);
                     } else if click_count >= 2 {

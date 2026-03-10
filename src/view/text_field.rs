@@ -7,6 +7,7 @@
 use crate::editable::{Cursor, EditableState, Position, Selection, StringBuffer};
 
 use super::frame::Frame;
+use super::geometry::{ModalSpacing, WidgetRect};
 use super::TextPainter;
 
 /// Options for rendering a text field.
@@ -170,6 +171,37 @@ impl TextFieldRenderer {
                 }
             }
         }
+    }
+
+    pub fn render_modal_input(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        content: &dyn TextFieldContent,
+        rect: &WidgetRect,
+        line_height: usize,
+        char_width: f32,
+        background_color: u32,
+        text_color: u32,
+        cursor_color: u32,
+        selection_color: u32,
+        cursor_visible: bool,
+    ) {
+        frame.fill_rect_px(rect.x, rect.y, rect.w, rect.h, background_color);
+
+        let padx = ModalSpacing::INPUT_PAD_X;
+        let opts = TextFieldOptions {
+            x: rect.x + padx,
+            y: rect.y + (rect.h.saturating_sub(line_height)) / 2,
+            width: rect.w.saturating_sub(padx * 2),
+            height: line_height,
+            char_width,
+            text_color,
+            cursor_color,
+            selection_color,
+            cursor_visible,
+            scroll_x: 0,
+        };
+        Self::render(frame, painter, content, &opts);
     }
 
     /// Render a simple text field from raw text and cursor position.
