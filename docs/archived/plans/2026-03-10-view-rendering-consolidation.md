@@ -501,8 +501,8 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 **Files:**
 
 - `src/view/mod.rs`
-- `docs/plans/2026-03-10-view-layer-balanced-refactor.md`
-- `docs/plans/2026-03-10-view-layer-redesign.md`
+- `docs/archived/plans/2026-03-10-view-layer-balanced-refactor.md`
+- `docs/archived/plans/2026-03-10-view-layer-redesign.md`
 - feature docs that still point at stale rendering seams
 
 **Changes:**
