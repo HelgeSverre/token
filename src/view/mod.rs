@@ -68,6 +68,216 @@ pub enum PreviewRenderMode {
     NativeMarkdown,
 }
 
+struct RenderPlan {
+    window_width: usize,
+    window_height: usize,
+    window_layout: geometry::WindowLayout,
+    splitters: Vec<SplitterBar>,
+    effective_damage: Damage,
+    render_editor: bool,
+    render_status_bar: bool,
+    cursor_lines_only: Option<Vec<usize>>,
+    show_modal: bool,
+    show_drop_overlay: bool,
+    #[cfg(debug_assertions)]
+    show_perf_overlay: bool,
+    #[cfg(debug_assertions)]
+    show_debug_overlay: bool,
+}
+
+impl RenderPlan {
+    #[inline]
+    fn uses_cursor_lines_fast_path(&self) -> bool {
+        self.cursor_lines_only.is_some()
+    }
+}
+
+struct RenderSession<'buffer, 'a> {
+    frame: Frame<'buffer>,
+    painter: TextPainter<'a>,
+    model: &'a AppModel,
+    plan: &'a RenderPlan,
+}
+
+impl<'buffer, 'a> RenderSession<'buffer, 'a> {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        buffer: &'buffer mut [u32],
+        window_width: usize,
+        window_height: usize,
+        font: &'a Font,
+        glyph_cache: &'a mut GlyphCache,
+        font_size: f32,
+        ascent: f32,
+        char_width: f32,
+        line_height: usize,
+        model: &'a AppModel,
+        plan: &'a RenderPlan,
+    ) -> Self {
+        Self {
+            frame: Frame::new(buffer, window_width, window_height),
+            painter: TextPainter::new(
+                font,
+                glyph_cache,
+                font_size,
+                ascent,
+                char_width,
+                line_height,
+            ),
+            model,
+            plan,
+        }
+    }
+
+    fn render_editor_area_phase(&mut self) {
+        Renderer::render_editor_area(
+            &mut self.frame,
+            &mut self.painter,
+            self.model,
+            &self.plan.splitters,
+        );
+    }
+
+    fn render_sidebar_phase(&mut self) {
+        let Some(sidebar_rect) = self.plan.window_layout.sidebar_rect else {
+            return;
+        };
+
+        Renderer::render_sidebar(
+            &mut self.frame,
+            &mut self.painter,
+            self.model,
+            sidebar_rect.width.round() as usize,
+            sidebar_rect.height.round() as usize,
+        );
+    }
+
+    fn render_right_dock_phase(&mut self) {
+        let Some(dock_rect) = self.plan.window_layout.right_dock_rect else {
+            return;
+        };
+
+        Renderer::render_dock(
+            &mut self.frame,
+            &mut self.painter,
+            self.model,
+            crate::panel::DockPosition::Right,
+            dock_rect,
+        );
+    }
+
+    fn render_bottom_dock_phase(&mut self) {
+        let Some(dock_rect) = self.plan.window_layout.bottom_dock_rect else {
+            return;
+        };
+
+        Renderer::render_dock(
+            &mut self.frame,
+            &mut self.painter,
+            self.model,
+            crate::panel::DockPosition::Bottom,
+            dock_rect,
+        );
+    }
+
+    fn render_status_bar_phase(&mut self) {
+        Renderer::render_status_bar(
+            &mut self.frame,
+            &mut self.painter,
+            self.model,
+            self.plan.window_width,
+            self.plan.window_height,
+        );
+    }
+
+    fn render_modal_phase(&mut self) {
+        if !self.plan.show_modal {
+            return;
+        }
+
+        Renderer::render_modals(
+            &mut self.frame,
+            &mut self.painter,
+            self.model,
+            self.plan.window_width,
+            self.plan.window_height,
+        );
+    }
+
+    fn render_drop_overlay_phase(&mut self) {
+        if !self.plan.show_drop_overlay {
+            return;
+        }
+
+        Renderer::render_drop_overlay(
+            &mut self.frame,
+            &mut self.painter,
+            self.model,
+            self.plan.window_width,
+            self.plan.window_height,
+        );
+    }
+
+    #[cfg(debug_assertions)]
+    fn render_perf_overlay_phase(&mut self, perf: &crate::perf::PerfStats) {
+        if !self.plan.show_perf_overlay {
+            return;
+        }
+
+        crate::perf::render_perf_overlay(
+            &mut self.frame,
+            &mut self.painter,
+            perf,
+            &self.model.theme,
+        );
+    }
+
+    #[cfg(debug_assertions)]
+    fn render_debug_overlay_phase(&mut self) {
+        if !self.plan.show_debug_overlay {
+            return;
+        }
+
+        let Some(ref overlay) = self.model.debug_overlay else {
+            return;
+        };
+
+        let lines = overlay.render_lines(self.model);
+        if lines.is_empty() {
+            return;
+        }
+
+        let max_line_len = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+        let overlay_width = (max_line_len as f32 * self.painter.char_width()).ceil() as usize + 20;
+        let overlay_height = lines.len() * self.painter.line_height() + 10;
+
+        let overlay_x = self.plan.window_width.saturating_sub(overlay_width + 10);
+        let overlay_y = 10;
+
+        let bg_color = self.model.theme.overlay.background.to_argb_u32();
+        let fg_color = self.model.theme.overlay.foreground.to_argb_u32();
+
+        for py in overlay_y..(overlay_y + overlay_height).min(self.plan.window_height) {
+            for px in overlay_x..(overlay_x + overlay_width).min(self.plan.window_width) {
+                self.frame.blend_pixel(px, py, bg_color);
+            }
+        }
+
+        for (i, line) in lines.iter().enumerate() {
+            let text_x = overlay_x + 10;
+            let text_y = overlay_y + 5 + i * self.painter.line_height();
+            self.painter
+                .draw(&mut self.frame, text_x, text_y, line, fg_color);
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn record_cache_stats(&self, perf: &mut crate::perf::PerfStats) {
+        let stats = self.painter.cache_stats();
+        perf.add_cache_stats(stats.hits, stats.misses);
+    }
+}
+
 pub struct Renderer {
     font: Font,
     surface: Surface<Rc<Window>, Rc<Window>>,
@@ -203,6 +413,90 @@ impl Renderer {
         }
 
         damage.clone()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build_render_plan(
+        &self,
+        model: &mut AppModel,
+        perf: &crate::perf::PerfStats,
+        damage: &Damage,
+        window_width: usize,
+        window_height: usize,
+        line_height: usize,
+        char_width: f32,
+    ) -> RenderPlan {
+        let window_layout = geometry::WindowLayout::compute(model, line_height);
+        let splitters = model
+            .editor_area
+            .compute_layout_scaled(window_layout.editor_area_rect, model.metrics.splitter_width);
+        model
+            .editor_area
+            .sync_all_viewports(line_height, char_width, &model.metrics);
+
+        let effective_damage = self.compute_effective_damage(damage, model, perf);
+        let render_editor = effective_damage.is_full()
+            || effective_damage.includes_editor()
+            || has_cursor_lines_damage(&effective_damage);
+        let render_status_bar =
+            effective_damage.is_full() || effective_damage.includes_status_bar();
+
+        let is_text_mode = model
+            .editor_area
+            .groups
+            .get(&model.editor_area.focused_group_id)
+            .and_then(|g| g.active_editor_id())
+            .and_then(|id| model.editor_area.editors.get(&id))
+            .map(|e| {
+                matches!(e.tab_content, crate::model::TabContent::Text) && !e.view_mode.is_csv()
+            })
+            .unwrap_or(false);
+
+        let cursor_lines_only = if is_text_mode {
+            effective_damage.cursor_lines_only().map(|v| v.to_vec())
+        } else {
+            None
+        };
+
+        RenderPlan {
+            window_width,
+            window_height,
+            window_layout,
+            splitters,
+            effective_damage,
+            render_editor,
+            render_status_bar,
+            cursor_lines_only,
+            show_modal: model.ui.active_modal.is_some(),
+            show_drop_overlay: model.ui.drop_state.is_hovering,
+            #[cfg(debug_assertions)]
+            show_perf_overlay: perf.should_show_overlay(),
+            #[cfg(debug_assertions)]
+            show_debug_overlay: model
+                .debug_overlay
+                .as_ref()
+                .map(|overlay| overlay.visible)
+                .unwrap_or(false),
+        }
+    }
+
+    fn clear_back_buffer(&mut self, model: &AppModel, plan: &RenderPlan) {
+        let bg_color = model.theme.editor.background.to_argb_u32();
+        let mut frame = Frame::new(&mut self.back_buffer, plan.window_width, plan.window_height);
+
+        if plan.effective_damage.is_full() {
+            frame.clear(bg_color);
+            return;
+        }
+
+        if plan.render_editor {
+            frame.fill_rect(plan.window_layout.content_rect, bg_color);
+        }
+
+        if plan.render_status_bar {
+            let status_bg = model.theme.status_bar.background.to_argb_u32();
+            frame.fill_rect(plan.window_layout.status_bar_rect, status_bg);
+        }
     }
 
     fn render_cursor_lines_only(
@@ -1200,91 +1494,30 @@ impl Renderer {
         let font_size = self.font_size;
         let ascent = self.line_metrics.ascent;
         let char_width = self.char_width;
-        let width = self.width;
-        let height = self.height;
+        let width_usize = self.width as usize;
+        let height_usize = self.height as usize;
 
         #[cfg(feature = "damage-debug")]
         let status_bar_height = line_height;
-        let window_layout = geometry::WindowLayout::compute(model, line_height);
-        let splitters = model
-            .editor_area
-            .compute_layout_scaled(window_layout.editor_area_rect, model.metrics.splitter_width);
-        model
-            .editor_area
-            .sync_all_viewports(line_height, char_width, &model.metrics);
 
-        // Create Frame wrapper for cleaner drawing API
-        // Note: We use Frame for new code; legacy code still uses raw buffer slices
-        let width_usize = width as usize;
-        let height_usize = height as usize;
-
-        // Compute effective damage: force Full for complex overlays
-        // (Must be done before borrowing buffer)
-        let effective_damage = self.compute_effective_damage(damage, model, perf);
-
-        // Determine what regions need to be rendered
-        let render_editor = effective_damage.is_full()
-            || effective_damage.includes_editor()
-            || has_cursor_lines_damage(&effective_damage);
-        let render_status_bar =
-            effective_damage.is_full() || effective_damage.includes_status_bar();
+        let plan = self.build_render_plan(
+            model,
+            perf,
+            damage,
+            width_usize,
+            height_usize,
+            line_height,
+            char_width,
+        );
 
         // All rendering happens to back_buffer (persistent between frames).
         // At the end, we copy to the surface buffer and present.
-
-        // Clear and render based on damage
-        let bg_color = model.theme.editor.background.to_argb_u32();
-
-        // Check for cursor-lines-only damage early (before clearing)
-        let cursor_lines_damage = effective_damage.cursor_lines_only().map(|v| v.to_vec());
-
-        if effective_damage.is_full() {
-            // Full redraw: clear entire screen
+        if !plan.uses_cursor_lines_fast_path() {
             let _timer = perf.time_clear();
-            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
-            frame.clear(bg_color);
-        } else if cursor_lines_damage.is_some() {
-            // Cursor lines only: clear just those line rectangles
-            // (clearing happens in render_cursor_lines_only for precise line bounds)
-        } else {
-            // Partial redraw: only clear damaged regions
-            let _timer = perf.time_clear();
-            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
-
-            if render_editor {
-                // Clear editor area (everything except status bar)
-                frame.fill_rect(window_layout.content_rect, bg_color);
-            }
-
-            if render_status_bar {
-                // Clear status bar area
-                let status_bg = model.theme.status_bar.background.to_argb_u32();
-                frame.fill_rect(window_layout.status_bar_rect, status_bg);
-            }
+            self.clear_back_buffer(model, &plan);
         }
 
-        // Render editor area if needed
-        // Check for cursor-lines-only damage for optimized rendering
-        // Note: cursor-lines optimization only works for text mode (not CSV, Image, or BinaryPlaceholder)
-        let is_text_mode = model
-            .editor_area
-            .groups
-            .get(&model.editor_area.focused_group_id)
-            .and_then(|g| g.active_editor_id())
-            .and_then(|id| model.editor_area.editors.get(&id))
-            .map(|e| {
-                matches!(e.tab_content, crate::model::TabContent::Text) && !e.view_mode.is_csv()
-            })
-            .unwrap_or(false);
-
-        let cursor_lines_only = if is_text_mode {
-            effective_damage.cursor_lines_only()
-        } else {
-            None // Non-text tabs have no cursor to blink
-        };
-
-        if let Some(dirty_lines) = cursor_lines_only {
-            // Optimized path: only redraw specific cursor lines
+        if let Some(ref dirty_lines) = plan.cursor_lines_only {
             let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
             let mut painter = TextPainter::new(
                 &self.font,
@@ -1303,211 +1536,47 @@ impl Renderer {
                 let stats = painter.cache_stats();
                 perf.add_cache_stats(stats.hits, stats.misses);
             }
-        } else if render_editor {
-            // Full editor area render
-            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
-            let mut painter = TextPainter::new(
+        } else {
+            let mut session = RenderSession::new(
+                &mut self.back_buffer,
+                width_usize,
+                height_usize,
                 &self.font,
                 &mut self.glyph_cache,
                 font_size,
                 ascent,
                 char_width,
                 line_height,
-            );
-            {
-                let _timer = perf.time_text();
-                Self::render_editor_area(&mut frame, &mut painter, model, &splitters);
-            }
-            #[cfg(debug_assertions)]
-            {
-                let stats = painter.cache_stats();
-                perf.add_cache_stats(stats.hits, stats.misses);
-            }
-        }
-
-        // Render sidebar if workspace is open and editor is being rendered
-        if let Some(sidebar_rect) = window_layout.sidebar_rect.filter(|_| render_editor) {
-            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
-            let mut painter = TextPainter::new(
-                &self.font,
-                &mut self.glyph_cache,
-                font_size,
-                ascent,
-                char_width,
-                line_height,
-            );
-            Self::render_sidebar(
-                &mut frame,
-                &mut painter,
                 model,
-                sidebar_rect.width.round() as usize,
-                sidebar_rect.height.round() as usize,
+                &plan,
             );
-            #[cfg(debug_assertions)]
-            {
-                let stats = painter.cache_stats();
-                perf.add_cache_stats(stats.hits, stats.misses);
-            }
-        }
 
-        // Render right dock if open
-        if let Some(dock_rect) = window_layout.right_dock_rect.filter(|_| render_editor) {
-            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
-            let mut painter = TextPainter::new(
-                &self.font,
-                &mut self.glyph_cache,
-                font_size,
-                ascent,
-                char_width,
-                line_height,
-            );
-            Self::render_dock(
-                &mut frame,
-                &mut painter,
-                model,
-                crate::panel::DockPosition::Right,
-                dock_rect,
-            );
-        }
-
-        // Render bottom dock if open
-        // Bottom dock spans from sidebar to window right edge (under right dock)
-        if let Some(dock_rect) = window_layout.bottom_dock_rect.filter(|_| render_editor) {
-            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
-            let mut painter = TextPainter::new(
-                &self.font,
-                &mut self.glyph_cache,
-                font_size,
-                ascent,
-                char_width,
-                line_height,
-            );
-            Self::render_dock(
-                &mut frame,
-                &mut painter,
-                model,
-                crate::panel::DockPosition::Bottom,
-                dock_rect,
-            );
-        }
-
-        // Render status bar if needed
-        if render_status_bar {
-            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
-            let mut painter = TextPainter::new(
-                &self.font,
-                &mut self.glyph_cache,
-                font_size,
-                ascent,
-                char_width,
-                line_height,
-            );
-            {
-                let _timer = perf.time_status_bar();
-                Self::render_status_bar(&mut frame, &mut painter, model, width_usize, height_usize);
-            }
-            #[cfg(debug_assertions)]
-            {
-                let stats = painter.cache_stats();
-                perf.add_cache_stats(stats.hits, stats.misses);
-            }
-        }
-
-        // Render modals (layer 2 - on top of editor and status bar)
-        if model.ui.active_modal.is_some() {
-            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
-            let mut painter = TextPainter::new(
-                &self.font,
-                &mut self.glyph_cache,
-                font_size,
-                ascent,
-                char_width,
-                line_height,
-            );
-            Self::render_modals(&mut frame, &mut painter, model, width_usize, height_usize);
-            #[cfg(debug_assertions)]
-            {
-                let stats = painter.cache_stats();
-                perf.add_cache_stats(stats.hits, stats.misses);
-            }
-        }
-
-        // Render drop overlay (layer 3 - on top of modals)
-        if model.ui.drop_state.is_hovering {
-            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
-            let mut painter = TextPainter::new(
-                &self.font,
-                &mut self.glyph_cache,
-                font_size,
-                ascent,
-                char_width,
-                line_height,
-            );
-            Self::render_drop_overlay(&mut frame, &mut painter, model, width_usize, height_usize);
-            #[cfg(debug_assertions)]
-            {
-                let stats = painter.cache_stats();
-                perf.add_cache_stats(stats.hits, stats.misses);
-            }
-        }
-
-        #[cfg(debug_assertions)]
-        if perf.should_show_overlay() {
-            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
-            let mut painter = TextPainter::new(
-                &self.font,
-                &mut self.glyph_cache,
-                font_size,
-                ascent,
-                char_width,
-                line_height,
-            );
-            crate::perf::render_perf_overlay(&mut frame, &mut painter, perf, &model.theme);
-        }
-
-        #[cfg(debug_assertions)]
-        if let Some(ref overlay) = model.debug_overlay {
-            if overlay.visible {
-                let lines = overlay.render_lines(model);
-                if !lines.is_empty() {
-                    let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
-                    let mut painter = TextPainter::new(
-                        &self.font,
-                        &mut self.glyph_cache,
-                        font_size,
-                        ascent,
-                        char_width,
-                        line_height,
-                    );
-
-                    // Calculate dimensions
-                    let max_line_len = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
-                    let overlay_width =
-                        (max_line_len as f32 * painter.char_width()).ceil() as usize + 20;
-                    let overlay_height = lines.len() * painter.line_height() + 10;
-
-                    // Position in top-right corner (perf overlay is top-left)
-                    let overlay_x = width_usize.saturating_sub(overlay_width + 10);
-                    let overlay_y = 10;
-
-                    // Render semi-transparent background
-                    let bg_color = model.theme.overlay.background.to_argb_u32();
-                    let fg_color = model.theme.overlay.foreground.to_argb_u32();
-
-                    for py in overlay_y..(overlay_y + overlay_height).min(height_usize) {
-                        for px in overlay_x..(overlay_x + overlay_width).min(width_usize) {
-                            frame.blend_pixel(px, py, bg_color);
-                        }
-                    }
-
-                    // Render text lines
-                    for (i, line) in lines.iter().enumerate() {
-                        let text_x = overlay_x + 10;
-                        let text_y = overlay_y + 5 + i * painter.line_height();
-                        painter.draw(&mut frame, text_x, text_y, line, fg_color);
-                    }
+            if plan.render_editor {
+                {
+                    let _timer = perf.time_text();
+                    session.render_editor_area_phase();
                 }
+                session.render_sidebar_phase();
+                session.render_right_dock_phase();
+                session.render_bottom_dock_phase();
             }
+
+            if plan.render_status_bar {
+                let _timer = perf.time_status_bar();
+                session.render_status_bar_phase();
+            }
+
+            session.render_modal_phase();
+            session.render_drop_overlay_phase();
+
+            #[cfg(debug_assertions)]
+            session.render_perf_overlay_phase(perf);
+
+            #[cfg(debug_assertions)]
+            session.render_debug_overlay_phase();
+
+            #[cfg(debug_assertions)]
+            session.record_cache_stats(perf);
         }
 
         // Debug: visualize damage regions with colored outlines
@@ -1516,10 +1585,10 @@ impl Renderer {
             let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
             Self::render_damage_debug(
                 &mut frame,
-                &effective_damage,
+                &plan.effective_damage,
                 model,
-                width_usize,
-                height_usize,
+                plan.window_width,
+                plan.window_height,
                 status_bar_height,
                 line_height,
                 char_width,

@@ -173,6 +173,7 @@ impl TextFieldRenderer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render_modal_input(
         frame: &mut Frame,
         painter: &mut TextPainter,

@@ -48,6 +48,7 @@ fn render_modal_shell(frame: &mut Frame, layout: &geometry::ModalLayout, colors:
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_theme_picker_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -117,6 +118,7 @@ fn render_theme_picker_modal(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_command_palette_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -199,6 +201,7 @@ fn render_command_palette_modal(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_goto_line_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -233,6 +236,7 @@ fn render_goto_line_modal(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_find_replace_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -314,6 +318,7 @@ fn render_find_replace_modal(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_file_finder_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -419,6 +424,7 @@ fn render_file_finder_modal(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_recent_files_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
