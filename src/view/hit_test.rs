@@ -20,7 +20,9 @@ use crate::commands::filter_commands;
 use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, TabId};
 use crate::model::{AppModel, FocusTarget, ModalState};
 
-use super::geometry::{is_in_status_bar, PreviewPaneLayout, TabBarLayout, WindowLayout};
+use super::geometry::{
+    is_in_status_bar, DockHeaderLayout, PreviewPaneLayout, TabBarLayout, WindowLayout,
+};
 
 // ============================================================================
 // Core Types
@@ -834,32 +836,60 @@ pub fn hit_test_docks(model: &AppModel, pt: Point) -> Option<HitTarget> {
     let window_layout = WindowLayout::compute(model, model.line_height);
 
     if let Some(right_rect) = window_layout.right_dock_rect {
-        if right_rect.contains(pt.x as f32, pt.y as f32) {
+        if right_rect.contains(pt.x as f32, pt.y as f32) && model.dock_layout.right.is_open {
             let dock = &model.dock_layout.right;
-            if let Some(panel_id) = dock.active_panel() {
-                return Some(HitTarget::DockContent {
+            let layout = DockHeaderLayout::new(dock, right_rect, &model.metrics, model.char_width);
+            if layout.is_in_header(pt.x, pt.y) {
+                if let Some(tab) = layout.tab_at(pt.x, pt.y) {
+                    return Some(HitTarget::DockTab {
+                        position: crate::panel::DockPosition::Right,
+                        panel_id: tab.panel_id,
+                    });
+                }
+                return Some(HitTarget::DockTabBarEmpty {
                     position: crate::panel::DockPosition::Right,
-                    active_panel_id: panel_id,
                 });
             }
-            return Some(HitTarget::DockTabBarEmpty {
-                position: crate::panel::DockPosition::Right,
-            });
+            if layout.is_in_content(pt.x, pt.y) {
+                if let Some(panel_id) = dock.active_panel() {
+                    return Some(HitTarget::DockContent {
+                        position: crate::panel::DockPosition::Right,
+                        active_panel_id: panel_id,
+                    });
+                }
+                return Some(HitTarget::DockTabBarEmpty {
+                    position: crate::panel::DockPosition::Right,
+                });
+            }
         }
     }
 
     if let Some(bottom_rect) = window_layout.bottom_dock_rect {
-        if bottom_rect.contains(pt.x as f32, pt.y as f32) {
+        if bottom_rect.contains(pt.x as f32, pt.y as f32) && model.dock_layout.bottom.is_open {
             let dock = &model.dock_layout.bottom;
-            if let Some(panel_id) = dock.active_panel() {
-                return Some(HitTarget::DockContent {
+            let layout = DockHeaderLayout::new(dock, bottom_rect, &model.metrics, model.char_width);
+            if layout.is_in_header(pt.x, pt.y) {
+                if let Some(tab) = layout.tab_at(pt.x, pt.y) {
+                    return Some(HitTarget::DockTab {
+                        position: crate::panel::DockPosition::Bottom,
+                        panel_id: tab.panel_id,
+                    });
+                }
+                return Some(HitTarget::DockTabBarEmpty {
                     position: crate::panel::DockPosition::Bottom,
-                    active_panel_id: panel_id,
                 });
             }
-            return Some(HitTarget::DockTabBarEmpty {
-                position: crate::panel::DockPosition::Bottom,
-            });
+            if layout.is_in_content(pt.x, pt.y) {
+                if let Some(panel_id) = dock.active_panel() {
+                    return Some(HitTarget::DockContent {
+                        position: crate::panel::DockPosition::Bottom,
+                        active_panel_id: panel_id,
+                    });
+                }
+                return Some(HitTarget::DockTabBarEmpty {
+                    position: crate::panel::DockPosition::Bottom,
+                });
+            }
         }
     }
 

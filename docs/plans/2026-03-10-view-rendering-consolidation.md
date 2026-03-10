@@ -24,8 +24,9 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 
 - `Phase 1` is complete.
 - `Phase 2` is complete.
-- `Phase 3` is in progress.
-- `Phase 4` through `Phase 5` have not started.
+- `Phase 3` is complete.
+- `Phase 4` has not started.
+- `Phase 4.5` through `Phase 5` have not started.
 
 ### What Has Landed
 
@@ -35,10 +36,11 @@ This plan is intentionally conservative. It treats the renderer as an editor UI,
 - `DockPaneScene` and `DockContentKind` now own active dock-content resolution for outline vs placeholder dock panels.
 - `TabBarLayout` now owns group-tab geometry for both rendering and hit-testing.
 - `PreviewPaneLayout` now owns preview header/content geometry for rendering, hit-testing, and hosted webview placement.
+- `DockHeaderLayout` now owns dock header/content geometry for rendering, hit-testing, and outline interaction.
 
 ### What Still Remains
 
-- dock-header and popup geometry contracts are still missing.
+- popup geometry contracts are still missing if context-menu work begins before a narrower overlay contract is enough.
 - the text renderer still needs a deliberate decoration pipeline and future text-viewport seam work for soft wrap readiness.
 - older docs and transitional seams still need a cleanup pass once the architecture settles.
 
@@ -406,7 +408,7 @@ For tree-style panels, keep sharing visible-tree/query helpers and only grow a s
 
 ### Phase 3: Shared Layout Contracts For Tabs And Preview/Dock Chrome
 
-**Status:** In Progress
+**Status:** Complete
 
 **Goal:** stop adding new interactive geometry as feature-local math.
 

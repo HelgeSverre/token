@@ -20,7 +20,7 @@ use token::model::AppModel;
 use token::update::update;
 use token::util::visible_tree_row_at_index;
 
-use token::view::geometry::{OutlinePanelLayout, WindowLayout};
+use token::view::geometry::{DockHeaderLayout, OutlinePanelLayout, WindowLayout};
 use token::view::hit_test::{hit_test_ui, EventResult, HitTarget, MouseEvent};
 use token::view::Renderer;
 
@@ -615,10 +615,19 @@ fn handle_left_click(
                 use token::messages::OutlineMsg;
 
                 let window_layout = WindowLayout::compute(model, model.line_height);
-                let Some(dock_rect) = window_layout.right_dock_rect else {
+                let dock_rect = match position {
+                    token::panel::DockPosition::Right => window_layout.right_dock_rect,
+                    token::panel::DockPosition::Bottom => window_layout.bottom_dock_rect,
+                    token::panel::DockPosition::Left => None,
+                };
+                let Some(dock_rect) = dock_rect else {
                     return EventResult::consumed_with_focus(FocusTarget::Dock(*position));
                 };
-                let outline_layout = OutlinePanelLayout::new(dock_rect, &model.metrics);
+                let dock = model.dock_layout.dock(*position);
+                let dock_layout =
+                    DockHeaderLayout::new(dock, dock_rect, &model.metrics, model.char_width);
+                let outline_layout =
+                    OutlinePanelLayout::new(dock_layout.content_rect, &model.metrics);
 
                 if let Some(clicked_index) = outline_layout
                     .row_index_at_y(event.pos.y as f32, model.outline_panel.scroll_offset)

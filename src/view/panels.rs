@@ -4,23 +4,22 @@ use crate::model::editor_area::Rect;
 use crate::model::AppModel;
 
 use super::frame::{Frame, TextPainter};
-use super::geometry::{OutlinePanelLayout, TreeListLayout};
+use super::geometry::{DockHeaderLayout, OutlinePanelLayout, TreeListLayout};
 use super::tree_view::{render_tree, TreeRenderLayout};
 
 enum DockContentKind {
     Outline,
-    Placeholder {
-        title: &'static str,
-        message: &'static str,
-    },
+    Placeholder { message: &'static str },
 }
 
 struct DockPaneScene {
     position: crate::panel::DockPosition,
-    rect: Rect,
+    layout: DockHeaderLayout,
     border_color: u32,
     text_color: u32,
     bg_color: u32,
+    active_tab_bg: u32,
+    active_tab_fg: u32,
     content: DockContentKind,
 }
 
@@ -32,6 +31,7 @@ impl DockPaneScene {
         }
 
         let theme = &model.theme.sidebar;
+        let layout = DockHeaderLayout::new(dock, rect, &model.metrics, model.char_width);
         let active_panel = dock
             .active_panel()
             .unwrap_or(crate::panel::PanelId::TERMINAL);
@@ -40,23 +40,25 @@ impl DockPaneScene {
         } else {
             let placeholder = crate::panels::PlaceholderPanel::new(active_panel);
             DockContentKind::Placeholder {
-                title: placeholder.title(),
                 message: placeholder.message(),
             }
         };
 
         Some(Self {
             position,
-            rect,
+            layout,
             border_color: theme.border.to_argb_u32(),
             text_color: theme.foreground.to_argb_u32(),
             bg_color: theme.background.to_argb_u32(),
+            active_tab_bg: theme.selection_background.to_argb_u32(),
+            active_tab_fg: theme.selection_foreground.to_argb_u32(),
             content,
         })
     }
 
     fn render(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
         self.render_chrome(frame);
+        self.render_header(frame, painter);
 
         match &self.content {
             DockContentKind::Outline => {
@@ -64,44 +66,72 @@ impl DockPaneScene {
                     frame,
                     painter,
                     model,
-                    self.rect,
+                    self.layout.content_rect,
                     self.text_color,
                     self.bg_color,
                 );
             }
-            DockContentKind::Placeholder { title, message } => {
-                self.render_placeholder_content(frame, painter, model, title, message);
+            DockContentKind::Placeholder { message } => {
+                self.render_placeholder_content(frame, painter, message);
             }
         }
     }
 
     fn render_chrome(&self, frame: &mut Frame) {
-        frame.fill_rect(self.rect, self.bg_color);
+        let rect = Rect::new(
+            self.layout.rect_x as f32,
+            self.layout.rect_y as f32,
+            self.layout.rect_w as f32,
+            self.layout.rect_h as f32 + self.layout.content_rect.height,
+        );
+        frame.fill_rect(rect, self.bg_color);
+        frame.fill_rect_px(
+            self.layout.rect_x,
+            self.layout.border_y,
+            self.layout.rect_w,
+            1,
+            self.border_color,
+        );
 
         match self.position {
             crate::panel::DockPosition::Left => {
                 frame.fill_rect(
-                    Rect::new(
-                        self.rect.x + self.rect.width - 1.0,
-                        self.rect.y,
-                        1.0,
-                        self.rect.height,
-                    ),
+                    Rect::new(rect.x + rect.width - 1.0, rect.y, 1.0, rect.height),
                     self.border_color,
                 );
             }
             crate::panel::DockPosition::Right => {
                 frame.fill_rect(
-                    Rect::new(self.rect.x, self.rect.y, 1.0, self.rect.height),
+                    Rect::new(rect.x, rect.y, 1.0, rect.height),
                     self.border_color,
                 );
             }
             crate::panel::DockPosition::Bottom => {
                 frame.fill_rect(
-                    Rect::new(self.rect.x, self.rect.y, self.rect.width, 1.0),
+                    Rect::new(rect.x, rect.y, rect.width, 1.0),
                     self.border_color,
                 );
             }
+        }
+    }
+
+    fn render_header(&self, frame: &mut Frame, painter: &mut TextPainter) {
+        for tab in &self.layout.tabs {
+            if tab.is_active {
+                frame.fill_rect_px(tab.x, tab.y, tab.width, tab.height, self.active_tab_bg);
+            }
+
+            painter.draw(
+                frame,
+                tab.text_x,
+                tab.text_y,
+                tab.title,
+                if tab.is_active {
+                    self.active_tab_fg
+                } else {
+                    self.text_color
+                },
+            );
         }
     }
 
@@ -109,25 +139,14 @@ impl DockPaneScene {
         &self,
         frame: &mut Frame,
         painter: &mut TextPainter,
-        model: &AppModel,
-        title: &str,
         message: &str,
     ) {
-        let title_x = self.rect.x + model.metrics.padding_large as f32;
-        let title_y = self.rect.y + model.metrics.padding_large as f32;
-        painter.draw(
-            frame,
-            title_x as usize,
-            title_y as usize,
-            title,
-            self.text_color,
-        );
-
         let char_width = painter.char_width();
         let line_height = painter.line_height();
         let text_width = message.len() as f32 * char_width;
-        let text_x = self.rect.x + (self.rect.width - text_width) / 2.0;
-        let text_y = self.rect.y + (self.rect.height - line_height as f32) / 2.0;
+        let content = self.layout.content_rect;
+        let text_x = content.x + (content.width - text_width) / 2.0;
+        let text_y = content.y + (content.height - line_height as f32) / 2.0;
         painter.draw(
             frame,
             text_x as usize,
@@ -325,15 +344,6 @@ pub fn render_outline_panel(
     let line_height = painter.line_height();
     let outline_layout = OutlinePanelLayout::new(rect, &model.metrics);
 
-    // Title bar
-    painter.draw(
-        frame,
-        outline_layout.title_x,
-        outline_layout.title_y,
-        "Outline",
-        text_color,
-    );
-
     // Get outline from the focused document
     let outline = model
         .editor_area
@@ -380,7 +390,7 @@ pub fn render_outline_panel(
         |row| {
             let node = row.node;
             let pos = ctx.layout.tree.node_position(row.depth, row.row_y);
-            let base_x = ctx.layout.rect.x as usize;
+            let base_x = ctx.layout.content_rect.x as usize;
             let icon_x = pos.icon_x + base_x;
             let text_x = pos.text_x + base_x;
             let text_y = pos.text_y;
@@ -389,9 +399,9 @@ pub fn render_outline_panel(
             if is_selected {
                 frame.fill_rect_blended(
                     Rect::new(
-                        ctx.layout.rect.x,
+                        ctx.layout.content_rect.x,
                         row.row_y as f32,
-                        ctx.layout.rect.width,
+                        ctx.layout.content_rect.width,
                         ctx.layout.row_height as f32,
                     ),
                     ctx.selection_bg,
@@ -426,7 +436,8 @@ pub fn render_outline_panel(
             painter.draw(frame, text_x, text_y, label, label_color);
 
             let name_x = text_x + (label.len() + 1) * painter.char_width() as usize;
-            let container_width = ctx.layout.rect.x as usize + ctx.layout.rect.width as usize;
+            let container_width =
+                ctx.layout.content_rect.x as usize + ctx.layout.content_rect.width as usize;
             let available = ctx
                 .layout
                 .tree

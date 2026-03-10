@@ -5,7 +5,7 @@ use crate::messages::OutlineMsg;
 use crate::model::AppModel;
 use crate::outline::OutlineNode;
 use crate::util::{visible_tree_count, visible_tree_row_at_index};
-use crate::view::geometry::{OutlinePanelLayout, WindowLayout};
+use crate::view::geometry::{DockHeaderLayout, OutlinePanelLayout, WindowLayout};
 
 fn count_visible_items(nodes: &[OutlineNode], panel: &crate::model::OutlinePanelState) -> usize {
     visible_tree_count(nodes, |node: &OutlineNode| {
@@ -197,7 +197,16 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                 let total = count_visible_items(&outline.roots, &model.outline_panel);
                 let visible_capacity = WindowLayout::compute(model, model.line_height)
                     .right_dock_rect
-                    .map(|rect| OutlinePanelLayout::new(rect, &model.metrics).visible_capacity())
+                    .map(|rect| {
+                        let dock_layout = DockHeaderLayout::new(
+                            &model.dock_layout.right,
+                            rect,
+                            &model.metrics,
+                            model.char_width,
+                        );
+                        OutlinePanelLayout::new(dock_layout.content_rect, &model.metrics)
+                            .visible_capacity()
+                    })
                     .unwrap_or(0);
 
                 model.outline_panel.scroll_offset = if visible_capacity == 0 {
