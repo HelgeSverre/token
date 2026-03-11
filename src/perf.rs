@@ -511,9 +511,25 @@ pub fn render_perf_overlay(
             .iter()
             .any(|value| *value > Duration::ZERO);
 
+    let padding_x = (10.0 * scale).round() as usize;
+    let padding_y = (8.0 * scale).round() as usize;
+    let row_gap = (4.0 * scale).round() as usize;
+    let section_gap = (6.0 * scale).round() as usize;
+    let row_height = line_height + row_gap;
+    let summary_rows = 4;
+    let legend_rows = 1;
+    let stacked_bar_rows = 1;
+    let cache_rows = 4;
+    let breakdown_header_rows = 1;
     let breakdown_rows = active_stages.len() + usize::from(show_untracked);
     let overlay_width = (500.0 * scale).round() as usize;
-    let overlay_height = ((line_height * 10) + (breakdown_rows * (line_height + 4)) + 36)
+    let overlay_rows = summary_rows
+        + legend_rows
+        + stacked_bar_rows
+        + cache_rows
+        + breakdown_header_rows
+        + breakdown_rows;
+    let overlay_height = (padding_y * 2 + overlay_rows * row_height + section_gap * 3)
         .max((360.0 * scale).round() as usize);
 
     let config = OverlayConfig::new(OverlayAnchor::TopRight, overlay_width, overlay_height)
@@ -545,13 +561,25 @@ pub fn render_perf_overlay(
     let error_color = theme.overlay.error.to_argb_u32();
     let untracked_color = 0xFF4B5563_u32;
 
-    let padding_x = (8.0 * scale).round() as usize;
-    let padding_y = (4.0 * scale).round() as usize;
-    let text_x = bounds.x + padding_x;
-    let mut text_y = bounds.y + padding_y;
+    let inner_left = bounds.x + padding_x;
+    let inner_right = bounds
+        .x
+        .saturating_add(bounds.width)
+        .saturating_sub(padding_x);
+    let inner_width = inner_right.saturating_sub(inner_left);
+    let row_text_y = |row_top: usize| row_top + row_height.saturating_sub(line_height) / 2;
+    let row_box_y =
+        |row_top: usize, box_height: usize| row_top + row_height.saturating_sub(box_height) / 2;
+    let mut row_top = bounds.y + padding_y;
 
-    painter.draw(frame, text_x, text_y, "Performance", text_color);
-    text_y += line_height;
+    painter.draw(
+        frame,
+        inner_left,
+        row_text_y(row_top),
+        "Performance",
+        text_color,
+    );
+    row_top += row_height;
 
     let frame_ms = perf.last_frame_time.as_secs_f64() * 1000.0;
     let throughput = perf.render_throughput_per_sec();
@@ -566,35 +594,35 @@ pub fn render_perf_overlay(
 
     painter.draw(
         frame,
-        text_x,
-        text_y,
+        inner_left,
+        row_text_y(row_top),
         &format!("Frame: {:.1}ms", frame_ms),
         frame_color,
     );
-    text_y += line_height;
+    row_top += row_height;
 
     painter.draw(
         frame,
-        text_x,
-        text_y,
+        inner_left,
+        row_text_y(row_top),
         &format!("Throughput: {:.1} renders/s", throughput),
         text_color,
     );
-    text_y += line_height;
+    row_top += row_height;
 
     let tracked_ms = perf.tracked_time().as_secs_f64() * 1000.0;
     let untracked_ms = perf.untracked_time().as_secs_f64() * 1000.0;
     painter.draw(
         frame,
-        text_x,
-        text_y,
+        inner_left,
+        row_text_y(row_top),
         &format!(
             "Tracked: {:.1}ms | Untracked: {:.1}ms",
             tracked_ms, untracked_ms
         ),
         text_color,
     );
-    text_y += line_height;
+    row_top += row_height;
 
     let mut phase_entries: Vec<(&'static str, Duration, u32)> = active_stages
         .iter()
@@ -621,18 +649,25 @@ pub fn render_perf_overlay(
         })
         .collect::<Vec<_>>()
         .join(" │ ");
-    painter.draw(frame, text_x, text_y, &legend, text_color);
-    text_y += line_height + 4;
+    painter.draw(frame, inner_left, row_text_y(row_top), &legend, text_color);
+    row_top += row_height;
+    row_top += section_gap;
 
     let frame_us = perf.last_frame_time.as_micros().max(1) as f32;
-    let bar_total_width = (bounds.width - 16).min((340.0 * scale).round() as usize);
     let bar_height = ((line_height as f32 * 0.7).round() as usize).max(10);
-    let bar_y = text_y + 2;
+    let bar_total_width = inner_width.min((340.0 * scale).round() as usize);
+    let bar_y = row_box_y(row_top, bar_height);
 
-    frame.fill_rect_px(text_x, bar_y, bar_total_width, bar_height, untracked_color);
+    frame.fill_rect_px(
+        inner_left,
+        bar_y,
+        bar_total_width,
+        bar_height,
+        untracked_color,
+    );
 
-    let mut bar_x = text_x;
-    let bar_end_x = text_x + bar_total_width;
+    let mut bar_x = inner_left;
+    let bar_end_x = inner_left + bar_total_width;
     for stage in &active_stages {
         let spec = stage.spec();
         let duration = perf.stage_time(*stage);
@@ -645,28 +680,29 @@ pub fn render_perf_overlay(
             bar_x += actual_width;
         }
     }
-    text_y += bar_height + 6;
+    row_top += row_height;
+    row_top += section_gap;
 
     let avg_ms = perf.avg_frame_time().as_secs_f64() * 1000.0;
     painter.draw(
         frame,
-        text_x,
-        text_y,
+        inner_left,
+        row_text_y(row_top),
         &format!("Avg render: {:.1}ms", avg_ms),
         text_color,
     );
-    text_y += line_height + 4;
+    row_top += row_height;
 
     let cache_size = painter.glyph_cache_size();
     let hit_rate = perf.cache_hit_rate();
     painter.draw(
         frame,
-        text_x,
-        text_y,
+        inner_left,
+        row_text_y(row_top),
         &format!("Cache: {} glyphs", cache_size),
         text_color,
     );
-    text_y += line_height;
+    row_top += row_height;
 
     let hit_color = if hit_rate > 99.0 {
         highlight_color
@@ -677,82 +713,114 @@ pub fn render_perf_overlay(
     };
     painter.draw(
         frame,
-        text_x,
-        text_y,
+        inner_left,
+        row_text_y(row_top),
         &format!("Hits: {} ({:.1}%)", perf.total_cache_hits, hit_rate),
         hit_color,
     );
-    text_y += line_height;
+    row_top += row_height;
 
     painter.draw(
         frame,
-        text_x,
-        text_y,
+        inner_left,
+        row_text_y(row_top),
         &format!("Miss: {}", perf.total_cache_misses),
         text_color,
     );
-    text_y += line_height + 4;
+    row_top += row_height;
+    row_top += section_gap;
 
-    painter.draw(frame, text_x, text_y, "Render breakdown:", text_color);
-    text_y += line_height;
+    painter.draw(
+        frame,
+        inner_left,
+        row_text_y(row_top),
+        "Render breakdown:",
+        text_color,
+    );
+    row_top += row_height;
 
-    let mut max_label_chars = active_stages
+    let mut max_label_width = active_stages
         .iter()
-        .map(|stage| stage.spec().label.chars().count())
+        .map(|stage| painter.measure_width(stage.spec().label).ceil() as usize)
         .max()
         .unwrap_or(0);
     if show_untracked {
-        max_label_chars = max_label_chars.max("Untracked".chars().count());
+        max_label_width = max_label_width.max(painter.measure_width("Untracked").ceil() as usize);
     }
 
-    let char_width_approx = (line_height as f32 * 0.6).round() as usize;
-    let label_width = char_width_approx * max_label_chars.max(10);
-    let chart_width = (160.0 * scale).round() as usize;
-    let chart_height = line_height;
-    let chart_x = text_x + label_width + 6;
-    let value_width = char_width_approx * 10;
+    let mut max_value_width = active_stages
+        .iter()
+        .map(|stage| {
+            painter
+                .measure_width(&format!("{} µs", perf.stage_time(*stage).as_micros()))
+                .ceil() as usize
+        })
+        .max()
+        .unwrap_or(0);
+    if show_untracked {
+        max_value_width = max_value_width.max(
+            painter
+                .measure_width(&format!("{} µs", perf.untracked_time().as_micros()))
+                .ceil() as usize,
+        );
+    }
+
+    let chart_gap = (8.0 * scale).round() as usize;
+    let value_gap = (8.0 * scale).round() as usize;
+    let label_width = max_label_width.max((80.0 * scale).round() as usize);
+    let value_width = max_value_width.max((84.0 * scale).round() as usize);
+    let chart_x = inner_left + label_width + chart_gap;
+    let value_x = inner_right.saturating_sub(value_width);
     let chart_bg = theme.overlay.background.with_alpha(200).to_argb_u32();
-    let max_chart_width = bounds.width.saturating_sub(label_width + value_width + 30);
-    let chart_width = chart_width.min(max_chart_width);
+    let chart_height = ((line_height as f32 * 0.75).round() as usize).max(10);
+    let chart_width = value_x.saturating_sub(value_gap).saturating_sub(chart_x);
 
     for stage in &active_stages {
         let spec = stage.spec();
         let duration = perf.stage_time(*stage);
-        painter.draw(frame, text_x, text_y, spec.label, text_color);
-        frame.draw_sparkline(
-            chart_x,
-            text_y + 2,
-            chart_width,
-            chart_height,
-            perf.stage_history(*stage),
-            spec.color,
-            chart_bg,
-        );
+        let text_y = row_text_y(row_top);
+        let chart_y = row_box_y(row_top, chart_height);
+        painter.draw(frame, inner_left, text_y, spec.label, text_color);
+        if chart_width > 0 {
+            frame.draw_sparkline(
+                chart_x,
+                chart_y,
+                chart_width,
+                chart_height,
+                perf.stage_history(*stage),
+                spec.color,
+                chart_bg,
+            );
+        }
         painter.draw(
             frame,
-            chart_x + chart_width + 6,
+            value_x,
             text_y,
             &format!("{} µs", duration.as_micros()),
             spec.color,
         );
-        text_y += chart_height + 4;
+        row_top += row_height;
     }
 
     if show_untracked {
         let duration = perf.untracked_time();
-        painter.draw(frame, text_x, text_y, "Untracked", text_color);
-        frame.draw_sparkline(
-            chart_x,
-            text_y + 2,
-            chart_width,
-            chart_height,
-            perf.untracked_history(),
-            untracked_color,
-            chart_bg,
-        );
+        let text_y = row_text_y(row_top);
+        let chart_y = row_box_y(row_top, chart_height);
+        painter.draw(frame, inner_left, text_y, "Untracked", text_color);
+        if chart_width > 0 {
+            frame.draw_sparkline(
+                chart_x,
+                chart_y,
+                chart_width,
+                chart_height,
+                perf.untracked_history(),
+                untracked_color,
+                chart_bg,
+            );
+        }
         painter.draw(
             frame,
-            chart_x + chart_width + 6,
+            value_x,
             text_y,
             &format!("{} µs", duration.as_micros()),
             untracked_color,

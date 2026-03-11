@@ -698,10 +698,8 @@ impl App {
         // Sync webviews with preview panes
         let webview_sync_start = std::time::Instant::now();
         self.sync_webviews();
-        self.perf.record_stage_elapsed(
-            PerfStage::WebviewSync,
-            webview_sync_start.elapsed(),
-        );
+        self.perf
+            .record_stage_elapsed(PerfStage::WebviewSync, webview_sync_start.elapsed());
 
         // Hide webviews when modals are active (so they don't render on top)
         let show_webviews = self.model.ui.active_modal.is_none();

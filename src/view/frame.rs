@@ -416,28 +416,37 @@ impl<'a> Frame<'a> {
         bar_color: u32,
         bg_color: u32,
     ) {
-        if data.is_empty() {
+        if data.is_empty() || chart_width == 0 || chart_height == 0 {
             return;
         }
 
         self.fill_rect_px(x, y, chart_width, chart_height, bg_color);
 
-        let max_val = data.iter().map(|d| d.as_micros()).max().unwrap_or(1).max(1) as f32;
+        let sample_count = data.len().min(chart_width);
+        if sample_count == 0 {
+            return;
+        }
 
-        let bar_width = (chart_width as f32 / data.len() as f32).max(1.0) as usize;
-        let gap = if bar_width > 2 { 1 } else { 0 };
+        let start_idx = data.len().saturating_sub(sample_count);
+        let samples: Vec<u128> = data
+            .iter()
+            .skip(start_idx)
+            .map(|duration| duration.as_micros())
+            .collect();
+        let max_val = samples.iter().copied().max().unwrap_or(1).max(1) as f32;
 
-        for (i, duration) in data.iter().enumerate() {
-            let normalized = duration.as_micros() as f32 / max_val;
-            let bar_height = ((normalized * chart_height as f32) as usize).max(1);
-            let bar_x = x + i * bar_width;
+        for column in 0..chart_width {
+            let sample_idx = column * sample_count / chart_width;
+            let sample = samples[sample_idx.min(sample_count - 1)];
+            let normalized = sample as f32 / max_val;
+            let bar_height = ((normalized * chart_height as f32).round() as usize)
+                .max(1)
+                .min(chart_height);
+            let px = x + column;
 
             for dy in 0..bar_height {
                 let py = y + chart_height - dy - 1;
-                for dx in 0..(bar_width - gap) {
-                    let px = bar_x + dx;
-                    self.set_pixel(px, py, bar_color);
-                }
+                self.set_pixel(px, py, bar_color);
             }
         }
     }
@@ -676,6 +685,8 @@ impl<'a> TextPainter<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
+    use std::time::Duration;
 
     #[test]
     fn test_frame_fill_rect() {
@@ -822,5 +833,28 @@ mod tests {
         // Blend outside clip — should remain white
         frame.blend_pixel(3, 3, 0x80000000);
         assert_eq!(frame.get_pixel(3, 3), 0xFFFFFFFF);
+    }
+
+    #[test]
+    fn test_draw_sparkline_stays_within_chart_bounds() {
+        let sentinel = 0xFF112233;
+        let mut buffer = vec![sentinel; 20 * 20];
+        let mut frame = Frame::new(&mut buffer, 20, 20);
+        let history: VecDeque<_> = (1..=16).map(Duration::from_micros).collect();
+
+        frame.draw_sparkline(4, 5, 6, 4, &history, 0xFFFF0000, 0xFF000000);
+
+        for y in 0..20 {
+            for x in 0..20 {
+                let inside_chart = (4..10).contains(&x) && (5..9).contains(&y);
+                if !inside_chart {
+                    assert_eq!(
+                        frame.get_pixel(x, y),
+                        sentinel,
+                        "sparkline should not paint outside its chart bounds at ({x}, {y})"
+                    );
+                }
+            }
+        }
     }
 }
