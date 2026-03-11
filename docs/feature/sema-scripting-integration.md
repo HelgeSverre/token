@@ -602,7 +602,7 @@ pub struct ScriptContext<'a> {
 - [ ] Add `Cmd::DispatchBatch(Vec<Msg>)` for script message queuing
 - [ ] Implement message queue: script API functions push to `ScriptEngine::msg_queue`
 - [ ] Implement undo grouping: mark undo stack position before script execution, collapse all new `EditOperation` entries into a single `EditOperation::Batch` after script completes (uses existing `Batch` variant in `document.rs`)
-- [ ] Investigate Sema eval fuel/interruption mechanism for timeout enforcement (may require upstream work)
+- [ ] Expose Sema's existing eval step limit on public `Interpreter` API (upstream: `set_step_limit()`, `reset_steps()` -- see `sema-lisp/docs/plans/2026-03-11-embedding-api-improvements.md`)
 - [ ] Load `init.sema` at startup in `runtime/app.rs`
 - [ ] Unit tests for engine lifecycle
 
@@ -875,7 +875,7 @@ The following gaps were identified during review and have been incorporated into
 - **Multi-buffer API** -- `buffer/*` namespace added with `DocumentId` integer handles. Read-only access to any open buffer. Added to Phase 2.
 - **Layout/window API** -- `layout/*` namespace added, mapping directly to existing `LayoutMsg` variants (split, close, focus, tabs). Added to Phase 2.
 - **Filetype-specific config** -- `editor/set-option` and `editor/get-option` added. Combined with `:on-language-change` hook, scripts can set per-language settings. Added to Phase 2.
-- **Timeout/interruption** -- Investigation of Sema eval fuel mechanism added to Phase 1 as a prerequisite.
+- **Timeout/interruption** -- Sema already has a working step limit mechanism internally (`eval_step_limit`/`eval_steps` on `EvalContext`). Needs public API exposure (small upstream change). See `sema-lisp/docs/plans/2026-03-11-embedding-api-improvements.md`.
 
 #### Remaining: Should Address Early
 
@@ -893,7 +893,7 @@ The following gaps were identified during review and have been incorporated into
 
 ### Sema Language Gaps
 
-These are constraints of the Sema language itself that limit what the scripting integration can offer. Some may warrant upstream changes to Sema.
+These are constraints of the Sema language itself that limit what the scripting integration can offer. Some may warrant upstream changes to Sema. Specific upstream changes are documented in `sema-lisp/docs/plans/2026-03-11-embedding-api-improvements.md`.
 
 #### Blockers for Future Features
 
@@ -905,9 +905,9 @@ These are constraints of the Sema language itself that limit what the scripting 
 
 #### Development Friction
 
-**No automatic Rust struct <-> Sema value mapping.** Every API function must manually construct `Value::map(...)` for return values and manually extract fields from argument maps. Steel (Helix's Scheme) has `#[steel_derive]` proc macros that auto-generate conversions. With 20+ API functions each returning cursor/selection/position maps, the boilerplate adds up quickly. A derive macro or conversion trait in Sema would significantly reduce the API module's size and error surface.
+**No automatic Rust struct <-> Sema value mapping.** Every API function must manually construct `Value::map(...)` for return values and manually extract fields from argument maps. Steel (Helix's Scheme) has `#[steel_derive]` proc macros that auto-generate conversions. With 20+ API functions each returning cursor/selection/position maps, the boilerplate adds up quickly. A derive macro or conversion trait in Sema would significantly reduce the API module's size and error surface. Upstream plan: `sema-lisp/docs/plans/2026-03-11-embedding-api-improvements.md` Section 3.
 
-**No typed function registration.** `register_fn` takes `fn(&[Value]) -> Result<Value>`. Every function must manually `check_arity!`, call `.as_str()`, `.as_int()`, handle `None`. There is no `register_fn_typed::<(String, i64), Value>(...)` that auto-extracts and validates arguments. This makes the API module tedious to write and every function a potential source of type-check bugs.
+**No typed function registration.** `register_fn` takes `fn(&[Value]) -> Result<Value>`. Every function must manually `check_arity!`, call `.as_str()`, `.as_int()`, handle `None`. There is no `register_fn_typed::<(String, i64), Value>(...)` that auto-extracts and validates arguments. This makes the API module tedious to write and every function a potential source of type-check bugs. Upstream plan: `sema-lisp/docs/plans/2026-03-11-embedding-api-improvements.md` Section 2.
 
 **No dynamic library / native plugin loading.** Steel can load `.dylib` files over a stable ABI, letting plugins include Rust code loaded at runtime. Sema cannot. If a user wants a high-performance script (e.g., custom syntax analysis), they cannot drop to native code without recompiling the editor.
 
@@ -921,13 +921,13 @@ Items marked with a checkmark have been incorporated into the implementation pha
 |----------|-----|----------|--------|
 | Must fix | Undo grouping | Plan | Addressed -- Phase 1 (engine) + Phase 2 (`editor/with-undo-group`) |
 | Must fix | Event data in hooks | Plan | Addressed -- Phase 4 (event maps passed to callbacks) |
-| Must fix | Timeout/interruption | Sema | Addressed -- Phase 1 (investigate eval fuel mechanism) |
+| Must fix | Timeout/interruption | Sema | Addressed -- mechanism exists, needs public API exposure (small upstream change) |
 | Must fix | Multi-buffer API | Plan | Addressed -- Phase 2 (`buffer/*` namespace with DocumentId handles) |
 | Must fix | Layout/window API | Plan | Addressed -- Phase 2 (`layout/*` namespace, maps to existing LayoutMsg) |
 | Must fix | Hook pattern filtering | Plan | Addressed -- Phase 4 (optional `{:pattern glob}` filter) |
 | Must fix | Filetype config from scripts | Plan | Addressed -- Phase 2 (`editor/set-option`, `editor/get-option`) |
 | Should fix | Snapshot vs live state | Plan | Open -- decide before Phase 2; consider Rope working copy for text mutations |
-| Should fix | Typed registration | Sema | Open -- build conversion helpers or macros to reduce API boilerplate |
+| Should fix | Typed registration | Sema | Open -- upstream plan documented (`sema-lisp/docs/plans/2026-03-11-embedding-api-improvements.md`) |
 | Nice to have | Custom UI / virtual text | Plan | Deferred -- design API surface when needed |
 | Nice to have | Subprocess management | Plan + Sema | Deferred -- blocked by Sema async gap |
 | Nice to have | Interactive input (picker, completion) | Plan | Deferred -- requires modal input system |
