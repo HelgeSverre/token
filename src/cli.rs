@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 /// A fast text editor
 #[derive(Parser, Debug)]
-#[command(name = "token", version, about = "A fast text editor")]
+#[command(name = "token", version = env!("TOKEN_VERSION"), about = "A fast text editor")]
 pub struct CliArgs {
     /// Files or directories to open
     #[arg(value_name = "PATHS")]
