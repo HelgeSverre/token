@@ -40,6 +40,7 @@ samples/binary.bin
 
 # Profiling / tracing artifacts
 dhat-heap.json
+token-trace.json
 cargo-flamegraph.trace/*
 
 # Misc temporary files

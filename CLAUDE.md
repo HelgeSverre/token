@@ -80,20 +80,26 @@ Message → Update → Command → Render
 
 ### Core Modules
 
-| Module       | File(s)           | Purpose                                       |
-| ------------ | ----------------- | --------------------------------------------- |
-| **Model**    | `src/model/`      | AppModel, Document, EditorState, EditorArea   |
-| **Messages** | `src/messages.rs` | Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg |
-| **Update**   | `src/update/`     | Pure state transformation (10 submodules)     |
-| **Commands** | `src/commands.rs` | Cmd enum (Redraw, SaveFile, LoadFile, Batch)  |
-| **Theme**    | `src/theme.rs`    | YAML theme loading, Color types               |
-| **View**     | `src/view/`       | CPU rendering with fontdue + softbuffer       |
-| **Runtime**  | `src/runtime/`    | App, input handling, runtime glue (winit)     |
-| **Perf**     | `src/perf.rs`     | Stage-based perf stats and debug overlay       |
-| **Keymap**   | `src/keymap/`     | Configurable keybindings, command dispatch    |
-| **Syntax**   | `src/syntax/`     | Tree-sitter syntax highlighting (20 langs)    |
-| **CSV**      | `src/csv/`        | CSV viewer/editor with spreadsheet UI         |
-| **Editable** | `src/editable/`   | Unified text editing (cursors, selection)     |
+| Module         | File(s)            | Purpose                                       |
+| -------------- | ------------------ | --------------------------------------------- |
+| **Model**      | `src/model/`       | AppModel, Document, EditorState, EditorArea   |
+| **Messages**   | `src/messages.rs`  | Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg |
+| **Update**     | `src/update/`      | Pure state transformation (14 submodules)     |
+| **Commands**   | `src/commands.rs`  | Cmd enum (Redraw, SaveFile, LoadFile, Batch)  |
+| **Theme**      | `src/theme.rs`     | YAML theme loading, Color types               |
+| **View**       | `src/view/`        | CPU rendering with fontdue + softbuffer       |
+| **Runtime**    | `src/runtime/`     | App, input handling, runtime glue (winit)     |
+| **Perf**       | `src/perf.rs`      | Stage-based perf stats and debug overlay      |
+| **Keymap**     | `src/keymap/`      | Configurable keybindings, command dispatch    |
+| **Syntax**     | `src/syntax/`      | Tree-sitter syntax highlighting (20 langs)    |
+| **CSV**        | `src/csv/`         | CSV viewer/editor with spreadsheet UI         |
+| **Editable**   | `src/editable/`    | Unified text editing (cursors, selection)     |
+| **Image**      | `src/image/`       | Image file viewing and rendering              |
+| **Markdown**   | `src/markdown/`    | Markdown preview and rendering                |
+| **Outline**    | `src/outline/`     | Code outline / symbol extraction              |
+| **Panel**      | `src/panel/`       | Dock panel system                             |
+| **Config**     | `src/config.rs`    | Editor configuration                          |
+| **FsWatcher**  | `src/fs_watcher.rs`| File system change detection                  |
 
 ### Module Structure
 
@@ -101,11 +107,19 @@ Message → Update → Command → Render
 src/
 ├── main.rs              # Entry point (~20 lines)
 ├── lib.rs               # Library root with module exports
+├── cli.rs               # CLI argument parsing
 ├── messages.rs          # All message types
 ├── commands.rs          # Cmd enum
+├── config.rs            # Editor configuration
+├── config_paths.rs      # Config file path resolution
 ├── perf.rs              # PerfStage, PerfStats, perf overlay implementation
 ├── theme.rs             # Theme, Color, TabBarTheme
 ├── overlay.rs           # OverlayConfig, OverlayBounds
+├── fs_watcher.rs        # File system change detection
+├── recent_files.rs      # Recent files tracking
+├── tracing.rs           # Logging / tracing setup
+├── debug_dump.rs        # Debug state dumps
+├── debug_overlay.rs     # Debug overlay rendering
 ├── model/
 │   ├── mod.rs           # AppModel struct, layout constants
 │   ├── document.rs      # Document (buffer, undo/redo, file_path)
@@ -122,6 +136,10 @@ src/
 │   ├── app.rs           # File operations, window resize
 │   ├── ui.rs            # Status bar, cursor blink
 │   ├── csv.rs           # CSV view updates
+│   ├── dock.rs          # Dock panel updates
+│   ├── image.rs         # Image view updates
+│   ├── outline.rs       # Outline panel updates
+│   ├── preview.rs       # Preview pane updates
 │   ├── syntax.rs        # Syntax highlighting updates
 │   ├── text_edit.rs     # Unified text editing dispatch
 │   └── workspace.rs     # File tree, workspace updates
@@ -137,7 +155,22 @@ src/
 │   ├── frame.rs         # Frame, TextPainter abstractions
 │   ├── geometry.rs      # Geometry helpers
 │   ├── helpers.rs       # Rendering helpers
-│   └── text_field.rs    # Text field rendering
+│   ├── hit_test.rs      # Mouse hit-testing logic
+│   ├── text_field.rs    # Text field rendering
+│   ├── editor_text.rs   # Text editor rendering
+│   ├── editor_scrollbars.rs  # Scrollbar rendering
+│   ├── editor_special_tabs.rs # Non-text tab rendering
+│   ├── modal.rs         # Modal dialog rendering
+│   ├── panels.rs        # Panel rendering
+│   ├── button.rs        # Button widget rendering
+│   ├── scrollbar.rs     # Shared scrollbar primitives
+│   ├── selectable_list.rs # Selectable list widget
+│   └── tree_view.rs     # Tree view widget (file tree, outline)
+├── image/               # Image file viewing
+├── markdown/            # Markdown preview and rendering
+├── outline/             # Code outline / symbol extraction
+├── panel/               # Dock panel system
+├── panels/              # Panel placeholders
 ├── keymap/              # Configurable keybindings
 ├── syntax/              # Tree-sitter syntax highlighting
 ├── csv/                 # CSV viewer/editor
@@ -176,50 +209,9 @@ Font: JetBrains Mono embedded in `assets/JetBrainsMono.ttf`
 
 ## Key Bindings
 
-### Navigation
+See `docs/KEYBINDINGS.md` for the full key bindings reference.
 
-| Action          | Mac           | Standard |
-| --------------- | ------------- | -------- |
-| Line start/end  | Cmd+←/→       | Home/End |
-| Word left/right | Option+←/→    | -        |
-| Doc start/end   | Ctrl+Home/End | -        |
-
-### Selection
-
-| Action           | Mac                      |
-| ---------------- | ------------------------ |
-| Extend selection | Shift + any movement key |
-| Select word      | Double-click             |
-| Select line      | Triple-click             |
-| Select all       | Cmd+A                    |
-| Expand selection | Option+↑                 |
-| Shrink selection | Option+↓                 |
-
-### Multi-Cursor
-
-| Action            | Mac               |
-| ----------------- | ----------------- |
-| Add/remove cursor | Cmd+Click         |
-| Add cursor above  | Option+Option+↑   |
-| Add cursor below  | Option+Option+↓   |
-| Rectangle select  | Middle mouse drag |
-
-### Editing
-
-| Action      | Mac                 |
-| ----------- | ------------------- |
-| Undo/Redo   | Cmd+Z / Cmd+Shift+Z |
-| Copy        | Cmd+C               |
-| Cut         | Cmd+X               |
-| Paste       | Cmd+V               |
-| Duplicate   | Cmd+D               |
-| Delete line | Cmd+Backspace       |
-
-### Debug
-
-| Action       | Key | Notes             |
-| ------------ | --- | ----------------- |
-| Perf overlay | F2  | Debug builds only |
+Essential shortcuts: Cmd+Z/Cmd+Shift+Z (undo/redo), Cmd+D (duplicate line), Cmd+Backspace (delete line), Cmd+Click (add cursor), Option+↑/↓ (expand/shrink selection), F2 (perf overlay, debug builds only).
 
 ## Documentation & Design Workflow
 
@@ -232,13 +224,16 @@ Design docs live in `docs/feature/*.md`. Before implementing a feature:
 
 ### Key Docs
 
-| Doc                                    | Purpose                                    |
-| -------------------------------------- | ------------------------------------------ |
-| `docs/ROADMAP.md`                      | Planned features, module structure         |
-| `docs/CHANGELOG.md`                    | Completed work by date                     |
-| `docs/EDITOR_UI_REFERENCE.md`          | Comprehensive UI component reference       |
-| `docs/archived/GUI-REVIEW-FINDINGS.md` | GUI architecture improvements plan         |
-| `docs/feature/*.md`                    | Design specs (KEYMAPPING, SPLIT_VIEW, etc) |
+| Doc                           | Purpose                                |
+| ----------------------------- | -------------------------------------- |
+| `docs/ROADMAP.md`             | Planned features, module structure     |
+| `docs/CHANGELOG.md`           | Completed work by date                 |
+| `docs/KEYBINDINGS.md`         | Full key bindings reference            |
+| `docs/EDITOR_UI_REFERENCE.md` | Comprehensive UI component reference   |
+| `docs/THEMES.md`              | Theme system documentation             |
+| `docs/PROFILING.md`           | Profiling and benchmarking guide       |
+| `docs/feature/*.md`           | Design specs (20 feature docs)         |
+| `docs/plans/`                 | Implementation plans                   |
 
 ## Releasing a New Version
 
