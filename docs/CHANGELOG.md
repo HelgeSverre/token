@@ -7,6 +7,7 @@ All notable changes to rust-editor are documented in this file.
 ## Unreleased
 
 ### Added
+- CLI: `--version` now shows git commit info (e.g. `token 0.3.19-48-g33d40cd`) for easier build traceability.
 - Image Viewer: Open image files (PNG, JPG, GIF, BMP, WebP, ICO) inline in editor tabs with aspect-ratio-preserving scaling and checkerboard transparency background.
 - Binary Placeholder: Unsupported binary files now open a tab with a centered placeholder showing filename, file size, and a clickable "Open with Default Application" button.
 - Syntax: Added Just/Justfile language support with syntax highlighting via tree-sitter-just. Detects `justfile`, `Justfile`, `.justfile`, and `*.just` files.
@@ -257,7 +258,7 @@ Fixed hard-coded pixel values in the performance overlay (`src/runtime/perf.rs`)
 
 ### Added - Profiling Documentation
 
-Enhanced [docs/profiling-guide.md](profiling-guide.md) with recommended workflow:
+Enhanced [docs/PROFILING.md](PROFILING.md) with recommended workflow:
 
 - Step-by-step process: headless benchmark → sample command → Instruments
 - Interpreting `sample` output (mach_msg2_trap, CFRunLoop patterns)
