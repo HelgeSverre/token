@@ -1,0 +1,319 @@
+/// WIT (WebAssembly Interface Types) Syntax Highlighting Test
+/// A component model interface for a text editor plugin system.
+
+/// The core editor interface that plugins interact with.
+package token:editor@0.3.19;
+
+// ============================================================
+// Shared types
+// ============================================================
+
+/// Common types used across interfaces.
+interface types {
+    /// A position in a text document.
+    record position {
+        line: u32,
+        column: u32,
+    }
+
+    /// A range in a text document.
+    record range {
+        start: position,
+        end: position,
+    }
+
+    /// A text edit operation.
+    record text-edit {
+        range: range,
+        new-text: string,
+    }
+
+    /// Cursor with optional selection.
+    record cursor {
+        position: position,
+        selection-anchor: option<position>,
+        desired-column: option<u32>,
+    }
+
+    /// Document metadata.
+    record document-info {
+        path: option<string>,
+        language-id: string,
+        version: u32,
+        line-count: u32,
+        is-modified: bool,
+        encoding: encoding,
+    }
+
+    /// Supported text encodings.
+    enum encoding {
+        utf8,
+        utf16,
+        ascii,
+        latin1,
+    }
+
+    /// Severity levels for diagnostics.
+    enum severity {
+        error,
+        warning,
+        info,
+        hint,
+    }
+
+    /// A diagnostic message (error, warning, etc).
+    record diagnostic {
+        range: range,
+        severity: severity,
+        message: string,
+        code: option<string>,
+        source: option<string>,
+        related: list<diagnostic-related>,
+    }
+
+    record diagnostic-related {
+        range: range,
+        message: string,
+    }
+
+    /// Key modifier flags.
+    flags modifiers {
+        shift,
+        ctrl,
+        alt,
+        meta,
+    }
+
+    /// A keyboard event.
+    record key-event {
+        key: string,
+        modifiers: modifiers,
+    }
+
+    /// Result type for operations that can fail.
+    variant editor-error {
+        not-found(string),
+        invalid-range(range),
+        read-only,
+        io-error(string),
+        plugin-error(string),
+    }
+}
+
+// ============================================================
+// Buffer operations
+// ============================================================
+
+/// Interface for reading and manipulating text buffers.
+interface buffer {
+    use types.{position, range, text-edit, cursor, document-info, editor-error};
+
+    /// Get the full text of the current document.
+    get-text: func() -> string;
+
+    /// Get text within a range.
+    get-text-range: func(range: range) -> result<string, editor-error>;
+
+    /// Get a specific line (0-indexed).
+    get-line: func(line: u32) -> result<string, editor-error>;
+
+    /// Get the total number of lines.
+    line-count: func() -> u32;
+
+    /// Apply a single edit.
+    apply-edit: func(edit: text-edit) -> result<_, editor-error>;
+
+    /// Apply multiple edits atomically.
+    apply-edits: func(edits: list<text-edit>) -> result<_, editor-error>;
+
+    /// Get document metadata.
+    document-info: func() -> document-info;
+
+    /// Get all cursor positions.
+    get-cursors: func() -> list<cursor>;
+
+    /// Set cursor positions.
+    set-cursors: func(cursors: list<cursor>) -> result<_, editor-error>;
+
+    /// Get the word at a position.
+    word-at: func(pos: position) -> option<range>;
+
+    /// Find all occurrences of a pattern.
+    find-all: func(pattern: string, is-regex: bool) -> list<range>;
+
+    /// Replace all occurrences.
+    replace-all: func(pattern: string, replacement: string, is-regex: bool) -> result<u32, editor-error>;
+}
+
+// ============================================================
+// UI integration
+// ============================================================
+
+/// Interface for UI interactions.
+interface ui {
+    use types.{position, range, severity, key-event};
+
+    /// Display a message in the status bar.
+    show-message: func(message: string, severity: severity);
+
+    /// Show an input prompt and return user input.
+    show-input: func(prompt: string, default-value: option<string>) -> option<string>;
+
+    /// Show a quick-pick menu and return the selected item index.
+    show-quick-pick: func(items: list<quick-pick-item>) -> option<u32>;
+
+    record quick-pick-item {
+        label: string,
+        description: option<string>,
+        detail: option<string>,
+    }
+
+    /// Add a decoration (highlight, underline, etc) to a range.
+    add-decoration: func(id: string, ranges: list<decorated-range>);
+
+    /// Remove decorations by id.
+    remove-decoration: func(id: string);
+
+    record decorated-range {
+        range: range,
+        style: decoration-style,
+    }
+
+    enum decoration-style {
+        highlight,
+        underline-error,
+        underline-warning,
+        underline-info,
+        strikethrough,
+        border,
+    }
+
+    /// Register a keyboard shortcut.
+    register-keybinding: func(keys: string, command: string) -> result<_, string>;
+
+    /// Add a status bar segment.
+    add-status-segment: func(id: string, text: string, priority: u32, alignment: alignment);
+
+    /// Update a status bar segment.
+    update-status-segment: func(id: string, text: string);
+
+    enum alignment {
+        left,
+        center,
+        right,
+    }
+}
+
+// ============================================================
+// File system access
+// ============================================================
+
+/// Sandboxed file system access for plugins.
+interface filesystem {
+    /// Read a file's contents.
+    read-file: func(path: string) -> result<list<u8>, string>;
+
+    /// Write content to a file.
+    write-file: func(path: string, content: list<u8>) -> result<_, string>;
+
+    /// Check if a path exists.
+    exists: func(path: string) -> bool;
+
+    /// List directory contents.
+    list-directory: func(path: string) -> result<list<dir-entry>, string>;
+
+    record dir-entry {
+        name: string,
+        is-directory: bool,
+        size: u64,
+        modified: option<u64>,
+    }
+
+    /// Watch a file or directory for changes.
+    watch: func(path: string) -> result<watch-handle, string>;
+
+    /// Stop watching.
+    unwatch: func(handle: watch-handle);
+
+    type watch-handle = u32;
+
+    /// File change event.
+    record file-event {
+        path: string,
+        kind: file-event-kind,
+    }
+
+    enum file-event-kind {
+        created,
+        modified,
+        deleted,
+        renamed,
+    }
+}
+
+// ============================================================
+// Plugin lifecycle
+// ============================================================
+
+/// The main interface that plugins must implement.
+interface plugin {
+    use types.{key-event, diagnostic, severity};
+    use filesystem.{file-event};
+
+    /// Plugin metadata.
+    record plugin-info {
+        name: string,
+        version: string,
+        description: option<string>,
+        author: option<string>,
+        homepage: option<string>,
+        /// Languages this plugin supports (empty = all).
+        languages: list<string>,
+    }
+
+    /// Called when the plugin is loaded.
+    activate: func() -> result<plugin-info, string>;
+
+    /// Called when the plugin is unloaded.
+    deactivate: func();
+
+    /// Called when a command registered by this plugin is invoked.
+    on-command: func(command: string, args: list<string>) -> result<_, string>;
+
+    /// Called on every keystroke (return true to consume the event).
+    on-key: func(event: key-event) -> bool;
+
+    /// Called when the active document changes.
+    on-document-changed: func();
+
+    /// Called when document content is modified.
+    on-document-edited: func();
+
+    /// Called when a watched file changes.
+    on-file-changed: func(event: file-event);
+
+    /// Provide diagnostics for the current document.
+    get-diagnostics: func() -> list<diagnostic>;
+}
+
+// ============================================================
+// World definition
+// ============================================================
+
+/// The complete world that a plugin component operates in.
+world editor-plugin {
+    /// Imports: what the host provides to plugins.
+    import buffer;
+    import ui;
+    import filesystem;
+
+    /// Export: what plugins must implement.
+    export plugin;
+}
+
+/// A simpler world for pure text transformation plugins.
+world text-filter {
+    import buffer;
+
+    export plugin;
+}

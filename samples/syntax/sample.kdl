@@ -1,0 +1,290 @@
+// KDL (KDL Document Language) Syntax Highlighting Test
+// A text editor configuration with themes, keybindings, and plugin settings.
+
+// ============================================================
+// Editor settings
+// ============================================================
+
+editor {
+    font-family "JetBrains Mono" "Fira Code" "monospace"
+    font-size 14
+    line-height 1.6
+    tab-width 4
+    insert-spaces true
+    word-wrap false
+    show-line-numbers true
+    show-minimap false
+    cursor-style "block"
+    cursor-blink true
+    blink-interval 500
+
+    // Scrolling behavior
+    scroll {
+        smooth true
+        speed 3.0
+        overscroll false
+        margin-lines 5
+    }
+
+    // Auto-save configuration
+    auto-save {
+        enabled true
+        delay-ms 1000
+        on-focus-lost true
+        on-window-change true
+        exclude-patterns "*.tmp" "*.log" ".env*"
+    }
+
+    // Whitespace rendering
+    whitespace {
+        render "selection"  // "none" | "all" | "selection" | "trailing"
+        trailing-highlight true
+        tab-character "→"
+        space-character "·"
+    }
+
+    // Bracket matching
+    brackets {
+        auto-close true
+        highlight-matching true
+        pairs "(" ")" "{" "}" "[" "]" "<" ">"
+        color "#ffd700"
+    }
+}
+
+// ============================================================
+// Theme definition
+// ============================================================
+
+theme "Token Dark" {
+    type "dark"
+
+    // UI colors
+    ui {
+        background "#1e1e2e"
+        foreground "#cdd6f4"
+        selection "#45475a"
+        cursor "#f5e0dc"
+        line-highlight "#313244"
+        gutter "#6c7086"
+        gutter-active "#cdd6f4"
+
+        // Status bar
+        status-bar {
+            background "#181825"
+            foreground "#a6adc8"
+            active-item "#cba6f7"
+        }
+
+        // Tab bar
+        tab-bar {
+            background "#181825"
+            active-tab "#1e1e2e"
+            inactive-tab "#11111b"
+            border "#313244"
+            modified-indicator "#f38ba8"
+        }
+
+        // Sidebar
+        sidebar {
+            background "#181825"
+            foreground "#cdd6f4"
+            selection "#313244"
+            indent-guide "#313244"
+        }
+    }
+
+    // Syntax colors
+    syntax {
+        comment "#6c7086" italic=true
+        keyword "#cba6f7" bold=true
+        keyword-control "#cba6f7"
+        string "#a6e3a1"
+        string-escape "#f2cdcd"
+        number "#fab387"
+        boolean "#fab387"
+        operator "#89dceb"
+        punctuation "#6c7086"
+        function "#89b4fa"
+        function-call "#89b4fa"
+        method "#89b4fa"
+        type "#f9e2af"
+        type-parameter "#f9e2af" italic=true
+        constant "#fab387"
+        variable "#cdd6f4"
+        parameter "#f2cdcd" italic=true
+        property "#89b4fa"
+        attribute "#f9e2af"
+        tag "#f38ba8"
+        tag-attribute "#fab387"
+        namespace "#f9e2af"
+        macro "#f38ba8" bold=true
+        regexp "#f5c2e7"
+        link "#89b4fa" underline=true
+        heading "#89b4fa" bold=true
+    }
+
+    // Diagnostic colors
+    diagnostics {
+        error "#f38ba8"
+        warning "#f9e2af"
+        info "#89b4fa"
+        hint "#a6e3a1"
+        error-background "#f38ba820"
+        warning-background "#f9e2af20"
+    }
+
+    // Diff colors
+    diff {
+        added "#a6e3a1"
+        added-background "#a6e3a120"
+        removed "#f38ba8"
+        removed-background "#f38ba820"
+        modified "#89b4fa"
+        modified-background "#89b4fa20"
+    }
+}
+
+// ============================================================
+// Keybindings
+// ============================================================
+
+keybindings {
+    // Navigation
+    bind "Cmd+P" "command-palette"
+    bind "Cmd+Shift+P" "command-palette-all"
+    bind "Cmd+G" "goto-line"
+    bind "Cmd+O" "open-file"
+    bind "Cmd+S" "save"
+    bind "Cmd+Shift+S" "save-as"
+    bind "Cmd+W" "close-tab"
+
+    // Editing
+    bind "Cmd+D" "duplicate-line"
+    bind "Cmd+Shift+K" "delete-line"
+    bind "Cmd+Enter" "insert-line-below"
+    bind "Cmd+Shift+Enter" "insert-line-above"
+    bind "Alt+Up" "move-line-up"
+    bind "Alt+Down" "move-line-down"
+    bind "Cmd+/" "toggle-comment"
+    bind "Cmd+Shift+/" "toggle-block-comment"
+
+    // Multi-cursor
+    bind "Cmd+Alt+Up" "add-cursor-above"
+    bind "Cmd+Alt+Down" "add-cursor-below"
+    bind "Cmd+Shift+L" "select-all-occurrences"
+
+    // Selection
+    bind "Alt+Up" "expand-selection"
+    bind "Alt+Down" "shrink-selection"
+    bind "Cmd+L" "select-line"
+    bind "Cmd+A" "select-all"
+
+    // View
+    bind "Cmd+B" "toggle-sidebar"
+    bind "Cmd+J" "toggle-terminal"
+    bind "Cmd+\\" "split-right"
+    bind "Cmd+Shift+\\" "split-down"
+    bind "Cmd+1" "focus-group-1"
+    bind "Cmd+2" "focus-group-2"
+    bind "Cmd+3" "focus-group-3"
+
+    // Chord bindings
+    chord "Cmd+K" {
+        bind "Cmd+S" "save-without-format"
+        bind "Cmd+F" "format-document"
+        bind "Cmd+C" "copy-path"
+        bind "T" "toggle-theme"
+        bind "Z" "toggle-zen-mode"
+    }
+
+    // Context-specific
+    context "editor.csv" {
+        bind "Tab" "csv-next-cell"
+        bind "Shift+Tab" "csv-prev-cell"
+        bind "Enter" "csv-next-row"
+    }
+
+    context "overlay.open" {
+        bind "Escape" "close-overlay"
+        bind "Enter" "confirm-selection"
+        bind "Up" "select-previous"
+        bind "Down" "select-next"
+    }
+}
+
+// ============================================================
+// Languages and syntax
+// ============================================================
+
+languages {
+    language "rust" {
+        extensions ".rs"
+        tab-width 4
+        comment-line "//"
+        comment-block "/*" "*/"
+        auto-pairs "{" "}" "(" ")" "[" "]" "\"" "\"" "'" "'"
+        indent-regex r"(pub\s+)?(fn|struct|enum|impl|trait|mod|if|else|for|while|loop|match)\b.*\{$"
+    }
+
+    language "python" {
+        extensions ".py" ".pyw" ".pyi"
+        tab-width 4
+        insert-spaces true
+        comment-line "#"
+        auto-pairs "{" "}" "(" ")" "[" "]" "\"" "\"" "'" "'"
+        indent-regex r"(def|class|if|elif|else|for|while|with|try|except|finally)\b.*:$"
+    }
+
+    language "markdown" {
+        extensions ".md" ".markdown"
+        word-wrap true
+        tab-width 2
+        rulers 80 120
+    }
+
+    language "json" {
+        extensions ".json" ".jsonc"
+        tab-width 2
+        auto-format-on-save true
+        trailing-comma false
+    }
+}
+
+// ============================================================
+// Plugins
+// ============================================================
+
+plugins {
+    plugin "git-gutter" {
+        enabled true
+        show-blame true
+        blame-format "{author}, {date}"
+        update-interval 300
+    }
+
+    plugin "file-tree" {
+        enabled true
+        show-hidden false
+        exclude-patterns ".git" "node_modules" "target" "__pycache__" ".venv"
+        sort-directories-first true
+        indent-size 16
+    }
+
+    plugin "fuzzy-finder" {
+        enabled true
+        max-results 50
+        show-preview true
+        preview-lines 20
+        ignore-file ".gitignore"
+        additional-ignores "*.lock" "dist/" "build/"
+    }
+
+    plugin "auto-complete" {
+        enabled true
+        trigger-characters "." ":" "<" "\"" "/"
+        delay-ms 100
+        max-suggestions 15
+        show-documentation true
+    }
+}

@@ -1,0 +1,308 @@
+{# Tera Template Syntax Highlighting Test #}
+{# A documentation site template with layout inheritance, macros, and filters. #}
+
+{# ============================================================ #}
+{# Base layout template                                          #}
+{# ============================================================ #}
+
+<!DOCTYPE html>
+<html lang="{{ config.lang | default(value="en") }}" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{{ page.description | default(value=config.description) | truncate(length=160) }}">
+
+    <title>
+        {%- if page.title -%}
+            {{ page.title }} — {{ config.title }}
+        {%- else -%}
+            {{ config.title }}
+        {%- endif -%}
+    </title>
+
+    {# Open Graph tags #}
+    <meta property="og:title" content="{{ page.title | default(value=config.title) }}">
+    <meta property="og:type" content="{% if page.type %}{{ page.type }}{% else %}website{% endif %}">
+    <meta property="og:url" content="{{ current_url }}">
+    {% if page.og_image %}
+        <meta property="og:image" content="{{ config.base_url }}{{ page.og_image }}">
+    {% endif %}
+
+    {# CSS #}
+    <link rel="stylesheet" href="{{ get_url(path="style.css") | safe }}">
+
+    {# Preload fonts #}
+    {% for font in config.extra.fonts %}
+        <link rel="preload" href="{{ font.url }}" as="font" type="font/{{ font.format }}" crossorigin>
+    {% endfor %}
+
+    {% block head_extra %}{% endblock head_extra %}
+</head>
+<body class="{{ page.extra.body_class | default(value="") }}">
+    {# Skip link for accessibility #}
+    <a href="#main-content" class="skip-link">Skip to content</a>
+
+    {# Navigation #}
+    {% block header %}
+        {% include "partials/header.html" %}
+    {% endblock header %}
+
+    {# Main content area #}
+    <main id="main-content">
+        {% block content %}{% endblock content %}
+    </main>
+
+    {# Footer #}
+    {% block footer %}
+        <footer class="site-footer">
+            <div class="container">
+                <p>&copy; {{ now() | date(format="%Y") }} {{ config.title }}.
+                   Built with <a href="https://www.getzola.org">Zola</a>.</p>
+            </div>
+        </footer>
+    {% endblock footer %}
+
+    {# Scripts #}
+    {% block scripts %}{% endblock scripts %}
+</body>
+</html>
+
+{# ============================================================ #}
+{# Macros                                                        #}
+{# ============================================================ #}
+
+{# Render a task card #}
+{% macro task_card(task, show_project=true) %}
+    <article class="task-card priority-{{ task.priority }}">
+        <header class="task-card__header">
+            <span class="task-status task-status--{{ task.status }}">
+                {% if task.status == "done" %}
+                    &#x2713;
+                {% elif task.status == "in_progress" %}
+                    &#x25B6;
+                {% else %}
+                    &#x25CB;
+                {% endif %}
+            </span>
+            <h3 class="task-card__title">
+                <a href="{{ task.url }}">{{ task.title }}</a>
+            </h3>
+            {% if task.priority == "critical" %}
+                <span class="badge badge--danger">Critical</span>
+            {% elif task.priority == "high" %}
+                <span class="badge badge--warning">High</span>
+            {% endif %}
+        </header>
+
+        {% if task.description %}
+            <p class="task-card__description">
+                {{ task.description | truncate(length=120) }}
+            </p>
+        {% endif %}
+
+        <footer class="task-card__footer">
+            {% if task.tags | length > 0 %}
+                <div class="task-tags">
+                    {% for tag in task.tags %}
+                        <a href="{{ get_url(path="tags/" ~ tag) }}" class="tag">
+                            {{ tag }}
+                        </a>
+                    {% endfor %}
+                </div>
+            {% endif %}
+
+            {% if show_project and task.project %}
+                <span class="task-project">{{ task.project.name }}</span>
+            {% endif %}
+
+            {% if task.assignee %}
+                <span class="task-assignee" title="{{ task.assignee.name }}">
+                    {{ task.assignee.name | split(pat=" ") | first }}
+                </span>
+            {% endif %}
+
+            {% if task.due_date %}
+                {% set days_until = task.due_date | date(format="%s") | int - now() | date(format="%s") | int %}
+                <time
+                    datetime="{{ task.due_date | date(format="%Y-%m-%d") }}"
+                    class="{% if days_until < 0 %}overdue{% elif days_until < 3 %}due-soon{% endif %}"
+                >
+                    {{ task.due_date | date(format="%b %d") }}
+                </time>
+            {% endif %}
+        </footer>
+    </article>
+{% endmacro task_card %}
+
+{# Render a navigation link with active state #}
+{% macro nav_link(url, label, icon="") %}
+    {% set is_active = current_path is starting_with(url) %}
+    <a
+        href="{{ url }}"
+        class="nav-link {% if is_active %}nav-link--active{% endif %}"
+        {% if is_active %}aria-current="page"{% endif %}
+    >
+        {% if icon %}<span class="icon">{{ icon }}</span>{% endif %}
+        {{ label }}
+    </a>
+{% endmacro nav_link %}
+
+{# Render a code block with language label #}
+{% macro code_block(code, lang="text", filename="") %}
+    <div class="code-block">
+        {% if filename %}
+            <div class="code-block__header">
+                <span class="code-block__filename">{{ filename }}</span>
+                <span class="code-block__lang">{{ lang }}</span>
+            </div>
+        {% endif %}
+        <pre><code class="language-{{ lang }}">{{ code | safe }}</code></pre>
+    </div>
+{% endmacro code_block %}
+
+{# Pagination component #}
+{% macro pagination(paginator) %}
+    {% if paginator.number_pagers > 1 %}
+        <nav class="pagination" aria-label="Page navigation">
+            {% if paginator.previous %}
+                <a href="{{ paginator.previous }}" class="pagination__link pagination__prev">
+                    &larr; Previous
+                </a>
+            {% else %}
+                <span class="pagination__link pagination__prev pagination__disabled">
+                    &larr; Previous
+                </span>
+            {% endif %}
+
+            <span class="pagination__info">
+                Page {{ paginator.current_index }} of {{ paginator.number_pagers }}
+            </span>
+
+            {% if paginator.next %}
+                <a href="{{ paginator.next }}" class="pagination__link pagination__next">
+                    Next &rarr;
+                </a>
+            {% else %}
+                <span class="pagination__link pagination__next pagination__disabled">
+                    Next &rarr;
+                </span>
+            {% endif %}
+        </nav>
+    {% endif %}
+{% endmacro pagination %}
+
+{# ============================================================ #}
+{# Page template (extends base)                                  #}
+{# ============================================================ #}
+
+{% extends "base.html" %}
+
+{% block content %}
+    <div class="container">
+        {# Breadcrumbs #}
+        {% if page.ancestors | length > 0 %}
+            <nav class="breadcrumbs" aria-label="Breadcrumb">
+                <ol>
+                    <li><a href="{{ config.base_url }}">Home</a></li>
+                    {% for ancestor in page.ancestors %}
+                        {% set section = get_section(path=ancestor) %}
+                        <li><a href="{{ section.permalink }}">{{ section.title }}</a></li>
+                    {% endfor %}
+                    <li aria-current="page">{{ page.title }}</li>
+                </ol>
+            </nav>
+        {% endif %}
+
+        {# Page header #}
+        <header class="page-header">
+            <h1>{{ page.title }}</h1>
+            {% if page.description %}
+                <p class="lead">{{ page.description }}</p>
+            {% endif %}
+            <div class="page-meta">
+                {% if page.date %}
+                    <time datetime="{{ page.date | date(format="%Y-%m-%d") }}">
+                        {{ page.date | date(format="%B %d, %Y") }}
+                    </time>
+                {% endif %}
+                {% if page.reading_time %}
+                    <span class="reading-time">{{ page.reading_time }} min read</span>
+                {% endif %}
+            </div>
+        </header>
+
+        {# Content with TOC #}
+        <div class="content-layout">
+            <article class="prose">
+                {{ page.content | safe }}
+            </article>
+
+            {% if page.toc | length > 0 %}
+                <aside class="table-of-contents">
+                    <h2>On this page</h2>
+                    <ul>
+                        {% for h2 in page.toc %}
+                            <li>
+                                <a href="#{{ h2.id }}">{{ h2.title }}</a>
+                                {% if h2.children | length > 0 %}
+                                    <ul>
+                                        {% for h3 in h2.children %}
+                                            <li><a href="#{{ h3.id }}">{{ h3.title }}</a></li>
+                                        {% endfor %}
+                                    </ul>
+                                {% endif %}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </aside>
+            {% endif %}
+        </div>
+
+        {# Task list if page has tasks #}
+        {% if page.extra.tasks %}
+            <section class="task-section">
+                <h2>Related Tasks</h2>
+                <div class="task-grid">
+                    {% for task in page.extra.tasks %}
+                        {{ self::task_card(task=task, show_project=false) }}
+                    {% endfor %}
+                </div>
+            </section>
+        {% endif %}
+
+        {# Related pages #}
+        {% if page.lower or page.higher %}
+            <nav class="page-navigation">
+                {% if page.lower %}
+                    <a href="{{ page.lower.permalink }}" class="page-nav__prev">
+                        <small>Previous</small>
+                        <span>{{ page.lower.title }}</span>
+                    </a>
+                {% endif %}
+                {% if page.higher %}
+                    <a href="{{ page.higher.permalink }}" class="page-nav__next">
+                        <small>Next</small>
+                        <span>{{ page.higher.title }}</span>
+                    </a>
+                {% endif %}
+            </nav>
+        {% endif %}
+    </div>
+{% endblock content %}
+
+{% block scripts %}
+    <script>
+        // Copy button for code blocks
+        document.querySelectorAll('.code-block pre').forEach(pre => {
+            const button = document.createElement('button');
+            button.textContent = 'Copy';
+            button.className = 'copy-btn';
+            button.addEventListener('click', () => {
+                navigator.clipboard.writeText(pre.textContent);
+                button.textContent = 'Copied!';
+                setTimeout(() => button.textContent = 'Copy', 2000);
+            });
+            pre.parentElement.appendChild(button);
+        });
+    </script>
+{% endblock scripts %}

@@ -1,0 +1,363 @@
+---
+// Astro Syntax Highlighting Test
+// A documentation page component with dynamic content and multiple framework islands.
+
+import Layout from '../layouts/Layout.astro';
+import { getCollection, type CollectionEntry } from 'astro:content';
+import TableOfContents from '../components/TableOfContents.astro';
+import SearchBar from '../components/SearchBar.tsx';  // React island
+import CodeBlock from '../components/CodeBlock.svelte';  // Svelte island
+import FeedbackForm from '../components/FeedbackForm.vue';  // Vue island
+
+// Type definitions
+interface Props {
+    slug: string;
+    section?: string;
+}
+
+type DocEntry = CollectionEntry<'docs'>;
+
+interface NavItem {
+    title: string;
+    slug: string;
+    children?: NavItem[];
+    badge?: 'new' | 'updated' | 'deprecated';
+}
+
+// Fetch document data at build time
+const { slug, section = 'guides' } = Astro.props;
+
+const allDocs: DocEntry[] = await getCollection('docs', (entry) => {
+    return entry.data.section === section && !entry.data.draft;
+});
+
+const currentDoc = allDocs.find((doc) => doc.slug === slug);
+if (!currentDoc) {
+    return Astro.redirect('/404');
+}
+
+const { Content, headings } = await currentDoc.render();
+
+// Build navigation tree
+const navItems: NavItem[] = allDocs
+    .sort((a, b) => (a.data.order ?? 99) - (b.data.order ?? 99))
+    .map((doc) => ({
+        title: doc.data.title,
+        slug: doc.slug,
+        children: doc.data.children?.map((child: { title: string; slug: string }) => ({
+            title: child.title,
+            slug: `${doc.slug}/${child.slug}`,
+        })),
+        badge: doc.data.badge,
+    }));
+
+// Compute prev/next links
+const currentIndex = allDocs.findIndex((d) => d.slug === slug);
+const prevDoc = currentIndex > 0 ? allDocs[currentIndex - 1] : null;
+const nextDoc = currentIndex < allDocs.length - 1 ? allDocs[currentIndex + 1] : null;
+
+// Format date
+const lastUpdated = currentDoc.data.updatedAt
+    ? new Date(currentDoc.data.updatedAt).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+      })
+    : null;
+---
+
+<Layout
+    title={`${currentDoc.data.title} - Token Editor Docs`}
+    description={currentDoc.data.description}
+    ogImage={currentDoc.data.ogImage}
+>
+    <div class="docs-layout">
+        <!-- Sidebar navigation -->
+        <aside class="sidebar" aria-label="Documentation navigation">
+            <div class="sidebar-header">
+                <a href="/" class="logo">
+                    <img src="/logo.svg" alt="Token Editor" width="32" height="32" />
+                    <span>Docs</span>
+                </a>
+                <SearchBar client:load placeholder="Search docs..." />
+            </div>
+
+            <nav class="sidebar-nav">
+                {navItems.map((item) => (
+                    <div class="nav-group">
+                        <a
+                            href={`/docs/${item.slug}`}
+                            class:list={['nav-link', { active: item.slug === slug }]}
+                            aria-current={item.slug === slug ? 'page' : undefined}
+                        >
+                            {item.title}
+                            {item.badge && (
+                                <span class={`badge badge-${item.badge}`}>
+                                    {item.badge}
+                                </span>
+                            )}
+                        </a>
+                        {item.children && (
+                            <ul class="nav-children">
+                                {item.children.map((child) => (
+                                    <li>
+                                        <a
+                                            href={`/docs/${child.slug}`}
+                                            class:list={['nav-link', 'nav-child', {
+                                                active: child.slug === slug,
+                                            }]}
+                                        >
+                                            {child.title}
+                                        </a>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                ))}
+            </nav>
+        </aside>
+
+        <!-- Main content -->
+        <main class="content">
+            <article class="doc-article">
+                <header class="doc-header">
+                    <div class="breadcrumbs">
+                        <a href="/docs">Docs</a>
+                        <span class="separator">/</span>
+                        <a href={`/docs?section=${section}`}>{section}</a>
+                        <span class="separator">/</span>
+                        <span>{currentDoc.data.title}</span>
+                    </div>
+                    <h1>{currentDoc.data.title}</h1>
+                    {currentDoc.data.description && (
+                        <p class="lead">{currentDoc.data.description}</p>
+                    )}
+                    {lastUpdated && (
+                        <p class="last-updated">
+                            Last updated: <time>{lastUpdated}</time>
+                        </p>
+                    )}
+                </header>
+
+                <div class="doc-body prose">
+                    <Content components={{ pre: CodeBlock }} />
+                </div>
+
+                <!-- Prev/Next navigation -->
+                <nav class="doc-pagination" aria-label="Pagination">
+                    {prevDoc ? (
+                        <a href={`/docs/${prevDoc.slug}`} class="pagination-link prev">
+                            <span class="pagination-label">Previous</span>
+                            <span class="pagination-title">{prevDoc.data.title}</span>
+                        </a>
+                    ) : <div />}
+
+                    {nextDoc && (
+                        <a href={`/docs/${nextDoc.slug}`} class="pagination-link next">
+                            <span class="pagination-label">Next</span>
+                            <span class="pagination-title">{nextDoc.data.title}</span>
+                        </a>
+                    )}
+                </nav>
+
+                <!-- Interactive feedback (Vue island - hydrated on visible) -->
+                <FeedbackForm
+                    client:visible
+                    pageSlug={slug}
+                    pageTitle={currentDoc.data.title}
+                />
+            </article>
+
+            <!-- Table of contents (right sidebar) -->
+            <TableOfContents headings={headings} />
+        </main>
+    </div>
+</Layout>
+
+<style>
+    .docs-layout {
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        min-height: 100vh;
+    }
+
+    .sidebar {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow-y: auto;
+        border-right: 1px solid var(--color-border);
+        background: var(--color-bg-secondary);
+        padding: 1rem;
+    }
+
+    .sidebar-header {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--color-border);
+        margin-bottom: 1rem;
+    }
+
+    .logo {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        text-decoration: none;
+        font-weight: 700;
+        font-size: 1.125rem;
+        color: var(--color-text);
+    }
+
+    .nav-link {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.375rem 0.75rem;
+        border-radius: 6px;
+        text-decoration: none;
+        color: var(--color-text-secondary);
+        font-size: 0.875rem;
+        transition: all 0.15s ease;
+    }
+
+    .nav-link:hover {
+        color: var(--color-text);
+        background: var(--color-bg-hover);
+    }
+
+    .nav-link.active {
+        color: var(--color-primary);
+        background: var(--color-primary-bg);
+        font-weight: 500;
+    }
+
+    .badge {
+        font-size: 0.625rem;
+        padding: 0.125rem 0.375rem;
+        border-radius: 999px;
+        text-transform: uppercase;
+        font-weight: 600;
+    }
+
+    .badge-new { background: #dcfce7; color: #166534; }
+    .badge-updated { background: #dbeafe; color: #1e40af; }
+    .badge-deprecated { background: #fee2e2; color: #991b1b; }
+
+    .content {
+        display: grid;
+        grid-template-columns: 1fr 220px;
+        gap: 2rem;
+        max-width: 1200px;
+        padding: 2rem;
+    }
+
+    .doc-header {
+        margin-bottom: 2rem;
+    }
+
+    .doc-header h1 {
+        font-size: 2rem;
+        line-height: 1.2;
+        margin: 0.5rem 0;
+    }
+
+    .lead {
+        font-size: 1.125rem;
+        color: var(--color-text-secondary);
+        margin-top: 0.5rem;
+    }
+
+    .last-updated {
+        font-size: 0.8125rem;
+        color: var(--color-text-muted);
+    }
+
+    .doc-pagination {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-top: 3rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--color-border);
+    }
+
+    .pagination-link {
+        display: flex;
+        flex-direction: column;
+        padding: 1rem;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        text-decoration: none;
+        transition: border-color 0.15s;
+    }
+
+    .pagination-link:hover {
+        border-color: var(--color-primary);
+    }
+
+    .pagination-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+    }
+
+    .pagination-title {
+        font-weight: 500;
+        color: var(--color-primary);
+    }
+
+    @media (max-width: 768px) {
+        .docs-layout {
+            grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+            position: fixed;
+            z-index: 50;
+            transform: translateX(-100%);
+            transition: transform 0.2s ease;
+        }
+
+        .sidebar.open {
+            transform: translateX(0);
+        }
+
+        .content {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+<script>
+    // Client-side interactivity
+    const sidebar = document.querySelector('.sidebar');
+    const menuToggle = document.querySelector('[data-menu-toggle]');
+
+    menuToggle?.addEventListener('click', () => {
+        sidebar?.classList.toggle('open');
+    });
+
+    // Highlight current heading in TOC based on scroll position
+    const observer = new IntersectionObserver(
+        (entries) => {
+            entries.forEach((entry) => {
+                const id = entry.target.getAttribute('id');
+                const tocLink = document.querySelector(`a[href="#${id}"]`);
+                if (entry.isIntersecting) {
+                    document.querySelectorAll('.toc-link.active').forEach((el) => {
+                        el.classList.remove('active');
+                    });
+                    tocLink?.classList.add('active');
+                }
+            });
+        },
+        { rootMargin: '-80px 0px -80% 0px' }
+    );
+
+    document.querySelectorAll('h2[id], h3[id]').forEach((heading) => {
+        observer.observe(heading);
+    });
+</script>

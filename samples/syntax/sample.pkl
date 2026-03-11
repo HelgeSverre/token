@@ -1,0 +1,291 @@
+/// Pkl Syntax Highlighting Test
+/// A typed configuration language for a Kubernetes deployment.
+
+@ModuleInfo { minPklVersion = "0.25.0" }
+module DeploymentConfig
+
+import "pkl:math"
+
+// ============================================================
+// Type definitions
+// ============================================================
+
+typealias Port = UInt16(this >= 1 && this <= 65535)
+typealias CpuAmount = String(matches(Regex(#"\d+m?"#)))
+typealias MemoryAmount = String(matches(Regex(#"\d+(Mi|Gi)"#)))
+typealias ImageTag = String(!isEmpty && !contains(" "))
+
+class ResourceLimits {
+  cpu: CpuAmount
+  memory: MemoryAmount
+}
+
+class Resources {
+  requests: ResourceLimits
+  limits: ResourceLimits
+
+  hidden isValid: Boolean =
+    parseCpu(limits.cpu) >= parseCpu(requests.cpu) &&
+    parseMemory(limits.memory) >= parseMemory(requests.memory)
+}
+
+class HealthCheck {
+  path: String
+  port: Port
+  initialDelaySeconds: UInt = 10
+  periodSeconds: UInt = 30
+  timeoutSeconds: UInt = 5
+  failureThreshold: UInt = 3
+  successThreshold: UInt = 1
+}
+
+class EnvVar {
+  name: String(!isEmpty)
+  value: (String|Int|Boolean|Duration)?
+  secret: SecretRef?
+
+  hidden isSecret: Boolean = secret != null
+}
+
+class SecretRef {
+  name: String
+  key: String
+}
+
+class ContainerConfig {
+  name: String
+  image: ImageTag
+  tag: String = "latest"
+  ports: Listing<Port>
+  env: Listing<EnvVar>
+  resources: Resources
+  healthCheck: HealthCheck?
+  command: Listing<String>?
+  args: Listing<String>?
+
+  hidden fullImage: String = "\(image):\(tag)"
+}
+
+class ServiceConfig {
+  name: String
+  type: "ClusterIP"|"NodePort"|"LoadBalancer" = "ClusterIP"
+  port: Port
+  targetPort: Port
+  annotations: Mapping<String, String>
+}
+
+class IngressRule {
+  host: String
+  path: String = "/"
+  pathType: "Prefix"|"Exact"|"ImplementationSpecific" = "Prefix"
+  serviceName: String
+  servicePort: Port
+}
+
+class AutoscalingConfig {
+  enabled: Boolean = false
+  minReplicas: UInt(this >= 1) = 1
+  maxReplicas: UInt(this >= minReplicas) = 10
+  targetCPUPercent: UInt(this >= 1 && this <= 100) = 70
+  targetMemoryPercent: UInt(this >= 1 && this <= 100)? = null
+}
+
+// ============================================================
+// Environment abstraction
+// ============================================================
+
+abstract class Environment {
+  name: String
+  namespace: String = "default"
+  replicas: UInt(this >= 1)
+  domain: String
+
+  container: ContainerConfig
+  service: ServiceConfig
+  ingress: Listing<IngressRule>
+  autoscaling: AutoscalingConfig
+
+  /// Labels applied to all resources
+  labels: Mapping<String, String> = new {
+    ["app"] = container.name
+    ["environment"] = name
+    ["managed-by"] = "pkl"
+    ["version"] = container.tag
+  }
+
+  /// Annotations for monitoring
+  annotations: Mapping<String, String> = new {
+    ["prometheus.io/scrape"] = "true"
+    ["prometheus.io/port"] = "\(container.ports.toList().first)"
+  }
+}
+
+// ============================================================
+// Helper functions
+// ============================================================
+
+local function parseCpu(value: CpuAmount): Int =
+  if (value.endsWith("m"))
+    value.dropLast(1).toInt()
+  else
+    value.toInt() * 1000
+
+local function parseMemory(value: MemoryAmount): Int =
+  if (value.endsWith("Gi"))
+    value.dropLast(2).toInt() * 1024
+  else if (value.endsWith("Mi"))
+    value.dropLast(2).toInt()
+  else
+    0
+
+local function envFromSecret(name: String, secretName: String, key: String): EnvVar = new {
+  name = name
+  secret = new SecretRef {
+    name = secretName
+    key = key
+  }
+}
+
+local function envLiteral(name: String, value: String|Int|Boolean): EnvVar = new {
+  name = name
+  value = value
+}
+
+// ============================================================
+// Shared defaults
+// ============================================================
+
+local baseContainer: ContainerConfig = new {
+  name = "token-editor-api"
+  image = "ghcr.io/example/token-editor-api"
+  ports {
+    8080
+    9090
+  }
+  resources = new {
+    requests = new { cpu = "100m"; memory = "128Mi" }
+    limits = new { cpu = "500m"; memory = "512Mi" }
+  }
+  healthCheck = new {
+    path = "/health"
+    port = 8080
+  }
+}
+
+local baseEnv: Listing<EnvVar> = new {
+  envLiteral("APP_NAME", "token-editor")
+  envLiteral("LOG_FORMAT", "json")
+  envLiteral("METRICS_ENABLED", true)
+  envFromSecret("DATABASE_URL", "app-secrets", "database-url")
+  envFromSecret("API_KEY", "app-secrets", "api-key")
+}
+
+// ============================================================
+// Environment configurations
+// ============================================================
+
+production: Environment = new {
+  name = "production"
+  namespace = "token-editor-prod"
+  replicas = 3
+  domain = "api.token-editor.com"
+
+  container = (baseContainer) {
+    tag = "v0.3.19"
+    env = (baseEnv) {
+      envLiteral("ENVIRONMENT", "production")
+      envLiteral("LOG_LEVEL", "info")
+      envLiteral("RATE_LIMIT", 1000)
+      envLiteral("CACHE_TTL", 300)
+    }
+    resources = new {
+      requests = new { cpu = "500m"; memory = "512Mi" }
+      limits = new { cpu = "2000m"; memory = "2Gi" }
+    }
+  }
+
+  service = new {
+    name = "token-editor-api"
+    type = "ClusterIP"
+    port = 80
+    targetPort = 8080
+    annotations = new {
+      ["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
+    }
+  }
+
+  ingress = new {
+    new {
+      host = domain
+      serviceName = service.name
+      servicePort = service.port
+    }
+    new {
+      host = "www.\(domain)"
+      serviceName = service.name
+      servicePort = service.port
+    }
+  }
+
+  autoscaling = new {
+    enabled = true
+    minReplicas = 3
+    maxReplicas = 20
+    targetCPUPercent = 65
+    targetMemoryPercent = 80
+  }
+}
+
+staging: Environment = new {
+  name = "staging"
+  namespace = "token-editor-staging"
+  replicas = 1
+  domain = "staging-api.token-editor.com"
+
+  container = (baseContainer) {
+    tag = "latest"
+    env = (baseEnv) {
+      envLiteral("ENVIRONMENT", "staging")
+      envLiteral("LOG_LEVEL", "debug")
+      envLiteral("RATE_LIMIT", 100)
+    }
+  }
+
+  service = new {
+    name = "token-editor-api"
+    port = 80
+    targetPort = 8080
+    annotations = new {}
+  }
+
+  ingress = new {
+    new {
+      host = domain
+      serviceName = service.name
+      servicePort = service.port
+    }
+  }
+
+  autoscaling = new {
+    enabled = false
+  }
+}
+
+/// Summary output
+output {
+  text = """
+    === Deployment Configuration ===
+
+    Production:
+      Image:    \(production.container.fullImage)
+      Replicas: \(production.replicas) (autoscale: \(production.autoscaling.minReplicas)-\(production.autoscaling.maxReplicas))
+      Domain:   \(production.domain)
+      CPU:      \(production.container.resources.requests.cpu) - \(production.container.resources.limits.cpu)
+      Memory:   \(production.container.resources.requests.memory) - \(production.container.resources.limits.memory)
+
+    Staging:
+      Image:    \(staging.container.fullImage)
+      Replicas: \(staging.replicas)
+      Domain:   \(staging.domain)
+    """
+}

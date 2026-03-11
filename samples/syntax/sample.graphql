@@ -1,0 +1,347 @@
+# GraphQL Syntax Highlighting Test
+# A project management API schema with queries, mutations, and subscriptions.
+
+"""
+The root schema for the project management API.
+Supports real-time updates via subscriptions.
+"""
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
+
+# Scalars
+scalar DateTime
+scalar JSON
+scalar Upload
+
+# Enums
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SortDirection {
+  ASC
+  DESC
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_UPDATED
+  COMMENT_ADDED
+  MENTION
+  DUE_DATE_APPROACHING
+}
+
+# Interfaces
+interface Node {
+  id: ID!
+}
+
+interface Timestamped {
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+# Union type
+union SearchResult = Task | Project | User | Comment
+
+# Input types
+input TaskFilter {
+  status: [TaskStatus!]
+  priority: [Priority!]
+  assigneeId: ID
+  projectId: ID!
+  tags: [String!]
+  dueBefore: DateTime
+  dueAfter: DateTime
+  search: String
+}
+
+input TaskSort {
+  field: TaskSortField!
+  direction: SortDirection! = ASC
+}
+
+enum TaskSortField {
+  CREATED_AT
+  UPDATED_AT
+  PRIORITY
+  DUE_DATE
+  TITLE
+}
+
+input CreateTaskInput {
+  title: String!
+  description: String
+  projectId: ID!
+  assigneeId: ID
+  priority: Priority = MEDIUM
+  dueDate: DateTime
+  tags: [String!]
+  parentId: ID
+  estimatedHours: Float
+}
+
+input UpdateTaskInput {
+  title: String
+  description: String
+  status: TaskStatus
+  assigneeId: ID
+  priority: Priority
+  dueDate: DateTime
+  tags: [String!]
+  estimatedHours: Float
+  actualHours: Float
+}
+
+input PaginationInput {
+  first: Int = 20
+  after: String
+  last: Int
+  before: String
+}
+
+# Types
+type User implements Node & Timestamped {
+  id: ID!
+  username: String!
+  email: String!
+  displayName: String!
+  avatarUrl: String
+  role: String!
+  isActive: Boolean!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+
+  # Relationships
+  assignedTasks(
+    filter: TaskFilter
+    sort: TaskSort
+    pagination: PaginationInput
+  ): TaskConnection!
+  projects: [Project!]!
+  notifications(unreadOnly: Boolean = false): [Notification!]!
+}
+
+type Project implements Node & Timestamped {
+  id: ID!
+  name: String!
+  slug: String!
+  description: String
+  visibility: String!
+  isArchived: Boolean!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+
+  # Relationships
+  owner: User!
+  members: [ProjectMember!]!
+  tasks(
+    filter: TaskFilter
+    sort: TaskSort
+    pagination: PaginationInput
+  ): TaskConnection!
+
+  # Computed fields
+  taskCount: Int!
+  completionPercentage: Float!
+  nextDeadline: DateTime
+}
+
+type ProjectMember {
+  user: User!
+  role: String!
+  joinedAt: DateTime!
+}
+
+type Task implements Node & Timestamped {
+  id: ID!
+  title: String!
+  description: String
+  status: TaskStatus!
+  priority: Priority!
+  dueDate: DateTime
+  estimatedHours: Float
+  actualHours: Float
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  completedAt: DateTime
+
+  # Relationships
+  project: Project!
+  assignee: User
+  creator: User!
+  parent: Task
+  subtasks: [Task!]!
+  tags: [String!]!
+  comments(pagination: PaginationInput): CommentConnection!
+  attachments: [Attachment!]!
+
+  # Computed
+  isOverdue: Boolean!
+  depth: Int!
+}
+
+type Comment implements Node & Timestamped {
+  id: ID!
+  body: String!
+  isEdited: Boolean!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+
+  author: User!
+  task: Task!
+  mentions: [User!]!
+}
+
+type Attachment {
+  id: ID!
+  filename: String!
+  mimeType: String!
+  size: Int!
+  url: String!
+  uploadedBy: User!
+  uploadedAt: DateTime!
+}
+
+type Notification implements Node {
+  id: ID!
+  type: NotificationType!
+  message: String!
+  isRead: Boolean!
+  createdAt: DateTime!
+  relatedTask: Task
+  actor: User!
+}
+
+# Pagination (Relay-style)
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+  totalCount: Int!
+}
+
+type TaskConnection {
+  edges: [TaskEdge!]!
+  pageInfo: PageInfo!
+}
+
+type TaskEdge {
+  node: Task!
+  cursor: String!
+}
+
+type CommentConnection {
+  edges: [CommentEdge!]!
+  pageInfo: PageInfo!
+}
+
+type CommentEdge {
+  node: Comment!
+  cursor: String!
+}
+
+# Mutation payloads
+type TaskPayload {
+  task: Task
+  errors: [UserError!]!
+}
+
+type UserError {
+  field: String!
+  message: String!
+}
+
+type BatchPayload {
+  count: Int!
+  tasks: [Task!]!
+}
+
+# Queries
+type Query {
+  # Node interface
+  node(id: ID!): Node
+
+  # Users
+  me: User!
+  user(id: ID!): User
+  users(search: String, limit: Int = 20): [User!]!
+
+  # Projects
+  project(id: ID!): Project
+  projectBySlug(slug: String!): Project
+  projects(includeArchived: Boolean = false): [Project!]!
+
+  # Tasks
+  task(id: ID!): Task
+  tasks(
+    filter: TaskFilter!
+    sort: TaskSort
+    pagination: PaginationInput
+  ): TaskConnection!
+
+  # Search
+  search(query: String!, limit: Int = 10): [SearchResult!]!
+
+  # Analytics
+  projectStats(projectId: ID!): JSON!
+}
+
+# Mutations
+type Mutation {
+  # Tasks
+  createTask(input: CreateTaskInput!): TaskPayload!
+  updateTask(id: ID!, input: UpdateTaskInput!): TaskPayload!
+  deleteTask(id: ID!): Boolean!
+  moveTask(id: ID!, status: TaskStatus!): TaskPayload!
+  assignTask(id: ID!, assigneeId: ID!): TaskPayload!
+  batchUpdateTasks(ids: [ID!]!, input: UpdateTaskInput!): BatchPayload!
+
+  # Comments
+  addComment(taskId: ID!, body: String!): Comment!
+  editComment(id: ID!, body: String!): Comment!
+  deleteComment(id: ID!): Boolean!
+
+  # Projects
+  createProject(name: String!, description: String): Project!
+  archiveProject(id: ID!): Project!
+
+  # File uploads
+  uploadAttachment(taskId: ID!, file: Upload!): Attachment!
+
+  # Notifications
+  markNotificationRead(id: ID!): Notification!
+  markAllNotificationsRead: Boolean!
+}
+
+# Subscriptions
+type Subscription {
+  taskUpdated(projectId: ID!): Task!
+  commentAdded(taskId: ID!): Comment!
+  notificationReceived: Notification!
+}
+
+# Directives
+directive @auth(requires: String!) on FIELD_DEFINITION
+directive @deprecated(reason: String = "No longer supported") on FIELD_DEFINITION | ENUM_VALUE
+directive @cacheControl(maxAge: Int!, scope: CacheControlScope) on FIELD_DEFINITION
+
+enum CacheControlScope {
+  PUBLIC
+  PRIVATE
+}

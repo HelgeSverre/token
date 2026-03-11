@@ -1,0 +1,356 @@
+/// SCSS Syntax Highlighting Test
+/// A design system with variables, mixins, functions, and component styles.
+
+@use 'sass:math';
+@use 'sass:color';
+@use 'sass:map';
+@use 'sass:list';
+@use 'sass:string';
+
+// ============================================================
+// Variables & Maps
+// ============================================================
+
+// Color palette
+$colors: (
+  'primary':   #3b82f6,
+  'secondary': #6366f1,
+  'success':   #22c55e,
+  'warning':   #f59e0b,
+  'danger':    #ef4444,
+  'gray-50':   #f9fafb,
+  'gray-100':  #f3f4f6,
+  'gray-200':  #e5e7eb,
+  'gray-300':  #d1d5db,
+  'gray-400':  #9ca3af,
+  'gray-500':  #6b7280,
+  'gray-600':  #4b5563,
+  'gray-700':  #374151,
+  'gray-800':  #1f2937,
+  'gray-900':  #111827,
+);
+
+// Spacing scale (4px base)
+$spacing-base: 4px;
+$spacing: (
+  0: 0,
+  1: $spacing-base,
+  2: $spacing-base * 2,
+  3: $spacing-base * 3,
+  4: $spacing-base * 4,
+  6: $spacing-base * 6,
+  8: $spacing-base * 8,
+  12: $spacing-base * 12,
+  16: $spacing-base * 16,
+);
+
+// Typography
+$font-family-sans: 'Inter', system-ui, -apple-system, sans-serif;
+$font-family-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+$font-sizes: (
+  'xs':  (size: 0.75rem,  line-height: 1rem),
+  'sm':  (size: 0.875rem, line-height: 1.25rem),
+  'base': (size: 1rem,     line-height: 1.5rem),
+  'lg':  (size: 1.125rem, line-height: 1.75rem),
+  'xl':  (size: 1.25rem,  line-height: 1.75rem),
+  '2xl': (size: 1.5rem,   line-height: 2rem),
+  '3xl': (size: 1.875rem, line-height: 2.25rem),
+);
+
+// Breakpoints
+$breakpoints: (
+  'sm': 640px,
+  'md': 768px,
+  'lg': 1024px,
+  'xl': 1280px,
+);
+
+$border-radius: 6px;
+$transition-duration: 200ms;
+$shadow-color: rgba(0, 0, 0, 0.1);
+
+// ============================================================
+// Functions
+// ============================================================
+
+@function color($name) {
+  @if not map.has-key($colors, $name) {
+    @error "Unknown color '#{$name}'. Available: #{map.keys($colors)}";
+  }
+  @return map.get($colors, $name);
+}
+
+@function spacing($key) {
+  @return map.get($spacing, $key);
+}
+
+@function font-size($name) {
+  $config: map.get($font-sizes, $name);
+  @return map.get($config, 'size');
+}
+
+@function tint($color, $percentage) {
+  @return color.mix(white, $color, $percentage);
+}
+
+@function shade($color, $percentage) {
+  @return color.mix(black, $color, $percentage);
+}
+
+// ============================================================
+// Mixins
+// ============================================================
+
+@mixin respond-to($breakpoint) {
+  $value: map.get($breakpoints, $breakpoint);
+  @if $value {
+    @media (min-width: $value) {
+      @content;
+    }
+  } @else {
+    @warn "Unknown breakpoint: #{$breakpoint}";
+  }
+}
+
+@mixin flex-center($direction: row) {
+  display: flex;
+  flex-direction: $direction;
+  align-items: center;
+  justify-content: center;
+}
+
+@mixin truncate($lines: 1) {
+  @if $lines == 1 {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  } @else {
+    display: -webkit-box;
+    -webkit-line-clamp: $lines;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+@mixin interactive {
+  cursor: pointer;
+  user-select: none;
+  transition: all $transition-duration ease;
+
+  &:hover { opacity: 0.85; }
+  &:active { transform: scale(0.98); }
+  &:focus-visible {
+    outline: 2px solid color('primary');
+    outline-offset: 2px;
+  }
+  &:disabled,
+  &[aria-disabled='true'] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+}
+
+// ============================================================
+// Base & Reset
+// ============================================================
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-family: $font-family-sans;
+  font-size: 16px;
+  line-height: 1.5;
+  color: color('gray-900');
+  background-color: color('gray-50');
+  -webkit-font-smoothing: antialiased;
+}
+
+// ============================================================
+// Utility class generation
+// ============================================================
+
+// Generate spacing utilities
+@each $prop, $prefix in ('margin': 'm', 'padding': 'p') {
+  @each $key, $value in $spacing {
+    .#{$prefix}-#{$key} { #{$prop}: $value; }
+    .#{$prefix}x-#{$key} {
+      #{$prop}-left: $value;
+      #{$prop}-right: $value;
+    }
+    .#{$prefix}y-#{$key} {
+      #{$prop}-top: $value;
+      #{$prop}-bottom: $value;
+    }
+  }
+}
+
+// Generate text color utilities
+@each $name, $value in $colors {
+  .text-#{$name} { color: $value; }
+  .bg-#{$name} { background-color: $value; }
+}
+
+// ============================================================
+// Components
+// ============================================================
+
+.btn {
+  @include interactive;
+  @include flex-center;
+  display: inline-flex;
+  gap: spacing(2);
+  padding: spacing(2) spacing(4);
+  border: 1px solid transparent;
+  border-radius: $border-radius;
+  font-size: font-size('sm');
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+
+  // Variants using @each
+  $variants: (
+    'primary':   (bg: color('primary'),   text: white),
+    'secondary': (bg: color('secondary'), text: white),
+    'danger':    (bg: color('danger'),    text: white),
+    'outline':   (bg: transparent,        text: color('gray-700')),
+  );
+
+  @each $name, $config in $variants {
+    &--#{$name} {
+      background-color: map.get($config, 'bg');
+      color: map.get($config, 'text');
+
+      @if $name == 'outline' {
+        border-color: color('gray-300');
+
+        &:hover {
+          background-color: color('gray-100');
+        }
+      } @else {
+        &:hover {
+          background-color: shade(map.get($config, 'bg'), 15%);
+        }
+      }
+    }
+  }
+
+  // Sizes
+  &--sm {
+    padding: spacing(1) spacing(3);
+    font-size: font-size('xs');
+  }
+
+  &--lg {
+    padding: spacing(3) spacing(6);
+    font-size: font-size('base');
+  }
+}
+
+.card {
+  background: white;
+  border: 1px solid color('gray-200');
+  border-radius: $border-radius * 2;
+  box-shadow: 0 1px 3px $shadow-color;
+  overflow: hidden;
+
+  &__header {
+    padding: spacing(4) spacing(6);
+    border-bottom: 1px solid color('gray-200');
+
+    h3 {
+      font-size: font-size('lg');
+      font-weight: 600;
+      @include truncate;
+    }
+  }
+
+  &__body {
+    padding: spacing(6);
+  }
+
+  &__footer {
+    @include flex-center;
+    justify-content: flex-end;
+    gap: spacing(3);
+    padding: spacing(4) spacing(6);
+    border-top: 1px solid color('gray-200');
+    background: color('gray-50');
+  }
+
+  // Responsive
+  @include respond-to('md') {
+    &__body { padding: spacing(8); }
+  }
+}
+
+// Code block styling
+.code-block {
+  font-family: $font-family-mono;
+  font-size: font-size('sm');
+  background: color('gray-900');
+  color: color('gray-100');
+  border-radius: $border-radius;
+  overflow-x: auto;
+
+  pre {
+    padding: spacing(4);
+    margin: 0;
+    tab-size: 4;
+  }
+
+  // Syntax tokens
+  .token {
+    &.keyword    { color: #c678dd; }
+    &.string     { color: #98c379; }
+    &.number     { color: #d19a66; }
+    &.comment    { color: color('gray-500'); font-style: italic; }
+    &.function   { color: #61afef; }
+    &.operator   { color: #56b6c2; }
+    &.punctuation { color: color('gray-400'); }
+  }
+
+  // Line numbers
+  &--numbered {
+    counter-reset: line;
+
+    .line {
+      counter-increment: line;
+
+      &::before {
+        content: counter(line);
+        display: inline-block;
+        width: 3ch;
+        margin-right: spacing(4);
+        color: color('gray-600');
+        text-align: right;
+      }
+    }
+  }
+}
+
+// Dark mode
+@media (prefers-color-scheme: dark) {
+  html {
+    color: color('gray-100');
+    background-color: color('gray-900');
+  }
+
+  .card {
+    background: color('gray-800');
+    border-color: color('gray-700');
+
+    &__header { border-color: color('gray-700'); }
+    &__footer {
+      border-color: color('gray-700');
+      background: color('gray-900');
+    }
+  }
+}

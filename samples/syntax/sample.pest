@@ -1,0 +1,209 @@
+// PEG Grammar (pest) Syntax Highlighting Test
+// A grammar for a simple configuration/expression language.
+
+// ============================================================
+// Whitespace and comments
+// ============================================================
+
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT    = _{ line_comment | block_comment }
+
+line_comment  = @{ "//" ~ (!NEWLINE ~ ANY)* }
+block_comment = @{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+// ============================================================
+// Primitives
+// ============================================================
+
+// Numbers
+integer    = @{ "-"? ~ ("0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*) }
+float      = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~ exponent? }
+hex_number = @{ "0x" ~ ASCII_HEX_DIGIT+ }
+oct_number = @{ "0o" ~ ('0'..'7')+ }
+bin_number = @{ "0b" ~ ("0" | "1")+ }
+exponent   = @{ ("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+ }
+
+number = { hex_number | oct_number | bin_number | float | integer }
+
+// Strings
+string          = ${ "\"" ~ string_inner ~ "\"" }
+string_inner    = @{ (escape_sequence | !("\"" | "\\") ~ ANY)* }
+raw_string      = @{ "r\"" ~ (!("\"") ~ ANY)* ~ "\"" }
+template_string = ${ "`" ~ (template_expr | template_char)* ~ "`" }
+template_expr   = !{ "${" ~ expression ~ "}" }
+template_char   = @{ (!("${" | "`") ~ ANY)+ }
+
+escape_sequence = @{
+    "\\" ~ (
+        "\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" |
+        ("u" ~ ASCII_HEX_DIGIT{4}) |
+        ("U" ~ ASCII_HEX_DIGIT{8})
+    )
+}
+
+// Booleans and null
+boolean = { "true" | "false" }
+null    = { "null" }
+
+// Identifiers and paths
+identifier  = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+dotted_path = @{ identifier ~ ("." ~ identifier)+ }
+env_var     = @{ "$" ~ identifier }
+
+// ============================================================
+// Collections
+// ============================================================
+
+// Arrays: [1, 2, 3]
+array       = { "[" ~ array_items? ~ "]" }
+array_items = { value ~ ("," ~ value)* ~ ","? }
+
+// Objects/Maps: { key: value, ... }
+object       = { "{" ~ object_items? ~ "}" }
+object_items = { key_value ~ ("," ~ key_value)* ~ ","? }
+key_value    = { (identifier | string) ~ ":" ~ value }
+
+// Tuples: (a, b, c)
+tuple       = { "(" ~ tuple_items? ~ ")" }
+tuple_items = { value ~ ("," ~ value)+ ~ ","? }
+
+// ============================================================
+// Expressions
+// ============================================================
+
+value = {
+    null | boolean | number | raw_string | template_string | string |
+    array | object | tuple | function_call | dotted_path | env_var | identifier
+}
+
+// Binary operators (precedence climbing)
+expression = { unary_expr ~ (binary_op ~ unary_expr)* }
+
+unary_expr = {
+    prefix_op? ~ (
+        "(" ~ expression ~ ")" |
+        function_call |
+        value
+    ) ~ postfix_op?
+}
+
+binary_op = {
+    "||" | "&&" |
+    "==" | "!=" | "<=" | ">=" | "<" | ">" |
+    "+" | "-" | "*" | "/" | "%" | "**" |
+    "|>" | "++" | ".."
+}
+
+prefix_op  = { "!" | "-" | "~" }
+postfix_op = { "?" | "!" }
+
+// Ternary / conditional
+conditional = { expression ~ "?" ~ expression ~ ":" ~ expression }
+
+// Function calls
+function_call = { (dotted_path | identifier) ~ "(" ~ arguments? ~ ")" }
+arguments     = { (named_arg | expression) ~ ("," ~ (named_arg | expression))* ~ ","? }
+named_arg     = { identifier ~ "=" ~ expression }
+
+// ============================================================
+// Statements
+// ============================================================
+
+// Variable binding
+let_binding   = { "let" ~ pattern ~ type_annotation? ~ "=" ~ expression }
+const_binding = { "const" ~ identifier ~ type_annotation? ~ "=" ~ expression }
+
+// Patterns (for destructuring)
+pattern = {
+    identifier |
+    array_pattern |
+    object_pattern |
+    "_"
+}
+
+array_pattern  = { "[" ~ (pattern ~ ("," ~ pattern)*)? ~ ","? ~ "]" }
+object_pattern = { "{" ~ (field_pattern ~ ("," ~ field_pattern)*)? ~ ","? ~ "}" }
+field_pattern  = { identifier ~ (":" ~ pattern)? }
+
+// Type annotations
+type_annotation = { ":" ~ type_expr }
+type_expr       = {
+    "(" ~ (type_expr ~ ("," ~ type_expr)*)? ~ ")" ~ "->" ~ type_expr |  // function type
+    type_name ~ ("<" ~ type_expr ~ ("," ~ type_expr)* ~ ">")? |          // generic type
+    type_expr ~ "?" |                                                     // optional
+    type_expr ~ "[]"                                                      // array type
+}
+type_name = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
+
+// ============================================================
+// Blocks and control flow
+// ============================================================
+
+block = { "{" ~ statement* ~ expression? ~ "}" }
+
+statement = {
+    let_binding ~ ";" |
+    const_binding ~ ";" |
+    if_statement |
+    for_statement |
+    match_statement |
+    import_statement ~ ";" |
+    expression ~ ";"
+}
+
+// If/else
+if_statement   = { "if" ~ expression ~ block ~ else_clause? }
+else_clause    = { "else" ~ (if_statement | block) }
+
+// For loops
+for_statement  = { "for" ~ pattern ~ "in" ~ expression ~ block }
+
+// Match/switch
+match_statement = { "match" ~ expression ~ "{" ~ match_arm+ ~ "}" }
+match_arm       = { match_pattern ~ "=>" ~ (block | expression ~ ",") }
+match_pattern   = {
+    literal_pattern |
+    range_pattern |
+    pattern ~ guard_clause?
+}
+literal_pattern = { number | string | boolean | null }
+range_pattern   = { number ~ ".." ~ number }
+guard_clause    = { "if" ~ expression }
+
+// ============================================================
+// Top-level declarations
+// ============================================================
+
+// Functions
+function_decl = {
+    "fn" ~ identifier ~ type_params? ~ "(" ~ param_list? ~ ")" ~
+    type_annotation? ~ block
+}
+type_params = { "<" ~ identifier ~ ("," ~ identifier)* ~ ">" }
+param_list  = { param ~ ("," ~ param)* ~ ","? }
+param       = { pattern ~ type_annotation? ~ default_value? }
+default_value = { "=" ~ expression }
+
+// Imports
+import_statement = {
+    "import" ~ string ~ ("as" ~ identifier)? |
+    "from" ~ string ~ "import" ~ import_items
+}
+import_items = {
+    "*" ~ ("as" ~ identifier)? |
+    "{" ~ (identifier ~ ("as" ~ identifier)? ~ ("," ~ identifier ~ ("as" ~ identifier)?)*)? ~ "}"
+}
+
+// ============================================================
+// Top-level file structure
+// ============================================================
+
+config_file = {
+    SOI ~
+    (import_statement ~ ";"?)* ~
+    (function_decl | const_binding ~ ";" | statement)* ~
+    EOI
+}
+
+// Entry point
+file = { SOI ~ config_file ~ EOI }

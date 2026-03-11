@@ -1,0 +1,359 @@
+// Protobuf Syntax Highlighting Test
+// A task management service with streaming and various field types.
+
+syntax = "proto3";
+
+package taskmanager.v1;
+
+option go_package = "github.com/example/taskmanager/v1;taskmanagerv1";
+option java_multiple_files = true;
+option java_package = "com.example.taskmanager.v1";
+option csharp_namespace = "Example.TaskManager.V1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+
+// ============================================================
+// Enums
+// ============================================================
+
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  TASK_STATUS_OPEN = 1;
+  TASK_STATUS_IN_PROGRESS = 2;
+  TASK_STATUS_IN_REVIEW = 3;
+  TASK_STATUS_DONE = 4;
+  TASK_STATUS_CANCELLED = 5;
+}
+
+enum Priority {
+  PRIORITY_UNSPECIFIED = 0;
+  PRIORITY_LOW = 1;
+  PRIORITY_MEDIUM = 2;
+  PRIORITY_HIGH = 3;
+  PRIORITY_CRITICAL = 4;
+}
+
+enum SortDirection {
+  SORT_DIRECTION_UNSPECIFIED = 0;
+  SORT_DIRECTION_ASC = 1;
+  SORT_DIRECTION_DESC = 2;
+}
+
+// ============================================================
+// Core Messages
+// ============================================================
+
+message User {
+  string id = 1;
+  string username = 2;
+  string email = 3;
+  string display_name = 4;
+  string avatar_url = 5;
+  string role = 6;
+  bool is_active = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp last_login_at = 9;
+}
+
+message Project {
+  string id = 1;
+  string name = 2;
+  string slug = 3;
+  string description = 4;
+  string owner_id = 5;
+  Visibility visibility = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+  google.protobuf.Timestamp archived_at = 9;
+
+  // Computed fields (read-only)
+  int32 task_count = 10;
+  float completion_percentage = 11;
+
+  enum Visibility {
+    VISIBILITY_UNSPECIFIED = 0;
+    VISIBILITY_PUBLIC = 1;
+    VISIBILITY_PRIVATE = 2;
+    VISIBILITY_INTERNAL = 3;
+  }
+}
+
+message Task {
+  string id = 1;
+  string project_id = 2;
+  string title = 3;
+  string description = 4;
+  TaskStatus status = 5;
+  Priority priority = 6;
+  google.protobuf.StringValue assignee_id = 7;     // nullable
+  google.protobuf.Timestamp due_date = 8;
+  google.protobuf.FloatValue estimated_hours = 9;   // nullable
+  google.protobuf.FloatValue actual_hours = 10;     // nullable
+  repeated string tags = 11;
+  google.protobuf.StringValue parent_id = 12;       // nullable
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+  google.protobuf.Timestamp completed_at = 15;
+
+  // Nested message
+  message Attachment {
+    string id = 1;
+    string filename = 2;
+    string mime_type = 3;
+    int64 size_bytes = 4;
+    string url = 5;
+    string uploaded_by = 6;
+    google.protobuf.Timestamp uploaded_at = 7;
+  }
+
+  repeated Attachment attachments = 16;
+
+  // Oneof for task-specific data
+  oneof extra {
+    BugReport bug_report = 17;
+    FeatureRequest feature_request = 18;
+  }
+}
+
+message BugReport {
+  string steps_to_reproduce = 1;
+  string expected_behavior = 2;
+  string actual_behavior = 3;
+  string environment = 4;
+  Severity severity = 5;
+
+  enum Severity {
+    SEVERITY_UNSPECIFIED = 0;
+    SEVERITY_COSMETIC = 1;
+    SEVERITY_MINOR = 2;
+    SEVERITY_MAJOR = 3;
+    SEVERITY_BLOCKER = 4;
+  }
+}
+
+message FeatureRequest {
+  string use_case = 1;
+  string proposed_solution = 2;
+  repeated string alternatives_considered = 3;
+  int32 impact_score = 4;
+}
+
+message Comment {
+  string id = 1;
+  string task_id = 2;
+  string author_id = 3;
+  string body = 4;
+  bool edited = 5;
+  google.protobuf.Timestamp created_at = 6;
+  repeated string mentioned_user_ids = 7;
+}
+
+// ============================================================
+// Request / Response Messages
+// ============================================================
+
+message ListTasksRequest {
+  string project_id = 1;
+  TaskFilter filter = 2;
+  TaskSort sort = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+}
+
+message TaskFilter {
+  repeated TaskStatus statuses = 1;
+  repeated Priority priorities = 2;
+  google.protobuf.StringValue assignee_id = 3;
+  repeated string tags = 4;
+  google.protobuf.Timestamp due_before = 5;
+  google.protobuf.Timestamp due_after = 6;
+  string search_query = 7;
+}
+
+message TaskSort {
+  string field = 1;
+  SortDirection direction = 2;
+}
+
+message ListTasksResponse {
+  repeated Task tasks = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+message CreateTaskRequest {
+  Task task = 1;
+  bool notify_assignee = 2;
+}
+
+message UpdateTaskRequest {
+  Task task = 1;
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+message BatchUpdateTasksRequest {
+  string project_id = 1;
+  repeated string task_ids = 2;
+  map<string, string> field_updates = 3;
+}
+
+message BatchUpdateTasksResponse {
+  int32 updated_count = 1;
+  repeated Task tasks = 2;
+  repeated string failed_ids = 3;
+}
+
+message GetTaskTreeRequest {
+  string root_task_id = 1;
+  int32 max_depth = 2;
+}
+
+message TaskTree {
+  Task task = 1;
+  repeated TaskTree children = 2;
+  int32 depth = 3;
+  int32 total_descendants = 4;
+}
+
+// Stats
+message ProjectStatsRequest {
+  string project_id = 1;
+  google.protobuf.Duration time_range = 2;
+}
+
+message ProjectStats {
+  string project_id = 1;
+  map<string, int32> status_counts = 2;
+  map<string, int32> priority_counts = 3;
+  int32 overdue_count = 4;
+  float avg_completion_hours = 5;
+  repeated UserWorkload workloads = 6;
+
+  message UserWorkload {
+    string user_id = 1;
+    string display_name = 2;
+    int32 assigned_count = 3;
+    int32 completed_count = 4;
+    float avg_hours = 5;
+  }
+}
+
+// Streaming
+message TaskEvent {
+  string task_id = 1;
+  EventType type = 2;
+  Task task = 3;
+  User actor = 4;
+  google.protobuf.Timestamp occurred_at = 5;
+
+  enum EventType {
+    EVENT_TYPE_UNSPECIFIED = 0;
+    EVENT_TYPE_CREATED = 1;
+    EVENT_TYPE_UPDATED = 2;
+    EVENT_TYPE_DELETED = 3;
+    EVENT_TYPE_STATUS_CHANGED = 4;
+    EVENT_TYPE_ASSIGNED = 5;
+    EVENT_TYPE_COMMENTED = 6;
+  }
+}
+
+// ============================================================
+// Service Definition
+// ============================================================
+
+service TaskManagerService {
+  // Tasks - Unary RPCs
+  rpc GetTask(GetTaskRequest) returns (Task);
+  rpc CreateTask(CreateTaskRequest) returns (Task);
+  rpc UpdateTask(UpdateTaskRequest) returns (Task);
+  rpc DeleteTask(DeleteTaskRequest) returns (google.protobuf.Empty);
+
+  // Tasks - List with pagination
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+
+  // Tasks - Batch operations
+  rpc BatchUpdateTasks(BatchUpdateTasksRequest) returns (BatchUpdateTasksResponse);
+
+  // Task tree
+  rpc GetTaskTree(GetTaskTreeRequest) returns (TaskTree);
+
+  // Comments
+  rpc AddComment(AddCommentRequest) returns (Comment);
+  rpc ListComments(ListCommentsRequest) returns (ListCommentsResponse);
+
+  // Stats
+  rpc GetProjectStats(ProjectStatsRequest) returns (ProjectStats);
+
+  // Server streaming - watch for task updates
+  rpc WatchTasks(WatchTasksRequest) returns (stream TaskEvent);
+
+  // Client streaming - bulk import
+  rpc ImportTasks(stream CreateTaskRequest) returns (ImportTasksResponse);
+
+  // Bidirectional streaming - real-time collaboration
+  rpc Collaborate(stream CollaborationMessage) returns (stream CollaborationMessage);
+}
+
+message GetTaskRequest {
+  string id = 1;
+}
+
+message DeleteTaskRequest {
+  string id = 1;
+}
+
+message AddCommentRequest {
+  string task_id = 1;
+  string body = 2;
+}
+
+message ListCommentsRequest {
+  string task_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListCommentsResponse {
+  repeated Comment comments = 1;
+  string next_page_token = 2;
+}
+
+message WatchTasksRequest {
+  string project_id = 1;
+  repeated TaskEvent.EventType event_types = 2;
+}
+
+message ImportTasksResponse {
+  int32 imported_count = 1;
+  int32 failed_count = 2;
+  repeated string errors = 3;
+}
+
+message CollaborationMessage {
+  string session_id = 1;
+  string user_id = 2;
+
+  oneof payload {
+    CursorPosition cursor = 3;
+    TaskEdit edit = 4;
+    string chat_message = 5;
+    bool typing_indicator = 6;
+  }
+
+  message CursorPosition {
+    string task_id = 1;
+    string field = 2;
+    int32 offset = 3;
+  }
+
+  message TaskEdit {
+    string task_id = 1;
+    string field = 2;
+    string old_value = 3;
+    string new_value = 4;
+  }
+}
