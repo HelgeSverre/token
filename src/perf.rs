@@ -63,6 +63,42 @@ struct PerfStageSpec {
     color: u32,
 }
 
+#[cfg(feature = "profile-tracing")]
+impl PerfStage {
+    pub const fn tracing_label(&self) -> &'static str {
+        match self {
+            Self::BuildPlan => "build_plan",
+            Self::Clear => "clear",
+            Self::CursorFastPath => "cursor_fast_path",
+            Self::TabBar => "tab_bar",
+            Self::TextBackground => "text_background",
+            Self::TextDecorations => "text_decorations",
+            Self::TextGlyphs => "text_glyphs",
+            Self::TextCursors => "text_cursors",
+            Self::Gutter => "gutter",
+            Self::Scrollbars => "scrollbars",
+            Self::Csv => "csv",
+            Self::Image => "image",
+            Self::BinaryPlaceholder => "binary_placeholder",
+            Self::PreviewPane => "preview_pane",
+            Self::Splitters => "splitters",
+            Self::Sidebar => "sidebar",
+            Self::RightDock => "right_dock",
+            Self::BottomDock => "bottom_dock",
+            Self::StatusBar => "status_bar",
+            Self::Modal => "modal",
+            Self::DropOverlay => "drop_overlay",
+            Self::PerfOverlay => "perf_overlay",
+            Self::DebugOverlay => "debug_overlay",
+            Self::SurfaceAcquire => "surface_acquire",
+            Self::BufferCopy => "buffer_copy",
+            Self::SurfacePresent => "surface_present",
+            Self::WebviewSync => "webview_sync",
+            Self::WebviewVisibility => "webview_visibility",
+        }
+    }
+}
+
 impl PerfStage {
     pub const ALL: [Self; 28] = [
         Self::BuildPlan,
@@ -263,11 +299,25 @@ pub struct PerfStats {
     pub total_cache_hits: usize,
     pub total_cache_misses: usize,
     pub show_overlay: bool,
+    #[cfg(feature = "profile-tracing")]
+    frame_span: Option<tracing::span::EnteredSpan>,
 }
 
 #[cfg(not(debug_assertions))]
-#[derive(Default)]
-pub struct PerfStats;
+pub struct PerfStats {
+    #[cfg(feature = "profile-tracing")]
+    frame_span: Option<tracing::span::EnteredSpan>,
+}
+
+#[cfg(not(debug_assertions))]
+impl Default for PerfStats {
+    fn default() -> Self {
+        Self {
+            #[cfg(feature = "profile-tracing")]
+            frame_span: None,
+        }
+    }
+}
 
 #[cfg(debug_assertions)]
 impl Default for PerfStats {
@@ -284,6 +334,8 @@ impl Default for PerfStats {
             total_cache_hits: 0,
             total_cache_misses: 0,
             show_overlay: false,
+            #[cfg(feature = "profile-tracing")]
+            frame_span: None,
         }
     }
 }
@@ -294,10 +346,15 @@ pub struct TimerGuard<'a> {
     start: Instant,
     perf: &'a mut PerfStats,
     stage: PerfStage,
+    #[cfg(feature = "profile-tracing")]
+    _span: tracing::span::EnteredSpan,
 }
 
 #[cfg(not(debug_assertions))]
-pub struct TimerGuard;
+pub struct TimerGuard {
+    #[cfg(feature = "profile-tracing")]
+    _span: tracing::span::EnteredSpan,
+}
 
 #[cfg(debug_assertions)]
 impl<'a> TimerGuard<'a> {
@@ -306,6 +363,8 @@ impl<'a> TimerGuard<'a> {
             start: Instant::now(),
             perf,
             stage,
+            #[cfg(feature = "profile-tracing")]
+            _span: tracing::info_span!("render_stage", stage = stage.tracing_label()).entered(),
         }
     }
 }
@@ -339,6 +398,10 @@ impl PerfStats {
     #[inline(always)]
     pub fn start_frame(&mut self) {
         self.frame_start = Some(Instant::now());
+        #[cfg(feature = "profile-tracing")]
+        {
+            self.frame_span = Some(tracing::info_span!("frame").entered());
+        }
     }
 
     #[inline(always)]
@@ -349,6 +412,10 @@ impl PerfStats {
             if self.frame_times.len() > PERF_HISTORY_SIZE {
                 self.frame_times.pop_front();
             }
+        }
+        #[cfg(feature = "profile-tracing")]
+        {
+            self.frame_span.take();
         }
     }
 
@@ -375,6 +442,9 @@ impl PerfStats {
 
     #[inline(always)]
     pub fn measure_stage<R>(&mut self, stage: PerfStage, f: impl FnOnce() -> R) -> R {
+        #[cfg(feature = "profile-tracing")]
+        let _span = tracing::info_span!("render_stage", stage = stage.tracing_label()).entered();
+
         let start = Instant::now();
         let result = f();
         self.record_stage_elapsed(stage, start.elapsed());
@@ -465,21 +535,39 @@ impl PerfStats {
     pub fn add_cache_stats(&mut self, _hits: usize, _misses: usize) {}
 
     #[inline(always)]
-    pub fn start_frame(&mut self) {}
+    pub fn start_frame(&mut self) {
+        #[cfg(feature = "profile-tracing")]
+        {
+            self.frame_span = Some(tracing::info_span!("frame").entered());
+        }
+    }
 
     #[inline(always)]
-    pub fn record_frame_time(&mut self) {}
+    pub fn record_frame_time(&mut self) {
+        #[cfg(feature = "profile-tracing")]
+        {
+            self.frame_span.take();
+        }
+    }
 
     #[inline(always)]
     pub fn record_render_history(&mut self) {}
 
     #[inline(always)]
     pub fn time_stage(&mut self, _stage: PerfStage) -> TimerGuard {
-        TimerGuard
+        #[cfg(feature = "profile-tracing")]
+        return TimerGuard {
+            _span: tracing::info_span!("render_stage", stage = _stage.tracing_label()).entered(),
+        };
+        #[cfg(not(feature = "profile-tracing"))]
+        TimerGuard {}
     }
 
     #[inline(always)]
     pub fn measure_stage<R>(&mut self, _stage: PerfStage, f: impl FnOnce() -> R) -> R {
+        #[cfg(feature = "profile-tracing")]
+        let _span =
+            tracing::info_span!("render_stage", stage = _stage.tracing_label()).entered();
         f()
     }
 

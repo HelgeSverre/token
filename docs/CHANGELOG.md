@@ -7,6 +7,7 @@ All notable changes to rust-editor are documented in this file.
 ## Unreleased
 
 ### Added
+- Profiling: Chrome trace export via `make profile-chrome` — all 28 render stages emit named `tracing` spans (`frame`, `render_stage`) visible in Perfetto UI. Feature-gated (`profile-chrome` / `profile-tracing`) with zero overhead when disabled.
 - CLI: `--version` now shows git commit info (e.g. `token 0.3.19-48-g33d40cd`) for easier build traceability.
 - Image Viewer: Open image files (PNG, JPG, GIF, BMP, WebP, ICO) inline in editor tabs with aspect-ratio-preserving scaling and checkerboard transparency background.
 - Binary Placeholder: Unsupported binary files now open a tab with a centered placeholder showing filename, file size, and a clickable "Open with Default Application" button.

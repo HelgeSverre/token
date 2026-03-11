@@ -19,7 +19,14 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 
 use crate::model::EditorState;
 
-/// Initialize tracing subscriber with console and file logging
+/// Guard that must be held alive for the duration of profiling.
+/// When dropped, flushes and closes any active trace output.
+pub struct TraceGuard {
+    #[cfg(feature = "profile-chrome")]
+    _chrome_guard: Option<tracing_chrome::FlushGuard>,
+}
+
+/// Initialize tracing subscriber with console and file logging.
 ///
 /// Console output respects RUST_LOG env var for filtering:
 /// - `RUST_LOG=debug` - all debug logs
@@ -27,7 +34,9 @@ use crate::model::EditorState;
 /// - `RUST_LOG=token::update::editor=debug` - module-level filtering
 ///
 /// File logging writes to `~/.config/token-editor/logs/token.log` with daily rotation.
-pub fn init() {
+///
+/// Returns a guard that must be held alive for trace output to flush on exit.
+pub fn init() -> TraceGuard {
     let console_filter = default_filter_from_env("RUST_LOG");
 
     // Console layer - respects RUST_LOG
@@ -57,10 +66,35 @@ pub fn init() {
         }
     };
 
-    tracing_subscriber::registry()
-        .with(console_layer)
-        .with(file_layer)
-        .init();
+    #[cfg(feature = "profile-chrome")]
+    let (chrome_layer, chrome_guard) = {
+        let (layer, guard) = tracing_chrome::ChromeLayerBuilder::new()
+            .file("token-trace.json")
+            .include_args(true)
+            .build();
+        (Some(layer), Some(guard))
+    };
+
+    #[cfg(feature = "profile-chrome")]
+    {
+        tracing_subscriber::registry()
+            .with(console_layer)
+            .with(file_layer)
+            .with(chrome_layer)
+            .init();
+    }
+    #[cfg(not(feature = "profile-chrome"))]
+    {
+        tracing_subscriber::registry()
+            .with(console_layer)
+            .with(file_layer)
+            .init();
+    }
+
+    TraceGuard {
+        #[cfg(feature = "profile-chrome")]
+        _chrome_guard: chrome_guard,
+    }
 }
 
 fn default_filter_from_env(env_var: &str) -> EnvFilter {

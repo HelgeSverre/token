@@ -1,390 +1,265 @@
-# Profiling Guide for Token Editor
+# Profiling Guide
 
-This guide covers deep performance analysis tools available on macOS for profiling the Token editor. It has been updated with clarifications about the `--profile` usage, Apple Silicon / macOS caveats, `xctrace` examples, sanitizer notes, and `cargo flamegraph` permissions. Follow the recommended workflow first, then consult the troubleshooting section if something doesn't behave as expected.
+Performance analysis tools and workflows for the Token editor on macOS.
 
 ## Quick Start
 
-Make sure your repo either defines a `profiling` Cargo profile or you build a release-like binary with debug symbols. See the "Cargo profile" section below for an example profile.
-
 ```bash
-# Build with profiling symbols (release speed + debug info)
-cargo build --profile profiling --bin token
+# Build with debug symbols for profiling
+make build-prof
 
-# Run headless render benchmark
+# Headless render benchmark (isolates rendering from windowing)
 ./target/profiling/profile_render --frames 500 --splits 3 --stats
+
+# Interactive profiling with samply (opens Firefox Profiler)
+make profile-samply
+
+# CPU flamegraph
+make flamegraph
+
+# Heap profiling with DHAT
+make profile-memory
+
+# Chrome trace with named render stages (open in Perfetto)
+make profile-chrome
 ```
 
 ## Recommended Workflow
 
-When investigating performance issues, follow this workflow:
+### Step 1: Headless Benchmark
 
-### Step 1: Headless Benchmark (Isolate Rendering)
-
-First, rule out render code by running the headless profiler. The headless binary isolates rendering from windowing/event handling so you can determine whether slowness is in rendering.
+Rule out rendering as the bottleneck. The headless binary runs the render pipeline without windowing or event handling.
 
 ```bash
-cargo build --profile profiling --bin profile_render
+make build-prof
 ./target/profiling/profile_render --frames 500 --splits 3 --lines 5000 --stats
 ```
 
-If headless shows good FPS but the live app is slow, the issue is likely in event handling, input processing, or windowing rather than rendering.
+If headless is fast but the live app is slow, the issue is in event handling, input, or windowing.
 
-### Step 2: Quick Live Profile with `sample` or `xctrace` (30 seconds)
+### Step 2: CPU Profiling
 
-macOS provides `sample` but on modern macOS / Apple Silicon `sample` can be inconsistent or missing. Prefer `xctrace` (Time Profiler) if `sample` is not available.
-
-`sample` (older macOS; simple and fast):
+**Samply** (recommended — produces Firefox Profiler recordings):
 
 ```bash
-# Start the app in background (build with profiling profile first)
+make profile-samply
+# Or manually:
+samply record ./target/profiling/token samples/large_file.rs
+```
+
+**xctrace / Instruments** (Apple Silicon friendly):
+
+```bash
 ./target/profiling/token samples/large_file.rs &
 APP_PID=$!
-
-# Sample for 30 seconds at ~1ms intervals
-sample $APP_PID 30 -file /tmp/token-sample.txt
-
-# Kill the app
+xcrun xctrace record --template "Time Profiler" --attach-pid $APP_PID --time-limit 30s -o /tmp/token.trace
 kill $APP_PID
+# Open /tmp/token.trace in Instruments.app
 ```
 
-`xctrace` (recommended on modern macOS / Apple Silicon):
+### Step 3: Memory Profiling
 
 ```bash
-# Launch and record Time Profiler attached to a running PID for 30s
-./target/profiling/token samples/large_file.rs &
-APP_PID=$!
+# DHAT heap profiler (opens web viewer)
+make profile-memory
 
-xcrun xctrace record --template "Time Profiler" --attach-pid $APP_PID --time-limit 30s -o /tmp/token-xctrace.trace
-
-# Open /tmp/token-xctrace.trace in Instruments.app
-```
-
-The output shows:
-
-- Call tree with sample counts per function
-- Hot functions and heavy call paths
-- Time breakdown by module and thread
-
-Interpreting common patterns:
-
-- High % in `mach_msg2_trap` — app is idle/waiting (good)
-- High % in `CFRunLoop*` — event loop overhead
-- High % in `render_*` or `TextPainter::draw` — rendering bottleneck
-- High % in `poll` syscall — event loop spinning; prefer `WaitUntil` rather than `Poll`
-
-### Step 3: Detailed Analysis with Instruments
-
-Use Instruments (Time Profiler, Allocations, System Trace) for deeper analysis and visualization. `xcrun xctrace` can produce .trace files you open in Instruments.app.
-
-```bash
-# Time Profiler (CPU sampling)
-xcrun xctrace record --template "Time Profiler" --launch ./target/profiling/token -- samples/large_file.rs -o /tmp/token-time.trace
-
-# Allocations (memory)
-xcrun xctrace record --template "Allocations" --launch ./target/profiling/token -- samples/large_file.rs -o /tmp/token-allocations.trace
-
-# System Trace (thread scheduling, syscalls)
-xcrun xctrace record --template "System Trace" --launch ./target/profiling/token -- samples/large_file.rs -o /tmp/token-system.trace
-```
-
-Open the .trace in Instruments.app for visualization, stack traces, and timeline analysis.
-
-### Step 4: Symbolication (if needed)
-
-If you see addresses instead of function names in a trace, symbolicate the trace. Ensure you pass the built binary or its dSYM directory.
-
-```bash
-xcrun xctrace symbolicate --input /path/to/Launch-xxx.trace --dsym ./target/profiling/token
-```
-
-Note: Instruments/xctrace will usually find symbols automatically if the binary has debug info and dSYM files were produced.
-
-## Available Tools
-
-### 1. Samply (Recommended - Firefox Profiler format)
-
-Samply produces Firefox Profiler-compatible recordings (great flame graph / timeline UI).
-
-```bash
-# Install
-cargo install samply
-
-# Profile the app (build with profiling profile first)
-cargo build --profile profiling --bin token
-samply record ./target/profiling/token samples/large_file.rs
-
-# Profile headless rendering
-samply record ./target/profiling/profile_render --frames 1000 --splits 3 --lines 10000
-```
-
-Samply recordings can be opened in Firefox Profiler for flame graphs, call tree, and timeline views.
-
-### 2. Instruments / xctrace (Apple)
-
-Instruments (via GUI) and `xcrun xctrace` (CLI) are the most reliable tools on macOS — especially on Apple Silicon where some DTrace-based tools are restricted.
-
-```bash
-# Build with profiling profile
-cargo build --profile profiling --bin token
-
-# Time Profiler
-xcrun xctrace record --template "Time Profiler" --launch ./target/profiling/token -- samples/large_file.rs -o /tmp/time.trace
-```
-
-Recommended templates:
-
-- Time Profiler — CPU hot paths
-- Allocations — allocation hotspots and growth
-- Leaks — leak detection
-- System Trace — scheduling, syscalls, I/O
-- Metal System Trace — GPU profiling
-
-### 3. DHAT (Heap profiler)
-
-DHAT is useful for allocation-site analysis. It requires your project to enable DHAT support.
-
-```bash
-# Run with DHAT enabled (project must support this feature)
-cargo run --features dhat-heap --release -- samples/large_file.rs
-
-# Produces dhat-heap.json — view with:
-# https://nnethercote.github.io/dh_view/dh_view.html
-```
-
-### 4. cargo-flamegraph / Flamegraph
-
-`cargo-flamegraph` generates an SVG flamegraph using `dtrace` on macOS. On modern macOS (and especially Apple Silicon), `dtrace`-based tooling has additional restrictions.
-
-```bash
-# Install (may require privileges)
-cargo install flamegraph
-
-# Generate flame graph (may need sudo or codesigning depending on macOS version)
-sudo cargo flamegraph --profile profiling --bin token
-
-# Result: flamegraph.svg
-```
-
-Caveats:
-
-- Recent macOS releases / SIP may restrict dtrace; you may need elevated permissions or codesign the binary with a special entitlements profile. When `cargo flamegraph` fails due to dtrace permissions, prefer `samply` or `xctrace` instead.
-
-### 5. Criterion Benchmarks
-
-Use Criterion for microbenchmarks with statistical analysis.
-
-```bash
-# Run all benchmarks
-cargo bench
-
-# Run specific groups
-cargo bench hot_paths
-cargo bench main_loop
-cargo bench rendering
-
-# Save baseline and compare later
-cargo bench -- --save-baseline before
-# ... make changes ...
-cargo bench -- --baseline before
-```
-
-Results are saved under `target/criterion/`.
-
-### 6. Divan Benchmarks
-
-If configured, Divan benchmarks provide allocation counting and other insights.
-
-```bash
-# Run divan benchmarks (if configured)
-cargo bench --bench hot_paths
-```
-
-## Profiling Scenarios
-
-### CPU Hot Paths
-
-```bash
-# Quick using samply
-samply record ./target/profiling/token samples/large_file.rs
-
-# Or Time Profiler with xctrace
-xcrun xctrace record --template "Time Profiler" --launch ./target/profiling/token samples/large_file.rs -o /tmp/time.trace
-```
-
-### Memory Allocations
-
-```bash
-# Quick: DHAT
-cargo run --features dhat-heap --release -- samples/large_file.rs
-
-# Detailed: Instruments Allocations
+# Instruments Allocations
 xcrun xctrace record --template "Allocations" --launch ./target/profiling/token -- samples/large_file.rs -o /tmp/alloc.trace
 ```
 
-### Render Performance
+### Step 4: Chrome Trace (Named Stages)
+
+When you need to see exactly which render stages cost time across many frames, capture a Chrome trace. Every `PerfStats` stage appears as a named span in the timeline.
 
 ```bash
-# Headless benchmark
-./target/profiling/profile_render --frames 1000 --splits 3 --lines 10000 --stats
-
-# Profile headless render
-samply record ./target/profiling/profile_render --frames 1000 --splits 3
+make profile-chrome
+# Interact with the editor, then quit — Perfetto opens automatically
+# Drag-and-drop token-trace.json into the browser
 ```
 
-### Multi-split & Event Loop Analysis
+See [Chrome Trace Export (Perfetto)](#chrome-trace-export-perfetto) below for full details.
+
+### Step 5: Debug Overlay (F2)
+
+In debug builds, press F2 for a live performance overlay showing frame time, per-stage breakdown, glyph cache stats, and sparklines. Note: the overlay forces full redraws while visible, so it perturbs its own measurements.
 
 ```bash
-# Multi-split
-./target/profiling/profile_render --frames 500 --splits 4 --lines 20000 --include-csv --stats
-
-# Event loop / scheduling - use System Trace
-xcrun xctrace record --template "System Trace" --time-limit 10s --launch ./target/profiling/token -o /tmp/system.trace
+make dev
+# Press F2 in the running editor
 ```
 
-## Debug Overlay (F2)
+## Benchmarks
 
-In debug builds, press F2 to toggle the in-app performance overlay. Run a debug build to use this:
+All benchmarks use **Divan** with allocation tracking via `divan::AllocProfiler`.
 
 ```bash
-cargo run -- samples/large_file.rs
-# Press F2 to toggle overlay during the run
+make bench               # Run all benchmarks
+make bench-rope          # Rope insert/delete/navigate
+make bench-render        # Buffer ops, alpha blending, line rendering
+make bench-glyph         # Font rasterization, cache hit patterns
+make bench-loop          # Main update→render cycle
+make bench-search        # Find/replace operations
+make bench-layout        # Text measurement, viewport calculation
+make bench-syntax        # Syntax highlighting (all 20 languages)
 ```
 
-The overlay shows:
-
-- Frame time and FPS
-- Per-phase render breakdown
-- Glyph cache statistics and simple sparklines
-
-## Valgrind Alternative on macOS and Sanitizers
-
-Valgrind is not practical on modern macOS / ARM64. Prefer Instruments and DHAT. AddressSanitizer (ASan) and LeakSanitizer require nightly and have platform limitations.
-
-Sanitizer notes:
+Individual bench files live in `benches/`. Run a specific one:
 
 ```bash
-# AddressSanitizer / LeakSanitizer notes
-# Requires Rust nightly and unstable flags
-cargo +nightly run -Zsanitizer=address -- samples/large_file.rs
-
-# LeakSanitizer (nightly)
-cargo +nightly run -Zsanitizer=leak -- samples/large_file.rs
+cargo bench --bench hot_paths
 ```
 
-Caveats:
+## Internal Instrumentation
 
-- ASan/LSan support on macOS is limited on Apple Silicon (arm64). You may find tools unreliable or unsupported. When sanitizers are unavailable, use Instruments (Allocations/Leaks), DHAT, or manual inspection.
-- Use `cargo +nightly` when invoking `-Z` flags.
+### Stage-Based Perf System (`src/perf.rs`)
+
+The editor tracks 28 named render stages. In debug builds, `PerfStats` records per-stage timing histories (60 frames). In release builds, all perf code compiles away.
+
+Key APIs:
+
+- `PerfStats::measure_stage(stage)` — returns a `TimerGuard` RAII wrapper
+- `PerfStats::time_stage(stage)` — alternative timing API
+- Stages cover the full pipeline: `BuildPlan`, `Clear`, `TabBar`, `TextBackground`, `TextGlyphs`, `Gutter`, `Scrollbars`, `Sidebar`, `StatusBar`, `SurfacePresent`, etc.
+
+### Structured Logging (`src/tracing.rs`)
+
+Uses the `tracing` crate with console + file output. File logs rotate daily to `~/.config/token-editor/logs/token.log`.
+
+- `RUST_LOG` — console filter (e.g., `RUST_LOG=token=debug`)
+- `TOKEN_FILE_LOG` — file-specific filter (falls back to `RUST_LOG`)
+
+## Chrome Trace Export (Perfetto)
+
+The editor's 28 internal render stages (`PerfStats`) can emit `tracing` spans visible to external profilers. This is controlled by Cargo feature flags and is off by default — zero overhead in normal builds.
+
+### Usage
+
+The quickest way to capture a trace:
+
+```bash
+make profile-chrome
+```
+
+This builds a release binary with `--features profile-chrome`, opens the token codebase as a workspace (a realistic workload with sidebar, file tree, syntax highlighting), and writes `token-trace.json` when the editor exits. Perfetto UI opens automatically in your browser — drag-and-drop `token-trace.json` into it.
+
+For a custom file or directory:
+
+```bash
+cargo build --release --features profile-chrome --bin token
+./target/release/token path/to/project/
+# Quit the editor (Cmd+Q). The trace flushes on exit.
+open https://ui.perfetto.dev
+```
+
+### Viewing the Trace
+
+Once Perfetto UI is open:
+
+1. Click **Open trace file** (or drag-and-drop `token-trace.json`)
+2. Use the timeline to zoom into individual frames
+3. Use Ctrl+F to search by stage name (e.g., `text_glyphs`)
+
+What you'll see:
+
+- **`frame`** — a top-level span wrapping each render frame
+- **`render_stage`** — nested spans for each of the 28 named stages, with a `stage` field like `text_glyphs`, `build_plan`, `sidebar`, `status_bar`, etc.
+
+Use Perfetto's search (Ctrl+F) to filter by stage name, e.g., `text_glyphs`, to see only that stage across all frames.
+
+### Combining with Samply
+
+You can profile with samply and Chrome tracing simultaneously to get both CPU stacks and named stage markers:
+
+```bash
+cargo build --profile profiling --features profile-chrome --bin token
+samply record ./target/profiling/token samples/large.txt
+# After quitting: samply opens Firefox Profiler, and token-trace.json is on disk
+```
+
+### Profiling Debug Builds
+
+Chrome tracing also works in debug builds. This is useful for correlating stage timings with the F2 overlay:
+
+```bash
+cargo build --features profile-chrome
+./target/debug/token samples/sample_code.rs
+# Press F2 to see the live overlay; quit to write token-trace.json
+```
+
+### Feature Flags
+
+| Feature | Effect |
+|---------|--------|
+| `profile-tracing` | Emit `tracing::info_span!` inside `PerfStats::measure_stage` / `time_stage` |
+| `profile-chrome` | Implies `profile-tracing`; adds a `tracing-chrome` subscriber that writes `token-trace.json` |
+
+`profile-tracing` alone emits spans but doesn't write a file — useful if you add your own subscriber (e.g., Tracy). `profile-chrome` is the batteries-included option.
+
+### How It Works
+
+The spans are emitted inside `PerfStats` methods, so all existing call sites (`perf.measure_stage(PerfStage::TabBar, || { ... })`) automatically appear in the trace with no code changes. The `frame` span is opened in `start_frame()` and closed in `record_frame_time()`.
+
+In release builds without the feature, `PerfStats` is a zero-size struct and all methods are `#[inline(always)]` no-ops — the compiler eliminates everything.
+
+### Limitations
+
+4 text sub-stages (`TextBackground`, `TextDecorations`, `TextGlyphs`, `TextCursors`) use manual `record_stage_elapsed` calls in `editor_text.rs` rather than `measure_stage`. These record timing to the F2 overlay but don't emit tracing spans. They can be migrated later.
+
+### Future: Tracy Support
+
+Tracy can be added as another feature flag (`profile-tracy = ["profile-tracing", "dep:tracing-tracy", "dep:tracy-client"]`) without touching `PerfStats` — the spans are already emitted, only a new subscriber layer is needed.
+
+## Cargo Profiles
+
+| Profile     | Purpose                          | Key Settings                                            |
+| ----------- | -------------------------------- | ------------------------------------------------------- |
+| `dev`       | Fast compile                     | opt-level=0, line-tables-only debug                     |
+| `debugging` | Full debug info                  | Inherits dev, debug=true                                |
+| `release`   | Local testing                    | opt-level=3, lto=thin, panic=abort                      |
+| `profiling` | Release speed + debug symbols    | Inherits release, debug=true, lto=false                 |
+| `dist`      | Distribution (max optimization)  | Inherits release, lto=fat, codegen-units=1, strip=true  |
+
+Always use `--profile profiling` (or `make build-prof`) for profiling. The `dist` profile strips symbols.
 
 ## Profile-Guided Optimization (PGO)
 
-PGO steps (LLVM-style):
+Not automated yet. Manual steps:
 
 ```bash
-# Step 1: Build instrumented binary
+# 1. Build instrumented binary
 RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release
 
-# Step 2: Run representative workloads to collect data
-./target/release/token samples/large_file.rs &
-# Interact with the app to exercise hot paths, then quit
+# 2. Run representative workloads, then quit
+./target/release/token samples/large_file.rs
 
-# Step 3: Merge profile data
+# 3. Merge and rebuild
 llvm-profdata merge -o /tmp/pgo-data/merged.profdata /tmp/pgo-data
-
-# Step 4: Build optimized binary using merged data
 RUSTFLAGS="-Cprofile-use=/tmp/pgo-data/merged.profdata" cargo build --release
 ```
 
-## Cargo profile: `profiling` example
+## Interpreting Results
 
-If your repo doesn't have a `profiling` profile, add one to `Cargo.toml`. This produces optimized builds with debug info for better symbolication.
-
-```toml
-[profile.profiling]
-inherits = "release"
-debug = true         # keep debug info for symbolication
-opt-level = 3        # optimize
-lto = false
-debug-assertions = false
-overflow-checks = false
-codegen-units = 1
-```
-
-Alternatively you can use `--release` and set `debug = true` for `profile.release` if you prefer fewer profiles.
-
-## Comparing Performance
-
-```bash
-# Save baseline
-cargo bench -- --save-baseline before
-
-# After changes...
-cargo bench -- --baseline before
-```
-
-## Tips & Best Practices
-
-1. Always use `--profile profiling` (or an equivalent release build with debug info) for accurate stacks in profilers.
-2. Close other apps to reduce noise.
-3. Run multiple times; the first run may have cold caches.
-4. Use `--stats` on `profile_render` for quick summaries.
-5. Focus on hot paths: Pareto principle often applies (80/20).
-6. If headless is fast but live is slow, suspect event loop/input/windowing issues.
-7. High idle % in samples is good — a responsive app sleeps when idle.
-
-## Common Issues & Solutions
-
-| Symptom                   | Likely Cause                 | Solution                                                                     |
-| ------------------------- | ---------------------------- | ---------------------------------------------------------------------------- |
-| Low FPS but headless fast | Event loop spinning          | Use `ControlFlow::WaitUntil` instead of `Poll`; only redraw when needed      |
-| High CPU while idle       | Constant redraws             | Only call `request_redraw` on state change                                   |
-| Memory growth over time   | Per-frame allocations        | Reuse buffers, avoid per-frame heap allocations, prefer `Cow<str>` or slices |
-| Stuttery scrolling        | Allocations / GC-like pauses | Profile allocations and reuse temporaries                                    |
-
-## Troubleshooting
-
-If a tool fails or results look odd, try these checks:
-
-- **No symbols / unreadable stacks**
-  - Ensure you built with the `profiling` profile (or `--release` with `debug = true`).
-  - Verify the dSYM is present (Xcode or `dsymutil` can help).
-  - For `xctrace`, open the .trace file in Instruments.app; Instruments often symbolicates automatically if debug info is present.
-
-- **`xctrace`/Instruments shows no samples or empty call stacks**
-  - The binary might be stripped or missing debug info.
-  - Try re-building with `debug = true` for the profile you used.
-  - Confirm the process ID is correct and that the process was active during recording.
-
-- **`cargo flamegraph` or dtrace permission errors**
-  - Modern macOS restricts DTrace; you may need elevated privileges (`sudo`) or codesign the binary with appropriate entitlements.
-  - When dtrace is blocked, prefer `samply` or `xctrace`.
-
-- **`sample` missing or not working**
-  - `sample` is deprecated on some systems. Use `xcrun xctrace` / Instruments instead.
-
-- **Sanitizers fail or don't run on Apple Silicon**
-  - ASan/LSan require nightly and are not fully supported on arm64 macOS. Use Instruments (Allocations/Leaks) or DHAT instead.
-
-- **Permissions / SIP / codesign problems**
-  - Some low-level tracing tools require specific system permissions or temporary SIP adjustments. Prefer Apple-supported `xctrace` and Instruments when possible, as they are supported and do not require disabling SIP.
-
-## Quick Troubleshooting Checklist
-
-1. Rebuild with `cargo build --profile profiling --bin token` (or add the profile to Cargo.toml).
-2. Use `xcrun xctrace` to record Time Profiler and open the .trace in Instruments.
-3. If `cargo flamegraph` errors, try `samply` or `xctrace`.
-4. If symbolication is missing, ensure debug info/dSYM is produced for the binary.
-5. If things still fail, collect small reproducible steps and capture logs/trace files — those make root cause analysis much easier.
-
-## Example Healthy Profile (30s sample)
+**Healthy idle profile** (~30s sample):
 
 ```text
-Total samples: ~26,000 (30s @ 1ms)
-
 mach_msg2_trap        77%   # Idle/waiting (good!)
 CFRunLoopDoObservers  21%   # Event handling
 render_text_area       1%   # Actual work
-TextPainter::draw    <1%    # Glyph blitting
 ```
 
-If `mach_msg2_trap` is low or absent, your event loop is likely spinning and consuming CPU.
+**Common patterns:**
+
+| Pattern                         | Meaning                  | Action                                           |
+| ------------------------------- | ------------------------ | ------------------------------------------------ |
+| High `mach_msg2_trap`           | App is idle (good)       | Normal                                           |
+| Low `mach_msg2_trap`            | Event loop spinning      | Use `WaitUntil` instead of `Poll`                |
+| High CPU while idle             | Unnecessary redraws      | Only `request_redraw` on state change            |
+| Memory growth over time         | Per-frame allocations    | Reuse buffers, avoid per-frame heap allocations  |
+| Headless fast, live slow        | Not a rendering issue    | Investigate event handling / windowing            |
+
+## Troubleshooting
+
+- **No symbols in traces** — Rebuild with `make build-prof`. Check dSYM is present.
+- **`cargo flamegraph` permission errors** — macOS SIP restricts dtrace. Use `make profile-samply` instead.
+- **Empty xctrace stacks** — Binary may be stripped. Ensure `debug = true` in the cargo profile.
+- **Sanitizers fail on Apple Silicon** — ASan/LSan are limited on arm64 macOS. Use Instruments or DHAT instead.

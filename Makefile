@@ -1,7 +1,7 @@
 # Makefile for token
 
 .PHONY: build release dist debugging run dev csv damage-debug test-syntax trace test clean fmt format lint help samples-files ci screenshots \
-        build-prof flamegraph profile-samply profile-memory \
+        build-prof flamegraph profile-samply profile-chrome profile-memory \
         bench bench-rope bench-render bench-glyph \
         coverage coverage-html coverage-ci \
         watch watch-lint test-fast test-retry \
@@ -206,6 +206,7 @@ help:
 	@echo "Profiling:"
 	@echo "  make flamegraph     - Generate CPU flamegraph"
 	@echo "  make profile-samply - Interactive profiling (Firefox Profiler)"
+	@echo "  make profile-chrome - Chrome trace export (open in ui.perfetto.dev)"
 	@echo "  make profile-memory - Heap profiling with dhat"
 	@echo ""
 	@echo "Coverage:"
@@ -278,6 +279,13 @@ flamegraph: build-prof
 # Interactive profiling with samply (requires: cargo install samply)
 profile-samply: build-prof
 	samply record ./target/profiling/token samples/large.txt
+
+# Chrome trace export (opens codebase as workspace, then Perfetto on exit)
+profile-chrome:
+	cargo build --release --features profile-chrome --bin token
+	./target/release/token ./
+	@echo "Trace written to token-trace.json"
+	@open "https://ui.perfetto.dev"
 
 # Memory profiling with dhat (generates dhat-heap.json, auto-opens viewer)
 profile-memory:

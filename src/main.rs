@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
-    token::tracing::init();
+    let _trace_guard = token::tracing::init();
 
     // Parse command-line arguments
     let args = CliArgs::parse();

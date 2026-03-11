@@ -31,6 +31,10 @@ default = []
 dhat-heap = ["dhat"]
 # Enable debug visualization of damage regions (colored outlines)
 damage-debug = []
+# Emit tracing spans from PerfStats for external profiler visibility
+profile-tracing = []
+# Export Chrome trace format (open in ui.perfetto.dev)
+profile-chrome = ["profile-tracing", "dep:tracing-chrome"]
 
 [dependencies]
 winit = "0.30.12"
@@ -124,6 +128,9 @@ nucleo-matcher = "0.3"
 
 # Optional: heap profiling
 dhat = { version = "0.3", optional = true }
+
+# Optional: Chrome trace export for profiling
+tracing-chrome = { version = "0.7", optional = true }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
