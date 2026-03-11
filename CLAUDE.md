@@ -47,6 +47,19 @@ make coverage            # Generate HTML coverage report
 - When adding timings, time the phase that actually owns the work and extend the shared stage registry instead of keeping a separate hard-coded overlay list.
 - File tracing is opt-in for hot paths: file logging follows `TOKEN_FILE_LOG` when set, otherwise falls back to `RUST_LOG`.
 
+### Rendering Guardrails
+
+- Keep `Renderer` monolithic as the top-level orchestrator. Do not introduce file/module splits just to reduce line count.
+- Add abstractions only when they provide a shared source of truth or a clear feature home. Good examples in the current codebase are:
+  - scene objects for content/pane dispatch (`EditorGroupScene`, dock scene, preview scene)
+  - shared layout structs (`WindowLayout`, `GroupLayout`, `TabBarLayout`, `OutlinePanelLayout`, `PreviewPaneLayout`, `DockHeaderLayout`)
+  - `TextEditorRenderer` for text-editor-specific rendering logic
+- Avoid generic GUI-framework abstractions. This is an editor, not a reusable widget toolkit.
+- New text-view features should usually land in `src/view/editor_text.rs` and use shared viewport/layout helpers instead of adding feature-local document-line loops elsewhere.
+- Do not deepen the assumption that `logical line == rendered row`. Soft wrap and folding will need a visual-line seam, so prefer names and helper boundaries that can evolve toward visual rows / wrapped segments.
+- Keep render/hit-test/update paths on the same ordering and geometry helpers. If a feature adds a second traversal or re-derives tab/tree/viewport geometry separately, that should be treated as a design smell.
+- Text-only fast paths must remain gated by `EditorState::is_plain_text_mode()` so non-text tabs do not pick up cursor-line or gutter assumptions by accident.
+
 ### CI & Cross-Compilation
 
 ```bash

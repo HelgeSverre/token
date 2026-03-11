@@ -38,6 +38,16 @@ Key structures: Rope (ropey) for text buffer, Cursor, EditOperation for undo/red
 - Perf instrumentation is stage-based in `src/perf.rs`. If you add or change render timings, extend `PerfStage` / `PerfStats::measure_stage()` there instead of adding one-off counters or a second overlay-specific list.
 - File tracing is not always-on. File logging follows `TOKEN_FILE_LOG` when set, otherwise `RUST_LOG`.
 
+## Rendering Guardrails
+
+- Keep `Renderer` monolithic at the top level. Do not split rendering code only because a file is large; add abstractions only when they become a real shared source of truth or a real feature home.
+- Prefer domain-specific seams over generic widget layers. Current examples are scene objects (`EditorGroupScene`, dock/preview scenes), shared geometry structs, and `TextEditorRenderer`.
+- New text-editor visuals should plug into `src/view/editor_text.rs` and shared viewport helpers, not add fresh line iteration or viewport math in `Renderer`, hit-test code, or update code.
+- Do not deepen the assumption that `logical line == rendered row`. When adding text-view logic, prefer APIs and naming that can later work with visual rows / wrapped segments.
+- Reuse shared layout helpers (`WindowLayout`, `GroupLayout`, `TabBarLayout`, dock/outline/preview layouts) instead of re-deriving geometry in each render or hit-test path.
+- Render order and interaction order should share the same traversal/model helpers. If a tree, tab bar, or viewport has one visible ordering in render code and a different one in hit-testing or selection code, that is usually a bug.
+- Text-only fast paths must stay text-only. Gate them through `EditorState::is_plain_text_mode()` so image/CSV/binary tabs do not accidentally opt into text rendering assumptions.
+
 ## Releasing a New Version
 
 Releases are automated via **cargo-dist**. Pushing a tag triggers CI to build binaries, create the GitHub release, and publish to Homebrew.
