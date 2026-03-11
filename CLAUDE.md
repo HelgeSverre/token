@@ -38,6 +38,15 @@ make profile-memory      # Heap profiling with dhat
 make coverage            # Generate HTML coverage report
 ```
 
+### Performance Workflow Notes
+
+- `make workspace` launches `target/debug/token ./` using the dev profile. That is intentionally compile-fast and can be dramatically slower than release for CPU rendering work.
+- Use `make release`, `make run`, or the profiling profile when making performance claims. Debug numbers are mainly useful for relative local diagnosis.
+- The perf overlay (`F2`, debug builds only) currently forces full redraw while visible. It is useful for stage breakdowns, but it perturbs the numbers it shows.
+- Perf instrumentation is stage-based. The source of truth is `src/perf.rs` (`PerfStage`, `PerfStats::measure_stage`, `render_perf_overlay`). `src/runtime/perf.rs` is only a re-export shim for runtime code.
+- When adding timings, time the phase that actually owns the work and extend the shared stage registry instead of keeping a separate hard-coded overlay list.
+- File tracing is opt-in for hot paths: file logging follows `TOKEN_FILE_LOG` when set, otherwise falls back to `RUST_LOG`.
+
 ### CI & Cross-Compilation
 
 ```bash
@@ -66,7 +75,8 @@ Message → Update → Command → Render
 | **Commands** | `src/commands.rs` | Cmd enum (Redraw, SaveFile, LoadFile, Batch)  |
 | **Theme**    | `src/theme.rs`    | YAML theme loading, Color types               |
 | **View**     | `src/view/`       | CPU rendering with fontdue + softbuffer       |
-| **Runtime**  | `src/runtime/`    | App, input handling, perf stats (winit)       |
+| **Runtime**  | `src/runtime/`    | App, input handling, runtime glue (winit)     |
+| **Perf**     | `src/perf.rs`     | Stage-based perf stats and debug overlay       |
 | **Keymap**   | `src/keymap/`     | Configurable keybindings, command dispatch    |
 | **Syntax**   | `src/syntax/`     | Tree-sitter syntax highlighting (20 langs)    |
 | **CSV**      | `src/csv/`        | CSV viewer/editor with spreadsheet UI         |
@@ -80,6 +90,7 @@ src/
 ├── lib.rs               # Library root with module exports
 ├── messages.rs          # All message types
 ├── commands.rs          # Cmd enum
+├── perf.rs              # PerfStage, PerfStats, perf overlay implementation
 ├── theme.rs             # Theme, Color, TabBarTheme
 ├── overlay.rs           # OverlayConfig, OverlayBounds
 ├── model/
@@ -105,7 +116,9 @@ src/
 │   ├── mod.rs           # Runtime module exports
 │   ├── app.rs           # App struct, winit ApplicationHandler
 │   ├── input.rs         # handle_key, keyboard→Msg mapping
-│   └── perf.rs          # PerfStats, debug overlay (debug only)
+│   ├── mouse.rs         # Mouse dispatch and hit-tested actions
+│   ├── perf.rs          # Re-export shim for token::perf
+│   └── webview.rs       # Markdown preview webview management
 ├── view/
 │   ├── mod.rs           # Renderer, GlyphCache
 │   ├── frame.rs         # Frame, TextPainter abstractions
@@ -139,11 +152,12 @@ IntelliJ-style word boundaries using `CharType`:
 
 ### Rendering Pipeline
 
-1. Clear framebuffer (#1E1E1E dark background)
-2. Render visible lines with line numbers
-3. Draw blinking cursor (500ms interval)
-4. Render status bar
-5. Present via softbuffer
+1. Build a render plan from damage + window/layout state
+2. Clear the persistent back buffer as needed
+3. Render editor groups / panes / overlays into the back buffer
+4. Copy the back buffer into the softbuffer surface and present
+
+Perf timings for that pipeline are tracked by stage in `src/perf.rs`, including tracked vs untracked frame time.
 
 Font: JetBrains Mono embedded in `assets/JetBrainsMono.ttf`
 

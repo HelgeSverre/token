@@ -31,6 +31,13 @@ Key structures: Rope (ropey) for text buffer, Cursor, EditOperation for undo/red
 - Design docs in `docs/feature/*.md`; check `docs/ROADMAP.md` for planned work
 - Update `docs/CHANGELOG.md` when features are complete
 
+## Performance Notes
+
+- `make workspace` runs the debug binary (`target/debug/token ./`). That is useful for day-to-day iteration, but not for meaningful renderer performance claims.
+- The in-app perf overlay (`F2`, debug builds only) currently forces full redraw while visible. Treat it as a diagnostic breakdown, not a release-equivalent FPS meter.
+- Perf instrumentation is stage-based in `src/perf.rs`. If you add or change render timings, extend `PerfStage` / `PerfStats::measure_stage()` there instead of adding one-off counters or a second overlay-specific list.
+- File tracing is not always-on. File logging follows `TOKEN_FILE_LOG` when set, otherwise `RUST_LOG`.
+
 ## Releasing a New Version
 
 Releases are automated via **cargo-dist**. Pushing a tag triggers CI to build binaries, create the GitHub release, and publish to Homebrew.
