@@ -129,12 +129,13 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
         }
     }
 
-    fn render_editor_area_phase(&mut self) {
+    fn render_editor_area_phase(&mut self, perf: &mut crate::perf::PerfStats) {
         Renderer::render_editor_area(
             &mut self.frame,
             &mut self.painter,
             self.model,
             &self.plan.splitters,
+            perf,
         );
     }
 
@@ -339,18 +340,34 @@ impl<'a> EditorGroupScene<'a> {
         })
     }
 
-    fn render(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
-        Renderer::render_tab_bar(frame, painter, model, self.group, &self.layout);
-        self.render_content(frame, painter, model);
+    fn render(
+        &self,
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        perf: &mut crate::perf::PerfStats,
+    ) {
+        perf.measure_stage(crate::perf::PerfStage::TabBar, || {
+            Renderer::render_tab_bar(frame, painter, model, self.group, &self.layout);
+        });
+        self.render_content(frame, painter, model, perf);
 
         if self.should_render_scrollbars(model) {
-            self.render_scrollbars(frame, model);
+            perf.measure_stage(crate::perf::PerfStage::Scrollbars, || {
+                self.render_scrollbars(frame, model);
+            });
         }
 
         self.render_unfocused_dim(frame, model);
     }
 
-    fn render_content(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
+    fn render_content(
+        &self,
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        perf: &mut crate::perf::PerfStats,
+    ) {
         match &self.content {
             EditorContentKind::Text { document } => {
                 editor_text::render_text_area(
@@ -361,6 +378,7 @@ impl<'a> EditorGroupScene<'a> {
                     document,
                     &self.layout,
                     self.is_focused,
+                    perf,
                 );
                 editor_text::render_gutter(
                     frame,
@@ -369,29 +387,36 @@ impl<'a> EditorGroupScene<'a> {
                     self.editor,
                     document,
                     &self.layout,
+                    perf,
                 );
             }
             EditorContentKind::Csv { state } => {
-                Renderer::render_csv_grid(
-                    frame,
-                    painter,
-                    model,
-                    state,
-                    &self.layout,
-                    self.is_focused,
-                );
+                perf.measure_stage(crate::perf::PerfStage::Csv, || {
+                    Renderer::render_csv_grid(
+                        frame,
+                        painter,
+                        model,
+                        state,
+                        &self.layout,
+                        self.is_focused,
+                    );
+                });
             }
             EditorContentKind::Image { state } => {
-                Renderer::render_image_tab(frame, model, state, &self.layout);
+                perf.measure_stage(crate::perf::PerfStage::Image, || {
+                    Renderer::render_image_tab(frame, model, state, &self.layout);
+                });
             }
             EditorContentKind::BinaryPlaceholder { placeholder } => {
-                Renderer::render_binary_placeholder(
-                    frame,
-                    painter,
-                    model,
-                    placeholder,
-                    &self.layout,
-                );
+                perf.measure_stage(crate::perf::PerfStage::BinaryPlaceholder, || {
+                    Renderer::render_binary_placeholder(
+                        frame,
+                        painter,
+                        model,
+                        placeholder,
+                        &self.layout,
+                    );
+                });
             }
         }
     }
@@ -610,7 +635,7 @@ impl Renderer {
         &self,
         damage: &Damage,
         model: &AppModel,
-        #[allow(unused_variables)] perf: &crate::perf::PerfStats,
+        show_perf_overlay: bool,
     ) -> Damage {
         // Force full redraw for complex overlays
         if model.ui.active_modal.is_some() {
@@ -624,7 +649,7 @@ impl Renderer {
         // Debug builds: force full for perf/debug overlays
         #[cfg(debug_assertions)]
         {
-            if perf.should_show_overlay() {
+            if show_perf_overlay {
                 return Damage::Full;
             }
             if let Some(ref overlay) = model.debug_overlay {
@@ -641,12 +666,12 @@ impl Renderer {
     fn build_render_plan(
         &self,
         model: &mut AppModel,
-        perf: &crate::perf::PerfStats,
         damage: &Damage,
         window_width: usize,
         window_height: usize,
         line_height: usize,
         char_width: f32,
+        show_perf_overlay: bool,
     ) -> RenderPlan {
         let window_layout = geometry::WindowLayout::compute(model, line_height);
         let splitters = model
@@ -656,7 +681,7 @@ impl Renderer {
             .editor_area
             .sync_all_viewports(line_height, char_width, &model.metrics);
 
-        let effective_damage = self.compute_effective_damage(damage, model, perf);
+        let effective_damage = self.compute_effective_damage(damage, model, show_perf_overlay);
         let render_editor = effective_damage.is_full()
             || effective_damage.includes_editor()
             || has_cursor_lines_damage(&effective_damage);
@@ -690,7 +715,7 @@ impl Renderer {
             show_modal: model.ui.active_modal.is_some(),
             show_drop_overlay: model.ui.drop_state.is_hovering,
             #[cfg(debug_assertions)]
-            show_perf_overlay: perf.should_show_overlay(),
+            show_perf_overlay,
             #[cfg(debug_assertions)]
             show_debug_overlay: model
                 .debug_overlay
@@ -730,6 +755,7 @@ impl Renderer {
         painter: &mut TextPainter,
         model: &AppModel,
         splitters: &[SplitterBar],
+        perf: &mut crate::perf::PerfStats,
     ) {
         Self::render_editor_area_with_preview_mode(
             frame,
@@ -737,6 +763,7 @@ impl Renderer {
             model,
             splitters,
             PreviewRenderMode::WebviewChromeOnly,
+            perf,
         )
     }
 
@@ -746,25 +773,34 @@ impl Renderer {
         model: &AppModel,
         splitters: &[SplitterBar],
         preview_mode: PreviewRenderMode,
+        perf: &mut crate::perf::PerfStats,
     ) {
         for (&group_id, group) in &model.editor_area.groups {
             let is_focused = group_id == model.editor_area.focused_group_id;
-            Self::render_editor_group(frame, painter, model, group_id, group.rect, is_focused);
+            Self::render_editor_group(
+                frame, painter, model, group_id, group.rect, is_focused, perf,
+            );
         }
 
         // Render preview panes
         for (&preview_id, preview) in &model.editor_area.previews {
-            Self::render_preview_pane(
-                frame,
-                painter,
-                model,
-                preview_id,
-                preview.rect,
-                preview_mode,
-            );
+            perf.measure_stage(crate::perf::PerfStage::PreviewPane, || {
+                Self::render_preview_pane(
+                    frame,
+                    painter,
+                    model,
+                    preview_id,
+                    preview.rect,
+                    preview_mode,
+                );
+            });
         }
 
-        Self::render_splitters(frame, splitters, model);
+        if !splitters.is_empty() {
+            perf.measure_stage(crate::perf::PerfStage::Splitters, || {
+                Self::render_splitters(frame, splitters, model);
+            });
+        }
     }
 
     /// Render a pane with optional header, background, and borders.
@@ -1024,6 +1060,7 @@ impl Renderer {
         group_id: GroupId,
         group_rect: Rect,
         is_focused: bool,
+        perf: &mut crate::perf::PerfStats,
     ) {
         let Some(scene) = EditorGroupScene::resolve(
             model,
@@ -1035,7 +1072,7 @@ impl Renderer {
             return;
         };
 
-        scene.render(frame, painter, model);
+        scene.render(frame, painter, model, perf);
     }
 
     fn render_editor_scrollbars(
@@ -1567,21 +1604,25 @@ impl Renderer {
         #[cfg(feature = "damage-debug")]
         let status_bar_height = line_height;
 
-        let plan = self.build_render_plan(
-            model,
-            perf,
-            damage,
-            width_usize,
-            height_usize,
-            line_height,
-            char_width,
-        );
+        let show_perf_overlay = perf.should_show_overlay();
+        let plan = perf.measure_stage(crate::perf::PerfStage::BuildPlan, || {
+            self.build_render_plan(
+                model,
+                damage,
+                width_usize,
+                height_usize,
+                line_height,
+                char_width,
+                show_perf_overlay,
+            )
+        });
 
         // All rendering happens to back_buffer (persistent between frames).
         // At the end, we copy to the surface buffer and present.
         if !plan.uses_cursor_lines_fast_path() {
-            let _timer = perf.time_clear();
-            self.clear_back_buffer(model, &plan);
+            perf.measure_stage(crate::perf::PerfStage::Clear, || {
+                self.clear_back_buffer(model, &plan);
+            });
         }
 
         if let Some(ref dirty_lines) = plan.cursor_lines_only {
@@ -1594,10 +1635,9 @@ impl Renderer {
                 char_width,
                 line_height,
             );
-            {
-                let _timer = perf.time_text();
+            perf.measure_stage(crate::perf::PerfStage::CursorFastPath, || {
                 editor_text::render_cursor_lines_only(&mut frame, &mut painter, model, dirty_lines);
-            }
+            });
             #[cfg(debug_assertions)]
             {
                 let stats = painter.cache_stats();
@@ -1619,28 +1659,54 @@ impl Renderer {
             );
 
             if plan.render_editor {
-                {
-                    let _timer = perf.time_text();
-                    session.render_editor_area_phase();
+                session.render_editor_area_phase(perf);
+                if plan.window_layout.sidebar_rect.is_some() {
+                    perf.measure_stage(crate::perf::PerfStage::Sidebar, || {
+                        session.render_sidebar_phase();
+                    });
                 }
-                session.render_sidebar_phase();
-                session.render_right_dock_phase();
-                session.render_bottom_dock_phase();
+                if plan.window_layout.right_dock_rect.is_some() {
+                    perf.measure_stage(crate::perf::PerfStage::RightDock, || {
+                        session.render_right_dock_phase();
+                    });
+                }
+                if plan.window_layout.bottom_dock_rect.is_some() {
+                    perf.measure_stage(crate::perf::PerfStage::BottomDock, || {
+                        session.render_bottom_dock_phase();
+                    });
+                }
             }
 
             if plan.render_status_bar {
-                let _timer = perf.time_status_bar();
-                session.render_status_bar_phase();
+                perf.measure_stage(crate::perf::PerfStage::StatusBar, || {
+                    session.render_status_bar_phase();
+                });
             }
 
-            session.render_modal_phase();
-            session.render_drop_overlay_phase();
+            if plan.show_modal {
+                perf.measure_stage(crate::perf::PerfStage::Modal, || {
+                    session.render_modal_phase();
+                });
+            }
+            if plan.show_drop_overlay {
+                perf.measure_stage(crate::perf::PerfStage::DropOverlay, || {
+                    session.render_drop_overlay_phase();
+                });
+            }
 
             #[cfg(debug_assertions)]
-            session.render_perf_overlay_phase(perf);
+            if plan.show_perf_overlay {
+                let start = std::time::Instant::now();
+                session.render_perf_overlay_phase(perf);
+                perf.record_stage_elapsed(crate::perf::PerfStage::PerfOverlay, start.elapsed());
+            }
 
             #[cfg(debug_assertions)]
-            session.render_debug_overlay_phase();
+            if plan.show_debug_overlay {
+                perf.measure_stage(crate::perf::PerfStage::DebugOverlay, || {
+                    session.render_debug_overlay_phase();
+                });
+            }
 
             #[cfg(debug_assertions)]
             session.record_cache_stats(perf);
@@ -1664,15 +1730,19 @@ impl Renderer {
 
         // Copy back buffer to surface and present
         {
-            let _timer = perf.time_present();
-            let mut buffer = self
-                .surface
-                .buffer_mut()
-                .map_err(|e| anyhow::anyhow!("Failed to get surface buffer: {}", e))?;
-            buffer.copy_from_slice(&self.back_buffer);
-            buffer
-                .present()
-                .map_err(|e| anyhow::anyhow!("Failed to present buffer: {}", e))?;
+            let mut buffer = perf.measure_stage(crate::perf::PerfStage::SurfaceAcquire, || {
+                self.surface
+                    .buffer_mut()
+                    .map_err(|e| anyhow::anyhow!("Failed to get surface buffer: {}", e))
+            })?;
+            perf.measure_stage(crate::perf::PerfStage::BufferCopy, || {
+                buffer.copy_from_slice(&self.back_buffer);
+            });
+            perf.measure_stage(crate::perf::PerfStage::SurfacePresent, || {
+                buffer
+                    .present()
+                    .map_err(|e| anyhow::anyhow!("Failed to present buffer: {}", e))
+            })?;
         }
 
         Ok(())

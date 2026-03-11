@@ -1,7 +1,11 @@
 //! Text editor content rendering (text area, gutter, cursors).
 
+#[cfg(debug_assertions)]
+use std::time::{Duration, Instant};
+
 use crate::model::editor::Selection;
 use crate::model::{AppModel, Document, EditorState, TextViewportMap};
+use crate::perf::{PerfStage, PerfStats};
 
 use super::frame::{Frame, TextPainter};
 use super::geometry::{self, char_col_to_visual_col, column_to_pixel_x, expand_tabs_for_display};
@@ -632,7 +636,29 @@ impl<'a> TextEditorRenderer<'a> {
         }
     }
 
-    fn render_text_area(&mut self, frame: &mut Frame, painter: &mut TextPainter, is_focused: bool) {
+    fn render_text_area(
+        &mut self,
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        is_focused: bool,
+        perf: &mut PerfStats,
+    ) {
+        #[cfg(debug_assertions)]
+        let mut background_time = Duration::ZERO;
+        #[cfg(debug_assertions)]
+        let mut decoration_time = Duration::ZERO;
+        #[cfg(debug_assertions)]
+        let mut glyph_time = Duration::ZERO;
+        #[cfg(debug_assertions)]
+        let mut cursor_time = Duration::ZERO;
+
+        #[cfg(debug_assertions)]
+        {
+            let start = Instant::now();
+            self.render_current_line_background_stage(frame);
+            background_time += start.elapsed();
+        }
+        #[cfg(not(debug_assertions))]
         self.render_current_line_background_stage(frame);
 
         for screen_line in 0..self.ctx.visible_lines {
@@ -645,12 +671,42 @@ impl<'a> TextEditorRenderer<'a> {
             }
 
             let line = self.prepare_visible_line(doc_line, y);
+            #[cfg(debug_assertions)]
+            {
+                let start = Instant::now();
+                self.collect_line_decorations(&line);
+                self.render_line_decoration_stage(frame, &line);
+                decoration_time += start.elapsed();
+
+                let start = Instant::now();
+                self.render_line_text_stage(frame, painter, &line);
+                glyph_time += start.elapsed();
+            }
+            #[cfg(not(debug_assertions))]
             self.render_line_content_stages(frame, painter, &line);
         }
 
         if is_focused {
-            self.render_visible_cursors(frame);
-            self.render_preview_cursors(frame);
+            #[cfg(debug_assertions)]
+            {
+                let start = Instant::now();
+                self.render_visible_cursors(frame);
+                self.render_preview_cursors(frame);
+                cursor_time += start.elapsed();
+            }
+            #[cfg(not(debug_assertions))]
+            {
+                self.render_visible_cursors(frame);
+                self.render_preview_cursors(frame);
+            }
+        }
+
+        #[cfg(debug_assertions)]
+        {
+            perf.record_stage_elapsed(PerfStage::TextBackground, background_time);
+            perf.record_stage_elapsed(PerfStage::TextDecorations, decoration_time);
+            perf.record_stage_elapsed(PerfStage::TextGlyphs, glyph_time);
+            perf.record_stage_elapsed(PerfStage::TextCursors, cursor_time);
         }
     }
 
@@ -724,6 +780,7 @@ pub fn render_cursor_lines_only(
 }
 
 /// Render text content (lines, selections, cursors) for an editor group.
+#[allow(clippy::too_many_arguments)]
 pub fn render_text_area(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -732,12 +789,13 @@ pub fn render_text_area(
     document: &Document,
     layout: &geometry::GroupLayout,
     is_focused: bool,
+    perf: &mut PerfStats,
 ) {
     let char_width = painter.char_width();
     let line_height = painter.line_height();
     let mut renderer =
         TextEditorRenderer::new(model, editor, document, layout, char_width, line_height);
-    renderer.render_text_area(frame, painter, is_focused);
+    renderer.render_text_area(frame, painter, is_focused, perf);
 }
 
 /// Render the gutter (line numbers) for an editor group.
@@ -748,12 +806,13 @@ pub fn render_gutter(
     editor: &EditorState,
     document: &Document,
     layout: &geometry::GroupLayout,
+    perf: &mut PerfStats,
 ) {
     let char_width = painter.char_width();
     let line_height = painter.line_height();
     let renderer =
         TextEditorRenderer::new(model, editor, document, layout, char_width, line_height);
-    renderer.render_gutter(frame, painter);
+    perf.measure_stage(PerfStage::Gutter, || renderer.render_gutter(frame, painter));
 }
 
 #[cfg(test)]
@@ -829,8 +888,17 @@ mod tests {
             .groups
             .get(&model.editor_area.focused_group_id)
             .unwrap();
+        let mut perf = crate::perf::PerfStats::default();
 
-        Renderer::render_editor_group(&mut frame, &mut painter, model, group.id, group.rect, true);
+        Renderer::render_editor_group(
+            &mut frame,
+            &mut painter,
+            model,
+            group.id,
+            group.rect,
+            true,
+            &mut perf,
+        );
         buffer
     }
 

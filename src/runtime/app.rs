@@ -35,7 +35,7 @@ use super::mouse::{
 use super::webview::WebviewManager;
 use token::view::Renderer;
 
-use super::perf::PerfStats;
+use super::perf::{PerfStage, PerfStats};
 
 use winit::keyboard::ModifiersState;
 
@@ -696,11 +696,21 @@ impl App {
         }
 
         // Sync webviews with preview panes
+        let webview_sync_start = std::time::Instant::now();
         self.sync_webviews();
+        self.perf.record_stage_elapsed(
+            PerfStage::WebviewSync,
+            webview_sync_start.elapsed(),
+        );
 
         // Hide webviews when modals are active (so they don't render on top)
         let show_webviews = self.model.ui.active_modal.is_none();
+        let webview_visibility_start = std::time::Instant::now();
         self.webview_manager.set_all_visible(show_webviews);
+        self.perf.record_stage_elapsed(
+            PerfStage::WebviewVisibility,
+            webview_visibility_start.elapsed(),
+        );
 
         self.perf.record_frame_time();
         self.perf.record_render_history();
