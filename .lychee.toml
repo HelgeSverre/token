@@ -26,4 +26,6 @@ exclude = [
   "file:///.*token-editor/",
   # gnu.org rate-limits CI runners
   "^https://www\\.gnu\\.org/",
+  # vim.fandom.com blocks bots with 403
+  "^https://vim\\.fandom\\.com/",
 ]

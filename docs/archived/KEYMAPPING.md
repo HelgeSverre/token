@@ -852,4 +852,4 @@ impl App {
 - [VS Code Keybindings](https://code.visualstudio.com/docs/configure/keybindings)
 - [Helix Keymap](https://docs.helix-editor.com/keymap.html)
 - [Zed Keybindings](https://zed.dev/docs/key-bindings)
-- [EDITOR_UI_REFERENCE.md Chapter 13](/docs/EDITOR_UI_REFERENCE.md#chapter-13-keyboard-mapping-and-command-dispatch)
+- [EDITOR_UI_REFERENCE.md Chapter 13](../EDITOR_UI_REFERENCE.md#chapter-13-keyboard-mapping-and-command-dispatch)

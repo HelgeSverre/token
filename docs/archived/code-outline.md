@@ -628,7 +628,6 @@ The only new files are outline query files (`queries/<lang>/outline.scm`) which 
 ## References
 
 - Tree-sitter query syntax: https://tree-sitter.github.io/tree-sitter/using-parsers/queries
-- Tree-sitter tags queries (prior art): https://tree-sitter.github.io/tree-sitter/code-navigation-systems
 - VS Code outline view: https://code.visualstudio.com/docs/getstarted/userinterface#_outline-view
 - Zed outline implementation: uses tree-sitter queries for symbol extraction
 - Token sidebar rendering: `src/view/mod.rs` `render_sidebar()` — pattern to follow for tree rendering
