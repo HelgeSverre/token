@@ -123,8 +123,8 @@ tree-sitter-just = { git = "https://github.com/casey/tree-sitter-just", rev = "6
 
 streaming-iterator = "0.1"
 
-# For fuzzy file finder
-nucleo-matcher = "0.3"
+# For fuzzy file finder (fff-inspired: typo-resistant SIMD matching)
+neo_frizbee = "0.8.5"
 
 # Optional: heap profiling
 dhat = { version = "0.3", optional = true }
