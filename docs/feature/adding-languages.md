@@ -484,3 +484,64 @@ If parsing is slow:
 - [Tree-sitter Query Syntax](https://tree-sitter.github.io/tree-sitter/using-parsers#pattern-matching-with-queries)
 - [nvim-treesitter queries](https://github.com/nvim-treesitter/nvim-treesitter/tree/master/queries) - High-quality reference queries
 - [Tree-sitter Playground](https://tree-sitter.github.io/tree-sitter/7-playground.html) - Test queries interactively
+
+---
+
+## Alternatives Considered
+
+### `tree-sitter-language-pack` (`ts-pack-core`)
+
+**Investigated:** 2026-04-19 | [GitHub](https://github.com/kreuzberg-dev/tree-sitter-language-pack) | [Crate](https://crates.io/crates/tree-sitter-language-pack)
+
+**Summary: Not recommended as a replacement for token's current tree-sitter setup.**
+
+`tree-sitter-language-pack` bundles 305+ tree-sitter parsers behind a unified API with bindings for Rust, Python, Node.js, Go, Java, Elixir, and others. The Rust crate is `ts-pack-core`.
+
+#### What it offers
+
+| Feature | Details |
+|---------|---------|
+| Parser count | 305+ languages via a single crate |
+| API | `get_language(name)`, `get_parser(name)`, `get_highlights_query(name)` |
+| Language detection | `detect_language(path)`, `detect_language_from_extension(ext)` |
+| Code analysis | High-level `process()` returning functions, classes, imports, chunks |
+| Highlight queries | `get_highlights_query(language)` bundled per-language `.scm` files |
+| Download model | On-demand download + local caching (primary model) |
+| Static compilation | Possible via `TSLP_LANGUAGES=rust,python cargo build` env var |
+
+#### Why it doesn't fit token
+
+1. **On-demand download model conflicts with offline use.**
+   The primary value of the pack is downloading parsers on first use from the internet. Token is a
+   desktop editor that must work offline. Using the static compilation option (`TSLP_LANGUAGES`)
+   would work around this, but adds build-time complexity with little benefit.
+
+2. **Bundled highlight queries may not match token's capture names.**
+   Token uses a curated `HIGHLIGHT_NAMES` array in `src/syntax/highlights.rs` that captures like
+   `text.emphasis`, `text.strong`, and `text.title` for Markdown. The pack's bundled queries target
+   Neovim/Helix conventions that use `markup.*` prefixes instead. Adopting them would break token's
+   theme system or require a mapping layer.
+
+3. **Specialized languages are unsupported.**
+   Token relies on `tree-sitter-md` for two-pass Markdown parsing (block + inline grammars as
+   separate parsers). This specialized behavior — which powers inline code injection into Markdown
+   blocks — is not replicable from the pack's generic Markdown parser. Similarly, `tree-sitter-blade`
+   and `tree-sitter-just` are sourced from custom git repositories that may not be in the 305-language
+   pack.
+
+4. **No net simplification at the code level.**
+   The current architecture (individual crates, static compilation, `include_str!` queries) is already
+   clean and well-documented. Migrating to `ts-pack-core` would replace 15 Cargo.toml entries with 1,
+   but would require rewriting `parser.rs` init code, auditing every highlight query for capture name
+   compatibility, and adding build-time env var configuration.
+
+5. **Different primary use case.**
+   `tree-sitter-language-pack` is designed for code intelligence pipelines — RAG chunking, semantic
+   search indexing, AI context extraction. The high-level `process()` API that extracts functions,
+   imports and code chunks is the main value proposition, not syntax highlighting for an editor.
+
+#### When it _could_ be useful
+
+If token ever gains a code intelligence feature (e.g., "find all functions in workspace" or AI context
+extraction), `ts-pack-core` would be a good fit for that specific use case — not as a replacement for
+the existing tree-sitter highlighting pipeline, but as an additive dependency for the new feature.
