@@ -1234,8 +1234,30 @@ fn get_current_cursor_lines(model: &AppModel) -> Vec<usize> {
 // ============================================================================
 
 use crate::model::FileMatch;
-use nucleo_matcher::{Config, Matcher, Utf32Str};
+use neo_frizbee::{Config, Match, Scoring};
 use std::path::Path;
+
+// ---- Scoring constants (ported from fff.nvim score.rs) ---- //
+
+/// Maximum number of typos allowed in a fuzzy match.
+const MAX_TYPOS: u16 = 2;
+
+/// Bonus applied to the neo_frizbee smith-waterman score when the query
+/// contains uppercase chars and a character matches with the correct case.
+const CAPITALIZATION_BONUS: u16 = 8;
+
+/// Additional bonus when an uppercase query character matches the same case.
+const MATCHING_CASE_BONUS: u16 = 4;
+
+/// Minimum query part length considered for multi-word search.
+/// Parts shorter than this are skipped to avoid noise.
+const MIN_PART_LEN: usize = 2;
+
+/// Maximum number of results returned by the file finder.
+const MAX_RESULTS: usize = 50;
+
+/// Maximum number of files shown when the query is empty.
+const MAX_RESULTS_EMPTY_QUERY: usize = 100;
 
 /// Update file finder results based on current query
 pub fn update_file_finder_results(state: &mut FileFinderState) {
@@ -1245,55 +1267,158 @@ pub fn update_file_finder_results(state: &mut FileFinderState) {
     state.selected_index = 0;
 }
 
-/// Perform fuzzy matching on file paths
+/// Perform fuzzy matching on file paths using the fff-inspired algorithm:
+/// - Matches against full relative path (not just filename)
+/// - Typo-tolerant via Smith-Waterman (neo_frizbee, same engine as fff.nvim)
+/// - Uppercase in query enables case-sensitivity bonus
+/// - Filename bonus: matches that land in the filename portion rank higher
+/// - Space-separated query parts: all parts must match, scores are summed
 fn fuzzy_match_files(
     files: &[std::path::PathBuf],
     query: &str,
     workspace_root: &Path,
 ) -> Vec<FileMatch> {
     if query.is_empty() {
-        // Show all files sorted alphabetically when no query (limit to first 100)
+        // Show all files in order when no query
         return files
             .iter()
-            .take(100)
+            .take(MAX_RESULTS_EMPTY_QUERY)
             .map(|p| FileMatch::from_path(p, workspace_root, 0, vec![]))
             .collect();
     }
 
-    let mut matcher = Matcher::new(Config::DEFAULT);
-    let mut query_buf = Vec::new();
-    let needle = Utf32Str::new(query, &mut query_buf);
-
-    let mut results: Vec<FileMatch> = files
+    // Build relative-path strings for all files (use forward slashes for cross-platform)
+    let relative_paths: Vec<String> = files
         .iter()
-        .filter_map(|path| {
+        .map(|p| {
+            p.strip_prefix(workspace_root)
+                .unwrap_or(p)
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
+        .collect();
+    let haystack_refs: Vec<&str> = relative_paths.iter().map(|s| s.as_str()).collect();
+
+    // Detect uppercase in query: if present, give a case-sensitivity bonus (like fff)
+    let has_uppercase = query.chars().any(|c| c.is_uppercase());
+
+    let config = Config {
+        max_typos: Some(MAX_TYPOS),
+        sort: false,
+        scoring: Scoring {
+            capitalization_bonus: if has_uppercase { CAPITALIZATION_BONUS } else { 0 },
+            matching_case_bonus: if has_uppercase { MATCHING_CASE_BONUS } else { 0 },
+            ..Default::default()
+        },
+    };
+
+    // Split query by whitespace into parts; each part must independently match
+    let parts: Vec<&str> = query
+        .split_whitespace()
+        .filter(|p| p.len() >= MIN_PART_LEN)
+        .collect();
+
+    // If all parts were filtered out (e.g., single-char query), fall back to full query
+    let effective_parts: Vec<&str> = if parts.is_empty() {
+        vec![query]
+    } else {
+        parts
+    };
+
+    // Match the first part against all files
+    let mut combined: Vec<Match> =
+        neo_frizbee::match_list(effective_parts[0], &haystack_refs, &config);
+
+    // For additional parts, intersect: every part must match; sum scores (like fff multi-part)
+    for part in effective_parts.iter().skip(1) {
+        if combined.is_empty() {
+            break;
+        }
+        let mut part_config = config.clone();
+        part_config.max_typos = config.max_typos.map(|t| t.min(part.len() as u16));
+
+        combined = combined
+            .into_iter()
+            .filter_map(|mut m| {
+                let path = haystack_refs.get(m.index as usize)?;
+                let part_matches = neo_frizbee::match_list(part, &[*path], &part_config);
+                let part_match = part_matches.first()?;
+                let total = (m.score as u32).saturating_add(part_match.score as u32);
+                m.score = total.min(u16::MAX as u32) as u16;
+                Some(m)
+            })
+            .collect();
+    }
+
+    // Build scored FileMatch results, applying filename bonus (ported from fff scoring logic)
+    let needle_len = effective_parts[0].len();
+
+    let mut results: Vec<FileMatch> = combined
+        .into_iter()
+        .filter_map(|m| {
+            let idx = m.index as usize;
+            let path = files.get(idx)?;
             let filename = path.file_name()?.to_str()?;
-            let mut filename_buf = Vec::new();
-            let haystack = Utf32Str::new(filename, &mut filename_buf);
+            let base_score = m.score as i32;
 
-            // Get fuzzy match score
-            let score = matcher.fuzzy_match(haystack, needle)?;
+            // Filename bonus tiers (ported from fff.nvim score.rs):
+            // - exact filename match  → +40% of base score
+            // - fuzzy match in filename region → +16% of base score
+            // - special entry-point file (mod.rs, index.ts, …) → +5%
+            let filename_bonus = if m.exact && needle_len == filename.len() {
+                base_score * 2 / 5 // 40% bonus
+            } else {
+                let filename_hit =
+                    neo_frizbee::match_list(effective_parts[0], &[filename], &config)
+                        .first()
+                        .is_some();
+                if filename_hit {
+                    base_score / 6 // ~16% bonus
+                } else if is_special_entry_point_file(filename) {
+                    base_score * 5 / 100 // 5% bonus
+                } else {
+                    0
+                }
+            };
 
-            // Get match indices for highlighting
-            let mut indices = vec![];
-            matcher.fuzzy_indices(haystack, needle, &mut indices);
-            let indices = indices.to_vec();
+            let total = (base_score + filename_bonus).max(0) as u32;
 
-            Some(FileMatch::from_path(
-                path,
-                workspace_root,
-                score as u32,
-                indices,
-            ))
+            // neo_frizbee doesn't expose per-character match indices, so pass empty
+            // (highlighting is degraded gracefully in the renderer)
+            Some(FileMatch::from_path(path, workspace_root, total, vec![]))
         })
         .collect();
 
-    // Sort by score descending
+    // Sort by total score descending
     results.sort_by(|a, b| b.score.cmp(&a.score));
 
-    // Limit results
-    results.truncate(50);
+    results.truncate(MAX_RESULTS);
     results
+}
+
+/// Check if a filename is a special entry point file deserving a small score bonus.
+/// Ported from fff.nvim's scoring logic.
+fn is_special_entry_point_file(filename: &str) -> bool {
+    matches!(
+        filename,
+        "mod.rs"
+            | "lib.rs"
+            | "main.rs"
+            | "index.js"
+            | "index.jsx"
+            | "index.ts"
+            | "index.tsx"
+            | "index.mjs"
+            | "index.cjs"
+            | "index.vue"
+            | "__init__.py"
+            | "__main__.py"
+            | "main.go"
+            | "main.c"
+            | "index.php"
+            | "main.rb"
+            | "index.rb"
+    )
 }
 
 #[cfg(test)]
@@ -1325,5 +1450,103 @@ mod tests {
         model.editor_mut().cursors[0].line = 7;
 
         assert!(get_current_cursor_lines(&model).is_empty());
+    }
+
+    // =========================================================================
+    // Fuzzy file finder tests
+    // =========================================================================
+
+    use super::{fuzzy_match_files, MAX_RESULTS, MAX_RESULTS_EMPTY_QUERY};
+    use std::path::PathBuf;
+
+    fn make_paths(workspace: &str, names: &[&str]) -> Vec<PathBuf> {
+        names
+            .iter()
+            .map(|n| PathBuf::from(workspace).join(n))
+            .collect()
+    }
+
+    #[test]
+    fn fuzzy_match_returns_empty_on_empty_query() {
+        let root = PathBuf::from("/ws");
+        let files = make_paths("/ws", &["src/main.rs", "src/lib.rs"]);
+        let results = fuzzy_match_files(&files, "", &root);
+        // Empty query returns up to MAX_RESULTS_EMPTY_QUERY files (100)
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn fuzzy_match_ranks_filename_match_higher_than_path_only_match() {
+        let root = PathBuf::from("/ws");
+        // "editor" appears in both the path component and the filename
+        let files = make_paths(
+            "/ws",
+            &[
+                "src/view/editor_helper/util.rs", // "editor" only in path
+                "src/view/editor.rs",              // "editor" in filename
+            ],
+        );
+        let results = fuzzy_match_files(&files, "editor", &root);
+        assert!(!results.is_empty());
+        // The file whose filename matches should rank first (or at least appear)
+        let first = &results[0];
+        assert!(
+            first.filename.contains("editor.rs") || first.filename.contains("editor"),
+            "filename match should rank high, got: {:?}",
+            first.filename
+        );
+    }
+
+    #[test]
+    fn fuzzy_match_supports_typos() {
+        let root = PathBuf::from("/ws");
+        let files = make_paths("/ws", &["src/update/ui.rs", "src/model/document.rs"]);
+        // "udate" is a typo of "update" — neo_frizbee should still find it
+        let results = fuzzy_match_files(&files, "udate", &root);
+        assert!(
+            !results.is_empty(),
+            "typo-tolerant match should still return results"
+        );
+    }
+
+    #[test]
+    fn fuzzy_match_multi_part_query_requires_all_parts() {
+        let root = PathBuf::from("/ws");
+        let files = make_paths(
+            "/ws",
+            &[
+                "src/update/ui.rs",  // matches "update" but not "model"
+                "src/model/ui.rs",   // matches both "model" and "ui"
+            ],
+        );
+        let results = fuzzy_match_files(&files, "model ui", &root);
+        assert!(!results.is_empty());
+        // The file matching both parts should appear
+        let first = &results[0];
+        assert!(
+            first.relative_path.contains("model"),
+            "multi-part match should find file containing both parts, got: {:?}",
+            first.relative_path
+        );
+    }
+
+    #[test]
+    fn fuzzy_match_limits_results() {
+        let root = PathBuf::from("/ws");
+        let files: Vec<PathBuf> = (0..200)
+            .map(|i| PathBuf::from(format!("/ws/file_{i}.rs")))
+            .collect();
+        let results = fuzzy_match_files(&files, "file", &root);
+        assert!(results.len() <= MAX_RESULTS);
+    }
+
+    #[test]
+    fn fuzzy_match_empty_query_limit() {
+        let root = PathBuf::from("/ws");
+        let files: Vec<PathBuf> = (0..150)
+            .map(|i| PathBuf::from(format!("/ws/file_{i}.rs")))
+            .collect();
+        let results = fuzzy_match_files(&files, "", &root);
+        assert!(results.len() <= MAX_RESULTS_EMPTY_QUERY);
     }
 }
