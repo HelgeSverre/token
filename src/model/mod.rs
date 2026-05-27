@@ -485,14 +485,6 @@ impl AppModel {
     pub fn record_file_opened(&mut self, path: PathBuf) {
         let workspace = self.workspace.as_ref().map(|ws| ws.root.clone());
         self.recent_files.add(path, workspace);
-
-        // Save in background (fire and forget)
-        let recent = self.recent_files.clone();
-        std::thread::spawn(move || {
-            if let Err(e) = recent.save() {
-                tracing::warn!("Failed to save recent files: {}", e);
-            }
-        });
     }
 
     /// Close the current workspace
@@ -538,36 +530,72 @@ impl AppModel {
     // These delegate to editor_area's focused document/editor
     // =========================================================================
 
+    /// Get the focused document (read-only), or None if no document is focused
+    #[inline]
+    pub fn try_document(&self) -> Option<&Document> {
+        self.editor_area.focused_document()
+    }
+
     /// Get the focused document (read-only)
+    ///
+    /// # Panics
+    /// Panics if no document is focused. The editor guarantees at least one
+    /// document is always open; this is an invariant assertion.
     #[inline]
     pub fn document(&self) -> &Document {
-        self.editor_area
-            .focused_document()
-            .expect("EditorArea must have at least one document")
+        self.try_document()
+            .expect("Invariant violated: no focused document. This is a bug - please report it.")
+    }
+
+    /// Get the focused document (mutable), or None if no document is focused
+    #[inline]
+    pub fn try_document_mut(&mut self) -> Option<&mut Document> {
+        self.editor_area.focused_document_mut()
     }
 
     /// Get the focused document (mutable)
+    ///
+    /// # Panics
+    /// Panics if no document is focused. The editor guarantees at least one
+    /// document is always open; this is an invariant assertion.
     #[inline]
     pub fn document_mut(&mut self) -> &mut Document {
-        self.editor_area
-            .focused_document_mut()
-            .expect("EditorArea must have at least one document")
+        self.try_document_mut()
+            .expect("Invariant violated: no focused document. This is a bug - please report it.")
+    }
+
+    /// Get the focused editor state (read-only), or None if no editor is focused
+    #[inline]
+    pub fn try_editor(&self) -> Option<&EditorState> {
+        self.editor_area.focused_editor()
     }
 
     /// Get the focused editor state (read-only)
+    ///
+    /// # Panics
+    /// Panics if no editor is focused. The editor guarantees at least one
+    /// editor is always open; this is an invariant assertion.
     #[inline]
     pub fn editor(&self) -> &EditorState {
-        self.editor_area
-            .focused_editor()
-            .expect("EditorArea must have at least one editor")
+        self.try_editor()
+            .expect("Invariant violated: no focused editor. This is a bug - please report it.")
+    }
+
+    /// Get the focused editor state (mutable), or None if no editor is focused
+    #[inline]
+    pub fn try_editor_mut(&mut self) -> Option<&mut EditorState> {
+        self.editor_area.focused_editor_mut()
     }
 
     /// Get the focused editor state (mutable)
+    ///
+    /// # Panics
+    /// Panics if no editor is focused. The editor guarantees at least one
+    /// editor is always open; this is an invariant assertion.
     #[inline]
     pub fn editor_mut(&mut self) -> &mut EditorState {
-        self.editor_area
-            .focused_editor_mut()
-            .expect("EditorArea must have at least one editor")
+        self.try_editor_mut()
+            .expect("Invariant violated: no focused editor. This is a bug - please report it.")
     }
 
     /// Update viewport dimensions after window resize
@@ -598,11 +626,7 @@ impl AppModel {
             .saturating_sub(status_bar_height)
             .saturating_sub(tab_bar_height)
             .saturating_sub(bottom_dock_height);
-        let visible_lines = if self.line_height > 0 {
-            available_height / self.line_height
-        } else {
-            0
-        };
+        let visible_lines = available_height.checked_div(self.line_height).unwrap_or(0);
 
         // Update ALL editors, not just the focused one
         for editor in self.editor_area.editors.values_mut() {

@@ -727,11 +727,10 @@ impl EditorArea {
 
             // Subtract tab bar height because group rect includes the tab bar area,
             // but visible_lines should only count the text content area.
-            let visible_lines = if line_height > 0 {
-                (height as usize).saturating_sub(metrics.tab_bar_height) / line_height
-            } else {
-                0
-            };
+            let visible_lines = (height as usize)
+                .saturating_sub(metrics.tab_bar_height)
+                .checked_div(line_height)
+                .unwrap_or(0);
 
             let text_x = crate::model::text_start_x_scaled(char_width, metrics).round();
             let visible_columns = if char_width > 0.0 {

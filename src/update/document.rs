@@ -145,7 +145,7 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                     let selection = model.editor().selections[idx];
 
                     if do_surround && !selection.is_empty() {
-                        let close = close.unwrap();
+                        let Some(close) = close else { continue };
                         let sel_start = selection.start();
                         let sel_end = selection.end();
                         let start_offset = model
@@ -1364,16 +1364,14 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 }
             }
 
+            let mut cmd = redraw_with_syntax_parse(model);
             if !text_to_copy.is_empty() {
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    let _ = clipboard.set_text(&text_to_copy);
-                }
                 model
                     .ui
                     .set_status(format!("Copied {} chars", text_to_copy.len()));
+                cmd = Cmd::Batch(vec![cmd, Cmd::CopyToClipboard(text_to_copy)]);
             }
-
-            Some(redraw_with_syntax_parse(model))
+            Some(cmd)
         }
 
         DocumentMsg::Cut => {
@@ -1415,13 +1413,6 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                         .slice(start_offset..end_offset)
                         .chars()
                         .collect();
-                }
-            }
-
-            // Copy to clipboard
-            if !text_to_copy.is_empty() {
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    let _ = clipboard.set_text(&text_to_copy);
                 }
             }
 
@@ -1494,171 +1485,183 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
 
             model.ensure_cursor_visible();
             model.reset_cursor_blink();
-            Some(redraw_with_syntax_parse(model))
+
+            let mut cmd = redraw_with_syntax_parse(model);
+            if !text_to_copy.is_empty() {
+                cmd = Cmd::Batch(vec![cmd, Cmd::CopyToClipboard(text_to_copy)]);
+            }
+            Some(cmd)
         }
 
-        DocumentMsg::Paste => {
-            // Get text from clipboard
-            let clipboard_text = if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                clipboard.get_text().ok()
-            } else {
-                None
-            };
+        DocumentMsg::Paste => Some(Cmd::RequestClipboardPaste),
 
-            if let Some(text) = clipboard_text {
-                if text.is_empty() {
-                    return Some(redraw_with_syntax_parse(model));
-                }
+        DocumentMsg::PasteText(text) => {
+            if text.is_empty() {
+                return Some(redraw_with_syntax_parse(model));
+            }
 
-                let cursor_before = *model.editor().primary_cursor();
-                let paste_edit_line = cursor_before.line;
-                let old_line_count = model.document().line_count();
+            let cursor_before = *model.editor().primary_cursor();
+            let paste_edit_line = cursor_before.line;
+            let old_line_count = model.document().line_count();
 
-                if model.editor().has_multiple_cursors() {
-                    let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
-                    let mut operations = Vec::new();
+            if model.editor().has_multiple_cursors() {
+                let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
+                let mut operations = Vec::new();
 
-                    let lines: Vec<&str> = text.lines().collect();
-                    let cursor_count = model.editor().cursors.len();
+                let lines: Vec<&str> = text.lines().collect();
+                let cursor_count = model.editor().cursors.len();
 
-                    // If clipboard has same number of lines as cursors, distribute one per cursor
-                    if lines.len() == cursor_count {
-                        let indices = cursors_in_reverse_order(model);
-                        for (i, idx) in indices.iter().enumerate() {
-                            let line_to_paste = lines[cursor_count - 1 - i]; // Reverse order
-                            let cursor = model.editor().cursors[*idx];
-                            let pos = model
-                                .document()
-                                .cursor_to_offset(cursor.line, cursor.column);
-                            model.document_mut().buffer.insert(pos, line_to_paste);
+                // If clipboard has same number of lines as cursors, distribute one per cursor
+                if lines.len() == cursor_count {
+                    let indices = cursors_in_reverse_order(model);
+                    for (i, idx) in indices.iter().enumerate() {
+                        let line_to_paste = lines[cursor_count - 1 - i]; // Reverse order
+                        let cursor = model.editor().cursors[*idx];
+                        let pos = model
+                            .document()
+                            .cursor_to_offset(cursor.line, cursor.column);
+                        model.document_mut().buffer.insert(pos, line_to_paste);
 
-                            let char_count = line_to_paste.chars().count();
-                            model.editor_mut().cursors[*idx].column += char_count;
-                            let new_pos = model.editor().cursors[*idx].to_position();
-                            model.editor_mut().selections[*idx] = Selection::new(new_pos);
+                        let char_count = line_to_paste.chars().count();
+                        model.editor_mut().cursors[*idx].column += char_count;
+                        let new_pos = model.editor().cursors[*idx].to_position();
+                        model.editor_mut().selections[*idx] = Selection::new(new_pos);
 
-                            operations.push(EditOperation::Insert {
-                                position: pos,
-                                text: line_to_paste.to_string(),
-                                cursor_before: cursor,
-                                cursor_after: Cursor::at(
-                                    model.editor().cursors[*idx].line,
-                                    model.editor().cursors[*idx].column,
-                                ),
-                            });
-                        }
-                    } else {
-                        // Paste full text at each cursor
-                        let indices = cursors_in_reverse_order(model);
-                        let lines_added = text.chars().filter(|&c| c == '\n').count();
+                        operations.push(EditOperation::Insert {
+                            position: pos,
+                            text: line_to_paste.to_string(),
+                            cursor_before: cursor,
+                            cursor_after: Cursor::at(
+                                model.editor().cursors[*idx].line,
+                                model.editor().cursors[*idx].column,
+                            ),
+                        });
+                    }
+                } else {
+                    // Paste full text at each cursor
+                    let indices = cursors_in_reverse_order(model);
+                    let lines_added = text.chars().filter(|&c| c == '\n').count();
 
-                        for idx in indices {
-                            let cursor = model.editor().cursors[idx];
-                            let insert_line = cursor.line;
-                            let pos = model
-                                .document()
-                                .cursor_to_offset(cursor.line, cursor.column);
-                            model.document_mut().buffer.insert(pos, &text);
+                    for idx in indices {
+                        let cursor = model.editor().cursors[idx];
+                        let insert_line = cursor.line;
+                        let pos = model
+                            .document()
+                            .cursor_to_offset(cursor.line, cursor.column);
+                        model.document_mut().buffer.insert(pos, &text);
 
-                            // Update cursor position (move to end of pasted text)
-                            let new_offset = pos + text.chars().count();
-                            let (new_line, new_col) = model.document().offset_to_cursor(new_offset);
-                            model.editor_mut().cursors[idx].line = new_line;
-                            model.editor_mut().cursors[idx].column = new_col;
-                            let new_pos = model.editor().cursors[idx].to_position();
-                            model.editor_mut().selections[idx] = Selection::new(new_pos);
+                        // Update cursor position (move to end of pasted text)
+                        let new_offset = pos + text.chars().count();
+                        let (new_line, new_col) = model.document().offset_to_cursor(new_offset);
+                        model.editor_mut().cursors[idx].line = new_line;
+                        model.editor_mut().cursors[idx].column = new_col;
+                        let new_pos = model.editor().cursors[idx].to_position();
+                        model.editor_mut().selections[idx] = Selection::new(new_pos);
 
-                            operations.push(EditOperation::Insert {
-                                position: pos,
-                                text: text.clone(),
-                                cursor_before: cursor,
-                                cursor_after: Cursor::at(new_line, new_col),
-                            });
+                        operations.push(EditOperation::Insert {
+                            position: pos,
+                            text: text.clone(),
+                            cursor_before: cursor,
+                            cursor_after: Cursor::at(new_line, new_col),
+                        });
 
-                            // Adjust other cursors for lines added
-                            if lines_added > 0 {
-                                for other_idx in 0..model.editor().cursors.len() {
-                                    if other_idx != idx
-                                        && model.editor().cursors[other_idx].line > insert_line
+                        // Adjust other cursors for lines added
+                        if lines_added > 0 {
+                            for other_idx in 0..model.editor().cursors.len() {
+                                if other_idx != idx
+                                    && model.editor().cursors[other_idx].line > insert_line
+                                {
+                                    model.editor_mut().cursors[other_idx].line += lines_added;
+                                    if model.editor().selections[other_idx].anchor.line
+                                        > insert_line
                                     {
-                                        model.editor_mut().cursors[other_idx].line += lines_added;
-                                        if model.editor().selections[other_idx].anchor.line
-                                            > insert_line
-                                        {
-                                            model.editor_mut().selections[other_idx].anchor.line +=
-                                                lines_added;
-                                        }
-                                        if model.editor().selections[other_idx].head.line
-                                            > insert_line
-                                        {
-                                            model.editor_mut().selections[other_idx].head.line +=
-                                                lines_added;
-                                        }
+                                        model.editor_mut().selections[other_idx].anchor.line +=
+                                            lines_added;
+                                    }
+                                    if model.editor().selections[other_idx].head.line > insert_line
+                                    {
+                                        model.editor_mut().selections[other_idx].head.line +=
+                                            lines_added;
                                     }
                                 }
                             }
                         }
                     }
-
-                    // Record batch for proper multi-cursor undo
-                    if !operations.is_empty() {
-                        let cursors_after: Vec<Cursor> = model.editor().cursors.clone();
-                        model.document_mut().push_edit(EditOperation::Batch {
-                            operations,
-                            cursors_before,
-                            cursors_after,
-                        });
-                    }
-                } else {
-                    // Single cursor: use Replace if selection exists for atomic undo
-                    if !model.editor().primary_selection().is_empty() {
-                        let (pos, deleted_text) = delete_selection(model).unwrap();
-
-                        model.document_mut().buffer.insert(pos, &text);
-
-                        // Move cursor to end of pasted text
-                        let new_offset = pos + text.chars().count();
-                        model.set_cursor_from_position(new_offset);
-
-                        let cursor_after = *model.editor().primary_cursor();
-                        model.document_mut().push_edit(EditOperation::Replace {
-                            position: pos,
-                            deleted_text,
-                            inserted_text: text.clone(),
-                            cursor_before,
-                            cursor_after,
-                        });
-                    } else {
-                        let pos = model.cursor_buffer_position();
-
-                        model.document_mut().buffer.insert(pos, &text);
-
-                        // Move cursor to end of pasted text
-                        let new_offset = pos + text.chars().count();
-                        model.set_cursor_from_position(new_offset);
-
-                        let cursor_after = *model.editor().primary_cursor();
-                        model.document_mut().push_edit(EditOperation::Insert {
-                            position: pos,
-                            text: text.clone(),
-                            cursor_before,
-                            cursor_after,
-                        });
-                    }
                 }
 
-                model.document_mut().is_modified = true;
-                model.ui.set_status(format!("Pasted {} chars", text.len()));
-                model.ensure_cursor_visible();
-                model.reset_cursor_blink();
-                let new_line_count = model.document().line_count();
-                return Some(redraw_with_syntax_parse_shift(
-                    model,
-                    Some((paste_edit_line, old_line_count, new_line_count)),
-                ));
+                // Record batch for proper multi-cursor undo
+                if !operations.is_empty() {
+                    let cursors_after: Vec<Cursor> = model.editor().cursors.clone();
+                    model.document_mut().push_edit(EditOperation::Batch {
+                        operations,
+                        cursors_before,
+                        cursors_after,
+                    });
+                }
+            } else {
+                // Single cursor: use Replace if selection exists for atomic undo
+                if !model.editor().primary_selection().is_empty() {
+                    let Some((pos, deleted_text)) = delete_selection(model) else {
+                        let cursor_pos = model.cursor_buffer_position();
+                        model.document_mut().buffer.insert(cursor_pos, &text);
+                        let new_offset = cursor_pos + text.chars().count();
+                        model.set_cursor_from_position(new_offset);
+                        model.document_mut().is_modified = true;
+                        model.ui.set_status(format!("Pasted {} chars", text.len()));
+                        model.ensure_cursor_visible();
+                        model.reset_cursor_blink();
+                        return Some(redraw_with_syntax_parse_shift(
+                            model,
+                            Some((
+                                paste_edit_line,
+                                old_line_count,
+                                model.document().line_count(),
+                            )),
+                        ));
+                    };
+
+                    model.document_mut().buffer.insert(pos, &text);
+
+                    // Move cursor to end of pasted text
+                    let new_offset = pos + text.chars().count();
+                    model.set_cursor_from_position(new_offset);
+
+                    let cursor_after = *model.editor().primary_cursor();
+                    model.document_mut().push_edit(EditOperation::Replace {
+                        position: pos,
+                        deleted_text,
+                        inserted_text: text.clone(),
+                        cursor_before,
+                        cursor_after,
+                    });
+                } else {
+                    let pos = model.cursor_buffer_position();
+
+                    model.document_mut().buffer.insert(pos, &text);
+
+                    // Move cursor to end of pasted text
+                    let new_offset = pos + text.chars().count();
+                    model.set_cursor_from_position(new_offset);
+
+                    let cursor_after = *model.editor().primary_cursor();
+                    model.document_mut().push_edit(EditOperation::Insert {
+                        position: pos,
+                        text: text.clone(),
+                        cursor_before,
+                        cursor_after,
+                    });
+                }
             }
 
-            Some(redraw_with_syntax_parse(model))
+            model.document_mut().is_modified = true;
+            model.ui.set_status(format!("Pasted {} chars", text.len()));
+            model.ensure_cursor_visible();
+            model.reset_cursor_blink();
+            let new_line_count = model.document().line_count();
+            Some(redraw_with_syntax_parse_shift(
+                model,
+                Some((paste_edit_line, old_line_count, new_line_count)),
+            ))
         }
 
         DocumentMsg::Duplicate => {

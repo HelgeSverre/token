@@ -63,6 +63,7 @@ pub fn update_csv(model: &mut AppModel, msg: CsvMsg) -> Option<Cmd> {
         CsvMsg::EditCopy => edit_copy(model),
         CsvMsg::EditCut => edit_cut(model),
         CsvMsg::EditPaste => edit_paste(model),
+        CsvMsg::EditPasteText(text) => edit_paste_text(model, text),
     }
 }
 
@@ -721,15 +722,14 @@ fn edit_cursor_word_right_with_selection(model: &mut AppModel) -> Option<Cmd> {
 fn edit_copy(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
+        let mut cmd = Cmd::redraw_editor();
         if let Some(edit) = &mut csv.editing {
             let text = edit.selected_text();
             if !text.is_empty() {
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    let _ = clipboard.set_text(&text);
-                }
+                cmd = Cmd::Batch(vec![cmd, Cmd::CopyToClipboard(text)]);
             }
         }
-        Some(Cmd::redraw_editor())
+        Some(cmd)
     } else {
         None
     }
@@ -739,14 +739,48 @@ fn edit_copy(model: &mut AppModel) -> Option<Cmd> {
 fn edit_cut(model: &mut AppModel) -> Option<Cmd> {
     let editor = model.editor_area.focused_editor_mut()?;
     if let Some(csv) = editor.view_mode.as_csv_mut() {
+        let mut extra_cmds = Vec::new();
         if let Some(edit) = &mut csv.editing {
             let text = edit.selected_text();
             if !text.is_empty() {
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    let _ = clipboard.set_text(&text);
-                }
+                extra_cmds.push(Cmd::CopyToClipboard(text));
                 edit.delete_backward();
             }
+        }
+
+        // Update column width and scroll position
+        if let Some(edit) = &csv.editing {
+            let content_len = edit.buffer().chars().count();
+            update_column_width_for_edit(csv, content_len);
+        }
+        update_edit_scroll(model.char_width, csv);
+
+        let redraw = Cmd::redraw_editor();
+        if extra_cmds.is_empty() {
+            Some(redraw)
+        } else {
+            let mut batch = vec![redraw];
+            batch.extend(extra_cmds);
+            Some(Cmd::Batch(batch))
+        }
+    } else {
+        None
+    }
+}
+
+/// Paste from clipboard
+fn edit_paste(_model: &mut AppModel) -> Option<Cmd> {
+    Some(Cmd::RequestClipboardPaste)
+}
+
+/// Paste given text into the cell
+pub(crate) fn edit_paste_text(model: &mut AppModel, text: String) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor_mut()?;
+    if let Some(csv) = editor.view_mode.as_csv_mut() {
+        if let Some(edit) = &mut csv.editing {
+            // Filter out newlines for single-line cell editing
+            let filtered: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+            edit.insert_text(&filtered);
         }
 
         // Update column width and scroll position
@@ -760,36 +794,6 @@ fn edit_cut(model: &mut AppModel) -> Option<Cmd> {
     } else {
         None
     }
-}
-
-/// Paste from clipboard
-fn edit_paste(model: &mut AppModel) -> Option<Cmd> {
-    let clipboard_text = if let Ok(mut clipboard) = arboard::Clipboard::new() {
-        clipboard.get_text().ok()
-    } else {
-        None
-    };
-
-    if let Some(text) = clipboard_text {
-        let editor = model.editor_area.focused_editor_mut()?;
-        if let Some(csv) = editor.view_mode.as_csv_mut() {
-            if let Some(edit) = &mut csv.editing {
-                // Filter out newlines for single-line cell editing
-                let filtered: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
-                edit.insert_text(&filtered);
-            }
-
-            // Update column width and scroll position
-            if let Some(edit) = &csv.editing {
-                let content_len = edit.buffer().chars().count();
-                update_column_width_for_edit(csv, content_len);
-            }
-            update_edit_scroll(model.char_width, csv);
-
-            return Some(Cmd::redraw_editor());
-        }
-    }
-    None
 }
 
 // === Document Sync ===

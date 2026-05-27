@@ -1,0 +1,67 @@
+{
+  "name": "tree-sitter-blade",
+  "version": "0.12.2",
+  "homepage": "https://github.com/EmranMR/tree-sitter-blade",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EmranMR/tree-sitter-blade"
+  },
+  "bugs": "https://github.com/EmranMR/tree-sitter-blade/issues",
+  "funding": "https://github.com/sponsors/EmranMR",
+  "license": "MIT",
+  "description": "tree-sitter-blade grammar for Laravel Blade files",
+  "author": {
+    "name": "Emran Mashhadi Ramezan",
+    "email": "2t5ukanu@duck.com"
+  },
+  "contributors": [
+    {
+      "name": "Caleb White",
+      "email": "cdwhite3@pm.me"
+    }
+  ],
+  "main": "bindings/node/index.cjs",
+  "types": "bindings/node/index.d.ts",
+  "keywords": [
+    "tree-sitter-blade",
+    "blade",
+    "tree-sitter",
+    "laravel"
+  ],
+  "files": [
+    "binding.gyp",
+    "prebuilds/**",
+    "bindings/node/*",
+    "queries/*",
+    "grammar.js",
+    "tree-sitter.json",
+    "src/**",
+    "*.wasm"
+  ],
+  "dependencies": {
+    "node-addon-api": "^8.4.0",
+    "node-gyp-build": "^4.8.4"
+  },
+  "peerDependencies": {
+    "tree-sitter": "^0.22.4"
+  },
+  "peerDependenciesMeta": {
+    "tree-sitter": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.32",
+    "prebuildify": "^6.0.1",
+    "tree-sitter-cli": "^0.25.6"
+  },
+  "scripts": {
+    "install": "node-gyp-build",
+    "build": " tree-sitter generate",
+    "prestart": "tree-sitter build --wasm",
+    "start": "tree-sitter playground -q",
+    "test": "node --test bindings/node/*_test.cjs",
+    "bundle": "deno -A ./main/bundle.ts"
+  }
+}

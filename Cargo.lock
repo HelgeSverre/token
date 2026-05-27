@@ -4335,7 +4335,6 @@ dependencies = [
 [[package]]
 name = "tree-sitter-blade"
 version = "0.12.0"
-source = "git+https://github.com/EmranMR/tree-sitter-blade?tag=v0.12.3#cc764dadcbbceb3f259396fef66f970c72e94f96"
 dependencies = [
  "cc",
  "tree-sitter-language",

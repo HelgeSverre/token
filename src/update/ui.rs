@@ -601,6 +601,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::Copy => {
+            let mut cmd = Cmd::Redraw;
             if let Some(ref mut modal) = model.ui.active_modal {
                 let text = match modal {
                     ModalState::CommandPalette(state) => state.editable.selected_text(),
@@ -611,15 +612,14 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     ModalState::RecentFiles(state) => state.editable.selected_text(),
                 };
                 if !text.is_empty() {
-                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                        let _ = clipboard.set_text(&text);
-                    }
+                    cmd = Cmd::Batch(vec![cmd, Cmd::CopyToClipboard(text)]);
                 }
             }
-            Some(Cmd::Redraw)
+            Some(cmd)
         }
 
         ModalMsg::Cut => {
+            let mut cmd = Cmd::Redraw;
             if let Some(ref mut modal) = model.ui.active_modal {
                 let text = match modal {
                     ModalState::CommandPalette(state) => {
@@ -664,49 +664,41 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     }
                 };
                 if !text.is_empty() {
-                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                        let _ = clipboard.set_text(&text);
-                    }
+                    cmd = Cmd::Batch(vec![cmd, Cmd::CopyToClipboard(text)]);
                 }
             }
-            Some(Cmd::Redraw)
+            Some(cmd)
         }
 
-        ModalMsg::Paste => {
-            let clipboard_text = if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                clipboard.get_text().ok()
-            } else {
-                None
-            };
+        ModalMsg::Paste => Some(Cmd::RequestClipboardPaste),
 
-            if let Some(text) = clipboard_text {
-                // Filter out newlines for single-line modal inputs
-                let filtered: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
-                if !filtered.is_empty() {
-                    if let Some(ref mut modal) = model.ui.active_modal {
-                        match modal {
-                            ModalState::CommandPalette(state) => {
-                                state.editable.insert_text(&filtered);
-                                state.selected_index = 0;
-                            }
-                            ModalState::GotoLine(state) => {
-                                // Filter to only digits for goto line
-                                let digits: String =
-                                    filtered.chars().filter(|c| c.is_ascii_digit()).collect();
-                                state.editable.insert_text(&digits);
-                            }
-                            ModalState::FindReplace(state) => {
-                                state.focused_editable_mut().insert_text(&filtered);
-                            }
-                            ModalState::FileFinder(state) => {
-                                state.editable.insert_text(&filtered);
-                                update_file_finder_results(state);
-                            }
-                            ModalState::ThemePicker(_) => {}
-                            ModalState::RecentFiles(state) => {
-                                state.editable.insert_text(&filtered);
-                                state.selected_index = 0;
-                            }
+        ModalMsg::PasteText(text) => {
+            // Filter out newlines for single-line modal inputs
+            let filtered: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+            if !filtered.is_empty() {
+                if let Some(ref mut modal) = model.ui.active_modal {
+                    match modal {
+                        ModalState::CommandPalette(state) => {
+                            state.editable.insert_text(&filtered);
+                            state.selected_index = 0;
+                        }
+                        ModalState::GotoLine(state) => {
+                            // Filter to only digits for goto line
+                            let digits: String =
+                                filtered.chars().filter(|c| c.is_ascii_digit()).collect();
+                            state.editable.insert_text(&digits);
+                        }
+                        ModalState::FindReplace(state) => {
+                            state.focused_editable_mut().insert_text(&filtered);
+                        }
+                        ModalState::FileFinder(state) => {
+                            state.editable.insert_text(&filtered);
+                            update_file_finder_results(state);
+                        }
+                        ModalState::ThemePicker(_) => {}
+                        ModalState::RecentFiles(state) => {
+                            state.editable.insert_text(&filtered);
+                            state.selected_index = 0;
                         }
                     }
                 }
@@ -1289,7 +1281,7 @@ fn fuzzy_match_files(
         .collect();
 
     // Sort by score descending
-    results.sort_by(|a, b| b.score.cmp(&a.score));
+    results.sort_by_key(|a| std::cmp::Reverse(a.score));
 
     // Limit results
     results.truncate(50);

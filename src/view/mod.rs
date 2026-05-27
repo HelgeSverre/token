@@ -1586,11 +1586,10 @@ impl Renderer {
             let new_size = (self.width as usize) * (self.height as usize);
             self.back_buffer.resize(new_size, 0);
 
+            let width = NonZeroU32::new(self.width.max(1)).unwrap();
+            let height = NonZeroU32::new(self.height.max(1)).unwrap();
             self.surface
-                .resize(
-                    NonZeroU32::new(self.width).unwrap(),
-                    NonZeroU32::new(self.height).unwrap(),
-                )
+                .resize(width, height)
                 .map_err(|e| anyhow::anyhow!("Failed to resize surface: {}", e))?;
         }
 

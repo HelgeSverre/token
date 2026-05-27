@@ -354,11 +354,32 @@ mod tests {
     }
 
     // ========================================================================
-    // Integration tests (marked ignore for CI stability)
+    // Integration tests
     // ========================================================================
 
+    /// Poll for events with a timeout, returning as soon as events are available.
+    fn poll_events_with_timeout(
+        watcher: &FileSystemWatcher,
+        timeout: Duration,
+    ) -> Vec<FileSystemEvent> {
+        let start = std::time::Instant::now();
+        loop {
+            let events = watcher.poll_events();
+            if !events.is_empty() {
+                return events;
+            }
+            if start.elapsed() >= timeout {
+                return events;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+
     #[test]
-    #[ignore] // Flaky in CI - file system event timing varies by platform
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "FSEvents on macOS requires a CFRunLoop, which is unavailable in test threads"
+    )]
     fn test_watcher_detects_file_creation() {
         let dir = tempdir().expect("Failed to create temp dir");
         let watcher =
@@ -368,15 +389,15 @@ mod tests {
         let file_path = dir.path().join("test.txt");
         fs::write(&file_path, "hello").expect("Failed to write file");
 
-        // Wait for debounce (500ms) plus margin
-        thread::sleep(Duration::from_millis(1000));
-
-        let events = watcher.poll_events();
+        let events = poll_events_with_timeout(&watcher, Duration::from_millis(3000));
         assert!(!events.is_empty(), "Should detect file creation");
     }
 
     #[test]
-    #[ignore] // Flaky in CI - file system event timing varies by platform
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "FSEvents on macOS requires a CFRunLoop, which is unavailable in test threads"
+    )]
     fn test_watcher_detects_file_modification() {
         let dir = tempdir().expect("Failed to create temp dir");
 
@@ -391,15 +412,15 @@ mod tests {
         // Modify the file
         fs::write(&file_path, "modified content").expect("Failed to modify file");
 
-        // Wait for debounce
-        thread::sleep(Duration::from_millis(1000));
-
-        let events = watcher.poll_events();
+        let events = poll_events_with_timeout(&watcher, Duration::from_millis(3000));
         assert!(!events.is_empty(), "Should detect file modification");
     }
 
     #[test]
-    #[ignore] // Flaky in CI - file system event timing varies by platform
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "FSEvents on macOS requires a CFRunLoop, which is unavailable in test threads"
+    )]
     fn test_watcher_ignores_target_directory() {
         let dir = tempdir().expect("Failed to create temp dir");
         let watcher =
@@ -410,10 +431,7 @@ mod tests {
         fs::create_dir(&target_dir).expect("Failed to create target dir");
         fs::write(target_dir.join("output.bin"), "binary").expect("Failed to write");
 
-        // Wait for debounce
-        thread::sleep(Duration::from_millis(1000));
-
-        let events = watcher.poll_events();
+        let events = poll_events_with_timeout(&watcher, Duration::from_millis(3000));
         // Events should be empty or not contain target paths
         for event in &events {
             match event {
@@ -431,7 +449,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Flaky in CI - file system event timing varies by platform
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "FSEvents on macOS requires a CFRunLoop, which is unavailable in test threads"
+    )]
     fn test_watcher_deduplicates_events() {
         let dir = tempdir().expect("Failed to create temp dir");
         let watcher =
@@ -444,10 +465,7 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
 
-        // Wait for debounce
-        thread::sleep(Duration::from_millis(1000));
-
-        let events = watcher.poll_events();
+        let events = poll_events_with_timeout(&watcher, Duration::from_millis(3000));
 
         // Count events for the same path - should be deduplicated
         let rapid_events: Vec<_> = events

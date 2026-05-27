@@ -80,6 +80,8 @@ pub struct App {
     click_tracker: ClickTracker,
     /// Syntax highlight debounce deadlines: document_id → (deadline, revision)
     syntax_deadlines: HashMap<token::model::editor_area::DocumentId, (Instant, u64)>,
+    /// File paths queued for background loading after startup
+    pending_file_loads: Vec<std::path::PathBuf>,
 }
 
 impl App {
@@ -95,9 +97,17 @@ impl App {
         }
 
         // Extract file paths and workspace from config
-        let file_paths = startup_config.file_paths();
+        let mut file_paths = startup_config.file_paths();
         let workspace_root = startup_config.workspace_root().cloned();
         let initial_position = startup_config.initial_position;
+
+        // Load the first file synchronously (needed for immediate editing).
+        // Defer additional files to background loads so startup isn't blocked.
+        let pending_file_loads = if file_paths.len() > 1 {
+            file_paths.split_off(1)
+        } else {
+            Vec::new()
+        };
 
         let mut model = AppModel::new(window_width, window_height, 1.0, file_paths);
 
@@ -158,6 +168,7 @@ impl App {
             webview_manager: WebviewManager::new(),
             click_tracker: ClickTracker::default(),
             syntax_deadlines: HashMap::new(),
+            pending_file_loads,
         };
 
         // Trigger initial syntax parsing for all loaded documents
@@ -180,14 +191,17 @@ impl App {
 
         // Send parse requests for each document
         for (doc_id, revision, source, language) in docs_to_parse {
-            let _ = self
+            if let Err(e) = self
                 .syntax_tx
                 .send(SyntaxWorkerRequest::Parse(SyntaxParseRequest {
                     document_id: doc_id,
                     revision,
                     source,
                     language,
-                }));
+                }))
+            {
+                tracing::warn!("Failed to send initial syntax parse request: {}", e);
+            }
         }
     }
 
@@ -757,7 +771,7 @@ impl App {
         struct PreviewUpdate {
             preview_id: PreviewId,
             rect: token::model::editor_area::Rect,
-            content: PreviewContent,
+            content: Option<PreviewContent>,
             doc_revision: u64,
             needs_content_update: bool,
             needs_create: bool,
@@ -770,32 +784,37 @@ impl App {
             .iter()
             .filter_map(|(&preview_id, preview)| {
                 let document = self.model.editor_area.documents.get(&preview.document_id)?;
-                let buffer_content = document.buffer.to_string();
-                let html = content_to_preview_html(&buffer_content, document.language, &theme)?;
+                let needs_create = !self.webview_manager.has_webview(preview_id);
+                let needs_content_update = preview.needs_refresh(document.revision);
 
-                // For HTML files with a file path, enable local resource loading
-                let content = if document.language == LanguageId::Html {
-                    if let Some(file_path) = &document.file_path {
-                        if let Some(base_dir) = file_path.parent() {
-                            PreviewContent::HtmlFile {
-                                html,
-                                base_dir: base_dir.to_path_buf(),
+                let webview_rect =
+                    PreviewPaneLayout::new(preview.rect, metrics).hosted_content_rect();
+
+                // Only generate HTML when creating or updating content
+                let content = if needs_create || needs_content_update {
+                    let buffer_content = document.buffer.to_string();
+                    let html = content_to_preview_html(&buffer_content, document.language, &theme)?;
+
+                    // For HTML files with a file path, enable local resource loading
+                    Some(if document.language == LanguageId::Html {
+                        if let Some(file_path) = &document.file_path {
+                            if let Some(base_dir) = file_path.parent() {
+                                PreviewContent::HtmlFile {
+                                    html,
+                                    base_dir: base_dir.to_path_buf(),
+                                }
+                            } else {
+                                PreviewContent::Html(html)
                             }
                         } else {
                             PreviewContent::Html(html)
                         }
                     } else {
                         PreviewContent::Html(html)
-                    }
+                    })
                 } else {
-                    PreviewContent::Html(html)
+                    None
                 };
-
-                let needs_create = !self.webview_manager.has_webview(preview_id);
-                let needs_content_update = preview.needs_refresh(document.revision);
-
-                let webview_rect =
-                    PreviewPaneLayout::new(preview.rect, metrics).hosted_content_rect();
 
                 Some(PreviewUpdate {
                     preview_id,
@@ -824,14 +843,16 @@ impl App {
 
             if update.needs_create {
                 // Create new webview
-                if let Err(e) = self.webview_manager.create_webview(
-                    update.preview_id,
-                    window,
-                    update.rect,
-                    update.content,
-                ) {
-                    tracing::error!("Failed to create webview for preview: {}", e);
-                    continue;
+                if let Some(content) = update.content {
+                    if let Err(e) = self.webview_manager.create_webview(
+                        update.preview_id,
+                        window,
+                        update.rect,
+                        content,
+                    ) {
+                        tracing::error!("Failed to create webview for preview: {}", e);
+                        continue;
+                    }
                 }
                 // Update last_revision after successful creation
                 if let Some(preview) = self.model.editor_area.preview_mut(update.preview_id) {
@@ -849,8 +870,10 @@ impl App {
 
                 // Update content if revision changed
                 if update.needs_content_update {
-                    self.webview_manager
-                        .update_content(update.preview_id, update.content);
+                    if let Some(content) = update.content {
+                        self.webview_manager
+                            .update_content(update.preview_id, content);
+                    }
                     // Update last_revision after content update
                     if let Some(preview) = self.model.editor_area.preview_mut(update.preview_id) {
                         preview.last_revision = update.doc_revision;
@@ -879,57 +902,124 @@ impl App {
                 let tx = self.msg_tx.clone();
                 std::thread::spawn(move || {
                     let result = std::fs::write(&path, content).map_err(|e| e.to_string());
-                    let _ = tx.send(Msg::App(AppMsg::SaveCompleted(result)));
+                    if let Err(e) = tx.send(Msg::App(AppMsg::SaveCompleted(result))) {
+                        tracing::warn!("Failed to send save completion to main thread: {}", e);
+                    }
                 });
             }
             Cmd::LoadFile { path } => {
                 let tx = self.msg_tx.clone();
                 std::thread::spawn(move || {
                     let result = std::fs::read_to_string(&path).map_err(|e| e.to_string());
-                    let _ = tx.send(Msg::App(AppMsg::FileLoaded { path, result }));
+                    if let Err(e) = tx.send(Msg::App(AppMsg::FileLoaded { path, result })) {
+                        tracing::warn!("Failed to send file load result to main thread: {}", e);
+                    }
                 });
             }
             Cmd::OpenInExplorer { path } => {
                 #[cfg(target_os = "macos")]
                 {
-                    let _ = std::process::Command::new("open").arg(&path).spawn();
+                    if let Err(e) = std::process::Command::new("open").arg(&path).spawn() {
+                        tracing::warn!("Failed to open file in default app: {}", e);
+                    }
                 }
                 #[cfg(target_os = "windows")]
                 {
-                    let _ = std::process::Command::new("explorer").arg(&path).spawn();
+                    if let Err(e) = std::process::Command::new("explorer").arg(&path).spawn() {
+                        tracing::warn!("Failed to open file in explorer: {}", e);
+                    }
                 }
                 #[cfg(target_os = "linux")]
                 {
-                    let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
+                    if let Err(e) = std::process::Command::new("xdg-open").arg(&path).spawn() {
+                        tracing::warn!("Failed to open file with xdg-open: {}", e);
+                    }
                 }
             }
             Cmd::RevealFileInFinder { path } => {
                 #[cfg(target_os = "macos")]
                 {
-                    let _ = std::process::Command::new("open")
+                    if let Err(e) = std::process::Command::new("open")
                         .arg("-R")
                         .arg(&path)
-                        .spawn();
+                        .spawn()
+                    {
+                        tracing::warn!("Failed to reveal file in Finder: {}", e);
+                    }
                 }
                 #[cfg(target_os = "linux")]
                 {
                     if let Some(parent) = path.parent() {
-                        let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+                        if let Err(e) = std::process::Command::new("xdg-open").arg(parent).spawn() {
+                            tracing::warn!("Failed to reveal file in file manager: {}", e);
+                        }
                     }
                 }
                 #[cfg(target_os = "windows")]
                 {
-                    let _ = std::process::Command::new("explorer")
+                    if let Err(e) = std::process::Command::new("explorer")
                         .arg("/select,")
                         .arg(&path)
-                        .spawn();
+                        .spawn()
+                    {
+                        tracing::warn!("Failed to reveal file in Explorer: {}", e);
+                    }
                 }
             }
             Cmd::OpenFileInEditor { path } => {
                 let tx = self.msg_tx.clone();
                 std::thread::spawn(move || {
                     let result = std::fs::read_to_string(&path).map_err(|e| e.to_string());
-                    let _ = tx.send(Msg::App(AppMsg::FileLoaded { path, result }));
+                    if let Err(e) = tx.send(Msg::App(AppMsg::FileLoaded { path, result })) {
+                        tracing::warn!("Failed to send file load result to main thread: {}", e);
+                    }
+                });
+            }
+            Cmd::SaveRecentFiles { recent } => {
+                std::thread::spawn(move || {
+                    if let Err(e) = recent.save() {
+                        tracing::warn!("Failed to save recent files: {}", e);
+                    }
+                });
+            }
+            Cmd::CopyToClipboard(text) => {
+                std::thread::spawn(move || {
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        if let Err(e) = clipboard.set_text(&text) {
+                            tracing::warn!("Failed to copy to clipboard: {}", e);
+                        }
+                    } else {
+                        tracing::warn!("Failed to initialize clipboard");
+                    }
+                });
+            }
+            Cmd::RequestClipboardPaste => {
+                let tx = self.msg_tx.clone();
+                std::thread::spawn(move || {
+                    let clipboard_text = if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        clipboard.get_text().unwrap_or_default()
+                    } else {
+                        tracing::warn!("Failed to open clipboard for pasting");
+                        String::new()
+                    };
+                    if let Err(e) = tx.send(Msg::App(AppMsg::PasteFromClipboard(clipboard_text))) {
+                        tracing::warn!(
+                            "Failed to send clipboard paste message to main thread: {}",
+                            e
+                        );
+                    }
+                });
+            }
+            Cmd::CreateDefaultKeymapFile { path } => {
+                let tx = self.msg_tx.clone();
+                std::thread::spawn(move || {
+                    let result = token::update::create_default_keymap_file(&path);
+                    if let Err(e) = tx.send(Msg::App(AppMsg::KeymapCreated { path, result })) {
+                        tracing::warn!(
+                            "Failed to send keymap created message to main thread: {}",
+                            e
+                        );
+                    }
                 });
             }
             Cmd::Batch(cmds) => {
@@ -958,7 +1048,12 @@ impl App {
                         dlg.pick_file().into_iter().collect()
                     };
 
-                    let _ = tx.send(Msg::App(AppMsg::OpenFileDialogResult { paths }));
+                    if let Err(e) = tx.send(Msg::App(AppMsg::OpenFileDialogResult { paths })) {
+                        tracing::warn!(
+                            "Failed to send open file dialog result to main thread: {}",
+                            e
+                        );
+                    }
                 });
             }
 
@@ -976,7 +1071,12 @@ impl App {
                     }
 
                     let path = dlg.save_file();
-                    let _ = tx.send(Msg::App(AppMsg::SaveFileAsDialogResult { path }));
+                    if let Err(e) = tx.send(Msg::App(AppMsg::SaveFileAsDialogResult { path })) {
+                        tracing::warn!(
+                            "Failed to send save file dialog result to main thread: {}",
+                            e
+                        );
+                    }
                 });
             }
 
@@ -989,7 +1089,12 @@ impl App {
                     }
 
                     let folder = dlg.pick_folder();
-                    let _ = tx.send(Msg::App(AppMsg::OpenFolderDialogResult { folder }));
+                    if let Err(e) = tx.send(Msg::App(AppMsg::OpenFolderDialogResult { folder })) {
+                        tracing::warn!(
+                            "Failed to send open folder dialog result to main thread: {}",
+                            e
+                        );
+                    }
                 });
             }
 
@@ -1030,20 +1135,25 @@ impl App {
                     source.len()
                 );
                 let syntax_tx = self.syntax_tx.clone();
-                let _ = syntax_tx.send(SyntaxWorkerRequest::Parse(SyntaxParseRequest {
+                if let Err(e) = syntax_tx.send(SyntaxWorkerRequest::Parse(SyntaxParseRequest {
                     document_id,
                     revision,
                     source,
                     language,
-                }));
+                })) {
+                    tracing::warn!("Failed to send syntax parse request: {}", e);
+                }
             }
 
             Cmd::ClearSyntaxState { document_id } => {
                 tracing::debug!("ClearSyntaxState: doc={}", document_id.0);
                 self.syntax_deadlines.remove(&document_id);
-                let _ = self
+                if let Err(e) = self
                     .syntax_tx
-                    .send(SyntaxWorkerRequest::ClearDocument(document_id));
+                    .send(SyntaxWorkerRequest::ClearDocument(document_id))
+                {
+                    tracing::warn!("Failed to send syntax clear request: {}", e);
+                }
             }
 
             // =====================================================================
@@ -1100,12 +1210,37 @@ impl ApplicationHandler for App {
                 .with_window_icon(create_window_icon())
                 .with_inner_size(LogicalSize::new(800, 600)); // TODO: Persist window size/position/monitor on exit/boot
 
-            let window = Rc::new(event_loop.create_window(window_attributes).unwrap());
-            let context = Context::new(Rc::clone(&window)).unwrap();
+            let window = match event_loop.create_window(window_attributes) {
+                Ok(w) => Rc::new(w),
+                Err(e) => {
+                    tracing::error!("Failed to create window: {}", e);
+                    event_loop.exit();
+                    return;
+                }
+            };
 
-            self.init_renderer(Rc::clone(&window), &context).unwrap();
+            let context = match Context::new(Rc::clone(&window)) {
+                Ok(ctx) => ctx,
+                Err(e) => {
+                    tracing::error!("Failed to create rendering context: {}", e);
+                    event_loop.exit();
+                    return;
+                }
+            };
+
+            if let Err(e) = self.init_renderer(Rc::clone(&window), &context) {
+                tracing::error!("Failed to initialize renderer: {}", e);
+                event_loop.exit();
+                return;
+            }
+
             self.window = Some(window);
             self.context = Some(context);
+
+            // Dispatch background loads for any additional startup files
+            for path in std::mem::take(&mut self.pending_file_loads) {
+                self.process_cmd(Cmd::OpenFileInEditor { path });
+            }
         }
     }
 
@@ -1337,12 +1472,14 @@ fn syntax_worker_loop(rx: Receiver<SyntaxWorkerRequest>, msg_tx: Sender<Msg>) {
                 outline.as_ref().map(|o| o.roots.len()).unwrap_or(0)
             );
 
-            let _ = msg_tx.send(Msg::Syntax(SyntaxMsg::ParseCompleted {
+            if let Err(e) = msg_tx.send(Msg::Syntax(SyntaxMsg::ParseCompleted {
                 document_id: req.document_id,
                 revision: req.revision,
                 highlights,
                 outline,
-            }));
+            })) {
+                tracing::warn!("Failed to send parse completion to main thread: {}", e);
+            }
         }
     }
 }

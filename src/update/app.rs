@@ -89,6 +89,16 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             Some(Cmd::redraw_status_bar())
         }
 
+        AppMsg::KeymapCreated { path, result } => match result {
+            Ok(_) => Some(Cmd::OpenFileInEditor { path }),
+            Err(e) => {
+                model
+                    .ui
+                    .set_status(format!("Failed to create keymap: {}", e));
+                Some(Cmd::redraw_status_bar())
+            }
+        },
+
         AppMsg::FileLoaded { path, result } => {
             model.ui.is_loading = false;
             match result {
@@ -123,10 +133,18 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                                     revision,
                                     delay_ms: SYNTAX_DEBOUNCE_MS,
                                 },
+                                Cmd::SaveRecentFiles {
+                                    recent: model.recent_files.clone(),
+                                },
                             ]));
                         }
                     }
-                    Some(Cmd::redraw_editor())
+                    Some(Cmd::Batch(vec![
+                        Cmd::redraw_editor(),
+                        Cmd::SaveRecentFiles {
+                            recent: model.recent_files.clone(),
+                        },
+                    ]))
                 }
                 Err(e) => {
                     model.ui.set_status(format!("Error: {}", e));
@@ -227,6 +245,25 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             }
             Some(Cmd::redraw_status_bar())
         }
+
+        AppMsg::PasteFromClipboard(text) => {
+            if model.ui.active_modal.is_some() {
+                return super::ui::update_ui(
+                    model,
+                    crate::messages::UiMsg::Modal(crate::messages::ModalMsg::PasteText(text)),
+                );
+            }
+
+            let csv_info = model
+                .editor_area
+                .focused_editor()
+                .and_then(|e| e.view_mode.as_csv().map(|csv| (true, csv.is_editing())));
+            if let Some((true, true)) = csv_info {
+                return super::csv::update_csv(model, crate::messages::CsvMsg::EditPasteText(text));
+            }
+
+            super::document::update_document(model, crate::messages::DocumentMsg::PasteText(text))
+        }
     }
 }
 
@@ -276,14 +313,10 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             if let Some(keymap_path) = config_paths::keymap_file() {
                 config_paths::ensure_all_config_dirs();
                 if !keymap_path.exists() {
-                    if let Err(e) = create_default_keymap_file(&keymap_path) {
-                        model
-                            .ui
-                            .set_status(format!("Failed to create keymap: {}", e));
-                        return Some(Cmd::Redraw);
-                    }
+                    Some(Cmd::CreateDefaultKeymapFile { path: keymap_path })
+                } else {
+                    Some(Cmd::OpenFileInEditor { path: keymap_path })
                 }
-                Some(Cmd::OpenFileInEditor { path: keymap_path })
             } else {
                 model.ui.set_status("Could not determine keymap path");
                 Some(Cmd::Redraw)
@@ -333,7 +366,9 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             if let Some(path) = model.document().file_path.clone() {
                 let text = path.display().to_string();
                 if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    let _ = clipboard.set_text(&text);
+                    if let Err(e) = clipboard.set_text(&text) {
+                        tracing::warn!("Failed to copy text to clipboard: {}", e);
+                    }
                     model.ui.set_status(format!("Copied: {}", text));
                 } else {
                     model.ui.set_status("Failed to access clipboard");
@@ -354,7 +389,9 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
                     path.display().to_string()
                 };
                 if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    let _ = clipboard.set_text(&text);
+                    if let Err(e) = clipboard.set_text(&text) {
+                        tracing::warn!("Failed to copy text to clipboard: {}", e);
+                    }
                     model.ui.set_status(format!("Copied: {}", text));
                 } else {
                     model.ui.set_status("Failed to access clipboard");
@@ -379,7 +416,7 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
     }
 }
 
-fn create_default_keymap_file(path: &std::path::Path) -> Result<(), String> {
+pub fn create_default_keymap_file(path: &std::path::Path) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create directory: {}", e))?;
