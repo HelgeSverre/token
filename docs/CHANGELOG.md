@@ -7,6 +7,11 @@ All notable changes to rust-editor are documented in this file.
 ## Unreleased
 
 ### Added
+
+- Pure Elm Boundaries: Shifted side-effect layers (like thread spawning, clipboard integrations, and filesystem writes) out of `AppModel` mutations and pure `update` handlers into non-blocking, asynchronous command (`Cmd`) definitions and completion messages (`Msg`).
+- Asynchronous Clipboard integrations: Implemented asynchronous clipboard copy/cut operations (`Cmd::CopyToClipboard`) and non-blocking clipboard paste requests (`Cmd::RequestClipboardPaste`) running in background runtime workers.
+- Centralized Clipboard routing: Main runner processes clipboard paste asynchronously and contextually dispatches `AppMsg::PasteFromClipboard` to either active Modal inputs, CSV cell editing buffers, or active text documents.
+- Async config operations: Shifted keymap configuration creation (`Cmd::CreateDefaultKeymapFile`) to background threads, returning `AppMsg::KeymapCreated` on completion to cleanly load keybindings.
 - Profiling: Chrome trace export via `make profile-chrome` — all 28 render stages emit named `tracing` spans (`frame`, `render_stage`) visible in Perfetto UI. Feature-gated (`profile-chrome` / `profile-tracing`) with zero overhead when disabled.
 - CLI: `--version` now shows git commit info (e.g. `token 0.3.19-48-g33d40cd`) for easier build traceability.
 - Image Viewer: Open image files (PNG, JPG, GIF, BMP, WebP, ICO) inline in editor tabs with aspect-ratio-preserving scaling and checkerboard transparency background.
@@ -16,10 +21,14 @@ All notable changes to rust-editor are documented in this file.
 - Themes: `button` section with 6 color properties (background, background_hover, background_pressed, foreground, border, focus_ring) for UI button styling.
 
 ### Improved
+
+- Pure, thread-free state transitions: Refactored `AppModel::record_file_opened` to be a pure, thread-free state mutation, deferring disk writes to `Cmd::SaveRecentFiles`.
+- Compiler Lints: Resolved 10 pre-existing compiler warnings and Clippy lints (including unnecessary sorting, manual checked divisions, and loop counters) to ensure a warning-free compilation.
 - Rendering: Frame clipping system — sidebar and other panels no longer render outside their bounds. TextPainter pixel writes are routed through the Frame clip rectangle.
 - Syntax: Hierarchical highlight name resolution now walks the full capture name chain (e.g. `keyword.control.import` → `keyword.control` → `keyword`) instead of only trying one parent level.
 
 ### Fixed
+
 - Sidebar text no longer overflows into the editor area on long filenames.
 
 ---
@@ -27,6 +36,7 @@ All notable changes to rust-editor are documented in this file.
 ## v0.3.19 - 2026-02-19
 
 ### Added
+
 - Code Outline: Tree-sitter based symbol extraction panel in the right dock. Supports 10 languages (Rust, TypeScript, JavaScript, Python, Go, Java, PHP, C/C++, Markdown, YAML). Collapsible tree with click-to-select, double-click-to-jump, and scroll support.
 - Code Outline: Dock panel hit-testing fix — clicks on dock panels no longer fall through to the editor.
 - Code Outline: Added HTML outline support — shows structural/semantic elements (`html`, `body`, `nav`, `section`, `div`, `form`, `table`, etc.) with enriched labels (e.g. `div#app`, `section.hero`).
@@ -34,9 +44,11 @@ All notable changes to rust-editor are documented in this file.
 - Syntax: Added Laravel Blade (`.blade.php`) language support with syntax highlighting for directives, comments, echo delimiters, components, and HTML structure. Uses [tree-sitter-blade](https://github.com/EmranMR/tree-sitter-blade) by [Emran MR](https://github.com/EmranMR).
 
 ### Improved
+
 - Code Outline: Jumping to a symbol (double-click or Enter) now centers the target line in the viewport instead of minimal scrolling, for better orientation.
 
 ### Fixed
+
 - Icons: Fixed all Nerd Font file type icons (were empty strings — PUA codepoints lost during copy/paste). Now using explicit Unicode escapes with codepoints from nvim-web-devicons. Also fixed folder/folder_open icons and improved Markdown/YAML icon variants.
 
 ---
@@ -44,6 +56,7 @@ All notable changes to rust-editor are documented in this file.
 ## v0.3.18 - 2026-02-19
 
 ### Added
+
 - Recent Files: Persistent recent files list (Cmd+E) — tracks files opened via any method (CLI, file dialog, quick open, drag-and-drop) and persists to `~/.config/token-editor/recent.json`. MRU-ordered list of up to 50 entries with fuzzy filtering, file type icons, and "time ago" timestamps. Pressing Cmd+E then Enter instantly swaps to the previously active file.
 - Editing: Auto-surround selection — select text and type `(`, `[`, `{`, `"`, `'`, or `` ` `` to wrap it (e.g., `hello` → `(hello)`). Works with multi-cursor.
 - Editing: Matching bracket highlighting — when cursor is adjacent to `()`, `[]`, or `{}`, both brackets are highlighted with a colored background.
@@ -52,14 +65,17 @@ All notable changes to rust-editor are documented in this file.
 - Themes: `bracket_match_background` editor color for customizing bracket highlight appearance
 
 ### Performance
+
 - Syntax highlighting pipeline rewritten: replaced thread-per-debounce with event-loop deadline timers for lower latency.
 - Immediate highlight shifting on edits (InsertNewline, DeleteBackward, Paste, DeleteForward, DeleteWordBackward, DeleteWordForward, DeleteLine) eliminates highlight flashing on keystrokes.
 
 ### Fixed
+
 - Viewport no longer scrolls unexpectedly when clicking near viewport edges or past the midpoint on newly opened editors.
 - Modal layout bugs (geometry, hit-testing) fixed with comprehensive test coverage.
 
 ### Changed
+
 - Refactored modal layout system: replaced ad-hoc layout code with VStack-based `ModalLayout` for cleaner, testable geometry.
 
 ---
@@ -67,6 +83,7 @@ All notable changes to rust-editor are documented in this file.
 ## v0.3.17 - 2026-02-18
 
 ### Added
+
 - Themes: 5 new builtin themes — Dracula, Catppuccin Mocha, Nord, Tokyo Night, Gruvbox Dark
 - Syntax: Added sema-lisp syntax sample file
 
@@ -75,6 +92,7 @@ All notable changes to rust-editor are documented in this file.
 ## v0.3.15 - 2026-01-09
 
 ### Added
+
 - Preview: HTML file preview support. Opening preview on `.html` files now displays the rendered HTML in the webview pane, reusing the existing markdown preview infrastructure.
 - Preview: Local resource loading for HTML preview. Images, CSS, and JS files are now served from the document's directory via a custom `token://` protocol handler.
 - Preview: Preview now updates to show the new file when switching tabs (if the new file supports preview), instead of closing.
@@ -86,10 +104,12 @@ All notable changes to rust-editor are documented in this file.
 ## v0.3.14 - 2026-01-09
 
 ### Added
+
 - Docs: Updated developer OVERVIEW and archived obsolete docs to reflect recent refactors and module moves.
 - Tests: Comprehensive damage computation tests added for redraw/damage logic.
 
 ### Fixed
+
 - Layout: Editor viewport now correctly shrinks to accommodate dock panels (bottom/right). Fixed issue where dock panels would obscure part of the editor area because the logical viewport didn't account for dock sizes.
 - Layout: Viewport dimensions now recalculated when dock visibility or size changes.
 - Preview: Fixed dual rendering issue where both native markdown and webview were drawn. Native rendering is now properly disabled when webview is active.
@@ -99,6 +119,7 @@ All notable changes to rust-editor are documented in this file.
 - Sidebar: Fixed syntax highlighting not triggering when opening files via sidebar double-click. Commands from update() calls in mouse handlers are now properly propagated.
 
 ### Changed
+
 - Refactor (mouse): Unified mouse event handling with new hit-test system in `src/view/hit_test.rs` and centralized dispatch in `src/runtime/mouse.rs`. Replaces ad-hoc if/else chains with explicit `HitTarget` enum and priority-ordered hit-testing.
 - Refactor (app): Introduced specific redraw helpers and tighter damage accumulation to reduce unnecessary full redraws; clearer separation between damage computation and command processing.
 - Refactor (layout): Added `redraw_editor`-style helpers to limit redraw scope when layout changes are localized.
@@ -112,28 +133,33 @@ All notable changes to rust-editor are documented in this file.
 ### Fixed - CSV Cell Editing
 
 **Column Truncation:**
+
 - Fixed column truncation issue during CSV cell editing
 - Cells now properly handle content that exceeds initial column width
 - No data loss when editing longer values
 
 **Horizontal Scrolling:**
+
 - Added horizontal scroll support for CSV cell editing
 - Long cell content now scrollable within the edit field
 - Improved UX for editing cells with long text values
 
 **Log File Discovery:**
+
 - Fixed log file discovery to find most recent dated log file
 - Improved config path resolution for logging
 
 ### Added - Command Palette Enhancements
 
 **New Commands:**
+
 - Added "Open Folder..." command to open workspace directories
 - Added "Quit" command (⌘Q) to close the application
 - Added "Toggle Performance Overlay" command (F2) - debug builds only
 - Added "Toggle Debug Overlay" command (F8) - debug builds only
 
 **Implementation:**
+
 - Added `Cmd::Quit` for proper application exit flow
 - Debug commands use conditional compilation (`#[cfg(debug_assertions)]`)
 - Added `DEBUG_COMMANDS` array for debug-only command definitions
@@ -141,16 +167,19 @@ All notable changes to rust-editor are documented in this file.
 ### Added - Configuration and Command System
 
 **Configuration Reload:**
+
 - Implemented `ReloadConfiguration` command for hot-reloading config without restart
 - Command palette now includes "Reload Configuration" command
 - Allows changes to config.yaml and keymap.yaml to take effect immediately
 
 **Application Commands:**
+
 - Added `ApplicationCommand` enum for app-level operations (quit, reload config)
 - Added `WorkspaceCommand` enum for workspace operations (toggle sidebar, refresh, etc.)
 - Unified command structure with `Cmd::Application` and `Cmd::Workspace` variants
 
 **Theme Picker Enhancements:**
+
 - Implemented theme preview with live updates
 - Theme changes are applied immediately while browsing
 - Restore original theme on cancel (Escape)
@@ -158,6 +187,7 @@ All notable changes to rust-editor are documented in this file.
 - Updated theme picker tests for new preview/restore API
 
 **Configuration Integration:**
+
 - Cursor blink interval now configurable via `editor.cursor_blink_interval_ms` in config.yaml
 - Performance overlay toggle now configurable via `editor.show_perf_overlay` in config.yaml
 - Runtime respects user configuration preferences
@@ -165,17 +195,20 @@ All notable changes to rust-editor are documented in this file.
 ### Fixed - Rendering Bugs
 
 **Selection Highlights Disappearing:**
+
 - Selection highlights were disappearing after ~1 second due to cursor blink optimization
 - `render_cursor_lines_only()` now properly renders selection highlights and rectangle selections
 - Cursor blink interval changed from 500ms to 600ms
 
 **CSV Cell Editor Cursor:**
+
 - Fixed cursor appearing at top of editor instead of inside cell when editing CSV
 - Skip cursor-lines-only optimization for CSV mode (falls back to full render)
 
 ### Changed - Build System
 
 **Cargo.toml Enhancements:**
+
 - Added package metadata: authors, readme, keywords, categories, exclude
 - Added `default-run = "token"` to handle multiple binaries
 - New build profiles:
@@ -186,6 +219,7 @@ All notable changes to rust-editor are documented in this file.
   - `profiling`: Debug symbols, no LTO for flamegraph/samply
 
 **Makefile Updates:**
+
 - Added `make dist` and `make debugging` targets
 - Cross-compilation targets now use `dist` profile for maximum optimization
 - `make bundle-macos` uses `dist` profile for smallest binary
@@ -200,6 +234,7 @@ All notable changes to rust-editor are documented in this file.
 Complete implementation of the Find/Replace modal (Cmd+F):
 
 **Core Search Functions:**
+
 - `find_all_occurrences_with_options()` with case sensitivity support
 - `find_next_occurrence_with_options()` for forward search with wrapping
 - `find_prev_occurrence_with_options()` for backward search with wrapping
@@ -207,6 +242,7 @@ Complete implementation of the Find/Replace modal (Cmd+F):
 - Overlapping match detection
 
 **New Modal Messages:**
+
 - `ToggleFindReplaceField` - Tab to switch between query/replace fields
 - `ToggleFindReplaceCaseSensitive` - Toggle case-sensitive search
 - `FindNext` / `FindPrevious` - Navigate through matches
@@ -214,12 +250,14 @@ Complete implementation of the Find/Replace modal (Cmd+F):
 - `ReplaceAll` - Replace all occurrences at once
 
 **UX Improvements:**
+
 - Query persists when reopening Cmd+F (like command palette)
 - Transient messages show "No matches found" or "Replaced N occurrences"
 - Selection highlights the current match
 - Cursor scrolls to ensure match is visible
 
 **Test Coverage:**
+
 - 25+ new tests for find functionality
 - Case sensitivity tests
 - Unicode edge cases (emoji, CJK, Greek letters)
@@ -237,6 +275,7 @@ Critical fix for the event loop spinning issue that caused ~7 FPS in multi-split
 **Root Cause:** `ControlFlow::Poll` was spinning the event loop constantly at ~100% CPU even when idle.
 
 **Fix:** Changed to `ControlFlow::WaitUntil` in `src/runtime/app.rs`:
+
 - Event loop now sleeps until the next cursor blink timer (500ms)
 - Wakes immediately for user input, async messages, or file system changes
 - Idle CPU usage dropped from ~100% to ~0%
@@ -278,25 +317,30 @@ Enhanced [docs/PROFILING.md](PROFILING.md) with recommended workflow:
 ### Added - File System Watcher & New Languages
 
 **Workspace File Watching:**
+
 - Integrated `notify` crate for real-time file system monitoring
 - `FileSystemChange` event for workspace updates
 - Automatic refresh when files change externally
 
 **New Language Support:**
+
 - **Scheme** - tree-sitter-scheme parser and highlighting
-- **INI** - tree-sitter-ini parser and highlighting  
+- **INI** - tree-sitter-ini parser and highlighting
 - **XML** - tree-sitter-xml parser and highlighting
 
 **File Operations:**
+
 - Support for opening files via sidebar
 - Support for creating new files
 - `Document::new_with_path` constructor with comprehensive tests
 
 **Theme Improvements:**
+
 - Added CSV highlighting colors to all themes
 - Restructured CSV theme initialization
 
 **Documentation:**
+
 - Added comprehensive documentation suite
 - Updated workspace feature documentation
 - Added workspace performance benchmarks and testing guide
@@ -330,6 +374,7 @@ Enhanced [docs/PROFILING.md](PROFILING.md) with recommended workflow:
 Major refactoring to unify text editing across all input contexts (modals, CSV cells) with consistent behavior:
 
 **Core Architecture (`src/editable/` module):**
+
 - **`TextBuffer` / `TextBufferMut` traits** - Abstract over String and Rope buffer backends
 - **`StringBuffer`** - Efficient single-line buffer for modals and CSV cells
 - **`EditableState<B>`** - Unified state container with cursor, selection, and undo history
@@ -339,6 +384,7 @@ Major refactoring to unify text editing across all input contexts (modals, CSV c
 - **`TextFieldRenderer`** - Unified text field rendering with selection support
 
 **Modal Input Improvements:**
+
 - Full cursor navigation in all modals (Left/Right, Home/End)
 - Selection support (Shift+Arrow) in command palette, goto line, find/replace
 - Word movement (Option+Arrow) in all modals
@@ -349,6 +395,7 @@ Major refactoring to unify text editing across all input contexts (modals, CSV c
 - Clipboard integration (Cmd+C/X/V) in all modals
 
 **CSV Cell Editor Enhancements:**
+
 - Migrated `CellEditState` to use `EditableState<StringBuffer>`
 - Word movement (Option+Left/Right) while editing cells
 - Word deletion (Option+Backspace/Delete) while editing cells
@@ -358,6 +405,7 @@ Major refactoring to unify text editing across all input contexts (modals, CSV c
 - Clipboard integration (Cmd+C/X/V) while editing cells
 
 **New Messages:**
+
 - `CsvMsg::EditCursorWordLeft`, `EditCursorWordRight`
 - `CsvMsg::EditDeleteWordBackward`, `EditDeleteWordForward`
 - `CsvMsg::EditSelectAll`, `EditUndo`, `EditRedo`
@@ -367,12 +415,14 @@ Major refactoring to unify text editing across all input contexts (modals, CSV c
 - `Msg::TextEdit(EditContext, TextEditMsg)` - Unified text editing dispatch
 
 **Main Editor Bridge:**
+
 - `bridge_text_edit_to_editor()` maps `TextEditMsg` to legacy `EditorMsg`/`DocumentMsg`
 - Enables unified message system to control main editor via bridge pattern
 - All movement, selection, editing, clipboard, undo/redo, and multi-cursor operations bridged
 - Allows gradual migration without breaking existing functionality
 
 **New Files:**
+
 - `src/editable/mod.rs` - Module exports
 - `src/editable/buffer.rs` - TextBuffer traits and implementations
 - `src/editable/cursor.rs` - Position and Cursor types
@@ -394,12 +444,14 @@ Major refactoring to unify text editing across all input contexts (modals, CSV c
 Complete workspace management with sidebar file tree and comprehensive focus handling:
 
 **Sidebar Resize:**
+
 - Click-and-drag to resize sidebar width
 - ColResize cursor shown on hover over resize border
 - `SidebarResizeState` tracks drag operation
 - Width persists in logical pixels for DPI-independence
 
 **File Tree Keyboard Navigation:**
+
 - Arrow Up/Down to navigate between items
 - Arrow Right expands folders or moves to next item
 - Arrow Left collapses folders or jumps to parent folder (standard file tree behavior)
@@ -408,12 +460,14 @@ Complete workspace management with sidebar file tree and comprehensive focus han
 - Escape returns focus to editor
 
 **Workspace Root Display:**
+
 - Workspace root folder is now displayed as the first item in the file tree
 - Root folder is auto-expanded when workspace opens
 - Root path is canonicalized to ensure proper display name (fixes "." showing as empty)
 - Folder expand/collapse indicators: `-` for expanded, `+` for collapsed
 
 **Focus Management System:**
+
 - New `FocusTarget` enum: `Editor`, `Sidebar`, `Modal`
 - Explicit focus tracking in `UiState.focus`
 - Click on sidebar transfers focus to sidebar
@@ -423,24 +477,29 @@ Complete workspace management with sidebar file tree and comprehensive focus han
 - `KeyContext.sidebar_focused` and `editor_focused` now reflect actual focus state
 
 **Global Shortcuts:**
+
 - Command palette (Cmd+Shift+A), Save (Cmd+S), Quit (Cmd+Q), and other global shortcuts now work regardless of focus state
 - New `Command::is_global()` method identifies shortcuts that bypass focus-based input routing
 - Global commands include: ToggleCommandPalette, ToggleGotoLine, ToggleFindReplace, ToggleSidebar, Quit, SaveFile, NewTab, CloseTab
 
 **Cursor Icon Cleanup:**
+
 - I-beam cursor only appears over editable text areas
 - Default pointer for sidebar, tab bars, status bar, modals, gutter
 - ColResize/RowResize for splitters and sidebar resize border
 
 **Keyboard Routing Fixes:**
+
 - CSV cell editing now properly bypasses keymap (arrow keys work in cell editor)
 - Added `AppModel::is_csv_editing()` helper method for consistent checking
 
 **New Commands:**
+
 - `FileTreeSelectPrevious`, `FileTreeSelectNext`
 - `FileTreeOpenOrToggle`, `FileTreeRefresh`
 
 **New Messages:**
+
 - `WorkspaceMsg::OpenOrToggle` - opens file or toggles folder
 - `WorkspaceMsg::SelectParent` - navigate to parent folder
 
@@ -453,6 +512,7 @@ Complete workspace management with sidebar file tree and comprehensive focus han
 Full cell editing support for CSV mode with document synchronization:
 
 **Editing:**
+
 - **Enter or typing** starts editing the selected cell
 - **Typing replaces** cell content when starting with a character
 - **Edit cursor** navigation with Left/Right arrows, Home/End
@@ -462,16 +522,19 @@ Full cell editing support for CSV mode with document synchronization:
 - **Escape cancels** edit, restoring original value
 
 **Document Sync:**
+
 - Edits update the underlying text buffer in real-time
 - Proper CSV escaping for values with delimiters, quotes, or newlines
 - Quoted fields are handled correctly (embedded commas don't break parsing)
 - File becomes "modified" after edits, triggers save prompt
 
 **New types:**
+
 - `CellEditState` - tracks edit buffer, cursor position, original value
 - `CellEdit` - represents a completed edit for sync/undo
 
 **New messages:**
+
 - `CsvMsg::StartEditing`, `StartEditingWithChar(char)`
 - `CsvMsg::ConfirmEdit`, `CancelEdit`
 - `CsvMsg::EditInsertChar`, `EditDeleteBackward`, `EditDeleteForward`
@@ -486,6 +549,7 @@ Full cell editing support for CSV mode with document synchronization:
 Spreadsheet-like view for CSV, TSV, and PSV files with full navigation support:
 
 **Core Features:**
+
 - **Grid rendering** with row numbers (1, 2, 3...) and column headers (A, B, C...)
 - **Cell selection** via mouse click with proper hit-testing
 - **Delimiter detection** from file extension or content sniffing
@@ -494,6 +558,7 @@ Spreadsheet-like view for CSV, TSV, and PSV files with full navigation support:
 - **Memory-efficient storage** using delimited strings (Tablecruncher pattern)
 
 **Navigation:**
+
 - Arrow keys move cell selection
 - Tab/Shift+Tab for next/previous cell with row wrapping
 - Home/End for first/last column in row
@@ -503,18 +568,21 @@ Spreadsheet-like view for CSV, TSV, and PSV files with full navigation support:
 - Click to select cell
 
 **Integration:**
+
 - Command palette: "Toggle CSV View" command
 - Escape exits CSV mode
 - Status bar shows CSV mode indicator
 - Works with split views
 
 **New files:**
+
 - `src/csv/` module with `mod.rs`, `model.rs`, `parser.rs`, `render.rs`, `navigation.rs`, `viewport.rs`
 - `samples/large_data.csv` - 10,001-line test file
 - `make csv` target for testing
 
 **Messages added:**
-- `CsvMsg` enum with Toggle, Move*, NextCell, PrevCell, FirstCell, LastCell, RowStart, RowEnd, PageUp, PageDown, Exit, SelectCell, ScrollVertical, ScrollHorizontal
+
+- `CsvMsg` enum with Toggle, Move\*, NextCell, PrevCell, FirstCell, LastCell, RowStart, RowEnd, PageUp, PageDown, Exit, SelectCell, ScrollVertical, ScrollHorizontal
 
 **Documentation:** See [docs/feature/csv-editor.md](archived/csv-editor.md)
 
@@ -553,17 +621,20 @@ Fixed critical issues when switching between displays with different DPI/scale f
 Added 11 new languages to syntax highlighting, completing the roadmap phases 3-5:
 
 **Phase 3 (Priority):**
+
 - **TypeScript** - `tree-sitter-typescript` v0.23 with custom queries
 - **TSX** - Shares queries with TypeScript, separate parser
 - **JSON** - `tree-sitter-json` v0.24 with custom queries
 - **TOML** - `tree-sitter-toml-ng` v0.7 with custom queries
 
 **Phase 4 (Common):**
+
 - **Python** - `tree-sitter-python` v0.25 using built-in highlights query
 - **Go** - `tree-sitter-go` v0.25 using built-in highlights query
 - **PHP** - `tree-sitter-php` v0.24 using built-in highlights query
 
 **Phase 5 (Extended):**
+
 - **C** - `tree-sitter-c` v0.24 using built-in highlights query
 - **C++** - `tree-sitter-cpp` v0.23 using built-in highlights query
 - **Java** - `tree-sitter-java` v0.23 using built-in highlights query
@@ -595,16 +666,19 @@ Added 11 new languages to syntax highlighting, completing the roadmap phases 3-5
 Implemented proper incremental parsing for significantly faster syntax highlighting on edits:
 
 **Tree Caching:**
+
 - `ParserState` now caches parsed trees per document in `doc_cache: HashMap<DocumentId, DocParseState>`
 - Each `DocParseState` stores the tree, source text, and language
 - Cache enables incremental parsing on subsequent edits
 
 **Edit Diffing:**
+
 - `compute_incremental_edit()` computes `InputEdit` by diffing old vs new source
 - Finds common prefix/suffix to minimize the edited region
 - `byte_to_point()` converts byte offsets to tree-sitter `Point` (row, column)
 
 **Incremental Parse Flow:**
+
 1. On edit, diff cached source against new source
 2. Call `tree.edit(&input_edit)` on cached tree
 3. Pass edited tree to `parser.parse(source, Some(&old_tree))`
@@ -618,9 +692,10 @@ Implemented proper incremental parsing for significantly faster syntax highlight
 | 1000 lines | 660µs | 728µs |
 | 5000 lines | 3.4ms | 3.6ms |
 
-*Note: Incremental is similar speed due to highlight extraction dominating; benefit increases for larger files.*
+_Note: Incremental is similar speed due to highlight extraction dominating; benefit increases for larger files._
 
 **New Benchmark Suite** (`benches/syntax.rs`):
+
 - `parse_sample` - Parse small samples for each language
 - `parse_only_sample` - Isolated parse time (pre-initialized parser)
 - `parse_only_large_rust` - Large file scaling (100-10000 lines)
@@ -629,6 +704,7 @@ Implemented proper incremental parsing for significantly faster syntax highlight
 - `full_reparse_comparison` - Fresh parser baseline
 
 **New Makefile Target:**
+
 - `make bench-syntax` - Run syntax highlighting benchmarks
 
 ### Changed
@@ -646,6 +722,7 @@ Implemented proper incremental parsing for significantly faster syntax highlight
 Critical fixes for the syntax highlighting system:
 
 **Tree-sitter Incremental Parsing Bug:**
+
 - Fixed misaligned highlights after document edits (e.g., pressing Enter)
 - Root cause: Passing old cached tree to tree-sitter without calling `tree.edit()`
 - Tree-sitter incorrectly reused nodes from stale tree, producing wrong line/column positions
@@ -653,12 +730,14 @@ Critical fixes for the syntax highlighting system:
 - Removed unused tree caching from `ParserState` until proper incremental parsing is implemented
 
 **Flash of Unstyled Text (FOUC):**
+
 - Fixed jarring unstyled flash during syntax re-parsing
 - Old highlights are now preserved until new ones arrive
 - Revision checks ensure only matching highlights are applied
 - Reduced debounce from 50ms to 30ms for snappier updates
 
 **Tab Expansion in Highlighting:**
+
 - Fixed highlight token columns not accounting for tab expansion
 - Token character columns are now converted to visual columns using `char_col_to_visual_col()`
 
@@ -676,6 +755,7 @@ Critical fixes for the syntax highlighting system:
 Comprehensive audit and improvement of the benchmark suite:
 
 **Phase 1: Fixed Inaccurate Benchmarks**
+
 - **Rewrote `glyph_cache.rs`** — Now uses actual fontdue rasterization instead of fictional patterns
   - `glyph_rasterize` tests real character rasterization at various font sizes
   - `glyph_cache_realistic_paragraph` tests actual cache hit/miss patterns
@@ -685,6 +765,7 @@ Comprehensive audit and improvement of the benchmark suite:
 - **Updated `rendering.rs` and `support.rs`** — Use shared blend function instead of duplicated code
 
 **Phase 2: Added Missing Benchmarks**
+
 - **Multi-cursor benchmarks in `main_loop.rs`:**
   - `multi_cursor_setup` (10, 100, 500 cursors)
   - `multi_cursor_insert_char`, `multi_cursor_delete`, `multi_cursor_move_down`
@@ -701,6 +782,7 @@ Comprehensive audit and improvement of the benchmark suite:
   - `column_from_x_position`, `full_viewport_layout`, `viewport_layout_with_cache`
 
 **New Makefile Targets:**
+
 - `make bench-loop` — Main loop benchmarks
 - `make bench-search` — Search benchmarks
 - `make bench-layout` — Layout benchmarks
@@ -714,11 +796,13 @@ Comprehensive audit and improvement of the benchmark suite:
 Tree-sitter based syntax highlighting with async background parsing:
 
 **New `src/syntax/` module:**
+
 - `highlights.rs` - `HighlightToken`, `LineHighlights`, `SyntaxHighlights` data structures
 - `languages.rs` - `LanguageId` enum with extension-based language detection
 - `worker.rs` - `SyntaxWorker` with background thread, mpsc channels, debouncing
 
 **Features:**
+
 - **Async parsing** - Background worker thread prevents UI blocking
 - **Debouncing** - 50ms timer prevents parsing on every keystroke
 - **Revision tracking** - Staleness checks discard outdated parse results
@@ -727,10 +811,12 @@ Tree-sitter based syntax highlighting with async background parsing:
 - **Auto-trigger** - Parsing on document load and content changes
 
 **New messages:**
+
 - `SyntaxMsg::ParseCompleted` - Delivers highlights from background thread
 - `Cmd::ParseSyntax` - Triggers async syntax parsing
 
 **Dependencies added:**
+
 - `tree-sitter = "0.24"`
 - `tree-sitter-yaml = "0.6"`
 - `tree-sitter-md = "0.3"`
@@ -820,6 +906,7 @@ Moved inline tests to integration test folder:
 Complete data-driven keybinding system with YAML configuration:
 
 **Core Module** (`src/keymap/`):
+
 - `KeyCode`, `Keystroke`, `Modifiers` - platform-agnostic key representation
 - `Command` enum - 52 bindable editor commands with `to_msgs()` conversion
 - `Keybinding` struct - binds keystroke to command with optional conditions
@@ -829,6 +916,7 @@ Complete data-driven keybinding system with YAML configuration:
 - YAML parser with platform-specific binding support
 
 **Default Bindings** (`keymap.yaml`):
+
 - 74 default bindings embedded at compile time
 - Platform-aware `cmd` modifier (Cmd on macOS, Ctrl elsewhere)
 - macOS-specific bindings (meta+arrow for line navigation)
@@ -836,11 +924,13 @@ Complete data-driven keybinding system with YAML configuration:
 - Context-aware Escape (collapse multi-cursor → clear selection → nothing)
 
 **Integration** (`src/runtime/app.rs`):
+
 - Keymap tried first for all key events
 - Fallback to `input.rs` for complex behaviors (option double-tap, selection collapse on arrows)
 - `KeyContext` extracted from model state for binding evaluation
 
 **Commands Added**:
+
 - `DeleteWordForward` - Option+Delete deletes word after cursor
 - `InsertTab` - Insert tab character (for Tab without selection)
 - `EscapeSmartClear` - No-op fallback for Escape key
@@ -881,16 +971,19 @@ This preserves the Option+Option+Arrow gesture for adding cursors above/below.
 Fully functional command palette with searchable command list:
 
 **Command Registry** (`src/commands.rs`):
+
 - `CommandId` enum with 17 commands (file, edit, navigation, view operations)
 - `CommandDef` struct with id, label, keybinding
 - `COMMANDS` static registry with all available commands
 - `filter_commands(query)` for fuzzy substring matching
 
 **Command Execution** (`src/update/app.rs`):
+
 - `execute_command(model, cmd_id)` dispatches to appropriate update functions
 - Commands routed through existing message handlers (DocumentMsg, LayoutMsg, etc.)
 
 **Command Palette UI** (`src/view/mod.rs`):
+
 - Filtered command list displayed below input field
 - Selected item highlighted with selection background
 - Keybindings shown right-aligned (dimmed)
@@ -908,11 +1001,13 @@ New File, Save File, Undo, Redo, Cut, Copy, Paste, Select All, Go to Line, Split
 Modal overlays now properly capture mouse events:
 
 **Mouse Blocking** (`src/runtime/app.rs`):
+
 - Click outside modal closes it
 - Click inside modal is consumed (doesn't leak to editor)
 - Uses centralized `geometry::point_in_modal()` for hit-testing
 
 **Modal Geometry** (`src/view/geometry.rs`):
+
 - `modal_bounds()` - calculates modal position and size
 - `point_in_modal()` - hit-test for modal area
 - Shared between rendering and input handling
@@ -933,6 +1028,7 @@ New drawing primitives for cleaner rendering:
 Added minimal modal overlay infrastructure with focus capture:
 
 **Modal State Types** (`src/model/ui.rs`):
+
 - `ModalId` enum: `CommandPalette`, `GotoLine`, `FindReplace`
 - `ModalState` enum with per-modal state structs
 - `CommandPaletteState`, `GotoLineState`, `FindReplaceState`
@@ -940,21 +1036,25 @@ Added minimal modal overlay infrastructure with focus capture:
 - Helper methods: `has_modal()`, `open_modal()`, `close_modal()`
 
 **Modal Messages** (`src/messages.rs`):
+
 - `ModalMsg` enum with variants: `Open*`, `Close`, `SetInput`, `InsertChar`, `DeleteBackward`, `SelectPrevious`, `SelectNext`, `Confirm`
 - `UiMsg::Modal(ModalMsg)` and `UiMsg::ToggleModal(ModalId)`
 
 **Focus Capture** (`src/runtime/input.rs`):
+
 - `handle_modal_key()` routes all keyboard input to modal when active
 - Modal consumes Escape, Enter, arrows, backspace, and character input
 - Editor key handling bypassed when modal is open
 
 **Modal Rendering** (`src/view/mod.rs`):
+
 - `render_modals()` draws modal overlay layer
 - 40% dimmed background over entire window
 - Centered modal dialog with title, input field, and blinking cursor
 - Rendered after status bar, before debug overlays
 
 **Keyboard Shortcuts**:
+
 - `Cmd+P` / `Ctrl+P` - Toggle Command Palette
 - `Cmd+G` / `Ctrl+G` - Toggle Go to Line
 - `Cmd+F` / `Ctrl+F` - Toggle Find/Replace
@@ -975,6 +1075,7 @@ Added minimal modal overlay infrastructure with focus capture:
 Transformed monolithic render function into composable widget functions:
 
 **New `src/view/geometry.rs` module** - centralized geometry helpers:
+
 - Constants: `TAB_BAR_HEIGHT`, `TABULATOR_WIDTH`
 - Viewport sizing: `compute_visible_lines()`, `compute_visible_columns()`
 - Tab handling: `expand_tabs_for_display()`, `char_col_to_visual_col()`, `visual_col_to_char_col()`
@@ -982,6 +1083,7 @@ Transformed monolithic render function into composable widget functions:
 - Layout helpers: `group_content_rect()`, `group_gutter_rect()`, `group_text_area_rect()`
 
 **Extracted widget renderers:**
+
 - `render_editor_area_static()` - top-level: all groups + splitters
 - `render_editor_group_static()` - orchestrates tab bar, gutter, text area
 - `render_tab_bar_static()` - tab bar background, tabs, active highlight
@@ -991,6 +1093,7 @@ Transformed monolithic render function into composable widget functions:
 - `render_status_bar_static()` - status bar with segments and separators
 
 **Updated hit-testing** to delegate to `view::geometry`:
+
 - `Renderer::is_in_status_bar()`, `is_in_tab_bar()`, `tab_at_position()`, `pixel_to_cursor()`
 
 #### Benefits

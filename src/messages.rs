@@ -138,6 +138,8 @@ pub enum DocumentMsg {
     Cut,
     /// Paste from clipboard (Cmd+V)
     Paste,
+    /// Paste given text into the document
+    PasteText(String),
     /// Duplicate current line or selection (Cmd+D)
     Duplicate,
     /// Indent selected lines (Tab with selection)
@@ -207,6 +209,8 @@ pub enum ModalMsg {
     Cut,
     /// Paste from clipboard (Cmd+V)
     Paste,
+    /// Paste given text into the modal input
+    PasteText(String),
 
     // === List Navigation ===
     /// Move selection up in list (e.g., command palette results)
@@ -413,6 +417,14 @@ pub enum AppMsg {
     OpenFolderDialog,
     /// Open Folder dialog returned folder (or None if cancelled)
     OpenFolderDialogResult { folder: Option<PathBuf> },
+
+    /// Paste text retrieved from system clipboard
+    PasteFromClipboard(String),
+    /// Default keymap file was created asynchronously
+    KeymapCreated {
+        path: PathBuf,
+        result: Result<(), String>,
+    },
 }
 
 /// Syntax highlighting messages
@@ -557,6 +569,8 @@ pub enum CsvMsg {
     EditCut,
     /// Paste from clipboard (Cmd+V while editing)
     EditPaste,
+    /// Paste given text into the active CSV cell editing buffer
+    EditPasteText(String),
 }
 
 /// Outline panel messages

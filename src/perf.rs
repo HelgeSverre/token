@@ -566,8 +566,7 @@ impl PerfStats {
     #[inline(always)]
     pub fn measure_stage<R>(&mut self, _stage: PerfStage, f: impl FnOnce() -> R) -> R {
         #[cfg(feature = "profile-tracing")]
-        let _span =
-            tracing::info_span!("render_stage", stage = _stage.tracing_label()).entered();
+        let _span = tracing::info_span!("render_stage", stage = _stage.tracing_label()).entered();
         f()
     }
 
@@ -722,7 +721,7 @@ pub fn render_perf_overlay(
     if show_untracked {
         phase_entries.push(("Untracked", perf.untracked_time(), untracked_color));
     }
-    phase_entries.sort_by(|a, b| b.1.cmp(&a.1));
+    phase_entries.sort_by_key(|a| std::cmp::Reverse(a.1));
 
     let legend = phase_entries
         .iter()

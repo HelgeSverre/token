@@ -173,11 +173,7 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
                 // Calculate how many rows fit in the sidebar viewport
                 let row_height = model.metrics.file_tree_row_height;
                 let sidebar_height = model.window_size.1 as usize;
-                let visible_rows = if row_height > 0 {
-                    sidebar_height / row_height
-                } else {
-                    20 // fallback
-                };
+                let visible_rows = sidebar_height.checked_div(row_height).unwrap_or(20);
 
                 let max_offset = total.saturating_sub(visible_rows);
                 let current = workspace.scroll_offset as i32;
@@ -249,11 +245,7 @@ fn ensure_selection_visible(model: &mut AppModel) {
     // Calculate viewport bounds
     let row_height = model.metrics.file_tree_row_height;
     let sidebar_height = model.window_size.1 as usize;
-    let visible_rows = if row_height > 0 {
-        sidebar_height / row_height
-    } else {
-        20
-    };
+    let visible_rows = sidebar_height.checked_div(row_height).unwrap_or(20);
 
     let scroll_offset = workspace.scroll_offset;
     let viewport_end = scroll_offset + visible_rows;

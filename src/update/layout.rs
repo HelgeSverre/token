@@ -289,7 +289,12 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
                         model
                             .ui
                             .set_status(format!("Opened image: {} ({}×{})", filename, w, h));
-                        return Some(Cmd::Redraw);
+                        return Some(Cmd::Batch(vec![
+                            Cmd::Redraw,
+                            Cmd::SaveRecentFiles {
+                                recent: model.recent_files.clone(),
+                            },
+                        ]));
                     }
                     None => {
                         model
@@ -333,7 +338,12 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
                 model
                     .ui
                     .set_status(format!("Opened binary file: {}", filename));
-                return Some(Cmd::Redraw);
+                return Some(Cmd::Batch(vec![
+                    Cmd::Redraw,
+                    Cmd::SaveRecentFiles {
+                        recent: model.recent_files.clone(),
+                    },
+                ]));
             }
 
             // Load text document from file
@@ -390,11 +400,16 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
     }
 
     // 6. Schedule syntax parsing for the new document
+    let mut cmds = vec![
+        Cmd::Redraw,
+        Cmd::SaveRecentFiles {
+            recent: model.recent_files.clone(),
+        },
+    ];
     if let Some(parse_cmd) = schedule_syntax_parse(model, doc_id) {
-        Some(Cmd::Batch(vec![Cmd::Redraw, parse_cmd]))
-    } else {
-        Some(Cmd::Redraw)
+        cmds.push(parse_cmd);
     }
+    Some(Cmd::Batch(cmds))
 }
 
 /// Split the focused group in the given direction

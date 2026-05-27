@@ -976,7 +976,7 @@ impl<B: TextBuffer + TextBufferMut> EditableState<B> {
                 .iter()
                 .map(|c| Selection::collapsed(c.to_position()))
                 .collect();
-            self.active_cursor = 0.min(self.cursors.len() - 1);
+            self.active_cursor = 0;
         }
 
         true
@@ -1010,7 +1010,7 @@ impl<B: TextBuffer + TextBufferMut> EditableState<B> {
                 .iter()
                 .map(|c| Selection::collapsed(c.to_position()))
                 .collect();
-            self.active_cursor = 0.min(self.cursors.len() - 1);
+            self.active_cursor = 0;
         }
 
         true

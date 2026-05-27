@@ -282,11 +282,9 @@ pub fn render_sidebar(
             };
 
             let available_width = ctx.tree.available_text_width(ctx.sidebar_width, text_x);
-            let max_chars = if ctx.char_width > 0 {
-                available_width / ctx.char_width
-            } else {
-                available_width / 8
-            };
+            let max_chars = available_width
+                .checked_div(ctx.char_width)
+                .unwrap_or(available_width / 8);
 
             let name_chars = node.name.chars().count();
             let needs_truncation = name_chars > max_chars && max_chars > 3;
@@ -443,7 +441,7 @@ pub fn render_outline_panel(
                 .tree
                 .available_text_width(container_width, name_x);
             let char_w = painter.char_width() as usize;
-            let max_chars = if char_w > 0 { available / char_w } else { 80 };
+            let max_chars = available.checked_div(char_w).unwrap_or(80);
 
             let name_chars = node.name.chars().count();
             if name_chars > max_chars && max_chars > 1 {

@@ -203,11 +203,9 @@ fn get_line_near_end_large_file(line_count: usize) {
 fn sequential_inserts_large_file(line_count: usize) {
     let mut rope = Rope::from_str(&"base line\n".repeat(line_count));
 
-    // Simulate typing 100 characters at the middle
-    let mut pos = rope.len_chars() / 2;
-    for _ in 0..100 {
-        rope.insert_char(pos, 'x');
-        pos += 1;
+    let start_pos = rope.len_chars() / 2;
+    for offset in 0..100 {
+        rope.insert_char(start_pos + offset, 'x');
     }
     divan::black_box(&rope);
 }

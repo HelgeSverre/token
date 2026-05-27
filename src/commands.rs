@@ -381,7 +381,7 @@ pub fn filter_commands(query: &str) -> Vec<&'static CommandDef> {
         .collect();
 
     // Sort by score descending (best matches first)
-    matches.sort_by(|a, b| b.1.cmp(&a.1));
+    matches.sort_by_key(|a| std::cmp::Reverse(a.1));
 
     matches.into_iter().map(|(cmd, _)| cmd).collect()
 }
@@ -675,6 +675,17 @@ pub enum Cmd {
     /// Request application exit
     Quit,
 
+    /// Save recent files list asynchronously
+    SaveRecentFiles {
+        recent: crate::recent_files::RecentFiles,
+    },
+    /// Copy a string to the system clipboard
+    CopyToClipboard(String),
+    /// Request pasting text from the system clipboard
+    RequestClipboardPaste,
+    /// Create default keymap file asynchronously
+    CreateDefaultKeymapFile { path: PathBuf },
+
     // === Debug Commands ===
     /// Toggle performance overlay (debug builds only)
     #[cfg(debug_assertions)]
@@ -711,6 +722,10 @@ impl Cmd {
             Cmd::ReinitializeRenderer => true,
             // Quit doesn't need redraw - app is exiting
             Cmd::Quit => false,
+            Cmd::SaveRecentFiles { .. } => false,
+            Cmd::CopyToClipboard(_) => false,
+            Cmd::RequestClipboardPaste => false,
+            Cmd::CreateDefaultKeymapFile { .. } => false,
             // Debug overlay toggle triggers redraw
             #[cfg(debug_assertions)]
             Cmd::TogglePerfOverlay => true,
@@ -762,6 +777,10 @@ impl Cmd {
             Cmd::ReinitializeRenderer => Damage::Full,
             // Quit doesn't need redraw - app is exiting
             Cmd::Quit => Damage::Areas(vec![]),
+            Cmd::SaveRecentFiles { .. } => Damage::Areas(vec![]),
+            Cmd::CopyToClipboard(_) => Damage::Areas(vec![]),
+            Cmd::RequestClipboardPaste => Damage::Areas(vec![]),
+            Cmd::CreateDefaultKeymapFile { .. } => Damage::Areas(vec![]),
             // Debug overlay toggle triggers full redraw
             #[cfg(debug_assertions)]
             Cmd::TogglePerfOverlay => Damage::Full,
