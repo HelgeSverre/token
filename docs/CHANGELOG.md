@@ -26,6 +26,8 @@ All notable changes to rust-editor are documented in this file.
 - Compiler Lints: Resolved 10 pre-existing compiler warnings and Clippy lints (including unnecessary sorting, manual checked divisions, and loop counters) to ensure a warning-free compilation.
 - Rendering: Frame clipping system — sidebar and other panels no longer render outside their bounds. TextPainter pixel writes are routed through the Frame clip rectangle.
 - Syntax: Hierarchical highlight name resolution now walks the full capture name chain (e.g. `keyword.control.import` → `keyword.control` → `keyword`) instead of only trying one parent level.
+- Syntax: Sema now uses its own canonical grammar (vendored [`tree-sitter-sema`](https://github.com/sema-lisp/tree-sitter-sema)) instead of piggybacking on the Racket grammar, with the upstream highlight query covering Sema's LLM/agent builtins and namespaced stdlib functions.
+
 ### Added
 
 - Tabs: drag a tab to reorder it within its group (live reorder past a 4px threshold), or drag it onto another pane's tab bar or content area to move it there — the move happens live at the hovered position and focuses the target pane. A semi-transparent ghost of the dragged tab follows the cursor.
@@ -34,12 +36,15 @@ All notable changes to rust-editor are documented in this file.
 ### Fixed
 
 - Sidebar text no longer overflows into the editor area on long filenames.
+- Syntax: overlapping query captures now resolve with tree-sitter's last-match-wins convention (specific overrides beat generic fallbacks). Previously the first capture won, which painted every symbol with the `@variable` fallback — Sema files rendered almost entirely uncolored and JavaScript function names lost their color.
+- Syntax: silenced the two `-Wunused` compiler warnings from the generated tree-sitter-sema parser, and added Sema to the query-compilation test suite.
 - Dock panels: clicking a dock header tab no longer closes the dock — header tab clicks now activate the panel (toggle behavior remains on the keybindings).
 - Tabs: tab title text is clipped to the tab, so the last tab in a narrow pane no longer bleeds into the neighboring pane.
 - Scrollbar: no longer panics when a pane's scrollbar track is shorter than the minimum thumb size (e.g. deeply split panes or tiny windows) — the thumb is now clamped to the track length.
 - Scrollbar: resizing the window/pane smaller than the scrollbar itself no longer crashes the editor — the horizontal track width is clamped to zero and degenerate (negative-size) tracks yield zero thumb travel instead of panicking.
 - Sidebar: clicking the folder chevron now uses the same `TreeListLayout` geometry as the renderer, fixing misaligned chevron hit zones on HiDPI displays (previously hardcoded unscaled pixel offsets).
 - Sidebar: collapsing a folder while scrolled down no longer leaves the file tree blank — the scroll offset is clamped after the visible item count shrinks.
+- Sidebar: collapsing a folder now collapses all folders beneath it, so collapsing the top-level folders resets the whole tree instead of restoring stale expansion state on re-expand.
 - Sidebar: scroll and auto-scroll-to-selection now use the actual sidebar viewport height (excluding the status bar), so the last row can't hide behind the status bar.
 - Mouse: double/triple-click detection is now keyed by click target (editor pane, sidebar row, outline row, binary placeholder), so rapid clicks on unrelated UI regions no longer register as double-clicks (e.g. a sidebar click followed by a binary-placeholder click no longer opens the file in an external app).
 
