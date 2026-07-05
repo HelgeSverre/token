@@ -4,6 +4,30 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
+## v0.4.1 - 2026-07-05
+
+### Fixed
+
+- CSV: `sync_cell_edit_to_document` used byte offsets (from `char_indices`) directly with `Rope::remove`/`insert`, which expect char offsets — corrupting or panicking on any CSV cell edit near multi-byte UTF-8 content (accents, CJK, emoji).
+- Opening keybindings/log file while a non-text tab (image/CSV/binary) was focused silently overwrote its document without resetting `view_mode`/`tab_content`, leaving the wrong renderer active.
+- Split views: `DeleteForward`, `IndentLines`, `UnindentLines`, `Duplicate`, and single-cursor `PasteText` now sync peer editors' cursors on the same document; previously only some paths did, causing split-view cursor drift.
+- Multi-cursor auto-surround (typing a bracket/quote around a selection) could corrupt the buffer when selections overlapped (e.g. from "Select All Occurrences" with overlapping matches); overlapping selections are now merged first.
+- `hit_test_ui` cloned the entire `EditorArea` (every open document's undo/redo history included) on every mouse move/click; it now derives splitter geometry read-only instead.
+- Rectangle (block) selection dragged down-and-right used to skip any intermediate line shorter than the live drag column instead of clipping the selection to that line's length.
+- `OpenFileDialogResult` discarded each opened file's syntax-parse/recent-files commands when opening multiple files at once.
+- Undo/Redo unconditionally marked the document as modified, so undoing back to the exact saved state still showed a dirty indicator.
+- `CopyAbsolutePath`/`CopyRelativePath` performed clipboard I/O directly in the pure update layer instead of returning a command.
+- `ReloadConfiguration` only triggered a status-bar redraw, so theme changes didn't visually apply until another event.
+- Large text inserts (e.g. IME commit) were split into a loop of per-character `InsertChar` messages; they're now a single atomic insert with one undo record.
+- `TextEditMsg::Paste` discarded its already-captured clipboard text and re-read the OS clipboard asynchronously instead.
+- `SetCursorPosition`, `ClickRow`, and `JumpToSymbol` could write out-of-range cursor positions from a stale outline; all three now clamp to document bounds.
+- CRLF files: cursor-column math and line-length clamping counted the trailing `\r` while rendering stripped it, causing off-by-one cursor placement near the end of a line.
+- Binary-file placeholder button hover state was a single global flag, so hovering one split group's button also highlighted another visible group's button; focus ring was also hardcoded on.
+- Theme picker modal drew every theme with no scrolling or clipping, and used an uncapped vertical position unlike other modals.
+- Outline panel didn't auto-scroll to keep the keyboard-selected item visible.
+- Modal text inputs hardcoded zero horizontal scroll, so the cursor could scroll out of view and become invisible on a long query.
+- Various minor correctness/performance cleanups: redundant unwrap in tab-move, O(n²) cursor-line dedup, unchecked arithmetic in viewport/scroll math, full-content-rect clearing instead of the editor sub-rect, degenerate-rect handling in frame clipping, redundant per-pixel alpha re-derivation in blend/dim, jumpy (non-minimal) list scroll behavior, and a focus ring that was skipped on small buttons.
+
 ## v0.4.0 - 2026-07-05
 
 ### Added
