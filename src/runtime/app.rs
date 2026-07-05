@@ -30,7 +30,8 @@ use token::update::update;
 
 use super::input::{handle_key, OptionKeyGesture};
 use super::mouse::{
-    handle_mouse_press, handle_mouse_wheel, make_mouse_event, ClickTracker, DragState,
+    end_tab_drag, handle_mouse_press, handle_mouse_wheel, make_mouse_event, update_tab_drag,
+    ClickTracker, DragState,
 };
 use super::webview::WebviewManager;
 use token::view::Renderer;
@@ -486,6 +487,11 @@ impl App {
                     );
                 }
 
+                // Handle tab drag (armed on tab press, activates past threshold)
+                if self.model.ui.tab_drag.is_some() {
+                    return update_tab_drag(&mut self.model, position.x, position.y);
+                }
+
                 // Handle image panning and mouse tracking
                 if let Some(editor) = self.model.editor_area.focused_editor() {
                     if editor.view_mode.is_image() {
@@ -597,6 +603,13 @@ impl App {
                 ..
             } => {
                 self.drag.end();
+
+                // Finish tab drag if one is armed/active
+                if self.model.ui.tab_drag.is_some() {
+                    if let Some(cmd) = end_tab_drag(&mut self.model) {
+                        return Some(cmd);
+                    }
+                }
 
                 // End splitter drag if active
                 if self.model.ui.splitter_drag.is_some() {

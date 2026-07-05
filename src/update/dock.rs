@@ -83,6 +83,27 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
             }
         }
 
+        DockMsg::ActivatePanel(panel_id) => {
+            // Non-toggling activation: open the dock, activate the panel,
+            // and focus it. Clicking an already-active dock tab is a no-op
+            // rather than a close (unlike FocusOrTogglePanel).
+            if let Some(position) = model.dock_layout.find_panel(panel_id) {
+                model.dock_layout.dock_mut(position).activate(panel_id);
+
+                if position == DockPosition::Left {
+                    model.ui.focus = FocusTarget::Sidebar;
+                    sync_workspace_with_dock(model);
+                } else {
+                    model.ui.focus = FocusTarget::Dock(position);
+                }
+
+                model.recalculate_viewports();
+                Some(Cmd::Redraw)
+            } else {
+                None
+            }
+        }
+
         DockMsg::CloseFocusedDock => {
             // Close the dock that currently has focus
             match model.ui.focus {

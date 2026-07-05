@@ -207,6 +207,39 @@ pub struct TabBarLayout {
 }
 
 impl TabBarLayout {
+    /// Compute each tab's `(start, end)` x-extent in unscrolled tab-bar
+    /// coordinates (relative to the group's left edge).
+    ///
+    /// Single source of truth for tab positions, shared by `new` (render +
+    /// hit-test) and the tab-scroll logic in the update layer.
+    pub fn tab_spans(
+        group: &EditorGroup,
+        model: &AppModel,
+        char_width: f32,
+    ) -> Vec<(usize, usize)> {
+        let metrics = &model.metrics;
+        let mut spans = Vec::with_capacity(group.tabs.len());
+        let mut x = metrics.padding_medium;
+
+        for tab in &group.tabs {
+            let title_chars = get_tab_display_name(model, tab).chars().count();
+            let ideal_width =
+                (title_chars as f32 * char_width).round() as usize + metrics.padding_large * 2;
+            spans.push((x, x + ideal_width));
+            x += ideal_width + metrics.padding_small;
+        }
+
+        spans
+    }
+
+    /// Total width of all tabs including trailing padding, in pixels.
+    pub fn total_tabs_width(group: &EditorGroup, model: &AppModel, char_width: f32) -> usize {
+        Self::tab_spans(group, model, char_width)
+            .last()
+            .map(|&(_, end)| end + model.metrics.padding_medium)
+            .unwrap_or(0)
+    }
+
     pub fn new(group: &EditorGroup, model: &AppModel, char_width: f32) -> Self {
         let metrics = &model.metrics;
         let rect_x = group.rect.x.round() as usize;
@@ -216,36 +249,42 @@ impl TabBarLayout {
         let border_y = (rect_y + rect_h).saturating_sub(1);
         let tab_y = rect_y + metrics.padding_small;
         let tab_height = rect_h.saturating_sub(metrics.padding_medium);
-        let right_edge = rect_x + rect_w;
+        let right_edge = (rect_x + rect_w) as isize;
+        let scroll = group.tab_scroll as isize;
 
+        let spans = Self::tab_spans(group, model, char_width);
         let mut tabs = Vec::with_capacity(group.tabs.len());
-        let mut tab_x = rect_x + metrics.padding_medium;
 
-        for (index, tab) in group.tabs.iter().enumerate() {
+        for (index, (tab, &(start, end))) in group.tabs.iter().zip(&spans).enumerate() {
+            let tab_x = rect_x as isize + start as isize - scroll;
+            let tab_right = rect_x as isize + end as isize - scroll;
+
+            if tab_right <= rect_x as isize {
+                // Scrolled fully off the left edge
+                continue;
+            }
             if tab_x >= right_edge {
                 break;
             }
 
-            let title = get_tab_display_name(model, tab);
-            let title_chars = title.chars().count();
-            let ideal_width =
-                (title_chars as f32 * char_width).round() as usize + metrics.padding_large * 2;
-            let width = ideal_width.min(right_edge.saturating_sub(tab_x));
+            // Clip to the group's tab bar on both edges; partially visible
+            // tabs keep their logical text_x so glyphs stay put and the
+            // renderer's per-tab clip trims the overhang.
+            let visible_x = tab_x.max(rect_x as isize) as usize;
+            let visible_right = tab_right.min(right_edge) as usize;
 
             tabs.push(TabBarTab {
                 index,
                 tab_id: tab.id,
-                title,
-                x: tab_x,
+                title: get_tab_display_name(model, tab),
+                x: visible_x,
                 y: tab_y,
-                width,
+                width: visible_right.saturating_sub(visible_x),
                 height: tab_height,
-                text_x: tab_x + metrics.padding_large,
+                text_x: (tab_x + metrics.padding_large as isize).max(0) as usize,
                 text_y: tab_y + metrics.padding_medium,
                 is_active: index == group.active_tab_index,
             });
-
-            tab_x += ideal_width + metrics.padding_small;
         }
 
         Self {
@@ -731,7 +770,9 @@ impl GroupLayout {
         Some(Rect::new(
             cr.x,
             cr.y + cr.height - sw,
-            cr.width - sw, // leave corner for vertical scrollbar
+            // Leave corner for vertical scrollbar; panes narrower than the
+            // scrollbar itself must not produce a negative-width track.
+            (cr.width - sw).max(0.0),
             sw,
         ))
     }

@@ -1626,3 +1626,140 @@ fn test_is_group_focused_invalid_group() {
     // Non-existent group should return false
     assert!(!model.editor_area.is_group_focused(GroupId(999)));
 }
+
+// ============================================================================
+// Tab Reorder & Tab Bar Scrolling
+// ============================================================================
+
+/// Open several untitled tabs in the focused group and return their tab ids.
+fn open_tabs(model: &mut token::model::AppModel, count: usize) -> Vec<token::model::TabId> {
+    for _ in 0..count {
+        update(model, Msg::Layout(LayoutMsg::NewTab));
+    }
+    model
+        .editor_area
+        .focused_group()
+        .unwrap()
+        .tabs
+        .iter()
+        .map(|t| t.id)
+        .collect()
+}
+
+#[test]
+fn test_reorder_tab_moves_and_keeps_active() {
+    let mut model = test_model("hello\n", 0, 0);
+    let ids = open_tabs(&mut model, 2); // 3 tabs total, last is active
+
+    // Active tab is the last one; move it to the front
+    let active_id = ids[2];
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::ReorderTab {
+            tab_id: active_id,
+            to_index: 0,
+        }),
+    );
+
+    let group = model.editor_area.focused_group().unwrap();
+    assert_eq!(group.tabs[0].id, active_id);
+    assert_eq!(group.active_tab_index, 0);
+    // The dragged tab is still the active tab
+    assert_eq!(group.active_tab().unwrap().id, active_id);
+}
+
+#[test]
+fn test_reorder_tab_adjusts_active_index_of_other_tab() {
+    let mut model = test_model("hello\n", 0, 0);
+    let ids = open_tabs(&mut model, 2); // tabs [0,1,2], active = 2
+
+    // Move the first (inactive) tab to the end; active tab shifts left
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::ReorderTab {
+            tab_id: ids[0],
+            to_index: 2,
+        }),
+    );
+
+    let group = model.editor_area.focused_group().unwrap();
+    assert_eq!(group.tabs[2].id, ids[0]);
+    assert_eq!(group.active_tab().unwrap().id, ids[2]);
+    assert_eq!(group.active_tab_index, 1);
+}
+
+#[test]
+fn test_reorder_tab_out_of_range_index_clamped() {
+    let mut model = test_model("hello\n", 0, 0);
+    let ids = open_tabs(&mut model, 1); // 2 tabs
+
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::ReorderTab {
+            tab_id: ids[0],
+            to_index: 99,
+        }),
+    );
+
+    let group = model.editor_area.focused_group().unwrap();
+    assert_eq!(group.tabs.len(), 2);
+    assert_eq!(group.tabs[1].id, ids[0]);
+}
+
+#[test]
+fn test_tab_scroll_clamped_to_content() {
+    let mut model = test_model("hello\n", 0, 0);
+    open_tabs(&mut model, 10);
+    let group_id = model.editor_area.focused_group_id;
+
+    // Scroll far right: clamped to content width, not unbounded
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::ScrollTabBar {
+            group_id,
+            delta_px: 1_000_000,
+        }),
+    );
+    let scroll_right = model.editor_area.focused_group().unwrap().tab_scroll;
+    assert!(scroll_right > 0, "many tabs should allow scrolling");
+    assert!(scroll_right < 1_000_000, "scroll must be clamped");
+
+    // Scroll far left: clamped to zero
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::ScrollTabBar {
+            group_id,
+            delta_px: -2_000_000,
+        }),
+    );
+    assert_eq!(model.editor_area.focused_group().unwrap().tab_scroll, 0);
+}
+
+#[test]
+fn test_switch_to_tab_scrolls_focused_tab_into_view() {
+    let mut model = test_model("hello\n", 0, 0);
+    let group_id = model.editor_area.focused_group_id;
+    // Give the group a realistic rect (tests skip the render-layout pass)
+    model.editor_area.groups.get_mut(&group_id).unwrap().rect =
+        token::model::Rect::new(0.0, 0.0, 200.0, 600.0);
+    open_tabs(&mut model, 20);
+
+    // Opening many tabs keeps the newest (rightmost) tab visible
+    let scroll_at_end = model.editor_area.focused_group().unwrap().tab_scroll;
+    assert!(
+        scroll_at_end > 0,
+        "tab bar should have scrolled to keep the newest tab visible"
+    );
+
+    // Switching to the first tab scrolls back to the start
+    update(&mut model, Msg::Layout(LayoutMsg::SwitchToTab(0)));
+    assert_eq!(model.editor_area.groups[&group_id].tab_scroll, 0);
+
+    // Rendered layout includes the active tab after the scroll
+    let group = &model.editor_area.groups[&group_id];
+    let layout = token::view::geometry::TabBarLayout::new(group, &model, model.char_width);
+    assert!(
+        layout.tabs.iter().any(|t| t.is_active),
+        "active tab must be present in the visible tab layout"
+    );
+}

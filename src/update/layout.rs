@@ -28,12 +28,14 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
         LayoutMsg::NewTab => {
             new_tab_in_focused_group(model);
             sync_viewports(model);
+            ensure_focused_tab_visible(model);
             Some(Cmd::Redraw)
         }
 
         LayoutMsg::OpenFileInNewTab(path) => {
             let cmd = open_file_in_new_tab(model, path);
             sync_viewports(model);
+            ensure_focused_tab_visible(model);
             cmd
         }
 
@@ -95,11 +97,23 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
 
         LayoutMsg::MoveTab { tab_id, to_group } => {
             move_tab(model, tab_id, to_group);
+            ensure_active_tab_visible(model, to_group);
+            Some(Cmd::redraw_editor())
+        }
+
+        LayoutMsg::ReorderTab { tab_id, to_index } => {
+            reorder_tab(model, tab_id, to_index);
+            Some(Cmd::redraw_editor())
+        }
+
+        LayoutMsg::ScrollTabBar { group_id, delta_px } => {
+            scroll_tab_bar(model, group_id, delta_px);
             Some(Cmd::redraw_editor())
         }
 
         LayoutMsg::CloseTab(tab_id) => {
             let released_documents = close_tab(model, tab_id);
+            ensure_focused_tab_visible(model);
             Some(with_released_documents(
                 Cmd::redraw_editor(),
                 released_documents,
@@ -114,6 +128,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
             {
                 let tab_id = tab.id;
                 let released_documents = close_tab(model, tab_id);
+                ensure_focused_tab_visible(model);
                 return Some(with_released_documents(
                     Cmd::redraw_editor(),
                     released_documents,
@@ -131,6 +146,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
             close_preview_if_not_markdown(model);
             model.outline_panel.scroll_offset = 0;
             model.outline_panel.selected_index = None;
+            ensure_focused_tab_visible(model);
             Some(Cmd::redraw_editor())
         }
 
@@ -147,6 +163,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
             close_preview_if_not_markdown(model);
             model.outline_panel.scroll_offset = 0;
             model.outline_panel.selected_index = None;
+            ensure_focused_tab_visible(model);
             Some(Cmd::redraw_editor())
         }
 
@@ -159,6 +176,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
             close_preview_if_not_markdown(model);
             model.outline_panel.scroll_offset = 0;
             model.outline_panel.selected_index = None;
+            ensure_focused_tab_visible(model);
             Some(Cmd::redraw_editor())
         }
 
@@ -186,6 +204,99 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
     }
+}
+
+// ============================================================================
+// Tab Bar Scrolling
+// ============================================================================
+
+use crate::view::geometry::TabBarLayout;
+
+/// Scroll the tab bar of `group_id` so the active tab is fully visible,
+/// and clamp the scroll offset to the current tab content width.
+fn ensure_active_tab_visible(model: &mut AppModel, group_id: GroupId) {
+    let char_width = model.char_width;
+    let padding = model.metrics.padding_medium;
+    let Some(group) = model.editor_area.groups.get(&group_id) else {
+        return;
+    };
+
+    let spans = TabBarLayout::tab_spans(group, model, char_width);
+    let rect_w = group.rect.width.round() as usize;
+    let total_width = spans.last().map(|&(_, end)| end + padding).unwrap_or(0);
+    let max_scroll = total_width.saturating_sub(rect_w);
+    let mut scroll = group.tab_scroll.min(max_scroll);
+
+    if let Some(&(start, end)) = spans.get(group.active_tab_index) {
+        if start.saturating_sub(padding) < scroll {
+            // Active tab (partially) off the left edge
+            scroll = start.saturating_sub(padding);
+        } else if rect_w > 0 && end + padding > scroll + rect_w {
+            // Active tab (partially) off the right edge
+            scroll = (end + padding).saturating_sub(rect_w);
+        }
+    }
+
+    if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
+        group.tab_scroll = scroll;
+    }
+}
+
+/// Ensure the focused group's active tab is scrolled into view.
+fn ensure_focused_tab_visible(model: &mut AppModel) {
+    ensure_active_tab_visible(model, model.editor_area.focused_group_id);
+}
+
+/// Scroll a group's tab bar by a pixel delta, clamped to the tab content.
+fn scroll_tab_bar(model: &mut AppModel, group_id: GroupId, delta_px: i32) {
+    let char_width = model.char_width;
+    let Some(group) = model.editor_area.groups.get(&group_id) else {
+        return;
+    };
+
+    let total_width = TabBarLayout::total_tabs_width(group, model, char_width);
+    let rect_w = group.rect.width.round() as usize;
+    let max_scroll = total_width.saturating_sub(rect_w) as i64;
+    let new_scroll = (group.tab_scroll as i64 + delta_px as i64).clamp(0, max_scroll) as usize;
+
+    if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
+        group.tab_scroll = new_scroll;
+    }
+}
+
+/// Move a tab to a new index within its owning group (drag reorder),
+/// keeping the same tab active.
+fn reorder_tab(model: &mut AppModel, tab_id: TabId, to_index: usize) {
+    let Some((group_id, from_index)) = model
+        .editor_area
+        .groups
+        .iter()
+        .find_map(|(id, g)| g.tabs.iter().position(|t| t.id == tab_id).map(|i| (*id, i)))
+    else {
+        return;
+    };
+
+    let Some(group) = model.editor_area.groups.get_mut(&group_id) else {
+        return;
+    };
+    let to_index = to_index.min(group.tabs.len().saturating_sub(1));
+    if from_index == to_index {
+        return;
+    }
+
+    let tab = group.tabs.remove(from_index);
+    group.tabs.insert(to_index, tab);
+
+    // Keep the active tab pointing at the same tab after the shuffle
+    if group.active_tab_index == from_index {
+        group.active_tab_index = to_index;
+    } else if from_index < group.active_tab_index && to_index >= group.active_tab_index {
+        group.active_tab_index -= 1;
+    } else if from_index > group.active_tab_index && to_index <= group.active_tab_index {
+        group.active_tab_index += 1;
+    }
+
+    ensure_active_tab_visible(model, group_id);
 }
 
 // ============================================================================
@@ -466,6 +577,7 @@ fn split_group(model: &mut AppModel, group_id: GroupId, direction: SplitDirectio
         active_tab_index: 0,
         rect: Default::default(),
         attached_preview: None,
+        tab_scroll: 0,
     };
     model.editor_area.groups.insert(new_group_id, new_group);
 

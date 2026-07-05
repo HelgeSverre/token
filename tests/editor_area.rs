@@ -92,6 +92,7 @@ fn test_horizontal_split_layout() {
             active_tab_index: 0,
             rect: Rect::default(),
             attached_preview: None,
+            tab_scroll: 0,
         },
     );
 
@@ -152,6 +153,7 @@ fn test_vertical_split_layout() {
             active_tab_index: 0,
             rect: Rect::default(),
             attached_preview: None,
+            tab_scroll: 0,
         },
     );
 
@@ -212,6 +214,7 @@ fn test_group_at_point_split() {
             active_tab_index: 0,
             rect: Rect::default(),
             attached_preview: None,
+            tab_scroll: 0,
         },
     );
 
@@ -263,6 +266,7 @@ fn test_splitter_at_point() {
             active_tab_index: 0,
             rect: Rect::default(),
             attached_preview: None,
+            tab_scroll: 0,
         },
     );
 

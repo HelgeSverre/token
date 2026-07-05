@@ -342,6 +342,12 @@ pub enum LayoutMsg {
     /// Move a tab to a different group
     MoveTab { tab_id: TabId, to_group: GroupId },
 
+    /// Move a tab to a new index within its current group (drag reorder)
+    ReorderTab { tab_id: TabId, to_index: usize },
+
+    /// Scroll a group's tab bar horizontally by a pixel delta
+    ScrollTabBar { group_id: GroupId, delta_px: i32 },
+
     /// Close a specific tab
     CloseTab(TabId),
 
@@ -611,6 +617,11 @@ pub enum DockMsg {
     /// Pure toggle: Open if closed, close if open. Focus-agnostic.
     /// Used by command palette where focus state is irrelevant.
     TogglePanel(crate::panel::PanelId),
+
+    /// Activate a panel without ever closing its dock: open the dock,
+    /// make the panel active, and focus it. Used by dock header tab clicks,
+    /// which must not toggle the dock closed.
+    ActivatePanel(crate::panel::PanelId),
 
     /// Close the currently focused dock and return focus to editor
     CloseFocusedDock,

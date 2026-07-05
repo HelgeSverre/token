@@ -88,6 +88,8 @@ pub struct EditorGroup {
     pub rect: Rect,
     /// Preview pane attached to this group (if any)
     pub attached_preview: Option<PreviewId>,
+    /// Horizontal tab bar scroll offset in pixels (0 = leftmost tab visible)
+    pub tab_scroll: usize,
 }
 
 impl EditorGroup {
@@ -218,6 +220,7 @@ impl EditorArea {
                 active_tab_index: 0,
                 rect: Rect::default(),
                 attached_preview: None,
+                tab_scroll: 0,
             },
         );
 

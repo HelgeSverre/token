@@ -496,6 +496,20 @@ pub enum ScrollbarDragAxis {
     Horizontal,
 }
 
+/// State for dragging an editor tab (reorder within a group, or move to
+/// another group by dropping on its tab bar).
+#[derive(Debug, Clone, Copy)]
+pub struct TabDragState {
+    /// The tab being dragged
+    pub tab_id: crate::model::editor_area::TabId,
+    /// Mouse position at press time (drag activates past a threshold)
+    pub press: (f64, f64),
+    /// Current mouse position (drives the drag ghost rendering)
+    pub current: (f64, f64),
+    /// Whether the drag threshold has been exceeded
+    pub active: bool,
+}
+
 /// State for scrollbar thumb dragging
 #[derive(Debug, Clone)]
 pub struct ScrollbarDragState {
@@ -591,6 +605,8 @@ pub struct UiState {
     pub sidebar_resize: Option<SidebarResizeState>,
     /// Scrollbar thumb drag state
     pub scrollbar_drag: Option<ScrollbarDragState>,
+    /// Editor tab drag state (reorder within a group / move between groups)
+    pub tab_drag: Option<TabDragState>,
     /// Which UI region has keyboard focus
     pub focus: FocusTarget,
     /// Which UI region the mouse is currently hovering over
@@ -618,6 +634,7 @@ impl UiState {
             splitter_drag: None,
             sidebar_resize: None,
             scrollbar_drag: None,
+            tab_drag: None,
             focus: FocusTarget::Editor,
             hover: HoverRegion::None,
             previous_cursor_lines: Vec::new(),
@@ -641,6 +658,7 @@ impl UiState {
             splitter_drag: None,
             sidebar_resize: None,
             scrollbar_drag: None,
+            tab_drag: None,
             focus: FocusTarget::Editor,
             hover: HoverRegion::None,
             previous_cursor_lines: Vec::new(),

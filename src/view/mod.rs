@@ -79,6 +79,7 @@ struct RenderPlan {
     cursor_lines_only: Option<Vec<usize>>,
     show_modal: bool,
     show_drop_overlay: bool,
+    show_tab_drag_ghost: bool,
     #[cfg(debug_assertions)]
     show_perf_overlay: bool,
     #[cfg(debug_assertions)]
@@ -217,6 +218,14 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
             self.plan.window_width,
             self.plan.window_height,
         );
+    }
+
+    fn render_tab_drag_ghost_phase(&mut self) {
+        if !self.plan.show_tab_drag_ghost {
+            return;
+        }
+
+        Renderer::render_tab_drag_ghost(&mut self.frame, &mut self.painter, self.model);
     }
 
     #[cfg(debug_assertions)]
@@ -714,6 +723,7 @@ impl Renderer {
             cursor_lines_only,
             show_modal: model.ui.active_modal.is_some(),
             show_drop_overlay: model.ui.drop_state.is_hovering,
+            show_tab_drag_ghost: model.ui.tab_drag.is_some_and(|d| d.active),
             #[cfg(debug_assertions)]
             show_perf_overlay,
             #[cfg(debug_assertions)]
@@ -1146,7 +1156,16 @@ impl Renderer {
             };
 
             frame.fill_rect_px(tab.x, tab.y, tab.width, tab.height, bg_color);
+            // Clip the title to the tab rect: edge tabs are width-clamped to
+            // the group, and unclipped text would bleed into the next pane.
+            frame.set_clip(Rect::new(
+                tab.x as f32,
+                tab.y as f32,
+                tab.width as f32,
+                tab.height as f32,
+            ));
             painter.draw(frame, tab.text_x, tab.text_y, &tab.title, fg_color);
+            frame.clear_clip();
         }
     }
 
@@ -1555,6 +1574,55 @@ impl Renderer {
         modal::render_modals(frame, painter, model, window_width, window_height);
     }
 
+    /// Render a floating semi-transparent copy of the dragged tab at the
+    /// cursor position (drawn topmost, after all panes and overlays).
+    fn render_tab_drag_ghost(frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
+        let Some(drag) = model.ui.tab_drag.filter(|d| d.active) else {
+            return;
+        };
+        let Some(tab) = model
+            .editor_area
+            .groups
+            .values()
+            .flat_map(|g| g.tabs.iter())
+            .find(|t| t.id == drag.tab_id)
+        else {
+            return;
+        };
+
+        let metrics = &model.metrics;
+        let title = helpers::get_tab_display_name(model, tab);
+        let width = (title.chars().count() as f32 * painter.char_width()).round() as usize
+            + metrics.padding_large * 2;
+        let height = metrics
+            .tab_bar_height
+            .saturating_sub(metrics.padding_medium);
+
+        // Center the ghost on the cursor
+        let x = (drag.current.0 as isize - width as isize / 2).max(0) as usize;
+        let y = (drag.current.1 as isize - height as isize / 2).max(0) as usize;
+
+        let bg = model.theme.tab_bar.active_background.to_argb_u32();
+        let fg = model.theme.tab_bar.active_foreground.to_argb_u32();
+        let border = model.theme.tab_bar.border.to_argb_u32();
+        const GHOST_ALPHA: u32 = 0xD0 << 24;
+
+        frame.blend_rect_px(x, y, width, height, (bg & 0x00FF_FFFF) | GHOST_ALPHA);
+        let bw = metrics.border_width.max(1);
+        frame.fill_rect_px(x, y, width, bw, border);
+        frame.fill_rect_px(x, y + height - bw, width, bw, border);
+        frame.fill_rect_px(x, y, bw, height, border);
+        frame.fill_rect_px(x + width - bw, y, bw, height, border);
+
+        painter.draw(
+            frame,
+            x + metrics.padding_large,
+            y + metrics.padding_medium,
+            &title,
+            fg,
+        );
+    }
+
     fn render_drop_overlay(
         frame: &mut Frame,
         painter: &mut TextPainter,
@@ -1691,6 +1759,9 @@ impl Renderer {
                 perf.measure_stage(crate::perf::PerfStage::DropOverlay, || {
                     session.render_drop_overlay_phase();
                 });
+            }
+            if plan.show_tab_drag_ghost {
+                session.render_tab_drag_ghost_phase();
             }
 
             #[cfg(debug_assertions)]

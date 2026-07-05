@@ -20,14 +20,35 @@ use token::model::AppModel;
 use token::update::update;
 use token::util::visible_tree_row_at_index;
 
-use token::view::geometry::{DockHeaderLayout, OutlinePanelLayout, WindowLayout};
+use token::model::editor_area::GroupId;
+use token::view::geometry::{DockHeaderLayout, OutlinePanelLayout, TabBarLayout, WindowLayout};
 use token::view::hit_test::{hit_test_ui, EventResult, HitTarget, MouseEvent};
 use token::view::Renderer;
+
+/// Identifies what was clicked, so rapid clicks on unrelated targets
+/// (e.g. a sidebar row then an editor line) never count as double-clicks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClickRegion {
+    Editor {
+        group: token::model::editor_area::GroupId,
+        line: usize,
+        column: usize,
+    },
+    Sidebar {
+        row: usize,
+    },
+    Outline {
+        row: usize,
+    },
+    BinaryPlaceholder {
+        group: token::model::editor_area::GroupId,
+    },
+}
 
 /// Click tracking state for double/triple click detection
 pub struct ClickTracker {
     pub last_click_time: Instant,
-    pub last_click_position: Option<(usize, usize)>,
+    pub last_click_region: Option<ClickRegion>,
     pub click_count: u32,
 }
 
@@ -35,24 +56,24 @@ impl Default for ClickTracker {
     fn default() -> Self {
         Self {
             last_click_time: Instant::now() - Duration::from_secs(10),
-            last_click_position: None,
+            last_click_region: None,
             click_count: 0,
         }
     }
 }
 
 impl ClickTracker {
-    /// Update click count based on timing and position
+    /// Update click count based on timing and click target
     ///
     /// Returns the new click count (1, 2, or 3)
-    pub fn track_click(&mut self, line: usize, column: usize) -> u8 {
+    pub fn track_click(&mut self, region: ClickRegion) -> u8 {
         let now = Instant::now();
         let double_click_time = Duration::from_millis(300);
 
         let is_rapid_click = now.duration_since(self.last_click_time) < double_click_time;
-        let is_same_position = self.last_click_position == Some((line, column));
+        let is_same_target = self.last_click_region == Some(region);
 
-        if is_rapid_click && is_same_position {
+        if is_rapid_click && is_same_target {
             self.click_count += 1;
             if self.click_count > 3 {
                 self.click_count = 1;
@@ -62,21 +83,9 @@ impl ClickTracker {
         }
 
         self.last_click_time = now;
-        self.last_click_position = Some((line, column));
+        self.last_click_region = Some(region);
 
         self.click_count as u8
-    }
-
-    /// Track a click at a generic row (for sidebar)
-    pub fn track_row_click(&mut self, row: usize) -> u8 {
-        self.track_click(row, 0)
-    }
-
-    /// Reset click tracking (e.g., when target changes)
-    #[allow(dead_code)]
-    pub fn reset(&mut self) {
-        self.click_count = 0;
-        self.last_click_position = None;
     }
 }
 
@@ -165,6 +174,103 @@ impl DragState {
         self.last_auto_scroll = Some(now);
         Some(direction)
     }
+}
+
+/// Distance in pixels before an armed tab drag becomes active
+const TAB_DRAG_THRESHOLD_PIXELS: f64 = 4.0;
+
+/// Find the group whose tab bar contains the point, along with the tab index
+/// under the cursor (or the last index when over the empty tail of the bar).
+fn tab_bar_target_at(model: &AppModel, x: f64, y: f64) -> Option<(GroupId, usize)> {
+    model.editor_area.groups.values().find_map(|group| {
+        let layout = TabBarLayout::new(group, model, model.char_width);
+        if !layout.contains(x, y) {
+            return None;
+        }
+        let index = layout
+            .tab_at(x, y)
+            .map(|tab| tab.index)
+            .unwrap_or_else(|| group.tabs.len().saturating_sub(1));
+        Some((group.id, index))
+    })
+}
+
+/// Find the group that currently owns a tab.
+fn tab_owning_group(model: &AppModel, tab_id: token::model::editor_area::TabId) -> Option<GroupId> {
+    model
+        .editor_area
+        .groups
+        .iter()
+        .find_map(|(id, g)| g.tabs.iter().any(|t| t.id == tab_id).then_some(*id))
+}
+
+/// Update an armed/active tab drag on mouse move.
+///
+/// The drag is fully live: hovering a tab bar reorders the tab into that
+/// slot (moving it between groups first if needed), and hovering another
+/// pane's content area moves the tab into that pane. Releasing simply drops
+/// the tab where it already is (`end_tab_drag`).
+pub fn update_tab_drag(model: &mut AppModel, x: f64, y: f64) -> Option<Cmd> {
+    let drag = model.ui.tab_drag.as_mut()?;
+    drag.current = (x, y);
+
+    if !drag.active {
+        let dx = x - drag.press.0;
+        let dy = y - drag.press.1;
+        if (dx * dx + dy * dy).sqrt() < TAB_DRAG_THRESHOLD_PIXELS {
+            return None;
+        }
+        drag.active = true;
+    }
+
+    let tab_id = drag.tab_id;
+    let owning_group = tab_owning_group(model, tab_id)?;
+
+    // Tab bars take priority; a pane's content area targets that pane's
+    // tab end, but only for *other* panes (dragging into your own pane's
+    // text area must not reorder anything).
+    let target = tab_bar_target_at(model, x, y).or_else(|| {
+        model.editor_area.groups.values().find_map(|g| {
+            (g.id != owning_group && g.rect.contains(x as f32, y as f32))
+                .then_some((g.id, usize::MAX))
+        })
+    });
+
+    if let Some((group_id, index)) = target {
+        if group_id != owning_group {
+            update(
+                model,
+                Msg::Layout(LayoutMsg::MoveTab {
+                    tab_id,
+                    to_group: group_id,
+                }),
+            );
+            update(model, Msg::Layout(LayoutMsg::FocusGroup(group_id)));
+        }
+        // ReorderTab clamps the index, so usize::MAX means "keep at end"
+        update(
+            model,
+            Msg::Layout(LayoutMsg::ReorderTab {
+                tab_id,
+                to_index: index,
+            }),
+        );
+    }
+
+    // Full redraw every move: the drag ghost follows the cursor anywhere
+    Some(Cmd::Redraw)
+}
+
+/// Finish a tab drag on mouse release.
+///
+/// Moves/reorders happen live during the drag, so this only clears the
+/// drag state and repaints to remove the ghost.
+pub fn end_tab_drag(model: &mut AppModel) -> Option<Cmd> {
+    let drag = model.ui.tab_drag.take()?;
+    if !drag.active {
+        return None; // plain click, no drag happened
+    }
+    Some(Cmd::Redraw)
 }
 
 /// Construct a MouseEvent from raw input data
@@ -317,7 +423,7 @@ fn handle_left_click(
             clicked_on_chevron,
         } => {
             // Track clicks for double-click detection
-            let click_count = click_tracker.track_row_click(*row);
+            let click_count = click_tracker.track_click(ClickRegion::Sidebar { row: *row });
 
             // Always select the item
             update(
@@ -384,14 +490,21 @@ fn handle_left_click(
         // Tab click
         HitTarget::GroupTab {
             group_id,
+            tab_id,
             tab_index,
-            ..
         } => {
             // Focus group if not already focused
             if *group_id != model.editor_area.focused_group_id {
                 update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
             }
             update(model, Msg::Layout(LayoutMsg::SwitchToTab(*tab_index)));
+            // Arm a potential tab drag (activates past the move threshold)
+            model.ui.tab_drag = Some(token::model::ui::TabDragState {
+                tab_id: *tab_id,
+                press: (event.pos.x, event.pos.y),
+                current: (event.pos.x, event.pos.y),
+                active: false,
+            });
             EventResult::consumed_with_focus(FocusTarget::Editor)
         }
 
@@ -580,11 +693,11 @@ fn handle_left_click(
             EventResult::consumed_with_focus(FocusTarget::Editor)
         }
 
-        // Dock tab click - focus/toggle panel
+        // Dock tab click - activate panel (never toggles the dock closed)
         HitTarget::DockTab { panel_id, .. } => {
             update(
                 model,
-                Msg::Dock(token::messages::DockMsg::FocusOrTogglePanel(*panel_id)),
+                Msg::Dock(token::messages::DockMsg::ActivatePanel(*panel_id)),
             );
             EventResult::consumed_redraw()
         }
@@ -648,7 +761,8 @@ fn handle_left_click(
                             let on_chevron = row.node.is_collapsible()
                                 && outline_layout.is_on_chevron(row.depth, event.pos.x as f32);
 
-                            let click_count = click_tracker.track_row_click(clicked_index);
+                            let click_count = click_tracker
+                                .track_click(ClickRegion::Outline { row: clicked_index });
 
                             update(
                                 model,
@@ -696,7 +810,8 @@ fn handle_editor_content_click(
     if let Some(editor) = model.editor_area.focused_editor() {
         match &editor.tab_content {
             token::model::TabContent::BinaryPlaceholder(state) => {
-                let click_count = click_tracker.track_click(0, 0);
+                let click_count =
+                    click_tracker.track_click(ClickRegion::BinaryPlaceholder { group: group_id });
                 if click_count >= 2 {
                     let path = state.path.clone();
                     update(model, Msg::Layout(LayoutMsg::OpenWithDefaultApp(path)));
@@ -711,7 +826,11 @@ fn handle_editor_content_click(
     let (line, column) = renderer.pixel_to_cursor(event.pos.x, event.pos.y, model);
 
     // Track clicks for double/triple detection
-    let click_count = click_tracker.track_click(line, column);
+    let click_count = click_tracker.track_click(ClickRegion::Editor {
+        group: group_id,
+        line,
+        column,
+    });
 
     // Handle modifiers
     if event.shift() {
@@ -908,11 +1027,36 @@ pub fn handle_mouse_wheel(
         // Preview panes: webview handles its own scrolling
         HoverRegion::Preview => None,
 
-        // Modal/StatusBar/Splitter/TabBar/DockResize/Button: ignore scroll
+        // Editor tab bar: scroll the tabs horizontally
+        HoverRegion::EditorTabBar => {
+            let delta = if h_delta != 0 { h_delta } else { v_delta };
+            if delta == 0 {
+                return None;
+            }
+            // Find which group's tab bar is under the cursor
+            let (x, y) = mouse_position?;
+            let pt = token::view::hit_test::Point::new(x, y);
+            let group_id = model.editor_area.groups.values().find_map(|group| {
+                let layout =
+                    token::view::geometry::TabBarLayout::new(group, model, model.char_width);
+                layout.contains(pt.x, pt.y).then_some(group.id)
+            })?;
+            let scroll_step = (model.line_height as i32).max(1);
+            // Wheel-down / swipe-left moves the tab strip left (shows tabs
+            // further right), matching horizontal content scrolling.
+            update(
+                model,
+                Msg::Layout(LayoutMsg::ScrollTabBar {
+                    group_id,
+                    delta_px: -delta * scroll_step,
+                }),
+            )
+        }
+
+        // Modal/StatusBar/Splitter/DockResize/Button: ignore scroll
         HoverRegion::Modal
         | HoverRegion::StatusBar
         | HoverRegion::Splitter
-        | HoverRegion::EditorTabBar
         | HoverRegion::SidebarResize
         | HoverRegion::DockResize(_)
         | HoverRegion::Button
