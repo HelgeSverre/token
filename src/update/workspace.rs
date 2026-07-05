@@ -4,6 +4,7 @@ use crate::commands::Cmd;
 use crate::messages::{LayoutMsg, WorkspaceMsg};
 use crate::model::AppModel;
 use crate::util::visible_tree_index_of;
+use crate::view::geometry::status_bar_height;
 
 use super::layout::update_layout;
 
@@ -34,6 +35,7 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
             if let Some(workspace) = &mut model.workspace {
                 workspace.toggle_folder(&path);
             }
+            clamp_sidebar_scroll(model);
             Some(Cmd::redraw_editor())
         }
 
@@ -48,6 +50,7 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
             if let Some(workspace) = &mut model.workspace {
                 workspace.collapse_folder(&path);
             }
+            clamp_sidebar_scroll(model);
             Some(Cmd::redraw_editor())
         }
 
@@ -97,6 +100,7 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
                     if let Some(workspace) = &mut model.workspace {
                         workspace.toggle_folder(&path);
                     }
+                    clamp_sidebar_scroll(model);
                     Some(Cmd::redraw_editor())
                 }
                 Some((path, false)) => {
@@ -163,17 +167,14 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
         }
 
         WorkspaceMsg::Scroll { lines } => {
+            // Calculate how many rows fit in the sidebar viewport
+            let visible_rows = sidebar_visible_rows(model);
             if let Some(workspace) = &mut model.workspace {
                 let total = workspace.visible_item_count();
                 if total == 0 {
                     tracing::trace!("Sidebar scroll: no visible items");
                     return Some(Cmd::redraw_editor());
                 }
-
-                // Calculate how many rows fit in the sidebar viewport
-                let row_height = model.metrics.file_tree_row_height;
-                let sidebar_height = model.window_size.1 as usize;
-                let visible_rows = sidebar_height.checked_div(row_height).unwrap_or(20);
 
                 let max_offset = total.saturating_sub(visible_rows);
                 let current = workspace.scroll_offset as i32;
@@ -221,6 +222,28 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
     }
 }
 
+/// Number of rows that fit in the sidebar viewport.
+///
+/// Uses the same height the renderer draws into: the window minus the
+/// status bar (see `WindowLayout::compute`), not the raw window height.
+fn sidebar_visible_rows(model: &AppModel) -> usize {
+    let row_height = model.metrics.file_tree_row_height;
+    let sidebar_height =
+        (model.window_size.1 as usize).saturating_sub(status_bar_height(model.line_height));
+    sidebar_height.checked_div(row_height).unwrap_or(20)
+}
+
+/// Clamp the sidebar scroll offset after the visible item count may have
+/// shrunk (folder collapse, tree refresh), so the tree never scrolls past
+/// its own content and renders blank.
+fn clamp_sidebar_scroll(model: &mut AppModel) {
+    let visible_rows = sidebar_visible_rows(model);
+    if let Some(workspace) = &mut model.workspace {
+        let max_offset = workspace.visible_item_count().saturating_sub(visible_rows);
+        workspace.scroll_offset = workspace.scroll_offset.min(max_offset);
+    }
+}
+
 /// Ensure the selected item is visible within the sidebar viewport.
 /// Scrolls up or down as needed to bring the selection into view.
 fn ensure_selection_visible(model: &mut AppModel) {
@@ -243,9 +266,7 @@ fn ensure_selection_visible(model: &mut AppModel) {
     };
 
     // Calculate viewport bounds
-    let row_height = model.metrics.file_tree_row_height;
-    let sidebar_height = model.window_size.1 as usize;
-    let visible_rows = sidebar_height.checked_div(row_height).unwrap_or(20);
+    let visible_rows = sidebar_visible_rows(model);
 
     let scroll_offset = workspace.scroll_offset;
     let viewport_end = scroll_offset + visible_rows;

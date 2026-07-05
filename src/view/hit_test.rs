@@ -21,7 +21,8 @@ use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, 
 use crate::model::{AppModel, FocusTarget, ModalState, TextViewportMap};
 
 use super::geometry::{
-    is_in_status_bar, DockHeaderLayout, PreviewPaneLayout, TabBarLayout, WindowLayout,
+    is_in_status_bar, DockHeaderLayout, PreviewPaneLayout, TabBarLayout, TreeListLayout,
+    WindowLayout,
 };
 
 // ============================================================================
@@ -586,7 +587,6 @@ pub fn hit_test_sidebar(model: &AppModel, pt: Point) -> Option<HitTarget> {
     }
 
     let row_height = model.metrics.file_tree_row_height as f64;
-    let indent = model.metrics.file_tree_indent as f64;
     let clicked_visual_row = (pt.y / row_height) as usize;
     let clicked_row = workspace.scroll_offset.saturating_add(clicked_visual_row);
 
@@ -594,8 +594,10 @@ pub fn hit_test_sidebar(model: &AppModel, pt: Point) -> Option<HitTarget> {
         .file_tree
         .get_visible_item_with_depth(clicked_row, &workspace.expanded_folders)
     {
-        let chevron_start = (depth as f64 * indent) + 8.0;
-        let chevron_end = chevron_start + 16.0;
+        // Share chevron geometry with the renderer (TreeListLayout in render_sidebar)
+        let tree = TreeListLayout::from_metrics(&model.metrics);
+        let chevron_start = tree.x_offset(depth) as f64;
+        let chevron_end = chevron_start + tree.indicator_width as f64;
         let clicked_on_chevron = node.is_dir && pt.x >= chevron_start && pt.x < chevron_end;
 
         Some(HitTarget::SidebarItem {
