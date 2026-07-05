@@ -339,6 +339,36 @@ fn test_workspace_collapse_folder() {
 }
 
 #[test]
+fn test_workspace_collapse_folder_collapses_descendants() {
+    let mut ws = test_workspace();
+    let parent = PathBuf::from("/test/project/src");
+    let child = PathBuf::from("/test/project/src/view");
+    let grandchild = PathBuf::from("/test/project/src/view/widgets");
+    let sibling = PathBuf::from("/test/project/docs");
+    // Same prefix string but a different directory — must NOT be collapsed
+    let lookalike = PathBuf::from("/test/project/src-generated");
+
+    for f in [&parent, &child, &grandchild, &sibling, &lookalike] {
+        ws.expand_folder(f);
+    }
+
+    // Collapsing via toggle resets the whole subtree
+    ws.toggle_folder(&parent);
+
+    assert!(!ws.is_expanded(&parent));
+    assert!(!ws.is_expanded(&child));
+    assert!(!ws.is_expanded(&grandchild));
+    // Unrelated folders keep their state
+    assert!(ws.is_expanded(&sibling));
+    assert!(ws.is_expanded(&lookalike));
+
+    // Re-expanding the parent shows collapsed children
+    ws.toggle_folder(&parent);
+    assert!(ws.is_expanded(&parent));
+    assert!(!ws.is_expanded(&child));
+}
+
+#[test]
 fn test_workspace_sidebar_width() {
     let mut ws = test_workspace();
 

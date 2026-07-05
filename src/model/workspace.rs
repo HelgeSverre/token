@@ -534,7 +534,7 @@ impl Workspace {
     /// Toggle folder expansion
     pub fn toggle_folder(&mut self, path: &Path) {
         if self.expanded_folders.contains(path) {
-            self.expanded_folders.remove(path);
+            self.collapse_folder(path);
         } else {
             self.expanded_folders.insert(path.to_path_buf());
         }
@@ -545,9 +545,14 @@ impl Workspace {
         self.expanded_folders.insert(path.to_path_buf());
     }
 
-    /// Collapse a folder (no-op if already collapsed)
+    /// Collapse a folder and every expanded folder beneath it.
+    ///
+    /// Collapsing a parent resets its subtree, so re-expanding it later
+    /// shows collapsed children instead of restoring stale expansion state.
+    /// This makes collapsing the top-level folders collapse everything.
     pub fn collapse_folder(&mut self, path: &Path) {
-        self.expanded_folders.remove(path);
+        self.expanded_folders
+            .retain(|expanded| !expanded.starts_with(path));
     }
 
     /// Check if a folder is expanded
