@@ -116,6 +116,10 @@ pub enum EditorMsg {
 pub enum DocumentMsg {
     /// Insert a character at cursor
     InsertChar(char),
+    /// Insert a string at cursor as a single atomic operation (one rope
+    /// edit, one undo record). Preferred over looping `InsertChar` for
+    /// multi-char inserts (e.g. IME commit, legacy insert bridge).
+    InsertText(String),
     /// Insert a newline at cursor
     InsertNewline,
     /// Delete character before cursor (Backspace)

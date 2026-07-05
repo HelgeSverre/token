@@ -200,7 +200,7 @@ fn update_traced(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         debug!(target: "message", msg = %msg_name, "processing");
     }
 
-    let result = update_inner(model, msg.clone());
+    let result = update_inner(model, msg);
 
     let diff = if let (Some(ref before), Some(editor)) = (&before, model.focused_editor()) {
         let after = CursorSnapshot::from_editor(editor);

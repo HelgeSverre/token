@@ -190,17 +190,31 @@ impl TextFieldRenderer {
         frame.fill_rect_px(rect.x, rect.y, rect.w, rect.h, background_color);
 
         let padx = ModalSpacing::INPUT_PAD_X;
+        let width = rect.w.saturating_sub(padx * 2);
+
+        // Keep the cursor visible: a long query would otherwise overflow the
+        // input box with `scroll_x` pinned at 0, leaving the cursor rendered
+        // off-screen (never drawn, since `render` only draws it when it
+        // falls within `[opts.x, opts.x + opts.width)`).
+        let visible_chars = (width as f32 / char_width).ceil() as usize + 1;
+        let cursor_col = content
+            .cursors()
+            .get(content.active_cursor_index())
+            .map(|c| c.column)
+            .unwrap_or(0);
+        let scroll_x = Self::calculate_scroll(cursor_col, 0, visible_chars);
+
         let opts = TextFieldOptions {
             x: rect.x + padx,
             y: rect.y + (rect.h.saturating_sub(line_height)) / 2,
-            width: rect.w.saturating_sub(padx * 2),
+            width,
             height: line_height,
             char_width,
             text_color,
             cursor_color,
             selection_color,
             cursor_visible,
-            scroll_x: 0,
+            scroll_x,
         };
         Self::render(frame, painter, content, &opts);
     }
@@ -243,7 +257,6 @@ impl TextFieldRenderer {
     /// Calculate the scroll offset needed to keep the cursor visible.
     ///
     /// Returns the new scroll_x value.
-    #[allow(dead_code)]
     pub fn calculate_scroll(cursor_col: usize, scroll_x: usize, visible_chars: usize) -> usize {
         // Keep some margin around the cursor
         let margin = 2;
@@ -348,5 +361,77 @@ mod tests {
     fn test_simple_text_field_with_cursor() {
         let field = SimpleTextField::with_cursor("hello", 2);
         assert_eq!(field.cursors()[0].column, 2);
+    }
+
+    #[test]
+    fn render_modal_input_keeps_cursor_visible_for_a_long_query() {
+        use crate::view::frame::Frame;
+        use crate::view::geometry::WidgetRect;
+        use crate::view::{GlyphCache, TextPainter};
+        use fontdue::{Font, FontSettings};
+
+        let font = Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            FontSettings::default(),
+        )
+        .expect("test font should load");
+        let font_size = 14.0;
+        let line_metrics = font
+            .horizontal_line_metrics(font_size)
+            .expect("font should expose horizontal metrics");
+        let (metrics, _) = font.rasterize('M', font_size);
+        let char_width = metrics.advance_width;
+        let line_height = line_metrics.new_line_size.ceil() as usize;
+
+        // A narrow field (20 chars wide) with a query far longer than that,
+        // cursor at the very end. Before this fix, `scroll_x` was hardcoded
+        // to 0, so the cursor (at column 60) would be computed far outside
+        // `[opts.x, opts.x + opts.width)` and never drawn at all.
+        let long_query = "x".repeat(60);
+        let field = SimpleTextField::with_cursor(&long_query, 60);
+
+        let width = 200;
+        let height = 40;
+        let mut buffer = vec![0u32; width * height];
+        let mut frame = Frame::new(&mut buffer, width, height);
+        let mut glyph_cache = GlyphCache::default();
+        let mut painter = TextPainter::new(
+            &font,
+            &mut glyph_cache,
+            font_size,
+            line_metrics.ascent,
+            char_width,
+            line_height,
+        );
+
+        let rect = WidgetRect {
+            x: 0,
+            y: 0,
+            w: width,
+            h: height,
+        };
+
+        TextFieldRenderer::render_modal_input(
+            &mut frame,
+            &mut painter,
+            &field,
+            &rect,
+            line_height,
+            char_width,
+            0xFF000000,
+            0xFFFFFFFF,
+            0xFFFF0000,
+            0xFF444444,
+            true,
+        );
+
+        // The cursor is drawn as a solid 2px-wide bar in `cursor_color`
+        // (0xFFFF0000). If scroll_x were still pinned at 0, no such pixel
+        // would appear anywhere in the buffer.
+        let cursor_drawn = buffer.contains(&0xFFFF0000);
+        assert!(
+            cursor_drawn,
+            "cursor must be scrolled into view and actually drawn for a long query"
+        );
     }
 }

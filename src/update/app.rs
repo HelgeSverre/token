@@ -77,7 +77,9 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             model.ui.is_saving = false;
             match result {
                 Ok(_) => {
-                    model.document_mut().is_modified = false;
+                    let doc = model.document_mut();
+                    doc.is_modified = false;
+                    doc.saved_revision = Some(doc.undo_stack.len());
                     if let Some(path) = &model.document().file_path {
                         model.ui.set_status(format!("Saved: {}", path.display()));
                     }
@@ -112,11 +114,20 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                     doc.is_modified = false;
                     doc.undo_stack.clear();
                     doc.redo_stack.clear();
+                    doc.saved_revision = Some(0);
                     doc.language = language;
                     doc.syntax_highlights = None;
                     doc.revision = doc.revision.wrapping_add(1);
 
-                    model.editor_mut().collapse_to_primary();
+                    // Cmd::OpenFileInEditor (e.g. OpenKeybindings/OpenLogFile)
+                    // reuses the focused tab regardless of what it was
+                    // previously showing, so a non-text tab (image/CSV/binary)
+                    // could otherwise end up rendering text content with the
+                    // wrong renderer still active.
+                    let editor = model.editor_mut();
+                    editor.view_mode = crate::model::editor::ViewMode::Text;
+                    editor.tab_content = crate::model::editor::TabContent::Text;
+                    editor.collapse_to_primary();
                     model.ui.set_status(format!("Loaded: {}", path.display()));
 
                     // Record in recent files
@@ -177,7 +188,10 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                 ReloadResult::NoConfigDir => "No config directory, using defaults",
             };
             model.ui.set_status(msg);
-            Some(Cmd::redraw_status_bar())
+            // A theme/config reload can change colors across the whole
+            // window, not just the status bar, so it needs a full redraw to
+            // actually appear before the next unrelated event triggers one.
+            Some(Cmd::Redraw)
         }
 
         // =====================================================================
@@ -222,11 +236,21 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                 return Some(Cmd::Redraw);
             }
 
-            // Open each file as a new tab
+            // Open each file as a new tab, preserving any commands each open
+            // produces (e.g. debounced syntax parsing, recent-files saves)
+            // instead of discarding all but the final redraw. Flatten nested
+            // batches so callers can scan the result with a single pass.
+            let mut cmds: Vec<Cmd> = Vec::new();
             for path in paths {
-                update_layout(model, LayoutMsg::OpenFileInNewTab(path));
+                if let Some(cmd) = update_layout(model, LayoutMsg::OpenFileInNewTab(path)) {
+                    match cmd {
+                        Cmd::Batch(inner) => cmds.extend(inner),
+                        other => cmds.push(other),
+                    }
+                }
             }
-            Some(Cmd::Redraw)
+            cmds.push(Cmd::Redraw);
+            Some(Cmd::Batch(cmds))
         }
 
         // TODO: Remove OpenFolderDialog - combine with OpenFileDialog using auto-detection
@@ -365,15 +389,8 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::CopyAbsolutePath => {
             if let Some(path) = model.document().file_path.clone() {
                 let text = path.display().to_string();
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    if let Err(e) = clipboard.set_text(&text) {
-                        tracing::warn!("Failed to copy text to clipboard: {}", e);
-                    }
-                    model.ui.set_status(format!("Copied: {}", text));
-                } else {
-                    model.ui.set_status("Failed to access clipboard");
-                }
-                Some(Cmd::Redraw)
+                model.ui.set_status(format!("Copied: {}", text));
+                Some(Cmd::Batch(vec![Cmd::CopyToClipboard(text), Cmd::Redraw]))
             } else {
                 model.ui.set_status("No file path (unsaved)");
                 Some(Cmd::Redraw)
@@ -388,15 +405,8 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
                 } else {
                     path.display().to_string()
                 };
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    if let Err(e) = clipboard.set_text(&text) {
-                        tracing::warn!("Failed to copy text to clipboard: {}", e);
-                    }
-                    model.ui.set_status(format!("Copied: {}", text));
-                } else {
-                    model.ui.set_status("Failed to access clipboard");
-                }
-                Some(Cmd::Redraw)
+                model.ui.set_status(format!("Copied: {}", text));
+                Some(Cmd::Batch(vec![Cmd::CopyToClipboard(text), Cmd::Redraw]))
             } else {
                 model.ui.set_status("No file path (unsaved)");
                 Some(Cmd::Redraw)

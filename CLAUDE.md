@@ -80,26 +80,26 @@ Message → Update → Command → Render
 
 ### Core Modules
 
-| Module         | File(s)            | Purpose                                       |
-| -------------- | ------------------ | --------------------------------------------- |
-| **Model**      | `src/model/`       | AppModel, Document, EditorState, EditorArea   |
-| **Messages**   | `src/messages.rs`  | Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg |
-| **Update**     | `src/update/`      | Pure state transformation (14 submodules)     |
-| **Commands**   | `src/commands.rs`  | Cmd enum (Redraw, SaveFile, LoadFile, Batch)  |
-| **Theme**      | `src/theme.rs`     | YAML theme loading, Color types               |
-| **View**       | `src/view/`        | CPU rendering with fontdue + softbuffer       |
-| **Runtime**    | `src/runtime/`     | App, input handling, runtime glue (winit)     |
-| **Perf**       | `src/perf.rs`      | Stage-based perf stats and debug overlay      |
-| **Keymap**     | `src/keymap/`      | Configurable keybindings, command dispatch    |
-| **Syntax**     | `src/syntax/`      | Tree-sitter syntax highlighting (20 langs)    |
-| **CSV**        | `src/csv/`         | CSV viewer/editor with spreadsheet UI         |
-| **Editable**   | `src/editable/`    | Unified text editing (cursors, selection)     |
-| **Image**      | `src/image/`       | Image file viewing and rendering              |
-| **Markdown**   | `src/markdown/`    | Markdown preview and rendering                |
-| **Outline**    | `src/outline/`     | Code outline / symbol extraction              |
-| **Panel**      | `src/panel/`       | Dock panel system                             |
-| **Config**     | `src/config.rs`    | Editor configuration                          |
-| **FsWatcher**  | `src/fs_watcher.rs`| File system change detection                  |
+| Module        | File(s)             | Purpose                                       |
+| ------------- | ------------------- | --------------------------------------------- |
+| **Model**     | `src/model/`        | AppModel, Document, EditorState, EditorArea   |
+| **Messages**  | `src/messages.rs`   | Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg |
+| **Update**    | `src/update/`       | Pure state transformation (14 submodules)     |
+| **Commands**  | `src/commands.rs`   | Cmd enum (Redraw, SaveFile, LoadFile, Batch)  |
+| **Theme**     | `src/theme.rs`      | YAML theme loading, Color types               |
+| **View**      | `src/view/`         | CPU rendering with fontdue + softbuffer       |
+| **Runtime**   | `src/runtime/`      | App, input handling, runtime glue (winit)     |
+| **Perf**      | `src/perf.rs`       | Stage-based perf stats and debug overlay      |
+| **Keymap**    | `src/keymap/`       | Configurable keybindings, command dispatch    |
+| **Syntax**    | `src/syntax/`       | Tree-sitter syntax highlighting (20 langs)    |
+| **CSV**       | `src/csv/`          | CSV viewer/editor with spreadsheet UI         |
+| **Editable**  | `src/editable/`     | Unified text editing (cursors, selection)     |
+| **Image**     | `src/image/`        | Image file viewing and rendering              |
+| **Markdown**  | `src/markdown/`     | Markdown preview and rendering                |
+| **Outline**   | `src/outline/`      | Code outline / symbol extraction              |
+| **Panel**     | `src/panel/`        | Dock panel system                             |
+| **Config**    | `src/config.rs`     | Editor configuration                          |
+| **FsWatcher** | `src/fs_watcher.rs` | File system change detection                  |
 
 ### Module Structure
 
@@ -224,16 +224,16 @@ Design docs live in `docs/feature/*.md`. Before implementing a feature:
 
 ### Key Docs
 
-| Doc                           | Purpose                                |
-| ----------------------------- | -------------------------------------- |
-| `docs/ROADMAP.md`             | Planned features, module structure     |
-| `docs/CHANGELOG.md`           | Completed work by date                 |
-| `docs/KEYBINDINGS.md`         | Full key bindings reference            |
-| `docs/EDITOR_UI_REFERENCE.md` | Comprehensive UI component reference   |
-| `docs/THEMES.md`              | Theme system documentation             |
-| `docs/PROFILING.md`           | Profiling and benchmarking guide       |
-| `docs/feature/*.md`           | Design specs (20 feature docs)         |
-| `docs/plans/`                 | Implementation plans                   |
+| Doc                           | Purpose                              |
+| ----------------------------- | ------------------------------------ |
+| `docs/ROADMAP.md`             | Planned features, module structure   |
+| `docs/CHANGELOG.md`           | Completed work by date               |
+| `docs/KEYBINDINGS.md`         | Full key bindings reference          |
+| `docs/EDITOR_UI_REFERENCE.md` | Comprehensive UI component reference |
+| `docs/THEMES.md`              | Theme system documentation           |
+| `docs/PROFILING.md`           | Profiling and benchmarking guide     |
+| `docs/feature/*.md`           | Design specs (20 feature docs)       |
+| `docs/plans/`                 | Implementation plans                 |
 
 ## Releasing a New Version
 

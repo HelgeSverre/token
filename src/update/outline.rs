@@ -7,6 +7,17 @@ use crate::outline::OutlineNode;
 use crate::util::{visible_tree_count, visible_tree_row_at_index};
 use crate::view::geometry::{DockHeaderLayout, OutlinePanelLayout, WindowLayout};
 
+/// Clamp a (line, col) position to valid document bounds.
+///
+/// A stale outline (built before the document was edited) could otherwise
+/// carry an out-of-range position through to the cursor.
+fn clamp_to_document(model: &AppModel, line: usize, col: usize) -> (usize, usize) {
+    let last_line = model.document().line_count().saturating_sub(1);
+    let clamped_line = line.min(last_line);
+    let clamped_col = col.min(model.document().line_length(clamped_line));
+    (clamped_line, clamped_col)
+}
+
 fn count_visible_items(nodes: &[OutlineNode], panel: &crate::model::OutlinePanelState) -> usize {
     visible_tree_count(nodes, |node: &OutlineNode| {
         node.is_collapsible() && !panel.is_collapsed(node)
@@ -28,10 +39,13 @@ fn visible_node_at_index<'a>(
 pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
     match msg {
         OutlineMsg::JumpToSymbol { line, col } => {
-            // Move cursor to the symbol and focus the editor
+            // Move cursor to the symbol and focus the editor. Clamp
+            // defensively: a stale outline (built before the document was
+            // edited) could otherwise carry an out-of-range position.
+            let (clamped_line, clamped_col) = clamp_to_document(model, line, col);
             let editor = model.editor_mut();
-            editor.cursors[0].line = line;
-            editor.cursors[0].column = col;
+            editor.cursors[0].line = clamped_line;
+            editor.cursors[0].column = clamped_col;
             editor.cursors[0].desired_column = None;
             editor.clear_selection();
             model.ensure_cursor_visible_centered();
@@ -185,7 +199,7 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
             if lines < 0 {
                 model.outline_panel.scroll_offset = offset.saturating_sub((-lines) as usize);
             } else {
-                model.outline_panel.scroll_offset = offset + lines as usize;
+                model.outline_panel.scroll_offset = offset.saturating_add(lines as usize);
             }
 
             let outline = model
@@ -244,9 +258,10 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                     } else if click_count >= 2 {
                         let line = node.range.start_line;
                         let col = node.range.start_col;
+                        let (clamped_line, clamped_col) = clamp_to_document(model, line, col);
                         let editor = model.editor_mut();
-                        editor.cursors[0].line = line;
-                        editor.cursors[0].column = col;
+                        editor.cursors[0].line = clamped_line;
+                        editor.cursors[0].column = clamped_col;
                         editor.cursors[0].desired_column = None;
                         editor.clear_selection();
                         model.ensure_cursor_visible_centered();

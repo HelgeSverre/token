@@ -59,6 +59,11 @@ pub struct Document {
     pub undo_stack: Vec<EditOperation>,
     /// Redo stack
     pub redo_stack: Vec<EditOperation>,
+    /// `undo_stack.len()` at the moment of the last successful save, if that
+    /// exact state is still reachable via undo/redo. `None` means the
+    /// document has never been saved (or the file doesn't exist yet), so
+    /// undo/redo can never clear the dirty flag on its own.
+    pub saved_revision: Option<usize>,
 
     // === Syntax Highlighting ===
     /// Detected language for syntax highlighting
@@ -83,6 +88,7 @@ impl Document {
             is_modified: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            saved_revision: Some(0),
             language: LanguageId::PlainText,
             syntax_highlights: None,
             outline: None,
@@ -100,6 +106,7 @@ impl Document {
             is_modified: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            saved_revision: Some(0),
             language: LanguageId::PlainText,
             syntax_highlights: None,
             outline: None,
@@ -119,6 +126,7 @@ impl Document {
             is_modified: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            saved_revision: Some(0),
             language,
             syntax_highlights: None,
             outline: None,
@@ -140,6 +148,9 @@ impl Document {
             is_modified: true, // Mark as modified since file doesn't exist yet
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            // No saved state exists yet (file doesn't exist on disk), so
+            // Undo/Redo can't clear the dirty flag until an actual save happens.
+            saved_revision: None,
             language,
             syntax_highlights: None,
             outline: None,
@@ -231,17 +242,26 @@ impl Document {
         }
     }
 
-    /// Get the length of a line (excluding newline character)
+    /// Get the length of a line (excluding the trailing line ending).
+    ///
+    /// Mirrors the CRLF-aware trim in `get_line_cow`: a trailing `\r\n`
+    /// excludes 2 chars, a lone trailing `\n` excludes 1. Without this a
+    /// CRLF file would overcount by 1 (the `\r`), diverging from what's
+    /// actually rendered and from `view::helpers::trim_line_ending`.
     pub fn line_length(&self, line_idx: usize) -> usize {
         if line_idx < self.buffer.len_lines() {
             let line = self.buffer.line(line_idx);
-            line.len_chars().saturating_sub(
-                if line.len_chars() > 0 && line.chars().last() == Some('\n') {
-                    1
+            let len = line.len_chars();
+            let trim_len = if len > 0 && line.char(len - 1) == '\n' {
+                if len > 1 && line.char(len - 2) == '\r' {
+                    2
                 } else {
-                    0
-                },
-            )
+                    1
+                }
+            } else {
+                0
+            };
+            len - trim_len
         } else {
             0
         }

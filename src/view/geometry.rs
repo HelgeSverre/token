@@ -1456,9 +1456,19 @@ pub struct ThemePickerWidgets {
     pub list: usize,
 }
 
+/// Cap on rows shown at once in the theme picker so a long theme list can't
+/// overflow the modal past the window. Shared between rendering
+/// (`view::modal`) and hit-testing (`view::hit_test`) so both compute the
+/// same layout for the same state.
+pub const THEME_PICKER_MAX_VISIBLE_ROWS: usize = 12;
+
 /// Compute layout for the Theme Picker modal.
 ///
-/// `total_rows` should include section headers (User Themes / Built-in Themes).
+/// `total_rows` should include section headers (User Themes / Built-in
+/// Themes), already capped by the caller to at most
+/// `THEME_PICKER_MAX_VISIBLE_ROWS` (via `.min(...)`) — this function does not
+/// apply that cap itself so callers that need the true uncapped count (e.g.
+/// for other computations) aren't forced through it.
 pub fn theme_picker_layout(
     window_width: usize,
     window_height: usize,
@@ -1474,9 +1484,8 @@ pub fn theme_picker_layout(
     v.gap(ModalSpacing::GAP_MD);
     let list = v.push(total_rows * line_height);
 
-    // ThemePicker uses window_height/4 without the min(100) cap
     let modal_x = window_width.saturating_sub(modal_width) / 2;
-    let modal_y = window_height / 4;
+    let modal_y = (window_height / 4).min(100);
     let content_height = v.height();
     let modal_height = content_height + pad * 2;
     let content_x = modal_x + pad;
@@ -1989,6 +1998,35 @@ mod tests {
     }
 
     #[test]
+    fn test_crlf_cursor_column_math_matches_rendered_text() {
+        // Regression test for a CRLF cursor-placement bug: `get_line_cow`
+        // (used for rendering) strips a trailing `\r\n`, but before this fix
+        // `trim_line_ending` (used for click->column math) and `line_length`
+        // (used for column clamping) only stripped the `\n`, leaving the `\r`
+        // counted. That mismatch let a click past the end of "hello" land on
+        // column 6 (as if the line were "hello\r") instead of clamping to 5.
+        let document = crate::model::Document::with_text("hello\r\nworld\r\n");
+
+        let rendered = document.get_line_cow(0).unwrap();
+        assert_eq!(&*rendered, "hello");
+
+        let line_text = document.get_line(0).unwrap();
+        let trimmed = crate::view::helpers::trim_line_ending(&line_text);
+        assert_eq!(trimmed, rendered.as_ref());
+
+        // Simulate clicking far past the end of the line (visual column 100).
+        let column = visual_col_to_char_col(trimmed, 100);
+        let line_len = document.line_length(0);
+        let clamped_column = column.min(line_len);
+
+        assert_eq!(line_len, 5);
+        assert_eq!(
+            clamped_column, 5,
+            "cursor must clamp to 'hello', not include the \\r"
+        );
+    }
+
+    #[test]
     fn test_column_to_pixel_x() {
         assert_eq!(column_to_pixel_x(2, 0, 100, 8.0), 116);
         assert_eq!(column_to_pixel_x(6, 4, 100, 8.0), 116);
@@ -2188,6 +2226,19 @@ mod tests {
         assert_eq!(list.h, 10 * lh);
         // Modal width is always 400
         assert_eq!(layout.w, 400);
+    }
+
+    #[test]
+    fn test_theme_picker_layout_y_position_is_capped_like_other_modals() {
+        // Regression test: ThemePicker used to compute modal_y as
+        // `window_height / 4` with no cap, while every other modal (via
+        // ModalLayout::build) caps it at 100. On a tall window this made the
+        // theme picker sit much lower than every other modal.
+        let (layout, _) = theme_picker_layout(1000, 2000, 20, 10);
+        assert_eq!(
+            layout.y, 100,
+            "theme picker's Y position must be capped at 100 like other modals"
+        );
     }
 
     #[test]

@@ -370,7 +370,7 @@ impl HitTarget {
             HitTarget::DockTab { position, .. }
             | HitTarget::DockTabBarEmpty { position }
             | HitTarget::DockContent { position, .. } => HoverRegion::Dock(*position),
-            HitTarget::BinaryPlaceholderButton { .. } => HoverRegion::Button,
+            HitTarget::BinaryPlaceholderButton { group_id } => HoverRegion::Button(*group_id),
             // Editor content, gutter, image content, CSV cells, and scrollbars map to EditorText.
             HitTarget::EditorGutter { .. }
             | HitTarget::EditorContent { .. }
@@ -509,7 +509,12 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
             let has_builtin = themes.iter().any(|t| t.source == ThemeSource::Builtin);
             let section_count = has_user as usize + has_builtin as usize;
             let total_rows = themes.len() + section_count;
-            let (l, _) = super::geometry::theme_picker_layout(ww, wh, lh, total_rows);
+            // Must match the cap `render_theme_picker_modal` applies, or
+            // hit-testing computes a taller/shorter layout than what's
+            // actually drawn.
+            let visible_rows =
+                total_rows.min(super::geometry::THEME_PICKER_MAX_VISIBLE_ROWS.max(1));
+            let (l, _) = super::geometry::theme_picker_layout(ww, wh, lh, visible_rows);
             l
         }
         Some(ModalState::GotoLine(_)) => {
@@ -942,12 +947,13 @@ pub fn hit_test_ui(model: &AppModel, pt: Point, char_width: f32) -> Option<HitTa
     // 6. Splitter bars (need to compute layout first)
     let window_layout = WindowLayout::compute(model, model.line_height);
 
-    // Note: This creates a temporary copy of splitters; in production code
-    // the splitters should be passed in or cached
+    // Group/preview rects are already kept current by the render pass's own
+    // `compute_layout_scaled` call, so hit-testing only needs splitters and
+    // can derive them read-only instead of cloning the entire `EditorArea`
+    // (every open document's undo/redo stacks included) on every mouse event.
     let splitters = model
         .editor_area
-        .clone() // Avoid borrow issues
-        .compute_layout_scaled(window_layout.editor_area_rect, model.metrics.splitter_width);
+        .compute_splitters(window_layout.editor_area_rect, model.metrics.splitter_width);
 
     if let Some(target) = hit_test_splitters(model, pt, &splitters) {
         return Some(target);

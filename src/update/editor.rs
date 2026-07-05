@@ -177,7 +177,7 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 let cursor_line = editor.active_cursor().line;
                 let top_line = editor.viewport.top_line;
                 let visible_lines = editor.viewport.visible_lines;
-                if cursor_line >= top_line + visible_lines {
+                if cursor_line >= top_line.saturating_add(visible_lines) {
                     let next_top_line = cursor_line.saturating_sub(visible_lines.saturating_sub(1));
                     editor.set_top_line_clamped(&doc, next_top_line);
                 }
@@ -189,8 +189,14 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
         }
 
         EditorMsg::SetCursorPosition { line, column } => {
-            model.editor_mut().primary_cursor_mut().line = line;
-            model.editor_mut().primary_cursor_mut().column = column;
+            // Current callers pre-clamp before sending this message, but
+            // clamp defensively here too so an out-of-range position can
+            // never reach the cursor regardless of caller.
+            let last_line = model.document().line_count().saturating_sub(1);
+            let clamped_line = line.min(last_line);
+            let clamped_column = column.min(model.document().line_length(clamped_line));
+            model.editor_mut().primary_cursor_mut().line = clamped_line;
+            model.editor_mut().primary_cursor_mut().column = clamped_column;
             model.editor_mut().primary_cursor_mut().desired_column = None;
             model.editor_mut().collapse_selections_to_cursors();
             // Use no-padding scroll: mouse clicks target visible positions,
@@ -319,7 +325,7 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
                 let cursor_line = editor.active_cursor().line;
                 let top_line = editor.viewport.top_line;
                 let visible_lines = editor.viewport.visible_lines;
-                if cursor_line >= top_line + visible_lines {
+                if cursor_line >= top_line.saturating_add(visible_lines) {
                     let next_top_line = cursor_line.saturating_sub(visible_lines.saturating_sub(1));
                     editor.set_top_line_clamped(&doc, next_top_line);
                 }
@@ -1187,6 +1193,47 @@ pub(crate) fn sync_other_editor_cursors(
         lines_delta,
         column_delta,
     );
+}
+
+/// Sync peer editors' cursors/selections after edits that shift columns on
+/// specific lines independently (e.g. indent/unindent), rather than at a
+/// single edit point. For each `(line, column_delta)` pair, any peer cursor
+/// or selection endpoint sitting on that line has its column shifted by the
+/// corresponding delta (clamped to stay non-negative).
+pub(crate) fn sync_other_editor_cursors_for_line_shifts(
+    model: &mut AppModel,
+    line_deltas: &std::collections::HashMap<usize, isize>,
+) {
+    let editor_id = match model.editor_area.focused_editor_id() {
+        Some(id) => id,
+        None => return,
+    };
+    let doc_id = match model.editor_area.focused_document_id() {
+        Some(id) => id,
+        None => return,
+    };
+
+    let editor_ids = model.editor_area.editors_for_document(doc_id);
+    for peer_id in editor_ids {
+        if peer_id == editor_id {
+            continue;
+        }
+        let Some(editor) = model.editor_area.editors.get_mut(&peer_id) else {
+            continue;
+        };
+        for (cursor, selection) in editor.cursors.iter_mut().zip(editor.selections.iter_mut()) {
+            if let Some(&delta) = line_deltas.get(&cursor.line) {
+                cursor.column = (cursor.column as isize + delta).max(0) as usize;
+            }
+            if let Some(&delta) = line_deltas.get(&selection.anchor.line) {
+                selection.anchor.column =
+                    (selection.anchor.column as isize + delta).max(0) as usize;
+            }
+            if let Some(&delta) = line_deltas.get(&selection.head.line) {
+                selection.head.column = (selection.head.column as isize + delta).max(0) as usize;
+            }
+        }
+    }
 }
 
 /// Get cursor indices sorted by position in reverse document order (last first)

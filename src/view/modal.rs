@@ -4,7 +4,9 @@ use crate::model::AppModel;
 
 use super::frame::{Frame, TextPainter};
 use super::geometry;
-use super::selectable_list::{render_selectable_list, SelectableListColors, SelectableListLayout};
+use super::selectable_list::{
+    render_selectable_list, SelectableListColors, SelectableListLayout, SelectableListViewport,
+};
 use super::text_field::TextFieldRenderer;
 
 #[derive(Clone, Copy)]
@@ -48,6 +50,15 @@ fn render_modal_shell(frame: &mut Frame, layout: &geometry::ModalLayout, colors:
     );
 }
 
+/// A single rendered row in the theme picker: either a section header or a
+/// theme entry (indexing back into `state.themes`).
+enum ThemeRow<'a> {
+    Header(&'static str),
+    Theme(usize, &'a crate::theme::ThemeInfo),
+}
+
+use geometry::THEME_PICKER_MAX_VISIBLE_ROWS;
+
 #[allow(clippy::too_many_arguments)]
 fn render_theme_picker_modal(
     frame: &mut Frame,
@@ -62,27 +73,13 @@ fn render_theme_picker_modal(
     use crate::theme::ThemeSource;
 
     let themes = &state.themes;
-
-    let has_user = themes.iter().any(|t| t.source == ThemeSource::User);
-    let has_builtin = themes.iter().any(|t| t.source == ThemeSource::Builtin);
-    let section_count = has_user as usize + has_builtin as usize;
-    let total_rows = themes.len() + section_count;
-
-    let (layout, w) =
-        geometry::theme_picker_layout(window_width, window_height, line_height, total_rows);
-
-    render_modal_shell(frame, &layout, colors);
-
-    let title_r = layout.widget(w.title);
-    painter.draw(frame, title_r.x, title_r.y, "Switch Theme", colors.fg);
-
-    let list_r = layout.widget(w.list);
     let clamped_selected = state.selected_index.min(themes.len().saturating_sub(1));
 
-    let mut current_y = list_r.y;
+    // Flatten themes + section headers into a single row list so scrolling
+    // and clipping can treat them uniformly.
+    let mut rows: Vec<ThemeRow> = Vec::with_capacity(themes.len() + 2);
     let mut current_source: Option<ThemeSource> = None;
-    let section_color = 0xFF666666;
-
+    let mut selected_row_index = 0;
     for (i, theme_info) in themes.iter().enumerate() {
         if current_source != Some(theme_info.source) {
             current_source = Some(theme_info.source);
@@ -90,32 +87,79 @@ fn render_theme_picker_modal(
                 ThemeSource::User => "User Themes",
                 ThemeSource::Builtin => "Built-in Themes",
             };
-            painter.draw(frame, layout.x + 12, current_y, header, section_color);
-            current_y += line_height;
+            rows.push(ThemeRow::Header(header));
         }
-
-        let is_selected = i == clamped_selected;
-
-        if is_selected {
-            frame.fill_rect_px(
-                layout.x + 4,
-                current_y,
-                layout.w - 8,
-                line_height,
-                colors.selection_bg,
-            );
+        if i == clamped_selected {
+            selected_row_index = rows.len();
         }
+        rows.push(ThemeRow::Theme(i, theme_info));
+    }
 
-        let label_x = layout.x + 24;
-        painter.draw(frame, label_x, current_y, &theme_info.name, colors.fg);
+    let max_visible_rows = THEME_PICKER_MAX_VISIBLE_ROWS.min(rows.len().max(1));
+    let viewport = SelectableListViewport::compute_from(
+        rows.len(),
+        selected_row_index,
+        max_visible_rows,
+        state.scroll_offset,
+    );
 
-        if model.theme.name == theme_info.name || model.config.theme == theme_info.id {
-            let check_x = layout.x + layout.w - 30;
-            painter.draw(frame, check_x, current_y, "✓", colors.highlight);
+    let (layout, w) = geometry::theme_picker_layout(
+        window_width,
+        window_height,
+        line_height,
+        rows.len().min(max_visible_rows),
+    );
+
+    render_modal_shell(frame, &layout, colors);
+
+    let title_r = layout.widget(w.title);
+    painter.draw(frame, title_r.x, title_r.y, "Switch Theme", colors.fg);
+
+    let list_r = layout.widget(w.list);
+    let section_color = 0xFF666666;
+
+    frame.set_clip(crate::model::Rect::new(
+        list_r.x as f32,
+        list_r.y as f32,
+        list_r.w as f32,
+        list_r.h as f32,
+    ));
+
+    let mut current_y = list_r.y;
+    for row in rows
+        .iter()
+        .skip(viewport.scroll_offset)
+        .take(max_visible_rows)
+    {
+        match row {
+            ThemeRow::Header(header) => {
+                painter.draw(frame, layout.x + 12, current_y, header, section_color);
+            }
+            ThemeRow::Theme(i, theme_info) => {
+                let is_selected = *i == clamped_selected;
+                if is_selected {
+                    frame.fill_rect_px(
+                        layout.x + 4,
+                        current_y,
+                        layout.w - 8,
+                        line_height,
+                        colors.selection_bg,
+                    );
+                }
+
+                let label_x = layout.x + 24;
+                painter.draw(frame, label_x, current_y, &theme_info.name, colors.fg);
+
+                if model.theme.name == theme_info.name || model.config.theme == theme_info.id {
+                    let check_x = layout.x + layout.w - 30;
+                    painter.draw(frame, check_x, current_y, "✓", colors.highlight);
+                }
+            }
         }
-
         current_y += line_height;
     }
+
+    frame.clear_clip();
 }
 
 #[allow(clippy::too_many_arguments)]

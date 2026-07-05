@@ -37,12 +37,10 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                 let previous_cursor_lines = &model.ui.previous_cursor_lines;
 
                 // Dirty lines = union of previous and current cursor lines
-                let mut dirty_lines: Vec<usize> = current_cursor_lines.clone();
-                for &line in previous_cursor_lines {
-                    if !dirty_lines.contains(&line) {
-                        dirty_lines.push(line);
-                    }
-                }
+                let mut dirty_lines_set: std::collections::HashSet<usize> =
+                    current_cursor_lines.iter().copied().collect();
+                dirty_lines_set.extend(previous_cursor_lines.iter().copied());
+                let dirty_lines: Vec<usize> = dirty_lines_set.into_iter().collect();
 
                 // Update previous cursor lines for next blink
                 model.ui.previous_cursor_lines = current_cursor_lines;
@@ -1290,8 +1288,10 @@ fn fuzzy_match_files(
 
 #[cfg(test)]
 mod tests {
-    use super::get_current_cursor_lines;
+    use super::{get_current_cursor_lines, update_ui};
+    use crate::commands::{Cmd, DamageArea};
     use crate::image::ImageState;
+    use crate::messages::UiMsg;
     use crate::model::{AppModel, ViewMode};
 
     #[test]
@@ -1317,5 +1317,40 @@ mod tests {
         model.editor_mut().cursors[0].line = 7;
 
         assert!(get_current_cursor_lines(&model).is_empty());
+    }
+
+    #[test]
+    fn blink_cursor_dedupes_dirty_lines_from_previous_and_current() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        // Force update_cursor_blink to report a state change on the next call.
+        model.config.cursor_blink_ms = 0;
+
+        // Two cursors: one overlaps a previous line, one is new.
+        model.editor_mut().cursors[0].line = 3;
+        let mut second_cursor = model.editor_mut().cursors[0];
+        second_cursor.line = 5;
+        model.editor_mut().cursors.push(second_cursor);
+
+        // Previous cursor lines overlap partially (3) and add a line not present now (9).
+        model.ui.previous_cursor_lines = vec![3, 9];
+
+        let cmd = update_ui(&mut model, UiMsg::BlinkCursor);
+
+        let areas = match cmd {
+            Some(Cmd::RedrawAreas(areas)) => areas,
+            other => panic!("expected Cmd::RedrawAreas, got {other:?}"),
+        };
+        assert_eq!(areas.len(), 1);
+        let mut lines = match &areas[0] {
+            DamageArea::CursorLines(lines) => lines.clone(),
+            other => panic!("expected DamageArea::CursorLines, got {other:?}"),
+        };
+        lines.sort_unstable();
+        assert_eq!(lines, vec![3, 5, 9], "dirty lines should be deduplicated");
+
+        // previous_cursor_lines should now be updated to the current cursor lines.
+        let mut updated_previous = model.ui.previous_cursor_lines.clone();
+        updated_previous.sort_unstable();
+        assert_eq!(updated_previous, vec![3, 5]);
     }
 }

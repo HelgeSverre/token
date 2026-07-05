@@ -826,8 +826,16 @@ fn sync_cell_edit_to_document(doc: &mut Document, edit: &CellEdit, delimiter: De
         }
     };
 
-    let abs_start = row_range.start + cell_range.start;
-    let abs_end = row_range.start + cell_range.end;
+    let abs_start_byte = row_range.start + cell_range.start;
+    let abs_end_byte = row_range.start + cell_range.end;
+
+    // `find_row_byte_range`/`find_field_byte_range` operate on `str::char_indices`,
+    // which yields byte offsets. `Rope::remove`/`Rope::insert` expect char offsets,
+    // so convert here before touching the rope. Without this, any multi-byte UTF-8
+    // content (accents, CJK, emoji) at or before the edited cell causes the wrong
+    // range to be mutated, or a panic when the byte offset exceeds `len_chars()`.
+    let abs_start = doc.buffer.byte_to_char(abs_start_byte);
+    let abs_end = doc.buffer.byte_to_char(abs_end_byte);
 
     let escaped = escape_csv_value(&edit.new_value, delimiter);
 
@@ -893,6 +901,7 @@ fn find_field_byte_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::csv::CellPosition;
 
     #[test]
     fn test_find_row_byte_range() {
@@ -941,5 +950,51 @@ mod tests {
         assert_eq!(find_field_byte_range(row, 0, Delimiter::Tab), Some(0..1));
         assert_eq!(find_field_byte_range(row, 1, Delimiter::Tab), Some(2..3));
         assert_eq!(find_field_byte_range(row, 2, Delimiter::Tab), Some(4..5));
+    }
+
+    /// Regression test: `find_row_byte_range`/`find_field_byte_range` return BYTE
+    /// offsets (from `str::char_indices`), but `Rope::remove`/`Rope::insert` expect
+    /// CHAR offsets. When a row before the edited cell contains multi-byte UTF-8
+    /// (like "café", where 'é' is 2 bytes but 1 char), byte offsets and char offsets
+    /// diverge, and passing raw byte offsets into the rope mutates the wrong range.
+    ///
+    /// Before the fix, editing the "age" field of the "bob" row below would corrupt
+    /// the buffer (e.g. deleting a wrong char and swallowing the following newline)
+    /// instead of producing "name,age\ncafé,30\nbob,26".
+    #[test]
+    fn test_sync_cell_edit_to_document_multibyte_row_before_edit() {
+        let content = "name,age\ncafé,30\nbob,25";
+        let mut doc = Document::with_text(content);
+
+        let edit = CellEdit {
+            position: CellPosition::new(2, 1),
+            old_value: "25".to_string(),
+            new_value: "26".to_string(),
+        };
+
+        sync_cell_edit_to_document(&mut doc, &edit, Delimiter::Comma);
+
+        assert_eq!(doc.buffer.to_string(), "name,age\ncafé,30\nbob,26");
+        assert!(doc.is_modified);
+    }
+
+    /// Same hazard as above, but the edit targets a cell in the very row that
+    /// contains the multi-byte character, exercising the field-range conversion
+    /// as well as the row-range conversion.
+    #[test]
+    fn test_sync_cell_edit_to_document_multibyte_in_edited_row() {
+        let content = "name,age\ncafé,30\nbob,25";
+        let mut doc = Document::with_text(content);
+
+        let edit = CellEdit {
+            position: CellPosition::new(1, 1),
+            old_value: "30".to_string(),
+            new_value: "31".to_string(),
+        };
+
+        sync_cell_edit_to_document(&mut doc, &edit, Delimiter::Comma);
+
+        assert_eq!(doc.buffer.to_string(), "name,age\ncafé,31\nbob,25");
+        assert!(doc.is_modified);
     }
 }

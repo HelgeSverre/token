@@ -468,6 +468,38 @@ fn test_splitter_exact_position_horizontal() {
 }
 
 #[test]
+fn test_compute_splitters_matches_mutating_layout_computation() {
+    use token::model::Rect;
+
+    // hit_test_ui used to clone the entire EditorArea (every open document's
+    // undo/redo stacks included) just to get a `&mut self` receiver for
+    // `compute_layout_scaled`. `compute_splitters` is the read-only
+    // replacement; it must produce identical splitter geometry without
+    // requiring `&mut self` or a clone.
+    let mut model = test_model("hello\nworld\n", 0, 0);
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
+    );
+
+    let available = Rect::new(0.0, 0.0, 800.0, 600.0);
+    let mutating = model.editor_area.compute_layout(available);
+    let read_only = model
+        .editor_area
+        .compute_splitters(available, token::model::SPLITTER_WIDTH);
+
+    assert_eq!(mutating.len(), read_only.len());
+    for (a, b) in mutating.iter().zip(read_only.iter()) {
+        assert_eq!(a.direction, b.direction);
+        assert_eq!(a.index, b.index);
+        assert_eq!((a.rect.x, a.rect.y, a.rect.width, a.rect.height), {
+            let r = b.rect;
+            (r.x, r.y, r.width, r.height)
+        });
+    }
+}
+
+#[test]
 fn test_splitter_exact_position_vertical() {
     use token::model::Rect;
 
@@ -1564,6 +1596,148 @@ fn test_cursor_sync_delete_backward() {
     // Cursor should have shifted left by 1 (was at col 5, now at col 4)
     assert_eq!(model.editor().primary_cursor().line, 0);
     assert_eq!(model.editor().primary_cursor().column, 4);
+}
+
+#[test]
+fn test_cursor_sync_indent_lines() {
+    use token::messages::DocumentMsg;
+
+    let mut model = test_model("hello\nworld\n", 0, 0);
+    let group1 = model.editor_area.focused_group_id;
+
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
+    );
+    let group2 = model.editor_area.focused_group_id;
+
+    // Peer cursor sits on the line that will be indented.
+    set_cursor_at(&mut model, 0, 3);
+
+    update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
+    set_cursor_at(&mut model, 0, 0);
+    update(&mut model, Msg::Document(DocumentMsg::IndentLines));
+
+    update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group2)));
+    assert_eq!(
+        model.editor().primary_cursor().column,
+        4,
+        "IndentLines on a peer group must shift this cursor's column right by 1"
+    );
+}
+
+#[test]
+fn test_cursor_sync_unindent_lines() {
+    use token::messages::DocumentMsg;
+
+    let mut model = test_model("\thello\nworld\n", 0, 0);
+    let group1 = model.editor_area.focused_group_id;
+
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
+    );
+    let group2 = model.editor_area.focused_group_id;
+
+    set_cursor_at(&mut model, 0, 3);
+
+    update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
+    set_cursor_at(&mut model, 0, 0);
+    update(&mut model, Msg::Document(DocumentMsg::UnindentLines));
+
+    update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group2)));
+    assert_eq!(
+        model.editor().primary_cursor().column,
+        2,
+        "UnindentLines on a peer group must shift this cursor's column left by the removed amount"
+    );
+}
+
+#[test]
+fn test_cursor_sync_duplicate_line_no_selection() {
+    use token::messages::DocumentMsg;
+
+    let mut model = test_model("hello\nworld\n", 0, 0);
+    let group1 = model.editor_area.focused_group_id;
+
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
+    );
+    let group2 = model.editor_area.focused_group_id;
+
+    // Peer cursor sits on the line below the one that will be duplicated.
+    set_cursor_at(&mut model, 1, 2);
+
+    update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
+    set_cursor_at(&mut model, 0, 0);
+    update(&mut model, Msg::Document(DocumentMsg::Duplicate));
+
+    update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group2)));
+    assert_eq!(
+        model.editor().primary_cursor().line,
+        2,
+        "Duplicate on a peer group must shift this cursor down by the duplicated line"
+    );
+}
+
+#[test]
+fn test_cursor_sync_paste_text_single_cursor() {
+    use token::messages::DocumentMsg;
+
+    let mut model = test_model("hello\nworld\n", 0, 0);
+    let group1 = model.editor_area.focused_group_id;
+
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
+    );
+    let group2 = model.editor_area.focused_group_id;
+
+    // Peer cursor sits after where text will be pasted on the same line.
+    set_cursor_at(&mut model, 0, 5);
+
+    update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
+    set_cursor_at(&mut model, 0, 0);
+    update(
+        &mut model,
+        Msg::Document(DocumentMsg::PasteText("XY".to_string())),
+    );
+
+    update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group2)));
+    assert_eq!(
+        model.editor().primary_cursor().column,
+        7,
+        "PasteText on a peer group must shift this cursor right by the pasted text's length"
+    );
+}
+
+#[test]
+fn test_cursor_sync_delete_forward_single_cursor_no_selection() {
+    use token::messages::DocumentMsg;
+
+    let mut model = test_model("hello\nworld\n", 0, 0);
+    let group1 = model.editor_area.focused_group_id;
+
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
+    );
+    let group2 = model.editor_area.focused_group_id;
+
+    // Peer cursor sits after the character that will be deleted forward.
+    set_cursor_at(&mut model, 0, 5);
+
+    update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group1)));
+    set_cursor_at(&mut model, 0, 3);
+    update(&mut model, Msg::Document(DocumentMsg::DeleteForward));
+
+    update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group2)));
+    assert_eq!(
+        model.editor().primary_cursor().column,
+        4,
+        "DeleteForward on a peer group must shift this cursor left by 1"
+    );
 }
 
 // ============================================================================

@@ -21,12 +21,16 @@ pub fn get_tab_display_name(model: &AppModel, tab: &Tab) -> String {
         .unwrap_or_else(|| "Untitled".to_string())
 }
 
-/// Trim trailing newline from a line of text.
+/// Trim trailing line ending (`\r\n` or `\n`) from a line of text.
 ///
-/// Used for display purposes to avoid rendering the newline character.
+/// Used for display purposes to avoid rendering the line-ending characters.
+/// Mirrors `Document::get_line_cow`'s CRLF-aware trim so cursor-column math
+/// derived from this text matches what's actually rendered.
 #[inline]
 pub fn trim_line_ending(text: &str) -> &str {
-    text.strip_suffix('\n').unwrap_or(text)
+    text.strip_suffix("\r\n")
+        .or_else(|| text.strip_suffix('\n'))
+        .unwrap_or(text)
 }
 
 #[cfg(test)]

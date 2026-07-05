@@ -109,7 +109,9 @@ fn word_end_after(buffer: &ropey::Rope, offset: usize) -> usize {
 /// Handle document messages (text editing, undo/redo)
 pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
     let result = update_document_inner(model, msg);
-    super::editor::compute_matched_brackets(model);
+    if model.editor().is_plain_text_mode() {
+        super::editor::compute_matched_brackets(model);
+    }
     result
 }
 
@@ -135,6 +137,16 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 let any_has_selection = model.editor().selections.iter().any(|s| !s.is_empty());
                 let do_surround =
                     model.config.auto_surround && close.is_some() && any_has_selection;
+
+                // Overlapping selections (e.g. from SelectAllOccurrences, which only
+                // deduplicates cursors but does not merge overlapping ranges) would
+                // corrupt the buffer when processed in reverse order below, since each
+                // selection's offset is recomputed against an already-mutated buffer.
+                // Merging first guarantees non-overlapping ranges, making reverse-order
+                // processing safe.
+                if do_surround {
+                    model.editor_mut().merge_overlapping_selections();
+                }
 
                 let cursors_before: Vec<Cursor> = model.editor().cursors.clone();
                 let indices = cursors_in_reverse_order(model);
@@ -944,7 +956,7 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                         // Record operation
                         operations.push(EditOperation::Delete {
                             position: start_offset,
-                            text: deleted_text,
+                            text: deleted_text.clone(),
                             cursor_before: model.editor().cursors[idx],
                             cursor_after: Cursor::at(start.line, start.column),
                         });
@@ -952,6 +964,26 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                         model.editor_mut().cursors[idx].line = start.line;
                         model.editor_mut().cursors[idx].column = start.column;
                         model.editor_mut().selections[idx] = Selection::new(start);
+
+                        // Sync cursors in other views
+                        let lines_removed = deleted_text.chars().filter(|&c| c == '\n').count();
+                        if lines_removed > 0 {
+                            sync_other_editor_cursors(
+                                model,
+                                start.line,
+                                start.column,
+                                -(lines_removed as isize),
+                                0,
+                            );
+                        } else {
+                            sync_other_editor_cursors(
+                                model,
+                                start.line,
+                                start.column,
+                                0,
+                                -(deleted_text.chars().count() as isize),
+                            );
+                        }
                     } else {
                         let cursor = model.editor().cursors[idx];
                         let pos = model
@@ -964,6 +996,7 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                                 .slice(pos..pos + 1)
                                 .chars()
                                 .collect();
+                            let is_newline = deleted_char == "\n";
                             model.document_mut().buffer.remove(pos..pos + 1);
 
                             // Record operation (cursor doesn't move for delete forward)
@@ -973,6 +1006,13 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                                 cursor_before: cursor,
                                 cursor_after: cursor,
                             });
+
+                            // Sync cursors in other views
+                            if is_newline {
+                                sync_other_editor_cursors(model, cursor.line, cursor.column, -1, 0);
+                            } else {
+                                sync_other_editor_cursors(model, cursor.line, cursor.column, 0, -1);
+                            }
                         }
                     }
                 }
@@ -999,14 +1039,36 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
             // Single cursor: check for selection
             if let Some((pos, deleted_text)) = delete_selection(model) {
                 let cursor_after = *model.editor().primary_cursor();
+                let (edit_line, edit_column) = model.document().offset_to_cursor(pos);
+                let lines_removed = deleted_text.chars().filter(|&c| c == '\n').count();
                 model.document_mut().push_edit(EditOperation::Delete {
                     position: pos,
-                    text: deleted_text,
+                    text: deleted_text.clone(),
                     cursor_before,
                     cursor_after,
                 });
                 model.document_mut().is_modified = true;
                 model.reset_cursor_blink();
+
+                // Sync cursors in other views
+                if lines_removed > 0 {
+                    sync_other_editor_cursors(
+                        model,
+                        edit_line,
+                        edit_column,
+                        -(lines_removed as isize),
+                        0,
+                    );
+                } else {
+                    sync_other_editor_cursors(
+                        model,
+                        edit_line,
+                        edit_column,
+                        0,
+                        -(deleted_text.chars().count() as isize),
+                    );
+                }
+
                 let new_line_count = model.document().line_count();
                 let edit_line = cursor_before.line.min(new_line_count.saturating_sub(1));
                 return Some(redraw_with_syntax_parse_shift(
@@ -1277,9 +1339,13 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
 
                 model.document_mut().is_modified = true;
 
-                if let Some(editor_id) = model.editor_area.focused_editor_id() {
-                    let next_top_line = model.editor().viewport.top_line.saturating_sub(1);
-                    model.set_editor_vertical_scroll(editor_id, next_top_line);
+                // Only shift the scroll position up if the deleted line was actually
+                // above the viewport; deleting a line at/below top_line must not move it.
+                if line_idx < model.editor().viewport.top_line {
+                    if let Some(editor_id) = model.editor_area.focused_editor_id() {
+                        let next_top_line = model.editor().viewport.top_line.saturating_sub(1);
+                        model.set_editor_vertical_scroll(editor_id, next_top_line);
+                    }
                 }
             }
 
@@ -1299,8 +1365,9 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
         DocumentMsg::Undo => {
             if let Some(edit) = model.document_mut().undo_stack.pop() {
                 apply_undo_operation(model, &edit);
-                model.document_mut().redo_stack.push(edit);
-                model.document_mut().is_modified = true;
+                let doc = model.document_mut();
+                doc.redo_stack.push(edit);
+                doc.is_modified = doc.saved_revision != Some(doc.undo_stack.len());
                 model.editor_mut().collapse_selections_to_cursors();
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
@@ -1311,8 +1378,9 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
         DocumentMsg::Redo => {
             if let Some(edit) = model.document_mut().redo_stack.pop() {
                 apply_redo_operation(model, &edit);
-                model.document_mut().undo_stack.push(edit);
-                model.document_mut().is_modified = true;
+                let doc = model.document_mut();
+                doc.undo_stack.push(edit);
+                doc.is_modified = doc.saved_revision != Some(doc.undo_stack.len());
                 model.editor_mut().collapse_selections_to_cursors();
                 model.ensure_cursor_visible();
                 model.reset_cursor_blink();
@@ -1495,7 +1563,11 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
 
         DocumentMsg::Paste => Some(Cmd::RequestClipboardPaste),
 
-        DocumentMsg::PasteText(text) => {
+        // `InsertText` (single atomic multi-char insert, e.g. IME commit or a
+        // legacy-bridge insert) needs the exact same semantics as pasting
+        // text: one rope insert, one undo record, proper multi-cursor
+        // distribution and peer-cursor sync — so it shares this arm.
+        DocumentMsg::PasteText(text) | DocumentMsg::InsertText(text) => {
             if text.is_empty() {
                 return Some(redraw_with_syntax_parse(model));
             }
@@ -1603,6 +1675,8 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 if !model.editor().primary_selection().is_empty() {
                     let Some((pos, deleted_text)) = delete_selection(model) else {
                         let cursor_pos = model.cursor_buffer_position();
+                        let (edit_line, edit_column) =
+                            model.document().offset_to_cursor(cursor_pos);
                         model.document_mut().buffer.insert(cursor_pos, &text);
                         let new_offset = cursor_pos + text.chars().count();
                         model.set_cursor_from_position(new_offset);
@@ -1610,6 +1684,24 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                         model.ui.set_status(format!("Pasted {} chars", text.len()));
                         model.ensure_cursor_visible();
                         model.reset_cursor_blink();
+                        let lines_added = text.chars().filter(|&c| c == '\n').count();
+                        if lines_added > 0 {
+                            sync_other_editor_cursors(
+                                model,
+                                edit_line,
+                                edit_column,
+                                lines_added as isize,
+                                0,
+                            );
+                        } else {
+                            sync_other_editor_cursors(
+                                model,
+                                edit_line,
+                                edit_column,
+                                0,
+                                text.chars().count() as isize,
+                            );
+                        }
                         return Some(redraw_with_syntax_parse_shift(
                             model,
                             Some((
@@ -1620,6 +1712,7 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                         ));
                     };
 
+                    let (edit_line, edit_column) = model.document().offset_to_cursor(pos);
                     model.document_mut().buffer.insert(pos, &text);
 
                     // Move cursor to end of pasted text
@@ -1634,8 +1727,28 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                         cursor_before,
                         cursor_after,
                     });
+
+                    let lines_added = text.chars().filter(|&c| c == '\n').count();
+                    if lines_added > 0 {
+                        sync_other_editor_cursors(
+                            model,
+                            edit_line,
+                            edit_column,
+                            lines_added as isize,
+                            0,
+                        );
+                    } else {
+                        sync_other_editor_cursors(
+                            model,
+                            edit_line,
+                            edit_column,
+                            0,
+                            text.chars().count() as isize,
+                        );
+                    }
                 } else {
                     let pos = model.cursor_buffer_position();
+                    let (edit_line, edit_column) = model.document().offset_to_cursor(pos);
 
                     model.document_mut().buffer.insert(pos, &text);
 
@@ -1650,6 +1763,25 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                         cursor_before,
                         cursor_after,
                     });
+
+                    let lines_added = text.chars().filter(|&c| c == '\n').count();
+                    if lines_added > 0 {
+                        sync_other_editor_cursors(
+                            model,
+                            edit_line,
+                            edit_column,
+                            lines_added as isize,
+                            0,
+                        );
+                    } else {
+                        sync_other_editor_cursors(
+                            model,
+                            edit_line,
+                            edit_column,
+                            0,
+                            text.chars().count() as isize,
+                        );
+                    }
                 }
             }
 
@@ -1864,6 +1996,9 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 let new_pos = model.editor().primary_cursor().to_position();
                 *model.editor_mut().primary_selection_mut() = Selection::new(new_pos);
 
+                let lines_added = text_to_insert.chars().filter(|&c| c == '\n').count();
+                let effective_lines_added = if !has_newline { 1 } else { lines_added };
+
                 let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Insert {
                     position: line_end_offset,
@@ -1871,6 +2006,14 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                     cursor_before,
                     cursor_after,
                 });
+
+                sync_other_editor_cursors(
+                    model,
+                    line_idx,
+                    model.document().line_length(line_idx),
+                    effective_lines_added as isize,
+                    0,
+                );
             } else {
                 // With selection: duplicate the selected text after selection end
                 let sel_start = selection.start();
@@ -1903,10 +2046,29 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 let cursor_after = *model.editor().primary_cursor();
                 model.document_mut().push_edit(EditOperation::Insert {
                     position: end_offset,
-                    text: selected_text,
+                    text: selected_text.clone(),
                     cursor_before,
                     cursor_after,
                 });
+
+                let lines_added = selected_text.chars().filter(|&c| c == '\n').count();
+                if lines_added > 0 {
+                    sync_other_editor_cursors(
+                        model,
+                        sel_end.line,
+                        sel_end.column,
+                        lines_added as isize,
+                        0,
+                    );
+                } else {
+                    sync_other_editor_cursors(
+                        model,
+                        sel_end.line,
+                        sel_end.column,
+                        0,
+                        selected_text.chars().count() as isize,
+                    );
+                }
             }
 
             model.document_mut().is_modified = true;
@@ -1961,6 +2123,12 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 cursors_before,
                 cursors_after,
             });
+
+            // Sync peer editors on the same document: every indented line
+            // shifted its own columns right by 1.
+            let line_deltas: std::collections::HashMap<usize, isize> =
+                indented_lines.iter().map(|&line| (line, 1)).collect();
+            super::editor::sync_other_editor_cursors_for_line_shifts(model, &line_deltas);
 
             model.document_mut().is_modified = true;
             model.ensure_cursor_visible();
@@ -2033,6 +2201,14 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                     cursors_after,
                 });
                 model.document_mut().is_modified = true;
+
+                // Sync peer editors on the same document: every unindented
+                // line shifted its own columns left by however much was removed.
+                let line_deltas: std::collections::HashMap<usize, isize> = removed_per_line
+                    .iter()
+                    .map(|(&line, &removed)| (line, -(removed as isize)))
+                    .collect();
+                super::editor::sync_other_editor_cursors_for_line_shifts(model, &line_deltas);
             }
 
             model.ensure_cursor_visible();

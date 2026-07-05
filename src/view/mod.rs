@@ -424,6 +424,8 @@ impl<'a> EditorGroupScene<'a> {
                         model,
                         placeholder,
                         &self.layout,
+                        self.group.id,
+                        self.is_focused,
                     );
                 });
             }
@@ -745,7 +747,9 @@ impl Renderer {
         }
 
         if plan.render_editor {
-            frame.fill_rect(plan.window_layout.content_rect, bg_color);
+            // Only clear the editor area's own sub-rect, not the full
+            // content_rect (which also spans the sidebar/dock areas).
+            frame.fill_rect(plan.window_layout.editor_area_rect, bg_color);
         }
 
         if plan.render_status_bar {
@@ -1104,14 +1108,25 @@ impl Renderer {
         editor_special_tabs::render_image_tab(frame, model, img_state, layout);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_binary_placeholder(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
         placeholder: &crate::model::editor::BinaryPlaceholderState,
         layout: &geometry::GroupLayout,
+        group_id: crate::model::editor_area::GroupId,
+        focused: bool,
     ) {
-        editor_special_tabs::render_binary_placeholder(frame, painter, model, placeholder, layout);
+        editor_special_tabs::render_binary_placeholder(
+            frame,
+            painter,
+            model,
+            placeholder,
+            layout,
+            group_id,
+            focused,
+        );
     }
 
     fn render_tab_bar(

@@ -261,11 +261,14 @@ impl<'a> TextEditorRenderer<'a> {
 
         let left_visual_col = rect_sel.left_visual_col();
         let right_visual_col = rect_sel.right_visual_col();
-        let current_visual_col = rect_sel.current_visual_col;
 
         let line_visual_len = char_col_to_visual_col(line_text, line_text.chars().count());
 
-        if current_visual_col > line_visual_len {
+        // A line has nothing to draw only when it's fully to the left of the
+        // whole rectangle. Don't bail based on the live drag column (just
+        // one edge of the rectangle) — a shorter intermediate line still
+        // needs a span clipped to `line_visual_len`, handled below.
+        if line_visual_len <= left_visual_col {
             return None;
         }
 
@@ -773,6 +776,19 @@ pub fn render_cursor_lines_only(
         return;
     };
 
+    // Defensive guard: this fast path assumes text-editor invariants
+    // (cursor-line highlighting, gutter, plain per-line layout) that only
+    // hold for plain-text tabs. `build_render_plan` only ever populates this
+    // path for text tabs, but guard here too so a future caller wiring this
+    // up for a non-text tab fails safely instead of misrendering.
+    debug_assert!(
+        editor.is_plain_text_mode(),
+        "render_cursor_lines_only called for a non-plain-text editor"
+    );
+    if !editor.is_plain_text_mode() {
+        return;
+    }
+
     let layout = geometry::GroupLayout::new(group, model, char_width);
     let mut renderer =
         TextEditorRenderer::new(model, editor, document, &layout, char_width, line_height);
@@ -818,6 +834,8 @@ pub fn render_gutter(
 #[cfg(test)]
 mod tests {
     use super::render_cursor_lines_only;
+    use super::{EditorRenderContext, TextEditorRenderer};
+    use crate::model::editor::RectangleSelectionState;
     use crate::model::{AppModel, Cursor, Position, Rect, Selection};
     use crate::view::geometry::GroupLayout;
     use crate::view::{Frame, GlyphCache, Renderer, TextPainter};
@@ -866,6 +884,67 @@ mod tests {
         editor.matched_brackets = Some((Position::new(1, 5), Position::new(1, 6)));
 
         model
+    }
+
+    #[test]
+    fn rectangle_selection_clips_to_a_shorter_intermediate_line_instead_of_skipping_it() {
+        // Regression test for a block-selection bug: dragging a rectangle
+        // selection down-and-right used to bail out entirely (`None`) for
+        // any intermediate line shorter than the *live drag column*, even
+        // though the line clearly overlaps the rectangle's left edge and
+        // should get a selection span clipped to its own length.
+        let model = make_text_model();
+        let char_width = 8.0;
+        let group = model
+            .editor_area
+            .groups
+            .get(&model.editor_area.focused_group_id)
+            .unwrap();
+        let layout = GroupLayout::new(group, &model, char_width);
+        let ctx =
+            EditorRenderContext::new(&layout, model.editor(), model.document(), char_width, 16);
+
+        // Rectangle drag: started at (line 0, visual col 0), dragged to
+        // (line 2, visual col 10) — i.e. a wide rectangle spanning columns
+        // [0, 10) across lines 0..=2.
+        let rect_sel = RectangleSelectionState {
+            active: true,
+            start_line: 0,
+            start_visual_col: 0,
+            current_line: 2,
+            current_visual_col: 10,
+            preview_cursors: Vec::new(),
+        };
+
+        // "alpha" is only 5 chars long — shorter than the drag's right edge
+        // (visual col 10) — so it used to be skipped (`None`) entirely.
+        let span =
+            TextEditorRenderer::rectangle_selection_span_for_line(&ctx, 0, &rect_sel, 0, "alpha");
+        assert!(
+            span.is_some(),
+            "a short line overlapping the rectangle's left edge must still get a clipped span, not None"
+        );
+
+        // A line fully to the left of the rectangle (empty, before the
+        // rectangle even starts) must still correctly return None.
+        let no_overlap = TextEditorRenderer::rectangle_selection_span_for_line(
+            &ctx,
+            0,
+            &RectangleSelectionState {
+                active: true,
+                start_line: 0,
+                start_visual_col: 20,
+                current_line: 2,
+                current_visual_col: 30,
+                preview_cursors: Vec::new(),
+            },
+            0,
+            "alpha",
+        );
+        assert!(
+            no_overlap.is_none(),
+            "a line fully left of the rectangle should still have no selection span"
+        );
     }
 
     fn render_full_editor_group(model: &AppModel) -> Vec<u32> {

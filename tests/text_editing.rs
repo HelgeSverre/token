@@ -3,7 +3,7 @@
 mod common;
 
 use common::{buffer_to_string, test_model, test_model_with_selection};
-use token::messages::{DocumentMsg, Msg};
+use token::messages::{AppMsg, DocumentMsg, Msg};
 use token::update::update;
 
 // ========================================================================
@@ -762,4 +762,62 @@ fn test_paste_multi_cursor_undo() {
     // Undo
     update(&mut model, Msg::Document(DocumentMsg::Undo));
     assert_eq!(buffer_to_string(&model), "XY\nXY");
+}
+
+// ========================================================================
+// Undo/Redo dirty-flag regression tests
+// ========================================================================
+
+#[test]
+fn test_undo_back_to_saved_state_clears_dirty_flag() {
+    let mut model = test_model("hello", 0, 5);
+
+    // Simulate a successful save at the current (unmodified) state.
+    update(&mut model, Msg::App(AppMsg::SaveCompleted(Ok(()))));
+    assert!(!model.document().is_modified);
+
+    update(&mut model, Msg::Document(DocumentMsg::InsertChar('!')));
+    assert!(model.document().is_modified);
+    assert_eq!(buffer_to_string(&model), "hello!");
+
+    // Undoing back to the exact saved state must clear the dirty flag,
+    // not just leave it set because *some* undo/redo happened.
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(buffer_to_string(&model), "hello");
+    assert!(
+        !model.document().is_modified,
+        "undoing back to the saved revision should clear is_modified"
+    );
+
+    // Redoing back past the saved state should mark it modified again.
+    update(&mut model, Msg::Document(DocumentMsg::Redo));
+    assert_eq!(buffer_to_string(&model), "hello!");
+    assert!(model.document().is_modified);
+}
+
+// ========================================================================
+// InsertText atomic-insert regression tests
+// ========================================================================
+
+#[test]
+fn test_insert_text_is_a_single_atomic_undo_record() {
+    let mut model = test_model("hello", 0, 5);
+
+    update(
+        &mut model,
+        Msg::Document(DocumentMsg::InsertText(" world".to_string())),
+    );
+    assert_eq!(buffer_to_string(&model), "hello world");
+    assert_eq!(model.editor().primary_cursor().column, 11);
+
+    // A single InsertText of multiple chars must be exactly one undo
+    // record, not one InsertChar-equivalent record per character.
+    assert_eq!(model.document().undo_stack.len(), 1);
+
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(
+        buffer_to_string(&model),
+        "hello",
+        "a single undo should remove the entire inserted string at once"
+    );
 }

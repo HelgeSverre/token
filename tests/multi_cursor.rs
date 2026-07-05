@@ -9,7 +9,7 @@
 mod common;
 
 use common::test_model;
-use token::messages::{EditorMsg, Msg};
+use token::messages::{DocumentMsg, EditorMsg, Msg};
 use token::model::{Cursor, Position, Selection};
 use token::update::update;
 
@@ -1185,4 +1185,38 @@ fn test_delete_backward_newline_multi_cursor_column_positions() {
         6,
         "Cursor 1 should be at column 6"
     );
+}
+
+// ========================================================================
+// Overlapping-selection surround regression test
+// ========================================================================
+
+#[test]
+fn test_auto_surround_with_overlapping_occurrences_does_not_corrupt_buffer() {
+    // "aaaa" searched for "aa" yields overlapping matches at [0,2), [1,3),
+    // [2,4) via find_all_occurrences (which intentionally allows overlap).
+    // SelectAllOccurrences only deduplicates cursors, not overlapping
+    // selection ranges, so typing a surround char used to corrupt the
+    // buffer when the multi-cursor surround handler processed these
+    // overlapping selections in reverse order against stale offsets.
+    let mut model = test_model("aaaa", 0, 0);
+
+    model.editor_mut().primary_selection_mut().anchor = Position::new(0, 0);
+    model.editor_mut().primary_selection_mut().head = Position::new(0, 2);
+    model.editor_mut().primary_cursor_mut().line = 0;
+    model.editor_mut().primary_cursor_mut().column = 2;
+
+    update(&mut model, Msg::Editor(EditorMsg::SelectAllOccurrences));
+    assert!(
+        model.editor().selections.len() > 1,
+        "expected multiple overlapping occurrences to be selected"
+    );
+
+    update(&mut model, Msg::Document(DocumentMsg::InsertChar('(')));
+
+    let text = model.document().buffer.to_string();
+    // The exact wrapping only matters insofar as it must be a sane,
+    // non-corrupted result: overlapping selections get merged first, so
+    // the whole overlapping span is wrapped exactly once.
+    assert_eq!(text, "(aaaa)");
 }

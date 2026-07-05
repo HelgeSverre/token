@@ -262,14 +262,7 @@ fn bridge_text_edit_to_editor(model: &mut AppModel, msg: TextEditMsg) -> Option<
 
         // === Insertion ===
         TextEditMsg::InsertChar(ch) => update_document(model, DocumentMsg::InsertChar(ch)),
-        TextEditMsg::InsertText(ref text) => {
-            // Insert text character by character (no batch insert in legacy)
-            let mut cmd = None;
-            for ch in text.chars() {
-                cmd = update_document(model, DocumentMsg::InsertChar(ch));
-            }
-            cmd
-        }
+        TextEditMsg::InsertText(text) => update_document(model, DocumentMsg::InsertText(text)),
         TextEditMsg::InsertNewline => update_document(model, DocumentMsg::InsertNewline),
 
         // === Deletion ===
@@ -299,9 +292,10 @@ fn bridge_text_edit_to_editor(model: &mut AppModel, msg: TextEditMsg) -> Option<
         // === Clipboard ===
         TextEditMsg::Copy => update_document(model, DocumentMsg::Copy),
         TextEditMsg::Cut => update_document(model, DocumentMsg::Cut),
-        TextEditMsg::Paste(_) => {
-            // The bridge approach uses the legacy Paste which reads from clipboard
-            update_document(model, DocumentMsg::Paste)
+        TextEditMsg::Paste(text) => {
+            // Use the already-captured text directly instead of discarding it
+            // and re-reading the OS clipboard asynchronously via `Paste`.
+            update_document(model, DocumentMsg::PasteText(text))
         }
 
         // === Undo/Redo ===

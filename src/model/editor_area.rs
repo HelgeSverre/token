@@ -875,6 +875,92 @@ impl EditorArea {
         }
     }
 
+    /// Compute the splitter bars for the current layout tree without
+    /// mutating group/preview rects.
+    ///
+    /// Hit-testing needs up-to-date splitter geometry on every mouse event,
+    /// but `compute_layout_scaled` requires `&mut self` (it also stores each
+    /// group/preview's rect). Those rects are already kept current by the
+    /// render pass's own call to `compute_layout_scaled` with the same rect,
+    /// so a hit-test-only caller can derive splitters read-only from `&self`
+    /// instead of cloning the entire `EditorArea` (every open document's
+    /// undo/redo stacks included) just to get a `&mut self` receiver.
+    pub fn compute_splitters(&self, available: Rect, splitter_width: f32) -> Vec<SplitterBar> {
+        let mut splitters = Vec::new();
+        self.compute_splitters_node(&self.layout, available, &mut splitters, splitter_width);
+        splitters
+    }
+
+    fn compute_splitters_node(
+        &self,
+        node: &LayoutNode,
+        rect: Rect,
+        splitters: &mut Vec<SplitterBar>,
+        splitter_width: f32,
+    ) {
+        let LayoutNode::Split(container) = node else {
+            return;
+        };
+
+        let children = &container.children;
+        let ratios = &container.ratios;
+        if children.is_empty() {
+            return;
+        }
+
+        let mut offset = 0.0;
+        let total_size = match container.direction {
+            SplitDirection::Horizontal => rect.width,
+            SplitDirection::Vertical => rect.height,
+        };
+
+        for (i, child) in children.iter().enumerate() {
+            let ratio = ratios
+                .get(i)
+                .copied()
+                .unwrap_or(1.0 / children.len() as f32);
+            let child_size = total_size * ratio;
+
+            let child_rect = match container.direction {
+                SplitDirection::Horizontal => {
+                    Rect::new(rect.x + offset, rect.y, child_size, rect.height)
+                }
+                SplitDirection::Vertical => {
+                    Rect::new(rect.x, rect.y + offset, rect.width, child_size)
+                }
+            };
+
+            if i < children.len() - 1 {
+                let splitter = match container.direction {
+                    SplitDirection::Horizontal => SplitterBar {
+                        direction: container.direction,
+                        rect: Rect::new(
+                            rect.x + offset + child_size - splitter_width / 2.0,
+                            rect.y,
+                            splitter_width,
+                            rect.height,
+                        ),
+                        index: i,
+                    },
+                    SplitDirection::Vertical => SplitterBar {
+                        direction: container.direction,
+                        rect: Rect::new(
+                            rect.x,
+                            rect.y + offset + child_size - splitter_width / 2.0,
+                            rect.width,
+                            splitter_width,
+                        ),
+                        index: i,
+                    },
+                };
+                splitters.push(splitter);
+            }
+
+            self.compute_splitters_node(child, child_rect, splitters, splitter_width);
+            offset += child_size;
+        }
+    }
+
     /// Find the group at a given point (for mouse clicks)
     pub fn group_at_point(&self, x: f32, y: f32) -> Option<GroupId> {
         self.group_at_point_node(&self.layout, x, y)

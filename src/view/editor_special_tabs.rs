@@ -26,12 +26,20 @@ pub fn render_image_tab(
 }
 
 /// Render a binary file placeholder tab.
+///
+/// `group_id` identifies which editor group this placeholder belongs to
+/// (needed to disambiguate hover state when the same button is visible in
+/// multiple split groups at once); `focused` is whether this group is the
+/// currently focused editor group.
+#[allow(clippy::too_many_arguments)]
 pub fn render_binary_placeholder(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
     placeholder: &BinaryPlaceholderState,
     layout: &geometry::GroupLayout,
+    group_id: crate::model::editor_area::GroupId,
+    focused: bool,
 ) {
     let content_rect = layout.content_rect;
     let bg = model.theme.editor.background.to_argb_u32();
@@ -67,7 +75,7 @@ pub fn render_binary_placeholder(
         .saturating_sub((size_str.len() as f32 * char_width / 2.0) as usize);
     painter.draw(frame, size_x, bp_layout.size_y, &size_str, dim_fg);
 
-    let btn_state = if model.ui.hover == crate::model::ui::HoverRegion::Button {
+    let btn_state = if model.ui.hover == crate::model::ui::HoverRegion::Button(group_id) {
         button::ButtonState::Hovered
     } else {
         button::ButtonState::Normal
@@ -80,7 +88,7 @@ pub fn render_binary_placeholder(
         bp_layout.button_rect,
         btn_label,
         btn_state,
-        true,
+        focused,
     );
 }
 
@@ -98,7 +106,7 @@ fn format_file_size(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_file_size, render_image_tab};
+    use super::{format_file_size, render_binary_placeholder, render_image_tab};
     use crate::commands::Cmd;
     use crate::image::ImageState;
     use crate::messages::{ImageMsg, Msg};
@@ -238,6 +246,91 @@ mod tests {
         assert_ne!(
             before, after,
             "pan state must change rendered pixels, not just internal offsets"
+        );
+    }
+
+    #[test]
+    fn binary_placeholder_hover_is_scoped_to_its_own_group() {
+        use crate::model::editor::BinaryPlaceholderState;
+        use crate::model::editor_area::GroupId;
+        use crate::model::ui::HoverRegion;
+        use crate::view::geometry::GroupLayout;
+        use crate::view::{GlyphCache, TextPainter};
+        use fontdue::{Font, FontSettings};
+
+        let font = Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            FontSettings::default(),
+        )
+        .expect("test font should load");
+        let font_size = 14.0;
+        let line_metrics = font
+            .horizontal_line_metrics(font_size)
+            .expect("font should expose horizontal metrics");
+        let (metrics, _) = font.rasterize('M', font_size);
+        let char_width = metrics.advance_width;
+        let line_height = line_metrics.new_line_size.ceil() as usize;
+
+        let mut model = AppModel::new(200, 120, 1.0, vec![]);
+        let group_id = model.editor_area.focused_group_id;
+        let tab_bar_height = model.metrics.tab_bar_height as f32;
+        model.editor_area.groups.get_mut(&group_id).unwrap().rect =
+            Rect::new(0.0, 0.0, 200.0, 120.0 + tab_bar_height);
+
+        let placeholder = BinaryPlaceholderState {
+            path: std::path::PathBuf::from("/tmp/data.bin"),
+            size_bytes: 42,
+        };
+
+        let render = |model: &AppModel, group_id: GroupId, focused: bool| -> Vec<u32> {
+            let width = model.window_size.0 as usize;
+            let height = (model.window_size.1 as f32 + tab_bar_height) as usize;
+            let mut buffer = vec![0; width * height];
+            let mut frame = Frame::new(&mut buffer, width, height);
+            let mut glyph_cache = GlyphCache::default();
+            let mut painter = TextPainter::new(
+                &font,
+                &mut glyph_cache,
+                font_size,
+                line_metrics.ascent,
+                char_width,
+                line_height,
+            );
+            let group = model.editor_area.groups.get(&group_id).unwrap();
+            let layout = GroupLayout::new(group, model, char_width);
+            render_binary_placeholder(
+                &mut frame,
+                &mut painter,
+                model,
+                &placeholder,
+                &layout,
+                group_id,
+                focused,
+            );
+            buffer
+        };
+
+        let other_group = GroupId(group_id.0.wrapping_add(1));
+
+        // Not hovering this group's button at all: baseline (Normal state).
+        model.ui.hover = HoverRegion::None;
+        let normal = render(&model, group_id, true);
+
+        // Hovering a *different* group's button must not render this
+        // group's button as hovered.
+        model.ui.hover = HoverRegion::Button(other_group);
+        let hover_other_group = render(&model, group_id, true);
+        assert_eq!(
+            normal, hover_other_group,
+            "hovering another group's button must not affect this group's button rendering"
+        );
+
+        // Hovering *this* group's button must render differently (Hovered state).
+        model.ui.hover = HoverRegion::Button(group_id);
+        let hover_this_group = render(&model, group_id, true);
+        assert_ne!(
+            normal, hover_this_group,
+            "hovering this group's own button must change its rendered pixels"
         );
     }
 }

@@ -1059,7 +1059,7 @@ pub fn handle_mouse_wheel(
         | HoverRegion::Splitter
         | HoverRegion::SidebarResize
         | HoverRegion::DockResize(_)
-        | HoverRegion::Button
+        | HoverRegion::Button(_)
         | HoverRegion::None => None,
 
         // Editor text area: scroll the editor or delegate to specialized modes.

@@ -102,10 +102,16 @@ impl<'a> Frame<'a> {
     /// Set a clipping rectangle. All subsequent drawing operations will be
     /// constrained to this region. Coordinates are in pixels (Rect uses f32).
     pub fn set_clip(&mut self, rect: Rect) {
+        // Clamp width/height to non-negative in f32 space before casting and
+        // adding to x/y: a negative width previously could make `x1 < x0`
+        // (an inverted clip rect) once both were independently clamped and
+        // cast to `usize`.
+        let w = rect.width.max(0.0);
+        let h = rect.height.max(0.0);
         let x0 = (rect.x.max(0.0) as usize).min(self.width);
         let y0 = (rect.y.max(0.0) as usize).min(self.height);
-        let x1 = ((rect.x + rect.width) as usize).min(self.width);
-        let y1 = ((rect.y + rect.height) as usize).min(self.height);
+        let x1 = ((rect.x.max(0.0) + w) as usize).min(self.width);
+        let y1 = ((rect.y.max(0.0) + h) as usize).min(self.height);
         self.clip = Some(ClipRect { x0, y0, x1, y1 });
     }
 
@@ -281,6 +287,27 @@ impl<'a> Frame<'a> {
 
     /// Fill a rectangle with alpha blending
     pub fn blend_rect(&mut self, rect: Rect, color: u32) {
+        // `color`'s alpha is loop-invariant across the whole rect; extract
+        // it once instead of re-deriving it (and re-checking the
+        // alpha<=0/alpha>=1 fast paths) on every single pixel.
+        let alpha = ((color >> 24) & 0xFF) as f32 / 255.0;
+        if alpha <= 0.0 {
+            return;
+        }
+        if alpha >= 1.0 {
+            let x0 = (rect.x.max(0.0) as usize).min(self.width).max(self.min_x());
+            let y0 = (rect.y.max(0.0) as usize)
+                .min(self.height)
+                .max(self.min_y());
+            let w = ((rect.x + rect.width) as usize)
+                .min(self.max_x())
+                .saturating_sub(x0);
+            let h = ((rect.y + rect.height) as usize)
+                .min(self.max_y())
+                .saturating_sub(y0);
+            return self.fill_rect_px(x0, y0, w, h, color | 0xFF000000);
+        }
+
         let x0 = (rect.x.max(0.0) as usize).min(self.width).max(self.min_x());
         let y0 = (rect.y.max(0.0) as usize)
             .min(self.height)
@@ -290,7 +317,7 @@ impl<'a> Frame<'a> {
 
         for y in y0..y1 {
             for x in x0..x1 {
-                self.blend_pixel(x, y, color);
+                self.blend_text_pixel(x, y, color, alpha);
             }
         }
     }
@@ -365,10 +392,25 @@ impl<'a> Frame<'a> {
     /// Dim the entire frame with a semi-transparent overlay
     /// Useful for modal backgrounds
     pub fn dim(&mut self, alpha: u8) {
+        if alpha == 0 {
+            return;
+        }
         let dim_color = (alpha as u32) << 24; // Black with given alpha
-        for y in 0..self.height {
-            for x in 0..self.width {
-                self.blend_pixel(x, y, dim_color);
+                                              // `alpha` is loop-invariant across the whole frame; extract it once
+                                              // instead of re-deriving it on every single pixel.
+        let a = alpha as f32 / 255.0;
+        if alpha == 0xFF {
+            return self.fill_rect_px(
+                self.min_x(),
+                self.min_y(),
+                self.width,
+                self.height,
+                dim_color | 0xFF000000,
+            );
+        }
+        for y in self.min_y()..self.max_y() {
+            for x in self.min_x()..self.max_x() {
+                self.blend_text_pixel(x, y, dim_color, a);
             }
         }
     }
@@ -707,6 +749,73 @@ mod tests {
         assert_eq!(frame.get_pixel(15, 15), 0xFFFF0000);
         // Check a pixel outside the rect
         assert_eq!(frame.get_pixel(5, 5), 0);
+    }
+
+    #[test]
+    fn set_clip_with_negative_width_produces_empty_not_inverted_clip() {
+        // Regression test: `set_clip` used to cast `rect.x + rect.width` to
+        // usize before clamping, so a negative width could (after `x0`'s own
+        // clamp) leave `x1 < x0` — an inverted clip rect. It must now
+        // collapse to an empty (x1 == x0), not inverted, region.
+        let mut buffer = vec![0u32; 20 * 20];
+        let mut frame = Frame::new(&mut buffer, 20, 20);
+
+        frame.set_clip(Rect {
+            x: 10.0,
+            y: 10.0,
+            width: -100.0,
+            height: -100.0,
+        });
+
+        assert!(frame.min_x() <= frame.max_x());
+        assert!(frame.min_y() <= frame.max_y());
+    }
+
+    #[test]
+    fn blend_rect_matches_per_pixel_blend_pixel_reference() {
+        // Regression test: `blend_rect` was refactored to extract alpha once
+        // and use a fast path for opaque colors, instead of re-deriving
+        // alpha on every pixel via `blend_pixel`. Output must be identical.
+        let rect = Rect {
+            x: 2.0,
+            y: 3.0,
+            width: 6.0,
+            height: 5.0,
+        };
+        let color = 0x80336699;
+
+        let mut buffer_a = vec![0xFFFFFFFF_u32; 12 * 12];
+        let mut frame_a = Frame::new(&mut buffer_a, 12, 12);
+        frame_a.blend_rect(rect, color);
+
+        // Reference: the old per-pixel `blend_pixel` loop.
+        let mut buffer_b = vec![0xFFFFFFFF_u32; 12 * 12];
+        let mut frame_b = Frame::new(&mut buffer_b, 12, 12);
+        for y in 3..8 {
+            for x in 2..8 {
+                frame_b.blend_pixel(x, y, color);
+            }
+        }
+
+        assert_eq!(buffer_a, buffer_b);
+    }
+
+    #[test]
+    fn dim_matches_per_pixel_blend_pixel_reference() {
+        let mut buffer_a = vec![0xFFFFFFFF_u32; 10 * 10];
+        let mut frame_a = Frame::new(&mut buffer_a, 10, 10);
+        frame_a.dim(96);
+
+        let mut buffer_b = vec![0xFFFFFFFF_u32; 10 * 10];
+        let mut frame_b = Frame::new(&mut buffer_b, 10, 10);
+        let dim_color = (96_u32) << 24;
+        for y in 0..10 {
+            for x in 0..10 {
+                frame_b.blend_pixel(x, y, dim_color);
+            }
+        }
+
+        assert_eq!(buffer_a, buffer_b);
     }
 
     #[test]

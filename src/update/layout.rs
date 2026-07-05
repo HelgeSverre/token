@@ -819,13 +819,10 @@ fn move_tab(model: &mut AppModel, tab_id: TabId, to_group: GroupId) {
     }
 
     // Remove the tab from source group
-    let tab = model
-        .editor_area
-        .groups
-        .get_mut(&source_group_id)
-        .unwrap()
-        .tabs
-        .remove(tab_idx);
+    let tab = match model.editor_area.groups.get_mut(&source_group_id) {
+        Some(group) => group.tabs.remove(tab_idx),
+        None => return,
+    };
 
     // Adjust active tab index in source group
     if let Some(source) = model.editor_area.groups.get_mut(&source_group_id) {

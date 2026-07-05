@@ -1,6 +1,6 @@
 //! UI state - status bar, cursor blink, modals, and other UI concerns
 
-use super::editor_area::SplitDirection;
+use super::editor_area::{GroupId, SplitDirection};
 use super::status_bar::{StatusBar, TransientMessage};
 use crate::editable::{EditConstraints, EditableState, StringBuffer};
 use crate::panel::DockPosition;
@@ -57,8 +57,11 @@ pub enum HoverRegion {
     DockResize(DockPosition),
     /// Hovering over a preview pane
     Preview,
-    /// Hovering over a button control
-    Button,
+    /// Hovering over a button control in a specific editor group (e.g. the
+    /// binary-placeholder "Open Anyway" button). Carrying the group id keeps
+    /// hover state correct when multiple such buttons are visible across a
+    /// split layout.
+    Button(GroupId),
 }
 
 // ============================================================================
@@ -232,6 +235,9 @@ pub struct ThemePickerState {
     pub themes: Vec<ThemeInfo>,
     /// Original theme ID for restore on cancel
     pub original_theme_id: String,
+    /// Scroll offset (in rows) for keeping a long theme list clipped and the
+    /// selection visible instead of overflowing the modal.
+    pub scroll_offset: usize,
 }
 
 impl ThemePickerState {
@@ -241,6 +247,7 @@ impl ThemePickerState {
             selected_index: 0,
             themes: list_available_themes(),
             original_theme_id: current_theme_id,
+            scroll_offset: 0,
         }
     }
 }
