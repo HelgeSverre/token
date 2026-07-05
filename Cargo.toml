@@ -114,6 +114,9 @@ tree-sitter-bash = "0.25"
 tree-sitter-racket = "0.24"
 tree-sitter-ini = "1.4"
 tree-sitter-xml = "0.7"
+# Vendored: upstream has no committed Rust bindings/Cargo.toml, so it can't be
+# used as a git dependency. Canonical grammar: https://github.com/sema-lisp/tree-sitter-sema
+tree-sitter-sema = { path = "vendor/tree-sitter-sema" }
 
 # Phase 7 languages (Template)
 # Vendored because upstream v0.12.3 has an SSH submodule URL that breaks

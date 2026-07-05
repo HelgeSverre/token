@@ -32,6 +32,31 @@ fn byte_to_char_col(text: &str, byte_col: usize) -> usize {
     text[..valid_byte].chars().count()
 }
 
+/// Sort each line's tokens by span and resolve identical-span duplicates
+/// with last-capture-wins.
+///
+/// Tree-sitter queries follow the last-match-wins convention: generic
+/// fallbacks (e.g. `(identifier) @variable`) come first in the query file
+/// and specific overrides (function names, keywords gated by predicates)
+/// come last. Keeping the last capture for a span makes those overrides
+/// take effect; keeping the first would paint everything with the fallback.
+fn finalize_line_tokens(highlights: &mut SyntaxHighlights) {
+    for line_highlights in highlights.lines.values_mut() {
+        let tokens = &mut line_highlights.tokens;
+        // Stable sort preserves capture order within identical spans
+        tokens.sort_by_key(|t| (t.start_col, t.end_col));
+        // Collapse runs of identical spans, keeping the LAST capture
+        tokens.dedup_by(|next, kept| {
+            if next.start_col == kept.start_col && next.end_col == kept.end_col {
+                kept.highlight = next.highlight;
+                true
+            } else {
+                false
+            }
+        });
+    }
+}
+
 /// Convert a byte offset to a tree-sitter Point (row, column in bytes)
 fn byte_to_point(text: &str, byte_offset: usize) -> Point {
     let mut row = 0usize;
@@ -295,7 +320,7 @@ impl ParserState {
             LanguageId::Bash => (tree_sitter_bash::LANGUAGE.into(), BASH_HIGHLIGHTS),
             // Phase 6 languages (specialized)
             LanguageId::Scheme => (tree_sitter_racket::LANGUAGE.into(), SCHEME_HIGHLIGHTS),
-            LanguageId::Sema => (tree_sitter_racket::LANGUAGE.into(), SEMA_HIGHLIGHTS),
+            LanguageId::Sema => (tree_sitter_sema::LANGUAGE.into(), SEMA_HIGHLIGHTS),
             LanguageId::Ini => (tree_sitter_ini::LANGUAGE.into(), INI_HIGHLIGHTS),
             LanguageId::Xml => (tree_sitter_xml::LANGUAGE_XML.into(), XML_HIGHLIGHTS),
             // Phase 7 languages (template)
@@ -558,12 +583,7 @@ impl ParserState {
             }
         }
 
-        // Sort tokens within each line by start column
-        for line_highlights in highlights.lines.values_mut() {
-            line_highlights
-                .tokens
-                .sort_by_key(|t| (t.start_col, t.end_col));
-        }
+        finalize_line_tokens(&mut highlights);
 
         highlights
     }
@@ -664,11 +684,7 @@ impl ParserState {
         self.extract_fenced_code_highlights(source, &block_tree, &mut highlights);
 
         // Re-sort tokens after adding inline and injected highlights
-        for line_highlights in highlights.lines.values_mut() {
-            line_highlights
-                .tokens
-                .sort_by_key(|t| (t.start_col, t.end_col));
-        }
+        finalize_line_tokens(&mut highlights);
 
         highlights
     }
@@ -1125,11 +1141,7 @@ impl ParserState {
         self.extract_html_embedded_highlights(source, &html_tree, &mut highlights);
 
         // Re-sort tokens after adding injected highlights
-        for line_highlights in highlights.lines.values_mut() {
-            line_highlights
-                .tokens
-                .sort_by_key(|t| (t.start_col, t.end_col));
-        }
+        finalize_line_tokens(&mut highlights);
 
         highlights
     }
@@ -1330,11 +1342,7 @@ impl ParserState {
         self.extract_vue_embedded_highlights(source, &tree, &mut highlights);
 
         // Re-sort tokens after adding injected highlights
-        for line_highlights in highlights.lines.values_mut() {
-            line_highlights
-                .tokens
-                .sort_by_key(|t| (t.start_col, t.end_col));
-        }
+        finalize_line_tokens(&mut highlights);
 
         highlights
     }
@@ -1666,6 +1674,7 @@ enabled: true
             LanguageId::Bash,
             // Phase 6
             LanguageId::Scheme,
+            LanguageId::Sema,
             LanguageId::Ini,
             LanguageId::Xml,
             // Phase 7
@@ -1882,6 +1891,33 @@ enabled: true
         fn test_just_query_compiles() {
             assert_query_compiles("Just", tree_sitter_just::LANGUAGE.into(), JUST_HIGHLIGHTS);
         }
+
+        #[test]
+        fn test_sema_query_compiles() {
+            assert_query_compiles("Sema", tree_sitter_sema::LANGUAGE.into(), SEMA_HIGHLIGHTS);
+        }
+    }
+
+    /// Guard the last-match-wins capture precedence: generic fallbacks come
+    /// first in the query files, specific overrides last, and the override
+    /// must win for identical spans (see `finalize_line_tokens`).
+    #[test]
+    fn test_capture_precedence_last_match_wins() {
+        let mut state = ParserState::new();
+
+        let source = "(define (factorial n) 1)\n";
+        let highlights = state.parse_and_highlight(source, LanguageId::Sema, DocumentId(60), 1);
+        let line = &highlights.lines[&0];
+
+        let name_at = |col: usize| {
+            line.highlight_at(col)
+                .map(|id| crate::syntax::highlights::HIGHLIGHT_NAMES[id as usize])
+                .unwrap_or("<none>")
+        };
+        // `define` is a special form, not the generic `(symbol) @variable`
+        assert_eq!(name_at(1), "keyword");
+        // `factorial` is the defined function name
+        assert_eq!(name_at(9), "function");
     }
 
     #[test]
