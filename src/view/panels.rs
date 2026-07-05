@@ -156,6 +156,25 @@ impl DockPaneScene {
     }
 }
 
+/// Truncate `name` to at most `max_chars` characters (including the trailing
+/// ellipsis), returning it unchanged if it already fits.
+///
+/// Operates on chars, not bytes, so multi-byte UTF-8 sequences are never cut
+/// mid-codepoint.
+fn truncate_with_ellipsis(name: &str, max_chars: usize) -> std::borrow::Cow<'_, str> {
+    let char_count = name.chars().count();
+    if char_count <= max_chars || max_chars == 0 {
+        return std::borrow::Cow::Borrowed(name);
+    }
+
+    let truncated: String = name
+        .chars()
+        .take(max_chars.saturating_sub(1))
+        .chain(std::iter::once('\u{2026}'))
+        .collect();
+    std::borrow::Cow::Owned(truncated)
+}
+
 /// Context for sidebar rendering, holding constant values throughout tree traversal.
 struct SidebarRenderContext {
     sidebar_width: usize,
@@ -285,24 +304,8 @@ pub fn render_sidebar(
                 .checked_div(ctx.char_width)
                 .unwrap_or(available_width / 8);
 
-            let name_chars = node.name.chars().count();
-            let needs_truncation = name_chars > max_chars && max_chars > 3;
-
-            if needs_truncation {
-                let truncate_at = max_chars.saturating_sub(1);
-                let byte_end = node
-                    .name
-                    .char_indices()
-                    .nth(truncate_at)
-                    .map(|(i, _)| i)
-                    .unwrap_or(node.name.len());
-                let mut display_name = String::with_capacity(byte_end + 3);
-                display_name.push_str(&node.name[..byte_end]);
-                display_name.push('\u{2026}');
-                painter.draw(frame, text_x, text_y, &display_name, fg);
-            } else {
-                painter.draw(frame, text_x, text_y, &node.name, fg);
-            }
+            let display_name = truncate_with_ellipsis(&node.name, max_chars);
+            painter.draw(frame, text_x, text_y, &display_name, fg);
         },
     );
 
@@ -478,18 +481,8 @@ pub fn render_outline_panel(
             let char_w = painter.char_width() as usize;
             let max_chars = available.checked_div(char_w).unwrap_or(80);
 
-            let name_chars = node.name.chars().count();
-            if name_chars > max_chars && max_chars > 1 {
-                let display: String = node
-                    .name
-                    .chars()
-                    .take(max_chars.saturating_sub(1))
-                    .chain(std::iter::once('\u{2026}'))
-                    .collect();
-                painter.draw(frame, name_x, text_y, &display, fg);
-            } else {
-                painter.draw(frame, name_x, text_y, &node.name, fg);
-            }
+            let display = truncate_with_ellipsis(&node.name, max_chars);
+            painter.draw(frame, name_x, text_y, &display, fg);
         },
     );
 }
@@ -526,5 +519,43 @@ mod outline_scroll_tests {
     #[test]
     fn leaves_scroll_untouched_when_capacity_is_zero() {
         assert_eq!(resolve_outline_scroll_offset(3, Some(10), 0), 3);
+    }
+}
+
+#[cfg(test)]
+mod truncate_with_ellipsis_tests {
+    use super::truncate_with_ellipsis;
+
+    #[test]
+    fn leaves_short_names_unchanged() {
+        let result = truncate_with_ellipsis("short.rs", 20);
+        assert_eq!(result, "short.rs");
+        assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn truncates_long_names_with_ellipsis() {
+        // "a_very_long_filename.rs" is 24 chars; requesting 10 chars should
+        // keep 9 chars of the original plus a trailing ellipsis.
+        let result = truncate_with_ellipsis("a_very_long_filename.rs", 10);
+        assert_eq!(result, "a_very_lo\u{2026}");
+        assert_eq!(result.chars().count(), 10);
+    }
+
+    #[test]
+    fn truncates_multibyte_names_on_char_boundaries() {
+        // "café_very_long_name" contains a multi-byte 'é' (2 bytes in UTF-8).
+        // Truncation must count characters, not bytes, or this would panic
+        // or split the 'é' mid-codepoint.
+        let name = "café_very_long_name";
+        assert_eq!(name.chars().count(), 19);
+        let result = truncate_with_ellipsis(name, 6);
+        assert_eq!(result, "café_\u{2026}");
+        assert_eq!(result.chars().count(), 6);
+    }
+
+    #[test]
+    fn does_not_truncate_when_max_chars_is_zero() {
+        assert_eq!(truncate_with_ellipsis("anything", 0), "anything");
     }
 }

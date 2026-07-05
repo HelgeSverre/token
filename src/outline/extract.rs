@@ -298,16 +298,61 @@ fn build_tree_by_containment(mut symbols: Vec<FlatSymbol>) -> Vec<OutlineNode> {
 }
 
 // =============================================================================
+// Shared recursive walking driver
+// =============================================================================
+//
+// Every language's `extract_X_symbols` walks the tree-sitter AST the same
+// way: visit a node, let the language decide what (if anything) to record,
+// then recurse into children. The only per-language variation is:
+//   1. which node kinds produce a `FlatSymbol`, and
+//   2. occasionally, which subset of children to recurse into (e.g. Python
+//      skips decorator nodes so nested decls inside decorator arguments
+//      aren't picked up, and JS/TS's `export_statement` filters out any
+//      nested `export_statement` child to avoid double-visiting).
+//
+// `classify` captures that per-language logic. It may push zero or more
+// symbols for `node`, and returns:
+//   - `None` to recurse into all of `node`'s children (the common case), or
+//   - `Some(children)` to recurse only into that explicit list (which may
+//     be empty, effectively stopping descent into `node`).
+fn walk_and_collect<'tree>(
+    node: Node<'tree>,
+    source: &str,
+    symbols: &mut Vec<FlatSymbol>,
+    classify: &impl Fn(Node<'tree>, &str, &mut Vec<FlatSymbol>) -> Option<Vec<Node<'tree>>>,
+) {
+    let next_children = classify(node, source, symbols);
+
+    match next_children {
+        Some(children) => {
+            for child in children {
+                walk_and_collect(child, source, symbols, classify);
+            }
+        }
+        None => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                walk_and_collect(child, source, symbols, classify);
+            }
+        }
+    }
+}
+
+// =============================================================================
 // Rust symbol extraction
 // =============================================================================
 
 fn extract_rust_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
     let mut symbols = Vec::new();
-    collect_rust_symbols(root, source, &mut symbols);
+    walk_and_collect(root, source, &mut symbols, &classify_rust_node);
     symbols
 }
 
-fn collect_rust_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
+fn classify_rust_node<'tree>(
+    node: Node<'tree>,
+    source: &str,
+    symbols: &mut Vec<FlatSymbol>,
+) -> Option<Vec<Node<'tree>>> {
     match node.kind() {
         "function_item" => {
             if let Some(name_node) = child_by_field(&node, "name") {
@@ -384,10 +429,7 @@ fn collect_rust_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>)
         _ => {}
     }
 
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_rust_symbols(child, source, symbols);
-    }
+    None
 }
 
 // =============================================================================
@@ -396,11 +438,15 @@ fn collect_rust_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>)
 
 fn extract_js_ts_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
     let mut symbols = Vec::new();
-    collect_js_ts_symbols(root, source, &mut symbols);
+    walk_and_collect(root, source, &mut symbols, &classify_js_ts_node);
     symbols
 }
 
-fn collect_js_ts_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
+fn classify_js_ts_node<'tree>(
+    node: Node<'tree>,
+    source: &str,
+    symbols: &mut Vec<FlatSymbol>,
+) -> Option<Vec<Node<'tree>>> {
     match node.kind() {
         "function_declaration" => {
             if let Some(name_node) = child_by_field(&node, "name") {
@@ -474,20 +520,16 @@ fn collect_js_ts_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>
         }
         "export_statement" => {
             let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                if child.kind() != "export_statement" {
-                    collect_js_ts_symbols(child, source, symbols);
-                }
-            }
-            return;
+            let children: Vec<Node> = node
+                .children(&mut cursor)
+                .filter(|c| c.kind() != "export_statement")
+                .collect();
+            return Some(children);
         }
         _ => {}
     }
 
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_js_ts_symbols(child, source, symbols);
-    }
+    None
 }
 
 // =============================================================================
@@ -496,11 +538,15 @@ fn collect_js_ts_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>
 
 fn extract_python_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
     let mut symbols = Vec::new();
-    collect_python_symbols(root, source, &mut symbols);
+    walk_and_collect(root, source, &mut symbols, &classify_python_node);
     symbols
 }
 
-fn collect_python_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
+fn classify_python_node<'tree>(
+    node: Node<'tree>,
+    source: &str,
+    symbols: &mut Vec<FlatSymbol>,
+) -> Option<Vec<Node<'tree>>> {
     match node.kind() {
         "function_definition" => {
             if let Some(name_node) = child_by_field(&node, "name") {
@@ -518,20 +564,16 @@ fn collect_python_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol
         }
         "decorated_definition" => {
             let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                if child.kind() == "function_definition" || child.kind() == "class_definition" {
-                    collect_python_symbols(child, source, symbols);
-                }
-            }
-            return;
+            let children: Vec<Node> = node
+                .children(&mut cursor)
+                .filter(|c| c.kind() == "function_definition" || c.kind() == "class_definition")
+                .collect();
+            return Some(children);
         }
         _ => {}
     }
 
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_python_symbols(child, source, symbols);
-    }
+    None
 }
 
 // =============================================================================
@@ -540,11 +582,15 @@ fn collect_python_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol
 
 fn extract_go_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
     let mut symbols = Vec::new();
-    collect_go_symbols(root, source, &mut symbols);
+    walk_and_collect(root, source, &mut symbols, &classify_go_node);
     symbols
 }
 
-fn collect_go_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
+fn classify_go_node<'tree>(
+    node: Node<'tree>,
+    source: &str,
+    symbols: &mut Vec<FlatSymbol>,
+) -> Option<Vec<Node<'tree>>> {
     match node.kind() {
         "function_declaration" => {
             if let Some(name_node) = child_by_field(&node, "name") {
@@ -593,10 +639,7 @@ fn collect_go_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
         _ => {}
     }
 
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_go_symbols(child, source, symbols);
-    }
+    None
 }
 
 // =============================================================================
@@ -605,11 +648,15 @@ fn collect_go_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
 
 fn extract_java_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
     let mut symbols = Vec::new();
-    collect_java_symbols(root, source, &mut symbols);
+    walk_and_collect(root, source, &mut symbols, &classify_java_node);
     symbols
 }
 
-fn collect_java_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
+fn classify_java_node<'tree>(
+    node: Node<'tree>,
+    source: &str,
+    symbols: &mut Vec<FlatSymbol>,
+) -> Option<Vec<Node<'tree>>> {
     match node.kind() {
         "class_declaration" => {
             if let Some(name_node) = child_by_field(&node, "name") {
@@ -654,10 +701,7 @@ fn collect_java_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>)
         _ => {}
     }
 
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_java_symbols(child, source, symbols);
-    }
+    None
 }
 
 // =============================================================================
@@ -666,11 +710,15 @@ fn collect_java_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>)
 
 fn extract_php_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
     let mut symbols = Vec::new();
-    collect_php_symbols(root, source, &mut symbols);
+    walk_and_collect(root, source, &mut symbols, &classify_php_node);
     symbols
 }
 
-fn collect_php_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
+fn classify_php_node<'tree>(
+    node: Node<'tree>,
+    source: &str,
+    symbols: &mut Vec<FlatSymbol>,
+) -> Option<Vec<Node<'tree>>> {
     match node.kind() {
         "class_declaration" => {
             if let Some(name_node) = child_by_field(&node, "name") {
@@ -717,10 +765,7 @@ fn collect_php_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) 
         _ => {}
     }
 
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_php_symbols(child, source, symbols);
-    }
+    None
 }
 
 // =============================================================================
@@ -729,16 +774,18 @@ fn collect_php_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) 
 
 fn extract_c_cpp_symbols(root: Node, source: &str, language: LanguageId) -> Vec<FlatSymbol> {
     let mut symbols = Vec::new();
-    collect_c_cpp_symbols(root, source, &mut symbols, language);
+    walk_and_collect(root, source, &mut symbols, &|node, source, symbols| {
+        classify_c_cpp_node(node, source, symbols, language)
+    });
     symbols
 }
 
-fn collect_c_cpp_symbols(
-    node: Node,
+fn classify_c_cpp_node<'tree>(
+    node: Node<'tree>,
     source: &str,
     symbols: &mut Vec<FlatSymbol>,
     language: LanguageId,
-) {
+) -> Option<Vec<Node<'tree>>> {
     match node.kind() {
         "function_definition" => {
             if let Some(decl) = child_by_field(&node, "declarator") {
@@ -778,10 +825,7 @@ fn collect_c_cpp_symbols(
         _ => {}
     }
 
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_c_cpp_symbols(child, source, symbols, language);
-    }
+    None
 }
 
 fn extract_c_function_name(declarator: &Node, source: &str) -> Option<String> {
@@ -810,11 +854,15 @@ fn extract_c_function_name(declarator: &Node, source: &str) -> Option<String> {
 
 fn extract_yaml_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
     let mut symbols = Vec::new();
-    collect_yaml_symbols(root, source, &mut symbols);
+    walk_and_collect(root, source, &mut symbols, &classify_yaml_node);
     symbols
 }
 
-fn collect_yaml_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
+fn classify_yaml_node<'tree>(
+    node: Node<'tree>,
+    source: &str,
+    symbols: &mut Vec<FlatSymbol>,
+) -> Option<Vec<Node<'tree>>> {
     match node.kind() {
         "block_mapping_pair" | "flow_pair" => {
             if let Some(key_node) = child_by_field(&node, "key") {
@@ -829,10 +877,7 @@ fn collect_yaml_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>)
         _ => {}
     }
 
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_yaml_symbols(child, source, symbols);
-    }
+    None
 }
 
 // =============================================================================
@@ -848,11 +893,15 @@ const HTML_OUTLINE_TAGS: &[&str] = &[
 
 fn extract_html_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
     let mut symbols = Vec::new();
-    collect_html_symbols(root, source, &mut symbols);
+    walk_and_collect(root, source, &mut symbols, &classify_html_node);
     symbols
 }
 
-fn collect_html_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
+fn classify_html_node<'tree>(
+    node: Node<'tree>,
+    source: &str,
+    symbols: &mut Vec<FlatSymbol>,
+) -> Option<Vec<Node<'tree>>> {
     if node.kind() == "element" {
         if let Some(start_tag) = node.child_by_field_name("start_tag").or_else(|| {
             node.children(&mut node.walk())
@@ -873,10 +922,7 @@ fn collect_html_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>)
         }
     }
 
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_html_symbols(child, source, symbols);
-    }
+    None
 }
 
 /// Build a display label like `div#app` or `section.hero` from attributes
@@ -960,11 +1006,15 @@ const BLADE_OUTLINE_DIRECTIVES: &[&str] = &[
 
 fn extract_blade_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
     let mut symbols = Vec::new();
-    collect_blade_symbols(root, source, &mut symbols);
+    walk_and_collect(root, source, &mut symbols, &classify_blade_node);
     symbols
 }
 
-fn collect_blade_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
+fn classify_blade_node<'tree>(
+    node: Node<'tree>,
+    source: &str,
+    symbols: &mut Vec<FlatSymbol>,
+) -> Option<Vec<Node<'tree>>> {
     match node.kind() {
         // HTML elements (reuse HTML logic)
         "element" => {
@@ -997,12 +1047,9 @@ fn collect_blade_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>
             let ident = blade_directive_ident(&node, source);
             if let Some(ref name) = ident {
                 if !BLADE_OUTLINE_DIRECTIVES.contains(&name.as_str()) {
-                    // Not structural — skip but still recurse into children
-                    let mut cursor = node.walk();
-                    for child in node.children(&mut cursor) {
-                        collect_blade_symbols(child, source, symbols);
-                    }
-                    return;
+                    // Not structural — skip pushing a symbol, but still recurse
+                    // into children normally (falls through to `None` below).
+                    return None;
                 }
             }
             let kind = match node.kind() {
@@ -1018,10 +1065,7 @@ fn collect_blade_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>
         _ => {}
     }
 
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_blade_symbols(child, source, symbols);
-    }
+    None
 }
 
 /// Extract the directive identifier from a node's raw text by scanning for `@`.
@@ -1085,11 +1129,15 @@ fn blade_directive_label(node: &Node, source: &str) -> String {
 
 fn extract_vue_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
     let mut symbols = Vec::new();
-    collect_vue_symbols(root, source, &mut symbols);
+    walk_and_collect(root, source, &mut symbols, &classify_vue_node);
     symbols
 }
 
-fn collect_vue_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) {
+fn classify_vue_node<'tree>(
+    node: Node<'tree>,
+    source: &str,
+    symbols: &mut Vec<FlatSymbol>,
+) -> Option<Vec<Node<'tree>>> {
     match node.kind() {
         "element" | "script_element" | "style_element" => {
             if let Some(tag_name) = vue_element_tag_name(node, source) {
@@ -1108,10 +1156,7 @@ fn collect_vue_symbols(node: Node, source: &str, symbols: &mut Vec<FlatSymbol>) 
         _ => {}
     }
 
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_vue_symbols(child, source, symbols);
-    }
+    None
 }
 
 /// Get the tag name from an HTML element node (element, script_element, style_element)

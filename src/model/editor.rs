@@ -608,22 +608,9 @@ impl EditorState {
 
     /// Create an editor state with specific viewport dimensions
     pub fn with_viewport(visible_lines: usize, visible_columns: usize) -> Self {
-        let cursor = Cursor::new();
-        let selection = Selection::new(cursor.to_position());
         Self {
-            id: None,
-            document_id: None,
-            cursors: vec![cursor],
-            selections: vec![selection],
-            active_cursor_index: 0,
             viewport: Viewport::new(visible_lines, visible_columns),
-            scroll_padding: 1,
-            rectangle_selection: RectangleSelectionState::default(),
-            occurrence_state: None,
-            selection_history: Vec::new(),
-            view_mode: ViewMode::default(),
-            tab_content: TabContent::default(),
-            matched_brackets: None,
+            ..Self::new()
         }
     }
 

@@ -749,20 +749,11 @@ impl AppModel {
             return false;
         };
 
-        let Some(doc_ptr) = self
-            .editor_area
-            .documents
-            .get(&doc_id)
-            .map(|doc| doc as *const Document)
-        else {
+        let Some(document) = self.editor_area.documents.get(&doc_id) else {
             return false;
         };
-
-        let changed = {
-            let editor = self.editor_area.editors.get_mut(&editor_id).unwrap();
-            let document = unsafe { &*doc_ptr };
-            editor.set_top_line_clamped(document, top_line)
-        };
+        let editor = self.editor_area.editors.get_mut(&editor_id).unwrap();
+        let changed = editor.set_top_line_clamped(document, top_line);
 
         if changed && self.editor_area.focused_editor_id() == Some(editor_id) {
             self.sync_preview_scroll();
@@ -786,17 +777,10 @@ impl AppModel {
             return false;
         };
 
-        let Some(doc_ptr) = self
-            .editor_area
-            .documents
-            .get(&doc_id)
-            .map(|doc| doc as *const Document)
-        else {
+        let Some(document) = self.editor_area.documents.get(&doc_id) else {
             return false;
         };
-
         let editor = self.editor_area.editors.get_mut(&editor_id).unwrap();
-        let document = unsafe { &*doc_ptr };
         editor.set_left_column_clamped(document, left_column)
     }
 
@@ -809,12 +793,9 @@ impl AppModel {
             return false;
         };
 
-        let doc_ptr = self.editor_area.documents.get(&doc_id).unwrap() as *const Document;
-        let changed = {
-            let editor = self.editor_area.editors.get_mut(&editor_id).unwrap();
-            let document = unsafe { &*doc_ptr };
-            editor.scroll_vertical_by(document, delta)
-        };
+        let document = self.editor_area.documents.get(&doc_id).unwrap();
+        let editor = self.editor_area.editors.get_mut(&editor_id).unwrap();
+        let changed = editor.scroll_vertical_by(document, delta);
 
         if changed {
             self.sync_preview_scroll();
@@ -832,9 +813,8 @@ impl AppModel {
             return false;
         };
 
-        let doc_ptr = self.editor_area.documents.get(&doc_id).unwrap() as *const Document;
+        let document = self.editor_area.documents.get(&doc_id).unwrap();
         let editor = self.editor_area.editors.get_mut(&editor_id).unwrap();
-        let document = unsafe { &*doc_ptr };
         editor.scroll_horizontal_visible_window_by(document, delta)
     }
 

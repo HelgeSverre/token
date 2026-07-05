@@ -2,7 +2,7 @@
 //!
 //! Memory-efficient storage using delimited strings instead of Vec<Vec<String>>.
 
-use crate::editable::{EditConstraints, EditableState, StringBuffer};
+use crate::editable::{EditConstraints, EditableState, MoveTarget, StringBuffer};
 
 use super::viewport::CsvViewport;
 
@@ -126,24 +126,45 @@ impl CellEditState {
         self.editable.delete_forward();
     }
 
+    /// Shared dispatch for all cell cursor movement variants.
+    ///
+    /// Collapses the previously independent `cursor_*` / `cursor_*_with_selection`
+    /// one-line wrappers into a single implementation.
+    pub fn move_cursor(&mut self, target: MoveTarget, extend: bool) {
+        match target {
+            MoveTarget::Left => self.editable.move_left(extend),
+            MoveTarget::Right => self.editable.move_right(extend),
+            MoveTarget::LineStart => self.editable.move_line_start(extend),
+            MoveTarget::LineEnd => self.editable.move_line_end(extend),
+            MoveTarget::WordLeft => self.editable.move_word_left(extend),
+            MoveTarget::WordRight => self.editable.move_word_right(extend),
+            other => {
+                debug_assert!(
+                    false,
+                    "move_cursor: unsupported MoveTarget for CSV cell: {other:?}"
+                );
+            }
+        }
+    }
+
     /// Move cursor left
     pub fn cursor_left(&mut self) {
-        self.editable.move_left(false);
+        self.move_cursor(MoveTarget::Left, false);
     }
 
     /// Move cursor right
     pub fn cursor_right(&mut self) {
-        self.editable.move_right(false);
+        self.move_cursor(MoveTarget::Right, false);
     }
 
     /// Move cursor to start
     pub fn cursor_home(&mut self) {
-        self.editable.move_line_start(false);
+        self.move_cursor(MoveTarget::LineStart, false);
     }
 
     /// Move cursor to end
     pub fn cursor_end(&mut self) {
-        self.editable.move_line_end(false);
+        self.move_cursor(MoveTarget::LineEnd, false);
     }
 
     /// Check if content changed from original
@@ -160,12 +181,12 @@ impl CellEditState {
 
     /// Move cursor left by one word
     pub fn cursor_word_left(&mut self) {
-        self.editable.move_word_left(false);
+        self.move_cursor(MoveTarget::WordLeft, false);
     }
 
     /// Move cursor right by one word
     pub fn cursor_word_right(&mut self) {
-        self.editable.move_word_right(false);
+        self.move_cursor(MoveTarget::WordRight, false);
     }
 
     /// Delete word before cursor
@@ -207,32 +228,32 @@ impl CellEditState {
 
     /// Move cursor left with selection
     pub fn cursor_left_with_selection(&mut self) {
-        self.editable.move_left(true);
+        self.move_cursor(MoveTarget::Left, true);
     }
 
     /// Move cursor right with selection
     pub fn cursor_right_with_selection(&mut self) {
-        self.editable.move_right(true);
+        self.move_cursor(MoveTarget::Right, true);
     }
 
     /// Move cursor to start with selection
     pub fn cursor_home_with_selection(&mut self) {
-        self.editable.move_line_start(true);
+        self.move_cursor(MoveTarget::LineStart, true);
     }
 
     /// Move cursor to end with selection
     pub fn cursor_end_with_selection(&mut self) {
-        self.editable.move_line_end(true);
+        self.move_cursor(MoveTarget::LineEnd, true);
     }
 
     /// Move cursor word left with selection
     pub fn cursor_word_left_with_selection(&mut self) {
-        self.editable.move_word_left(true);
+        self.move_cursor(MoveTarget::WordLeft, true);
     }
 
     /// Move cursor word right with selection
     pub fn cursor_word_right_with_selection(&mut self) {
-        self.editable.move_word_right(true);
+        self.move_cursor(MoveTarget::WordRight, true);
     }
 
     /// Insert text at cursor (for paste)

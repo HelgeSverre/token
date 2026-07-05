@@ -99,18 +99,8 @@ impl Document {
     /// Create a document with initial text
     pub fn with_text(text: &str) -> Self {
         Self {
-            id: None,
             buffer: Rope::from(text),
-            file_path: None,
-            untitled_name: None,
-            is_modified: false,
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
-            saved_revision: Some(0),
-            language: LanguageId::PlainText,
-            syntax_highlights: None,
-            outline: None,
-            revision: 0,
+            ..Self::new()
         }
     }
 
@@ -119,18 +109,10 @@ impl Document {
         let content = std::fs::read_to_string(&path)?;
         let language = LanguageId::from_path(&path);
         Ok(Self {
-            id: None,
             buffer: Rope::from(content),
             file_path: Some(path),
-            untitled_name: None,
-            is_modified: false,
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
-            saved_revision: Some(0),
             language,
-            syntax_highlights: None,
-            outline: None,
-            revision: 0,
+            ..Self::new()
         })
     }
 
@@ -141,20 +123,13 @@ impl Document {
     pub fn new_with_path(path: PathBuf) -> Self {
         let language = LanguageId::from_path(&path);
         Self {
-            id: None,
-            buffer: Rope::from(""),
             file_path: Some(path),
-            untitled_name: None,
             is_modified: true, // Mark as modified since file doesn't exist yet
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
+            language,
             // No saved state exists yet (file doesn't exist on disk), so
             // Undo/Redo can't clear the dirty flag until an actual save happens.
             saved_revision: None,
-            language,
-            syntax_highlights: None,
-            outline: None,
-            revision: 0,
+            ..Self::new()
         }
     }
 

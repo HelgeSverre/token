@@ -663,6 +663,10 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     let group_id = model.editor_area.group_at_point(pt.x as f32, pt.y as f32)?;
     let group = model.editor_area.groups.get(&group_id)?;
     let tab_bar = TabBarLayout::new(group, model, char_width);
+    // Single source of truth for group geometry, shared by the scrollbar
+    // branch and the gutter/content branch below (mirrors the render path's
+    // use of GroupLayout in `EditorRenderContext`).
+    let layout = super::geometry::GroupLayout::new(group, model, char_width);
 
     // Check if in tab bar
     if tab_bar.contains(pt.x, pt.y) {
@@ -721,7 +725,6 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
         && !editor.view_mode.is_csv()
     {
         use super::scrollbar::{ScrollbarGeometry, ScrollbarState};
-        let layout = super::geometry::GroupLayout::new(group, model, char_width);
         let sw = model.metrics.scrollbar_width;
         let viewport = &editor.viewport;
         let visible_lines = layout.visible_lines(model.line_height);
@@ -812,9 +815,8 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     }
 
     // Check if in gutter area
-    let gutter_width = crate::model::gutter_border_x_scaled(char_width, &model.metrics) as f64;
-    let gutter_x_end = group.rect.x as f64 + gutter_width;
-    let content_y_start = (tab_bar.rect_y + tab_bar.rect_h) as f64;
+    let gutter_x_end = layout.gutter_right_x as f64;
+    let content_y_start = layout.content_y() as f64;
 
     if pt.x >= group.rect.x as f64 && pt.x < gutter_x_end && pt.y >= content_y_start {
         // Compute which line was clicked
@@ -1021,5 +1023,56 @@ mod tests {
 
         let bubble = EventResult::Bubble;
         assert!(!bubble.needs_redraw());
+    }
+
+    /// Regression test: `hit_test_groups` must classify gutter vs. content
+    /// clicks using the exact same `GroupLayout` geometry that the render
+    /// path (`EditorRenderContext`) uses, not a hand-rederived copy. Before
+    /// this fix the gutter/content branch computed its own
+    /// `gutter_width`/`gutter_x_end` locals independently of the
+    /// `GroupLayout` built for the scrollbar branch above it.
+    #[test]
+    fn test_hit_test_groups_gutter_content_boundary_matches_group_layout() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let available = Rect::new(0.0, 0.0, 800.0, 600.0);
+        model.editor_area.compute_layout(available);
+
+        let group_id = model
+            .editor_area
+            .group_at_point(10.0, 10.0)
+            .expect("a group should exist near the window origin");
+        let group = model
+            .editor_area
+            .groups
+            .get(&group_id)
+            .expect("group_at_point returned a valid group id");
+        let char_width = model.char_width;
+
+        // The single source of truth both hit-testing and rendering should
+        // agree on.
+        let layout = crate::view::geometry::GroupLayout::new(group, &model, char_width);
+        let y = layout.content_y() as f64 + 5.0;
+
+        // A point just left of GroupLayout's gutter/content boundary must
+        // resolve to the gutter.
+        let left_of_boundary = Point::new(layout.gutter_right_x as f64 - 1.0, y);
+        match hit_test_groups(&model, left_of_boundary, char_width) {
+            Some(HitTarget::EditorGutter { .. }) => {}
+            other => panic!(
+                "expected EditorGutter just left of gutter_right_x, got {:?}",
+                other
+            ),
+        }
+
+        // A point just right of the same boundary must resolve to content,
+        // not the gutter.
+        let right_of_boundary = Point::new(layout.gutter_right_x as f64 + 1.0, y);
+        match hit_test_groups(&model, right_of_boundary, char_width) {
+            Some(HitTarget::EditorContent { .. }) => {}
+            other => panic!(
+                "expected EditorContent just right of gutter_right_x, got {:?}",
+                other
+            ),
+        }
     }
 }

@@ -42,7 +42,7 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::runtime::input::handle_key;
+    use crate::runtime::input::{handle_key, KeyModifiers};
     use token::config::EditorConfig;
     use token::messages::{DocumentMsg, EditorMsg, Msg};
     use token::model::{
@@ -184,10 +184,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::ArrowUp),
             PhysicalKey::Code(KeyCode::ArrowUp),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -225,10 +227,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::ArrowDown),
             PhysicalKey::Code(KeyCode::ArrowDown),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -268,10 +272,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::Home),
             PhysicalKey::Code(KeyCode::Home),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -307,10 +313,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::End),
             PhysicalKey::Code(KeyCode::End),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -351,10 +359,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::PageUp),
             PhysicalKey::Code(KeyCode::PageUp),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -391,10 +401,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::PageDown),
             PhysicalKey::Code(KeyCode::PageDown),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -507,10 +519,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::PageUp),
             PhysicalKey::Code(KeyCode::PageUp),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -557,10 +571,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::PageUp),
             PhysicalKey::Code(KeyCode::PageUp),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -719,10 +735,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::ArrowDown),
             PhysicalKey::Code(KeyCode::ArrowDown),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -738,10 +756,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::ArrowUp),
             PhysicalKey::Code(KeyCode::ArrowUp),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -756,20 +776,24 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::ArrowLeft),
             PhysicalKey::Code(KeyCode::ArrowLeft),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
         handle_key(
             &mut model,
             Key::Named(NamedKey::ArrowRight),
             PhysicalKey::Code(KeyCode::ArrowRight),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -790,30 +814,36 @@ mod tests {
             &mut model,
             Key::Character("a".into()),
             PhysicalKey::Code(KeyCode::KeyA),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
         handle_key(
             &mut model,
             Key::Character("b".into()),
             PhysicalKey::Code(KeyCode::KeyB),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
         handle_key(
             &mut model,
             Key::Character("c".into()),
             PhysicalKey::Code(KeyCode::KeyC),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -839,10 +869,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::Backspace),
             PhysicalKey::Code(KeyCode::Backspace),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -867,10 +899,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::Delete),
             PhysicalKey::Code(KeyCode::Delete),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -892,10 +926,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::Enter),
             PhysicalKey::Code(KeyCode::Enter),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -926,10 +962,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::Escape),
             PhysicalKey::Code(KeyCode::Escape),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -961,10 +999,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::PageDown),
             PhysicalKey::Code(KeyCode::PageDown),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -985,10 +1025,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::PageUp),
             PhysicalKey::Code(KeyCode::PageUp),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -1015,10 +1057,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::Home),
             PhysicalKey::Code(KeyCode::Home),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -1033,10 +1077,12 @@ mod tests {
             &mut model,
             Key::Named(NamedKey::End),
             PhysicalKey::Code(KeyCode::End),
-            false,
-            false,
-            false,
-            false,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: false,
+            },
             false,
         );
 
@@ -1063,10 +1109,12 @@ mod tests {
             &mut model,
             Key::Character("a".into()),
             PhysicalKey::Code(KeyCode::KeyA),
-            false,
-            false,
-            false,
-            true,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: true,
+            },
             false, // logo=true (Cmd on macOS)
         );
 
@@ -1081,10 +1129,12 @@ mod tests {
             &mut model,
             Key::Character("d".into()),
             PhysicalKey::Code(KeyCode::KeyD),
-            false,
-            false,
-            false,
-            true,
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: true,
+            },
             false,
         );
 

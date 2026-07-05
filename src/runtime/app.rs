@@ -28,7 +28,7 @@ use token::model::AppModel;
 use token::syntax::{LanguageId, ParserState};
 use token::update::update;
 
-use super::input::{handle_key, OptionKeyGesture};
+use super::input::{handle_key, KeyModifiers, OptionKeyGesture};
 use super::mouse::{
     end_tab_drag, handle_mouse_press, handle_mouse_wheel, make_mouse_event, update_tab_drag,
     ClickTracker, DragState,
@@ -367,17 +367,31 @@ impl App {
                     let shift = self.modifiers.shift_key();
                     let alt = self.modifiers.alt_key();
                     let logo = self.modifiers.super_key();
+                    let modifiers = KeyModifiers {
+                        ctrl,
+                        shift,
+                        alt,
+                        logo,
+                    };
 
-                    // Check for global commands first (work regardless of focus state)
-                    // These include command palette, save, quit, etc.
-                    if let Some(keystroke) = keystroke_from_winit(
+                    // Convert the raw winit event to our Keystroke type once. This is a
+                    // pure conversion of the event + modifiers and doesn't depend on
+                    // keymap state, so the same value can be reused for both the
+                    // global-command check below and the non-global check further down
+                    // (previously this called keystroke_from_winit twice with identical
+                    // arguments).
+                    let keystroke = keystroke_from_winit(
                         &event.logical_key,
                         event.physical_key,
                         ctrl,
                         shift,
                         alt,
                         logo,
-                    ) {
+                    );
+
+                    // Check for global commands first (work regardless of focus state)
+                    // These include command palette, save, quit, etc.
+                    if let Some(keystroke) = keystroke {
                         let context = self.get_key_context();
                         if let KeyAction::Execute(command) = self
                             .keymap
@@ -404,14 +418,7 @@ impl App {
                         || self.model.is_csv_editing();
 
                     if !skip_keymap {
-                        if let Some(keystroke) = keystroke_from_winit(
-                            &event.logical_key,
-                            event.physical_key,
-                            ctrl,
-                            shift,
-                            alt,
-                            logo,
-                        ) {
+                        if let Some(keystroke) = keystroke {
                             let context = self.get_key_context();
                             match self
                                 .keymap
@@ -436,10 +443,7 @@ impl App {
                         &mut self.model,
                         event.logical_key.clone(),
                         event.physical_key,
-                        ctrl,
-                        shift,
-                        alt,
-                        logo,
+                        modifiers,
                         self.option_gesture.double_tapped,
                     )
                 } else {
@@ -722,20 +726,22 @@ impl App {
             renderer.render(&mut self.model, &mut self.perf, &damage)?;
         }
 
-        // Sync webviews with preview panes
-        let webview_sync_start = std::time::Instant::now();
-        self.sync_webviews();
-        self.perf
-            .record_stage_elapsed(PerfStage::WebviewSync, webview_sync_start.elapsed());
+        // Sync webviews with preview panes.
+        //
+        // `sync_webviews` takes `&mut self` (the whole `App`), so it can't be
+        // passed as a closure directly to `self.perf.measure_stage(...)` -
+        // that would require borrowing `self.perf` and all of `self`
+        // simultaneously. Swap `perf` out to a local for the duration of the
+        // call instead of hand-rolling the timing with `Instant::now()`.
+        let mut perf = std::mem::take(&mut self.perf);
+        perf.measure_stage(PerfStage::WebviewSync, || self.sync_webviews());
+        self.perf = perf;
 
         // Hide webviews when modals are active (so they don't render on top)
         let show_webviews = self.model.ui.active_modal.is_none();
-        let webview_visibility_start = std::time::Instant::now();
-        self.webview_manager.set_all_visible(show_webviews);
-        self.perf.record_stage_elapsed(
-            PerfStage::WebviewVisibility,
-            webview_visibility_start.elapsed(),
-        );
+        self.perf.measure_stage(PerfStage::WebviewVisibility, || {
+            self.webview_manager.set_all_visible(show_webviews);
+        });
 
         self.perf.record_frame_time();
         self.perf.record_render_history();

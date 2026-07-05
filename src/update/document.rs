@@ -7,7 +7,8 @@ use crate::util::char_type;
 
 use super::editor::{
     cursors_in_reverse_order, delete_selection, lines_covered_by_all_cursors,
-    sync_other_editor_cursors,
+    shift_sibling_cursors, sync_other_editor_cursors, sync_other_editor_cursors_for_deleted_text,
+    sync_other_editor_cursors_for_single_char_delete, sync_other_editor_cursors_for_text,
 };
 use super::syntax::schedule_syntax_parse;
 
@@ -350,19 +351,7 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
 
                     // Adjust all OTHER cursors that are AFTER this insertion point
                     // (they need to shift down by 1 line)
-                    for other_idx in 0..model.editor().cursors.len() {
-                        if other_idx != idx && model.editor().cursors[other_idx].line > insert_line
-                        {
-                            model.editor_mut().cursors[other_idx].line += 1;
-                            // Also adjust selection positions
-                            if model.editor().selections[other_idx].anchor.line > insert_line {
-                                model.editor_mut().selections[other_idx].anchor.line += 1;
-                            }
-                            if model.editor().selections[other_idx].head.line > insert_line {
-                                model.editor_mut().selections[other_idx].head.line += 1;
-                            }
-                        }
-                    }
+                    shift_sibling_cursors(model.editor_mut(), idx, insert_line, 1, None);
                 }
 
                 // Record batch for proper multi-cursor undo
@@ -496,49 +485,13 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                             // If we deleted a newline, adjust all other cursors below this point
                             // new_col is the column where the merge point is (end of previous line)
                             if is_newline {
-                                for other_idx in 0..model.editor().cursors.len() {
-                                    if other_idx != idx
-                                        && model.editor().cursors[other_idx].line
-                                            >= deleted_from_line
-                                    {
-                                        // If cursor was on the deleted line, it merges with previous line
-                                        // and needs column adjustment
-                                        if model.editor().cursors[other_idx].line
-                                            == deleted_from_line
-                                        {
-                                            model.editor_mut().cursors[other_idx].column += new_col;
-                                        }
-                                        model.editor_mut().cursors[other_idx].line -= 1;
-
-                                        // Adjust selection anchor
-                                        if model.editor().selections[other_idx].anchor.line
-                                            == deleted_from_line
-                                        {
-                                            model.editor_mut().selections[other_idx]
-                                                .anchor
-                                                .column += new_col;
-                                        }
-                                        if model.editor().selections[other_idx].anchor.line
-                                            >= deleted_from_line
-                                        {
-                                            model.editor_mut().selections[other_idx].anchor.line -=
-                                                1;
-                                        }
-
-                                        // Adjust selection head
-                                        if model.editor().selections[other_idx].head.line
-                                            == deleted_from_line
-                                        {
-                                            model.editor_mut().selections[other_idx].head.column +=
-                                                new_col;
-                                        }
-                                        if model.editor().selections[other_idx].head.line
-                                            >= deleted_from_line
-                                        {
-                                            model.editor_mut().selections[other_idx].head.line -= 1;
-                                        }
-                                    }
-                                }
+                                shift_sibling_cursors(
+                                    model.editor_mut(),
+                                    idx,
+                                    deleted_from_line,
+                                    -1,
+                                    Some(new_col),
+                                );
                             }
                         }
                     }
@@ -600,20 +553,21 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                     cursor_after,
                 });
 
-                // Sync cursors in other views
-                if is_newline {
-                    // Deleted newline: removes a line, cursors on later lines shift up
-                    sync_other_editor_cursors(model, edit_line.saturating_sub(1), 0, -1, 0);
+                // Sync cursors in other views. Backspace deletes the character
+                // *before* the cursor, so the sync point differs by branch:
+                // for a deleted newline it's the end of the previous line;
+                // otherwise it's one column left on the same line.
+                let (sync_line, sync_column) = if is_newline {
+                    (edit_line.saturating_sub(1), 0)
                 } else {
-                    // Deleted character: cursors after shift left
-                    sync_other_editor_cursors(
-                        model,
-                        edit_line,
-                        edit_column.saturating_sub(1),
-                        0,
-                        -1,
-                    );
-                }
+                    (edit_line, edit_column.saturating_sub(1))
+                };
+                sync_other_editor_cursors_for_single_char_delete(
+                    model,
+                    sync_line,
+                    sync_column,
+                    is_newline,
+                );
             }
 
             model.reset_cursor_blink();
@@ -966,24 +920,12 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                         model.editor_mut().selections[idx] = Selection::new(start);
 
                         // Sync cursors in other views
-                        let lines_removed = deleted_text.chars().filter(|&c| c == '\n').count();
-                        if lines_removed > 0 {
-                            sync_other_editor_cursors(
-                                model,
-                                start.line,
-                                start.column,
-                                -(lines_removed as isize),
-                                0,
-                            );
-                        } else {
-                            sync_other_editor_cursors(
-                                model,
-                                start.line,
-                                start.column,
-                                0,
-                                -(deleted_text.chars().count() as isize),
-                            );
-                        }
+                        sync_other_editor_cursors_for_deleted_text(
+                            model,
+                            start.line,
+                            start.column,
+                            &deleted_text,
+                        );
                     } else {
                         let cursor = model.editor().cursors[idx];
                         let pos = model
@@ -1008,11 +950,12 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                             });
 
                             // Sync cursors in other views
-                            if is_newline {
-                                sync_other_editor_cursors(model, cursor.line, cursor.column, -1, 0);
-                            } else {
-                                sync_other_editor_cursors(model, cursor.line, cursor.column, 0, -1);
-                            }
+                            sync_other_editor_cursors_for_single_char_delete(
+                                model,
+                                cursor.line,
+                                cursor.column,
+                                is_newline,
+                            );
                         }
                     }
                 }
@@ -1040,7 +983,6 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
             if let Some((pos, deleted_text)) = delete_selection(model) {
                 let cursor_after = *model.editor().primary_cursor();
                 let (edit_line, edit_column) = model.document().offset_to_cursor(pos);
-                let lines_removed = deleted_text.chars().filter(|&c| c == '\n').count();
                 model.document_mut().push_edit(EditOperation::Delete {
                     position: pos,
                     text: deleted_text.clone(),
@@ -1051,23 +993,12 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 model.reset_cursor_blink();
 
                 // Sync cursors in other views
-                if lines_removed > 0 {
-                    sync_other_editor_cursors(
-                        model,
-                        edit_line,
-                        edit_column,
-                        -(lines_removed as isize),
-                        0,
-                    );
-                } else {
-                    sync_other_editor_cursors(
-                        model,
-                        edit_line,
-                        edit_column,
-                        0,
-                        -(deleted_text.chars().count() as isize),
-                    );
-                }
+                sync_other_editor_cursors_for_deleted_text(
+                    model,
+                    edit_line,
+                    edit_column,
+                    &deleted_text,
+                );
 
                 let new_line_count = model.document().line_count();
                 let edit_line = cursor_before.line.min(new_line_count.saturating_sub(1));
@@ -1102,13 +1033,12 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                 });
 
                 // Sync cursors in other views
-                if is_newline {
-                    // Deleted newline: removes a line
-                    sync_other_editor_cursors(model, edit_line, edit_column, -1, 0);
-                } else {
-                    // Deleted character: cursors after shift left
-                    sync_other_editor_cursors(model, edit_line, edit_column, 0, -1);
-                }
+                sync_other_editor_cursors_for_single_char_delete(
+                    model,
+                    edit_line,
+                    edit_column,
+                    is_newline,
+                );
             }
 
             model.reset_cursor_blink();
@@ -1639,24 +1569,13 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
 
                         // Adjust other cursors for lines added
                         if lines_added > 0 {
-                            for other_idx in 0..model.editor().cursors.len() {
-                                if other_idx != idx
-                                    && model.editor().cursors[other_idx].line > insert_line
-                                {
-                                    model.editor_mut().cursors[other_idx].line += lines_added;
-                                    if model.editor().selections[other_idx].anchor.line
-                                        > insert_line
-                                    {
-                                        model.editor_mut().selections[other_idx].anchor.line +=
-                                            lines_added;
-                                    }
-                                    if model.editor().selections[other_idx].head.line > insert_line
-                                    {
-                                        model.editor_mut().selections[other_idx].head.line +=
-                                            lines_added;
-                                    }
-                                }
-                            }
+                            shift_sibling_cursors(
+                                model.editor_mut(),
+                                idx,
+                                insert_line,
+                                lines_added as isize,
+                                None,
+                            );
                         }
                     }
                 }
@@ -1684,24 +1603,7 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                         model.ui.set_status(format!("Pasted {} chars", text.len()));
                         model.ensure_cursor_visible();
                         model.reset_cursor_blink();
-                        let lines_added = text.chars().filter(|&c| c == '\n').count();
-                        if lines_added > 0 {
-                            sync_other_editor_cursors(
-                                model,
-                                edit_line,
-                                edit_column,
-                                lines_added as isize,
-                                0,
-                            );
-                        } else {
-                            sync_other_editor_cursors(
-                                model,
-                                edit_line,
-                                edit_column,
-                                0,
-                                text.chars().count() as isize,
-                            );
-                        }
+                        sync_other_editor_cursors_for_text(model, edit_line, edit_column, &text);
                         return Some(redraw_with_syntax_parse_shift(
                             model,
                             Some((
@@ -1728,24 +1630,7 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                         cursor_after,
                     });
 
-                    let lines_added = text.chars().filter(|&c| c == '\n').count();
-                    if lines_added > 0 {
-                        sync_other_editor_cursors(
-                            model,
-                            edit_line,
-                            edit_column,
-                            lines_added as isize,
-                            0,
-                        );
-                    } else {
-                        sync_other_editor_cursors(
-                            model,
-                            edit_line,
-                            edit_column,
-                            0,
-                            text.chars().count() as isize,
-                        );
-                    }
+                    sync_other_editor_cursors_for_text(model, edit_line, edit_column, &text);
                 } else {
                     let pos = model.cursor_buffer_position();
                     let (edit_line, edit_column) = model.document().offset_to_cursor(pos);
@@ -1764,24 +1649,7 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                         cursor_after,
                     });
 
-                    let lines_added = text.chars().filter(|&c| c == '\n').count();
-                    if lines_added > 0 {
-                        sync_other_editor_cursors(
-                            model,
-                            edit_line,
-                            edit_column,
-                            lines_added as isize,
-                            0,
-                        );
-                    } else {
-                        sync_other_editor_cursors(
-                            model,
-                            edit_line,
-                            edit_column,
-                            0,
-                            text.chars().count() as isize,
-                        );
-                    }
+                    sync_other_editor_cursors_for_text(model, edit_line, edit_column, &text);
                 }
             }
 
@@ -1860,21 +1728,13 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
 
                         // Adjust ALL OTHER cursors that are AFTER this insertion point
                         // (they need to shift down by the number of lines added)
-                        for other_idx in 0..model.editor().cursors.len() {
-                            if other_idx != idx && model.editor().cursors[other_idx].line > line_idx
-                            {
-                                model.editor_mut().cursors[other_idx].line += effective_lines_added;
-                                // Also adjust selection positions
-                                if model.editor().selections[other_idx].anchor.line > line_idx {
-                                    model.editor_mut().selections[other_idx].anchor.line +=
-                                        effective_lines_added;
-                                }
-                                if model.editor().selections[other_idx].head.line > line_idx {
-                                    model.editor_mut().selections[other_idx].head.line +=
-                                        effective_lines_added;
-                                }
-                            }
-                        }
+                        shift_sibling_cursors(
+                            model.editor_mut(),
+                            idx,
+                            line_idx,
+                            effective_lines_added as isize,
+                            None,
+                        );
                     } else {
                         // With selection: duplicate selected text after selection end
                         let sel_start = selection.start();
@@ -1922,24 +1782,13 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
 
                         // Adjust cursors after this insertion if lines were added
                         if lines_added > 0 {
-                            for other_idx in 0..model.editor().cursors.len() {
-                                if other_idx != idx
-                                    && model.editor().cursors[other_idx].line > sel_end.line
-                                {
-                                    model.editor_mut().cursors[other_idx].line += lines_added;
-                                    if model.editor().selections[other_idx].anchor.line
-                                        > sel_end.line
-                                    {
-                                        model.editor_mut().selections[other_idx].anchor.line +=
-                                            lines_added;
-                                    }
-                                    if model.editor().selections[other_idx].head.line > sel_end.line
-                                    {
-                                        model.editor_mut().selections[other_idx].head.line +=
-                                            lines_added;
-                                    }
-                                }
-                            }
+                            shift_sibling_cursors(
+                                model.editor_mut(),
+                                idx,
+                                sel_end.line,
+                                lines_added as isize,
+                                None,
+                            );
                         }
                     }
                 }
@@ -2051,24 +1900,12 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
                     cursor_after,
                 });
 
-                let lines_added = selected_text.chars().filter(|&c| c == '\n').count();
-                if lines_added > 0 {
-                    sync_other_editor_cursors(
-                        model,
-                        sel_end.line,
-                        sel_end.column,
-                        lines_added as isize,
-                        0,
-                    );
-                } else {
-                    sync_other_editor_cursors(
-                        model,
-                        sel_end.line,
-                        sel_end.column,
-                        0,
-                        selected_text.chars().count() as isize,
-                    );
-                }
+                sync_other_editor_cursors_for_text(
+                    model,
+                    sel_end.line,
+                    sel_end.column,
+                    &selected_text,
+                );
             }
 
             model.document_mut().is_modified = true;
@@ -2218,62 +2055,49 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
     }
 }
 
+/// Extract the single-cursor `cursor_before` field from a non-batch
+/// `EditOperation`. Returns `None` for `Batch`, which restores its whole
+/// `cursors_before` vector instead (see `apply_undo_operation`).
+fn edit_cursor_before(edit: &EditOperation) -> Option<Cursor> {
+    match edit {
+        EditOperation::Insert { cursor_before, .. }
+        | EditOperation::Delete { cursor_before, .. }
+        | EditOperation::Replace { cursor_before, .. } => Some(*cursor_before),
+        EditOperation::Batch { .. } => None,
+    }
+}
+
+/// Extract the single-cursor `cursor_after` field from a non-batch
+/// `EditOperation`. Returns `None` for `Batch`, which restores its whole
+/// `cursors_after` vector instead (see `apply_redo_operation`).
+fn edit_cursor_after(edit: &EditOperation) -> Option<Cursor> {
+    match edit {
+        EditOperation::Insert { cursor_after, .. }
+        | EditOperation::Delete { cursor_after, .. }
+        | EditOperation::Replace { cursor_after, .. } => Some(*cursor_after),
+        EditOperation::Batch { .. } => None,
+    }
+}
+
+/// Restore `editor.cursors`/`editor.selections` from a batch's saved cursor
+/// vector, padding/truncating `selections` to match `cursors` length (a
+/// batch's operations may have added/removed cursors along the way).
+fn restore_batch_cursors(model: &mut AppModel, cursors: &[Cursor]) {
+    let editor = model.editor_mut();
+    editor.cursors = cursors.to_vec();
+    while editor.selections.len() < editor.cursors.len() {
+        editor.selections.push(Selection::new(Position::new(0, 0)));
+    }
+    editor.selections.truncate(editor.cursors.len());
+}
+
 /// Apply an undo operation to the model (reverses the edit)
 fn apply_undo_operation(model: &mut AppModel, edit: &EditOperation) {
-    match edit {
-        EditOperation::Insert {
-            position,
-            text,
-            cursor_before,
-            ..
-        } => {
-            model
-                .document_mut()
-                .buffer
-                .remove(*position..*position + text.chars().count());
-            *model.editor_mut().primary_cursor_mut() = *cursor_before;
-        }
-        EditOperation::Delete {
-            position,
-            text,
-            cursor_before,
-            ..
-        } => {
-            model.document_mut().buffer.insert(*position, text);
-            *model.editor_mut().primary_cursor_mut() = *cursor_before;
-        }
-        EditOperation::Replace {
-            position,
-            deleted_text,
-            inserted_text,
-            cursor_before,
-            ..
-        } => {
-            model
-                .document_mut()
-                .buffer
-                .remove(*position..*position + inserted_text.chars().count());
-            model.document_mut().buffer.insert(*position, deleted_text);
-            *model.editor_mut().primary_cursor_mut() = *cursor_before;
-        }
-        EditOperation::Batch {
-            operations,
-            cursors_before,
-            ..
-        } => {
-            // Undo in reverse order
-            for op in operations.iter().rev() {
-                apply_undo_operation_buffer_only(model, op);
-            }
-            // Restore all cursors
-            let editor = model.editor_mut();
-            editor.cursors = cursors_before.clone();
-            // Ensure selections array matches
-            while editor.selections.len() < editor.cursors.len() {
-                editor.selections.push(Selection::new(Position::new(0, 0)));
-            }
-            editor.selections.truncate(editor.cursors.len());
-        }
+    apply_undo_operation_buffer_only(model, edit);
+    if let EditOperation::Batch { cursors_before, .. } = edit {
+        restore_batch_cursors(model, cursors_before);
+    } else if let Some(cursor_before) = edit_cursor_before(edit) {
+        *model.editor_mut().primary_cursor_mut() = cursor_before;
     }
 }
 
@@ -2311,60 +2135,11 @@ fn apply_undo_operation_buffer_only(model: &mut AppModel, edit: &EditOperation) 
 
 /// Apply a redo operation to the model (re-applies the edit)
 fn apply_redo_operation(model: &mut AppModel, edit: &EditOperation) {
-    match edit {
-        EditOperation::Insert {
-            position,
-            text,
-            cursor_after,
-            ..
-        } => {
-            model.document_mut().buffer.insert(*position, text);
-            *model.editor_mut().primary_cursor_mut() = *cursor_after;
-        }
-        EditOperation::Delete {
-            position,
-            text,
-            cursor_after,
-            ..
-        } => {
-            model
-                .document_mut()
-                .buffer
-                .remove(*position..*position + text.chars().count());
-            *model.editor_mut().primary_cursor_mut() = *cursor_after;
-        }
-        EditOperation::Replace {
-            position,
-            deleted_text,
-            inserted_text,
-            cursor_after,
-            ..
-        } => {
-            model
-                .document_mut()
-                .buffer
-                .remove(*position..*position + deleted_text.chars().count());
-            model.document_mut().buffer.insert(*position, inserted_text);
-            *model.editor_mut().primary_cursor_mut() = *cursor_after;
-        }
-        EditOperation::Batch {
-            operations,
-            cursors_after,
-            ..
-        } => {
-            // Redo in forward order
-            for op in operations.iter() {
-                apply_redo_operation_buffer_only(model, op);
-            }
-            // Restore all cursors
-            let editor = model.editor_mut();
-            editor.cursors = cursors_after.clone();
-            // Ensure selections array matches
-            while editor.selections.len() < editor.cursors.len() {
-                editor.selections.push(Selection::new(Position::new(0, 0)));
-            }
-            editor.selections.truncate(editor.cursors.len());
-        }
+    apply_redo_operation_buffer_only(model, edit);
+    if let EditOperation::Batch { cursors_after, .. } = edit {
+        restore_batch_cursors(model, cursors_after);
+    } else if let Some(cursor_after) = edit_cursor_after(edit) {
+        *model.editor_mut().primary_cursor_mut() = cursor_after;
     }
 }
 

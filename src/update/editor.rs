@@ -5,7 +5,7 @@ use std::time::Duration;
 use crate::commands::Cmd;
 use crate::messages::{Direction, EditorMsg};
 use crate::model::{
-    AppModel, Cursor, OccurrenceState, Position, SegmentContent, SegmentId, Selection,
+    AppModel, Cursor, EditorState, OccurrenceState, Position, SegmentContent, SegmentId, Selection,
     TransientMessage,
 };
 use crate::util::{char_type, CharType};
@@ -1193,6 +1193,145 @@ pub(crate) fn sync_other_editor_cursors(
         lines_delta,
         column_delta,
     );
+}
+
+/// Sync peer editors' cursors after inserting `text` at `(edit_line,
+/// edit_column)`. Multi-line inserts shift later lines down; single-line
+/// inserts shift the edit line's column right.
+pub(crate) fn sync_other_editor_cursors_for_text(
+    model: &mut AppModel,
+    edit_line: usize,
+    edit_column: usize,
+    text: &str,
+) {
+    let lines_added = text.chars().filter(|&c| c == '\n').count();
+    if lines_added > 0 {
+        sync_other_editor_cursors(model, edit_line, edit_column, lines_added as isize, 0);
+    } else {
+        sync_other_editor_cursors(
+            model,
+            edit_line,
+            edit_column,
+            0,
+            text.chars().count() as isize,
+        );
+    }
+}
+
+/// Sync peer editors' cursors after deleting `text` from `(edit_line,
+/// edit_column)`. Mirror of `sync_other_editor_cursors_for_text` for
+/// deletions: multi-line removals shift later lines up; single-line
+/// removals shift the edit line's column left.
+pub(crate) fn sync_other_editor_cursors_for_deleted_text(
+    model: &mut AppModel,
+    edit_line: usize,
+    edit_column: usize,
+    text: &str,
+) {
+    let lines_removed = text.chars().filter(|&c| c == '\n').count();
+    if lines_removed > 0 {
+        sync_other_editor_cursors(model, edit_line, edit_column, -(lines_removed as isize), 0);
+    } else {
+        sync_other_editor_cursors(
+            model,
+            edit_line,
+            edit_column,
+            0,
+            -(text.chars().count() as isize),
+        );
+    }
+}
+
+/// Sync peer editors' cursors after deleting a single character at
+/// `(edit_line, edit_column)`. `is_newline` selects whether the deleted
+/// character removed a line (shift later lines up) or just a column
+/// (shift the edit line's column left).
+pub(crate) fn sync_other_editor_cursors_for_single_char_delete(
+    model: &mut AppModel,
+    edit_line: usize,
+    edit_column: usize,
+    is_newline: bool,
+) {
+    if is_newline {
+        sync_other_editor_cursors(model, edit_line, edit_column, -1, 0);
+    } else {
+        sync_other_editor_cursors(model, edit_line, edit_column, 0, -1);
+    }
+}
+
+/// Shift sibling cursors/selections within the SAME editor after a
+/// single-point line-count-changing edit made by cursor `exclude_idx`
+/// (e.g. inserting or removing a newline, pasting multi-line text,
+/// duplicating a line/selection).
+///
+/// - `edit_line`: the line the edit happened at.
+/// - `lines_delta`: signed number of lines added (positive) or removed
+///   (negative).
+/// - `merge_column`: when `Some(col)`, this is a merge-style edit (e.g.
+///   backspacing a newline merges `edit_line`'s content onto the previous
+///   line at column `col`): siblings sitting exactly on `edit_line` get
+///   `col` added to their column before their line shifts, and the
+///   qualifying threshold becomes `line >= edit_line` instead of
+///   `line > edit_line`. When `None`, only lines strictly after
+///   `edit_line` shift, with no column adjustment.
+pub(crate) fn shift_sibling_cursors(
+    editor: &mut EditorState,
+    exclude_idx: usize,
+    edit_line: usize,
+    lines_delta: isize,
+    merge_column: Option<usize>,
+) {
+    let inclusive = merge_column.is_some();
+
+    for other_idx in 0..editor.cursors.len() {
+        if other_idx == exclude_idx {
+            continue;
+        }
+
+        let cursor_line = editor.cursors[other_idx].line;
+        if if inclusive {
+            cursor_line >= edit_line
+        } else {
+            cursor_line > edit_line
+        } {
+            if let Some(col) = merge_column {
+                if cursor_line == edit_line {
+                    editor.cursors[other_idx].column += col;
+                }
+            }
+            editor.cursors[other_idx].line = (cursor_line as isize + lines_delta).max(0) as usize;
+        }
+
+        let anchor_line = editor.selections[other_idx].anchor.line;
+        if if inclusive {
+            anchor_line >= edit_line
+        } else {
+            anchor_line > edit_line
+        } {
+            if let Some(col) = merge_column {
+                if anchor_line == edit_line {
+                    editor.selections[other_idx].anchor.column += col;
+                }
+            }
+            editor.selections[other_idx].anchor.line =
+                (anchor_line as isize + lines_delta).max(0) as usize;
+        }
+
+        let head_line = editor.selections[other_idx].head.line;
+        if if inclusive {
+            head_line >= edit_line
+        } else {
+            head_line > edit_line
+        } {
+            if let Some(col) = merge_column {
+                if head_line == edit_line {
+                    editor.selections[other_idx].head.column += col;
+                }
+            }
+            editor.selections[other_idx].head.line =
+                (head_line as isize + lines_delta).max(0) as usize;
+        }
+    }
 }
 
 /// Sync peer editors' cursors/selections after edits that shift columns on

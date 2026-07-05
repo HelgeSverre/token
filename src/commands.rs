@@ -699,37 +699,16 @@ impl Cmd {
     }
 
     /// Check if this command requires a redraw
+    ///
+    /// Derived from `damage()` so the two never drift out of sync. For
+    /// `Batch`, this is equivalent to short-circuiting on the first
+    /// sub-command that needs a redraw: `damage()` merges sub-damages and
+    /// stops early once it hits `Damage::Full`, and any sub-command whose
+    /// own `needs_redraw()` would be true contributes either `Full` or a
+    /// non-empty `Areas(..)`, both of which make the merged result's
+    /// `needs_redraw()` true.
     pub fn needs_redraw(&self) -> bool {
-        match self {
-            Cmd::None => false,
-            Cmd::Redraw => true,
-            Cmd::RedrawAreas(areas) => !areas.is_empty(),
-            Cmd::SaveFile { .. } => true,
-            Cmd::LoadFile { .. } => true,
-            Cmd::OpenInExplorer { .. } => true,
-            Cmd::RevealFileInFinder { .. } => false,
-            Cmd::OpenFileInEditor { .. } => true,
-            Cmd::Batch(cmds) => cmds.iter().any(|c| c.needs_redraw()),
-            // Dialogs don't need immediate redraw - they'll trigger messages when done
-            Cmd::ShowOpenFileDialog { .. } => false,
-            Cmd::ShowSaveFileDialog { .. } => false,
-            Cmd::ShowOpenFolderDialog { .. } => false,
-            // Syntax commands don't need immediate redraw - ParseCompleted triggers redraw
-            Cmd::DebouncedSyntaxParse { .. } => false,
-            Cmd::RunSyntaxParse { .. } => false,
-            Cmd::ClearSyntaxState { .. } => false,
-            // Reinitialize triggers a full redraw after renderer is recreated
-            Cmd::ReinitializeRenderer => true,
-            // Quit doesn't need redraw - app is exiting
-            Cmd::Quit => false,
-            Cmd::SaveRecentFiles { .. } => false,
-            Cmd::CopyToClipboard(_) => false,
-            Cmd::RequestClipboardPaste => false,
-            Cmd::CreateDefaultKeymapFile { .. } => false,
-            // Debug overlay toggle triggers redraw
-            #[cfg(debug_assertions)]
-            Cmd::TogglePerfOverlay => true,
-        }
+        self.damage().needs_redraw()
     }
 
     /// Get the damage for this command
@@ -982,6 +961,37 @@ mod tests {
         assert!(Damage::Full.needs_redraw());
         assert!(Damage::Areas(vec![DamageArea::EditorArea]).needs_redraw());
         assert!(!Damage::Areas(vec![]).needs_redraw());
+    }
+
+    #[test]
+    fn test_needs_redraw_agrees_with_damage_needs_redraw() {
+        // Guards against `needs_redraw()` and `damage()` drifting apart now
+        // that `needs_redraw()` is implemented in terms of `damage()`.
+        let samples: Vec<Cmd> = vec![
+            Cmd::None,
+            Cmd::Redraw,
+            Cmd::RedrawAreas(vec![DamageArea::EditorArea]),
+            Cmd::RedrawAreas(vec![]),
+            Cmd::CopyToClipboard("no visual effect".to_string()),
+            Cmd::Quit,
+            // Batch mixing a damaging command with a non-damaging one.
+            Cmd::Batch(vec![
+                Cmd::CopyToClipboard("x".to_string()),
+                Cmd::RedrawAreas(vec![DamageArea::StatusBar]),
+            ]),
+            // Batch containing only non-damaging commands.
+            Cmd::Batch(vec![Cmd::CopyToClipboard("x".to_string()), Cmd::Quit]),
+            // Batch containing a full redraw.
+            Cmd::Batch(vec![Cmd::CopyToClipboard("x".to_string()), Cmd::Redraw]),
+        ];
+
+        for cmd in samples {
+            assert_eq!(
+                cmd.needs_redraw(),
+                cmd.damage().needs_redraw(),
+                "needs_redraw() and damage().needs_redraw() disagree for {cmd:?}"
+            );
+        }
     }
 
     #[test]

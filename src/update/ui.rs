@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use crate::commands::{filter_commands, Cmd};
+use crate::editable::{EditableState, StringBuffer};
 use crate::messages::LayoutMsg;
 use crate::messages::{ModalMsg, UiMsg};
 use crate::model::{
@@ -255,6 +256,38 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
     }
 }
 
+/// Get mutable access to the "active" editable text field for a modal state,
+/// if it has one. This is the single field that plain text-editing
+/// `ModalMsg` variants (insert/delete/move/select/copy/cut) operate on.
+///
+/// `FindReplace` has two editable fields (query + replacement); it exposes
+/// whichever one currently has focus via `focused_editable_mut()`.
+/// `ThemePicker` has no text input at all and returns `None`.
+fn modal_editable_mut(modal: &mut ModalState) -> Option<&mut EditableState<StringBuffer>> {
+    match modal {
+        ModalState::CommandPalette(state) => Some(&mut state.editable),
+        ModalState::GotoLine(state) => Some(&mut state.editable),
+        ModalState::FindReplace(state) => Some(state.focused_editable_mut()),
+        ModalState::ThemePicker(_) => None,
+        ModalState::FileFinder(state) => Some(&mut state.editable),
+        ModalState::RecentFiles(state) => Some(&mut state.editable),
+    }
+}
+
+/// Run the modal-specific side effect that should happen whenever a modal's
+/// text input changes (insert/delete/cut/paste). `CommandPalette` and
+/// `RecentFiles` reset their selected index back to the top of the list;
+/// `FileFinder` refreshes its fuzzy-matched results. Other modal types have
+/// no such side effect.
+fn on_modal_input_changed(modal: &mut ModalState) {
+    match modal {
+        ModalState::CommandPalette(state) => state.selected_index = 0,
+        ModalState::FileFinder(state) => update_file_finder_results(state),
+        ModalState::RecentFiles(state) => state.selected_index = 0,
+        ModalState::GotoLine(_) | ModalState::FindReplace(_) | ModalState::ThemePicker(_) => {}
+    }
+}
+
 /// Handle modal-specific messages
 fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
     match msg {
@@ -312,28 +345,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::InsertChar(ch) => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => {
-                        state.editable.insert_char(ch);
-                        state.selected_index = 0; // Reset selection when input changes
-                    }
-                    ModalState::GotoLine(state) => {
-                        // EditableState handles the char filter constraint
-                        state.editable.insert_char(ch);
-                    }
-                    ModalState::FindReplace(state) => {
-                        state.focused_editable_mut().insert_char(ch);
-                    }
-                    ModalState::ThemePicker(_) => {} // No text input for theme picker
-                    ModalState::FileFinder(state) => {
-                        state.editable.insert_char(ch);
-                        update_file_finder_results(state);
-                    }
-                    ModalState::RecentFiles(state) => {
-                        state.editable.insert_char(ch);
-                        state.selected_index = 0;
-                    }
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.insert_char(ch);
                 }
+                on_modal_input_changed(modal);
                 Some(Cmd::Redraw)
             } else {
                 None
@@ -342,27 +357,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::DeleteBackward => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => {
-                        state.editable.delete_backward();
-                        state.selected_index = 0; // Reset selection when input changes
-                    }
-                    ModalState::GotoLine(state) => {
-                        state.editable.delete_backward();
-                    }
-                    ModalState::FindReplace(state) => {
-                        state.focused_editable_mut().delete_backward();
-                    }
-                    ModalState::ThemePicker(_) => {} // No text input for theme picker
-                    ModalState::FileFinder(state) => {
-                        state.editable.delete_backward();
-                        update_file_finder_results(state);
-                    }
-                    ModalState::RecentFiles(state) => {
-                        state.editable.delete_backward();
-                        state.selected_index = 0;
-                    }
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.delete_backward();
                 }
+                on_modal_input_changed(modal);
                 Some(Cmd::Redraw)
             } else {
                 None
@@ -371,27 +369,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::DeleteWordBackward => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => {
-                        state.editable.delete_word_backward();
-                        state.selected_index = 0;
-                    }
-                    ModalState::GotoLine(state) => {
-                        state.editable.delete_word_backward();
-                    }
-                    ModalState::FindReplace(state) => {
-                        state.focused_editable_mut().delete_word_backward();
-                    }
-                    ModalState::ThemePicker(_) => {} // No text input for theme picker
-                    ModalState::FileFinder(state) => {
-                        state.editable.delete_word_backward();
-                        update_file_finder_results(state);
-                    }
-                    ModalState::RecentFiles(state) => {
-                        state.editable.delete_word_backward();
-                        state.selected_index = 0;
-                    }
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.delete_word_backward();
                 }
+                on_modal_input_changed(modal);
                 Some(Cmd::Redraw)
             } else {
                 None
@@ -400,15 +381,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::MoveCursorWordLeft => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => state.editable.move_word_left(false),
-                    ModalState::GotoLine(state) => state.editable.move_word_left(false),
-                    ModalState::FindReplace(state) => {
-                        state.focused_editable_mut().move_word_left(false)
-                    }
-                    ModalState::FileFinder(state) => state.editable.move_word_left(false),
-                    ModalState::ThemePicker(_) => {}
-                    ModalState::RecentFiles(state) => state.editable.move_word_left(false),
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.move_word_left(false);
                 }
             }
             Some(Cmd::Redraw)
@@ -416,15 +390,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::MoveCursorWordRight => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => state.editable.move_word_right(false),
-                    ModalState::GotoLine(state) => state.editable.move_word_right(false),
-                    ModalState::FindReplace(state) => {
-                        state.focused_editable_mut().move_word_right(false)
-                    }
-                    ModalState::FileFinder(state) => state.editable.move_word_right(false),
-                    ModalState::ThemePicker(_) => {}
-                    ModalState::RecentFiles(state) => state.editable.move_word_right(false),
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.move_word_right(false);
                 }
             }
             Some(Cmd::Redraw)
@@ -432,13 +399,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::MoveCursorLeft => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => state.editable.move_left(false),
-                    ModalState::GotoLine(state) => state.editable.move_left(false),
-                    ModalState::FindReplace(state) => state.focused_editable_mut().move_left(false),
-                    ModalState::FileFinder(state) => state.editable.move_left(false),
-                    ModalState::ThemePicker(_) => {}
-                    ModalState::RecentFiles(state) => state.editable.move_left(false),
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.move_left(false);
                 }
             }
             Some(Cmd::Redraw)
@@ -446,15 +408,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::MoveCursorRight => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => state.editable.move_right(false),
-                    ModalState::GotoLine(state) => state.editable.move_right(false),
-                    ModalState::FindReplace(state) => {
-                        state.focused_editable_mut().move_right(false)
-                    }
-                    ModalState::FileFinder(state) => state.editable.move_right(false),
-                    ModalState::ThemePicker(_) => {}
-                    ModalState::RecentFiles(state) => state.editable.move_right(false),
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.move_right(false);
                 }
             }
             Some(Cmd::Redraw)
@@ -462,15 +417,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::MoveCursorHome => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => state.editable.move_line_start(false),
-                    ModalState::GotoLine(state) => state.editable.move_line_start(false),
-                    ModalState::FindReplace(state) => {
-                        state.focused_editable_mut().move_line_start(false)
-                    }
-                    ModalState::FileFinder(state) => state.editable.move_line_start(false),
-                    ModalState::ThemePicker(_) => {}
-                    ModalState::RecentFiles(state) => state.editable.move_line_start(false),
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.move_line_start(false);
                 }
             }
             Some(Cmd::Redraw)
@@ -478,15 +426,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::MoveCursorEnd => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => state.editable.move_line_end(false),
-                    ModalState::GotoLine(state) => state.editable.move_line_end(false),
-                    ModalState::FindReplace(state) => {
-                        state.focused_editable_mut().move_line_end(false)
-                    }
-                    ModalState::FileFinder(state) => state.editable.move_line_end(false),
-                    ModalState::ThemePicker(_) => {}
-                    ModalState::RecentFiles(state) => state.editable.move_line_end(false),
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.move_line_end(false);
                 }
             }
             Some(Cmd::Redraw)
@@ -494,13 +435,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::MoveCursorLeftWithSelection => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => state.editable.move_left(true),
-                    ModalState::GotoLine(state) => state.editable.move_left(true),
-                    ModalState::FindReplace(state) => state.focused_editable_mut().move_left(true),
-                    ModalState::FileFinder(state) => state.editable.move_left(true),
-                    ModalState::ThemePicker(_) => {}
-                    ModalState::RecentFiles(state) => state.editable.move_left(true),
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.move_left(true);
                 }
             }
             Some(Cmd::Redraw)
@@ -508,13 +444,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::MoveCursorRightWithSelection => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => state.editable.move_right(true),
-                    ModalState::GotoLine(state) => state.editable.move_right(true),
-                    ModalState::FindReplace(state) => state.focused_editable_mut().move_right(true),
-                    ModalState::FileFinder(state) => state.editable.move_right(true),
-                    ModalState::ThemePicker(_) => {}
-                    ModalState::RecentFiles(state) => state.editable.move_right(true),
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.move_right(true);
                 }
             }
             Some(Cmd::Redraw)
@@ -522,15 +453,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::MoveCursorHomeWithSelection => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => state.editable.move_line_start(true),
-                    ModalState::GotoLine(state) => state.editable.move_line_start(true),
-                    ModalState::FindReplace(state) => {
-                        state.focused_editable_mut().move_line_start(true)
-                    }
-                    ModalState::FileFinder(state) => state.editable.move_line_start(true),
-                    ModalState::ThemePicker(_) => {}
-                    ModalState::RecentFiles(state) => state.editable.move_line_start(true),
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.move_line_start(true);
                 }
             }
             Some(Cmd::Redraw)
@@ -538,15 +462,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::MoveCursorEndWithSelection => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => state.editable.move_line_end(true),
-                    ModalState::GotoLine(state) => state.editable.move_line_end(true),
-                    ModalState::FindReplace(state) => {
-                        state.focused_editable_mut().move_line_end(true)
-                    }
-                    ModalState::FileFinder(state) => state.editable.move_line_end(true),
-                    ModalState::ThemePicker(_) => {}
-                    ModalState::RecentFiles(state) => state.editable.move_line_end(true),
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.move_line_end(true);
                 }
             }
             Some(Cmd::Redraw)
@@ -554,15 +471,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::MoveCursorWordLeftWithSelection => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => state.editable.move_word_left(true),
-                    ModalState::GotoLine(state) => state.editable.move_word_left(true),
-                    ModalState::FindReplace(state) => {
-                        state.focused_editable_mut().move_word_left(true)
-                    }
-                    ModalState::FileFinder(state) => state.editable.move_word_left(true),
-                    ModalState::ThemePicker(_) => {}
-                    ModalState::RecentFiles(state) => state.editable.move_word_left(true),
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.move_word_left(true);
                 }
             }
             Some(Cmd::Redraw)
@@ -570,15 +480,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::MoveCursorWordRightWithSelection => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => state.editable.move_word_right(true),
-                    ModalState::GotoLine(state) => state.editable.move_word_right(true),
-                    ModalState::FindReplace(state) => {
-                        state.focused_editable_mut().move_word_right(true)
-                    }
-                    ModalState::FileFinder(state) => state.editable.move_word_right(true),
-                    ModalState::ThemePicker(_) => {}
-                    ModalState::RecentFiles(state) => state.editable.move_word_right(true),
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.move_word_right(true);
                 }
             }
             Some(Cmd::Redraw)
@@ -586,13 +489,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::SelectAll => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => state.editable.select_all(),
-                    ModalState::GotoLine(state) => state.editable.select_all(),
-                    ModalState::FindReplace(state) => state.focused_editable_mut().select_all(),
-                    ModalState::FileFinder(state) => state.editable.select_all(),
-                    ModalState::ThemePicker(_) => {}
-                    ModalState::RecentFiles(state) => state.editable.select_all(),
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.select_all();
                 }
             }
             Some(Cmd::Redraw)
@@ -601,14 +499,9 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         ModalMsg::Copy => {
             let mut cmd = Cmd::Redraw;
             if let Some(ref mut modal) = model.ui.active_modal {
-                let text = match modal {
-                    ModalState::CommandPalette(state) => state.editable.selected_text(),
-                    ModalState::GotoLine(state) => state.editable.selected_text(),
-                    ModalState::FindReplace(state) => state.focused_editable_mut().selected_text(),
-                    ModalState::FileFinder(state) => state.editable.selected_text(),
-                    ModalState::ThemePicker(_) => String::new(),
-                    ModalState::RecentFiles(state) => state.editable.selected_text(),
-                };
+                let text = modal_editable_mut(modal)
+                    .map(|editable| editable.selected_text())
+                    .unwrap_or_default();
                 if !text.is_empty() {
                     cmd = Cmd::Batch(vec![cmd, Cmd::CopyToClipboard(text)]);
                 }
@@ -619,49 +512,14 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         ModalMsg::Cut => {
             let mut cmd = Cmd::Redraw;
             if let Some(ref mut modal) = model.ui.active_modal {
-                let text = match modal {
-                    ModalState::CommandPalette(state) => {
-                        let t = state.editable.selected_text();
-                        if !t.is_empty() {
-                            state.editable.delete_backward();
-                            state.selected_index = 0;
-                        }
-                        t
-                    }
-                    ModalState::GotoLine(state) => {
-                        let t = state.editable.selected_text();
-                        if !t.is_empty() {
-                            state.editable.delete_backward();
-                        }
-                        t
-                    }
-                    ModalState::FindReplace(state) => {
-                        let editable = state.focused_editable_mut();
-                        let t = editable.selected_text();
-                        if !t.is_empty() {
-                            editable.delete_backward();
-                        }
-                        t
-                    }
-                    ModalState::FileFinder(state) => {
-                        let t = state.editable.selected_text();
-                        if !t.is_empty() {
-                            state.editable.delete_backward();
-                            update_file_finder_results(state);
-                        }
-                        t
-                    }
-                    ModalState::ThemePicker(_) => String::new(),
-                    ModalState::RecentFiles(state) => {
-                        let t = state.editable.selected_text();
-                        if !t.is_empty() {
-                            state.editable.delete_backward();
-                            state.selected_index = 0;
-                        }
-                        t
-                    }
-                };
+                let text = modal_editable_mut(modal)
+                    .map(|editable| editable.selected_text())
+                    .unwrap_or_default();
                 if !text.is_empty() {
+                    if let Some(editable) = modal_editable_mut(modal) {
+                        editable.delete_backward();
+                    }
+                    on_modal_input_changed(modal);
                     cmd = Cmd::Batch(vec![cmd, Cmd::CopyToClipboard(text)]);
                 }
             }
@@ -675,29 +533,16 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             let filtered: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
             if !filtered.is_empty() {
                 if let Some(ref mut modal) = model.ui.active_modal {
-                    match modal {
-                        ModalState::CommandPalette(state) => {
-                            state.editable.insert_text(&filtered);
-                            state.selected_index = 0;
+                    if let ModalState::GotoLine(state) = modal {
+                        // Filter to only digits for goto line
+                        let digits: String =
+                            filtered.chars().filter(|c| c.is_ascii_digit()).collect();
+                        state.editable.insert_text(&digits);
+                    } else {
+                        if let Some(editable) = modal_editable_mut(modal) {
+                            editable.insert_text(&filtered);
                         }
-                        ModalState::GotoLine(state) => {
-                            // Filter to only digits for goto line
-                            let digits: String =
-                                filtered.chars().filter(|c| c.is_ascii_digit()).collect();
-                            state.editable.insert_text(&digits);
-                        }
-                        ModalState::FindReplace(state) => {
-                            state.focused_editable_mut().insert_text(&filtered);
-                        }
-                        ModalState::FileFinder(state) => {
-                            state.editable.insert_text(&filtered);
-                            update_file_finder_results(state);
-                        }
-                        ModalState::ThemePicker(_) => {}
-                        ModalState::RecentFiles(state) => {
-                            state.editable.insert_text(&filtered);
-                            state.selected_index = 0;
-                        }
+                        on_modal_input_changed(modal);
                     }
                 }
             }
@@ -706,27 +551,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::DeleteForward => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => {
-                        state.editable.delete_forward();
-                        state.selected_index = 0;
-                    }
-                    ModalState::GotoLine(state) => {
-                        state.editable.delete_forward();
-                    }
-                    ModalState::FindReplace(state) => {
-                        state.focused_editable_mut().delete_forward();
-                    }
-                    ModalState::FileFinder(state) => {
-                        state.editable.delete_forward();
-                        update_file_finder_results(state);
-                    }
-                    ModalState::ThemePicker(_) => {}
-                    ModalState::RecentFiles(state) => {
-                        state.editable.delete_forward();
-                        state.selected_index = 0;
-                    }
+                if let Some(editable) = modal_editable_mut(modal) {
+                    editable.delete_forward();
                 }
+                on_modal_input_changed(modal);
                 Some(Cmd::Redraw)
             } else {
                 None

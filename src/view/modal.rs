@@ -7,7 +7,7 @@ use super::geometry;
 use super::selectable_list::{
     render_selectable_list, SelectableListColors, SelectableListLayout, SelectableListViewport,
 };
-use super::text_field::TextFieldRenderer;
+use super::text_field::{TextFieldContent, TextFieldRenderer};
 
 #[derive(Clone, Copy)]
 struct ModalColors {
@@ -39,6 +39,18 @@ impl ModalColors {
     }
 }
 
+/// Constant rendering context shared by every modal for the duration of a
+/// single `render_modals` call: window size, the shared line/char metrics,
+/// and the resolved theme colors. Bundling these avoids threading the same
+/// 5-6 parameters through every `render_*_modal` function individually.
+struct ModalRenderCtx {
+    window_width: usize,
+    window_height: usize,
+    line_height: usize,
+    char_width: f32,
+    colors: ModalColors,
+}
+
 fn render_modal_shell(frame: &mut Frame, layout: &geometry::ModalLayout, colors: &ModalColors) {
     frame.draw_bordered_rect(
         layout.x,
@@ -59,18 +71,17 @@ enum ThemeRow<'a> {
 
 use geometry::THEME_PICKER_MAX_VISIBLE_ROWS;
 
-#[allow(clippy::too_many_arguments)]
 fn render_theme_picker_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
     state: &crate::model::ui::ThemePickerState,
-    window_width: usize,
-    window_height: usize,
-    line_height: usize,
-    colors: &ModalColors,
+    ctx: &ModalRenderCtx,
 ) {
     use crate::theme::ThemeSource;
+
+    let colors = &ctx.colors;
+    let line_height = ctx.line_height;
 
     let themes = &state.themes;
     let clamped_selected = state.selected_index.min(themes.len().saturating_sub(1));
@@ -104,8 +115,8 @@ fn render_theme_picker_modal(
     );
 
     let (layout, w) = geometry::theme_picker_layout(
-        window_width,
-        window_height,
+        ctx.window_width,
+        ctx.window_height,
         line_height,
         rows.len().min(max_visible_rows),
     );
@@ -162,27 +173,26 @@ fn render_theme_picker_modal(
     frame.clear_clip();
 }
 
-#[allow(clippy::too_many_arguments)]
 fn render_command_palette_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
     state: &crate::model::ui::CommandPaletteState,
-    window_width: usize,
-    window_height: usize,
-    line_height: usize,
-    char_width: f32,
-    colors: &ModalColors,
+    ctx: &ModalRenderCtx,
 ) {
     use crate::commands::filter_commands;
+
+    let colors = &ctx.colors;
+    let line_height = ctx.line_height;
+    let char_width = ctx.char_width;
 
     let input_text = state.input();
     let filtered_commands = filter_commands(&input_text);
     let max_visible_items = 8;
 
     let (layout, w) = geometry::command_palette_layout(
-        window_width,
-        window_height,
+        ctx.window_width,
+        ctx.window_height,
         line_height,
         filtered_commands.len(),
     );
@@ -245,19 +255,18 @@ fn render_command_palette_modal(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn render_goto_line_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
     state: &crate::model::ui::GotoLineState,
-    window_width: usize,
-    window_height: usize,
-    line_height: usize,
-    char_width: f32,
-    colors: &ModalColors,
+    ctx: &ModalRenderCtx,
 ) {
-    let (layout, w) = geometry::goto_line_layout(window_width, window_height, line_height);
+    let colors = &ctx.colors;
+    let line_height = ctx.line_height;
+    let char_width = ctx.char_width;
+
+    let (layout, w) = geometry::goto_line_layout(ctx.window_width, ctx.window_height, line_height);
 
     render_modal_shell(frame, &layout, colors);
 
@@ -280,22 +289,25 @@ fn render_goto_line_modal(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn render_find_replace_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
     state: &crate::model::ui::FindReplaceState,
-    window_width: usize,
-    window_height: usize,
-    line_height: usize,
-    char_width: f32,
-    colors: &ModalColors,
+    ctx: &ModalRenderCtx,
 ) {
     use crate::model::ui::FindReplaceField;
 
-    let (layout, w) =
-        geometry::find_replace_layout(window_width, window_height, line_height, state.replace_mode);
+    let colors = &ctx.colors;
+    let line_height = ctx.line_height;
+    let char_width = ctx.char_width;
+
+    let (layout, w) = geometry::find_replace_layout(
+        ctx.window_width,
+        ctx.window_height,
+        line_height,
+        state.replace_mode,
+    );
 
     render_modal_shell(frame, &layout, colors);
 
@@ -362,39 +374,49 @@ fn render_find_replace_modal(
     }
 }
 
+/// Shared shell for the two "search a list, filtered by a text input" modals
+/// (file finder and recent files): modal shell + title + filter input +
+/// selectable list + "no results" fallback message.
+///
+/// The two modals differ only in title, item type, per-row rendering, and
+/// empty-state copy, so those are the only things callers need to supply.
 #[allow(clippy::too_many_arguments)]
-fn render_file_finder_modal(
+fn render_search_list_modal<T>(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
-    state: &crate::model::ui::FileFinderState,
-    window_width: usize,
-    window_height: usize,
-    line_height: usize,
-    char_width: f32,
-    colors: &ModalColors,
+    ctx: &ModalRenderCtx,
+    title: &str,
+    input: &dyn TextFieldContent,
+    input_is_empty: bool,
+    empty_message: &str,
+    items: &[T],
+    selected_index: usize,
+    max_visible_items: usize,
+    mut render_row: impl FnMut(&mut Frame, &mut TextPainter, &T, usize, usize, usize, f32, u32, u32),
 ) {
-    let results = &state.results;
-    let max_visible_items = 10;
+    let colors = &ctx.colors;
+    let line_height = ctx.line_height;
+    let char_width = ctx.char_width;
 
     let (layout, w) = geometry::file_finder_layout(
-        window_width,
-        window_height,
+        ctx.window_width,
+        ctx.window_height,
         line_height,
-        results.len(),
-        !state.input().is_empty(),
+        items.len(),
+        !input_is_empty,
     );
 
     render_modal_shell(frame, &layout, colors);
 
     let title_r = layout.widget(w.title);
-    painter.draw(frame, title_r.x, title_r.y, "Go to File", colors.fg);
+    painter.draw(frame, title_r.x, title_r.y, title, colors.fg);
 
     let input_r = layout.widget(w.input);
     TextFieldRenderer::render_modal_input(
         frame,
         painter,
-        &state.editable,
+        input,
         input_r,
         line_height,
         char_width,
@@ -424,21 +446,53 @@ fn render_file_finder_modal(
     };
     render_selectable_list(
         frame,
-        results.as_slice(),
-        state.selected_index,
+        items,
+        selected_index,
         &list_layout,
         &list_colors,
-        |frame, file_match, _actual_index, item_y, _is_selected| {
-            let icon = crate::model::FileExtension::from_path(&file_match.path).icon();
-            let icon_x = layout.x + 12;
-            painter.draw(frame, icon_x, item_y, icon, colors.fg);
+        |frame, item, _actual_index, item_y, _is_selected| {
+            render_row(
+                frame, painter, item, item_y, layout.x, layout.w, char_width, colors.fg, dim_color,
+            );
+        },
+    );
 
-            let name_x = layout.x + 36;
-            painter.draw(frame, name_x, item_y, &file_match.filename, colors.fg);
+    if items.is_empty() && !input_is_empty {
+        painter.draw(frame, layout.x + 12, results_y, empty_message, dim_color);
+    }
+}
+
+fn render_file_finder_modal(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    state: &crate::model::ui::FileFinderState,
+    ctx: &ModalRenderCtx,
+) {
+    let input_text = state.input();
+    render_search_list_modal(
+        frame,
+        painter,
+        model,
+        ctx,
+        "Go to File",
+        &state.editable,
+        input_text.is_empty(),
+        "No files match your query",
+        state.results.as_slice(),
+        state.selected_index,
+        10,
+        |frame, painter, file_match, item_y, layout_x, layout_w, char_width, fg, dim| {
+            let icon = crate::model::FileExtension::from_path(&file_match.path).icon();
+            let icon_x = layout_x + 12;
+            painter.draw(frame, icon_x, item_y, icon, fg);
+
+            let name_x = layout_x + 36;
+            painter.draw(frame, name_x, item_y, &file_match.filename, fg);
 
             let filename_width = (file_match.filename.len() as f32 * char_width) as usize;
             let path_x = name_x + filename_width + (char_width as usize * 2);
-            let available_width = (layout.x + layout.w).saturating_sub(path_x + 16);
+            let available_width = (layout_x + layout_w).saturating_sub(path_x + 16);
             let max_path_chars = (available_width as f32 / char_width) as usize;
 
             if max_path_chars > 5 {
@@ -452,113 +506,48 @@ fn render_file_finder_modal(
                 } else {
                     file_match.relative_path.clone()
                 };
-                painter.draw(frame, path_x, item_y, &path_display, dim_color);
+                painter.draw(frame, path_x, item_y, &path_display, dim);
             }
         },
     );
-
-    if results.is_empty() && !state.input().is_empty() {
-        painter.draw(
-            frame,
-            layout.x + 12,
-            results_y,
-            "No files match your query",
-            dim_color,
-        );
-    }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn render_recent_files_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
     state: &crate::model::ui::RecentFilesState,
-    window_width: usize,
-    window_height: usize,
-    line_height: usize,
-    char_width: f32,
-    colors: &ModalColors,
+    ctx: &ModalRenderCtx,
 ) {
     let filtered = state.filtered_entries();
-    let max_visible_items = 10;
-
-    let (layout, w) = geometry::file_finder_layout(
-        window_width,
-        window_height,
-        line_height,
-        filtered.len(),
-        !state.input().is_empty(),
-    );
-
-    render_modal_shell(frame, &layout, colors);
-
-    let title_r = layout.widget(w.title);
-    painter.draw(frame, title_r.x, title_r.y, "Recent Files", colors.fg);
-
-    let input_r = layout.widget(w.input);
-    TextFieldRenderer::render_modal_input(
+    let input_text = state.input();
+    render_search_list_modal(
         frame,
         painter,
+        model,
+        ctx,
+        "Recent Files",
         &state.editable,
-        input_r,
-        line_height,
-        char_width,
-        colors.input_bg,
-        colors.fg,
-        colors.highlight,
-        colors.selection_bg,
-        model.ui.cursor_visible,
-    );
-
-    let results_y = if let Some(list_idx) = w.list {
-        layout.widget(list_idx).y
-    } else {
-        input_r.y + input_r.h + geometry::ModalSpacing::GAP_MD
-    };
-    let dim_color = 0xFF888888;
-    let list_layout = SelectableListLayout {
-        x: layout.x,
-        y: results_y,
-        width: layout.w,
-        row_height: line_height,
-        max_visible_items,
-        selection_inset: 4,
-    };
-    let list_colors = SelectableListColors {
-        selection_bg: colors.selection_bg,
-    };
-    render_selectable_list(
-        frame,
+        input_text.is_empty(),
+        "No recent files match your query",
         filtered.as_slice(),
         state.selected_index,
-        &list_layout,
-        &list_colors,
-        |frame, entry, _actual_index, item_y, _is_selected| {
+        10,
+        |frame, painter, entry, item_y, layout_x, layout_w, char_width, fg, dim| {
             let icon = crate::model::FileExtension::from_path(&entry.path).icon();
-            let icon_x = layout.x + 12;
-            painter.draw(frame, icon_x, item_y, icon, colors.fg);
+            let icon_x = layout_x + 12;
+            painter.draw(frame, icon_x, item_y, icon, fg);
 
             let display = entry.display_path();
-            let name_x = layout.x + 36;
-            painter.draw(frame, name_x, item_y, &display, colors.fg);
+            let name_x = layout_x + 36;
+            painter.draw(frame, name_x, item_y, &display, fg);
 
             let time_str = entry.time_ago();
             let time_width = (time_str.len() as f32 * char_width) as usize;
-            let time_x = (layout.x + layout.w).saturating_sub(time_width + 12);
-            painter.draw(frame, time_x, item_y, &time_str, dim_color);
+            let time_x = (layout_x + layout_w).saturating_sub(time_width + 12);
+            painter.draw(frame, time_x, item_y, &time_str, dim);
         },
     );
-
-    if filtered.is_empty() && !state.input().is_empty() {
-        painter.draw(
-            frame,
-            layout.x + 12,
-            results_y,
-            "No recent files match your query",
-            dim_color,
-        );
-    }
 }
 
 /// Render the active modal overlay.
@@ -575,8 +564,6 @@ pub fn render_modals(
     window_height: usize,
 ) {
     use crate::model::ModalState;
-    let char_width = painter.char_width();
-    let line_height = painter.line_height();
 
     let Some(ref modal) = model.ui.active_modal else {
         return;
@@ -585,75 +572,32 @@ pub fn render_modals(
     // 1. Dim background (40% black overlay)
     frame.dim(MODAL_DIM_ALPHA); // 102/255 ≈ 40% opacity
 
-    let colors = ModalColors::from_model(model);
+    let ctx = ModalRenderCtx {
+        window_width,
+        window_height,
+        line_height: painter.line_height(),
+        char_width: painter.char_width(),
+        colors: ModalColors::from_model(model),
+    };
 
     // Handle different modal types
     match modal {
-        ModalState::ThemePicker(state) => render_theme_picker_modal(
-            frame,
-            painter,
-            model,
-            state,
-            window_width,
-            window_height,
-            line_height,
-            &colors,
-        ),
-        ModalState::CommandPalette(state) => render_command_palette_modal(
-            frame,
-            painter,
-            model,
-            state,
-            window_width,
-            window_height,
-            line_height,
-            char_width,
-            &colors,
-        ),
-        ModalState::GotoLine(state) => render_goto_line_modal(
-            frame,
-            painter,
-            model,
-            state,
-            window_width,
-            window_height,
-            line_height,
-            char_width,
-            &colors,
-        ),
-        ModalState::FindReplace(state) => render_find_replace_modal(
-            frame,
-            painter,
-            model,
-            state,
-            window_width,
-            window_height,
-            line_height,
-            char_width,
-            &colors,
-        ),
-        ModalState::FileFinder(state) => render_file_finder_modal(
-            frame,
-            painter,
-            model,
-            state,
-            window_width,
-            window_height,
-            line_height,
-            char_width,
-            &colors,
-        ),
-        ModalState::RecentFiles(state) => render_recent_files_modal(
-            frame,
-            painter,
-            model,
-            state,
-            window_width,
-            window_height,
-            line_height,
-            char_width,
-            &colors,
-        ),
+        ModalState::ThemePicker(state) => {
+            render_theme_picker_modal(frame, painter, model, state, &ctx)
+        }
+        ModalState::CommandPalette(state) => {
+            render_command_palette_modal(frame, painter, model, state, &ctx)
+        }
+        ModalState::GotoLine(state) => render_goto_line_modal(frame, painter, model, state, &ctx),
+        ModalState::FindReplace(state) => {
+            render_find_replace_modal(frame, painter, model, state, &ctx)
+        }
+        ModalState::FileFinder(state) => {
+            render_file_finder_modal(frame, painter, model, state, &ctx)
+        }
+        ModalState::RecentFiles(state) => {
+            render_recent_files_modal(frame, painter, model, state, &ctx)
+        }
     }
 }
 

@@ -652,23 +652,7 @@ impl UiState {
     pub fn with_status(message: impl Into<String>) -> Self {
         Self {
             status_message: message.into(),
-            status_bar: StatusBar::new(),
-            transient_message: None,
-            cursor_visible: true,
-            last_cursor_blink: Instant::now(),
-            is_loading: false,
-            is_saving: false,
-            active_modal: None,
-            last_command_palette: None,
-            last_find_replace: None,
-            drop_state: DropState::default(),
-            splitter_drag: None,
-            sidebar_resize: None,
-            scrollbar_drag: None,
-            tab_drag: None,
-            focus: FocusTarget::Editor,
-            hover: HoverRegion::None,
-            previous_cursor_lines: Vec::new(),
+            ..Self::new()
         }
     }
 

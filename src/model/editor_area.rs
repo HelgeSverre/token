@@ -304,11 +304,8 @@ impl EditorArea {
             None => return,
         };
 
-        // Get raw pointers to work around borrow checker
-        // Safety: We only read from doc while mutating editor, and they don't overlap
-        let doc_ptr = self.documents.get(&doc_id).unwrap() as *const Document;
+        let doc = self.documents.get(&doc_id).unwrap();
         let editor = self.editors.get_mut(&editor_id).unwrap();
-        let doc = unsafe { &*doc_ptr };
         editor.ensure_cursor_visible_with_mode(doc, mode);
     }
 
@@ -324,9 +321,8 @@ impl EditorArea {
             None => return,
         };
 
-        let doc_ptr = self.documents.get(&doc_id).unwrap() as *const Document;
+        let doc = self.documents.get(&doc_id).unwrap();
         let editor = self.editors.get_mut(&editor_id).unwrap();
-        let doc = unsafe { &*doc_ptr };
         editor.ensure_cursor_visible_no_padding(doc);
     }
 

@@ -24,6 +24,19 @@ use token::model::AppModel;
 use token::panel::{DockPosition, PanelId};
 use token::update::update;
 
+/// Bundles the four keyboard modifier flags (Ctrl, Shift, Alt, Logo/Cmd) that
+/// are threaded through nearly every keyboard-handling function in this module.
+///
+/// Replaces the previous pattern of passing `ctrl: bool, shift: bool, alt: bool,
+/// logo: bool` as four separate parameters everywhere.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct KeyModifiers {
+    pub ctrl: bool,
+    pub shift: bool,
+    pub alt: bool,
+    pub logo: bool,
+}
+
 /// Detects Option key double-tap gesture for multi-cursor mode.
 ///
 /// When the Option key is pressed twice within 300ms, `double_tapped` is set to true.
@@ -59,17 +72,20 @@ impl OptionKeyGesture {
 /// - CSV cell editing is active (all input routes to cell editor)
 /// - Option double-tap multi-cursor gesture is in progress
 /// - Keymap returns NoMatch or a non-simple command
-#[allow(clippy::too_many_arguments)]
 pub fn handle_key(
     model: &mut AppModel,
     key: Key,
     _physical_key: winit::keyboard::PhysicalKey,
-    ctrl: bool,
-    shift: bool,
-    alt: bool,
-    logo: bool,
+    modifiers: KeyModifiers,
     option_double_tapped: bool,
 ) -> Option<Cmd> {
+    let KeyModifiers {
+        ctrl,
+        shift,
+        alt,
+        logo,
+    } = modifiers;
+
     // Cancel splitter drag with Escape (highest priority)
     if model.ui.splitter_drag.is_some() {
         if let Key::Named(NamedKey::Escape) = key {
@@ -79,12 +95,12 @@ pub fn handle_key(
 
     // Focus capture: route keys to modal when active
     if model.ui.has_modal() {
-        return handle_modal_key(model, key, ctrl, shift, alt, logo);
+        return handle_modal_key(model, key, modifiers);
     }
 
     // Focus capture: route keys to CSV cell editor when editing
     if model.is_csv_editing() {
-        return handle_csv_edit_key(model, key, ctrl, shift, alt, logo);
+        return handle_csv_edit_key(model, key, modifiers);
     }
 
     // Focus capture: route keys exclusively to sidebar when it has focus
@@ -239,18 +255,214 @@ pub fn handle_key(
     }
 }
 
+/// A text-editing action expressed independently of which target (modal input
+/// vs. CSV cell editor) it will be dispatched to.
+///
+/// `handle_modal_key` and `handle_csv_edit_key` handle a near-identical set of
+/// keystrokes for cursor movement, selection, clipboard, and character entry;
+/// they differ only in which `Msg` variant each action maps to. This enum
+/// captures "what the keystroke means" once, so that meaning isn't duplicated
+/// across both match blocks.
+#[derive(Debug, Clone, PartialEq)]
+enum TextEditingKeyAction {
+    MoveLeft { extend: bool },
+    MoveRight { extend: bool },
+    MoveWordLeft { extend: bool },
+    MoveWordRight { extend: bool },
+    MoveHome { extend: bool },
+    MoveEnd { extend: bool },
+    SelectAll,
+    Copy,
+    Cut,
+    Paste,
+    DeleteWordBackward,
+    DeleteBackward,
+    DeleteForward,
+    InsertText(String),
+}
+
+/// Classify a keystroke into a `TextEditingKeyAction`, if it maps to one of
+/// the movement/selection/clipboard/insertion behaviors shared by the modal
+/// input and CSV cell editor.
+///
+/// Keys with target-specific behavior (Escape, Enter, Tab, Up/Down, Cmd+Z,
+/// alt+Delete word-forward) are intentionally NOT handled here - those are
+/// matched directly in `handle_modal_key` / `handle_csv_edit_key` before
+/// falling back to this classifier.
+fn classify_text_editing_key(key: &Key, modifiers: KeyModifiers) -> Option<TextEditingKeyAction> {
+    use TextEditingKeyAction::*;
+
+    let KeyModifiers {
+        ctrl,
+        shift,
+        alt,
+        logo,
+    } = modifiers;
+
+    match key {
+        // Word navigation with selection (Shift+Option+Arrow)
+        Key::Named(NamedKey::ArrowLeft) if shift && alt => Some(MoveWordLeft { extend: true }),
+        Key::Named(NamedKey::ArrowRight) if shift && alt => Some(MoveWordRight { extend: true }),
+
+        // Word navigation (Option/Alt + Arrow)
+        Key::Named(NamedKey::ArrowLeft) if alt => Some(MoveWordLeft { extend: false }),
+        Key::Named(NamedKey::ArrowRight) if alt => Some(MoveWordRight { extend: false }),
+
+        // Cursor left/right with selection (Shift+Arrow)
+        Key::Named(NamedKey::ArrowLeft) if shift => Some(MoveLeft { extend: true }),
+        Key::Named(NamedKey::ArrowRight) if shift => Some(MoveRight { extend: true }),
+
+        // Cursor left/right
+        Key::Named(NamedKey::ArrowLeft) => Some(MoveLeft { extend: false }),
+        Key::Named(NamedKey::ArrowRight) => Some(MoveRight { extend: false }),
+
+        // Home/End with selection (Shift+Home/End)
+        Key::Named(NamedKey::Home) if shift => Some(MoveHome { extend: true }),
+        Key::Named(NamedKey::End) if shift => Some(MoveEnd { extend: true }),
+
+        // Home/End (also Cmd+Left/Right on Mac)
+        Key::Named(NamedKey::Home) => Some(MoveHome { extend: false }),
+        Key::Named(NamedKey::End) => Some(MoveEnd { extend: false }),
+
+        // Select all (Cmd+A)
+        Key::Character(s) if logo && s.eq_ignore_ascii_case("a") => Some(SelectAll),
+
+        // Copy (Cmd+C)
+        Key::Character(s) if logo && s.eq_ignore_ascii_case("c") => Some(Copy),
+
+        // Cut (Cmd+X)
+        Key::Character(s) if logo && s.eq_ignore_ascii_case("x") => Some(Cut),
+
+        // Paste (Cmd+V)
+        Key::Character(s) if logo && s.eq_ignore_ascii_case("v") => Some(Paste),
+
+        // Word deletion (Option/Alt + Backspace)
+        Key::Named(NamedKey::Backspace) if alt => Some(DeleteWordBackward),
+
+        // Backspace: delete character
+        Key::Named(NamedKey::Backspace) => Some(DeleteBackward),
+
+        // Delete key: delete forward
+        // (alt+Delete word-forward-deletion, where supported, is special-cased
+        // by the caller before this classifier runs)
+        Key::Named(NamedKey::Delete) => Some(DeleteForward),
+
+        // Character input (only when no Ctrl/Cmd modifiers)
+        Key::Character(s) if !(ctrl || logo) => Some(InsertText(s.to_string())),
+
+        // Space (without modifiers)
+        Key::Named(NamedKey::Space) if !(ctrl || logo) => Some(InsertText(" ".to_string())),
+
+        _ => None,
+    }
+}
+
+/// Dispatch a `TextEditingKeyAction` to the modal input's `ModalMsg` variants.
+fn dispatch_modal_text_edit(model: &mut AppModel, action: TextEditingKeyAction) -> Option<Cmd> {
+    use TextEditingKeyAction::*;
+
+    match action {
+        MoveLeft { extend: false } => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorLeft)))
+        }
+        MoveLeft { extend: true } => update(
+            model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorLeftWithSelection)),
+        ),
+        MoveRight { extend: false } => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorRight)))
+        }
+        MoveRight { extend: true } => update(
+            model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorRightWithSelection)),
+        ),
+        MoveWordLeft { extend: false } => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorWordLeft)))
+        }
+        MoveWordLeft { extend: true } => update(
+            model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorWordLeftWithSelection)),
+        ),
+        MoveWordRight { extend: false } => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorWordRight)))
+        }
+        MoveWordRight { extend: true } => update(
+            model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorWordRightWithSelection)),
+        ),
+        MoveHome { extend: false } => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorHome)))
+        }
+        MoveHome { extend: true } => update(
+            model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorHomeWithSelection)),
+        ),
+        MoveEnd { extend: false } => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorEnd))),
+        MoveEnd { extend: true } => update(
+            model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorEndWithSelection)),
+        ),
+        SelectAll => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectAll))),
+        Copy => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Copy))),
+        Cut => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Cut))),
+        Paste => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Paste))),
+        DeleteWordBackward => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteWordBackward))),
+        DeleteBackward => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteBackward))),
+        DeleteForward => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteForward))),
+        InsertText(s) => {
+            let mut cmd = None;
+            for ch in s.chars() {
+                cmd = update(model, Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar(ch)))).or(cmd);
+            }
+            cmd
+        }
+    }
+}
+
+/// Dispatch a `TextEditingKeyAction` to the CSV cell editor's `CsvMsg` variants.
+fn dispatch_csv_text_edit(model: &mut AppModel, action: TextEditingKeyAction) -> Option<Cmd> {
+    use TextEditingKeyAction::*;
+
+    match action {
+        MoveLeft { extend: false } => update(model, Msg::Csv(CsvMsg::EditCursorLeft)),
+        MoveLeft { extend: true } => update(model, Msg::Csv(CsvMsg::EditCursorLeftWithSelection)),
+        MoveRight { extend: false } => update(model, Msg::Csv(CsvMsg::EditCursorRight)),
+        MoveRight { extend: true } => update(model, Msg::Csv(CsvMsg::EditCursorRightWithSelection)),
+        MoveWordLeft { extend: false } => update(model, Msg::Csv(CsvMsg::EditCursorWordLeft)),
+        MoveWordLeft { extend: true } => {
+            update(model, Msg::Csv(CsvMsg::EditCursorWordLeftWithSelection))
+        }
+        MoveWordRight { extend: false } => update(model, Msg::Csv(CsvMsg::EditCursorWordRight)),
+        MoveWordRight { extend: true } => {
+            update(model, Msg::Csv(CsvMsg::EditCursorWordRightWithSelection))
+        }
+        MoveHome { extend: false } => update(model, Msg::Csv(CsvMsg::EditCursorHome)),
+        MoveHome { extend: true } => update(model, Msg::Csv(CsvMsg::EditCursorHomeWithSelection)),
+        MoveEnd { extend: false } => update(model, Msg::Csv(CsvMsg::EditCursorEnd)),
+        MoveEnd { extend: true } => update(model, Msg::Csv(CsvMsg::EditCursorEndWithSelection)),
+        SelectAll => update(model, Msg::Csv(CsvMsg::EditSelectAll)),
+        Copy => update(model, Msg::Csv(CsvMsg::EditCopy)),
+        Cut => update(model, Msg::Csv(CsvMsg::EditCut)),
+        Paste => update(model, Msg::Csv(CsvMsg::EditPaste)),
+        DeleteWordBackward => update(model, Msg::Csv(CsvMsg::EditDeleteWordBackward)),
+        DeleteBackward => update(model, Msg::Csv(CsvMsg::EditDeleteBackward)),
+        DeleteForward => update(model, Msg::Csv(CsvMsg::EditDeleteForward)),
+        InsertText(s) => {
+            let mut cmd = None;
+            for ch in s.chars() {
+                cmd = update(model, Msg::Csv(CsvMsg::EditInsertChar(ch))).or(cmd);
+            }
+            cmd
+        }
+    }
+}
+
 /// Handle keyboard input when a modal is active.
 ///
 /// This captures focus and routes keys to the modal instead of the editor.
-#[allow(clippy::too_many_arguments)]
-fn handle_modal_key(
-    model: &mut AppModel,
-    key: Key,
-    ctrl: bool,
-    shift: bool,
-    alt: bool,
-    logo: bool,
-) -> Option<Cmd> {
+fn handle_modal_key(model: &mut AppModel, key: Key, modifiers: KeyModifiers) -> Option<Cmd> {
+    let KeyModifiers { shift, alt, .. } = modifiers;
+
     match key {
         // Escape: close modal
         Key::Named(NamedKey::Escape) => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Close))),
@@ -266,124 +478,26 @@ fn handle_modal_key(
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)))
         }
 
-        // Word navigation with selection (Shift+Option+Arrow)
-        Key::Named(NamedKey::ArrowLeft) if shift && alt => update(
-            model,
-            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorWordLeftWithSelection)),
-        ),
-        Key::Named(NamedKey::ArrowRight) if shift && alt => update(
-            model,
-            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorWordRightWithSelection)),
-        ),
-
-        // Word navigation (Option/Alt + Arrow)
-        Key::Named(NamedKey::ArrowLeft) if alt => {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorWordLeft)))
-        }
-        Key::Named(NamedKey::ArrowRight) if alt => {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorWordRight)))
-        }
-
-        // Cursor left/right with selection (Shift+Arrow)
-        Key::Named(NamedKey::ArrowLeft) if shift => update(
-            model,
-            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorLeftWithSelection)),
-        ),
-        Key::Named(NamedKey::ArrowRight) if shift => update(
-            model,
-            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorRightWithSelection)),
-        ),
-
-        // Cursor left/right
-        Key::Named(NamedKey::ArrowLeft) => {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorLeft)))
-        }
-        Key::Named(NamedKey::ArrowRight) => {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorRight)))
-        }
-
-        // Home/End with selection (Shift+Home/End)
-        Key::Named(NamedKey::Home) if shift => update(
-            model,
-            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorHomeWithSelection)),
-        ),
-        Key::Named(NamedKey::End) if shift => update(
-            model,
-            Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorEndWithSelection)),
-        ),
-
-        // Home/End (also Cmd+Left/Right on Mac)
-        Key::Named(NamedKey::Home) => {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorHome)))
-        }
-        Key::Named(NamedKey::End) => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorEnd))),
-
-        // Select all (Cmd+A)
-        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("a") => {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectAll)))
-        }
-
-        // Copy (Cmd+C)
-        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("c") => {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Copy)))
-        }
-
-        // Cut (Cmd+X)
-        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("x") => {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Cut)))
-        }
-
-        // Paste (Cmd+V)
-        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("v") => {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Paste)))
-        }
-
-        // Word deletion (Option/Alt + Backspace)
-        Key::Named(NamedKey::Backspace) if alt => {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteWordBackward)))
-        }
-
-        // Backspace: delete character
-        Key::Named(NamedKey::Backspace) => {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteBackward)))
-        }
-
-        // Delete key: delete forward
-        Key::Named(NamedKey::Delete) => {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteForward)))
-        }
-
-        // Character input (only when no Ctrl/Cmd modifiers)
-        Key::Character(ref s) if !(ctrl || logo) => {
-            let mut cmd = None;
-            for ch in s.chars() {
-                cmd = update(model, Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar(ch)))).or(cmd);
-            }
-            cmd
-        }
-
-        // Space (without modifiers)
-        Key::Named(NamedKey::Space) if !(ctrl || logo) => {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar(' '))))
-        }
-
-        // Block all other keys when modal is active (consume but don't act)
-        _ => Some(Cmd::Redraw),
+        // Movement / selection / clipboard / insertion shared with CSV cell editing
+        _ => match classify_text_editing_key(&key, modifiers) {
+            Some(action) => dispatch_modal_text_edit(model, action),
+            // Block all other keys when modal is active (consume but don't act)
+            None => Some(Cmd::Redraw),
+        },
     }
 }
 
 /// Handle keyboard input when editing a CSV cell
 ///
 /// This captures focus and routes keys to the cell editor instead of the normal editor.
-#[allow(clippy::too_many_arguments)]
-fn handle_csv_edit_key(
-    model: &mut AppModel,
-    key: Key,
-    ctrl: bool,
-    shift: bool,
-    alt: bool,
-    logo: bool,
-) -> Option<Cmd> {
+fn handle_csv_edit_key(model: &mut AppModel, key: Key, modifiers: KeyModifiers) -> Option<Cmd> {
+    let KeyModifiers {
+        ctrl,
+        shift,
+        alt,
+        logo,
+    } = modifiers;
+
     match key {
         // Escape: cancel edit
         Key::Named(NamedKey::Escape) => update(model, Msg::Csv(CsvMsg::CancelEdit)),
@@ -410,55 +524,8 @@ fn handle_csv_edit_key(
             }
         }
 
-        // === Select All (Cmd+A) ===
-        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("a") => {
-            update(model, Msg::Csv(CsvMsg::EditSelectAll))
-        }
-
-        // === Clipboard (Cmd+C/X/V) ===
-        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("c") => {
-            update(model, Msg::Csv(CsvMsg::EditCopy))
-        }
-        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("x") => {
-            update(model, Msg::Csv(CsvMsg::EditCut))
-        }
-        Key::Character(ref s) if logo && s.eq_ignore_ascii_case("v") => {
-            update(model, Msg::Csv(CsvMsg::EditPaste))
-        }
-
-        // === Word Movement with Selection (Shift+Option+Arrow) ===
-        Key::Named(NamedKey::ArrowLeft) if shift && alt && !ctrl && !logo => {
-            update(model, Msg::Csv(CsvMsg::EditCursorWordLeftWithSelection))
-        }
-        Key::Named(NamedKey::ArrowRight) if shift && alt && !ctrl && !logo => {
-            update(model, Msg::Csv(CsvMsg::EditCursorWordRightWithSelection))
-        }
-
-        // === Word Movement (Option+Arrow) ===
-        Key::Named(NamedKey::ArrowLeft) if alt && !shift && !ctrl && !logo => {
-            update(model, Msg::Csv(CsvMsg::EditCursorWordLeft))
-        }
-        Key::Named(NamedKey::ArrowRight) if alt && !shift && !ctrl && !logo => {
-            update(model, Msg::Csv(CsvMsg::EditCursorWordRight))
-        }
-
-        // === Selection Movement (Shift+Arrow) ===
-        Key::Named(NamedKey::ArrowLeft) if shift && !alt && !ctrl && !logo => {
-            update(model, Msg::Csv(CsvMsg::EditCursorLeftWithSelection))
-        }
-        Key::Named(NamedKey::ArrowRight) if shift && !alt && !ctrl && !logo => {
-            update(model, Msg::Csv(CsvMsg::EditCursorRightWithSelection))
-        }
-
-        // Arrow Left/Right: move cursor within cell
-        Key::Named(NamedKey::ArrowLeft) if !shift && !alt && !ctrl && !logo => {
-            update(model, Msg::Csv(CsvMsg::EditCursorLeft))
-        }
-        Key::Named(NamedKey::ArrowRight) if !shift && !alt && !ctrl && !logo => {
-            update(model, Msg::Csv(CsvMsg::EditCursorRight))
-        }
-
-        // Arrow Up/Down: confirm edit and navigate
+        // Arrow Up/Down: confirm edit and navigate (CSV-specific: no equivalent
+        // in modal input, which uses SelectPrevious/SelectNext instead)
         Key::Named(NamedKey::ArrowUp) => {
             update(model, Msg::Csv(CsvMsg::ConfirmEdit));
             update(model, Msg::Csv(CsvMsg::MoveUp))
@@ -468,48 +535,26 @@ fn handle_csv_edit_key(
             update(model, Msg::Csv(CsvMsg::MoveDown))
         }
 
-        // Home/End with selection (Shift+Home/End)
-        Key::Named(NamedKey::Home) if shift => {
-            update(model, Msg::Csv(CsvMsg::EditCursorHomeWithSelection))
-        }
-        Key::Named(NamedKey::End) if shift => {
-            update(model, Msg::Csv(CsvMsg::EditCursorEndWithSelection))
-        }
-
-        // Home/End: move cursor to start/end
-        Key::Named(NamedKey::Home) => update(model, Msg::Csv(CsvMsg::EditCursorHome)),
-        Key::Named(NamedKey::End) => update(model, Msg::Csv(CsvMsg::EditCursorEnd)),
-
-        // === Word Deletion (Option+Backspace / Option+Delete) ===
-        Key::Named(NamedKey::Backspace) if alt => {
-            update(model, Msg::Csv(CsvMsg::EditDeleteWordBackward))
-        }
+        // Word deletion forward (Option+Delete) - CSV-specific, modal input has
+        // no DeleteWordForward equivalent
         Key::Named(NamedKey::Delete) if alt => {
             update(model, Msg::Csv(CsvMsg::EditDeleteWordForward))
         }
 
-        // Backspace: delete backward
-        Key::Named(NamedKey::Backspace) => update(model, Msg::Csv(CsvMsg::EditDeleteBackward)),
-
-        // Delete: delete forward
-        Key::Named(NamedKey::Delete) => update(model, Msg::Csv(CsvMsg::EditDeleteForward)),
-
-        // Space
-        Key::Named(NamedKey::Space) if !(ctrl || logo) => {
-            update(model, Msg::Csv(CsvMsg::EditInsertChar(' ')))
+        // CSV-specific: unlike modal input, Ctrl/Cmd+Left/Right is not bound to
+        // any cell-editing movement action here, so it falls through to the
+        // catch-all instead of reaching the shared movement classification
+        // (which does not itself check ctrl/logo for arrow-key movement).
+        Key::Named(NamedKey::ArrowLeft) | Key::Named(NamedKey::ArrowRight) if ctrl || logo => {
+            Some(Cmd::Redraw)
         }
 
-        // Character input
-        Key::Character(ref s) if !(ctrl || logo) => {
-            let mut cmd = None;
-            for ch in s.chars() {
-                cmd = update(model, Msg::Csv(CsvMsg::EditInsertChar(ch))).or(cmd);
-            }
-            cmd
-        }
-
-        // Block all other keys when editing (consume but don't act)
-        _ => Some(Cmd::Redraw),
+        // Movement / selection / clipboard / insertion shared with modal editing
+        _ => match classify_text_editing_key(&key, modifiers) {
+            Some(action) => dispatch_csv_text_edit(model, action),
+            // Block all other keys when editing (consume but don't act)
+            None => Some(Cmd::Redraw),
+        },
     }
 }
 
