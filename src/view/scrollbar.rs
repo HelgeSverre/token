@@ -257,13 +257,22 @@ pub fn render_scrollbar(
 // ============================================================================
 
 /// Compute thumb size in pixels given visible/total ratio and track length.
+///
+/// The thumb never exceeds the track: on tracks shorter than the minimum
+/// thumb size the thumb fills the track, keeping travel non-negative.
 fn thumb_size(visible: usize, total: usize, track_len: f32) -> f32 {
     let ratio = (visible as f32 / total as f32).clamp(0.0, 1.0);
-    (ratio * track_len).max(MIN_THUMB_PX)
+    (ratio * track_len)
+        .max(MIN_THUMB_PX)
+        .min(track_len.max(0.0))
 }
 
 /// Compute thumb offset in pixels given scroll position ratio and available travel distance.
+///
+/// Degenerate tracks (smaller than the thumb, or negative-size rects from
+/// panes tinier than the scrollbar itself) yield zero travel, never a panic.
 fn thumb_offset(position: usize, max_position: usize, travel: f32) -> f32 {
+    let travel = travel.max(0.0);
     if max_position == 0 {
         return 0.0;
     }
@@ -350,6 +359,34 @@ mod tests {
             MIN_THUMB_PX,
             geo.thumb_rect.height
         );
+    }
+
+    #[test]
+    fn test_tiny_track_does_not_panic() {
+        // Track shorter than MIN_THUMB_PX: thumb must not exceed track,
+        // and travel must not go negative (previously panicked in clamp).
+        let track = make_rect(0.0, 0.0, 12.0, 10.0);
+        let state = ScrollbarState::new(100, 2, 50);
+        let geo = ScrollbarGeometry::vertical(track, &state);
+        assert!(geo.needed);
+        assert!(geo.thumb_rect.height <= track.height);
+        assert!(geo.thumb_rect.y >= track.y);
+
+        let track_h = make_rect(0.0, 0.0, 10.0, 12.0);
+        let geo_h = ScrollbarGeometry::horizontal(track_h, &state);
+        assert!(geo_h.thumb_rect.width <= track_h.width);
+    }
+
+    #[test]
+    fn test_negative_track_does_not_panic() {
+        // Panes narrower/shorter than the scrollbar produce negative-size
+        // track rects (e.g. h_scrollbar_rect: content_width - scrollbar_width).
+        // Geometry must degrade gracefully, not panic.
+        let state = ScrollbarState::new(100, 2, 50);
+        let geo_h = ScrollbarGeometry::horizontal(make_rect(0.0, 388.0, -2.0, 12.0), &state);
+        assert!(geo_h.thumb_rect.width <= 0.0 + f32::EPSILON);
+        let geo_v = ScrollbarGeometry::vertical(make_rect(0.0, 0.0, 12.0, -2.0), &state);
+        assert!(geo_v.thumb_rect.height <= 0.0 + f32::EPSILON);
     }
 
     #[test]

@@ -690,8 +690,8 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
     let available_rect = Rect::new(
         sidebar_width,
         0.0,
-        width as f32 - sidebar_width,
-        (height - status_bar_height) as f32,
+        (width as f32 - sidebar_width).max(0.0),
+        height.saturating_sub(status_bar_height) as f32,
     );
     let splitters = model
         .editor_area
