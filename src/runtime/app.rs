@@ -686,16 +686,11 @@ impl App {
                 None
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                use winit::event::MouseScrollDelta;
-
-                let (h_delta, v_delta) = match delta {
-                    MouseScrollDelta::LineDelta(x, y) => ((x * 3.0) as i32, (-y * 3.0) as i32),
-                    MouseScrollDelta::PixelDelta(pos) => {
-                        let line_height = self.model.line_height as f64;
-                        let char_width = self.model.char_width as f64;
-                        ((pos.x / char_width) as i32, (-pos.y / line_height) as i32)
-                    }
-                };
+                let (h_delta, v_delta) = mouse_wheel_deltas(
+                    *delta,
+                    self.model.char_width as f64,
+                    self.model.line_height as f64,
+                );
 
                 handle_mouse_wheel(&mut self.model, self.mouse_position, h_delta, v_delta)
             }
@@ -1523,5 +1518,57 @@ fn handle_syntax_worker_request(
             pending.remove(&document_id);
             parser_state.clear_doc_cache(document_id);
         }
+    }
+}
+
+/// Convert a raw winit mouse-wheel delta into `(h_delta, v_delta)` in the
+/// sign convention shared by `EditorState::scroll_vertical_by`,
+/// `EditorState::scroll_horizontal_visible_window_by`, and CSV's
+/// `scroll_horizontal`: a positive delta reveals further content (down for
+/// vertical, right for horizontal). winit reports both axes in the opposite
+/// sense (positive x/y means the content should move toward the viewport's
+/// current position, not away from it), so both axes are negated here —
+/// consistently, unlike a prior version of this code that only negated `y`.
+fn mouse_wheel_deltas(
+    delta: winit::event::MouseScrollDelta,
+    char_width: f64,
+    line_height: f64,
+) -> (i32, i32) {
+    use winit::event::MouseScrollDelta;
+    match delta {
+        MouseScrollDelta::LineDelta(x, y) => ((-x * 3.0) as i32, (-y * 3.0) as i32),
+        MouseScrollDelta::PixelDelta(pos) => {
+            ((-pos.x / char_width) as i32, (-pos.y / line_height) as i32)
+        }
+    }
+}
+
+#[cfg(test)]
+mod mouse_wheel_tests {
+    use super::mouse_wheel_deltas;
+    use winit::dpi::PhysicalPosition;
+    use winit::event::MouseScrollDelta;
+
+    #[test]
+    fn horizontal_and_vertical_line_delta_negate_symmetrically() {
+        let (h, v) = mouse_wheel_deltas(MouseScrollDelta::LineDelta(1.0, 1.0), 8.0, 16.0);
+        // Regression test: horizontal scroll used to pass `x` through
+        // unnegated while vertical negated `y`, inverting horizontal scroll
+        // direction relative to vertical (and relative to the "positive
+        // delta reveals further content" convention both axes share in the
+        // model layer). Both axes must now negate the same way.
+        assert_eq!(h, -3);
+        assert_eq!(v, -3);
+    }
+
+    #[test]
+    fn horizontal_and_vertical_pixel_delta_negate_symmetrically() {
+        let (h, v) = mouse_wheel_deltas(
+            MouseScrollDelta::PixelDelta(PhysicalPosition::new(16.0, 32.0)),
+            8.0,
+            16.0,
+        );
+        assert_eq!(h, -2);
+        assert_eq!(v, -2);
     }
 }

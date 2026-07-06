@@ -1099,6 +1099,35 @@ impl Renderer {
         editor_scrollbars::render_editor_scrollbars(frame, model, editor_state, document, layout);
     }
 
+    /// Redraw the focused group's scrollbars on top of whatever was just
+    /// drawn. Used after the cursor-lines-only fast path, which fills dirty
+    /// lines across the full group width and would otherwise erase the
+    /// scrollbar overlay's pixels in the persistent back buffer.
+    fn redraw_scrollbars_for_focused_group(frame: &mut Frame, model: &AppModel, char_width: f32) {
+        let focused_group_id = model.editor_area.focused_group_id;
+        let Some(group) = model.editor_area.groups.get(&focused_group_id) else {
+            return;
+        };
+        let Some(editor_id) = group.active_editor_id() else {
+            return;
+        };
+        let Some(editor) = model.editor_area.editors.get(&editor_id) else {
+            return;
+        };
+        let Some(doc_id) = editor.document_id else {
+            return;
+        };
+        let Some(document) = model.editor_area.documents.get(&doc_id) else {
+            return;
+        };
+        if !editor.is_plain_text_mode() {
+            return;
+        }
+
+        let layout = geometry::GroupLayout::new(group, model, char_width);
+        Self::render_editor_scrollbars(frame, model, editor, document, &layout);
+    }
+
     fn render_image_tab(
         frame: &mut Frame,
         model: &AppModel,
@@ -1720,6 +1749,18 @@ impl Renderer {
             perf.measure_stage(crate::perf::PerfStage::CursorFastPath, || {
                 editor_text::render_cursor_lines_only(&mut frame, &mut painter, model, dirty_lines);
             });
+            // Cursor-lines-only redraw fills each dirty line's background and
+            // text across the full group width, which overlaps the vertical
+            // scrollbar's overlay region (the scrollbar draws on top of the
+            // rightmost columns rather than reserving its own space). Without
+            // this, the scrollbar's last-drawn pixels in the persistent back
+            // buffer get overwritten by the fresh line fill until the next
+            // full render, making text appear to render over the scrollbar.
+            if model.config.show_scrollbar {
+                perf.measure_stage(crate::perf::PerfStage::Scrollbars, || {
+                    Self::redraw_scrollbars_for_focused_group(&mut frame, model, char_width);
+                });
+            }
             #[cfg(debug_assertions)]
             {
                 let stats = painter.cache_stats();
@@ -2172,4 +2213,123 @@ fn flush_line(text: &mut String, style: HtmlTextStyle, lines: &mut Vec<HtmlTextL
         });
     }
     text.clear();
+}
+
+#[cfg(test)]
+mod cursor_fast_path_scrollbar_tests {
+    use super::*;
+    use crate::model::Rect as ModelRect;
+    use fontdue::{Font, FontSettings};
+
+    fn load_test_font() -> (Font, f32, f32, f32, usize) {
+        let font = Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            FontSettings::default(),
+        )
+        .expect("test font should load");
+        let font_size = 14.0;
+        let line_metrics = font
+            .horizontal_line_metrics(font_size)
+            .expect("font should expose horizontal metrics");
+        let (metrics, _) = font.rasterize('M', font_size);
+        (
+            font,
+            font_size,
+            line_metrics.ascent,
+            metrics.advance_width,
+            line_metrics.new_line_size.ceil() as usize,
+        )
+    }
+
+    #[test]
+    fn cursor_fast_path_restores_scrollbar_pixels_instead_of_erasing_them() {
+        // Regression test: render_cursor_lines_only fills each dirty line's
+        // background/text across the *full* group width, which overlaps the
+        // vertical scrollbar's overlay region (the scrollbar draws on top of
+        // the rightmost columns rather than reserving its own space). Without
+        // redrawing the scrollbar afterward, its pixels in the persistent
+        // back buffer get erased by the fresh line fill -- this test proves
+        // both halves: that the fast path alone does erase them, and that
+        // `redraw_scrollbars_for_focused_group` restores them.
+        let (font, font_size, ascent, char_width, line_height) = load_test_font();
+        let width = 220usize;
+        let height = 160usize;
+
+        let mut model = AppModel::new(width as u32, height as u32, 1.0, vec![]);
+        model.config.show_scrollbar = true;
+        let group_id = model.editor_area.focused_group_id;
+        let tab_bar_height = model.metrics.tab_bar_height as f32;
+        model.editor_area.groups.get_mut(&group_id).unwrap().rect =
+            ModelRect::new(0.0, 0.0, width as f32, height as f32 + tab_bar_height);
+
+        // Enough lines that a vertical scrollbar is actually needed.
+        let mut text = String::new();
+        for i in 0..200 {
+            text.push_str(&format!("line {i}\n"));
+        }
+        model.document_mut().buffer = ropey::Rope::from(text.as_str());
+
+        let mut buffer = vec![0u32; width * height];
+        let mut frame = Frame::new(&mut buffer, width, height);
+        let mut glyph_cache = GlyphCache::default();
+        let mut painter = TextPainter::new(
+            &font,
+            &mut glyph_cache,
+            font_size,
+            ascent,
+            char_width,
+            line_height,
+        );
+        let mut perf = crate::perf::PerfStats::default();
+
+        let group = model.editor_area.groups.get(&group_id).unwrap();
+        Renderer::render_editor_group(
+            &mut frame,
+            &mut painter,
+            &model,
+            group_id,
+            group.rect,
+            true,
+            &mut perf,
+        );
+
+        let layout = geometry::GroupLayout::new(group, &model, char_width);
+        let sw = model.metrics.scrollbar_width;
+        let v_rect = layout
+            .v_scrollbar_rect(sw)
+            .expect("vertical scrollbar should be present for a 200-line document");
+        // Sample a pixel in the middle of the scrollbar track's x-range, on
+        // the first visible text line's y (row 0), where a cursor-line
+        // redraw would otherwise clobber it.
+        let sample_x = (v_rect.x + v_rect.width / 2.0) as usize;
+        let sample_y = layout.content_y() + line_height / 2;
+
+        let track_color = model.theme.scrollbar.track.to_argb_u32();
+        let thumb_color = model.theme.scrollbar.thumb.to_argb_u32();
+        let is_scrollbar_color = |c: u32| c == track_color || c == thumb_color;
+
+        let before = frame.get_pixel(sample_x, sample_y);
+        assert!(
+            is_scrollbar_color(before),
+            "expected a scrollbar track/thumb color at the sampled pixel after a full render, got {before:#010x}"
+        );
+
+        // Simulate a cursor-blink dirty-line redraw on the same row via the
+        // real production fast path, with no scrollbar redraw yet.
+        editor_text::render_cursor_lines_only(&mut frame, &mut painter, &model, &[0]);
+        let after_fast_path_alone = frame.get_pixel(sample_x, sample_y);
+        assert!(
+            !is_scrollbar_color(after_fast_path_alone),
+            "cursor-lines-only redraw should have overwritten the scrollbar pixel (proving the bug is real), got {after_fast_path_alone:#010x}"
+        );
+
+        // Now apply the fix: redraw the scrollbar on top, as render() does
+        // after the fast path.
+        Renderer::redraw_scrollbars_for_focused_group(&mut frame, &model, char_width);
+        let after_fix = frame.get_pixel(sample_x, sample_y);
+        assert!(
+            is_scrollbar_color(after_fix),
+            "redraw_scrollbars_for_focused_group should restore the scrollbar pixel on top of the fast-path redraw, got {after_fix:#010x}"
+        );
+    }
 }
