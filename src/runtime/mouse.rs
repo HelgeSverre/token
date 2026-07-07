@@ -683,11 +683,15 @@ fn handle_left_click(
 
         // Dock resize handle
         HitTarget::DockResize { position } => {
+            let initial_coord = match position {
+                token::panel::DockPosition::Bottom => event.pos.y,
+                _ => event.pos.x,
+            };
             update(
                 model,
                 Msg::Dock(token::messages::DockMsg::StartResize {
                     position: *position,
-                    initial_coord: event.pos.x,
+                    initial_coord,
                 }),
             );
             EventResult::consumed_with_focus(FocusTarget::Editor)

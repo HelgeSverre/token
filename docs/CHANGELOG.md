@@ -4,6 +4,20 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
+## Unreleased
+
+### Added
+
+- Embedded terminal dock panel with async PTY spawning, VT/ANSI terminal emulation, keyboard and paste routing, scrollback, resize-aware grid sizing, and native rendering in the bottom dock.
+
+### Fixed
+
+- Terminal spawn lifecycle now tracks in-flight PTY creation, avoids duplicate spawns while one is pending, and discards late spawn results if the terminal panel has been closed.
+- Dock resizing now grows the right dock when dragging its handle left and grows the bottom dock when dragging its handle up.
+- Terminal cursor rendering now uses the scrolled grid row instead of the visible row, so the cursor glyph stays correct when viewing scrollback.
+
+---
+
 ## v0.4.1 - 2026-07-05
 
 ### Fixed

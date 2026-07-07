@@ -9,6 +9,7 @@ use super::tree_view::{render_tree, TreeRenderLayout};
 
 enum DockContentKind {
     Outline,
+    Terminal,
     Placeholder { message: &'static str },
 }
 
@@ -35,12 +36,14 @@ impl DockPaneScene {
         let active_panel = dock
             .active_panel()
             .unwrap_or(crate::panel::PanelId::TERMINAL);
-        let content = if active_panel == crate::panel::PanelId::Outline {
-            DockContentKind::Outline
-        } else {
-            let placeholder = crate::panels::PlaceholderPanel::new(active_panel);
-            DockContentKind::Placeholder {
-                message: placeholder.message(),
+        let content = match active_panel {
+            crate::panel::PanelId::Outline => DockContentKind::Outline,
+            crate::panel::PanelId::Terminal => DockContentKind::Terminal,
+            _ => {
+                let placeholder = crate::panels::PlaceholderPanel::new(active_panel);
+                DockContentKind::Placeholder {
+                    message: placeholder.message(),
+                }
             }
         };
 
@@ -68,6 +71,14 @@ impl DockPaneScene {
                     model,
                     self.layout.content_rect,
                     self.text_color,
+                );
+            }
+            DockContentKind::Terminal => {
+                crate::panels::terminal::render_terminal_panel(
+                    frame,
+                    painter,
+                    model,
+                    self.layout.content_rect,
                 );
             }
             DockContentKind::Placeholder { message } => {

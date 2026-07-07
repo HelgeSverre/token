@@ -12,6 +12,7 @@ pub mod layout;
 mod outline;
 mod preview;
 mod syntax;
+mod terminal;
 mod text_edit;
 mod ui;
 mod workspace;
@@ -35,6 +36,7 @@ pub use layout::update_layout;
 pub use outline::update_outline;
 pub use preview::update_preview;
 pub use syntax::{schedule_syntax_parse, update_syntax, SYNTAX_DEBOUNCE_MS};
+pub use terminal::update_terminal;
 pub use text_edit::{apply_text_edit_msg, update_text_edit};
 pub use ui::update_ui;
 pub use workspace::update_workspace;
@@ -123,6 +125,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::Dock(m) => dock::update_dock(model, m),
         Msg::Outline(m) => outline::update_outline(model, m),
         Msg::TextEdit(context, m) => text_edit::update_text_edit(model, context, m),
+        Msg::Terminal(m) => terminal::update_terminal(model, m),
     };
 
     sync_status_bar(model);
@@ -249,5 +252,6 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Dock(m) => format!("Dock::{:?}", m),
         Msg::Outline(m) => format!("Outline::{:?}", m),
         Msg::TextEdit(ctx, m) => format!("TextEdit::{:?}::{:?}", ctx, m),
+        Msg::Terminal(m) => format!("Terminal::{:?}", m),
     }
 }

@@ -2,11 +2,11 @@
 
 Integrated terminal panel at the bottom of the editor
 
-> **Status:** Planned
+> **Status:** In Progress
 > **Priority:** P2
 > **Effort:** L (8–14 days)
 > **Created:** 2025-12-20
-> **Updated:** 2026-02-19
+> **Updated:** 2026-07-06
 > **Milestone:** 5 - Future
 
 ---
@@ -38,7 +38,7 @@ The editor has a **full dock panel system** already built:
 - ✅ `DockRects` in `geometry.rs` for layout calculation
 - ✅ `FocusTarget::Dock(DockPosition)` for keyboard focus routing
 - ✅ `HitTarget` variants for dock resize, tabs, and content
-- ⏳ Currently renders `PlaceholderPanel` with "Terminal panel coming soon..."
+- ✅ Terminal panel renders PTY output and routes focused keyboard/paste input to the PTY
 
 ### Goals
 
@@ -289,41 +289,41 @@ All other keys (when terminal is focused) are sent directly to the PTY as escape
 
 **Goal**: Spawn a shell, send/receive bytes, parse into a grid.
 
-1. [ ] Add `portable-pty` and `alacritty_terminal` to `Cargo.toml`
-2. [ ] Create `src/terminal/mod.rs` with `TerminalState` and `TerminalSession`
-3. [ ] Implement `src/terminal/pty.rs`:
-   - Detect default shell (`$SHELL` → `/bin/zsh` → `/bin/sh`)
+1. [x] Add `portable-pty` and `alacritty_terminal` to `Cargo.toml`
+2. [x] Create `src/terminal/mod.rs` with `TerminalState` and `TerminalSession`
+3. [x] Implement `src/terminal/pty.rs`:
+   - Detect default shell (`$SHELL` → `/bin/zsh` on macOS, `/bin/bash` elsewhere)
    - Spawn PTY via `portable-pty`
    - Read thread: blocking read → coalesce into chunks → `Msg::Terminal(PtyOutput)`
    - Write channel for keyboard input
    - Process exit detection → `Msg::Terminal(ProcessExited)`
-4. [ ] Implement `src/terminal/session.rs`:
+4. [x] Implement `src/terminal/session.rs`:
    - Wrapper around `alacritty_terminal::Term`
    - `apply_bytes(&mut self, data: &[u8])` — feed to parser
    - `resize(&mut self, rows: u16, cols: u16)` — update grid + PTY
-5. [ ] Add `TerminalMsg` to `src/messages.rs` and `Msg::Terminal` variant
-6. [ ] Add `TerminalState` to `AppModel`
-7. [ ] Implement `src/update/terminal.rs`:
+5. [x] Add `TerminalMsg` to `src/messages.rs` and `Msg::Terminal` variant
+6. [x] Add `TerminalState` to `AppModel`
+7. [x] Implement `src/update/terminal.rs`:
    - Handle `PtyOutput` → feed bytes to session → `Cmd::Redraw`
    - Handle `ProcessExited` → mark session exited
    - Handle `NewSession` → spawn PTY + create session
 
-**Verification**: `make build` compiles. Unit test spawns a PTY, sends `echo hello\n`, receives output.
+**Verification**: `make build`, `make test`, and `make lint` pass. Unit tests spawn a PTY, send `echo hello\n`, receive output, and verify runtime `Cmd::SpawnTerminal` stores a session.
 
 ### Phase 2: Terminal Rendering (3–4 days)
 
 **Goal**: See actual terminal output in the dock panel.
 
-1. [ ] Create `src/panels/terminal.rs` — terminal panel renderer
-2. [ ] Add terminal content to dock scene dispatch and replace the placeholder content
-3. [ ] Render terminal grid:
+1. [x] Create `src/panels/terminal.rs` — terminal panel renderer
+2. [x] Add terminal content to dock scene dispatch and replace the placeholder content
+3. [x] Render terminal grid:
    - Iterate `alacritty_terminal` grid cells
    - Map cell colors → theme colors (16-color palette + default fg/bg)
    - Render each character via existing `TextPainter`/fontdue
    - Render block cursor at terminal cursor position
-4. [ ] Compute rows/cols from the resolved dock content rect + `char_width`/`line_height`
-5. [ ] Auto-spawn terminal session when panel first opens
-6. [ ] Handle dock resize → `TerminalMsg::Resize` → PTY resize
+4. [x] Compute rows/cols from the resolved dock content rect + `char_width`/`line_height`
+5. [x] Auto-spawn terminal session when panel first opens
+6. [x] Handle dock resize → `TerminalMsg::Resize` → PTY resize
 
 **Verification**: Open terminal (Cmd+2), see shell prompt rendered in dock panel.
 
@@ -331,16 +331,16 @@ All other keys (when terminal is focused) are sent directly to the PTY as escape
 
 **Goal**: Type in the terminal and interact with the shell.
 
-1. [ ] Implement `src/terminal/translate_keys.rs`:
+1. [x] Implement `src/terminal/translate_keys.rs`:
    - Map winit `KeyEvent` → terminal escape sequences
    - Regular characters → UTF-8 bytes
    - Arrow keys → `\x1b[A/B/C/D`
    - Enter → `\r`, Backspace → `\x7f`
    - Ctrl+C → `\x03`, Ctrl+D → `\x04`, Ctrl+Z → `\x1a`
    - Function keys, Home/End/PgUp/PgDn
-2. [ ] Route keyboard input when `FocusTarget::Dock(Bottom)` + active panel is Terminal
-3. [ ] Implement paste: `TerminalMsg::Paste(text)` → send text bytes to PTY
-4. [ ] Handle Escape → return focus to editor (existing `UiMsg::FocusEditor`)
+2. [x] Route keyboard input when `FocusTarget::Dock(Bottom)` + active panel is Terminal
+3. [x] Implement paste: `TerminalMsg::Paste(text)` → send text bytes to PTY
+4. [x] Handle Escape → return focus to editor (existing `UiMsg::FocusEditor`)
 
 **Verification**: Can type `ls`, `cargo build`, `vim` (cursor-based apps work).
 

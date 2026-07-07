@@ -131,6 +131,12 @@ streaming-iterator = "0.1"
 # For fuzzy file finder
 nucleo-matcher = "0.3"
 
+# Embedded terminal panel: cross-platform PTY spawning + VT100/ANSI terminal
+# emulator core (parser + grid + scrollback). Token only renders the
+# resulting cell grid via its existing fontdue-based TextPainter.
+portable-pty = "0.9"
+alacritty_terminal = "0.26"
+
 # Optional: heap profiling
 dhat = { version = "0.3", optional = true }
 

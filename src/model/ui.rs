@@ -496,6 +496,27 @@ pub struct SidebarResizeState {
     pub original_width: f32,
 }
 
+/// Which axis a dock resize drag applies to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DockResizeAxis {
+    Horizontal,
+    Vertical,
+}
+
+/// State for dock resize dragging (right or bottom dock).
+#[derive(Debug, Clone)]
+pub struct DockResizeState {
+    /// Which dock is being resized.
+    pub position: crate::panel::DockPosition,
+    /// The axis along which the drag operates.
+    pub axis: DockResizeAxis,
+    /// Starting mouse coordinate on the drag axis when drag began (x for
+    /// horizontal/left-right, y for vertical/top-bottom).
+    pub start_coord: f64,
+    /// Original dock size (logical pixels) before drag started.
+    pub original_size: f32,
+}
+
 /// Which axis a scrollbar drag applies to
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollbarDragAxis {
@@ -610,6 +631,8 @@ pub struct UiState {
     pub splitter_drag: Option<SplitterDragState>,
     /// Sidebar resize drag state
     pub sidebar_resize: Option<SidebarResizeState>,
+    /// Dock resize drag state (right/bottom dock resize handle)
+    pub dock_resize: Option<DockResizeState>,
     /// Scrollbar thumb drag state
     pub scrollbar_drag: Option<ScrollbarDragState>,
     /// Editor tab drag state (reorder within a group / move between groups)
@@ -640,6 +663,7 @@ impl UiState {
             drop_state: DropState::default(),
             splitter_drag: None,
             sidebar_resize: None,
+            dock_resize: None,
             scrollbar_drag: None,
             tab_drag: None,
             focus: FocusTarget::Editor,

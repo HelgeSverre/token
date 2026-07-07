@@ -53,6 +53,8 @@ enum SyntaxWorkerRequest {
     ClearDocument(token::model::editor_area::DocumentId),
 }
 
+type TerminalSpawnReceiver = Receiver<Result<token::terminal::TerminalSpawnResult, String>>;
+
 pub struct App {
     model: AppModel,
     keymap: Keymap,
@@ -83,6 +85,9 @@ pub struct App {
     syntax_deadlines: HashMap<token::model::editor_area::DocumentId, (Instant, u64)>,
     /// File paths queued for background loading after startup
     pending_file_loads: Vec<std::path::PathBuf>,
+    /// Receiver for background PTY spawn completion. Spawned asynchronously
+    /// because `portable_pty` startup can block on shell initialization.
+    terminal_spawn_rx: Option<(usize, TerminalSpawnReceiver)>,
 }
 
 impl App {
@@ -170,6 +175,7 @@ impl App {
             click_tracker: ClickTracker::default(),
             syntax_deadlines: HashMap::new(),
             pending_file_loads,
+            terminal_spawn_rx: None,
         };
 
         // Trigger initial syntax parsing for all loaded documents
@@ -300,6 +306,17 @@ impl App {
             return;
         }
 
+        // In-progress dock resize overrides hit-testing
+        if let Some(ref resize_state) = self.model.ui.dock_resize {
+            self.model.ui.hover = HoverRegion::DockResize(resize_state.position);
+            let icon = match resize_state.axis {
+                token::model::ui::DockResizeAxis::Horizontal => CursorIcon::ColResize,
+                token::model::ui::DockResizeAxis::Vertical => CursorIcon::RowResize,
+            };
+            window.set_cursor(icon);
+            return;
+        }
+
         let pt = Point::new(x, y);
         if let Some(target) = hit_test_ui(&self.model, pt, renderer.char_width()) {
             window.set_cursor(target.cursor_icon());
@@ -412,9 +429,15 @@ impl App {
                     // - Not editing a CSV cell (CSV cell editor handled by handle_csv_edit_key in input.rs)
                     let sidebar_focused =
                         matches!(self.model.ui.focus, token::model::FocusTarget::Sidebar);
+                    let terminal_focused = self.model.ui.focused_dock()
+                        == Some(token::panel::DockPosition::Bottom)
+                        && self.model.dock_layout.bottom.is_open
+                        && self.model.dock_layout.bottom.active_panel()
+                            == Some(token::panel::PanelId::TERMINAL);
                     let skip_keymap = self.model.ui.has_modal()
                         || (self.option_gesture.double_tapped && alt)
                         || sidebar_focused
+                        || terminal_focused
                         || self.model.is_csv_editing();
 
                     if !skip_keymap {
@@ -488,6 +511,18 @@ impl App {
                     return update(
                         &mut self.model,
                         Msg::Workspace(WorkspaceMsg::UpdateSidebarResize { x: position.x }),
+                    );
+                }
+
+                // Handle dock resize drag
+                if let Some(ref resize_state) = self.model.ui.dock_resize {
+                    let coord = match resize_state.axis {
+                        token::model::ui::DockResizeAxis::Horizontal => position.x,
+                        token::model::ui::DockResizeAxis::Vertical => position.y,
+                    };
+                    return update(
+                        &mut self.model,
+                        Msg::Dock(token::messages::DockMsg::UpdateResize { coord }),
                     );
                 }
 
@@ -630,6 +665,14 @@ impl App {
                     return update(
                         &mut self.model,
                         Msg::Workspace(WorkspaceMsg::EndSidebarResize),
+                    );
+                }
+
+                // End dock resize drag if active
+                if self.model.ui.dock_resize.is_some() {
+                    return update(
+                        &mut self.model,
+                        Msg::Dock(token::messages::DockMsg::EndResize),
                     );
                 }
 
@@ -1036,6 +1079,47 @@ impl App {
                     }
                 });
             }
+            Cmd::SpawnTerminal {
+                session_id,
+                rows,
+                cols,
+            } => {
+                if let Some((pending_session_id, _)) = self.terminal_spawn_rx.as_ref() {
+                    tracing::debug!(
+                        "Ignoring terminal spawn for session {session_id}; spawn for session {pending_session_id} is pending"
+                    );
+                    if *pending_session_id != session_id {
+                        self.model.terminal.clear_spawn_pending(session_id);
+                    }
+                    return;
+                }
+
+                self.model.terminal.mark_spawn_pending(session_id);
+                let cwd = self
+                    .model
+                    .workspace
+                    .as_ref()
+                    .map(|workspace| workspace.root.clone())
+                    .or_else(|| std::env::current_dir().ok())
+                    .unwrap_or_else(std::env::temp_dir);
+
+                let (spawn_tx, spawn_rx) = mpsc::channel();
+                self.terminal_spawn_rx = Some((session_id, spawn_rx));
+                let msg_tx = self.msg_tx.clone();
+                std::thread::spawn(move || {
+                    let result = token::terminal::spawn_pty(&cwd, rows, cols, msg_tx, session_id)
+                        .map(|pty| token::terminal::TerminalSpawnResult {
+                            session_id,
+                            rows: rows as usize,
+                            cols: cols as usize,
+                            pty,
+                        })
+                        .map_err(|e| e.to_string());
+                    if let Err(e) = spawn_tx.send(result) {
+                        tracing::warn!("Failed to send terminal spawn result: {e:?}");
+                    }
+                });
+            }
             Cmd::Batch(cmds) => {
                 for cmd in cmds {
                     self.process_cmd(cmd);
@@ -1188,7 +1272,7 @@ impl App {
     }
 
     fn process_async_messages(&mut self) -> bool {
-        let mut needs_redraw = false;
+        let mut needs_redraw = self.process_terminal_spawn_results();
         while let Ok(msg) = self.msg_rx.try_recv() {
             // Log syntax-related messages for debugging
             if let Msg::Syntax(ref syntax_msg) = msg {
@@ -1205,6 +1289,78 @@ impl App {
             }
         }
         needs_redraw
+    }
+
+    /// Drain any pending background PTY spawn results and create the
+    /// corresponding `TerminalSession` on the main thread.
+    fn process_terminal_spawn_results(&mut self) -> bool {
+        let mut needs_redraw = false;
+        let mut clear_receiver = false;
+
+        {
+            let Some((spawn_session_id, rx)) = self.terminal_spawn_rx.as_ref() else {
+                return false;
+            };
+            let spawn_session_id = *spawn_session_id;
+
+            loop {
+                match rx.try_recv() {
+                    Ok(Ok(mut result)) => {
+                        clear_receiver = true;
+                        let should_keep = self.should_keep_terminal_spawn_result(result.session_id);
+                        self.model.terminal.clear_spawn_pending(result.session_id);
+                        if result.session_id != spawn_session_id {
+                            self.model.terminal.clear_spawn_pending(spawn_session_id);
+                        }
+
+                        if should_keep {
+                            let session = token::terminal::TerminalSession::new(
+                                result.session_id,
+                                result.rows,
+                                result.cols,
+                                result.pty,
+                                self.msg_tx.clone(),
+                            );
+                            self.model.terminal.sessions.push(session);
+                            self.model.terminal.active =
+                                self.model.terminal.sessions.len().saturating_sub(1);
+                            self.pending_damage.merge(Cmd::Redraw.damage());
+                            needs_redraw = true;
+                        } else {
+                            result.pty.kill();
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        clear_receiver = true;
+                        self.model.terminal.clear_spawn_pending(spawn_session_id);
+                        tracing::warn!("Failed to spawn terminal: {}", e);
+                        self.model
+                            .ui
+                            .set_status(format!("Failed to spawn terminal: {e}"));
+                        self.pending_damage.merge(Cmd::redraw_status_bar().damage());
+                        needs_redraw = true;
+                    }
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        clear_receiver = true;
+                        self.model.terminal.clear_spawn_pending(spawn_session_id);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if clear_receiver {
+            self.terminal_spawn_rx = None;
+        }
+
+        needs_redraw
+    }
+
+    fn should_keep_terminal_spawn_result(&self, session_id: usize) -> bool {
+        self.model.terminal.is_spawn_pending(session_id)
+            && self.model.dock_layout.bottom.is_open
+            && self.model.dock_layout.bottom.active_panel() == Some(token::panel::PanelId::TERMINAL)
     }
 }
 
@@ -1422,6 +1578,112 @@ impl App {
         }
 
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use token::cli::{StartupConfig, StartupMode};
+
+    fn empty_startup_config() -> StartupConfig {
+        StartupConfig {
+            mode: StartupMode::Empty,
+            initial_position: None,
+            wait_mode: false,
+        }
+    }
+
+    #[test]
+    fn spawn_terminal_command_adds_session_to_model() {
+        use std::time::{Duration, Instant};
+
+        let mut app = App::new(800, 600, empty_startup_config());
+        app.model
+            .dock_layout
+            .bottom
+            .activate(token::panel::PanelId::TERMINAL);
+
+        app.process_cmd(Cmd::SpawnTerminal {
+            session_id: 42,
+            rows: 12,
+            cols: 34,
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let session = loop {
+            app.process_terminal_spawn_results();
+            if let Some(session) = app.model.terminal.sessions.iter().find(|s| s.id == 42) {
+                break session;
+            }
+            if Instant::now() >= deadline {
+                panic!("spawned terminal session should be stored in the model");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+
+        assert_eq!(session.size, (12, 34));
+        assert_eq!(app.model.terminal.active, 0);
+
+        session.pty.write(b"exit\n".to_vec());
+    }
+
+    #[test]
+    fn terminal_spawn_result_is_discarded_when_terminal_is_closed() {
+        let mut app = App::new(800, 600, empty_startup_config());
+        let (spawn_tx, spawn_rx) = mpsc::channel();
+        let (pty, _pty_rx) = token::terminal::PtyHandle::new_for_test();
+
+        spawn_tx
+            .send(Ok(token::terminal::TerminalSpawnResult {
+                session_id: 99,
+                rows: 24,
+                cols: 80,
+                pty,
+            }))
+            .expect("test spawn result should send");
+        app.terminal_spawn_rx = Some((99, spawn_rx));
+        app.model.terminal.mark_spawn_pending(99);
+
+        let needs_redraw = app.process_terminal_spawn_results();
+
+        assert!(!needs_redraw);
+        assert!(app.model.terminal.sessions.is_empty());
+        assert!(!app.model.terminal.is_spawn_pending(99));
+    }
+
+    #[test]
+    fn ignored_terminal_spawn_command_clears_its_pending_marker() {
+        let mut app = App::new(800, 600, empty_startup_config());
+        let (_spawn_tx, spawn_rx) = mpsc::channel();
+        app.terminal_spawn_rx = Some((6, spawn_rx));
+        app.model.terminal.mark_spawn_pending(6);
+        app.model.terminal.mark_spawn_pending(7);
+
+        app.process_cmd(Cmd::SpawnTerminal {
+            session_id: 7,
+            rows: 24,
+            cols: 80,
+        });
+
+        assert!(!app.model.terminal.is_spawn_pending(7));
+        assert!(app.model.terminal.is_spawn_pending(6));
+    }
+
+    #[test]
+    fn duplicate_terminal_spawn_command_preserves_in_flight_pending_marker() {
+        let mut app = App::new(800, 600, empty_startup_config());
+        let (_spawn_tx, spawn_rx) = mpsc::channel();
+        app.terminal_spawn_rx = Some((7, spawn_rx));
+        app.model.terminal.mark_spawn_pending(7);
+
+        app.process_cmd(Cmd::SpawnTerminal {
+            session_id: 7,
+            rows: 24,
+            cols: 80,
+        });
+
+        assert!(app.model.terminal.is_spawn_pending(7));
     }
 }
 

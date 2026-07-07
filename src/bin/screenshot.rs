@@ -281,6 +281,7 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         metrics: ScaledMetrics::new(scale),
         workspace: None,
         dock_layout: token::panel::DockLayout::default(),
+        terminal: token::terminal::TerminalState::default(),
         outline_panel: token::model::OutlinePanelState::default(),
         recent_files: token::recent_files::RecentFiles::default(),
         #[cfg(debug_assertions)]

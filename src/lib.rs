@@ -24,6 +24,7 @@ pub mod panels;
 pub mod perf;
 pub mod recent_files;
 pub mod syntax;
+pub mod terminal;
 pub mod theme;
 pub mod tracing;
 pub mod update;

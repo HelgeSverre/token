@@ -12,6 +12,7 @@
 //! - **Outline**: Code outline/structure view (future)
 
 mod placeholder;
+pub mod terminal;
 
 pub use placeholder::PlaceholderPanel;
 

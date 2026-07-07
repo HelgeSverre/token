@@ -3,9 +3,11 @@
 //! Handles dock-related messages for panel visibility, focus, and resizing.
 
 use crate::commands::Cmd;
-use crate::messages::DockMsg;
+use crate::messages::{DockMsg, TerminalMsg};
 use crate::model::{AppModel, FocusTarget};
-use crate::panel::DockPosition;
+use crate::panel::{DockPosition, PanelId};
+use crate::panels::terminal::{grid_size_for_rect, TerminalGridSize};
+use crate::view::geometry::{DockHeaderLayout, WindowLayout};
 
 /// Sync workspace sidebar visibility with dock layout (left dock)
 fn sync_workspace_with_dock(model: &mut AppModel) {
@@ -13,6 +15,96 @@ fn sync_workspace_with_dock(model: &mut AppModel) {
         workspace.sidebar_visible = model.dock_layout.left.is_open;
         workspace.sidebar_width_logical = model.dock_layout.left.size_logical;
     }
+}
+
+fn next_terminal_session_id(model: &AppModel) -> usize {
+    model
+        .terminal
+        .sessions
+        .iter()
+        .map(|session| session.id)
+        .max()
+        .map(|session_id| session_id + 1)
+        .unwrap_or(0)
+}
+
+fn is_terminal_panel_open(model: &AppModel) -> bool {
+    let dock = &model.dock_layout.bottom;
+    dock.is_open && dock.active_panel() == Some(PanelId::TERMINAL)
+}
+
+fn terminal_grid_size_for_model(model: &AppModel) -> Option<TerminalGridSize> {
+    let window_layout = WindowLayout::compute(model, model.line_height);
+    let dock_rect = window_layout.bottom_dock_rect?;
+    let layout = DockHeaderLayout::new(
+        &model.dock_layout.bottom,
+        dock_rect,
+        &model.metrics,
+        model.char_width,
+    );
+
+    Some(grid_size_for_rect(
+        layout.content_rect,
+        model.char_width,
+        model.line_height,
+    ))
+}
+
+fn terminal_sync_command(model: &mut AppModel) -> Option<Cmd> {
+    if !is_terminal_panel_open(model) {
+        return None;
+    }
+
+    let grid_size = terminal_grid_size_for_model(model)?;
+    if model.terminal.sessions.is_empty() {
+        if model.terminal.has_pending_spawn() {
+            return None;
+        }
+
+        let session_id = next_terminal_session_id(model);
+        model.terminal.mark_spawn_pending(session_id);
+        return Some(Cmd::SpawnTerminal {
+            session_id,
+            rows: grid_size.rows,
+            cols: grid_size.cols,
+        });
+    }
+
+    let desired_size = (grid_size.rows as usize, grid_size.cols as usize);
+    let needs_resize = model
+        .terminal
+        .active_session()
+        .is_some_and(|session| session.size != desired_size);
+
+    if needs_resize {
+        super::terminal::update_terminal(
+            model,
+            TerminalMsg::Resize {
+                rows: grid_size.rows,
+                cols: grid_size.cols,
+            },
+        )
+    } else {
+        None
+    }
+}
+
+fn push_command(cmds: &mut Vec<Cmd>, cmd: Cmd) {
+    match cmd {
+        Cmd::Batch(inner) => cmds.extend(inner),
+        other => cmds.push(other),
+    }
+}
+
+pub(super) fn with_terminal_sync(model: &mut AppModel, cmd: Cmd) -> Cmd {
+    let Some(sync_cmd) = terminal_sync_command(model) else {
+        return cmd;
+    };
+
+    let mut cmds = Vec::new();
+    push_command(&mut cmds, sync_cmd);
+    push_command(&mut cmds, cmd);
+    Cmd::Batch(cmds)
 }
 
 /// Update function for dock messages
@@ -51,7 +143,7 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
             // Recalculate viewport dimensions since dock visibility affects editor area
             model.recalculate_viewports();
 
-            Some(Cmd::Redraw)
+            Some(with_terminal_sync(model, Cmd::Redraw))
         }
 
         DockMsg::TogglePanel(panel_id) => {
@@ -77,7 +169,7 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
                 // Recalculate viewport dimensions since dock visibility affects editor area
                 model.recalculate_viewports();
 
-                Some(Cmd::Redraw)
+                Some(with_terminal_sync(model, Cmd::Redraw))
             } else {
                 None
             }
@@ -98,7 +190,7 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
                 }
 
                 model.recalculate_viewports();
-                Some(Cmd::Redraw)
+                Some(with_terminal_sync(model, Cmd::Redraw))
             } else {
                 None
             }
@@ -118,7 +210,7 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
             }
             model.ui.focus = FocusTarget::Editor;
             model.recalculate_viewports();
-            Some(Cmd::Redraw)
+            Some(with_terminal_sync(model, Cmd::Redraw))
         }
 
         DockMsg::FocusDock(position) => {
@@ -130,7 +222,7 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
                 model.ui.focus = FocusTarget::Dock(position);
             }
             model.recalculate_viewports();
-            Some(Cmd::Redraw)
+            Some(with_terminal_sync(model, Cmd::Redraw))
         }
 
         DockMsg::ToggleDock(position) => {
@@ -139,7 +231,7 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
                 sync_workspace_with_dock(model);
             }
             model.recalculate_viewports();
-            Some(Cmd::Redraw)
+            Some(with_terminal_sync(model, Cmd::Redraw))
         }
 
         DockMsg::NextPanelInDock => {
@@ -153,7 +245,7 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
                 }
                 _ => {}
             }
-            Some(Cmd::Redraw)
+            Some(with_terminal_sync(model, Cmd::Redraw))
         }
 
         DockMsg::PrevPanelInDock => {
@@ -166,23 +258,36 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
                 }
                 _ => {}
             }
-            Some(Cmd::Redraw)
+            Some(with_terminal_sync(model, Cmd::Redraw))
         }
 
         DockMsg::StartResize {
             position,
             initial_coord,
         } => {
-            // Store resize state - we'll need to track this somewhere
-            // For now, delegate to existing sidebar resize for left dock
+            let dock = model.dock_layout.dock(position);
+            let axis = match position {
+                DockPosition::Left | DockPosition::Right => {
+                    crate::model::ui::DockResizeAxis::Horizontal
+                }
+                DockPosition::Bottom => crate::model::ui::DockResizeAxis::Vertical,
+            };
+
             if position == DockPosition::Left {
-                model.ui.sidebar_resize = Some(crate::model::SidebarResizeState {
+                // Keep sidebar resize in sync for existing workspace logic.
+                model.ui.sidebar_resize = Some(crate::model::ui::SidebarResizeState {
                     start_x: initial_coord,
-                    original_width: model.dock_layout.left.size_logical,
+                    original_width: dock.size_logical,
                 });
             }
-            // TODO: add resize state for right/bottom docks
-            Some(Cmd::Redraw)
+
+            model.ui.dock_resize = Some(crate::model::ui::DockResizeState {
+                position,
+                axis,
+                start_coord: initial_coord,
+                original_size: dock.size_logical,
+            });
+            Some(with_terminal_sync(model, Cmd::Redraw))
         }
 
         DockMsg::UpdateResize { coord } => {
@@ -198,14 +303,152 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
                 sync_workspace_with_dock(model);
                 model.recalculate_viewports();
             }
-            // TODO: handle right/bottom dock resize
-            Some(Cmd::Redraw)
+
+            if let Some(ref resize_state) = model.ui.dock_resize {
+                if resize_state.position != DockPosition::Left {
+                    let dock = model.dock_layout.dock_mut(resize_state.position);
+                    let delta = match resize_state.position {
+                        DockPosition::Right | DockPosition::Bottom => {
+                            resize_state.start_coord - coord
+                        }
+                        DockPosition::Left => coord - resize_state.start_coord,
+                    };
+                    let min_size = dock.min_size();
+                    let max_size = match resize_state.position {
+                        DockPosition::Right => {
+                            model.window_size.0 as f32 * dock.max_size_fraction()
+                        }
+                        DockPosition::Bottom => {
+                            model.window_size.1 as f32 * dock.max_size_fraction()
+                        }
+                        DockPosition::Left => dock.size_logical,
+                    };
+                    let new_size = (resize_state.original_size as f64 + delta)
+                        .clamp(min_size as f64, max_size as f64)
+                        as f32;
+                    dock.size_logical = new_size;
+                    model.recalculate_viewports();
+                }
+            }
+            Some(with_terminal_sync(model, Cmd::Redraw))
         }
 
         DockMsg::EndResize => {
             model.ui.sidebar_resize = None;
+            model.ui.dock_resize = None;
             model.recalculate_viewports();
-            Some(Cmd::Redraw)
+            Some(with_terminal_sync(model, Cmd::Redraw))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::Cmd;
+    use crate::model::AppModel;
+    use crate::panel::{DockPosition, PanelId};
+    use crate::panels::terminal::grid_size_for_rect;
+    use crate::view::geometry::{DockHeaderLayout, WindowLayout};
+
+    fn test_model() -> AppModel {
+        AppModel::new(800, 600, 1.0, vec![])
+    }
+
+    fn expected_terminal_grid_size(model: &AppModel) -> crate::panels::terminal::TerminalGridSize {
+        let window_layout = WindowLayout::compute(model, model.line_height);
+        let dock_rect = window_layout
+            .bottom_dock_rect
+            .expect("terminal dock should be open");
+        let content_rect = DockHeaderLayout::new(
+            &model.dock_layout.bottom,
+            dock_rect,
+            &model.metrics,
+            model.char_width,
+        )
+        .content_rect;
+
+        grid_size_for_rect(content_rect, model.char_width, model.line_height)
+    }
+
+    fn contains_spawn_terminal(cmd: &Option<Cmd>) -> bool {
+        cmd.as_ref().is_some_and(cmd_contains_spawn_terminal)
+    }
+
+    fn cmd_contains_spawn_terminal(cmd: &Cmd) -> bool {
+        match cmd {
+            Cmd::SpawnTerminal { .. } => true,
+            Cmd::Batch(cmds) => cmds.iter().any(cmd_contains_spawn_terminal),
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn opening_terminal_panel_spawns_session_sized_to_dock_content() {
+        let mut model = test_model();
+
+        let cmd = update_dock(&mut model, DockMsg::TogglePanel(PanelId::TERMINAL));
+        let expected = expected_terminal_grid_size(&model);
+
+        let Some(Cmd::Batch(cmds)) = cmd else {
+            panic!("expected terminal dock open to return a batched spawn + redraw command");
+        };
+
+        assert!(cmds.iter().any(|cmd| matches!(
+            cmd,
+            Cmd::SpawnTerminal {
+                session_id: 0,
+                rows,
+                cols,
+            } if *rows == expected.rows && *cols == expected.cols
+        )));
+        assert!(cmds.iter().any(|cmd| matches!(cmd, Cmd::Redraw)));
+    }
+
+    #[test]
+    fn terminal_spawn_is_not_repeated_while_previous_spawn_is_pending() {
+        let mut model = test_model();
+
+        let first = update_dock(&mut model, DockMsg::TogglePanel(PanelId::TERMINAL));
+        assert!(contains_spawn_terminal(&first));
+
+        let second = update_dock(&mut model, DockMsg::FocusDock(DockPosition::Bottom));
+        assert!(!contains_spawn_terminal(&second));
+    }
+
+    #[test]
+    fn dragging_right_resize_handle_left_grows_right_dock() {
+        let mut model = test_model();
+        model.dock_layout.right.activate(PanelId::OUTLINE);
+        let original_size = model.dock_layout.right.size_logical;
+
+        update_dock(
+            &mut model,
+            DockMsg::StartResize {
+                position: DockPosition::Right,
+                initial_coord: 600.0,
+            },
+        );
+        update_dock(&mut model, DockMsg::UpdateResize { coord: 550.0 });
+
+        assert!(model.dock_layout.right.size_logical > original_size);
+    }
+
+    #[test]
+    fn dragging_bottom_resize_handle_up_grows_bottom_dock() {
+        let mut model = test_model();
+        model.dock_layout.bottom.activate(PanelId::TERMINAL);
+        let original_size = model.dock_layout.bottom.size_logical;
+
+        update_dock(
+            &mut model,
+            DockMsg::StartResize {
+                position: DockPosition::Bottom,
+                initial_coord: 500.0,
+            },
+        );
+        update_dock(&mut model, DockMsg::UpdateResize { coord: 450.0 });
+
+        assert!(model.dock_layout.bottom.size_logical > original_size);
     }
 }

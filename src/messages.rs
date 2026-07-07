@@ -610,6 +610,63 @@ pub enum OutlineMsg {
     Scroll { lines: i32 },
 }
 
+/// Terminal panel messages.
+///
+/// Toggle/focus/panel switching is handled by the existing `DockMsg` --
+/// not duplicated here. See `docs/feature/embedded-terminal.md`.
+#[derive(Debug, Clone)]
+pub enum TerminalMsg {
+    /// Spawn a new terminal session.
+    NewSession,
+    /// Close the active terminal session.
+    CloseSession,
+    /// Raw bytes received from the PTY (sent by the reader worker thread).
+    PtyOutput {
+        session_id: usize,
+        data: Vec<u8>,
+    },
+    /// PTY process exited.
+    ProcessExited {
+        session_id: usize,
+        code: i32,
+    },
+    /// Write bytes to the PTY (keyboard input or an escape-sequence
+    /// response the terminal emulator needs to send back, e.g. a
+    /// cursor-position report).
+    WriteToPty {
+        session_id: usize,
+        bytes: Vec<u8>,
+    },
+    /// Paste clipboard text into the active terminal session.
+    Paste(String),
+    /// OSC title sequence changed the session's title (empty string resets
+    /// to the default).
+    TitleChanged {
+        session_id: usize,
+        title: String,
+    },
+    /// Terminal bell rang.
+    Bell {
+        session_id: usize,
+    },
+    /// Terminal content changed and needs a redraw (coalesced from
+    /// multiple lower-level VT events).
+    Redraw {
+        session_id: usize,
+    },
+    /// Scroll terminal scrollback.
+    ScrollUp(usize),
+    ScrollDown(usize),
+    ScrollToBottom,
+    /// Clear the terminal buffer.
+    Clear,
+    /// Resize the terminal grid (triggered by dock resize).
+    Resize {
+        rows: u16,
+        cols: u16,
+    },
+}
+
 /// Dock-level messages (panel switching, resizing, visibility)
 #[derive(Debug, Clone)]
 pub enum DockMsg {
@@ -766,6 +823,8 @@ pub enum Msg {
     Outline(OutlineMsg),
     /// Unified text editing messages (Phase 2 - editable system)
     TextEdit(EditContext, TextEditMsg),
+    /// Terminal panel messages
+    Terminal(TerminalMsg),
 }
 
 // Convenience constructors for common messages

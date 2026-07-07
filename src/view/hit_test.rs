@@ -841,64 +841,97 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
 /// Hit-test dock panels (right and bottom docks).
 ///
 /// Computes dock rectangles and checks if the point falls within any open dock.
-/// Returns `DockContent` with the active panel ID for content clicks.
+/// Returns `DockContent` with the active panel ID for content clicks, or
+/// `DockResize` if the point is over the resizable border between a dock and
+/// the editor area.
 pub fn hit_test_docks(model: &AppModel, pt: Point) -> Option<HitTarget> {
     let window_layout = WindowLayout::compute(model, model.line_height);
+    let hit_zone = model.metrics.resize_handle_zone as f64;
 
     if let Some(right_rect) = window_layout.right_dock_rect {
-        if right_rect.contains(pt.x as f32, pt.y as f32) && model.dock_layout.right.is_open {
-            let dock = &model.dock_layout.right;
-            let layout = DockHeaderLayout::new(dock, right_rect, &model.metrics, model.char_width);
-            if layout.is_in_header(pt.x, pt.y) {
-                if let Some(tab) = layout.tab_at(pt.x, pt.y) {
-                    return Some(HitTarget::DockTab {
-                        position: crate::panel::DockPosition::Right,
-                        panel_id: tab.panel_id,
-                    });
-                }
-                return Some(HitTarget::DockTabBarEmpty {
+        if model.dock_layout.right.is_open {
+            let resize_zone_start = right_rect.x as f64 - hit_zone;
+            let resize_zone_end = right_rect.x as f64 + hit_zone;
+            if pt.x >= resize_zone_start
+                && pt.x <= resize_zone_end
+                && pt.y >= right_rect.y as f64
+                && pt.y < (right_rect.y + right_rect.height) as f64
+            {
+                return Some(HitTarget::DockResize {
                     position: crate::panel::DockPosition::Right,
                 });
             }
-            if layout.is_in_content(pt.x, pt.y) {
-                if let Some(panel_id) = dock.active_panel() {
-                    return Some(HitTarget::DockContent {
+
+            if right_rect.contains(pt.x as f32, pt.y as f32) {
+                let dock = &model.dock_layout.right;
+                let layout =
+                    DockHeaderLayout::new(dock, right_rect, &model.metrics, model.char_width);
+                if layout.is_in_header(pt.x, pt.y) {
+                    if let Some(tab) = layout.tab_at(pt.x, pt.y) {
+                        return Some(HitTarget::DockTab {
+                            position: crate::panel::DockPosition::Right,
+                            panel_id: tab.panel_id,
+                        });
+                    }
+                    return Some(HitTarget::DockTabBarEmpty {
                         position: crate::panel::DockPosition::Right,
-                        active_panel_id: panel_id,
                     });
                 }
-                return Some(HitTarget::DockTabBarEmpty {
-                    position: crate::panel::DockPosition::Right,
-                });
+                if layout.is_in_content(pt.x, pt.y) {
+                    if let Some(panel_id) = dock.active_panel() {
+                        return Some(HitTarget::DockContent {
+                            position: crate::panel::DockPosition::Right,
+                            active_panel_id: panel_id,
+                        });
+                    }
+                    return Some(HitTarget::DockTabBarEmpty {
+                        position: crate::panel::DockPosition::Right,
+                    });
+                }
             }
         }
     }
 
     if let Some(bottom_rect) = window_layout.bottom_dock_rect {
-        if bottom_rect.contains(pt.x as f32, pt.y as f32) && model.dock_layout.bottom.is_open {
-            let dock = &model.dock_layout.bottom;
-            let layout = DockHeaderLayout::new(dock, bottom_rect, &model.metrics, model.char_width);
-            if layout.is_in_header(pt.x, pt.y) {
-                if let Some(tab) = layout.tab_at(pt.x, pt.y) {
-                    return Some(HitTarget::DockTab {
-                        position: crate::panel::DockPosition::Bottom,
-                        panel_id: tab.panel_id,
-                    });
-                }
-                return Some(HitTarget::DockTabBarEmpty {
+        if model.dock_layout.bottom.is_open {
+            let resize_zone_start = bottom_rect.y as f64 - hit_zone;
+            let resize_zone_end = bottom_rect.y as f64 + hit_zone;
+            if pt.y >= resize_zone_start
+                && pt.y <= resize_zone_end
+                && pt.x >= bottom_rect.x as f64
+                && pt.x < (bottom_rect.x + bottom_rect.width) as f64
+            {
+                return Some(HitTarget::DockResize {
                     position: crate::panel::DockPosition::Bottom,
                 });
             }
-            if layout.is_in_content(pt.x, pt.y) {
-                if let Some(panel_id) = dock.active_panel() {
-                    return Some(HitTarget::DockContent {
+
+            if bottom_rect.contains(pt.x as f32, pt.y as f32) {
+                let dock = &model.dock_layout.bottom;
+                let layout =
+                    DockHeaderLayout::new(dock, bottom_rect, &model.metrics, model.char_width);
+                if layout.is_in_header(pt.x, pt.y) {
+                    if let Some(tab) = layout.tab_at(pt.x, pt.y) {
+                        return Some(HitTarget::DockTab {
+                            position: crate::panel::DockPosition::Bottom,
+                            panel_id: tab.panel_id,
+                        });
+                    }
+                    return Some(HitTarget::DockTabBarEmpty {
                         position: crate::panel::DockPosition::Bottom,
-                        active_panel_id: panel_id,
                     });
                 }
-                return Some(HitTarget::DockTabBarEmpty {
-                    position: crate::panel::DockPosition::Bottom,
-                });
+                if layout.is_in_content(pt.x, pt.y) {
+                    if let Some(panel_id) = dock.active_panel() {
+                        return Some(HitTarget::DockContent {
+                            position: crate::panel::DockPosition::Bottom,
+                            active_panel_id: panel_id,
+                        });
+                    }
+                    return Some(HitTarget::DockTabBarEmpty {
+                        position: crate::panel::DockPosition::Bottom,
+                    });
+                }
             }
         }
     }

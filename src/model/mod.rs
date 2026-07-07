@@ -410,6 +410,9 @@ pub struct AppModel {
     pub workspace: Option<Workspace>,
     /// Dock layout state (left/right/bottom panels)
     pub dock_layout: crate::panel::DockLayout,
+    /// Terminal panel state (PTY sessions). Visibility, height, and
+    /// resizing are owned by `dock_layout`.
+    pub terminal: crate::terminal::TerminalState,
     /// Outline panel UI state (expand/collapse, selection, scroll)
     pub outline_panel: crate::model::ui::OutlinePanelState,
     /// Recent files list (persistent across sessions)
@@ -456,6 +459,7 @@ impl AppModel {
             metrics,
             workspace: None,
             dock_layout: crate::panel::DockLayout::default(),
+            terminal: crate::terminal::TerminalState::default(),
             outline_panel: crate::model::ui::OutlinePanelState::default(),
             recent_files,
             #[cfg(debug_assertions)]

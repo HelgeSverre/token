@@ -686,6 +686,17 @@ pub enum Cmd {
     /// Create default keymap file asynchronously
     CreateDefaultKeymapFile { path: PathBuf },
 
+    // === Terminal Commands ===
+    /// Spawn a PTY + shell for a new terminal session. The runtime spawns
+    /// the PTY reader/writer threads (see `terminal::spawn_pty`) and routes
+    /// `Msg::Terminal(PtyOutput)`/`ProcessExited` back through the update
+    /// loop, matching the async-worker pattern used for syntax parsing.
+    SpawnTerminal {
+        session_id: usize,
+        rows: u16,
+        cols: u16,
+    },
+
     // === Debug Commands ===
     /// Toggle performance overlay (debug builds only)
     #[cfg(debug_assertions)]
@@ -760,6 +771,9 @@ impl Cmd {
             Cmd::CopyToClipboard(_) => Damage::Areas(vec![]),
             Cmd::RequestClipboardPaste => Damage::Areas(vec![]),
             Cmd::CreateDefaultKeymapFile { .. } => Damage::Areas(vec![]),
+            // Spawning doesn't need immediate redraw; the PtyOutput that
+            // follows shortly after will request one.
+            Cmd::SpawnTerminal { .. } => Damage::Areas(vec![]),
             // Debug overlay toggle triggers full redraw
             #[cfg(debug_assertions)]
             Cmd::TogglePerfOverlay => Damage::Full,

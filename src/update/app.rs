@@ -6,9 +6,9 @@ use crate::commands::{Cmd, CommandId};
 use crate::config::EditorConfig;
 use crate::config_paths;
 use crate::keymap::get_default_keymap_yaml;
-use crate::messages::{AppMsg, DockMsg, DocumentMsg, LayoutMsg, UiMsg};
+use crate::messages::{AppMsg, DockMsg, DocumentMsg, LayoutMsg, TerminalMsg, UiMsg};
 use crate::model::{AppModel, ModalId, SplitDirection};
-use crate::panel::PanelId;
+use crate::panel::{DockPosition, PanelId};
 use crate::syntax::LanguageId;
 use crate::theme::{load_theme, Theme};
 
@@ -36,13 +36,16 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                 }
             }
 
-            Some(Cmd::Redraw)
+            Some(super::dock::with_terminal_sync(model, Cmd::Redraw))
         }
 
         AppMsg::ScaleFactorChanged(scale_factor) => {
             model.set_scale_factor(scale_factor);
             // Reinitialize renderer (creates new glyph cache) and force redraw
-            Some(Cmd::Batch(vec![Cmd::ReinitializeRenderer, Cmd::Redraw]))
+            Some(super::dock::with_terminal_sync(
+                model,
+                Cmd::Batch(vec![Cmd::ReinitializeRenderer, Cmd::Redraw]),
+            ))
         }
 
         AppMsg::SaveFile => {
@@ -286,9 +289,22 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                 return super::csv::update_csv(model, crate::messages::CsvMsg::EditPasteText(text));
             }
 
+            if is_terminal_dock_focused(model) {
+                return super::terminal::update_terminal(model, TerminalMsg::Paste(text));
+            }
+
             super::document::update_document(model, crate::messages::DocumentMsg::PasteText(text))
         }
     }
+}
+
+fn is_terminal_dock_focused(model: &AppModel) -> bool {
+    if model.ui.focused_dock() != Some(DockPosition::Bottom) {
+        return false;
+    }
+
+    let bottom_dock = model.dock_layout.dock(DockPosition::Bottom);
+    bottom_dock.is_open && bottom_dock.active_panel() == Some(PanelId::TERMINAL)
 }
 
 /// Execute a command from the command palette
@@ -433,4 +449,87 @@ pub fn create_default_keymap_file(path: &std::path::Path) -> Result<(), String> 
     }
     std::fs::write(path, get_default_keymap_yaml())
         .map_err(|e| format!("Failed to write file: {}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::AppModel;
+    use crate::panels::terminal::grid_size_for_rect;
+    use crate::terminal::{PtyHandle, TerminalSession};
+    use crate::view::geometry::{DockHeaderLayout, WindowLayout};
+    use std::sync::mpsc;
+
+    fn test_model() -> AppModel {
+        AppModel::new(800, 600, 1.0, vec![])
+    }
+
+    fn focused_terminal_model() -> (AppModel, mpsc::Receiver<Vec<u8>>) {
+        let mut model = test_model();
+        model.dock_layout.bottom.activate(PanelId::TERMINAL);
+        model.ui.focus_dock(DockPosition::Bottom);
+
+        let (pty, pty_rx) = PtyHandle::new_for_test();
+        let (msg_tx, _msg_rx) = mpsc::channel();
+        model
+            .terminal
+            .sessions
+            .push(TerminalSession::new(11, 24, 80, pty, msg_tx));
+
+        (model, pty_rx)
+    }
+
+    fn expected_terminal_grid_size(model: &AppModel) -> crate::panels::terminal::TerminalGridSize {
+        let window_layout = WindowLayout::compute(model, model.line_height);
+        let dock_rect = window_layout
+            .bottom_dock_rect
+            .expect("terminal dock should be open");
+        let content_rect = DockHeaderLayout::new(
+            &model.dock_layout.bottom,
+            dock_rect,
+            &model.metrics,
+            model.char_width,
+        )
+        .content_rect;
+
+        grid_size_for_rect(content_rect, model.char_width, model.line_height)
+    }
+
+    #[test]
+    fn resizing_window_with_open_terminal_panel_spawns_to_resolved_grid_size() {
+        let mut model = test_model();
+        model.dock_layout.bottom.activate(PanelId::TERMINAL);
+
+        let cmd = update_app(&mut model, AppMsg::Resize(900, 700));
+        let expected = expected_terminal_grid_size(&model);
+
+        let Some(Cmd::Batch(cmds)) = cmd else {
+            panic!("expected resize to return a batched terminal spawn + redraw command");
+        };
+
+        assert!(cmds.iter().any(|cmd| matches!(
+            cmd,
+            Cmd::SpawnTerminal {
+                session_id: 0,
+                rows,
+                cols,
+            } if *rows == expected.rows && *cols == expected.cols
+        )));
+        assert!(cmds.iter().any(|cmd| matches!(cmd, Cmd::Redraw)));
+    }
+
+    #[test]
+    fn paste_from_clipboard_routes_to_focused_terminal() {
+        let (mut model, pty_rx) = focused_terminal_model();
+        let document_before = model.document().buffer.to_string();
+
+        let cmd = update_app(
+            &mut model,
+            AppMsg::PasteFromClipboard("terminal paste".to_string()),
+        );
+
+        assert!(cmd.is_none());
+        assert_eq!(model.document().buffer.to_string(), document_before);
+        assert_eq!(pty_rx.try_recv().unwrap(), b"terminal paste".to_vec());
+    }
 }

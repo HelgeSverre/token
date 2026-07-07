@@ -17,11 +17,12 @@ use winit::keyboard::{Key, NamedKey};
 
 use token::commands::Cmd;
 use token::messages::{
-    CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, OutlineMsg, UiMsg,
-    WorkspaceMsg,
+    CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, OutlineMsg, TerminalMsg,
+    UiMsg, WorkspaceMsg,
 };
 use token::model::AppModel;
 use token::panel::{DockPosition, PanelId};
+use token::terminal::{translate_key, TerminalKeyModifiers};
 use token::update::update;
 
 /// Bundles the four keyboard modifier flags (Ctrl, Shift, Alt, Logo/Cmd) that
@@ -112,6 +113,11 @@ pub fn handle_key(
     // Focus capture: route keys to outline panel when right dock outline has focus
     if is_outline_dock_focused(model) {
         return handle_outline_dock_key(model, &key).or(Some(Cmd::Redraw));
+    }
+
+    // Focus capture: route keys to terminal panel when bottom dock terminal has focus
+    if is_terminal_dock_focused(model) {
+        return handle_terminal_dock_key(model, &key, modifiers).or(Some(Cmd::Redraw));
     }
 
     // Binary placeholder: Enter opens file with default app
@@ -675,6 +681,50 @@ fn handle_outline_dock_key(model: &mut AppModel, key: &Key) -> Option<Cmd> {
     }
 }
 
+/// Check if the terminal panel (bottom dock) has keyboard focus.
+fn is_terminal_dock_focused(model: &AppModel) -> bool {
+    if model.ui.focused_dock() != Some(DockPosition::Bottom) {
+        return false;
+    }
+
+    let bottom_dock = model.dock_layout.dock(DockPosition::Bottom);
+    bottom_dock.is_open && bottom_dock.active_panel() == Some(PanelId::TERMINAL)
+}
+
+/// Handle keyboard input when the terminal panel is focused.
+fn handle_terminal_dock_key(
+    model: &mut AppModel,
+    key: &Key,
+    modifiers: KeyModifiers,
+) -> Option<Cmd> {
+    if matches!(key, Key::Named(NamedKey::Escape)) {
+        model.ui.focus_editor();
+        return Some(Cmd::Redraw);
+    }
+
+    if modifiers.logo {
+        if let Key::Character(s) = key {
+            if s.eq_ignore_ascii_case("v") {
+                return Some(Cmd::RequestClipboardPaste);
+            }
+        }
+    }
+
+    let session_id = model.terminal.active_session().map(|session| session.id)?;
+    let terminal_modifiers = TerminalKeyModifiers {
+        ctrl: modifiers.ctrl,
+        shift: modifiers.shift,
+        alt: modifiers.alt,
+        logo: modifiers.logo,
+    };
+    let bytes = translate_key(key, terminal_modifiers)?;
+
+    update(
+        model,
+        Msg::Terminal(TerminalMsg::WriteToPty { session_id, bytes }),
+    )
+}
+
 /// If the focused editor is a binary placeholder tab, return its path
 fn get_binary_placeholder_path(model: &AppModel) -> Option<std::path::PathBuf> {
     let editor = model.editor_area.focused_editor()?;
@@ -682,5 +732,101 @@ fn get_binary_placeholder_path(model: &AppModel) -> Option<std::path::PathBuf> {
         Some(state.path.clone())
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+
+    use super::*;
+    use token::model::FocusTarget;
+    use token::terminal::{PtyHandle, TerminalSession};
+    use winit::keyboard::{KeyCode, PhysicalKey};
+
+    fn focused_terminal_model() -> (AppModel, mpsc::Receiver<Vec<u8>>) {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.dock_layout.bottom.activate(PanelId::TERMINAL);
+        model.ui.focus_dock(DockPosition::Bottom);
+
+        let (pty, pty_rx) = PtyHandle::new_for_test();
+        let (msg_tx, _msg_rx) = mpsc::channel();
+        model
+            .terminal
+            .sessions
+            .push(TerminalSession::new(7, 24, 80, pty, msg_tx));
+
+        (model, pty_rx)
+    }
+
+    #[test]
+    fn terminal_character_key_writes_utf8_to_active_session() {
+        let (mut model, pty_rx) = focused_terminal_model();
+
+        let cmd = handle_key(
+            &mut model,
+            Key::Character("å".into()),
+            PhysicalKey::Code(KeyCode::KeyA),
+            KeyModifiers::default(),
+            false,
+        );
+
+        assert!(matches!(cmd, Some(Cmd::Redraw)));
+        assert_eq!(pty_rx.try_recv().unwrap(), "å".as_bytes());
+    }
+
+    #[test]
+    fn terminal_ctrl_c_writes_control_byte_to_active_session() {
+        let (mut model, pty_rx) = focused_terminal_model();
+
+        let cmd = handle_key(
+            &mut model,
+            Key::Character("c".into()),
+            PhysicalKey::Code(KeyCode::KeyC),
+            KeyModifiers {
+                ctrl: true,
+                ..KeyModifiers::default()
+            },
+            false,
+        );
+
+        assert!(matches!(cmd, Some(Cmd::Redraw)));
+        assert_eq!(pty_rx.try_recv().unwrap(), vec![0x03]);
+    }
+
+    #[test]
+    fn terminal_cmd_v_requests_clipboard_paste() {
+        let (mut model, pty_rx) = focused_terminal_model();
+
+        let cmd = handle_key(
+            &mut model,
+            Key::Character("v".into()),
+            PhysicalKey::Code(KeyCode::KeyV),
+            KeyModifiers {
+                logo: true,
+                ..KeyModifiers::default()
+            },
+            false,
+        );
+
+        assert!(matches!(cmd, Some(Cmd::RequestClipboardPaste)));
+        assert!(pty_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn terminal_escape_returns_focus_to_editor() {
+        let (mut model, pty_rx) = focused_terminal_model();
+
+        let cmd = handle_key(
+            &mut model,
+            Key::Named(NamedKey::Escape),
+            PhysicalKey::Code(KeyCode::Escape),
+            KeyModifiers::default(),
+            false,
+        );
+
+        assert!(matches!(cmd, Some(Cmd::Redraw)));
+        assert!(matches!(model.ui.focus, FocusTarget::Editor));
+        assert!(pty_rx.try_recv().is_err());
     }
 }
