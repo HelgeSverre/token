@@ -27,9 +27,9 @@ Thank you for your interest in contributing to Token!
 ## Running Tests
 
 ```bash
-make test           # Run all tests
+make test           # Run all tests (nextest + doctests)
 make test-verbose   # Run with output
-make test-fast      # Fast parallel tests (nextest)
+make test-retry     # Tests with retries for flaky tests
 ```
 
 ---

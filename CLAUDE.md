@@ -9,7 +9,7 @@ make build               # Build debug binary
 make release             # Build optimized release binary
 make run                 # Run release build with sample file
 make dev                 # Run debug build (faster compile)
-make test                # Run all tests
+make test                # Run all tests (nextest + doctests)
 make test-one TEST=name  # Run specific test
 make test-verbose        # Run tests with output
 make fmt                 # Format Rust code and markdown
@@ -21,7 +21,6 @@ make lint                # Run clippy lints (mirrors CI)
 ```bash
 make watch               # Start bacon watch mode
 make watch-lint          # Watch with clippy
-make test-fast           # Fast parallel tests (nextest)
 make test-retry          # Tests with retries for flaky tests
 ```
 

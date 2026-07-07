@@ -4,7 +4,7 @@
         build-prof flamegraph profile-samply profile-chrome profile-memory \
         bench bench-rope bench-render bench-glyph \
         coverage coverage-html coverage-ci \
-        watch watch-lint test-fast test-retry \
+        watch watch-lint test-retry \
         setup setup-tools install uninstall \
         compile-all compile-macos-x86 compile-macos-arm compile-linux compile-windows \
         generate-icon icons bundle-macos bundle-linux bundle-windows bundle bundle-all
@@ -96,9 +96,11 @@ damage-debug:
 trace: build
 	RUST_LOG=debug ./target/debug/token samples/sample_code.rs
 
-# Run all tests
+# Run all tests (nextest for speed; doctests run separately since nextest
+# does not execute them). Requires: cargo install cargo-nextest (make setup).
 test:
-	cargo test
+	cargo nextest run
+	cargo test --doc
 
 
 # Run tests with output
@@ -185,10 +187,9 @@ help:
 	@echo "  make test-syntax  - Open all 20 syntax sample files for manual testing"
 	@echo ""
 	@echo "Test targets:"
-	@echo "  make test         - Run all tests"
+	@echo "  make test         - Run all tests (nextest + doctests)"
 	@echo "  make test-one TEST=name - Run specific test"
 	@echo "  make test-verbose - Run tests with output"
-	@echo "  make test-fast    - Fast parallel tests (nextest)"
 	@echo "  make test-retry   - Tests with retries for flaky tests"
 	@echo ""
 	@echo "Benchmarking:"
@@ -261,7 +262,7 @@ setup setup-tools:
 	@echo ""
 	@echo "Available commands:"
 	@echo "  make watch        - Start bacon watch mode"
-	@echo "  make test-fast    - Run tests with nextest"
+	@echo "  make test         - Run tests with nextest"
 	@echo "  make coverage     - Generate coverage report"
 	@echo "  make flamegraph   - Generate CPU flamegraph"
 	@echo "  make bench        - Run benchmarks"
@@ -382,10 +383,6 @@ watch:
 # Watch with clippy
 watch-lint:
 	bacon clippy
-
-# Fast parallel tests (requires: cargo install cargo-nextest)
-test-fast:
-	cargo nextest run
 
 # Tests with retries for flaky tests
 test-retry:
