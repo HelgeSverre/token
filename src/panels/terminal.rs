@@ -48,6 +48,14 @@ pub struct TerminalPalette {
     pub ansi: [u32; 16],
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct TerminalCellDecorations {
+    bold: bool,
+    italic: bool,
+    underline: bool,
+    strikeout: bool,
+}
+
 struct TerminalRenderContext<'a> {
     rect: Rect,
     char_width: f32,
@@ -103,11 +111,9 @@ pub fn resolve_terminal_color(
         AnsiColor::Spec(rgb) => {
             0xFF00_0000 | ((rgb.r as u32) << 16) | ((rgb.g as u32) << 8) | rgb.b as u32
         }
-        AnsiColor::Indexed(index) => palette
-            .ansi
-            .get(index as usize)
-            .copied()
-            .unwrap_or_else(|| fallback_color(palette, role)),
+        AnsiColor::Indexed(index) => {
+            indexed_color(index, palette).unwrap_or_else(|| fallback_color(palette, role))
+        }
     }
 }
 
@@ -146,18 +152,23 @@ pub fn render_terminal_panel(
         palette: &palette,
     };
 
+    // Oldest addressable line: history lines sit *above* the screen and are
+    // addressed with negative `Line` indices in alacritty.
+    let topmost_line = grid.screen_lines() as i32 - grid.total_lines() as i32;
+
     for row in 0..rows {
         let grid_line = terminal_view_row_to_grid_line(row, scroll_offset);
-        if grid_line >= grid.total_lines() {
-            break;
+        if grid_line < topmost_line {
+            continue;
         }
         for col in 0..cols {
-            let cell = &grid[Line(grid_line as i32)][Column(col)];
+            let cell = &grid[Line(grid_line)][Column(col)];
             render_terminal_cell(frame, painter, &ctx, row, col, cell);
         }
     }
 
     render_terminal_cursor(frame, painter, &ctx, rows, cols, grid, scroll_offset);
+    render_scrollback_indicator(frame, painter, &ctx, scroll_offset, max_offset);
 
     frame.clear_clip();
 }
@@ -183,7 +194,18 @@ fn render_terminal_cell(
 
     let mut buf = [0; 4];
     let text = cell.c.encode_utf8(&mut buf);
+    let decorations = cell_decorations(cell);
     painter.draw(frame, cell_rect.x as usize, cell_rect.y as usize, text, fg);
+    if decorations.bold {
+        painter.draw(
+            frame,
+            cell_rect.x as usize + 1,
+            cell_rect.y as usize,
+            text,
+            fg,
+        );
+    }
+    render_cell_decorations(frame, &cell_rect, fg, decorations);
 }
 
 fn render_terminal_cursor(
@@ -196,14 +218,17 @@ fn render_terminal_cursor(
     scroll_offset: usize,
 ) {
     let cursor = grid.cursor.point;
-    let cursor_row = cursor.line.0 as usize;
+    // The cursor lives on the live screen (line >= 0). Scrolling up by
+    // `scroll_offset` pushes it *down* the viewport by that many rows.
+    let cursor_line = cursor.line.0;
+    let view_row = cursor_line + scroll_offset as i32;
 
-    // Hide the cursor when scrolled away from the live bottom of the buffer.
-    if cursor_row < scroll_offset || cursor_row >= scroll_offset + rows {
+    // Hide the cursor when it has scrolled off the visible viewport.
+    if view_row < 0 || view_row as usize >= rows {
         return;
     }
 
-    let row = cursor_row - scroll_offset;
+    let row = view_row as usize;
     let col = cursor.column.0;
     if col >= cols {
         return;
@@ -212,8 +237,7 @@ fn render_terminal_cursor(
     let cell_rect = terminal_cell_rect(ctx, row, col);
     frame.fill_rect(cell_rect, ctx.palette.cursor);
 
-    let grid_line = terminal_view_row_to_grid_line(row, scroll_offset);
-    let cell = &grid[Line(grid_line as i32)][Column(col)];
+    let cell = &grid[Line(cursor_line)][Column(col)];
     if cell.c == ' ' || cell.flags.contains(Flags::HIDDEN | Flags::WIDE_CHAR_SPACER) {
         return;
     }
@@ -238,22 +262,129 @@ fn terminal_cell_rect(ctx: &TerminalRenderContext<'_>, row: usize, col: usize) -
     )
 }
 
-fn terminal_view_row_to_grid_line(row: usize, scroll_offset: usize) -> usize {
-    row.saturating_add(scroll_offset)
+/// Map a viewport row (0 = top of the visible area) to an alacritty grid
+/// `Line`. Scrolling up by `scroll_offset` reveals history, which alacritty
+/// addresses with negative line indices, so the offset is *subtracted*.
+fn terminal_view_row_to_grid_line(row: usize, scroll_offset: usize) -> i32 {
+    row as i32 - scroll_offset as i32
 }
 
 fn cell_colors(
     cell: &alacritty_terminal::term::cell::Cell,
     palette: &TerminalPalette,
 ) -> (u32, u32) {
-    let fg = resolve_terminal_color(cell.fg, palette, TerminalColorRole::Foreground);
+    let mut fg = resolve_terminal_color(cell.fg, palette, TerminalColorRole::Foreground);
     let bg = resolve_terminal_color(cell.bg, palette, TerminalColorRole::Background);
+    if cell.flags.contains(Flags::DIM) {
+        fg = dim_color(fg);
+    }
 
     if cell.flags.contains(Flags::INVERSE) {
         (bg, fg)
     } else {
         (fg, bg)
     }
+}
+
+fn indexed_color(index: u8, palette: &TerminalPalette) -> Option<u32> {
+    match index {
+        0..=15 => palette.ansi.get(index as usize).copied(),
+        16..=231 => {
+            let index = index - 16;
+            let levels: [u8; 6] = [0, 95, 135, 175, 215, 255];
+            let r = levels[(index / 36) as usize];
+            let g = levels[((index % 36) / 6) as usize];
+            let b = levels[(index % 6) as usize];
+            Some(rgb_to_argb(r, g, b))
+        }
+        232..=255 => {
+            let level = 8 + (index - 232) * 10;
+            Some(rgb_to_argb(level, level, level))
+        }
+    }
+}
+
+fn rgb_to_argb(r: u8, g: u8, b: u8) -> u32 {
+    0xFF00_0000 | ((r as u32) << 16) | ((g as u32) << 8) | b as u32
+}
+
+fn dim_color(color: u32) -> u32 {
+    let alpha = color & 0xFF00_0000;
+    let r = (((color >> 16) & 0xFF) * 2 / 3) << 16;
+    let g = (((color >> 8) & 0xFF) * 2 / 3) << 8;
+    let b = (color & 0xFF) * 2 / 3;
+    alpha | r | g | b
+}
+
+fn cell_decorations(cell: &alacritty_terminal::term::cell::Cell) -> TerminalCellDecorations {
+    TerminalCellDecorations {
+        bold: cell.flags.contains(Flags::BOLD),
+        italic: cell.flags.contains(Flags::ITALIC),
+        underline: cell.flags.intersects(Flags::ALL_UNDERLINES),
+        strikeout: cell.flags.contains(Flags::STRIKEOUT),
+    }
+}
+
+fn render_cell_decorations(
+    frame: &mut Frame,
+    cell_rect: &Rect,
+    color: u32,
+    decorations: TerminalCellDecorations,
+) {
+    if decorations.underline {
+        let thickness = (cell_rect.height / 12.0).round().max(1.0);
+        frame.fill_rect(
+            Rect::new(
+                cell_rect.x,
+                cell_rect.y + cell_rect.height - thickness,
+                cell_rect.width,
+                thickness,
+            ),
+            color,
+        );
+    }
+
+    if decorations.strikeout {
+        let thickness = (cell_rect.height / 14.0).round().max(1.0);
+        frame.fill_rect(
+            Rect::new(
+                cell_rect.x,
+                cell_rect.y + cell_rect.height * 0.52,
+                cell_rect.width,
+                thickness,
+            ),
+            color,
+        );
+    }
+}
+
+fn render_scrollback_indicator(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    ctx: &TerminalRenderContext<'_>,
+    scroll_offset: usize,
+    max_offset: usize,
+) {
+    let Some(text) = scrollback_indicator_text(scroll_offset, max_offset) else {
+        return;
+    };
+
+    let padding = ctx.char_width.max(1.0).round();
+    let width = text.chars().count() as f32 * ctx.char_width + padding;
+    let x = (ctx.rect.x + ctx.rect.width - width).max(ctx.rect.x);
+    let rect = Rect::new(x, ctx.rect.y, width, ctx.line_height.max(1) as f32);
+    frame.fill_rect(rect, ctx.palette.default_bg);
+    painter.draw(
+        frame,
+        (x + padding / 2.0) as usize,
+        ctx.rect.y as usize,
+        &text,
+        ctx.palette.default_fg,
+    );
+}
+
+fn scrollback_indicator_text(scroll_offset: usize, max_offset: usize) -> Option<String> {
+    (scroll_offset > 0).then(|| format!("{scroll_offset}/{max_offset}"))
 }
 
 fn fallback_color(palette: &TerminalPalette, role: TerminalColorRole) -> u32 {
@@ -330,8 +461,52 @@ mod tests {
 
     #[test]
     fn terminal_view_row_to_grid_line_accounts_for_scroll_offset() {
-        assert_eq!(terminal_view_row_to_grid_line(0, 2), 2);
-        assert_eq!(terminal_view_row_to_grid_line(3, 2), 5);
+        // Row 0 with the view scrolled up 2 lines shows 2 lines of history,
+        // which alacritty addresses with negative `Line` indices.
+        assert_eq!(terminal_view_row_to_grid_line(0, 2), -2);
+        assert_eq!(terminal_view_row_to_grid_line(3, 2), 1);
+    }
+
+    fn scrollback_term() -> alacritty_terminal::Term<alacritty_terminal::event::VoidListener> {
+        use alacritty_terminal::term::{test::TermSize, Config};
+        use alacritty_terminal::vte::ansi::Processor;
+
+        let size = TermSize::new(20, 4);
+        let mut term = alacritty_terminal::Term::new(
+            Config::default(),
+            &size,
+            alacritty_terminal::event::VoidListener,
+        );
+        let mut parser: Processor = Processor::new();
+        // 10 lines into a 4-row screen -> 6 lines of scrollback history.
+        for line in 0..10 {
+            parser.advance(&mut term, format!("line{line}\r\n").as_bytes());
+        }
+        term
+    }
+
+    #[test]
+    fn rendering_scrolled_back_history_indexes_valid_grid_lines() {
+        // Regression: the renderer used positive `row + scroll_offset` line
+        // indices, which addressed the live screen (and ran past it into an
+        // out-of-range assertion) instead of reading negative history lines.
+        let term = scrollback_term();
+        let grid = term.grid();
+        let rows = grid.screen_lines();
+        let max_offset = grid.total_lines().saturating_sub(rows);
+        let topmost = rows as i32 - grid.total_lines() as i32;
+
+        for scroll_offset in 0..=max_offset {
+            for row in 0..rows {
+                let grid_line = terminal_view_row_to_grid_line(row, scroll_offset);
+                assert!(
+                    (topmost..rows as i32).contains(&grid_line),
+                    "row {row} offset {scroll_offset} produced out-of-range line {grid_line}"
+                );
+                // Must not panic on the alacritty bounds assertion.
+                let _ = grid[Line(grid_line)][Column(0)].c;
+            }
+        }
     }
 
     #[test]
@@ -396,5 +571,74 @@ mod tests {
             ),
             palette.ansi[3]
         );
+    }
+
+    #[test]
+    fn color_resolution_maps_256_color_palette_entries() {
+        let palette = test_palette();
+
+        assert_eq!(
+            resolve_terminal_color(
+                AnsiColor::Indexed(196),
+                &palette,
+                TerminalColorRole::Foreground,
+            ),
+            0xFFFF_0000
+        );
+        assert_eq!(
+            resolve_terminal_color(
+                AnsiColor::Indexed(232),
+                &palette,
+                TerminalColorRole::Foreground,
+            ),
+            0xFF08_0808
+        );
+        assert_eq!(
+            resolve_terminal_color(
+                AnsiColor::Indexed(255),
+                &palette,
+                TerminalColorRole::Foreground,
+            ),
+            0xFFEE_EEEE
+        );
+    }
+
+    #[test]
+    fn dim_cells_reduce_foreground_intensity() {
+        let palette = test_palette();
+        let mut cell = alacritty_terminal::term::cell::Cell {
+            fg: AnsiColor::Spec(Rgb {
+                r: 0x60,
+                g: 0x30,
+                b: 0x18,
+            }),
+            ..Default::default()
+        };
+        cell.flags.insert(Flags::DIM);
+
+        let (fg, bg) = cell_colors(&cell, &palette);
+
+        assert_eq!(fg, 0xFF40_2010);
+        assert_eq!(bg, palette.default_bg);
+    }
+
+    #[test]
+    fn cell_decorations_track_terminal_text_attributes() {
+        let mut cell = alacritty_terminal::term::cell::Cell::default();
+        cell.flags
+            .insert(Flags::BOLD | Flags::ITALIC | Flags::UNDERLINE | Flags::STRIKEOUT);
+
+        let decorations = cell_decorations(&cell);
+
+        assert!(decorations.bold);
+        assert!(decorations.italic);
+        assert!(decorations.underline);
+        assert!(decorations.strikeout);
+    }
+
+    #[test]
+    fn scrollback_indicator_is_only_shown_when_scrolled_up() {
+        assert_eq!(scrollback_indicator_text(0, 10), None);
+        assert_eq!(scrollback_indicator_text(3, 10), Some("3/10".to_string()));
     }
 }

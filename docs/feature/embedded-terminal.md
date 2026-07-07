@@ -2,11 +2,11 @@
 
 Integrated terminal panel at the bottom of the editor
 
-> **Status:** In Progress
+> **Status:** MVP Complete (post-MVP tabs pending)
 > **Priority:** P2
 > **Effort:** L (8–14 days)
 > **Created:** 2025-12-20
-> **Updated:** 2026-07-06
+> **Updated:** 2026-07-07
 > **Milestone:** 5 - Future
 
 ---
@@ -39,6 +39,8 @@ The editor has a **full dock panel system** already built:
 - ✅ `FocusTarget::Dock(DockPosition)` for keyboard focus routing
 - ✅ `HitTarget` variants for dock resize, tabs, and content
 - ✅ Terminal panel renders PTY output and routes focused keyboard/paste input to the PTY
+- ✅ Terminal scrollback supports mouse wheel and Shift+PageUp/Shift+PageDown
+- ✅ Dock resize deltas are converted from physical cursor movement to logical dock sizes on high-DPI displays
 
 ### Goals
 
@@ -348,16 +350,16 @@ All other keys (when terminal is focused) are sent directly to the PTY as escape
 
 **Goal**: Scroll through terminal history, handle edge cases.
 
-1. [ ] Mouse wheel over terminal dock → scroll terminal scrollback
-2. [ ] Auto-scroll to bottom on new output (unless user scrolled up)
-3. [ ] Render scrollback indicator (e.g. line count or scrollbar)
-4. [ ] Handle `TerminalMsg::Clear` — reset terminal buffer
-5. [ ] SGR color support: 256-color + true color (24-bit)
-6. [ ] Text attributes: bold, italic, underline, dim, inverse
-7. [ ] Handle terminal bell (flash or ignore)
-8. [ ] OSC title updates → update `TerminalSession.title`
+1. [x] Mouse wheel over terminal dock → scroll terminal scrollback
+2. [x] Auto-scroll to bottom on new output unless user scrolled up; stale offsets clamp to available history
+3. [x] Render scrollback indicator (`current/max` while scrolled up)
+4. [x] Handle `TerminalMsg::Clear` — reset visible grid, scrollback history, and local offset
+5. [x] SGR color support: 256-color + true color (24-bit)
+6. [x] Text attributes: bold approximation, underline, strikeout, dim, inverse; italic is parsed but not visually slanted by the current single-font renderer
+7. [x] Handle terminal bell by intentionally ignoring it for the MVP
+8. [x] OSC title updates → update `TerminalSession.title`
 
-**Verification**: Run `cargo build` with colored output, scroll up through build log, scroll back down.
+**Verification**: Unit tests cover scrollback wheel/key routing, scroll clamping, clear, 256-color mapping, and text-attribute helpers. Manual GUI smoke testing remains in the checklist below.
 
 ### Post-MVP: Multiple Terminal Tabs
 

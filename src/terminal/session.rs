@@ -154,6 +154,27 @@ impl TerminalSession {
         self.parser.advance(&mut self.term, data);
     }
 
+    /// Maximum number of history lines that can be displayed above the
+    /// current screen.
+    pub fn max_scrollback_offset(&self) -> usize {
+        self.term
+            .grid()
+            .total_lines()
+            .saturating_sub(self.term.grid().screen_lines())
+    }
+
+    /// Keep the view offset inside the available history.
+    pub fn clamp_scroll_offset(&mut self) {
+        self.scroll_offset = self.scroll_offset.min(self.max_scrollback_offset());
+    }
+
+    /// Clear visible terminal contents and scrollback history.
+    pub fn clear(&mut self) {
+        self.term.grid_mut().reset();
+        self.parser = Processor::new();
+        self.scroll_offset = 0;
+    }
+
     /// Resize the terminal grid and the underlying PTY to match.
     pub fn resize(&mut self, rows: usize, cols: usize) {
         if self.size == (rows, cols) {

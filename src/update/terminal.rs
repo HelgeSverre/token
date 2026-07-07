@@ -58,7 +58,13 @@ pub fn update_terminal(model: &mut AppModel, msg: TerminalMsg) -> Option<Cmd> {
 
         TerminalMsg::PtyOutput { session_id, data } => {
             if let Some(session) = model.terminal.session_mut(session_id) {
+                let was_at_bottom = session.scroll_offset == 0;
                 session.apply_bytes(&data);
+                if was_at_bottom {
+                    session.scroll_offset = 0;
+                } else {
+                    session.clamp_scroll_offset();
+                }
             }
             Some(Cmd::Redraw)
         }
@@ -97,7 +103,8 @@ pub fn update_terminal(model: &mut AppModel, msg: TerminalMsg) -> Option<Cmd> {
         }
 
         TerminalMsg::Bell { session_id: _ } => {
-            // Flash/ignore handling is Phase 4 polish; no-op for now.
+            // MVP behavior: bells are intentionally ignored rather than
+            // flashing the entire dock.
             None
         }
 
@@ -106,6 +113,7 @@ pub fn update_terminal(model: &mut AppModel, msg: TerminalMsg) -> Option<Cmd> {
         TerminalMsg::ScrollUp(lines) => {
             if let Some(session) = model.terminal.active_session_mut() {
                 session.scroll_offset = session.scroll_offset.saturating_add(lines);
+                session.clamp_scroll_offset();
             }
             Some(Cmd::redraw_editor())
         }
@@ -113,6 +121,7 @@ pub fn update_terminal(model: &mut AppModel, msg: TerminalMsg) -> Option<Cmd> {
         TerminalMsg::ScrollDown(lines) => {
             if let Some(session) = model.terminal.active_session_mut() {
                 session.scroll_offset = session.scroll_offset.saturating_sub(lines);
+                session.clamp_scroll_offset();
             }
             Some(Cmd::redraw_editor())
         }
@@ -125,16 +134,16 @@ pub fn update_terminal(model: &mut AppModel, msg: TerminalMsg) -> Option<Cmd> {
         }
 
         TerminalMsg::Clear => {
-            // Full VT reset (clearing scrollback + screen) is handled by
-            // the shell/application sending the corresponding escape
-            // sequence in practice; Phase 4 will wire an explicit reset
-            // through `TerminalSession` if needed. No-op for Phase 1.
-            None
+            if let Some(session) = model.terminal.active_session_mut() {
+                session.clear();
+            }
+            Some(Cmd::redraw_editor())
         }
 
         TerminalMsg::Resize { rows, cols } => {
             if let Some(session) = model.terminal.active_session_mut() {
                 session.resize(rows as usize, cols as usize);
+                session.clamp_scroll_offset();
             }
             Some(Cmd::redraw_editor())
         }
@@ -144,10 +153,33 @@ pub fn update_terminal(model: &mut AppModel, msg: TerminalMsg) -> Option<Cmd> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc;
+
     use crate::model::AppModel;
+    use crate::terminal::{PtyHandle, TerminalSession};
+    use alacritty_terminal::grid::Dimensions;
+    use alacritty_terminal::index::{Column, Line};
 
     fn test_model() -> AppModel {
         AppModel::new(800, 600, 1.0, vec![])
+    }
+
+    fn push_test_session(model: &mut AppModel, rows: usize, cols: usize) {
+        let (pty, _pty_rx) = PtyHandle::new_for_test();
+        let (msg_tx, _msg_rx) = mpsc::channel();
+        model
+            .terminal
+            .sessions
+            .push(TerminalSession::new(7, rows, cols, pty, msg_tx));
+    }
+
+    fn active_history_size(model: &AppModel) -> usize {
+        let session = model.terminal.active_session().unwrap();
+        session
+            .term()
+            .grid()
+            .total_lines()
+            .saturating_sub(session.term().grid().screen_lines())
     }
 
     #[test]
@@ -191,5 +223,90 @@ mod tests {
             },
         );
         assert!(matches!(cmd, Some(Cmd::Redraw)));
+    }
+
+    #[test]
+    fn scroll_up_clamps_to_available_scrollback() {
+        let mut model = test_model();
+        push_test_session(&mut model, 2, 20);
+
+        update_terminal(
+            &mut model,
+            TerminalMsg::PtyOutput {
+                session_id: 7,
+                data: b"one\r\ntwo\r\nthree\r\nfour\r\n".to_vec(),
+            },
+        );
+        let history_size = active_history_size(&model);
+
+        update_terminal(&mut model, TerminalMsg::ScrollUp(history_size + 100));
+
+        assert_eq!(
+            model.terminal.active_session().unwrap().scroll_offset,
+            history_size
+        );
+    }
+
+    #[test]
+    fn pty_output_clamps_stale_scrollback_offset() {
+        let mut model = test_model();
+        push_test_session(&mut model, 2, 20);
+        model.terminal.active_session_mut().unwrap().scroll_offset = 999;
+
+        update_terminal(
+            &mut model,
+            TerminalMsg::PtyOutput {
+                session_id: 7,
+                data: b"one\r\ntwo\r\nthree\r\n".to_vec(),
+            },
+        );
+
+        assert_eq!(
+            model.terminal.active_session().unwrap().scroll_offset,
+            active_history_size(&model)
+        );
+    }
+
+    #[test]
+    fn scroll_down_clamps_stale_scrollback_offset() {
+        let mut model = test_model();
+        push_test_session(&mut model, 2, 20);
+        update_terminal(
+            &mut model,
+            TerminalMsg::PtyOutput {
+                session_id: 7,
+                data: b"one\r\ntwo\r\nthree\r\n".to_vec(),
+            },
+        );
+        model.terminal.active_session_mut().unwrap().scroll_offset = 999;
+
+        update_terminal(&mut model, TerminalMsg::ScrollDown(1));
+
+        assert_eq!(
+            model.terminal.active_session().unwrap().scroll_offset,
+            active_history_size(&model)
+        );
+    }
+
+    #[test]
+    fn clear_resets_terminal_grid_and_scrollback_offset() {
+        let mut model = test_model();
+        push_test_session(&mut model, 2, 20);
+        update_terminal(
+            &mut model,
+            TerminalMsg::PtyOutput {
+                session_id: 7,
+                data: b"one\r\ntwo\r\nthree\r\n".to_vec(),
+            },
+        );
+        model.terminal.active_session_mut().unwrap().scroll_offset = 1;
+
+        update_terminal(&mut model, TerminalMsg::Clear);
+
+        let session = model.terminal.active_session().unwrap();
+        let grid = session.term().grid();
+        assert_eq!(session.scroll_offset, 0);
+        assert_eq!(grid.total_lines(), grid.screen_lines());
+        assert_eq!(grid[Line(0)][Column(0)].c, ' ');
     }
 }

@@ -710,6 +710,26 @@ fn handle_terminal_dock_key(
         }
     }
 
+    if modifiers.shift {
+        match key {
+            Key::Named(NamedKey::PageUp) => {
+                let lines = model
+                    .terminal
+                    .active_session()
+                    .map(|session| session.size.0.saturating_sub(1).max(1))?;
+                return update(model, Msg::Terminal(TerminalMsg::ScrollUp(lines)));
+            }
+            Key::Named(NamedKey::PageDown) => {
+                let lines = model
+                    .terminal
+                    .active_session()
+                    .map(|session| session.size.0.saturating_sub(1).max(1))?;
+                return update(model, Msg::Terminal(TerminalMsg::ScrollDown(lines)));
+            }
+            _ => {}
+        }
+    }
+
     let session_id = model.terminal.active_session().map(|session| session.id)?;
     let terminal_modifiers = TerminalKeyModifiers {
         ctrl: modifiers.ctrl,
@@ -827,6 +847,55 @@ mod tests {
 
         assert!(matches!(cmd, Some(Cmd::Redraw)));
         assert!(matches!(model.ui.focus, FocusTarget::Editor));
+        assert!(pty_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn terminal_shift_page_up_scrolls_scrollback_without_writing_to_pty() {
+        let (mut model, pty_rx) = focused_terminal_model();
+        let output: Vec<u8> = (0..60)
+            .flat_map(|line| format!("line {line}\r\n").into_bytes())
+            .collect();
+        model
+            .terminal
+            .active_session_mut()
+            .unwrap()
+            .apply_bytes(&output);
+
+        let cmd = handle_key(
+            &mut model,
+            Key::Named(NamedKey::PageUp),
+            PhysicalKey::Code(KeyCode::PageUp),
+            KeyModifiers {
+                shift: true,
+                ..KeyModifiers::default()
+            },
+            false,
+        );
+
+        assert!(cmd.as_ref().is_some_and(Cmd::needs_redraw));
+        assert_eq!(model.terminal.active_session().unwrap().scroll_offset, 23);
+        assert!(pty_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn terminal_shift_page_down_scrolls_toward_bottom_without_writing_to_pty() {
+        let (mut model, pty_rx) = focused_terminal_model();
+        model.terminal.active_session_mut().unwrap().scroll_offset = 10;
+
+        let cmd = handle_key(
+            &mut model,
+            Key::Named(NamedKey::PageDown),
+            PhysicalKey::Code(KeyCode::PageDown),
+            KeyModifiers {
+                shift: true,
+                ..KeyModifiers::default()
+            },
+            false,
+        );
+
+        assert!(cmd.as_ref().is_some_and(Cmd::needs_redraw));
+        assert_eq!(model.terminal.active_session().unwrap().scroll_offset, 0);
         assert!(pty_rx.try_recv().is_err());
     }
 }

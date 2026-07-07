@@ -50,6 +50,14 @@ fn terminal_grid_size_for_model(model: &AppModel) -> Option<TerminalGridSize> {
     ))
 }
 
+fn physical_delta_to_logical(delta: f64, scale_factor: f64) -> f64 {
+    delta / scale_factor.max(f64::EPSILON)
+}
+
+fn physical_dimension_to_logical(dimension: u32, scale_factor: f64) -> f32 {
+    physical_delta_to_logical(dimension as f64, scale_factor) as f32
+}
+
 fn terminal_sync_command(model: &mut AppModel) -> Option<Cmd> {
     if !is_terminal_panel_open(model) {
         return None;
@@ -281,24 +289,30 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
                 });
             }
 
-            model.ui.dock_resize = Some(crate::model::ui::DockResizeState {
-                position,
-                axis,
-                start_coord: initial_coord,
-                original_size: dock.size_logical,
-            });
+            if position != DockPosition::Left {
+                model.ui.dock_resize = Some(crate::model::ui::DockResizeState {
+                    position,
+                    axis,
+                    start_coord: initial_coord,
+                    original_size: dock.size_logical,
+                });
+            }
             Some(with_terminal_sync(model, Cmd::Redraw))
         }
 
         DockMsg::UpdateResize { coord } => {
             // Update the dock size during drag
             if let Some(ref resize_state) = model.ui.sidebar_resize {
-                let delta = coord - resize_state.start_x;
+                let delta = physical_delta_to_logical(
+                    coord - resize_state.start_x,
+                    model.metrics.scale_factor,
+                );
                 let new_width = (resize_state.original_width as f64 + delta)
                     .max(model.dock_layout.left.min_size() as f64)
                     as f32;
                 let max_width =
-                    model.window_size.0 as f32 * model.dock_layout.left.max_size_fraction();
+                    physical_dimension_to_logical(model.window_size.0, model.metrics.scale_factor)
+                        * model.dock_layout.left.max_size_fraction();
                 model.dock_layout.left.size_logical = new_width.min(max_width);
                 sync_workspace_with_dock(model);
                 model.recalculate_viewports();
@@ -313,13 +327,20 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
                         }
                         DockPosition::Left => coord - resize_state.start_coord,
                     };
+                    let delta = physical_delta_to_logical(delta, model.metrics.scale_factor);
                     let min_size = dock.min_size();
                     let max_size = match resize_state.position {
                         DockPosition::Right => {
-                            model.window_size.0 as f32 * dock.max_size_fraction()
+                            physical_dimension_to_logical(
+                                model.window_size.0,
+                                model.metrics.scale_factor,
+                            ) * dock.max_size_fraction()
                         }
                         DockPosition::Bottom => {
-                            model.window_size.1 as f32 * dock.max_size_fraction()
+                            physical_dimension_to_logical(
+                                model.window_size.1,
+                                model.metrics.scale_factor,
+                            ) * dock.max_size_fraction()
                         }
                         DockPosition::Left => dock.size_logical,
                     };
@@ -353,6 +374,10 @@ mod tests {
 
     fn test_model() -> AppModel {
         AppModel::new(800, 600, 1.0, vec![])
+    }
+
+    fn hidpi_test_model() -> AppModel {
+        AppModel::new(1600, 1200, 2.0, vec![])
     }
 
     fn expected_terminal_grid_size(model: &AppModel) -> crate::panels::terminal::TerminalGridSize {
@@ -435,6 +460,41 @@ mod tests {
     }
 
     #[test]
+    fn right_dock_resize_converts_physical_delta_to_logical_size() {
+        let mut model = hidpi_test_model();
+        model.dock_layout.right.activate(PanelId::OUTLINE);
+        let original_size = model.dock_layout.right.size_logical;
+
+        update_dock(
+            &mut model,
+            DockMsg::StartResize {
+                position: DockPosition::Right,
+                initial_coord: 1200.0,
+            },
+        );
+        update_dock(&mut model, DockMsg::UpdateResize { coord: 1100.0 });
+
+        assert_eq!(model.dock_layout.right.size_logical, original_size + 50.0);
+    }
+
+    #[test]
+    fn right_dock_resize_max_uses_logical_window_size_on_hidpi() {
+        let mut model = hidpi_test_model();
+        model.dock_layout.right.activate(PanelId::OUTLINE);
+
+        update_dock(
+            &mut model,
+            DockMsg::StartResize {
+                position: DockPosition::Right,
+                initial_coord: 1200.0,
+            },
+        );
+        update_dock(&mut model, DockMsg::UpdateResize { coord: 0.0 });
+
+        assert_eq!(model.dock_layout.right.size_logical, 400.0);
+    }
+
+    #[test]
     fn dragging_bottom_resize_handle_up_grows_bottom_dock() {
         let mut model = test_model();
         model.dock_layout.bottom.activate(PanelId::TERMINAL);
@@ -450,5 +510,57 @@ mod tests {
         update_dock(&mut model, DockMsg::UpdateResize { coord: 450.0 });
 
         assert!(model.dock_layout.bottom.size_logical > original_size);
+    }
+
+    #[test]
+    fn bottom_dock_resize_converts_physical_delta_to_logical_size() {
+        let mut model = hidpi_test_model();
+        model.dock_layout.bottom.activate(PanelId::TERMINAL);
+        let original_size = model.dock_layout.bottom.size_logical;
+
+        update_dock(
+            &mut model,
+            DockMsg::StartResize {
+                position: DockPosition::Bottom,
+                initial_coord: 1000.0,
+            },
+        );
+        update_dock(&mut model, DockMsg::UpdateResize { coord: 900.0 });
+
+        assert_eq!(model.dock_layout.bottom.size_logical, original_size + 50.0);
+    }
+
+    #[test]
+    fn bottom_dock_resize_max_uses_logical_window_size_on_hidpi() {
+        let mut model = hidpi_test_model();
+        model.dock_layout.bottom.activate(PanelId::TERMINAL);
+
+        update_dock(
+            &mut model,
+            DockMsg::StartResize {
+                position: DockPosition::Bottom,
+                initial_coord: 1000.0,
+            },
+        );
+        update_dock(&mut model, DockMsg::UpdateResize { coord: 0.0 });
+
+        assert_eq!(model.dock_layout.bottom.size_logical, 300.0);
+    }
+
+    #[test]
+    fn ending_left_dock_resize_clears_both_resize_states() {
+        let mut model = test_model();
+
+        update_dock(
+            &mut model,
+            DockMsg::StartResize {
+                position: DockPosition::Left,
+                initial_coord: 250.0,
+            },
+        );
+        update_dock(&mut model, DockMsg::EndResize);
+
+        assert!(model.ui.sidebar_resize.is_none());
+        assert!(model.ui.dock_resize.is_none());
     }
 }
