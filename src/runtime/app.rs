@@ -64,6 +64,8 @@ pub struct App {
     last_tick: Instant,
     modifiers: ModifiersState,
     mouse_position: Option<(f64, f64)>,
+    /// Carries sub-line trackpad scroll remainders between wheel events.
+    scroll_accumulator: ScrollAccumulator,
     option_gesture: OptionKeyGesture,
     drag: DragState,
     msg_tx: Sender<Msg>,
@@ -162,6 +164,7 @@ impl App {
             last_tick: Instant::now(),
             modifiers: ModifiersState::empty(),
             mouse_position: None,
+            scroll_accumulator: ScrollAccumulator::default(),
             option_gesture: OptionKeyGesture::default(),
             drag: DragState::default(),
             msg_tx,
@@ -729,7 +732,7 @@ impl App {
                 None
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let (h_delta, v_delta) = mouse_wheel_deltas(
+                let (h_delta, v_delta) = self.scroll_accumulator.deltas(
                     *delta,
                     self.model.char_width as f64,
                     self.model.line_height as f64,
@@ -1783,37 +1786,74 @@ fn handle_syntax_worker_request(
     }
 }
 
-/// Convert a raw winit mouse-wheel delta into `(h_delta, v_delta)` in the
-/// sign convention shared by `EditorState::scroll_vertical_by`,
-/// `EditorState::scroll_horizontal_visible_window_by`, and CSV's
-/// `scroll_horizontal`: a positive delta reveals further content (down for
-/// vertical, right for horizontal). winit reports both axes in the opposite
-/// sense (positive x/y means the content should move toward the viewport's
-/// current position, not away from it), so both axes are negated here —
-/// consistently, unlike a prior version of this code that only negated `y`.
-fn mouse_wheel_deltas(
-    delta: winit::event::MouseScrollDelta,
-    char_width: f64,
-    line_height: f64,
-) -> (i32, i32) {
-    use winit::event::MouseScrollDelta;
-    match delta {
-        MouseScrollDelta::LineDelta(x, y) => ((-x * 3.0) as i32, (-y * 3.0) as i32),
-        MouseScrollDelta::PixelDelta(pos) => {
-            ((-pos.x / char_width) as i32, (-pos.y / line_height) as i32)
+/// Number of lines a single discrete mouse-wheel notch scrolls. Matches the
+/// common editor default (VS Code, etc.).
+const LINES_PER_WHEEL_NOTCH: f64 = 3.0;
+
+/// Carries fractional scroll remainders between wheel events so trackpad
+/// scrolling keeps a consistent, non-truncating sensitivity.
+///
+/// Without carrying the remainder, every high-resolution `PixelDelta` event
+/// that moved less than a full line/column truncated to zero and the
+/// fractional motion was lost, so slow scrolling either did nothing or snapped
+/// a whole line at once — the "threshold feels off" symptom.
+#[derive(Default)]
+struct ScrollAccumulator {
+    h: f64,
+    v: f64,
+}
+
+impl ScrollAccumulator {
+    /// Convert a raw winit mouse-wheel delta into integer `(h_delta, v_delta)`
+    /// in the sign convention shared by `EditorState::scroll_vertical_by`,
+    /// `EditorState::scroll_horizontal_visible_window_by`, and CSV's
+    /// `scroll_horizontal`: a positive delta reveals further content (down for
+    /// vertical, right for horizontal). winit reports both axes in the opposite
+    /// sense, so both are negated here.
+    ///
+    /// `line_height` and `char_width` are in physical pixels (font size is
+    /// scaled by the display's scale factor), matching winit's `PixelDelta`, so
+    /// no scale conversion is needed. Sub-unit remainders are retained for the
+    /// next `PixelDelta` event.
+    fn deltas(
+        &mut self,
+        delta: winit::event::MouseScrollDelta,
+        char_width: f64,
+        line_height: f64,
+    ) -> (i32, i32) {
+        use winit::event::MouseScrollDelta;
+        match delta {
+            // Discrete mouse-wheel notches are already whole steps; no
+            // sub-unit remainder to accumulate.
+            MouseScrollDelta::LineDelta(x, y) => (
+                (-x as f64 * LINES_PER_WHEEL_NOTCH) as i32,
+                (-y as f64 * LINES_PER_WHEEL_NOTCH) as i32,
+            ),
+            MouseScrollDelta::PixelDelta(pos) => {
+                self.h += -pos.x / char_width;
+                self.v += -pos.y / line_height;
+                // `trunc` toward zero keeps the fractional remainder with the
+                // correct sign whether scrolling up or down.
+                let h_steps = self.h.trunc();
+                let v_steps = self.v.trunc();
+                self.h -= h_steps;
+                self.v -= v_steps;
+                (h_steps as i32, v_steps as i32)
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod mouse_wheel_tests {
-    use super::mouse_wheel_deltas;
+    use super::ScrollAccumulator;
     use winit::dpi::PhysicalPosition;
     use winit::event::MouseScrollDelta;
 
     #[test]
     fn horizontal_and_vertical_line_delta_negate_symmetrically() {
-        let (h, v) = mouse_wheel_deltas(MouseScrollDelta::LineDelta(1.0, 1.0), 8.0, 16.0);
+        let mut accum = ScrollAccumulator::default();
+        let (h, v) = accum.deltas(MouseScrollDelta::LineDelta(1.0, 1.0), 8.0, 16.0);
         // Regression test: horizontal scroll used to pass `x` through
         // unnegated while vertical negated `y`, inverting horizontal scroll
         // direction relative to vertical (and relative to the "positive
@@ -1825,12 +1865,31 @@ mod mouse_wheel_tests {
 
     #[test]
     fn horizontal_and_vertical_pixel_delta_negate_symmetrically() {
-        let (h, v) = mouse_wheel_deltas(
+        let mut accum = ScrollAccumulator::default();
+        let (h, v) = accum.deltas(
             MouseScrollDelta::PixelDelta(PhysicalPosition::new(16.0, 32.0)),
             8.0,
             16.0,
         );
         assert_eq!(h, -2);
         assert_eq!(v, -2);
+    }
+
+    #[test]
+    fn sub_line_pixel_deltas_accumulate_instead_of_truncating_to_zero() {
+        let mut accum = ScrollAccumulator::default();
+        // Each event moves less than a full line (16px); previously every one
+        // truncated to 0 and the motion was lost entirely.
+        let mut emitted = 0;
+        for _ in 0..4 {
+            let (_, v) = accum.deltas(
+                MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, 6.0)),
+                8.0,
+                16.0,
+            );
+            emitted += v;
+        }
+        // 4 × 6px = 24px ≈ 1.5 lines → one line emitted, remainder carried.
+        assert_eq!(emitted, -1);
     }
 }

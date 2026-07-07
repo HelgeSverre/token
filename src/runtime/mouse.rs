@@ -13,8 +13,8 @@ use winit::keyboard::ModifiersState;
 
 use token::commands::Cmd;
 use token::messages::{
-    CsvMsg, EditorMsg, ImageMsg, LayoutMsg, ModalMsg, Msg, OutlineMsg, PreviewMsg, UiMsg,
-    WorkspaceMsg,
+    CsvMsg, EditorMsg, ImageMsg, LayoutMsg, ModalMsg, Msg, OutlineMsg, PreviewMsg, TerminalMsg,
+    UiMsg, WorkspaceMsg,
 };
 use token::model::AppModel;
 use token::update::update;
@@ -59,6 +59,76 @@ impl Default for ClickTracker {
             last_click_region: None,
             click_count: 0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+
+    use super::*;
+    use token::model::HoverRegion;
+    use token::panel::{DockPosition, PanelId};
+    use token::terminal::{PtyHandle, TerminalSession};
+
+    fn terminal_model_with_history() -> AppModel {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.dock_layout.bottom.activate(PanelId::TERMINAL);
+        model.ui.hover = HoverRegion::Dock(DockPosition::Bottom);
+
+        let (pty, _pty_rx) = PtyHandle::new_for_test();
+        let (msg_tx, _msg_rx) = mpsc::channel();
+        let mut session = TerminalSession::new(7, 4, 20, pty, msg_tx);
+        session.apply_bytes(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\nseven\r\n");
+        model.terminal.sessions.push(session);
+        model
+    }
+
+    #[test]
+    fn mouse_wheel_up_over_terminal_dock_scrolls_scrollback() {
+        let mut model = terminal_model_with_history();
+
+        let cmd = handle_mouse_wheel(&mut model, Some((0.0, 0.0)), 0, -3);
+
+        assert!(cmd.as_ref().is_some_and(Cmd::needs_redraw));
+        assert_eq!(model.terminal.active_session().unwrap().scroll_offset, 3);
+    }
+
+    #[test]
+    fn mouse_wheel_down_over_terminal_dock_scrolls_toward_bottom() {
+        let mut model = terminal_model_with_history();
+        model.terminal.active_session_mut().unwrap().scroll_offset = 4;
+
+        let cmd = handle_mouse_wheel(&mut model, Some((0.0, 0.0)), 0, 2);
+
+        assert!(cmd.as_ref().is_some_and(Cmd::needs_redraw));
+        assert_eq!(model.terminal.active_session().unwrap().scroll_offset, 2);
+    }
+
+    #[test]
+    fn tab_bar_horizontal_scroll_matches_content_direction() {
+        // Regression: horizontal tab scrolling was inverted once trackpad
+        // horizontal deltas stopped truncating to zero. Positive `h_delta`
+        // must reveal tabs further right (positive `delta_px`), matching
+        // editor horizontal scrolling.
+        assert_eq!(tab_bar_scroll_delta_px(2, 0, 10), Some(20));
+        assert_eq!(tab_bar_scroll_delta_px(-2, 0, 10), Some(-20));
+    }
+
+    #[test]
+    fn tab_bar_horizontal_takes_precedence_over_vertical() {
+        assert_eq!(tab_bar_scroll_delta_px(1, 5, 10), Some(10));
+    }
+
+    #[test]
+    fn tab_bar_vertical_wheel_falls_back_with_inverted_sign() {
+        // Plain mouse wheel (no X axis) keeps its legacy repurposed sign.
+        assert_eq!(tab_bar_scroll_delta_px(0, 3, 10), Some(-30));
+    }
+
+    #[test]
+    fn tab_bar_no_scroll_when_both_axes_are_zero() {
+        assert_eq!(tab_bar_scroll_delta_px(0, 0, 10), None);
     }
 }
 
@@ -991,6 +1061,24 @@ fn handle_right_click(
     EventResult::Bubble
 }
 
+/// Horizontal `delta_px` for scrolling the editor tab strip from a wheel event,
+/// or `None` when neither axis moved.
+///
+/// A horizontal gesture maps directly: positive `h_delta` reveals tabs further
+/// right, matching editor horizontal scrolling (and `ScrollTabBar`, which
+/// increases `tab_scroll` for positive `delta_px`). A vertical-only wheel (a
+/// plain mouse with no X axis) is repurposed to scroll the strip, keeping the
+/// legacy inverted sign so mouse-wheel behavior over the tabs is unchanged.
+fn tab_bar_scroll_delta_px(h_delta: i32, v_delta: i32, scroll_step: i32) -> Option<i32> {
+    if h_delta != 0 {
+        Some(h_delta * scroll_step)
+    } else if v_delta != 0 {
+        Some(-v_delta * scroll_step)
+    } else {
+        None
+    }
+}
+
 /// Handle mouse wheel scroll events, routing to the appropriate target
 /// based on the current hover region.
 pub fn handle_mouse_wheel(
@@ -1023,6 +1111,14 @@ pub fn handle_mouse_wheel(
             };
             if active_panel == Some(token::panel::PanelId::Outline) && v_delta != 0 {
                 update(model, Msg::Outline(OutlineMsg::Scroll { lines: v_delta }))
+            } else if active_panel == Some(token::panel::PanelId::TERMINAL) && v_delta != 0 {
+                let lines = v_delta.unsigned_abs() as usize;
+                let msg = if v_delta < 0 {
+                    TerminalMsg::ScrollUp(lines)
+                } else {
+                    TerminalMsg::ScrollDown(lines)
+                };
+                update(model, Msg::Terminal(msg))
             } else {
                 None
             }
@@ -1033,10 +1129,8 @@ pub fn handle_mouse_wheel(
 
         // Editor tab bar: scroll the tabs horizontally
         HoverRegion::EditorTabBar => {
-            let delta = if h_delta != 0 { h_delta } else { v_delta };
-            if delta == 0 {
-                return None;
-            }
+            let scroll_step = (model.line_height as i32).max(1);
+            let delta_px = tab_bar_scroll_delta_px(h_delta, v_delta, scroll_step)?;
             // Find which group's tab bar is under the cursor
             let (x, y) = mouse_position?;
             let pt = token::view::hit_test::Point::new(x, y);
@@ -1045,15 +1139,9 @@ pub fn handle_mouse_wheel(
                     token::view::geometry::TabBarLayout::new(group, model, model.char_width);
                 layout.contains(pt.x, pt.y).then_some(group.id)
             })?;
-            let scroll_step = (model.line_height as i32).max(1);
-            // Wheel-down / swipe-left moves the tab strip left (shows tabs
-            // further right), matching horizontal content scrolling.
             update(
                 model,
-                Msg::Layout(LayoutMsg::ScrollTabBar {
-                    group_id,
-                    delta_px: -delta * scroll_step,
-                }),
+                Msg::Layout(LayoutMsg::ScrollTabBar { group_id, delta_px }),
             )
         }
 
