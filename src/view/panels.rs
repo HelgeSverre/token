@@ -128,7 +128,11 @@ impl DockPaneScene {
     fn render_header(&self, frame: &mut Frame, painter: &mut TextPainter) {
         for tab in &self.layout.tabs {
             if tab.is_active {
-                frame.fill_rect_px(tab.x, tab.y, tab.width, tab.height, self.active_tab_bg);
+                // The active-tab highlight is a translucent color (e.g. white
+                // at ~10% alpha), so it must be alpha-blended over the panel
+                // background. A plain `fill_rect_px` ignores alpha and would
+                // paint a solid (white) block, hiding the tab title.
+                frame.blend_rect_px(tab.x, tab.y, tab.width, tab.height, self.active_tab_bg);
             }
 
             painter.draw(

@@ -184,7 +184,6 @@ impl<'a> Frame<'a> {
     }
 
     /// Fill a rectangle with alpha blending (pixel coordinates, ARGB format)
-    #[cfg_attr(not(feature = "damage-debug"), allow(dead_code))]
     pub fn blend_rect_px(&mut self, x: usize, y: usize, w: usize, h: usize, color: u32) {
         let alpha = ((color >> 24) & 0xFF) as f32 / 255.0;
         if alpha <= 0.0 {
@@ -749,6 +748,24 @@ mod tests {
         assert_eq!(frame.get_pixel(15, 15), 0xFFFF0000);
         // Check a pixel outside the rect
         assert_eq!(frame.get_pixel(5, 5), 0);
+    }
+
+    #[test]
+    fn translucent_active_tab_highlight_blends_instead_of_painting_solid() {
+        // Regression: the dock header painted the active-tab highlight
+        // (`selection_background`, a translucent white like #FFFFFF1A) with
+        // `fill_rect_px`, which ignores alpha and produced a solid white block
+        // that hid the white tab title. It must alpha-blend over the panel bg.
+        let mut buffer = vec![0xFF25_2526u32; 40 * 20]; // panel background
+        let mut frame = Frame::new(&mut buffer, 40, 20);
+
+        frame.blend_rect_px(0, 0, 10, 10, 0x1AFF_FFFF); // ~10% white
+
+        let px = frame.get_pixel(2, 2);
+        assert_ne!(px, 0xFFFF_FFFF, "highlight must not be solid white");
+        // A subtle lightening of the dark background, still opaque.
+        assert_eq!(px >> 24, 0xFF);
+        assert!((px & 0xFF) > 0x26 && (px & 0xFF) < 0x60);
     }
 
     #[test]
