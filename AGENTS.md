@@ -31,6 +31,13 @@ Key structures: Rope (ropey) for text buffer, Cursor, EditOperation for undo/red
 - Design docs in `docs/feature/*.md`; check `docs/ROADMAP.md` for planned work
 - Update `docs/CHANGELOG.md` when features are complete
 
+### Byte Quantities
+
+- Prefer `ByteSize` constructors over handwritten `* 1024` arithmetic for limits, capacities, thresholds, and displayed file sizes.
+- Use KiB, MiB, and GiB names when calculations are 1024-based.
+- Keep raw byte primitives at external API and protocol boundaries, converting explicitly to or from `ByteSize`.
+- Do not use `ByteSize` for pixels, characters, rows, or unrelated generic numeric quantities.
+
 ## Performance Notes
 
 - `just workspace` runs the debug binary (`target/debug/token ./`). That is useful for day-to-day iteration, but not for meaningful renderer performance claims.

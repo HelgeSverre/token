@@ -149,14 +149,7 @@ fn with_opened_panel_sync(model: &mut AppModel, panel_id: PanelId, cmd: Cmd) -> 
 pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
     match msg {
         DockMsg::FocusOrTogglePanel(panel_id) => {
-            let is_dock_focused = |pos: DockPosition| -> bool {
-                match pos {
-                    DockPosition::Left => model.ui.focus == FocusTarget::Sidebar,
-                    DockPosition::Right | DockPosition::Bottom => {
-                        model.ui.focus == FocusTarget::Dock(pos)
-                    }
-                }
-            };
+            let is_dock_focused = |pos| model.ui.focus == FocusTarget::Dock(pos);
 
             let (opened, position) = model
                 .dock_layout
@@ -165,11 +158,7 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
             // Update focus based on result
             if opened {
                 if let Some(pos) = position {
-                    if pos == DockPosition::Left {
-                        model.ui.focus = FocusTarget::Sidebar;
-                    } else {
-                        model.ui.focus = FocusTarget::Dock(pos);
-                    }
+                    model.ui.focus = FocusTarget::Dock(pos);
                 }
             } else {
                 model.ui.focus = FocusTarget::Editor;
@@ -220,11 +209,9 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
             if let Some(position) = model.dock_layout.find_panel(panel_id) {
                 model.dock_layout.dock_mut(position).activate(panel_id);
 
+                model.ui.focus = FocusTarget::Dock(position);
                 if position == DockPosition::Left {
-                    model.ui.focus = FocusTarget::Sidebar;
                     sync_workspace_with_dock(model);
-                } else {
-                    model.ui.focus = FocusTarget::Dock(position);
                 }
 
                 model.recalculate_viewports();
@@ -236,15 +223,11 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
 
         DockMsg::CloseFocusedDock => {
             // Close the dock that currently has focus
-            match model.ui.focus {
-                FocusTarget::Sidebar => {
-                    model.dock_layout.close_dock(DockPosition::Left);
+            if let FocusTarget::Dock(position) = model.ui.focus {
+                model.dock_layout.close_dock(position);
+                if position == DockPosition::Left {
                     sync_workspace_with_dock(model);
                 }
-                FocusTarget::Dock(pos) => {
-                    model.dock_layout.close_dock(pos);
-                }
-                _ => {}
             }
             model.ui.focus = FocusTarget::Editor;
             model.recalculate_viewports();
@@ -253,11 +236,9 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
 
         DockMsg::FocusDock(position) => {
             model.dock_layout.dock_mut(position).is_open = true;
+            model.ui.focus = FocusTarget::Dock(position);
             if position == DockPosition::Left {
-                model.ui.focus = FocusTarget::Sidebar;
                 sync_workspace_with_dock(model);
-            } else {
-                model.ui.focus = FocusTarget::Dock(position);
             }
             model.recalculate_viewports();
             Some(with_terminal_sync(model, Cmd::Redraw))
@@ -274,27 +255,15 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
 
         DockMsg::NextPanelInDock => {
             // Cycle in the focused dock
-            match model.ui.focus {
-                FocusTarget::Sidebar => {
-                    model.dock_layout.next_panel_in_dock(DockPosition::Left);
-                }
-                FocusTarget::Dock(pos) => {
-                    model.dock_layout.next_panel_in_dock(pos);
-                }
-                _ => {}
+            if let FocusTarget::Dock(position) = model.ui.focus {
+                model.dock_layout.next_panel_in_dock(position);
             }
             Some(with_terminal_sync(model, Cmd::Redraw))
         }
 
         DockMsg::PrevPanelInDock => {
-            match model.ui.focus {
-                FocusTarget::Sidebar => {
-                    model.dock_layout.prev_panel_in_dock(DockPosition::Left);
-                }
-                FocusTarget::Dock(pos) => {
-                    model.dock_layout.prev_panel_in_dock(pos);
-                }
-                _ => {}
+            if let FocusTarget::Dock(position) = model.ui.focus {
+                model.dock_layout.prev_panel_in_dock(position);
             }
             Some(with_terminal_sync(model, Cmd::Redraw))
         }
@@ -469,6 +438,16 @@ mod tests {
 
         let second = update_dock(&mut model, DockMsg::FocusDock(DockPosition::Bottom));
         assert!(!contains_spawn_terminal(&second));
+    }
+
+    #[test]
+    fn focusing_file_explorer_uses_left_dock_focus() {
+        let mut model = test_model();
+
+        update_dock(&mut model, DockMsg::ActivatePanel(PanelId::FILE_EXPLORER));
+
+        assert_eq!(model.ui.focus, FocusTarget::Dock(DockPosition::Left));
+        assert_eq!(model.ui.focused_dock(), Some(DockPosition::Left));
     }
 
     #[test]

@@ -42,7 +42,7 @@ just coverage            # Generate HTML coverage report
 - `just workspace` launches `target/debug/token ./` using the dev profile. That is intentionally compile-fast and can be dramatically slower than release for CPU rendering work.
 - Use `just release`, `just run`, or the profiling profile when making performance claims. Debug numbers are mainly useful for relative local diagnosis.
 - The perf overlay (`F2`, debug builds only) currently forces full redraw while visible. It is useful for stage breakdowns, but it perturbs the numbers it shows.
-- Perf instrumentation is stage-based. The source of truth is `src/perf.rs` (`PerfStage`, `PerfStats::measure_stage`, `render_perf_overlay`). `src/runtime/perf.rs` is only a re-export shim for runtime code.
+- Perf instrumentation is stage-based. The source of truth is `src/perf.rs` (`PerfStage`, `PerfStats::measure_stage`, `render_perf_overlay`).
 - When adding timings, time the phase that actually owns the work and extend the shared stage registry instead of keeping a separate hard-coded overlay list.
 - File tracing is opt-in for hot paths: file logging follows `TOKEN_FILE_LOG` when set, otherwise falls back to `RUST_LOG`.
 
@@ -68,6 +68,13 @@ just setup               # Install all dev tools
 ```
 
 Run `just help` for complete command list.
+
+### Byte Quantities
+
+- Prefer `ByteSize` constructors over handwritten `* 1024` arithmetic for limits, capacities, thresholds, and displayed file sizes.
+- Use KiB, MiB, and GiB names when calculations are 1024-based.
+- Keep raw byte primitives at external API and protocol boundaries, converting explicitly to or from `ByteSize`.
+- Do not use `ByteSize` for pixels, characters, rows, or unrelated generic numeric quantities.
 
 ## Architecture
 
@@ -147,7 +154,6 @@ src/
 │   ├── app.rs           # App struct, winit ApplicationHandler
 │   ├── input.rs         # handle_key, keyboard→Msg mapping
 │   ├── mouse.rs         # Mouse dispatch and hit-tested actions
-│   ├── perf.rs          # Re-export shim for token::perf
 │   └── webview.rs       # Markdown preview webview management
 ├── view/
 │   ├── mod.rs           # Renderer, GlyphCache

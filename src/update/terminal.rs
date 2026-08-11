@@ -10,7 +10,7 @@ use crate::model::AppModel;
 
 /// Default terminal grid size for a newly spawned session, before the dock
 /// panel has a resolved content rect to derive real rows/cols from (wired
-/// in a later phase -- see docs/feature/embedded-terminal.md, Phase 2).
+/// later; see `docs/feature/embedded-terminal.md`.
 const DEFAULT_ROWS: u16 = 24;
 const DEFAULT_COLS: u16 = 80;
 

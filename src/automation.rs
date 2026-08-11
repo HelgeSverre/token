@@ -8,12 +8,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use token::model::AppModel;
 use token::perf::PerfSnapshot;
+use token::util::ByteSize;
 use winit::event_loop::EventLoopProxy;
 
 const SOCKET_ENV: &str = "TOKEN_AUTOMATION_SOCKET";
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
-const MAX_MESSAGE_BYTES: u64 = 4 * 1024 * 1024;
-const MAX_DOCUMENT_BYTES: usize = 3 * 1024 * 1024;
+const MAX_MESSAGE_SIZE: ByteSize = ByteSize::mebibytes(4);
+const MAX_DOCUMENT_SIZE: ByteSize = ByteSize::mebibytes(3);
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -121,15 +122,22 @@ pub(crate) struct DocumentSnapshot {
 impl DocumentSnapshot {
     pub(crate) fn from_model(model: &AppModel) -> Result<Self, String> {
         let bytes = model.document().buffer.len_bytes();
-        if bytes > MAX_DOCUMENT_BYTES {
-            return Err(format!(
-                "document is {bytes} bytes; automation reads are limited to {MAX_DOCUMENT_BYTES} bytes"
-            ));
+        if let Some(error) = document_size_error(bytes) {
+            return Err(error);
         }
         Ok(Self {
             text: model.document().buffer.to_string(),
         })
     }
+}
+
+fn document_size_error(bytes: usize) -> Option<String> {
+    (bytes > MAX_DOCUMENT_SIZE.as_usize()).then(|| {
+        format!(
+            "document is {}; automation reads are limited to {MAX_DOCUMENT_SIZE}",
+            ByteSize::bytes(bytes as u64)
+        )
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -302,7 +310,7 @@ fn handle_stream(
     proxy: &EventLoopProxy<()>,
 ) -> io::Result<AutomationResponse> {
     let mut line = String::new();
-    BufReader::new((&mut *stream).take(MAX_MESSAGE_BYTES)).read_line(&mut line)?;
+    BufReader::new((&mut *stream).take(MAX_MESSAGE_SIZE.as_u64())).read_line(&mut line)?;
     let request = serde_json::from_str(&line).map_err(io::Error::other)?;
     let (response_tx, response_rx) = mpsc::sync_channel(1);
     app_tx
@@ -330,7 +338,7 @@ pub(crate) fn request(request: AutomationRequest) -> Result<AutomationResponse, 
     let mut writer = stream.try_clone().map_err(|error| error.to_string())?;
     serde_json::to_writer(&mut writer, &request).map_err(|error| error.to_string())?;
     writer.write_all(b"\n").map_err(|error| error.to_string())?;
-    serde_json::from_reader(BufReader::new(stream).take(MAX_MESSAGE_BYTES))
+    serde_json::from_reader(BufReader::new(stream).take(MAX_MESSAGE_SIZE.as_u64()))
         .map_err(|error| format!("invalid response from Token: {error}"))
 }
 
@@ -400,4 +408,21 @@ fn parse_arg<T: std::str::FromStr>(value: Option<String>, name: &str) -> Result<
         .ok_or_else(|| format!("missing {name}"))?
         .parse()
         .map_err(|_| format!("invalid {name}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{document_size_error, MAX_DOCUMENT_SIZE, MAX_MESSAGE_SIZE};
+    use token::util::ByteSize;
+
+    #[test]
+    fn automation_limits_preserve_binary_thresholds() {
+        assert_eq!(MAX_DOCUMENT_SIZE, ByteSize::mebibytes(3));
+        assert_eq!(MAX_MESSAGE_SIZE, ByteSize::mebibytes(4));
+        assert!(document_size_error(MAX_DOCUMENT_SIZE.as_usize()).is_none());
+        assert_eq!(
+            document_size_error(MAX_DOCUMENT_SIZE.as_usize() + 1).as_deref(),
+            Some("document is 3.0 MiB; automation reads are limited to 3.0 MiB")
+        );
+    }
 }

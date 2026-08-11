@@ -8,7 +8,7 @@
 
 use std::time::{Duration, Instant};
 
-use winit::event::{ElementState, MouseButton};
+use winit::event::MouseButton;
 use winit::keyboard::ModifiersState;
 
 use token::commands::Cmd;
@@ -17,6 +17,7 @@ use token::messages::{
     UiMsg, WorkspaceMsg,
 };
 use token::model::AppModel;
+use token::panel::DockPosition;
 use token::update::update;
 use token::util::visible_tree_row_at_index;
 
@@ -348,11 +349,9 @@ pub fn make_mouse_event(
     x: f64,
     y: f64,
     button: MouseButton,
-    state: ElementState,
-    click_count: u8,
     modifiers: ModifiersState,
 ) -> MouseEvent {
-    MouseEvent::new(x, y, button, state, click_count, modifiers)
+    MouseEvent::new(x, y, button, modifiers)
 }
 
 /// Result of mouse press handling, including state changes for the App
@@ -408,7 +407,6 @@ pub fn handle_mouse_press(
     {
         match focus_target {
             token::model::FocusTarget::Editor => model.ui.focus_editor(),
-            token::model::FocusTarget::Sidebar => model.ui.focus_sidebar(),
             token::model::FocusTarget::Dock(pos) => model.ui.focus_dock(*pos),
             token::model::FocusTarget::Modal => {}
         }
@@ -483,7 +481,9 @@ fn handle_left_click(
         }
 
         // Sidebar empty area
-        HitTarget::SidebarEmpty => EventResult::consumed_with_focus(FocusTarget::Sidebar),
+        HitTarget::SidebarEmpty => {
+            EventResult::consumed_with_focus(FocusTarget::Dock(DockPosition::Left))
+        }
 
         // Sidebar item
         HitTarget::SidebarItem {
@@ -507,7 +507,7 @@ fn handle_left_click(
                     model,
                     Msg::Workspace(WorkspaceMsg::ToggleFolder(path.clone())),
                 );
-                return EventResult::consumed_with_focus(FocusTarget::Sidebar);
+                return EventResult::consumed_with_focus(FocusTarget::Dock(DockPosition::Left));
             }
 
             // Double-click opens file or toggles folder
@@ -527,10 +527,10 @@ fn handle_left_click(
                     )
                 };
                 // Return the command from opening the file (includes syntax parse)
-                return EventResult::consumed_with_cmd(cmd, FocusTarget::Sidebar);
+                return EventResult::consumed_with_cmd(cmd, FocusTarget::Dock(DockPosition::Left));
             }
 
-            EventResult::consumed_with_focus(FocusTarget::Sidebar)
+            EventResult::consumed_with_focus(FocusTarget::Dock(DockPosition::Left))
         }
 
         // Splitter drag
@@ -853,10 +853,11 @@ fn handle_left_click(
                 return EventResult::consumed_with_focus(FocusTarget::Dock(*position));
             }
 
-            // For left dock (file explorer), return sidebar focus
+            // The left dock hosts the file explorer; other dock content handled
+            // above has already returned with its dock focus.
             match position {
                 token::panel::DockPosition::Left => {
-                    EventResult::consumed_with_focus(FocusTarget::Sidebar)
+                    EventResult::consumed_with_focus(FocusTarget::Dock(*position))
                 }
                 _ => EventResult::consumed_redraw(),
             }

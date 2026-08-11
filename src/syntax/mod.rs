@@ -13,15 +13,17 @@
 //!              → (worker thread) → Msg::SyntaxUpdated → Cmd::Redraw
 //! ```
 //!
-//! ## Supported Languages (Phase 1)
+//! ## Supported Languages
 //!
 //! - YAML
 //! - Markdown
 //! - Rust
 
+mod compat;
 mod highlights;
 mod languages;
 mod parser;
+pub(crate) mod registry;
 mod selection;
 
 pub use highlights::{
@@ -30,4 +32,4 @@ pub use highlights::{
 };
 pub use languages::LanguageId;
 pub use parser::{ParserState, ParserTiming};
-pub use selection::{expansion_candidates, SyntaxTreeSnapshot};
+pub use selection::{expansion_candidates, InjectedSyntaxTree, SyntaxTreeSnapshot};

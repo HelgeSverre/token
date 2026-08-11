@@ -1,4 +1,8 @@
 fn main() {
+    compile_applescript_scanner();
+    compile_janet_scanner();
+    compile_fennel_grammar();
+    compile_legacy_grammars();
     let version = git_version();
     println!("cargo:rustc-env=TOKEN_VERSION={version}");
     println!("cargo:rerun-if-changed=.git/HEAD");
@@ -9,6 +13,76 @@ fn main() {
             println!("cargo:warning=Failed to compile Windows resources: {error}");
         }
     }
+}
+
+fn compile_legacy_grammars() {
+    for (name, include, files) in [
+        (
+            "tree-sitter-cue-compat",
+            "vendor/tree-sitter-cue-compat",
+            &[
+                "vendor/tree-sitter-cue-compat/parser.c",
+                "vendor/tree-sitter-cue-compat/scanner.c",
+            ] as &[_],
+        ),
+        (
+            "tree-sitter-pest-compat",
+            "vendor/tree-sitter-pest-compat",
+            &["vendor/tree-sitter-pest-compat/parser.c"] as &[_],
+        ),
+        (
+            "tree-sitter-pony-compat",
+            "vendor/tree-sitter-pony-compat",
+            &[
+                "vendor/tree-sitter-pony-compat/parser.c",
+                "vendor/tree-sitter-pony-compat/scanner.c",
+            ] as &[_],
+        ),
+    ] {
+        let mut build = cc::Build::new();
+        build.warnings(false);
+        build.include(include);
+        for file in files {
+            build.file(file);
+            println!("cargo:rerun-if-changed={file}");
+        }
+        build.compile(name);
+    }
+}
+
+fn compile_fennel_grammar() {
+    let parser = "vendor/tree-sitter-fennel-compat/parser.c";
+    let scanner = "vendor/tree-sitter-fennel-compat/scanner.c";
+    cc::Build::new()
+        .warnings(false)
+        .include("vendor/tree-sitter-fennel-compat")
+        .file(parser)
+        .file(scanner)
+        .compile("tree-sitter-fennel-compat");
+    println!("cargo:rerun-if-changed={parser}");
+    println!("cargo:rerun-if-changed={scanner}");
+}
+
+fn compile_janet_scanner() {
+    let scanner = "vendor/tree-sitter-janet-compat/scanner.c";
+    cc::Build::new()
+        .warnings(false)
+        // Reuse the standard Tree-sitter parser header retained with the
+        // AppleScript compatibility source.
+        .include("vendor/tree-sitter-applescript-compat")
+        .file(scanner)
+        .compile("tree-sitter-janet-scanner");
+    println!("cargo:rerun-if-changed={scanner}");
+}
+
+fn compile_applescript_scanner() {
+    let scanner = "vendor/tree-sitter-applescript-compat/scanner.c";
+    cc::Build::new()
+        .warnings(false)
+        .include("vendor/tree-sitter-applescript-compat")
+        .file(scanner)
+        .compile("tree-sitter-applescript-scanner");
+    println!("cargo:rerun-if-changed={scanner}");
 }
 
 fn compile_windows_resources() -> Result<(), Box<dyn std::error::Error>> {

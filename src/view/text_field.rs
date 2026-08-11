@@ -4,7 +4,9 @@
 //! and proper text display. Used by modals, CSV cell editor, and potentially
 //! other single-line input contexts.
 
-use crate::editable::{Cursor, EditableState, Position, Selection, StringBuffer};
+#[cfg(test)]
+use crate::editable::Position;
+use crate::editable::{Cursor, EditableState, Selection, StringBuffer};
 
 use super::frame::Frame;
 use super::geometry::{ModalSpacing, WidgetRect};
@@ -219,41 +221,6 @@ impl TextFieldRenderer {
         Self::render(frame, painter, content, &opts);
     }
 
-    /// Render a simple text field from raw text and cursor position.
-    ///
-    /// This is a convenience method for cases where we don't have a full
-    /// EditableState yet (during migration).
-    #[allow(dead_code)]
-    pub fn render_simple(
-        frame: &mut Frame,
-        painter: &mut TextPainter,
-        text: &str,
-        cursor_col: usize,
-        opts: &TextFieldOptions,
-    ) {
-        // Render text
-        let max_chars = (opts.width as f32 / opts.char_width).ceil() as usize + 1;
-        let visible_text: String = text.chars().skip(opts.scroll_x).take(max_chars).collect();
-
-        painter.draw(frame, opts.x, opts.y, &visible_text, opts.text_color);
-
-        // Render cursor
-        if opts.cursor_visible {
-            let col = cursor_col.saturating_sub(opts.scroll_x);
-            let cursor_x = opts.x + (col as f32 * opts.char_width).round() as usize;
-
-            if cursor_x >= opts.x && cursor_x < opts.x + opts.width {
-                frame.fill_rect_px(
-                    cursor_x,
-                    opts.y + 1,
-                    2,
-                    opts.height.saturating_sub(2),
-                    opts.cursor_color,
-                );
-            }
-        }
-    }
-
     /// Calculate the scroll offset needed to keep the cursor visible.
     ///
     /// Returns the new scroll_x value.
@@ -274,17 +241,17 @@ impl TextFieldRenderer {
     }
 }
 
-/// Simple wrapper for rendering text fields during migration.
+/// Test fixture for rendering text fields without a full editable model.
 ///
 /// Holds text and cursor position without full EditableState.
-#[allow(dead_code)]
+#[cfg(test)]
 pub struct SimpleTextField {
     text: String,
     cursor: Cursor,
     selection: Selection,
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 impl SimpleTextField {
     pub fn new(text: &str) -> Self {
         let cursor = Cursor::new(0, text.chars().count());
@@ -305,6 +272,7 @@ impl SimpleTextField {
     }
 }
 
+#[cfg(test)]
 impl TextFieldContent for SimpleTextField {
     fn text(&self) -> &str {
         &self.text

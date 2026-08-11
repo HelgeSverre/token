@@ -69,7 +69,7 @@ pub fn render_binary_placeholder(
         .saturating_sub((filename.len() as f32 * char_width / 2.0) as usize);
     painter.draw(frame, name_x, bp_layout.name_y, &filename, fg);
 
-    let size_str = format_file_size(placeholder.size_bytes);
+    let size_str = crate::util::ByteSize::bytes(placeholder.size_bytes).to_string();
     let size_x = bp_layout
         .center_x
         .saturating_sub((size_str.len() as f32 * char_width / 2.0) as usize);
@@ -92,21 +92,9 @@ pub fn render_binary_placeholder(
     );
 }
 
-fn format_file_size(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{} B", bytes)
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else if bytes < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{format_file_size, render_binary_placeholder, render_image_tab};
+    use super::{render_binary_placeholder, render_image_tab};
     use crate::commands::Cmd;
     use crate::image::ImageState;
     use crate::messages::{ImageMsg, Msg};
@@ -171,18 +159,6 @@ mod tests {
 
         render_image_tab(&mut frame, model, image, &layout);
         buffer
-    }
-
-    #[test]
-    fn formats_small_file_sizes() {
-        assert_eq!(format_file_size(512), "512 B");
-        assert_eq!(format_file_size(1536), "1.5 KB");
-    }
-
-    #[test]
-    fn formats_large_file_sizes() {
-        assert_eq!(format_file_size(3 * 1024 * 1024), "3.0 MB");
-        assert_eq!(format_file_size(5 * 1024 * 1024 * 1024), "5.0 GB");
     }
 
     #[test]

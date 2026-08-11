@@ -643,35 +643,14 @@ impl GroupLayout {
         self.group_rect.width.round() as usize
     }
 
-    /// Get group height in pixels
-    #[inline]
-    #[allow(dead_code)]
-    pub fn rect_h(&self) -> usize {
-        self.group_rect.height.round() as usize
-    }
-
     // =========================================================================
     // Content-level accessors (below tab bar)
     // =========================================================================
-
-    /// Get absolute X position for content area
-    #[inline]
-    #[allow(dead_code)]
-    pub fn content_x(&self) -> usize {
-        self.content_rect.x.round() as usize
-    }
 
     /// Get absolute Y position for content area (below tab bar)
     #[inline]
     pub fn content_y(&self) -> usize {
         self.content_rect.y.round() as usize
-    }
-
-    /// Get content width in pixels
-    #[inline]
-    #[allow(dead_code)]
-    pub fn content_w(&self) -> usize {
-        self.content_rect.width.round() as usize
     }
 
     /// Get content height in pixels
@@ -803,24 +782,6 @@ impl PaneBorders {
         left: false,
         right: false,
     };
-
-    /// All borders
-    #[allow(dead_code)]
-    pub const ALL: Self = Self {
-        top: true,
-        bottom: true,
-        left: true,
-        right: true,
-    };
-
-    /// Bottom border only (common for headers)
-    #[allow(dead_code)]
-    pub const BOTTOM: Self = Self {
-        top: false,
-        bottom: true,
-        left: false,
-        right: false,
-    };
 }
 
 /// Insets (padding) configuration for a pane.
@@ -840,17 +801,6 @@ impl PaneInsets {
             bottom: size,
             left: size,
             right: size,
-        }
-    }
-
-    /// Create horizontal/vertical insets
-    #[allow(dead_code)]
-    pub fn symmetric(horizontal: usize, vertical: usize) -> Self {
-        Self {
-            top: vertical,
-            bottom: vertical,
-            left: horizontal,
-            right: horizontal,
         }
     }
 
@@ -915,33 +865,6 @@ impl Pane {
         }
     }
 
-    /// Create a pane without a header.
-    #[allow(dead_code)]
-    pub fn without_header(rect: Rect, metrics: &crate::model::ScaledMetrics) -> Self {
-        Self {
-            outer_rect: rect,
-            header_height: 0,
-            header_border: false,
-            insets: PaneInsets::all(metrics.padding_large),
-            borders: PaneBorders::NONE,
-            border_width: metrics.border_width,
-        }
-    }
-
-    /// Set content insets
-    #[allow(dead_code)]
-    pub fn with_insets(mut self, insets: PaneInsets) -> Self {
-        self.insets = insets;
-        self
-    }
-
-    /// Set border configuration
-    #[allow(dead_code)]
-    pub fn with_borders(mut self, borders: PaneBorders) -> Self {
-        self.borders = borders;
-        self
-    }
-
     // =========================================================================
     // Outer rect accessors
     // =========================================================================
@@ -980,18 +903,6 @@ impl Pane {
         self.header_height > 0
     }
 
-    /// Header rect (returns zero-height rect if no header)
-    #[inline]
-    #[allow(dead_code)]
-    pub fn header_rect(&self) -> Rect {
-        Rect::new(
-            self.outer_rect.x,
-            self.outer_rect.y,
-            self.outer_rect.width,
-            self.header_height as f32,
-        )
-    }
-
     /// X position for header title text
     #[inline]
     pub fn header_title_x(&self) -> usize {
@@ -1014,8 +925,7 @@ impl Pane {
     // Content rect accessors
     // =========================================================================
 
-    /// Content area rect (after header and insets)
-    #[allow(dead_code)]
+    /// Content area rect after the header, before applying insets.
     pub fn content_rect(&self) -> Rect {
         let y = self.outer_rect.y + self.header_height as f32;
         let height = (self.outer_rect.height - self.header_height as f32).max(0.0);
@@ -1046,17 +956,6 @@ impl Pane {
     pub fn content_height(&self) -> usize {
         self.height()
             .saturating_sub(self.header_height + self.insets.top + self.insets.bottom)
-    }
-
-    /// Inner content rect (with all insets applied)
-    #[allow(dead_code)]
-    pub fn inner_content_rect(&self) -> Rect {
-        Rect::new(
-            self.content_x() as f32,
-            self.content_y() as f32,
-            self.content_width() as f32,
-            self.content_height() as f32,
-        )
     }
 
     // =========================================================================

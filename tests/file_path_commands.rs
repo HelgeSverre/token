@@ -6,7 +6,16 @@ use std::path::PathBuf;
 
 use common::test_model;
 use token::commands::{filter_commands, Cmd, CommandId};
+use token::model::{AppModel, SegmentId};
 use token::update::execute_command;
+
+fn status_message(model: &AppModel) -> &str {
+    model
+        .ui
+        .status_bar
+        .get_segment(SegmentId::StatusMessage)
+        .map_or("", |segment| segment.content.display_text())
+}
 
 // ============================================================================
 // Command Palette Registration Tests
@@ -77,7 +86,7 @@ fn test_reveal_in_finder_without_file_path() {
     assert!(cmd.is_some());
 
     // Should set a status message about unsaved file
-    assert!(model.ui.status_message.contains("unsaved"));
+    assert!(status_message(&model).contains("unsaved"));
     // Should NOT produce a RevealFileInFinder command
     assert!(!matches!(cmd.unwrap(), Cmd::Batch(_)));
 }
@@ -96,10 +105,10 @@ fn test_copy_absolute_path_with_file() {
 
     // Should set a status message confirming the copy
     assert!(
-        model.ui.status_message.contains("/tmp/test.txt")
-            || model.ui.status_message.contains("clipboard"),
+        status_message(&model).contains("/tmp/test.txt")
+            || status_message(&model).contains("clipboard"),
         "Status should mention path or clipboard, got: {}",
-        model.ui.status_message
+        status_message(&model)
     );
 }
 
@@ -112,9 +121,9 @@ fn test_copy_absolute_path_without_file() {
     assert!(cmd.is_some());
 
     assert!(
-        model.ui.status_message.contains("unsaved"),
+        status_message(&model).contains("unsaved"),
         "Status should mention unsaved, got: {}",
-        model.ui.status_message
+        status_message(&model)
     );
 }
 
@@ -131,9 +140,9 @@ fn test_copy_relative_path_without_file() {
     assert!(cmd.is_some());
 
     assert!(
-        model.ui.status_message.contains("unsaved"),
+        status_message(&model).contains("unsaved"),
         "Status should mention unsaved, got: {}",
-        model.ui.status_message
+        status_message(&model)
     );
 }
 
@@ -148,10 +157,10 @@ fn test_copy_relative_path_without_workspace_falls_back_to_absolute() {
 
     // Without workspace, should fall back to absolute path in status
     assert!(
-        model.ui.status_message.contains("/tmp/project/src/main.rs")
-            || model.ui.status_message.contains("clipboard"),
+        status_message(&model).contains("/tmp/project/src/main.rs")
+            || status_message(&model).contains("clipboard"),
         "Status should contain absolute path or clipboard error, got: {}",
-        model.ui.status_message
+        status_message(&model)
     );
 }
 

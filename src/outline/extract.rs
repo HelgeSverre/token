@@ -8,6 +8,20 @@ use tree_sitter::{Node, Tree};
 use super::{OutlineData, OutlineKind, OutlineNode, OutlineRange};
 use crate::syntax::LanguageId;
 
+pub(crate) trait OutlineBehavior: Sync {
+    fn extract(&self, root: Node<'_>, source: &str) -> Vec<OutlineNode>;
+}
+
+struct EmptyOutline;
+
+impl OutlineBehavior for EmptyOutline {
+    fn extract(&self, _root: Node<'_>, _source: &str) -> Vec<OutlineNode> {
+        Vec::new()
+    }
+}
+
+pub(crate) static NO_OUTLINE: &dyn OutlineBehavior = &EmptyOutline;
+
 /// Extract outline from a tree-sitter parse tree
 pub fn extract_outline(
     tree: &Tree,
@@ -17,59 +31,511 @@ pub fn extract_outline(
 ) -> OutlineData {
     let root = tree.root_node();
 
-    let nodes = match language {
-        LanguageId::Markdown => extract_markdown_headings(root, source),
-        LanguageId::Rust => {
-            let flat = extract_rust_symbols(root, source);
-            build_tree_by_containment(flat)
-        }
-        LanguageId::TypeScript | LanguageId::Tsx | LanguageId::JavaScript | LanguageId::Jsx => {
-            let flat = extract_js_ts_symbols(root, source);
-            build_tree_by_containment(flat)
-        }
-        LanguageId::Python => {
-            let flat = extract_python_symbols(root, source);
-            build_tree_by_containment(flat)
-        }
-        LanguageId::Go => {
-            let flat = extract_go_symbols(root, source);
-            build_tree_by_containment(flat)
-        }
-        LanguageId::Java => {
-            let flat = extract_java_symbols(root, source);
-            build_tree_by_containment(flat)
-        }
-        LanguageId::Php => {
-            let flat = extract_php_symbols(root, source);
-            build_tree_by_containment(flat)
-        }
-        LanguageId::C | LanguageId::Cpp => {
-            let flat = extract_c_cpp_symbols(root, source, language);
-            build_tree_by_containment(flat)
-        }
-        LanguageId::Yaml => {
-            let flat = extract_yaml_symbols(root, source);
-            build_tree_by_containment(flat)
-        }
-        LanguageId::Html => {
-            let flat = extract_html_symbols(root, source);
-            build_tree_by_containment(flat)
-        }
-        LanguageId::Blade => {
-            let flat = extract_blade_symbols(root, source);
-            build_tree_by_containment(flat)
-        }
-        LanguageId::Vue | LanguageId::Svelte => {
-            let flat = extract_vue_symbols(root, source);
-            build_tree_by_containment(flat)
-        }
-        _ => Vec::new(),
-    };
+    let nodes = crate::syntax::registry::language(language)
+        .outline
+        .extract(root, source);
 
     OutlineData {
         revision,
         roots: nodes,
     }
+}
+
+struct FlatOutlineBehavior {
+    extract_flat: for<'tree> fn(Node<'tree>, &str) -> Vec<FlatSymbol>,
+}
+
+impl OutlineBehavior for FlatOutlineBehavior {
+    fn extract(&self, root: Node<'_>, source: &str) -> Vec<OutlineNode> {
+        build_tree_by_containment((self.extract_flat)(root, source))
+    }
+}
+
+struct MarkdownOutline;
+
+impl OutlineBehavior for MarkdownOutline {
+    fn extract(&self, root: Node<'_>, source: &str) -> Vec<OutlineNode> {
+        extract_markdown_headings(root, source)
+    }
+}
+
+macro_rules! flat_outline {
+    ($static_name:ident, $impl_name:ident, $extractor:expr) => {
+        static $impl_name: FlatOutlineBehavior = FlatOutlineBehavior {
+            extract_flat: $extractor,
+        };
+        pub(crate) static $static_name: &dyn OutlineBehavior = &$impl_name;
+    };
+}
+
+static MARKDOWN_OUTLINE_IMPL: MarkdownOutline = MarkdownOutline;
+pub(crate) static MARKDOWN_OUTLINE: &dyn OutlineBehavior = &MARKDOWN_OUTLINE_IMPL;
+
+flat_outline!(RUST_OUTLINE, RUST_OUTLINE_IMPL, extract_rust_symbols);
+flat_outline!(
+    JAVASCRIPT_OUTLINE,
+    JAVASCRIPT_OUTLINE_IMPL,
+    extract_js_ts_symbols
+);
+flat_outline!(PYTHON_OUTLINE, PYTHON_OUTLINE_IMPL, extract_python_symbols);
+flat_outline!(GO_OUTLINE, GO_OUTLINE_IMPL, extract_go_symbols);
+flat_outline!(JAVA_OUTLINE, JAVA_OUTLINE_IMPL, extract_java_symbols);
+flat_outline!(PHP_OUTLINE, PHP_OUTLINE_IMPL, extract_php_symbols);
+flat_outline!(YAML_OUTLINE, YAML_OUTLINE_IMPL, extract_yaml_symbols);
+flat_outline!(HTML_OUTLINE, HTML_OUTLINE_IMPL, extract_html_symbols);
+flat_outline!(BLADE_OUTLINE, BLADE_OUTLINE_IMPL, extract_blade_symbols);
+flat_outline!(
+    COMPONENT_OUTLINE,
+    COMPONENT_OUTLINE_IMPL,
+    extract_vue_symbols
+);
+flat_outline!(
+    APPLESCRIPT_OUTLINE,
+    APPLESCRIPT_OUTLINE_IMPL,
+    extract_applescript_symbols
+);
+flat_outline!(R_OUTLINE, R_OUTLINE_IMPL, extract_r_symbols);
+flat_outline!(ELIXIR_OUTLINE, ELIXIR_OUTLINE_IMPL, extract_elixir_symbols);
+
+fn extract_c_symbols(root: Node<'_>, source: &str) -> Vec<FlatSymbol> {
+    extract_c_cpp_symbols(root, source, LanguageId::C)
+}
+
+fn extract_cpp_symbols(root: Node<'_>, source: &str) -> Vec<FlatSymbol> {
+    extract_c_cpp_symbols(root, source, LanguageId::Cpp)
+}
+
+flat_outline!(C_OUTLINE, C_OUTLINE_IMPL, extract_c_symbols);
+flat_outline!(CPP_OUTLINE, CPP_OUTLINE_IMPL, extract_cpp_symbols);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OutlineRule {
+    pub node_kind: &'static str,
+    pub symbol_kind: OutlineKind,
+    pub name: OutlineName,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OutlineName {
+    Field(&'static str),
+    DescendantKind(&'static str),
+}
+
+pub(crate) struct RuleOutline {
+    rules: &'static [OutlineRule],
+}
+
+impl RuleOutline {
+    pub(crate) const fn new(rules: &'static [OutlineRule]) -> Self {
+        Self { rules }
+    }
+}
+
+impl OutlineBehavior for RuleOutline {
+    fn extract(&self, root: Node<'_>, source: &str) -> Vec<OutlineNode> {
+        build_tree_by_containment(extract_rule_symbols(root, source, self.rules))
+    }
+}
+
+macro_rules! rule_outline {
+    ($name:ident, [$($rule:expr),+ $(,)?]) => {
+        pub(crate) static $name: RuleOutline = RuleOutline::new(&[$($rule),+]);
+    };
+}
+
+macro_rules! rule_outline_behavior {
+    ($name:ident, $implementation:ident, [$($rule:expr),+ $(,)?]) => {
+        static $implementation: RuleOutline = RuleOutline::new(&[$($rule),+]);
+        pub(crate) static $name: &dyn OutlineBehavior = &$implementation;
+    };
+}
+
+rule_outline_behavior!(
+    CSHARP_OUTLINE,
+    CSHARP_OUTLINE_IMPL,
+    [
+        OutlineRule {
+            node_kind: "class_declaration",
+            symbol_kind: OutlineKind::Class,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "struct_declaration",
+            symbol_kind: OutlineKind::Struct,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "enum_declaration",
+            symbol_kind: OutlineKind::Enum,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "interface_declaration",
+            symbol_kind: OutlineKind::Interface,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "method_declaration",
+            symbol_kind: OutlineKind::Method,
+            name: OutlineName::Field("name")
+        },
+    ]
+);
+rule_outline_behavior!(
+    RUBY_OUTLINE,
+    RUBY_OUTLINE_IMPL,
+    [
+        OutlineRule {
+            node_kind: "class",
+            symbol_kind: OutlineKind::Class,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "module",
+            symbol_kind: OutlineKind::Module,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "method",
+            symbol_kind: OutlineKind::Method,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "singleton_method",
+            symbol_kind: OutlineKind::Method,
+            name: OutlineName::Field("name")
+        },
+    ]
+);
+rule_outline_behavior!(
+    LUA_OUTLINE,
+    LUA_OUTLINE_IMPL,
+    [OutlineRule {
+        node_kind: "function_declaration",
+        symbol_kind: OutlineKind::Function,
+        name: OutlineName::Field("name")
+    },]
+);
+rule_outline_behavior!(
+    SWIFT_OUTLINE,
+    SWIFT_OUTLINE_IMPL,
+    [
+        OutlineRule {
+            node_kind: "class_declaration",
+            symbol_kind: OutlineKind::Class,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "protocol_declaration",
+            symbol_kind: OutlineKind::Interface,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "function_declaration",
+            symbol_kind: OutlineKind::Function,
+            name: OutlineName::Field("name")
+        },
+    ]
+);
+rule_outline_behavior!(
+    GLEAM_OUTLINE,
+    GLEAM_OUTLINE_IMPL,
+    [OutlineRule {
+        node_kind: "function",
+        symbol_kind: OutlineKind::Function,
+        name: OutlineName::Field("name")
+    },]
+);
+rule_outline_behavior!(
+    SOLIDITY_OUTLINE,
+    SOLIDITY_OUTLINE_IMPL,
+    [
+        OutlineRule {
+            node_kind: "contract_declaration",
+            symbol_kind: OutlineKind::Class,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "interface_declaration",
+            symbol_kind: OutlineKind::Interface,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "struct_declaration",
+            symbol_kind: OutlineKind::Struct,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "enum_declaration",
+            symbol_kind: OutlineKind::Enum,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "function_definition",
+            symbol_kind: OutlineKind::Function,
+            name: OutlineName::Field("name")
+        },
+    ]
+);
+
+rule_outline!(
+    KOTLIN_RULE_OUTLINE,
+    [
+        OutlineRule {
+            node_kind: "class_declaration",
+            symbol_kind: OutlineKind::Class,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "function_declaration",
+            symbol_kind: OutlineKind::Function,
+            name: OutlineName::Field("name")
+        },
+    ]
+);
+rule_outline!(
+    DART_RULE_OUTLINE,
+    [
+        OutlineRule {
+            node_kind: "class_declaration",
+            symbol_kind: OutlineKind::Class,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "function_signature",
+            symbol_kind: OutlineKind::Function,
+            name: OutlineName::DescendantKind("identifier")
+        },
+    ]
+);
+rule_outline!(
+    VHDL_RULE_OUTLINE,
+    [OutlineRule {
+        node_kind: "entity_declaration",
+        symbol_kind: OutlineKind::Class,
+        name: OutlineName::Field("entity")
+    },]
+);
+rule_outline!(
+    PROTOBUF_RULE_OUTLINE,
+    [
+        OutlineRule {
+            node_kind: "message",
+            symbol_kind: OutlineKind::Struct,
+            name: OutlineName::DescendantKind("message_name")
+        },
+        OutlineRule {
+            node_kind: "enum",
+            symbol_kind: OutlineKind::Enum,
+            name: OutlineName::DescendantKind("enum_name")
+        },
+        OutlineRule {
+            node_kind: "service",
+            symbol_kind: OutlineKind::Interface,
+            name: OutlineName::DescendantKind("service_name")
+        },
+        OutlineRule {
+            node_kind: "rpc",
+            symbol_kind: OutlineKind::Method,
+            name: OutlineName::DescendantKind("rpc_name")
+        },
+    ]
+);
+rule_outline!(
+    PKL_RULE_OUTLINE,
+    [
+        OutlineRule {
+            node_kind: "clazz",
+            symbol_kind: OutlineKind::Class,
+            name: OutlineName::DescendantKind("identifier")
+        },
+        OutlineRule {
+            node_kind: "classMethod",
+            symbol_kind: OutlineKind::Method,
+            name: OutlineName::DescendantKind("identifier")
+        },
+        OutlineRule {
+            node_kind: "typeAlias",
+            symbol_kind: OutlineKind::Struct,
+            name: OutlineName::DescendantKind("identifier")
+        },
+    ]
+);
+rule_outline!(
+    WIT_RULE_OUTLINE,
+    [OutlineRule {
+        node_kind: "interface_item",
+        symbol_kind: OutlineKind::Interface,
+        name: OutlineName::Field("name")
+    },]
+);
+rule_outline!(
+    NIM_RULE_OUTLINE,
+    [
+        OutlineRule {
+            node_kind: "proc_declaration",
+            symbol_kind: OutlineKind::Function,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "method_declaration",
+            symbol_kind: OutlineKind::Method,
+            name: OutlineName::Field("name")
+        },
+    ]
+);
+rule_outline!(
+    WGSL_RULE_OUTLINE,
+    [OutlineRule {
+        node_kind: "function_declaration",
+        symbol_kind: OutlineKind::Function,
+        name: OutlineName::Field("name")
+    },]
+);
+rule_outline!(
+    V_RULE_OUTLINE,
+    [
+        OutlineRule {
+            node_kind: "function_declaration",
+            symbol_kind: OutlineKind::Function,
+            name: OutlineName::Field("name")
+        },
+        OutlineRule {
+            node_kind: "interface_declaration",
+            symbol_kind: OutlineKind::Interface,
+            name: OutlineName::Field("name")
+        },
+    ]
+);
+rule_outline!(
+    PONY_RULE_OUTLINE,
+    [
+        OutlineRule {
+            node_kind: "class",
+            symbol_kind: OutlineKind::Class,
+            name: OutlineName::DescendantKind("identifier")
+        },
+        OutlineRule {
+            node_kind: "interface",
+            symbol_kind: OutlineKind::Interface,
+            name: OutlineName::DescendantKind("identifier")
+        },
+        OutlineRule {
+            node_kind: "method",
+            symbol_kind: OutlineKind::Method,
+            name: OutlineName::DescendantKind("identifier")
+        },
+    ]
+);
+
+fn extract_rule_symbols(root: Node, source: &str, rules: &[OutlineRule]) -> Vec<FlatSymbol> {
+    let mut symbols = Vec::new();
+    walk_and_collect(root, source, &mut symbols, &|node, source, symbols| {
+        for rule in rules.iter().filter(|rule| rule.node_kind == node.kind()) {
+            let Some(name_node) = outline_name_node(node, rule.name) else {
+                continue;
+            };
+            let Some(name) = node_name(&name_node, source).map(str::trim) else {
+                continue;
+            };
+            if !name.is_empty() {
+                symbols.push(flat_sym(rule.symbol_kind, name, &node));
+            }
+        }
+        None
+    });
+    symbols
+}
+
+fn outline_name_node(node: Node<'_>, name: OutlineName) -> Option<Node<'_>> {
+    match name {
+        OutlineName::Field(field) => node.child_by_field_name(field),
+        OutlineName::DescendantKind(node_kind) => descendant_of_kind(node, node_kind),
+    }
+}
+
+fn descendant_of_kind<'tree>(node: Node<'tree>, node_kind: &str) -> Option<Node<'tree>> {
+    if node.kind() == node_kind {
+        return Some(node);
+    }
+    let mut cursor = node.walk();
+    let descendant = node
+        .named_children(&mut cursor)
+        .find_map(|child| descendant_of_kind(child, node_kind));
+    descendant
+}
+
+fn extract_r_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
+    let mut symbols = Vec::new();
+    walk_and_collect(root, source, &mut symbols, &|node, source, symbols| {
+        if node.kind() == "binary_operator"
+            && node
+                .child_by_field_name("rhs")
+                .is_some_and(|rhs| rhs.kind() == "function_definition")
+        {
+            if let Some(name) = node
+                .child_by_field_name("lhs")
+                .filter(|lhs| lhs.kind() == "identifier")
+                .and_then(|lhs| node_name(&lhs, source))
+            {
+                symbols.push(flat_sym(OutlineKind::Function, name, &node));
+            }
+        }
+        None
+    });
+    symbols
+}
+
+fn extract_elixir_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
+    let mut symbols = Vec::new();
+    walk_and_collect(root, source, &mut symbols, &|node, source, symbols| {
+        if node.kind() != "call" {
+            return None;
+        }
+        let target_node = node.child_by_field_name("target")?;
+        let target = node_name(&target_node, source)?;
+        let kind = match target {
+            "defmodule" | "defprotocol" => OutlineKind::Module,
+            "def" | "defp" | "defmacro" | "defmacrop" => OutlineKind::Function,
+            _ => return None,
+        };
+        let mut cursor = node.walk();
+        let name = node
+            .named_children(&mut cursor)
+            .find(|child| child.start_byte() > target_node.end_byte())
+            .and_then(|argument| node_name(&argument, source))
+            .and_then(|text| text.split(['(', ',', ' ']).next())
+            .filter(|name| !name.is_empty())
+            .unwrap_or(target);
+        symbols.push(flat_sym(kind, name, &node));
+        None
+    });
+    symbols
+}
+
+fn extract_applescript_symbols(root: Node, source: &str) -> Vec<FlatSymbol> {
+    let mut symbols = Vec::new();
+    walk_and_collect(root, source, &mut symbols, &|node, source, symbols| {
+        match node.kind() {
+            "handler_definition" => {
+                if let Some(name) =
+                    child_by_field(&node, "name").and_then(|name| node_name(&name, source))
+                {
+                    symbols.push(flat_sym(OutlineKind::Function, name, &node));
+                }
+            }
+            "property_declaration" => {
+                if let Some(name) =
+                    child_by_field(&node, "name").and_then(|name| node_name(&name, source))
+                {
+                    symbols.push(flat_sym(OutlineKind::Property, name, &node));
+                }
+            }
+            _ => {}
+        }
+        None
+    });
+    symbols
 }
 
 // =============================================================================
@@ -1355,5 +1821,67 @@ mod tests {
 
         // Empty after @
         assert_eq!(parse_directive_ident("@"), None);
+    }
+
+    #[test]
+    fn applescript_outline_contains_handlers_and_properties() {
+        let source = "property greeting : \"Hello\"\n\non greet(personName)\n\treturn personName\nend greet\n";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_applescript::language())
+            .expect("AppleScript grammar should load");
+        let tree = parser
+            .parse(source, None)
+            .expect("AppleScript source should parse");
+
+        let outline = extract_outline(&tree, source, LanguageId::AppleScript, 1);
+        assert!(outline
+            .roots
+            .iter()
+            .any(|node| { node.kind == OutlineKind::Property && node.name == "greeting" }));
+        assert!(outline
+            .roots
+            .iter()
+            .any(|node| { node.kind == OutlineKind::Function && node.name == "greet" }));
+    }
+
+    #[test]
+    fn extended_languages_extract_top_level_symbols() {
+        let cases = [
+            (LanguageId::CSharp, tree_sitter_c_sharp::LANGUAGE.into(), "class Greeter { string Greet(string name) { return name; } }", "Greeter"),
+            (LanguageId::Ruby, tree_sitter_ruby::LANGUAGE.into(), "class Greeter\n  def greet(name) = name\nend\n", "Greeter"),
+            (LanguageId::Lua, tree_sitter_lua::LANGUAGE.into(), "function greet(name) return name end", "greet"),
+            (LanguageId::R, tree_sitter_r::LANGUAGE.into(), "greet <- function(name) { name }", "greet"),
+            (LanguageId::Swift, tree_sitter_swift::LANGUAGE.into(), "func greet(name: String) -> String { name }", "greet"),
+            (LanguageId::Elixir, tree_sitter_elixir::LANGUAGE.into(), "defmodule Greeter do\n  def greet(name), do: name\nend", "Greeter"),
+            (LanguageId::Gleam, tree_sitter_gleam::LANGUAGE.into(), "pub fn greet(name: String) { name }", "greet"),
+            (LanguageId::Solidity, tree_sitter_solidity::LANGUAGE.into(), "contract Greeter { function greet(string memory name) public pure returns (string memory) { return name; } }", "Greeter"),
+            (LanguageId::Kotlin, tree_sitter_kotlin_ng::LANGUAGE.into(), "class Greeter { fun greet(name: String): String = name }", "Greeter"),
+            (LanguageId::Dart, tree_sitter_dart::LANGUAGE.into(), "class Greeter { String greet(String name) => name; }", "Greeter"),
+            (LanguageId::Vhdl, tree_sitter_vhdl::LANGUAGE.into(), "entity greeter is end entity;", "greeter"),
+            (LanguageId::Protobuf, tree_sitter_proto::LANGUAGE.into(), "message Greeter { string name = 1; }", "Greeter"),
+            (LanguageId::Pkl, tree_sitter_pkl::LANGUAGE.into(), "class Greeter { name: String }", "Greeter"),
+            (LanguageId::Wit, tree_sitter_wit::LANGUAGE.into(), "interface greeter { greet: func(name: string) -> string; }", "greeter"),
+            (LanguageId::Nim, tree_sitter_nim::language(), "proc greet(name: string): string = name", "greet"),
+            (LanguageId::Wgsl, tree_sitter_wgsl_bevy::LANGUAGE.into(), "fn greet(name: u32) -> u32 { return name; }", "greet"),
+            (LanguageId::V, tree_sitter_v::LANGUAGE.into(), "fn greet(name string) string { return name }", "greet"),
+        ];
+
+        for (language, grammar, source, expected) in cases {
+            let mut parser = tree_sitter::Parser::new();
+            parser.set_language(&grammar).expect("grammar should load");
+            let tree = parser.parse(source, None).expect("source should parse");
+            let outline = extract_outline(&tree, source, language, 1);
+            assert!(
+                outline.roots.iter().any(|node| node.name == expected),
+                "{language:?}: expected {expected}, got {:?}; tree: {}",
+                outline
+                    .roots
+                    .iter()
+                    .map(|node| &node.name)
+                    .collect::<Vec<_>>(),
+                tree.root_node().to_sexp()
+            );
+        }
     }
 }

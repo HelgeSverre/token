@@ -88,7 +88,7 @@ impl EventListener for TerminalEventProxy {
                 }
             }
             // Clipboard integration, color queries, and shutdown requests
-            // are out of scope for the Phase 1 MVP (see "Non-Goals").
+            // are out of scope for the MVP (see "Non-Goals").
             Event::ClipboardStore(..)
             | Event::ClipboardLoad(..)
             | Event::ColorRequest(..)

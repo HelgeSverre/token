@@ -15,11 +15,12 @@ use std::time::Duration;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 
 use crate::messages::{Msg, TerminalMsg};
+use crate::util::ByteSize;
 
 /// How much PTY output to accumulate before forwarding it as a
 /// `Msg::Terminal(PtyOutput)`. Matches the plan's "coalesce into chunks"
 /// guidance to avoid flooding the message queue during large builds.
-const READ_CHUNK_SIZE: usize = 32 * 1024;
+const READ_CHUNK_SIZE: usize = ByteSize::kibibytes(32).as_usize();
 
 /// Maximum time to hold PTY output before forwarding it, so small, infrequent
 /// output (e.g. a shell prompt) still reaches the UI promptly.

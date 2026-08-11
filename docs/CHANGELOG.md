@@ -8,6 +8,23 @@ All notable changes to rust-editor are documented in this file.
 
 ### Added
 
+- Human-readable, const-friendly `ByteSize` quantities now centralize binary
+  size limits and B/KiB/MiB/GiB display formatting.
+- AppleScript syntax support using the pinned HelgeSverre Tree-sitter grammar,
+  including `.applescript` detection, highlighting, structural selection
+  expansion, handler/property outlines, and a representative sample fixture.
+- Tree-sitter parsing, highlighting, file detection, fenced-code aliases, and
+  structural selection coverage for C#, Ruby, Lua, R, Swift, Elixir, Gleam,
+  Solidity, Kotlin, Dart, Julia, Haskell, OCaml, D, Objective-C, VHDL, Odin,
+  Fish, Assembly, SCSS, CMake, Make, Common Lisp, Zig, GLSL, GraphQL,
+  HCL/Terraform, Nix, Ada, Erlang, Clojure, Nushell, sed, Tcl, Roc, Janet,
+  Forth, Protobuf, Dhall, Pkl, Hurl, WIT, Standard ML, Nim, Astro, AWK, KDL,
+  Tera, Typst, Dockerfile/Containerfile, WGSL, SQL, V, CUE, Fennel, Pest, and
+  Pony. Every syntax fixture is now covered by a registered language.
+- Syntax-tree snapshots can now retain embedded language trees alongside their
+  host tree. Markdown fences and HTML-family script/style regions use
+  document-relative included ranges so expand-selection can move through both
+  embedded-language and host-language scopes.
 - macOS releases now include native `Token.app` archives for both Apple
   architectures alongside the existing CLI artifacts. The app bundle supplies
   the icon, version, category, copyright, and product metadata used by Finder
@@ -29,6 +46,14 @@ All notable changes to rust-editor are documented in this file.
 
 ### Changed
 
+- Syntax-aware selection behavior is now supplied through composable language
+  profiles, preserving the existing markup, YAML, INI, Rust, delimiter, and
+  plaintext fallback behavior while giving new grammars explicit extension
+  points for normalization and additional semantic ranges.
+- Each language now has one authoritative registry descriptor composing
+  metadata and detection, lazy parser/query construction, selection, outline,
+  and injection behavior. This removes parallel language switches while
+  retaining explicit per-language extension points.
 - Desktop product metadata is consistently branded as “Token” while preserving
   `token` as the command name. Direct macOS launches now use the capitalized
   name in the application menu, the native About panel links to the Token
@@ -49,6 +74,11 @@ All notable changes to rust-editor are documented in this file.
   immediately when the outline is opened.
 
 ### Fixed
+
+- Expand selection inside Svelte script blocks no longer interleaves malformed
+  host-tree ranges with the injected TypeScript tree. Expanding within
+  `toggleTag` now selects that function before moving to the enclosing script
+  and component scopes.
 
 - Opening multiple files from the CLI now creates a distinct tab for every
   path again; deferred startup loads previously raced to overwrite the focused

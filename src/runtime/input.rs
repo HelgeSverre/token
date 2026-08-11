@@ -571,7 +571,7 @@ fn handle_csv_edit_key(model: &mut AppModel, key: Key, modifiers: KeyModifiers) 
 /// Check if the sidebar file tree has keyboard focus
 fn is_sidebar_focused(model: &AppModel) -> bool {
     use token::model::FocusTarget;
-    matches!(model.ui.focus, FocusTarget::Sidebar)
+    matches!(model.ui.focus, FocusTarget::Dock(DockPosition::Left))
 }
 
 /// Handle keyboard input when sidebar file tree is focused

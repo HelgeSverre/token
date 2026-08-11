@@ -535,7 +535,7 @@ src/
 ├── overlay.rs           # OverlayConfig, OverlayBounds, render functions
 └── util/
     ├── mod.rs           # Module exports, re-exports
-    ├── text.rs          # CharType enum, is_punctuation, char_type
+    ├── text.rs          # CharType enum, word-boundary symbols, char_type
     └── file_validation.rs # FileOpenError, validate_file_for_opening, is_likely_binary
 
 themes/

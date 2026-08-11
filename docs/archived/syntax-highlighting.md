@@ -150,17 +150,14 @@ pub type HighlightId = u16; // Index into HIGHLIGHT_NAMES
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LanguageId {
     PlainText,
-    // Phase 1 languages
     Yaml,
     Markdown,
     Rust,
-    // Phase 2 languages (web stack)
     Php,
     Html,
     Css,
     JavaScript,
     TypeScript,
-    // Phase 3 languages (common)
     Python,
     Go,
     C,
@@ -173,17 +170,14 @@ pub enum LanguageId {
 impl LanguageId {
     pub fn from_extension(ext: &str) -> Self {
         match ext.to_lowercase().as_str() {
-            // Phase 1
             "yaml" | "yml" => LanguageId::Yaml,
             "md" | "markdown" => LanguageId::Markdown,
             "rs" => LanguageId::Rust,
-            // Phase 2
             "php" | "phtml" => LanguageId::Php,
             "html" | "htm" => LanguageId::Html,
             "css" => LanguageId::Css,
             "js" | "mjs" | "cjs" => LanguageId::JavaScript,
             "ts" | "tsx" => LanguageId::TypeScript,
-            // Phase 3
             "py" => LanguageId::Python,
             "go" => LanguageId::Go,
             "c" | "h" => LanguageId::C,
@@ -941,19 +935,19 @@ queries/                     # Tree-sitter query files (embedded via include_str
 [dependencies]
 tree-sitter = "0.24"
 
-# Phase 1: Initial languages
+# Initial languages
 tree-sitter-yaml = "0.6"
 tree-sitter-md = "0.3"
 tree-sitter-rust = "0.23"
 
-# Phase 2: Web stack (for injection support)
+# Web stack (for injection support)
 tree-sitter-php = "0.24"
 tree-sitter-html = "0.23"
 tree-sitter-css = "0.23"
 tree-sitter-javascript = "0.23"
 tree-sitter-typescript = "0.23"
 
-# Phase 3: Common languages
+# Common languages
 tree-sitter-python = "0.23"
 tree-sitter-go = "0.23"
 tree-sitter-c = "0.23"

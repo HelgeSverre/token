@@ -309,11 +309,10 @@ fn confirm_edit(model: &mut AppModel, row_delta: i32) -> Option<Cmd> {
     let editor_id = model.editor_area.focused_group()?.active_editor_id()?;
     let editor = model.editor_area.editors.get_mut(&editor_id)?;
 
-    let (edit, delimiter) = if let Some(csv) = editor.view_mode.as_csv_mut() {
+    let (edit, delimiter) = {
+        let csv = editor.view_mode.as_csv_mut()?;
         let delimiter = csv.delimiter;
         (csv.confirm_edit(), delimiter)
-    } else {
-        return None;
     };
 
     if let Some(cell_edit) = edit {

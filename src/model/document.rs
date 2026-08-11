@@ -628,9 +628,9 @@ mod tests {
 
     #[test]
     fn test_new_with_path_makefile() {
-        // Makefile is detected as Bash (shell syntax)
+        // Makefiles use their dedicated grammar.
         let doc = Document::new_with_path(PathBuf::from("Makefile"));
-        assert_eq!(doc.language, LanguageId::Bash);
+        assert_eq!(doc.language, LanguageId::Make);
     }
 
     #[test]

@@ -3,7 +3,7 @@
 use crate::commands::Cmd;
 use crate::messages::DocumentMsg;
 use crate::model::{AppModel, Cursor, EditOperation, Position, Selection};
-use crate::util::char_type;
+use crate::util::text::char_type;
 
 use super::editor::{
     cursors_in_reverse_order, delete_selection, lines_covered_by_all_cursors,
@@ -1495,11 +1495,9 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
 
         DocumentMsg::Paste => Some(Cmd::RequestClipboardPaste),
 
-        // `InsertText` (single atomic multi-char insert, e.g. IME commit or a
-        // legacy-bridge insert) needs the exact same semantics as pasting
-        // text: one rope insert, one undo record, proper multi-cursor
-        // distribution and peer-cursor sync — so it shares this arm.
-        DocumentMsg::PasteText(text) | DocumentMsg::InsertText(text) => {
+        // Atomic multi-character insertion uses one rope edit and undo record,
+        // with proper multi-cursor distribution and peer-cursor synchronization.
+        DocumentMsg::InsertText(text) => {
             if text.is_empty() {
                 return Some(redraw_with_syntax_parse(model));
             }

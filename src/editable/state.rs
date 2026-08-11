@@ -1,6 +1,6 @@
 //! EditableState - the main abstraction for editable text with cursors, selections, and history.
 
-use crate::util::{char_type, CharType};
+use crate::util::text::{char_type, CharType};
 
 use super::buffer::{TextBuffer, TextBufferMut};
 use super::constraints::EditConstraints;

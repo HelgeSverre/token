@@ -1,486 +1,145 @@
-# Adding New Languages to Syntax Highlighting
+# Adding Tree-sitter Languages
 
-> **Status:** Ready for Implementation
-> **Created:** 2025-12-15
-> **Prerequisites:** Familiarity with tree-sitter and Scheme-like query syntax
+Token keeps language detection, parser construction, highlighting, embedded
+language parsing, structural selection, and outlines as composable concerns
+owned by one authoritative `LanguageDefinition`. A language is complete only
+when each relevant concern is covered by its descriptor.
 
----
+## Integration checklist
 
-## Overview
+1. Select a maintained grammar whose generated ABI works with Tree-sitter
+   0.25. Prefer a released crate exposing `tree_sitter_language::LanguageFn`.
+   Otherwise pin an exact Git revision. Vendor generated sources only when an
+   older binding would introduce a second `tree_sitter::Language` type.
+2. Add the `LanguageId`, then create its complete descriptor module in
+   `src/syntax/registry.rs`. Add that descriptor to `ALL_LANGUAGES`.
+3. Put display name, extensions, fence aliases, exact filenames, and compound
+   suffixes in that descriptor. Do not add detection branches elsewhere.
+4. Register the grammar factory and highlight source in the descriptor.
+   Queries may come from an exported grammar constant or an attributed local
+   file under `queries/<language>/highlights.scm`.
+5. Add a representative fixture under `samples/syntax`. The
+   `every_syntax_sample_has_a_registered_language` test prevents fixtures from
+   silently falling back to plain text.
+6. Add the fixture to `extended_language_samples_parse_and_highlight` and add
+   a declaration/expression case to
+   `extended_languages_provide_structural_candidates`.
+7. Add an explicit outline implementation for declaration-bearing grammars.
+   Languages without meaningful document symbols compose `NoOutline`; node
+   kinds and name extraction are never guessed globally.
+8. If the format embeds other languages, implement document-relative
+   included-range discovery in its `InjectionBehavior` and test the resulting
+   snapshot. Query registration alone is not enough for expand selection.
+9. Run `just fmt`, `just lint`, the syntax tests, and `just test`.
 
-This document describes how to add support for new programming languages to the syntax highlighting system. The architecture is designed to make adding languages straightforward.
+## Metadata and detection
 
-### Current Languages (21)
-
-| Language | Tree-sitter Crate | Query Source |
-|----------|-------------------|--------------|
-| YAML | `tree-sitter-yaml` | Custom: `queries/yaml/highlights.scm` |
-| Markdown | `tree-sitter-md` | Custom: `queries/markdown/highlights.scm` |
-| Rust | `tree-sitter-rust` | Built-in: `HIGHLIGHTS_QUERY` |
-| HTML | `tree-sitter-html` | Custom: `queries/html/highlights.scm` |
-| CSS | `tree-sitter-css` | Custom: `queries/css/highlights.scm` |
-| JavaScript | `tree-sitter-javascript` | Custom: `queries/javascript/highlights.scm` |
-| TypeScript | `tree-sitter-typescript` | Custom: `queries/typescript/highlights.scm` |
-| TSX | `tree-sitter-typescript` | Custom: `queries/typescript/highlights.scm` |
-| JSON | `tree-sitter-json` | Custom: `queries/json/highlights.scm` |
-| TOML | `tree-sitter-toml-ng` | Custom: `queries/toml/highlights.scm` |
-| Python | `tree-sitter-python` | Built-in: `HIGHLIGHTS_QUERY` |
-| Go | `tree-sitter-go` | Built-in: `HIGHLIGHTS_QUERY` |
-| PHP | `tree-sitter-php` | Built-in: `HIGHLIGHTS_QUERY` |
-| C | `tree-sitter-c` | Built-in: `HIGHLIGHT_QUERY` |
-| C++ | `tree-sitter-cpp` | Built-in: `HIGHLIGHT_QUERY` |
-| Java | `tree-sitter-java` | Built-in: `HIGHLIGHTS_QUERY` |
-| Bash | `tree-sitter-bash` | Built-in: `HIGHLIGHT_QUERY` |
-| Scheme | `tree-sitter-racket` | Built-in: `HIGHLIGHTS_QUERY` |
-| INI | `tree-sitter-ini` | Built-in: `HIGHLIGHTS_QUERY` |
-| XML | `tree-sitter-xml` | Built-in: `XML_HIGHLIGHT_QUERY` |
-| Just | `tree-sitter-just` | Built-in: `HIGHLIGHTS_QUERY` |
-
-### Future Languages
-
-**Potential additions:**
-- Swift (`tree-sitter-swift`)
-- Kotlin (`tree-sitter-kotlin`)
-- Ruby (`tree-sitter-ruby`)
-- SQL (`tree-sitter-sql`)
-- Lua (`tree-sitter-lua`)
-
----
-
-## Step-by-Step: Adding a New Language
-
-### Step 1: Add the tree-sitter grammar dependency
-
-Edit `Cargo.toml`:
-
-```toml
-[dependencies]
-# ... existing deps ...
-tree-sitter-python = "0.25"  # Align with versions already used in Cargo.toml
-```
-
-### Step 2: Add the LanguageId variant
-
-Edit `src/syntax/languages.rs`:
+Language support is declarative and behavior-bearing:
 
 ```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum LanguageId {
-    #[default]
-    PlainText,
-    // Phase 1 languages
-    Yaml,
-    Markdown,
-    Rust,
-    // Phase 2 languages (web stack)
-    Html,
-    Css,
-    JavaScript,
-    // Phase 3 languages -- ADD YOUR LANGUAGE HERE
-    Python,  // NEW
-}
+language!(
+    example, Example, "Example",
+    ["example", "ex"], ["example", "ex"], [], [],
+    tree_sitter_example::LANGUAGE.into(),
+    static_query!(p::EXAMPLE_HIGHLIGHTS),
+    CODE_SELECTION, NO_OUTLINE, NO_INJECTIONS
+);
 ```
 
-Update `from_extension()`:
+Extensions and fenced-code aliases must be unique. Ambiguous extensions should
+not be claimed until `from_path()` has a reliable filename or content policy.
+For example, `.h` remains C, `.vsh` is V rather than GLSL, and ambiguous Forth
+extensions such as `.f` and `.fs` are omitted.
 
-```rust
-impl LanguageId {
-    pub fn from_extension(ext: &str) -> Self {
-        match ext.to_lowercase().as_str() {
-            // ... existing ...
-            "py" | "pyw" => LanguageId::Python,  // NEW
-            _ => LanguageId::PlainText,
-        }
-    }
-}
-```
+Do not register binary or bundle formats as text solely because their suffix is
+associated with a language. AppleScript therefore recognizes `.applescript`,
+but not compiled `.scpt` files or `.scptd` bundles.
 
-Update `display_name()`:
+## Parser and query registration
 
-```rust
-pub fn display_name(&self) -> &'static str {
-    match self {
-        // ... existing ...
-        LanguageId::Python => "Python",  // NEW
-    }
-}
-```
+`ParserState` constructs parsers and compiles queries lazily on first use from
+the descriptor's `ParserDefinition`. There is no parser match to update and no
+language should eagerly initialize itself in `ParserState::new()`.
 
-Update `has_highlighting()` if needed (defaults to true for non-PlainText).
+Use one of these dependency strategies:
 
-### Filename Detection Policy
+- Released, compatible crate: preferred.
+- Exact Git revision: for maintained grammars without a release.
+- Local generated-source adapter: only for a grammar whose old Rust binding
+  cannot coexist with Tree-sitter 0.25. Record its source, revision, and license
+  in `vendor/TREE_SITTER_COMPAT.md`.
 
-When adding a language, define and document both extension-based and special-filename detection in `LanguageId::from_path()`.
+Never link a legacy grammar crate merely to obtain its native parser symbol:
+doing so can link multiple Tree-sitter runtimes and cause duplicate symbols or
+process crashes.
 
-For Just syntax support, the editor recognizes:
+Highlight queries are an independent completion gate. If upstream ships a
+query but does not export it, copy it under `queries/` with its provenance
+recorded. If no query exists, author a minimal query and expand it from the
+fixture. Parser-only registration is not considered syntax support.
 
-- `justfile` / `Justfile`
-- `.justfile` / `.Justfile`
-- `*.just`
+## Structural selection
 
-Use this pattern for future languages that rely on canonical filenames (for example, `Makefile`, `Dockerfile`, or dotfile-based configs).
+Every descriptor owns a `&dyn SelectionBehavior`. `src/syntax/selection.rs`
+provides shared structural implementations that languages compose or replace.
+The shared strategies are:
 
-### Step 3: Create the highlights query file
+- `CodeSelection` walks expressions, statements, declarations, blocks, strings,
+  and delimiter interiors.
+- markup profiles add opening/closing-tag and element-interior boundaries;
+- YAML, INI, and Rust profiles normalize their grammar-specific ranges; and
+- document selection preserves document-oriented behavior.
 
-Create `queries/python/highlights.scm`:
+Language profiles may provide a boundary profile, node-range normalization,
+or extra semantic range callback. Add specialization only when a focused
+candidate-chain test demonstrates that the generic fallback is wrong. Existing
+Rust attached-doc/attribute, YAML comment, INI whitespace, and HTML-family
+boundary behavior must remain intact.
 
-```scheme
-; queries/python/highlights.scm
-; Python syntax highlighting queries
+Injected trees are evaluated before their host tree. While the selection is
+inside a valid embedded region, host candidates are admitted only when they
+contain the whole region. This prevents malformed host AST fragments from
+interleaving with embedded-language declarations, as covered by the Svelte
+adjacent-function regression test.
 
-; Keywords
-[
-  "and"
-  "as"
-  "assert"
-  "async"
-  "await"
-  "break"
-  "class"
-  "continue"
-  "def"
-  "del"
-  "elif"
-  "else"
-  "except"
-  "finally"
-  "for"
-  "from"
-  "global"
-  "if"
-  "import"
-  "in"
-  "is"
-  "lambda"
-  "nonlocal"
-  "not"
-  "or"
-  "pass"
-  "raise"
-  "return"
-  "try"
-  "while"
-  "with"
-  "yield"
-] @keyword
+## Embedded languages
 
-; Function definitions
-(function_definition
-  name: (identifier) @function)
+`SyntaxTreeSnapshot` stores a host tree and zero or more `InjectedSyntaxTree`
+values. Each injected parser receives a Tree-sitter included range over the
+original document, so all byte positions remain document-relative.
 
-; Class definitions
-(class_definition
-  name: (identifier) @type)
+When adding an injected format:
 
-; Function calls
-(call
-  function: (identifier) @function)
+1. Locate the content node and determine the embedded `LanguageId`.
+2. Exclude delimiters when the embedded grammar does not accept them.
+3. Implement or extend the descriptor's `InjectionBehavior`.
+4. Test both its language and source range.
+5. Add an expand-selection regression covering an embedded declaration.
 
-; Parameters
-(parameters
-  (identifier) @variable.parameter)
+Current discovery covers Markdown fences, HTML/Vue/Svelte/Astro scripts and
+styles, Astro frontmatter, Dockerfile and Make shell commands, Tera
+frontmatter, Hurl JSON/XML bodies, and language-tagged Typst raw blocks.
 
-; Decorators
-(decorator) @attribute
+## Outlines
 
-; Strings
-(string) @string
+Each declaration-bearing language owns an outline extractor or an explicit
+query/rule implementation. Shared traversal, range construction, and
+containment nesting are reusable components, but node-kind and name semantics
+belong to the language implementation. Formats without meaningful declarations
+compose `NoOutline` explicitly.
 
-; Comments
-(comment) @comment
+Outline tests assert symbol kind and name, and include nesting when the language
+supports members.
 
-; Numbers
-(integer) @number
-(float) @number
-
-; Boolean
-(true) @boolean
-(false) @boolean
-(none) @constant.builtin
-
-; Operators
-[
-  "+"
-  "-"
-  "*"
-  "/"
-  "%"
-  "**"
-  "//"
-  "=="
-  "!="
-  "<"
-  "<="
-  ">"
-  ">="
-  "="
-  "+="
-  "-="
-  "*="
-  "/="
-] @operator
-
-; Punctuation
-["(" ")" "[" "]" "{" "}"] @punctuation.bracket
-["," ":" "."] @punctuation.delimiter
-```
-
-**Tips for writing queries:**
-- Use nvim-treesitter queries as reference: https://github.com/nvim-treesitter/nvim-treesitter/tree/master/queries
-- Run `tree-sitter parse <file>` to see the syntax tree structure
-- Test queries with tree-sitter playground: https://tree-sitter.github.io/tree-sitter/7-playground.html
-
-### Step 4: Register the language in ParserState
-
-Edit `src/syntax/parser.rs`:
-
-Add the constant for the query file:
-
-```rust
-// Embedded query files
-const YAML_HIGHLIGHTS: &str = include_str!("../../queries/yaml/highlights.scm");
-// ... existing ...
-const PYTHON_HIGHLIGHTS: &str = include_str!("../../queries/python/highlights.scm");  // NEW
-```
-
-Update `ParserState::new()` to initialize the language:
-
-```rust
-impl ParserState {
-    pub fn new() -> Self {
-        let mut state = Self {
-            parsers: HashMap::new(),
-            queries: HashMap::new(),
-            doc_cache: HashMap::new(),
-        };
-
-        // Initialize existing languages
-        state.init_language(LanguageId::Yaml);
-        state.init_language(LanguageId::Markdown);
-        state.init_language(LanguageId::Rust);
-        state.init_language(LanguageId::Html);
-        state.init_language(LanguageId::Css);
-        state.init_language(LanguageId::JavaScript);
-        
-        // Phase 3 languages -- ADD HERE
-        state.init_language(LanguageId::Python);  // NEW
-
-        state
-    }
-}
-```
-
-Update `init_language()` match arm:
-
-```rust
-fn init_language(&mut self, lang: LanguageId) {
-    let (ts_lang, highlights_scm) = match lang {
-        // ... existing ...
-        LanguageId::Python => (
-            tree_sitter_python::LANGUAGE.into(),
-            PYTHON_HIGHLIGHTS,
-        ),
-        LanguageId::PlainText => return,
-    };
-    // ... rest of function ...
-}
-```
-
-### Step 5: Add the query compilation test
-
-Edit `src/syntax/parser.rs`, add to `query_compilation_tests` module:
-
-```rust
-#[test]
-fn test_python_query_compiles() {
-    assert_query_compiles(
-        "Python",
-        tree_sitter_python::LANGUAGE.into(),
-        PYTHON_HIGHLIGHTS,
-    );
-}
-```
-
-Also update `test_all_query_files_compile()`:
-
-```rust
-let languages_with_queries = [
-    LanguageId::Yaml,
-    LanguageId::Markdown,
-    LanguageId::Rust,
-    LanguageId::Html,
-    LanguageId::Css,
-    LanguageId::JavaScript,
-    LanguageId::Python,  // NEW
-];
-```
-
-### Step 6: Add a parsing test
-
-Add a test in `src/syntax/parser.rs`:
-
-```rust
-#[test]
-fn test_python_parsing() {
-    let mut state = ParserState::new();
-    let source = r#"
-def greet(name):
-    """Say hello."""
-    print(f"Hello, {name}!")
-
-class Person:
-    def __init__(self, name):
-        self.name = name
-
-if __name__ == "__main__":
-    greet("World")
-"#;
-    let doc_id = DocumentId(100);
-    let highlights = state.parse_and_highlight(source, LanguageId::Python, doc_id, 1);
-
-    assert_eq!(highlights.language, LanguageId::Python);
-    assert!(!highlights.lines.is_empty());
-}
-```
-
-### Step 7: Run tests and verify
+## Verification commands
 
 ```bash
-# Run all syntax tests
-cargo test --lib syntax
-
-# Run just the new language tests
-cargo test --lib python
-
-# Run benchmarks to verify performance
-cargo bench --bench syntax -- parse_sample
+cargo test every_syntax_sample_has_a_registered_language --lib
+cargo test extended_language_samples_parse_and_highlight --lib
+cargo test test_all_query_files_compile --lib
+cargo test extended_languages_provide_structural_candidates --lib
+cargo test syntax_snapshot_contains_ --lib
+just fmt
+just lint
+just test
 ```
-
----
-
-## Supported Highlight Names
-
-The editor maps tree-sitter capture names to theme colors. These are the supported captures in `HIGHLIGHT_NAMES`:
-
-```
-attribute             - @attribute (decorators, annotations)
-boolean               - @boolean (true, false)
-comment               - @comment
-constant              - @constant
-constant.builtin      - @constant.builtin (null, nil, None)
-constructor           - @constructor (new Foo)
-escape                - @escape (string escapes like \n)
-function              - @function
-function.builtin      - @function.builtin (print, len)
-function.method       - @function.method
-keyword               - @keyword
-keyword.return        - @keyword.return
-keyword.function      - @keyword.function (def, fn, function)
-keyword.operator      - @keyword.operator (and, or, not)
-label                 - @label (goto labels, YAML anchors)
-number                - @number
-operator              - @operator
-property              - @property
-punctuation           - @punctuation (general)
-punctuation.bracket   - @punctuation.bracket
-punctuation.delimiter - @punctuation.delimiter
-punctuation.special   - @punctuation.special
-string                - @string
-string.special        - @string.special (regex, heredoc)
-tag                   - @tag (HTML tags)
-tag.attribute         - @tag.attribute
-text                  - @text (plain text in markdown)
-text.emphasis         - @text.emphasis (*italic*)
-text.strong           - @text.strong (**bold**)
-text.title            - @text.title (headings)
-text.uri              - @text.uri (URLs)
-type                  - @type
-type.builtin          - @type.builtin (int, str, bool)
-variable              - @variable
-variable.builtin      - @variable.builtin (self, this)
-variable.parameter    - @variable.parameter
-```
-
-If your query uses a capture name not in this list, it will be silently ignored. You can either:
-1. Map it to an existing capture (e.g., `@keyword.control` → `@keyword`)
-2. Add the new capture to `HIGHLIGHT_NAMES` in `src/syntax/highlights.rs`
-
----
-
-## Query File Locations
-
-Queries are embedded at compile time via `include_str!()`:
-
-```
-queries/
-├── yaml/
-│   └── highlights.scm
-├── markdown/
-│   └── highlights.scm
-├── html/
-│   └── highlights.scm
-├── css/
-│   └── highlights.scm
-├── javascript/
-│   └── highlights.scm
-└── python/           # NEW
-    └── highlights.scm
-```
-
-**Note:** Rust uses the built-in `tree_sitter_rust::HIGHLIGHTS_QUERY` constant instead of a separate file.
-
----
-
-## Debugging Query Issues
-
-### Query doesn't compile
-
-Run the specific test:
-
-```bash
-cargo test --lib test_python_query_compiles
-```
-
-The test will show:
-- Exact row and column of the error
-- The problematic line
-- Error type (invalid capture, syntax error, etc.)
-
-### Highlights aren't appearing
-
-1. **Check the language is detected:**
-   ```rust
-   let lang = LanguageId::from_extension("py");
-   println!("{:?}", lang);  // Should be Python, not PlainText
-   ```
-
-2. **Check the query has captures:**
-   Run the debug overlay (F8) and look at "Syntax Highlighting" section.
-
-3. **Check capture names match:**
-   Use `HIGHLIGHT_NAMES` captures only, or add new ones.
-
-4. **Inspect the syntax tree:**
-   Use `tree-sitter parse file.py` to see the actual tree structure.
-
-### Performance issues
-
-Run benchmarks:
-
-```bash
-cargo bench --bench syntax -- python
-```
-
-If parsing is slow:
-- Reduce query complexity
-- Use more specific patterns
-- Consider lazy loading for rarely-used languages
-
----
-
-## Resources
-
-- [Tree-sitter Documentation](https://tree-sitter.github.io/tree-sitter/)
-- [Tree-sitter Query Syntax](https://tree-sitter.github.io/tree-sitter/using-parsers#pattern-matching-with-queries)
-- [nvim-treesitter queries](https://github.com/nvim-treesitter/nvim-treesitter/tree/master/queries) - High-quality reference queries
-- [Tree-sitter Playground](https://tree-sitter.github.io/tree-sitter/7-playground.html) - Test queries interactively

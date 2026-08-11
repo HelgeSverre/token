@@ -26,6 +26,7 @@ use token::messages::{
 };
 use token::model::editor::Position;
 use token::model::AppModel;
+use token::panel::DockPosition;
 use token::syntax::{LanguageId, ParserState};
 use token::update::update;
 
@@ -37,8 +38,8 @@ use super::mouse::{
 use super::webview::WebviewManager;
 use token::view::Renderer;
 
-use super::perf::{PerfStage, PerfStats};
 use crate::automation::{self, AutomationEnvelope, AutomationRequest, AutomationResponse};
+use token::perf::{PerfStage, PerfStats};
 
 use winit::keyboard::ModifiersState;
 
@@ -143,9 +144,16 @@ impl App {
         }
 
         // Extract file paths and workspace from config
-        let demo_mode = matches!(startup_config.mode, StartupMode::Demo);
-        let file_paths = startup_config.file_paths();
-        let workspace_root = startup_config.workspace_root().cloned();
+        let (demo_mode, file_paths, workspace_root) = match startup_config.mode {
+            StartupMode::Demo => (true, Vec::new(), None),
+            StartupMode::Empty => (false, Vec::new(), None),
+            StartupMode::SingleFile(path) => (false, vec![path], None),
+            StartupMode::MultipleFiles(paths) => (false, paths, None),
+            StartupMode::Workspace {
+                root,
+                initial_files,
+            } => (false, initial_files, Some(root)),
+        };
         let initial_position = startup_config.initial_position;
 
         let mut model = AppModel::new(window_width, window_height, 1.0, file_paths);
@@ -281,7 +289,7 @@ impl App {
             has_multiple_cursors: self.model.editor().has_multiple_cursors(),
             modal_active: self.model.ui.has_modal(),
             editor_focused: matches!(focus, FocusTarget::Editor),
-            sidebar_focused: matches!(focus, FocusTarget::Sidebar),
+            sidebar_focused: matches!(focus, FocusTarget::Dock(DockPosition::Left)),
         }
     }
 
@@ -476,8 +484,10 @@ impl App {
                     // - Not in option double-tap mode with alt pressed (multi-cursor gesture)
                     // - Sidebar is not focused (sidebar keys handled by handle_sidebar_key in input.rs)
                     // - Not editing a CSV cell (CSV cell editor handled by handle_csv_edit_key in input.rs)
-                    let sidebar_focused =
-                        matches!(self.model.ui.focus, token::model::FocusTarget::Sidebar);
+                    let sidebar_focused = matches!(
+                        self.model.ui.focus,
+                        token::model::FocusTarget::Dock(token::panel::DockPosition::Left)
+                    );
                     let terminal_focused = self.model.ui.focused_dock()
                         == Some(token::panel::DockPosition::Bottom)
                         && self.model.dock_layout.bottom.is_open
@@ -660,14 +670,7 @@ impl App {
             } => {
                 if let Some((x, y)) = self.mouse_position {
                     if let Some(renderer) = &mut self.renderer {
-                        let event = make_mouse_event(
-                            x,
-                            y,
-                            MouseButton::Left,
-                            ElementState::Pressed,
-                            1, // Click count computed inside handler
-                            self.modifiers,
-                        );
+                        let event = make_mouse_event(x, y, MouseButton::Left, self.modifiers);
                         let result = handle_mouse_press(
                             &mut self.model,
                             renderer,
@@ -745,14 +748,7 @@ impl App {
             } => {
                 if let Some((x, y)) = self.mouse_position {
                     if let Some(renderer) = &mut self.renderer {
-                        let event = make_mouse_event(
-                            x,
-                            y,
-                            MouseButton::Middle,
-                            ElementState::Pressed,
-                            1,
-                            self.modifiers,
-                        );
+                        let event = make_mouse_event(x, y, MouseButton::Middle, self.modifiers);
                         let result = handle_mouse_press(
                             &mut self.model,
                             renderer,
@@ -2105,12 +2101,7 @@ fn syntax_worker_loop(
             let highlights = parser_state
                 .take_last_highlight_patch()
                 .unwrap_or(full_highlights);
-            let syntax_tree =
-                parser_state
-                    .get_cached_tree(req.document_id)
-                    .map(|(tree, language)| {
-                        token::syntax::SyntaxTreeSnapshot::new(req.revision, language, tree.clone())
-                    });
+            let syntax_tree = parser_state.syntax_tree_snapshot(req.document_id, req.revision);
 
             // Extract outline from the cached tree (just parsed above)
             let outline_started = Instant::now();

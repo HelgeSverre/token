@@ -118,7 +118,7 @@ pub enum DocumentMsg {
     InsertChar(char),
     /// Insert a string at cursor as a single atomic operation (one rope
     /// edit, one undo record). Preferred over looping `InsertChar` for
-    /// multi-char inserts (e.g. IME commit, legacy insert bridge).
+    /// multi-char inserts (e.g. paste or IME commit).
     InsertText(String),
     /// Insert a newline at cursor
     InsertNewline,
@@ -142,8 +142,6 @@ pub enum DocumentMsg {
     Cut,
     /// Paste from clipboard (Cmd+V)
     Paste,
-    /// Paste given text into the document
-    PasteText(String),
     /// Duplicate current line or selection (Cmd+D)
     Duplicate,
     /// Indent selected lines (Tab with selection)
@@ -242,8 +240,6 @@ pub enum ModalMsg {
 /// UI-specific messages (status bar, cursor blink, modals)
 #[derive(Debug, Clone)]
 pub enum UiMsg {
-    /// Set status bar message (legacy, for backward compatibility)
-    SetStatus(String),
     /// Toggle cursor blink state
     BlinkCursor,
     /// Update a specific status bar segment
@@ -533,7 +529,7 @@ pub enum CsvMsg {
     /// Scroll viewport horizontally (from mouse wheel)
     ScrollHorizontal(i32),
 
-    // === Cell Editing (Phase 2) ===
+    // Cell editing
     /// Start editing the selected cell (Enter or F2)
     StartEditing,
     /// Start editing with initial character (typing replaces content)
@@ -838,7 +834,7 @@ pub enum Msg {
     Dock(DockMsg),
     /// Outline panel messages
     Outline(OutlineMsg),
-    /// Unified text editing messages (Phase 2 - editable system)
+    /// Unified text editing messages.
     TextEdit(EditContext, TextEditMsg),
     /// Terminal panel messages
     Terminal(TerminalMsg),

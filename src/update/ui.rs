@@ -18,16 +18,6 @@ use super::app::execute_command;
 /// Handle UI messages (status bar, cursor blink, modals)
 pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
     match msg {
-        UiMsg::SetStatus(message) => {
-            // Legacy: also update the StatusMessage segment
-            model.ui.status_bar.update_segment(
-                SegmentId::StatusMessage,
-                SegmentContent::Text(message.clone()),
-            );
-            model.ui.set_status(message);
-            Some(Cmd::redraw_status_bar())
-        }
-
         UiMsg::BlinkCursor => {
             if model
                 .ui

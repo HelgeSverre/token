@@ -3,7 +3,7 @@
 //! Provides a spreadsheet-like view for CSV/TSV/PSV files with:
 //! - Grid rendering with row/column headers
 //! - Cell navigation (arrow keys, Tab, Enter)
-//! - Cell editing with sync back to document buffer (Phase 2)
+//! - Cell editing with sync back to document buffer
 //!
 //! # Architecture
 //!

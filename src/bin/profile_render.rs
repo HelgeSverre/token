@@ -131,7 +131,7 @@ fn main() -> Result<()> {
 
         // Simulate scrolling to exercise different code paths
         if args.scroll && frame % 10 == 0 {
-            for (_, editor) in model.editor_area.editors.iter_mut() {
+            for editor in model.editor_area.editors.values_mut() {
                 let max_scroll = 100;
                 editor.viewport.top_line = (frame / 10) % max_scroll;
             }

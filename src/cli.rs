@@ -116,26 +116,6 @@ impl CliArgs {
     }
 }
 
-impl StartupConfig {
-    /// Get file paths to open (for backward compatibility with current App::new)
-    pub fn file_paths(&self) -> Vec<PathBuf> {
-        match &self.mode {
-            StartupMode::Empty | StartupMode::Demo => vec![],
-            StartupMode::SingleFile(path) => vec![path.clone()],
-            StartupMode::MultipleFiles(paths) => paths.clone(),
-            StartupMode::Workspace { initial_files, .. } => initial_files.clone(),
-        }
-    }
-
-    /// Get workspace root if this is a workspace mode
-    pub fn workspace_root(&self) -> Option<&PathBuf> {
-        match &self.mode {
-            StartupMode::Workspace { root, .. } => Some(root),
-            _ => None,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

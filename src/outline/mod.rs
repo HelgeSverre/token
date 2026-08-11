@@ -3,7 +3,7 @@
 //! Provides structural symbol extraction from tree-sitter parse trees.
 //! Used by the outline panel to show a collapsible tree of document symbols.
 
-mod extract;
+pub(crate) mod extract;
 
 pub use extract::extract_outline;
 

@@ -3,7 +3,7 @@
 use super::document::Document;
 use super::editor_area::{DocumentId, EditorId};
 use crate::csv::CsvState;
-use crate::util::{char_type, CharType};
+use crate::util::text::{char_type, CharType};
 
 /// Strategy for revealing the cursor when it's outside the viewport
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1202,7 +1202,7 @@ impl EditorState {
     pub fn assert_invariants_with_context(&self, _context: &str) {}
 
     // =========================================================================
-    // Per-cursor movement primitives (Phase 0)
+    // Per-cursor movement primitives
     // =========================================================================
 
     /// Move a single cursor left by one character
@@ -1373,7 +1373,7 @@ impl EditorState {
     }
 
     // =========================================================================
-    // All-cursors movement wrappers (Phase 1)
+    // All-cursors movement wrappers
     // =========================================================================
 
     /// Apply a cursor movement operation to all cursors, then deduplicate.
@@ -1496,7 +1496,7 @@ impl EditorState {
     }
 
     // =========================================================================
-    // Selection movement helpers (Phase 3)
+    // Selection movement helpers
     // =========================================================================
 
     /// Move all cursors left and extend selections

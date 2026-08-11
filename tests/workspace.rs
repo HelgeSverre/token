@@ -450,7 +450,7 @@ fn test_workspace_toggle_sidebar_returns_focus_to_editor() {
 
     let mut model = test_model("hello\nworld\n", 0, 0);
     model.workspace = Some(test_workspace());
-    model.ui.focus = FocusTarget::Sidebar;
+    model.ui.focus = FocusTarget::Dock(token::panel::DockPosition::Left);
 
     // Hiding sidebar while focused on it should return focus to editor
     update(&mut model, Msg::Workspace(WorkspaceMsg::ToggleSidebar));

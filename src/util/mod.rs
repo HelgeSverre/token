@@ -1,11 +1,11 @@
 //! Utility modules
 
+pub mod byte_size;
 pub mod file_validation;
 pub mod text;
 pub mod tree;
 
-// Re-export text utilities at the util level for backward compatibility
-pub use text::{char_type, is_punctuation, is_word_boundary, CharType};
+pub use byte_size::ByteSize;
 
 // Re-export file validation utilities
 pub use file_validation::{

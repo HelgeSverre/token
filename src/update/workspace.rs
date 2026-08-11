@@ -18,7 +18,10 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
                 model.dock_layout.left.is_open = workspace.sidebar_visible;
                 // If sidebar is hidden while focused, return focus to editor
                 if !workspace.sidebar_visible
-                    && matches!(model.ui.focus, crate::model::FocusTarget::Sidebar)
+                    && matches!(
+                        model.ui.focus,
+                        crate::model::FocusTarget::Dock(crate::panel::DockPosition::Left)
+                    )
                 {
                     model.ui.focus_editor();
                 }

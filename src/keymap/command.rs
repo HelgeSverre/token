@@ -201,8 +201,6 @@ pub enum Command {
     // ========================================================================
     // Workspace (Sidebar/File Tree)
     // ========================================================================
-    /// Toggle sidebar visibility (legacy, use ToggleFileExplorer)
-    ToggleSidebar,
     /// Reveal active file in sidebar
     RevealInSidebar,
     /// Select previous item in file tree
@@ -419,9 +417,6 @@ impl Command {
             FocusGroup4 => vec![Msg::Layout(LayoutMsg::FocusGroupByIndex(4))],
 
             // Workspace
-            ToggleSidebar => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(
-                PanelId::FILE_EXPLORER,
-            ))],
             RevealInSidebar => vec![Msg::Workspace(WorkspaceMsg::RevealActiveFile)],
             FileTreeSelectPrevious => vec![Msg::Workspace(WorkspaceMsg::SelectPrevious)],
             FileTreeSelectNext => vec![Msg::Workspace(WorkspaceMsg::SelectNext)],
@@ -507,7 +502,6 @@ impl Command {
                 | Command::ToggleFindReplace
                 | Command::OpenRecentFiles
                 | Command::FuzzyFileFinder
-                | Command::ToggleSidebar
                 | Command::ToggleFileExplorer
                 | Command::ToggleTerminal
                 | Command::ToggleOutline
@@ -606,7 +600,6 @@ impl Command {
             FocusGroup3 => "Focus Group 3",
             FocusGroup4 => "Focus Group 4",
 
-            ToggleSidebar => "Toggle Sidebar",
             RevealInSidebar => "Reveal in Sidebar",
             FileTreeSelectPrevious => "File Tree: Select Previous",
             FileTreeSelectNext => "File Tree: Select Next",

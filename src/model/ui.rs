@@ -1,7 +1,7 @@
 //! UI state - status bar, cursor blink, modals, and other UI concerns
 
 use super::editor_area::{GroupId, SplitDirection};
-use super::status_bar::{StatusBar, TransientMessage};
+use super::status_bar::{SegmentContent, SegmentId, StatusBar, TransientMessage};
 use crate::editable::{EditConstraints, EditableState, StringBuffer};
 use crate::panel::DockPosition;
 use crate::theme::{list_available_themes, ThemeInfo};
@@ -18,9 +18,7 @@ pub enum FocusTarget {
     /// Main editor text area (default)
     #[default]
     Editor,
-    /// File tree sidebar (left dock's file explorer)
-    Sidebar,
-    /// A dock panel (right or bottom; left uses Sidebar for compatibility)
+    /// A dock panel, including the file explorer in the left dock
     Dock(DockPosition),
     /// Modal dialog (command palette, goto line, find/replace, etc.)
     Modal,
@@ -605,8 +603,6 @@ impl OutlinePanelState {
 /// UI state - status messages and cursor animation
 #[derive(Debug, Clone)]
 pub struct UiState {
-    /// Message displayed in the status bar (legacy, kept for compatibility)
-    pub status_message: String,
     /// Structured status bar with segments
     pub status_bar: StatusBar,
     /// Transient message with auto-expiry
@@ -650,7 +646,6 @@ impl UiState {
     /// Create a new UI state with default settings
     pub fn new() -> Self {
         Self {
-            status_message: String::new(),
             status_bar: StatusBar::new(),
             transient_message: None,
             cursor_visible: true,
@@ -674,10 +669,9 @@ impl UiState {
 
     /// Create a UI state with an initial status message
     pub fn with_status(message: impl Into<String>) -> Self {
-        Self {
-            status_message: message.into(),
-            ..Self::new()
-        }
+        let mut state = Self::new();
+        state.set_status(message);
+        state
     }
 
     // =========================================================================
@@ -709,14 +703,6 @@ impl UiState {
         }
     }
 
-    /// Set focus to the sidebar
-    pub fn focus_sidebar(&mut self) {
-        if self.focus != FocusTarget::Sidebar {
-            tracing::trace!("Focus changed: {:?} -> Sidebar", self.focus);
-            self.focus = FocusTarget::Sidebar;
-        }
-    }
-
     /// Set focus to a modal (prefer using open_modal instead)
     pub fn focus_modal(&mut self) {
         if self.focus != FocusTarget::Modal {
@@ -725,7 +711,7 @@ impl UiState {
         }
     }
 
-    /// Set focus to a dock (right or bottom; left dock uses focus_sidebar)
+    /// Set focus to a dock
     pub fn focus_dock(&mut self, position: DockPosition) {
         let target = FocusTarget::Dock(position);
         if self.focus != target {
@@ -738,7 +724,6 @@ impl UiState {
     pub fn focused_dock(&self) -> Option<DockPosition> {
         match self.focus {
             FocusTarget::Dock(pos) => Some(pos),
-            FocusTarget::Sidebar => Some(DockPosition::Left),
             _ => None,
         }
     }
@@ -763,7 +748,10 @@ impl UiState {
 
     /// Set the status message
     pub fn set_status(&mut self, message: impl Into<String>) {
-        self.status_message = message.into();
+        self.status_bar.update_segment(
+            SegmentId::StatusMessage,
+            SegmentContent::Text(message.into()),
+        );
     }
 
     /// Check if the UI is busy (loading or saving)

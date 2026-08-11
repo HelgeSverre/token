@@ -15,6 +15,41 @@ struct BoundarySelectionProfile {
     closing_node_kinds: &'static [&'static str],
 }
 
+/// Broad syntax families provide a reusable selection-expansion baseline.
+///
+/// Language profiles can layer grammar-specific normalization and candidate
+/// contributors on top without weakening the engine's containment invariants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SelectionFamily {
+    GenericCode,
+    Markup,
+    DataConfig,
+    Document,
+}
+
+type NormalizeNodeRange = for<'tree> fn(&Document, Node<'tree>) -> Range<usize>;
+type ExtraNodeRange = for<'tree> fn(&Document, Node<'tree>) -> Option<Range<usize>>;
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SelectionProfile {
+    family: SelectionFamily,
+    boundaries: Option<&'static BoundarySelectionProfile>,
+    normalize_node: NormalizeNodeRange,
+    extra_node_range: Option<ExtraNodeRange>,
+}
+
+pub(crate) trait SelectionBehavior: Sync {
+    fn profile(&self) -> SelectionProfile;
+}
+
+struct StaticSelectionBehavior(SelectionProfile);
+
+impl SelectionBehavior for StaticSelectionBehavior {
+    fn profile(&self) -> SelectionProfile {
+        self.0
+    }
+}
+
 const XML_BOUNDARIES: BoundarySelectionProfile = BoundarySelectionProfile {
     completed_node_kinds: &["element", "EmptyElemTag"],
     implicit_element_node_kinds: &[],
@@ -44,20 +79,94 @@ const JSX_BOUNDARIES: BoundarySelectionProfile = BoundarySelectionProfile {
     closing_node_kinds: &["jsx_closing_element"],
 };
 
-fn boundary_profile(language: LanguageId) -> Option<&'static BoundarySelectionProfile> {
-    match language {
-        LanguageId::Xml => Some(&XML_BOUNDARIES),
-        LanguageId::Html | LanguageId::Vue | LanguageId::Svelte => Some(&HTML_BOUNDARIES),
-        LanguageId::Jsx | LanguageId::Tsx => Some(&JSX_BOUNDARIES),
-        _ => None,
+fn identity_node_range(_document: &Document, node: Node<'_>) -> Range<usize> {
+    node.start_byte()..node.end_byte()
+}
+
+fn ini_node_range(document: &Document, node: Node<'_>) -> Range<usize> {
+    if node.kind() == "setting_value" {
+        trim_horizontal_whitespace(document, node.start_byte()..node.end_byte())
+    } else {
+        identity_node_range(document, node)
     }
 }
+
+fn yaml_node_range(_document: &Document, node: Node<'_>) -> Range<usize> {
+    yaml_range_without_boundary_comments(node)
+}
+
+fn selection_profile(language: LanguageId) -> SelectionProfile {
+    crate::syntax::registry::language(language)
+        .selection
+        .profile()
+}
+
+static CODE_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
+    family: SelectionFamily::GenericCode,
+    boundaries: None,
+    normalize_node: identity_node_range,
+    extra_node_range: None,
+});
+static DOCUMENT_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
+    family: SelectionFamily::Document,
+    ..CODE_BEHAVIOR.0
+});
+static HTML_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
+    family: SelectionFamily::Markup,
+    boundaries: Some(&HTML_BOUNDARIES),
+    ..CODE_BEHAVIOR.0
+});
+static XML_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
+    family: SelectionFamily::Markup,
+    boundaries: Some(&XML_BOUNDARIES),
+    ..CODE_BEHAVIOR.0
+});
+static JSX_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
+    family: SelectionFamily::Markup,
+    boundaries: Some(&JSX_BOUNDARIES),
+    ..CODE_BEHAVIOR.0
+});
+static YAML_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
+    family: SelectionFamily::DataConfig,
+    normalize_node: yaml_node_range,
+    ..CODE_BEHAVIOR.0
+});
+static INI_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
+    family: SelectionFamily::DataConfig,
+    normalize_node: ini_node_range,
+    ..CODE_BEHAVIOR.0
+});
+static RUST_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
+    extra_node_range: Some(rust_attached_item_range),
+    ..CODE_BEHAVIOR.0
+});
+
+pub(crate) static CODE_SELECTION: &dyn SelectionBehavior = &CODE_BEHAVIOR;
+pub(crate) static DOCUMENT_SELECTION: &dyn SelectionBehavior = &DOCUMENT_BEHAVIOR;
+pub(crate) static HTML_SELECTION: &dyn SelectionBehavior = &HTML_BEHAVIOR;
+pub(crate) static XML_SELECTION: &dyn SelectionBehavior = &XML_BEHAVIOR;
+pub(crate) static JSX_SELECTION: &dyn SelectionBehavior = &JSX_BEHAVIOR;
+pub(crate) static YAML_SELECTION: &dyn SelectionBehavior = &YAML_BEHAVIOR;
+pub(crate) static INI_SELECTION: &dyn SelectionBehavior = &INI_BEHAVIOR;
+pub(crate) static RUST_SELECTION: &dyn SelectionBehavior = &RUST_BEHAVIOR;
 
 /// Immutable parse tree associated with one exact document revision.
 #[derive(Debug, Clone)]
 pub struct SyntaxTreeSnapshot {
     pub revision: u64,
     pub language: LanguageId,
+    pub tree: tree_sitter::Tree,
+    injections: Vec<InjectedSyntaxTree>,
+}
+
+/// A parsed language region embedded in the host document.
+///
+/// Injected trees use document-relative byte coordinates. Parsers should use
+/// Tree-sitter included ranges rather than parsing a detached substring.
+#[derive(Debug, Clone)]
+pub struct InjectedSyntaxTree {
+    pub language: LanguageId,
+    pub range: Range<usize>,
     pub tree: tree_sitter::Tree,
 }
 
@@ -67,7 +176,17 @@ impl SyntaxTreeSnapshot {
             revision,
             language,
             tree,
+            injections: Vec::new(),
         }
+    }
+
+    pub fn with_injections(mut self, injections: Vec<InjectedSyntaxTree>) -> Self {
+        self.injections = injections;
+        self
+    }
+
+    pub fn injections(&self) -> &[InjectedSyntaxTree] {
+        &self.injections
     }
 }
 
@@ -87,28 +206,79 @@ pub fn expansion_candidates(
 
     let start_byte = position_to_byte(document, selection.start());
     let end_byte = position_to_byte(document, selection.end());
-    let root = snapshot.tree.root_node();
+    let host_candidates = tree_expansion_candidates(
+        document,
+        &snapshot.tree,
+        snapshot.language,
+        selection,
+        start_byte,
+        end_byte,
+    );
+    let mut candidates = Vec::new();
+    let mut active_injection = None;
+    for injection in &snapshot.injections {
+        if injection.range.start <= start_byte && injection.range.end >= end_byte {
+            let injected_candidates = tree_expansion_candidates(
+                document,
+                &injection.tree,
+                injection.language,
+                selection,
+                start_byte,
+                end_byte,
+            );
+            if !injected_candidates.is_empty() {
+                active_injection = Some(injection.range.clone());
+                candidates.extend(injected_candidates);
+            }
+        }
+    }
+    candidates.extend(host_candidates.into_iter().filter(|candidate| {
+        let Some(injection) = &active_injection else {
+            return true;
+        };
+        let candidate_start = position_to_byte(document, candidate.start());
+        let candidate_end = position_to_byte(document, candidate.end());
+        candidate_start <= injection.start && candidate_end >= injection.end
+    }));
+    candidates.sort_by_key(|candidate| {
+        let start = position_to_byte(document, candidate.start());
+        let end = position_to_byte(document, candidate.end());
+        (end.saturating_sub(start), start)
+    });
+    candidates.dedup_by_key(|candidate| (candidate.start(), candidate.end()));
+    candidates
+}
+
+fn tree_expansion_candidates(
+    document: &Document,
+    tree: &tree_sitter::Tree,
+    language: LanguageId,
+    selection: Selection,
+    start_byte: usize,
+    end_byte: usize,
+) -> Vec<Selection> {
+    let root = tree.root_node();
     let Some(mut node) = root.named_descendant_for_byte_range(start_byte, end_byte) else {
         return Vec::new();
     };
 
-    let preferred_boundary =
-        completed_node_before_eol(document, root, snapshot.language, selection);
+    let profile = selection_profile(language);
+    let preferred_boundary = completed_node_before_eol(document, root, profile, selection);
     let mut ranges = preferred_boundary.clone().into_iter().collect::<Vec<_>>();
     loop {
         if !node.is_missing() {
             if let Some(inner) = delimiter_interior(document, node) {
                 ranges.push(inner);
             }
-            if let Some(inner) = markup_element_interior(snapshot.language, node) {
-                ranges.push(inner);
-            }
-            let range = normalized_node_range(document, snapshot.language, node);
+            collect_family_ranges(document, profile, node, &mut ranges);
+            let range = normalized_node_range(document, profile, node);
             if node != root {
                 ranges.push(range);
             }
-            if let Some(attached) = rust_attached_item_range(document, snapshot.language, node) {
-                ranges.push(attached);
+            if let Some(extra_node_range) = profile.extra_node_range {
+                if let Some(extra) = extra_node_range(document, node) {
+                    ranges.push(extra);
+                }
             }
         }
 
@@ -147,10 +317,10 @@ pub fn expansion_candidates(
 fn completed_node_before_eol(
     document: &Document,
     root: Node<'_>,
-    language: LanguageId,
+    profile: SelectionProfile,
     selection: Selection,
 ) -> Option<Range<usize>> {
-    let profile = boundary_profile(language)?;
+    let profile = profile.boundaries?;
     if !selection.is_empty() {
         return None;
     }
@@ -190,8 +360,10 @@ fn completed_node_before_eol(
     }
 }
 
-fn markup_element_interior(language: LanguageId, node: Node<'_>) -> Option<Range<usize>> {
-    let profile = boundary_profile(language)?;
+fn markup_element_interior(
+    profile: &BoundarySelectionProfile,
+    node: Node<'_>,
+) -> Option<Range<usize>> {
     if !profile.container_node_kinds.contains(&node.kind()) {
         return None;
     }
@@ -208,6 +380,22 @@ fn markup_element_interior(language: LanguageId, node: Node<'_>) -> Option<Range
     }
     let range = opening_end?..closing_start?;
     (range.start < range.end).then_some(range)
+}
+
+fn collect_family_ranges(
+    _document: &Document,
+    profile: SelectionProfile,
+    node: Node<'_>,
+    ranges: &mut Vec<Range<usize>>,
+) {
+    if profile.family == SelectionFamily::Markup {
+        if let Some(inner) = profile
+            .boundaries
+            .and_then(|boundaries| markup_element_interior(boundaries, node))
+        {
+            ranges.push(inner);
+        }
+    }
 }
 
 fn implicit_markup_element_range(
@@ -237,17 +425,12 @@ fn range_contains_non_whitespace(document: &Document, range: &Range<usize>) -> b
 
 fn normalized_node_range(
     document: &Document,
-    language: LanguageId,
+    profile: SelectionProfile,
     node: Node<'_>,
 ) -> Range<usize> {
-    let range = match language {
-        LanguageId::Yaml => yaml_range_without_boundary_comments(node),
-        LanguageId::Ini if node.kind() == "setting_value" => {
-            trim_horizontal_whitespace(document, node.start_byte()..node.end_byte())
-        }
-        _ => node.start_byte()..node.end_byte(),
-    };
-    let range = boundary_profile(language)
+    let range = (profile.normalize_node)(document, node);
+    let range = profile
+        .boundaries
         .and_then(|profile| implicit_markup_element_range(profile, node))
         .unwrap_or(range);
 
@@ -323,12 +506,8 @@ fn trim_trailing_line_ending(document: &Document, range: Range<usize>) -> Range<
     range.start..end
 }
 
-fn rust_attached_item_range(
-    document: &Document,
-    language: LanguageId,
-    node: Node<'_>,
-) -> Option<Range<usize>> {
-    if language != LanguageId::Rust || !is_rust_attributable_item(node.kind()) {
+fn rust_attached_item_range(document: &Document, node: Node<'_>) -> Option<Range<usize>> {
+    if !is_rust_attributable_item(node.kind()) {
         return None;
     }
 
@@ -597,6 +776,219 @@ mod tests {
     }
 
     #[test]
+    fn applescript_candidates_include_expression_statement_and_handler() {
+        let source = "on greet(personName)\n\tset message to \"Hello, \" & personName\n\treturn message\nend greet\n";
+        let texts = candidate_texts(source, LanguageId::AppleScript, "personName");
+
+        assert!(
+            texts
+                .iter()
+                .any(|text| text.contains("\"Hello, \" & personName")),
+            "{texts:?}"
+        );
+        assert!(
+            texts.iter().any(|text| text.contains("set message")),
+            "{texts:?}"
+        );
+        assert!(
+            texts.iter().any(|text| text.starts_with("on greet")),
+            "{texts:?}"
+        );
+    }
+
+    #[test]
+    fn injected_tree_candidates_are_merged_with_host_candidates() {
+        let source = "<script>const answer = make(user.name);</script>";
+        let (document, host) = parsed_document(source, LanguageId::Html);
+        let content_start = source.find("const").unwrap();
+        let content_end = source.find("</script>").unwrap();
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_javascript::LANGUAGE.into())
+            .unwrap();
+        parser
+            .set_included_ranges(&[tree_sitter::Range {
+                start_byte: content_start,
+                end_byte: content_end,
+                start_point: tree_sitter::Point::new(0, content_start),
+                end_point: tree_sitter::Point::new(0, content_end),
+            }])
+            .unwrap();
+        let injected_tree = parser.parse(source, None).unwrap();
+        let snapshot = host.with_injections(vec![InjectedSyntaxTree {
+            language: LanguageId::JavaScript,
+            range: content_start..content_end,
+            tree: injected_tree,
+        }]);
+        let name_start = source.find("name").unwrap();
+        let selection = Selection::from_positions(
+            byte_to_position(&document, name_start),
+            byte_to_position(&document, name_start + "name".len()),
+        );
+
+        let texts = expansion_candidates(&document, &snapshot, selection)
+            .into_iter()
+            .map(|candidate| candidate.get_text(&document))
+            .collect::<Vec<_>>();
+
+        assert!(
+            texts.iter().any(|text| text == "make(user.name)"),
+            "{texts:?}"
+        );
+        assert!(
+            texts.iter().any(|text| text.starts_with("<script>")),
+            "{texts:?}"
+        );
+    }
+
+    #[test]
+    fn svelte_injection_does_not_mix_adjacent_function_ranges() {
+        let source = r#"<script lang="ts">
+function deleteTask(taskId: string) {
+    console.log(taskId);
+}
+
+function toggleTag(tag: string) {
+    selectedTags.update((tags) => tags.has(tag));
+}
+</script>
+"#;
+        let mut document = Document::with_text(source);
+        document.language = LanguageId::Svelte;
+        document.revision = 1;
+        let document_id = DocumentId(100);
+        let mut parser = ParserState::new();
+        parser.parse_and_highlight(source, LanguageId::Svelte, document_id, 1);
+        let snapshot = parser.syntax_tree_snapshot(document_id, 1).unwrap();
+        let function_start = source.rfind("function toggleTag").unwrap();
+        let selection = Selection::from_positions(
+            byte_to_position(&document, function_start),
+            byte_to_position(&document, function_start + "function".len()),
+        );
+
+        let texts = expansion_candidates(&document, &snapshot, selection)
+            .into_iter()
+            .map(|candidate| candidate.get_text(&document))
+            .collect::<Vec<_>>();
+
+        let first = texts.first().expect("function should have an expansion");
+        assert!(first.starts_with("function toggleTag"), "{texts:?}");
+        assert!(first.ends_with('}'), "{texts:?}");
+        assert!(!first.contains("function deleteTask"), "{texts:?}");
+    }
+
+    #[test]
+    fn extended_languages_provide_structural_candidates() {
+        let cases = [
+            (
+                LanguageId::CSharp,
+                "class Greeter { string Greet(string name) { return \"Hi \" + name; } }",
+                "name",
+                "string Greet",
+            ),
+            (
+                LanguageId::Ruby,
+                "class Greeter\n  def greet(name)\n    \"Hi #{name}\"\n  end\nend\n",
+                "name",
+                "def greet",
+            ),
+            (
+                LanguageId::Lua,
+                "function greet(name)\n  return \"Hi \" .. name\nend\n",
+                "name",
+                "function greet",
+            ),
+            (
+                LanguageId::R,
+                "greet <- function(name) {\n  paste(\"Hi\", name)\n}\n",
+                "name",
+                "function(name)",
+            ),
+            (
+                LanguageId::Swift,
+                "func greet(name: String) -> String {\n  return \"Hi \\(name)\"\n}\n",
+                "name",
+                "func greet",
+            ),
+            (
+                LanguageId::Elixir,
+                "defmodule Greeter do\n  def greet(name), do: \"Hi #{name}\"\nend\n",
+                "name",
+                "def greet",
+            ),
+            (
+                LanguageId::Gleam,
+                "pub fn greet(name: String) {\n  \"Hi \" <> name\n}\n",
+                "name",
+                "pub fn greet",
+            ),
+            (
+                LanguageId::Solidity,
+                "contract Greeter { function greet(string memory name) public pure returns (string memory) { return name; } }",
+                "name",
+                "function greet",
+            ),
+            (LanguageId::Kotlin, "fun greet(name: String): String = \"Hi $name\"", "name", "fun greet"),
+            (LanguageId::Dart, "String greet(String name) { return 'Hi $name'; }", "name", "greet(String name)"),
+            (LanguageId::Julia, "function greet(name)\n  \"Hi $name\"\nend\n", "name", "function greet"),
+            (LanguageId::Haskell, "greet name = \"Hi \" ++ name\n", "name", "greet name"),
+            (LanguageId::Ocaml, "let greet name = \"Hi \" ^ name\n", "name", "let greet"),
+            (LanguageId::D, "string greet(string name) { return \"Hi \" ~ name; }", "name", "greet(string name)"),
+            (LanguageId::ObjectiveC, "NSString *greet(NSString *name) { return name; }", "name", "greet(NSString *name)"),
+            (LanguageId::Vhdl, "entity greeter is\n  port (name : in string);\nend entity;\n", "name", "entity greeter"),
+            (LanguageId::Odin, "greet :: proc(name: string) -> string { return name }", "name", "greet :: proc"),
+            (LanguageId::Fish, "function greet\n  set name world\n  echo $name\nend\n", "name", "set name"),
+            (LanguageId::Assembly, "greet:\n  mov rax, rbx\n  ret\n", "rax", "mov rax"),
+            (LanguageId::Scss, ".card { color: red; &:hover { color: blue; } }", "blue", "color: blue"),
+            (LanguageId::Cmake, "function(greet name)\n  message(STATUS ${name})\nendfunction()\n", "name", "function(greet name)"),
+            (LanguageId::Make, "greet:\n\t@echo hello world\n", "hello", "echo hello world"),
+            (LanguageId::CommonLisp, "(defun greet (name) (concatenate 'string \"Hi \" name))", "name", "defun greet"),
+            (LanguageId::Zig, "fn greet(name: []const u8) []const u8 { return name; }", "name", "fn greet"),
+            (LanguageId::Glsl, "vec4 shade(vec3 color) { return vec4(color, 1.0); }", "color", "shade(vec3 color)"),
+            (LanguageId::Graphql, "query User($id: ID!) { user(id: $id) { name } }", "name", "user(id: $id)"),
+            (LanguageId::Hcl, "resource \"demo\" \"main\" { name = var.name }", "var.name", "name = var.name"),
+            (LanguageId::Nix, "{ name }: { greeting = \"Hello ${name}\"; }", "name", "greeting ="),
+            (LanguageId::Ada, "function Greet (Name : String) return String is\nbegin\n  return Name;\nend Greet;", "Name", "function Greet"),
+            (LanguageId::Erlang, "greet(Name) -> io:format(\"Hi ~s\", [Name]).", "Name", "greet(Name)"),
+            (LanguageId::Clojure, "(defn greet [name] (str \"Hi \" name))", "name", "defn greet"),
+            (LanguageId::Nushell, "def greet [name: string] { $\"Hi ($name)\" }", "name", "def greet"),
+            (LanguageId::Sed, "s/hello/world/g", "hello", "s/hello/world"),
+            (LanguageId::Tcl, "proc greet {name} { return \"Hi $name\" }", "name", "proc greet"),
+            (LanguageId::Roc, "greet = \\name -> \"Hi ${name}\"", "name", "greet ="),
+            (LanguageId::Janet, "(defn greet [name] (string \"Hi \" name))", "name", "defn greet"),
+            (LanguageId::Forth, ": greet ( name -- ) . ;", "name", ": greet"),
+            (LanguageId::Protobuf, "message Greeter { string name = 1; }", "name", "message Greeter"),
+            (LanguageId::Dhall, "let greet = \\(name : Text) -> \"Hi ${name}\" in greet", "name", "let greet"),
+            (LanguageId::Pkl, "class Greeter { name: String = \"world\" }", "name", "class Greeter"),
+            (LanguageId::Hurl, "GET https://example.com/users\nHTTP 200\n[Asserts]\nstatus == 200", "status", "status == 200"),
+            (LanguageId::Wit, "interface greeter { greet: func(name: string) -> string; }", "name", "interface greeter"),
+            (LanguageId::StandardMl, "fun greet name = \"Hi \" ^ name", "name", "fun greet"),
+            (LanguageId::Nim, "proc greet(name: string): string = \"Hi \" & name", "name", "proc greet"),
+            (LanguageId::Astro, "---\nconst name = 'world';\n---\n<h1>Hello {name}</h1>", "name", "const name"),
+            (LanguageId::Awk, "function greet(name) { print \"Hi\", name }", "name", "function greet"),
+            (LanguageId::Kdl, "server host=\"localhost\" { port 8080 }", "localhost", "server host"),
+            (LanguageId::Tera, "{% macro greet(name) %}Hello {{ name }}{% endmacro %}", "name", "macro greet"),
+            (LanguageId::Typst, "#let greet(name) = [Hello #name]", "name", "let greet"),
+            (LanguageId::Dockerfile, "FROM alpine\nRUN echo hello world\n", "hello", "RUN echo hello world"),
+            (LanguageId::Wgsl, "fn shade(color: vec3f) -> vec4f { return vec4f(color, 1.0); }", "color", "fn shade"),
+            (LanguageId::Sql, "SELECT users.name FROM users WHERE users.active = true;", "name", "SELECT users.name"),
+            (LanguageId::V, "fn greet(name string) string { return 'Hi ${name}' }", "name", "fn greet"),
+            (LanguageId::Cue, "greeter: { name: \"world\"; message: \"Hi \\(name)\" }", "name", "name:"),
+            (LanguageId::Fennel, "(fn greet [name] (.. \"Hi \" name))", "name", "fn greet"),
+            (LanguageId::Pest, "identifier = { ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }", "ASCII_ALPHA", "identifier ="),
+            (LanguageId::Pony, "class Greeter\n  fun greet(name: String): String => name\nend", "name", "fun greet"),
+        ];
+
+        for (language, source, needle, owning_scope) in cases {
+            let texts = candidate_texts(source, language, needle);
+            assert!(
+                texts.iter().any(|text| text.contains(owning_scope)),
+                "{language:?}: {texts:?}"
+            );
+        }
+    }
+
+    #[test]
     fn html_candidates_include_owning_element() {
         let texts = candidate_texts(
             "<main><span>content</span></main>",
@@ -806,7 +1198,13 @@ mod tests {
         let (document, snapshot) = parsed_document(rust, LanguageId::Rust);
         let root = snapshot.tree.root_node();
         let selection = Selection::new(Position::new(1, 16));
-        assert!(completed_node_before_eol(&document, root, LanguageId::Rust, selection).is_none());
+        assert!(completed_node_before_eol(
+            &document,
+            root,
+            selection_profile(LanguageId::Rust),
+            selection
+        )
+        .is_none());
     }
 
     #[test]

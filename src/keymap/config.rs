@@ -350,7 +350,6 @@ impl FromStr for Command {
             "FocusGroup4" => Ok(Command::FocusGroup4),
 
             // Workspace
-            "ToggleSidebar" => Ok(Command::ToggleSidebar),
             "RevealInSidebar" => Ok(Command::RevealInSidebar),
             "FileTreeSelectPrevious" => Ok(Command::FileTreeSelectPrevious),
             "FileTreeSelectNext" => Ok(Command::FileTreeSelectNext),

@@ -128,15 +128,6 @@ impl WebviewManager {
         }
     }
 
-    /// Scroll webview to a specific line (for scroll sync)
-    #[allow(dead_code)]
-    pub fn scroll_to_line(&self, preview_id: PreviewId, line: usize) {
-        if let Some(webview) = self.webviews.get(&preview_id) {
-            let js = format!("if(window.scrollToLine) window.scrollToLine({});", line);
-            let _ = webview.evaluate_script(&js);
-        }
-    }
-
     /// Close and remove a webview
     pub fn close_webview(&mut self, preview_id: PreviewId) {
         self.webviews.remove(&preview_id);
@@ -153,14 +144,6 @@ impl WebviewManager {
     /// Get all active preview IDs
     pub fn active_previews(&self) -> Vec<PreviewId> {
         self.webviews.keys().copied().collect()
-    }
-
-    /// Set visibility for a specific webview
-    #[allow(dead_code)]
-    pub fn set_visible(&self, preview_id: PreviewId, visible: bool) {
-        if let Some(webview) = self.webviews.get(&preview_id) {
-            let _ = webview.set_visible(visible);
-        }
     }
 
     /// Set visibility for all webviews (hide when modals are shown)

@@ -13,7 +13,7 @@
 
 use std::path::PathBuf;
 
-use winit::event::{ElementState, MouseButton};
+use winit::event::MouseButton;
 use winit::keyboard::ModifiersState;
 
 use crate::commands::filter_commands;
@@ -49,59 +49,23 @@ pub struct MouseEvent {
     pub pos: Point,
     /// Which mouse button
     pub button: MouseButton,
-    /// Pressed or released (currently only press events are handled)
-    #[allow(dead_code)]
-    pub state: ElementState,
-    /// Click count: 1=single, 2=double, 3=triple (computed by ClickTracker, not used here)
-    #[allow(dead_code)]
-    pub click_count: u8,
     /// Active keyboard modifiers
     pub modifiers: ModifiersState,
 }
 
 impl MouseEvent {
-    pub fn new(
-        x: f64,
-        y: f64,
-        button: MouseButton,
-        state: ElementState,
-        click_count: u8,
-        modifiers: ModifiersState,
-    ) -> Self {
+    pub fn new(x: f64, y: f64, button: MouseButton, modifiers: ModifiersState) -> Self {
         Self {
             pos: Point::new(x, y),
             button,
-            state,
-            click_count,
             modifiers,
         }
-    }
-
-    /// Check if this is a press event
-    #[inline]
-    #[allow(dead_code)]
-    pub fn is_pressed(&self) -> bool {
-        matches!(self.state, ElementState::Pressed)
-    }
-
-    /// Check if this is a release event
-    #[inline]
-    #[allow(dead_code)]
-    pub fn is_released(&self) -> bool {
-        matches!(self.state, ElementState::Released)
     }
 
     /// Check if shift modifier is active
     #[inline]
     pub fn shift(&self) -> bool {
         self.modifiers.shift_key()
-    }
-
-    /// Check if ctrl/cmd modifier is active (for future context menus)
-    #[inline]
-    #[allow(dead_code)]
-    pub fn ctrl(&self) -> bool {
-        self.modifiers.control_key()
     }
 
     /// Check if alt/option modifier is active
@@ -124,7 +88,6 @@ impl MouseEvent {
 /// Note: Some variant fields are not currently read but are populated for
 /// future use (e.g., context menus, detailed click handling).
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub enum HitTarget {
     /// Modal overlay (command palette, goto line, find/replace, etc.)
     /// `inside` indicates whether the click was inside or outside the modal bounds
@@ -271,62 +234,6 @@ pub enum HitTarget {
 }
 
 impl HitTarget {
-    /// Get the group ID if this target is associated with an editor group
-    #[allow(dead_code)]
-    pub fn group_id(&self) -> Option<GroupId> {
-        match self {
-            HitTarget::GroupTab { group_id, .. }
-            | HitTarget::GroupTabBarEmpty { group_id }
-            | HitTarget::EditorGutter { group_id, .. }
-            | HitTarget::EditorContent { group_id, .. }
-            | HitTarget::CsvCell { group_id, .. }
-            | HitTarget::BinaryPlaceholderButton { group_id }
-            | HitTarget::ImageContent { group_id, .. }
-            | HitTarget::ScrollbarThumbVertical { group_id, .. }
-            | HitTarget::ScrollbarTrackVertical { group_id, .. }
-            | HitTarget::ScrollbarThumbHorizontal { group_id, .. }
-            | HitTarget::ScrollbarTrackHorizontal { group_id, .. } => Some(*group_id),
-            _ => None,
-        }
-    }
-
-    /// Get the suggested focus target for this hit
-    #[allow(dead_code)]
-    pub fn suggested_focus(&self) -> Option<FocusTarget> {
-        match self {
-            HitTarget::Modal { .. } => Some(FocusTarget::Modal),
-            HitTarget::SidebarEmpty | HitTarget::SidebarItem { .. } => Some(FocusTarget::Sidebar),
-            HitTarget::GroupTab { .. }
-            | HitTarget::GroupTabBarEmpty { .. }
-            | HitTarget::EditorGutter { .. }
-            | HitTarget::EditorContent { .. }
-            | HitTarget::CsvCell { .. }
-            | HitTarget::BinaryPlaceholderButton { .. }
-            | HitTarget::ImageContent { .. }
-            | HitTarget::ScrollbarThumbVertical { .. }
-            | HitTarget::ScrollbarTrackVertical { .. }
-            | HitTarget::ScrollbarThumbHorizontal { .. }
-            | HitTarget::ScrollbarTrackHorizontal { .. } => Some(FocusTarget::Editor),
-            // Dock content areas suggest sidebar focus for left dock (file explorer),
-            // editor focus for others (until we have FocusTarget::Dock)
-            HitTarget::DockTab { position, .. }
-            | HitTarget::DockTabBarEmpty { position }
-            | HitTarget::DockContent { position, .. } => {
-                match position {
-                    crate::panel::DockPosition::Left => Some(FocusTarget::Sidebar),
-                    _ => Some(FocusTarget::Editor), // TODO: FocusTarget::Dock(position)
-                }
-            }
-            // These don't change focus
-            HitTarget::StatusBar
-            | HitTarget::SidebarResize
-            | HitTarget::DockResize { .. }
-            | HitTarget::Splitter { .. }
-            | HitTarget::PreviewHeader { .. }
-            | HitTarget::PreviewContent { .. } => None,
-        }
-    }
-
     /// Get the appropriate mouse cursor icon for this hit target
     pub fn cursor_icon(&self) -> winit::window::CursorIcon {
         use crate::model::editor_area::SplitDirection;
@@ -439,24 +346,6 @@ impl EventResult {
             redraw: cmd.is_none(), // Only set redraw if no cmd
             focus: Some(focus),
             cmd,
-        }
-    }
-
-    /// Check if this result requests a redraw
-    #[allow(dead_code)]
-    pub fn needs_redraw(&self) -> bool {
-        match self {
-            Self::Consumed { redraw, cmd, .. } => cmd.is_some() || *redraw,
-            Self::Bubble => false,
-        }
-    }
-
-    /// Get the command from this result
-    #[allow(dead_code)]
-    pub fn cmd(&self) -> Option<&crate::commands::Cmd> {
-        match self {
-            Self::Consumed { cmd, .. } => cmd.as_ref(),
-            Self::Bubble => None,
         }
     }
 }
@@ -1016,46 +905,9 @@ mod tests {
 
     #[test]
     fn test_mouse_event_helpers() {
-        let event = MouseEvent::new(
-            50.0,
-            50.0,
-            MouseButton::Left,
-            ElementState::Pressed,
-            1,
-            ModifiersState::empty(),
-        );
-        assert!(event.is_pressed());
-        assert!(!event.is_released());
+        let event = MouseEvent::new(50.0, 50.0, MouseButton::Left, ModifiersState::empty());
         assert!(!event.shift());
-        assert!(!event.ctrl());
         assert!(!event.alt());
-    }
-
-    #[test]
-    fn test_hit_target_suggested_focus() {
-        let modal = HitTarget::Modal { inside: true };
-        assert_eq!(modal.suggested_focus(), Some(FocusTarget::Modal));
-
-        let sidebar = HitTarget::SidebarEmpty;
-        assert_eq!(sidebar.suggested_focus(), Some(FocusTarget::Sidebar));
-
-        let splitter = HitTarget::Splitter {
-            index: 0,
-            direction: crate::model::editor_area::SplitDirection::Horizontal,
-        };
-        assert_eq!(splitter.suggested_focus(), None);
-    }
-
-    #[test]
-    fn test_event_result_helpers() {
-        let consumed = EventResult::consumed_redraw();
-        assert!(consumed.needs_redraw());
-
-        let no_redraw = EventResult::consumed_no_redraw();
-        assert!(!no_redraw.needs_redraw());
-
-        let bubble = EventResult::Bubble;
-        assert!(!bubble.needs_redraw());
     }
 
     /// Regression test: `hit_test_groups` must classify gutter vs. content

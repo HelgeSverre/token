@@ -1,7 +1,7 @@
 //! Utility functions for text editing
 
-/// Check if a character is a punctuation/symbol boundary (not whitespace)
-pub fn is_punctuation(ch: char) -> bool {
+/// Check if a character is a non-whitespace symbol that separates words.
+fn is_word_boundary_symbol(ch: char) -> bool {
     matches!(
         ch,
         '/' | ':'
@@ -44,25 +44,19 @@ pub enum CharType {
     Whitespace,
     /// Alphanumeric characters (word characters)
     WordChar,
-    /// Punctuation and symbols
-    Punctuation,
+    /// A non-whitespace symbol that separates words
+    BoundarySymbol,
 }
 
 /// Get the character type for word navigation
 pub fn char_type(ch: char) -> CharType {
     if ch.is_whitespace() {
         CharType::Whitespace
-    } else if is_punctuation(ch) {
-        CharType::Punctuation
+    } else if is_word_boundary_symbol(ch) {
+        CharType::BoundarySymbol
     } else {
         CharType::WordChar
     }
-}
-
-/// Check if a character is a word boundary (symbol or whitespace)
-#[allow(dead_code)]
-pub fn is_word_boundary(ch: char) -> bool {
-    ch.is_whitespace() || is_punctuation(ch)
 }
 
 /// Tab width for visual column calculations

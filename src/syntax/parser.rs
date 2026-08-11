@@ -12,6 +12,7 @@ use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, Tree, TreeCursor
 
 use super::highlights::{highlight_id_for_name, HighlightToken, SyntaxHighlights};
 use super::languages::LanguageId;
+use super::selection::{InjectedSyntaxTree, SyntaxTreeSnapshot};
 use crate::model::editor_area::DocumentId;
 
 /// Cached parse state for a document (enables incremental parsing)
@@ -34,6 +35,207 @@ fn byte_to_char_col(text: &str, byte_col: usize) -> usize {
     }
     text[..valid_byte].chars().count()
 }
+
+#[derive(Debug, Clone)]
+pub(crate) struct InjectionRegion {
+    pub language: LanguageId,
+    pub range: Range<usize>,
+}
+
+pub(crate) trait InjectionBehavior: Sync {
+    fn regions(&self, tree: &Tree, source: &str) -> Vec<InjectionRegion>;
+}
+
+struct NoInjections;
+
+impl InjectionBehavior for NoInjections {
+    fn regions(&self, _tree: &Tree, _source: &str) -> Vec<InjectionRegion> {
+        Vec::new()
+    }
+}
+
+type InjectionMatcher =
+    for<'tree> fn(tree_sitter::Node<'tree>, &str) -> Option<(LanguageId, tree_sitter::Node<'tree>)>;
+
+struct NodeInjections {
+    matcher: InjectionMatcher,
+}
+
+impl InjectionBehavior for NodeInjections {
+    fn regions(&self, tree: &Tree, source: &str) -> Vec<InjectionRegion> {
+        let mut regions = Vec::new();
+        let mut stack = vec![tree.root_node()];
+        while let Some(node) = stack.pop() {
+            if let Some((language, content)) = (self.matcher)(node, source) {
+                regions.push(InjectionRegion {
+                    language,
+                    range: content.start_byte()..content.end_byte(),
+                });
+            }
+            let mut cursor = node.walk();
+            stack.extend(node.named_children(&mut cursor));
+        }
+        regions
+    }
+}
+
+fn markdown_injection<'tree>(
+    node: tree_sitter::Node<'tree>,
+    source: &str,
+) -> Option<(LanguageId, tree_sitter::Node<'tree>)> {
+    if node.kind() == "fenced_code_block" {
+        let mut injected_language = None;
+        let mut content = None;
+        let mut cursor = node.walk();
+        for child in node.named_children(&mut cursor) {
+            match child.kind() {
+                "info_string" => {
+                    injected_language = child
+                        .named_child(0)
+                        .filter(|language| language.kind() == "language")
+                        .and_then(|language| language.utf8_text(source.as_bytes()).ok())
+                        .and_then(LanguageId::from_code_fence_info);
+                }
+                "code_fence_content" => content = Some(child),
+                _ => {}
+            }
+        }
+        if let (Some(injected_language), Some(content)) = (injected_language, content) {
+            return Some((injected_language, content));
+        }
+    }
+    None
+}
+
+fn html_injection<'tree>(
+    node: tree_sitter::Node<'tree>,
+    _source: &str,
+) -> Option<(LanguageId, tree_sitter::Node<'tree>)> {
+    if node.kind() == "raw_text" {
+        let parent = node.parent();
+        let injected_language = match parent.map(|parent| parent.kind()) {
+            Some("script_element") => Some(LanguageId::JavaScript),
+            Some("style_element") => Some(LanguageId::Css),
+            _ => None,
+        };
+        if let Some(injected_language) = injected_language {
+            return Some((injected_language, node));
+        }
+    }
+    None
+}
+
+fn component_injection<'tree>(
+    node: tree_sitter::Node<'tree>,
+    source: &str,
+) -> Option<(LanguageId, tree_sitter::Node<'tree>)> {
+    if node.kind() != "raw_text" {
+        return None;
+    }
+    let parent = node.parent()?;
+    let language = match parent.kind() {
+        "script_element" => detect_component_script_language(parent, source),
+        "style_element" => LanguageId::Css,
+        _ => return None,
+    };
+    Some((language, node))
+}
+
+fn astro_injection<'tree>(
+    node: tree_sitter::Node<'tree>,
+    source: &str,
+) -> Option<(LanguageId, tree_sitter::Node<'tree>)> {
+    if node.kind() == "frontmatter_js_block" {
+        Some((LanguageId::TypeScript, node))
+    } else {
+        component_injection(node, source)
+    }
+}
+
+fn docker_injection<'tree>(
+    node: tree_sitter::Node<'tree>,
+    _source: &str,
+) -> Option<(LanguageId, tree_sitter::Node<'tree>)> {
+    (node.kind() == "shell_command").then_some((LanguageId::Bash, node))
+}
+
+fn make_injection<'tree>(
+    node: tree_sitter::Node<'tree>,
+    _source: &str,
+) -> Option<(LanguageId, tree_sitter::Node<'tree>)> {
+    matches!(node.kind(), "shell_text" | "shell_command").then_some((LanguageId::Bash, node))
+}
+
+fn tera_injection<'tree>(
+    node: tree_sitter::Node<'tree>,
+    _source: &str,
+) -> Option<(LanguageId, tree_sitter::Node<'tree>)> {
+    (node.kind() == "content"
+        && node
+            .parent()
+            .is_some_and(|parent| parent.kind() == "frontmatter"))
+    .then_some((LanguageId::Yaml, node))
+}
+
+fn hurl_injection<'tree>(
+    node: tree_sitter::Node<'tree>,
+    _source: &str,
+) -> Option<(LanguageId, tree_sitter::Node<'tree>)> {
+    match node.kind() {
+        "json_value" => Some((LanguageId::Json, node)),
+        "xml" => Some((LanguageId::Xml, node)),
+        _ => None,
+    }
+}
+
+fn typst_injection<'tree>(
+    node: tree_sitter::Node<'tree>,
+    source: &str,
+) -> Option<(LanguageId, tree_sitter::Node<'tree>)> {
+    if node.kind() == "blob"
+        && node
+            .parent()
+            .is_some_and(|parent| parent.kind() == "raw_blck")
+    {
+        let injected_language = node
+            .parent()
+            .and_then(|parent| parent.child_by_field_name("lang"))
+            .and_then(|lang| lang.utf8_text(source.as_bytes()).ok())
+            .and_then(LanguageId::from_code_fence_info);
+        if let Some(injected_language) = injected_language {
+            return Some((injected_language, node));
+        }
+    }
+    None
+}
+
+static NO_INJECTIONS_IMPL: NoInjections = NoInjections;
+pub(crate) static NO_INJECTIONS: &dyn InjectionBehavior = &NO_INJECTIONS_IMPL;
+
+macro_rules! node_injections {
+    ($name:ident, $impl_name:ident, $matcher:ident) => {
+        static $impl_name: NodeInjections = NodeInjections { matcher: $matcher };
+        pub(crate) static $name: &dyn InjectionBehavior = &$impl_name;
+    };
+}
+
+node_injections!(
+    MARKDOWN_INJECTIONS,
+    MARKDOWN_INJECTIONS_IMPL,
+    markdown_injection
+);
+node_injections!(HTML_INJECTIONS, HTML_INJECTIONS_IMPL, html_injection);
+node_injections!(
+    COMPONENT_INJECTIONS,
+    COMPONENT_INJECTIONS_IMPL,
+    component_injection
+);
+node_injections!(ASTRO_INJECTIONS, ASTRO_INJECTIONS_IMPL, astro_injection);
+node_injections!(DOCKER_INJECTIONS, DOCKER_INJECTIONS_IMPL, docker_injection);
+node_injections!(MAKE_INJECTIONS, MAKE_INJECTIONS_IMPL, make_injection);
+node_injections!(TERA_INJECTIONS, TERA_INJECTIONS_IMPL, tera_injection);
+node_injections!(HURL_INJECTIONS, HURL_INJECTIONS_IMPL, hurl_injection);
+node_injections!(TYPST_INJECTIONS, TYPST_INJECTIONS_IMPL, typst_injection);
 
 /// Sort each line's tokens by span and resolve identical-span duplicates
 /// with last-capture-wins.
@@ -135,48 +337,104 @@ fn merge_line_ranges(ranges: &mut Vec<Range<usize>>) {
 }
 
 // Embedded query files
-// Phase 1 languages
-const YAML_HIGHLIGHTS: &str = include_str!("../../queries/yaml/highlights.scm");
-const MARKDOWN_HIGHLIGHTS: &str = include_str!("../../queries/markdown/highlights.scm");
-const MARKDOWN_INLINE_HIGHLIGHTS: &str =
+pub(crate) const YAML_HIGHLIGHTS: &str = include_str!("../../queries/yaml/highlights.scm");
+pub(crate) const MARKDOWN_HIGHLIGHTS: &str = include_str!("../../queries/markdown/highlights.scm");
+pub(crate) const MARKDOWN_INLINE_HIGHLIGHTS: &str =
     include_str!("../../queries/markdown/inline-highlights.scm");
-const RUST_HIGHLIGHTS: &str = tree_sitter_rust::HIGHLIGHTS_QUERY;
+pub(crate) const RUST_HIGHLIGHTS: &str = tree_sitter_rust::HIGHLIGHTS_QUERY;
 
-// Phase 2 languages (web stack)
-const HTML_HIGHLIGHTS: &str = include_str!("../../queries/html/highlights.scm");
-const CSS_HIGHLIGHTS: &str = include_str!("../../queries/css/highlights.scm");
-const JAVASCRIPT_HIGHLIGHTS: &str = include_str!("../../queries/javascript/highlights.scm");
-const JSX_HIGHLIGHTS: &str = tree_sitter_javascript::JSX_HIGHLIGHT_QUERY;
+pub(crate) const HTML_HIGHLIGHTS: &str = include_str!("../../queries/html/highlights.scm");
+pub(crate) const CSS_HIGHLIGHTS: &str = include_str!("../../queries/css/highlights.scm");
+pub(crate) const JAVASCRIPT_HIGHLIGHTS: &str =
+    include_str!("../../queries/javascript/highlights.scm");
+pub(crate) const JSX_HIGHLIGHTS: &str = tree_sitter_javascript::JSX_HIGHLIGHT_QUERY;
 
-// Phase 3 languages (priority)
-const TYPESCRIPT_HIGHLIGHTS: &str = include_str!("../../queries/typescript/highlights.scm");
-const TSX_HIGHLIGHTS: &str = include_str!("../../queries/tsx/highlights.scm");
-const JSON_HIGHLIGHTS: &str = include_str!("../../queries/json/highlights.scm");
-const TOML_HIGHLIGHTS: &str = include_str!("../../queries/toml/highlights.scm");
+pub(crate) const TYPESCRIPT_HIGHLIGHTS: &str =
+    include_str!("../../queries/typescript/highlights.scm");
+pub(crate) const TSX_HIGHLIGHTS: &str = include_str!("../../queries/tsx/highlights.scm");
+pub(crate) const JSON_HIGHLIGHTS: &str = include_str!("../../queries/json/highlights.scm");
+pub(crate) const TOML_HIGHLIGHTS: &str = include_str!("../../queries/toml/highlights.scm");
 
-// Phase 4 languages (common) - use built-in queries where available
-const PYTHON_HIGHLIGHTS: &str = tree_sitter_python::HIGHLIGHTS_QUERY;
-const GO_HIGHLIGHTS: &str = tree_sitter_go::HIGHLIGHTS_QUERY;
-const PHP_HIGHLIGHTS: &str = tree_sitter_php::HIGHLIGHTS_QUERY;
+pub(crate) const PYTHON_HIGHLIGHTS: &str = tree_sitter_python::HIGHLIGHTS_QUERY;
+pub(crate) const GO_HIGHLIGHTS: &str = tree_sitter_go::HIGHLIGHTS_QUERY;
+pub(crate) const PHP_HIGHLIGHTS: &str = tree_sitter_php::HIGHLIGHTS_QUERY;
 
-// Phase 5 languages (extended) - use built-in queries (some use HIGHLIGHT_QUERY singular)
-const C_HIGHLIGHTS: &str = tree_sitter_c::HIGHLIGHT_QUERY;
-const CPP_HIGHLIGHTS: &str = tree_sitter_cpp::HIGHLIGHT_QUERY;
-const JAVA_HIGHLIGHTS: &str = tree_sitter_java::HIGHLIGHTS_QUERY;
-const BASH_HIGHLIGHTS: &str = tree_sitter_bash::HIGHLIGHT_QUERY;
+pub(crate) const C_HIGHLIGHTS: &str = tree_sitter_c::HIGHLIGHT_QUERY;
+pub(crate) const CPP_HIGHLIGHTS: &str = tree_sitter_cpp::HIGHLIGHT_QUERY;
+pub(crate) const JAVA_HIGHLIGHTS: &str = tree_sitter_java::HIGHLIGHTS_QUERY;
+pub(crate) const BASH_HIGHLIGHTS: &str = tree_sitter_bash::HIGHLIGHT_QUERY;
 
-// Phase 6 languages (specialized)
-const SCHEME_HIGHLIGHTS: &str = tree_sitter_racket::HIGHLIGHTS_QUERY;
-const INI_HIGHLIGHTS: &str = tree_sitter_ini::HIGHLIGHTS_QUERY;
-const XML_HIGHLIGHTS: &str = tree_sitter_xml::XML_HIGHLIGHT_QUERY;
-const SEMA_HIGHLIGHTS: &str = include_str!("../../queries/sema/highlights.scm");
+pub(crate) const SCHEME_HIGHLIGHTS: &str = tree_sitter_racket::HIGHLIGHTS_QUERY;
+pub(crate) const INI_HIGHLIGHTS: &str = tree_sitter_ini::HIGHLIGHTS_QUERY;
+pub(crate) const XML_HIGHLIGHTS: &str = tree_sitter_xml::XML_HIGHLIGHT_QUERY;
+pub(crate) const SEMA_HIGHLIGHTS: &str = include_str!("../../queries/sema/highlights.scm");
 
-// Phase 7 languages (template)
-const BLADE_HIGHLIGHTS: &str = include_str!("../../queries/blade/highlights.scm");
-const SVELTE_HIGHLIGHTS: &str = tree_sitter_svelte_ng::HIGHLIGHTS_QUERY;
+pub(crate) const BLADE_HIGHLIGHTS: &str = include_str!("../../queries/blade/highlights.scm");
+pub(crate) const SVELTE_HIGHLIGHTS: &str = tree_sitter_svelte_ng::HIGHLIGHTS_QUERY;
 
-// Phase 8 languages (build tooling)
-const JUST_HIGHLIGHTS: &str = tree_sitter_just::HIGHLIGHTS_QUERY;
+pub(crate) const JUST_HIGHLIGHTS: &str = tree_sitter_just::HIGHLIGHTS_QUERY;
+pub(crate) const APPLESCRIPT_HIGHLIGHTS: &str =
+    include_str!("../../queries/applescript/highlights.scm");
+pub(crate) const CSHARP_HIGHLIGHTS: &str = tree_sitter_c_sharp::HIGHLIGHTS_QUERY;
+pub(crate) const RUBY_HIGHLIGHTS: &str = tree_sitter_ruby::HIGHLIGHTS_QUERY;
+pub(crate) const LUA_HIGHLIGHTS: &str = tree_sitter_lua::HIGHLIGHTS_QUERY;
+pub(crate) const R_HIGHLIGHTS: &str = tree_sitter_r::HIGHLIGHTS_QUERY;
+pub(crate) const SWIFT_HIGHLIGHTS: &str = tree_sitter_swift::HIGHLIGHTS_QUERY;
+pub(crate) const ELIXIR_HIGHLIGHTS: &str = tree_sitter_elixir::HIGHLIGHTS_QUERY;
+pub(crate) const GLEAM_HIGHLIGHTS: &str = tree_sitter_gleam::HIGHLIGHT_QUERY;
+pub(crate) const SOLIDITY_HIGHLIGHTS: &str = tree_sitter_solidity::HIGHLIGHT_QUERY;
+pub(crate) const KOTLIN_HIGHLIGHTS: &str = include_str!("../../queries/kotlin/highlights.scm");
+pub(crate) const DART_HIGHLIGHTS: &str = tree_sitter_dart::HIGHLIGHTS_QUERY;
+pub(crate) const JULIA_HIGHLIGHTS: &str = include_str!("../../queries/julia/highlights.scm");
+pub(crate) const HASKELL_HIGHLIGHTS: &str = tree_sitter_haskell::HIGHLIGHTS_QUERY;
+pub(crate) const OCAML_HIGHLIGHTS: &str = tree_sitter_ocaml::HIGHLIGHTS_QUERY;
+pub(crate) const OCAML_INTERFACE_HIGHLIGHTS: &str =
+    include_str!("../../queries/ocaml-interface/highlights.scm");
+pub(crate) const D_HIGHLIGHTS: &str = include_str!("../../queries/d/highlights.scm");
+pub(crate) const OBJC_HIGHLIGHTS: &str = tree_sitter_objc::HIGHLIGHTS_QUERY;
+pub(crate) const VHDL_HIGHLIGHTS: &str = tree_sitter_vhdl::HIGHLIGHTS_QUERY;
+pub(crate) const ODIN_HIGHLIGHTS: &str = tree_sitter_odin::HIGHLIGHTS_QUERY;
+pub(crate) const FISH_HIGHLIGHTS: &str = tree_sitter_fish::HIGHLIGHTS_QUERY;
+pub(crate) const ASM_HIGHLIGHTS: &str = tree_sitter_asm::HIGHLIGHTS_QUERY;
+pub(crate) const SCSS_HIGHLIGHTS: &str = tree_sitter_scss::HIGHLIGHTS_QUERY;
+pub(crate) const CMAKE_HIGHLIGHTS: &str = tree_sitter_cmake::HIGHLIGHTS_QUERY;
+pub(crate) const MAKE_HIGHLIGHTS: &str = tree_sitter_make::HIGHLIGHTS_QUERY;
+pub(crate) const COMMONLISP_HIGHLIGHTS: &str =
+    include_str!("../../queries/commonlisp/highlights.scm");
+pub(crate) const ZIG_HIGHLIGHTS: &str = tree_sitter_zig::HIGHLIGHTS_QUERY;
+pub(crate) const GLSL_HIGHLIGHTS: &str = tree_sitter_glsl::HIGHLIGHTS_QUERY;
+pub(crate) const GRAPHQL_HIGHLIGHTS: &str = include_str!("../../queries/graphql/highlights.scm");
+pub(crate) const HCL_HIGHLIGHTS: &str = include_str!("../../queries/hcl/highlights.scm");
+pub(crate) const NIX_HIGHLIGHTS: &str = tree_sitter_nix::HIGHLIGHTS_QUERY;
+pub(crate) const ADA_HIGHLIGHTS: &str = include_str!("../../queries/ada/highlights.scm");
+pub(crate) const ERLANG_HIGHLIGHTS: &str = tree_sitter_erlang::HIGHLIGHTS_QUERY;
+pub(crate) const CLOJURE_HIGHLIGHTS: &str = include_str!("../../queries/clojure/highlights.scm");
+pub(crate) const NU_HIGHLIGHTS: &str = tree_sitter_nu::HIGHLIGHTS_QUERY;
+pub(crate) const SED_HIGHLIGHTS: &str = include_str!("../../queries/sed/highlights.scm");
+pub(crate) const TCL_HIGHLIGHTS: &str = include_str!("../../queries/tcl/highlights.scm");
+pub(crate) const ROC_HIGHLIGHTS: &str = include_str!("../../queries/roc/highlights.scm");
+pub(crate) const JANET_HIGHLIGHTS: &str = include_str!("../../queries/janet/highlights.scm");
+pub(crate) const FORTH_HIGHLIGHTS: &str = tree_sitter_forth::HIGHLIGHTS_QUERY;
+pub(crate) const PROTO_HIGHLIGHTS: &str = include_str!("../../queries/proto/highlights.scm");
+pub(crate) const DHALL_HIGHLIGHTS: &str = tree_sitter_dhall::HIGHLIGHTS_QUERY;
+pub(crate) const PKL_HIGHLIGHTS: &str = include_str!("../../queries/pkl/highlights.scm");
+pub(crate) const HURL_HIGHLIGHTS: &str = include_str!("../../queries/hurl/highlights.scm");
+pub(crate) const WIT_HIGHLIGHTS: &str = tree_sitter_wit::HIGHLIGHTS_QUERY;
+pub(crate) const SML_HIGHLIGHTS: &str = include_str!("../../queries/sml/highlights.scm");
+pub(crate) const NIM_HIGHLIGHTS: &str = include_str!("../../queries/nim/highlights.scm");
+pub(crate) const ASTRO_HIGHLIGHTS: &str = tree_sitter_astro_next::HIGHLIGHTS_QUERY;
+pub(crate) const AWK_HIGHLIGHTS: &str = arborium_awk::HIGHLIGHTS_QUERY;
+pub(crate) const KDL_HIGHLIGHTS: &str = arborium_kdl::HIGHLIGHTS_QUERY;
+pub(crate) const TERA_HIGHLIGHTS: &str = include_str!("../../queries/tera/highlights.scm");
+pub(crate) const TYPST_HIGHLIGHTS: &str = include_str!("../../queries/typst/highlights.scm");
+pub(crate) const DOCKERFILE_HIGHLIGHTS: &str = tree_sitter_containerfile::HIGHLIGHTS_QUERY;
+pub(crate) const WGSL_HIGHLIGHTS: &str = include_str!("../../queries/wgsl/highlights.scm");
+pub(crate) const SQL_HIGHLIGHTS: &str = tree_sitter_sequel::HIGHLIGHTS_QUERY;
+pub(crate) const V_HIGHLIGHTS: &str = include_str!("../../queries/v/highlights.scm");
+pub(crate) const CUE_HIGHLIGHTS: &str = include_str!("../../queries/cue/highlights.scm");
+pub(crate) const FENNEL_HIGHLIGHTS: &str = include_str!("../../queries/fennel/highlights.scm");
+pub(crate) const PEST_HIGHLIGHTS: &str = include_str!("../../queries/pest/highlights.scm");
+pub(crate) const PONY_HIGHLIGHTS: &str = include_str!("../../queries/pony/highlights.scm");
 
 /// Thread-local parser state (tree-sitter parsers are !Sync)
 pub struct ParserState {
@@ -209,6 +467,48 @@ impl ParserState {
             .map(|state| (&state.tree, state.language))
     }
 
+    /// Clone the host tree and parse supported embedded regions with document-
+    /// relative ranges so structural selection can cross language boundaries.
+    pub fn syntax_tree_snapshot(
+        &mut self,
+        doc_id: DocumentId,
+        revision: u64,
+    ) -> Option<SyntaxTreeSnapshot> {
+        let cached = self.doc_cache.get(&doc_id)?;
+        let source = cached.source.clone();
+        let language = cached.language;
+        let tree = cached.tree.clone();
+        let regions = crate::syntax::registry::language(language)
+            .injections
+            .regions(&tree, &source);
+        let mut injections = Vec::with_capacity(regions.len());
+        for region in regions {
+            self.ensure_language(region.language);
+            let Some(parser) = self.parsers.get_mut(&region.language) else {
+                continue;
+            };
+            let included_range = tree_sitter::Range {
+                start_byte: region.range.start,
+                end_byte: region.range.end,
+                start_point: byte_to_point(&source, region.range.start),
+                end_point: byte_to_point(&source, region.range.end),
+            };
+            if parser.set_included_ranges(&[included_range]).is_err() {
+                continue;
+            }
+            let injected_tree = parser.parse(&source, None);
+            let _ = parser.set_included_ranges(&[]);
+            if let Some(injected_tree) = injected_tree {
+                injections.push(InjectedSyntaxTree {
+                    language: region.language,
+                    range: region.range,
+                    tree: injected_tree,
+                });
+            }
+        }
+        Some(SyntaxTreeSnapshot::new(revision, language, tree).with_injections(injections))
+    }
+
     /// Create a new parser state with initialized languages
     pub fn new() -> Self {
         let mut state = Self {
@@ -222,53 +522,18 @@ impl ParserState {
             last_highlight_patch: None,
         };
 
-        // Initialize Phase 1 languages
-        state.init_language(LanguageId::Yaml);
-        state.init_language(LanguageId::Markdown);
-        state.init_language(LanguageId::Rust);
-
-        // Initialize Phase 2 languages (web stack)
-        state.init_language(LanguageId::Html);
-        state.init_language(LanguageId::Css);
-        state.init_language(LanguageId::JavaScript);
-
-        // Initialize Phase 3 languages (priority)
-        state.init_language(LanguageId::TypeScript);
-        state.init_language(LanguageId::Tsx);
-        state.init_language(LanguageId::Jsx);
-        state.init_language(LanguageId::Json);
-        state.init_language(LanguageId::Toml);
-
-        // Initialize Phase 4 languages (common)
-        state.init_language(LanguageId::Python);
-        state.init_language(LanguageId::Go);
-        state.init_language(LanguageId::Php);
-
-        // Initialize Phase 5 languages (extended)
-        state.init_language(LanguageId::C);
-        state.init_language(LanguageId::Cpp);
-        state.init_language(LanguageId::Java);
-        state.init_language(LanguageId::Bash);
-
-        // Initialize Phase 6 languages (specialized)
-        state.init_language(LanguageId::Scheme);
-        state.init_language(LanguageId::Ini);
-        state.init_language(LanguageId::Xml);
-        state.init_language(LanguageId::Sema);
-
-        // Initialize Phase 7 languages (template)
-        state.init_language(LanguageId::Blade);
-
-        // Initialize Phase 8 languages (framework)
-        state.init_language(LanguageId::Vue);
-        state.init_language(LanguageId::Svelte);
-        // Initialize Phase 8 languages (build tooling)
-        state.init_language(LanguageId::Just);
-
         // Initialize markdown inline parser for two-pass parsing
         state.init_markdown_inline();
 
         state
+    }
+
+    fn ensure_language(&mut self, language: LanguageId) {
+        if super::registry::language(language).parser.is_some()
+            && !self.parsers.contains_key(&language)
+        {
+            self.init_language(language);
+        }
     }
 
     /// Initialize the markdown inline grammar parser and query
@@ -297,93 +562,11 @@ impl ParserState {
 
     /// Initialize a language's parser and query
     fn init_language(&mut self, lang: LanguageId) {
-        // JSX needs combined JS + JSX highlight queries
-        if lang == LanguageId::Jsx {
-            let ts_lang: tree_sitter::Language = tree_sitter_javascript::LANGUAGE.into();
-            let combined = format!("{}\n{}", JAVASCRIPT_HIGHLIGHTS, JSX_HIGHLIGHTS);
-
-            let mut parser = Parser::new();
-            if let Err(e) = parser.set_language(&ts_lang) {
-                tracing::error!("Failed to set language for JSX: {}", e);
-                return;
-            }
-            self.parsers.insert(lang, parser);
-
-            match Query::new(&ts_lang, &combined) {
-                Ok(query) => {
-                    self.queries.insert(lang, query);
-                }
-                Err(e) => {
-                    tracing::error!("Failed to compile query for JSX: {:?}", e);
-                }
-            }
+        let Some(definition) = super::registry::language(lang).parser else {
             return;
-        }
-
-        if lang == LanguageId::Svelte {
-            let ts_lang: tree_sitter::Language = tree_sitter_svelte_ng::LANGUAGE.into();
-            let combined = format!("{}\n{}", HTML_HIGHLIGHTS, SVELTE_HIGHLIGHTS);
-            let mut parser = Parser::new();
-            if let Err(error) = parser.set_language(&ts_lang) {
-                tracing::error!("Failed to initialize Svelte parser: {error}");
-                return;
-            }
-            self.parsers.insert(lang, parser);
-            match Query::new(&ts_lang, &combined) {
-                Ok(query) => {
-                    self.queries.insert(lang, query);
-                }
-                Err(error) => tracing::error!("Failed to compile Svelte query: {error:?}"),
-            }
-            return;
-        }
-
-        let (ts_lang, highlights_scm) = match lang {
-            // Phase 1 languages
-            LanguageId::Yaml => (tree_sitter_yaml::language(), YAML_HIGHLIGHTS),
-            LanguageId::Markdown => (tree_sitter_md::LANGUAGE.into(), MARKDOWN_HIGHLIGHTS),
-            LanguageId::Rust => (tree_sitter_rust::LANGUAGE.into(), RUST_HIGHLIGHTS),
-            // Phase 2 languages (web stack)
-            LanguageId::Html => (tree_sitter_html::LANGUAGE.into(), HTML_HIGHLIGHTS),
-            LanguageId::Css => (tree_sitter_css::LANGUAGE.into(), CSS_HIGHLIGHTS),
-            LanguageId::JavaScript => (
-                tree_sitter_javascript::LANGUAGE.into(),
-                JAVASCRIPT_HIGHLIGHTS,
-            ),
-            // Phase 3 languages (priority)
-            LanguageId::TypeScript => (
-                tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-                TYPESCRIPT_HIGHLIGHTS,
-            ),
-            LanguageId::Tsx | LanguageId::Jsx => {
-                (tree_sitter_typescript::LANGUAGE_TSX.into(), TSX_HIGHLIGHTS)
-            }
-            LanguageId::Json => (tree_sitter_json::LANGUAGE.into(), JSON_HIGHLIGHTS),
-            LanguageId::Toml => (tree_sitter_toml_ng::LANGUAGE.into(), TOML_HIGHLIGHTS),
-            // Phase 4 languages (common)
-            LanguageId::Python => (tree_sitter_python::LANGUAGE.into(), PYTHON_HIGHLIGHTS),
-            LanguageId::Go => (tree_sitter_go::LANGUAGE.into(), GO_HIGHLIGHTS),
-            LanguageId::Php => (tree_sitter_php::LANGUAGE_PHP.into(), PHP_HIGHLIGHTS),
-            // Phase 5 languages (extended)
-            LanguageId::C => (tree_sitter_c::LANGUAGE.into(), C_HIGHLIGHTS),
-            LanguageId::Cpp => (tree_sitter_cpp::LANGUAGE.into(), CPP_HIGHLIGHTS),
-            LanguageId::Java => (tree_sitter_java::LANGUAGE.into(), JAVA_HIGHLIGHTS),
-            LanguageId::Bash => (tree_sitter_bash::LANGUAGE.into(), BASH_HIGHLIGHTS),
-            // Phase 6 languages (specialized)
-            LanguageId::Scheme => (tree_sitter_racket::LANGUAGE.into(), SCHEME_HIGHLIGHTS),
-            LanguageId::Sema => (tree_sitter_sema::LANGUAGE.into(), SEMA_HIGHLIGHTS),
-            LanguageId::Ini => (tree_sitter_ini::LANGUAGE.into(), INI_HIGHLIGHTS),
-            LanguageId::Xml => (tree_sitter_xml::LANGUAGE_XML.into(), XML_HIGHLIGHTS),
-            // Phase 7 languages (template)
-            LanguageId::Blade => (tree_sitter_blade::LANGUAGE.into(), BLADE_HIGHLIGHTS),
-            // Phase 8 languages (framework) — Vue uses HTML grammar
-            LanguageId::Vue => (tree_sitter_html::LANGUAGE.into(), HTML_HIGHLIGHTS),
-            LanguageId::Svelte => unreachable!("Svelte is initialized above"),
-            // Phase 8 languages (build tooling)
-            LanguageId::Just => (tree_sitter_just::LANGUAGE.into(), JUST_HIGHLIGHTS),
-            // No highlighting for plain text
-            LanguageId::PlainText => return,
         };
+        let ts_lang = (definition.grammar)();
+        let highlights = definition.highlights.query();
 
         // Create parser
         let mut parser = Parser::new();
@@ -394,7 +577,7 @@ impl ParserState {
         self.parsers.insert(lang, parser);
 
         // Create query (may fail if query syntax is invalid)
-        match Query::new(&ts_lang, highlights_scm) {
+        match Query::new(&ts_lang, highlights.as_ref()) {
             Ok(query) => {
                 self.queries.insert(lang, query);
             }
@@ -420,6 +603,8 @@ impl ParserState {
         if language == LanguageId::PlainText {
             return SyntaxHighlights::new(language, revision);
         }
+
+        self.ensure_language(language);
 
         // Use specialized two-pass parsing for markdown (block + inline)
         if language == LanguageId::Markdown {
@@ -1116,6 +1301,8 @@ impl ParserState {
             return;
         };
 
+        self.ensure_language(lang_id);
+
         // Skip if we don't have a parser for this language
         let Some(parser) = self.parsers.get_mut(&lang_id) else {
             return;
@@ -1612,6 +1799,8 @@ impl ParserState {
         let base_row = raw_text.start_position().row;
         let base_col = raw_text.start_position().column;
 
+        self.ensure_language(lang_id);
+
         // Get parser for this language
         let Some(parser) = self.parsers.get_mut(&lang_id) else {
             return;
@@ -1822,46 +2011,357 @@ enabled: true
     }
 
     #[test]
+    fn languages_are_initialized_lazily() {
+        let mut state = ParserState::new();
+        assert!(state.parsers.is_empty());
+        assert!(state.queries.is_empty());
+
+        state.parse_and_highlight("fn main() {}", LanguageId::Rust, DocumentId(300), 1);
+
+        assert_eq!(state.parsers.len(), 1);
+        assert_eq!(state.queries.len(), 1);
+        assert!(state.parsers.contains_key(&LanguageId::Rust));
+        assert!(state.queries.contains_key(&LanguageId::Rust));
+    }
+
+    #[test]
+    fn syntax_snapshot_contains_markdown_fence_tree() {
+        let source = "```rust\nlet answer = make(user.name);\n```\n";
+        let document = DocumentId(301);
+        let mut state = ParserState::new();
+        state.parse_and_highlight(source, LanguageId::Markdown, document, 1);
+
+        let snapshot = state.syntax_tree_snapshot(document, 1).unwrap();
+
+        assert_eq!(snapshot.injections().len(), 1);
+        assert_eq!(snapshot.injections()[0].language, LanguageId::Rust);
+        assert_eq!(
+            &source[snapshot.injections()[0].range.clone()],
+            "let answer = make(user.name);\n"
+        );
+    }
+
+    #[test]
+    fn syntax_snapshot_contains_astro_frontmatter_tree() {
+        let source = "---\nconst name: string = 'world';\n---\n<h1>{name}</h1>\n";
+        let document = DocumentId(302);
+        let mut state = ParserState::new();
+        state.parse_and_highlight(source, LanguageId::Astro, document, 1);
+
+        let snapshot = state.syntax_tree_snapshot(document, 1).unwrap();
+        assert!(snapshot.injections().iter().any(|injection| {
+            injection.language == LanguageId::TypeScript
+                && source[injection.range.clone()].contains("const name")
+        }));
+    }
+
+    #[test]
+    fn syntax_snapshot_contains_docker_shell_tree() {
+        let source = "FROM alpine\nRUN echo hello && touch /tmp/ready\n";
+        let document = DocumentId(303);
+        let mut state = ParserState::new();
+        state.parse_and_highlight(source, LanguageId::Dockerfile, document, 1);
+
+        let snapshot = state.syntax_tree_snapshot(document, 1).unwrap();
+        assert!(snapshot
+            .injections()
+            .iter()
+            .any(|injection| injection.language == LanguageId::Bash));
+    }
+
+    #[test]
+    fn syntax_snapshot_contains_tera_frontmatter_tree() {
+        let source = "---\ntitle: Example\n---\n<h1>{{ title }}</h1>\n";
+        let document = DocumentId(304);
+        let mut state = ParserState::new();
+        state.parse_and_highlight(source, LanguageId::Tera, document, 1);
+
+        let snapshot = state.syntax_tree_snapshot(document, 1).unwrap();
+        assert!(snapshot
+            .injections()
+            .iter()
+            .any(|injection| injection.language == LanguageId::Yaml));
+    }
+
+    #[test]
+    fn syntax_snapshot_contains_hurl_json_tree() {
+        let source = "POST https://example.com/users\nContent-Type: application/json\n{\n  \"name\": \"Ada\"\n}\nHTTP 201\n";
+        let document = DocumentId(305);
+        let mut state = ParserState::new();
+        state.parse_and_highlight(source, LanguageId::Hurl, document, 1);
+
+        let snapshot = state.syntax_tree_snapshot(document, 1).unwrap();
+        assert!(snapshot
+            .injections()
+            .iter()
+            .any(|injection| injection.language == LanguageId::Json));
+    }
+
+    #[test]
+    fn syntax_snapshot_contains_typst_raw_block_tree() {
+        let source = "```rust\nfn answer() -> u8 { 42 }\n```\n";
+        let document = DocumentId(306);
+        let mut state = ParserState::new();
+        state.parse_and_highlight(source, LanguageId::Typst, document, 1);
+
+        let snapshot = state.syntax_tree_snapshot(document, 1).unwrap();
+        assert!(snapshot
+            .injections()
+            .iter()
+            .any(|injection| injection.language == LanguageId::Rust));
+    }
+
+    #[test]
+    fn extended_language_samples_parse_and_highlight() {
+        let samples = [
+            (
+                LanguageId::CSharp,
+                include_str!("../../samples/syntax/sample.cs"),
+            ),
+            (
+                LanguageId::Ruby,
+                include_str!("../../samples/syntax/sample.rb"),
+            ),
+            (
+                LanguageId::Lua,
+                include_str!("../../samples/syntax/sample.lua"),
+            ),
+            (LanguageId::R, include_str!("../../samples/syntax/sample.r")),
+            (
+                LanguageId::Swift,
+                include_str!("../../samples/syntax/sample.swift"),
+            ),
+            (
+                LanguageId::Elixir,
+                include_str!("../../samples/syntax/sample.ex"),
+            ),
+            (
+                LanguageId::Gleam,
+                include_str!("../../samples/syntax/sample.gleam"),
+            ),
+            (
+                LanguageId::Solidity,
+                include_str!("../../samples/syntax/sample.sol"),
+            ),
+            (
+                LanguageId::Kotlin,
+                include_str!("../../samples/syntax/sample.kt"),
+            ),
+            (
+                LanguageId::Dart,
+                include_str!("../../samples/syntax/sample.dart"),
+            ),
+            (
+                LanguageId::Julia,
+                include_str!("../../samples/syntax/sample.jl"),
+            ),
+            (
+                LanguageId::Haskell,
+                include_str!("../../samples/syntax/sample.hs"),
+            ),
+            (
+                LanguageId::Ocaml,
+                include_str!("../../samples/syntax/sample.ml"),
+            ),
+            (LanguageId::D, include_str!("../../samples/syntax/sample.d")),
+            (
+                LanguageId::ObjectiveC,
+                include_str!("../../samples/syntax/sample.m"),
+            ),
+            (
+                LanguageId::Vhdl,
+                include_str!("../../samples/syntax/sample.vhdl"),
+            ),
+            (
+                LanguageId::Odin,
+                include_str!("../../samples/syntax/sample.odin"),
+            ),
+            (
+                LanguageId::Fish,
+                include_str!("../../samples/syntax/sample.fish"),
+            ),
+            (
+                LanguageId::Assembly,
+                include_str!("../../samples/syntax/sample.asm"),
+            ),
+            (
+                LanguageId::Scss,
+                include_str!("../../samples/syntax/sample.scss"),
+            ),
+            (
+                LanguageId::Cmake,
+                include_str!("../../samples/syntax/CMakeLists.txt"),
+            ),
+            (
+                LanguageId::Make,
+                include_str!("../../samples/syntax/Makefile"),
+            ),
+            (
+                LanguageId::CommonLisp,
+                include_str!("../../samples/syntax/sample.lisp"),
+            ),
+            (LanguageId::OcamlInterface, "val greet : string -> string\n"),
+            (
+                LanguageId::Zig,
+                include_str!("../../samples/syntax/sample.zig"),
+            ),
+            (
+                LanguageId::Glsl,
+                include_str!("../../samples/syntax/sample.glsl"),
+            ),
+            (
+                LanguageId::Graphql,
+                include_str!("../../samples/syntax/sample.graphql"),
+            ),
+            (
+                LanguageId::Hcl,
+                include_str!("../../samples/syntax/sample.tf"),
+            ),
+            (
+                LanguageId::Nix,
+                include_str!("../../samples/syntax/sample.nix"),
+            ),
+            (
+                LanguageId::Ada,
+                include_str!("../../samples/syntax/sample.adb"),
+            ),
+            (
+                LanguageId::Erlang,
+                include_str!("../../samples/syntax/sample.erl"),
+            ),
+            (
+                LanguageId::Clojure,
+                include_str!("../../samples/syntax/sample.clj"),
+            ),
+            (
+                LanguageId::Nushell,
+                include_str!("../../samples/syntax/sample.nu"),
+            ),
+            (
+                LanguageId::Sed,
+                include_str!("../../samples/syntax/sample.sed"),
+            ),
+            (
+                LanguageId::Tcl,
+                include_str!("../../samples/syntax/sample.tcl"),
+            ),
+            (
+                LanguageId::Roc,
+                include_str!("../../samples/syntax/sample.roc"),
+            ),
+            (
+                LanguageId::Janet,
+                include_str!("../../samples/syntax/sample.janet"),
+            ),
+            (
+                LanguageId::Forth,
+                include_str!("../../samples/syntax/sample.forth"),
+            ),
+            (
+                LanguageId::Protobuf,
+                include_str!("../../samples/syntax/sample.proto"),
+            ),
+            (
+                LanguageId::Dhall,
+                include_str!("../../samples/syntax/sample.dhall"),
+            ),
+            (
+                LanguageId::Pkl,
+                include_str!("../../samples/syntax/sample.pkl"),
+            ),
+            (
+                LanguageId::Hurl,
+                include_str!("../../samples/syntax/sample.hurl"),
+            ),
+            (
+                LanguageId::Wit,
+                include_str!("../../samples/syntax/sample.wit"),
+            ),
+            (
+                LanguageId::StandardMl,
+                include_str!("../../samples/syntax/sample.sml"),
+            ),
+            (
+                LanguageId::Nim,
+                include_str!("../../samples/syntax/sample.nim"),
+            ),
+            (
+                LanguageId::Astro,
+                include_str!("../../samples/syntax/sample.astro"),
+            ),
+            (
+                LanguageId::Awk,
+                include_str!("../../samples/syntax/sample.awk"),
+            ),
+            (
+                LanguageId::Kdl,
+                include_str!("../../samples/syntax/sample.kdl"),
+            ),
+            (
+                LanguageId::Tera,
+                include_str!("../../samples/syntax/sample.tera"),
+            ),
+            (
+                LanguageId::Typst,
+                include_str!("../../samples/syntax/sample.typ"),
+            ),
+            (
+                LanguageId::Dockerfile,
+                include_str!("../../samples/syntax/sample.Dockerfile"),
+            ),
+            (
+                LanguageId::Wgsl,
+                include_str!("../../samples/syntax/sample.wgsl"),
+            ),
+            (
+                LanguageId::Sql,
+                include_str!("../../samples/syntax/sample.sql"),
+            ),
+            (LanguageId::V, include_str!("../../samples/syntax/sample.v")),
+            (
+                LanguageId::Cue,
+                include_str!("../../samples/syntax/sample.cue"),
+            ),
+            (
+                LanguageId::Fennel,
+                include_str!("../../samples/syntax/sample.fnl"),
+            ),
+            (
+                LanguageId::Pest,
+                include_str!("../../samples/syntax/sample.pest"),
+            ),
+            (
+                LanguageId::Pony,
+                include_str!("../../samples/syntax/sample.pony"),
+            ),
+        ];
+        let mut state = ParserState::new();
+
+        for (index, (language, source)) in samples.into_iter().enumerate() {
+            let document = DocumentId(400 + index as u64);
+            let highlights = state.parse_and_highlight(source, language, document, 1);
+            assert!(
+                !highlights.lines.is_empty(),
+                "{language:?} produced no highlights"
+            );
+            assert!(
+                state.get_cached_tree(document).is_some(),
+                "{language:?} produced no tree"
+            );
+        }
+    }
+
+    #[test]
     fn test_all_query_files_compile() {
         // This test ensures all .scm query files are valid and compile without errors
-        let state = ParserState::new();
+        let mut state = ParserState::new();
 
-        // All languages with highlighting should have compiled queries
-        let languages_with_queries = [
-            // Phase 1
-            LanguageId::Yaml,
-            LanguageId::Markdown,
-            LanguageId::Rust,
-            // Phase 2
-            LanguageId::Html,
-            LanguageId::Css,
-            LanguageId::JavaScript,
-            // Phase 3
-            LanguageId::TypeScript,
-            LanguageId::Tsx,
-            LanguageId::Json,
-            LanguageId::Toml,
-            // Phase 4
-            LanguageId::Python,
-            LanguageId::Go,
-            LanguageId::Php,
-            // Phase 5
-            LanguageId::C,
-            LanguageId::Cpp,
-            LanguageId::Java,
-            LanguageId::Bash,
-            // Phase 6
-            LanguageId::Scheme,
-            LanguageId::Sema,
-            LanguageId::Ini,
-            LanguageId::Xml,
-            // Phase 7
-            LanguageId::Blade,
-            // Phase 8
-            LanguageId::Just,
-        ];
-
-        for lang in languages_with_queries {
+        for definition in crate::syntax::registry::ALL_LANGUAGES {
+            let lang = definition.id;
+            if lang == LanguageId::PlainText {
+                continue;
+            }
+            state.ensure_language(lang);
             assert!(
                 state.queries.contains_key(&lang),
                 "Query failed to compile for {:?}",
@@ -1917,6 +2417,52 @@ enabled: true
         }
 
         #[test]
+        fn test_kotlin_query_compiles() {
+            assert_query_compiles(
+                "kotlin",
+                tree_sitter_kotlin_ng::LANGUAGE.into(),
+                KOTLIN_HIGHLIGHTS,
+            );
+        }
+
+        #[test]
+        fn test_ocaml_interface_query_compiles() {
+            assert_query_compiles(
+                "ocaml-interface",
+                tree_sitter_ocaml::LANGUAGE_OCAML_INTERFACE.into(),
+                OCAML_INTERFACE_HIGHLIGHTS,
+            );
+        }
+
+        #[test]
+        fn test_commonlisp_query_compiles() {
+            assert_query_compiles(
+                "commonlisp",
+                tree_sitter_commonlisp::LANGUAGE_COMMONLISP.into(),
+                COMMONLISP_HIGHLIGHTS,
+            );
+        }
+
+        #[test]
+        fn test_hurl_query_compiles() {
+            assert_query_compiles("hurl", tree_sitter_hurl::LANGUAGE.into(), HURL_HIGHLIGHTS);
+        }
+
+        #[test]
+        fn test_wgsl_query_compiles() {
+            assert_query_compiles(
+                "wgsl",
+                tree_sitter_wgsl_bevy::LANGUAGE.into(),
+                WGSL_HIGHLIGHTS,
+            );
+        }
+
+        #[test]
+        fn test_v_query_compiles() {
+            assert_query_compiles("v", tree_sitter_v::LANGUAGE.into(), V_HIGHLIGHTS);
+        }
+
+        #[test]
         fn test_yaml_query_compiles() {
             assert_query_compiles("YAML", tree_sitter_yaml::language(), YAML_HIGHLIGHTS);
         }
@@ -1954,8 +2500,6 @@ enabled: true
             );
         }
 
-        // Phase 3 languages
-
         #[test]
         fn test_typescript_query_compiles() {
             assert_query_compiles(
@@ -1988,8 +2532,6 @@ enabled: true
             );
         }
 
-        // Phase 4 languages
-
         #[test]
         fn test_python_query_compiles() {
             assert_query_compiles(
@@ -2008,8 +2550,6 @@ enabled: true
         fn test_php_query_compiles() {
             assert_query_compiles("PHP", tree_sitter_php::LANGUAGE_PHP.into(), PHP_HIGHLIGHTS);
         }
-
-        // Phase 5 languages
 
         #[test]
         fn test_c_query_compiles() {
@@ -2031,8 +2571,6 @@ enabled: true
             assert_query_compiles("Bash", tree_sitter_bash::LANGUAGE.into(), BASH_HIGHLIGHTS);
         }
 
-        // Phase 6 languages
-
         #[test]
         fn test_scheme_query_compiles() {
             assert_query_compiles(
@@ -2052,8 +2590,6 @@ enabled: true
             assert_query_compiles("XML", tree_sitter_xml::LANGUAGE_XML.into(), XML_HIGHLIGHTS);
         }
 
-        // Phase 7 languages
-
         #[test]
         fn test_blade_query_compiles() {
             assert_query_compiles(
@@ -2062,8 +2598,6 @@ enabled: true
                 BLADE_HIGHLIGHTS,
             );
         }
-
-        // Phase 8 languages
 
         #[test]
         fn test_just_query_compiles() {
@@ -2165,8 +2699,6 @@ fn main() {}
         assert!(!highlights.lines.is_empty());
     }
 
-    // Phase 3 parsing tests
-
     #[test]
     fn test_typescript_parsing() {
         let mut state = ParserState::new();
@@ -2247,8 +2779,6 @@ path = "src/main.rs""#;
         assert!(!highlights.lines.is_empty());
     }
 
-    // Phase 4 parsing tests
-
     #[test]
     fn test_python_parsing() {
         let mut state = ParserState::new();
@@ -2323,8 +2853,6 @@ echo $user->greet();
         assert_eq!(highlights.language, LanguageId::Php);
         assert!(!highlights.lines.is_empty());
     }
-
-    // Phase 5 parsing tests
 
     #[test]
     fn test_c_parsing() {

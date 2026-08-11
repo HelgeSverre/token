@@ -294,7 +294,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                 return super::terminal::update_terminal(model, TerminalMsg::Paste(text));
             }
 
-            super::document::update_document(model, crate::messages::DocumentMsg::PasteText(text))
+            super::document::update_document(model, crate::messages::DocumentMsg::InsertText(text))
         }
     }
 }

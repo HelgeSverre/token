@@ -100,15 +100,9 @@ impl ImageState {
         (self.scale * 100.0).round() as u32
     }
 
-    /// Format file size for display (e.g. "2.4 MB", "128 KB")
+    /// Format file size for display (e.g. "2.4 MiB", "128.0 KiB").
     pub fn file_size_display(&self) -> String {
-        if self.file_size >= 1_048_576 {
-            format!("{:.1} MB", self.file_size as f64 / 1_048_576.0)
-        } else if self.file_size >= 1024 {
-            format!("{:.0} KB", self.file_size as f64 / 1024.0)
-        } else {
-            format!("{} B", self.file_size)
-        }
+        crate::util::ByteSize::bytes(self.file_size).to_string()
     }
 }
 

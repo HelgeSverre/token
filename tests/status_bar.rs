@@ -7,7 +7,6 @@ mod common;
 use token::model::status_bar::{SegmentContent, SegmentId, StatusBar, StatusSegment};
 
 // =============================================================================
-// Phase 1: Core Data Structures
 // =============================================================================
 
 #[test]
@@ -117,7 +116,6 @@ fn test_status_bar_update_segment() {
 }
 
 // =============================================================================
-// Phase 2: Collection Operations
 // =============================================================================
 
 use token::model::status_bar::SegmentPosition;
@@ -193,7 +191,6 @@ fn test_all_segments_iteration() {
 }
 
 // =============================================================================
-// Phase 3: Sync Function
 // =============================================================================
 
 use common::{test_model, test_model_with_selection};
@@ -354,7 +351,6 @@ fn test_sync_selection_multiline() {
 }
 
 // =============================================================================
-// Phase 4: Messages & Transient Message System
 // =============================================================================
 
 use std::time::Duration;
@@ -480,7 +476,6 @@ fn test_clear_transient_clears_segment() {
 }
 
 // =============================================================================
-// Phase 5: Layout Algorithm
 // =============================================================================
 
 #[test]
@@ -612,29 +607,7 @@ fn test_layout_left_segments_ordered_correctly() {
 }
 
 // =============================================================================
-// Phase 8: Backward Compatibility
 // =============================================================================
-
-#[test]
-fn test_set_status_backward_compatibility() {
-    let mut model = test_model("hello", 0, 0);
-
-    // Use old API
-    let _ = update(
-        &mut model,
-        Msg::Ui(UiMsg::SetStatus("Hello World".to_string())),
-    );
-
-    // Should update both legacy field and segment
-    assert_eq!(model.ui.status_message, "Hello World");
-
-    let segment = model
-        .ui
-        .status_bar
-        .get_segment(SegmentId::StatusMessage)
-        .unwrap();
-    assert_eq!(segment.content.display_text(), "Hello World");
-}
 
 #[test]
 fn test_status_bar_syncs_after_cursor_movement() {

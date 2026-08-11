@@ -63,10 +63,10 @@ fn test_compute_fit_scale_tall_image() {
 #[test]
 fn test_file_size_display() {
     let state = ImageState::new(vec![0; 400], 10, 10, 2_500_000, "PNG".into(), 800, 600);
-    assert_eq!(state.file_size_display(), "2.4 MB");
+    assert_eq!(state.file_size_display(), "2.4 MiB");
 
     let state = ImageState::new(vec![0; 400], 10, 10, 150_000, "PNG".into(), 800, 600);
-    assert_eq!(state.file_size_display(), "146 KB");
+    assert_eq!(state.file_size_display(), "146.5 KiB");
 
     let state = ImageState::new(vec![0; 400], 10, 10, 500, "PNG".into(), 800, 600);
     assert_eq!(state.file_size_display(), "500 B");

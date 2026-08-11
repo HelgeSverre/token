@@ -1,7 +1,7 @@
 //! Unified text editing update handler.
 //!
 //! Routes TextEditMsg to the appropriate EditableState based on EditContext.
-//! This is Phase 2 of the unified text editing system.
+//! This implements the unified text editing system.
 //!
 //! For the main editor (EditContext::Editor), we use a bridge approach that maps
 //! TextEditMsg to existing EditorMsg/DocumentMsg handlers. This allows gradual
@@ -295,7 +295,7 @@ fn bridge_text_edit_to_editor(model: &mut AppModel, msg: TextEditMsg) -> Option<
         TextEditMsg::Paste(text) => {
             // Use the already-captured text directly instead of discarding it
             // and re-reading the OS clipboard asynchronously via `Paste`.
-            update_document(model, DocumentMsg::PasteText(text))
+            update_document(model, DocumentMsg::InsertText(text))
         }
 
         // === Undo/Redo ===

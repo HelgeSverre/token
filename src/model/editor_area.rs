@@ -601,21 +601,6 @@ impl EditorArea {
         }
     }
 
-    /// Find which group contains a document
-    #[allow(dead_code)]
-    fn find_group_for_document(&self, doc_id: DocumentId) -> Option<GroupId> {
-        for (group_id, group) in &self.groups {
-            for tab in &group.tabs {
-                if let Some(editor) = self.editors.get(&tab.editor_id) {
-                    if editor.document_id == Some(doc_id) {
-                        return Some(*group_id);
-                    }
-                }
-            }
-        }
-        None
-    }
-
     /// Wrap a group in a horizontal split with a preview pane
     fn wrap_group_with_preview(&mut self, group_id: GroupId, preview_id: PreviewId) {
         let layout = std::mem::take(&mut self.layout);

@@ -99,14 +99,13 @@ impl ViewportGeometry {
 
     /// Compute number of visible columns given window width.
     ///
-    /// Uses `text_start_x()` for accurate gutter width calculation.
-    /// This is the canonical calculation used across the codebase.
+    /// Uses the canonical scaled geometry calculation at the default scale.
     #[inline]
     pub fn compute_visible_columns(window_width: u32, char_width: f32) -> usize {
         if char_width <= 0.0 {
             return 80; // fallback
         }
-        let text_x = text_start_x(char_width).round();
+        let text_x = text_start_x_scaled(char_width, &ScaledMetrics::default()).round();
         ((window_width as f32 - text_x) / char_width).floor() as usize
     }
 }
@@ -375,18 +374,6 @@ pub fn gutter_border_x_scaled(char_width: f32, metrics: &ScaledMetrics) -> f32 {
     char_width * LINE_NUMBER_GUTTER_CHARS as f32 + metrics.gutter_padding
 }
 
-/// Calculate the x-coordinate where text content begins (legacy, uses scale factor 1.0)
-#[inline]
-pub fn text_start_x(char_width: f32) -> f32 {
-    text_start_x_scaled(char_width, &ScaledMetrics::default())
-}
-
-/// Calculate the x-coordinate of the gutter border (legacy, uses scale factor 1.0)
-#[inline]
-pub fn gutter_border_x(char_width: f32) -> f32 {
-    gutter_border_x_scaled(char_width, &ScaledMetrics::default())
-}
-
 /// The complete application model
 #[derive(Debug)]
 pub struct AppModel {
@@ -530,8 +517,8 @@ impl AppModel {
     }
 
     // =========================================================================
-    // Accessor methods for backward compatibility
-    // These delegate to editor_area's focused document/editor
+    // Focused document/editor accessors. These centralize the invariant that
+    // the application always has a focused editor and document.
     // =========================================================================
 
     /// Get the focused document (read-only), or None if no document is focused

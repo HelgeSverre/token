@@ -1682,7 +1682,7 @@ fn test_cursor_sync_duplicate_line_no_selection() {
 }
 
 #[test]
-fn test_cursor_sync_paste_text_single_cursor() {
+fn test_cursor_sync_insert_text_single_cursor() {
     use token::messages::DocumentMsg;
 
     let mut model = test_model("hello\nworld\n", 0, 0);
@@ -1701,14 +1701,14 @@ fn test_cursor_sync_paste_text_single_cursor() {
     set_cursor_at(&mut model, 0, 0);
     update(
         &mut model,
-        Msg::Document(DocumentMsg::PasteText("XY".to_string())),
+        Msg::Document(DocumentMsg::InsertText("XY".to_string())),
     );
 
     update(&mut model, Msg::Layout(LayoutMsg::FocusGroup(group2)));
     assert_eq!(
         model.editor().primary_cursor().column,
         7,
-        "PasteText on a peer group must shift this cursor right by the pasted text's length"
+        "InsertText on a peer group must shift this cursor right by the inserted text's length"
     );
 }
 

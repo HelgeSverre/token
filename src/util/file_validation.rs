@@ -9,8 +9,10 @@ use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
 
-/// Maximum file size in bytes (50 MB)
-pub const MAX_FILE_SIZE: u64 = 50 * 1024 * 1024;
+use super::ByteSize;
+
+/// Maximum file size (50 MiB).
+pub const MAX_FILE_SIZE: ByteSize = ByteSize::mebibytes(50);
 
 /// Errors that can occur when validating a file for opening
 #[derive(Debug, Clone)]
@@ -24,7 +26,7 @@ pub enum FileOpenError {
     /// File appears to be binary (contains null bytes)
     BinaryFile,
     /// File exceeds size limit
-    TooLarge { size_mb: f64 },
+    TooLarge { size: ByteSize },
     /// Other I/O error
     IoError(String),
 }
@@ -37,13 +39,8 @@ impl FileOpenError {
             Self::PermissionDenied => format!("Permission denied: {}", filename),
             Self::IsDirectory => format!("Cannot open directory: {}", filename),
             Self::BinaryFile => format!("Cannot open binary file: {}", filename),
-            Self::TooLarge { size_mb } => {
-                format!(
-                    "{} is too large ({:.1} MB, max {} MB)",
-                    filename,
-                    size_mb,
-                    MAX_FILE_SIZE / (1024 * 1024)
-                )
+            Self::TooLarge { size } => {
+                format!("{} is too large ({size}, max {MAX_FILE_SIZE})", filename)
             }
             Self::IoError(msg) => format!("Error opening {}: {}", filename, msg),
         }
@@ -57,7 +54,7 @@ impl std::fmt::Display for FileOpenError {
             Self::PermissionDenied => write!(f, "permission denied"),
             Self::IsDirectory => write!(f, "is a directory"),
             Self::BinaryFile => write!(f, "binary file"),
-            Self::TooLarge { size_mb } => write!(f, "file too large ({:.1} MB)", size_mb),
+            Self::TooLarge { size } => write!(f, "file too large ({size})"),
             Self::IoError(msg) => write!(f, "{}", msg),
         }
     }
@@ -85,9 +82,9 @@ pub fn validate_file_for_opening(path: &Path) -> Result<(), FileOpenError> {
         return Err(FileOpenError::IsDirectory);
     }
 
-    if metadata.len() > MAX_FILE_SIZE {
+    if ByteSize::bytes(metadata.len()) > MAX_FILE_SIZE {
         return Err(FileOpenError::TooLarge {
-            size_mb: metadata.len() as f64 / (1024.0 * 1024.0),
+            size: ByteSize::bytes(metadata.len()),
         });
     }
 
@@ -108,7 +105,7 @@ pub fn is_supported_image(path: &Path) -> bool {
 
 /// Check if a file is likely binary by scanning for null bytes
 ///
-/// Reads the first 8KB of the file and checks for null bytes,
+/// Reads the first 8 KiB of the file and checks for null bytes,
 /// which are common in binary files but rare in text files.
 ///
 /// Returns `true` if the file appears to be binary, `false` if it appears to be text.
@@ -118,7 +115,7 @@ pub fn is_likely_binary(path: &Path) -> bool {
         return false;
     };
 
-    let mut buffer = [0u8; 8192];
+    let mut buffer = [0u8; ByteSize::kibibytes(8).as_usize()];
     let Ok(bytes_read) = file.read(&mut buffer) else {
         return false;
     };
@@ -158,6 +155,23 @@ mod tests {
         let temp = NamedTempFile::new().unwrap();
         let result = validate_file_for_opening(temp.path());
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_file_size_boundary() {
+        let at_limit = NamedTempFile::new().unwrap();
+        at_limit.as_file().set_len(MAX_FILE_SIZE.as_u64()).unwrap();
+        assert!(validate_file_for_opening(at_limit.path()).is_ok());
+
+        let over_limit = NamedTempFile::new().unwrap();
+        over_limit
+            .as_file()
+            .set_len(MAX_FILE_SIZE.as_u64() + 1)
+            .unwrap();
+        assert!(matches!(
+            validate_file_for_opening(over_limit.path()),
+            Err(FileOpenError::TooLarge { size }) if size == ByteSize::bytes(MAX_FILE_SIZE.as_u64() + 1)
+        ));
     }
 
     #[test]
@@ -207,5 +221,13 @@ mod tests {
             FileOpenError::BinaryFile.user_message("image.png"),
             "Cannot open binary file: image.png"
         );
+        let error = FileOpenError::TooLarge {
+            size: ByteSize::bytes(MAX_FILE_SIZE.as_u64() + 1),
+        };
+        assert_eq!(
+            error.user_message("large.txt"),
+            "large.txt is too large (50.0 MiB, max 50.0 MiB)"
+        );
+        assert_eq!(error.to_string(), "file too large (50.0 MiB)");
     }
 }

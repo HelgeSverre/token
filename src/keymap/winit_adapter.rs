@@ -94,20 +94,6 @@ pub fn keystroke_from_winit(
     key_code.map(|key| Keystroke::new(key, mods))
 }
 
-/// Simplified conversion for use in input.rs during migration
-/// Takes the same parameters as the current handle_key function
-#[allow(dead_code)] // Will be used in Phase 4 bridge integration
-pub fn keystroke_from_key(
-    key: &Key,
-    physical_key: PhysicalKey,
-    ctrl: bool,
-    shift: bool,
-    alt: bool,
-    logo: bool,
-) -> Option<Keystroke> {
-    keystroke_from_winit(key, physical_key, ctrl, shift, alt, logo)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
