@@ -743,7 +743,15 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
 
         // 4. Modals (on top of everything)
         if model.ui.active_modal.is_some() {
-            Renderer::render_modals(&mut frame, &mut painter, model, width, height);
+            let mut mask_cache = token::view::RoundedRectMaskCache::new();
+            Renderer::render_modals(
+                &mut frame,
+                &mut painter,
+                model,
+                width,
+                height,
+                &mut mask_cache,
+            );
         }
     }
 

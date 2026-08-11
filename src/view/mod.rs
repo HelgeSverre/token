@@ -20,7 +20,7 @@ pub mod text_field;
 pub mod tree_view;
 
 pub use button::{button_rect, render_button, ButtonState};
-pub use frame::{Frame, TextPainter};
+pub use frame::{Frame, RoundedRectMaskCache, TextPainter};
 pub use helpers::get_tab_display_name;
 pub use text_field::{TextFieldContent, TextFieldOptions, TextFieldRenderer};
 
@@ -120,6 +120,7 @@ struct RenderSession<'buffer, 'a> {
     painter: TextPainter<'a>,
     model: &'a AppModel,
     plan: &'a RenderPlan,
+    overlay_mask_cache: &'a mut RoundedRectMaskCache,
 }
 
 impl<'buffer, 'a> RenderSession<'buffer, 'a> {
@@ -136,6 +137,7 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
         line_height: usize,
         model: &'a AppModel,
         plan: &'a RenderPlan,
+        overlay_mask_cache: &'a mut RoundedRectMaskCache,
     ) -> Self {
         Self {
             frame: Frame::new(buffer, window_width, window_height),
@@ -149,6 +151,7 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
             ),
             model,
             plan,
+            overlay_mask_cache,
         }
     }
 
@@ -225,6 +228,7 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
             self.model,
             self.plan.window_width,
             self.plan.window_height,
+            self.overlay_mask_cache,
         );
     }
 
@@ -570,6 +574,9 @@ pub struct Renderer {
     font_size: f32,
     line_metrics: LineMetrics,
     glyph_cache: GlyphCache,
+    /// Rounded-corner masks for the overlay surface, keyed by physical-px
+    /// radius. Owned here (not per-call) so masks survive across frames.
+    overlay_mask_cache: RoundedRectMaskCache,
     char_width: f32,
     scale_factor: f64,
 }
@@ -651,6 +658,7 @@ impl Renderer {
             font_size,
             line_metrics,
             glyph_cache: HashMap::new(),
+            overlay_mask_cache: RoundedRectMaskCache::new(),
             char_width,
             scale_factor,
         })
@@ -1634,8 +1642,16 @@ impl Renderer {
         model: &AppModel,
         window_width: usize,
         window_height: usize,
+        overlay_mask_cache: &mut RoundedRectMaskCache,
     ) {
-        modal::render_modals(frame, painter, model, window_width, window_height);
+        modal::render_modals(
+            frame,
+            painter,
+            model,
+            window_width,
+            window_height,
+            overlay_mask_cache,
+        );
     }
 
     /// Render a floating semi-transparent copy of the dragged tab at the
@@ -1799,6 +1815,7 @@ impl Renderer {
                 line_height,
                 model,
                 &plan,
+                &mut self.overlay_mask_cache,
             );
 
             if plan.render_editor {

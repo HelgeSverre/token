@@ -2,7 +2,7 @@
 
 use crate::model::AppModel;
 
-use super::frame::{Frame, TextPainter};
+use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry;
 use super::selectable_list::{
     render_selectable_list, SelectableListColors, SelectableListLayout, SelectableListViewport,
@@ -179,17 +179,85 @@ fn render_theme_picker_modal(
 /// new `OverlaySurface` component instead of the legacy shell, so the new
 /// primitives/palette can be checked against the mockups without changing
 /// default behavior. Off by default; Phase 2 makes this the only path.
-fn overlay_surface_gate_enabled() -> bool {
+pub(crate) fn overlay_surface_gate_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var_os("TOKEN_OVERLAY_SURFACE").is_some())
 }
 
+/// Palette/pickers cap at 10 visible rows (Visual Language > Overflow).
+const COMMAND_PALETTE_MAX_VISIBLE: usize = 10;
+const COMMAND_PALETTE_WIDTH: (f32, f32, f32) = (0.5, 480.0, 640.0);
+
+/// Panel geometry for the overlay-surface command palette, shared by
+/// `render_command_palette_modal_via_overlay_surface` and
+/// `hit_test::hit_test_modal` so a click just outside the legacy layout but
+/// inside the panel actually painted isn't treated as an outside-click.
+pub(crate) fn command_palette_overlay_panel(
+    state: &crate::model::ui::CommandPaletteState,
+    window_width: usize,
+    window_height: usize,
+    scale_factor: f64,
+) -> super::geometry::WidgetRect {
+    use crate::commands::filter_commands;
+    use crate::view::overlay_surface::{
+        self, Accessory, Anchor, Body, FlatIndex, Header, Row, RowIcon, Section, WidthRule,
+    };
+    use crate::view::selectable_list::SelectableListViewport;
+
+    let count = filter_commands(&state.input()).len();
+    // Layout only depends on row count/height, not row content, so
+    // placeholder rows are sufficient here.
+    let rows: Vec<Row> = (0..count)
+        .map(|_| Row {
+            icon: RowIcon::None,
+            label: "",
+            match_indices: &[],
+            detail: None,
+            accessory: Accessory::None,
+        })
+        .collect();
+    let sections = [Section {
+        title: None,
+        rows: &rows,
+    }];
+    let selected_index = state.selected_index.min(count.saturating_sub(1));
+    let viewport =
+        SelectableListViewport::compute(count, selected_index, COMMAND_PALETTE_MAX_VISIBLE);
+    let (pct, min, max) = COMMAND_PALETTE_WIDTH;
+    let spec = overlay_surface::OverlaySpec {
+        anchor: Anchor::Centered {
+            width: WidthRule { pct, min, max },
+            dim_alpha: MODAL_DIM_ALPHA,
+        },
+        header: Header {
+            glyph: None,
+            text: "",
+            placeholder: "",
+            caret: None,
+            scope: None,
+        },
+        body: Body::List {
+            sections: &sections,
+            selected: FlatIndex(selected_index),
+            scroll: viewport.scroll_offset,
+            max_visible: COMMAND_PALETTE_MAX_VISIBLE,
+        },
+        footer: Some(overlay_surface::Footer {
+            leading: "",
+            trailing: "",
+        }),
+    };
+    overlay_surface::layout(&spec, window_width, window_height, scale_factor).panel
+}
+
+#[allow(clippy::too_many_arguments)]
 fn render_command_palette_modal_via_overlay_surface(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
     state: &crate::model::ui::CommandPaletteState,
     ctx: &ModalRenderCtx,
+    mask_cache: &mut RoundedRectMaskCache,
 ) {
     use crate::commands::filter_commands;
     use crate::view::overlay_surface::{
@@ -197,12 +265,11 @@ fn render_command_palette_modal_via_overlay_surface(
     };
     use crate::view::selectable_list::SelectableListViewport;
 
-    // Palette/pickers cap at 10 visible rows (Visual Language > Overflow).
     // `CommandPaletteState` doesn't track a scroll offset yet (that lands
     // with Phase 2's `resolve_palette_rows`); `compute` still keeps the
     // selection on-screen so the gate demonstrates real scrolling instead of
     // pinning to a fixed 8-row window with no way to see past it.
-    const MAX_VISIBLE: usize = 10;
+    const MAX_VISIBLE: usize = COMMAND_PALETTE_MAX_VISIBLE;
 
     let input_text = state.input();
     let filtered = filter_commands(&input_text);
@@ -227,13 +294,10 @@ fn render_command_palette_modal_via_overlay_surface(
     let selected_index = state.selected_index.min(rows.len().saturating_sub(1));
     let viewport = SelectableListViewport::compute(rows.len(), selected_index, MAX_VISIBLE);
 
+    let (pct, min, max) = COMMAND_PALETTE_WIDTH;
     let spec = overlay_surface::OverlaySpec {
         anchor: Anchor::Centered {
-            width: WidthRule {
-                pct: 0.5,
-                min: 480.0,
-                max: 640.0,
-            },
+            width: WidthRule { pct, min, max },
             dim_alpha: MODAL_DIM_ALPHA,
         },
         header: Header {
@@ -262,11 +326,10 @@ fn render_command_palette_modal_via_overlay_surface(
         }),
     };
 
-    let mut mask_cache = crate::view::frame::RoundedRectMaskCache::new();
     overlay_surface::render(
         frame,
         painter,
-        &mut mask_cache,
+        mask_cache,
         &model.theme.overlay,
         &spec,
         ctx.window_width,
@@ -282,11 +345,14 @@ fn render_command_palette_modal(
     model: &AppModel,
     state: &crate::model::ui::CommandPaletteState,
     ctx: &ModalRenderCtx,
+    mask_cache: &mut RoundedRectMaskCache,
 ) {
     use crate::commands::filter_commands;
 
     if overlay_surface_gate_enabled() {
-        return render_command_palette_modal_via_overlay_surface(frame, painter, model, state, ctx);
+        return render_command_palette_modal_via_overlay_surface(
+            frame, painter, model, state, ctx, mask_cache,
+        );
     }
 
     let colors = &ctx.colors;
@@ -682,6 +748,7 @@ pub fn render_modals(
     model: &AppModel,
     window_width: usize,
     window_height: usize,
+    overlay_mask_cache: &mut RoundedRectMaskCache,
 ) {
     use crate::model::ModalState;
 
@@ -713,7 +780,7 @@ pub fn render_modals(
             render_theme_picker_modal(frame, painter, model, state, &ctx)
         }
         ModalState::CommandPalette(state) => {
-            render_command_palette_modal(frame, painter, model, state, &ctx)
+            render_command_palette_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
         }
         ModalState::GotoLine(state) => render_goto_line_modal(frame, painter, model, state, &ctx),
         ModalState::FindReplace(state) => {
