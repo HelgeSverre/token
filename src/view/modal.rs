@@ -49,6 +49,7 @@ struct ModalRenderCtx {
     line_height: usize,
     char_width: f32,
     colors: ModalColors,
+    scale_factor: f64,
 }
 
 fn render_modal_shell(frame: &mut Frame, layout: &geometry::ModalLayout, colors: &ModalColors) {
@@ -119,6 +120,7 @@ fn render_theme_picker_modal(
         ctx.window_height,
         line_height,
         rows.len().min(max_visible_rows),
+        ctx.scale_factor,
     );
 
     render_modal_shell(frame, &layout, colors);
@@ -173,6 +175,96 @@ fn render_theme_picker_modal(
     frame.clear_clip();
 }
 
+/// overlay-surface.md Phase 1 gate: render the command palette through the
+/// new `OverlaySurface` component instead of the legacy shell, so the new
+/// primitives/palette can be checked against the mockups without changing
+/// default behavior. Off by default; Phase 2 makes this the only path.
+fn overlay_surface_gate_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("TOKEN_OVERLAY_SURFACE").is_some())
+}
+
+fn render_command_palette_modal_via_overlay_surface(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    state: &crate::model::ui::CommandPaletteState,
+    ctx: &ModalRenderCtx,
+) {
+    use crate::commands::filter_commands;
+    use crate::view::overlay_surface::{
+        self, Accessory, Anchor, Body, FlatIndex, Header, Row, RowIcon, Section, WidthRule,
+    };
+
+    let input_text = state.input();
+    let filtered = filter_commands(&input_text);
+    let rows: Vec<Row> = filtered
+        .iter()
+        .map(|cmd| Row {
+            icon: RowIcon::None,
+            label: cmd.label,
+            match_indices: &[],
+            detail: None,
+            accessory: match cmd.keybinding {
+                Some(kb) => Accessory::DimText(kb),
+                None => Accessory::None,
+            },
+        })
+        .collect();
+    let sections = [Section {
+        title: None,
+        rows: &rows,
+    }];
+
+    let spec = overlay_surface::OverlaySpec {
+        anchor: Anchor::Centered {
+            width: WidthRule {
+                pct: 0.5,
+                min: 480.0,
+                max: 640.0,
+            },
+            dim_alpha: MODAL_DIM_ALPHA,
+        },
+        header: Header {
+            glyph: Some('\u{276F}'),
+            text: &input_text,
+            placeholder: "Type a command...",
+            caret: Some(
+                state
+                    .editable
+                    .cursors()
+                    .first()
+                    .map(|c| c.column)
+                    .unwrap_or(0),
+            ),
+            scope: None,
+        },
+        body: Body::List {
+            sections: &sections,
+            selected: FlatIndex(state.selected_index.min(rows.len().saturating_sub(1))),
+            scroll: 0,
+            max_visible: 8,
+        },
+        footer: Some(overlay_surface::Footer {
+            leading: "\u{2191}\u{2193} navigate \u{00b7} \u{21b5} run",
+            trailing: "esc dismiss",
+        }),
+    };
+
+    let mut mask_cache = crate::view::frame::RoundedRectMaskCache::new();
+    overlay_surface::render(
+        frame,
+        painter,
+        &mut mask_cache,
+        &model.theme.overlay,
+        &spec,
+        ctx.window_width,
+        ctx.window_height,
+        ctx.scale_factor,
+        model.ui.cursor_visible,
+    );
+}
+
 fn render_command_palette_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -181,6 +273,10 @@ fn render_command_palette_modal(
     ctx: &ModalRenderCtx,
 ) {
     use crate::commands::filter_commands;
+
+    if overlay_surface_gate_enabled() {
+        return render_command_palette_modal_via_overlay_surface(frame, painter, model, state, ctx);
+    }
 
     let colors = &ctx.colors;
     let line_height = ctx.line_height;
@@ -195,6 +291,7 @@ fn render_command_palette_modal(
         ctx.window_height,
         line_height,
         filtered_commands.len(),
+        ctx.scale_factor,
     );
 
     render_modal_shell(frame, &layout, colors);
@@ -215,6 +312,7 @@ fn render_command_palette_modal(
         colors.highlight,
         colors.selection_bg,
         model.ui.cursor_visible,
+        ctx.scale_factor,
     );
 
     if let Some(list_idx) = w.list {
@@ -266,7 +364,12 @@ fn render_goto_line_modal(
     let line_height = ctx.line_height;
     let char_width = ctx.char_width;
 
-    let (layout, w) = geometry::goto_line_layout(ctx.window_width, ctx.window_height, line_height);
+    let (layout, w) = geometry::goto_line_layout(
+        ctx.window_width,
+        ctx.window_height,
+        line_height,
+        ctx.scale_factor,
+    );
 
     render_modal_shell(frame, &layout, colors);
 
@@ -286,6 +389,7 @@ fn render_goto_line_modal(
         colors.highlight,
         colors.selection_bg,
         model.ui.cursor_visible,
+        ctx.scale_factor,
     );
 }
 
@@ -307,6 +411,7 @@ fn render_find_replace_modal(
         ctx.window_height,
         line_height,
         state.replace_mode,
+        ctx.scale_factor,
     );
 
     render_modal_shell(frame, &layout, colors);
@@ -343,6 +448,7 @@ fn render_find_replace_modal(
         colors.highlight,
         colors.selection_bg,
         find_cursor_visible,
+        ctx.scale_factor,
     );
 
     if let Some(label_idx) = w.replace_label {
@@ -370,6 +476,7 @@ fn render_find_replace_modal(
             colors.highlight,
             colors.selection_bg,
             replace_cursor_visible,
+            ctx.scale_factor,
         );
     }
 }
@@ -405,6 +512,7 @@ fn render_search_list_modal<T>(
         line_height,
         items.len(),
         !input_is_empty,
+        ctx.scale_factor,
     );
 
     render_modal_shell(frame, &layout, colors);
@@ -425,12 +533,13 @@ fn render_search_list_modal<T>(
         colors.highlight,
         colors.selection_bg,
         model.ui.cursor_visible,
+        ctx.scale_factor,
     );
 
     let results_y = if let Some(list_idx) = w.list {
         layout.widget(list_idx).y
     } else {
-        input_r.y + input_r.h + geometry::ModalSpacing::GAP_MD
+        input_r.y + input_r.h + geometry::ModalSpacing::gap_md(ctx.scale_factor)
     };
     let dim_color = 0xFF888888;
     let list_layout = SelectableListLayout {
@@ -569,8 +678,14 @@ pub fn render_modals(
         return;
     };
 
-    // 1. Dim background (40% black overlay)
-    frame.dim(MODAL_DIM_ALPHA); // 102/255 ≈ 40% opacity
+    // 1. Dim background (40% black overlay). Skipped for the command
+    // palette when the overlay-surface gate is on: that path owns its own
+    // backdrop dim as part of the component's chrome.
+    let palette_via_overlay_surface =
+        overlay_surface_gate_enabled() && matches!(modal, ModalState::CommandPalette(_));
+    if !palette_via_overlay_surface {
+        frame.dim(MODAL_DIM_ALPHA); // 102/255 ≈ 40% opacity
+    }
 
     let ctx = ModalRenderCtx {
         window_width,
@@ -578,6 +693,7 @@ pub fn render_modals(
         line_height: painter.line_height(),
         char_width: painter.char_width(),
         colors: ModalColors::from_model(model),
+        scale_factor: model.metrics.scale_factor,
     };
 
     // Handle different modal types

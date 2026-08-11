@@ -31,6 +31,53 @@ pub fn blend_colors(bg: u32, fg: u32, alpha: f32) -> u32 {
     0xFF000000 | (final_r << 16) | (final_g << 8) | final_b
 }
 
+/// Per-corner alpha coverage for a rounded-rect corner of a given physical
+/// radius. Coverage is color-independent (just how much of each corner
+/// pixel the circular arc covers), so one mask is shared by every themed
+/// color drawn at that radius — the cache key is the radius alone.
+pub struct RoundedCornerMask {
+    radius: usize,
+    coverage: Vec<u8>,
+}
+
+impl RoundedCornerMask {
+    fn compute(radius: usize) -> Self {
+        let r = radius as f32;
+        let mut coverage = vec![0u8; radius * radius];
+        for dy in 0..radius {
+            for dx in 0..radius {
+                let px = dx as f32 + 0.5;
+                let py = dy as f32 + 0.5;
+                let dist = ((r - px).powi(2) + (r - py).powi(2)).sqrt();
+                // Solid inside the arc, transparent outside, with a ~1px
+                // linear falloff band at the boundary for antialiasing.
+                let alpha = if dist <= r - 0.5 {
+                    255.0
+                } else if dist >= r + 0.5 {
+                    0.0
+                } else {
+                    (r + 0.5 - dist).clamp(0.0, 1.0) * 255.0
+                };
+                coverage[dy * radius + dx] = alpha.round() as u8;
+            }
+        }
+        Self { radius, coverage }
+    }
+
+    #[inline]
+    fn coverage(&self, dx: usize, dy: usize) -> u8 {
+        if dx >= self.radius || dy >= self.radius {
+            return 0;
+        }
+        self.coverage[dy * self.radius + dx]
+    }
+}
+
+/// Cache of `RoundedCornerMask`s keyed by physical corner radius. Owned by
+/// the caller (mirrors `GlyphCache`'s lifetime pattern) and threaded into
+/// the rounded-rect primitives so masks survive across frames.
+pub type RoundedRectMaskCache = std::collections::HashMap<usize, RoundedCornerMask>;
+
 /// Clipping rectangle in pixel coordinates (inclusive start, exclusive end).
 #[derive(Clone, Copy, Debug)]
 struct ClipRect {
@@ -439,6 +486,160 @@ impl<'a> Frame<'a> {
         self.fill_rect_px(x + w.saturating_sub(1), y, 1, h, opaque_border);
     }
 
+    /// Fill a rectangle with rounded corners, alpha-blended onto the
+    /// background. `radius` is a physical-pixel radius; corner coverage
+    /// masks are cached per radius in `mask_cache` (color-independent, see
+    /// `RoundedCornerMask`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn fill_rounded_rect(
+        &mut self,
+        x: usize,
+        y: usize,
+        w: usize,
+        h: usize,
+        radius: usize,
+        color: u32,
+        mask_cache: &mut RoundedRectMaskCache,
+    ) {
+        if w == 0 || h == 0 {
+            return;
+        }
+        let radius = radius.min(w / 2).min(h / 2);
+        if radius == 0 {
+            self.blend_rect_px(x, y, w, h, color);
+            return;
+        }
+
+        // Middle band spanning the full width, between the top and bottom
+        // corner rows.
+        if h > 2 * radius {
+            self.blend_rect_px(x, y + radius, w, h - 2 * radius, color);
+        }
+
+        let mask = mask_cache
+            .entry(radius)
+            .or_insert_with(|| RoundedCornerMask::compute(radius));
+        let base_alpha = ((color >> 24) & 0xFF) as f32;
+        let rgb = color & 0x00FF_FFFF;
+
+        for dy in 0..radius {
+            // Straight segment of this corner row, between the left/right corners.
+            if w > 2 * radius {
+                self.blend_rect_px(x + radius, y + dy, w - 2 * radius, 1, color);
+                self.blend_rect_px(x + radius, y + h - 1 - dy, w - 2 * radius, 1, color);
+            }
+            for dx in 0..radius {
+                let cov = mask.coverage(dx, dy);
+                if cov == 0 {
+                    continue;
+                }
+                let a = (base_alpha * cov as f32 / 255.0).round() as u32;
+                let c = (a.min(255) << 24) | rgb;
+                self.blend_pixel(x + dx, y + dy, c);
+                self.blend_pixel(x + w - 1 - dx, y + dy, c);
+                self.blend_pixel(x + dx, y + h - 1 - dy, c);
+                self.blend_pixel(x + w - 1 - dx, y + h - 1 - dy, c);
+            }
+        }
+    }
+
+    /// 1px rounded-rect outline: straight edges plus the antialiased arc
+    /// band of the corner mask (skipping the solid interior, so a corner
+    /// reads as a thin arc rather than a filled quarter-circle).
+    #[allow(clippy::too_many_arguments)]
+    fn stroke_rounded_rect(
+        &mut self,
+        x: usize,
+        y: usize,
+        w: usize,
+        h: usize,
+        radius: usize,
+        color: u32,
+        mask_cache: &mut RoundedRectMaskCache,
+    ) {
+        if w == 0 || h == 0 {
+            return;
+        }
+        let radius = radius.min(w / 2).min(h / 2);
+
+        if w > 2 * radius {
+            self.blend_rect_px(x + radius, y, w - 2 * radius, 1, color);
+            self.blend_rect_px(
+                x + radius,
+                y + h.saturating_sub(1),
+                w - 2 * radius,
+                1,
+                color,
+            );
+        }
+        if h > 2 * radius {
+            self.blend_rect_px(x, y + radius, 1, h - 2 * radius, color);
+            self.blend_rect_px(
+                x + w.saturating_sub(1),
+                y + radius,
+                1,
+                h - 2 * radius,
+                color,
+            );
+        }
+        if radius == 0 {
+            return;
+        }
+
+        let mask = mask_cache
+            .entry(radius)
+            .or_insert_with(|| RoundedCornerMask::compute(radius));
+        let base_alpha = ((color >> 24) & 0xFF) as f32;
+        let rgb = color & 0x00FF_FFFF;
+
+        for dy in 0..radius {
+            for dx in 0..radius {
+                let cov = mask.coverage(dx, dy);
+                if cov == 0 || cov == 255 {
+                    continue;
+                }
+                let a = (base_alpha * cov as f32 / 255.0).round() as u32;
+                let c = (a.min(255) << 24) | rgb;
+                self.blend_pixel(x + dx, y + dy, c);
+                self.blend_pixel(x + w - 1 - dx, y + dy, c);
+                self.blend_pixel(x + dx, y + h - 1 - dy, c);
+                self.blend_pixel(x + w - 1 - dx, y + h - 1 - dy, c);
+            }
+        }
+    }
+
+    /// Modal/popup drop shadow: an opaque outline ring plus two nested
+    /// translucent rings, each one physical pixel further out. No blur pass
+    /// — the software renderer can't afford a full-viewport convolution.
+    pub fn draw_shadow_rings(
+        &mut self,
+        x: usize,
+        y: usize,
+        w: usize,
+        h: usize,
+        radius: usize,
+        mask_cache: &mut RoundedRectMaskCache,
+    ) {
+        const RINGS: [(usize, u8); 3] = [(1, 0x8C), (2, 0x40), (3, 0x1F)];
+        for (offset, alpha) in RINGS {
+            let rx = x.saturating_sub(offset);
+            let ry = y.saturating_sub(offset);
+            let rw = w + offset * 2;
+            let rh = h + offset * 2;
+            let color = (alpha as u32) << 24;
+            self.stroke_rounded_rect(rx, ry, rw, rh, radius + offset, color, mask_cache);
+        }
+    }
+
+    /// A 2-row, 4px-period wavy underline (squiggle), used for diagnostic
+    /// underlines and shared with `editor-decorations.md`'s `Wavy` kind.
+    pub fn draw_wavy_underline(&mut self, x: usize, y: usize, w: usize, color: u32) {
+        for i in 0..w {
+            let row = if i % 4 < 2 { 0 } else { 1 };
+            self.blend_pixel(x + i, y + row, color);
+        }
+    }
+
     /// Draw a sparkline chart (used by perf overlay)
     #[cfg(debug_assertions)]
     #[allow(clippy::too_many_arguments)]
@@ -608,6 +809,99 @@ impl<'a> TextPainter<'a> {
         }
     }
 
+    /// Draw text at an arbitrary (physical-px) size with optional tracking
+    /// (extra advance per character, for the +1px section-header
+    /// letterspacing). The glyph cache is already keyed on `(char, size)`,
+    /// so a new size is just another cache bucket. Returns the drawn width.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_sized(
+        &mut self,
+        frame: &mut Frame,
+        x: usize,
+        y: usize,
+        text: &str,
+        size: f32,
+        tracking: f32,
+        color: u32,
+    ) -> f32 {
+        let ascent = self
+            .font
+            .horizontal_line_metrics(size)
+            .map(|m| m.ascent)
+            .unwrap_or(self.ascent);
+        let baseline = y as f32 + ascent;
+        let mut current_x = x as f32;
+
+        for ch in text.chars() {
+            let key = (ch, size.to_bits());
+
+            #[cfg(debug_assertions)]
+            let is_hit = self.glyph_cache.contains_key(&key);
+            #[cfg(debug_assertions)]
+            if is_hit {
+                self.cache_stats.hits += 1;
+            } else {
+                self.cache_stats.misses += 1;
+            }
+
+            let (metrics, bitmap) = self
+                .glyph_cache
+                .entry(key)
+                .or_insert_with(|| self.font.rasterize(ch, size));
+
+            let glyph_top = baseline - metrics.height as f32 - metrics.ymin as f32;
+
+            for bitmap_y in 0..metrics.height {
+                for bitmap_x in 0..metrics.width {
+                    let bitmap_idx = bitmap_y * metrics.width + bitmap_x;
+                    if bitmap_idx < bitmap.len() {
+                        let alpha = bitmap[bitmap_idx];
+                        if alpha > 0 {
+                            let px = current_x as isize + bitmap_x as isize + metrics.xmin as isize;
+                            let py = (glyph_top + bitmap_y as f32) as isize;
+
+                            if px >= 0 && py >= 0 {
+                                frame.blend_text_pixel(
+                                    px as usize,
+                                    py as usize,
+                                    color,
+                                    alpha as f32 / 255.0,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            current_x += metrics.advance_width + tracking;
+        }
+
+        current_x - x as f32
+    }
+
+    /// Measure text width in pixels at an arbitrary size, with tracking.
+    pub fn measure_sized(&mut self, text: &str, size: f32, tracking: f32) -> f32 {
+        let mut width = 0.0;
+        for ch in text.chars() {
+            let key = (ch, size.to_bits());
+            let (metrics, _) = self
+                .glyph_cache
+                .entry(key)
+                .or_insert_with(|| self.font.rasterize(ch, size));
+            width += metrics.advance_width + tracking;
+        }
+        width
+    }
+
+    /// Line height (px) at an arbitrary size, for laying out chrome that
+    /// mixes the 14/13/11 type scale (e.g. keycap chip height).
+    pub fn line_height_for_size(&self, size: f32) -> usize {
+        self.font
+            .horizontal_line_metrics(size)
+            .map(|m| m.new_line_size.ceil() as usize)
+            .unwrap_or(self.line_height)
+    }
+
     /// Measure text width in pixels
     pub fn measure_width(&mut self, text: &str) -> f32 {
         let mut width = 0.0;
@@ -711,6 +1005,69 @@ impl<'a> TextPainter<'a> {
             current_x += metrics.advance_width;
         }
     }
+}
+
+/// A single keycap chip: bordered rounded rect + centered 11px label.
+/// Returns the chip's width, so callers laying out a row of chips
+/// (`binding_chips`) can advance past it. Sizes/paddings are 11px-scale
+/// logical constants, scaled to physical px like the rest of the chrome.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_keycap(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    mask_cache: &mut RoundedRectMaskCache,
+    x: usize,
+    y: usize,
+    label: &str,
+    bg: u32,
+    border: u32,
+    fg: u32,
+    scale_factor: f64,
+) -> usize {
+    const SIZE_LOGICAL: f32 = 11.0;
+    const MIN_WIDTH_LOGICAL: f32 = 17.0;
+    const PAD_X_LOGICAL: f32 = 4.0;
+    const PAD_Y_LOGICAL: f32 = 2.0;
+    const RADIUS_LOGICAL: f32 = 4.0;
+
+    let scale = |v: f32| (v as f64 * scale_factor).round().max(1.0) as usize;
+
+    let size = (SIZE_LOGICAL as f64 * scale_factor) as f32;
+    let text_w = painter.measure_sized(label, size, 0.0);
+    let pad_x = scale(PAD_X_LOGICAL);
+    let pad_y = scale(PAD_Y_LOGICAL);
+    let radius = scale(RADIUS_LOGICAL);
+    let min_width = scale(MIN_WIDTH_LOGICAL);
+    let border_w = scale(1.0);
+    let border_bottom_w = border_w + scale(1.0);
+
+    let text_h = painter.line_height_for_size(size);
+    let content_w = text_w.ceil() as usize + pad_x * 2;
+    let width = content_w.max(min_width);
+    let height = text_h + pad_y * 2;
+
+    frame.fill_rounded_rect(x, y, width, height, radius, border, mask_cache);
+
+    let inner_x = x + border_w;
+    let inner_y = y + border_w;
+    let inner_w = width.saturating_sub(border_w * 2);
+    let inner_h = height.saturating_sub(border_w + border_bottom_w);
+    let inner_radius = radius.saturating_sub(border_w);
+    frame.fill_rounded_rect(
+        inner_x,
+        inner_y,
+        inner_w,
+        inner_h,
+        inner_radius,
+        bg,
+        mask_cache,
+    );
+
+    let text_x = x + (width.saturating_sub(text_w.ceil() as usize)) / 2;
+    let text_y = y + (height.saturating_sub(text_h)) / 2;
+    painter.draw_sized(frame, text_x, text_y, label, size, 0.0, fg);
+
+    width
 }
 
 #[cfg(test)]
@@ -972,5 +1329,158 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn fill_rounded_rect_true_corner_is_transparent() {
+        // At a real corner radius, the outermost pixel of each corner sits
+        // clearly outside the arc and must stay untouched (alpha 0), not
+        // painted like a square rect would.
+        let mut buffer = vec![0u32; 20 * 20];
+        let mut frame = Frame::new(&mut buffer, 20, 20);
+        let mut cache = RoundedRectMaskCache::new();
+
+        frame.fill_rounded_rect(2, 2, 16, 16, 6, 0xFFFF0000, &mut cache);
+
+        assert_eq!(
+            frame.get_pixel(2, 2),
+            0,
+            "true corner pixel must be untouched"
+        );
+        assert_eq!(
+            frame.get_pixel(17, 2),
+            0,
+            "true corner pixel must be untouched"
+        );
+        assert_eq!(
+            frame.get_pixel(2, 17),
+            0,
+            "true corner pixel must be untouched"
+        );
+        assert_eq!(
+            frame.get_pixel(17, 17),
+            0,
+            "true corner pixel must be untouched"
+        );
+    }
+
+    #[test]
+    fn fill_rounded_rect_interior_and_edge_midpoints_are_opaque() {
+        let mut buffer = vec![0u32; 20 * 20];
+        let mut frame = Frame::new(&mut buffer, 20, 20);
+        let mut cache = RoundedRectMaskCache::new();
+
+        frame.fill_rounded_rect(2, 2, 16, 16, 6, 0xFFFF0000, &mut cache);
+
+        // Center of the rect: fully inside, opaque red.
+        assert_eq!(frame.get_pixel(10, 10), 0xFFFF0000);
+        // Midpoint of the top edge: outside the corner arcs, straight edge.
+        assert_eq!(frame.get_pixel(10, 2), 0xFFFF0000);
+        // Midpoint of the left edge.
+        assert_eq!(frame.get_pixel(2, 10), 0xFFFF0000);
+    }
+
+    #[test]
+    fn fill_rounded_rect_mask_cache_reused_across_calls_at_same_radius() {
+        let mut buffer = vec![0u32; 20 * 20];
+        let mut frame = Frame::new(&mut buffer, 20, 20);
+        let mut cache = RoundedRectMaskCache::new();
+
+        frame.fill_rounded_rect(0, 0, 10, 10, 4, 0xFFFF0000, &mut cache);
+        assert_eq!(cache.len(), 1, "one mask cached for radius 4");
+        frame.fill_rounded_rect(10, 10, 10, 10, 4, 0xFF00FF00, &mut cache);
+        assert_eq!(
+            cache.len(),
+            1,
+            "second call at the same physical radius must reuse the cached mask, not add a new one"
+        );
+    }
+
+    #[test]
+    fn fill_rounded_rect_zero_radius_matches_fill_rect() {
+        let mut buffer_a = vec![0u32; 10 * 10];
+        let mut frame_a = Frame::new(&mut buffer_a, 10, 10);
+        let mut cache = RoundedRectMaskCache::new();
+        frame_a.fill_rounded_rect(1, 1, 6, 6, 0, 0xFF0000FF, &mut cache);
+
+        let mut buffer_b = vec![0u32; 10 * 10];
+        let mut frame_b = Frame::new(&mut buffer_b, 10, 10);
+        frame_b.blend_rect_px(1, 1, 6, 6, 0xFF0000FF);
+
+        assert_eq!(buffer_a, buffer_b);
+    }
+
+    #[test]
+    fn draw_wavy_underline_alternates_rows_every_two_pixels() {
+        let mut buffer = vec![0u32; 10 * 3];
+        let mut frame = Frame::new(&mut buffer, 10, 3);
+        frame.draw_wavy_underline(0, 0, 8, 0xFFFFFFFF);
+
+        for i in 0..8usize {
+            let expect_row0 = i % 4 < 2;
+            assert_eq!(
+                frame.get_pixel(i, 0) == 0xFFFFFFFF,
+                expect_row0,
+                "col {i} row 0"
+            );
+            assert_eq!(
+                frame.get_pixel(i, 1) == 0xFFFFFFFF,
+                !expect_row0,
+                "col {i} row 1"
+            );
+        }
+    }
+
+    #[test]
+    fn draw_shadow_rings_paints_outside_the_source_rect() {
+        let mut buffer = vec![0u32; 30 * 30];
+        let mut frame = Frame::new(&mut buffer, 30, 30);
+        let mut cache = RoundedRectMaskCache::new();
+
+        frame.draw_shadow_rings(10, 10, 10, 10, 4, &mut cache);
+
+        // A pixel just outside the panel's straight edge (top, above the
+        // corner band) should be touched by the first ring.
+        let px = frame.get_pixel(15, 9);
+        assert_ne!(px, 0, "shadow ring must paint just outside the panel edge");
+        // Far outside all three rings, nothing should be painted.
+        assert_eq!(frame.get_pixel(0, 0), 0);
+    }
+
+    #[test]
+    fn draw_keycap_respects_minimum_width_and_paints_the_label() {
+        let font = Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .expect("test font should load");
+        let mut glyph_cache = super::super::GlyphCache::default();
+        let mut painter = TextPainter::new(&font, &mut glyph_cache, 14.0, 11.0, 8.0, 18);
+
+        let mut buffer = vec![0u32; 60 * 30];
+        let mut frame = Frame::new(&mut buffer, 60, 30);
+        let mut mask_cache = RoundedRectMaskCache::new();
+
+        // A single narrow glyph ("a") is narrower than the 17px logical
+        // minimum, so the chip must still be at least that wide.
+        let width = draw_keycap(
+            &mut frame,
+            &mut painter,
+            &mut mask_cache,
+            2,
+            2,
+            "a",
+            0xFF35373C,
+            0xFF4A4D53,
+            0xFFA5A8AE,
+            1.0,
+        );
+
+        assert!(
+            width >= 17,
+            "keycap must respect the 17px minimum width, got {width}"
+        );
+        // Something was painted (border/background), not left transparent.
+        assert_ne!(frame.get_pixel(2, 2 + 4), 0);
     }
 }

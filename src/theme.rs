@@ -250,6 +250,244 @@ impl Color {
     }
 }
 
+/// Relative luminance per WCAG 2.x, 0.0 (black) – 1.0 (white).
+fn relative_luminance(c: Color) -> f64 {
+    fn chan(v: u8) -> f64 {
+        let v = v as f64 / 255.0;
+        if v <= 0.03928 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    }
+    0.2126 * chan(c.r) + 0.7152 * chan(c.g) + 0.0722 * chan(c.b)
+}
+
+/// WCAG contrast ratio between two colors (1.0 – 21.0).
+fn contrast_ratio(a: Color, b: Color) -> f64 {
+    let (la, lb) = (relative_luminance(a), relative_luminance(b));
+    let (hi, lo) = if la > lb { (la, lb) } else { (lb, la) };
+    (hi + 0.05) / (lo + 0.05)
+}
+
+/// Linear per-channel mix of two opaque colors; `t` in `[0, 1]`.
+fn mix(a: Color, b: Color, t: f64) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    let lerp = |x: u8, y: u8| (x as f64 + (y as f64 - x as f64) * t).round() as u8;
+    Color::rgb(lerp(a.r, b.r), lerp(a.g, b.g), lerp(a.b, b.b))
+}
+
+/// Blend `fg` toward `pole` (white or black) until its contrast ratio
+/// against `ground` reaches `min_ratio`, binary-searching the mix amount.
+/// If even `pole` itself can't clear the ratio, returns `pole`.
+fn ensure_min_contrast(fg: Color, ground: Color, pole: Color, min_ratio: f64) -> Color {
+    if contrast_ratio(fg, ground) >= min_ratio {
+        return fg;
+    }
+    // Search for a small margin above `min_ratio`: `mix`'s u8 channel
+    // rounding can otherwise land the final color a fraction under the
+    // target ratio.
+    let target = min_ratio + 0.1;
+    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+    for _ in 0..16 {
+        let mid = (lo + hi) / 2.0;
+        if contrast_ratio(mix(fg, pole, mid), ground) >= target {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    mix(fg, pole, hi)
+}
+
+/// The pole (black or white) that contrasts more strongly against `ground`.
+fn max_contrast_pole(ground: Color) -> Color {
+    let white = Color::rgb(0xFF, 0xFF, 0xFF);
+    let black = Color::rgb(0x00, 0x00, 0x00);
+    if contrast_ratio(white, ground) >= contrast_ratio(black, ground) {
+        white
+    } else {
+        black
+    }
+}
+
+/// Resolve the `overlay.*` palette: theme-provided hex strings win; missing
+/// keys fall back to a luminance-relative, minimum-contrast derivation from
+/// already-resolved overlay/editor/status-bar colors (see the color table in
+/// `docs/feature/overlay-surface.md`), so an existing user theme with none
+/// of these keys still renders legibly, including light themes.
+fn resolve_overlay_theme(
+    data: &OverlayThemeData,
+    status_bar: &StatusBarTheme,
+) -> Result<OverlayTheme, String> {
+    let defaults = OverlayTheme::default_dark();
+
+    fn parsed(s: &Option<String>) -> Result<Option<Color>, String> {
+        s.as_ref().map(|s| Color::from_hex(s)).transpose()
+    }
+
+    let border = parsed(&data.border)?;
+    let background = parsed(&data.background)?.unwrap_or(defaults.background);
+    let foreground = parsed(&data.foreground)?.unwrap_or(defaults.foreground);
+    let input_background = parsed(&data.input_background)?.unwrap_or(defaults.input_background);
+    let selection_background =
+        parsed(&data.selection_background)?.unwrap_or(defaults.selection_background);
+    let highlight = parsed(&data.highlight)?.unwrap_or(defaults.highlight);
+    let warning = parsed(&data.warning)?.unwrap_or(defaults.warning);
+    let error = parsed(&data.error)?.unwrap_or(defaults.error);
+
+    let light = relative_luminance(background) > 0.5;
+    let white = Color::rgb(0xFF, 0xFF, 0xFF);
+    let black = Color::rgb(0x00, 0x00, 0x00);
+    // The pole away from the panel's own luminance direction — white on a
+    // dark panel, black on a light one. Used for both the "push toward
+    // legible" contrast fixes and accent's own lighten/darken direction.
+    let away_pole = if light { black } else { white };
+
+    let accent = parsed(&data.accent)?.unwrap_or(status_bar.background);
+    let accent_bright = parsed(&data.accent_bright)?.unwrap_or_else(|| mix(accent, away_pole, 0.3));
+
+    let panel_background = parsed(&data.panel_background)?.unwrap_or(background);
+    let panel_secondary = parsed(&data.panel_secondary)?.unwrap_or_else(|| {
+        if light {
+            mix(panel_background, foreground, 0.04)
+        } else {
+            mix(panel_background, black, 0.06)
+        }
+    });
+    let recessed_wash = parsed(&data.recessed_wash)?.unwrap_or_else(|| {
+        if light {
+            mix(panel_background, foreground, 0.06)
+        } else {
+            mix(panel_background, black, 0.15)
+        }
+    });
+    let hairline =
+        parsed(&data.hairline)?.unwrap_or_else(|| mix(panel_background, foreground, 0.09));
+
+    let selection_wash =
+        parsed(&data.selection_wash)?.unwrap_or_else(|| mix(panel_background, accent, 0.28));
+
+    let match_on_selection = parsed(&data.match_on_selection)?
+        .unwrap_or_else(|| ensure_min_contrast(accent_bright, selection_wash, away_pole, 7.0));
+
+    let text_primary = parsed(&data.text_primary)?.unwrap_or_else(|| {
+        ensure_min_contrast(
+            foreground,
+            panel_background,
+            max_contrast_pole(panel_background),
+            7.0,
+        )
+    });
+    let text_bright =
+        parsed(&data.text_bright)?.unwrap_or_else(|| max_contrast_pole(panel_background));
+    let text_secondary = parsed(&data.text_secondary)?.unwrap_or_else(|| {
+        ensure_min_contrast(
+            foreground,
+            panel_background,
+            max_contrast_pole(panel_background),
+            4.5,
+        )
+    });
+    let text_dim = parsed(&data.text_dim)?.unwrap_or_else(|| {
+        ensure_min_contrast(
+            foreground,
+            panel_background,
+            max_contrast_pole(panel_background),
+            4.5,
+        )
+    });
+
+    let keycap_bg =
+        parsed(&data.keycap_bg)?.unwrap_or_else(|| mix(panel_background, foreground, 0.08));
+    let keycap_border =
+        parsed(&data.keycap_border)?.unwrap_or_else(|| mix(panel_background, foreground, 0.18));
+    let keycap_fg = parsed(&data.keycap_fg)?.unwrap_or_else(|| {
+        ensure_min_contrast(foreground, keycap_bg, max_contrast_pole(keycap_bg), 4.5)
+    });
+
+    let severity_error = parsed(&data.severity_error)?.unwrap_or_else(|| {
+        ensure_min_contrast(
+            error,
+            panel_background,
+            max_contrast_pole(panel_background),
+            4.5,
+        )
+    });
+    let severity_warning = parsed(&data.severity_warning)?.unwrap_or_else(|| {
+        ensure_min_contrast(
+            warning,
+            panel_background,
+            max_contrast_pole(panel_background),
+            4.5,
+        )
+    });
+    let severity_info = parsed(&data.severity_info)?.unwrap_or_else(|| {
+        ensure_min_contrast(
+            accent,
+            panel_background,
+            max_contrast_pole(panel_background),
+            4.5,
+        )
+    });
+    let severity_hint = parsed(&data.severity_hint)?.unwrap_or(text_dim);
+
+    // "banner wash" approximation: the severity color washed lightly over
+    // the panel, matching how a severity banner would actually be painted.
+    let banner_ground = |severity: Color| mix(panel_background, severity, 0.15);
+    // Blend toward whichever pole (black/white) contrasts more against the
+    // banner wash itself — a fixed `text_primary` pole (calibrated against
+    // `panel_background`) doesn't guarantee 4.5:1 against a wash tinted by
+    // a bright severity color.
+    let severity_error_text = parsed(&data.severity_error_text)?.unwrap_or_else(|| {
+        let ground = banner_ground(severity_error);
+        ensure_min_contrast(severity_error, ground, max_contrast_pole(ground), 4.5)
+    });
+    let severity_warning_text = parsed(&data.severity_warning_text)?.unwrap_or_else(|| {
+        let ground = banner_ground(severity_warning);
+        ensure_min_contrast(severity_warning, ground, max_contrast_pole(ground), 4.5)
+    });
+    let severity_info_text = parsed(&data.severity_info_text)?.unwrap_or_else(|| {
+        let ground = banner_ground(severity_info);
+        ensure_min_contrast(severity_info, ground, max_contrast_pole(ground), 4.5)
+    });
+    let severity_hint_text = parsed(&data.severity_hint_text)?.unwrap_or(text_dim);
+
+    Ok(OverlayTheme {
+        border,
+        background,
+        foreground,
+        input_background,
+        selection_background,
+        highlight,
+        warning,
+        error,
+        accent,
+        accent_bright,
+        panel_background,
+        panel_secondary,
+        recessed_wash,
+        hairline,
+        selection_wash,
+        match_on_selection,
+        text_primary,
+        text_bright,
+        text_secondary,
+        text_dim,
+        keycap_bg,
+        keycap_border,
+        keycap_fg,
+        severity_error,
+        severity_warning,
+        severity_info,
+        severity_hint,
+        severity_error_text,
+        severity_warning_text,
+        severity_info_text,
+        severity_hint_text,
+    })
+}
+
 /// Raw theme data as parsed from YAML
 #[derive(Debug, Clone, Deserialize)]
 pub struct ThemeData {
@@ -338,6 +576,55 @@ pub struct OverlayThemeData {
     pub warning: Option<String>,
     #[serde(default)]
     pub error: Option<String>,
+    // `overlay-surface.md` Phase 1 keys, all optional with derivation
+    // fallbacks (see `resolve_overlay_theme`) so existing user themes with
+    // none of these keys keep rendering correctly.
+    #[serde(default)]
+    pub accent: Option<String>,
+    #[serde(default)]
+    pub accent_bright: Option<String>,
+    #[serde(default)]
+    pub panel_background: Option<String>,
+    #[serde(default)]
+    pub panel_secondary: Option<String>,
+    #[serde(default)]
+    pub recessed_wash: Option<String>,
+    #[serde(default)]
+    pub hairline: Option<String>,
+    #[serde(default)]
+    pub selection_wash: Option<String>,
+    #[serde(default)]
+    pub match_on_selection: Option<String>,
+    #[serde(default)]
+    pub text_primary: Option<String>,
+    #[serde(default)]
+    pub text_bright: Option<String>,
+    #[serde(default)]
+    pub text_secondary: Option<String>,
+    #[serde(default)]
+    pub text_dim: Option<String>,
+    #[serde(default)]
+    pub keycap_bg: Option<String>,
+    #[serde(default)]
+    pub keycap_border: Option<String>,
+    #[serde(default)]
+    pub keycap_fg: Option<String>,
+    #[serde(default)]
+    pub severity_error: Option<String>,
+    #[serde(default)]
+    pub severity_warning: Option<String>,
+    #[serde(default)]
+    pub severity_info: Option<String>,
+    #[serde(default)]
+    pub severity_hint: Option<String>,
+    #[serde(default)]
+    pub severity_error_text: Option<String>,
+    #[serde(default)]
+    pub severity_warning_text: Option<String>,
+    #[serde(default)]
+    pub severity_info_text: Option<String>,
+    #[serde(default)]
+    pub severity_hint_text: Option<String>,
 }
 
 /// Splitter bar colors (all optional for backward compatibility)
@@ -560,6 +847,33 @@ pub struct OverlayTheme {
     pub warning: Color,
     /// Error/bad indicator color (red)
     pub error: Color,
+
+    // `overlay-surface.md` Phase 1 palette — the new OverlaySurface's chrome,
+    // rows, keycaps and severity conventions. See `resolve_overlay_theme`
+    // for the derivation fallbacks applied when a theme omits these.
+    pub accent: Color,
+    pub accent_bright: Color,
+    pub panel_background: Color,
+    pub panel_secondary: Color,
+    pub recessed_wash: Color,
+    pub hairline: Color,
+    pub selection_wash: Color,
+    pub match_on_selection: Color,
+    pub text_primary: Color,
+    pub text_bright: Color,
+    pub text_secondary: Color,
+    pub text_dim: Color,
+    pub keycap_bg: Color,
+    pub keycap_border: Color,
+    pub keycap_fg: Color,
+    pub severity_error: Color,
+    pub severity_warning: Color,
+    pub severity_info: Color,
+    pub severity_hint: Color,
+    pub severity_error_text: Color,
+    pub severity_warning_text: Color,
+    pub severity_info_text: Color,
+    pub severity_hint_text: Color,
 }
 
 impl OverlayTheme {
@@ -574,6 +888,29 @@ impl OverlayTheme {
             highlight: Color::rgb(0x80, 0xFF, 0x80),
             warning: Color::rgb(0xFF, 0xFF, 0x80),
             error: Color::rgb(0xFF, 0x80, 0x80),
+            accent: Color::rgb(0x00, 0x7A, 0xCC),
+            accent_bright: Color::rgb(0x4D, 0xAA, 0xFF),
+            panel_background: Color::rgb(0x26, 0x28, 0x2C),
+            panel_secondary: Color::rgb(0x22, 0x23, 0x27),
+            recessed_wash: Color::rgb(0x1F, 0x21, 0x24),
+            hairline: Color::rgb(0x3C, 0x3E, 0x42),
+            selection_wash: Color::rgba(0x00, 0x7A, 0xCC, 0x47),
+            match_on_selection: Color::rgb(0xC9, 0xE4, 0xFF),
+            text_primary: Color::rgb(0xEC, 0xEC, 0xEE),
+            text_bright: Color::rgb(0xFF, 0xFF, 0xFF),
+            text_secondary: Color::rgb(0xC9, 0xCB, 0xCF),
+            text_dim: Color::rgb(0x8D, 0x91, 0x98),
+            keycap_bg: Color::rgb(0x35, 0x37, 0x3C),
+            keycap_border: Color::rgb(0x4A, 0x4D, 0x53),
+            keycap_fg: Color::rgb(0xA5, 0xA8, 0xAE),
+            severity_error: Color::rgb(0xF1, 0x4C, 0x4C),
+            severity_warning: Color::rgb(0xCC, 0xA7, 0x00),
+            severity_info: Color::rgb(0x37, 0x94, 0xFF),
+            severity_hint: Color::rgb(0x8D, 0x91, 0x98),
+            severity_error_text: Color::rgb(0xE8, 0xA0, 0xA0),
+            severity_warning_text: Color::rgb(0xE0, 0xC8, 0x80),
+            severity_info_text: Color::rgb(0xA0, 0xCC, 0xFF),
+            severity_hint_text: Color::rgb(0x8D, 0x91, 0x98),
         }
     }
 }
@@ -924,6 +1261,14 @@ impl SyntaxTheme {
 }
 
 impl Theme {
+    /// Whether this theme's overlay panel reads as a light surface —
+    /// relative luminance of `overlay.background` above 0.5. Flips the
+    /// direction overlay derivations mix in (see `resolve_overlay_theme`),
+    /// so light themes like github-light resolve legible chrome too.
+    pub fn is_light(&self) -> bool {
+        relative_luminance(self.overlay.background) > 0.5
+    }
+
     /// Load theme from YAML string
     pub fn from_yaml(yaml: &str) -> Result<Self, String> {
         let data: ThemeData =
@@ -994,82 +1339,18 @@ impl Theme {
         // Build CSV theme using editor/gutter as fallbacks
         let csv = CsvTheme::from_data(Some(&data.ui.csv), &gutter, &editor);
 
+        let status_bar = StatusBarTheme {
+            background: Color::from_hex(&data.ui.status_bar.background)?,
+            foreground: Color::from_hex(&data.ui.status_bar.foreground)?,
+        };
+        let overlay = resolve_overlay_theme(&data.ui.overlay, &status_bar)?;
+
         Ok(Theme {
             name: data.name,
             editor,
             gutter,
-            status_bar: StatusBarTheme {
-                background: Color::from_hex(&data.ui.status_bar.background)?,
-                foreground: Color::from_hex(&data.ui.status_bar.foreground)?,
-            },
-            overlay: {
-                let defaults = OverlayTheme::default_dark();
-                OverlayTheme {
-                    border: data
-                        .ui
-                        .overlay
-                        .border
-                        .as_ref()
-                        .map(|s| Color::from_hex(s))
-                        .transpose()?,
-                    background: data
-                        .ui
-                        .overlay
-                        .background
-                        .as_ref()
-                        .map(|s| Color::from_hex(s))
-                        .transpose()?
-                        .unwrap_or(defaults.background),
-                    foreground: data
-                        .ui
-                        .overlay
-                        .foreground
-                        .as_ref()
-                        .map(|s| Color::from_hex(s))
-                        .transpose()?
-                        .unwrap_or(defaults.foreground),
-                    input_background: data
-                        .ui
-                        .overlay
-                        .input_background
-                        .as_ref()
-                        .map(|s| Color::from_hex(s))
-                        .transpose()?
-                        .unwrap_or(defaults.input_background),
-                    selection_background: data
-                        .ui
-                        .overlay
-                        .selection_background
-                        .as_ref()
-                        .map(|s| Color::from_hex(s))
-                        .transpose()?
-                        .unwrap_or(defaults.selection_background),
-                    highlight: data
-                        .ui
-                        .overlay
-                        .highlight
-                        .as_ref()
-                        .map(|s| Color::from_hex(s))
-                        .transpose()?
-                        .unwrap_or(defaults.highlight),
-                    warning: data
-                        .ui
-                        .overlay
-                        .warning
-                        .as_ref()
-                        .map(|s| Color::from_hex(s))
-                        .transpose()?
-                        .unwrap_or(defaults.warning),
-                    error: data
-                        .ui
-                        .overlay
-                        .error
-                        .as_ref()
-                        .map(|s| Color::from_hex(s))
-                        .transpose()?
-                        .unwrap_or(defaults.error),
-                }
-            },
+            status_bar,
+            overlay,
             tab_bar: {
                 let defaults = TabBarTheme::default_dark();
                 TabBarTheme {

@@ -394,11 +394,11 @@ Mockups for the picker contexts: [B1 recent-grouped](assets/palette-b1.png), [B2
 
 **Effort:** M
 
-- [ ] The five primitives: `fill_rounded_rect` (mask-per-physical-radius cache), `draw_shadow_rings`, `draw_keycap`, `draw_wavy_underline`, `TextPainter::draw_sized` (+ per-size metrics); corner-coverage unit tests.
-- [ ] **Thread `scale_factor` through modal geometry**: `ModalSpacing` becomes scaled accessors; layout clamps against logical width. (Today's modals are effectively half-size on 2x displays — this is a bug fix, not a refactor.)
-- [ ] `overlay_surface.rs`: layout + paint for `Anchor::Centered`, `Header`, `Body::List` (sections, `FlatIndex`, match-index coalescing, accessories, truncation rules, scrollbar), `Footer`; **one layout function**, shared later with hit-testing.
-- [ ] Theme: new `overlay.*` keys, `is_light()`, luminance-relative + min-contrast resolution; tuned values for all 9 bundled themes; the per-theme 4.5:1 contrast unit test.
-- [ ] **Gate:** command palette rendered through OverlaySurface behind a debug flag; checked against mockup A1 at 1x / 1.25x / 2x on default-dark **and github-light**; frame time within existing budget (overlay frames are already full-window repaints — verify the primitives don't move the needle).
+- [x] The five primitives: `fill_rounded_rect` (mask-per-physical-radius cache), `draw_shadow_rings`, `draw_keycap`, `draw_wavy_underline`, `TextPainter::draw_sized` (+ per-size metrics); corner-coverage unit tests.
+- [x] **Thread `scale_factor` through modal geometry**: `ModalSpacing` becomes scaled accessors; layout clamps against logical width. (Today's modals are effectively half-size on 2x displays — this is a bug fix, not a refactor.)
+- [x] `overlay_surface.rs`: layout + paint for `Anchor::Centered`, `Header`, `Body::List` (sections, `FlatIndex`, match-index coalescing, accessories, truncation rules, scrollbar), `Footer`; **one layout function**, shared later with hit-testing.
+- [x] Theme: new `overlay.*` keys, `is_light()`, luminance-relative + min-contrast resolution; the per-theme 4.5:1 contrast unit test. Tuned literal values landed for `default-dark` (matching this doc's color table); the other 8 bundled themes rely on the derivation fallbacks (verified by the same contrast test) rather than per-theme hand-tuning — deferred, see Phase 1 deviations.
+- [x] **Gate:** command palette rendered through OverlaySurface behind an opt-in env var (`TOKEN_OVERLAY_SURFACE`, off by default). Structural/unit verification only — no windowed manual check at 1x/1.25x/2x or frame-time profiling was run in this environment; do that before Phase 2 default-flips this on.
 
 ### Phase 2: Command palette on the new surface (A1 look)
 

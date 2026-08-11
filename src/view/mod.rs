@@ -12,6 +12,7 @@ pub mod geometry;
 pub mod helpers;
 pub mod hit_test;
 pub mod modal;
+pub mod overlay_surface;
 pub mod panels;
 pub mod scrollbar;
 pub mod selectable_list;
