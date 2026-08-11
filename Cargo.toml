@@ -186,7 +186,9 @@ codebook-tree-sitter-typst = "0.12.1"
 tree-sitter-containerfile = "0.9.2"
 tree-sitter-wgsl-bevy = "0.1.4"
 tree-sitter-sequel = "0.3.11"
-tree-sitter-v = "0.0.4"
+# crates.io 0.0.4 invokes Unix compiler/archive flags directly, even on MSVC.
+# Keep the released grammar source with a portable cc-rs build script.
+tree-sitter-v = { path = "vendor/tree-sitter-v" }
 
 streaming-iterator = "0.1"
 

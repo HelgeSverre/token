@@ -91,7 +91,7 @@ All notable changes to rust-editor are documented in this file.
 
 ### Fixed
 
-- Windows release builds no longer fail when compiling the SCSS and Standard ML
+- Windows release builds no longer fail when compiling SCSS, Standard ML, and V
   Tree-sitter grammars with MSVC.
 
 - macOS text-input accessories, including the Caps Lock indicator and IME
