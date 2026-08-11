@@ -108,6 +108,42 @@ fn test_expand_at_markup_eol_selects_completed_element() {
 }
 
 #[test]
+fn test_expand_at_code_eol_selects_completed_statement() {
+    let source = "fn main() {\n    let value = foo();\n    next();\n}\n";
+    let line = source.lines().nth(1).expect("fixture line should exist");
+    let mut model = test_model(source, 1, line.chars().count());
+    attach_tree(&mut model, LanguageId::Rust);
+
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+
+    assert_eq!(
+        model
+            .editor()
+            .primary_selection()
+            .get_text(model.document()),
+        "let value = foo();"
+    );
+}
+
+#[test]
+fn test_expand_at_ambiguous_separator_eol_falls_back_to_line() {
+    let source = "{\n  \"first\": 1,\n  \"second\": 2\n}\n";
+    let line = source.lines().nth(1).expect("fixture line should exist");
+    let mut model = test_model(source, 1, line.chars().count());
+    attach_tree(&mut model, LanguageId::Json);
+
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+
+    assert_eq!(
+        model
+            .editor()
+            .primary_selection()
+            .get_text(model.document()),
+        "  \"first\": 1,"
+    );
+}
+
+#[test]
 fn test_stale_tree_uses_plaintext_fallback() {
     let source = "fn main() { let value = foo.bar(); }\n";
     let bar_column = source.find("bar").expect("bar should exist") + 1;

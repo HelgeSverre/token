@@ -9,10 +9,25 @@ use crate::model::{Document, Position, Selection};
 #[derive(Debug)]
 struct BoundarySelectionProfile {
     completed_node_kinds: &'static [&'static str],
+    nearest_completed_named_node: bool,
+    fallback_to_line_without_completed_node: bool,
     implicit_element_node_kinds: &'static [&'static str],
     container_node_kinds: &'static [&'static str],
     opening_node_kinds: &'static [&'static str],
     closing_node_kinds: &'static [&'static str],
+}
+
+#[derive(Debug)]
+enum EolBoundaryResolution {
+    Default,
+    Preferred(Range<usize>),
+    LineFallback,
+}
+
+#[derive(Debug)]
+enum TreeExpansion {
+    Candidates(Vec<Selection>),
+    LineFallback,
 }
 
 type NormalizeNodeRange = for<'tree> fn(&Document, Node<'tree>) -> Range<usize>;
@@ -27,6 +42,8 @@ pub(crate) struct SelectionProfile {
 
 const XML_BOUNDARIES: BoundarySelectionProfile = BoundarySelectionProfile {
     completed_node_kinds: &["element", "EmptyElemTag"],
+    nearest_completed_named_node: false,
+    fallback_to_line_without_completed_node: false,
     implicit_element_node_kinds: &[],
     container_node_kinds: &["element"],
     opening_node_kinds: &["STag"],
@@ -40,6 +57,8 @@ const HTML_BOUNDARIES: BoundarySelectionProfile = BoundarySelectionProfile {
         "script_element",
         "style_element",
     ],
+    nearest_completed_named_node: false,
+    fallback_to_line_without_completed_node: false,
     implicit_element_node_kinds: &["element"],
     container_node_kinds: &["element", "script_element", "style_element"],
     opening_node_kinds: &["start_tag"],
@@ -48,10 +67,32 @@ const HTML_BOUNDARIES: BoundarySelectionProfile = BoundarySelectionProfile {
 
 const JSX_BOUNDARIES: BoundarySelectionProfile = BoundarySelectionProfile {
     completed_node_kinds: &["jsx_element", "jsx_self_closing_element"],
+    nearest_completed_named_node: false,
+    fallback_to_line_without_completed_node: false,
     implicit_element_node_kinds: &[],
     container_node_kinds: &["jsx_element"],
     opening_node_kinds: &["jsx_opening_element"],
     closing_node_kinds: &["jsx_closing_element"],
+};
+
+const CODE_BOUNDARIES: BoundarySelectionProfile = BoundarySelectionProfile {
+    completed_node_kinds: &[],
+    nearest_completed_named_node: true,
+    fallback_to_line_without_completed_node: true,
+    implicit_element_node_kinds: &[],
+    container_node_kinds: &[],
+    opening_node_kinds: &[],
+    closing_node_kinds: &[],
+};
+
+const STYLESHEET_BOUNDARIES: BoundarySelectionProfile = BoundarySelectionProfile {
+    completed_node_kinds: &["block"],
+    nearest_completed_named_node: true,
+    fallback_to_line_without_completed_node: true,
+    implicit_element_node_kinds: &[],
+    container_node_kinds: &[],
+    opening_node_kinds: &[],
+    closing_node_kinds: &[],
 };
 
 fn identity_node_range(_document: &Document, node: Node<'_>) -> Range<usize> {
@@ -75,7 +116,7 @@ fn selection_profile(language: LanguageId) -> SelectionProfile {
 }
 
 pub(crate) const CODE_SELECTION: SelectionProfile = SelectionProfile {
-    boundaries: None,
+    boundaries: Some(&CODE_BOUNDARIES),
     normalize_node: identity_node_range,
     extra_node_range: None,
 };
@@ -89,6 +130,10 @@ pub(crate) const XML_SELECTION: SelectionProfile = SelectionProfile {
 };
 pub(crate) const JSX_SELECTION: SelectionProfile = SelectionProfile {
     boundaries: Some(&JSX_BOUNDARIES),
+    ..CODE_SELECTION
+};
+pub(crate) const STYLESHEET_SELECTION: SelectionProfile = SelectionProfile {
+    boundaries: Some(&STYLESHEET_BOUNDARIES),
     ..CODE_SELECTION
 };
 pub(crate) const YAML_SELECTION: SelectionProfile = SelectionProfile {
@@ -169,7 +214,7 @@ pub fn expansion_candidates(
 
     let start_byte = position_to_byte(document, selection.start());
     let end_byte = position_to_byte(document, selection.end());
-    let host_candidates = tree_expansion_candidates(
+    let host_expansion = tree_expansion_candidates(
         document,
         &snapshot.tree,
         snapshot.language,
@@ -185,10 +230,17 @@ pub fn expansion_candidates(
         end_byte,
     );
 
-    let active_range = active_injection
-        .as_ref()
-        .map(|(injection, _)| injection.range.clone());
-    let mut candidates = active_injection.map_or_else(Vec::new, |(_, candidates)| candidates);
+    let (active_range, mut candidates) = match active_injection {
+        Some((injection, TreeExpansion::Candidates(candidates))) => {
+            (Some(injection.range.clone()), candidates)
+        }
+        Some((_, TreeExpansion::LineFallback)) => return Vec::new(),
+        None => (None, Vec::new()),
+    };
+    let host_candidates = match host_expansion {
+        TreeExpansion::Candidates(candidates) => candidates,
+        TreeExpansion::LineFallback => Vec::new(),
+    };
     candidates.extend(host_candidates.into_iter().filter(|candidate| {
         let Some(injection) = &active_range else {
             return true;
@@ -207,20 +259,21 @@ pub fn expansion_candidates(
 }
 
 /// Choose one active embedded tree deterministically. Recursive injection
-/// parsing is not modeled yet, so the smallest successful containing region
-/// represents the innermost language available in the flat snapshot.
+/// parsing is not modeled yet, so the smallest containing region that yields
+/// candidates or an intentional line fallback represents the innermost
+/// language available in the flat snapshot.
 fn smallest_containing_injection<'snapshot>(
     document: &Document,
     injections: &'snapshot [InjectedSyntaxTree],
     selection: Selection,
     start_byte: usize,
     end_byte: usize,
-) -> Option<(&'snapshot InjectedSyntaxTree, Vec<Selection>)> {
+) -> Option<(&'snapshot InjectedSyntaxTree, TreeExpansion)> {
     injections
         .iter()
         .filter(|injection| injection.range.start <= start_byte && injection.range.end >= end_byte)
         .filter_map(|injection| {
-            let candidates = tree_expansion_candidates(
+            let expansion = tree_expansion_candidates(
                 document,
                 &injection.tree,
                 injection.language,
@@ -228,7 +281,12 @@ fn smallest_containing_injection<'snapshot>(
                 start_byte,
                 end_byte,
             );
-            (!candidates.is_empty()).then_some((injection, candidates))
+            match &expansion {
+                TreeExpansion::Candidates(candidates) if candidates.is_empty() => None,
+                TreeExpansion::Candidates(_) | TreeExpansion::LineFallback => {
+                    Some((injection, expansion))
+                }
+            }
         })
         .min_by_key(|(injection, _)| {
             (
@@ -247,14 +305,18 @@ fn tree_expansion_candidates(
     selection: Selection,
     start_byte: usize,
     end_byte: usize,
-) -> Vec<Selection> {
+) -> TreeExpansion {
     let root = tree.root_node();
     let Some(mut node) = root.named_descendant_for_byte_range(start_byte, end_byte) else {
-        return Vec::new();
+        return TreeExpansion::Candidates(Vec::new());
     };
 
     let profile = selection_profile(language);
-    let preferred_boundary = completed_node_before_eol(document, root, profile, selection);
+    let preferred_boundary = match eol_boundary_resolution(document, root, profile, selection) {
+        EolBoundaryResolution::Preferred(range) => Some(range),
+        EolBoundaryResolution::Default => None,
+        EolBoundaryResolution::LineFallback => return TreeExpansion::LineFallback,
+    };
     let mut ranges = preferred_boundary.clone().into_iter().collect::<Vec<_>>();
     loop {
         if !node.is_missing() {
@@ -299,26 +361,30 @@ fn tree_expansion_candidates(
             ranges[..=index].rotate_right(1);
         }
     }
-    ranges
-        .into_iter()
-        .map(|range| selection_from_byte_range(document, range.start, range.end, selection))
-        .collect()
+    TreeExpansion::Candidates(
+        ranges
+            .into_iter()
+            .map(|range| selection_from_byte_range(document, range.start, range.end, selection))
+            .collect(),
+    )
 }
 
-fn completed_node_before_eol(
+fn eol_boundary_resolution(
     document: &Document,
     root: Node<'_>,
     profile: SelectionProfile,
     selection: Selection,
-) -> Option<Range<usize>> {
-    let profile = profile.boundaries?;
+) -> EolBoundaryResolution {
+    let Some(boundaries) = profile.boundaries else {
+        return EolBoundaryResolution::Default;
+    };
     if !selection.is_empty() {
-        return None;
+        return EolBoundaryResolution::Default;
     }
 
     let cursor = selection.head;
     if cursor.column != document.line_length(cursor.line) {
-        return None;
+        return EolBoundaryResolution::Default;
     }
     let line_start_char = document.cursor_to_offset(cursor.line, 0);
     let line_start = document.buffer.char_to_byte(line_start_char);
@@ -330,24 +396,50 @@ fn completed_node_before_eol(
         boundary -= 1;
     }
     if boundary == line_start {
-        return None;
+        return if boundaries.fallback_to_line_without_completed_node {
+            EolBoundaryResolution::LineFallback
+        } else {
+            EolBoundaryResolution::Default
+        };
     }
 
     // Start on the final token (often an anonymous `>` node) and walk upward.
     // A named-only lookup may skip the closing tag and land in its container.
-    let mut node = root.descendant_for_byte_range(boundary - 1, boundary)?;
+    let Some(mut node) = root.descendant_for_byte_range(boundary - 1, boundary) else {
+        return EolBoundaryResolution::Default;
+    };
+    let ends_with_opening_delimiter = matches!(node.kind(), "(" | "[" | "{");
     loop {
-        if node.end_byte() == boundary && profile.completed_node_kinds.contains(&node.kind()) {
-            return Some(node.start_byte()..node.end_byte());
+        if node.end_byte() == boundary && boundaries.completed_node_kinds.contains(&node.kind()) {
+            return EolBoundaryResolution::Preferred(node.start_byte()..node.end_byte());
         }
-        if node.end_byte() == boundary && profile.opening_node_kinds.contains(&node.kind()) {
+        if node.end_byte() == boundary && boundaries.opening_node_kinds.contains(&node.kind()) {
             if let Some(parent) = node.parent() {
-                if let Some(range) = implicit_markup_element_range(profile, parent) {
-                    return Some(range);
+                if let Some(range) = implicit_markup_element_range(boundaries, parent) {
+                    return EolBoundaryResolution::Preferred(range);
                 }
             }
         }
-        node = node.parent()?;
+        if boundaries.nearest_completed_named_node
+            && node != root
+            && node.is_named()
+            && !node.is_missing()
+            && node.kind() != "ERROR"
+            && node.end_byte() == boundary
+        {
+            let range = normalized_node_range(document, profile, node);
+            return EolBoundaryResolution::Preferred(range);
+        }
+        let Some(parent) = node.parent() else {
+            break;
+        };
+        node = parent;
+    }
+
+    if boundaries.fallback_to_line_without_completed_node && !ends_with_opening_delimiter {
+        EolBoundaryResolution::LineFallback
+    } else {
+        EolBoundaryResolution::Default
     }
 }
 
@@ -833,6 +925,24 @@ mod tests {
     }
 
     #[test]
+    fn injected_tree_line_fallback_prevents_host_scope_takeover() {
+        let source = "<script>\nconst values = [one,\ntwo];\n</script>\n";
+        let mut document = Document::with_text(source);
+        document.language = LanguageId::Html;
+        document.revision = 1;
+        let document_id = DocumentId(101);
+        let mut parser = ParserState::new();
+        parser.parse_and_highlight(source, LanguageId::Html, document_id, 1);
+        let snapshot = parser
+            .syntax_tree_snapshot(document_id, 1)
+            .expect("HTML fixture should retain its JavaScript injection");
+        let line = source.lines().nth(1).expect("fixture line should exist");
+        let selection = Selection::new(Position::new(1, line.chars().count()));
+
+        assert!(expansion_candidates(&document, &snapshot, selection).is_empty());
+    }
+
+    #[test]
     fn smallest_containing_injection_is_order_independent() {
         let source = "  const result = format(user.name);  ";
         let (document, host) = parsed_document(source, LanguageId::JavaScript);
@@ -872,7 +982,7 @@ mod tests {
             vec![outer.clone(), inner.clone()],
             vec![inner.clone(), outer.clone()],
         ] {
-            let (chosen, candidates) = smallest_containing_injection(
+            let (chosen, expansion) = smallest_containing_injection(
                 &document,
                 &injections,
                 selection,
@@ -881,7 +991,10 @@ mod tests {
             )
             .expect("an injection should produce candidates");
             assert_eq!(chosen.range, inner_range);
-            assert!(!candidates.is_empty());
+            assert!(matches!(
+                expansion,
+                TreeExpansion::Candidates(candidates) if !candidates.is_empty()
+            ));
         }
 
         let left = parse_injection(0..source.len() - 2);
@@ -1251,7 +1364,7 @@ function toggleTag(tag: string) {
     }
 
     #[test]
-    fn boundary_recovery_does_not_cross_lines_or_apply_to_rust() {
+    fn boundary_recovery_does_not_cross_lines_and_applies_to_code() {
         let xml = "<root>\n<price>5.95</price>\n   \n<next />\n</root>\n";
         let texts = candidate_texts_at_cursor(xml, LanguageId::Xml, 2, 3);
         assert_ne!(
@@ -1263,13 +1376,226 @@ function toggleTag(tag: string) {
         let (document, snapshot) = parsed_document(rust, LanguageId::Rust);
         let root = snapshot.tree.root_node();
         let selection = Selection::new(Position::new(1, 16));
-        assert!(completed_node_before_eol(
-            &document,
-            root,
-            selection_profile(LanguageId::Rust),
-            selection
-        )
-        .is_none());
+        assert!(matches!(
+            eol_boundary_resolution(
+                &document,
+                root,
+                selection_profile(LanguageId::Rust),
+                selection
+            ),
+            EolBoundaryResolution::Preferred(_)
+        ));
+    }
+
+    #[test]
+    fn code_eol_prefers_nearest_completed_named_node() {
+        for (language, source, expected) in [
+            (
+                LanguageId::Rust,
+                "fn main() {\n    let value = foo();\n    next();\n}\n",
+                "let value = foo();",
+            ),
+            (
+                LanguageId::JavaScript,
+                "function main() {\n  const value = foo();\n  next();\n}\n",
+                "const value = foo();",
+            ),
+            (
+                LanguageId::TypeScript,
+                "function main() {\n  const value: number = foo();\n  next();\n}\n",
+                "const value: number = foo();",
+            ),
+            (
+                LanguageId::Python,
+                "def main():\n    value = foo()\n    next()\n",
+                "()",
+            ),
+            (
+                LanguageId::Go,
+                "func main() {\n\tvalue := foo()\n\tnext()\n}\n",
+                "()",
+            ),
+            (
+                LanguageId::Java,
+                "void main() {\n  int value = foo();\n  next();\n}\n",
+                "int value = foo();",
+            ),
+            (
+                LanguageId::C,
+                "void main() {\n  int value = foo();\n  next();\n}\n",
+                "int value = foo();",
+            ),
+            (
+                LanguageId::Ruby,
+                "def main\n  value = foo()\n  next()\nend\n",
+                "()",
+            ),
+            (
+                LanguageId::Bash,
+                "main() {\n  value=$(foo)\n  next\n}\n",
+                "$(foo)",
+            ),
+        ] {
+            let line = source.lines().nth(1).expect("fixture line should exist");
+            let texts = candidate_texts_at_cursor(source, language, 1, line.chars().count());
+            assert_eq!(
+                texts.first().map(String::as_str),
+                Some(expected),
+                "{language:?}: {texts:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn code_eol_recovery_ignores_trailing_horizontal_whitespace() {
+        for (language, source, expected) in [
+            (
+                LanguageId::Yaml,
+                "first: value   \nsecond: value\n",
+                "value",
+            ),
+            (
+                LanguageId::Toml,
+                "first = 'value'   \nsecond = 'value'\n",
+                "'value'",
+            ),
+            (
+                LanguageId::Hcl,
+                "resource \"x\" \"y\" {\n  first = value   \n  second = value\n}\n",
+                "value",
+            ),
+            (
+                LanguageId::Graphql,
+                "query Demo {\n  first   \n  second\n}\n",
+                "first",
+            ),
+        ] {
+            let line_number = if matches!(language, LanguageId::Yaml | LanguageId::Toml) {
+                0
+            } else {
+                1
+            };
+            let line = source
+                .lines()
+                .nth(line_number)
+                .expect("fixture line should exist");
+            let texts =
+                candidate_texts_at_cursor(source, language, line_number, line.chars().count());
+            assert_eq!(
+                texts.first().map(String::as_str),
+                Some(expected),
+                "{language:?}: {texts:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ambiguous_eol_terminals_prefer_line_fallback() {
+        for (language, source, line_number) in [
+            (
+                LanguageId::Json,
+                "{\n  \"first\": 1,\n  \"second\": 2\n}\n",
+                1,
+            ),
+            (LanguageId::Sql, "SELECT first;\nSELECT second;\n", 0),
+            (LanguageId::Python, "if ready:\n    run()\n", 0),
+        ] {
+            let line = source
+                .lines()
+                .nth(line_number)
+                .expect("fixture line should exist");
+            let texts =
+                candidate_texts_at_cursor(source, language, line_number, line.chars().count());
+            assert!(texts.is_empty(), "{language:?}: {texts:?}");
+        }
+    }
+
+    #[test]
+    fn code_opening_delimiter_eol_keeps_right_affinity() {
+        for (language, source, expected_content) in [
+            (
+                LanguageId::Rust,
+                "fn main() {\n    calculate();\n}\n",
+                "calculate();",
+            ),
+            (
+                LanguageId::JavaScript,
+                "function main() {\n  calculate();\n}\n",
+                "calculate();",
+            ),
+        ] {
+            let line = source.lines().next().expect("fixture line should exist");
+            let texts = candidate_texts_at_cursor(source, language, 0, line.chars().count());
+            assert!(
+                texts
+                    .first()
+                    .is_some_and(|text| text.contains(expected_content)),
+                "{language:?}: {texts:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn code_closing_delimiter_eol_prefers_completed_block() {
+        let source = "fn first() {\n    calculate();\n}\n\nfn second() {}\n";
+        let texts = candidate_texts_at_cursor(source, LanguageId::Rust, 2, 1);
+        assert_eq!(
+            texts.first().map(String::as_str),
+            Some("{\n    calculate();\n}")
+        );
+    }
+
+    #[test]
+    fn css_rule_eol_prefers_completed_declaration_block() {
+        let source = include_str!("../../samples/syntax/sample.css");
+        let rule = ".text-right { text-align: right; }";
+        let rule_end = source.find(rule).expect("sample rule should exist") + rule.len();
+        let (document, snapshot) = parsed_document(source, LanguageId::Css);
+        let cursor = byte_to_position(&document, rule_end);
+        let texts = expansion_candidates(&document, &snapshot, Selection::new(cursor))
+            .into_iter()
+            .map(|selection| selection.get_text(&document))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            texts.first().map(String::as_str),
+            Some("{ text-align: right; }")
+        );
+    }
+
+    #[test]
+    fn stylesheet_eol_recovery_is_shared_by_css_and_scss() {
+        for language in [LanguageId::Css, LanguageId::Scss] {
+            let source = ".parent {\n  .first { color: red; }\n  .second { color: blue; }   \n}\n";
+            let line = source.lines().nth(2).expect("fixture line should exist");
+            let texts = candidate_texts_at_cursor(source, language, 2, line.chars().count());
+
+            assert_eq!(
+                texts.first().map(String::as_str),
+                Some("{ color: blue; }"),
+                "{language:?}: {texts:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn stylesheet_opening_block_eol_keeps_right_affinity_to_content() {
+        for language in [LanguageId::Css, LanguageId::Scss] {
+            let source = ".parent {\n  color: red;\n}\n";
+            let texts = candidate_texts_at_cursor(source, language, 0, ".parent {".len());
+
+            assert_ne!(
+                texts.first().map(String::as_str),
+                Some(".parent {"),
+                "{language:?}: {texts:?}"
+            );
+            assert!(
+                texts
+                    .first()
+                    .is_some_and(|text| text.contains("color: red;")),
+                "{language:?}: {texts:?}"
+            );
+        }
     }
 
     #[test]

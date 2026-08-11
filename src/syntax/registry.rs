@@ -15,7 +15,7 @@ use super::parser::{
 };
 use super::selection::{
     SelectionProfile, CODE_SELECTION, HTML_SELECTION, INI_SELECTION, JSX_SELECTION, RUST_SELECTION,
-    XML_SELECTION, YAML_SELECTION,
+    STYLESHEET_SELECTION, XML_SELECTION, YAML_SELECTION,
 };
 use crate::outline::extract::{
     OutlineBehavior, APPLESCRIPT_OUTLINE, BLADE_OUTLINE, COMPONENT_OUTLINE, CPP_OUTLINE,
@@ -230,7 +230,7 @@ language!(
     [],
     tree_sitter_css::LANGUAGE.into(),
     static_query!(p::CSS_HIGHLIGHTS),
-    CODE_SELECTION,
+    STYLESHEET_SELECTION,
     NO_OUTLINE,
     NO_INJECTIONS
 );
@@ -832,7 +832,7 @@ language!(
     [],
     tree_sitter_scss::language(),
     static_query!(p::SCSS_HIGHLIGHTS),
-    CODE_SELECTION,
+    STYLESHEET_SELECTION,
     NO_OUTLINE,
     NO_INJECTIONS
 );

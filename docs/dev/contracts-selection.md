@@ -185,6 +185,12 @@ items expose the bare item first and then a range containing contiguous outer
 attributes and documentation comments; blank lines and ordinary comments break
 that attachment.
 
+At the end of a code line, trailing horizontal whitespace is ignored and the
+nearest completed named syntax node has left affinity. Opening delimiters keep
+right affinity to their upcoming contents. When the final token does not end a
+completed node, such as a separator or continuation boundary, syntax expansion
+defers to the current-line fallback instead of selecting an enclosing block.
+
 History snapshots preserve all cursors, selections, and the active cursor for
 `ShrinkSelection`.
 

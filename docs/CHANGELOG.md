@@ -79,6 +79,10 @@ All notable changes to rust-editor are documented in this file.
 
 ### Fixed
 
+- Syntax-aware expansion at the end of a code line now recovers the nearest
+  completed named syntax node instead of jumping to an enclosing block. Opening
+  delimiters retain right affinity, ambiguous separators fall back to the
+  current line, and CSS/SCSS completed rules start with their declaration block.
 - Expand selection inside Svelte script blocks no longer interleaves malformed
   host-tree ranges with the injected TypeScript tree. Expanding within
   `toggleTag` now selects that function before moving to the enclosing script

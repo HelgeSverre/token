@@ -87,6 +87,13 @@ boundaries, INI values exclude horizontal padding around `=`, and Rust items
 gain a distinct owning range containing contiguous documentation comments and
 outer attributes.
 
+An empty cursor at the end of a code line uses boundary affinity before the
+normal ancestor walk. Trailing horizontal whitespace is ignored, a completed
+named node has left affinity, and an opening delimiter retains right affinity to
+the contents that follow it. If the terminal token ends no completed node, as
+with an ambiguous separator or continuation boundary, expansion falls back to
+the current line instead of jumping to a broader containing node.
+
 ### Delimiter Ranges
 
 For nodes whose source range is grammar-confirmed and wrapped by matching delimiters, synthesize separate inner and outer candidates:
