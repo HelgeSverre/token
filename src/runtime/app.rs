@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -13,7 +15,9 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
 #[cfg(debug_assertions)]
 use winit::keyboard::{Key, NamedKey};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::{CursorIcon, Icon, Window};
+#[cfg(not(target_os = "macos"))]
+use winit::window::Icon;
+use winit::window::{CursorIcon, Window};
 
 use token::cli::{StartupConfig, StartupMode};
 use token::commands::{Cmd, Damage};
@@ -36,7 +40,7 @@ use super::mouse::{
     ClickTracker, DragState,
 };
 use super::webview::WebviewManager;
-use token::view::Renderer;
+use token::view::{Renderer, RendererPreparation};
 
 use crate::automation::{self, AutomationEnvelope, AutomationRequest, AutomationResponse};
 use token::perf::{PerfStage, PerfStats};
@@ -61,10 +65,104 @@ enum SyntaxWorkerRequest {
 
 type TerminalSpawnReceiver = Receiver<Result<token::terminal::TerminalSpawnResult, String>>;
 
+const POST_FIRST_FRAME_STARTUP_DELAY: Duration = Duration::from_millis(50);
+
+struct PreparedApp {
+    model: AppModel,
+    keymap: Keymap,
+    workspace_root: Option<PathBuf>,
+}
+
+/// Application state prepared in parallel with the platform event loop.
+pub struct AppPreparation {
+    handle: JoinHandle<PreparedApp>,
+}
+
+impl AppPreparation {
+    pub fn start(
+        window_width: u32,
+        window_height: u32,
+        startup_config: StartupConfig,
+    ) -> std::io::Result<Self> {
+        let handle = std::thread::Builder::new()
+            .name("token-app-loader".to_owned())
+            .spawn(move || prepare_app(window_width, window_height, startup_config))?;
+        Ok(Self { handle })
+    }
+
+    fn finish(self) -> Option<PreparedApp> {
+        match self.handle.join() {
+            Ok(prepared) => Some(prepared),
+            Err(_) => {
+                tracing::warn!("Application preparation thread panicked; retrying synchronously");
+                None
+            }
+        }
+    }
+}
+
+fn prepare_app(
+    window_width: u32,
+    window_height: u32,
+    startup_config: StartupConfig,
+) -> PreparedApp {
+    let keymap = Keymap::with_bindings(load_default_keymap());
+
+    let (demo_mode, file_paths, workspace_root) = match startup_config.mode {
+        StartupMode::Demo => (true, Vec::new(), None),
+        StartupMode::Empty => (false, Vec::new(), None),
+        StartupMode::SingleFile(path) => (false, vec![path], None),
+        StartupMode::MultipleFiles(paths) => (false, paths, None),
+        StartupMode::Workspace {
+            root,
+            initial_files,
+        } => (false, initial_files, Some(root)),
+    };
+
+    let mut model = AppModel::new(window_width, window_height, 1.0, file_paths);
+    if demo_mode {
+        let document_id = model.document().id;
+        *model.document_mut() = token::model::Document::with_text(DEMO_DOCUMENT);
+        model.document_mut().id = document_id;
+        model.document_mut().untitled_name = Some("Automation Demo.rs".to_owned());
+        model.document_mut().language = LanguageId::Rust;
+    }
+
+    let cli_paths: Vec<_> = model
+        .editor_area
+        .documents
+        .values()
+        .filter_map(|doc| doc.file_path.clone())
+        .collect();
+    for path in cli_paths {
+        model.record_file_opened(path);
+    }
+
+    if let Some(root) = &workspace_root {
+        model.open_workspace(root.clone());
+    }
+
+    if let Some((line, column)) = startup_config.initial_position {
+        let editor = model.editor_mut();
+        editor.cursors[0].line = line;
+        editor.cursors[0].column = column;
+        editor.selections[0].anchor = Position::new(line, column);
+        editor.selections[0].head = Position::new(line, column);
+        model.ensure_cursor_visible();
+    }
+
+    PreparedApp {
+        model,
+        keymap,
+        workspace_root,
+    }
+}
+
 pub struct App {
     model: AppModel,
     keymap: Keymap,
     renderer: Option<Renderer>,
+    renderer_preparation: Option<RendererPreparation>,
     window: Option<Rc<Window>>,
     context: Option<Context<Rc<Window>>>,
     last_tick: Instant,
@@ -81,6 +179,11 @@ pub struct App {
     syntax_tx: Sender<SyntaxWorkerRequest>,
     /// File system watcher for workspace directory (if workspace is open)
     fs_watcher: Option<FileSystemWatcher>,
+    /// Workspace watcher initialization is deferred until after first paint.
+    pending_fs_watcher_root: Option<PathBuf>,
+    /// Deadline for nonessential startup work scheduled after first paint.
+    deferred_startup_at: Option<Instant>,
+    deferred_startup_complete: bool,
     /// Pending damage for the next render (accumulated from commands)
     pending_damage: Damage,
     /// Flag to request application exit (set by Cmd::Quit)
@@ -126,14 +229,14 @@ impl App {
         window_height: u32,
         startup_config: StartupConfig,
         automation_proxy: Option<EventLoopProxy<()>>,
+        renderer_preparation: Option<RendererPreparation>,
+        app_preparation: Option<AppPreparation>,
     ) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
         let (automation_tx, automation_rx) = mpsc::channel();
         if let Some(proxy) = automation_proxy.clone() {
             automation::start_server(automation_tx, proxy);
         }
-        let keymap = Keymap::with_bindings(load_default_keymap());
-
         // Spawn syntax highlighting worker thread
         let (syntax_tx, syntax_rx) = mpsc::channel::<SyntaxWorkerRequest>();
         {
@@ -143,68 +246,19 @@ impl App {
             });
         }
 
-        // Extract file paths and workspace from config
-        let (demo_mode, file_paths, workspace_root) = match startup_config.mode {
-            StartupMode::Demo => (true, Vec::new(), None),
-            StartupMode::Empty => (false, Vec::new(), None),
-            StartupMode::SingleFile(path) => (false, vec![path], None),
-            StartupMode::MultipleFiles(paths) => (false, paths, None),
-            StartupMode::Workspace {
-                root,
-                initial_files,
-            } => (false, initial_files, Some(root)),
-        };
-        let initial_position = startup_config.initial_position;
-
-        let mut model = AppModel::new(window_width, window_height, 1.0, file_paths);
-        if demo_mode {
-            let document_id = model.document().id;
-            *model.document_mut() = token::model::Document::with_text(DEMO_DOCUMENT);
-            model.document_mut().id = document_id;
-            model.document_mut().untitled_name = Some("Automation Demo.rs".to_owned());
-            model.document_mut().language = LanguageId::Rust;
-        }
-
-        // Record CLI-opened files in recent files list
-        let cli_paths: Vec<_> = model
-            .editor_area
-            .documents
-            .values()
-            .filter_map(|doc| doc.file_path.clone())
-            .collect();
-        for path in cli_paths {
-            model.record_file_opened(path);
-        }
-
-        // Open workspace if specified and start file watcher
-        let fs_watcher = if let Some(root) = workspace_root {
-            model.open_workspace(root.clone());
-            // Start file system watcher for the workspace
-            match FileSystemWatcher::new(root) {
-                Ok(watcher) => Some(watcher),
-                Err(e) => {
-                    tracing::warn!("Failed to start file system watcher: {}", e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        // Apply initial cursor position if specified (--line/--column)
-        if let Some((line, column)) = initial_position {
-            let editor = model.editor_mut();
-            editor.cursors[0].line = line;
-            editor.cursors[0].column = column;
-            editor.selections[0].anchor = Position::new(line, column);
-            editor.selections[0].head = Position::new(line, column);
-            model.ensure_cursor_visible();
-        }
+        let PreparedApp {
+            model,
+            keymap,
+            workspace_root,
+        } = app_preparation
+            .and_then(AppPreparation::finish)
+            .unwrap_or_else(|| prepare_app(window_width, window_height, startup_config));
 
         let mut app = Self {
             model,
             keymap,
             renderer: None,
+            renderer_preparation,
             window: None,
             context: None,
             last_tick: Instant::now(),
@@ -217,7 +271,10 @@ impl App {
             msg_rx,
             perf: PerfStats::default(),
             syntax_tx,
-            fs_watcher,
+            fs_watcher: None,
+            pending_fs_watcher_root: workspace_root,
+            deferred_startup_at: None,
+            deferred_startup_complete: false,
             pending_damage: Damage::Full, // Start with full render
             should_quit: false,
             webview_manager: WebviewManager::new(),
@@ -294,7 +351,10 @@ impl App {
     }
 
     fn init_renderer(&mut self, window: Rc<Window>, context: &Context<Rc<Window>>) -> Result<()> {
-        let renderer = Renderer::new(Rc::clone(&window), context)?;
+        let renderer = match self.renderer_preparation.take() {
+            Some(preparation) => Renderer::new_prepared(Rc::clone(&window), context, preparation)?,
+            None => Renderer::new(Rc::clone(&window), context)?,
+        };
 
         self.model.set_char_width(renderer.char_width());
         self.model.set_scale_factor(renderer.scale_factor());
@@ -846,6 +906,12 @@ impl App {
 
         self.perf.record_frame_time();
         self.perf.record_render_history();
+        if !self.deferred_startup_complete
+            && self.deferred_startup_at.is_none()
+            && self.has_deferred_startup_work()
+        {
+            self.deferred_startup_at = Some(Instant::now() + POST_FIRST_FRAME_STARTUP_DELAY);
+        }
         for mut pending in std::mem::take(&mut self.syntax_present_pending) {
             pending.snapshot.edit_to_present_ms =
                 pending.started_at.elapsed().as_secs_f64() * 1000.0;
@@ -868,6 +934,27 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    fn has_deferred_startup_work(&self) -> bool {
+        self.pending_fs_watcher_root.is_some() || cfg!(target_os = "macos")
+    }
+
+    fn finish_deferred_startup(&mut self) {
+        self.deferred_startup_at = None;
+        self.deferred_startup_complete = true;
+
+        #[cfg(target_os = "macos")]
+        super::macos_menu::install();
+
+        if let Some(root) = self.pending_fs_watcher_root.take() {
+            match FileSystemWatcher::new(root) {
+                Ok(watcher) => self.fs_watcher = Some(watcher),
+                Err(error) => {
+                    tracing::warn!("Failed to start file system watcher: {error}");
+                }
+            }
+        }
     }
 
     /// Synchronize webview instances with preview panes in the model.
@@ -1523,6 +1610,7 @@ fn main() {
 "#;
 
 /// Create window icon from embedded PNG
+#[cfg(not(target_os = "macos"))]
 fn create_window_icon() -> Option<Icon> {
     let icon_bytes = include_bytes!("../../assets/icon.png");
     let icon_image = image::load_from_memory(icon_bytes).ok()?.to_rgba8();
@@ -1535,8 +1623,9 @@ impl ApplicationHandler for App {
         if self.window.is_none() {
             let window_attributes = Window::default_attributes()
                 .with_title(token::product::DISPLAY_NAME)
-                .with_window_icon(create_window_icon())
                 .with_inner_size(LogicalSize::new(800, 600)); // TODO: Persist window size/position/monitor on exit/boot
+            #[cfg(not(target_os = "macos"))]
+            let window_attributes = window_attributes.with_window_icon(create_window_icon());
 
             let window = match event_loop.create_window(window_attributes) {
                 Ok(w) => Rc::new(w),
@@ -1612,6 +1701,13 @@ impl ApplicationHandler for App {
             needs_redraw = true;
         }
 
+        if self
+            .deferred_startup_at
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            self.finish_deferred_startup();
+        }
+
         // Poll file system watcher for changes
         if self.poll_fs_watcher() {
             needs_redraw = true;
@@ -1651,6 +1747,9 @@ impl ApplicationHandler for App {
         let mut next_wake = self.last_tick + blink_interval;
         if let Some(earliest_deadline) = self.syntax_deadlines.values().map(|(d, _)| *d).min() {
             next_wake = next_wake.min(earliest_deadline);
+        }
+        if let Some(deferred_startup_at) = self.deferred_startup_at {
+            next_wake = next_wake.min(deferred_startup_at);
         }
         event_loop.set_control_flow(ControlFlow::WaitUntil(next_wake));
     }
@@ -1950,8 +2049,10 @@ mod tests {
             initial_position: None,
             wait_mode: false,
         };
+        let preparation = AppPreparation::start(800, 600, config.clone())
+            .expect("application preparation thread should start");
 
-        let app = App::new(800, 600, config, None);
+        let app = App::new(800, 600, config, None, None, Some(preparation));
         let open_paths: std::collections::HashSet<_> = app
             .model
             .editor_area
@@ -1976,7 +2077,7 @@ mod tests {
     fn spawn_terminal_command_adds_session_to_model() {
         use std::time::{Duration, Instant};
 
-        let mut app = App::new(800, 600, empty_startup_config(), None);
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
         app.model
             .dock_layout
             .bottom
@@ -2008,7 +2109,7 @@ mod tests {
 
     #[test]
     fn terminal_spawn_result_is_discarded_when_terminal_is_closed() {
-        let mut app = App::new(800, 600, empty_startup_config(), None);
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
         let (spawn_tx, spawn_rx) = mpsc::channel();
         let (pty, _pty_rx) = token::terminal::PtyHandle::new_for_test();
 
@@ -2032,7 +2133,7 @@ mod tests {
 
     #[test]
     fn ignored_terminal_spawn_command_clears_its_pending_marker() {
-        let mut app = App::new(800, 600, empty_startup_config(), None);
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
         let (_spawn_tx, spawn_rx) = mpsc::channel();
         app.terminal_spawn_rx = Some((6, spawn_rx));
         app.model.terminal.mark_spawn_pending(6);
@@ -2050,7 +2151,7 @@ mod tests {
 
     #[test]
     fn duplicate_terminal_spawn_command_preserves_in_flight_pending_marker() {
-        let mut app = App::new(800, 600, empty_startup_config(), None);
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
         let (_spawn_tx, spawn_rx) = mpsc::channel();
         app.terminal_spawn_rx = Some((7, spawn_rx));
         app.model.terminal.mark_spawn_pending(7);

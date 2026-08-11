@@ -49,6 +49,37 @@ pub type GlyphCacheKey = (char, u32);
 
 pub type GlyphCache = HashMap<GlyphCacheKey, (Metrics, Vec<u8>)>;
 
+/// Font parsing started ahead of renderer creation so it can overlap platform
+/// event-loop and window initialization.
+#[must_use = "renderer preparation should be passed to Renderer::new_prepared"]
+pub struct RendererPreparation {
+    font: std::thread::JoinHandle<fontdue::FontResult<Font>>,
+}
+
+impl RendererPreparation {
+    /// Begins parsing the embedded editor font on a background thread.
+    pub fn start() -> std::io::Result<Self> {
+        std::thread::Builder::new()
+            .name("token-font-loader".to_owned())
+            .spawn(load_editor_font)
+            .map(|font| Self { font })
+    }
+
+    fn finish(self) -> Result<Font> {
+        self.font
+            .join()
+            .map_err(|_| anyhow::anyhow!("Font preparation thread panicked"))?
+            .map_err(|error| anyhow::anyhow!("Failed to load font: {error}"))
+    }
+}
+
+fn load_editor_font() -> fontdue::FontResult<Font> {
+    Font::from_bytes(
+        include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+        FontSettings::default(),
+    )
+}
+
 /// Controls how preview panes render their content
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewRenderMode {
@@ -546,7 +577,17 @@ impl Renderer {
     /// Create a new renderer, automatically detecting the window's scale factor
     pub fn new(window: Rc<Window>, context: &softbuffer::Context<Rc<Window>>) -> Result<Self> {
         let scale_factor = window.scale_factor();
-        Self::with_scale_factor(window, context, scale_factor)
+        Self::with_scale_factor_and_preparation(window, context, scale_factor, None)
+    }
+
+    /// Creates a renderer using an editor font prepared during application startup.
+    pub fn new_prepared(
+        window: Rc<Window>,
+        context: &softbuffer::Context<Rc<Window>>,
+        preparation: RendererPreparation,
+    ) -> Result<Self> {
+        let scale_factor = window.scale_factor();
+        Self::with_scale_factor_and_preparation(window, context, scale_factor, Some(preparation))
     }
 
     /// Create a new renderer with an explicit scale factor
@@ -554,6 +595,15 @@ impl Renderer {
         window: Rc<Window>,
         context: &softbuffer::Context<Rc<Window>>,
         scale_factor: f64,
+    ) -> Result<Self> {
+        Self::with_scale_factor_and_preparation(window, context, scale_factor, None)
+    }
+
+    fn with_scale_factor_and_preparation(
+        window: Rc<Window>,
+        context: &softbuffer::Context<Rc<Window>>,
+        scale_factor: f64,
+        preparation: Option<RendererPreparation>,
     ) -> Result<Self> {
         let (width, height) = {
             let size = window.inner_size();
@@ -572,11 +622,11 @@ impl Renderer {
             )
             .map_err(|e| anyhow::anyhow!("Failed to resize surface: {}", e))?;
 
-        let font = Font::from_bytes(
-            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
-            FontSettings::default(),
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to load font: {}", e))?;
+        let font = match preparation {
+            Some(preparation) => preparation.finish()?,
+            None => load_editor_font()
+                .map_err(|error| anyhow::anyhow!("Failed to load font: {error}"))?,
+        };
 
         let font_size = 14.0 * scale_factor as f32;
 

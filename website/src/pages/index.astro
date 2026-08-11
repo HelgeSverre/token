@@ -10,9 +10,97 @@ import imgSidebarSplits from '../assets/screenshots/screenshot-showcase-sidebar-
 import imgCsvSplit from '../assets/screenshots/screenshot-showcase-csv-split.png';
 import imgSplits from '../assets/screenshots/screenshot-splits.png';
 
+const syntaxLanguages = [
+  'YAML',
+  'Markdown',
+  'Rust',
+  'HTML',
+  'CSS',
+  'JavaScript',
+  'TypeScript',
+  'TSX',
+  'JSX',
+  'JSON',
+  'TOML',
+  'Python',
+  'Go',
+  'PHP',
+  'C',
+  'C++',
+  'Java',
+  'Bash',
+  'Scheme',
+  'INI',
+  'XML',
+  'Sema',
+  'Blade',
+  'Vue',
+  'Svelte',
+  'Just',
+  'AppleScript',
+  'C#',
+  'Ruby',
+  'Lua',
+  'R',
+  'Swift',
+  'Elixir',
+  'Gleam',
+  'Solidity',
+  'Kotlin',
+  'Dart',
+  'Julia',
+  'Haskell',
+  'OCaml',
+  'OCaml Interface',
+  'D',
+  'Objective-C',
+  'VHDL',
+  'Odin',
+  'Fish',
+  'Assembly',
+  'SCSS',
+  'CMake',
+  'Make',
+  'Common Lisp',
+  'Zig',
+  'GLSL',
+  'GraphQL',
+  'HCL',
+  'Nix',
+  'Ada',
+  'Erlang',
+  'Clojure',
+  'Nushell',
+  'sed',
+  'Tcl',
+  'Roc',
+  'Janet',
+  'Forth',
+  'Protocol Buffers',
+  'Dhall',
+  'Pkl',
+  'Hurl',
+  'WIT',
+  'Standard ML',
+  'Nim',
+  'Astro',
+  'AWK',
+  'KDL',
+  'Tera',
+  'Typst',
+  'Dockerfile',
+  'WGSL',
+  'SQL',
+  'V',
+  'CUE',
+  'Fennel',
+  'Pest',
+  'Pony',
+];
+
 const showcaseSlides = [
-  { id: 'splits', label: 'Split views', desc: 'Side-by-side editing with independent viewports. Horizontal, vertical, or nested.', key: '⌘+\\', img: imgSplits },
-  { id: 'preview', label: 'Live preview', desc: 'Markdown and HTML render in real time alongside your source.', key: '⌘+⇧+P', img: imgMarkdownPreview },
+  { id: 'splits', label: 'Split views', desc: 'Side-by-side editing with independent viewports. Horizontal, vertical, or nested.', key: '⌘⇧⌥V', img: imgSplits },
+  { id: 'preview', label: 'Live preview', desc: 'Markdown and HTML render in real time alongside your source.', key: '⌘⇧V', img: imgMarkdownPreview },
   { id: 'workspace', label: 'Workspace', desc: 'File tree, splits, and sidebar — all in one view for real projects.', key: '⌘+1', img: imgSidebarSplits },
   { id: 'palette', label: 'Command palette', desc: 'Fuzzy search for any action. Switch themes, open files, run commands.', key: '⌘+⇧+A', img: imgCommandPalette },
   { id: 'csv', label: 'CSV + Code', desc: 'Spreadsheet view beside your source. Navigate cells with arrow keys.', key: null, img: imgCsvSplit },
@@ -36,9 +124,9 @@ const optimizedSlides = await Promise.all(
       <h1>
         <span>Multi-cursor.</span>
         <span>Syntax aware.</span>
-        <span class="accent">Absurdly fast.</span>
+        <span class="accent">Native by design.</span>
       </h1>
-      <p class="hero-desc">Token is a minimal code editor with multi-cursor editing, split views, and Tree-sitter syntax highlighting. No Electron. No bloat. Just code.</p>
+      <p class="hero-desc">Token is a minimal code editor with multi-cursor editing, split views, and Tree-sitter syntax highlighting. A native editor UI written in Rust, without Electron.</p>
       <div class="hero-actions">
         <a href="#download" class="btn-primary">Download <span class="arrow">↓</span></a>
         <a href="https://github.com/HelgeSverre/token" class="btn-ghost" target="_blank">View source →</a>
@@ -65,13 +153,15 @@ const optimizedSlides = await Promise.all(
 
 <!-- Stats -->
 <section class="stats">
-  <div class="stat"><span class="stat-val">18</span><span class="stat-label">Languages</span></div>
-  <div class="stat-div"></div>
-  <div class="stat"><span class="stat-val">&lt;50ms</span><span class="stat-label">Startup</span></div>
-  <div class="stat-div"></div>
-  <div class="stat"><span class="stat-val">∞</span><span class="stat-label">Cursors</span></div>
-  <div class="stat-div"></div>
-  <div class="stat"><span class="stat-val">0</span><span class="stat-label">Electron</span></div>
+  <div class="stats-row">
+    <div class="stat"><span class="stat-val">{syntaxLanguages.length}</span><span class="stat-label">Languages</span></div>
+    <div class="stat-div"></div>
+    <div class="stat"><span class="stat-val">~86ms</span><span class="stat-label">Startup*</span></div>
+    <div class="stat-div"></div>
+    <div class="stat"><span class="stat-val">0</span><span class="stat-label">Electron</span></div>
+  </div>
+  <!-- Benchmark source: 86.1 ms median (83.2–103.3 ms range) across 12 warm starts after two warmups, release build on macOS 15.6, measured from process launch through the first complete frame with the Token workspace and its largest tracked Rust file (139,260 bytes / 3,953 physical lines) loaded on an M2 Max MacBook Pro. -->
+  <p class="stats-note">* 86.1ms median warm start to first frame with this workspace and its largest Rust file loaded on an M2 Max MacBook Pro (12 runs).</p>
 </section>
 
 <!-- Features -->
@@ -102,7 +192,7 @@ const optimizedSlides = await Promise.all(
     <div class="feature-card">
       <span class="feature-num">03</span>
       <h3>Tree-sitter syntax</h3>
-      <p>Incremental parsing with real AST understanding. Not regex. Accurate highlighting.</p>
+      <p>Incremental parsing with concrete syntax trees rather than regex-based token matching.</p>
       <div class="feature-demo compact">
         <div class="demo-line"><span class="kw">fn</span> <span class="fn">parse</span>(<span class="var">input</span>: &amp;<span class="typ">str</span>)</div>
         <div class="demo-line">  -> <span class="typ">Result</span>&lt;<span class="typ">AST</span>, <span class="typ">Error</span>&gt;</div>
@@ -137,13 +227,7 @@ const optimizedSlides = await Promise.all(
   <h3>Languages</h3>
   <div class="marquee">
     <div class="marquee-track">
-      <span>Rust</span><span>TypeScript</span><span>JavaScript</span><span>Python</span>
-      <span>Go</span><span>Java</span><span>C</span><span>C++</span><span>PHP</span>
-      <span>HTML</span><span>CSS</span><span>JSON</span><span>YAML</span><span>TOML</span>
-      <span>Markdown</span><span>Bash</span><span>Scheme</span><span>XML</span>
-      <span>Rust</span><span>TypeScript</span><span>JavaScript</span><span>Python</span>
-      <span>Go</span><span>Java</span><span>C</span><span>C++</span><span>PHP</span>
-      <span>HTML</span><span>CSS</span><span>JSON</span><span>YAML</span><span>TOML</span>
+      {[...syntaxLanguages, ...syntaxLanguages].map((language) => <span>{language}</span>)}
     </div>
   </div>
 </section>
@@ -194,7 +278,7 @@ const optimizedSlides = await Promise.all(
       <code class="install-cmd"><span class="fn">curl</span> -fsSL token-editor.com/install.sh | <span class="fn">sh</span></code>
       <button class="copy-btn" id="copy-install" aria-label="Copy">⎘</button>
     </div>
-    <p class="install-note">Detects macOS (ARM/Intel), Linux, and Windows. Downloads the latest release and installs to <code>/usr/local/bin</code>.</p>
+    <p class="install-note">Detects macOS, Linux, and Windows POSIX shells. Downloads the latest release, installs to <code>~/.cargo/bin</code>, and updates your shell path.</p>
   </div>
 
   <div class="install-alt">
@@ -202,23 +286,23 @@ const optimizedSlides = await Promise.all(
       <summary>Or build from source</summary>
       <div class="install-source-block">
         <div class="line"><span class="fn">git</span> clone https://github.com/HelgeSverre/token</div>
-        <div class="line"><span class="fn">cd</span> token && <span class="fn">make</span> release</div>
-        <div class="line"><span class="fn">sudo</span> <span class="fn">mv</span> target/release/token /usr/local/bin/</div>
+        <div class="line"><span class="fn">cd</span> token && <span class="fn">cargo</span> build --release</div>
+        <div class="line">./target/release/token</div>
       </div>
     </details>
   </div>
 
   <div class="download-grid">
-    <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-macos-aarch64.tar.gz" class="dl-card">
-      <span class="dl-platform">macOS</span><span class="dl-arch">Apple Silicon</span><span class="dl-ext">.tar.gz</span>
+    <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-aarch64-apple-darwin.tar.xz" class="dl-card">
+      <span class="dl-platform">macOS</span><span class="dl-arch">Apple Silicon</span><span class="dl-ext">.tar.xz</span>
     </a>
-    <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-macos-x86_64.tar.gz" class="dl-card">
-      <span class="dl-platform">macOS</span><span class="dl-arch">Intel</span><span class="dl-ext">.tar.gz</span>
+    <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-x86_64-apple-darwin.tar.xz" class="dl-card">
+      <span class="dl-platform">macOS</span><span class="dl-arch">Intel</span><span class="dl-ext">.tar.xz</span>
     </a>
-    <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-linux-x86_64.tar.gz" class="dl-card">
-      <span class="dl-platform">Linux</span><span class="dl-arch">x86_64</span><span class="dl-ext">.tar.gz</span>
+    <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-x86_64-unknown-linux-gnu.tar.xz" class="dl-card">
+      <span class="dl-platform">Linux</span><span class="dl-arch">x86_64</span><span class="dl-ext">.tar.xz</span>
     </a>
-    <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-windows-x86_64.zip" class="dl-card">
+    <a href="https://github.com/HelgeSverre/token/releases/latest/download/token-x86_64-pc-windows-msvc.zip" class="dl-card">
       <span class="dl-platform">Windows</span><span class="dl-arch">x86_64</span><span class="dl-ext">.zip</span>
     </a>
   </div>
@@ -267,42 +351,42 @@ const optimizedSlides = await Promise.all(
 <section class="ai-section">
   <div class="ai-content">
     <div class="ai-text">
-      <span class="ai-badge">100+ conversations</span>
-      <h2>Built with AI,<br/><span class="ai-accent">in the open</span></h2>
-      <p>Every feature, every bug fix, every architectural decision — built through conversations with AI coding assistants. The entire development process is documented publicly.</p>
-      <a href="https://ampcode.com/@helgesverre" class="btn-primary" target="_blank">View the threads →</a>
+      <span class="ai-badge">AI-assisted development</span>
+      <h2>Built with AI,<br/><span class="ai-accent">documented in Git</span></h2>
+      <p>Token is developed with AI coding assistants. The durable public record is the repository: source, design documents, changelog, issues, and commit history.</p>
+      <a href="https://github.com/HelgeSverre/token" class="btn-primary" target="_blank">Browse project history →</a>
     </div>
     <div class="ai-terminal">
       <div class="ai-terminal-chrome">
         <span class="dot red"></span>
         <span class="dot yellow"></span>
         <span class="dot green"></span>
-        <span class="ai-terminal-title">amp — token-editor</span>
+        <span class="ai-terminal-title">development log — token-editor</span>
       </div>
       <div class="ai-terminal-body">
         <div class="ai-thread">
           <div class="ai-msg human"><span class="ai-role">you</span><span class="ai-text-line">add multi-cursor support with Opt+Click</span></div>
-          <div class="ai-msg assistant"><span class="ai-role">amp</span><span class="ai-text-line">I'll implement this in 3 steps: cursor storage, click handling, and synchronized editing…</span></div>
+          <div class="ai-msg assistant"><span class="ai-role">agent</span><span class="ai-text-line">I'll implement this in 3 steps: cursor storage, click handling, and synchronized editing…</span></div>
           <div class="ai-msg files">
-            <span class="ai-file changed">src/model/cursor.rs</span>
-            <span class="ai-file changed">src/update/text_edit.rs</span>
-            <span class="ai-file new">src/model/selection.rs</span>
+            <span class="ai-file changed">src/model/editor.rs</span>
+            <span class="ai-file changed">src/update/editor.rs</span>
+            <span class="ai-file changed">src/view/editor_text.rs</span>
           </div>
-          <div class="ai-msg result"><span class="ai-check">✓</span> 12 tests passing · 3 files changed</div>
+          <div class="ai-msg result"><span class="ai-check">✓</span> Multi-cursor editing shipped</div>
         </div>
         <div class="ai-thread">
           <div class="ai-msg human"><span class="ai-role">you</span><span class="ai-text-line">implement CSV spreadsheet view mode</span></div>
-          <div class="ai-msg assistant"><span class="ai-role">amp</span><span class="ai-text-line">I'll add a grid renderer with cell navigation, parsing, and inline editing…</span></div>
+          <div class="ai-msg assistant"><span class="ai-role">agent</span><span class="ai-text-line">I'll add a grid renderer with cell navigation, parsing, and inline editing…</span></div>
           <div class="ai-msg files">
-            <span class="ai-file changed">src/view/mod.rs</span>
-            <span class="ai-file new">src/model/csv.rs</span>
-            <span class="ai-file new">src/update/csv.rs</span>
+            <span class="ai-file changed">src/csv/model.rs</span>
+            <span class="ai-file changed">src/csv/render.rs</span>
+            <span class="ai-file changed">src/update/csv.rs</span>
           </div>
-          <div class="ai-msg result"><span class="ai-check">✓</span> 8 tests passing · 4 files changed</div>
+          <div class="ai-msg result"><span class="ai-check">✓</span> CSV spreadsheet mode shipped</div>
         </div>
         <div class="ai-thread">
           <div class="ai-msg human"><span class="ai-role">you</span><span class="ai-text-line">add Tree-sitter syntax highlighting</span></div>
-          <div class="ai-msg assistant typing"><span class="ai-role">amp</span><span class="ai-text-line">Analyzing parser integration<span class="ai-cursor">▊</span></span></div>
+          <div class="ai-msg assistant typing"><span class="ai-role">agent</span><span class="ai-text-line">Analyzing parser integration<span class="ai-cursor">▊</span></span></div>
         </div>
       </div>
     </div>
@@ -555,16 +639,25 @@ const optimizedSlides = await Promise.all(
 /* Stats */
 .stats {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   align-items: center;
-  gap: 48px;
+  gap: 18px;
   padding: 48px;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   background: var(--bg-deep);
 }
 
-.stat { text-align: center; }
+.stats-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: clamp(12px, 4vw, 48px);
+  width: 100%;
+  max-width: 720px;
+}
+
+.stat { flex: 1; min-width: 0; text-align: center; }
 .stat-val {
   display: block;
   font-family: var(--font-mono);
@@ -580,6 +673,15 @@ const optimizedSlides = await Promise.all(
   letter-spacing: 0.1em;
 }
 .stat-div { width: 1px; height: 40px; background: var(--border-strong); }
+.stats-note {
+  max-width: 720px;
+  margin: 0;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  line-height: 1.5;
+  text-align: center;
+}
 
 /* Features */
 .features {
@@ -742,7 +844,7 @@ const optimizedSlides = await Promise.all(
 .marquee-track {
   display: inline-flex;
   gap: 48px;
-  animation: marquee 30s linear infinite;
+  animation: marquee 120s linear infinite;
   font-family: var(--font-mono);
   font-size: 0.85rem;
   color: var(--fg-muted);
@@ -1270,8 +1372,7 @@ const optimizedSlides = await Promise.all(
   .features { padding: 80px 24px; }
   .feature-grid { grid-template-columns: 1fr; }
   .feature-card.wide { grid-column: span 1; }
-  .stats { flex-wrap: wrap; gap: 32px; }
-  .stat-div { display: none; }
+  .stats { padding: 40px 20px; }
   .showcase-hero { padding: 40px 16px 0; }
   .showcase-viewport { flex-direction: column; }
   .showcase-panel { width: 100%; flex-direction: column; border-left: none; border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }

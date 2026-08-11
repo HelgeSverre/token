@@ -8,7 +8,9 @@
 
 pub mod app;
 pub mod input;
+#[cfg(target_os = "macos")]
+mod macos_menu;
 pub mod mouse;
 pub mod webview;
 
-pub use app::App;
+pub use app::{App, AppPreparation};

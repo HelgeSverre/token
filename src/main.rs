@@ -5,8 +5,11 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 use anyhow::Result;
 use clap::Parser;
 use winit::event_loop::EventLoop;
+#[cfg(target_os = "macos")]
+use winit::platform::macos::EventLoopBuilderExtMacOS;
 
 use token::cli::CliArgs;
+use token::view::RendererPreparation;
 
 mod automation;
 #[cfg(debug_assertions)]
@@ -14,7 +17,7 @@ mod debug_dump;
 mod mcp;
 mod runtime;
 
-use runtime::App;
+use runtime::{App, AppPreparation};
 
 #[cfg(target_os = "macos")]
 fn configure_platform_identity() {
@@ -59,9 +62,34 @@ fn main() -> Result<()> {
     let args = CliArgs::parse();
     let startup_config = args.into_config().map_err(|e| anyhow::anyhow!(e))?;
 
-    let event_loop = EventLoop::new()?;
+    let renderer_preparation = match RendererPreparation::start() {
+        Ok(preparation) => Some(preparation),
+        Err(error) => {
+            tracing::warn!("Failed to start font preparation thread: {error}");
+            None
+        }
+    };
+    let app_preparation = match AppPreparation::start(800, 600, startup_config.clone()) {
+        Ok(preparation) => Some(preparation),
+        Err(error) => {
+            tracing::warn!("Failed to start application preparation thread: {error}");
+            None
+        }
+    };
+
+    let mut event_loop_builder = EventLoop::builder();
+    #[cfg(target_os = "macos")]
+    event_loop_builder.with_default_menu(false);
+    let event_loop = event_loop_builder.build()?;
     let automation_proxy = event_loop.create_proxy();
-    let mut app = App::new(800, 600, startup_config, Some(automation_proxy));
+    let mut app = App::new(
+        800,
+        600,
+        startup_config,
+        Some(automation_proxy),
+        renderer_preparation,
+        app_preparation,
+    );
     event_loop.run_app(&mut app)?;
 
     Ok(())

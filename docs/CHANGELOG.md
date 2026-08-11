@@ -8,6 +8,16 @@ All notable changes to rust-editor are documented in this file.
 
 ### Changed
 
+- Reduced the workspace-plus-large-Rust-file startup stress test from a 166.4
+  ms release median to 86.1 ms by preparing fonts, application state, and the
+  workspace concurrently with AppKit, then moving the macOS application menu
+  and file-system watcher off the first-frame path. Startup-critical font
+  dependencies are also optimized for the `just workspace` debug workflow.
+- Audited the website homepage against the current language registry, release
+  artifacts, installer behavior, keymap, rendering architecture, and public
+  development record; replaced the unsupported `<50ms` startup claim with a
+  measured `~86ms` figure and corrected stale stats, shortcuts, download
+  links, and AI-development copy.
 - Updated the website's Astro and JavaScript dependencies to remediate known
   Dependabot security advisories.
 - Updated transitive `rand` dependencies to remediate two Dependabot security

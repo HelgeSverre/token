@@ -213,6 +213,8 @@ image = { version = "0.25", default-features = false, features = ["png", "ico"] 
 winres = "0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSApplication", "NSEvent", "NSMenu", "NSMenuItem"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSProcessInfo", "NSString"] }
 
 [target.'cfg(unix)'.dependencies]
@@ -306,6 +308,14 @@ incremental = true
 # No debug info for dependencies (faster compile)
 [profile.dev.package."*"]
 debug = false
+
+# Keep startup-critical dependencies fast in `just workspace` while leaving
+# Token's own code unoptimized for useful debug behavior.
+[profile.dev.package.fontdue]
+opt-level = 3
+
+[profile.dev.package."ttf-parser:0.21.1"]
+opt-level = 3
 
 # Debugging profile: full debug info when needed (cargo build --profile debugging)
 [profile.debugging]

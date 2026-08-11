@@ -3,6 +3,57 @@
 Captured on the development machine before search optimization with the release
 benchmark profile.
 
+## Startup stress test
+
+Startup was measured on an M2 Max MacBook Pro running macOS 15.6. The workload
+opened the Token repository as a workspace and loaded `src/syntax/parser.rs`,
+the largest tracked Rust source file at 139,260 bytes and 3,953 physical lines.
+Each result is the median of 12 warm launches after two warmups, with 250 ms
+between launches. The timer ran from process creation until the first complete
+frame was presented; temporary internal checkpoints were used to avoid counting
+automation-socket scheduling latency.
+
+| Build | Original | Font preparation | Conventional batch | Current range |
+| --- | ---: | ---: | ---: | ---: |
+| Release (`profile.release`) | 166.4 ms | 123.2 ms | **86.1 ms** | 83.2–103.3 ms |
+| Distribution (`profile.dist`) | — | 111.0 ms | Not rerun | 99.0–126.7 ms |
+| `just workspace` debug build | — | ~143 ms | 120.0 ms | 118.5–131.5 ms |
+
+The accepted optimization parses the full embedded JetBrains Mono font on a
+worker while macOS initializes the event loop and window. Font parsing cost
+about 39 ms in an optimized build and previously sat directly on the critical
+path. Startup-critical font dependencies are optimized in the dev profile so
+the literal `just workspace` candidate remains representative without
+optimizing Token's own debug code.
+
+The conventional follow-up overlaps model, keymap, initial-file, and workspace
+preparation with AppKit initialization. The recursive workspace watcher and
+standard macOS application menu are installed 50 ms after the first frame, and
+macOS no longer decodes a window icon that winit ignores on that platform. The
+menu retains About, Services, Hide, Hide Others, Show All, and Quit behavior;
+bundled builds still provide their richer About content through Info.plist and
+`Credits.rtf` resources.
+
+One instrumented release run from the conventional batch reached these
+cumulative points from the start of `main`:
+
+| Checkpoint | Time from `main` |
+| --- | ---: |
+| CLI ready | 1.0 ms |
+| Event loop ready | 43.3 ms |
+| Workspace and initial file ready | 43.5 ms |
+| Application resumed | 54.2 ms |
+| Native window ready | 80.4 ms |
+| Renderer ready | 80.8 ms |
+| First frame presented | 91.1 ms |
+
+The 86.1 ms headline is the median of the external process-to-first-frame
+samples, not the single checkpoint run. A true 50 ms result is still not
+realistic in the current single-process AppKit/winit architecture: Apple-owned
+application and titled-window initialization consume most of that budget
+before Token draws. Reaching 50 ms would require a product-level technique such
+as a persistent background process or prewarmed window.
+
 ```bash
 cargo bench --bench search
 cargo bench --bench syntax incremental
