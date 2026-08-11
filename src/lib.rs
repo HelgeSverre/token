@@ -22,6 +22,7 @@ pub mod overlay;
 pub mod panel;
 pub mod panels;
 pub mod perf;
+pub mod product;
 pub mod recent_files;
 pub mod syntax;
 pub mod terminal;

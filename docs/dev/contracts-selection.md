@@ -171,12 +171,25 @@ For each cursor:
 
 ### ExpandSelection (Option+Up)
 
-Progressive expansion:
+When a current tree-sitter tree is available, expansion walks strict containing
+named syntax nodes and delimiter interiors before falling back to line/document
+scopes. The plaintext and stale-tree fallback is:
 1. No selection → select word
 2. Word selected → select line
 3. Line selected → select all
 
-History stack preserves previous selection for `ShrinkSelection`.
+Tree ranges are normalized where a grammar includes non-semantic boundary
+text. YAML scopes exclude comments attached to the boundary of a neighboring
+collection, and INI value scopes exclude horizontal separator padding. Rust
+items expose the bare item first and then a range containing contiguous outer
+attributes and documentation comments; blank lines and ordinary comments break
+that attachment.
+
+History snapshots preserve all cursors, selections, and the active cursor for
+`ShrinkSelection`.
+
+See [Syntax-Aware Expand Selection](../feature/syntax-aware-expand-selection.md)
+for candidate ordering, freshness rules, and deferred injected-language support.
 
 ### ShrinkSelection (Option+Down)
 

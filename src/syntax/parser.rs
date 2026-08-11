@@ -173,6 +173,7 @@ const SEMA_HIGHLIGHTS: &str = include_str!("../../queries/sema/highlights.scm");
 
 // Phase 7 languages (template)
 const BLADE_HIGHLIGHTS: &str = include_str!("../../queries/blade/highlights.scm");
+const SVELTE_HIGHLIGHTS: &str = tree_sitter_svelte_ng::HIGHLIGHTS_QUERY;
 
 // Phase 8 languages (build tooling)
 const JUST_HIGHLIGHTS: &str = tree_sitter_just::HIGHLIGHTS_QUERY;
@@ -260,6 +261,7 @@ impl ParserState {
 
         // Initialize Phase 8 languages (framework)
         state.init_language(LanguageId::Vue);
+        state.init_language(LanguageId::Svelte);
         // Initialize Phase 8 languages (build tooling)
         state.init_language(LanguageId::Just);
 
@@ -318,6 +320,24 @@ impl ParserState {
             return;
         }
 
+        if lang == LanguageId::Svelte {
+            let ts_lang: tree_sitter::Language = tree_sitter_svelte_ng::LANGUAGE.into();
+            let combined = format!("{}\n{}", HTML_HIGHLIGHTS, SVELTE_HIGHLIGHTS);
+            let mut parser = Parser::new();
+            if let Err(error) = parser.set_language(&ts_lang) {
+                tracing::error!("Failed to initialize Svelte parser: {error}");
+                return;
+            }
+            self.parsers.insert(lang, parser);
+            match Query::new(&ts_lang, &combined) {
+                Ok(query) => {
+                    self.queries.insert(lang, query);
+                }
+                Err(error) => tracing::error!("Failed to compile Svelte query: {error:?}"),
+            }
+            return;
+        }
+
         let (ts_lang, highlights_scm) = match lang {
             // Phase 1 languages
             LanguageId::Yaml => (tree_sitter_yaml::language(), YAML_HIGHLIGHTS),
@@ -358,6 +378,7 @@ impl ParserState {
             LanguageId::Blade => (tree_sitter_blade::LANGUAGE.into(), BLADE_HIGHLIGHTS),
             // Phase 8 languages (framework) — Vue uses HTML grammar
             LanguageId::Vue => (tree_sitter_html::LANGUAGE.into(), HTML_HIGHLIGHTS),
+            LanguageId::Svelte => unreachable!("Svelte is initialized above"),
             // Phase 8 languages (build tooling)
             LanguageId::Just => (tree_sitter_just::LANGUAGE.into(), JUST_HIGHLIGHTS),
             // No highlighting for plain text
@@ -570,6 +591,12 @@ impl ParserState {
         {
             self.last_changed_line_ranges = None;
         }
+        // Component injection currently rebuilds the combined highlight set.
+        // Keep tree parsing incremental, but query the complete outer tree so
+        // unchanged outer-language tokens are not replaced by a partial patch.
+        if language == LanguageId::Svelte {
+            self.last_changed_line_ranges = None;
+        }
         let highlight_started = Instant::now();
         let mut patch = self.extract_highlights(
             source,
@@ -578,7 +605,7 @@ impl ParserState {
             revision,
             self.last_changed_line_ranges.as_deref(),
         );
-        let highlights = if let (Some(ranges), Some(cached)) = (
+        let mut highlights = if let (Some(ranges), Some(cached)) = (
             self.last_changed_line_ranges.as_ref(),
             self.doc_cache.get_mut(&doc_id),
         ) {
@@ -604,6 +631,13 @@ impl ParserState {
             }
             patch
         };
+        if language == LanguageId::Svelte {
+            self.extract_component_embedded_highlights(source, &tree, &mut highlights);
+            finalize_line_tokens(&mut highlights);
+            if let Some(cached) = self.doc_cache.get_mut(&doc_id) {
+                cached.highlights = Some(highlights.clone());
+            }
+        }
         self.last_timing.highlight_ms = Some(highlight_started.elapsed().as_secs_f64() * 1000.0);
         highlights
     }
@@ -1482,8 +1516,8 @@ impl ParserState {
         // Step 2: Extract HTML-level highlights (Vue uses same query as HTML)
         let mut highlights = self.extract_highlights(source, &tree, language, revision, None);
 
-        // Step 3: Language injection for script/style with Vue-aware lang detection
-        self.extract_vue_embedded_highlights(source, &tree, &mut highlights);
+        // Step 3: Language injection for script/style with component lang detection
+        self.extract_component_embedded_highlights(source, &tree, &mut highlights);
 
         // Re-sort tokens after adding injected highlights
         finalize_line_tokens(&mut highlights);
@@ -1491,19 +1525,19 @@ impl ParserState {
         highlights
     }
 
-    /// Extract highlights for embedded script/style content in Vue SFC
-    fn extract_vue_embedded_highlights(
+    /// Extract highlights for embedded script/style content in component files.
+    fn extract_component_embedded_highlights(
         &mut self,
         source: &str,
         tree: &Tree,
         highlights: &mut SyntaxHighlights,
     ) {
         let mut cursor = tree.walk();
-        self.visit_vue_embedded_elements(&mut cursor, source, highlights);
+        self.visit_component_embedded_elements(&mut cursor, source, highlights);
     }
 
-    /// Recursively visit nodes to find script/style elements in Vue SFC
-    fn visit_vue_embedded_elements(
+    /// Recursively visit component nodes to find script/style elements.
+    fn visit_component_embedded_elements(
         &mut self,
         cursor: &mut TreeCursor,
         source: &str,
@@ -1514,7 +1548,7 @@ impl ParserState {
 
             match node.kind() {
                 "script_element" => {
-                    self.process_vue_script_element(node, source, highlights);
+                    self.process_component_script_element(node, source, highlights);
                 }
                 "style_element" => {
                     // Style injection is identical to HTML
@@ -1524,7 +1558,7 @@ impl ParserState {
             }
 
             if cursor.goto_first_child() {
-                self.visit_vue_embedded_elements(cursor, source, highlights);
+                self.visit_component_embedded_elements(cursor, source, highlights);
                 cursor.goto_parent();
             }
 
@@ -1534,14 +1568,14 @@ impl ParserState {
         }
     }
 
-    /// Process Vue <script> element - detect lang attribute for TypeScript support
-    fn process_vue_script_element(
+    /// Process a component <script> element and honor its language attribute.
+    fn process_component_script_element(
         &mut self,
         node: tree_sitter::Node,
         source: &str,
         highlights: &mut SyntaxHighlights,
     ) {
-        let lang_id = detect_vue_script_language(node, source);
+        let lang_id = detect_component_script_language(node, source);
 
         // Find raw_text child (the script content)
         let mut child_cursor = node.walk();
@@ -1671,10 +1705,10 @@ impl ParserState {
     }
 }
 
-/// Detect the script language from a Vue SFC `<script>` element's `lang` attribute.
+/// Detect the script language from a component `<script>` element's `lang` attribute.
 /// Returns TypeScript for `lang="ts"` or `lang="typescript"`, TSX for `lang="tsx"`,
 /// and JavaScript as default.
-fn detect_vue_script_language(script_node: tree_sitter::Node, source: &str) -> LanguageId {
+fn detect_component_script_language(script_node: tree_sitter::Node, source: &str) -> LanguageId {
     let mut cursor = script_node.walk();
     if !cursor.goto_first_child() {
         return LanguageId::JavaScript;
@@ -2452,6 +2486,17 @@ fi"#;
 
         assert_eq!(highlights.language, LanguageId::Sema);
         assert!(!highlights.lines.is_empty());
+    }
+
+    #[test]
+    fn test_sema_workflow_and_alias_highlights() {
+        let mut state = ParserState::new();
+        let source = "(def answer 42)\n(defn run (x) (workflow/run x))\n(defworkflow deploy (step \"build\"))\n(defpolicy safe (approval \"ship\"))\n";
+        let highlights = state.parse_and_highlight(source, LanguageId::Sema, DocumentId(53), 1);
+
+        assert_eq!(highlights.language, LanguageId::Sema);
+        assert!(highlights.lines.keys().all(|line| *line < 4));
+        assert_eq!(highlights.lines.len(), 4);
     }
 
     #[test]
@@ -3257,6 +3302,67 @@ export default {
             highlights.lines.contains_key(&1),
             "Should highlight export default"
         );
+    }
+
+    #[test]
+    fn test_svelte_highlighting_and_injection() {
+        let mut state = ParserState::new();
+        let source = r#"<script lang="ts">
+let count: number = 1;
+</script>
+
+{#if count > 0}
+  <p>{count}</p>
+{/if}
+
+<style>
+p { color: red; }
+</style>"#;
+        let doc_id = DocumentId(402);
+        let highlights = state.parse_and_highlight(source, LanguageId::Svelte, doc_id, 1);
+
+        assert_eq!(highlights.language, LanguageId::Svelte);
+        assert!(
+            highlights.lines.contains_key(&1),
+            "TypeScript should be highlighted"
+        );
+        assert!(
+            highlights.lines.contains_key(&4),
+            "Svelte blocks should be highlighted"
+        );
+        assert!(
+            highlights.lines.contains_key(&9),
+            "CSS should be highlighted"
+        );
+        let tree = state
+            .get_cached_tree(doc_id)
+            .expect("Svelte should retain its outer syntax tree");
+        assert!(!tree.0.root_node().has_error());
+
+        let edited = source.replace("count: number = 1", "count: number = 2");
+        let updated = state.parse_and_highlight(&edited, LanguageId::Svelte, doc_id, 2);
+        assert!(
+            updated.lines.contains_key(&4),
+            "unchanged Svelte tokens should remain"
+        );
+        assert!(
+            updated.lines.contains_key(&9),
+            "unchanged CSS tokens should remain"
+        );
+        for line in updated.lines.values() {
+            let mut spans = line
+                .tokens
+                .iter()
+                .map(|token| (token.start_col, token.end_col, token.highlight))
+                .collect::<Vec<_>>();
+            spans.sort_unstable();
+            spans.dedup();
+            assert_eq!(
+                spans.len(),
+                line.tokens.len(),
+                "injected tokens must not duplicate"
+            );
+        }
     }
 
     #[test]

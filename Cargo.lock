@@ -4474,6 +4474,7 @@ dependencies = [
  "notify",
  "notify-debouncer-mini",
  "nucleo-matcher",
+ "objc2-foundation 0.3.2",
  "open",
  "portable-pty",
  "pulldown-cmark",
@@ -4512,6 +4513,7 @@ dependencies = [
  "tree-sitter-racket",
  "tree-sitter-rust",
  "tree-sitter-sema",
+ "tree-sitter-svelte-ng",
  "tree-sitter-toml-ng",
  "tree-sitter-typescript",
  "tree-sitter-xml",
@@ -4916,6 +4918,16 @@ dependencies = [
 [[package]]
 name = "tree-sitter-sema"
 version = "0.1.0"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-svelte-ng"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef0a71f9cf5e94373cc86c64893630c8a29bb25d3390a248268d08af2165fa37"
 dependencies = [
  "cc",
  "tree-sitter-language",

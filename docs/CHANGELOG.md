@@ -8,15 +8,35 @@ All notable changes to rust-editor are documented in this file.
 
 ### Added
 
+- macOS releases now include native `Token.app` archives for both Apple
+  architectures alongside the existing CLI artifacts. The app bundle supplies
+  the icon, version, category, copyright, and product metadata used by Finder
+  and the standard About panel.
+- Syntax-aware expand selection now walks current tree-sitter nodes through
+  identifiers, expressions, delimiter interiors, strings, blocks, and owning
+  declarations before falling back to line/document scopes. Revision checks
+  preserve the existing fallback for stale or unavailable trees, and shrink
+  now restores complete multi-cursor selection snapshots.
 - Deterministic `--demo` launching and cursor-free local automation through CLI
   and MCP clients, including document/state inspection, cursor and selection
   control, text insertion, scrolling, named keymap action discovery and
   dispatch, bounded real-renderer stage profiling, and end-to-end syntax
   pipeline profiling.
 - Embedded terminal dock panel with async PTY spawning, VT/ANSI terminal emulation, keyboard and paste routing, scrollback, resize-aware grid sizing, and native rendering in the bottom dock.
+- First-class Svelte syntax support, including `.svelte` detection, Svelte/HTML
+  highlighting, TypeScript and CSS injection, outline extraction, syntax-aware
+  selection, and a mixed-language sample fixture.
 
 ### Changed
 
+- Desktop product metadata is consistently branded as “Token” while preserving
+  `token` as the command name. Direct macOS launches now use the capitalized
+  name in the application menu, the native About panel links to the Token
+  website, and Windows executables carry complete version and product resources.
+- Developer tasks have moved from Make to a grouped, self-documenting Justfile.
+  All former build, run, test, benchmark, profiling, coverage, sample,
+  cross-compilation, installation, and packaging workflows remain available as
+  `just` recipes, with filterable tests and portable profiling output hints.
 - Document search now avoids per-character hash maps and redundant
   case-sensitive document copies, with an allocation-light ASCII
   case-insensitive fast path.
@@ -30,6 +50,27 @@ All notable changes to rust-editor are documented in this file.
 
 ### Fixed
 
+- Opening multiple files from the CLI now creates a distinct tab for every
+  path again; deferred startup loads previously raced to overwrite the focused
+  tab, which made `just test-syntax` appear to open only one sample.
+- Expand-selection history is now invalidated by document edits and all
+  cursor/selection-changing commands, preventing shrink from restoring stale
+  positions. Syntax string interiors now handle Python triple quotes, Rust raw
+  strings, and C++ raw-string delimiters correctly.
+- Syntax-aware expansion now excludes tree-sitter YAML comments attached to a
+  preceding sibling scope and INI whitespace around `=` values. Rust items add
+  a documented/attributed scope containing attached doc comments and attributes
+  such as `#[test]` and `#[should_panic]`.
+- Syntax-aware expansion now applies reusable boundary-affinity profiles to
+  XML, HTML, Vue, Svelte, JSX, and TSX: expansion at the end of a completed
+  element selects that element without indentation or trailing whitespace,
+  while expansion after an opening tag retains right affinity to its content.
+- HTML-family void elements such as `<source>`, `<br>`, and `<img>` now stop
+  selection at the end of their opening tag instead of including the newline
+  and indentation that tree-sitter attaches before the following sibling.
+- Sema highlighting is synchronized with upstream through commit `39a7dc9`,
+  adding `def`/`defn`, workflow and policy definitions, newer special forms,
+  and workflow-related builtins.
 - Terminal spawn lifecycle now tracks in-flight PTY creation, avoids duplicate spawns while one is pending, and discards late spawn results if the terminal panel has been closed.
 - Dock resizing now grows the right dock when dragging its handle left and grows the bottom dock when dragging its handle up.
 - Terminal cursor rendering now uses the scrolled grid row instead of the visible row, so the cursor glyph stays correct when viewing scrollback.

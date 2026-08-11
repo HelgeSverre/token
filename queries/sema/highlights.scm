@@ -79,13 +79,13 @@
 ; =====================================================================
 
 ; (define name value)
-(list . (symbol) @_f . (symbol) @variable (#eq? @_f "define"))
+(list . (symbol) @_f . (symbol) @variable (#any-of? @_f "define" "def"))
 
 ; (set! name value)
 (list . (symbol) @_f . (symbol) @variable (#eq? @_f "set!"))
 
 ; (defun name ...)
-(list . (symbol) @_f . (symbol) @function (#eq? @_f "defun"))
+(list . (symbol) @_f . (symbol) @function (#any-of? @_f "defun" "defn"))
 
 ; (defmacro name ...)
 (list . (symbol) @_f . (symbol) @function (#eq? @_f "defmacro"))
@@ -95,6 +95,10 @@
 
 ; (deftool name ...)
 (list . (symbol) @_f . (symbol) @function (#eq? @_f "deftool"))
+
+; (defworkflow name ...) / (defpolicy name ...)
+(list . (symbol) @_f . (symbol) @function
+  (#any-of? @_f "defworkflow" "defpolicy"))
 
 ; =====================================================================
 ; PARAMETERS
@@ -110,7 +114,7 @@
 
 ; (define (name x y) body)
 (list . (symbol) @_f . (list . (symbol) @function (symbol) @variable.parameter)
-  (#eq? @_f "define"))
+  (#any-of? @_f "define" "def"))
 
 ; =====================================================================
 ; BUILTIN FUNCTIONS
@@ -140,7 +144,7 @@
     "embedding/->list" "embedding/length"
     "embedding/list->embedding" "embedding/ref"
     ; Tool query functions
-    "tool/name" "tool/description" "tool/parameters"
+    "tool/name" "tool/description" "tool/parameters" "tool/policy-subjects"
     ; I/O
     "display" "print" "println" "newline" "format"
     "read" "read-line" "read-many"
@@ -250,6 +254,14 @@
     "sys/arch" "sys/elapsed" "sys/home-dir" "sys/hostname"
     "sys/interactive?" "sys/os" "sys/pid" "sys/temp-dir"
     "sys/tty" "sys/user" "sys/which"
+    ; Workflow and policy forms
+    "approval" "checkpoint" "parallel" "parallel-settled" "phase"
+    "pipeline" "pipeline-settled" "policy/without" "settled-partition"
+    "settled/err?" "settled/ok?" "step"
+    "workflow/approval" "workflow/check" "workflow/checkpoint"
+    "workflow/phase" "workflow/policy-without" "workflow/run"
+    "workflow/run-form" "workflow/step" "workflow/tool-call"
+    "workflow/tool-result"
     ; Misc
     "not" "error" "gensym"))
 
@@ -283,10 +295,13 @@
 
 (list . (symbol) @keyword
   (#any-of? @keyword
-    "define" "defun" "lambda" "fn" "set!"
-    "let" "let*" "letrec" "begin" "do"
+    "define" "def" "defun" "defn" "lambda" "fn" "set!"
+    "let" "let*" "letrec" "begin" "progn" "do" "while"
+    "let-values" "let*-values" "define-values" "define-syntax"
+    "match" "match*" "defmulti" "defmethod" "async" "await"
     "and" "or"
     "quote" "quasiquote" "unquote" "unquote-splicing"
     "define-record-type" "defmacro" "defagent" "deftool"
+    "defworkflow" "defpolicy"
     "delay" "force" "eval" "macroexpand"
     "with-budget" "prompt" "message"))

@@ -5,7 +5,8 @@
 mod support;
 
 use token::model::editor_area::DocumentId;
-use token::syntax::{LanguageId, ParserState};
+use token::model::{Document, Position, Selection};
+use token::syntax::{expansion_candidates, LanguageId, ParserState, SyntaxTreeSnapshot};
 
 #[global_allocator]
 static ALLOC: divan::AllocProfiler = divan::AllocProfiler::system();
@@ -274,6 +275,33 @@ fn generate_large_javascript(lines: usize) -> String {
         ));
     }
     source
+}
+
+// ============================================================================
+// Syntax-aware selection
+// ============================================================================
+
+#[divan::bench(args = [100, 1000, 5000, 10000])]
+fn syntax_selection_candidates(bencher: divan::Bencher, lines: usize) {
+    let source = generate_large_rust(lines);
+    let mut document = Document::with_text(&source);
+    document.language = LanguageId::Rust;
+    document.revision = 1;
+    let doc_id = DocumentId(1);
+    let mut parser = ParserState::new();
+    parser.parse_and_highlight(&source, LanguageId::Rust, doc_id, 1);
+    let tree = parser
+        .get_cached_tree(doc_id)
+        .expect("Rust benchmark source should parse")
+        .0
+        .clone();
+    let snapshot = SyntaxTreeSnapshot::new(1, LanguageId::Rust, tree);
+    let target_byte = source.len() / 2;
+    let target_char = document.buffer.byte_to_char(target_byte);
+    let (line, column) = document.offset_to_cursor(target_char);
+    let selection = Selection::new(Position::new(line, column));
+
+    bencher.bench_local(|| divan::black_box(expansion_candidates(&document, &snapshot, selection)));
 }
 
 // ============================================================================

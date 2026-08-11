@@ -310,7 +310,7 @@ All other keys (when terminal is focused) are sent directly to the PTY as escape
    - Handle `ProcessExited` → mark session exited
    - Handle `NewSession` → spawn PTY + create session
 
-**Verification**: `make build`, `make test`, and `make lint` pass. Unit tests spawn a PTY, send `echo hello\n`, receive output, and verify runtime `Cmd::SpawnTerminal` stores a session.
+**Verification**: `just build`, `just test`, and `just lint` pass. Unit tests spawn a PTY, send `echo hello\n`, receive output, and verify runtime `Cmd::SpawnTerminal` stores a session.
 
 ### Phase 2: Terminal Rendering (3–4 days)
 

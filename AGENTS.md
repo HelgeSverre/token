@@ -3,13 +3,13 @@
 ## Build & Test Commands
 
 ```bash
-make build                       # Build debug binary
-make release                     # Build optimized release binary
-make test                        # Run all tests
+just build                       # Build debug binary
+just release                     # Build optimized release binary
+just test                        # Run all tests
 cargo test test_name             # Run single test by name
-make fmt                         # Format code (cargo fmt + prettier)
-make lint                        # Run clippy lints (mirrors CI)
-make run                         # Run release build with sample file
+just fmt                         # Format code (cargo fmt + prettier)
+just lint                        # Run clippy lints (mirrors CI)
+just run                         # Run release build with sample file
 ```
 
 ## Architecture
@@ -27,13 +27,13 @@ Key structures: Rope (ropey) for text buffer, Cursor, EditOperation for undo/red
 
 ## Code Style
 
-- Rust 2021 edition, run `make fmt` and `make lint` before committing
+- Rust 2021 edition, run `just fmt` and `just lint` before committing
 - Design docs in `docs/feature/*.md`; check `docs/ROADMAP.md` for planned work
 - Update `docs/CHANGELOG.md` when features are complete
 
 ## Performance Notes
 
-- `make workspace` runs the debug binary (`target/debug/token ./`). That is useful for day-to-day iteration, but not for meaningful renderer performance claims.
+- `just workspace` runs the debug binary (`target/debug/token ./`). That is useful for day-to-day iteration, but not for meaningful renderer performance claims.
 - The in-app perf overlay (`F2`, debug builds only) currently forces full redraw while visible. Treat it as a diagnostic breakdown, not a release-equivalent FPS meter.
 - Perf instrumentation is stage-based in `src/perf.rs`. If you add or change render timings, extend `PerfStage` / `PerfStats::measure_stage()` there instead of adding one-off counters or a second overlay-specific list.
 - File tracing is not always-on. File logging follows `TOKEN_FILE_LOG` when set, otherwise `RUST_LOG`.
@@ -54,7 +54,7 @@ Releases are automated via **cargo-dist**. Pushing a tag triggers CI to build bi
 
 1. **Update version** in `Cargo.toml`
 2. **Update `docs/CHANGELOG.md`** with release notes under new version header
-3. **Run tests and lint**: `make test && make lint`
+3. **Run tests and lint**: `just test && just lint`
 4. **Commit changes**:
    ```bash
    git add -A && git commit -m "chore: release vX.Y.Z"

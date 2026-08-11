@@ -16,6 +16,19 @@ mod runtime;
 
 use runtime::App;
 
+#[cfg(target_os = "macos")]
+fn configure_platform_identity() {
+    use objc2_foundation::{ns_string, NSProcessInfo};
+
+    // Winit builds its default application menu from NSProcessInfo. Set this
+    // before creating the event loop so direct binary launches and app bundles
+    // both use the product name instead of the lowercase executable name.
+    NSProcessInfo::processInfo().setProcessName(ns_string!("Token"));
+}
+
+#[cfg(not(target_os = "macos"))]
+fn configure_platform_identity() {}
+
 // ============================================================================
 // MAIN - Entry point
 // ============================================================================
@@ -25,6 +38,8 @@ fn main() -> Result<()> {
     let _profiler = dhat::Profiler::new_heap();
 
     let _trace_guard = token::tracing::init();
+
+    configure_platform_identity();
 
     let mut raw_args = std::env::args();
     let _program = raw_args.next();

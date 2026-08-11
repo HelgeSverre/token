@@ -22,6 +22,7 @@
 mod highlights;
 mod languages;
 mod parser;
+mod selection;
 
 pub use highlights::{
     highlight_id_for_name, HighlightId, HighlightToken, LineHighlights, SyntaxHighlights,
@@ -29,3 +30,4 @@ pub use highlights::{
 };
 pub use languages::LanguageId;
 pub use parser::{ParserState, ParserTiming};
+pub use selection::{expansion_candidates, SyntaxTreeSnapshot};

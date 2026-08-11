@@ -118,7 +118,7 @@ Comprehensive audit and improvement of the benchmark suite in `benches/`:
 - **Added large file scaling:** 100k, 500k, 1M line tests in `rope_operations.rs`
 - **New `benches/search.rs`:** Literal search, case-insensitive, whole word, visible range
 - **New `benches/layout.rs`:** Line width, visible lines, char position, viewport layout
-- **New Makefile targets:** `bench-loop`, `bench-search`, `bench-layout`, `bench-multicursor`, `bench-large`
+- **Benchmark recipes:** `bench-loop`, `bench-search`, `bench-layout`, `bench-multicursor`, `bench-large`
 
 Remaining: Phase 3 (criterion throughput metrics for CI), syntax highlighting benchmarks (when feature ready).
 
@@ -260,7 +260,7 @@ Debug instrumentation for multi-cursor state transitions:
 - `update_traced()` wrapper logs message flow and cursor changes
 - `assert_invariants_with_context()` for contextual assertion failures
 - F8 toggle for in-editor debug overlay
-- `make trace` runs with `RUST_LOG=debug`
+- `just trace` runs with `RUST_LOG=debug`
 - Human-readable message names (e.g., `Editor::MoveCursor(Up)` instead of discriminants)
 
 ### Multi-Cursor Line Operations ✅
@@ -319,6 +319,10 @@ Progressive selection expansion with history stack:
 - Option+Up: Expand (cursor → word → line → all)
 - Option+Down: Shrink (restore previous from history)
 - 18 tests in `tests/expand_shrink_selection.rs`
+
+The plaintext `cursor → word → line → all` baseline now uses current
+tree-sitter trees to add structural scopes and complete multi-cursor history
+snapshots. See [Syntax-Aware Expand Selection](feature/syntax-aware-expand-selection.md).
 
 ### Multi-Cursor Movement ✅
 
@@ -413,6 +417,7 @@ Group rapid consecutive edits into single undo entries:
 | Selection & Multi-Cursor    | ✅ Complete | [archived/SELECTION_MULTICURSOR.md](archived/SELECTION_MULTICURSOR.md)                   |
 | Multi-Cursor Movement       | ✅ Complete | [archived/MULTI_CURSOR_MOVEMENT.md](archived/MULTI_CURSOR_MOVEMENT.md)                   |
 | Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md)     |
+| Syntax-Aware Expand Selection | ✅ Base phase | [feature/syntax-aware-expand-selection.md](feature/syntax-aware-expand-selection.md)     |
 | Configurable Keymapping     | ✅ Complete | [archived/KEYMAPPING_IMPLEMENTATION_PLAN.md](archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) |
 | Gesture Bindings            | Planned     | [feature/gesture-bindings.md](feature/gesture-bindings.md)                               |
 | Keymap Enhancements         | Future      | [future/keymap-enhancements.md](future/keymap-enhancements.md)                           |

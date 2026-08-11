@@ -93,7 +93,7 @@ Tell agents how to work in your codebase:
 | `AGENTS.md` | Build commands, architecture, conventions       |
 | `CLAUDE.md` | Same (symlink or duplicate for different tools) |
 
-Key: specify your Makefile/scripts so agents use `make test` instead of inventing `cargo test --all-features --no-fail-fast`.
+Key: specify your Justfile/scripts so agents use `just test` instead of inventing `cargo test --all-features --no-fail-fast`.
 
 ---
 
@@ -863,7 +863,7 @@ All conversations are public. Sorted by timestamp (oldest first).
 | 2025-12-15 17:29 | [Syntax Debug Events](https://ampcode.com/threads/T-019b230f-339a-75fd-83ed-72df6fe91f70)       | Bugfix   | Debug syntax highlighting update events                                                                |
 | 2025-12-15 19:44 | [Incremental Parsing](https://ampcode.com/threads/T-019b238a-cfc7-75ed-9b30-d9bfb119e56d)       | Feature  | Syntax highlighting with tree-sitter incremental parsing                                               |
 | 2025-12-15 20:05 | [Language Support 3-5](https://ampcode.com/threads/T-019b239e-0f2f-71ce-b793-63a784c6aa4f)      | Feature  | Implement Phase 3, 4, 5 language support (17 languages)                                                |
-| 2025-12-15 20:36 | [Syntax Sample Testing](https://ampcode.com/threads/T-019b23ba-ed60-74c4-af98-bb3013d8bdad)     | Feature  | Add Makefile target for syntax sample testing                                                          |
+| 2025-12-15 20:36 | [Syntax Sample Testing](https://ampcode.com/threads/T-019b23ba-ed60-74c4-af98-bb3013d8bdad)     | Feature  | Add Justfile recipe for syntax sample testing                                                          |
 | 2025-12-15 23:47 | [UI Code Review](https://ampcode.com/threads/T-019b2469-6390-75e7-bdd0-c31937d9e607)            | Refactor | Identify next 10 actionable review items                                                               |
 | 2025-12-16 00:03 | [HiDPI Scaling](https://ampcode.com/threads/T-019b2476-55a8-7058-9ba9-9360a9280c1b)             | Bugfix   | High DPI display scaling issues investigation                                                          |
 | 2025-12-16 10:53 | [UI Scaling Impl](https://ampcode.com/threads/T-019b26ca-a72d-7188-94e8-76964795edb5)           | Bugfix   | Verify UI scaling claims and implement suggestions                                                     |
@@ -871,7 +871,7 @@ All conversations are public. Sorted by timestamp (oldest first).
 | 2025-12-16 12:48 | [CSV Gap Analysis](https://ampcode.com/threads/T-019b2734-d942-72ca-a572-1c3d1ee4036e)          | Feature  | Merge CSV editor gap analysis into design doc                                                          |
 | 2025-12-16 13:12 | [Workspace vs Scaling](https://ampcode.com/threads/T-019b274a-3264-738c-96e0-53f0be6ffa30)      | Feature  | Review workspace management plan against UI scaling                                                    |
 | 2025-12-16 13:18 | [CSV Implementation](https://ampcode.com/threads/T-019b274f-d35e-7014-9c1f-979b1452722a)        | Feature  | CSV editor design consolidation and implementation                                                     |
-| 2025-12-16 13:33 | [CSV Sample Data](https://ampcode.com/threads/T-019b275d-95a8-747c-8296-9ac1df203a6d)           | Feature  | Generate large CSV file and add make target                                                            |
+| 2025-12-16 13:33 | [CSV Sample Data](https://ampcode.com/threads/T-019b275d-95a8-747c-8296-9ac1df203a6d)           | Feature  | Generate large CSV file and add just target                                                            |
 | 2025-12-16 14:14 | [CSV Phase 2](https://ampcode.com/threads/T-019b2783-7db1-73cf-b7de-2373fcbb61f0)               | Feature  | CSV viewer phase 2 cell editing implementation                                                         |
 | 2025-12-16 14:33 | [CSV v0.3.6 Release](https://ampcode.com/threads/T-019b2794-20a6-703c-b2b4-621b5f1c832f)        | Feature  | Release Phase 2 CSV cell editing feature                                                               |
 | 2025-12-17 08:43 | [Workspace Implementation](https://ampcode.com/threads/T-019b2b7a-8dd7-763a-9ab7-3132ddcf516a)  | Feature  | Workspace management feature implementation                                                            |

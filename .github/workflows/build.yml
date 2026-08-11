@@ -54,18 +54,26 @@ jobs:
             libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Install cargo-bundle
-        run: cargo install cargo-bundle --locked
+        run: cargo install cargo-bundle --version 0.9.0 --locked
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Bundle
+        if: matrix.os != 'macos-latest'
         run: cargo bundle --release --target ${{ matrix.target }} --format ${{ matrix.format }} --bin token
+
+      - name: Bundle macOS app
+        if: matrix.os == 'macos-latest'
+        run: sh scripts/package-macos-app.sh ${{ matrix.target }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}-bundle
-          path: target/${{ matrix.target }}/release/bundle/**/*
+          path: |
+            target/${{ matrix.target }}/release/bundle/**/*
+            target/${{ matrix.target }}/dist/bundle/**/*
+            target/distrib/*.app.tar.gz
           if-no-files-found: warn
           retention-days: 7

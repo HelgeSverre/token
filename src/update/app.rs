@@ -120,6 +120,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                     doc.saved_revision = Some(0);
                     doc.language = language;
                     doc.syntax_highlights = None;
+                    doc.syntax_tree = None;
                     doc.revision = doc.revision.wrapping_add(1);
 
                     // Cmd::OpenFileInEditor (e.g. OpenKeybindings/OpenLogFile)

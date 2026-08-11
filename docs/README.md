@@ -64,6 +64,7 @@ Detailed specifications for major features, located in `docs/feature/`:
 | CSV Viewer/Editor | ✅ P1-2 | [csv-editor.md](archived/csv-editor.md) |
 | Recent Files | ✅ MVP | [recent-files.md](archived/recent-files.md) |
 | Markdown Preview | ✅ | [markdown-preview.md](archived/markdown-preview.md) |
+| Syntax-Aware Expand Selection | ✅ Base phase | [syntax-aware-expand-selection.md](feature/syntax-aware-expand-selection.md) |
 
 ### Planned Features
 

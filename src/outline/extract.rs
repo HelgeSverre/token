@@ -59,7 +59,7 @@ pub fn extract_outline(
             let flat = extract_blade_symbols(root, source);
             build_tree_by_containment(flat)
         }
-        LanguageId::Vue => {
+        LanguageId::Vue | LanguageId::Svelte => {
             let flat = extract_vue_symbols(root, source);
             build_tree_by_containment(flat)
         }

@@ -6,9 +6,9 @@ use crate::commands::Cmd;
 use crate::messages::{Direction, EditorMsg};
 use crate::model::{
     AppModel, Cursor, EditorState, OccurrenceState, Position, SegmentContent, SegmentId, Selection,
-    TransientMessage,
+    SelectionSnapshot, TransientMessage,
 };
-use crate::util::{char_type, CharType};
+use crate::syntax::expansion_candidates;
 
 /// Handle editor messages (cursor movement, viewport scrolling)
 pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
@@ -36,7 +36,16 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
         | EditorMsg::PageDown
         | EditorMsg::SetCursorPosition { .. }
         | EditorMsg::ClearSelection
-        | EditorMsg::CollapseToSingleCursor => {
+        | EditorMsg::ToggleCursorAtPosition { .. }
+        | EditorMsg::AddCursorAbove
+        | EditorMsg::AddCursorBelow
+        | EditorMsg::CollapseToSingleCursor
+        | EditorMsg::RemoveCursor(_)
+        | EditorMsg::UnselectOccurrence
+        | EditorMsg::StartRectangleSelection { .. }
+        | EditorMsg::UpdateRectangleSelection { .. }
+        | EditorMsg::FinishRectangleSelection
+        | EditorMsg::CancelRectangleSelection => {
             model.editor_mut().occurrence_state = None;
             model.editor_mut().clear_selection_history();
         }
@@ -951,92 +960,73 @@ pub(crate) fn delete_selection(model: &mut AppModel) -> Option<(usize, String)> 
 // Expand/Shrink Selection
 // ============================================================================
 
-/// Expand selection to next semantic level: cursor → word → line → all
-/// Supports multiple cursors - each cursor/selection expands independently
+/// Expand each selection to its next syntax scope, with word/line/all fallback.
 fn expand_selection(model: &mut AppModel) {
-    // For multi-cursor, we need to expand each selection independently
-    // Exception: if ANY selection would expand to "all", we expand all to "all"
-    let cursor_count = model.editor().cursors.len();
+    let snapshot = SelectionSnapshot {
+        cursors: model.editor().cursors.clone(),
+        selections: model.editor().selections.clone(),
+        active_cursor_index: model.editor().active_cursor_index,
+    };
+    let (expansions, wants_document) = {
+        let document = model.document();
+        let editor = model.editor();
+        let syntax_tree = document.syntax_tree.as_ref();
+        let mut expansions = Vec::with_capacity(snapshot.selections.len());
+        let mut wants_document = Vec::with_capacity(snapshot.selections.len());
 
-    // First pass: determine what each selection would expand to
-    let mut should_select_all = false;
-    let mut expansions: Vec<Option<Selection>> = Vec::with_capacity(cursor_count);
-
-    for idx in 0..cursor_count {
-        let current = model.editor().selections[idx];
-        let cursor = &model.editor().cursors[idx];
-
-        let new_selection = if current.is_empty() {
-            // Level 0 → 1: Select word under cursor
-            if let Some((_word, start, end)) =
-                model.editor().word_under_cursor_at(model.document(), idx)
-            {
-                Some(Selection::from_positions(start, end))
-            } else {
-                // No word under cursor, try to select line
-                select_line_at(model, cursor.line)
-            }
-        } else if is_line_selection_at(&current, model, cursor.line) {
-            // Level 2 → 3: Select all
-            // Check line selection BEFORE word selection because a single-word line
-            // matches both patterns - we want line → all, not line → line
-            should_select_all = true;
-            None // Will be set to select_all below
-        } else if is_word_selection_at(&current, model) {
-            // Level 1 → 2: Select line
-            select_line_at(model, cursor.line)
-        } else {
-            // Arbitrary selection: expand to line if within single line, else to all
-            if is_within_single_line(&current) {
-                select_line_at(model, cursor.line)
-            } else {
-                should_select_all = true;
-                None
-            }
-        };
-
-        expansions.push(new_selection);
-    }
-
-    // If any cursor needs select_all, apply to all cursors (collapse to single selection)
-    if should_select_all {
-        if let Some(sel) = select_all(model) {
-            // Push current selections to history before expanding
-            let selections_to_save: Vec<Selection> = model.editor().selections.clone();
-            for selection in selections_to_save {
-                model.editor_mut().selection_history.push(selection);
-            }
-
-            // Collapse to single cursor with full document selection
-            model.editor_mut().cursors.truncate(1);
-            model.editor_mut().selections.truncate(1);
-            model.editor_mut().active_cursor_index = 0;
-
-            model.editor_mut().selections[0].anchor = sel.anchor;
-            model.editor_mut().selections[0].head = sel.head;
-            model.editor_mut().cursors[0].line = sel.head.line;
-            model.editor_mut().cursors[0].column = sel.head.column;
-            model.editor_mut().cursors[0].desired_column = None;
+        for (index, (&current, cursor)) in snapshot
+            .selections
+            .iter()
+            .zip(&snapshot.cursors)
+            .enumerate()
+        {
+            let word = current.is_empty().then(|| {
+                editor
+                    .word_under_cursor_at(document, index)
+                    .map(|(_, start, end)| Selection::from_positions(start, end))
+            });
+            let syntax = syntax_tree.and_then(|tree| {
+                expansion_candidates(document, tree, current)
+                    .into_iter()
+                    .next()
+            });
+            let line = select_line_for_document(document, cursor.line)
+                .filter(|candidate| strictly_contains(candidate, &current));
+            let expansion = word.flatten().or(syntax).or(line);
+            wants_document.push(expansion.is_none());
+            expansions.push(expansion);
         }
+        (expansions, wants_document)
+    };
+
+    if wants_document.iter().all(|wants| *wants) {
+        let Some(selection) = select_all(model) else {
+            return;
+        };
+        if snapshot.selections.len() == 1 && snapshot.selections[0] == selection {
+            return;
+        }
+
+        let editor = model.editor_mut();
+        editor.selection_history.push(snapshot);
+        editor.cursors.truncate(1);
+        editor.selections.truncate(1);
+        editor.active_cursor_index = 0;
+        editor.selections[0] = selection;
+        editor.cursors[0] = Cursor::from_position(selection.head);
         return;
     }
 
-    // Apply expansions to each cursor
-    // Clone selections first to avoid borrow conflicts
-    let selections_to_save: Vec<Selection> = model.editor().selections.clone();
-    for idx in 0..cursor_count {
-        // Push current selection to history before expanding
-        model
-            .editor_mut()
-            .selection_history
-            .push(selections_to_save[idx]);
+    if expansions.iter().all(Option::is_none) {
+        return;
+    }
 
-        if let Some(sel) = &expansions[idx] {
-            model.editor_mut().selections[idx].anchor = sel.anchor;
-            model.editor_mut().selections[idx].head = sel.head;
-            model.editor_mut().cursors[idx].line = sel.head.line;
-            model.editor_mut().cursors[idx].column = sel.head.column;
-            model.editor_mut().cursors[idx].desired_column = None;
+    let editor = model.editor_mut();
+    editor.selection_history.push(snapshot);
+    for (index, expansion) in expansions.into_iter().enumerate() {
+        if let Some(selection) = expansion {
+            editor.selections[index] = selection;
+            editor.cursors[index] = Cursor::from_position(selection.head);
         }
     }
 }
@@ -1044,104 +1034,29 @@ fn expand_selection(model: &mut AppModel) {
 /// Shrink selection to previous level (restore from history)
 fn shrink_selection(model: &mut AppModel) {
     if let Some(previous) = model.editor_mut().selection_history.pop() {
-        // Restore previous selection
-        model.editor_mut().active_selection_mut().anchor = previous.anchor;
-        model.editor_mut().active_selection_mut().head = previous.head;
-
-        // Update cursor to match selection head
-        model.editor_mut().active_cursor_mut().line = previous.head.line;
-        model.editor_mut().active_cursor_mut().column = previous.head.column;
-        model.editor_mut().active_cursor_mut().desired_column = None;
+        let editor = model.editor_mut();
+        editor.cursors = previous.cursors;
+        editor.selections = previous.selections;
+        editor.active_cursor_index = previous.active_cursor_index;
     } else {
         // No history - collapse selection to cursor position
         model.editor_mut().clear_selection();
     }
 }
 
-/// Check if selection exactly covers a word boundary (alias for multi-cursor compatibility)
-fn is_word_selection_at(selection: &Selection, model: &AppModel) -> bool {
-    if selection.start().line != selection.end().line {
-        return false; // Multi-line is not a word
-    }
-
-    let line = selection.start().line;
-    if let Some(line_text) = model.document().get_line(line) {
-        let line_text = line_text.trim_end_matches('\n');
-        let chars: Vec<char> = line_text.chars().collect();
-        let start_col = selection.start().column;
-        let end_col = selection.end().column;
-
-        if start_col >= chars.len() || end_col > chars.len() || start_col >= end_col {
-            return false;
-        }
-
-        // Check all chars in selection are same type (word chars)
-        let first_type = char_type(chars[start_col]);
-        if first_type != CharType::WordChar {
-            return false;
-        }
-
-        let all_same = (start_col..end_col).all(|i| char_type(chars[i]) == first_type);
-        if !all_same {
-            return false;
-        }
-
-        // Check boundaries are at type transitions
-        let at_word_start =
-            start_col == 0 || char_type(chars[start_col.saturating_sub(1)]) != first_type;
-        let at_word_end = end_col >= chars.len() || char_type(chars[end_col]) != first_type;
-
-        at_word_start && at_word_end
-    } else {
-        false
-    }
+fn strictly_contains(outer: &Selection, inner: &Selection) -> bool {
+    outer.start() <= inner.start()
+        && outer.end() >= inner.end()
+        && (outer.start() < inner.start() || outer.end() > inner.end())
 }
 
-/// Check if selection covers exactly one line (including trailing newline)
-/// `cursor_line` is used to verify the selection is for this specific cursor's line
-fn is_line_selection_at(selection: &Selection, model: &AppModel, cursor_line: usize) -> bool {
-    let start = selection.start();
-    let end = selection.end();
-
-    // Must start at column 0 and be on the cursor's line
-    if start.column != 0 || start.line != cursor_line {
-        return false;
-    }
-
-    // Selection must be on a single line and end at line length
-    if start.line == end.line {
-        let line_len = model.document().line_length(start.line);
-        return end.column == line_len;
-    }
-
-    false
-}
-
-/// Check if selection is entirely within a single line
-fn is_within_single_line(selection: &Selection) -> bool {
-    selection.start().line == selection.end().line
-}
-
-/// Create selection covering a specific line (NOT including newline)
-/// Selection ends at the last character of the line, not at the start of the next line
-fn select_line_at(model: &AppModel, line: usize) -> Option<Selection> {
-    let total_lines = model.document().line_count();
-
-    if line >= total_lines {
-        return None;
-    }
-
-    let start = Position::new(line, 0);
-    let line_len = model.document().line_length(line);
-    let end = Position::new(line, line_len);
-
-    Some(Selection::from_positions(start, end))
-}
-
-/// Create selection covering the current line (including newline if present)
-#[allow(dead_code)]
-fn select_current_line(model: &AppModel) -> Option<Selection> {
-    select_line_at(model, model.editor().active_cursor().line)
+fn select_line_for_document(document: &crate::model::Document, line: usize) -> Option<Selection> {
+    (line < document.line_count()).then(|| {
+        Selection::from_positions(
+            Position::new(line, 0),
+            Position::new(line, document.line_length(line)),
+        )
+    })
 }
 
 /// Create selection covering the entire document

@@ -12,7 +12,7 @@ authors = ["Helge Sverre <helge.sverre@gmail.com>"]
 readme = "README.md"
 keywords = ["editor", "text-editor", "syntax-highlighting", "terminal", "rust"]
 categories = ["text-editors", "development-tools"]
-exclude = ["samples/", "docs/", "*.md", "Makefile", "assets/icon.png"]
+exclude = ["samples/", "docs/", "*.md", "justfile", "assets/icon.png"]
 
 [[bin]]
 name = "token"
@@ -119,12 +119,14 @@ tree-sitter-ini = "1.4"
 tree-sitter-xml = "0.7"
 # Vendored: upstream has no committed Rust bindings/Cargo.toml, so it can't be
 # used as a git dependency. Canonical grammar: https://github.com/sema-lisp/tree-sitter-sema
+# Highlight query synchronized through upstream commit 39a7dc9.
 tree-sitter-sema = { path = "vendor/tree-sitter-sema" }
 
 # Phase 7 languages (Template)
 # Vendored because upstream v0.12.3 has an SSH submodule URL that breaks
 # cargo fetch in environments without SSH keys configured.
 tree-sitter-blade = { path = "vendor/tree-sitter-blade" }
+tree-sitter-svelte-ng = "1.0.2"
 
 # Phase 8 languages (Build tooling)
 tree-sitter-just = { git = "https://github.com/casey/tree-sitter-just", rev = "60df3d5b3fda2a22fdb3621226cafab50b763663" }
@@ -146,8 +148,12 @@ dhat = { version = "0.3", optional = true }
 # Optional: Chrome trace export for profiling
 tracing-chrome = { version = "0.7", optional = true }
 
-[target.'cfg(windows)'.build-dependencies]
+[build-dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "ico"] }
 winres = "0.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSProcessInfo", "NSString"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -155,9 +161,11 @@ libc = "0.2"
 [package.metadata.bundle]
 name = "Token"
 identifier = "no.helgesverre.token"
-icon = ["assets/icon.icns", "assets/icon.ico"]
+icon = ["assets/icon-packaging.png"]
+resources = ["Credits.rtf"]
 category = "public.app-category.developer-tools"
 copyright = "Copyright (c) Helge Sverre 2026"
+publisher = "Helge Sverre"
 short_description = "A fast, multi-cursor code editor built in Rust"
 long_description = """
 Token is a lightweight, high-performance code editor inspired by JetBrains IDEs.
@@ -166,11 +174,28 @@ syntax highlighting via Tree-sitter, customizable themes and keybindings, and a 
 file tree sidebar. Designed for developers who value speed and simplicity.
 """
 osx_minimum_system_version = "11.0"
+osx_info_plist_exts = ["assets/macos-info.plist"]
 
+# cargo-bundle treats per-binary metadata as a complete override rather than
+# inheriting the package table, so keep the desktop binary's native metadata
+# explicit here.
 [package.metadata.bundle.bin.token]
 name = "Token"
 identifier = "no.helgesverre.token"
-icon = ["assets/icon.icns", "assets/icon.ico"]
+icon = ["assets/icon-packaging.png"]
+resources = ["Credits.rtf"]
+category = "public.app-category.developer-tools"
+copyright = "Copyright (c) Helge Sverre 2026"
+publisher = "Helge Sverre"
+short_description = "A fast, multi-cursor code editor built in Rust"
+long_description = """
+Token is a lightweight, high-performance code editor inspired by JetBrains IDEs.
+Built entirely in Rust with CPU-based rendering, it features powerful multi-cursor editing,
+syntax highlighting via Tree-sitter, customizable themes and keybindings, and a responsive
+file tree sidebar. Designed for developers who value speed and simplicity.
+"""
+osx_minimum_system_version = "11.0"
+osx_info_plist_exts = ["assets/macos-info.plist"]
 
 [dev-dependencies]
 divan = "0.1"

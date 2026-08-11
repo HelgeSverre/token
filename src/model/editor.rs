@@ -144,6 +144,14 @@ pub struct Cursor {
     pub desired_column: Option<usize>,
 }
 
+/// Complete editor selection state saved by expand/shrink selection.
+#[derive(Debug, Clone)]
+pub struct SelectionSnapshot {
+    pub cursors: Vec<Cursor>,
+    pub selections: Vec<Selection>,
+    pub active_cursor_index: usize,
+}
+
 impl Cursor {
     /// Create a new cursor at position (0, 0)
     pub fn new() -> Self {
@@ -575,7 +583,7 @@ pub struct EditorState {
     pub occurrence_state: Option<OccurrenceState>,
     /// Selection history stack for expand/shrink selection (Option+Up/Down)
     /// Push before expanding, pop when shrinking
-    pub selection_history: Vec<Selection>,
+    pub selection_history: Vec<SelectionSnapshot>,
     /// Current view mode (Text or CSV)
     pub view_mode: ViewMode,
     /// What kind of content this tab displays (text, image, binary placeholder)

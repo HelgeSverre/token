@@ -646,6 +646,9 @@ impl<'a> TextEditorRenderer<'a> {
         is_focused: bool,
         perf: &mut PerfStats,
     ) {
+        #[cfg(not(debug_assertions))]
+        let _ = perf;
+
         #[cfg(debug_assertions)]
         let mut background_time = Duration::ZERO;
         #[cfg(debug_assertions)]

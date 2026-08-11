@@ -12,14 +12,14 @@ Thank you for your interest in contributing to Token!
    ```bash
    git clone https://github.com/HelgeSverre/token
    cd token
-   make setup    # Install dev dependencies
-   make build    # Build debug binary
+   just setup    # Install dev dependencies
+   just build    # Build debug binary
    ```
 
 3. **Run**:
    ```bash
-   make dev      # Run debug build
-   make run      # Run release build
+   just dev      # Run debug build
+   just run      # Run release build
    ```
 
 ---
@@ -27,17 +27,17 @@ Thank you for your interest in contributing to Token!
 ## Running Tests
 
 ```bash
-make test           # Run all tests (nextest + doctests)
-make test-verbose   # Run with output
-make test-retry     # Tests with retries for flaky tests
+just test           # Run all tests (nextest + doctests)
+just test-verbose   # Run with output
+just test-retry     # Tests with retries for flaky tests
 ```
 
 ---
 
 ## Code Style
 
-- **Format before committing**: Run `make fmt`
-- **Lint check**: Run `make lint` (mirrors CI)
+- **Format before committing**: Run `just fmt`
+- **Lint check**: Run `just lint` (mirrors CI)
 - **Follow existing patterns**: Match the style of surrounding code
 
 ---

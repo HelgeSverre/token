@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use super::editor::Cursor;
 use super::editor_area::DocumentId;
-use crate::syntax::{LanguageId, SyntaxHighlights};
+use crate::syntax::{LanguageId, SyntaxHighlights, SyntaxTreeSnapshot};
 
 /// Represents an edit operation for undo/redo functionality
 #[derive(Debug, Clone)]
@@ -70,6 +70,8 @@ pub struct Document {
     pub language: LanguageId,
     /// Current syntax highlights (updated asynchronously)
     pub syntax_highlights: Option<SyntaxHighlights>,
+    /// Parsed base-language tree for syntax-aware editor operations.
+    pub syntax_tree: Option<SyntaxTreeSnapshot>,
     /// Parsed outline data (functions, structs, etc.)
     pub outline: Option<crate::outline::OutlineData>,
     /// Document revision counter (incremented on each edit)
@@ -91,6 +93,7 @@ impl Document {
             saved_revision: Some(0),
             language: LanguageId::PlainText,
             syntax_highlights: None,
+            syntax_tree: None,
             outline: None,
             revision: 0,
         }

@@ -88,6 +88,7 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
             document_id,
             revision,
             highlights,
+            syntax_tree,
             outline,
             timing: _,
             replace_line_ranges,
@@ -151,6 +152,7 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
             } else {
                 doc.syntax_highlights = Some(highlights);
             }
+            doc.syntax_tree = syntax_tree;
             doc.outline = outline;
             tracing::debug!(
                 "Applied syntax highlights for document {:?}, revision {}",
@@ -180,6 +182,7 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
             // Update language and clear old highlights
             doc.language = language;
             doc.syntax_highlights = None;
+            doc.syntax_tree = None;
 
             // Trigger a new parse
             let revision = doc.revision;
@@ -365,6 +368,7 @@ mod tests {
                 document_id: doc_id,
                 revision: 7,
                 highlights: highlights.clone(),
+                syntax_tree: None,
                 outline: None,
                 timing: Box::default(),
                 replace_line_ranges: None,
@@ -400,6 +404,7 @@ mod tests {
                 document_id: doc_id,
                 revision: 5,
                 highlights,
+                syntax_tree: None,
                 outline: None,
                 timing: Box::default(),
                 replace_line_ranges: None,
@@ -447,6 +452,11 @@ mod tests {
         let source = model.document().buffer.to_string();
         let highlights =
             parser_state.parse_and_highlight(&source, LanguageId::JavaScript, doc_id, 1);
+        let syntax_tree = parser_state
+            .get_cached_tree(doc_id)
+            .map(|(tree, language)| {
+                crate::syntax::SyntaxTreeSnapshot::new(1, language, tree.clone())
+            });
 
         // Step 4: ParseCompleted comes back
         let redraw_cmd = update_syntax(
@@ -455,6 +465,7 @@ mod tests {
                 document_id: doc_id,
                 revision: 1,
                 highlights,
+                syntax_tree,
                 outline: None,
                 timing: Box::default(),
                 replace_line_ranges: None,
@@ -466,6 +477,7 @@ mod tests {
         // Verify highlights are stored
         let doc = model.editor_area.documents.get(&doc_id).unwrap();
         assert!(doc.syntax_highlights.is_some());
+        assert!(doc.syntax_tree.is_some());
         assert!(!doc.syntax_highlights.as_ref().unwrap().lines.is_empty());
     }
 
@@ -580,6 +592,7 @@ mod tests {
                 document_id: doc_id,
                 revision: 1,
                 highlights: new_highlights,
+                syntax_tree: None,
                 outline: None,
                 timing: Box::default(),
                 replace_line_ranges: None,

@@ -450,6 +450,7 @@ pub enum SyntaxMsg {
         document_id: crate::model::editor_area::DocumentId,
         revision: u64,
         highlights: crate::syntax::SyntaxHighlights,
+        syntax_tree: Option<crate::syntax::SyntaxTreeSnapshot>,
         outline: Option<crate::outline::OutlineData>,
         timing: Box<SyntaxWorkerTiming>,
         replace_line_ranges: Option<Vec<std::ops::Range<usize>>>,

@@ -195,7 +195,7 @@ bindings:
 | `Duplicate` | Duplicate selection or line |
 | `SelectNextOccurrence` | Add cursor at next match |
 | `UnselectOccurrence` | Remove last added cursor |
-| `ExpandSelection` | Expand to word/line/all |
+| `ExpandSelection` | Expand through syntax scopes, then line/all ([details](../feature/syntax-aware-expand-selection.md)) |
 | `ShrinkSelection` | Shrink to previous scope |
 | `ClearSelection` | Clear all selections |
 | `CollapseToSingleCursor` | Remove all but primary cursor |

@@ -3,8 +3,33 @@
 mod common;
 
 use common::test_model;
-use token::messages::{EditorMsg, Msg};
+use token::messages::{DocumentMsg, EditorMsg, Msg};
+use token::syntax::{LanguageId, ParserState, SyntaxTreeSnapshot};
 use token::update::update;
+
+fn attach_tree(model: &mut token::model::AppModel, language: LanguageId) {
+    let document_id = model
+        .document()
+        .id
+        .expect("test document should have an id");
+    let source = model.document().buffer.to_string();
+    let revision = 1;
+    model.document_mut().language = language;
+    model.document_mut().revision = revision;
+
+    let mut parser = ParserState::new();
+    parser.parse_and_highlight(&source, language, document_id, revision);
+    let tree = parser
+        .get_cached_tree(document_id)
+        .expect("test language should produce a parse tree")
+        .0
+        .clone();
+    model.document_mut().syntax_tree = Some(SyntaxTreeSnapshot::new(revision, language, tree));
+}
+
+fn attach_rust_tree(model: &mut token::model::AppModel) {
+    attach_tree(model, LanguageId::Rust);
+}
 
 // ============================================================================
 // Expand Selection Tests
@@ -23,6 +48,81 @@ fn test_expand_from_cursor_selects_word() {
     assert_eq!(sel.start().column, 0);
     assert_eq!(sel.end().line, 0);
     assert_eq!(sel.end().column, 5);
+}
+
+#[test]
+fn test_expand_uses_rust_syntax_ancestors() {
+    let source = "fn main() { let value = foo.bar(); }\n";
+    let bar_column = source.find("bar").expect("bar should exist") + 1;
+    let mut model = test_model(source, 0, bar_column);
+    attach_rust_tree(&mut model);
+
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+    assert_eq!(
+        model
+            .editor()
+            .primary_selection()
+            .get_text(model.document()),
+        "bar"
+    );
+
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+    assert_eq!(
+        model
+            .editor()
+            .primary_selection()
+            .get_text(model.document()),
+        "foo.bar"
+    );
+
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+    assert_eq!(
+        model
+            .editor()
+            .primary_selection()
+            .get_text(model.document()),
+        "foo.bar()"
+    );
+}
+
+#[test]
+fn test_expand_at_markup_eol_selects_completed_element() {
+    let source = "<book>\n  <price>5.95</price>   \n  <title>Next</title>\n</book>\n";
+    let column = source
+        .lines()
+        .nth(1)
+        .expect("fixture line should exist")
+        .len();
+    let mut model = test_model(source, 1, column);
+    attach_tree(&mut model, LanguageId::Xml);
+
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+
+    assert_eq!(
+        model
+            .editor()
+            .primary_selection()
+            .get_text(model.document()),
+        "<price>5.95</price>"
+    );
+}
+
+#[test]
+fn test_stale_tree_uses_plaintext_fallback() {
+    let source = "fn main() { let value = foo.bar(); }\n";
+    let bar_column = source.find("bar").expect("bar should exist") + 1;
+    let mut model = test_model(source, 0, bar_column);
+    attach_rust_tree(&mut model);
+    model.document_mut().revision += 1;
+
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+
+    assert_eq!(model.editor().primary_selection().start().column, 0);
+    assert_eq!(
+        model.editor().primary_selection().end().column,
+        model.document().line_length(0)
+    );
 }
 
 #[test]
@@ -108,13 +208,13 @@ fn test_expand_on_empty_line() {
 
     update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
 
-    // On empty line, selection is empty (start = end = (1, 0))
-    // This should expand to "all" since there's no word and line is empty
+    // The zero-sized line range is not a strict expansion, so skip to all.
     let sel = model.editor().primary_selection();
-    assert_eq!(sel.start().line, 1);
+    assert_eq!(sel.start().line, 0);
     assert_eq!(sel.start().column, 0);
-    assert_eq!(sel.end().line, 1);
-    assert_eq!(sel.end().column, 0); // Empty line has length 0
+    let last_line = model.document().line_count().saturating_sub(1);
+    assert_eq!(sel.end().line, last_line);
+    assert_eq!(sel.end().column, model.document().line_length(last_line));
 }
 
 #[test]
@@ -435,6 +535,59 @@ fn test_expand_multi_cursor_word_to_line() {
         0,
         "Line selection should start at column 0"
     );
+}
+
+#[test]
+fn test_multi_cursor_shrink_restores_complete_snapshot() {
+    let mut model = test_model("hello world\nfoo bar\n", 0, 2);
+    model.editor_mut().add_cursor_at(1, 1);
+    let original_cursors = model.editor().cursors.clone();
+    let original_selections = model.editor().selections.clone();
+    let original_active = model.editor().active_cursor_index;
+
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+    update(&mut model, Msg::Editor(EditorMsg::ShrinkSelection));
+
+    assert_eq!(model.editor().cursors.len(), original_cursors.len());
+    assert_eq!(model.editor().selections, original_selections);
+    assert_eq!(model.editor().active_cursor_index, original_active);
+    for (actual, expected) in model.editor().cursors.iter().zip(original_cursors) {
+        assert_eq!(
+            (actual.line, actual.column),
+            (expected.line, expected.column)
+        );
+    }
+}
+
+#[test]
+fn test_document_edit_invalidates_selection_history() {
+    let mut model = test_model("hello world\n", 0, 2);
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+    assert!(!model.editor().selection_history.is_empty());
+
+    update(&mut model, Msg::Document(DocumentMsg::InsertChar('!')));
+    assert!(model.editor().selection_history.is_empty());
+
+    let cursor_after_edit = *model.editor().primary_cursor();
+    update(&mut model, Msg::Editor(EditorMsg::ShrinkSelection));
+    let cursor_after_shrink = model.editor().primary_cursor();
+    assert_eq!(
+        (cursor_after_shrink.line, cursor_after_shrink.column),
+        (cursor_after_edit.line, cursor_after_edit.column)
+    );
+}
+
+#[test]
+fn test_multicursor_change_invalidates_selection_history() {
+    let mut model = test_model("hello\nworld\n", 0, 2);
+    update(&mut model, Msg::Editor(EditorMsg::ExpandSelection));
+    assert!(!model.editor().selection_history.is_empty());
+
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::ToggleCursorAtPosition { line: 1, column: 2 }),
+    );
+    assert!(model.editor().selection_history.is_empty());
 }
 
 #[test]

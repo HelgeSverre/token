@@ -122,10 +122,12 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
         return None;
     }
 
-    // Clear occurrence selection state on any editing operation
-    // (except Copy which doesn't modify the document)
+    // Editing invalidates occurrence state and semantic selection history.
+    // Copy is the sole document command that cannot change either positions or text.
     if !matches!(msg, DocumentMsg::Copy) {
-        model.editor_mut().occurrence_state = None;
+        let editor = model.editor_mut();
+        editor.occurrence_state = None;
+        editor.clear_selection_history();
     }
 
     match msg {

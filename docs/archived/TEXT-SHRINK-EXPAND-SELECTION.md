@@ -1,5 +1,11 @@
 # Expand / Shrink Selection
 
+> **Historical baseline:** This document describes the completed plaintext
+> `cursor → word → line → document` implementation. The current
+> [Syntax-Aware Expand Selection](../feature/syntax-aware-expand-selection.md)
+> design supersedes it for future structural selection behavior. The historical
+> requirements below remain unchanged.
+
 **Status:** ✅ Complete  
 **Completed:** 2025-12-06
 

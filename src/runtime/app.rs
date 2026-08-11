@@ -91,7 +91,6 @@ pub struct App {
     /// Syntax highlight debounce deadlines: document_id → (deadline, revision)
     syntax_deadlines: HashMap<token::model::editor_area::DocumentId, (Instant, u64)>,
     /// File paths queued for background loading after startup
-    pending_file_loads: Vec<std::path::PathBuf>,
     /// Receiver for background PTY spawn completion. Spawned asynchronously
     /// because `portable_pty` startup can block on shell initialization.
     terminal_spawn_rx: Option<(usize, TerminalSpawnReceiver)>,
@@ -145,17 +144,9 @@ impl App {
 
         // Extract file paths and workspace from config
         let demo_mode = matches!(startup_config.mode, StartupMode::Demo);
-        let mut file_paths = startup_config.file_paths();
+        let file_paths = startup_config.file_paths();
         let workspace_root = startup_config.workspace_root().cloned();
         let initial_position = startup_config.initial_position;
-
-        // Load the first file synchronously (needed for immediate editing).
-        // Defer additional files to background loads so startup isn't blocked.
-        let pending_file_loads = if file_paths.len() > 1 {
-            file_paths.split_off(1)
-        } else {
-            Vec::new()
-        };
 
         let mut model = AppModel::new(window_width, window_height, 1.0, file_paths);
         if demo_mode {
@@ -224,7 +215,6 @@ impl App {
             webview_manager: WebviewManager::new(),
             click_tracker: ClickTracker::default(),
             syntax_deadlines: HashMap::new(),
-            pending_file_loads,
             terminal_spawn_rx: None,
             automation_rx,
             automation_profile: None,
@@ -1530,7 +1520,7 @@ impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
             let window_attributes = Window::default_attributes()
-                .with_title("Token")
+                .with_title(token::product::DISPLAY_NAME)
                 .with_window_icon(create_window_icon())
                 .with_inner_size(LogicalSize::new(800, 600)); // TODO: Persist window size/position/monitor on exit/boot
 
@@ -1560,11 +1550,6 @@ impl ApplicationHandler for App {
 
             self.window = Some(window);
             self.context = Some(context);
-
-            // Dispatch background loads for any additional startup files
-            for path in std::mem::take(&mut self.pending_file_loads) {
-                self.process_cmd(Cmd::OpenFileInEditor { path });
-            }
         }
     }
 
@@ -1940,6 +1925,40 @@ mod tests {
     }
 
     #[test]
+    fn multiple_startup_files_open_as_distinct_tabs() {
+        let directory = tempfile::tempdir().expect("temporary directory should be created");
+        let first = directory.path().join("first.rs");
+        let second = directory.path().join("second.py");
+        std::fs::write(&first, "fn main() {}\n").expect("first fixture should be written");
+        std::fs::write(&second, "print('hello')\n").expect("second fixture should be written");
+        let config = StartupConfig {
+            mode: StartupMode::MultipleFiles(vec![first.clone(), second.clone()]),
+            initial_position: None,
+            wait_mode: false,
+        };
+
+        let app = App::new(800, 600, config, None);
+        let open_paths: std::collections::HashSet<_> = app
+            .model
+            .editor_area
+            .documents
+            .values()
+            .filter_map(|document| document.file_path.as_ref())
+            .collect();
+        let tab_count: usize = app
+            .model
+            .editor_area
+            .groups
+            .values()
+            .map(|group| group.tabs.len())
+            .sum();
+
+        assert_eq!(tab_count, 2);
+        assert!(open_paths.contains(&first));
+        assert!(open_paths.contains(&second));
+    }
+
+    #[test]
     fn spawn_terminal_command_adds_session_to_model() {
         use std::time::{Duration, Instant};
 
@@ -2086,6 +2105,12 @@ fn syntax_worker_loop(
             let highlights = parser_state
                 .take_last_highlight_patch()
                 .unwrap_or(full_highlights);
+            let syntax_tree =
+                parser_state
+                    .get_cached_tree(req.document_id)
+                    .map(|(tree, language)| {
+                        token::syntax::SyntaxTreeSnapshot::new(req.revision, language, tree.clone())
+                    });
 
             // Extract outline from the cached tree (just parsed above)
             let outline_started = Instant::now();
@@ -2115,6 +2140,7 @@ fn syntax_worker_loop(
                 document_id: req.document_id,
                 revision: req.revision,
                 highlights,
+                syntax_tree,
                 outline,
                 timing: Box::new(token::messages::SyntaxWorkerTiming {
                     snapshot_ms: req.snapshot_ms,

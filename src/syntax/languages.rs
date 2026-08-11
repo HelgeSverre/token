@@ -41,6 +41,7 @@ pub enum LanguageId {
     Blade,
     // Phase 8 languages (framework)
     Vue,
+    Svelte,
     // Phase 8 languages (build tooling)
     Just,
 }
@@ -83,6 +84,7 @@ impl LanguageId {
             "xml" | "xsd" | "xsl" | "xslt" | "svg" | "plist" => LanguageId::Xml,
             // Phase 8 (framework)
             "vue" => LanguageId::Vue,
+            "svelte" => LanguageId::Svelte,
             // Default
             _ => LanguageId::PlainText,
         }
@@ -151,6 +153,7 @@ impl LanguageId {
             LanguageId::Sema => "Sema",
             LanguageId::Blade => "Blade",
             LanguageId::Vue => "Vue",
+            LanguageId::Svelte => "Svelte",
             LanguageId::Just => "Just",
         }
     }
@@ -194,6 +197,7 @@ impl LanguageId {
             "ini" | "conf" => Some(LanguageId::Ini),
             "blade" => Some(LanguageId::Blade),
             "vue" => Some(LanguageId::Vue),
+            "svelte" => Some(LanguageId::Svelte),
             "just" | "justfile" => Some(LanguageId::Just),
             // Don't inject markdown into markdown
             "markdown" | "md" => None,
@@ -247,6 +251,7 @@ mod tests {
         assert_eq!(LanguageId::from_extension("svg"), LanguageId::Xml);
         // Phase 8
         assert_eq!(LanguageId::from_extension("vue"), LanguageId::Vue);
+        assert_eq!(LanguageId::from_extension("svelte"), LanguageId::Svelte);
         // Note: Blade is detected via from_path() not from_extension()
         // Unknown
         assert_eq!(LanguageId::from_extension("txt"), LanguageId::PlainText);

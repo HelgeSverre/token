@@ -648,6 +648,9 @@ impl Renderer {
         model: &AppModel,
         show_perf_overlay: bool,
     ) -> Damage {
+        #[cfg(not(debug_assertions))]
+        let _ = show_perf_overlay;
+
         // Force full redraw for complex overlays
         if model.ui.active_modal.is_some() {
             return Damage::Full;

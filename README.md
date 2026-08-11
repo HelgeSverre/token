@@ -28,16 +28,16 @@ Requires the [Rust toolchain](https://rustup.rs/).
 ```bash
 git clone https://github.com/HelgeSverre/token
 cd token
-make setup    # Install dependencies
-make release  # Build optimized binary
-make run      # Run the editor
+just setup    # Install dependencies
+just release  # Build optimized binary
+just run      # Run the editor
 ```
 
 For development:
 
 ```bash
-make dev      # Run debug build (faster compile)
-make watch    # Start bacon watch mode
+just dev      # Run debug build (faster compile)
+just watch    # Start bacon watch mode
 ```
 
 ---
@@ -121,17 +121,22 @@ See the documentation for details:
 
 ## Commands
 
-Run `make help` for the full command list.
+Run `just help` for the full command list.
 
 | Command        | Description                      |
 | -------------- | -------------------------------- |
-| `make build`   | Build debug binary               |
-| `make release` | Build optimized release binary   |
-| `make run`     | Run release build                |
-| `make dev`     | Run debug build (faster compile) |
-| `make test`    | Run all tests                    |
-| `make fmt`     | Format code                      |
-| `make lint`    | Run clippy lints                 |
+| `just build`   | Build debug binary               |
+| `just release` | Build optimized release binary   |
+| `just run`     | Run release build                |
+| `just dev`     | Run debug build (faster compile) |
+| `just test`    | Run all tests                    |
+| `just fmt`     | Format code                      |
+| `just lint`    | Run clippy lints                 |
+
+The installed command is named `token`; desktop bundles and operating-system
+UI use the product name `Token`. On macOS, `just app` detects the host
+architecture, builds the native bundle and versioned archive, and opens
+`Token.app`.
 
 ---
 

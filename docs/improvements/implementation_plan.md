@@ -74,7 +74,7 @@ We will implement execution handlers for the new commands inside the winit appli
 
 ### Component 3: Passive Model Layer (`src/model/mod.rs`)
 
-We will make `AppModel` completely pure by eliminating thread spawning from the recent files tracking logic.
+We will just `AppModel` completely pure by eliminating thread spawning from the recent files tracking logic.
 
 #### [MODIFY] [mod.rs](file:///Users/helge/code/token-editor/src/model/mod.rs)
 
@@ -140,20 +140,20 @@ We will refactor update handlers to return the appropriate commands instead of r
 
 - Build debug binary to verify compilation:
   ```bash
-  make build
+  just build
   ```
 - Run full test suite:
   ```bash
-  make test
+  just test
   ```
 - Run clippy lints to check for compiler/clippy warnings:
   ```bash
-  make lint
+  just lint
   ```
 
 ### Manual Verification
 
-- Launch application using `make run`.
+- Launch application using `just run`.
 - Open several files from explorer and verify they are successfully saved to the recent files list without thread lockups.
 - Trigger Copy/Cut/Paste inside a text document, modal inputs (such as Go to Line), and CSV cells, and verify standard clipboard integration works perfectly.
 - Trigger Open Keybindings when keymap doesn't exist, verify default keymap file is created and opened without latency.

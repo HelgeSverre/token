@@ -5,42 +5,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build Commands
 
 ```bash
-make build               # Build debug binary
-make release             # Build optimized release binary
-make run                 # Run release build with sample file
-make dev                 # Run debug build (faster compile)
-make test                # Run all tests (nextest + doctests)
-make test-one TEST=name  # Run specific test
-make test-verbose        # Run tests with output
-make fmt                 # Format Rust code and markdown
-make lint                # Run clippy lints (mirrors CI)
+just build               # Build debug binary
+just release             # Build optimized release binary
+just run                 # Run release build with sample file
+just dev                 # Run debug build (faster compile)
+just test                # Run all tests (nextest + doctests)
+just test-one name       # Run specific test
+just test-verbose        # Run tests with output
+just fmt                 # Format Rust code and markdown
+just lint                # Run clippy lints (mirrors CI)
 ```
 
 ### Development Workflow
 
 ```bash
-make watch               # Start bacon watch mode
-make watch-lint          # Watch with clippy
-make test-retry          # Tests with retries for flaky tests
+just watch               # Start bacon watch mode
+just watch-lint          # Watch with clippy
+just test-retry          # Tests with retries for flaky tests
 ```
 
 ### Profiling & Benchmarks
 
 ```bash
-make bench               # Run all benchmarks
-make bench-rope          # Rope operation benchmarks
-make bench-render        # Rendering benchmarks
-make bench-glyph         # Glyph cache benchmarks
-make flamegraph          # Generate CPU flamegraph
-make profile-samply      # Interactive profiling (Firefox Profiler)
-make profile-memory      # Heap profiling with dhat
-make coverage            # Generate HTML coverage report
+just bench               # Run all benchmarks
+just bench-rope          # Rope operation benchmarks
+just bench-render        # Rendering benchmarks
+just bench-glyph         # Glyph cache benchmarks
+just flamegraph          # Generate CPU flamegraph
+just profile-samply      # Interactive profiling (Firefox Profiler)
+just profile-memory      # Heap profiling with dhat
+just coverage            # Generate HTML coverage report
 ```
 
 ### Performance Workflow Notes
 
-- `make workspace` launches `target/debug/token ./` using the dev profile. That is intentionally compile-fast and can be dramatically slower than release for CPU rendering work.
-- Use `make release`, `make run`, or the profiling profile when making performance claims. Debug numbers are mainly useful for relative local diagnosis.
+- `just workspace` launches `target/debug/token ./` using the dev profile. That is intentionally compile-fast and can be dramatically slower than release for CPU rendering work.
+- Use `just release`, `just run`, or the profiling profile when making performance claims. Debug numbers are mainly useful for relative local diagnosis.
 - The perf overlay (`F2`, debug builds only) currently forces full redraw while visible. It is useful for stage breakdowns, but it perturbs the numbers it shows.
 - Perf instrumentation is stage-based. The source of truth is `src/perf.rs` (`PerfStage`, `PerfStats::measure_stage`, `render_perf_overlay`). `src/runtime/perf.rs` is only a re-export shim for runtime code.
 - When adding timings, time the phase that actually owns the work and extend the shared stage registry instead of keeping a separate hard-coded overlay list.
@@ -62,12 +62,12 @@ make coverage            # Generate HTML coverage report
 ### CI & Cross-Compilation
 
 ```bash
-make ci                  # Test GitHub Actions locally with act
-make compile-all         # Build for all platforms
-make setup               # Install all dev tools
+just ci                  # Test GitHub Actions locally with act
+just compile-all         # Build for all platforms
+just setup               # Install all dev tools
 ```
 
-Run `make help` for complete command list.
+Run `just help` for complete command list.
 
 ## Architecture
 
@@ -240,7 +240,7 @@ When releasing a new version, follow these steps:
 
 1. **Update version** in `Cargo.toml`
 2. **Update `docs/CHANGELOG.md`** with release notes under new version header
-3. **Run tests and lint**: `make test && make lint`
+3. **Run tests and lint**: `just test && just lint`
 4. **Commit changes**:
    ```bash
    git add -A && git commit -m "chore: release vX.Y.Z"

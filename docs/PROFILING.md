@@ -6,22 +6,22 @@ Performance analysis tools and workflows for the Token editor on macOS.
 
 ```bash
 # Build with debug symbols for profiling
-make build-prof
+just build-prof
 
 # Headless render benchmark (isolates rendering from windowing)
 ./target/profiling/profile_render --frames 500 --splits 3 --stats
 
 # Interactive profiling with samply (opens Firefox Profiler)
-make profile-samply
+just profile-samply
 
 # CPU flamegraph
-make flamegraph
+just flamegraph
 
 # Heap profiling with DHAT
-make profile-memory
+just profile-memory
 
 # Chrome trace with named render stages (open in Perfetto)
-make profile-chrome
+just profile-chrome
 ```
 
 ## Recommended Workflow
@@ -31,7 +31,7 @@ make profile-chrome
 Rule out rendering as the bottleneck. The headless binary runs the render pipeline without windowing or event handling.
 
 ```bash
-make build-prof
+just build-prof
 ./target/profiling/profile_render --frames 500 --splits 3 --lines 5000 --stats
 ```
 
@@ -42,7 +42,7 @@ If headless is fast but the live app is slow, the issue is in event handling, in
 **Samply** (recommended — produces Firefox Profiler recordings):
 
 ```bash
-make profile-samply
+just profile-samply
 # Or manually:
 samply record ./target/profiling/token samples/large_file.rs
 ```
@@ -61,7 +61,7 @@ kill $APP_PID
 
 ```bash
 # DHAT heap profiler (opens web viewer)
-make profile-memory
+just profile-memory
 
 # Instruments Allocations
 xcrun xctrace record --template "Allocations" --launch ./target/profiling/token -- samples/large_file.rs -o /tmp/alloc.trace
@@ -72,7 +72,7 @@ xcrun xctrace record --template "Allocations" --launch ./target/profiling/token 
 When you need to see exactly which render stages cost time across many frames, capture a Chrome trace. Every `PerfStats` stage appears as a named span in the timeline.
 
 ```bash
-make profile-chrome
+just profile-chrome
 # Interact with the editor, then quit — Perfetto opens automatically
 # Drag-and-drop token-trace.json into the browser
 ```
@@ -84,7 +84,7 @@ See [Chrome Trace Export (Perfetto)](#chrome-trace-export-perfetto) below for fu
 In debug builds, press F2 for a live performance overlay showing frame time, per-stage breakdown, glyph cache stats, and sparklines. Note: the overlay forces full redraws while visible, so it perturbs its own measurements.
 
 ```bash
-make dev
+just dev
 # Press F2 in the running editor
 ```
 
@@ -93,14 +93,14 @@ make dev
 All benchmarks use **Divan** with allocation tracking via `divan::AllocProfiler`.
 
 ```bash
-make bench               # Run all benchmarks
-make bench-rope          # Rope insert/delete/navigate
-make bench-render        # Buffer ops, alpha blending, line rendering
-make bench-glyph         # Font rasterization, cache hit patterns
-make bench-loop          # Main update→render cycle
-make bench-search        # Find/replace operations
-make bench-layout        # Text measurement, viewport calculation
-make bench-syntax        # Syntax highlighting (all 20 languages)
+just bench               # Run all benchmarks
+just bench-rope          # Rope insert/delete/navigate
+just bench-render        # Buffer ops, alpha blending, line rendering
+just bench-glyph         # Font rasterization, cache hit patterns
+just bench-loop          # Main update→render cycle
+just bench-search        # Find/replace operations
+just bench-layout        # Text measurement, viewport calculation
+just bench-syntax        # Syntax highlighting (all 20 languages)
 ```
 
 Individual bench files live in `benches/`. Run a specific one:
@@ -137,7 +137,7 @@ The editor's 28 internal render stages (`PerfStats`) can emit `tracing` spans vi
 The quickest way to capture a trace:
 
 ```bash
-make profile-chrome
+just profile-chrome
 ```
 
 This builds a release binary with `--features profile-chrome`, opens the token codebase as a workspace (a realistic workload with sidebar, file tree, syntax highlighting), and writes `token-trace.json` when the editor exits. Perfetto UI opens automatically in your browser — drag-and-drop `token-trace.json` into it.
@@ -219,7 +219,7 @@ Tracy can be added as another feature flag (`profile-tracy = ["profile-tracing",
 | `profiling` | Release speed + debug symbols    | Inherits release, debug=true, lto=false                 |
 | `dist`      | Distribution (max optimization)  | Inherits release, lto=fat, codegen-units=1, strip=true  |
 
-Always use `--profile profiling` (or `make build-prof`) for profiling. The `dist` profile strips symbols.
+Always use `--profile profiling` (or `just build-prof`) for profiling. The `dist` profile strips symbols.
 
 ## Profile-Guided Optimization (PGO)
 
@@ -259,7 +259,7 @@ render_text_area       1%   # Actual work
 
 ## Troubleshooting
 
-- **No symbols in traces** — Rebuild with `make build-prof`. Check dSYM is present.
-- **`cargo flamegraph` permission errors** — macOS SIP restricts dtrace. Use `make profile-samply` instead.
+- **No symbols in traces** — Rebuild with `just build-prof`. Check dSYM is present.
+- **`cargo flamegraph` permission errors** — macOS SIP restricts dtrace. Use `just profile-samply` instead.
 - **Empty xctrace stacks** — Binary may be stripped. Ensure `debug = true` in the cargo profile.
 - **Sanitizers fail on Apple Silicon** — ASan/LSan are limited on arm64 macOS. Use Instruments or DHAT instead.
