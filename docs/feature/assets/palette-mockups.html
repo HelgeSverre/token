@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Token — Command Palette &amp; Overlay Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Token actual theme values (themes/dark.yaml, default-dark)
+   ============================================================ */
+:root {
+  --ed-bg: #1E1E1E;
+  --ed-fg: #D4D4D4;
+  --ed-line: #2A2A2A;
+  --ed-sel: #264F78;
+  --ov-bg: #2B2D30;
+  --ov-fg: #E0E0E0;
+  --ov-border: #43454A;
+  --ov-input: #1E1E1E;
+  --ov-hl: #80FF80;
+  --accent: #007ACC;
+  --gutter-fg: #858585;
+  --tab-bg: #252526;
+  --tab-inactive: #2D2D2D;
+  --tab-border: #3C3C3C;
+  --err: #FF8080;
+  --warn: #FFFF80;
+  --err-vsc: #F14C4C;
+  --warn-vsc: #CCA700;
+  --info-vsc: #3794FF;
+  /* syntax */
+  --kw: #C586C0; --fn: #DCDCAA; --str: #CE9178; --num: #B5CEA8;
+  --cmt: #6A9955; --typ: #4EC9B0; --var: #9CDCFE; --cst: #569CD6;
+  --esc: #D7BA7D;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #141415;
+  color: #C9C9CE;
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 48px 32px 120px;
+}
+
+/* ============================================================
+   Page chrome
+   ============================================================ */
+.page-header { max-width: 1500px; margin: 0 auto 56px; }
+.page-header h1 { font-size: 26px; font-weight: 700; color: #F0F0F2; letter-spacing: -0.5px; }
+.page-header h1 span { color: var(--accent); }
+.page-header p { color: #86868E; max-width: 78ch; margin-top: 10px; font-size: 13px; }
+.page-header .legend { margin-top: 16px; font-size: 12px; color: #6A6A72; }
+.page-header .legend b { color: #A8A8B0; font-weight: 500; }
+
+.section { max-width: 1500px; margin: 0 auto 72px; }
+.section > h2 {
+  font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 2.5px;
+  color: #6A6A72; border-bottom: 1px solid #26262A; padding-bottom: 10px; margin-bottom: 28px;
+}
+.section > h2 em { font-style: normal; color: var(--accent); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(660px, 1fr)); gap: 40px 32px; }
+.grid .wide { grid-column: 1 / -1; }
+
+.card h3 { font-size: 15px; font-weight: 600; color: #E4E4E8; margin-bottom: 2px; }
+.card h3 .tag {
+  display: inline-block; font-size: 10px; font-weight: 500; vertical-align: 2px;
+  padding: 1px 7px; margin-left: 8px; border-radius: 3px; letter-spacing: 0.5px;
+  background: #24313D; color: #61AFEF; border: 1px solid #2E4A63;
+}
+.card h3 .tag.base { background: #2A2A2E; color: #909098; border: 1px solid #3A3A40; }
+.card h3 .tag.lsp  { background: #33291F; color: #E5A55D; border: 1px solid #4A3A28; }
+.card > p { font-size: 12px; color: #7C7C84; margin-bottom: 14px; max-width: 90ch; }
+.card > p b { color: #AEAEB6; font-weight: 500; }
+
+/* ============================================================
+   Fake Token window
+   ============================================================ */
+.win {
+  background: var(--ed-bg);
+  border: 1px solid #000;
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.4);
+  font-size: 13px;
+  line-height: 19px;
+}
+.titlebar {
+  height: 34px; background: #2B2B2B; display: flex; align-items: center; justify-content: center;
+  color: #9A9A9A; font-size: 12px; position: relative; border-bottom: 1px solid #1A1A1A;
+}
+.dots { position: absolute; left: 12px; display: flex; gap: 8px; }
+.dots i { width: 12px; height: 12px; border-radius: 50%; background: #4A4A4A; }
+.dots i:nth-child(1){ background:#FF5F57 } .dots i:nth-child(2){ background:#FEBC2E } .dots i:nth-child(3){ background:#28C840 }
+
+.tabs { display: flex; background: var(--tab-bg); border-bottom: 1px solid var(--tab-border); height: 28px; font-size: 12px; }
+.tabs .t { padding: 0 14px; line-height: 28px; color: #808080; background: var(--tab-inactive); border-right: 1px solid var(--tab-border); }
+.tabs .t.on { color: #fff; background: var(--ed-bg); }
+
+.body { position: relative; min-height: 380px; }
+.body.tall { min-height: 470px; }
+.body.short { min-height: 300px; }
+
+.code { display: flex; padding: 6px 0; overflow: hidden; }
+.code .g { color: var(--gutter-fg); text-align: right; padding: 0 14px 0 18px; user-select: none; flex: none; }
+.code pre { font-family: var(--mono); font-size: 13px; line-height: 19px; color: var(--ed-fg); overflow: hidden; }
+.k { color: var(--kw); } .f { color: var(--fn); } .s { color: var(--str); }
+.n { color: var(--num); } .c { color: var(--cmt); } .t { color: var(--typ); }
+.v { color: var(--var); } .b { color: var(--cst); } .e { color: var(--esc); }
+
+.statusbar {
+  height: 22px; background: var(--accent); color: #fff; font-size: 12px;
+  display: flex; align-items: center; padding: 0 10px; gap: 0;
+}
+.statusbar .seg { padding: 0 8px; }
+.statusbar .sep { width: 1px; height: 100%; background: rgba(255,255,255,0.4); }
+.statusbar .grow { flex: 1; }
+
+.dim40 { position: absolute; inset: 0; background: rgba(0,0,0,0.40); }
+.dim25 { position: absolute; inset: 0; background: rgba(0,0,0,0.25); }
+
+kbd.cap {
+  font-family: var(--mono); font-size: 10px; color: #A5A8AE;
+  background: #35373C; border: 1px solid #4A4D53; border-bottom-width: 2px;
+  border-radius: 4px; padding: 1px 5px; min-width: 17px; text-align: center; display: inline-block;
+}
+.match { color: #4DAAFF; font-weight: 700; }
+
+/* ============================================================
+   A0 — Current implementation (baseline)
+   ============================================================ */
+.m-current {
+  position: absolute; left: 50%; transform: translateX(-50%); top: 84px;
+  width: 460px; background: var(--ov-bg); border: 1px solid var(--ov-border); padding: 12px;
+}
+.m-current .title { color: var(--ov-fg); margin-bottom: 4px; }
+.m-current .input { background: var(--ov-input); color: var(--ov-fg); padding: 4px 8px; height: 27px; }
+.m-current .input .caret { display:inline-block; width:1px; height:14px; background: var(--ov-hl); vertical-align: -2px; animation: blink 1.2s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.m-current .list { margin-top: 8px; }
+.m-current .row { display: flex; justify-content: space-between; padding: 0 4px; height: 19px; color: var(--ov-fg); }
+.m-current .row span:first-child { padding-left: 12px; }
+.m-current .row.sel { background: var(--ed-sel); margin: 0 4px; padding: 0; }
+.m-current .row.sel span:first-child { padding-left: 12px; }
+.m-current .kb { color: rgba(224,224,224,0.5); padding-right: 12px; }
+.m-current .more { color: rgba(224,224,224,0.5); padding-left: 16px; height: 19px; }
+
+/* ============================================================
+   Shared refined shell
+   ============================================================ */
+.sheet {
+  position: absolute; left: 50%; transform: translateX(-50%); top: 64px;
+  background: #26282C;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.55), 0 16px 44px rgba(0,0,0,0.55), 0 4px 12px rgba(0,0,0,0.35);
+  overflow: hidden;
+}
+
+/* ============================================================
+   A1 — Refined
+   ============================================================ */
+.m-refined { width: 520px; }
+.m-refined .inputbar { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+.m-refined .inputbar .glyph { color: #5C6066; flex: none; font-size: 14px; }
+.m-refined .inputbar .q { color: #ECECEE; font-size: 14px; }
+.m-refined .inputbar .q .ph { color: #5C6066; }
+.m-refined .inputbar .caret { display:inline-block; width:1.5px; height:16px; background:#4DAAFF; vertical-align:-3px; animation: blink 1.2s steps(1) infinite; }
+.m-refined .group { padding: 6px 0 2px; }
+.m-refined .group .gh {
+  font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #6E7278;
+  padding: 6px 14px 4px; font-weight: 600;
+}
+.m-refined .row {
+  display: flex; align-items: center; gap: 10px; padding: 0 10px; margin: 0 4px;
+  height: 30px; border-radius: 6px; color: #C9CBCF; font-size: 13px;
+}
+.m-refined .row .ic { width: 18px; text-align: center; flex: none; color: #8B8F96; font-size: 13px; }
+.m-refined .row .lbl { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-refined .row .kbs { display: flex; gap: 3px; flex: none; }
+.m-refined .row.sel { background: rgba(0,122,204,0.28); color: #FFF; }
+.m-refined .row.sel .ic { color: #4DAAFF; }
+.m-refined .footer {
+  display: flex; align-items: center; gap: 14px; padding: 8px 14px; margin-top: 4px;
+  border-top: 1px solid rgba(255,255,255,0.07); font-size: 11px; color: #6E7278; background: rgba(0,0,0,0.15);
+}
+.m-refined .footer .grow { flex: 1; }
+.m-refined .footer .hint { display: flex; align-items: center; gap: 5px; }
+
+/* ============================================================
+   A2 — Search Everywhere
+   ============================================================ */
+.m-se { width: 620px; }
+.m-se .setabs { display: flex; padding: 0 8px; border-bottom: 1px solid rgba(255,255,255,0.07); background: rgba(0,0,0,0.12); }
+.m-se .setabs .st { padding: 9px 13px 7px; font-size: 12px; color: #85888E; border-bottom: 2px solid transparent; }
+.m-se .setabs .st.on { color: #ECECEE; border-bottom-color: var(--accent); }
+.m-se .setabs .st .cnt { color: #5C6066; font-size: 10px; margin-left: 4px; }
+.m-se .inputbar { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+.m-se .inputbar .q { color: #ECECEE; }
+.m-se .inputbar .caret { display:inline-block; width:1.5px; height:15px; background:#4DAAFF; vertical-align:-2px; animation: blink 1.2s steps(1) infinite; }
+.m-se .inputbar .scope { margin-left: auto; font-size: 11px; color: #6E7278; }
+.m-se .row { display: flex; align-items: center; gap: 10px; height: 28px; padding: 0 16px; font-size: 13px; color: #C9CBCF; }
+.m-se .row .ic { width: 17px; flex: none; text-align: center; font-size: 12px; }
+.m-se .row .where { margin-left: auto; font-size: 11px; color: #63666C; }
+.m-se .row.sel { background: rgba(0,122,204,0.30); color: #fff; }
+.m-se .row.sel .where { color: #9FBDD4; }
+.m-se .ghd {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #6E7278; font-weight: 600;
+  padding: 8px 16px 3px; display: flex; align-items: center; gap: 8px;
+}
+.m-se .ghd::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.06); }
+.m-se .foot { padding: 7px 16px; font-size: 11px; color: #6E7278; border-top: 1px solid rgba(255,255,255,0.07); background: rgba(0,0,0,0.15); display: flex; gap: 16px; }
+
+/* ============================================================
+   A3 — Launcher
+   ============================================================ */
+.m-launch { width: 580px; top: 52px; }
+.m-launch .inputbar { display: flex; align-items: center; gap: 12px; padding: 15px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.m-launch .inputbar .q { font-size: 17px; color: #F0F0F2; font-weight: 400; }
+.m-launch .inputbar .q .ph { color: #55585E; }
+.m-launch .inputbar .caret { display:inline-block; width:2px; height:19px; background:#4DAAFF; vertical-align:-3px; animation: blink 1.2s steps(1) infinite; }
+.m-launch .row { display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 10px; margin: 0 6px; border-radius: 8px; }
+.m-launch .row .tile {
+  width: 26px; height: 26px; border-radius: 6px; flex: none;
+  display: flex; align-items: center; justify-content: center; font-size: 13px;
+  background: #33363B; color: #A8ACB2;
+}
+.m-launch .row .name { color: #DDDEE1; font-size: 13.5px; }
+.m-launch .row .desc { color: #6E7278; font-size: 12px; margin-left: 2px; }
+.m-launch .row .type { margin-left: auto; font-size: 11px; color: #63666C; flex: none; }
+.m-launch .row.sel { background: rgba(255,255,255,0.07); }
+.m-launch .row.sel .type { color: #9A9DA3; }
+.m-launch .tile.rs  { background: #3A2E28; color: #E5A55D; }
+.m-launch .tile.cmd { background: #24313D; color: #4DAAFF; }
+.m-launch .tile.th  { background: #322A3A; color: #C586C0; }
+.m-launch .tile.gr  { background: #253326; color: #7CC379; }
+.m-launch .foot {
+  display: flex; align-items: center; padding: 9px 16px; gap: 6px; margin-top: 6px;
+  border-top: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.18); font-size: 11px; color: #6E7278;
+}
+.m-launch .foot .logo { width: 14px; height: 14px; border-radius: 4px; background: var(--accent); display:inline-block; margin-right: 6px; }
+.m-launch .foot .grow { flex: 1; }
+.m-launch .foot .act { display: flex; align-items: center; gap: 6px; padding-left: 14px; }
+
+/* ============================================================
+   A4 — Hairline minimal
+   ============================================================ */
+.m-hair {
+  width: 500px; top: 70px;
+  background: rgba(28,29,32,0.82);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+}
+.m-hair .inputbar { padding: 13px 18px; font-size: 14px; color: #F0F0F2; }
+.m-hair .inputbar .ph { color: #5F626A; }
+.m-hair .inputbar .caret { display:inline-block; width:1.5px; height:16px; background:#F0F0F2; vertical-align:-3px; animation: blink 1.2s steps(1) infinite; }
+.m-hair .row {
+  display: flex; align-items: center; height: 34px; padding: 0 18px; gap: 12px;
+  color: #B9BBC0; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.055);
+  position: relative;
+}
+.m-hair .row .kb { margin-left: auto; color: #63666C; font-size: 11.5px; letter-spacing: 1px; }
+.m-hair .row.sel { background: rgba(255,255,255,0.055); color: #FFF; }
+.m-hair .row.sel::before {
+  content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px;
+  background: #4DAAFF; border-radius: 0 2px 2px 0;
+}
+.m-hair .row.sel .kb { color: #9A9DA3; }
+
+/* ============================================================
+   B1 — Recent files, grouped
+   ============================================================ */
+.m-recent { width: 640px; }
+.m-recent .inputbar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.07); color: #ECECEE; }
+.m-recent .inputbar .ph { color: #5C6066; }
+.m-recent .inputbar .caret { display:inline-block; width:1.5px; height:15px; background:#4DAAFF; vertical-align:-2px; animation: blink 1.2s steps(1) infinite; }
+.m-recent .ghd { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #6E7278; font-weight: 600; padding: 9px 16px 3px; }
+.m-recent .row { display: flex; align-items: center; gap: 10px; height: 30px; margin: 0 6px; padding: 0 10px; border-radius: 6px; font-size: 13px; }
+.m-recent .row .fic { width: 17px; text-align: center; flex: none; font-size: 12px; }
+.m-recent .row .fname { color: #D6D8DB; flex: none; }
+.m-recent .row .fpath { color: #63666C; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-recent .row .when { margin-left: auto; color: #63666C; font-size: 11px; flex: none; }
+.m-recent .row .pin { color: #6E7278; font-size: 11px; flex: none; margin-left: 8px; }
+.m-recent .row.sel { background: rgba(0,122,204,0.28); }
+.m-recent .row.sel .fname { color: #fff; }
+.m-recent .row.sel .fpath, .m-recent .row.sel .when { color: #A9C7DC; }
+
+/* ============================================================
+   B2 — File finder + preview
+   ============================================================ */
+.m-finder { width: 780px; top: 46px; }
+.m-finder .inputbar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.07); color: #ECECEE; }
+.m-finder .inputbar .caret { display:inline-block; width:1.5px; height:15px; background:#4DAAFF; vertical-align:-2px; animation: blink 1.2s steps(1) infinite; }
+.m-finder .cols { display: flex; height: 252px; }
+.m-finder .list { width: 46%; border-right: 1px solid rgba(255,255,255,0.07); padding: 6px 0; overflow: hidden; }
+.m-finder .row { display: flex; align-items: center; gap: 9px; height: 30px; margin: 0 5px; padding: 0 9px; border-radius: 6px; font-size: 13px; }
+.m-finder .row .fic { flex: none; font-size: 12px; }
+.m-finder .row .fname { color: #D6D8DB; white-space: nowrap; }
+.m-finder .row .fpath { color: #63666C; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-finder .row.sel { background: rgba(0,122,204,0.28); }
+.m-finder .row.sel .fname { color: #fff; }
+.m-finder .prev { flex: 1; background: #1B1C1E; padding: 10px 0; font-size: 11.5px; line-height: 17px; overflow: hidden; }
+.m-finder .prev .ph { display: flex; justify-content: space-between; color: #6E7278; font-size: 10.5px; padding: 0 14px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); margin-bottom: 6px; }
+.m-finder .prev pre { padding: 0 14px; color: #A8AAAE; }
+.m-finder .foot { padding: 7px 16px; font-size: 11px; color: #6E7278; border-top: 1px solid rgba(255,255,255,0.07); background: rgba(0,0,0,0.15); display: flex; gap: 16px; }
+
+/* ============================================================
+   C1 — Completion
+   ============================================================ */
+.pop {
+  position: absolute;
+  background: #26282C;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.5), 0 12px 32px rgba(0,0,0,0.55);
+  overflow: hidden; z-index: 5;
+}
+.m-comp { left: 210px; top: 118px; display: flex; }
+.m-comp .items { width: 300px; padding: 4px; }
+.m-comp .row { display: flex; align-items: center; gap: 8px; height: 24px; padding: 0 7px; border-radius: 5px; font-size: 12.5px; color: #C9CBCF; }
+.m-comp .row .kind {
+  width: 16px; height: 16px; border-radius: 4px; flex: none; font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.m-comp .row .sig { margin-left: auto; color: #63666C; font-size: 11px; white-space: nowrap; }
+.m-comp .row.sel { background: rgba(0,122,204,0.30); color: #fff; }
+.m-comp .row.sel .sig { color: #9FBDD4; }
+.kind.m { background: #3A3226; color: #DCDCAA; }
+.kind.f { background: #322A3A; color: #C586C0; }
+.kind.v { background: #24313D; color: #9CDCFE; }
+.kind.s { background: #253326; color: #B5CEA8; }
+.kind.t { background: #1F3330; color: #4EC9B0; }
+.m-comp .docs {
+  width: 250px; border-left: 1px solid rgba(255,255,255,0.08); background: #222327;
+  padding: 10px 12px; font-size: 11.5px; line-height: 17px; color: #9FA2A8;
+}
+.m-comp .docs .dsig { color: #DCDCAA; margin-bottom: 8px; font-size: 11.5px; }
+.m-comp .docs .dsig .p { color: #9CDCFE; } .m-comp .docs .dsig .ty { color: #4EC9B0; }
+.m-comp .docs em { color: #C9CBCF; font-style: normal; }
+
+/* ============================================================
+   C2 — Hover card
+   ============================================================ */
+.m-hover { left: 176px; top: 36px; width: 420px; }
+.m-hover .diag { display: flex; gap: 8px; padding: 9px 12px; background: rgba(241,76,76,0.10); border-bottom: 1px solid rgba(241,76,76,0.25); font-size: 12px; color: #E8A0A0; }
+.m-hover .diag .sev { color: var(--err-vsc); flex: none; }
+.m-hover .diag .src { margin-left: auto; color: #8A6B6B; font-size: 11px; flex: none; }
+.m-hover .sigblock { padding: 10px 12px; font-size: 12.5px; background: #202226; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.m-hover .docblock { padding: 10px 12px; font-size: 12px; line-height: 18px; color: #A8ABB1; }
+.m-hover .docblock code { background: #1A1B1E; border: 1px solid rgba(255,255,255,0.07); border-radius: 3px; padding: 0 4px; color: #CE9178; font-size: 11.5px; }
+.m-hover .foot { padding: 6px 12px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 11px; color: #63666C; display: flex; gap: 14px; }
+
+/* ============================================================
+   C3 — Diagnostics in the editor
+   ============================================================ */
+.sq-err { text-decoration: underline wavy var(--err-vsc) 1px; text-underline-offset: 3px; }
+.sq-warn { text-decoration: underline wavy var(--warn-vsc) 1px; text-underline-offset: 3px; }
+.gd { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-left: 5px; vertical-align: 1px; }
+.gd.e { background: var(--err-vsc); } .gd.w { background: var(--warn-vsc); }
+.inline-msg { color: #7A5252; font-style: italic; padding-left: 24px; font-size: 12px; }
+.statusbar .dseg { display: flex; gap: 10px; align-items: center; }
+.statusbar .de { color: #FFD2D2; } .statusbar .dw { color: #FFF3C4; }
+
+/* ============================================================
+   C4 — Problems panel
+   ============================================================ */
+.problems {
+  position: absolute; left: 0; right: 0; bottom: 22px; height: 168px;
+  background: #222327; border-top: 1px solid var(--tab-border);
+  font-size: 12px;
+}
+.problems .phead { display: flex; align-items: center; height: 30px; padding: 0 14px; border-bottom: 1px solid rgba(255,255,255,0.06); gap: 16px; }
+.problems .phead .ptitle { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: #9A9DA3; font-weight: 600; }
+.problems .phead .counts { display: flex; gap: 12px; font-size: 11.5px; }
+.problems .phead .counts .e { color: var(--err-vsc); } .problems .phead .counts .w { color: var(--warn-vsc); }
+.problems .phead .x { margin-left: auto; color: #6E7278; }
+.problems .pfile { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 14px; color: #B9BBC0; }
+.problems .pfile .cnt { color: #63666C; font-size: 11px; }
+.problems .prow { display: flex; align-items: center; gap: 9px; height: 24px; padding: 0 14px 0 34px; color: #A8ABB1; }
+.problems .prow .sev { flex: none; width: 14px; }
+.problems .prow .sev.e { color: var(--err-vsc); } .problems .prow .sev.w { color: var(--warn-vsc); }
+.problems .prow .loc { margin-left: auto; color: #63666C; font-size: 11px; }
+.problems .prow.sel { background: rgba(0,122,204,0.25); color: #E8EAEC; }
+.problems .prow.sel .loc { color: #9FBDD4; }
+
+/* ============================================================
+   C5 — Code actions
+   ============================================================ */
+.m-actions { left: 235px; top: 137px; width: 320px; padding: 4px; }
+.m-actions .ahead { font-size: 10.5px; color: #6E7278; padding: 5px 9px 3px; letter-spacing: 1px; text-transform: uppercase; }
+.m-actions .row { display: flex; align-items: center; gap: 9px; height: 27px; padding: 0 9px; border-radius: 5px; font-size: 12.5px; color: #C9CBCF; }
+.m-actions .row .bulb { flex: none; }
+.m-actions .row .pref { color: #DCDCAA; font-size: 10px; margin-left: auto; }
+.m-actions .row.sel { background: rgba(0,122,204,0.30); color: #fff; }
+
+.note { font-size: 11.5px; color: #64646C; margin-top: 12px; max-width: 88ch; }
+.note b { color: #96969E; font-weight: 500; }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <h1>Token <span>·</span> Command Palette &amp; Overlay Mockups</h1>
+  <p>Design spike for a visually stronger palette/overlay system, plus the surfaces the LSP integration
+     (diagnostics, hover, completion, code actions, problems panel) will need. All mockups use the real
+     <b>default-dark</b> theme values and JetBrains Mono 14px — what you see is what the softbuffer painter would draw.</p>
+  <p class="legend">Everything below uses only primitives the renderer already has or can trivially add:
+     <b>filled rects, 1px borders, alpha blending, rounded corners</b> (small radius fills), and text.
+     Backdrop blur (mockup A4) is the one exception — flagged where used.</p>
+</header>
+
+<!-- ============================================================ -->
+<section class="section">
+  <h2><em>A</em> — Command Palette directions</h2>
+  <div class="grid">
+
+    <!-- A0 current -->
+    <div class="card" id="a0">
+      <h3>A0 — Current implementation <span class="tag base">baseline</span></h3>
+      <p>What ships today: flat #2B2D30 panel, square corners, 1px #43454A border, "Command Palette" title text,
+         full-row #264F78 selection bar, dim keybinding text. No icons, no shadow, no match highlighting.</p>
+      <div class="win">
+        <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div>Token</div>
+        <div class="body">
+          <div class="code">
+            <div class="g">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16</div>
+            <pre><span class="k">use</span> <span class="v">std</span>::<span class="v">collections</span>::<span class="t">HashMap</span>;
+
+<span class="c">/// Correlates JSON-RPC responses to requests.</span>
+<span class="k">pub struct</span> <span class="t">PendingRequests</span> {
+    <span class="v">inner</span>: <span class="t">HashMap</span>&lt;<span class="t">RequestId</span>, <span class="t">PendingRequest</span>&gt;,
+}
+
+<span class="k">impl</span> <span class="t">PendingRequests</span> {
+    <span class="k">pub fn</span> <span class="f">insert</span>(&amp;<span class="k">mut self</span>, <span class="v">id</span>: <span class="t">RequestId</span>) {
+        <span class="c">// one outstanding request per feature</span>
+        <span class="k">self</span>.<span class="v">inner</span>.<span class="f">retain</span>(|_, <span class="v">p</span>| !<span class="v">p</span>.<span class="f">superseded</span>());
+    }
+}</pre>
+          </div>
+          <div class="dim40"></div>
+          <div class="m-current">
+            <div class="title">Command Palette</div>
+            <div class="input">the<span class="caret"></span></div>
+            <div class="list">
+              <div class="row sel"><span>Switch Theme</span><span class="kb">⇧⌘T</span></div>
+              <div class="row"><span>Toggle Theme Follows System</span></div>
+              <div class="row"><span>Open Themes Folder</span></div>
+              <div class="row"><span>Reload Themes</span></div>
+              <div class="more">... and 3 more</div>
+            </div>
+          </div>
+        </div>
+        <div class="statusbar"><span class="seg">client.rs</span><span class="sep"></span><span class="seg grow"></span><span class="seg">Ln 12, Col 41</span></div>
+      </div>
+    </div>
+
+    <!-- A1 refined -->
+    <div class="card" id="a1">
+      <h3>A1 — Refined <span class="tag">recommended</span></h3>
+      <p>Same DNA, modernized: input <b>is</b> the header (title removed), 10px radius, real drop shadow, section
+         headers, per-command icons, fuzzy-match letters highlighted, keycaps instead of dim text, footer hint bar.
+         Cheapest big win — every element maps 1:1 onto today's layout code.</p>
+      <div class="win">
+        <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div>Token</div>
+        <div class="body">
+          <div class="code">
+            <div class="g">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16</div>
+            <pre><span class="k">use</span> <span class="v">std</span>::<span class="v">collections</span>::<span class="t">HashMap</span>;
+
+<span class="c">/// Correlates JSON-RPC responses to requests.</span>
+<span class="k">pub struct</span> <span class="t">PendingRequests</span> {
+    <span class="v">inner</span>: <span class="t">HashMap</span>&lt;<span class="t">RequestId</span>, <span class="t">PendingRequest</span>&gt;,
+}
+
+<span class="k">impl</span> <span class="t">PendingRequests</span> {
+    <span class="k">pub fn</span> <span class="f">insert</span>(&amp;<span class="k">mut self</span>, <span class="v">id</span>: <span class="t">RequestId</span>) {
+        <span class="c">// one outstanding request per feature</span>
+        <span class="k">self</span>.<span class="v">inner</span>.<span class="f">retain</span>(|_, <span class="v">p</span>| !<span class="v">p</span>.<span class="f">superseded</span>());
+    }
+}</pre>
+          </div>
+          <div class="dim40"></div>
+          <div class="sheet m-refined">
+            <div class="inputbar">
+              <span class="glyph">❯</span>
+              <span class="q">the<span class="caret"></span></span>
+            </div>
+            <div class="group">
+              <div class="gh">Recently used</div>
+              <div class="row sel"><span class="ic">◐</span><span class="lbl">Switch <span class="match">The</span>me</span><span class="kbs"><kbd class="cap">⇧</kbd><kbd class="cap">⌘</kbd><kbd class="cap">T</kbd></span></div>
+            </div>
+            <div class="group">
+              <div class="gh">Commands</div>
+              <div class="row"><span class="ic">◑</span><span class="lbl">Toggle <span class="match">The</span>me Follows System</span></div>
+              <div class="row"><span class="ic">▤</span><span class="lbl">Open <span class="match">The</span>mes Folder</span></div>
+              <div class="row"><span class="ic">↻</span><span class="lbl">Reload <span class="match">The</span>mes</span></div>
+              <div class="row"><span class="ic">✎</span><span class="lbl">Edit Current <span class="match">The</span>me</span></div>
+            </div>
+            <div class="footer">
+              <span class="hint"><kbd class="cap">↑</kbd><kbd class="cap">↓</kbd> navigate</span>
+              <span class="hint"><kbd class="cap">↵</kbd> run</span>
+              <span class="grow"></span>
+              <span class="hint"><kbd class="cap">esc</kbd> dismiss</span>
+            </div>
+          </div>
+        </div>
+        <div class="statusbar"><span class="seg">client.rs</span><span class="sep"></span><span class="seg grow"></span><span class="seg">Ln 12, Col 41</span></div>
+      </div>
+    </div>
+
+    <!-- A2 search everywhere -->
+    <div class="card wide" id="a2">
+      <h3>A2 — Search Everywhere <span class="tag">unified</span></h3>
+      <p>JetBrains-style single entry point: tabs scope the search (<b>All / Commands / Files / Symbols</b>), results grouped
+         with divider headers. This is the shape that absorbs LSP <b>workspace symbols</b> later — one modal replaces three.
+         Double-tap shift or Cmd+Shift+A opens it; typing a prefix like <b>&gt;</b> or <b>@</b> could switch tabs too.</p>
+      <div class="win">
+        <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div>Token</div>
+        <div class="body tall">
+          <div class="code">
+            <div class="g">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16<br>17<br>18<br>19<br>20</div>
+            <pre><span class="k">use</span> <span class="v">std</span>::<span class="v">process</span>::{<span class="t">Child</span>, <span class="t">Command</span>, <span class="t">Stdio</span>};
+
+<span class="c">/// One server process per (server def, workspace root).</span>
+<span class="k">pub struct</span> <span class="t">LspManager</span> {
+    <span class="v">servers</span>: <span class="t">HashMap</span>&lt;<span class="t">LspServerId</span>, <span class="t">ServerHandle</span>&gt;,
+    <span class="v">backoff</span>: <span class="t">HashMap</span>&lt;<span class="t">LspServerId</span>, <span class="t">RestartState</span>&gt;,
+}
+
+<span class="k">impl</span> <span class="t">LspManager</span> {
+    <span class="k">pub fn</span> <span class="f">spawn</span>(&amp;<span class="k">mut self</span>, <span class="v">def</span>: &amp;<span class="t">LspServerDef</span>) -&gt; <span class="t">Result</span>&lt;()&gt; {
+        <span class="k">let</span> <span class="v">child</span> = <span class="t">Command</span>::<span class="f">new</span>(<span class="v">def</span>.<span class="v">command</span>)
+            .<span class="f">args</span>(<span class="v">def</span>.<span class="v">args</span>)
+            .<span class="f">stdin</span>(<span class="t">Stdio</span>::<span class="f">piped</span>())
+            .<span class="f">spawn</span>()?;
+        <span class="t">Ok</span>(())
+    }
+}</pre>
+          </div>
+          <div class="dim40"></div>
+          <div class="sheet m-se">
+            <div class="setabs">
+              <div class="st on">All</div>
+              <div class="st">Commands <span class="cnt">142</span></div>
+              <div class="st">Files <span class="cnt">88</span></div>
+              <div class="st">Symbols <span class="cnt">—</span></div>
+            </div>
+            <div class="inputbar">
+              <span class="q">spawn<span class="caret"></span></span>
+              <span class="scope">workspace: token</span>
+            </div>
+            <div class="ghd">Commands</div>
+            <div class="row sel"><span class="ic" style="color:#4DAAFF">⌁</span><span><span class="match">Spawn</span> Terminal in Panel</span><span class="where">⌥F12</span></div>
+            <div class="row"><span class="ic" style="color:#4DAAFF">↻</span><span>Restart Language Server</span><span class="where">lsp</span></div>
+            <div class="ghd">Files</div>
+            <div class="row"><span class="ic" style="color:#E5A55D">◆</span><span><span class="match">spawn</span>.rs</span><span class="where">src/terminal</span></div>
+            <div class="row"><span class="ic" style="color:#E5A55D">◆</span><span>pty.rs</span><span class="where">src/terminal</span></div>
+            <div class="ghd">Symbols</div>
+            <div class="row"><span class="ic" style="color:#C586C0">ƒ</span><span><span class="match">spawn</span>_pty</span><span class="where">pty.rs · fn</span></div>
+            <div class="row"><span class="ic" style="color:#C586C0">ƒ</span><span><span class="match">spawn</span></span><span class="where">LspManager · fn</span></div>
+            <div class="row"><span class="ic" style="color:#4EC9B0">◇</span><span><span class="match">Spawn</span>Error</span><span class="where">pty.rs · enum</span></div>
+            <div class="foot"><span><kbd class="cap">⇥</kbd> next tab</span><span><kbd class="cap">↵</kbd> open</span><span><kbd class="cap">⌘↵</kbd> open in split</span></div>
+          </div>
+        </div>
+        <div class="statusbar"><span class="seg">app.rs</span><span class="sep"></span><span class="seg grow"></span><span class="seg">Ln 4, Col 18</span></div>
+      </div>
+    </div>
+
+    <!-- A3 launcher -->
+    <div class="card" id="a3">
+      <h3>A3 — Launcher <span class="tag">bold</span></h3>
+      <p>Raycast/Spotlight energy: oversized 17px input, colored icon tiles, inline descriptions, type label on the right,
+         branded footer with a secondary-action hint. Most visually distinctive, most new drawing code (tiles, two font sizes).</p>
+      <div class="win">
+        <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div>Token</div>
+        <div class="body">
+          <div class="code">
+            <div class="g">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16</div>
+            <pre><span class="c">// Content-Length framing over child stdio.</span>
+<span class="k">pub fn</span> <span class="f">write_frame</span>(<span class="v">w</span>: &amp;<span class="k">mut</span> <span class="k">impl</span> <span class="t">Write</span>, <span class="v">body</span>: &amp;<span class="v">str</span>) {
+    <span class="f">write!</span>(<span class="v">w</span>, <span class="s">"Content-Length: {}<span class="e">\r\n\r\n</span>{}"</span>,
+        <span class="v">body</span>.<span class="f">len</span>(), <span class="v">body</span>).<span class="f">unwrap</span>();
+}
+
+<span class="k">pub fn</span> <span class="f">read_frame</span>(<span class="v">r</span>: &amp;<span class="k">mut</span> <span class="k">impl</span> <span class="t">BufRead</span>) -&gt; <span class="t">Option</span>&lt;<span class="t">String</span>&gt; {
+    <span class="k">let mut</span> <span class="v">len</span> = <span class="n">0</span>;
+    <span class="c">// parse headers until blank line</span>
+    <span class="t">None</span>
+}</pre>
+          </div>
+          <div class="dim40"></div>
+          <div class="sheet m-launch">
+            <div class="inputbar">
+              <span class="q">re<span class="caret"></span><span class="ph">start language server…</span></span>
+            </div>
+            <div class="row sel">
+              <span class="tile cmd">↻</span><span class="name"><span class="match">Re</span>start Language Server</span><span class="desc">rust-analyzer</span><span class="type">Command</span>
+            </div>
+            <div class="row">
+              <span class="tile gr">⎌</span><span class="name"><span class="match">Re</span>do</span><span class="type">⇧⌘Z</span>
+            </div>
+            <div class="row">
+              <span class="tile rs">◆</span><span class="name"><span class="match">re</span>gistry.rs</span><span class="desc">src/syntax</span><span class="type">File</span>
+            </div>
+            <div class="row">
+              <span class="tile th">◐</span><span class="name"><span class="match">Re</span>load Themes</span><span class="type">Command</span>
+            </div>
+            <div class="foot">
+              <span class="logo"></span><span>Token</span>
+              <span class="grow"></span>
+              <span class="act">Run <kbd class="cap">↵</kbd></span>
+              <span class="act">Actions <kbd class="cap">⌘</kbd><kbd class="cap">K</kbd></span>
+            </div>
+          </div>
+        </div>
+        <div class="statusbar"><span class="seg">transport.rs</span><span class="sep"></span><span class="seg grow"></span><span class="seg">Ln 2, Col 1</span></div>
+      </div>
+    </div>
+
+    <!-- A4 hairline -->
+    <div class="card" id="a4">
+      <h3>A4 — Hairline minimal <span class="tag">quiet</span></h3>
+      <p>The restrained take: translucent blurred panel, rows divided by hairlines instead of filled bars, selection is a
+         2px accent edge + faint wash, keybindings as plain spaced text. <b>Needs backdrop blur</b> — expensive in a software
+         renderer; an 85% opaque panel gets 90% of the look for free.</p>
+      <div class="win">
+        <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div>Token</div>
+        <div class="body">
+          <div class="code">
+            <div class="g">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16</div>
+            <pre><span class="k">use</span> <span class="v">std</span>::<span class="v">collections</span>::<span class="t">HashMap</span>;
+
+<span class="c">/// Editor (line, char-col) ↔ LSP (line, UTF-16 col).</span>
+<span class="k">pub fn</span> <span class="f">char_to_utf16_col</span>(<span class="v">line</span>: &amp;<span class="v">str</span>, <span class="v">col</span>: <span class="t">usize</span>) -&gt; <span class="t">usize</span> {
+    <span class="v">line</span>.<span class="f">chars</span>()
+        .<span class="f">take</span>(<span class="v">col</span>)
+        .<span class="f">map</span>(|<span class="v">c</span>| <span class="v">c</span>.<span class="f">len_utf16</span>())
+        .<span class="f">sum</span>()
+}
+
+<span class="c">// Same testing bar as expand-selection:</span>
+<span class="c">// CRLF, emoji/surrogates, line ends.</span></pre>
+          </div>
+          <div class="dim25"></div>
+          <div class="sheet m-hair">
+            <div class="inputbar">go<span class="caret"></span><span class="ph"> to anything…</span></div>
+            <div class="row sel"><span><span class="match">Go</span> to File</span><span class="kb">⌘ P</span></div>
+            <div class="row"><span><span class="match">Go</span> to Line</span><span class="kb">⌘ L</span></div>
+            <div class="row"><span><span class="match">Go</span> to Definition</span><span class="kb">F12</span></div>
+            <div class="row"><span><span class="match">Go</span> Back</span><span class="kb">⌘ [</span></div>
+            <div class="row"><span>Navigate to Symbol</span><span class="kb">⌘ ⇧ O</span></div>
+          </div>
+        </div>
+        <div class="statusbar"><span class="seg">position.rs</span><span class="sep"></span><span class="seg grow"></span><span class="seg">Ln 4, Col 12</span></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section class="section">
+  <h2><em>B</em> — File pickers</h2>
+  <div class="grid">
+
+    <!-- B1 recent grouped -->
+    <div class="card" id="b1">
+      <h3>B1 — Recent files, time-grouped</h3>
+      <p>Current modal shows a flat list with "2h ago" on the right. Grouping by recency (<b>Today / Yesterday / Last week</b>)
+         reads faster than parsing relative times, and a pin affordance gives frequently-reopened files a stable home.</p>
+      <div class="win">
+        <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div>Token</div>
+        <div class="body tall">
+          <div class="code">
+            <div class="g">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16</div>
+            <pre><span class="k">pub struct</span> <span class="t">RecentFiles</span> {
+    <span class="v">entries</span>: <span class="t">Vec</span>&lt;<span class="t">RecentEntry</span>&gt;,
+    <span class="v">max_entries</span>: <span class="t">usize</span>,
+}
+
+<span class="k">impl</span> <span class="t">RecentFiles</span> {
+    <span class="k">pub fn</span> <span class="f">touch</span>(&amp;<span class="k">mut self</span>, <span class="v">path</span>: <span class="t">PathBuf</span>) {
+        <span class="k">self</span>.<span class="v">entries</span>.<span class="f">retain</span>(|<span class="v">e</span>| <span class="v">e</span>.<span class="v">path</span> != <span class="v">path</span>);
+        <span class="k">self</span>.<span class="v">entries</span>.<span class="f">insert</span>(<span class="n">0</span>, <span class="v">path</span>.<span class="f">into</span>());
+    }
+}</pre>
+          </div>
+          <div class="dim40"></div>
+          <div class="sheet m-recent" style="width: 560px;">
+            <div class="inputbar"><span class="ph">Filter recent files…</span><span class="caret"></span></div>
+            <div class="ghd">Pinned</div>
+            <div class="row"><span class="fic" style="color:#E5A55D">◆</span><span class="fname">lsp-integration.md</span><span class="fpath">docs/feature</span><span class="pin">⚲</span></div>
+            <div class="ghd">Today</div>
+            <div class="row sel"><span class="fic" style="color:#E5A55D">◆</span><span class="fname">client.rs</span><span class="fpath">src/lsp</span><span class="when">12m</span></div>
+            <div class="row"><span class="fic" style="color:#E5A55D">◆</span><span class="fname">app.rs</span><span class="fpath">src/runtime</span><span class="when">1h</span></div>
+            <div class="row"><span class="fic" style="color:#7CC379">◆</span><span class="fname">dark.yaml</span><span class="fpath">themes</span><span class="when">3h</span></div>
+            <div class="ghd">Yesterday</div>
+            <div class="row"><span class="fic" style="color:#4DAAFF">◆</span><span class="fname">modal.rs</span><span class="fpath">src/view</span><span class="when">1d</span></div>
+            <div class="row"><span class="fic" style="color:#4DAAFF">◆</span><span class="fname">geometry.rs</span><span class="fpath">src/view</span><span class="when">1d</span></div>
+            <div style="height: 8px"></div>
+          </div>
+        </div>
+        <div class="statusbar"><span class="seg">recent_files.rs</span><span class="sep"></span><span class="seg grow"></span><span class="seg">Ln 8, Col 5</span></div>
+      </div>
+    </div>
+
+    <!-- B2 finder + preview -->
+    <div class="card" id="b2">
+      <h3>B2 — Go to File with preview pane</h3>
+      <p>List keeps today's icon + name + dim path anatomy; the right pane previews the selection so you can confirm
+         it's the right file before Enter. Preview is just a read-only mini render of the buffer — the renderer
+         already knows how to draw code.</p>
+      <div class="win">
+        <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div>Token</div>
+        <div class="body">
+          <div class="code">
+            <div class="g">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16</div>
+            <pre><span class="k">fn</span> <span class="f">filter_files</span>(<span class="v">q</span>: &amp;<span class="v">str</span>) -&gt; <span class="t">Vec</span>&lt;<span class="t">FileMatch</span>&gt; {
+    <span class="c">// nucleo-matcher fuzzy scoring</span>
+    <span class="v">matcher</span>.<span class="f">fuzzy_match</span>(<span class="v">paths</span>, <span class="v">q</span>)
+}</pre>
+          </div>
+          <div class="dim40"></div>
+          <div class="sheet m-finder">
+            <div class="inputbar">tra<span class="caret"></span></div>
+            <div class="cols">
+              <div class="list">
+                <div class="row sel"><span class="fic" style="color:#E5A55D">◆</span><span class="fname"><span class="match">tra</span>nsport.rs</span><span class="fpath">src/lsp</span></div>
+                <div class="row"><span class="fic" style="color:#E5A55D">◆</span><span class="fname"><span class="match">tra</span>cing.rs</span><span class="fpath">src</span></div>
+                <div class="row"><span class="fic" style="color:#E5A55D">◆</span><span class="fname">terminal.rs</span><span class="fpath">src/panels</span></div>
+                <div class="row"><span class="fic" style="color:#4DAAFF">◆</span><span class="fname">tree_view.rs</span><span class="fpath">src/view</span></div>
+                <div class="row"><span class="fic" style="color:#7CC379">◆</span><span class="fname">extra_themes.yaml</span><span class="fpath">themes</span></div>
+              </div>
+              <div class="prev">
+                <div class="ph"><span>src/lsp/transport.rs</span><span>84 lines · Rust</span></div>
+                <pre><span class="c">//! Content-Length framing over stdio.</span>
+<span class="k">use</span> <span class="v">std</span>::<span class="v">io</span>::{<span class="t">BufRead</span>, <span class="t">Write</span>};
+
+<span class="k">pub fn</span> <span class="f">write_frame</span>(
+    <span class="v">w</span>: &amp;<span class="k">mut</span> <span class="k">impl</span> <span class="t">Write</span>,
+    <span class="v">body</span>: &amp;<span class="v">str</span>,
+) -&gt; <span class="t">io</span>::<span class="t">Result</span>&lt;()&gt; {
+    <span class="f">write!</span>(<span class="v">w</span>, <span class="s">"Content-Length: {}"</span>, <span class="v">body</span>.<span class="f">len</span>())?;
+    <span class="v">w</span>.<span class="f">write_all</span>(<span class="v">body</span>.<span class="f">as_bytes</span>())
+}</pre>
+              </div>
+            </div>
+            <div class="foot"><span><kbd class="cap">↵</kbd> open</span><span><kbd class="cap">⌘↵</kbd> open in split</span><span><kbd class="cap">⌘C</kbd> copy path</span></div>
+          </div>
+        </div>
+        <div class="statusbar"><span class="seg">workspace.rs</span><span class="sep"></span><span class="seg grow"></span><span class="seg">Ln 1, Col 1</span></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section class="section">
+  <h2><em>C</em> — LSP surfaces <span style="color:#4A4A52">(docs/feature/lsp-integration.md)</span></h2>
+  <div class="grid">
+
+    <!-- C1 completion -->
+    <div class="card wide" id="c1">
+      <h3>C1 — Completion dropdown <span class="tag lsp">phase 5</span></h3>
+      <p>Anchored below the cursor. Colored kind badges (<b>m</b>ethod, <b>f</b>n, <b>v</b>ar, <b>s</b>truct, <b>t</b>rait), dim type
+         signatures right-aligned, docs side-panel for the selected item (side-panel is optional/v2 — the left list alone is Phase 5).
+         Same list machinery as the palette, cursor-anchored instead of centered.</p>
+      <div class="win">
+        <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div>Token</div>
+        <div class="body">
+          <div class="code">
+            <div class="g">31<br>32<br>33<br>34<br>35<br>36<br>37<br>38<br>39<br>40<br>41<br>42<br>43</div>
+            <pre><span class="k">impl</span> <span class="t">LspClient</span> {
+    <span class="k">pub fn</span> <span class="f">handle_response</span>(&amp;<span class="k">mut self</span>, <span class="v">raw</span>: &amp;<span class="v">str</span>) {
+        <span class="k">let</span> <span class="v">msg</span> = <span class="v">serde_json</span>::<span class="f">from_str</span>(<span class="v">raw</span>);
+        <span class="k">let</span> <span class="v">pending</span> = <span class="k">self</span>.<span class="v">pending</span>.<span style="background: var(--ed-sel)">re</span><span style="border-left: 2px solid #FCE146"></span>
+    }
+}</pre>
+          </div>
+          <div class="pop m-comp">
+            <div class="items">
+              <div class="row sel"><span class="kind m">m</span><span>remove</span><span class="sig">fn(&amp;K) → Option&lt;V&gt;</span></div>
+              <div class="row"><span class="kind m">m</span><span>retain</span><span class="sig">fn(impl FnMut) → ()</span></div>
+              <div class="row"><span class="kind m">m</span><span>reserve</span><span class="sig">fn(usize) → ()</span></div>
+              <div class="row"><span class="kind v">v</span><span>request_id</span><span class="sig">RequestId</span></div>
+              <div class="row"><span class="kind t">t</span><span>RequestExt</span><span class="sig">trait</span></div>
+              <div class="row"><span class="kind s">s</span><span>RestartState</span><span class="sig">struct</span></div>
+            </div>
+            <div class="docs">
+              <div class="dsig"><span style="color:#C586C0">pub fn</span> remove(&amp;mut self, <span class="p">k</span>: &amp;<span class="ty">K</span>) → <span class="ty">Option</span>&lt;<span class="ty">V</span>&gt;</div>
+              Removes a key from the map, returning the value at the key if the key was previously in the map.
+              <br><br>The key may be any borrowed form of the map's key type, but <em>Hash</em> and <em>Eq</em> on the borrowed form must match.
+            </div>
+          </div>
+        </div>
+        <div class="statusbar"><span class="seg">client.rs</span><span class="sep"></span><span class="seg grow"></span><span class="seg dseg"><span class="de">✗ 0</span><span class="dw">⚠ 1</span></span><span class="sep"></span><span class="seg">Ln 34, Col 32</span></div>
+      </div>
+    </div>
+
+    <!-- C2 hover -->
+    <div class="card" id="c2">
+      <h3>C2 — Hover card <span class="tag lsp">phase 4</span></h3>
+      <p>Three stacked zones: diagnostic banner (when the cursor sits on one — closes the Phase 2 "where's the message?" gap),
+         signature block on darker ground, then plain-text docs. Footer teases the follow-up actions.</p>
+      <div class="win">
+        <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div>Token</div>
+        <div class="body">
+          <div class="code" style="position:absolute; left:0; right:0; bottom:22px;">
+            <div class="g">22<br>23<br>24<br>25<br>26</div>
+            <pre><span class="k">impl</span> <span class="t">LspClient</span> {
+    <span class="k">fn</span> <span class="f">refresh</span>(&amp;<span class="k">mut self</span>) {
+        <span class="k">let</span> <span class="v">id</span> = <span class="k">self</span>.<span class="f" style="background: var(--ed-line)">send_request</span>(<span class="s sq-err">"42"</span>);
+        <span class="k">self</span>.<span class="v">pending</span>.<span class="f">insert</span>(<span class="v">id</span>);
+    }</pre>
+          </div>
+          <div class="pop m-hover">
+            <div class="diag">
+              <span class="sev">✗</span>
+              <span>mismatched types: expected <b style="color:#4EC9B0;font-weight:500">u64</b>, found <b style="color:#4EC9B0;font-weight:500">&amp;str</b></span>
+              <span class="src">rust-analyzer E0308</span>
+            </div>
+            <div class="sigblock">
+              <span class="k">pub fn</span> <span class="f">send_request</span>(&amp;<span class="k">mut self</span>, <span class="v">revision</span>: <span class="t">u64</span>) -&gt; <span class="t">RequestId</span>
+            </div>
+            <div class="docblock">
+              Sends a request to the server, correlating the response with the document revision it was computed against.
+              Stale responses — wrong revision, superseded request — are discarded, mirroring the <code>ParseCompleted</code> guards.
+            </div>
+            <div class="foot"><span>F12 definition</span><span>⇧F12 references</span></div>
+          </div>
+        </div>
+        <div class="statusbar"><span class="seg">client.rs</span><span class="sep"></span><span class="seg grow"></span><span class="seg dseg"><span class="de">✗ 1</span></span><span class="sep"></span><span class="seg">Ln 24, Col 22</span></div>
+      </div>
+    </div>
+
+    <!-- C3 diagnostics -->
+    <div class="card" id="c3">
+      <h3>C3 — Inline diagnostics <span class="tag lsp">phase 2</span></h3>
+      <p>The Phase 2 pipeline-prover: gutter dots (error &gt; warning precedence), wavy underlines under the exact range,
+         optional dim inline message at end of line (cheap, very high value), and the <b>✗ n ⚠ n</b> status segment.</p>
+      <div class="win">
+        <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div>Token</div>
+        <div class="body short">
+          <div class="code">
+            <div class="g">10<br>11<br>12<br>13<br>14<br>15<br>16<br>17<br>18<br>19<br>20<br>21<br>22</div>
+            <pre><span class="k">fn</span> <span class="f">apply_diagnostics</span>(<span class="v">doc</span>: &amp;<span class="k">mut</span> <span class="t">Document</span>) {
+    <span class="k">let</span> <span class="v">count</span>: <span class="t">u32</span> = <span class="s sq-err">"three"</span>;  <span class="inline-msg">✗ expected `u32`, found `&amp;str`</span>
+    <span class="k">let</span> <span class="v sq-warn">unused_total</span> = <span class="n">0</span>;  <span class="inline-msg" style="color:#6E6540">⚠ unused variable</span>
+
+    <span class="k">for</span> <span class="v">d</span> <span class="k">in</span> <span class="v">doc</span>.<span class="v">diagnostics</span>.<span class="f">iter</span>() {
+        <span class="c">// clamp ranges to the current document;</span>
+        <span class="c">// a vanished line is dropped at render time</span>
+        <span class="v">d</span>.<span class="f">clamp_to</span>(<span class="v">doc</span>);
+    }
+}</pre>
+          </div>
+          <!-- gutter dots painted over the gutter numbers -->
+          <div style="position:absolute; left:44px; top:25px;"><span class="gd e"></span></div>
+          <div style="position:absolute; left:44px; top:44px;"><span class="gd w"></span></div>
+        </div>
+        <div class="statusbar"><span class="seg">update/lsp.rs</span><span class="sep"></span><span class="seg">rust-analyzer ●</span><span class="seg grow"></span><span class="seg dseg"><span class="de">✗ 1</span><span class="dw">⚠ 1</span></span><span class="sep"></span><span class="seg">Ln 11, Col 26</span></div>
+      </div>
+    </div>
+
+    <!-- C4 problems panel -->
+    <div class="card" id="c4">
+      <h3>C4 — Problems panel <span class="tag lsp">future</span></h3>
+      <p>Bottom dock (existing panel system), diagnostics grouped by file, Enter jumps. The header count chips mirror the
+         status segment so the two surfaces read as one system.</p>
+      <div class="win">
+        <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div>Token</div>
+        <div class="body">
+          <div class="code">
+            <div class="g">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8</div>
+            <pre><span class="k">pub enum</span> <span class="t">LspMsg</span> {
+    <span class="t">GotoDefinition</span>,
+    <span class="t">ShowHover</span>,
+    <span class="t">RequestCompletion</span> { <span class="v">explicit</span>: <span class="t">bool</span> },
+    <span class="t">NavigateBack</span>,
+}</pre>
+          </div>
+          <div class="problems">
+            <div class="phead">
+              <span class="ptitle">Problems</span>
+              <span class="counts"><span class="e">✗ 3</span><span class="w">⚠ 2</span></span>
+              <span class="x">✕</span>
+            </div>
+            <div class="pfile"><span>▾</span><span style="color:#E5A55D">◆</span><span>client.rs</span><span class="cnt">src/lsp · 3</span></div>
+            <div class="prow sel"><span class="sev e">✗</span><span>mismatched types: expected `u64`, found `&amp;str`</span><span class="loc">24:22</span></div>
+            <div class="prow"><span class="sev e">✗</span><span>cannot borrow `self.pending` as mutable more than once</span><span class="loc">31:9</span></div>
+            <div class="prow"><span class="sev w">⚠</span><span>unused variable: `deadline`</span><span class="loc">40:13</span></div>
+            <div class="pfile"><span>▾</span><span style="color:#E5A55D">◆</span><span>transport.rs</span><span class="cnt">src/lsp · 2</span></div>
+            <div class="prow"><span class="sev e">✗</span><span>missing lifetime specifier</span><span class="loc">12:30</span></div>
+          </div>
+        </div>
+        <div class="statusbar"><span class="seg">messages.rs</span><span class="sep"></span><span class="seg grow"></span><span class="seg dseg"><span class="de">✗ 3</span><span class="dw">⚠ 2</span></span><span class="sep"></span><span class="seg">Ln 2, Col 5</span></div>
+      </div>
+    </div>
+
+    <!-- C5 code actions -->
+    <div class="card" id="c5">
+      <h3>C5 — Code actions <span class="tag lsp">future</span></h3>
+      <p>Small cursor-anchored menu, "preferred" fix marked. Reuses the completion popup shell one-for-one — same
+         chrome, different rows.</p>
+      <div class="win">
+        <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div>Token</div>
+        <div class="body short">
+          <div class="code">
+            <div class="g">55<br>56<br>57<br>58<br>59<br>60<br>61<br>62<br>63<br>64<br>65<br>66<br>67</div>
+            <pre><span class="k">fn</span> <span class="f">restart</span>(&amp;<span class="k">mut self</span>, <span class="v">id</span>: <span class="t">LspServerId</span>) {
+    <span class="k">let</span> <span class="v">state</span> = <span class="k">self</span>.<span class="v">backoff</span>.<span class="f sq-err">get_mut</span>(<span class="v">id</span>);
+}</pre>
+          </div>
+          <div class="pop m-actions">
+            <div class="ahead">Quick fix · E0308</div>
+            <div class="row sel"><span class="bulb" style="color:#DCDCAA">💡</span><span>Borrow the argument: `&amp;id`</span><span class="pref">preferred</span></div>
+            <div class="row"><span class="bulb" style="color:#8B8F96">·</span><span>Change signature to take `LspServerId`</span></div>
+            <div class="row"><span class="bulb" style="color:#8B8F96">·</span><span>Extract into variable</span></div>
+          </div>
+        </div>
+        <div class="statusbar"><span class="seg">app.rs</span><span class="sep"></span><span class="seg grow"></span><span class="seg dseg"><span class="de">✗ 1</span></span><span class="sep"></span><span class="seg">Ln 56, Col 34</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="note" style="margin-top: 32px;">
+    <b>Renderer cost notes:</b> rounded corners at these radii are a handful of per-corner alpha rows on top of
+    <code style="color:#96969E">fill_rect_px</code>; shadows can be faked with 2–3 nested translucent rect borders (no blur pass needed);
+    the wavy underline is a 2-row pixel pattern repeated per char cell; keycaps are bordered rects with existing text drawing.
+    Only A4's backdrop blur is genuinely expensive — skip it or ship the opaque variant.
+  </p>
+</section>
+
+<script>
+const h = location.hash.slice(1);
+if (h && document.getElementById(h)) {
+  for (const e of document.querySelectorAll('.page-header, .section, .note')) e.style.display = 'none';
+  const card = document.getElementById(h);
+  let sec = card.closest('.section'); sec.style.display = 'block';
+  for (const e of sec.querySelectorAll('.card')) e.style.display = 'none';
+  for (const e of sec.querySelectorAll(':scope > h2, .note')) e.style.display = 'none';
+  card.style.display = 'block';
+  for (const e of card.querySelectorAll(':scope > h3, :scope > p')) e.style.display = 'none';
+  sec.style.margin = '0'; card.style.maxWidth = '860px';
+  document.body.style.padding = '20px';
+}
+</script>
+</body>
+</html>

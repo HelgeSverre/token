@@ -70,6 +70,7 @@ Detailed specifications for major features, located in `docs/feature/`:
 
 | Feature | Milestone | Design Doc |
 |---------|-----------|------------|
+| Overlay Surface & Search Everywhere | 1 - Navigation | [overlay-surface.md](feature/overlay-surface.md) |
 | Command Palette Enhancements | 1 - Navigation | [command-palette-enhancements.md](future/command-palette-enhancements.md) |
 | Quick Open | 1 - Navigation | planned |
 | Go to Line Enhancements | 1 - Navigation | [goto-line-enhancements.md](future/goto-line-enhancements.md) |
