@@ -86,19 +86,27 @@ fn modal_caret_rect(
 ) -> Option<WidgetRect> {
     let width = model.window_size.0 as usize;
     let height = model.window_size.1 as usize;
+    let scale_factor = model.metrics.scale_factor;
 
     let (content, input_rect) = match modal {
         ModalState::CommandPalette(state) => {
-            let (layout, widgets) = geometry::command_palette_layout(width, height, line_height, 0);
+            let (layout, widgets) =
+                geometry::command_palette_layout(width, height, line_height, 0, scale_factor);
             (&state.editable, *layout.widget(widgets.input))
         }
         ModalState::GotoLine(state) => {
-            let (layout, widgets) = geometry::goto_line_layout(width, height, line_height);
+            let (layout, widgets) =
+                geometry::goto_line_layout(width, height, line_height, scale_factor);
             (&state.editable, *layout.widget(widgets.input))
         }
         ModalState::FindReplace(state) => {
-            let (layout, widgets) =
-                geometry::find_replace_layout(width, height, line_height, state.replace_mode);
+            let (layout, widgets) = geometry::find_replace_layout(
+                width,
+                height,
+                line_height,
+                state.replace_mode,
+                scale_factor,
+            );
             match state.focused_field {
                 FindReplaceField::Query => {
                     (&state.query_editable, *layout.widget(widgets.find_input))
@@ -111,18 +119,19 @@ fn modal_caret_rect(
         }
         ModalState::FileFinder(state) => {
             let (layout, widgets) =
-                geometry::file_finder_layout(width, height, line_height, 0, false);
+                geometry::file_finder_layout(width, height, line_height, 0, false, scale_factor);
             (&state.editable, *layout.widget(widgets.input))
         }
         ModalState::RecentFiles(state) => {
             let (layout, widgets) =
-                geometry::file_finder_layout(width, height, line_height, 0, false);
+                geometry::file_finder_layout(width, height, line_height, 0, false, scale_factor);
             (&state.editable, *layout.widget(widgets.input))
         }
         ModalState::ThemePicker(_) => return None,
     };
 
-    let options = TextFieldOptions::for_modal(content, &input_rect, line_height, char_width);
+    let options =
+        TextFieldOptions::for_modal(content, &input_rect, line_height, char_width, scale_factor);
     TextFieldRenderer::caret_rect(content, &options)
 }
 
@@ -198,10 +207,10 @@ mod tests {
         model.ui.active_modal = Some(ModalState::GotoLine(state));
 
         let rect = active_text_input_rect(&model, 8.0, 20).expect("modal caret");
-        let (layout, widgets) = geometry::goto_line_layout(800, 600, 20);
+        let (layout, widgets) = geometry::goto_line_layout(800, 600, 20, 1.0);
         let input = layout.widget(widgets.input);
 
-        assert!(rect.x >= input.x + geometry::ModalSpacing::INPUT_PAD_X);
+        assert!(rect.x >= input.x + geometry::ModalSpacing::input_pad_x(1.0));
         assert!(rect.x < input.x + input.w);
         assert!(rect.y >= input.y);
         assert_ne!((rect.x, rect.y), (0, 0));

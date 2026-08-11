@@ -1093,20 +1093,67 @@ impl PreviewPaneLayout {
 // Modal Geometry
 // ============================================================================
 
-/// Standard padding/spacing constants for modal dialogs
+/// Standard padding/spacing constants for modal dialogs, in logical px.
+///
+/// These used to be bare `usize` constants consumed directly by layout code
+/// — never multiplied by `scale_factor`, so modals were effectively
+/// half-size on a 2x display. They're logical-px bases now; call the scaled
+/// accessor for the value actually used in physical-pixel layout math.
 pub struct ModalSpacing;
 
 impl ModalSpacing {
     /// Outer padding inside the modal border
-    pub const PAD: usize = 12;
+    const BASE_PAD: f64 = 12.0;
     /// Small gap (e.g., title to input, label to input)
-    pub const GAP_SM: usize = 4;
+    const BASE_GAP_SM: f64 = 4.0;
     /// Medium gap (e.g., between sections)
-    pub const GAP_MD: usize = 8;
+    const BASE_GAP_MD: f64 = 8.0;
     /// Input field internal vertical padding (total top+bottom)
-    pub const INPUT_PAD_Y: usize = 8;
+    const BASE_INPUT_PAD_Y: f64 = 8.0;
     /// Input field internal horizontal padding (each side)
-    pub const INPUT_PAD_X: usize = 8;
+    const BASE_INPUT_PAD_X: f64 = 8.0;
+
+    #[inline]
+    fn scaled(base: f64, scale_factor: f64) -> usize {
+        (base * scale_factor).round() as usize
+    }
+
+    pub fn pad(scale_factor: f64) -> usize {
+        Self::scaled(Self::BASE_PAD, scale_factor)
+    }
+
+    pub fn gap_sm(scale_factor: f64) -> usize {
+        Self::scaled(Self::BASE_GAP_SM, scale_factor)
+    }
+
+    pub fn gap_md(scale_factor: f64) -> usize {
+        Self::scaled(Self::BASE_GAP_MD, scale_factor)
+    }
+
+    pub fn input_pad_y(scale_factor: f64) -> usize {
+        Self::scaled(Self::BASE_INPUT_PAD_Y, scale_factor)
+    }
+
+    pub fn input_pad_x(scale_factor: f64) -> usize {
+        Self::scaled(Self::BASE_INPUT_PAD_X, scale_factor)
+    }
+}
+
+/// Modal width as a fraction of the (physical-px) window width, clamped
+/// between a logical-px min/max scaled to physical px, then clamped again to
+/// leave a 32 logical-px margin against the window edges.
+fn scaled_width_clamp(
+    window_width: usize,
+    pct: f32,
+    min_logical: f32,
+    max_logical: f32,
+    scale_factor: f64,
+) -> usize {
+    let min = (min_logical as f64 * scale_factor).round() as f32;
+    let max = (max_logical as f64 * scale_factor).round() as f32;
+    let margin = (32.0 * scale_factor).round() as usize;
+    let width = (window_width as f32 * pct).clamp(min, max) as usize;
+    width.min(window_width.saturating_sub(margin))
 }
 
 /// A positioned widget within a modal layout
@@ -1185,8 +1232,9 @@ impl ModalLayout {
         modal_width: usize,
         window_width: usize,
         window_height: usize,
+        scale_factor: f64,
     ) -> Self {
-        let pad = ModalSpacing::PAD;
+        let pad = ModalSpacing::pad(scale_factor);
         let content_height = vstack.height();
         let modal_height = content_height + pad * 2;
         let modal_x = (window_width.saturating_sub(modal_width)) / 2;
@@ -1226,8 +1274,8 @@ impl ModalLayout {
     }
 
     /// Height of an input field (line_height + padding)
-    pub fn input_height(line_height: usize) -> usize {
-        line_height + ModalSpacing::INPUT_PAD_Y
+    pub fn input_height(line_height: usize, scale_factor: f64) -> usize {
+        line_height + ModalSpacing::input_pad_y(scale_factor)
     }
 }
 
@@ -1254,11 +1302,12 @@ pub fn find_replace_layout(
     window_height: usize,
     line_height: usize,
     replace_mode: bool,
+    scale_factor: f64,
 ) -> (ModalLayout, FindReplaceWidgets) {
-    let modal_width = (window_width as f32 * 0.5).clamp(300.0, 500.0) as usize;
-    let pad = ModalSpacing::PAD;
+    let modal_width = scaled_width_clamp(window_width, 0.5, 300.0, 500.0, scale_factor);
+    let pad = ModalSpacing::pad(scale_factor);
     let content_width = modal_width.saturating_sub(pad * 2);
-    let input_height = ModalLayout::input_height(line_height);
+    let input_height = ModalLayout::input_height(line_height, scale_factor);
 
     let mut v = VStack::new(content_width);
 
@@ -1267,23 +1316,23 @@ pub fn find_replace_layout(
     let (find_label, find_input, replace_label, replace_input);
 
     if replace_mode {
-        v.gap(ModalSpacing::GAP_MD);
+        v.gap(ModalSpacing::gap_md(scale_factor));
         find_label = Some(v.push(line_height));
-        v.gap(ModalSpacing::GAP_SM);
+        v.gap(ModalSpacing::gap_sm(scale_factor));
         find_input = v.push(input_height);
-        v.gap(ModalSpacing::GAP_MD);
+        v.gap(ModalSpacing::gap_md(scale_factor));
         replace_label = Some(v.push(line_height));
-        v.gap(ModalSpacing::GAP_SM);
+        v.gap(ModalSpacing::gap_sm(scale_factor));
         replace_input = Some(v.push(input_height));
     } else {
-        v.gap(ModalSpacing::GAP_SM);
+        v.gap(ModalSpacing::gap_sm(scale_factor));
         find_label = None;
         find_input = v.push(input_height);
         replace_label = None;
         replace_input = None;
     }
 
-    let layout = ModalLayout::build(v, modal_width, window_width, window_height);
+    let layout = ModalLayout::build(v, modal_width, window_width, window_height, scale_factor);
     let widgets = FindReplaceWidgets {
         title,
         find_label,
@@ -1306,18 +1355,19 @@ pub fn goto_line_layout(
     window_width: usize,
     window_height: usize,
     line_height: usize,
+    scale_factor: f64,
 ) -> (ModalLayout, GotoLineWidgets) {
-    let modal_width = (window_width as f32 * 0.5).clamp(300.0, 500.0) as usize;
-    let pad = ModalSpacing::PAD;
+    let modal_width = scaled_width_clamp(window_width, 0.5, 300.0, 500.0, scale_factor);
+    let pad = ModalSpacing::pad(scale_factor);
     let content_width = modal_width.saturating_sub(pad * 2);
-    let input_height = ModalLayout::input_height(line_height);
+    let input_height = ModalLayout::input_height(line_height, scale_factor);
 
     let mut v = VStack::new(content_width);
     let title = v.push(line_height);
-    v.gap(ModalSpacing::GAP_SM);
+    v.gap(ModalSpacing::gap_sm(scale_factor));
     let input = v.push(input_height);
 
-    let layout = ModalLayout::build(v, modal_width, window_width, window_height);
+    let layout = ModalLayout::build(v, modal_width, window_width, window_height, scale_factor);
     (layout, GotoLineWidgets { title, input })
 }
 
@@ -1334,22 +1384,23 @@ pub fn command_palette_layout(
     window_height: usize,
     line_height: usize,
     list_items: usize,
+    scale_factor: f64,
 ) -> (ModalLayout, CommandPaletteWidgets) {
-    let modal_width = (window_width as f32 * 0.5).clamp(300.0, 500.0) as usize;
-    let pad = ModalSpacing::PAD;
+    let modal_width = scaled_width_clamp(window_width, 0.5, 300.0, 500.0, scale_factor);
+    let pad = ModalSpacing::pad(scale_factor);
     let content_width = modal_width.saturating_sub(pad * 2);
-    let input_height = ModalLayout::input_height(line_height);
+    let input_height = ModalLayout::input_height(line_height, scale_factor);
 
     let mut v = VStack::new(content_width);
     let title = v.push(line_height);
-    v.gap(ModalSpacing::GAP_SM);
+    v.gap(ModalSpacing::gap_sm(scale_factor));
     let input = v.push(input_height);
 
     let max_visible = 8;
     let visible = list_items.min(max_visible);
     let has_overflow = list_items > max_visible;
     let list = if visible > 0 {
-        v.gap(ModalSpacing::GAP_MD);
+        v.gap(ModalSpacing::gap_md(scale_factor));
         // Add extra line for "... and X more" overflow indicator
         let list_rows = if has_overflow { visible + 1 } else { visible };
         Some(v.push(list_rows * line_height))
@@ -1357,7 +1408,7 @@ pub fn command_palette_layout(
         None
     };
 
-    let layout = ModalLayout::build(v, modal_width, window_width, window_height);
+    let layout = ModalLayout::build(v, modal_width, window_width, window_height, scale_factor);
     (layout, CommandPaletteWidgets { title, input, list })
 }
 
@@ -1378,15 +1429,16 @@ pub fn file_finder_layout(
     line_height: usize,
     list_items: usize,
     has_query: bool,
+    scale_factor: f64,
 ) -> (ModalLayout, FileFinderWidgets) {
-    let modal_width = (window_width as f32 * 0.7).clamp(500.0, 900.0) as usize;
-    let pad = ModalSpacing::PAD;
+    let modal_width = scaled_width_clamp(window_width, 0.7, 500.0, 900.0, scale_factor);
+    let pad = ModalSpacing::pad(scale_factor);
     let content_width = modal_width.saturating_sub(pad * 2);
-    let input_height = ModalLayout::input_height(line_height);
+    let input_height = ModalLayout::input_height(line_height, scale_factor);
 
     let mut v = VStack::new(content_width);
     let title = v.push(line_height);
-    v.gap(ModalSpacing::GAP_MD);
+    v.gap(ModalSpacing::gap_md(scale_factor));
     let input = v.push(input_height);
 
     let max_visible = 10;
@@ -1400,13 +1452,13 @@ pub fn file_finder_layout(
         0
     };
     let list = if list_rows > 0 {
-        v.gap(ModalSpacing::GAP_MD);
+        v.gap(ModalSpacing::gap_md(scale_factor));
         Some(v.push(list_rows * line_height))
     } else {
         None
     };
 
-    let layout = ModalLayout::build(v, modal_width, window_width, window_height);
+    let layout = ModalLayout::build(v, modal_width, window_width, window_height, scale_factor);
     (layout, FileFinderWidgets { title, input, list })
 }
 
@@ -1434,14 +1486,15 @@ pub fn theme_picker_layout(
     window_height: usize,
     line_height: usize,
     total_rows: usize,
+    scale_factor: f64,
 ) -> (ModalLayout, ThemePickerWidgets) {
-    let modal_width = 400;
-    let pad = ModalSpacing::PAD;
-    let content_width = modal_width - pad * 2;
+    let modal_width = (400.0 * scale_factor).round() as usize;
+    let pad = ModalSpacing::pad(scale_factor);
+    let content_width = modal_width.saturating_sub(pad * 2);
 
     let mut v = VStack::new(content_width);
     let title = v.push(line_height);
-    v.gap(ModalSpacing::GAP_MD);
+    v.gap(ModalSpacing::gap_md(scale_factor));
     let list = v.push(total_rows * line_height);
 
     let modal_x = window_width.saturating_sub(modal_width) / 2;
@@ -1856,8 +1909,8 @@ mod tests {
         v.gap(8);
         v.push(20); // widget 1
 
-        let layout = ModalLayout::build(v, 224, 1000, 800);
-        let pad = ModalSpacing::PAD;
+        let layout = ModalLayout::build(v, 224, 1000, 800, 1.0);
+        let pad = ModalSpacing::pad(1.0);
 
         // Modal is centered: (1000 - 224) / 2 = 388
         assert_eq!(layout.x, 388);
@@ -1899,8 +1952,8 @@ mod tests {
     #[test]
     fn test_input_height() {
         assert_eq!(
-            ModalLayout::input_height(20),
-            20 + ModalSpacing::INPUT_PAD_Y
+            ModalLayout::input_height(20, 1.0),
+            20 + ModalSpacing::input_pad_y(1.0)
         );
     }
 
@@ -1911,14 +1964,14 @@ mod tests {
     #[test]
     fn test_goto_line_layout() {
         let lh = 20;
-        let (layout, w) = goto_line_layout(1000, 800, lh);
+        let (layout, w) = goto_line_layout(1000, 800, lh, 1.0);
 
         // Has title + input
         assert_eq!(layout.widgets.len(), 2);
         let title = layout.widget(w.title);
         let input = layout.widget(w.input);
         assert_eq!(title.h, lh);
-        assert_eq!(input.h, ModalLayout::input_height(lh));
+        assert_eq!(input.h, ModalLayout::input_height(lh, 1.0));
         // Input starts below title + gap
         assert!(input.y > title.y + title.h);
     }
@@ -1926,7 +1979,7 @@ mod tests {
     #[test]
     fn test_find_replace_layout_find_only() {
         let lh = 20;
-        let (layout, w) = find_replace_layout(1000, 800, lh, false);
+        let (layout, w) = find_replace_layout(1000, 800, lh, false, 1.0);
 
         // Find-only: title + find_input (no labels)
         assert!(w.find_label.is_none());
@@ -1938,7 +1991,7 @@ mod tests {
     #[test]
     fn test_find_replace_layout_replace_mode() {
         let lh = 20;
-        let (layout, w) = find_replace_layout(1000, 800, lh, true);
+        let (layout, w) = find_replace_layout(1000, 800, lh, true, 1.0);
 
         // Replace mode: title + find_label + find_input + replace_label + replace_input
         assert!(w.find_label.is_some());
@@ -1955,7 +2008,7 @@ mod tests {
     #[test]
     fn test_command_palette_layout_empty_list() {
         let lh = 20;
-        let (layout, w) = command_palette_layout(1000, 800, lh, 0);
+        let (layout, w) = command_palette_layout(1000, 800, lh, 0, 1.0);
 
         assert!(w.list.is_none());
         // Only title + input
@@ -1966,7 +2019,7 @@ mod tests {
     fn test_command_palette_layout_with_overflow() {
         let lh = 20;
         // 15 items > max_visible(8) -> should have overflow row
-        let (layout, w) = command_palette_layout(1000, 800, lh, 15);
+        let (layout, w) = command_palette_layout(1000, 800, lh, 15, 1.0);
 
         assert!(w.list.is_some());
         let list = layout.widget(w.list.unwrap());
@@ -1978,7 +2031,7 @@ mod tests {
     fn test_command_palette_layout_no_overflow() {
         let lh = 20;
         // 5 items <= max_visible(8) -> no overflow row
-        let (_, w) = command_palette_layout(1000, 800, lh, 5);
+        let (_, w) = command_palette_layout(1000, 800, lh, 5, 1.0);
 
         let list = &w.list;
         assert!(list.is_some());
@@ -1987,7 +2040,7 @@ mod tests {
     #[test]
     fn test_file_finder_layout_empty_no_query() {
         let lh = 20;
-        let (_, w) = file_finder_layout(1000, 800, lh, 0, false);
+        let (_, w) = file_finder_layout(1000, 800, lh, 0, false, 1.0);
 
         // No query, no results -> no list area
         assert!(w.list.is_none());
@@ -1996,7 +2049,7 @@ mod tests {
     #[test]
     fn test_file_finder_layout_empty_with_query() {
         let lh = 20;
-        let (layout, w) = file_finder_layout(1000, 800, lh, 0, true);
+        let (layout, w) = file_finder_layout(1000, 800, lh, 0, true, 1.0);
 
         // Has query but no results -> 1 row for "No files match" message
         assert!(w.list.is_some());
@@ -2007,7 +2060,7 @@ mod tests {
     #[test]
     fn test_theme_picker_layout() {
         let lh = 20;
-        let (layout, w) = theme_picker_layout(1000, 800, lh, 10);
+        let (layout, w) = theme_picker_layout(1000, 800, lh, 10, 1.0);
 
         let title = layout.widget(w.title);
         let list = layout.widget(w.list);
@@ -2023,7 +2076,7 @@ mod tests {
         // `window_height / 4` with no cap, while every other modal (via
         // ModalLayout::build) caps it at 100. On a tall window this made the
         // theme picker sit much lower than every other modal.
-        let (layout, _) = theme_picker_layout(1000, 2000, 20, 10);
+        let (layout, _) = theme_picker_layout(1000, 2000, 20, 10, 1.0);
         assert_eq!(
             layout.y, 100,
             "theme picker's Y position must be capped at 100 like other modals"

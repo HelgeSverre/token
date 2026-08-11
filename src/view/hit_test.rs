@@ -368,6 +368,7 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
     let ww = model.window_size.0 as usize;
     let wh = model.window_size.1 as usize;
     let lh = model.line_height;
+    let sf = model.metrics.scale_factor;
 
     // Use the same layout functions as rendering — single source of truth
     let layout = match &model.ui.active_modal {
@@ -378,6 +379,7 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
                 wh,
                 lh,
                 filter_commands(&input_text).len(),
+                sf,
             );
             l
         }
@@ -388,6 +390,7 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
                 lh,
                 state.results.len(),
                 !state.input().is_empty(),
+                sf,
             );
             l
         }
@@ -403,15 +406,15 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
             // actually drawn.
             let visible_rows =
                 total_rows.min(super::geometry::THEME_PICKER_MAX_VISIBLE_ROWS.max(1));
-            let (l, _) = super::geometry::theme_picker_layout(ww, wh, lh, visible_rows);
+            let (l, _) = super::geometry::theme_picker_layout(ww, wh, lh, visible_rows, sf);
             l
         }
         Some(ModalState::GotoLine(_)) => {
-            let (l, _) = super::geometry::goto_line_layout(ww, wh, lh);
+            let (l, _) = super::geometry::goto_line_layout(ww, wh, lh, sf);
             l
         }
         Some(ModalState::FindReplace(state)) => {
-            let (l, _) = super::geometry::find_replace_layout(ww, wh, lh, state.replace_mode);
+            let (l, _) = super::geometry::find_replace_layout(ww, wh, lh, state.replace_mode, sf);
             l
         }
         Some(ModalState::RecentFiles(state)) => {
@@ -422,6 +425,7 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
                 lh,
                 filtered.len(),
                 !state.input().is_empty(),
+                sf,
             );
             l
         }

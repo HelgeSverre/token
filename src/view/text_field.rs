@@ -62,8 +62,9 @@ impl TextFieldOptions {
         rect: &WidgetRect,
         line_height: usize,
         char_width: f32,
+        scale_factor: f64,
     ) -> Self {
-        let padx = ModalSpacing::INPUT_PAD_X;
+        let padx = ModalSpacing::input_pad_x(scale_factor);
         let width = rect.w.saturating_sub(padx * 2);
         let visible_chars = (width as f32 / char_width).ceil() as usize + 1;
         let cursor_col = content
@@ -237,6 +238,7 @@ impl TextFieldRenderer {
         cursor_color: u32,
         selection_color: u32,
         cursor_visible: bool,
+        scale_factor: f64,
     ) {
         frame.fill_rect_px(rect.x, rect.y, rect.w, rect.h, background_color);
 
@@ -245,7 +247,7 @@ impl TextFieldRenderer {
             cursor_color,
             selection_color,
             cursor_visible,
-            ..TextFieldOptions::for_modal(content, rect, line_height, char_width)
+            ..TextFieldOptions::for_modal(content, rect, line_height, char_width, scale_factor)
         };
         Self::render(frame, painter, content, &opts);
     }
@@ -444,6 +446,7 @@ mod tests {
             0xFFFF0000,
             0xFF444444,
             true,
+            1.0,
         );
 
         // The cursor is drawn as a solid 2px-wide bar in `cursor_color`
