@@ -10,6 +10,8 @@ All notable changes to rust-editor are documented in this file.
 
 - Updated the website's Astro and JavaScript dependencies to remediate known
   Dependabot security advisories.
+- Updated transitive `rand` dependencies to remediate two Dependabot security
+  advisories.
 - Improved the legibility of inline website keybindings with system-font
   modifier symbols and wider spacing.
 - Added plain-English tooltips to inline website keybindings.
@@ -88,6 +90,9 @@ All notable changes to rust-editor are documented in this file.
   immediately when the outline is opened.
 
 ### Fixed
+
+- Windows release builds no longer fail when compiling the SCSS Tree-sitter
+  grammar with MSVC.
 
 - macOS text-input accessories, including the Caps Lock indicator and IME
   candidate window, now follow the active editor, modal, or CSV cell caret

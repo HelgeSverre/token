@@ -149,7 +149,9 @@ tree-sitter-vhdl = "1.4"
 tree-sitter-odin = "1.3"
 tree-sitter-fish = "3.6"
 tree-sitter-asm = "0.24"
-tree-sitter-scss = "1.0"
+# crates.io 1.0.0 passes a GCC warning flag directly to MSVC. Pin the upstream
+# cross-platform build-flag fix until a corrected crate release is available.
+tree-sitter-scss = { git = "https://github.com/tree-sitter-grammars/tree-sitter-scss", rev = "9ab738d22bb248771d42e8678d1a307d14990df1" }
 tree-sitter-cmake = "0.7"
 tree-sitter-make = "1.1"
 tree-sitter-commonlisp = "0.4"
