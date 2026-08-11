@@ -11,8 +11,9 @@ when each relevant concern is covered by its descriptor.
    0.25. Prefer a released crate exposing `tree_sitter_language::LanguageFn`.
    Otherwise pin an exact Git revision. Vendor generated sources only when an
    older binding would introduce a second `tree_sitter::Language` type.
-2. Add the `LanguageId`, then create its complete descriptor module in
-   `src/syntax/registry.rs`. Add that descriptor to `ALL_LANGUAGES`.
+2. Add one `language!(...)` entry inside `language_registry!` in
+   `src/syntax/registry.rs`. The macro generates its `LanguageId`, descriptor
+   module, and `ALL_LANGUAGES` entry together.
 3. Put display name, extensions, fence aliases, exact filenames, and compound
    suffixes in that descriptor. Do not add detection branches elsewhere.
 4. Register the grammar factory and highlight source in the descriptor.
@@ -34,7 +35,8 @@ when each relevant concern is covered by its descriptor.
 
 ## Metadata and detection
 
-Language support is declarative and behavior-bearing:
+Language support is declarative and behavior-bearing. Every entry lives inside
+the single `language_registry!` invocation:
 
 ```rust
 language!(
@@ -80,15 +82,14 @@ fixture. Parser-only registration is not considered syntax support.
 
 ## Structural selection
 
-Every descriptor owns a `&dyn SelectionBehavior`. `src/syntax/selection.rs`
-provides shared structural implementations that languages compose or replace.
-The shared strategies are:
+Every descriptor owns a copied `SelectionProfile`. The profile composes the
+shared structural fallback with optional boundary, normalization, and
+extra-range callbacks:
 
-- `CodeSelection` walks expressions, statements, declarations, blocks, strings,
+- `CODE_SELECTION` walks expressions, statements, declarations, blocks, strings,
   and delimiter interiors.
-- markup profiles add opening/closing-tag and element-interior boundaries;
-- YAML, INI, and Rust profiles normalize their grammar-specific ranges; and
-- document selection preserves document-oriented behavior.
+- markup profiles add opening/closing-tag and element-interior boundaries; and
+- YAML, INI, and Rust profiles normalize their grammar-specific ranges.
 
 Language profiles may provide a boundary profile, node-range normalization,
 or extra semantic range callback. Add specialization only when a focused
@@ -96,11 +97,12 @@ candidate-chain test demonstrates that the generic fallback is wrong. Existing
 Rust attached-doc/attribute, YAML comment, INI whitespace, and HTML-family
 boundary behavior must remain intact.
 
-Injected trees are evaluated before their host tree. While the selection is
-inside a valid embedded region, host candidates are admitted only when they
-contain the whole region. This prevents malformed host AST fragments from
-interleaving with embedded-language declarations, as covered by the Svelte
-adjacent-function regression test.
+Injected trees are evaluated before their host tree. If multiple regions
+contain the selection, the smallest region that produces candidates is chosen
+deterministically; only that tree contributes embedded candidates. Host
+candidates are admitted only when they contain the chosen region. This keeps
+the current flat snapshot model order-independent without claiming recursive
+injection support.
 
 ## Embedded languages
 

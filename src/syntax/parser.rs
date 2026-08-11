@@ -135,7 +135,7 @@ fn component_injection<'tree>(
     let parent = node.parent()?;
     let language = match parent.kind() {
         "script_element" => detect_component_script_language(parent, source),
-        "style_element" => LanguageId::Css,
+        "style_element" => detect_component_style_language(parent, source),
         _ => return None,
     };
     Some((language, node))
@@ -182,7 +182,9 @@ fn hurl_injection<'tree>(
     _source: &str,
 ) -> Option<(LanguageId, tree_sitter::Node<'tree>)> {
     match node.kind() {
-        "json_value" => Some((LanguageId::Json, node)),
+        "json_value" if node.parent().is_some_and(|parent| parent.kind() == "bytes") => {
+            Some((LanguageId::Json, node))
+        }
         "xml" => Some((LanguageId::Xml, node)),
         _ => None,
     }
@@ -1898,60 +1900,51 @@ impl ParserState {
 /// Returns TypeScript for `lang="ts"` or `lang="typescript"`, TSX for `lang="tsx"`,
 /// and JavaScript as default.
 fn detect_component_script_language(script_node: tree_sitter::Node, source: &str) -> LanguageId {
-    let mut cursor = script_node.walk();
-    if !cursor.goto_first_child() {
-        return LanguageId::JavaScript;
+    match component_lang_attribute(script_node, source) {
+        Some(language) if language.eq_ignore_ascii_case("ts") => LanguageId::TypeScript,
+        Some(language) if language.eq_ignore_ascii_case("typescript") => LanguageId::TypeScript,
+        Some(language) if language.eq_ignore_ascii_case("tsx") => LanguageId::Tsx,
+        _ => LanguageId::JavaScript,
     }
-    loop {
-        let child = cursor.node();
-        if child.kind() == "start_tag" {
-            let mut attr_cursor = child.walk();
-            if attr_cursor.goto_first_child() {
-                loop {
-                    let attr = attr_cursor.node();
-                    if attr.kind() == "attribute" {
-                        let mut ac = attr.walk();
-                        let mut is_lang = false;
-                        let mut value = None;
-                        if ac.goto_first_child() {
-                            loop {
-                                let n = ac.node();
-                                if n.kind() == "attribute_name" {
-                                    let name = &source[n.start_byte()..n.end_byte()];
-                                    is_lang = name == "lang";
-                                } else if n.kind() == "quoted_attribute_value"
-                                    || n.kind() == "attribute_value"
-                                {
-                                    let v = &source[n.start_byte()..n.end_byte()];
-                                    value = Some(v.trim_matches('"').trim_matches('\''));
-                                }
-                                if !ac.goto_next_sibling() {
-                                    break;
-                                }
-                            }
-                        }
-                        if is_lang {
-                            if let Some(v) = value {
-                                return match v {
-                                    "ts" | "typescript" => LanguageId::TypeScript,
-                                    "tsx" => LanguageId::Tsx,
-                                    _ => LanguageId::JavaScript,
-                                };
-                            }
-                        }
+}
+
+/// Detect the language from a component `<style>` element's `lang` attribute.
+fn detect_component_style_language(style_node: tree_sitter::Node, source: &str) -> LanguageId {
+    match component_lang_attribute(style_node, source) {
+        Some(language) if language.eq_ignore_ascii_case("scss") => LanguageId::Scss,
+        _ => LanguageId::Css,
+    }
+}
+
+fn component_lang_attribute<'source>(
+    element: tree_sitter::Node<'_>,
+    source: &'source str,
+) -> Option<&'source str> {
+    let start_tag = element
+        .named_children(&mut element.walk())
+        .find(|child| child.kind() == "start_tag")?;
+
+    start_tag
+        .named_children(&mut start_tag.walk())
+        .filter(|child| child.kind() == "attribute")
+        .find_map(|attribute| {
+            let mut name = None;
+            let mut value = None;
+            for part in attribute.named_children(&mut attribute.walk()) {
+                match part.kind() {
+                    "attribute_name" => name = part.utf8_text(source.as_bytes()).ok(),
+                    "quoted_attribute_value" | "attribute_value" => {
+                        value = part
+                            .utf8_text(source.as_bytes())
+                            .ok()
+                            .map(|text| text.trim_matches(['"', '\'']))
                     }
-                    if !attr_cursor.goto_next_sibling() {
-                        break;
-                    }
+                    _ => {}
                 }
             }
-            break;
-        }
-        if !cursor.goto_next_sibling() {
-            break;
-        }
-    }
-    LanguageId::JavaScript
+            name.filter(|name| name.eq_ignore_ascii_case("lang"))
+                .and(value)
+        })
 }
 
 impl Default for ParserState {
@@ -2085,16 +2078,47 @@ enabled: true
 
     #[test]
     fn syntax_snapshot_contains_hurl_json_tree() {
-        let source = "POST https://example.com/users\nContent-Type: application/json\n{\n  \"name\": \"Ada\"\n}\nHTTP 201\n";
+        let source = "POST https://example.com/users\nContent-Type: application/json\n{\n  \"user\": {\"name\": \"Ada\"},\n  \"roles\": [\"admin\", \"editor\"]\n}\nHTTP 201\n";
         let document = DocumentId(305);
         let mut state = ParserState::new();
         state.parse_and_highlight(source, LanguageId::Hurl, document, 1);
 
         let snapshot = state.syntax_tree_snapshot(document, 1).unwrap();
-        assert!(snapshot
+        let json_injections: Vec<_> = snapshot
             .injections()
             .iter()
-            .any(|injection| injection.language == LanguageId::Json));
+            .filter(|injection| injection.language == LanguageId::Json)
+            .collect();
+        assert_eq!(
+            json_injections.len(),
+            1,
+            "only the outer JSON body is injected"
+        );
+        assert!(source[json_injections[0].range.clone()].starts_with('{'));
+    }
+
+    #[test]
+    fn component_scss_style_uses_scss_injection() {
+        for (index, language) in [LanguageId::Vue, LanguageId::Svelte, LanguageId::Astro]
+            .into_iter()
+            .enumerate()
+        {
+            let source = "<style lang=\"scss\">\n.card { &__title { color: red; } }\n</style>\n";
+            let document = DocumentId(310 + index as u64);
+            let mut state = ParserState::new();
+            state.parse_and_highlight(source, language, document, 1);
+
+            let snapshot = state
+                .syntax_tree_snapshot(document, 1)
+                .expect("component syntax tree should be available");
+            assert!(
+                snapshot
+                    .injections()
+                    .iter()
+                    .any(|injection| injection.language == LanguageId::Scss),
+                "{language:?} should inject SCSS for style lang=scss"
+            );
+        }
     }
 
     #[test]

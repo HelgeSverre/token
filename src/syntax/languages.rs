@@ -4,97 +4,7 @@
 
 use std::path::Path;
 
-/// Supported language identifiers
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum LanguageId {
-    #[default]
-    PlainText,
-    Yaml,
-    Markdown,
-    Rust,
-    Html,
-    Css,
-    JavaScript,
-    TypeScript,
-    Tsx,
-    Jsx,
-    Json,
-    Toml,
-    Python,
-    Go,
-    Php,
-    C,
-    Cpp,
-    Java,
-    Bash,
-    Scheme,
-    Ini,
-    Xml,
-    Sema,
-    Blade,
-    Vue,
-    Svelte,
-    Just,
-    AppleScript,
-    CSharp,
-    Ruby,
-    Lua,
-    R,
-    Swift,
-    Elixir,
-    Gleam,
-    Solidity,
-    Kotlin,
-    Dart,
-    Julia,
-    Haskell,
-    Ocaml,
-    OcamlInterface,
-    D,
-    ObjectiveC,
-    Vhdl,
-    Odin,
-    Fish,
-    Assembly,
-    Scss,
-    Cmake,
-    Make,
-    CommonLisp,
-    Zig,
-    Glsl,
-    Graphql,
-    Hcl,
-    Nix,
-    Ada,
-    Erlang,
-    Clojure,
-    Nushell,
-    Sed,
-    Tcl,
-    Roc,
-    Janet,
-    Forth,
-    Protobuf,
-    Dhall,
-    Pkl,
-    Hurl,
-    Wit,
-    StandardMl,
-    Nim,
-    Astro,
-    Awk,
-    Kdl,
-    Tera,
-    Typst,
-    Dockerfile,
-    Wgsl,
-    Sql,
-    V,
-    Cue,
-    Fennel,
-    Pest,
-    Pony,
-}
+pub use super::registry::LanguageId;
 
 impl LanguageId {
     /// Detect language from file extension
@@ -147,17 +57,13 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    fn registry_has_unique_ids_extensions_and_fence_aliases() {
-        let mut ids = HashSet::new();
+    fn registry_detection_keys_are_unique() {
         let mut extensions = HashSet::new();
         let mut aliases = HashSet::new();
+        let mut filenames = HashSet::new();
+        let mut suffixes = HashSet::new();
 
         for definition in crate::syntax::registry::ALL_LANGUAGES {
-            assert!(
-                ids.insert(definition.id),
-                "duplicate id: {:?}",
-                definition.id
-            );
             for extension in definition.extensions {
                 assert!(
                     extensions.insert(extension.to_ascii_lowercase()),
@@ -168,6 +74,18 @@ mod tests {
                 assert!(
                     aliases.insert(alias.to_ascii_lowercase()),
                     "duplicate fence alias: {alias}"
+                );
+            }
+            for filename in definition.filenames {
+                assert!(
+                    filenames.insert(filename.to_ascii_lowercase()),
+                    "duplicate filename: {filename}"
+                );
+            }
+            for suffix in definition.compound_suffixes {
+                assert!(
+                    suffixes.insert(suffix.to_ascii_lowercase()),
+                    "duplicate compound suffix: {suffix}"
                 );
             }
         }

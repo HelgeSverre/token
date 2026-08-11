@@ -15,39 +15,14 @@ struct BoundarySelectionProfile {
     closing_node_kinds: &'static [&'static str],
 }
 
-/// Broad syntax families provide a reusable selection-expansion baseline.
-///
-/// Language profiles can layer grammar-specific normalization and candidate
-/// contributors on top without weakening the engine's containment invariants.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SelectionFamily {
-    GenericCode,
-    Markup,
-    DataConfig,
-    Document,
-}
-
 type NormalizeNodeRange = for<'tree> fn(&Document, Node<'tree>) -> Range<usize>;
 type ExtraNodeRange = for<'tree> fn(&Document, Node<'tree>) -> Option<Range<usize>>;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SelectionProfile {
-    family: SelectionFamily,
     boundaries: Option<&'static BoundarySelectionProfile>,
     normalize_node: NormalizeNodeRange,
     extra_node_range: Option<ExtraNodeRange>,
-}
-
-pub(crate) trait SelectionBehavior: Sync {
-    fn profile(&self) -> SelectionProfile;
-}
-
-struct StaticSelectionBehavior(SelectionProfile);
-
-impl SelectionBehavior for StaticSelectionBehavior {
-    fn profile(&self) -> SelectionProfile {
-        self.0
-    }
 }
 
 const XML_BOUNDARIES: BoundarySelectionProfile = BoundarySelectionProfile {
@@ -96,59 +71,38 @@ fn yaml_node_range(_document: &Document, node: Node<'_>) -> Range<usize> {
 }
 
 fn selection_profile(language: LanguageId) -> SelectionProfile {
-    crate::syntax::registry::language(language)
-        .selection
-        .profile()
+    crate::syntax::registry::language(language).selection
 }
 
-static CODE_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
-    family: SelectionFamily::GenericCode,
+pub(crate) const CODE_SELECTION: SelectionProfile = SelectionProfile {
     boundaries: None,
     normalize_node: identity_node_range,
     extra_node_range: None,
-});
-static DOCUMENT_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
-    family: SelectionFamily::Document,
-    ..CODE_BEHAVIOR.0
-});
-static HTML_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
-    family: SelectionFamily::Markup,
+};
+pub(crate) const HTML_SELECTION: SelectionProfile = SelectionProfile {
     boundaries: Some(&HTML_BOUNDARIES),
-    ..CODE_BEHAVIOR.0
-});
-static XML_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
-    family: SelectionFamily::Markup,
+    ..CODE_SELECTION
+};
+pub(crate) const XML_SELECTION: SelectionProfile = SelectionProfile {
     boundaries: Some(&XML_BOUNDARIES),
-    ..CODE_BEHAVIOR.0
-});
-static JSX_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
-    family: SelectionFamily::Markup,
+    ..CODE_SELECTION
+};
+pub(crate) const JSX_SELECTION: SelectionProfile = SelectionProfile {
     boundaries: Some(&JSX_BOUNDARIES),
-    ..CODE_BEHAVIOR.0
-});
-static YAML_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
-    family: SelectionFamily::DataConfig,
+    ..CODE_SELECTION
+};
+pub(crate) const YAML_SELECTION: SelectionProfile = SelectionProfile {
     normalize_node: yaml_node_range,
-    ..CODE_BEHAVIOR.0
-});
-static INI_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
-    family: SelectionFamily::DataConfig,
+    ..CODE_SELECTION
+};
+pub(crate) const INI_SELECTION: SelectionProfile = SelectionProfile {
     normalize_node: ini_node_range,
-    ..CODE_BEHAVIOR.0
-});
-static RUST_BEHAVIOR: StaticSelectionBehavior = StaticSelectionBehavior(SelectionProfile {
+    ..CODE_SELECTION
+};
+pub(crate) const RUST_SELECTION: SelectionProfile = SelectionProfile {
     extra_node_range: Some(rust_attached_item_range),
-    ..CODE_BEHAVIOR.0
-});
-
-pub(crate) static CODE_SELECTION: &dyn SelectionBehavior = &CODE_BEHAVIOR;
-pub(crate) static DOCUMENT_SELECTION: &dyn SelectionBehavior = &DOCUMENT_BEHAVIOR;
-pub(crate) static HTML_SELECTION: &dyn SelectionBehavior = &HTML_BEHAVIOR;
-pub(crate) static XML_SELECTION: &dyn SelectionBehavior = &XML_BEHAVIOR;
-pub(crate) static JSX_SELECTION: &dyn SelectionBehavior = &JSX_BEHAVIOR;
-pub(crate) static YAML_SELECTION: &dyn SelectionBehavior = &YAML_BEHAVIOR;
-pub(crate) static INI_SELECTION: &dyn SelectionBehavior = &INI_BEHAVIOR;
-pub(crate) static RUST_SELECTION: &dyn SelectionBehavior = &RUST_BEHAVIOR;
+    ..CODE_SELECTION
+};
 
 /// Immutable parse tree associated with one exact document revision.
 #[derive(Debug, Clone)]
@@ -182,6 +136,15 @@ impl SyntaxTreeSnapshot {
 
     pub fn with_injections(mut self, injections: Vec<InjectedSyntaxTree>) -> Self {
         self.injections = injections;
+        self.injections.sort_by_key(|injection| {
+            (
+                injection.range.start,
+                injection.range.end,
+                injection.language,
+            )
+        });
+        self.injections
+            .dedup_by(|left, right| left.language == right.language && left.range == right.range);
         self
     }
 
@@ -214,26 +177,20 @@ pub fn expansion_candidates(
         start_byte,
         end_byte,
     );
-    let mut candidates = Vec::new();
-    let mut active_injection = None;
-    for injection in &snapshot.injections {
-        if injection.range.start <= start_byte && injection.range.end >= end_byte {
-            let injected_candidates = tree_expansion_candidates(
-                document,
-                &injection.tree,
-                injection.language,
-                selection,
-                start_byte,
-                end_byte,
-            );
-            if !injected_candidates.is_empty() {
-                active_injection = Some(injection.range.clone());
-                candidates.extend(injected_candidates);
-            }
-        }
-    }
+    let active_injection = smallest_containing_injection(
+        document,
+        &snapshot.injections,
+        selection,
+        start_byte,
+        end_byte,
+    );
+
+    let active_range = active_injection
+        .as_ref()
+        .map(|(injection, _)| injection.range.clone());
+    let mut candidates = active_injection.map_or_else(Vec::new, |(_, candidates)| candidates);
     candidates.extend(host_candidates.into_iter().filter(|candidate| {
-        let Some(injection) = &active_injection else {
+        let Some(injection) = &active_range else {
             return true;
         };
         let candidate_start = position_to_byte(document, candidate.start());
@@ -247,6 +204,40 @@ pub fn expansion_candidates(
     });
     candidates.dedup_by_key(|candidate| (candidate.start(), candidate.end()));
     candidates
+}
+
+/// Choose one active embedded tree deterministically. Recursive injection
+/// parsing is not modeled yet, so the smallest successful containing region
+/// represents the innermost language available in the flat snapshot.
+fn smallest_containing_injection<'snapshot>(
+    document: &Document,
+    injections: &'snapshot [InjectedSyntaxTree],
+    selection: Selection,
+    start_byte: usize,
+    end_byte: usize,
+) -> Option<(&'snapshot InjectedSyntaxTree, Vec<Selection>)> {
+    injections
+        .iter()
+        .filter(|injection| injection.range.start <= start_byte && injection.range.end >= end_byte)
+        .filter_map(|injection| {
+            let candidates = tree_expansion_candidates(
+                document,
+                &injection.tree,
+                injection.language,
+                selection,
+                start_byte,
+                end_byte,
+            );
+            (!candidates.is_empty()).then_some((injection, candidates))
+        })
+        .min_by_key(|(injection, _)| {
+            (
+                injection.range.end.saturating_sub(injection.range.start),
+                injection.range.start,
+                injection.range.end,
+                injection.language,
+            )
+        })
 }
 
 fn tree_expansion_candidates(
@@ -270,7 +261,7 @@ fn tree_expansion_candidates(
             if let Some(inner) = delimiter_interior(document, node) {
                 ranges.push(inner);
             }
-            collect_family_ranges(document, profile, node, &mut ranges);
+            collect_boundary_ranges(document, profile, node, &mut ranges);
             let range = normalized_node_range(document, profile, node);
             if node != root {
                 ranges.push(range);
@@ -382,13 +373,13 @@ fn markup_element_interior(
     (range.start < range.end).then_some(range)
 }
 
-fn collect_family_ranges(
+fn collect_boundary_ranges(
     _document: &Document,
     profile: SelectionProfile,
     node: Node<'_>,
     ranges: &mut Vec<Range<usize>>,
 ) {
-    if profile.family == SelectionFamily::Markup {
+    if profile.boundaries.is_some() {
         if let Some(inner) = profile
             .boundaries
             .and_then(|boundaries| markup_element_interior(boundaries, node))
@@ -839,6 +830,80 @@ mod tests {
             texts.iter().any(|text| text.starts_with("<script>")),
             "{texts:?}"
         );
+    }
+
+    #[test]
+    fn smallest_containing_injection_is_order_independent() {
+        let source = "  const result = format(user.name);  ";
+        let (document, host) = parsed_document(source, LanguageId::JavaScript);
+        let outer_range = 0..source.len();
+        let inner_start = source.find("format").expect("call should exist");
+        let inner_range = inner_start..source.len() - 1;
+
+        let parse_injection = |range: Range<usize>| {
+            let mut parser = tree_sitter::Parser::new();
+            parser
+                .set_language(&tree_sitter_javascript::LANGUAGE.into())
+                .expect("JavaScript grammar should load");
+            parser
+                .set_included_ranges(&[tree_sitter::Range {
+                    start_byte: range.start,
+                    end_byte: range.end,
+                    start_point: tree_sitter::Point::new(0, range.start),
+                    end_point: tree_sitter::Point::new(0, range.end),
+                }])
+                .expect("included range should be valid");
+            InjectedSyntaxTree {
+                language: LanguageId::JavaScript,
+                range,
+                tree: parser.parse(source, None).expect("source should parse"),
+            }
+        };
+
+        let outer = parse_injection(outer_range);
+        let inner = parse_injection(inner_range.clone());
+        let name = source.find("name").expect("name should exist");
+        let selection = Selection::from_positions(
+            byte_to_position(&document, name),
+            byte_to_position(&document, name + "name".len()),
+        );
+
+        for injections in [
+            vec![outer.clone(), inner.clone()],
+            vec![inner.clone(), outer.clone()],
+        ] {
+            let (chosen, candidates) = smallest_containing_injection(
+                &document,
+                &injections,
+                selection,
+                name,
+                name + "name".len(),
+            )
+            .expect("an injection should produce candidates");
+            assert_eq!(chosen.range, inner_range);
+            assert!(!candidates.is_empty());
+        }
+
+        let left = parse_injection(0..source.len() - 2);
+        let right = parse_injection(2..source.len());
+        for injections in [vec![right.clone(), left.clone()], vec![left.clone(), right]] {
+            let (chosen, _) = smallest_containing_injection(
+                &document,
+                &injections,
+                selection,
+                name,
+                name + "name".len(),
+            )
+            .expect("an overlapping injection should produce candidates");
+            assert_eq!(chosen.range, left.range);
+        }
+
+        let snapshot = host.with_injections(vec![inner.clone(), outer, inner]);
+        assert_eq!(snapshot.injections().len(), 2);
+        assert!(snapshot
+            .injections()
+            .windows(2)
+            .all(|pair| pair[0].range.start <= pair[1].range.start));
     }
 
     #[test]

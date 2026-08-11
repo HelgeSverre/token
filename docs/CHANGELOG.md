@@ -54,6 +54,10 @@ All notable changes to rust-editor are documented in this file.
   metadata and detection, lazy parser/query construction, selection, outline,
   and injection behavior. This removes parallel language switches while
   retaining explicit per-language extension points.
+- The language registry now generates `LanguageId`, descriptor modules, and
+  the complete inventory from one declaration. Selection profiles are stored
+  directly, and overlapping injected regions deterministically prefer the
+  smallest successful containing tree.
 - Desktop product metadata is consistently branded as “Token” while preserving
   `token` as the command name. Direct macOS launches now use the capitalized
   name in the application menu, the native About panel links to the Token

@@ -14,10 +14,9 @@ use super::parser::{
     TYPST_INJECTIONS,
 };
 use super::selection::{
-    SelectionBehavior, CODE_SELECTION, DOCUMENT_SELECTION, HTML_SELECTION, INI_SELECTION,
-    JSX_SELECTION, RUST_SELECTION, XML_SELECTION, YAML_SELECTION,
+    SelectionProfile, CODE_SELECTION, HTML_SELECTION, INI_SELECTION, JSX_SELECTION, RUST_SELECTION,
+    XML_SELECTION, YAML_SELECTION,
 };
-use super::LanguageId;
 use crate::outline::extract::{
     OutlineBehavior, APPLESCRIPT_OUTLINE, BLADE_OUTLINE, COMPONENT_OUTLINE, CPP_OUTLINE,
     CSHARP_OUTLINE, C_OUTLINE, DART_RULE_OUTLINE, ELIXIR_OUTLINE, GLEAM_OUTLINE, GO_OUTLINE,
@@ -59,12 +58,12 @@ pub(crate) struct LanguageDefinition {
     pub filenames: &'static [&'static str],
     pub compound_suffixes: &'static [&'static str],
     pub parser: Option<ParserDefinition>,
-    pub selection: &'static dyn SelectionBehavior,
+    pub selection: SelectionProfile,
     pub outline: &'static dyn OutlineBehavior,
     pub injections: &'static dyn InjectionBehavior,
 }
 
-macro_rules! language {
+macro_rules! parser_language_module {
     ($module:ident, $id:ident, $name:literal, $extensions:expr, $aliases:expr,
      $filenames:expr, $suffixes:expr, $grammar:expr, $highlights:expr,
      $selection:expr, $outline:expr, $injections:expr) => {
@@ -94,12 +93,77 @@ macro_rules! language {
     };
 }
 
+macro_rules! plain_language_module {
+    ($module:ident, $id:ident, $name:literal, $extensions:expr, $aliases:expr,
+     $filenames:expr, $suffixes:expr, $selection:expr, $outline:expr, $injections:expr) => {
+        pub(crate) mod $module {
+            use super::*;
+
+            pub(crate) static DEFINITION: LanguageDefinition = LanguageDefinition {
+                id: LanguageId::$id,
+                display_name: $name,
+                extensions: &$extensions,
+                fence_aliases: &$aliases,
+                filenames: &$filenames,
+                compound_suffixes: &$suffixes,
+                parser: None,
+                selection: $selection,
+                outline: $outline,
+                injections: $injections,
+            };
+        }
+    };
+}
+
+macro_rules! language_registry {
+    (
+        plain_language!($plain_module:ident, $plain_id:ident, $($plain_definition:tt)*);
+        $(language!($module:ident, $id:ident, $($definition:tt)*);)*
+    ) => {
+        /// Supported language identifiers.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+        pub enum LanguageId {
+            #[default]
+            $plain_id,
+            $($id),*
+        }
+
+        plain_language_module!($plain_module, $plain_id, $($plain_definition)*);
+        $(parser_language_module!($module, $id, $($definition)*);)*
+
+        pub(crate) static ALL_LANGUAGES: &[&LanguageDefinition] = &[
+            &$plain_module::DEFINITION,
+            $(&$module::DEFINITION),*
+        ];
+
+        pub(crate) fn language(id: LanguageId) -> &'static LanguageDefinition {
+            match id {
+                LanguageId::$plain_id => &$plain_module::DEFINITION,
+                $(LanguageId::$id => &$module::DEFINITION),*
+            }
+        }
+    };
+}
+
 macro_rules! static_query {
     ($query:expr) => {
         HighlightSource::Static($query)
     };
 }
 
+language_registry! {
+plain_language!(
+    plain_text,
+    PlainText,
+    "Plain Text",
+    [],
+    [],
+    [],
+    [],
+    CODE_SELECTION,
+    NO_OUTLINE,
+    NO_INJECTIONS
+);
 language!(
     yaml,
     Yaml,
@@ -124,7 +188,7 @@ language!(
     [],
     tree_sitter_md::LANGUAGE.into(),
     static_query!(p::MARKDOWN_HIGHLIGHTS),
-    DOCUMENT_SELECTION,
+    CODE_SELECTION,
     MARKDOWN_OUTLINE,
     MARKDOWN_INJECTIONS
 );
@@ -1291,118 +1355,6 @@ language!(
     NO_INJECTIONS
 );
 
-pub(crate) mod plain_text {
-    use super::*;
-
-    pub(crate) static DEFINITION: LanguageDefinition = LanguageDefinition {
-        id: LanguageId::PlainText,
-        display_name: "Plain Text",
-        extensions: &[],
-        fence_aliases: &[],
-        filenames: &[],
-        compound_suffixes: &[],
-        parser: None,
-        selection: CODE_SELECTION,
-        outline: NO_OUTLINE,
-        injections: NO_INJECTIONS,
-    };
-}
-
-pub(crate) static ALL_LANGUAGES: &[&LanguageDefinition] = &[
-    &plain_text::DEFINITION,
-    &yaml::DEFINITION,
-    &markdown::DEFINITION,
-    &rust::DEFINITION,
-    &html::DEFINITION,
-    &css::DEFINITION,
-    &javascript::DEFINITION,
-    &typescript::DEFINITION,
-    &tsx::DEFINITION,
-    &jsx::DEFINITION,
-    &json::DEFINITION,
-    &toml::DEFINITION,
-    &python::DEFINITION,
-    &go::DEFINITION,
-    &php::DEFINITION,
-    &c::DEFINITION,
-    &cpp::DEFINITION,
-    &java::DEFINITION,
-    &bash::DEFINITION,
-    &scheme::DEFINITION,
-    &ini::DEFINITION,
-    &xml::DEFINITION,
-    &sema::DEFINITION,
-    &blade::DEFINITION,
-    &vue::DEFINITION,
-    &svelte::DEFINITION,
-    &just::DEFINITION,
-    &applescript::DEFINITION,
-    &csharp::DEFINITION,
-    &ruby::DEFINITION,
-    &lua::DEFINITION,
-    &r::DEFINITION,
-    &swift::DEFINITION,
-    &elixir::DEFINITION,
-    &gleam::DEFINITION,
-    &solidity::DEFINITION,
-    &kotlin::DEFINITION,
-    &dart::DEFINITION,
-    &julia::DEFINITION,
-    &haskell::DEFINITION,
-    &ocaml::DEFINITION,
-    &ocaml_interface::DEFINITION,
-    &d::DEFINITION,
-    &objective_c::DEFINITION,
-    &vhdl::DEFINITION,
-    &odin::DEFINITION,
-    &fish::DEFINITION,
-    &assembly::DEFINITION,
-    &scss::DEFINITION,
-    &cmake::DEFINITION,
-    &make::DEFINITION,
-    &common_lisp::DEFINITION,
-    &zig::DEFINITION,
-    &glsl::DEFINITION,
-    &graphql::DEFINITION,
-    &hcl::DEFINITION,
-    &nix::DEFINITION,
-    &ada::DEFINITION,
-    &erlang::DEFINITION,
-    &clojure::DEFINITION,
-    &nushell::DEFINITION,
-    &sed::DEFINITION,
-    &tcl::DEFINITION,
-    &roc::DEFINITION,
-    &janet::DEFINITION,
-    &forth::DEFINITION,
-    &protobuf::DEFINITION,
-    &dhall::DEFINITION,
-    &pkl::DEFINITION,
-    &hurl::DEFINITION,
-    &wit::DEFINITION,
-    &standard_ml::DEFINITION,
-    &nim::DEFINITION,
-    &astro::DEFINITION,
-    &awk::DEFINITION,
-    &kdl::DEFINITION,
-    &tera::DEFINITION,
-    &typst::DEFINITION,
-    &dockerfile::DEFINITION,
-    &wgsl::DEFINITION,
-    &sql::DEFINITION,
-    &v::DEFINITION,
-    &cue::DEFINITION,
-    &fennel::DEFINITION,
-    &pest::DEFINITION,
-    &pony::DEFINITION,
-];
-
-pub(crate) fn language(id: LanguageId) -> &'static LanguageDefinition {
-    ALL_LANGUAGES
-        .iter()
-        .copied()
-        .find(|definition| definition.id == id)
-        .unwrap_or_else(|| panic!("missing language definition for {id:?}"))
 }
 
 pub(crate) fn from_extension(extension: &str) -> Option<&'static LanguageDefinition> {
