@@ -4,6 +4,8 @@
 //! Supports incremental parsing by caching trees and computing edits.
 
 use std::collections::HashMap;
+use std::ops::Range;
+use std::time::Instant;
 
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, Tree, TreeCursor};
@@ -20,6 +22,7 @@ struct DocParseState {
     tree: Tree,
     /// The source text that was parsed (needed for computing edits)
     source: String,
+    highlights: Option<SyntaxHighlights>,
 }
 
 /// Convert byte column to character column (handles UTF-8 multi-byte chars)
@@ -115,6 +118,22 @@ fn compute_incremental_edit(old_src: &str, new_src: &str) -> Option<InputEdit> {
     })
 }
 
+fn merge_line_ranges(ranges: &mut Vec<Range<usize>>) {
+    ranges.sort_by_key(|range| range.start);
+    let mut merged: Vec<Range<usize>> = Vec::with_capacity(ranges.len());
+    for range in ranges.drain(..) {
+        if let Some(previous) = merged
+            .last_mut()
+            .filter(|previous| range.start <= previous.end)
+        {
+            previous.end = previous.end.max(range.end);
+        } else {
+            merged.push(range);
+        }
+    }
+    *ranges = merged;
+}
+
 // Embedded query files
 // Phase 1 languages
 const YAML_HIGHLIGHTS: &str = include_str!("../../queries/yaml/highlights.scm");
@@ -170,6 +189,15 @@ pub struct ParserState {
     markdown_inline_parser: Option<Parser>,
     /// Markdown inline grammar query
     markdown_inline_query: Option<Query>,
+    last_timing: ParserTiming,
+    last_changed_line_ranges: Option<Vec<Range<usize>>>,
+    last_highlight_patch: Option<SyntaxHighlights>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ParserTiming {
+    pub parse_ms: Option<f64>,
+    pub highlight_ms: Option<f64>,
 }
 
 impl ParserState {
@@ -188,6 +216,9 @@ impl ParserState {
             doc_cache: HashMap::new(),
             markdown_inline_parser: None,
             markdown_inline_query: None,
+            last_timing: ParserTiming::default(),
+            last_changed_line_ranges: None,
+            last_highlight_patch: None,
         };
 
         // Initialize Phase 1 languages
@@ -361,6 +392,9 @@ impl ParserState {
         doc_id: DocumentId,
         revision: u64,
     ) -> SyntaxHighlights {
+        self.last_timing = ParserTiming::default();
+        self.last_changed_line_ranges = None;
+        self.last_highlight_patch = None;
         // Skip plain text
         if language == LanguageId::PlainText {
             return SyntaxHighlights::new(language, revision);
@@ -368,17 +402,20 @@ impl ParserState {
 
         // Use specialized two-pass parsing for markdown (block + inline)
         if language == LanguageId::Markdown {
-            return self.parse_and_highlight_markdown(source, doc_id, revision);
+            let highlights = self.parse_and_highlight_markdown(source, doc_id, revision);
+            return highlights;
         }
 
         // Use specialized parsing with language injection for HTML
         if language == LanguageId::Html {
-            return self.parse_and_highlight_html(source, doc_id, revision);
+            let highlights = self.parse_and_highlight_html(source, doc_id, revision);
+            return highlights;
         }
 
         // Use specialized parsing with language injection for Vue SFC
         if language == LanguageId::Vue {
-            return self.parse_and_highlight_vue(source, doc_id, revision);
+            let highlights = self.parse_and_highlight_vue(source, doc_id, revision);
+            return highlights;
         }
 
         let parser = match self.parsers.get_mut(&language) {
@@ -390,10 +427,21 @@ impl ParserState {
         };
 
         // Try incremental parsing if we have a cached tree for this document
+        let parse_started = Instant::now();
         let tree = if let Some(cached) = self.doc_cache.get_mut(&doc_id) {
             if cached.language == language {
                 // Same language, try incremental parse
                 if let Some(edit) = compute_incremental_edit(&cached.source, source) {
+                    let old_line_count =
+                        cached.source.bytes().filter(|byte| *byte == b'\n').count() + 1;
+                    let new_line_count = source.bytes().filter(|byte| *byte == b'\n').count() + 1;
+                    if let Some(highlights) = &mut cached.highlights {
+                        highlights.shift_for_edit(
+                            edit.start_position.row,
+                            old_line_count,
+                            new_line_count,
+                        );
+                    }
                     // Apply the edit to the cached tree
                     cached.tree.edit(&edit);
 
@@ -408,6 +456,24 @@ impl ParserState {
                     // Parse with the edited old tree for incremental reuse
                     match parser.parse(source, Some(&cached.tree)) {
                         Some(new_tree) => {
+                            let line_count =
+                                source.bytes().filter(|byte| *byte == b'\n').count() + 1;
+                            let mut changed_ranges: Vec<_> = cached
+                                .tree
+                                .changed_ranges(&new_tree)
+                                .map(|range| {
+                                    range.start_point.row.saturating_sub(1)
+                                        ..(range.end_point.row + 2).min(line_count)
+                                })
+                                .collect();
+                            if changed_ranges.is_empty() {
+                                changed_ranges.push(
+                                    edit.start_position.row.saturating_sub(1)
+                                        ..(edit.new_end_position.row + 2).min(line_count),
+                                );
+                            }
+                            merge_line_ranges(&mut changed_ranges);
+                            self.last_changed_line_ranges = Some(changed_ranges);
                             // Update cache with new tree and source
                             cached.tree = new_tree.clone();
                             cached.source = source.to_owned();
@@ -428,6 +494,7 @@ impl ParserState {
                                             language,
                                             tree: t.clone(),
                                             source: source.to_owned(),
+                                            highlights: None,
                                         },
                                     );
                                     t
@@ -460,6 +527,7 @@ impl ParserState {
                                 language,
                                 tree: t.clone(),
                                 source: source.to_owned(),
+                                highlights: None,
                             },
                         );
                         t
@@ -480,6 +548,7 @@ impl ParserState {
                             language,
                             tree: t.clone(),
                             source: source.to_owned(),
+                            highlights: None,
                         },
                     );
                     t
@@ -490,9 +559,65 @@ impl ParserState {
                 }
             }
         };
+        self.last_timing.parse_ms = Some(parse_started.elapsed().as_secs_f64() * 1000.0);
 
         // Extract highlights
-        self.extract_highlights(source, &tree, language, revision)
+        if self.last_changed_line_ranges.is_some()
+            && self
+                .doc_cache
+                .get(&doc_id)
+                .is_none_or(|cached| cached.highlights.is_none())
+        {
+            self.last_changed_line_ranges = None;
+        }
+        let highlight_started = Instant::now();
+        let mut patch = self.extract_highlights(
+            source,
+            &tree,
+            language,
+            revision,
+            self.last_changed_line_ranges.as_deref(),
+        );
+        let highlights = if let (Some(ranges), Some(cached)) = (
+            self.last_changed_line_ranges.as_ref(),
+            self.doc_cache.get_mut(&doc_id),
+        ) {
+            if let Some(mut existing) = cached.highlights.take() {
+                let patch_for_worker = patch.clone();
+                for range in ranges {
+                    existing.lines.retain(|line, _| !range.contains(line));
+                }
+                existing.lines.extend(std::mem::take(&mut patch.lines));
+                existing.revision = revision;
+                existing.language = language;
+                self.last_highlight_patch = Some(patch_for_worker);
+                cached.highlights = Some(existing.clone());
+                existing
+            } else {
+                self.last_changed_line_ranges = None;
+                cached.highlights = Some(patch.clone());
+                patch
+            }
+        } else {
+            if let Some(cached) = self.doc_cache.get_mut(&doc_id) {
+                cached.highlights = Some(patch.clone());
+            }
+            patch
+        };
+        self.last_timing.highlight_ms = Some(highlight_started.elapsed().as_secs_f64() * 1000.0);
+        highlights
+    }
+
+    pub fn last_timing(&self) -> ParserTiming {
+        self.last_timing
+    }
+
+    pub fn last_changed_line_ranges(&self) -> Option<Vec<Range<usize>>> {
+        self.last_changed_line_ranges.clone()
+    }
+
+    pub fn take_last_highlight_patch(&mut self) -> Option<SyntaxHighlights> {
+        self.last_highlight_patch.take()
     }
 
     /// Remove cached parse state for a document (call when document is closed)
@@ -507,6 +632,7 @@ impl ParserState {
         tree: &Tree,
         language: LanguageId,
         revision: u64,
+        line_ranges: Option<&[Range<usize>]>,
     ) -> SyntaxHighlights {
         let query = match self.queries.get(&language) {
             Some(q) => q,
@@ -520,56 +646,30 @@ impl ParserState {
         // Pre-split into lines for byte→char column conversion
         let lines: Vec<&str> = source.lines().collect();
 
-        // Run query and collect captures using StreamingIterator
-        let mut captures = cursor.captures(query, tree.root_node(), source_bytes);
-        while let Some((query_match, capture_idx)) = captures.next() {
-            let capture = &query_match.captures[*capture_idx];
-            let capture_name = &query.capture_names()[capture.index as usize];
+        let mut extract_range = |line_range: Range<usize>| {
+            cursor.set_point_range(Point::new(line_range.start, 0)..Point::new(line_range.end, 0));
+            let mut captures = cursor.captures(query, tree.root_node(), source_bytes);
+            while let Some((query_match, capture_idx)) = captures.next() {
+                let capture = &query_match.captures[*capture_idx];
+                let capture_name = &query.capture_names()[capture.index as usize];
 
-            // Map capture name to highlight ID
-            let highlight_id = match highlight_id_for_name(capture_name) {
-                Some(id) => id,
-                None => continue, // Skip unknown captures
-            };
+                // Map capture name to highlight ID
+                let highlight_id = match highlight_id_for_name(capture_name) {
+                    Some(id) => id,
+                    None => continue, // Skip unknown captures
+                };
 
-            let node = capture.node;
-            let start = node.start_position();
-            let end = node.end_position();
+                let node = capture.node;
+                let start = node.start_position();
+                let end = node.end_position();
 
-            // Handle multi-line nodes
-            if start.row == end.row {
-                // Single line token
-                let row = start.row;
-                let line = lines.get(row).copied().unwrap_or("");
-                let start_char = byte_to_char_col(line, start.column);
-                let end_char = byte_to_char_col(line, end.column);
-
-                if start_char < end_char {
-                    let line_highlights = highlights.lines.entry(row).or_default();
-                    line_highlights.tokens.push(HighlightToken {
-                        start_col: start_char,
-                        end_col: end_char,
-                        highlight: highlight_id,
-                    });
-                }
-            } else {
-                // Multi-line token: split across lines
-                for row in start.row..=end.row {
+                // Handle multi-line nodes
+                if start.row == end.row {
+                    // Single line token
+                    let row = start.row;
                     let line = lines.get(row).copied().unwrap_or("");
-                    let line_char_len = line.chars().count();
-
-                    let (start_char, end_char) = if row == start.row {
-                        // First line: from start to end of line
-                        let start_char = byte_to_char_col(line, start.column);
-                        (start_char, line_char_len)
-                    } else if row == end.row {
-                        // Last line: from start of line to end position
-                        let end_char = byte_to_char_col(line, end.column);
-                        (0, end_char)
-                    } else {
-                        // Middle lines: entire line
-                        (0, line_char_len)
-                    };
+                    let start_char = byte_to_char_col(line, start.column);
+                    let end_char = byte_to_char_col(line, end.column);
 
                     if start_char < end_char {
                         let line_highlights = highlights.lines.entry(row).or_default();
@@ -579,8 +679,43 @@ impl ParserState {
                             highlight: highlight_id,
                         });
                     }
+                } else {
+                    // Multi-line token: split across lines
+                    for row in start.row..=end.row {
+                        let line = lines.get(row).copied().unwrap_or("");
+                        let line_char_len = line.chars().count();
+
+                        let (start_char, end_char) = if row == start.row {
+                            // First line: from start to end of line
+                            let start_char = byte_to_char_col(line, start.column);
+                            (start_char, line_char_len)
+                        } else if row == end.row {
+                            // Last line: from start of line to end position
+                            let end_char = byte_to_char_col(line, end.column);
+                            (0, end_char)
+                        } else {
+                            // Middle lines: entire line
+                            (0, line_char_len)
+                        };
+
+                        if start_char < end_char {
+                            let line_highlights = highlights.lines.entry(row).or_default();
+                            line_highlights.tokens.push(HighlightToken {
+                                start_col: start_char,
+                                end_col: end_char,
+                                highlight: highlight_id,
+                            });
+                        }
+                    }
                 }
             }
+        };
+        if let Some(ranges) = line_ranges {
+            for range in ranges {
+                extract_range(range.clone());
+            }
+        } else {
+            extract_range(0..lines.len().max(1));
         }
 
         finalize_line_tokens(&mut highlights);
@@ -627,6 +762,7 @@ impl ParserState {
                                             language,
                                             tree: t.clone(),
                                             source: source.to_owned(),
+                                            highlights: None,
                                         },
                                     );
                                     t
@@ -648,6 +784,7 @@ impl ParserState {
                                 language,
                                 tree: t.clone(),
                                 source: source.to_owned(),
+                                highlights: None,
                             },
                         );
                         t
@@ -664,6 +801,7 @@ impl ParserState {
                             language,
                             tree: t.clone(),
                             source: source.to_owned(),
+                            highlights: None,
                         },
                     );
                     t
@@ -673,7 +811,7 @@ impl ParserState {
         };
 
         // Step 2: Extract block-level highlights
-        let mut highlights = self.extract_highlights(source, &block_tree, language, revision);
+        let mut highlights = self.extract_highlights(source, &block_tree, language, revision, None);
 
         // Step 3: Parse inline content if we have the inline parser
         if self.markdown_inline_parser.is_some() && self.markdown_inline_query.is_some() {
@@ -1089,6 +1227,7 @@ impl ParserState {
                                             language,
                                             tree: t.clone(),
                                             source: source.to_owned(),
+                                            highlights: None,
                                         },
                                     );
                                     t
@@ -1110,6 +1249,7 @@ impl ParserState {
                                 language,
                                 tree: t.clone(),
                                 source: source.to_owned(),
+                                highlights: None,
                             },
                         );
                         t
@@ -1126,6 +1266,7 @@ impl ParserState {
                             language,
                             tree: t.clone(),
                             source: source.to_owned(),
+                            highlights: None,
                         },
                     );
                     t
@@ -1135,7 +1276,7 @@ impl ParserState {
         };
 
         // Step 2: Extract HTML-level highlights
-        let mut highlights = self.extract_highlights(source, &html_tree, language, revision);
+        let mut highlights = self.extract_highlights(source, &html_tree, language, revision, None);
 
         // Step 3: Language injection for <script> and <style> elements
         self.extract_html_embedded_highlights(source, &html_tree, &mut highlights);
@@ -1290,6 +1431,7 @@ impl ParserState {
                                             language,
                                             tree: t.clone(),
                                             source: source.to_owned(),
+                                            highlights: None,
                                         },
                                     );
                                     t
@@ -1311,6 +1453,7 @@ impl ParserState {
                                 language,
                                 tree: t.clone(),
                                 source: source.to_owned(),
+                                highlights: None,
                             },
                         );
                         t
@@ -1327,6 +1470,7 @@ impl ParserState {
                             language,
                             tree: t.clone(),
                             source: source.to_owned(),
+                            highlights: None,
                         },
                     );
                     t
@@ -1336,7 +1480,7 @@ impl ParserState {
         };
 
         // Step 2: Extract HTML-level highlights (Vue uses same query as HTML)
-        let mut highlights = self.extract_highlights(source, &tree, language, revision);
+        let mut highlights = self.extract_highlights(source, &tree, language, revision, None);
 
         // Step 3: Language injection for script/style with Vue-aware lang detection
         self.extract_vue_embedded_highlights(source, &tree, &mut highlights);
@@ -2512,6 +2656,53 @@ test:
 
         // Cache should be populated
         assert!(state.doc_cache.contains_key(&doc_id));
+    }
+
+    #[test]
+    fn incremental_highlighting_returns_full_state_and_bounded_patch() {
+        let source = (0..100)
+            .map(|line| format!("fn function_{line}() {{}}\n"))
+            .collect::<String>();
+        let mut state = ParserState::new();
+        let doc_id = DocumentId(110);
+        let initial = state.parse_and_highlight(&source, LanguageId::Rust, doc_id, 1);
+        assert!(initial.lines.contains_key(&0));
+        assert!(initial.lines.contains_key(&99));
+
+        let edited = source.replacen("function_50", "renamed_50", 1);
+        let updated = state.parse_and_highlight(&edited, LanguageId::Rust, doc_id, 2);
+        let ranges = state
+            .last_changed_line_ranges()
+            .expect("incremental parse should report changed lines");
+        let patch = state
+            .take_last_highlight_patch()
+            .expect("incremental parse should retain a bounded patch");
+
+        assert!(updated.lines.contains_key(&0));
+        assert!(updated.lines.contains_key(&99));
+        assert!(ranges.iter().all(|range| range.end - range.start <= 3));
+        assert!(patch
+            .lines
+            .keys()
+            .all(|line| ranges.iter().any(|range| range.contains(line))));
+    }
+
+    #[test]
+    fn incremental_patch_matches_full_parse_inside_multiline_capture() {
+        let source = format!("fn main() {{\n/*\n{}*/\n}}\n", "comment line\n".repeat(100));
+        let edited = source.replacen(
+            "comment line\ncomment line",
+            "changed line\ncomment line",
+            1,
+        );
+        let doc_id = DocumentId(111);
+        let mut incremental = ParserState::new();
+        incremental.parse_and_highlight(&source, LanguageId::Rust, doc_id, 1);
+        let updated = incremental.parse_and_highlight(&edited, LanguageId::Rust, doc_id, 2);
+
+        let mut fresh = ParserState::new();
+        let expected = fresh.parse_and_highlight(&edited, LanguageId::Rust, DocumentId(112), 2);
+        assert_eq!(updated.lines, expected.lines);
     }
 
     #[test]

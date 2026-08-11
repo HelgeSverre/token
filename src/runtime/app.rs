@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::str::FromStr;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
@@ -8,13 +9,13 @@ use softbuffer::Context;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
 #[cfg(debug_assertions)]
 use winit::keyboard::{Key, NamedKey};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorIcon, Icon, Window};
 
-use token::cli::StartupConfig;
+use token::cli::{StartupConfig, StartupMode};
 use token::commands::{Cmd, Damage};
 use token::fs_watcher::{FileSystemEvent, FileSystemWatcher};
 use token::keymap::{
@@ -37,6 +38,7 @@ use super::webview::WebviewManager;
 use token::view::Renderer;
 
 use super::perf::{PerfStage, PerfStats};
+use crate::automation::{self, AutomationEnvelope, AutomationRequest, AutomationResponse};
 
 use winit::keyboard::ModifiersState;
 
@@ -46,6 +48,9 @@ struct SyntaxParseRequest {
     revision: u64,
     source: String,
     language: LanguageId,
+    snapshot_ms: f64,
+    queued_at: Instant,
+    extract_outline: bool,
 }
 
 enum SyntaxWorkerRequest {
@@ -90,21 +95,56 @@ pub struct App {
     /// Receiver for background PTY spawn completion. Spawned asynchronously
     /// because `portable_pty` startup can block on shell initialization.
     terminal_spawn_rx: Option<(usize, TerminalSpawnReceiver)>,
+    automation_rx: Receiver<AutomationEnvelope>,
+    automation_profile: Option<AutomationProfile>,
+    syntax_scheduled: HashMap<(token::model::editor_area::DocumentId, u64), Instant>,
+    syntax_present_pending: Vec<SyntaxPresentationPending>,
+    automation_syntax_profile: Option<AutomationSyntaxProfile>,
+    latest_syntax_performance: Option<crate::automation::SyntaxPerfSnapshot>,
+}
+
+struct AutomationProfile {
+    remaining_frames: usize,
+    response_tx: mpsc::SyncSender<AutomationResponse>,
+}
+
+struct AutomationSyntaxProfile {
+    document_id: token::model::editor_area::DocumentId,
+    revision: u64,
+    response_tx: mpsc::SyncSender<AutomationResponse>,
+}
+
+struct SyntaxPresentationPending {
+    snapshot: crate::automation::SyntaxPerfSnapshot,
+    started_at: Instant,
+    response_tx: Option<mpsc::SyncSender<AutomationResponse>>,
 }
 
 impl App {
-    pub fn new(window_width: u32, window_height: u32, startup_config: StartupConfig) -> Self {
+    pub fn new(
+        window_width: u32,
+        window_height: u32,
+        startup_config: StartupConfig,
+        automation_proxy: Option<EventLoopProxy<()>>,
+    ) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
+        let (automation_tx, automation_rx) = mpsc::channel();
+        if let Some(proxy) = automation_proxy.clone() {
+            automation::start_server(automation_tx, proxy);
+        }
         let keymap = Keymap::with_bindings(load_default_keymap());
 
         // Spawn syntax highlighting worker thread
         let (syntax_tx, syntax_rx) = mpsc::channel::<SyntaxWorkerRequest>();
         {
             let msg_tx_clone = msg_tx.clone();
-            std::thread::spawn(move || syntax_worker_loop(syntax_rx, msg_tx_clone));
+            std::thread::spawn(move || {
+                syntax_worker_loop(syntax_rx, msg_tx_clone, automation_proxy)
+            });
         }
 
         // Extract file paths and workspace from config
+        let demo_mode = matches!(startup_config.mode, StartupMode::Demo);
         let mut file_paths = startup_config.file_paths();
         let workspace_root = startup_config.workspace_root().cloned();
         let initial_position = startup_config.initial_position;
@@ -118,6 +158,13 @@ impl App {
         };
 
         let mut model = AppModel::new(window_width, window_height, 1.0, file_paths);
+        if demo_mode {
+            let document_id = model.document().id;
+            *model.document_mut() = token::model::Document::with_text(DEMO_DOCUMENT);
+            model.document_mut().id = document_id;
+            model.document_mut().untitled_name = Some("Automation Demo.rs".to_owned());
+            model.document_mut().language = LanguageId::Rust;
+        }
 
         // Record CLI-opened files in recent files list
         let cli_paths: Vec<_> = model
@@ -179,6 +226,12 @@ impl App {
             syntax_deadlines: HashMap::new(),
             pending_file_loads,
             terminal_spawn_rx: None,
+            automation_rx,
+            automation_profile: None,
+            syntax_scheduled: HashMap::new(),
+            syntax_present_pending: Vec::new(),
+            automation_syntax_profile: None,
+            latest_syntax_performance: None,
         };
 
         // Trigger initial syntax parsing for all loaded documents
@@ -208,6 +261,9 @@ impl App {
                     revision,
                     source,
                     language,
+                    snapshot_ms: 0.0,
+                    queued_at: Instant::now(),
+                    extract_outline: false,
                 }))
             {
                 tracing::warn!("Failed to send initial syntax parse request: {}", e);
@@ -786,6 +842,27 @@ impl App {
 
         self.perf.record_frame_time();
         self.perf.record_render_history();
+        for mut pending in std::mem::take(&mut self.syntax_present_pending) {
+            pending.snapshot.edit_to_present_ms =
+                pending.started_at.elapsed().as_secs_f64() * 1000.0;
+            self.latest_syntax_performance = Some(pending.snapshot);
+            if let Some(response_tx) = pending.response_tx {
+                let _ = response_tx.send(self.automation_response("syntax profile complete"));
+            }
+        }
+        if let Some(mut profile) = self.automation_profile.take() {
+            profile.remaining_frames = profile.remaining_frames.saturating_sub(1);
+            if profile.remaining_frames == 0 {
+                let response = self.automation_response("profile complete");
+                let _ = profile.response_tx.send(response);
+            } else {
+                self.pending_damage = Damage::Full;
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+                self.automation_profile = Some(profile);
+            }
+        }
         Ok(())
     }
 
@@ -1207,6 +1284,10 @@ impl App {
                 revision,
                 delay_ms,
             } => {
+                self.syntax_scheduled
+                    .retain(|(scheduled_document, _), _| *scheduled_document != document_id);
+                self.syntax_scheduled
+                    .insert((document_id, revision), Instant::now());
                 tracing::debug!(
                     "DebouncedSyntaxParse: doc={} rev={} delay={}ms",
                     document_id.0,
@@ -1227,6 +1308,7 @@ impl App {
                 revision,
                 source,
                 language,
+                snapshot_ms,
             } => {
                 tracing::debug!(
                     "RunSyntaxParse: doc={} rev={} lang={:?} len={}",
@@ -1241,6 +1323,10 @@ impl App {
                     revision,
                     source,
                     language,
+                    snapshot_ms,
+                    queued_at: Instant::now(),
+                    extract_outline: is_outline_panel_open(&self.model)
+                        && self.model.document().id == Some(document_id),
                 })) {
                     tracing::warn!("Failed to send syntax parse request: {}", e);
                 }
@@ -1277,6 +1363,15 @@ impl App {
     fn process_async_messages(&mut self) -> bool {
         let mut needs_redraw = self.process_terminal_spawn_results();
         while let Ok(msg) = self.msg_rx.try_recv() {
+            let syntax_completion = match &msg {
+                Msg::Syntax(SyntaxMsg::ParseCompleted {
+                    document_id,
+                    revision,
+                    timing,
+                    ..
+                }) => Some((*document_id, *revision, **timing, Instant::now())),
+                _ => None,
+            };
             // Log syntax-related messages for debugging
             if let Msg::Syntax(ref syntax_msg) = msg {
                 tracing::debug!("Received async syntax message: {:?}", syntax_msg);
@@ -1289,6 +1384,47 @@ impl App {
                 // Accumulate damage from async message
                 self.pending_damage.merge(cmd.damage());
                 self.process_cmd(cmd);
+            }
+            if let Some((document_id, revision, timing, apply_started)) = syntax_completion {
+                let applied = self
+                    .model
+                    .editor_area
+                    .documents
+                    .get(&document_id)
+                    .and_then(|document| document.syntax_highlights.as_ref())
+                    .is_some_and(|highlights| highlights.revision == revision);
+                if !applied {
+                    continue;
+                }
+                let started_at = self
+                    .syntax_scheduled
+                    .remove(&(document_id, revision))
+                    .unwrap_or(apply_started);
+                let response_tx = self
+                    .automation_syntax_profile
+                    .take_if(|profile| {
+                        profile.document_id == document_id && profile.revision == revision
+                    })
+                    .map(|profile| profile.response_tx);
+                self.syntax_present_pending.push(SyntaxPresentationPending {
+                    snapshot: crate::automation::SyntaxPerfSnapshot {
+                        revision,
+                        snapshot_ms: timing.snapshot_ms,
+                        queue_ms: timing.queue_ms,
+                        parse_highlight_ms: timing.parse_highlight_ms,
+                        parse_ms: timing.parse_ms,
+                        highlight_ms: timing.highlight_ms,
+                        outline_ms: timing.outline_ms,
+                        worker_total_ms: timing.worker_total_ms,
+                        outline_extracted: timing.outline_extracted,
+                        highlighted_line_count: timing.highlighted_line_count,
+                        replaced_range_count: timing.replaced_range_count,
+                        apply_ms: apply_started.elapsed().as_secs_f64() * 1000.0,
+                        edit_to_present_ms: 0.0,
+                    },
+                    started_at,
+                    response_tx,
+                });
             }
         }
         needs_redraw
@@ -1366,6 +1502,21 @@ impl App {
             && self.model.dock_layout.bottom.active_panel() == Some(token::panel::PanelId::TERMINAL)
     }
 }
+
+const DEMO_DOCUMENT: &str = r#"use std::time::Instant;
+
+fn render_frame(lines: &[&str]) -> usize {
+    let started = Instant::now();
+    let glyphs = lines.iter().map(|line| line.chars().count()).sum();
+    println!("rendered {glyphs} glyphs in {:?}", started.elapsed());
+    glyphs
+}
+
+fn main() {
+    let lines = ["Token", "deterministic", "automation demo"];
+    assert_eq!(render_frame(&lines), 34);
+}
+"#;
 
 /// Create window icon from embedded PNG
 fn create_window_icon() -> Option<Icon> {
@@ -1454,6 +1605,10 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let mut needs_redraw = false;
 
+        if self.process_automation_requests() {
+            needs_redraw = true;
+        }
+
         if self.process_async_messages() {
             needs_redraw = true;
         }
@@ -1500,6 +1655,193 @@ impl ApplicationHandler for App {
         }
         event_loop.set_control_flow(ControlFlow::WaitUntil(next_wake));
     }
+}
+
+impl App {
+    fn process_automation_requests(&mut self) -> bool {
+        let mut redraw = false;
+        while let Ok(envelope) = self.automation_rx.try_recv() {
+            match envelope.request {
+                AutomationRequest::State => {
+                    let _ = envelope.response_tx.send(self.automation_response("state"));
+                }
+                AutomationRequest::Document => {
+                    let response =
+                        match crate::automation::DocumentSnapshot::from_model(&self.model) {
+                            Ok(document) => {
+                                let mut response = self.automation_response("document");
+                                response.document = Some(document);
+                                response
+                            }
+                            Err(error) => AutomationResponse::error(error),
+                        };
+                    let _ = envelope.response_tx.send(response);
+                }
+                AutomationRequest::Actions => {
+                    let mut actions: Vec<_> = self
+                        .keymap
+                        .bindings()
+                        .iter()
+                        .map(|binding| crate::automation::ActionSnapshot {
+                            name: format!("{:?}", binding.command),
+                            label: binding.command.display_name().to_owned(),
+                            keybinding: binding.display_string(),
+                        })
+                        .collect();
+                    actions.sort_by(|left, right| left.name.cmp(&right.name));
+                    actions.dedup_by(|left, right| left.name == right.name);
+                    let mut response = self.automation_response("actions");
+                    response.actions = Some(actions);
+                    let _ = envelope.response_tx.send(response);
+                }
+                AutomationRequest::InsertText { text } => {
+                    self.process_automation_msg(Msg::Document(
+                        token::messages::DocumentMsg::InsertText(text),
+                    ));
+                    let _ = envelope
+                        .response_tx
+                        .send(self.automation_response("text inserted"));
+                    redraw = true;
+                }
+                AutomationRequest::SetCursor { line, column } => {
+                    self.process_automation_msg(Msg::Editor(EditorMsg::CollapseToSingleCursor));
+                    self.process_automation_msg(Msg::Editor(EditorMsg::SetCursorPosition {
+                        line,
+                        column,
+                    }));
+                    let _ = envelope
+                        .response_tx
+                        .send(self.automation_response("cursor set"));
+                    redraw = true;
+                }
+                AutomationRequest::SetSelection {
+                    anchor_line,
+                    anchor_column,
+                    head_line,
+                    head_column,
+                } => {
+                    let (anchor_line, anchor_column) =
+                        clamped_document_position(&self.model, anchor_line, anchor_column);
+                    let (head_line, head_column) =
+                        clamped_document_position(&self.model, head_line, head_column);
+                    self.process_automation_msg(Msg::Editor(EditorMsg::CollapseToSingleCursor));
+                    self.process_automation_msg(Msg::Editor(EditorMsg::SetCursorPosition {
+                        line: anchor_line,
+                        column: anchor_column,
+                    }));
+                    self.process_automation_msg(Msg::Editor(
+                        EditorMsg::ExtendSelectionToPosition {
+                            line: head_line,
+                            column: head_column,
+                        },
+                    ));
+                    let _ = envelope
+                        .response_tx
+                        .send(self.automation_response("selection set"));
+                    redraw = true;
+                }
+                AutomationRequest::ExecuteAction { name } => {
+                    let response = match Command::from_str(&name) {
+                        Ok(command) if command.is_simple() && command != Command::Unbound => {
+                            for msg in command.to_msgs() {
+                                self.process_automation_msg(msg);
+                            }
+                            redraw = true;
+                            self.automation_response("action executed")
+                        }
+                        Ok(_) => AutomationResponse::error(format!(
+                            "action `{name}` requires raw keyboard context and cannot be executed semantically"
+                        )),
+                        Err(()) => AutomationResponse::error(format!(
+                            "unknown action `{name}`; call list_actions to inspect bound action names"
+                        )),
+                    };
+                    let _ = envelope.response_tx.send(response);
+                }
+                AutomationRequest::Scroll { lines } => {
+                    self.process_automation_msg(Msg::Editor(EditorMsg::Scroll(lines)));
+                    let _ = envelope
+                        .response_tx
+                        .send(self.automation_response("scrolled"));
+                    redraw = true;
+                }
+                AutomationRequest::ProfileSyntax { text } => {
+                    if text.is_empty() {
+                        let _ = envelope
+                            .response_tx
+                            .send(AutomationResponse::error("profile text must not be empty"));
+                    } else if self.automation_syntax_profile.is_some() {
+                        let _ = envelope.response_tx.send(AutomationResponse::error(
+                            "a syntax profile is already running",
+                        ));
+                    } else if !self.model.document().language.has_highlighting() {
+                        let _ = envelope.response_tx.send(AutomationResponse::error(
+                            "the active document has no syntax highlighter",
+                        ));
+                    } else {
+                        self.process_automation_msg(Msg::Document(
+                            token::messages::DocumentMsg::InsertText(text),
+                        ));
+                        let document_id = self.model.document().id;
+                        if let Some(document_id) = document_id {
+                            self.automation_syntax_profile = Some(AutomationSyntaxProfile {
+                                document_id,
+                                revision: self.model.document().revision,
+                                response_tx: envelope.response_tx,
+                            });
+                            redraw = true;
+                        } else {
+                            let _ = envelope.response_tx.send(AutomationResponse::error(
+                                "the active document has no document id",
+                            ));
+                        }
+                    }
+                }
+                AutomationRequest::ProfileFrames { frames } => {
+                    if frames == 0 || frames > 10_000 {
+                        let _ = envelope.response_tx.send(AutomationResponse::error(
+                            "frames must be between 1 and 10000",
+                        ));
+                    } else if self.automation_profile.is_some() {
+                        let _ = envelope.response_tx.send(AutomationResponse::error(
+                            "a frame profile is already running",
+                        ));
+                    } else {
+                        self.perf.clear_history();
+                        self.automation_profile = Some(AutomationProfile {
+                            remaining_frames: frames,
+                            response_tx: envelope.response_tx,
+                        });
+                        self.pending_damage = Damage::Full;
+                        redraw = true;
+                    }
+                }
+            }
+        }
+        redraw
+    }
+
+    fn process_automation_msg(&mut self, msg: Msg) {
+        if let Some(cmd) = update(&mut self.model, msg) {
+            self.pending_damage.merge(cmd.damage());
+            self.process_cmd(cmd);
+        }
+    }
+
+    fn automation_response(&self, message: &str) -> AutomationResponse {
+        let mut response = AutomationResponse::success(
+            message,
+            crate::automation::EditorSnapshot::from_model(&self.model),
+            self.perf.snapshot(),
+        );
+        response.syntax_performance = self.latest_syntax_performance.clone();
+        response
+    }
+}
+
+fn clamped_document_position(model: &AppModel, line: usize, column: usize) -> (usize, usize) {
+    let line = line.min(model.document().line_count().saturating_sub(1));
+    (line, column.min(model.document().line_length(line)))
 }
 
 impl App {
@@ -1601,7 +1943,7 @@ mod tests {
     fn spawn_terminal_command_adds_session_to_model() {
         use std::time::{Duration, Instant};
 
-        let mut app = App::new(800, 600, empty_startup_config());
+        let mut app = App::new(800, 600, empty_startup_config(), None);
         app.model
             .dock_layout
             .bottom
@@ -1633,7 +1975,7 @@ mod tests {
 
     #[test]
     fn terminal_spawn_result_is_discarded_when_terminal_is_closed() {
-        let mut app = App::new(800, 600, empty_startup_config());
+        let mut app = App::new(800, 600, empty_startup_config(), None);
         let (spawn_tx, spawn_rx) = mpsc::channel();
         let (pty, _pty_rx) = token::terminal::PtyHandle::new_for_test();
 
@@ -1657,7 +1999,7 @@ mod tests {
 
     #[test]
     fn ignored_terminal_spawn_command_clears_its_pending_marker() {
-        let mut app = App::new(800, 600, empty_startup_config());
+        let mut app = App::new(800, 600, empty_startup_config(), None);
         let (_spawn_tx, spawn_rx) = mpsc::channel();
         app.terminal_spawn_rx = Some((6, spawn_rx));
         app.model.terminal.mark_spawn_pending(6);
@@ -1675,7 +2017,7 @@ mod tests {
 
     #[test]
     fn duplicate_terminal_spawn_command_preserves_in_flight_pending_marker() {
-        let mut app = App::new(800, 600, empty_startup_config());
+        let mut app = App::new(800, 600, empty_startup_config(), None);
         let (_spawn_tx, spawn_rx) = mpsc::channel();
         app.terminal_spawn_rx = Some((7, spawn_rx));
         app.model.terminal.mark_spawn_pending(7);
@@ -1691,7 +2033,11 @@ mod tests {
 }
 
 /// Syntax highlighting worker thread loop
-fn syntax_worker_loop(rx: Receiver<SyntaxWorkerRequest>, msg_tx: Sender<Msg>) {
+fn syntax_worker_loop(
+    rx: Receiver<SyntaxWorkerRequest>,
+    msg_tx: Sender<Msg>,
+    event_proxy: Option<EventLoopProxy<()>>,
+) {
     use std::collections::HashMap;
 
     tracing::info!("Syntax worker thread started");
@@ -1725,19 +2071,33 @@ fn syntax_worker_loop(rx: Receiver<SyntaxWorkerRequest>, msg_tx: Sender<Msg>) {
                 req.language
             );
 
-            let highlights = parser_state.parse_and_highlight(
+            let worker_started = Instant::now();
+            let queue_ms = req.queued_at.elapsed().as_secs_f64() * 1000.0;
+            let parse_started = Instant::now();
+            let full_highlights = parser_state.parse_and_highlight(
                 &req.source,
                 req.language,
                 req.document_id,
                 req.revision,
             );
+            let parse_highlight_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
+            let parser_timing = parser_state.last_timing();
+            let replace_line_ranges = parser_state.last_changed_line_ranges();
+            let highlights = parser_state
+                .take_last_highlight_patch()
+                .unwrap_or(full_highlights);
 
             // Extract outline from the cached tree (just parsed above)
-            let outline = parser_state
-                .get_cached_tree(req.document_id)
-                .map(|(tree, lang)| {
-                    token::outline::extract_outline(tree, &req.source, lang, req.revision)
-                });
+            let outline_started = Instant::now();
+            let outline = req.extract_outline.then(|| {
+                parser_state
+                    .get_cached_tree(req.document_id)
+                    .map(|(tree, lang)| {
+                        token::outline::extract_outline(tree, &req.source, lang, req.revision)
+                    })
+                    .unwrap_or_else(|| token::outline::OutlineData::empty(req.revision))
+            });
+            let outline_ms = outline_started.elapsed().as_secs_f64() * 1000.0;
 
             let line_count = highlights.lines.len();
             let token_count: usize = highlights.lines.values().map(|lh| lh.tokens.len()).sum();
@@ -1756,11 +2116,31 @@ fn syntax_worker_loop(rx: Receiver<SyntaxWorkerRequest>, msg_tx: Sender<Msg>) {
                 revision: req.revision,
                 highlights,
                 outline,
+                timing: Box::new(token::messages::SyntaxWorkerTiming {
+                    snapshot_ms: req.snapshot_ms,
+                    queue_ms,
+                    parse_highlight_ms,
+                    parse_ms: parser_timing.parse_ms,
+                    highlight_ms: parser_timing.highlight_ms,
+                    outline_ms,
+                    worker_total_ms: worker_started.elapsed().as_secs_f64() * 1000.0,
+                    outline_extracted: req.extract_outline,
+                    highlighted_line_count: line_count,
+                    replaced_range_count: replace_line_ranges.as_ref().map_or(0, Vec::len),
+                }),
+                replace_line_ranges,
             })) {
                 tracing::warn!("Failed to send parse completion to main thread: {}", e);
+            } else if let Some(proxy) = &event_proxy {
+                let _ = proxy.send_event(());
             }
         }
     }
+}
+
+fn is_outline_panel_open(model: &AppModel) -> bool {
+    let dock = &model.dock_layout.right;
+    dock.is_open && dock.active_panel() == Some(token::panel::PanelId::OUTLINE)
 }
 
 fn handle_syntax_worker_request(

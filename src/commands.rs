@@ -663,6 +663,7 @@ pub enum Cmd {
         revision: u64,
         source: String,
         language: LanguageId,
+        snapshot_ms: f64,
     },
     /// Drop debounced parse state and worker-side cached parse trees for a document.
     ClearSyntaxState { document_id: DocumentId },

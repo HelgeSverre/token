@@ -115,6 +115,36 @@ pub(super) fn with_terminal_sync(model: &mut AppModel, cmd: Cmd) -> Cmd {
     Cmd::Batch(cmds)
 }
 
+fn with_opened_panel_sync(model: &mut AppModel, panel_id: PanelId, cmd: Cmd) -> Cmd {
+    let cmd = with_terminal_sync(model, cmd);
+    if panel_id != PanelId::OUTLINE {
+        return cmd;
+    }
+
+    let dock = &model.dock_layout.right;
+    let outline_is_open = dock.is_open && dock.active_panel() == Some(PanelId::OUTLINE);
+    let document = model.document();
+    let outline_is_current = document
+        .outline
+        .as_ref()
+        .is_some_and(|outline| outline.revision == document.revision);
+    if !outline_is_open || outline_is_current || !document.language.has_highlighting() {
+        return cmd;
+    }
+
+    let Some(document_id) = document.id else {
+        return cmd;
+    };
+    Cmd::Batch(vec![
+        cmd,
+        Cmd::DebouncedSyntaxParse {
+            document_id,
+            revision: document.revision,
+            delay_ms: 0,
+        },
+    ])
+}
+
 /// Update function for dock messages
 pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
     match msg {
@@ -151,7 +181,7 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
             // Recalculate viewport dimensions since dock visibility affects editor area
             model.recalculate_viewports();
 
-            Some(with_terminal_sync(model, Cmd::Redraw))
+            Some(with_opened_panel_sync(model, panel_id, Cmd::Redraw))
         }
 
         DockMsg::TogglePanel(panel_id) => {
@@ -177,7 +207,7 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
                 // Recalculate viewport dimensions since dock visibility affects editor area
                 model.recalculate_viewports();
 
-                Some(with_terminal_sync(model, Cmd::Redraw))
+                Some(with_opened_panel_sync(model, panel_id, Cmd::Redraw))
             } else {
                 None
             }
@@ -198,7 +228,7 @@ pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
                 }
 
                 model.recalculate_viewports();
-                Some(with_terminal_sync(model, Cmd::Redraw))
+                Some(with_opened_panel_sync(model, panel_id, Cmd::Redraw))
             } else {
                 None
             }
@@ -439,6 +469,30 @@ mod tests {
 
         let second = update_dock(&mut model, DockMsg::FocusDock(DockPosition::Bottom));
         assert!(!contains_spawn_terminal(&second));
+    }
+
+    #[test]
+    fn opening_outline_schedules_missing_outline_immediately() {
+        let mut model = test_model();
+        model.document_mut().language = crate::syntax::LanguageId::Rust;
+        let document_id = model
+            .document()
+            .id
+            .expect("test document should have an id");
+        let revision = model.document().revision;
+
+        let cmd = update_dock(&mut model, DockMsg::TogglePanel(PanelId::OUTLINE));
+        let Some(Cmd::Batch(cmds)) = cmd else {
+            panic!("opening an uncached outline should batch redraw and syntax refresh");
+        };
+        assert!(cmds.iter().any(|cmd| matches!(
+            cmd,
+            Cmd::DebouncedSyntaxParse {
+                document_id: id,
+                revision: rev,
+                delay_ms: 0,
+            } if *id == document_id && *rev == revision
+        )));
     }
 
     #[test]

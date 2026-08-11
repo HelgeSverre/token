@@ -3,6 +3,7 @@
 //! Contains `PerfStats` for tracking frame timing and render breakdown.
 //! In release builds, all timing methods compile to no-ops for zero overhead.
 
+use serde::{Deserialize, Serialize};
 #[cfg(debug_assertions)]
 use std::array::from_fn;
 #[cfg(debug_assertions)]
@@ -53,6 +54,21 @@ pub enum PerfStage {
     SurfacePresent,
     WebviewSync,
     WebviewVisibility,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PerfSnapshot {
+    pub frame_count: usize,
+    pub average_frame_ms: f64,
+    pub last_frame_ms: f64,
+    pub stages: Vec<PerfStageSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerfStageSnapshot {
+    pub name: String,
+    pub average_ms: f64,
+    pub last_ms: f64,
 }
 
 #[cfg(debug_assertions)]
@@ -524,6 +540,39 @@ impl PerfStats {
             })
             .collect()
     }
+
+    pub fn snapshot(&self) -> PerfSnapshot {
+        let stages = PerfStage::ALL
+            .into_iter()
+            .map(|stage| {
+                let history = self.stage_history(stage);
+                let average = if history.is_empty() {
+                    Duration::ZERO
+                } else {
+                    history.iter().copied().sum::<Duration>() / history.len() as u32
+                };
+                PerfStageSnapshot {
+                    name: stage.spec().label.to_owned(),
+                    average_ms: average.as_secs_f64() * 1000.0,
+                    last_ms: self.stage_time(stage).as_secs_f64() * 1000.0,
+                }
+            })
+            .collect();
+        PerfSnapshot {
+            frame_count: self.frame_times.len(),
+            average_frame_ms: self.avg_frame_time().as_secs_f64() * 1000.0,
+            last_frame_ms: self.last_frame_time.as_secs_f64() * 1000.0,
+            stages,
+        }
+    }
+
+    pub fn clear_history(&mut self) {
+        self.frame_times.clear();
+        for history in &mut self.stage_histories {
+            history.clear();
+        }
+        self.untracked_history.clear();
+    }
 }
 
 #[cfg(not(debug_assertions))]
@@ -577,6 +626,12 @@ impl PerfStats {
     pub fn should_show_overlay(&self) -> bool {
         false
     }
+
+    pub fn snapshot(&self) -> PerfSnapshot {
+        PerfSnapshot::default()
+    }
+
+    pub fn clear_history(&mut self) {}
 }
 
 #[cfg(debug_assertions)]

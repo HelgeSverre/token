@@ -62,7 +62,7 @@ pub struct HighlightToken {
 }
 
 /// Highlight information for a single line
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LineHighlights {
     /// Tokens sorted by start_col
     pub tokens: Vec<HighlightToken>,

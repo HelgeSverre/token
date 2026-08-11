@@ -7,6 +7,7 @@ use crate::commands::Cmd;
 use crate::debug_overlay::SyntaxEventType;
 use crate::messages::SyntaxMsg;
 use crate::model::AppModel;
+use std::time::Instant;
 
 /// Debounce delay in milliseconds
 /// Kept short since we preserve old highlights during the wait (no FOUC)
@@ -59,7 +60,9 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
             }
 
             // Snapshot the document content for parsing
+            let snapshot_started = Instant::now();
             let source = doc.buffer.to_string();
+            let snapshot_ms = snapshot_started.elapsed().as_secs_f64() * 1000.0;
             let language = doc.language;
 
             #[cfg(debug_assertions)]
@@ -77,6 +80,7 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
                 revision,
                 source,
                 language,
+                snapshot_ms,
             })
         }
 
@@ -85,6 +89,8 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
             revision,
             highlights,
             outline,
+            timing: _,
+            replace_line_ranges,
         } => {
             tracing::debug!(
                 "update_syntax: ParseCompleted received for doc={} rev={}",
@@ -133,7 +139,18 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
                 (lc, tc)
             };
 
-            doc.syntax_highlights = Some(highlights);
+            if let (Some(existing), Some(ranges)) =
+                (doc.syntax_highlights.as_mut(), replace_line_ranges)
+            {
+                for range in ranges {
+                    existing.lines.retain(|line, _| !range.contains(line));
+                }
+                existing.lines.extend(highlights.lines);
+                existing.revision = highlights.revision;
+                existing.language = highlights.language;
+            } else {
+                doc.syntax_highlights = Some(highlights);
+            }
             doc.outline = outline;
             tracing::debug!(
                 "Applied syntax highlights for document {:?}, revision {}",
@@ -291,6 +308,7 @@ mod tests {
             revision,
             source,
             language,
+            ..
         }) = cmd
         {
             assert_eq!(document_id, doc_id);
@@ -348,6 +366,8 @@ mod tests {
                 revision: 7,
                 highlights: highlights.clone(),
                 outline: None,
+                timing: Box::default(),
+                replace_line_ranges: None,
             },
         );
 
@@ -381,6 +401,8 @@ mod tests {
                 revision: 5,
                 highlights,
                 outline: None,
+                timing: Box::default(),
+                replace_line_ranges: None,
             },
         );
 
@@ -434,6 +456,8 @@ mod tests {
                 revision: 1,
                 highlights,
                 outline: None,
+                timing: Box::default(),
+                replace_line_ranges: None,
             },
         );
         assert!(redraw_cmd.is_some());
@@ -557,6 +581,8 @@ mod tests {
                 revision: 1,
                 highlights: new_highlights,
                 outline: None,
+                timing: Box::default(),
+                replace_line_ranges: None,
             },
         );
         assert!(redraw_cmd.is_some());

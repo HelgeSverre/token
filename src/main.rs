@@ -8,8 +8,10 @@ use winit::event_loop::EventLoop;
 
 use token::cli::CliArgs;
 
+mod automation;
 #[cfg(debug_assertions)]
 mod debug_dump;
+mod mcp;
 mod runtime;
 
 use runtime::App;
@@ -24,12 +26,27 @@ fn main() -> Result<()> {
 
     let _trace_guard = token::tracing::init();
 
+    let mut raw_args = std::env::args();
+    let _program = raw_args.next();
+    match raw_args.next().as_deref() {
+        Some("automate") => {
+            automation::run_cli(raw_args).map_err(anyhow::Error::msg)?;
+            return Ok(());
+        }
+        Some("mcp") => {
+            mcp::run().map_err(anyhow::Error::msg)?;
+            return Ok(());
+        }
+        _ => {}
+    }
+
     // Parse command-line arguments
     let args = CliArgs::parse();
     let startup_config = args.into_config().map_err(|e| anyhow::anyhow!(e))?;
 
     let event_loop = EventLoop::new()?;
-    let mut app = App::new(800, 600, startup_config);
+    let automation_proxy = event_loop.create_proxy();
+    let mut app = App::new(800, 600, startup_config, Some(automation_proxy));
     event_loop.run_app(&mut app)?;
 
     Ok(())

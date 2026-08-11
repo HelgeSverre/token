@@ -8,7 +8,25 @@ All notable changes to rust-editor are documented in this file.
 
 ### Added
 
+- Deterministic `--demo` launching and cursor-free local automation through CLI
+  and MCP clients, including document/state inspection, cursor and selection
+  control, text insertion, scrolling, named keymap action discovery and
+  dispatch, bounded real-renderer stage profiling, and end-to-end syntax
+  pipeline profiling.
 - Embedded terminal dock panel with async PTY spawning, VT/ANSI terminal emulation, keyboard and paste routing, scrollback, resize-aware grid sizing, and native rendering in the bottom dock.
+
+### Changed
+
+- Document search now avoids per-character hash maps and redundant
+  case-sensitive document copies, with an allocation-light ASCII
+  case-insensitive fast path.
+- Syntax worker completion now wakes the window event loop immediately, rather
+  than waiting for an unrelated input or cursor-blink event before applying
+  and presenting updated highlights.
+- Incremental tree-sitter updates now rerun highlight queries only for expanded
+  changed-line ranges and merge those patches into existing highlights.
+  Outline extraction is demand-driven while its panel is closed and refreshes
+  immediately when the outline is opened.
 
 ### Fixed
 

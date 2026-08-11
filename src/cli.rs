@@ -32,11 +32,17 @@ pub struct CliArgs {
     /// Go to column N (used with --line)
     #[arg(long, value_name = "N")]
     pub column: Option<usize>,
+
+    /// Launch deterministic content for automation and screenshot testing
+    #[arg(long)]
+    pub demo: bool,
 }
 
 /// The startup mode determines what to open
 #[derive(Debug, Clone)]
 pub enum StartupMode {
+    /// Deterministic in-memory document for automation and profiling
+    Demo,
     /// Start with an empty buffer
     Empty,
     /// Open a single file
@@ -64,7 +70,9 @@ pub struct StartupConfig {
 impl CliArgs {
     /// Convert parsed CLI args into startup configuration
     pub fn into_config(self) -> Result<StartupConfig, String> {
-        let mode = if self.new || self.paths.is_empty() {
+        let mode = if self.demo {
+            StartupMode::Demo
+        } else if self.new || self.paths.is_empty() {
             StartupMode::Empty
         } else if self.paths.len() == 1 {
             let path = &self.paths[0];
@@ -112,7 +120,7 @@ impl StartupConfig {
     /// Get file paths to open (for backward compatibility with current App::new)
     pub fn file_paths(&self) -> Vec<PathBuf> {
         match &self.mode {
-            StartupMode::Empty => vec![],
+            StartupMode::Empty | StartupMode::Demo => vec![],
             StartupMode::SingleFile(path) => vec![path.clone()],
             StartupMode::MultipleFiles(paths) => paths.clone(),
             StartupMode::Workspace { initial_files, .. } => initial_files.clone(),
@@ -140,6 +148,7 @@ mod tests {
             wait: false,
             line: None,
             column: None,
+            demo: false,
         };
         let config = args.into_config().unwrap();
         assert!(matches!(config.mode, StartupMode::Empty));
@@ -153,6 +162,7 @@ mod tests {
             wait: false,
             line: None,
             column: None,
+            demo: false,
         };
         let config = args.into_config().unwrap();
         assert!(matches!(config.mode, StartupMode::Empty));
@@ -166,6 +176,7 @@ mod tests {
             wait: false,
             line: None,
             column: None,
+            demo: false,
         };
         let config = args.into_config().unwrap();
         assert!(matches!(config.mode, StartupMode::SingleFile(_)));
@@ -179,6 +190,7 @@ mod tests {
             wait: false,
             line: None,
             column: None,
+            demo: false,
         };
         let config = args.into_config().unwrap();
         if let StartupMode::MultipleFiles(files) = config.mode {
@@ -196,6 +208,7 @@ mod tests {
             wait: false,
             line: Some(42),
             column: Some(10),
+            demo: false,
         };
         let config = args.into_config().unwrap();
         // 1-indexed to 0-indexed: line 42 → 41, column 10 → 9
@@ -210,6 +223,7 @@ mod tests {
             wait: false,
             line: Some(10),
             column: None,
+            demo: false,
         };
         let config = args.into_config().unwrap();
         // Column defaults to 1, so 0-indexed: line 10 → 9, column 1 → 0
@@ -224,8 +238,23 @@ mod tests {
             wait: true,
             line: None,
             column: None,
+            demo: false,
         };
         let config = args.into_config().unwrap();
         assert!(config.wait_mode);
+    }
+
+    #[test]
+    fn demo_mode_takes_precedence_over_paths() {
+        let args = CliArgs {
+            paths: vec![PathBuf::from("ignored.txt")],
+            new: false,
+            wait: false,
+            line: None,
+            column: None,
+            demo: true,
+        };
+        let config = args.into_config().unwrap();
+        assert!(matches!(config.mode, StartupMode::Demo));
     }
 }

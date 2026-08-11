@@ -3,12 +3,29 @@
 //! Run with: cargo bench search
 
 use ropey::Rope;
+use token::model::Document;
 
 #[global_allocator]
 static ALLOC: divan::AllocProfiler = divan::AllocProfiler::system();
 
 fn main() {
     divan::main();
+}
+
+#[divan::bench(args = [10_000, 100_000])]
+fn document_find_all_occurrences(bencher: divan::Bencher, line_count: usize) {
+    let document =
+        Document::with_text(&"The quick brown fox jumps over the lazy dog.\n".repeat(line_count));
+    bencher
+        .bench_local(|| divan::black_box(document.find_all_occurrences_with_options("the", true)));
+}
+
+#[divan::bench(args = [10_000, 100_000])]
+fn document_find_all_case_insensitive(bencher: divan::Bencher, line_count: usize) {
+    let document =
+        Document::with_text(&"The quick brown fox jumps over the lazy dog.\n".repeat(line_count));
+    bencher
+        .bench_local(|| divan::black_box(document.find_all_occurrences_with_options("the", false)));
 }
 
 // ============================================================================

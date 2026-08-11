@@ -363,6 +363,22 @@ impl FromStr for Command {
             "ToggleOutline" => Ok(Command::ToggleOutline),
             "CloseFocusedDock" => Ok(Command::CloseFocusedDock),
 
+            // CSV mode
+            "CsvToggle" => Ok(Command::CsvToggle),
+            "CsvMoveUp" => Ok(Command::CsvMoveUp),
+            "CsvMoveDown" => Ok(Command::CsvMoveDown),
+            "CsvMoveLeft" => Ok(Command::CsvMoveLeft),
+            "CsvMoveRight" => Ok(Command::CsvMoveRight),
+            "CsvNextCell" => Ok(Command::CsvNextCell),
+            "CsvPrevCell" => Ok(Command::CsvPrevCell),
+            "CsvFirstCell" => Ok(Command::CsvFirstCell),
+            "CsvLastCell" => Ok(Command::CsvLastCell),
+            "CsvRowStart" => Ok(Command::CsvRowStart),
+            "CsvRowEnd" => Ok(Command::CsvRowEnd),
+            "CsvPageUp" => Ok(Command::CsvPageUp),
+            "CsvPageDown" => Ok(Command::CsvPageDown),
+            "CsvExit" => Ok(Command::CsvExit),
+
             // Markdown preview
             "MarkdownTogglePreview" => Ok(Command::MarkdownTogglePreview),
             "MarkdownOpenPreviewToSide" => Ok(Command::MarkdownOpenPreviewToSide),
@@ -376,6 +392,7 @@ impl FromStr for Command {
             // Special
             "EscapeSmartClear" => Ok(Command::EscapeSmartClear),
             "Unbound" => Ok(Command::Unbound),
+            "OpenLogFile" => Ok(Command::OpenLogFile),
 
             _ => Err(()),
         }
@@ -433,6 +450,8 @@ mod tests {
         assert_eq!(Command::from_str("SaveFile"), Ok(Command::SaveFile));
         assert_eq!(Command::from_str("Undo"), Ok(Command::Undo));
         assert_eq!(Command::from_str("MoveCursorUp"), Ok(Command::MoveCursorUp));
+        assert_eq!(Command::from_str("CsvNextCell"), Ok(Command::CsvNextCell));
+        assert_eq!(Command::from_str("OpenLogFile"), Ok(Command::OpenLogFile));
     }
 
     #[test]

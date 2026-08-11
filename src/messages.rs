@@ -451,12 +451,28 @@ pub enum SyntaxMsg {
         revision: u64,
         highlights: crate::syntax::SyntaxHighlights,
         outline: Option<crate::outline::OutlineData>,
+        timing: Box<SyntaxWorkerTiming>,
+        replace_line_ranges: Option<Vec<std::ops::Range<usize>>>,
     },
     /// Language changed for a document (triggers re-parse)
     LanguageChanged {
         document_id: crate::model::editor_area::DocumentId,
         language: crate::syntax::LanguageId,
     },
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SyntaxWorkerTiming {
+    pub snapshot_ms: f64,
+    pub queue_ms: f64,
+    pub parse_highlight_ms: f64,
+    pub parse_ms: Option<f64>,
+    pub highlight_ms: Option<f64>,
+    pub outline_ms: f64,
+    pub worker_total_ms: f64,
+    pub outline_extracted: bool,
+    pub highlighted_line_count: usize,
+    pub replaced_range_count: usize,
 }
 
 /// Markdown preview messages

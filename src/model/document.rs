@@ -321,51 +321,11 @@ impl Document {
         }
 
         let haystack = self.buffer.to_string();
-        let needle_char_len = needle.chars().count();
-
-        // For case-insensitive search, convert both to lowercase
-        let (search_haystack, search_needle) = if case_sensitive {
-            (haystack.clone(), needle.to_string())
+        if case_sensitive {
+            find_case_sensitive(&haystack, needle)
         } else {
-            (haystack.to_lowercase(), needle.to_lowercase())
-        };
-
-        let needle_byte_len = search_needle.len();
-
-        // Build byte offset → char index mapping (only for char boundaries)
-        // Use original haystack for char mapping since byte positions correspond
-        let byte_to_char: std::collections::HashMap<usize, usize> = haystack
-            .char_indices()
-            .enumerate()
-            .map(|(char_idx, (byte_idx, _))| (byte_idx, char_idx))
-            .collect();
-
-        let mut results = Vec::new();
-        let mut start_byte = 0;
-
-        while start_byte <= search_haystack.len().saturating_sub(needle_byte_len) {
-            if let Some(rel_byte) = search_haystack[start_byte..].find(&search_needle) {
-                let match_start_byte = start_byte + rel_byte;
-
-                // Convert byte offset to char offset
-                if let Some(&start_char) = byte_to_char.get(&match_start_byte) {
-                    let end_char = start_char + needle_char_len;
-                    results.push((start_char, end_char));
-                }
-
-                // Advance by the byte length of the first character of the match
-                // to allow overlapping matches while staying on char boundaries
-                let first_char_byte_len = search_haystack[match_start_byte..]
-                    .chars()
-                    .next()
-                    .map(|c| c.len_utf8())
-                    .unwrap_or(1);
-                start_byte = match_start_byte + first_char_byte_len;
-            } else {
-                break;
-            }
+            find_case_insensitive(&haystack, needle)
         }
-        results
     }
 
     /// Find next occurrence after given offset (wraps back to start)
@@ -430,6 +390,91 @@ impl Default for Document {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn find_case_sensitive(haystack: &str, needle: &str) -> Vec<(usize, usize)> {
+    let needle_chars = needle.chars().count();
+    let mut results = Vec::new();
+    let mut search_byte = 0;
+    let mut search_char = 0;
+
+    while let Some(relative_byte) = haystack[search_byte..].find(needle) {
+        let match_byte = search_byte + relative_byte;
+        let match_char = search_char + haystack[search_byte..match_byte].chars().count();
+        results.push((match_char, match_char + needle_chars));
+
+        let advance = haystack[match_byte..]
+            .chars()
+            .next()
+            .map_or(1, char::len_utf8);
+        search_byte = match_byte + advance;
+        search_char = match_char + 1;
+    }
+
+    results
+}
+
+fn find_case_insensitive(haystack: &str, needle: &str) -> Vec<(usize, usize)> {
+    if haystack.is_ascii() && needle.is_ascii() {
+        return find_ascii_case_insensitive(haystack, needle);
+    }
+
+    let mut folded = String::with_capacity(haystack.len());
+    let mut boundaries = Vec::with_capacity(haystack.chars().count() + 1);
+    boundaries.push((0, 0));
+
+    for (original_char, ch) in haystack.chars().enumerate() {
+        for folded_char in ch.to_lowercase() {
+            if boundaries.last().map(|entry| entry.0) != Some(folded.len()) {
+                boundaries.push((folded.len(), original_char));
+            }
+            folded.push(folded_char);
+        }
+        let boundary = (folded.len(), original_char + 1);
+        if let Some(last) = boundaries.last_mut().filter(|last| last.0 == boundary.0) {
+            *last = boundary;
+        } else {
+            boundaries.push(boundary);
+        }
+    }
+
+    let folded_needle = needle.to_lowercase();
+    let mut results = Vec::new();
+    let mut search_byte = 0;
+    while let Some(relative_byte) = folded[search_byte..].find(&folded_needle) {
+        let start_byte = search_byte + relative_byte;
+        let end_byte = start_byte + folded_needle.len();
+        if let (Ok(start), Ok(end)) = (
+            boundaries.binary_search_by_key(&start_byte, |entry| entry.0),
+            boundaries.binary_search_by_key(&end_byte, |entry| entry.0),
+        ) {
+            results.push((boundaries[start].1, boundaries[end].1));
+        }
+        search_byte = start_byte
+            + folded[start_byte..]
+                .chars()
+                .next()
+                .map_or(1, char::len_utf8);
+    }
+    results
+}
+
+fn find_ascii_case_insensitive(haystack: &str, needle: &str) -> Vec<(usize, usize)> {
+    let haystack = haystack.as_bytes();
+    let needle = needle.as_bytes();
+    if needle.len() > haystack.len() {
+        return Vec::new();
+    }
+
+    (0..=haystack.len() - needle.len())
+        .filter(|&start| {
+            haystack[start..start + needle.len()]
+                .iter()
+                .zip(needle)
+                .all(|(left, right)| left.eq_ignore_ascii_case(right))
+        })
+        .map(|start| (start, start + needle.len()))
+        .collect()
 }
 
 #[cfg(test)]

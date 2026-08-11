@@ -28,4 +28,4 @@ pub use highlights::{
     HIGHLIGHT_NAMES,
 };
 pub use languages::LanguageId;
-pub use parser::ParserState;
+pub use parser::{ParserState, ParserTiming};
