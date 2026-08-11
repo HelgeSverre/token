@@ -6,6 +6,7 @@ Word wrapping without modifying the document
 > **Priority:** P2
 > **Effort:** XL
 > **Created:** 2025-12-19
+> **Updated:** 2026-08-11 (aligned with `TextViewportMap` seam, keymap `Command` system)
 > **Milestone:** 4 - Hard Problems
 
 ---
@@ -111,23 +112,25 @@ Conversion:
 
 ```
 src/
-├── wrap.rs                   # Wrap algorithms and visual-line cache helpers
+├── wrap.rs                   # Wrap algorithms and visual-line cache helpers (new)
 ├── model/
-│   └── editor.rs             # Add soft_wrap: bool and future text viewport state
+│   └── editor.rs             # TextViewportMap lives here; add soft_wrap: bool + wrap cache
 ├── update/
 │   └── editor.rs             # Cursor movement / scrolling via visual-line mapping
 ├── view/
 │   ├── editor_text.rs        # TextEditorRenderer consumes visual rows
-│   └── geometry.rs           # Shared cursor / hit-test conversion
+│   ├── caret.rs              # Caret placement via TextViewportMap
+│   ├── hit_test.rs           # Mouse hit-testing via TextViewportMap
+│   └── geometry.rs           # Tab expansion (expand_tabs_for_display, TABULATOR_WIDTH)
 └── runtime/
-    └── input.rs              # Mouse routing uses the same visual mapping
+    └── mouse.rs              # Mouse routing uses the same visual mapping
 ```
 
-### Alignment With Current Renderer Plan
+### Alignment With TextViewportMap (the shared seam — now exists)
 
-Soft wrap should not be implemented as a render-only cache bolted onto one draw loop.
+The shared text viewport abstraction this plan originally speculated about **has since landed** as `TextViewportMap` in `src/model/editor.rs`. It is the single no-wrap mapping between visible rows/pixels and logical lines/columns (`doc_line_for_visible_row`, `visible_row_for_doc_line`, `doc_line_for_pixel_y`, `visual_column_for_x_offset`, ...), and is already consumed by `editor_text.rs`, `caret.rs`, `hit_test.rs`, and `geometry.rs`. Its doc comment explicitly reserves this seam for soft wrap and folding.
 
-The wrap data should either become, or feed, the future shared text viewport abstraction (`TextViewportModel`, `VisualLineMap`, or equivalent) so render, cursor reveal, scrolling, gutter presentation, and hit-testing all use the same mapping.
+Therefore soft wrap should **not** be a render-only cache bolted onto one draw loop. Instead, make `TextViewportMap` wrap-aware (or introduce a wrap-aware variant constructed from the `WrapCache` that answers the same queries in visual-row terms). All existing callers then get wrap support through the seam they already use — render, cursor reveal, scrolling, gutter, and hit-testing stay consistent for free.
 
 ---
 
@@ -212,10 +215,10 @@ impl WrapCache {
         let mut visual_line = 0;
 
         for logical_line in 0..document.line_count() {
-            let line_text = document.get_line(logical_line)
-                .unwrap_or_default()
-                .trim_end_matches('\n')
-                .to_string();
+            // Use get_line_cow() (zero-alloc when the line has no CRLF fixups)
+            // rather than get_line() which always allocates a String.
+            let line_text = document.get_line_cow(logical_line).unwrap_or_default();
+            let line_text = line_text.trim_end_matches('\n');
 
             let segments = self.compute_line_wraps(&line_text, wrap_width, tab_width, visual_line);
             let segment_count = segments.len();
@@ -254,7 +257,10 @@ impl WrapCache {
         let mut visual_line = starting_visual_line;
 
         for (i, &ch) in chars.iter().enumerate() {
-            // Calculate visual width of this character
+            // Calculate visual width of this character.
+            // Tab expansion must match src/view/geometry.rs (TABULATOR_WIDTH and
+            // expand_tabs_for_display) — reuse or share that logic rather than
+            // taking tab_width as a free parameter.
             let char_width = if ch == '\t' {
                 tab_width - (current_visual_width % tab_width)
             } else {
@@ -459,14 +465,16 @@ pub enum EditorMsg {
 
     /// Toggle soft wrap for current editor
     ToggleSoftWrap,
-
-    /// Move cursor to next visual line (respects wrapping)
-    MoveCursorVisualDown,
-
-    /// Move cursor to previous visual line (respects wrapping)
-    MoveCursorVisualUp,
 }
 ```
+
+No new movement messages are needed: the existing `MoveCursor(Direction)` handler
+becomes wrap-aware when `soft_wrap` is on (see Phase 4).
+
+The keybinding goes through the keymap system, not raw message binding: add a
+`Command::ToggleSoftWrap` variant in `src/keymap/command.rs`, bind it in
+`src/keymap/defaults.rs` (alongside the other `Toggle*` commands), and map it to
+`EditorMsg::ToggleSoftWrap`.
 
 ---
 
@@ -521,7 +529,7 @@ When soft wrap is enabled:
 4. [ ] Keep selections, cursors, and bracket highlights expressed in visual-row terms
 5. [ ] Update scrollbar sizing and viewport capacity calculations to visual rows
 
-**Implementation note:** This phase should plug into the future shared text viewport seam from the rendering-consolidation plan rather than add one-off `render_document()` logic.
+**Implementation note:** This phase plugs into the existing `TextViewportMap` seam (`src/model/editor.rs`) rather than adding one-off render logic. Make the map wrap-aware and the existing consumers (`editor_text.rs`, `caret.rs`, `hit_test.rs`) follow.
 
 **Test:** Long lines wrap visually, line numbers are correct
 
@@ -809,6 +817,8 @@ fn test_cursor_movement_with_wrap() {
 
 - VS Code word wrap: https://code.visualstudio.com/docs/editor/codebasics#_how-do-i-turn-on-word-wrap
 - Ropey line operations: https://docs.rs/ropey/latest/ropey/
-- Existing viewport: `src/model/editor.rs` (Viewport struct)
-- Existing text rendering: `src/view/editor_text.rs`
-- Existing shared geometry: `src/view/geometry.rs`
+- Existing viewport + shared row/line mapping seam: `src/model/editor.rs` (`Viewport`, `TextViewportMap`)
+- Existing text rendering: `src/view/editor_text.rs` (`TextEditorRenderer`)
+- Caret placement and mouse hit-testing (both use `TextViewportMap`): `src/view/caret.rs`, `src/view/hit_test.rs`
+- Tab expansion helpers: `src/view/geometry.rs` (`expand_tabs_for_display`, `TABULATOR_WIDTH`)
+- Keymap command system: `src/keymap/command.rs`, `src/keymap/defaults.rs`
