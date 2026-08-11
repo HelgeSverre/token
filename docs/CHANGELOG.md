@@ -6,6 +6,10 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Added the copyright notice to the standard macOS About panel.
+
 ## v0.5.1 - 2026-08-12
 
 ### Fixed
