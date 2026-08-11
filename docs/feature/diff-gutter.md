@@ -104,7 +104,7 @@ src/
     └── geometry.rs              # GutterLayout for marker lanes and hit targets
 ```
 
-Diff computation can stay feature-local, but rendering should align with the shared gutter contract.
+Diff computation can stay feature-local, but rendering should align with the shared gutter contract — now specified in [editor-decorations.md](editor-decorations.md) (`GutterLayout`, diff lane, mark collection, lane-aware hit targets, scrollbar overview marks). The rendering sketches later in this document predate that contract and should be implemented as its `Diff` lane/marks instead.
 
 The important seam is: diff state answers "what changed on this logical line?", while `GutterLayout` and the text rendering pipeline answer "where does that marker draw in the current viewport?".
 

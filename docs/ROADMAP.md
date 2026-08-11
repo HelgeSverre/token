@@ -419,6 +419,8 @@ Group rapid consecutive edits into single undo entries:
 | Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md)     |
 | Syntax-Aware Expand Selection | ✅ Base phase | [feature/syntax-aware-expand-selection.md](feature/syntax-aware-expand-selection.md)     |
 | Configurable Keymapping     | ✅ Complete | [archived/KEYMAPPING_IMPLEMENTATION_PLAN.md](archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) |
+| LSP Server Integration      | Planned     | [feature/lsp-integration.md](feature/lsp-integration.md)                                 |
+| Editor Decorations & Gutter Lanes | Planned | [feature/editor-decorations.md](feature/editor-decorations.md)                          |
 | Gesture Bindings            | Planned     | [feature/gesture-bindings.md](feature/gesture-bindings.md)                               |
 | Keymap Enhancements         | Future      | [future/keymap-enhancements.md](future/keymap-enhancements.md)                           |
 | Workspace Management        | ✅ P0-6     | [feature/workspace-management.md](archived/workspace-management.md)                       |

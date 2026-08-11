@@ -111,7 +111,7 @@ src/
     └── geometry.rs              # GutterLayout fold hit targets
 ```
 
-Basic folding should share the same future text viewport abstraction as soft wrap.
+Basic folding should share the same future text viewport abstraction as soft wrap. Gutter chevrons and gutter click routing go through the shared decoration contract in [editor-decorations.md](editor-decorations.md) (`GutterLayout` fold lane, the `LineMarks` fold slot, lane-aware `EditorGutter` hit target with press/drag suppression) rather than the render-only sketches later in this document.
 
 `FoldingState` owns fold regions and collapse state, but visual row iteration, gutter hit-testing, cursor reveal, and scroll capacity should eventually flow through shared viewport state rather than a separate render-only mapping.
 

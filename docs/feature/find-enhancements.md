@@ -612,7 +612,7 @@ impl Default for SearchHighlightTheme {
 **Files:** `src/view/editor_text.rs`, `src/theme.rs`
 
 - [ ] Add `SearchHighlightTheme` to theme
-- [ ] Render match highlights in visible viewport through the text decoration pipeline
+- [ ] Render match highlights in visible viewport through the text decoration pipeline — the `BackgroundTint` range decorations and scrollbar overview marks from [editor-decorations.md](editor-decorations.md) (Phases 2–3; this feature is likely its first consumer and does not need the gutter lane system)
 - [ ] Distinguish current match from other matches
 - [ ] Use semi-transparent overlays for readability
 
