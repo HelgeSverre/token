@@ -291,6 +291,14 @@ impl EditorArea {
         self.documents.get_mut(&doc_id)
     }
 
+    /// Get the document shown by a group's active tab, if any.
+    pub fn document_for_group(&self, group: &EditorGroup) -> Option<&Document> {
+        let editor_id = group.active_editor_id()?;
+        let editor = self.editors.get(&editor_id)?;
+        let doc_id = editor.document_id?;
+        self.documents.get(&doc_id)
+    }
+
     /// Ensure the focused editor's cursor is visible.
     /// This method works around borrow checker issues by getting both doc and editor
     /// within the same scope.
@@ -703,7 +711,9 @@ impl EditorArea {
             })
             .collect();
 
-        // Update each editor's viewport based on its group's dimensions.
+        // Update each editor's viewport based on its group's dimensions. Gutter
+        // width (and thus visible_columns) depends on each editor's own
+        // document line count, so it's computed per editor, not per group.
         for (editor_ids, width, height, content_height) in group_info {
             if width == 0 || height == 0 {
                 continue;
@@ -716,15 +726,20 @@ impl EditorArea {
                 .checked_div(line_height)
                 .unwrap_or(0);
 
-            let text_x = crate::model::text_start_x_scaled(char_width, metrics).round();
-            let visible_columns = if char_width > 0.0 {
-                ((width as f32 - text_x) / char_width).floor().max(1.0) as usize
-            } else {
-                0
-            };
-
             for editor_id in editor_ids {
                 if let Some(editor) = self.editors.get_mut(&editor_id) {
+                    let line_count = editor
+                        .document_id
+                        .and_then(|id| self.documents.get(&id))
+                        .map(|doc| doc.line_count())
+                        .unwrap_or(1);
+                    let text_x =
+                        crate::model::text_start_x_scaled(char_width, metrics, line_count).round();
+                    let visible_columns = if char_width > 0.0 {
+                        ((width as f32 - text_x) / char_width).floor().max(1.0) as usize
+                    } else {
+                        0
+                    };
                     editor.resize_viewport(visible_lines, visible_columns);
 
                     if let Some(image) = editor.view_mode.as_image_mut() {

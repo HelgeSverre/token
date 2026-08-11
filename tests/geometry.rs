@@ -8,6 +8,7 @@ use common::test_model;
 use token::messages::{LayoutMsg, Msg};
 use token::model::SplitDirection;
 use token::update::update;
+use token::view::geometry::GroupLayout;
 
 // ============================================================================
 // active_tab_index Bounds Tests
@@ -357,4 +358,33 @@ fn test_focused_group_always_valid() {
 
     // focused_group() should return Some
     assert!(model.editor_area.focused_group().is_some());
+}
+
+// ============================================================================
+// Dynamic Gutter Width (editor-decorations.md Phase 1)
+// ============================================================================
+
+#[test]
+fn gutter_width_matches_today_below_10k_lines() {
+    let small = test_model("a\nb\nc\n", 0, 0);
+    let group = small.editor_area.focused_group().unwrap();
+    let layout = GroupLayout::new(group, &small, 10.0);
+
+    // Pixel-identity criterion: unchanged from the historical fixed 5-char gutter.
+    assert_eq!(layout.gutter.numbers_w, (10.0 * 5.0 + small.metrics.gutter_padding) as u16);
+}
+
+#[test]
+fn gutter_width_grows_past_100k_lines() {
+    let text = "x\n".repeat(100_000);
+    let large = test_model(&text, 0, 0);
+    let group = large.editor_area.focused_group().unwrap();
+    let layout = GroupLayout::new(group, &large, 10.0);
+
+    let small = test_model("a\n", 0, 0);
+    let small_group = small.editor_area.focused_group().unwrap();
+    let small_layout = GroupLayout::new(small_group, &small, 10.0);
+
+    assert!(layout.gutter.numbers_w > small_layout.gutter.numbers_w);
+    assert!(layout.text_start_x > small_layout.text_start_x);
 }

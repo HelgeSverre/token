@@ -510,7 +510,8 @@ pub fn pixel_to_line_and_visual_column_in_group(
     let local_x = x - group_rect.x as f64;
     let local_y = y - group_rect.y as f64;
 
-    let text_x = crate::model::text_start_x_scaled(char_width, &model.metrics).round() as f64;
+    let text_x = crate::model::text_start_x_scaled(char_width, &model.metrics, document.line_count())
+        .round() as f64;
 
     let text_start_y = model.metrics.tab_bar_height as f64;
     let adjusted_y = (local_y - text_start_y).max(0.0);
@@ -542,7 +543,8 @@ pub fn pixel_to_cursor_in_group(
     let local_x = x - group_rect.x as f64;
     let local_y = y - group_rect.y as f64;
 
-    let text_x = crate::model::text_start_x_scaled(char_width, &model.metrics).round() as f64;
+    let text_x = crate::model::text_start_x_scaled(char_width, &model.metrics, document.line_count())
+        .round() as f64;
     let text_start_y = model.metrics.tab_bar_height as f64;
     let adjusted_y = (local_y - text_start_y).max(0.0);
     let line = viewport.doc_line_for_pixel_y(adjusted_y, line_height);
@@ -558,6 +560,44 @@ pub fn pixel_to_cursor_in_group(
     let column = column.min(line_len);
 
     (line, column)
+}
+
+// ============================================================================
+// GutterLayout - Gutter lane widths
+// ============================================================================
+
+/// Gutter lane widths, in physical pixels.
+///
+/// `Copy` and allocation-free: it's rebuilt as part of `GroupLayout` on the
+/// per-mouse-move hit-test path, so it must stay a plain widths struct with
+/// no `Vec`. Phase 1 only activates the line-numbers lane (`numbers_w`,
+/// which includes the trailing gutter padding up to the border); marks/fold/
+/// diff lanes stay 0 until their consumers ship (see editor-decorations.md).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct GutterLayout {
+    pub marks_w: u16,
+    pub numbers_w: u16,
+    pub fold_w: u16,
+    pub diff_w: u16,
+}
+
+impl GutterLayout {
+    /// Build the gutter layout for a document with `line_count` lines.
+    pub fn new(char_width: f32, metrics: &crate::model::ScaledMetrics, line_count: usize) -> Self {
+        let numbers_w =
+            crate::model::gutter_border_x_scaled(char_width, metrics, line_count).round() as u16;
+        Self {
+            marks_w: 0,
+            numbers_w,
+            fold_w: 0,
+            diff_w: 0,
+        }
+    }
+
+    /// Total gutter width in pixels, from the group's left edge to the border.
+    pub fn total_width(&self) -> usize {
+        self.marks_w as usize + self.numbers_w as usize + self.fold_w as usize + self.diff_w as usize
+    }
 }
 
 // ============================================================================
@@ -583,6 +623,8 @@ pub struct GroupLayout {
     pub content_rect: Rect,
     /// Tab bar height (scaled for DPI)
     pub tab_bar_height: usize,
+    /// Gutter lane widths for this group's document
+    pub gutter: GutterLayout,
     /// Gutter border X position (absolute window coordinate)
     pub gutter_right_x: usize,
     /// X coordinate where text content starts (absolute window coordinate)
@@ -593,7 +635,8 @@ impl GroupLayout {
     /// Create a new GroupLayout from an editor group.
     ///
     /// All positioning values are computed using scaled metrics from the model,
-    /// ensuring DPI-correct rendering on all displays.
+    /// ensuring DPI-correct rendering on all displays. Gutter width is derived
+    /// from the group's active document line count.
     pub fn new(group: &EditorGroup, model: &AppModel, char_width: f32) -> Self {
         let group_rect = group.rect;
         let metrics = &model.metrics;
@@ -606,16 +649,23 @@ impl GroupLayout {
             (group_rect.height - tab_bar_height as f32).max(0.0),
         );
 
+        let line_count = model
+            .editor_area
+            .document_for_group(group)
+            .map(|doc| doc.line_count())
+            .unwrap_or(1);
+
         let rect_x = group_rect.x.round() as usize;
-        let gutter_right_x =
-            rect_x + crate::model::gutter_border_x_scaled(char_width, metrics).round() as usize;
-        let text_start_x =
-            rect_x + crate::model::text_start_x_scaled(char_width, metrics).round() as usize;
+        let gutter = GutterLayout::new(char_width, metrics, line_count);
+        let gutter_right_x = rect_x + gutter.total_width();
+        let text_start_x = rect_x
+            + crate::model::text_start_x_scaled(char_width, metrics, line_count).round() as usize;
 
         Self {
             group_rect,
             content_rect,
             tab_bar_height,
+            gutter,
             gutter_right_x,
             text_start_x,
         }
@@ -1579,6 +1629,7 @@ mod tests {
             group_rect: Rect::new(0.0, 0.0, 200.0, 120.0),
             content_rect: Rect::new(0.0, 24.0, 200.0, 96.0),
             tab_bar_height: 24,
+            gutter: GutterLayout::default(),
             gutter_right_x: 48,
             text_start_x: 60,
         };

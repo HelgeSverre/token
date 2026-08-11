@@ -69,7 +69,9 @@ impl ViewportGeometry {
         let line_height = Self::DEFAULT_LINE_HEIGHT;
         let char_width = Self::DEFAULT_CHAR_WIDTH;
 
-        let visible_columns = Self::compute_visible_columns(window_width, char_width);
+        // No document loaded yet at this point; estimate with a 1-line document
+        // (the minimum gutter width), corrected once the real document is known.
+        let visible_columns = Self::compute_visible_columns(window_width, char_width, 1);
         let visible_lines = Self::compute_visible_lines(window_height, line_height, line_height);
 
         Self {
@@ -97,15 +99,16 @@ impl ViewportGeometry {
         (window_height as usize).saturating_sub(status_bar_height) / line_height
     }
 
-    /// Compute number of visible columns given window width.
+    /// Compute number of visible columns given window width and document
+    /// line count (which drives the dynamic gutter width).
     ///
     /// Uses the canonical scaled geometry calculation at the default scale.
     #[inline]
-    pub fn compute_visible_columns(window_width: u32, char_width: f32) -> usize {
+    pub fn compute_visible_columns(window_width: u32, char_width: f32, line_count: usize) -> usize {
         if char_width <= 0.0 {
             return 80; // fallback
         }
-        let text_x = text_start_x_scaled(char_width, &ScaledMetrics::default()).round();
+        let text_x = text_start_x_scaled(char_width, &ScaledMetrics::default(), line_count).round();
         ((window_width as f32 - text_x) / char_width).floor() as usize
     }
 }
@@ -245,8 +248,32 @@ fn create_initial_session(file_paths: Vec<PathBuf>, geom: &ViewportGeometry) -> 
     }
 }
 
-/// Layout constant - width of line number gutter in characters (e.g., " 123 ")
-pub const LINE_NUMBER_GUTTER_CHARS: usize = 5;
+/// Minimum width of the line number gutter, in characters (e.g., " 123 ").
+/// Matches the fixed pre-dynamic-gutter width for documents under 10,000 lines
+/// (pixel-identity criterion for `gutter_number_chars`).
+pub const LINE_NUMBER_GUTTER_CHARS_MIN: usize = 5;
+
+/// Number of gutter characters needed to display line numbers for a document
+/// with `line_count` lines, never narrower than `LINE_NUMBER_GUTTER_CHARS_MIN`.
+///
+/// This is the model-callable width formula: the sole source of truth for
+/// gutter number-lane width, consumed by both model-side viewport math and
+/// the view's `GutterLayout`.
+#[inline]
+pub fn gutter_number_chars(line_count: usize) -> usize {
+    digit_count(line_count.max(1)).max(LINE_NUMBER_GUTTER_CHARS_MIN)
+}
+
+/// Number of base-10 digits in `n` (`n == 0` counts as 1 digit).
+#[inline]
+fn digit_count(mut n: usize) -> usize {
+    let mut digits = 1;
+    while n >= 10 {
+        n /= 10;
+        digits += 1;
+    }
+    digits
+}
 
 // ============================================================================
 // Scaled Metrics - UI layout constants scaled for display DPI
@@ -360,18 +387,19 @@ impl Default for ScaledMetrics {
     }
 }
 
-/// Calculate the x-coordinate where text content begins (with metrics)
+/// Calculate the x-coordinate where text content begins (with metrics),
+/// for a document with `line_count` lines.
 #[inline]
-pub fn text_start_x_scaled(char_width: f32, metrics: &ScaledMetrics) -> f32 {
-    let gutter_width = char_width * LINE_NUMBER_GUTTER_CHARS as f32 + metrics.gutter_padding;
+pub fn text_start_x_scaled(char_width: f32, metrics: &ScaledMetrics, line_count: usize) -> f32 {
     let border_width = metrics.border_width as f32;
-    gutter_width + border_width + metrics.text_area_padding
+    gutter_border_x_scaled(char_width, metrics, line_count) + border_width + metrics.text_area_padding
 }
 
-/// Calculate the x-coordinate of the gutter border (with metrics)
+/// Calculate the x-coordinate of the gutter border (with metrics),
+/// for a document with `line_count` lines.
 #[inline]
-pub fn gutter_border_x_scaled(char_width: f32, metrics: &ScaledMetrics) -> f32 {
-    char_width * LINE_NUMBER_GUTTER_CHARS as f32 + metrics.gutter_padding
+pub fn gutter_border_x_scaled(char_width: f32, metrics: &ScaledMetrics, line_count: usize) -> f32 {
+    char_width * gutter_number_chars(line_count) as f32 + metrics.gutter_padding
 }
 
 /// The complete application model
@@ -602,12 +630,7 @@ impl AppModel {
             .map(|ws| ws.sidebar_width(self.metrics.scale_factor))
             .unwrap_or(0.0);
         let right_dock_width = self.dock_layout.right.size(self.metrics.scale_factor);
-
-        let text_x = text_start_x_scaled(self.char_width, &self.metrics).round();
         let effective_width = (width as f32) - sidebar_width - right_dock_width;
-        let visible_columns = ((effective_width - text_x) / self.char_width)
-            .floor()
-            .max(1.0) as usize;
 
         // Subtract status bar, tab bar, and bottom dock from available height
         let status_bar_height = self.line_height;
@@ -619,8 +642,21 @@ impl AppModel {
             .saturating_sub(bottom_dock_height);
         let visible_lines = available_height.checked_div(self.line_height).unwrap_or(0);
 
-        // Update ALL editors, not just the focused one
-        for editor in self.editor_area.editors.values_mut() {
+        // Update ALL editors, not just the focused one. Gutter width (and thus
+        // visible_columns) depends on each editor's own document line count.
+        let char_width = self.char_width;
+        let metrics = self.metrics;
+        let EditorArea {
+            editors, documents, ..
+        } = &mut self.editor_area;
+        for editor in editors.values_mut() {
+            let line_count = editor
+                .document_id
+                .and_then(|id| documents.get(&id))
+                .map(|doc| doc.line_count())
+                .unwrap_or(1);
+            let text_x = text_start_x_scaled(char_width, &metrics, line_count).round();
+            let visible_columns = ((effective_width - text_x) / char_width).floor().max(1.0) as usize;
             editor.resize_viewport(visible_lines, visible_columns);
         }
     }
@@ -639,12 +675,21 @@ impl AppModel {
     pub fn set_char_width(&mut self, char_width: f32) {
         self.char_width = char_width;
 
-        // Recalculate visible columns with new char width using scaled metrics
-        let text_x = text_start_x_scaled(char_width, &self.metrics).round();
-        let visible_columns = ((self.window_size.0 as f32 - text_x) / char_width).floor() as usize;
-
-        // FIX: Update ALL editors, not just the focused one
-        for editor in self.editor_area.editors.values_mut() {
+        // Recalculate visible columns with new char width using scaled metrics.
+        // Gutter width depends on each editor's own document line count.
+        let window_width = self.window_size.0;
+        let metrics = self.metrics;
+        let EditorArea {
+            editors, documents, ..
+        } = &mut self.editor_area;
+        for editor in editors.values_mut() {
+            let line_count = editor
+                .document_id
+                .and_then(|id| documents.get(&id))
+                .map(|doc| doc.line_count())
+                .unwrap_or(1);
+            let text_x = text_start_x_scaled(char_width, &metrics, line_count).round();
+            let visible_columns = ((window_width as f32 - text_x) / char_width).floor() as usize;
             editor.viewport.visible_columns = visible_columns;
         }
     }
@@ -928,8 +973,8 @@ mod tests {
     fn test_text_start_x_scaled() {
         let metrics = ScaledMetrics::new(1.0);
         let char_width = 10.0;
-        let result = text_start_x_scaled(char_width, &metrics);
-        let expected = char_width * LINE_NUMBER_GUTTER_CHARS as f32 + 4.0 + 1.0 + 8.0;
+        let result = text_start_x_scaled(char_width, &metrics, 1);
+        let expected = char_width * LINE_NUMBER_GUTTER_CHARS_MIN as f32 + 4.0 + 1.0 + 8.0;
         assert_eq!(result, expected);
     }
 
@@ -937,9 +982,50 @@ mod tests {
     fn test_gutter_border_x_scaled() {
         let metrics = ScaledMetrics::new(2.0);
         let char_width = 10.0;
-        let result = gutter_border_x_scaled(char_width, &metrics);
-        let expected = char_width * LINE_NUMBER_GUTTER_CHARS as f32 + 8.0;
+        let result = gutter_border_x_scaled(char_width, &metrics, 1);
+        let expected = char_width * LINE_NUMBER_GUTTER_CHARS_MIN as f32 + 8.0;
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_gutter_number_chars_min_and_growth() {
+        // Pixel-identity below 10,000 lines: always the historical minimum.
+        assert_eq!(gutter_number_chars(1), 5);
+        assert_eq!(gutter_number_chars(999), 5);
+        assert_eq!(gutter_number_chars(9_999), 5);
+        assert_eq!(gutter_number_chars(10_000), 5);
+        // Growth kicks in once line numbers themselves need a 6th digit.
+        assert_eq!(gutter_number_chars(99_999), 5);
+        assert_eq!(gutter_number_chars(100_000), 6);
+    }
+
+    #[test]
+    fn test_gutter_border_x_scaled_grows_with_line_count() {
+        let metrics = ScaledMetrics::new(1.0);
+        let char_width = 10.0;
+        let narrow = gutter_border_x_scaled(char_width, &metrics, 9_999);
+        let wide = gutter_border_x_scaled(char_width, &metrics, 100_000);
+        assert_eq!(narrow, char_width * 5.0 + metrics.gutter_padding);
+        assert_eq!(wide, char_width * 6.0 + metrics.gutter_padding);
+        assert!(wide > narrow);
+    }
+
+    #[test]
+    fn resize_narrows_visible_columns_for_large_line_counts() {
+        // Gutter width is per-editor, driven by that editor's own document
+        // line count; a wider gutter should leave fewer visible text columns.
+        let mut small = AppModel::new(400, 200, 1.0, vec![]);
+        small.set_char_width(10.0);
+        small.resize(400, 200);
+        let small_columns = small.editor().viewport.visible_columns;
+
+        let mut large = AppModel::new(400, 200, 1.0, vec![]);
+        large.document_mut().buffer = Rope::from("\n".repeat(100_000));
+        large.set_char_width(10.0);
+        large.resize(400, 200);
+        let large_columns = large.editor().viewport.visible_columns;
+
+        assert!(large_columns < small_columns);
     }
 
     #[test]

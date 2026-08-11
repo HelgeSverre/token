@@ -190,10 +190,10 @@ Not consumers: inlay hints / code lens / inline blame (virtual text), indent gui
 
 Ships ahead of all consumers as its own change: it fixes the live >9,999-line rendering bug, touches no feature code, and de-risks everything downstream. Most of an M by itself.
 
-- [ ] `GutterLayout` (`Copy`, widths-only) in `GroupLayout`; `gutter_width(...)` formula callable from model code.
-- [ ] Replace **all** `LINE_NUMBER_GUTTER_CHARS` consumers — view-side (`text_start_x_scaled`, `gutter_border_x_scaled`, `geometry.rs`) *and* model-side (`compute_visible_columns`, cursor-visibility sync, `sync_viewports`).
-- [ ] Viewport-column recompute on width change; tests at 9,999→10,000 and (later) first-lane activation.
-- [ ] Digit-count rendering verified at 1 / 999 / 10,000 / 100,000 lines; pixel-identity vs. today for <10,000-line files (min width 5 chars).
+- [x] `GutterLayout` (`Copy`, widths-only) in `GroupLayout`; `gutter_width(...)` formula callable from model code.
+- [x] Replace **all** `LINE_NUMBER_GUTTER_CHARS` consumers — view-side (`text_start_x_scaled`, `gutter_border_x_scaled`, `geometry.rs`) *and* model-side (`compute_visible_columns`, cursor-visibility sync, `sync_viewports`).
+- [x] Viewport-column recompute on width change; tests at 9,999→10,000 and (later) first-lane activation.
+- [x] Digit-count rendering verified at 1 / 999 / 10,000 / 100,000 lines; pixel-identity vs. today for <10,000-line files (min width 5 chars).
 
 ### Phase 2: Marks + Decoration Passes — *with first consumer (find or LSP diagnostics)*
 
