@@ -16,10 +16,9 @@ pub fn install() {
         return;
     };
     let app = NSApplication::sharedApplication(main_thread);
-    if app.mainMenu().is_some() {
-        return;
-    }
 
+    // App bundles may already have an empty placeholder menu at this point.
+    // Replace it with Token's menu instead of treating its presence as success.
     let menu_bar = NSMenu::new(main_thread);
     let app_menu_item = NSMenuItem::new(main_thread);
     menu_bar.addItem(&app_menu_item);
