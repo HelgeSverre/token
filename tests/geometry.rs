@@ -371,7 +371,10 @@ fn gutter_width_matches_today_below_10k_lines() {
     let layout = GroupLayout::new(group, &small, 10.0);
 
     // Pixel-identity criterion: unchanged from the historical fixed 5-char gutter.
-    assert_eq!(layout.gutter.numbers_w, (10.0 * 5.0 + small.metrics.gutter_padding) as u16);
+    assert_eq!(
+        layout.gutter.numbers_w,
+        (10.0 * 5.0 + small.metrics.gutter_padding) as u16
+    );
 }
 
 #[test]

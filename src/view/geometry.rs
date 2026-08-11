@@ -510,8 +510,12 @@ pub fn pixel_to_line_and_visual_column_in_group(
     let local_x = x - group_rect.x as f64;
     let local_y = y - group_rect.y as f64;
 
-    let text_x = crate::model::text_start_x_scaled(char_width, &model.metrics, document.line_count())
-        .round() as f64;
+    let text_x = crate::model::text_start_x_scaled(
+        char_width,
+        &model.metrics,
+        document.line_count(),
+    )
+    .round() as f64;
 
     let text_start_y = model.metrics.tab_bar_height as f64;
     let adjusted_y = (local_y - text_start_y).max(0.0);
@@ -543,8 +547,12 @@ pub fn pixel_to_cursor_in_group(
     let local_x = x - group_rect.x as f64;
     let local_y = y - group_rect.y as f64;
 
-    let text_x = crate::model::text_start_x_scaled(char_width, &model.metrics, document.line_count())
-        .round() as f64;
+    let text_x = crate::model::text_start_x_scaled(
+        char_width,
+        &model.metrics,
+        document.line_count(),
+    )
+    .round() as f64;
     let text_start_y = model.metrics.tab_bar_height as f64;
     let adjusted_y = (local_y - text_start_y).max(0.0);
     let line = viewport.doc_line_for_pixel_y(adjusted_y, line_height);
@@ -596,7 +604,10 @@ impl GutterLayout {
 
     /// Total gutter width in pixels, from the group's left edge to the border.
     pub fn total_width(&self) -> usize {
-        self.marks_w as usize + self.numbers_w as usize + self.fold_w as usize + self.diff_w as usize
+        self.marks_w as usize
+            + self.numbers_w as usize
+            + self.fold_w as usize
+            + self.diff_w as usize
     }
 }
 
