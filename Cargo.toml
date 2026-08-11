@@ -174,7 +174,9 @@ tree-sitter-dhall = { git = "https://github.com/jbellerb/tree-sitter-dhall", rev
 tree-sitter-pkl = { git = "https://github.com/apple/tree-sitter-pkl", rev = "3486521eb1c2fcb3c9a5e88300215930ee515693" }
 tree-sitter-hurl = { git = "https://github.com/pfeiferj/tree-sitter-hurl", rev = "597efbd7ce9a814bb058f48eabd055b1d1e12145" }
 tree-sitter-wit = { git = "https://github.com/bytecodealliance/tree-sitter-wit", rev = "cdf07263b136054b413cab449ac7a1d059c27542" }
-tree-sitter-sml = { git = "https://github.com/MatthewFluet/tree-sitter-sml", rev = "fd4b4955bb998262840ab8119885b3edf20ea75a" }
+# The upstream scanner uses GCC-only unused-parameter attributes and does not
+# compile with MSVC. Keep the pinned grammar source with a portable local patch.
+tree-sitter-sml = { path = "vendor/tree-sitter-sml" }
 tree-sitter-nim = { git = "https://github.com/alaviss/tree-sitter-nim", rev = "ac72ba30d16edf0be021588a9301ede4accd6cf4" }
 tree-sitter-astro-next = "0.1.1"
 arborium-awk = "2.18.1"

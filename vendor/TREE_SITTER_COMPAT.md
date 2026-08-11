@@ -14,6 +14,7 @@ and `src/syntax/compat.rs` exposes the resulting language functions through
 | `tree-sitter-janet-compat` | [GrayJack/tree-sitter-janet](https://github.com/GrayJack/tree-sitter-janet) | `64db751b233ba44ce06fa6c729701bdf87779011` | BSD-3-Clause | External scanner compiled separately from the otherwise current Rust binding. |
 | `tree-sitter-pest-compat` | [tree-sitter/tree-sitter-pest](https://github.com/tree-sitter/tree-sitter-pest) | `a8a98a824452b1ec4da7f508386a187a2f234b85` | MIT | Generated parser from crate `tree-sitter-pest` 0.0.2. |
 | `tree-sitter-pony-compat` | [amaanq/tree-sitter-pony](https://github.com/amaanq/tree-sitter-pony) | `16f930b250433cfcd4fb4144df92bb98ad344c20` | MIT | Generated parser and external scanner from crate `tree-sitter-pony` 1.0.0. |
+| `tree-sitter-sml` | [MatthewFluet/tree-sitter-sml](https://github.com/MatthewFluet/tree-sitter-sml) | `fd4b4955bb998262840ab8119885b3edf20ea75a` | MIT | Rust binding with the external scanner's unused parameters expressed as portable C for MSVC compatibility. |
 
 The generated sources remain attributable to their upstream projects and are
 not hand-maintained. When an upstream publishes a Tree-sitter 0.25-compatible

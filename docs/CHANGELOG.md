@@ -91,8 +91,8 @@ All notable changes to rust-editor are documented in this file.
 
 ### Fixed
 
-- Windows release builds no longer fail when compiling the SCSS Tree-sitter
-  grammar with MSVC.
+- Windows release builds no longer fail when compiling the SCSS and Standard ML
+  Tree-sitter grammars with MSVC.
 
 - macOS text-input accessories, including the Caps Lock indicator and IME
   candidate window, now follow the active editor, modal, or CSV cell caret

@@ -5433,7 +5433,6 @@ dependencies = [
 [[package]]
 name = "tree-sitter-sml"
 version = "0.25.0"
-source = "git+https://github.com/MatthewFluet/tree-sitter-sml?rev=fd4b4955bb998262840ab8119885b3edf20ea75a#fd4b4955bb998262840ab8119885b3edf20ea75a"
 dependencies = [
  "cc",
  "tree-sitter-language",
