@@ -547,7 +547,7 @@ impl<'a> Frame<'a> {
     /// band of the corner mask (skipping the solid interior, so a corner
     /// reads as a thin arc rather than a filled quarter-circle).
     #[allow(clippy::too_many_arguments)]
-    fn stroke_rounded_rect(
+    pub(crate) fn stroke_rounded_rect(
         &mut self,
         x: usize,
         y: usize,

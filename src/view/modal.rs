@@ -195,6 +195,14 @@ fn render_command_palette_modal_via_overlay_surface(
     use crate::view::overlay_surface::{
         self, Accessory, Anchor, Body, FlatIndex, Header, Row, RowIcon, Section, WidthRule,
     };
+    use crate::view::selectable_list::SelectableListViewport;
+
+    // Palette/pickers cap at 10 visible rows (Visual Language > Overflow).
+    // `CommandPaletteState` doesn't track a scroll offset yet (that lands
+    // with Phase 2's `resolve_palette_rows`); `compute` still keeps the
+    // selection on-screen so the gate demonstrates real scrolling instead of
+    // pinning to a fixed 8-row window with no way to see past it.
+    const MAX_VISIBLE: usize = 10;
 
     let input_text = state.input();
     let filtered = filter_commands(&input_text);
@@ -215,6 +223,9 @@ fn render_command_palette_modal_via_overlay_surface(
         title: None,
         rows: &rows,
     }];
+
+    let selected_index = state.selected_index.min(rows.len().saturating_sub(1));
+    let viewport = SelectableListViewport::compute(rows.len(), selected_index, MAX_VISIBLE);
 
     let spec = overlay_surface::OverlaySpec {
         anchor: Anchor::Centered {
@@ -241,9 +252,9 @@ fn render_command_palette_modal_via_overlay_surface(
         },
         body: Body::List {
             sections: &sections,
-            selected: FlatIndex(state.selected_index.min(rows.len().saturating_sub(1))),
-            scroll: 0,
-            max_visible: 8,
+            selected: FlatIndex(selected_index),
+            scroll: viewport.scroll_offset,
+            max_visible: MAX_VISIBLE,
         },
         footer: Some(overlay_surface::Footer {
             leading: "\u{2191}\u{2193} navigate \u{00b7} \u{21b5} run",

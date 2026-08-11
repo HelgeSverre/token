@@ -207,8 +207,9 @@ pub fn truncate_tail(painter: &mut TextPainter, size: f32, text: &str, max_width
     let budget = (max_width - ellipsis_w).max(0.0);
     let mut out = String::new();
     let mut w = 0.0;
+    let mut buf = [0u8; 4];
     for ch in text.chars() {
-        let cw = painter.measure_sized(&ch.to_string(), size, 0.0);
+        let cw = painter.measure_sized(ch.encode_utf8(&mut buf), size, 0.0);
         if w + cw > budget {
             break;
         }
@@ -229,8 +230,9 @@ pub fn truncate_head(painter: &mut TextPainter, size: f32, text: &str, max_width
     let budget = (max_width - ellipsis_w).max(0.0);
     let mut kept: Vec<char> = Vec::new();
     let mut w = 0.0;
+    let mut buf = [0u8; 4];
     for ch in text.chars().rev() {
-        let cw = painter.measure_sized(&ch.to_string(), size, 0.0);
+        let cw = painter.measure_sized(ch.encode_utf8(&mut buf), size, 0.0);
         if w + cw > budget {
             break;
         }
@@ -348,8 +350,6 @@ pub fn layout(
         None
     };
 
-    let _ = start; // used above for scrollbar math + row window (kept for clarity)
-
     OverlayLayout {
         panel,
         header,
@@ -425,6 +425,18 @@ pub fn render(
         layout.panel.h,
         radius,
         colors.panel_bg,
+        mask_cache,
+    );
+    // 1px light hairline edge — the dark edge the panel reads against comes
+    // from the shadow rings above, never from this border (Visual Language:
+    // Chrome > Border).
+    frame.stroke_rounded_rect(
+        layout.panel.x,
+        layout.panel.y,
+        layout.panel.w,
+        layout.panel.h,
+        radius,
+        colors.hairline,
         mask_cache,
     );
 
@@ -615,7 +627,16 @@ fn render_list(
                             .h
                             .saturating_sub(painter.line_height_for_size(row_size)))
                             / 2;
-                    painter.draw_sized(frame, x, text_y, &ch.to_string(), row_size, 0.0, color);
+                    let mut buf = [0u8; 4];
+                    painter.draw_sized(
+                        frame,
+                        x,
+                        text_y,
+                        ch.encode_utf8(&mut buf),
+                        row_size,
+                        0.0,
+                        color,
+                    );
                 }
                 x += icon_w;
 
@@ -750,6 +771,7 @@ fn draw_label_with_matches(
     }
     let runs = coalesce_match_indices(match_indices);
     let mut current_x = x as f32;
+    let mut buf = [0u8; 4];
     for (i, ch) in label.chars().enumerate() {
         let i = i as u32;
         let matched = runs.iter().any(|(s, e)| i >= *s && i < *e);
@@ -758,7 +780,7 @@ fn draw_label_with_matches(
             frame,
             current_x.round() as usize,
             y,
-            &ch.to_string(),
+            ch.encode_utf8(&mut buf),
             size,
             0.0,
             color,
@@ -939,6 +961,43 @@ mod tests {
 
         let l2 = layout(&spec, 4000, 800, 1.0);
         assert_eq!(l2.panel.w, 500, "must clamp down to the logical-px maximum");
+    }
+
+    #[test]
+    fn layout_panel_y_scales_with_scale_factor() {
+        // dims::Y (64 logical px) must scale to physical px like every other
+        // chrome constant — on a tall-enough window this is the value that
+        // wins the `.min(window_height / 4)` clamp.
+        let sections: [Section; 0] = [];
+        let spec = OverlaySpec {
+            anchor: Anchor::Centered {
+                width: WidthRule {
+                    pct: 0.5,
+                    min: 300.0,
+                    max: 500.0,
+                },
+                dim_alpha: 0x66,
+            },
+            header: Header {
+                glyph: None,
+                text: "",
+                placeholder: "",
+                caret: Some(0),
+                scope: None,
+            },
+            body: Body::List {
+                sections: &sections,
+                selected: FlatIndex(0),
+                scroll: 0,
+                max_visible: 8,
+            },
+            footer: None,
+        };
+        let l = layout(&spec, 2000, 4000, 2.0);
+        assert_eq!(
+            l.panel.y, 128,
+            "64 logical px * 2.0 scale = 128 physical px"
+        );
     }
 
     #[test]
