@@ -9,8 +9,8 @@
     "preview": "astro preview"
   },
   "dependencies": {
-    "@astrojs/sitemap": "^3.7.0",
-    "astro": "^5.17.1",
-    "yaml": "^2.8.2"
+    "@astrojs/sitemap": "^3.7.3",
+    "astro": "^7.2.1",
+    "yaml": "^2.9.0"
   }
 }

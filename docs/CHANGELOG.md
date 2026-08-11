@@ -4,6 +4,16 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
+## Unreleased
+
+### Changed
+
+- Updated the website's Astro and JavaScript dependencies to remediate known
+  Dependabot security advisories.
+- Improved the legibility of inline website keybindings with system-font
+  modifier symbols and wider spacing.
+- Added plain-English tooltips to inline website keybindings.
+
 ## v0.5.0 - 2026-08-11
 
 ### Added
