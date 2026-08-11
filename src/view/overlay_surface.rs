@@ -174,6 +174,27 @@ fn flatten_rows<'a>(sections: &'a [Section<'a>]) -> Vec<DisplayRow<'a>> {
     out
 }
 
+/// Resolve `scroll` (a `FlatIndex`-space row offset, e.g. from
+/// `SelectableListViewport`) into a display-row-space window: the first
+/// visible display slot and the visible count. Section headers occupy
+/// display slots but not `FlatIndex` slots, so scroll must be re-anchored
+/// to the display row that actually carries that `FlatIndex` rather than
+/// applied as a raw offset into `display_rows` — otherwise every header
+/// above the window shifts the selected row out of view by one slot.
+fn resolve_visible_window(
+    display_rows: &[DisplayRow],
+    scroll: usize,
+    max_visible: usize,
+) -> (usize, usize) {
+    let visible = display_rows.len().min(max_visible);
+    let scroll_display = display_rows
+        .iter()
+        .position(|dr| matches!(dr, DisplayRow::Row(_, FlatIndex(i)) if *i == scroll))
+        .unwrap_or(scroll);
+    let start = scroll_display.min(display_rows.len().saturating_sub(visible));
+    (start, visible)
+}
+
 /// Coalesce ascending, deduplicated nucleo match char-indices into
 /// contiguous `[start, end)` runs, so match highlighting can paint one
 /// blend region per run instead of one per matched character.
@@ -291,7 +312,7 @@ pub fn layout(
         ..
     } = &spec.body;
     let display_rows = flatten_rows(sections);
-    let visible = display_rows.len().min(*max_visible);
+    let (start, visible) = resolve_visible_window(&display_rows, *scroll, *max_visible);
     let list_h = visible * row_h;
 
     let panel_h = header_h + list_h + footer_h.unwrap_or(0);
@@ -312,7 +333,6 @@ pub fn layout(
     };
 
     let list_top = header.y + header.h;
-    let start = (*scroll).min(display_rows.len().saturating_sub(visible));
     let rows: Vec<WidgetRect> = (0..visible)
         .map(|i| WidgetRect {
             x: panel.x,
@@ -470,6 +490,21 @@ pub fn render(
     }
 }
 
+/// X position for a caret at char column `col` of `text`, measured from
+/// `base_x` — i.e. the width of `text` truncated to `col` chars, not the
+/// width of the whole string. `col` beyond `text`'s length clamps to the end
+/// (mirrors `str::chars().take(col)` behavior).
+fn caret_x_for_column(
+    painter: &mut TextPainter,
+    base_x: usize,
+    text: &str,
+    col: usize,
+    size: f32,
+) -> usize {
+    let before: String = text.chars().take(col).collect();
+    base_x + painter.measure_sized(&before, size, 0.0).ceil() as usize + 1
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_header(
     frame: &mut Frame,
@@ -524,8 +559,11 @@ fn render_header(
             0.0,
             colors.text_primary,
         );
-        if header.caret.is_some() && cursor_visible {
-            let caret_x = x + painter.measure_sized(header.text, size, 0.0).ceil() as usize + 1;
+    }
+
+    if let Some(col) = header.caret {
+        if cursor_visible {
+            let caret_x = caret_x_for_column(painter, x, header.text, col, size);
             let caret_w = scaled(1.5, scale_factor);
             frame.fill_rect_px(caret_x, text_y, caret_w, text_h, colors.accent_bright);
         }
@@ -565,8 +603,7 @@ fn render_list(
         max_visible,
     } = &spec.body;
     let display_rows = flatten_rows(sections);
-    let visible = display_rows.len().min(*max_visible);
-    let start = (*scroll).min(display_rows.len().saturating_sub(visible));
+    let (start, _visible) = resolve_visible_window(&display_rows, *scroll, *max_visible);
 
     let row_size = size_px(SIZE_ROW, scale_factor);
     let meta_size = size_px(SIZE_META, scale_factor);
@@ -739,7 +776,7 @@ fn render_list(
     if let Some(sb) = layout.scrollbar {
         let alpha = (colors.text_dim >> 24) & 0xFF;
         let sb_color = (((alpha * 40 / 100) & 0xFF) << 24) | (colors.text_dim & 0x00FF_FFFF);
-        frame.fill_rect_px(sb.x, sb.y, sb.w, sb.h, sb_color);
+        frame.blend_rect_px(sb.x, sb.y, sb.w, sb.h, sb_color);
     }
 }
 
@@ -1042,5 +1079,67 @@ mod tests {
         let l = layout(&spec, 1000, 800, 1.0);
         assert!(l.scrollbar.is_some());
         assert_eq!(l.rows.len(), 10);
+    }
+
+    #[test]
+    fn resolve_visible_window_reanchors_past_section_headers() {
+        // `scroll` is in FlatIndex (row-only) space, e.g. from
+        // SelectableListViewport. A titled section ahead of the selected
+        // row must not shift the window by one slot per header, or the
+        // selected row scrolls off-screen (regression for the bug where
+        // `layout()`/`render_list()` applied `scroll` directly as a
+        // `display_rows` offset).
+        let rows: Vec<Row> = (0..5)
+            .map(|_| Row {
+                icon: RowIcon::None,
+                label: "row",
+                match_indices: &[],
+                detail: None,
+                accessory: Accessory::None,
+            })
+            .collect();
+        let sections = [Section {
+            title: Some("Group"),
+            rows: &rows,
+        }];
+        let display_rows = flatten_rows(&sections);
+        // display_rows = [header, row0, row1, row2, row3, row4] (6 slots).
+        assert_eq!(display_rows.len(), 6);
+
+        // scroll = 3 (FlatIndex space) must land on display slot 4 (row3),
+        // not display slot 3 (row2), because of the header ahead of it.
+        let (start, visible) = resolve_visible_window(&display_rows, 3, 2);
+        assert_eq!(visible, 2);
+        assert!(matches!(
+            display_rows[start],
+            DisplayRow::Row(_, FlatIndex(3))
+        ));
+    }
+
+    #[test]
+    fn header_caret_tracks_column_not_text_end() {
+        let (font, mut cache) = test_painter_and_frame();
+        let mut painter = TextPainter::new(&font, &mut cache, 13.0, 10.0, 8.0, 16);
+        // Regression: the caret used to always draw at
+        // `x + measure(text)` regardless of the cursor's actual column, so
+        // moving the caret left/Home never moved it on screen.
+        let text = "abcd";
+        let at_start = caret_x_for_column(&mut painter, 100, text, 0, SIZE_INPUT);
+        let at_mid = caret_x_for_column(&mut painter, 100, text, 2, SIZE_INPUT);
+        let at_end = caret_x_for_column(&mut painter, 100, text, 4, SIZE_INPUT);
+        assert!(at_start < at_mid);
+        assert!(at_mid < at_end);
+        assert_eq!(at_start, 101, "column 0 caret sits right at the text start");
+    }
+
+    #[test]
+    fn header_caret_renders_on_empty_input() {
+        let (font, mut cache) = test_painter_and_frame();
+        let mut painter = TextPainter::new(&font, &mut cache, 13.0, 10.0, 8.0, 16);
+        // Regression: caret drawing lived in the `else` branch of
+        // `header.text.is_empty()`, so an empty palette input drew no
+        // caret at all.
+        let caret_x = caret_x_for_column(&mut painter, 100, "", 0, SIZE_INPUT);
+        assert_eq!(caret_x, 101);
     }
 }
