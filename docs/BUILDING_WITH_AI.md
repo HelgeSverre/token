@@ -88,10 +88,12 @@ When bugs emerged, we created a focused tracker and fixed them systematically—
 
 Tell agents how to work in your codebase:
 
-| File        | Purpose                                         |
-| ----------- | ----------------------------------------------- |
-| `AGENTS.md` | Build commands, architecture, conventions       |
-| `CLAUDE.md` | Same (symlink or duplicate for different tools) |
+| File        | Purpose                                                 |
+| ----------- | ------------------------------------------------------- |
+| `AGENTS.md` | Canonical build commands, architecture, and conventions |
+
+Keep one agent instruction file and improve it when reality changes. Tool-specific
+copies drift and eventually give different agents conflicting advice.
 
 Key: specify your Justfile/scripts so agents use `just test` instead of inventing `cargo test --all-features --no-fail-fast`.
 

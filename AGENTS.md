@@ -1,81 +1,82 @@
 # AGENTS.md
 
-## Build & Test Commands
+This is the canonical instruction file for every coding agent in this repository.
+Do not add tool-specific copies such as `CLAUDE.md`; improve this file instead.
+
+## Commands
 
 ```bash
-just build                       # Build debug binary
-just release                     # Build optimized release binary
-just test                        # Run all tests
-cargo test test_name             # Run single test by name
-just fmt                         # Format code (cargo fmt + prettier)
-just lint                        # Run clippy lints (mirrors CI)
-just run                         # Run release build with sample file
+just build             # Debug build
+just release           # Optimized build
+just test              # Full nextest suite plus doctests
+just test-one name     # One targeted test/filter
+just fmt               # Format Rust and root Markdown files
+just fmt-check          # Check formatting without changing files
+just lint               # Clippy with the same strictness as CI
+just run                # Release build with representative sample files
 ```
+
+Use `just --list` for profiling, benchmarks, packaging, and other less common
+workflows. Prefer repository recipes over invented Cargo command combinations.
 
 ## Architecture
 
-Elm Architecture in Rust: `Message → Update → Command → Render`
+The application follows an Elm-style flow:
+`Message -> Update -> Command -> Render`.
 
-- **Model** (`src/model/`): AppModel, Document, EditorState, EditorArea, UiState
-- **Messages** (`src/messages.rs`): Msg, EditorMsg, DocumentMsg, UiMsg, LayoutMsg, TextEditMsg
-- **Update** (`src/update/`): Pure state transformation (6 submodules including text_edit.rs)
-- **Commands** (`src/commands.rs`): Cmd enum (Redraw, SaveFile, LoadFile, Batch)
-- **View** (`src/view/`): CPU rendering with fontdue + softbuffer, winit event loop
-- **Editable** (`src/editable/`): Unified text editing system (EditableState, StringBuffer, Cursor, Selection)
+- `src/model/` owns application and document state.
+- `src/messages.rs` defines state-change requests.
+- `src/update/` transforms state and returns commands.
+- `src/commands.rs` describes effects for the runtime to perform.
+- `src/runtime/` owns winit integration, input dispatch, and side effects.
+- `src/view/` owns CPU rendering and hit testing.
+- `src/editable/` is the shared editing system; `src/syntax/` owns language
+  detection, parsing, highlighting, outline, injections, and syntax selection.
 
-Key structures: Rope (ropey) for text buffer, Cursor, EditOperation for undo/redo, GlyphCache, EditableState for modal/CSV inputs.
+Keep update handlers deterministic. Put I/O and platform work behind commands or
+in the runtime. Treat current code and tests as the source of truth; plans and
+feature docs can describe intent but may lag implementation.
 
-## Code Style
+## Working Rules
 
-- Rust 2021 edition, run `just fmt` and `just lint` before committing
-- Design docs in `docs/feature/*.md`; check `docs/ROADMAP.md` for planned work
-- Update `docs/CHANGELOG.md` when features are complete
+- Use Rust 2021 idioms. Run `just fmt`, targeted tests while iterating, then
+  `just test` and `just lint` before handing off a substantial change.
+- Preserve unrelated work in a dirty tree. Stage explicit files rather than
+  relying on `git add -A`.
+- Record user-visible changes in `docs/CHANGELOG.md` under `Unreleased`, creating
+  that section when necessary.
+- Use `ByteSize` constructors for binary limits, capacities, thresholds, and
+  displayed sizes. Keep raw bytes at external boundaries, and do not use
+  `ByteSize` for pixels, characters, rows, or other unrelated quantities.
 
-### Byte Quantities
+## Rendering and Performance
 
-- Prefer `ByteSize` constructors over handwritten `* 1024` arithmetic for limits, capacities, thresholds, and displayed file sizes.
-- Use KiB, MiB, and GiB names when calculations are 1024-based.
-- Keep raw byte primitives at external API and protocol boundaries, converting explicitly to or from `ByteSize`.
-- Do not use `ByteSize` for pixels, characters, rows, or unrelated generic numeric quantities.
+- Keep `Renderer` as the top-level orchestrator. Extract domain-specific code
+  only when it creates a shared source of truth or a clear feature home.
+- Reuse layout, viewport, and traversal helpers across rendering, hit testing,
+  and interaction. Independently derived geometry or ordering is a common bug.
+- Put text-editor visuals in `src/view/editor_text.rs` and shared viewport code.
+  Avoid new feature-local line loops and assumptions that a logical line is one
+  rendered row.
+- Gate text-only fast paths with `EditorState::is_plain_text_mode()` so image,
+  CSV, binary, and other special tabs cannot enter text rendering paths.
+- Do not make performance claims from `just workspace`: it is a debug build. The
+  F2 overlay also forces full redraw while visible, so use it for stage diagnosis,
+  not release-equivalent frame rates.
+- Extend the shared stages in `src/perf.rs` when instrumenting rendering; do not
+  add one-off timers or a second overlay-specific stage list.
 
-## Performance Notes
+## Releases
 
-- `just workspace` runs the debug binary (`target/debug/token ./`). That is useful for day-to-day iteration, but not for meaningful renderer performance claims.
-- The in-app perf overlay (`F2`, debug builds only) currently forces full redraw while visible. Treat it as a diagnostic breakdown, not a release-equivalent FPS meter.
-- Perf instrumentation is stage-based in `src/perf.rs`. If you add or change render timings, extend `PerfStage` / `PerfStats::measure_stage()` there instead of adding one-off counters or a second overlay-specific list.
-- File tracing is not always-on. File logging follows `TOKEN_FILE_LOG` when set, otherwise `RUST_LOG`.
+Preparing a release does not authorize publishing it.
 
-## Rendering Guardrails
+1. Update the version in `Cargo.toml` and `Cargo.lock`.
+2. Turn the changelog's `Unreleased` section into `vX.Y.Z - YYYY-MM-DD`.
+3. Run `just test && just lint` and commit only the release files with
+   `chore: release vX.Y.Z`.
+4. Only when explicitly asked to publish, create and push the exact annotated
+   tag: `git tag -a vX.Y.Z -m "vX.Y.Z - Summary"` then
+   `git push origin vX.Y.Z`.
 
-- Keep `Renderer` monolithic at the top level. Do not split rendering code only because a file is large; add abstractions only when they become a real shared source of truth or a real feature home.
-- Prefer domain-specific seams over generic widget layers. Current examples are scene objects (`EditorGroupScene`, dock/preview scenes), shared geometry structs, and `TextEditorRenderer`.
-- New text-editor visuals should plug into `src/view/editor_text.rs` and shared viewport helpers, not add fresh line iteration or viewport math in `Renderer`, hit-test code, or update code.
-- Do not deepen the assumption that `logical line == rendered row`. When adding text-view logic, prefer APIs and naming that can later work with visual rows / wrapped segments.
-- Reuse shared layout helpers (`WindowLayout`, `GroupLayout`, `TabBarLayout`, dock/outline/preview layouts) instead of re-deriving geometry in each render or hit-test path.
-- Render order and interaction order should share the same traversal/model helpers. If a tree, tab bar, or viewport has one visible ordering in render code and a different one in hit-testing or selection code, that is usually a bug.
-- Text-only fast paths must stay text-only. Gate them through `EditorState::is_plain_text_mode()` so image/CSV/binary tabs do not accidentally opt into text rendering assumptions.
-
-## Releasing a New Version
-
-Releases are automated via **cargo-dist**. Pushing a tag triggers CI to build binaries, create the GitHub release, and publish to Homebrew.
-
-1. **Update version** in `Cargo.toml`
-2. **Update `docs/CHANGELOG.md`** with release notes under new version header
-3. **Run tests and lint**: `just test && just lint`
-4. **Commit changes**:
-   ```bash
-   git add -A && git commit -m "chore: release vX.Y.Z"
-   ```
-5. **Create annotated tag and push**:
-   ```bash
-   git tag -a vX.Y.Z -m "vX.Y.Z - Brief description"
-   git push && git push --tags
-   ```
-
-cargo-dist CI will handle building platform binaries, creating the GitHub release, and publishing the Homebrew formula.
-
-### Version Numbering
-
-- **Major (X)**: Breaking changes or major rewrites
-- **Minor (Y)**: New features, significant improvements
-- **Patch (Z)**: Bug fixes, minor improvements
+The tag triggers cargo-dist, which builds artifacts, creates the GitHub release,
+and publishes Homebrew. Do not also run `gh release create`.
