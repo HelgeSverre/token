@@ -1137,6 +1137,12 @@ impl ModalSpacing {
     pub fn input_pad_x(scale_factor: f64) -> usize {
         Self::scaled(Self::BASE_INPUT_PAD_X, scale_factor)
     }
+
+    /// Cap on `y = window_height / 4` for small/centered modals — logical
+    /// 100px, scaled like every other modal constant.
+    pub fn top_offset_cap(scale_factor: f64) -> usize {
+        Self::scaled(100.0, scale_factor)
+    }
 }
 
 /// Modal width as a fraction of the (physical-px) window width, clamped
@@ -1238,7 +1244,7 @@ impl ModalLayout {
         let content_height = vstack.height();
         let modal_height = content_height + pad * 2;
         let modal_x = (window_width.saturating_sub(modal_width)) / 2;
-        let modal_y = (window_height / 4).min(100);
+        let modal_y = (window_height / 4).min(ModalSpacing::top_offset_cap(scale_factor));
         let content_x = modal_x + pad;
         let content_y = modal_y + pad;
 
@@ -1498,7 +1504,7 @@ pub fn theme_picker_layout(
     let list = v.push(total_rows * line_height);
 
     let modal_x = window_width.saturating_sub(modal_width) / 2;
-    let modal_y = (window_height / 4).min(100);
+    let modal_y = (window_height / 4).min(ModalSpacing::top_offset_cap(scale_factor));
     let content_height = v.height();
     let modal_height = content_height + pad * 2;
     let content_x = modal_x + pad;
@@ -2081,6 +2087,24 @@ mod tests {
             layout.y, 100,
             "theme picker's Y position must be capped at 100 like other modals"
         );
+    }
+
+    #[test]
+    fn test_theme_picker_layout_y_position_scales_with_scale_factor() {
+        // The `100` cap is a logical-px constant; on a 2x display it must
+        // scale to 200 physical px, not stay pinned at 100 (which would put
+        // the modal at half the intended distance from the top).
+        let (layout, _) = theme_picker_layout(2000, 4000, 40, 10, 2.0);
+        assert_eq!(layout.y, 200);
+    }
+
+    #[test]
+    fn test_command_palette_layout_y_position_scales_with_scale_factor() {
+        let lh = 40;
+        let mut v = VStack::new(400);
+        v.push(lh);
+        let layout = ModalLayout::build(v, 800, 2000, 4000, 2.0);
+        assert_eq!(layout.y, 200);
     }
 
     #[test]
