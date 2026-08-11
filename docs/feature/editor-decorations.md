@@ -26,7 +26,7 @@ All four reference shared machinery that does not exist. This document is that c
 
 ### Current State
 
-- The gutter is a fixed-width strip: `LINE_NUMBER_GUTTER_CHARS = 5` in `src/model/mod.rs` (`" 123 "` + `gutter_padding`). It cannot widen for marks — and already misrenders past 9,999 lines. Crucially, the constant has **model-side consumers with no view layout in scope**: `compute_visible_columns` (`src/model/mod.rs:108`), cursor-visibility/viewport sync (`src/model/mod.rs:606,643`), and `sync_viewports` (`src/model/editor_area.rs:719`). Dynamic width must therefore be computable model-side from `(document, active lanes, metrics)` — a view-only `GutterLayout` cannot be the sole source of truth.
+- The gutter is a fixed-width strip: `LINE_NUMBER_GUTTER_CHARS = 5` in `src/model/mod.rs` (`" 123 "` + `gutter_padding`). It cannot widen for marks — and already misrenders past 99,999 lines (min width 5 chars fits 5 digits since `gutter_padding == padding_medium == 4`). Crucially, the constant has **model-side consumers with no view layout in scope**: `compute_visible_columns` (`src/model/mod.rs:108`), cursor-visibility/viewport sync (`src/model/mod.rs:606,643`), and `sync_viewports` (`src/model/editor_area.rs:719`). Dynamic width must therefore be computable model-side from `(document, active lanes, metrics)` — a view-only `GutterLayout` cannot be the sole source of truth.
 - `render_gutter` (`src/view/editor_text.rs`) draws background, line numbers, border — nothing else. Actual pass order is **text area first, then gutter** (`src/view/mod.rs:373-389`); the gutter overpaints the text area's left edge.
 - Frame primitives cover every mark we need: `fill_rect_px`, `blend_rect_px`, `set_pixel`, `Frame::blend_pixel` (`src/view/frame.rs`; nb. a *different* free `blend_pixel(src, dst)` exists in `src/overlay.rs` — name collision to watch).
 - Hit-testing resolves gutter clicks to a line: `HitTarget::EditorGutter { group_id, editor_id, line }`. But the gutter is not inert today: press **focuses the group** (`src/runtime/mouse.rs:588`), and **drag maps into the text area and drives selection** (`src/runtime/mouse.rs:988-1000`). Lane routing must actively suppress these for interactive lanes.
@@ -42,7 +42,7 @@ All four reference shared machinery that does not exist. This document is that c
 - A range-decoration overdraw pass in the text area (underline/wavy/tint/strikethrough) that changes no layout.
 - Scrollbar overview marks (severity/match ticks).
 - Lane-aware gutter click routing that suppresses focus-steal/drag-select on interactive lanes.
-- Ship Phase 1 (dynamic width) standalone — it fixes the live >9,999-line rendering bug and de-risks every consumer.
+- Ship Phase 1 (dynamic width) standalone — it fixes the live >99,999-line rendering bug and de-risks every consumer.
 
 ### Non-Goals
 
@@ -69,7 +69,7 @@ Lanes are fixed-width vertical columns inside the gutter, left to right:
 ```
 
 - **A — Marks lane** (~1 char): diagnostic severity glyph (conventions from overlay-surface.md), bookmark, future breakpoint. One glyph per line; priority within this lane only: breakpoint > error > warning > info > bookmark.
-- **B — Line numbers**: width from `max(LINE_NUMBER_GUTTER_CHARS_MIN, digits(line_count))` where the minimum is **5** — matching today's width exactly for files under 10,000 lines (pixel-identity criterion), growing beyond.
+- **B — Line numbers**: width from `max(LINE_NUMBER_GUTTER_CHARS_MIN, digits(line_count))` where the minimum is **5** — matching today's width exactly for files under 100,000 lines (pixel-identity criterion), growing beyond.
 - **C — Fold lane** (~1 char): chevron, present only when folding ships.
 - **D — Diff lane** (3–4 px): colored bar at the border, per diff-gutter.md.
 
@@ -91,7 +91,7 @@ impl GutterLayout {
 pub enum LaneId { Marks, LineNumbers, Fold, Diff }
 ```
 
-**Width is model-derivable.** The formula `gutter_width(document_lines, active_lanes, metrics)` lives where model code can call it, replacing `LINE_NUMBER_GUTTER_CHARS` at *all* consumers — including `compute_visible_columns` and `sync_viewports`. Because `sync_viewports` runs only on layout changes, any width change (9,999 → 10,000 lines; a lane activating on first diagnostic) must trigger a viewport-column recompute, or horizontal scroll geometry goes silently stale. That trigger is Phase 1 work with a test at the digit boundary and on first-lane activation.
+**Width is model-derivable.** The formula `gutter_width(document_lines, active_lanes, metrics)` lives where model code can call it, replacing `LINE_NUMBER_GUTTER_CHARS` at *all* consumers — including `compute_visible_columns` and `sync_viewports`. Because `sync_viewports` runs only on layout changes, any width change (99,999 → 100,000 lines; a lane activating on first diagnostic) must trigger a viewport-column recompute, or horizontal scroll geometry goes silently stale. That trigger is Phase 1 work with a test at the digit boundary and on first-lane activation.
 
 ### Mark Collection
 
@@ -188,12 +188,12 @@ Not consumers: inlay hints / code lens / inline blame (virtual text), indent gui
 
 ### Phase 1: Dynamic Gutter Width — *standalone, ships first*
 
-Ships ahead of all consumers as its own change: it fixes the live >9,999-line rendering bug, touches no feature code, and de-risks everything downstream. Most of an M by itself.
+Ships ahead of all consumers as its own change: it fixes the live >99,999-line rendering bug, touches no feature code, and de-risks everything downstream. Most of an M by itself.
 
 - [x] `GutterLayout` (`Copy`, widths-only) in `GroupLayout`; `gutter_width(...)` formula callable from model code.
 - [x] Replace **all** `LINE_NUMBER_GUTTER_CHARS` consumers — view-side (`text_start_x_scaled`, `gutter_border_x_scaled`, `geometry.rs`) *and* model-side (`compute_visible_columns`, cursor-visibility sync, `sync_viewports`).
-- [x] Viewport-column recompute on width change; tests at 9,999→10,000 and (later) first-lane activation.
-- [x] Digit-count rendering verified at 1 / 999 / 10,000 / 100,000 lines; pixel-identity vs. today for <10,000-line files (min width 5 chars).
+- [x] Viewport-column recompute on width change; tests at 99,999→100,000 (the real digit boundary given min width 5) and (later) first-lane activation.
+- [x] Digit-count *width* verified at 1 / 999 / 10,000 / 100,000 lines (formula-level, no frame-render harness exists yet); pixel-identity vs. today for <100,000-line files (min width 5 chars).
 
 ### Phase 2: Marks + Decoration Passes — *with first consumer (find or LSP diagnostics)*
 
@@ -222,7 +222,7 @@ Ships ahead of all consumers as its own change: it fixes the live >9,999-line re
 
 ## Acceptance Criteria
 
-- Documents with no decoration state render pixel-identical to today, except line numbers no longer overflow past 9,999 lines.
+- Documents with no decoration state render pixel-identical to today, except line numbers no longer overflow past 99,999 lines.
 - Gutter width adapts to lanes and digit count; model-side viewport math (visible columns, cursor visibility) stays consistent, including across width changes mid-session.
 - A feature adds a mark or decoration kind by extending an enum and one collection branch — no layout, hit-test, or damage changes.
 - Stale ranges clamp or skip; never panic, never draw outside the viewport.

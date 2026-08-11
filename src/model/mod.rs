@@ -1032,6 +1032,30 @@ mod tests {
     }
 
     #[test]
+    fn sync_all_viewports_recomputes_columns_on_line_count_growth() {
+        // This is the actual per-frame path (see view::build_render_plan),
+        // distinct from AppModel::resize; a width change must be picked up
+        // here too or horizontal scroll goes stale as the gutter grows.
+        let mut model = AppModel::new(400, 200, 1.0, vec![]);
+        model.set_char_width(10.0);
+        model
+            .editor_area
+            .compute_layout(crate::model::editor_area::Rect::new(0.0, 0.0, 400.0, 200.0));
+        model
+            .editor_area
+            .sync_all_viewports(model.line_height, model.char_width, &model.metrics);
+        let small_columns = model.editor().viewport.visible_columns;
+
+        model.document_mut().buffer = Rope::from("\n".repeat(100_000));
+        model
+            .editor_area
+            .sync_all_viewports(model.line_height, model.char_width, &model.metrics);
+        let large_columns = model.editor().viewport.visible_columns;
+
+        assert!(large_columns < small_columns);
+    }
+
+    #[test]
     fn set_editor_vertical_scroll_syncs_linked_preview_for_focused_editor() {
         let mut model = AppModel::new(120, 80, 1.0, vec![]);
         model.document_mut().buffer = Rope::from("a\nb\nc\nd\ne\nf\n");
