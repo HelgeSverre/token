@@ -392,7 +392,9 @@ impl Default for ScaledMetrics {
 #[inline]
 pub fn text_start_x_scaled(char_width: f32, metrics: &ScaledMetrics, line_count: usize) -> f32 {
     let border_width = metrics.border_width as f32;
-    gutter_border_x_scaled(char_width, metrics, line_count) + border_width + metrics.text_area_padding
+    gutter_border_x_scaled(char_width, metrics, line_count)
+        + border_width
+        + metrics.text_area_padding
 }
 
 /// Calculate the x-coordinate of the gutter border (with metrics),
@@ -656,7 +658,8 @@ impl AppModel {
                 .map(|doc| doc.line_count())
                 .unwrap_or(1);
             let text_x = text_start_x_scaled(char_width, &metrics, line_count).round();
-            let visible_columns = ((effective_width - text_x) / char_width).floor().max(1.0) as usize;
+            let visible_columns =
+                ((effective_width - text_x) / char_width).floor().max(1.0) as usize;
             editor.resize_viewport(visible_lines, visible_columns);
         }
     }
