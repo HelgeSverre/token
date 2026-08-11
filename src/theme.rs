@@ -263,6 +263,13 @@ fn relative_luminance(c: Color) -> f64 {
     0.2126 * chan(c.r) + 0.7152 * chan(c.g) + 0.0722 * chan(c.b)
 }
 
+/// Whether a background color reads as a light surface — relative luminance
+/// above 0.5. Shared by `Theme::is_light()` and `resolve_overlay_theme` so
+/// the two can't drift.
+fn is_light_background(c: Color) -> bool {
+    relative_luminance(c) > 0.5
+}
+
 /// WCAG contrast ratio between two colors (1.0 – 21.0).
 fn contrast_ratio(a: Color, b: Color) -> f64 {
     let (la, lb) = (relative_luminance(a), relative_luminance(b));
@@ -336,7 +343,7 @@ fn resolve_overlay_theme(
     let warning = parsed(&data.warning)?.unwrap_or(defaults.warning);
     let error = parsed(&data.error)?.unwrap_or(defaults.error);
 
-    let light = relative_luminance(background) > 0.5;
+    let light = is_light_background(background);
     let white = Color::rgb(0xFF, 0xFF, 0xFF);
     let black = Color::rgb(0x00, 0x00, 0x00);
     // The pole away from the panel's own luminance direction — white on a
@@ -344,10 +351,18 @@ fn resolve_overlay_theme(
     // legible" contrast fixes and accent's own lighten/darken direction.
     let away_pole = if light { black } else { white };
 
-    let accent = parsed(&data.accent)?.unwrap_or(status_bar.background);
-    let accent_bright = parsed(&data.accent_bright)?.unwrap_or_else(|| mix(accent, away_pole, 0.3));
-
     let panel_background = parsed(&data.panel_background)?.unwrap_or(background);
+
+    // `status_bar.background` is chrome, not a highlight color — on several
+    // bundled themes it's identical (or near-identical) to `panel_background`
+    // (e.g. nord: both #3B4252), which would collapse every accent-derived
+    // key (selection wash, match highlight) onto the panel with no visible
+    // fill. Push the fallback away from the panel until it's a distinct UI
+    // graphic (WCAG non-text contrast, 3:1) before using it as `accent`.
+    let accent = parsed(&data.accent)?.unwrap_or_else(|| {
+        ensure_min_contrast(status_bar.background, panel_background, away_pole, 3.0)
+    });
+    let accent_bright = parsed(&data.accent_bright)?.unwrap_or_else(|| mix(accent, away_pole, 0.3));
     let panel_secondary = parsed(&data.panel_secondary)?.unwrap_or_else(|| {
         if light {
             mix(panel_background, foreground, 0.04)
@@ -381,19 +396,25 @@ fn resolve_overlay_theme(
     });
     let text_bright =
         parsed(&data.text_bright)?.unwrap_or_else(|| max_contrast_pole(panel_background));
+    // secondary/dim are a *ramp below* text_primary, not text_primary itself:
+    // start from a dimmed blend of `foreground` toward the panel and lift
+    // back toward `foreground` only as far as needed to clear the ratio.
+    // Starting at `foreground` (which already clears both ratios on every
+    // bundled theme) would make every step of the ramp resolve identically.
+    let dim_toward_panel = |amount: f64| mix(foreground, panel_background, amount);
     let text_secondary = parsed(&data.text_secondary)?.unwrap_or_else(|| {
-        ensure_min_contrast(
-            foreground,
-            panel_background,
-            max_contrast_pole(panel_background),
-            4.5,
-        )
+        ensure_min_contrast(dim_toward_panel(0.35), panel_background, foreground, 4.5)
     });
+    // `text_dim` sits below `text_secondary` in the ramp: dim further from
+    // that already-resolved color and, if the floor needs to lift it, cap
+    // the lift at `text_secondary` (not `foreground`) so it can never end up
+    // brighter than — or collapse onto the exact same color as — the level
+    // above it.
     let text_dim = parsed(&data.text_dim)?.unwrap_or_else(|| {
         ensure_min_contrast(
-            foreground,
+            mix(text_secondary, panel_background, 0.35),
             panel_background,
-            max_contrast_pole(panel_background),
+            text_secondary,
             4.5,
         )
     });
@@ -1266,7 +1287,7 @@ impl Theme {
     /// direction overlay derivations mix in (see `resolve_overlay_theme`),
     /// so light themes like github-light resolve legible chrome too.
     pub fn is_light(&self) -> bool {
-        relative_luminance(self.overlay.background) > 0.5
+        is_light_background(self.overlay.background)
     }
 
     /// Load theme from YAML string

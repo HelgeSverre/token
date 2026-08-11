@@ -256,3 +256,54 @@ ui:
     assert!(contrast_ratio(overlay.text_secondary, overlay.panel_background) >= 4.5);
     assert!(contrast_ratio(overlay.keycap_fg, overlay.keycap_bg) >= 4.5);
 }
+
+#[test]
+fn bundled_themes_have_a_real_derived_accent_and_wash() {
+    // Every bundled theme except default-dark (which sets `overlay.accent`
+    // explicitly) relies on the `status_bar.background` fallback. That
+    // fallback must not collapse onto `panel_background` — a selection row
+    // needs a visible fill, and `accent_bright` needs to be distinguishable
+    // from body text.
+    for builtin in BUILTIN_THEMES {
+        let theme = Theme::from_yaml(builtin.yaml)
+            .unwrap_or_else(|e| panic!("theme '{}' failed to parse: {}", builtin.id, e));
+        let overlay = &theme.overlay;
+        assert!(
+            contrast_ratio(overlay.accent, overlay.panel_background) >= 1.5,
+            "theme '{}': accent is indistinguishable from panel_background",
+            builtin.id
+        );
+        assert_ne!(
+            overlay.selection_wash.to_argb_u32() & 0x00FF_FFFF,
+            overlay.panel_background.to_argb_u32() & 0x00FF_FFFF,
+            "theme '{}': selection_wash has the same RGB as panel_background \
+             (a selected row would have no visible fill)",
+            builtin.id
+        );
+        assert_ne!(
+            overlay.accent_bright.to_argb_u32(),
+            overlay.text_primary.to_argb_u32(),
+            "theme '{}': accent_bright matches text_primary (match highlighting \
+             would be indistinguishable from body text)",
+            builtin.id
+        );
+    }
+}
+
+#[test]
+fn bundled_themes_derive_a_non_degenerate_text_ramp() {
+    // text_primary/secondary/dim must not all resolve to the same color —
+    // the whole point of the ramp is a visible hierarchy between section
+    // headers (dim), body text (secondary), and emphasized text (primary).
+    for builtin in BUILTIN_THEMES {
+        let theme = Theme::from_yaml(builtin.yaml)
+            .unwrap_or_else(|e| panic!("theme '{}' failed to parse: {}", builtin.id, e));
+        let overlay = &theme.overlay;
+        assert_ne!(
+            overlay.text_primary.to_argb_u32(),
+            overlay.text_dim.to_argb_u32(),
+            "theme '{}': text_primary and text_dim resolved identically",
+            builtin.id
+        );
+    }
+}

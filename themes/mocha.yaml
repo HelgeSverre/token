@@ -53,6 +53,9 @@ ui:
     highlight: "#A6E3A1"
     warning: "#F9E2AF"
     error: "#F38BA8"
+    # overlay-surface.md Phase 1: accent tuned to the theme's own palette;
+    # remaining overlay.* keys use the derivation fallbacks in theme.rs.
+    accent: "#89B4FA"
 
   csv:
     header_background: "#181825"
