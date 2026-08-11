@@ -4,6 +4,8 @@
 # IDE
 .idea/
 .vscode/
+.conductor/
+.antigravitycli/
 *.swp
 *.swo
 *~
@@ -45,7 +47,7 @@ cargo-flamegraph.trace/*
 
 # Misc temporary files
 wip/*
-dumps/*
+dumps/
 threads/
 draft.README.md
 
