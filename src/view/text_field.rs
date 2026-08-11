@@ -54,6 +54,36 @@ impl Default for TextFieldOptions {
     }
 }
 
+impl TextFieldOptions {
+    /// Build the geometry for a modal text input, including the horizontal
+    /// scroll needed to keep its active cursor visible.
+    pub fn for_modal(
+        content: &dyn TextFieldContent,
+        rect: &WidgetRect,
+        line_height: usize,
+        char_width: f32,
+    ) -> Self {
+        let padx = ModalSpacing::INPUT_PAD_X;
+        let width = rect.w.saturating_sub(padx * 2);
+        let visible_chars = (width as f32 / char_width).ceil() as usize + 1;
+        let cursor_col = content
+            .cursors()
+            .get(content.active_cursor_index())
+            .map(|cursor| cursor.column)
+            .unwrap_or(0);
+
+        Self {
+            x: rect.x + padx,
+            y: rect.y + (rect.h.saturating_sub(line_height)) / 2,
+            width,
+            height: line_height,
+            char_width,
+            scroll_x: TextFieldRenderer::calculate_scroll(cursor_col, 0, visible_chars),
+            ..Self::default()
+        }
+    }
+}
+
 /// Trait for content that can be rendered as a text field.
 ///
 /// This allows uniform rendering of different editable states.
@@ -98,6 +128,25 @@ impl TextFieldContent for EditableState<StringBuffer> {
 pub struct TextFieldRenderer;
 
 impl TextFieldRenderer {
+    /// Return the rendered active-cursor rectangle for a text field.
+    pub fn caret_rect(
+        content: &dyn TextFieldContent,
+        opts: &TextFieldOptions,
+    ) -> Option<WidgetRect> {
+        let cursor = content.cursors().get(content.active_cursor_index())?;
+        let visible_col = cursor.column.saturating_sub(opts.scroll_x);
+        let unclamped_x = opts.x + (visible_col as f32 * opts.char_width).round() as usize;
+        let width = 2.min(opts.width.max(1));
+        let max_x = opts.x + opts.width.saturating_sub(width);
+
+        Some(WidgetRect {
+            x: unclamped_x.clamp(opts.x, max_x),
+            y: opts.y + usize::from(opts.height > 1),
+            w: width,
+            h: opts.height.saturating_sub(2).max(1),
+        })
+    }
+
     /// Render a text field from an EditableState.
     pub fn render(
         frame: &mut Frame,
@@ -191,32 +240,12 @@ impl TextFieldRenderer {
     ) {
         frame.fill_rect_px(rect.x, rect.y, rect.w, rect.h, background_color);
 
-        let padx = ModalSpacing::INPUT_PAD_X;
-        let width = rect.w.saturating_sub(padx * 2);
-
-        // Keep the cursor visible: a long query would otherwise overflow the
-        // input box with `scroll_x` pinned at 0, leaving the cursor rendered
-        // off-screen (never drawn, since `render` only draws it when it
-        // falls within `[opts.x, opts.x + opts.width)`).
-        let visible_chars = (width as f32 / char_width).ceil() as usize + 1;
-        let cursor_col = content
-            .cursors()
-            .get(content.active_cursor_index())
-            .map(|c| c.column)
-            .unwrap_or(0);
-        let scroll_x = Self::calculate_scroll(cursor_col, 0, visible_chars);
-
         let opts = TextFieldOptions {
-            x: rect.x + padx,
-            y: rect.y + (rect.h.saturating_sub(line_height)) / 2,
-            width,
-            height: line_height,
-            char_width,
             text_color,
             cursor_color,
             selection_color,
             cursor_visible,
-            scroll_x,
+            ..TextFieldOptions::for_modal(content, rect, line_height, char_width)
         };
         Self::render(frame, painter, content, &opts);
     }
@@ -329,6 +358,30 @@ mod tests {
     fn test_simple_text_field_with_cursor() {
         let field = SimpleTextField::with_cursor("hello", 2);
         assert_eq!(field.cursors()[0].column, 2);
+    }
+
+    #[test]
+    fn caret_rect_matches_scrolled_text_field_cursor() {
+        let field = SimpleTextField::with_cursor("abcdefghijklmnopqrstuvwxyz", 20);
+        let opts = TextFieldOptions {
+            x: 100,
+            y: 40,
+            width: 80,
+            height: 20,
+            char_width: 8.0,
+            scroll_x: 15,
+            ..TextFieldOptions::default()
+        };
+
+        assert_eq!(
+            TextFieldRenderer::caret_rect(&field, &opts),
+            Some(WidgetRect {
+                x: 140,
+                y: 41,
+                w: 2,
+                h: 18,
+            })
+        );
     }
 
     #[test]

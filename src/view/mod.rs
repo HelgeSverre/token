@@ -3,6 +3,7 @@
 //! Contains the Renderer struct and all rendering-related functionality.
 
 pub mod button;
+pub mod caret;
 pub mod editor_scrollbars;
 pub mod editor_special_tabs;
 pub mod editor_text;
@@ -1474,36 +1475,12 @@ impl Renderer {
         line_height: usize,
         char_width: f32,
     ) {
-        let pos = &edit_state.position;
-
-        // Check if cell is visible
-        if pos.row < csv.viewport.top_row {
+        let Some(cell_rect) = layout.cell_editor_rect(csv, edit_state.position, line_height) else {
             return;
-        }
-        let screen_row = pos.row - csv.viewport.top_row;
-        if screen_row >= csv.viewport.visible_rows {
-            return;
-        }
-
-        // Find column position
-        let col_info = layout
-            .visible_columns
-            .iter()
-            .enumerate()
-            .find(|(_, &(col_idx, _))| col_idx == pos.col);
-
-        let (screen_col_idx, col_x) = match col_info {
-            Some((idx, &(_, x))) => (idx, x),
-            None => return,
         };
-
-        let col_width_px = layout
-            .column_widths_px
-            .get(screen_col_idx)
-            .copied()
-            .unwrap_or(50);
-        let cell_x = layout.grid_x + col_x;
-        let cell_y = layout.data_y + screen_row * line_height;
+        let cell_x = cell_rect.x as usize;
+        let cell_y = cell_rect.y as usize;
+        let col_width_px = cell_rect.width as usize;
 
         // Use input field colors from overlay theme
         let edit_bg = model.theme.overlay.input_background.to_argb_u32();

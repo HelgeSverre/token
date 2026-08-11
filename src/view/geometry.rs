@@ -1049,7 +1049,7 @@ impl ModalSpacing {
 }
 
 /// A positioned widget within a modal layout
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WidgetRect {
     pub x: usize,
     pub y: usize,

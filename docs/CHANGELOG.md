@@ -1,5 +1,7 @@
 # Changelog
 
+- macOS text-input accessories, including the Caps Lock indicator and IME candidate window, now follow the active editor, modal, or CSV cell caret instead of appearing at the top-left of the window.
+
 All notable changes to rust-editor are documented in this file.
 
 ---

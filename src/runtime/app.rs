@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use softbuffer::Context;
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
+use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
 #[cfg(debug_assertions)]
@@ -382,6 +382,22 @@ impl App {
             self.model.ui.hover = HoverRegion::None;
             window.set_cursor(CursorIcon::Default);
         }
+    }
+
+    fn sync_text_input_rect(&self) {
+        let Some(window) = &self.window else { return };
+        let Some(rect) = token::view::caret::active_text_input_rect(
+            &self.model,
+            self.model.char_width,
+            self.model.line_height,
+        ) else {
+            return;
+        };
+
+        window.set_ime_cursor_area(
+            PhysicalPosition::new(rect.x as i32, rect.y as i32),
+            PhysicalSize::new(rect.w as u32, rect.h as u32),
+        );
     }
 
     fn handle_event(&mut self, event: &WindowEvent) -> Option<Cmd> {
@@ -808,6 +824,8 @@ impl App {
             let damage = std::mem::take(&mut self.pending_damage);
             renderer.render(&mut self.model, &mut self.perf, &damage)?;
         }
+
+        self.sync_text_input_rect();
 
         // Sync webviews with preview panes.
         //

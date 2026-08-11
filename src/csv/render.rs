@@ -116,6 +116,33 @@ impl CsvRenderLayout {
             column_widths_px,
         }
     }
+
+    /// Return the visible editor rectangle for a cell being edited.
+    pub fn cell_editor_rect(
+        &self,
+        csv: &CsvState,
+        position: CellPosition,
+        line_height: usize,
+    ) -> Option<Rect> {
+        let screen_row = position.row.checked_sub(csv.viewport.top_row)?;
+        if screen_row >= csv.viewport.visible_rows {
+            return None;
+        }
+
+        let (screen_col, (_, col_x)) = self
+            .visible_columns
+            .iter()
+            .enumerate()
+            .find(|(_, (col, _))| *col == position.col)?;
+        let width = self.column_widths_px.get(screen_col).copied()?;
+
+        Some(Rect::new(
+            (self.grid_x + col_x) as f32,
+            (self.data_y + screen_row * line_height) as f32,
+            width as f32,
+            line_height as f32,
+        ))
+    }
 }
 
 /// Hit-test a CSV cell given window coordinates.
@@ -205,5 +232,25 @@ mod tests {
         assert_eq!(truncate_text("hello world", 5), "hell…");
         assert_eq!(truncate_text("ab", 2), "ab");
         assert_eq!(truncate_text("abc", 1), "a");
+    }
+
+    #[test]
+    fn cell_editor_rect_uses_visible_grid_geometry() {
+        use crate::csv::{CsvData, Delimiter};
+
+        let mut csv = CsvState::new(
+            CsvData::from_rows(vec![vec!["first".into(), "second".into()]]),
+            Delimiter::Comma,
+        );
+        csv.viewport.visible_rows = 5;
+        let layout = CsvRenderLayout::calculate(&csv, 40, 500, 30, 20, 8.0);
+
+        let rect = layout
+            .cell_editor_rect(&csv, CellPosition::new(0, 1), 20)
+            .expect("visible cell should have editor geometry");
+
+        assert_eq!(rect.y, 50.0);
+        assert!(rect.x > layout.grid_x as f32);
+        assert_eq!(rect.height, 20.0);
     }
 }
