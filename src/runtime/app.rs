@@ -1088,13 +1088,8 @@ impl App {
                 }
             } else {
                 // Update existing webview bounds
-                let window_height = window.inner_size().height;
-                self.webview_manager.update_bounds(
-                    update.preview_id,
-                    update.rect,
-                    scale_factor,
-                    window_height,
-                );
+                self.webview_manager
+                    .update_bounds(update.preview_id, update.rect, scale_factor);
 
                 // Update content if revision changed
                 if update.needs_content_update {

@@ -73,7 +73,6 @@ impl WebviewManager {
         }
 
         let scale_factor = window.scale_factor();
-        let window_height = window.inner_size().height;
         let protocol_state = Arc::clone(&self.protocol_state);
         let pid = preview_id;
 
@@ -82,7 +81,7 @@ impl WebviewManager {
                 handle_protocol_request(&protocol_state, pid, request)
             })
             .with_url(format!("token://preview-{}/index.html", preview_id.0))
-            .with_bounds(to_wry_rect(bounds, scale_factor, window_height))
+            .with_bounds(to_wry_rect(bounds, scale_factor))
             .with_transparent(false)
             .with_navigation_handler(|url| {
                 // Open external links in the default browser
@@ -120,10 +119,9 @@ impl WebviewManager {
         preview_id: PreviewId,
         bounds: token::model::editor_area::Rect,
         scale_factor: f64,
-        window_height: u32,
     ) {
         if let Some(webview) = self.webviews.get(&preview_id) {
-            let wry_rect = to_wry_rect(bounds, scale_factor, window_height);
+            let wry_rect = to_wry_rect(bounds, scale_factor);
             let _ = webview.set_bounds(wry_rect);
         }
     }
@@ -295,25 +293,64 @@ fn error_response(status: u16, message: &str) -> wry::http::Response<Cow<'static
         })
 }
 
-/// Convert our Rect to wry's Rect with proper DPI and coordinate system conversion.
-fn to_wry_rect(
-    bounds: token::model::editor_area::Rect,
-    scale_factor: f64,
-    window_height_px: u32,
-) -> Rect {
+/// Convert our physical-pixel Rect to wry's top-left logical coordinate system.
+fn to_wry_rect(bounds: token::model::editor_area::Rect, scale_factor: f64) -> Rect {
     use wry::dpi::{LogicalPosition, LogicalSize};
 
-    // Convert physical pixels to logical points
     let logical_x = bounds.x as f64 / scale_factor;
+    let logical_y = bounds.y as f64 / scale_factor;
     let logical_w = bounds.width as f64 / scale_factor;
     let logical_h = bounds.height as f64 / scale_factor;
-
-    // Convert from top-left to bottom-left coordinate system (macOS)
-    let window_height_logical = window_height_px as f64 / scale_factor;
-    let logical_y = window_height_logical - (bounds.y as f64 / scale_factor + logical_h);
 
     Rect {
         position: LogicalPosition::new(logical_x, logical_y).into(),
         size: LogicalSize::new(logical_w, logical_h).into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use token::model::editor_area::Rect as EditorRect;
+    use wry::dpi::{LogicalPosition, LogicalSize};
+
+    #[test]
+    fn wry_rect_preserves_top_left_coordinates_at_one_x() {
+        let rect = to_wry_rect(EditorRect::new(400.0, 27.0, 400.0, 554.0), 1.0);
+
+        assert_eq!(
+            rect.position.to_logical::<f64>(1.0),
+            LogicalPosition::new(400.0, 27.0)
+        );
+        assert_eq!(
+            rect.size.to_logical::<f64>(1.0),
+            LogicalSize::new(400.0, 554.0)
+        );
+    }
+
+    #[test]
+    fn wry_rect_converts_physical_pixels_to_logical_coordinates() {
+        let rect = to_wry_rect(EditorRect::new(800.0, 54.0, 800.0, 708.0), 2.0);
+
+        assert_eq!(
+            rect.position.to_logical::<f64>(1.0),
+            LogicalPosition::new(400.0, 27.0)
+        );
+        assert_eq!(
+            rect.size.to_logical::<f64>(1.0),
+            LogicalSize::new(400.0, 354.0)
+        );
+    }
+
+    #[test]
+    fn bottom_dock_shrinks_webview_without_moving_its_top_edge() {
+        let full_height = to_wry_rect(EditorRect::new(400.0, 27.0, 400.0, 554.0), 1.0);
+        let dock_open = to_wry_rect(EditorRect::new(400.0, 27.0, 400.0, 354.0), 1.0);
+
+        assert_eq!(full_height.position, dock_open.position);
+        assert_eq!(
+            dock_open.size.to_logical::<f64>(1.0),
+            LogicalSize::new(400.0, 354.0)
+        );
     }
 }

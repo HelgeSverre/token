@@ -6,6 +6,13 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+## v0.5.1 - 2026-08-12
+
+### Fixed
+
+- Constrained Markdown and HTML preview webviews to the editor area when the
+  bottom dock is opened or resized on macOS.
+
 ### Changed
 
 - Reduced the workspace-plus-large-Rust-file startup stress test from a 166.4
