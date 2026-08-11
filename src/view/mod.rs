@@ -2249,6 +2249,12 @@ mod cursor_fast_path_scrollbar_tests {
 
         let mut model = AppModel::new(width as u32, height as u32, 1.0, vec![]);
         model.config.show_scrollbar = true;
+        // Keep the sampled layers observably distinct regardless of the user's
+        // configured theme (some themes intentionally use the same color for
+        // the current line and scrollbar track).
+        model.theme.editor.current_line_background = crate::theme::Color::rgb(0x10, 0x20, 0x30);
+        model.theme.scrollbar.track = crate::theme::Color::rgb(0x40, 0x50, 0x60);
+        model.theme.scrollbar.thumb = crate::theme::Color::rgb(0x70, 0x80, 0x90);
         let group_id = model.editor_area.focused_group_id;
         let tab_bar_height = model.metrics.tab_bar_height as f32;
         model.editor_area.groups.get_mut(&group_id).unwrap().rect =
