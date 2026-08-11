@@ -1,12 +1,10 @@
 # Changelog
 
-- macOS text-input accessories, including the Caps Lock indicator and IME candidate window, now follow the active editor, modal, or CSV cell caret instead of appearing at the top-left of the window.
-
 All notable changes to rust-editor are documented in this file.
 
 ---
 
-## Unreleased
+## v0.5.0 - 2026-08-11
 
 ### Added
 
@@ -81,6 +79,9 @@ All notable changes to rust-editor are documented in this file.
 
 ### Fixed
 
+- macOS text-input accessories, including the Caps Lock indicator and IME
+  candidate window, now follow the active editor, modal, or CSV cell caret
+  instead of appearing at the top-left of the window.
 - Syntax-aware expansion at the end of a code line now recovers the nearest
   completed named syntax node instead of jumping to an enclosing block. Opening
   delimiters retain right affinity, ambiguous separators fall back to the
