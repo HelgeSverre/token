@@ -307,3 +307,51 @@ fn bundled_themes_derive_a_non_degenerate_text_ramp() {
         );
     }
 }
+
+#[test]
+fn status_bar_border_falls_back_to_gutter_border() {
+    // A user theme predating the `status_bar.border` key must resolve the
+    // border to the gutter border color so the bar still separates from the
+    // editor area above it.
+    let yaml = r##"
+version: 1
+name: Legacy User Theme
+ui:
+  editor:
+    background: "#1E1E1E"
+    foreground: "#D4D4D4"
+    current_line_background: "#2A2A2A"
+    cursor_color: "#FFFFFF"
+  gutter:
+    background: "#1E1E1E"
+    foreground: "#666666"
+    foreground_active: "#D4D4D4"
+    border_color: "#313438"
+  status_bar:
+    background: "#007ACC"
+    foreground: "#FFFFFF"
+"##;
+    let theme = Theme::from_yaml(yaml).expect("legacy theme without status_bar.border must parse");
+    assert_eq!(
+        theme.status_bar.border.to_argb_u32(),
+        theme.gutter.border_color.to_argb_u32()
+    );
+}
+
+#[test]
+fn bundled_themes_have_a_visible_status_bar_border() {
+    // The border exists to separate the status bar from the editor area; a
+    // border equal to the bar background is invisible (nord's gutter border
+    // matches its status bar background, which is why it sets an explicit
+    // `status_bar.border`).
+    for builtin in BUILTIN_THEMES {
+        let theme = Theme::from_yaml(builtin.yaml)
+            .unwrap_or_else(|e| panic!("theme '{}' failed to parse: {}", builtin.id, e));
+        assert_ne!(
+            theme.status_bar.border.to_argb_u32(),
+            theme.status_bar.background.to_argb_u32(),
+            "theme '{}': status_bar.border equals status_bar.background (invisible border)",
+            builtin.id
+        );
+    }
+}

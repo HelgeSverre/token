@@ -130,9 +130,13 @@ fn reload_configuration_returns_full_redraw() {
 
     let cmd = update(&mut model, Msg::App(AppMsg::ReloadConfiguration));
 
+    let damage = cmd
+        .as_ref()
+        .expect("ReloadConfiguration must return a command")
+        .damage();
     assert!(
-        matches!(cmd, Some(Cmd::Redraw)),
-        "ReloadConfiguration should return a full Cmd::Redraw so theme changes repaint immediately, got: {:?}",
+        damage.is_full(),
+        "ReloadConfiguration must produce full-redraw damage so theme changes repaint immediately, got: {:?}",
         cmd
     );
 }

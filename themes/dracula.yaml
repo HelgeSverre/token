@@ -21,6 +21,7 @@ ui:
   status_bar:
     background: "#191A21"
     foreground: "#F8F8F2"
+    border: "#343746"
 
   sidebar:
     background: "#21222C"

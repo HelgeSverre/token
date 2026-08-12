@@ -812,6 +812,15 @@ impl Renderer {
         self.line_metrics.new_line_size.ceil() as usize
     }
 
+    /// Line height of status-bar text at the configured logical size.
+    pub fn status_text_line_height(&self, logical_size: f32) -> usize {
+        let size = (logical_size * self.scale_factor as f32).round();
+        self.font
+            .horizontal_line_metrics(size)
+            .map(|m| m.new_line_size.ceil() as usize)
+            .unwrap_or_else(|| self.line_height())
+    }
+
     pub fn dimensions(&self) -> (u32, u32) {
         (self.width, self.height)
     }
@@ -878,7 +887,7 @@ impl Renderer {
         char_width: f32,
         show_perf_overlay: bool,
     ) -> RenderPlan {
-        let window_layout = geometry::WindowLayout::compute(model, line_height);
+        let window_layout = geometry::WindowLayout::compute(model);
         let splitters = model
             .editor_area
             .compute_layout_scaled(window_layout.editor_area_rect, model.metrics.splitter_width);
@@ -1736,55 +1745,56 @@ impl Renderer {
         window_width: usize,
         window_height: usize,
     ) {
-        let char_width = painter.char_width();
-        let line_height = painter.line_height();
         let status_bar_bg = model.theme.status_bar.background.to_argb_u32();
         let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
-        let status_bar_h = geometry::status_bar_height(line_height);
+        let status_bar_h = model.status_bar_height;
         let status_y = window_height.saturating_sub(status_bar_h);
-        let text_offset_y = model.metrics.padding_small;
+
+        // Status-bar text renders at its own (configurable) size; advances at
+        // small sizes are not linear in size, so measure the cell width.
+        let text_size = (model.config.status_bar_font_size_clamped()
+            * model.metrics.scale_factor as f32)
+            .round();
+        let cell_width = painter.measure_sized("M", text_size, 0.0).max(1.0);
+        let text_line_height = painter.line_height_for_size(text_size);
 
         // Background
         frame.fill_rect_px(0, status_y, window_width, status_bar_h, status_bar_bg);
 
+        // Top border separating the bar from the editor area above
+        let border_width = model.metrics.border_width;
+        let border_color = model.theme.status_bar.border.to_argb_u32();
+        frame.fill_rect_px(0, status_y, window_width, border_width, border_color);
+
+        // Center the text vertically in the bar (symmetric padding).
+        let text_y = status_y + status_bar_h.saturating_sub(text_line_height) / 2;
+
         // Layout calculation
-        let available_chars = (window_width as f32 / char_width).floor() as usize;
+        let available_chars = (window_width as f32 / cell_width).floor() as usize;
         let layout = model.ui.status_bar.layout(available_chars);
 
-        // Left segments
-        for seg in &layout.left {
-            let x_px = (seg.x as f32 * char_width).round() as usize;
-            painter.draw(
-                frame,
-                x_px,
-                status_y + text_offset_y,
-                &seg.text,
-                status_bar_fg,
-            );
+        // Left and right segments
+        for seg in layout.left.iter().chain(&layout.right) {
+            let x_px = (seg.x as f32 * cell_width).round() as usize;
+            painter.draw_sized(frame, x_px, text_y, &seg.text, text_size, 0.0, status_bar_fg);
         }
 
-        // Right segments
-        for seg in &layout.right {
-            let x_px = (seg.x as f32 * char_width).round() as usize;
-            painter.draw(
-                frame,
-                x_px,
-                status_y + text_offset_y,
-                &seg.text,
-                status_bar_fg,
-            );
-        }
-
-        // Separators
+        // Separators (foreground at ~10%, blended, kept below the top border)
         let separator_color = model
             .theme
             .status_bar
             .foreground
-            .with_alpha(100)
+            .with_alpha(26)
             .to_argb_u32();
         for &sep_char_x in &layout.separator_positions {
-            let x_px = (sep_char_x as f32 * char_width).round() as usize;
-            frame.fill_rect_px(x_px, status_y, 1, status_bar_h, separator_color);
+            let x_px = (sep_char_x as f32 * cell_width).round() as usize;
+            frame.blend_rect_px(
+                x_px,
+                status_y + border_width,
+                1,
+                status_bar_h - border_width,
+                separator_color,
+            );
         }
     }
 
@@ -1927,7 +1937,7 @@ impl Renderer {
         let height_usize = self.height as usize;
 
         #[cfg(feature = "damage-debug")]
-        let status_bar_height = line_height;
+        let status_bar_height = model.status_bar_height;
 
         let show_perf_overlay = perf.should_show_overlay();
         let plan = perf.measure_stage(crate::perf::PerfStage::BuildPlan, || {

@@ -962,12 +962,33 @@ impl UiState {
         }
     }
 
-    /// Set the status message
+    /// Default lifetime of a status flash message.
+    pub const DEFAULT_STATUS_MESSAGE_DURATION: Duration = Duration::from_secs(4);
+
+    /// Flash a status message for the default duration.
     pub fn set_status(&mut self, message: impl Into<String>) {
-        self.status_bar.update_segment(
-            SegmentId::StatusMessage,
-            SegmentContent::Text(message.into()),
-        );
+        self.set_status_for(message, Self::DEFAULT_STATUS_MESSAGE_DURATION);
+    }
+
+    /// Flash a status message for a custom duration.
+    pub fn set_status_for(&mut self, message: impl Into<String>, duration: Duration) {
+        let message = message.into();
+        self.transient_message = Some(TransientMessage::new(message.clone(), duration));
+        self.status_bar
+            .update_segment(SegmentId::StatusMessage, SegmentContent::Text(message));
+    }
+
+    /// Clear the status message if its lifetime has elapsed. Returns true if
+    /// something was cleared (the status bar needs a redraw).
+    pub fn expire_status_message(&mut self) -> bool {
+        if self.transient_message.as_ref().is_some_and(|t| t.is_expired()) {
+            self.transient_message = None;
+            self.status_bar
+                .update_segment(SegmentId::StatusMessage, SegmentContent::Empty);
+            true
+        } else {
+            false
+        }
     }
 
     /// Check if the UI is busy (loading or saving)
@@ -1149,5 +1170,35 @@ mod tests {
             state.entries[state.filtered_rows[0]].path,
             PathBuf::from("/project/main.rs")
         );
+    }
+
+    #[test]
+    fn set_status_creates_an_expiring_transient() {
+        let mut ui = UiState::new();
+        ui.set_status("Configuration reloaded");
+        let transient = ui.transient_message.as_ref().expect("set_status must arm expiry");
+        assert!(!transient.is_expired());
+        assert_eq!(transient.text, "Configuration reloaded");
+    }
+
+    #[test]
+    fn expire_status_message_clears_segment_after_lifetime() {
+        let mut ui = UiState::new();
+        ui.set_status_for("gone soon", Duration::ZERO);
+        assert!(ui.expire_status_message());
+        assert!(ui.transient_message.is_none());
+        let segment = ui
+            .status_bar
+            .get_segment(SegmentId::StatusMessage)
+            .expect("StatusMessage segment exists");
+        assert!(segment.content.is_empty());
+    }
+
+    #[test]
+    fn expire_status_message_is_a_noop_before_lifetime() {
+        let mut ui = UiState::new();
+        ui.set_status("still here");
+        assert!(!ui.expire_status_message());
+        assert!(ui.transient_message.is_some());
     }
 }

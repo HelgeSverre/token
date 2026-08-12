@@ -20,7 +20,7 @@ use winit::window::Icon;
 use winit::window::{CursorIcon, Window};
 
 use token::cli::{StartupConfig, StartupMode};
-use token::commands::{Cmd, Damage};
+use token::commands::{Cmd, Damage, DamageArea};
 use token::fs_watcher::{FileSystemEvent, FileSystemWatcher};
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
@@ -373,6 +373,9 @@ impl App {
 
         // Derive tab bar height from glyph metrics instead of hardcoded value
         self.model.recompute_tab_bar_height_from_line_height();
+        let status_text_lh = renderer
+            .status_text_line_height(self.model.config.status_bar_font_size_clamped());
+        self.model.recompute_status_bar_height(status_text_lh);
 
         // Recompute viewport geometry with new metrics
         let size = window.inner_size();
@@ -397,6 +400,9 @@ impl App {
 
         // Recompute tab bar height from new font metrics
         self.model.recompute_tab_bar_height_from_line_height();
+        let status_text_lh = renderer
+            .status_text_line_height(self.model.config.status_bar_font_size_clamped());
+        self.model.recompute_status_bar_height(status_text_lh);
 
         // Recompute viewport geometry for new char_width/line_height
         let size = window.inner_size();
@@ -1175,6 +1181,16 @@ impl App {
             Cmd::None => {}
             Cmd::Redraw => {}
             Cmd::RedrawAreas(_) => {} // Partial redraw - handled by damage tracking in render()
+            Cmd::SyncStatusBarMetrics => {
+                if let Some(renderer) = &self.renderer {
+                    let status_text_lh = renderer.status_text_line_height(
+                        self.model.config.status_bar_font_size_clamped(),
+                    );
+                    self.model.recompute_status_bar_height(status_text_lh);
+                    let (w, h) = self.model.window_size;
+                    self.model.resize(w, h);
+                }
+            }
             Cmd::ReinitializeRenderer => {
                 let scale_factor = self.model.metrics.scale_factor;
                 if let Err(e) = self.reinit_renderer(scale_factor) {
@@ -1780,6 +1796,13 @@ impl ApplicationHandler for App {
             needs_redraw = true;
         }
 
+        // Expire status flash messages
+        if self.model.ui.expire_status_message() {
+            self.pending_damage
+                .merge(Damage::Areas(vec![DamageArea::StatusBar]));
+            needs_redraw = true;
+        }
+
         if needs_redraw {
             if let Some(window) = &self.window {
                 window.request_redraw();
@@ -1809,6 +1832,9 @@ impl ApplicationHandler for App {
         let mut next_wake = self.last_tick + blink_interval;
         if let Some(earliest_deadline) = self.syntax_deadlines.values().map(|(d, _)| *d).min() {
             next_wake = next_wake.min(earliest_deadline);
+        }
+        if let Some(transient) = &self.model.ui.transient_message {
+            next_wake = next_wake.min(transient.expires_at);
         }
         if let Some(deferred_startup_at) = self.deferred_startup_at {
             next_wake = next_wake.min(deferred_startup_at);

@@ -1009,7 +1009,7 @@ fn handle_left_click(
             if *active_panel_id == token::panel::PanelId::Outline {
                 use token::messages::OutlineMsg;
 
-                let window_layout = WindowLayout::compute(model, model.line_height);
+                let window_layout = WindowLayout::compute(model);
                 let dock_rect = match position {
                     token::panel::DockPosition::Right => window_layout.right_dock_rect,
                     token::panel::DockPosition::Bottom => window_layout.bottom_dock_rect,

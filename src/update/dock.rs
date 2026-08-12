@@ -34,7 +34,7 @@ fn is_terminal_panel_open(model: &AppModel) -> bool {
 }
 
 fn terminal_grid_size_for_model(model: &AppModel) -> Option<TerminalGridSize> {
-    let window_layout = WindowLayout::compute(model, model.line_height);
+    let window_layout = WindowLayout::compute(model);
     let dock_rect = window_layout.bottom_dock_rect?;
     let layout = DockHeaderLayout::new(
         &model.dock_layout.bottom,
@@ -380,7 +380,7 @@ mod tests {
     }
 
     fn expected_terminal_grid_size(model: &AppModel) -> crate::panels::terminal::TerminalGridSize {
-        let window_layout = WindowLayout::compute(model, model.line_height);
+        let window_layout = WindowLayout::compute(model);
         let dock_rect = window_layout
             .bottom_dock_rect
             .expect("terminal dock should be open");

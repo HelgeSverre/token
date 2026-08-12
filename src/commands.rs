@@ -692,6 +692,9 @@ pub enum Cmd {
     // === Display Commands ===
     /// Reinitialize the renderer (e.g., after scale factor change)
     ReinitializeRenderer,
+    /// Re-derive status bar height from the renderer's font metrics
+    /// (config reload may change `status_bar_font_size`)
+    SyncStatusBarMetrics,
 
     // === Application Commands ===
     /// Request application exit
@@ -792,6 +795,7 @@ impl Cmd {
             Cmd::ClearSyntaxState { .. } => Damage::Areas(vec![]),
             // Reinitialize triggers full redraw
             Cmd::ReinitializeRenderer => Damage::Full,
+            Cmd::SyncStatusBarMetrics => Damage::Full,
             // Quit doesn't need redraw - app is exiting
             Cmd::Quit => Damage::Areas(vec![]),
             Cmd::SaveRecentFiles { .. } => Damage::Areas(vec![]),

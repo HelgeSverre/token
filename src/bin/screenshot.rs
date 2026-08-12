@@ -249,7 +249,17 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
     let line_height = font.line_height;
     let char_width = font.char_width;
 
-    let status_bar_height = line_height;
+    // Mirror AppModel::recompute_status_bar_height: status-bar text line
+    // height (at the configured size) + symmetric vertical padding.
+    let metrics = ScaledMetrics::new(scale);
+    let config = token::config::EditorConfig::default();
+    let status_text_size = (config.status_bar_font_size_clamped() * scale as f32).round();
+    let status_text_lh = font
+        .font
+        .horizontal_line_metrics(status_text_size)
+        .map(|m| m.new_line_size.ceil() as usize)
+        .unwrap_or(line_height);
+    let status_bar_height = status_text_lh + metrics.padding_small * 2;
     let visible_lines = (scenario.height as usize).saturating_sub(status_bar_height) / line_height;
     let visible_columns = ((scenario.width as f32 - 60.0) / char_width).floor() as usize;
 
@@ -274,11 +284,12 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         editor_area,
         ui: UiState::new(),
         theme,
-        config: token::config::EditorConfig::default(),
+        config,
         window_size: (scenario.width, scenario.height),
         line_height,
+        status_bar_height,
         char_width,
-        metrics: ScaledMetrics::new(scale),
+        metrics,
         workspace: None,
         dock_layout: token::panel::DockLayout::default(),
         terminal: token::terminal::TerminalState::default(),
@@ -413,7 +424,7 @@ fn apply_view_modes(model: &mut AppModel, scenario: &Scenario) {
                     if !data.is_empty() && data.column_count() > 0 {
                         let line_height = model.line_height.max(1);
                         let tab_bar_height = model.metrics.tab_bar_height;
-                        let status_bar_height = line_height;
+                        let status_bar_height = model.status_bar_height;
                         let col_header_height = line_height;
                         let content_height = (model.window_size.1 as usize)
                             .saturating_sub(tab_bar_height)
@@ -683,7 +694,7 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
 
     let mut glyph_cache: GlyphCache = HashMap::new();
 
-    let status_bar_height = font_info.line_height;
+    let status_bar_height = model.status_bar_height;
 
     // Calculate sidebar width (matches real renderer pipeline)
     let sidebar_width = model

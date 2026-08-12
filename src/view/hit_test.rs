@@ -438,7 +438,7 @@ pub fn hit_test_cursor_overlay(model: &AppModel, pt: Point) -> Option<HitTarget>
 
 /// Hit-test the status bar at the bottom of the window.
 pub fn hit_test_status_bar(model: &AppModel, pt: Point) -> Option<HitTarget> {
-    if is_in_status_bar(pt.y, model.window_size.1, model.line_height) {
+    if is_in_status_bar(pt.y, model.window_size.1, model.status_bar_height) {
         Some(HitTarget::StatusBar)
     } else {
         None
@@ -740,7 +740,7 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
 /// `DockResize` if the point is over the resizable border between a dock and
 /// the editor area.
 pub fn hit_test_docks(model: &AppModel, pt: Point) -> Option<HitTarget> {
-    let window_layout = WindowLayout::compute(model, model.line_height);
+    let window_layout = WindowLayout::compute(model);
     let hit_zone = model.metrics.resize_handle_zone as f64;
 
     if let Some(right_rect) = window_layout.right_dock_rect {
@@ -882,7 +882,7 @@ pub fn hit_test_ui(model: &AppModel, pt: Point, char_width: f32) -> Option<HitTa
     }
 
     // 6. Splitter bars (need to compute layout first)
-    let window_layout = WindowLayout::compute(model, model.line_height);
+    let window_layout = WindowLayout::compute(model);
 
     // Group/preview rects are already kept current by the render pass's own
     // `compute_layout_scaled` call, so hit-testing only needs splitters and

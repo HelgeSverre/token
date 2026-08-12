@@ -4,7 +4,6 @@ use crate::commands::Cmd;
 use crate::messages::{LayoutMsg, WorkspaceMsg};
 use crate::model::AppModel;
 use crate::util::visible_tree_index_of;
-use crate::view::geometry::status_bar_height;
 
 use super::layout::update_layout;
 
@@ -231,8 +230,7 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
 /// status bar (see `WindowLayout::compute`), not the raw window height.
 fn sidebar_visible_rows(model: &AppModel) -> usize {
     let row_height = model.metrics.file_tree_row_height;
-    let sidebar_height =
-        (model.window_size.1 as usize).saturating_sub(status_bar_height(model.line_height));
+    let sidebar_height = (model.window_size.1 as usize).saturating_sub(model.status_bar_height);
     sidebar_height.checked_div(row_height).unwrap_or(20)
 }
 

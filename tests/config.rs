@@ -105,6 +105,7 @@ fn test_config_serialize_deserialize() {
         auto_surround: true,
         bracket_matching: true,
         show_scrollbar: true,
+        status_bar_font_size: 12.0,
     };
     let yaml = serde_yaml::to_string(&config).unwrap();
     let parsed: EditorConfig = serde_yaml::from_str(&yaml).unwrap();
@@ -341,4 +342,16 @@ fn test_keymap_file_path_structure() {
         assert!(path_str.contains("token-editor"));
         assert!(path_str.contains("keymap.yaml"));
     }
+}
+
+#[test]
+fn test_config_status_bar_font_size_default() {
+    let config = EditorConfig::default();
+    assert_eq!(config.status_bar_font_size, 12.0);
+    // Legacy config without the key parses and gets the default.
+    let parsed: EditorConfig = serde_yaml::from_str("theme: dark").unwrap();
+    assert_eq!(parsed.status_bar_font_size, 12.0);
+    // Clamping guards absurd values.
+    let parsed: EditorConfig = serde_yaml::from_str("status_bar_font_size: 200.0").unwrap();
+    assert_eq!(parsed.status_bar_font_size_clamped(), 24.0);
 }

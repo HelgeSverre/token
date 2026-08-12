@@ -255,6 +255,9 @@ fn create_model(args: &Args) -> Result<token::model::AppModel> {
         config: EditorConfig::default(),
         window_size: (args.width, args.height),
         line_height,
+        // ponytail: profiling tool draws its own bar; parity with the real
+        // formula doesn't matter here
+        status_bar_height: line_height,
         char_width,
         metrics: token::model::ScaledMetrics::default(),
         workspace: None,

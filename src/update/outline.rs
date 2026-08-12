@@ -209,7 +209,7 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
 
             if let Some(outline) = outline {
                 let total = count_visible_items(&outline.roots, &model.outline_panel);
-                let visible_capacity = WindowLayout::compute(model, model.line_height)
+                let visible_capacity = WindowLayout::compute(model)
                     .right_dock_rect
                     .map(|rect| {
                         let dock_layout = DockHeaderLayout::new(

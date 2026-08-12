@@ -56,13 +56,9 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
         }
 
         UiMsg::SetTransientMessage { text, duration_ms } => {
-            let transient = TransientMessage::new(text.clone(), Duration::from_millis(duration_ms));
-            model.ui.transient_message = Some(transient);
-            // Also update the StatusMessage segment
             model
                 .ui
-                .status_bar
-                .update_segment(SegmentId::StatusMessage, SegmentContent::Text(text));
+                .set_status_for(text, Duration::from_millis(duration_ms));
             Some(Cmd::redraw_status_bar())
         }
 

@@ -103,7 +103,7 @@ fn toggle_csv_mode(model: &mut AppModel) -> Option<Cmd> {
             // Calculate visible rows based on window dimensions
             let line_height = model.line_height.max(1);
             let tab_bar_height = model.metrics.tab_bar_height;
-            let status_bar_height = line_height;
+            let status_bar_height = model.status_bar_height;
             let col_header_height = line_height;
             let content_height = (model.window_size.1 as usize)
                 .saturating_sub(tab_bar_height)

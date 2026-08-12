@@ -21,11 +21,6 @@ pub use crate::util::text::TABULATOR_WIDTH;
 // Viewport Sizing Helpers
 // ============================================================================
 
-/// Calculate the height of the status bar in pixels
-#[inline]
-pub fn status_bar_height(line_height: usize) -> usize {
-    line_height
-}
 
 // ============================================================================
 // Tab Expansion Helpers
@@ -175,8 +170,8 @@ fn focused_group_editor_document(
 
 /// Check if a y-coordinate is within the status bar region
 #[inline]
-pub fn is_in_status_bar(y: f64, window_height: u32, line_height: usize) -> bool {
-    let status_bar_top = window_height as f64 - line_height as f64;
+pub fn is_in_status_bar(y: f64, window_height: u32, status_bar_height: usize) -> bool {
+    let status_bar_top = window_height as f64 - status_bar_height as f64;
     y >= status_bar_top
 }
 
@@ -1332,10 +1327,10 @@ pub struct WindowLayout {
 
 impl WindowLayout {
     /// Compute the current top-level window layout from the app model.
-    pub fn compute(model: &AppModel, line_height: usize) -> Self {
+    pub fn compute(model: &AppModel) -> Self {
         let window_width = model.window_size.0 as f32;
         let window_height = model.window_size.1 as f32;
-        let status_bar_h = status_bar_height(line_height) as f32;
+        let status_bar_h = model.status_bar_height as f32;
         let content_height = (window_height - status_bar_h).max(0.0);
 
         let sidebar_width = model
@@ -1459,7 +1454,7 @@ mod tests {
 
     #[test]
     fn test_is_in_status_bar() {
-        // Window 600px tall, line height 20px -> status bar at y >= 580
+        // Window 600px tall, status bar height 20px -> status bar at y >= 580
         assert!(!is_in_status_bar(579.0, 600, 20));
         assert!(is_in_status_bar(580.0, 600, 20));
         assert!(is_in_status_bar(590.0, 600, 20));
@@ -1632,6 +1627,7 @@ mod tests {
 
         let mut model = crate::model::AppModel::new(1000, 700, 1.0, vec![]);
         model.line_height = 20;
+        model.status_bar_height = 20;
         model.dock_layout.dock_mut(DockPosition::Right).is_open = true;
         model.dock_layout.dock_mut(DockPosition::Right).size_logical = 180.0;
         model.dock_layout.dock_mut(DockPosition::Bottom).is_open = true;
@@ -1640,7 +1636,7 @@ mod tests {
             .dock_mut(DockPosition::Bottom)
             .size_logical = 140.0;
 
-        let layout = WindowLayout::compute(&model, model.line_height);
+        let layout = WindowLayout::compute(&model);
 
         assert_eq!(layout.content_rect.height, 680.0);
         assert_eq!(layout.status_bar_rect.y, 680.0);

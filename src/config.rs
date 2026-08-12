@@ -43,6 +43,10 @@ pub struct EditorConfig {
     /// When false, no scrollbars are rendered and no space is reserved for them.
     #[serde(default = "default_true")]
     pub show_scrollbar: bool,
+
+    /// Status bar font size in logical px (default: 12, editor text is 14)
+    #[serde(default = "default_status_bar_font_size")]
+    pub status_bar_font_size: f32,
 }
 
 fn default_theme() -> String {
@@ -57,6 +61,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_status_bar_font_size() -> f32 {
+    12.0
+}
+
 impl Default for EditorConfig {
     fn default() -> Self {
         Self {
@@ -65,7 +73,15 @@ impl Default for EditorConfig {
             auto_surround: true,
             bracket_matching: true,
             show_scrollbar: true,
+            status_bar_font_size: default_status_bar_font_size(),
         }
+    }
+}
+
+impl EditorConfig {
+    /// Status bar font size clamped to a usable range, in logical px.
+    pub fn status_bar_font_size_clamped(&self) -> f32 {
+        self.status_bar_font_size.clamp(8.0, 24.0)
     }
 }
 

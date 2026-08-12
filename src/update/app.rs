@@ -25,7 +25,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                 if let Some(csv) = editor.view_mode.as_csv_mut() {
                     let line_height = model.line_height.max(1);
                     let tab_bar_height = model.metrics.tab_bar_height;
-                    let status_bar_height = line_height;
+                    let status_bar_height = model.status_bar_height;
                     let col_header_height = line_height;
                     let content_height = (height as usize)
                         .saturating_sub(tab_bar_height)
@@ -195,7 +195,9 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             // A theme/config reload can change colors across the whole
             // window, not just the status bar, so it needs a full redraw to
             // actually appear before the next unrelated event triggers one.
-            Some(Cmd::Redraw)
+            // SyncStatusBarMetrics re-derives the bar height in case
+            // `status_bar_font_size` changed.
+            Some(Cmd::Batch(vec![Cmd::SyncStatusBarMetrics, Cmd::Redraw]))
         }
 
         // =====================================================================
@@ -496,7 +498,7 @@ mod tests {
     }
 
     fn expected_terminal_grid_size(model: &AppModel) -> crate::panels::terminal::TerminalGridSize {
-        let window_layout = WindowLayout::compute(model, model.line_height);
+        let window_layout = WindowLayout::compute(model);
         let dock_rect = window_layout
             .bottom_dock_rect
             .expect("terminal dock should be open");

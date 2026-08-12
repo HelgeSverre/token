@@ -422,6 +422,10 @@ pub struct AppModel {
     pub window_size: (u32, u32),
     /// Line height in pixels
     pub line_height: usize,
+    /// Status bar height in pixels (status-bar text line height + padding;
+    /// synced from the renderer's font metrics, see
+    /// `recompute_status_bar_height`)
+    pub status_bar_height: usize,
     /// Character width in pixels (monospace)
     pub char_width: f32,
     /// Scaled UI metrics for HiDPI support
@@ -481,6 +485,7 @@ impl AppModel {
             config,
             window_size: (window_width, window_height),
             line_height: geom.line_height,
+            status_bar_height: geom.line_height,
             char_width: geom.char_width,
             metrics,
             workspace: None,
@@ -548,6 +553,18 @@ impl AppModel {
         let padding = self.metrics.padding_medium;
 
         self.metrics.tab_bar_height = glyph_height + padding * 2;
+    }
+
+    /// Recompute the status bar height from the status-bar text line height
+    /// (which depends on the configured font size, so only the renderer can
+    /// supply it).
+    ///
+    /// Formula: text line height + symmetric vertical padding.
+    pub fn recompute_status_bar_height(&mut self, status_text_line_height: usize) {
+        if status_text_line_height == 0 {
+            return;
+        }
+        self.status_bar_height = status_text_line_height + self.metrics.padding_small * 2;
     }
 
     /// Get the focused editor (read-only), or None if no editor is focused
@@ -645,7 +662,7 @@ impl AppModel {
         let effective_width = (width as f32) - sidebar_width - right_dock_width;
 
         // Subtract status bar, tab bar, and bottom dock from available height
-        let status_bar_height = self.line_height;
+        let status_bar_height = self.status_bar_height;
         let tab_bar_height = self.metrics.tab_bar_height;
         let bottom_dock_height = self.dock_layout.bottom.size(self.metrics.scale_factor) as usize;
         let available_height = (height as usize)

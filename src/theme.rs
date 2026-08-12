@@ -576,6 +576,8 @@ pub struct GutterThemeData {
 pub struct StatusBarThemeData {
     pub background: String,
     pub foreground: String,
+    #[serde(default)]
+    pub border: Option<String>,
 }
 
 /// Overlay colors (all optional for backward compatibility)
@@ -847,6 +849,7 @@ pub struct GutterTheme {
 pub struct StatusBarTheme {
     pub background: Color,
     pub foreground: Color,
+    pub border: Color,
 }
 
 /// Overlay colors (resolved)
@@ -1363,6 +1366,14 @@ impl Theme {
         let status_bar = StatusBarTheme {
             background: Color::from_hex(&data.ui.status_bar.background)?,
             foreground: Color::from_hex(&data.ui.status_bar.foreground)?,
+            border: data
+                .ui
+                .status_bar
+                .border
+                .as_ref()
+                .map(|s| Color::from_hex(s))
+                .transpose()?
+                .unwrap_or(gutter.border_color),
         };
         let overlay = resolve_overlay_theme(&data.ui.overlay, &status_bar)?;
 
@@ -1809,6 +1820,7 @@ impl Theme {
                     status_bar: StatusBarTheme {
                         background: Color::rgb(0x00, 0x7A, 0xCC),
                         foreground: Color::rgb(0xFF, 0xFF, 0xFF),
+                        border: Color::rgb(0x31, 0x34, 0x38),
                     },
                     overlay: OverlayTheme::default_dark(),
                     tab_bar: TabBarTheme::default_dark(),

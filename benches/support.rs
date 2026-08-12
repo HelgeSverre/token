@@ -34,6 +34,7 @@ pub fn make_model(lines: usize) -> AppModel {
         config: EditorConfig::default(),
         window_size: (window_width, window_height),
         line_height,
+        status_bar_height,
         char_width,
         metrics: token::model::ScaledMetrics::default(),
         workspace: None,
