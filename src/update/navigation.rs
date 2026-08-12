@@ -9,7 +9,7 @@
 //! "fast path" for staying in the current file — it is just the case
 //! where the reused tab happens to already be the focused one.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::commands::Cmd;
 use crate::messages::LayoutMsg;
@@ -156,6 +156,43 @@ pub(crate) fn place_cursor_char(model: &mut AppModel, line: usize, col: usize) -
     Some(Cmd::redraw_editor())
 }
 
+/// One row of any confirmable location list (usages popup, problems
+/// panel, future pickers). line/col are CHAR coordinates (already
+/// converted from LSP UTF-16 where a document was available; raw LSP
+/// values otherwise — `place_cursor_char` clamps after open, same
+/// defense outline jumps rely on).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocationItem {
+    pub path: PathBuf,
+    pub line: usize,
+    pub col: usize,
+    pub preview: String,
+}
+
+/// The shared activate handler: push jump history, open-or-focus the
+/// tab, place the cursor iff the focused tab really shows `path` (the
+/// "no stale result ever moves a cursor" guard, verbatim from
+/// `DefinitionResolved`). `origin`: pre-captured entry for async flows
+/// (definition/references resolve), or capture-now for sync ones.
+pub(crate) fn jump_to_location(
+    model: &mut AppModel,
+    origin: Option<JumpEntry>,
+    path: &Path,
+    line: usize,
+    col: usize,
+) -> Option<Cmd> {
+    if let Some(entry) = origin.or_else(|| current_jump_entry(model)) {
+        push_history_entry(model, entry);
+    }
+    let open_cmd = open_or_focus(model, path.to_path_buf());
+    let cursor_cmd = if focused_tab_is_text(model) && focused_tab_shows(model, path) {
+        place_cursor_char(model, line, col)
+    } else {
+        None
+    };
+    Some(combine(open_cmd, cursor_cmd).unwrap_or(Cmd::Redraw))
+}
+
 /// `Command::NavigateBack` / `LspMsg::NavigateBack`: pops the *focused
 /// group's* most recent jump-history entry and navigates to it.
 /// `document_id` is tried first (it follows a Save-As-renamed document to
@@ -251,6 +288,32 @@ mod tests {
             (1, 2),
             "must capture the active (secondary) cursor's position, not cursors[0]"
         );
+    }
+
+    #[test]
+    fn jump_to_location_with_no_origin_captures_the_current_position_for_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut model = model_with_two_files(dir.path());
+        model.editor_mut().cursors[0].line = 1;
+        model.editor_mut().cursors[0].column = 2;
+        let b_path = model.document().file_path.clone().unwrap();
+
+        let a_path = dir.path().join("a.txt");
+        jump_to_location(&mut model, None, &a_path, 0, 1);
+
+        assert_eq!(model.document().file_path.as_deref(), Some(a_path.as_path()));
+        assert_eq!(model.editor().cursors[0].line, 0);
+        assert_eq!(model.editor().cursors[0].column, 1);
+
+        // The pre-jump position on b.txt must be in history, same as any
+        // other jump.
+        navigate_back(&mut model);
+        assert_eq!(
+            model.document().file_path.as_deref(),
+            Some(b_path.as_path())
+        );
+        assert_eq!(model.editor().cursors[0].line, 1);
+        assert_eq!(model.editor().cursors[0].column, 2);
     }
 
     #[test]

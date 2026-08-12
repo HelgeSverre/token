@@ -261,25 +261,24 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                         model.lsp.route_hint =
                             Some((path.clone(), resolving_server, resolving_root));
                     }
-                    navigation::push_history_entry(model, origin);
-                    let open_cmd = navigation::open_or_focus(model, path.clone());
-                    // `open_or_focus` can fall through without changing
-                    // focus (target failed to open, or was reused into a
-                    // different split) — `focused_tab_shows` catches that
-                    // so a bad open never moves the *origin* document's
-                    // cursor (design doc: "no stale result ever moves a
-                    // cursor").
-                    let cursor_cmd = if navigation::focused_tab_is_text(model)
-                        && navigation::focused_tab_shows(model, &path)
-                    {
-                        let target_doc = model.document();
-                        let position =
-                            crate::lsp::lsp_to_position(target_doc, location.range.start);
-                        navigation::place_cursor_char(model, position.line, position.column)
-                    } else {
-                        None
-                    };
-                    Some(navigation::combine(open_cmd, cursor_cmd).unwrap_or(Cmd::Redraw))
+                    // `LocationItem`'s contract: char coords when a
+                    // document is already available to convert LSP
+                    // UTF-16 through, raw LSP values otherwise —
+                    // `place_cursor_char` clamps either way.
+                    let (line, col) = model
+                        .editor_area
+                        .find_open_file(&path)
+                        .and_then(|(doc_id, _, _)| model.editor_area.documents.get(&doc_id))
+                        .map(|doc| {
+                            let position =
+                                crate::lsp::lsp_to_position(doc, location.range.start);
+                            (position.line, position.column)
+                        })
+                        .unwrap_or((
+                            location.range.start.line as usize,
+                            location.range.start.character as usize,
+                        ));
+                    navigation::jump_to_location(model, Some(origin), &path, line, col)
                 }
                 DefinitionOutcome::StillIndexing => {
                     model.ui.set_status("Language server still indexing…");
