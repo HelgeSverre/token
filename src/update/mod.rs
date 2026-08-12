@@ -22,6 +22,7 @@ use crate::commands::Cmd;
 use crate::messages::{CsvMsg, Direction, DocumentMsg, EditorMsg, Msg};
 use crate::model::sync_status_bar;
 use crate::model::AppModel;
+use crate::util::text::{char_type, CharType};
 
 #[cfg(debug_assertions)]
 use crate::tracing::CursorSnapshot;
@@ -122,11 +123,32 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
                 }
                 return None;
             }
-            let result = document::update_document(model, m.clone());
-            let completion_cmd = completion::sync_after_document_edit(model, &m);
+            // Only these two facts of `m` matter to the completion sync
+            // below; read them before `m` moves into `update_document`
+            // rather than cloning the whole message (cheap for most
+            // variants, but `InsertText(String)` carries a full paste/IME
+            // payload that a clone would copy for nothing).
+            let is_copy = matches!(m, DocumentMsg::Copy);
+            let opens_on_word_char =
+                matches!(&m, DocumentMsg::InsertChar(ch) if char_type(*ch) == CharType::WordChar);
+            let result = document::update_document(model, m);
+            let completion_cmd =
+                completion::sync_after_document_edit(model, is_copy, opens_on_word_char);
             merge_cmds(result, completion_cmd)
         }
-        Msg::Ui(m) => ui::update_ui(model, m),
+        Msg::Ui(m) => {
+            let result = ui::update_ui(model, m);
+            // A modal opening (any `UiMsg`/`ModalMsg` path — command
+            // palette, goto-line, find/replace, fuzzy finder, ...) must
+            // dismiss the completion popup: `cursor_overlay` is claimed
+            // pre-keymap (runtime/app.rs), so a still-open completion menu
+            // would hijack the modal's Up/Down/Enter/Tab/Escape instead of
+            // the modal ever seeing them.
+            if model.ui.has_modal() {
+                completion::dismiss(model);
+            }
+            result
+        }
         Msg::Layout(m) => layout::update_layout(model, m),
         Msg::App(m) => app::update_app(model, m),
         Msg::Syntax(m) => syntax::update_syntax(model, m),

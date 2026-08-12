@@ -15,7 +15,7 @@
 use crate::commands::Cmd;
 use crate::completion::menu::{filter_and_sort, CompletionMenuState};
 use crate::completion::sources::{collect_snippets, collect_words};
-use crate::messages::{CompletionMsg, DocumentMsg};
+use crate::messages::CompletionMsg;
 use crate::model::{
     AppModel, Cursor, CursorOverlayKind, CursorOverlayState, EditOperation, Selection,
 };
@@ -88,8 +88,18 @@ fn trigger_explicit(model: &mut AppModel) -> Option<Cmd> {
 /// Called after every text-mutating `DocumentMsg`. Opens the menu on a
 /// word-char `InsertChar`, refreshes it while already open, and dismisses it
 /// once the cursor is no longer preceded by a word char.
-pub(crate) fn sync_after_document_edit(model: &mut AppModel, msg: &DocumentMsg) -> Option<Cmd> {
-    if matches!(msg, DocumentMsg::Copy) {
+///
+/// Takes the two facts about the originating message the sync needs,
+/// rather than the message itself — the caller reads them before the
+/// message is moved into `update_document`, avoiding a clone of the whole
+/// `DocumentMsg` (which, for `InsertText`, would copy a full paste/IME
+/// payload) just to inspect its shape here.
+pub(crate) fn sync_after_document_edit(
+    model: &mut AppModel,
+    is_copy: bool,
+    opens_on_word_char: bool,
+) -> Option<Cmd> {
+    if is_copy {
         return None;
     }
     if !model.editor().is_plain_text_mode() {
@@ -105,8 +115,7 @@ pub(crate) fn sync_after_document_edit(model: &mut AppModel, msg: &DocumentMsg) 
     };
 
     let menu_open = model.ui.completion_menu.is_some();
-    let should_open = menu_open
-        || matches!(msg, DocumentMsg::InsertChar(ch) if char_type(*ch) == CharType::WordChar);
+    let should_open = menu_open || opens_on_word_char;
     if !should_open {
         return None;
     }
@@ -145,8 +154,14 @@ fn open_or_refresh(
         return;
     }
 
+    // A document without an id (e.g. an unregistered scratch buffer) can
+    // never be re-matched by `accept_selected`'s id/revision guard, so
+    // there's nothing safe to open the menu against — no-op rather than
+    // panic on what would otherwise be the hot typing path.
+    let Some(document_id) = doc.id else {
+        return;
+    };
     let (query_line, query_col) = doc.offset_to_cursor(query_start_offset);
-    let document_id = doc.id.expect("focused document always has an id");
     let revision = doc.revision;
 
     model.ui.completion_menu = Some(CompletionMenuState {
@@ -272,7 +287,7 @@ fn accept_selected(model: &mut AppModel) -> Option<Cmd> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::messages::Msg;
+    use crate::messages::{DocumentMsg, Msg};
     use crate::model::AppModel;
     use crate::update::update;
 
@@ -437,6 +452,29 @@ mod tests {
             update(&mut model, Msg::Completion(CompletionMsg::MenuNext));
         }
         assert_eq!(model.ui.cursor_overlay.unwrap().selected, 0);
+    }
+
+    #[test]
+    fn opening_a_modal_dismisses_the_completion_menu() {
+        use crate::messages::{ModalMsg, UiMsg};
+
+        let mut model = model_with_text("value_one\n\n");
+        place_cursor(&mut model, 1, 0);
+        type_str(&mut model, "val");
+        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.cursor_overlay.is_some());
+
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::OpenCommandPalette)),
+        );
+
+        assert!(model.ui.has_modal());
+        assert!(
+            model.ui.completion_menu.is_none(),
+            "an open modal must claim keys instead of the stale completion popup"
+        );
+        assert!(model.ui.cursor_overlay.is_none());
     }
 
     #[test]
