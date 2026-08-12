@@ -67,6 +67,18 @@ fn width_rule((pct, min, max): (f32, f32, f32)) -> WidthRule {
     WidthRule { pct, min, max }
 }
 
+/// The All tab's `max_visible`, in `FlatIndex` display slots rather than
+/// selectable rows: `flatten_rows` (overlay_surface.rs) emits one extra
+/// slot per titled section header, and the All tab is deliberately
+/// non-scrolling, so anything past `max_visible` is permanently
+/// unreachable — undercounting silently clips the tail (e.g. the last file
+/// row, or even the leading "Commands" header).
+fn all_tab_max_visible(sections_spec: &[(Option<&'static str>, usize)]) -> usize {
+    let rows: usize = sections_spec.iter().map(|&(_, len)| len).sum();
+    let headers = sections_spec.iter().filter(|(t, _)| t.is_some()).count();
+    (rows + headers).max(1)
+}
+
 // ============================================================================
 // Command Palette
 // ============================================================================
@@ -288,8 +300,12 @@ fn render_command_palette_modal(
                         }
                     })
                     .collect();
-                let total: usize = sections_spec.iter().map(|&(_, len)| len).sum();
-                (sections, state.all_selected, 0, total.max(1))
+                (
+                    sections,
+                    state.all_selected,
+                    0,
+                    all_tab_max_visible(&sections_spec),
+                )
             }
             SearchTab::Symbols => (Vec::new(), 0, 0, COMMAND_PALETTE_MAX_VISIBLE),
         };
@@ -948,7 +964,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
                     state.files.as_ref().map(|f| f.scroll_offset).unwrap_or(0),
                     COMMAND_PALETTE_MAX_VISIBLE,
                 ),
-                SearchTab::All => (state.all_selected, 0, total.max(1)),
+                SearchTab::All => (state.all_selected, 0, all_tab_max_visible(&sections_spec)),
                 SearchTab::Symbols => (0, 0, COMMAND_PALETTE_MAX_VISIBLE),
             };
 
@@ -1593,6 +1609,70 @@ mod tests {
         model
     }
 
+    #[test]
+    fn all_tab_max_visible_counts_headers_as_display_slots() {
+        assert_eq!(
+            all_tab_max_visible(&[(Some("Commands"), 5), (Some("Files"), 5)]),
+            12,
+            "2 headers + 10 rows"
+        );
+        assert_eq!(all_tab_max_visible(&[(None, 5)]), 5);
+        assert_eq!(
+            all_tab_max_visible(&[]),
+            1,
+            "never 0 — layout divides by it"
+        );
+    }
+
+    /// All tab with 5 commands + 5 files (2 titled sections, 10 rows = 12
+    /// display slots): every row must be laid out and hit-testable,
+    /// including the last file row and the leading "Commands" header —
+    /// `max_visible` undercounting used to truncate/scroll them off even
+    /// though the All tab is deliberately non-scrolling.
+    #[test]
+    fn all_tab_lays_out_every_row_across_two_titled_sections() {
+        use crate::model::ui::{CommandMatch, FileFinderState, FileMatch};
+        use crate::model::{CommandPaletteState, ModalState, SearchTab};
+
+        let mut state = CommandPaletteState {
+            matches: crate::commands::all_commands()
+                .into_iter()
+                .take(5)
+                .map(|def| CommandMatch {
+                    def,
+                    indices: Vec::new(),
+                })
+                .collect(),
+            active_tab: SearchTab::All,
+            files_available: true,
+            ..CommandPaletteState::default()
+        };
+        let root = std::path::PathBuf::from("/ws");
+        let mut files = FileFinderState::new(Vec::new(), root.clone());
+        files.results = (0..5)
+            .map(|i| FileMatch::from_path(&root.join(format!("f{i}.rs")), &root, 0, Vec::new()))
+            .collect();
+        state.files = Some(files);
+
+        let mut model = AppModel::new(1200, 800, 1.0, vec![]);
+        model.ui.open_modal(ModalState::CommandPalette(state));
+
+        let (max_visible, rows_laid_out) =
+            with_modal_overlay_layout(&model, 1200, 800, 1.0, |spec, layout| {
+                let Body::List { max_visible, .. } = spec.body else {
+                    panic!("expected a list body");
+                };
+                (max_visible, layout.rows.len())
+            })
+            .expect("expected an active modal");
+
+        assert_eq!(max_visible, 12);
+        assert_eq!(
+            rows_laid_out, 12,
+            "all 12 display slots (2 headers + 10 rows) must be laid out"
+        );
+    }
+
     /// Regression for the reported blocker: the shape-only spec
     /// `with_modal_overlay_layout` builds for hit-testing/caret placement
     /// used to hardcode `tabs: None`, silently dropping the tab bar the
@@ -1630,16 +1710,34 @@ mod tests {
         );
     }
 
-    /// A click on the first rendered row must activate flat index 0, not a
-    /// different row — reproduces the reported drift where the renderer's
-    /// row 0 and the hit-test layout's row 0 disagreed once the tab bar
-    /// was missing from one of the two consumers.
+    /// A click on the first rendered *data* row must activate flat index 0,
+    /// not a different row — reproduces the reported drift where the
+    /// renderer's row 0 and the hit-test layout's row 0 disagreed once the
+    /// tab bar was missing from one of the two consumers. `rows[0]` here is
+    /// the "Commands" section header (`opened_palette_model` lands on the
+    /// All tab, which always titles its single section) — a display slot,
+    /// but not a `ModalRow`.
     #[test]
     fn row_click_activates_the_row_actually_rendered_there() {
         let model = opened_palette_model();
-        let row_rect =
-            with_modal_overlay_layout(&model, 1200, 800, 1.0, |_, layout| layout.rows[0])
-                .expect("expected an active modal");
+        let (header_rect, row_rect) =
+            with_modal_overlay_layout(&model, 1200, 800, 1.0, |_, layout| {
+                (layout.rows[0], layout.rows[1])
+            })
+            .expect("expected an active modal");
+
+        let header_pt = Point::new(
+            (header_rect.x + header_rect.w / 2) as f64,
+            (header_rect.y + header_rect.h / 2) as f64,
+        );
+        assert!(
+            !matches!(
+                hit_test_modal(&model, header_pt),
+                Some(HitTarget::ModalRow { .. })
+            ),
+            "a click on the section header must not activate a row"
+        );
+
         let pt = Point::new(
             (row_rect.x + row_rect.w / 2) as f64,
             (row_rect.y + row_rect.h / 2) as f64,
@@ -1649,7 +1747,7 @@ mod tests {
                 hit_test_modal(&model, pt),
                 Some(HitTarget::ModalRow { flat_index: 0 })
             ),
-            "expected a click on the first rendered row to hit ModalRow {{ flat_index: 0 }}"
+            "expected a click on the first rendered data row to hit ModalRow {{ flat_index: 0 }}"
         );
     }
 
