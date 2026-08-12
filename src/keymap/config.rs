@@ -383,6 +383,9 @@ impl FromStr for Command {
             "MarkdownTogglePreview" => Ok(Command::MarkdownTogglePreview),
             "MarkdownOpenPreviewToSide" => Ok(Command::MarkdownOpenPreviewToSide),
 
+            // Completion
+            "TriggerCompletionMenu" => Ok(Command::TriggerCompletionMenu),
+
             // Image viewer
             "ImageZoomIn" => Ok(Command::ImageZoomIn),
             "ImageZoomOut" => Ok(Command::ImageZoomOut),

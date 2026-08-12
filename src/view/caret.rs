@@ -39,16 +39,35 @@ pub fn active_text_input_rect(
         return None;
     }
 
+    let cursor = editor.active_cursor();
+    editor_text_rect_at(model, cursor.line, cursor.column, char_width, line_height)
+}
+
+/// The physical rect of an arbitrary `(line, column)` position in the
+/// focused plain-text editor — the same geometry `active_text_input_rect`
+/// uses for the live caret, generalized to any column so callers (e.g. the
+/// completion popup, anchored at the query start rather than the cursor)
+/// don't need their own copy of the viewport/layout math.
+pub fn editor_text_rect_at(
+    model: &AppModel,
+    line: usize,
+    column: usize,
+    char_width: f32,
+    line_height: usize,
+) -> Option<WidgetRect> {
+    let group = model.editor_area.focused_group()?;
+    let editor = model.editor_area.focused_editor()?;
+    let layout = GroupLayout::new(group, model, char_width);
+
     let document = editor
         .document_id
         .and_then(|id| model.editor_area.documents.get(&id))?;
-    let cursor = editor.active_cursor();
     let viewport = TextViewportMap::new(&editor.viewport, document.line_count());
-    let screen_row = viewport.visible_row_for_doc_line(cursor.line);
+    let screen_row = viewport.visible_row_for_doc_line(line);
     let y = screen_row
         .map(|row| layout.content_y() + row * line_height)
         .unwrap_or_else(|| {
-            if cursor.line < viewport.top_line() {
+            if line < viewport.top_line() {
                 layout.content_y()
             } else {
                 layout
@@ -57,8 +76,8 @@ pub fn active_text_input_rect(
             }
         });
 
-    let line = document.get_line_cow(cursor.line).unwrap_or_default();
-    let visual_col = char_col_to_visual_col(&line, cursor.column);
+    let text_line = document.get_line_cow(line).unwrap_or_default();
+    let visual_col = char_col_to_visual_col(&text_line, column);
     let x = column_to_pixel_x(
         visual_col,
         viewport.left_column(),

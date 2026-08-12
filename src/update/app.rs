@@ -430,6 +430,9 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             }
         }
         CommandId::OpenRecentFiles => update_ui(model, UiMsg::ToggleModal(ModalId::RecentFiles)),
+        CommandId::TriggerCompletionMenu => {
+            crate::update::update_completion(model, crate::messages::CompletionMsg::TriggerMenu)
+        }
         CommandId::Quit => update_app(model, AppMsg::Quit),
         #[cfg(debug_assertions)]
         CommandId::TogglePerfOverlay => Some(Cmd::TogglePerfOverlay),

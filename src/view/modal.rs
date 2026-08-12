@@ -1325,6 +1325,48 @@ fn cursor_overlay_anchor(model: &AppModel) -> Option<(usize, usize, usize)> {
     Some((rect.x, rect.y, rect.h))
 }
 
+/// Maps a completion item's kind onto the overlay surface's badge palette —
+/// the view-layer translation `completion::menu::MenuItemKind`'s doc comment
+/// points to, kept here rather than in `completion/menu.rs` so that module
+/// stays independent of `view`.
+fn completion_kind_badge(
+    kind: crate::completion::menu::MenuItemKind,
+) -> overlay_surface::CompletionKind {
+    use crate::completion::menu::MenuItemKind as K;
+    use overlay_surface::CompletionKind as B;
+    match kind {
+        K::Function => B::Function,
+        K::Variable => B::Variable,
+        K::Type => B::Type,
+        K::Keyword => B::Keyword,
+        K::Field => B::Field,
+        K::Module => B::Module,
+        K::Constant => B::Constant,
+        K::Other => B::Other,
+    }
+}
+
+/// Build the real Completion popup's rows from `UiState::completion_menu`,
+/// in filtered/sorted order.
+fn completion_rows(state: &crate::completion::CompletionMenuState) -> Vec<Row<'_>> {
+    state
+        .filtered
+        .iter()
+        .filter_map(|&(_, idx)| state.items.get(idx))
+        .map(|item| Row {
+            icon: RowIcon::KindBadge(completion_kind_badge(item.kind)),
+            label: &item.label,
+            // ponytail: no match-index highlighting yet — filter_and_sort
+            // only computes a score, not `fuzzy_indices` (the debug shell
+            // this replaces also passed `&[]`). Add if/when a real user
+            // notices Phase 1's popup not bolding the typed substring.
+            match_indices: &[],
+            detail: item.detail.as_deref(),
+            accessory: Accessory::None,
+        })
+        .collect()
+}
+
 /// Dummy rows exercising the Completion list shell (kind badges, dim
 /// signature accessory) — manual-testing content only; the real completion
 /// source is [autocomplete.md](autocomplete.md) Phase 1.
@@ -1399,9 +1441,52 @@ pub(crate) fn with_cursor_overlay_layout<R>(
     f: impl FnOnce(&OverlaySpec, &OverlayLayout) -> R,
 ) -> Option<R> {
     let state = model.ui.cursor_overlay?;
+
+    if state.kind == crate::model::CursorOverlayKind::Completion {
+        let menu = model.ui.completion_menu.as_ref()?;
+        let rect = super::caret::editor_text_rect_at(
+            model,
+            menu.query_start.line,
+            menu.query_start.column,
+            model.char_width,
+            model.line_height,
+        )?;
+        let rows = completion_rows(menu);
+        let sections = [Section {
+            title: None,
+            rows: &rows,
+        }];
+        let spec = OverlaySpec {
+            tabs: None,
+            anchor: Anchor::Cursor {
+                x: rect.x,
+                y: rect.y,
+                h: rect.h,
+                prefer_below: true,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 240.0,
+                    max: 320.0,
+                },
+            },
+            header: None,
+            body: Body::List {
+                sections: &sections,
+                selected: FlatIndex(state.selected.min(rows.len().saturating_sub(1))),
+                scroll: state.scroll,
+                max_visible: overlay_surface::MAX_VISIBLE_COMPLETION,
+            },
+            footer: None,
+            hover_row: None,
+        };
+        let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+        return Some(f(&spec, &l));
+    }
+
     let (x, y, h) = cursor_overlay_anchor(model)?;
 
     match state.kind {
+        crate::model::CursorOverlayKind::Completion => unreachable!("handled above"),
         crate::model::CursorOverlayKind::DebugCompletion => {
             let rows = debug_completion_rows();
             let sections = [Section {

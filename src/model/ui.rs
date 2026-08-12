@@ -587,6 +587,9 @@ pub enum CursorOverlayKind {
     DebugCompletion,
     /// Demonstrates the hover `Zones` card (banner/code/text).
     DebugHover,
+    /// The real menu-completion popup (autocomplete.md Phase 1), backed by
+    /// `UiState::completion_menu`.
+    Completion,
 }
 
 /// State for a cursor-anchored popup (`ui.cursor_overlay`), distinct from
@@ -844,6 +847,10 @@ pub struct UiState {
     /// Cursor-anchored popup (completion/hover/debug demo), if one is open.
     /// Distinct from `active_modal` — see `CursorOverlayState`.
     pub cursor_overlay: Option<CursorOverlayState>,
+    /// Menu-completion popup state (autocomplete.md Phase 1), set alongside
+    /// `cursor_overlay` being `Some(CursorOverlayKind::Completion)`. `None`
+    /// whenever the completion popup is closed.
+    pub completion_menu: Option<crate::completion::CompletionMenuState>,
 }
 
 impl UiState {
@@ -870,6 +877,7 @@ impl UiState {
             previous_cursor_lines: Vec::new(),
             modal_hover_row: None,
             cursor_overlay: None,
+            completion_menu: None,
         }
     }
 

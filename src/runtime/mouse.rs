@@ -421,6 +421,7 @@ pub fn handle_mouse_press(
         && !matches!(target, HitTarget::CursorOverlay { .. })
     {
         model.ui.cursor_overlay = None;
+        model.ui.completion_menu = None;
         true
     } else {
         false
@@ -1254,6 +1255,12 @@ pub fn handle_mouse_wheel(
             if v_delta == 0 {
                 return None;
             }
+            let completion_rows = model
+                .ui
+                .completion_menu
+                .as_ref()
+                .map(|m| m.filtered.len())
+                .unwrap_or(0);
             let Some(state) = &mut model.ui.cursor_overlay else {
                 return None;
             };
@@ -1263,15 +1270,14 @@ pub fn handle_mouse_wheel(
                         .saturating_sub(token::view::overlay_surface::MAX_VISIBLE_COMPLETION)
                 }
                 token::model::CursorOverlayKind::DebugHover => 0,
+                token::model::CursorOverlayKind::Completion => completion_rows
+                    .saturating_sub(token::view::overlay_surface::MAX_VISIBLE_COMPLETION),
             };
             let delta = v_delta.signum() * 3;
             state.scroll = if delta < 0 {
                 state.scroll.saturating_sub(delta.unsigned_abs() as usize)
             } else {
-                state
-                    .scroll
-                    .saturating_add(delta as usize)
-                    .min(max_scroll)
+                state.scroll.saturating_add(delta as usize).min(max_scroll)
             };
             Some(Cmd::Redraw)
         }

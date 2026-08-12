@@ -17,8 +17,8 @@ use winit::keyboard::{Key, NamedKey};
 
 use token::commands::Cmd;
 use token::messages::{
-    CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, OutlineMsg, TerminalMsg,
-    UiMsg, WorkspaceMsg,
+    CompletionMsg, CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, OutlineMsg,
+    TerminalMsg, UiMsg, WorkspaceMsg,
 };
 use token::model::{AppModel, ModalState};
 use token::panel::{DockPosition, PanelId};
@@ -293,6 +293,29 @@ pub(crate) fn handle_cursor_overlay_key(model: &mut AppModel, key: &Key) -> Opti
         model.ui.cursor_overlay = None;
         return None;
     }
+    if kind == token::model::CursorOverlayKind::Completion {
+        // The real menu-completion popup (autocomplete.md Phase 1) routes
+        // through `update()` like every other message, instead of poking
+        // `cursor_overlay.selected` directly the way the demo shell below
+        // does — `MenuNext`/`MenuPrev`/`AcceptMenuItem`/`Dismiss` own the
+        // actual list-navigation/accept/dismiss logic.
+        return match key {
+            Key::Named(NamedKey::ArrowUp) => {
+                Some(update(model, Msg::Completion(CompletionMsg::MenuPrev)))
+            }
+            Key::Named(NamedKey::ArrowDown) => {
+                Some(update(model, Msg::Completion(CompletionMsg::MenuNext)))
+            }
+            Key::Named(NamedKey::Enter | NamedKey::Tab) => Some(update(
+                model,
+                Msg::Completion(CompletionMsg::AcceptMenuItem),
+            )),
+            Key::Named(NamedKey::Escape) => {
+                Some(update(model, Msg::Completion(CompletionMsg::Dismiss)))
+            }
+            _ => None,
+        };
+    }
     let state = model.ui.cursor_overlay.as_mut()?;
     match key {
         Key::Named(NamedKey::ArrowUp) => {
@@ -325,6 +348,9 @@ fn row_count_for(kind: token::model::CursorOverlayKind) -> usize {
     match kind {
         CursorOverlayKind::DebugCompletion => token::view::modal::debug_completion_row_count(),
         CursorOverlayKind::DebugHover => 0,
+        // Handled earlier in `handle_cursor_overlay_key` (routes through
+        // `update()` instead of this raw index math).
+        CursorOverlayKind::Completion => 0,
     }
 }
 

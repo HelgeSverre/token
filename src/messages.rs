@@ -862,6 +862,23 @@ pub enum Msg {
     TextEdit(EditContext, TextEditMsg),
     /// Terminal panel messages
     Terminal(TerminalMsg),
+    /// Menu completion messages (autocomplete.md Phase 1)
+    Completion(CompletionMsg),
+}
+
+/// Menu completion messages (autocomplete.md Phase 1: "words + snippets,
+/// fully offline"). Inline-suggestion messages (`TriggerInline`,
+/// `AcceptInline`, ...) aren't here yet — that's Phase 2.
+#[derive(Debug, Clone)]
+pub enum CompletionMsg {
+    /// Ctrl+Space or any other explicit-trigger binding.
+    TriggerMenu,
+    MenuNext,
+    MenuPrev,
+    /// Enter/Tab while the menu is visible.
+    AcceptMenuItem,
+    /// Escape, or any dismiss-causing edit/cursor-move.
+    Dismiss,
 }
 
 // Convenience constructors for common messages

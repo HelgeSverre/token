@@ -56,7 +56,7 @@ fn redraw_with_syntax_parse_shift(
 ///
 /// Uses direct character indexing instead of collecting to String/Vec to avoid
 /// allocating the entire document prefix (which could be megabytes for large files).
-fn word_start_before(buffer: &ropey::Rope, offset: usize) -> usize {
+pub(crate) fn word_start_before(buffer: &ropey::Rope, offset: usize) -> usize {
     if offset == 0 {
         return 0;
     }

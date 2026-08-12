@@ -6,6 +6,7 @@
 pub mod cli;
 pub mod command_history;
 pub mod commands;
+pub mod completion;
 pub mod config;
 pub mod config_paths;
 pub mod csv;

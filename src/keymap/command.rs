@@ -4,8 +4,8 @@
 //! Each command maps to one or more `Msg` values for the Elm-style update loop.
 
 use crate::messages::{
-    AppMsg, CsvMsg, Direction, DockMsg, DocumentMsg, EditorMsg, ImageMsg, LayoutMsg, Msg,
-    PreviewMsg, UiMsg, WorkspaceMsg,
+    AppMsg, CompletionMsg, CsvMsg, Direction, DockMsg, DocumentMsg, EditorMsg, ImageMsg, LayoutMsg,
+    Msg, PreviewMsg, UiMsg, WorkspaceMsg,
 };
 use crate::model::editor_area::SplitDirection;
 use crate::model::ModalId;
@@ -262,6 +262,12 @@ pub enum Command {
     CsvPageDown,
     CsvExit,
 
+    // ========================================================================
+    // Completion (autocomplete.md Phase 1)
+    // ========================================================================
+    /// Explicitly open the menu-completion popup (Ctrl+Space)
+    TriggerCompletionMenu,
+
     // Image viewer
     /// Zoom in (image mode)
     ImageZoomIn,
@@ -466,6 +472,9 @@ impl Command {
             CsvPageDown => vec![Msg::Csv(CsvMsg::PageDown)],
             CsvExit => vec![Msg::Csv(CsvMsg::Exit)],
 
+            // Completion
+            TriggerCompletionMenu => vec![Msg::Completion(CompletionMsg::TriggerMenu)],
+
             // Image viewer
             ImageZoomIn => vec![Msg::Image(ImageMsg::Zoom {
                 delta: 1.0,
@@ -632,6 +641,8 @@ impl Command {
             CsvPageUp => "CSV Page Up",
             CsvPageDown => "CSV Page Down",
             CsvExit => "Exit CSV View",
+
+            TriggerCompletionMenu => "Trigger Completion",
 
             ImageZoomIn => "Image: Zoom In",
             ImageZoomOut => "Image: Zoom Out",

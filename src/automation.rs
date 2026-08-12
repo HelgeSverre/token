@@ -76,6 +76,35 @@ pub(crate) struct EditorSnapshot {
     /// Marks-lane gutter state for each visible line, per
     /// editor-decorations.md. Empty today — no mark producer is wired yet.
     pub gutter_marks: Vec<GutterMarkSnapshot>,
+    /// The menu-completion popup (autocomplete.md Phase 1), if open —
+    /// `None` when no completion popup is showing.
+    pub completion: Option<CompletionSnapshot>,
+}
+
+/// A read-only view of the menu-completion popup, for automation to drive
+/// type -> filter -> accept flows without a rendering backend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CompletionSnapshot {
+    pub item_count: usize,
+    pub selected: usize,
+    /// Labels in filtered/sorted (i.e. on-screen) order.
+    pub items: Vec<String>,
+}
+
+fn completion_snapshot(model: &AppModel) -> Option<CompletionSnapshot> {
+    let menu = model.ui.completion_menu.as_ref()?;
+    let selected = model.ui.cursor_overlay.map(|o| o.selected).unwrap_or(0);
+    let items = menu
+        .filtered
+        .iter()
+        .filter_map(|&(_, idx)| menu.items.get(idx))
+        .map(|item| item.label.clone())
+        .collect::<Vec<_>>();
+    Some(CompletionSnapshot {
+        item_count: items.len(),
+        selected,
+        items,
+    })
 }
 
 /// One line's gutter mark, as reported to automation.
@@ -220,6 +249,7 @@ impl EditorSnapshot {
             viewport_left_column: viewport.left_column,
             overlay: model.ui.active_modal.as_ref().and_then(overlay_snapshot),
             gutter_marks: gutter_marks_snapshot(document, viewport),
+            completion: completion_snapshot(model),
         }
     }
 }

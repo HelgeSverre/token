@@ -3,6 +3,7 @@
 //! All state transformations flow through these functions.
 
 mod app;
+mod completion;
 mod csv;
 mod dock;
 mod document;
@@ -28,6 +29,7 @@ use crate::tracing::CursorSnapshot;
 use tracing::{debug, span, Level};
 
 pub use app::{create_default_keymap_file, execute_command, update_app};
+pub use completion::update_completion;
 pub use csv::update_csv;
 pub use dock::update_dock;
 pub use document::update_document;
@@ -61,6 +63,14 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
 fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     let result = match msg {
         Msg::Editor(m) => {
+            // Any cursor/selection movement invalidates the completion
+            // query (autocomplete.md dismiss rule: "cursor line change").
+            // Up/Down/Enter/Tab/Escape never reach here while the menu is
+            // open — they're claimed by the pre-keymap cursor-overlay
+            // branch in runtime/input.rs before an `EditorMsg` is ever
+            // built, so this only fires for keys that should dismiss.
+            completion::dismiss(model);
+
             // Block editor messages in image mode and binary placeholder mode
             let is_non_text = model.editor_area.focused_editor().is_some_and(|e| {
                 e.view_mode.is_image()
@@ -112,7 +122,9 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
                 }
                 return None;
             }
-            document::update_document(model, m)
+            let result = document::update_document(model, m.clone());
+            let completion_cmd = completion::sync_after_document_edit(model, &m);
+            merge_cmds(result, completion_cmd)
         }
         Msg::Ui(m) => ui::update_ui(model, m),
         Msg::Layout(m) => layout::update_layout(model, m),
@@ -126,10 +138,24 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::Outline(m) => outline::update_outline(model, m),
         Msg::TextEdit(context, m) => text_edit::update_text_edit(model, context, m),
         Msg::Terminal(m) => terminal::update_terminal(model, m),
+        Msg::Completion(m) => completion::update_completion(model, m),
     };
 
     sync_status_bar(model);
     result
+}
+
+/// Combine two independently-produced `Cmd`s into one, batching when both
+/// are present. Used where a message can both perform its own effect (e.g.
+/// document edit + redraw/syntax-parse) and trigger a side effect elsewhere
+/// (e.g. the completion menu opening/closing) that also wants to redraw.
+fn merge_cmds(a: Option<Cmd>, b: Option<Cmd>) -> Option<Cmd> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(Cmd::Batch(vec![a, b])),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
 }
 
 /// Map text editor movement messages to CSV navigation messages
@@ -253,5 +279,6 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Outline(m) => format!("Outline::{:?}", m),
         Msg::TextEdit(ctx, m) => format!("TextEdit::{:?}::{:?}", ctx, m),
         Msg::Terminal(m) => format!("Terminal::{:?}", m),
+        Msg::Completion(m) => format!("Completion::{:?}", m),
     }
 }

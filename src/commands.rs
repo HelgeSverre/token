@@ -81,6 +81,9 @@ pub enum CommandId {
     // Recent files
     OpenRecentFiles,
 
+    // Completion (autocomplete.md Phase 1)
+    TriggerCompletionMenu,
+
     // Application
     Quit,
 
@@ -353,6 +356,12 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: Some("⌘E"),
     },
     CommandDef {
+        id: CommandId::TriggerCompletionMenu,
+        category: CommandCategory::Edit,
+        label: "Trigger Completion",
+        keybinding: Some("⌃Space"),
+    },
+    CommandDef {
         id: CommandId::Quit,
         category: CommandCategory::System,
         label: "Quit",
@@ -435,6 +444,7 @@ impl CommandId {
             CommandId::CopyAbsolutePath => None,
             CommandId::CopyRelativePath => None,
             CommandId::OpenRecentFiles => Some(KeymapCommand::OpenRecentFiles),
+            CommandId::TriggerCompletionMenu => Some(KeymapCommand::TriggerCompletionMenu),
             CommandId::Quit => Some(KeymapCommand::Quit),
             #[cfg(debug_assertions)]
             CommandId::TogglePerfOverlay => None,
