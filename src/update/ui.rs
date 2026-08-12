@@ -94,9 +94,10 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                     state.files_available = model.workspace.is_some();
                     resolve_palette_rows(&mut state, &model.command_history);
                     state.active_tab = SearchTab::All;
-                    if state.files.is_none() {
-                        state.files = build_file_finder_state(model, &state.input());
-                    }
+                    // Rebuild (not just lazily fill) on every open — the
+                    // workspace/file tree may have changed since the index
+                    // was last cached in `last_command_palette`.
+                    state.files = build_file_finder_state(model, &state.input());
                     ModalState::CommandPalette(state)
                 }
                 ModalId::GotoLine => ModalState::GotoLine(GotoLineState::default()),
@@ -145,9 +146,8 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             state.files_available = model.workspace.is_some();
             resolve_palette_rows(&mut state, &model.command_history);
             state.active_tab = SearchTab::Files;
-            if state.files.is_none() {
-                state.files = build_file_finder_state(model, &state.input());
-            }
+            // Rebuild on every open, see `ToggleModal`'s CommandPalette arm.
+            state.files = build_file_finder_state(model, &state.input());
             model.ui.open_modal(ModalState::CommandPalette(state));
             Some(Cmd::Redraw)
         }
@@ -297,9 +297,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             state.files_available = model.workspace.is_some();
             resolve_palette_rows(&mut state, &model.command_history);
             state.active_tab = SearchTab::All;
-            if state.files.is_none() {
-                state.files = build_file_finder_state(model, &state.input());
-            }
+            // Rebuild on every open, see `UiMsg::ToggleModal`'s CommandPalette arm.
+            state.files = build_file_finder_state(model, &state.input());
             model.ui.open_modal(ModalState::CommandPalette(state));
             Some(Cmd::Redraw)
         }
