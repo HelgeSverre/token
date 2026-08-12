@@ -1287,7 +1287,11 @@ pub fn render_drop_overlay(
             dim_alpha: 0x80,
         },
         header: None,
-        body: Body::Zones { text: &text },
+        body: Body::Zones(overlay_surface::Zones {
+            banner: None,
+            code: None,
+            text: Some(&text),
+        }),
         footer: None,
         hover_row: None,
     };
@@ -1302,6 +1306,184 @@ pub fn render_drop_overlay(
         window_height,
         model.metrics.scale_factor,
         model.ui.cursor_visible,
+    );
+}
+
+// ============================================================================
+// Cursor-anchored popups (overlay-surface.md Phase 5)
+// ============================================================================
+
+/// The (physical-px) anchor point for a cursor-anchored popup: the text
+/// caret's rect, per overlay-surface.md Phase 5 ("pixel rect from view
+/// geometry ... `active_text_input_rect`"). `None` when there's no live text
+/// caret to anchor to (no modal is open, so this reduces to the editor
+/// caret).
+fn cursor_overlay_anchor(model: &AppModel) -> Option<(usize, usize)> {
+    let rect = super::caret::active_text_input_rect(model, model.char_width, model.line_height)?;
+    Some((rect.x, rect.y + rect.h))
+}
+
+/// Dummy rows exercising the Completion list shell (kind badges, dim
+/// signature accessory) — manual-testing content only; the real completion
+/// source is [autocomplete.md](autocomplete.md) Phase 1.
+fn debug_completion_rows() -> Vec<Row<'static>> {
+    const ITEMS: &[(overlay_surface::CompletionKind, &str, &str)] = &[
+        (
+            overlay_surface::CompletionKind::Function,
+            "to_string",
+            "fn() -> String",
+        ),
+        (
+            overlay_surface::CompletionKind::Function,
+            "trim",
+            "fn() -> &str",
+        ),
+        (overlay_surface::CompletionKind::Variable, "value", "i32"),
+        (overlay_surface::CompletionKind::Type, "String", "struct"),
+        (overlay_surface::CompletionKind::Keyword, "match", "keyword"),
+        (overlay_surface::CompletionKind::Field, "len", "usize"),
+        (
+            overlay_surface::CompletionKind::Module,
+            "std::fmt",
+            "module",
+        ),
+        (overlay_surface::CompletionKind::Constant, "MAX", "usize"),
+    ];
+    ITEMS
+        .iter()
+        .map(|&(kind, label, detail)| Row {
+            icon: RowIcon::KindBadge(kind),
+            label,
+            match_indices: &[],
+            detail: Some(detail),
+            accessory: Accessory::None,
+        })
+        .collect()
+}
+
+/// Row count of the debug Completion demo — `runtime::input`'s cursor-
+/// overlay key branch needs this to wrap Up/Down without duplicating (or
+/// importing) the row content itself.
+pub fn debug_completion_row_count() -> usize {
+    debug_completion_rows().len()
+}
+
+/// Dummy content exercising the hover `Zones` card (banner/code/text,
+/// severity conventions) — manual-testing content only; the real hover
+/// source is [lsp-integration.md](lsp-integration.md) Phase 4.
+fn debug_hover_zones() -> overlay_surface::Zones<'static> {
+    overlay_surface::Zones {
+        banner: Some((
+            overlay_surface::Severity::Warning,
+            "unused variable: `x`",
+            "rustc",
+        )),
+        code: Some("fn foo(x: i32) -> i32"),
+        text: Some("This value is never read.\nConsider prefixing with an underscore: `_x`."),
+    }
+}
+
+/// Build the cursor-overlay `OverlaySpec` for whichever demo kind is open,
+/// call `overlay_surface::layout()` on it, and hand both to `f` — mirrors
+/// `with_modal_overlay_layout`'s one-layout-two-consumers shape so render
+/// and hit-testing can't disagree on geometry. Content here is static (no
+/// per-frame temporaries), so unlike the modal version there's no need for a
+/// separate placeholder-content path.
+pub(crate) fn with_cursor_overlay_layout<R>(
+    model: &AppModel,
+    window_width: usize,
+    window_height: usize,
+    scale_factor: f64,
+    f: impl FnOnce(&OverlaySpec, &OverlayLayout) -> R,
+) -> Option<R> {
+    let state = model.ui.cursor_overlay?;
+    let (x, y) = cursor_overlay_anchor(model)?;
+
+    match state.kind {
+        crate::model::CursorOverlayKind::DebugCompletion => {
+            let rows = debug_completion_rows();
+            let sections = [Section {
+                title: None,
+                rows: &rows,
+            }];
+            let spec = OverlaySpec {
+                tabs: None,
+                anchor: Anchor::Cursor {
+                    x,
+                    y,
+                    prefer_below: true,
+                    width: WidthRule {
+                        pct: 0.0,
+                        min: 240.0,
+                        max: 320.0,
+                    },
+                },
+                header: None,
+                body: Body::List {
+                    sections: &sections,
+                    selected: FlatIndex(state.selected.min(rows.len().saturating_sub(1))),
+                    scroll: state.scroll,
+                    max_visible: overlay_surface::MAX_VISIBLE_COMPLETION,
+                },
+                footer: None,
+                hover_row: None,
+            };
+            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            Some(f(&spec, &l))
+        }
+        crate::model::CursorOverlayKind::DebugHover => {
+            let spec = OverlaySpec {
+                tabs: None,
+                anchor: Anchor::Cursor {
+                    x,
+                    y,
+                    prefer_below: true,
+                    width: WidthRule {
+                        pct: 0.0,
+                        min: 280.0,
+                        max: 420.0,
+                    },
+                },
+                header: None,
+                body: Body::Zones(debug_hover_zones()),
+                footer: None,
+                hover_row: None,
+            };
+            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            Some(f(&spec, &l))
+        }
+    }
+}
+
+/// Render the active cursor-anchored popup (completion/hover shells;
+/// currently debug-demo content only — see `with_cursor_overlay_layout`).
+pub fn render_cursor_overlay(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    window_width: usize,
+    window_height: usize,
+    mask_cache: &mut RoundedRectMaskCache,
+) {
+    let scale_factor = model.metrics.scale_factor;
+    with_cursor_overlay_layout(
+        model,
+        window_width,
+        window_height,
+        scale_factor,
+        |spec, _l| {
+            overlay_surface::render(
+                frame,
+                painter,
+                mask_cache,
+                &model.theme.overlay,
+                spec,
+                window_width,
+                window_height,
+                scale_factor,
+                model.ui.cursor_visible,
+            );
+        },
     );
 }
 

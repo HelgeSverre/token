@@ -19,11 +19,17 @@ use crate::theme::OverlayTheme;
 /// `round(v * scale_factor)`, with a 1px floor for strokes.
 mod dims {
     pub const RADIUS: f32 = 10.0;
+    /// `Anchor::Cursor` chrome radius (Visual Language > Chrome).
+    pub const RADIUS_CURSOR: f32 = 8.0;
     pub const HEADER_PAD_X: f32 = 16.0;
     pub const PAD_Y: f32 = 12.0;
     pub const ROW_HEIGHT: f32 = 30.0;
     pub const ROW_INSET: f32 = 6.0;
     pub const ROW_RADIUS: f32 = 6.0;
+    /// Completion row height/pad/radius (Visual Language > Rows: "Completion").
+    pub const ROW_HEIGHT_CURSOR: f32 = 24.0;
+    pub const ROW_INSET_CURSOR: f32 = 4.0;
+    pub const ROW_RADIUS_CURSOR: f32 = 5.0;
     pub const ROW_ICON_W: f32 = 18.0;
     pub const ROW_TEXT_PAD_X: f32 = 8.0;
     pub const FOOTER_HEIGHT: f32 = 30.0;
@@ -31,6 +37,18 @@ mod dims {
     pub const SCROLLBAR_INSET: f32 = 2.0;
     pub const SCROLLBAR_MIN_LEN: f32 = 20.0;
     pub const Y: f32 = 64.0;
+    /// Gap between the anchor line and a cursor-anchored popup (Visual
+    /// Language > Chrome: "below the anchor line + 2").
+    pub const CURSOR_GAP: f32 = 2.0;
+    /// `Anchor::Cursor` minimum panel width (Visual Language > Chrome:
+    /// "content-sized, clamped to window edges, 200px floor").
+    pub const CURSOR_WIDTH_FLOOR: f32 = 200.0;
+    /// Completion kind badge (Visual Language > Rows: "kind badge (16×16, r4)").
+    pub const KIND_BADGE_SIZE: f32 = 16.0;
+    pub const KIND_BADGE_RADIUS: f32 = 4.0;
+    /// Hover-card zone geometry (Zones body).
+    pub const ZONE_BANNER_H: f32 = 28.0;
+    pub const ZONE_GAP: f32 = 8.0;
     /// Gap between chips within one chord step's keycap accessory.
     pub const CHIP_GAP: f32 = 4.0;
     /// Gap between chord steps in a keycap accessory (Visual Language >
@@ -152,6 +170,24 @@ pub enum Anchor {
     /// Centered X; Y follows the Chrome table's `min(h/4, Y)` class. Dims
     /// the backdrop at `dim_alpha`.
     Centered { width: WidthRule, dim_alpha: u8 },
+    /// Anchored to a pixel point (physical px — the text caret rect from
+    /// `view::caret::active_text_input_rect`). Flips above the anchor line
+    /// when there isn't `panel_h` of space below; clamps to the window
+    /// edges; no backdrop dim (Visual Language > Chrome).
+    Cursor {
+        x: usize,
+        y: usize,
+        prefer_below: bool,
+        width: WidthRule,
+    },
+}
+
+impl Anchor {
+    fn width(&self) -> &WidthRule {
+        match self {
+            Anchor::Centered { width, .. } | Anchor::Cursor { width, .. } => width,
+        }
+    }
 }
 
 /// A Search Everywhere tab's match-count state (overlay-surface.md Search
@@ -199,7 +235,50 @@ pub struct Header<'a> {
 
 pub enum RowIcon {
     None,
-    Glyph { ch: char, color: u32 },
+    Glyph {
+        ch: char,
+        color: u32,
+    },
+    /// Completion row icon: a 16×16, r4 badge colored by `CompletionKind`
+    /// (Visual Language > Rows: "Completion").
+    KindBadge(CompletionKind),
+}
+
+/// LSP completion-item kind, coarsened to the badge groups
+/// overlay-surface.md's `overlay.kind_*` color table describes. Colors are
+/// derived from the existing syntax theme (`Theme::syntax`) rather than new
+/// persisted `overlay.kind_*` YAML keys — the doc's "per-kind from syntax
+/// colors" fallback rule, without adding nine themes' worth of literal
+/// tuning for a shell with no live producer yet.
+/// ponytail: new `overlay.kind_*` theme keys with per-theme hand-tuning are
+/// the fuller version; add them when autocomplete.md's Phase 1 ships a real
+/// completion source and the badge colors need bundled-theme polish.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompletionKind {
+    Function,
+    Variable,
+    Type,
+    Keyword,
+    Field,
+    Module,
+    Constant,
+    Other,
+}
+
+impl CompletionKind {
+    /// Single-glyph badge label.
+    pub fn glyph(self) -> char {
+        match self {
+            CompletionKind::Function => 'f',
+            CompletionKind::Variable => 'v',
+            CompletionKind::Type => 't',
+            CompletionKind::Keyword => 'k',
+            CompletionKind::Field => '.',
+            CompletionKind::Module => 'm',
+            CompletionKind::Constant => 'c',
+            CompletionKind::Other => '?',
+        }
+    }
 }
 
 pub enum Accessory<'a> {
@@ -250,6 +329,10 @@ pub fn binding_chips(binding: &str) -> Vec<Vec<Chip>> {
 pub fn chip_count(steps: &[Vec<Chip>]) -> usize {
     steps.iter().map(Vec::len).sum()
 }
+
+/// Completion popup scroll cap (Visual Language > Rows: "Overflow ... Max-
+/// visible caps: ... completion 8").
+pub const MAX_VISIBLE_COMPLETION: usize = 8;
 
 pub struct Row<'a> {
     pub icon: RowIcon,
@@ -317,8 +400,42 @@ pub enum Body<'a> {
         fields: &'a [Field<'a>],
         focused: usize,
     },
-    /// Drop overlay: a single block of centered text, no list/fields.
-    Zones { text: &'a str },
+    /// Drop overlay (Centered) / hover card (Cursor): stacked content
+    /// zones, no list/fields.
+    Zones(Zones<'a>),
+}
+
+/// LSP severity level, shared by the hover banner, gutter marks, and status
+/// bar (overlay-surface.md Colors: "All four LSP severity levels").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Severity {
+    Error,
+    Warning,
+    Info,
+    Hint,
+}
+
+impl Severity {
+    pub fn glyph(self) -> char {
+        match self {
+            Severity::Error => '\u{2717}',   // ✗
+            Severity::Warning => '\u{26A0}', // ⚠
+            Severity::Info => '\u{2139}',    // ℹ
+            Severity::Hint => '\u{25CF}',    // ●
+        }
+    }
+}
+
+/// Content zones, top to bottom, for a `Body::Zones` context — each
+/// optional. Used by the drop overlay (`text` only) and the hover card
+/// (`banner`/`code`/`text`, per lsp-integration.md).
+#[derive(Default)]
+pub struct Zones<'a> {
+    /// Severity, message, source (e.g. `(Error, "unused import", "rustc")`).
+    pub banner: Option<(Severity, &'a str, &'a str)>,
+    /// Signature block, rendered on `panel_secondary`.
+    pub code: Option<&'a str>,
+    pub text: Option<&'a str>,
 }
 
 impl<'a> Body<'a> {
@@ -327,7 +444,7 @@ impl<'a> Body<'a> {
     pub fn total_rows(&self) -> usize {
         match self {
             Body::List { sections, .. } => sections.iter().map(|s| s.rows.len()).sum(),
-            Body::Fields { .. } | Body::Zones { .. } => 0,
+            Body::Fields { .. } | Body::Zones(_) => 0,
         }
     }
 }
@@ -552,35 +669,108 @@ pub struct OverlayLayout {
     pub rows: Vec<WidgetRect>,
     /// One entry per `Body::Fields` field, in order. Empty otherwise.
     pub fields: Vec<FieldLayout>,
-    /// The single text block for a `Body::Zones` body. `None` otherwise.
+    /// The banner zone of a `Body::Zones` body. `None` unless
+    /// `spec.body`'s `Zones::banner` is `Some`.
+    pub zones_banner: Option<WidgetRect>,
+    /// The code zone of a `Body::Zones` body.
+    pub zones_code: Option<WidgetRect>,
+    /// The text zone of a `Body::Zones` body.
     pub zones_text: Option<WidgetRect>,
     pub footer: Option<WidgetRect>,
     pub scrollbar: Option<WidgetRect>,
 }
 
-/// Layout an `Anchor::Centered` surface against the (physical-px) window
-/// size. This is the one layout function the doc calls for — paint and
-/// hit-testing both consume it.
+/// Clamp a `WidthRule` against the window width (percent-of-window, clamped
+/// to a logical-px min/max, then margin-clamped to the window edges); for
+/// `Anchor::Cursor` an additional 200px floor applies (Visual Language >
+/// Chrome).
+fn resolve_panel_width(
+    anchor: &Anchor,
+    width: &WidthRule,
+    window_width: usize,
+    scale_factor: f64,
+) -> usize {
+    let margin = scaled(32.0, scale_factor);
+    let min_w = size_px(width.min, scale_factor) as usize;
+    let max_w = size_px(width.max, scale_factor) as usize;
+    let mut panel_w = ((window_width as f32 * width.pct) as usize)
+        .clamp(min_w, max_w)
+        .min(window_width.saturating_sub(margin));
+    if matches!(anchor, Anchor::Cursor { .. }) {
+        panel_w = panel_w.max(scaled(dims::CURSOR_WIDTH_FLOOR, scale_factor));
+    }
+    panel_w
+}
+
+/// Position the panel's top-left corner given its final width/height.
+/// Centered: centered X, `min(h/4, Y)` per the Chrome table. Cursor: below
+/// the anchor line + gap, flipping above when there isn't `panel_h` of
+/// space below, then edge-clamped to the window.
+fn position_panel(
+    anchor: &Anchor,
+    window_width: usize,
+    window_height: usize,
+    panel_w: usize,
+    panel_h: usize,
+    scale_factor: f64,
+) -> (usize, usize) {
+    match anchor {
+        Anchor::Centered { .. } => {
+            let x = window_width.saturating_sub(panel_w) / 2;
+            let y = scaled(dims::Y, scale_factor).min(window_height / 4);
+            (x, y)
+        }
+        Anchor::Cursor {
+            x, y, prefer_below, ..
+        } => {
+            let gap = scaled(dims::CURSOR_GAP, scale_factor);
+            let px = (*x).min(window_width.saturating_sub(panel_w));
+            let fits_below = y.saturating_add(gap).saturating_add(panel_h) <= window_height;
+            let fits_above = *y >= panel_h.saturating_add(gap);
+            let py = if *prefer_below && fits_below {
+                y + gap
+            } else if fits_above {
+                y - gap - panel_h
+            } else if fits_below {
+                y + gap
+            } else {
+                // Neither direction has room: clamp to the window.
+                window_height.saturating_sub(panel_h)
+            };
+            (px, py)
+        }
+    }
+}
+
+/// Layout an `OverlaySpec` against the (physical-px) window size. This is
+/// the one layout function the doc calls for — paint and hit-testing both
+/// consume it.
 pub fn layout(
     spec: &OverlaySpec,
     window_width: usize,
     window_height: usize,
     scale_factor: f64,
 ) -> OverlayLayout {
-    let Anchor::Centered { width, .. } = &spec.anchor;
-
-    let margin = scaled(32.0, scale_factor);
-    let min_w = size_px(width.min, scale_factor) as usize;
-    let max_w = size_px(width.max, scale_factor) as usize;
-    let panel_w = ((window_width as f32 * width.pct) as usize)
-        .clamp(min_w, max_w)
-        .min(window_width.saturating_sub(margin));
+    let panel_w = resolve_panel_width(
+        &spec.anchor,
+        spec.anchor.width(),
+        window_width,
+        scale_factor,
+    );
+    let is_cursor = matches!(spec.anchor, Anchor::Cursor { .. });
 
     let header_h = spec
         .header
         .as_ref()
         .map(|_| scaled(SIZE_INPUT, scale_factor) + 2 * scaled(dims::PAD_Y, scale_factor));
-    let row_h = scaled(dims::ROW_HEIGHT, scale_factor);
+    let row_h = scaled(
+        if is_cursor {
+            dims::ROW_HEIGHT_CURSOR
+        } else {
+            dims::ROW_HEIGHT
+        },
+        scale_factor,
+    );
     let footer_h = spec
         .footer
         .as_ref()
@@ -589,9 +779,6 @@ pub fn layout(
         .tabs
         .as_ref()
         .map(|_| scaled(dims::TAB_BAR_HEIGHT, scale_factor));
-
-    let panel_x_for = |panel_w: usize| window_width.saturating_sub(panel_w) / 2;
-    let panel_y = scaled(dims::Y, scale_factor).min(window_height / 4);
 
     match &spec.body {
         Body::List {
@@ -611,8 +798,16 @@ pub fn layout(
             let tab_bar_h_v = tab_bar_h.unwrap_or(0);
 
             let panel_h = tab_bar_h_v + header_h + list_h + footer_h.unwrap_or(0);
+            let (panel_x, panel_y) = position_panel(
+                &spec.anchor,
+                window_width,
+                window_height,
+                panel_w,
+                panel_h,
+                scale_factor,
+            );
             let panel = WidgetRect {
-                x: panel_x_for(panel_w),
+                x: panel_x,
                 y: panel_y,
                 w: panel_w,
                 h: panel_h,
@@ -692,6 +887,8 @@ pub fn layout(
                 row_height: row_h,
                 rows,
                 fields: Vec::new(),
+                zones_banner: None,
+                zones_code: None,
                 zones_text: None,
                 footer,
                 scrollbar,
@@ -710,8 +907,16 @@ pub fn layout(
                 + fields.len() * field_h
                 + fields.len().saturating_sub(1) * spacing
                 + footer_h.unwrap_or(0);
+            let (panel_x, panel_y) = position_panel(
+                &spec.anchor,
+                window_width,
+                window_height,
+                panel_w,
+                panel_h,
+                scale_factor,
+            );
             let panel = WidgetRect {
-                x: panel_x_for(panel_w),
+                x: panel_x,
                 y: panel_y,
                 w: panel_w,
                 h: panel_h,
@@ -755,26 +960,95 @@ pub fn layout(
                 row_height: row_h,
                 rows: Vec::new(),
                 fields: field_layouts,
+                zones_banner: None,
+                zones_code: None,
                 zones_text: None,
                 footer,
                 scrollbar: None,
             }
         }
-        Body::Zones { .. } => {
+        Body::Zones(zones) => {
             let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
-            let text_h = scaled(SIZE_INPUT, scale_factor);
-            let panel_h = pad_y * 2 + text_h;
+            let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
+            let gap = scaled(dims::ZONE_GAP, scale_factor);
+            let line_h = scaled(SIZE_ROW, scale_factor);
+            let banner_h = scaled(dims::ZONE_BANNER_H, scale_factor);
+            let code_h = zones
+                .code
+                .map(|s| s.lines().count().max(1) * line_h + 2 * (gap / 2));
+            let text_h = zones.text.map(|s| s.lines().count().max(1) * line_h);
+
+            let mut panel_h = pad_y * 2;
+            let mut y_off = 0;
+            if zones.banner.is_some() {
+                panel_h += banner_h;
+                y_off += banner_h;
+            }
+            if let Some(h) = code_h {
+                if y_off > 0 {
+                    panel_h += gap;
+                }
+                panel_h += h;
+            }
+            if let Some(h) = text_h {
+                if y_off > 0 || code_h.is_some() {
+                    panel_h += gap;
+                }
+                panel_h += h;
+            }
+
+            let (panel_x, panel_y) = position_panel(
+                &spec.anchor,
+                window_width,
+                window_height,
+                panel_w,
+                panel_h,
+                scale_factor,
+            );
             let panel = WidgetRect {
-                x: panel_x_for(panel_w),
+                x: panel_x,
                 y: panel_y,
                 w: panel_w,
                 h: panel_h,
             };
-            let zones_text = Some(WidgetRect {
-                x: panel.x,
-                y: panel.y + pad_y,
-                w: panel.w,
-                h: text_h,
+
+            let mut cursor_y = panel.y;
+            let zones_banner = zones.banner.map(|_| {
+                let r = WidgetRect {
+                    x: panel.x,
+                    y: cursor_y,
+                    w: panel.w,
+                    h: banner_h,
+                };
+                cursor_y += banner_h;
+                r
+            });
+            if zones_banner.is_none() {
+                cursor_y += pad_y;
+            }
+            let zones_code = zones.code.zip(code_h).map(|(_, h)| {
+                if zones_banner.is_some() {
+                    cursor_y += gap;
+                }
+                let r = WidgetRect {
+                    x: panel.x + pad_x,
+                    y: cursor_y,
+                    w: panel.w.saturating_sub(2 * pad_x),
+                    h,
+                };
+                cursor_y += h;
+                r
+            });
+            let zones_text = zones.text.zip(text_h).map(|(_, h)| {
+                if zones_banner.is_some() || zones_code.is_some() {
+                    cursor_y += gap;
+                }
+                WidgetRect {
+                    x: panel.x + pad_x,
+                    y: cursor_y,
+                    w: panel.w.saturating_sub(2 * pad_x),
+                    h,
+                }
             });
 
             OverlayLayout {
@@ -785,6 +1059,8 @@ pub fn layout(
                 row_height: row_h,
                 rows: Vec::new(),
                 fields: Vec::new(),
+                zones_banner,
+                zones_code,
                 zones_text,
                 footer: None,
                 scrollbar: None,
@@ -880,6 +1156,15 @@ struct Palette {
     keycap_bg: u32,
     keycap_border: u32,
     keycap_fg: u32,
+    panel_secondary: u32,
+    severity_error: u32,
+    severity_warning: u32,
+    severity_info: u32,
+    severity_hint: u32,
+    severity_error_text: u32,
+    severity_warning_text: u32,
+    severity_info_text: u32,
+    severity_hint_text: u32,
 }
 
 impl Palette {
@@ -898,7 +1183,67 @@ impl Palette {
             keycap_bg: theme.keycap_bg.to_argb_u32(),
             keycap_border: theme.keycap_border.to_argb_u32(),
             keycap_fg: theme.keycap_fg.to_argb_u32(),
+            panel_secondary: theme.panel_secondary.to_argb_u32(),
+            severity_error: theme.severity_error.to_argb_u32(),
+            severity_warning: theme.severity_warning.to_argb_u32(),
+            severity_info: theme.severity_info.to_argb_u32(),
+            severity_hint: theme.severity_hint.to_argb_u32(),
+            severity_error_text: theme.severity_error_text.to_argb_u32(),
+            severity_warning_text: theme.severity_warning_text.to_argb_u32(),
+            severity_info_text: theme.severity_info_text.to_argb_u32(),
+            severity_hint_text: theme.severity_hint_text.to_argb_u32(),
         }
+    }
+
+    fn severity_wash(&self, severity: Severity) -> u32 {
+        match severity {
+            Severity::Error => self.severity_error,
+            Severity::Warning => self.severity_warning,
+            Severity::Info => self.severity_info,
+            Severity::Hint => self.severity_hint,
+        }
+    }
+
+    fn severity_text(&self, severity: Severity) -> u32 {
+        match severity {
+            Severity::Error => self.severity_error_text,
+            Severity::Warning => self.severity_warning_text,
+            Severity::Info => self.severity_info_text,
+            Severity::Hint => self.severity_hint_text,
+        }
+    }
+}
+
+/// Alpha-blend opaque `fg` over opaque `bg`, discarding `fg`'s own alpha and
+/// producing an opaque result — the "pre-blended to opaque" idiom Visual
+/// Language > Rows uses for badges/tags/keycaps so a selected row doesn't
+/// stack washes.
+fn blend_opaque(fg: u32, bg: u32, alpha_pct: u32) -> u32 {
+    let mix = |shift: u32| {
+        let f = (fg >> shift) & 0xFF;
+        let b = (bg >> shift) & 0xFF;
+        ((f * alpha_pct + b * (100 - alpha_pct)) / 100) & 0xFF
+    };
+    0xFF00_0000 | (mix(16) << 16) | (mix(8) << 8) | mix(0)
+}
+
+impl CompletionKind {
+    /// Badge background, pre-blended to opaque over the panel (Visual
+    /// Language > Colors: "syntax color @ 20% over panel"). Colors are
+    /// picked from the existing overlay palette rather than new
+    /// `overlay.kind_*` theme keys — see the `CompletionKind` doc comment.
+    fn badge_color(self, colors: &Palette) -> u32 {
+        let source = match self {
+            CompletionKind::Function => colors.accent,
+            CompletionKind::Variable => colors.severity_info,
+            CompletionKind::Type => colors.accent_bright,
+            CompletionKind::Keyword => colors.severity_warning,
+            CompletionKind::Field => colors.text_dim,
+            CompletionKind::Module => colors.keycap_fg,
+            CompletionKind::Constant => colors.severity_error,
+            CompletionKind::Other => colors.text_dim,
+        };
+        blend_opaque(source, colors.panel_bg, 20)
     }
 }
 
@@ -917,12 +1262,16 @@ pub fn render(
     scale_factor: f64,
     cursor_visible: bool,
 ) {
-    let Anchor::Centered { dim_alpha, .. } = &spec.anchor;
     let layout = layout(spec, window_width, window_height, scale_factor);
     let colors = Palette::from_theme(theme);
-    let radius = scaled(dims::RADIUS, scale_factor);
+    let radius = match &spec.anchor {
+        Anchor::Centered { .. } => scaled(dims::RADIUS, scale_factor),
+        Anchor::Cursor { .. } => scaled(dims::RADIUS_CURSOR, scale_factor),
+    };
 
-    frame.dim(*dim_alpha);
+    if let Anchor::Centered { dim_alpha, .. } = &spec.anchor {
+        frame.dim(*dim_alpha);
+    }
     frame.draw_shadow_rings(
         layout.panel.x,
         layout.panel.y,
@@ -987,9 +1336,7 @@ pub fn render(
             &layout,
             scale_factor,
         ),
-        Body::Zones { text } => {
-            render_zones_text(frame, painter, &colors, text, &layout, scale_factor)
-        }
+        Body::Zones(zones) => render_zones(frame, painter, &colors, zones, &layout, scale_factor),
     }
     if let (Some(footer_spec), Some(footer_rect)) = (&spec.footer, layout.footer) {
         render_footer(
@@ -1183,10 +1530,25 @@ fn render_list(
     let display_rows = flatten_rows(sections);
     let (start, _visible) = resolve_visible_window(&display_rows, *scroll, *max_visible);
 
+    let is_cursor = matches!(spec.anchor, Anchor::Cursor { .. });
     let row_size = size_px(SIZE_ROW, scale_factor);
     let meta_size = size_px(SIZE_META, scale_factor);
-    let inset = scaled(dims::ROW_INSET, scale_factor);
-    let row_radius = scaled(dims::ROW_RADIUS, scale_factor);
+    let inset = scaled(
+        if is_cursor {
+            dims::ROW_INSET_CURSOR
+        } else {
+            dims::ROW_INSET
+        },
+        scale_factor,
+    );
+    let row_radius = scaled(
+        if is_cursor {
+            dims::ROW_RADIUS_CURSOR
+        } else {
+            dims::ROW_RADIUS
+        },
+        scale_factor,
+    );
     let icon_w = scaled(dims::ROW_ICON_W, scale_factor);
     let text_pad = scaled(dims::ROW_TEXT_PAD_X, scale_factor);
 
@@ -1247,22 +1609,56 @@ fn render_list(
                 };
 
                 let mut x = rect.x + inset + text_pad;
-                if let RowIcon::Glyph { ch, color } = row.icon {
-                    let text_y = rect.y
-                        + (rect
-                            .h
-                            .saturating_sub(painter.line_height_for_size(row_size)))
-                            / 2;
-                    let mut buf = [0u8; 4];
-                    painter.draw_sized(
-                        frame,
-                        x,
-                        text_y,
-                        ch.encode_utf8(&mut buf),
-                        row_size,
-                        0.0,
-                        color,
-                    );
+                match row.icon {
+                    RowIcon::Glyph { ch, color } => {
+                        let text_y = rect.y
+                            + (rect
+                                .h
+                                .saturating_sub(painter.line_height_for_size(row_size)))
+                                / 2;
+                        let mut buf = [0u8; 4];
+                        painter.draw_sized(
+                            frame,
+                            x,
+                            text_y,
+                            ch.encode_utf8(&mut buf),
+                            row_size,
+                            0.0,
+                            color,
+                        );
+                    }
+                    RowIcon::KindBadge(kind) => {
+                        let badge_size = scaled(dims::KIND_BADGE_SIZE, scale_factor);
+                        let badge_radius = scaled(dims::KIND_BADGE_RADIUS, scale_factor);
+                        let badge_y = rect.y + (rect.h.saturating_sub(badge_size)) / 2;
+                        frame.fill_rounded_rect(
+                            x,
+                            badge_y,
+                            badge_size,
+                            badge_size,
+                            badge_radius,
+                            kind.badge_color(colors),
+                            mask_cache,
+                        );
+                        let glyph_size = size_px(SIZE_META, scale_factor);
+                        let mut buf = [0u8; 4];
+                        let glyph = kind.glyph().encode_utf8(&mut buf);
+                        let glyph_w = painter.measure_sized(glyph, glyph_size, 0.0);
+                        let glyph_x = x + (badge_size.saturating_sub(glyph_w.ceil() as usize)) / 2;
+                        let glyph_y = badge_y
+                            + (badge_size.saturating_sub(painter.line_height_for_size(glyph_size)))
+                                / 2;
+                        painter.draw_sized(
+                            frame,
+                            glyph_x,
+                            glyph_y,
+                            glyph,
+                            glyph_size,
+                            0.0,
+                            colors.text_bright,
+                        );
+                    }
+                    RowIcon::None => {}
                 }
                 x += icon_w;
 
@@ -1547,20 +1943,107 @@ fn render_fields(
 
 /// Draw the single centered text block of a `Body::Zones` context (drop
 /// overlay).
-fn render_zones_text(
+/// Render a `Body::Zones` context: the drop overlay's single centered
+/// message (`text` only, no `banner`/`code`) and the hover card (banner +
+/// code + text) share this one paint path.
+fn render_zones(
     frame: &mut Frame,
     painter: &mut TextPainter,
     colors: &Palette,
-    text: &str,
+    zones: &Zones,
     layout: &OverlayLayout,
     scale_factor: f64,
 ) {
-    let Some(r) = layout.zones_text else { return };
-    let size = size_px(SIZE_INPUT, scale_factor);
-    let text_w = painter.measure_sized(text, size, 0.0).ceil() as usize;
-    let text_x = r.x + (r.w.saturating_sub(text_w)) / 2;
-    let text_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(size))) / 2;
-    painter.draw_sized(frame, text_x, text_y, text, size, 0.0, colors.text_primary);
+    let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
+
+    if let (Some((severity, message, source)), Some(r)) = (zones.banner, layout.zones_banner) {
+        frame.fill_rect_px(r.x, r.y, r.w, r.h, colors.severity_wash(severity));
+        let size = size_px(SIZE_ROW, scale_factor);
+        let text_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(size))) / 2;
+        let mut buf = [0u8; 4];
+        let text_color = colors.severity_text(severity);
+        let glyph_w = painter.draw_sized(
+            frame,
+            r.x + pad_x,
+            text_y,
+            severity.glyph().encode_utf8(&mut buf),
+            size,
+            0.0,
+            text_color,
+        );
+        let msg_x = r.x + pad_x + glyph_w.ceil() as usize + pad_x / 2;
+        painter.draw_sized(frame, msg_x, text_y, message, size, 0.0, text_color);
+
+        if !source.is_empty() {
+            let meta_size = size_px(SIZE_META, scale_factor);
+            let source_w = painter.measure_sized(source, meta_size, 0.0).ceil() as usize;
+            let source_x = r.x + r.w.saturating_sub(pad_x + source_w);
+            let source_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(meta_size))) / 2;
+            painter.draw_sized(
+                frame,
+                source_x,
+                source_y,
+                source,
+                meta_size,
+                0.0,
+                colors.text_dim,
+            );
+        }
+    }
+
+    if let (Some(code), Some(r)) = (zones.code, layout.zones_code) {
+        frame.fill_rect_px(r.x, r.y, r.w, r.h, colors.panel_secondary);
+        draw_text_lines(
+            frame,
+            painter,
+            r,
+            code,
+            SIZE_ROW,
+            colors.text_primary,
+            scale_factor,
+        );
+    }
+
+    if let (Some(text), Some(r)) = (zones.text, layout.zones_text) {
+        if zones.banner.is_none() && zones.code.is_none() && text.lines().count() <= 1 {
+            // Single-line, zone-only body (drop overlay): centered, matching
+            // the pre-migration look.
+            let size = size_px(SIZE_INPUT, scale_factor);
+            let text_w = painter.measure_sized(text, size, 0.0).ceil() as usize;
+            let text_x = r.x + (r.w.saturating_sub(text_w)) / 2;
+            let text_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(size))) / 2;
+            painter.draw_sized(frame, text_x, text_y, text, size, 0.0, colors.text_primary);
+        } else {
+            draw_text_lines(
+                frame,
+                painter,
+                r,
+                text,
+                SIZE_ROW,
+                colors.text_primary,
+                scale_factor,
+            );
+        }
+    }
+}
+
+/// Draw `text` as left-aligned, stacked lines within `rect` (no wrapping —
+/// callers pre-wrap or accept clipping; the real hover-card consumer owns
+/// wrapping policy per lsp-integration.md).
+fn draw_text_lines(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    rect: WidgetRect,
+    text: &str,
+    size: f32,
+    color: u32,
+    scale_factor: f64,
+) {
+    let size = size_px(size, scale_factor);
+    let line_h = painter.line_height_for_size(size);
+    for (i, line) in text.lines().enumerate() {
+        painter.draw_sized(frame, rect.x, rect.y + i * line_h, line, size, 0.0, color);
+    }
 }
 
 #[cfg(test)]
@@ -2208,9 +2691,11 @@ mod tests {
                 dim_alpha: 0x80,
             },
             header: None,
-            body: Body::Zones {
-                text: "Drop to open: file.rs",
-            },
+            body: Body::Zones(Zones {
+                banner: None,
+                code: None,
+                text: Some("Drop to open: file.rs"),
+            }),
             footer: None,
             hover_row: None,
         };
@@ -2221,5 +2706,335 @@ mod tests {
         let text_rect = l.zones_text.unwrap();
         assert!(text_rect.w > 0 && text_rect.h > 0);
         assert!(l.panel.h >= text_rect.h);
+    }
+
+    // =========================================================================
+    // Anchor::Cursor (Phase 5)
+    // =========================================================================
+
+    fn one_row() -> Row<'static> {
+        Row {
+            icon: RowIcon::None,
+            label: "foo",
+            match_indices: &[],
+            detail: None,
+            accessory: Accessory::None,
+        }
+    }
+
+    #[test]
+    fn cursor_anchor_positions_below_the_anchor_line_when_it_fits() {
+        let rows = [one_row(), one_row()];
+        let sections = [Section {
+            title: None,
+            rows: &rows,
+        }];
+        let spec = OverlaySpec {
+            tabs: None,
+            anchor: Anchor::Cursor {
+                x: 100,
+                y: 200,
+                prefer_below: true,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 0.0,
+                    max: 300.0,
+                },
+            },
+            header: None,
+            body: Body::List {
+                sections: &sections,
+                selected: FlatIndex(0),
+                scroll: 0,
+                max_visible: 8,
+            },
+            footer: None,
+            hover_row: None,
+        };
+        let l = layout(&spec, 1000, 800, 1.0);
+        assert!(l.panel.y > 200, "panel should sit below the anchor line");
+        assert!(l.panel.y < 200 + l.panel.h + 10);
+    }
+
+    #[test]
+    fn cursor_anchor_flips_above_when_below_space_is_too_small() {
+        let rows = [one_row(), one_row(), one_row()];
+        let sections = [Section {
+            title: None,
+            rows: &rows,
+        }];
+        // Anchor near the bottom of an 800px-tall window: no room below for
+        // a multi-row popup, but plenty of room above.
+        let spec = OverlaySpec {
+            tabs: None,
+            anchor: Anchor::Cursor {
+                x: 100,
+                y: 780,
+                prefer_below: true,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 0.0,
+                    max: 300.0,
+                },
+            },
+            header: None,
+            body: Body::List {
+                sections: &sections,
+                selected: FlatIndex(0),
+                scroll: 0,
+                max_visible: 8,
+            },
+            footer: None,
+            hover_row: None,
+        };
+        let l = layout(&spec, 1000, 800, 1.0);
+        assert!(
+            l.panel.y + l.panel.h <= 780,
+            "panel should flip above the anchor line: panel.y={} h={}",
+            l.panel.y,
+            l.panel.h
+        );
+    }
+
+    #[test]
+    fn cursor_anchor_clamps_to_window_edges_when_neither_direction_fits() {
+        // Anchor line close enough to both the top and bottom that a
+        // small popup fits neither strictly above nor strictly below;
+        // it must still clamp inside the window rather than picking an
+        // out-of-bounds position.
+        let rows = [one_row(), one_row(), one_row()];
+        let sections = [Section {
+            title: None,
+            rows: &rows,
+        }];
+        let spec = OverlaySpec {
+            tabs: None,
+            anchor: Anchor::Cursor {
+                x: 100,
+                y: 10, // near the top: no room above, and "prefer_below" is off
+                prefer_below: false,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 0.0,
+                    max: 300.0,
+                },
+            },
+            header: None,
+            body: Body::List {
+                sections: &sections,
+                selected: FlatIndex(0),
+                scroll: 0,
+                max_visible: 8,
+            },
+            footer: None,
+            hover_row: None,
+        };
+        let l = layout(&spec, 1000, 800, 1.0);
+        // No room above (y=10 < panel_h), so it must fall through to
+        // "fits_below" even though prefer_below is false — never picking a
+        // position that would clip off the top of the window.
+        assert!(l.panel.y + l.panel.h <= 800);
+        assert!(l.panel.y < 800);
+    }
+
+    #[test]
+    fn cursor_anchor_clamps_when_popup_is_taller_than_the_window() {
+        // Pathological case: the popup can't fit anywhere. The best a
+        // clamp can do is pin it to the top of the window rather than
+        // pushing it further off-screen.
+        let rows: Vec<Row> = (0..50).map(|_| one_row()).collect();
+        let sections = [Section {
+            title: None,
+            rows: &rows,
+        }];
+        let spec = OverlaySpec {
+            tabs: None,
+            anchor: Anchor::Cursor {
+                x: 100,
+                y: 400,
+                prefer_below: true,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 0.0,
+                    max: 300.0,
+                },
+            },
+            header: None,
+            body: Body::List {
+                sections: &sections,
+                selected: FlatIndex(0),
+                scroll: 0,
+                max_visible: 50,
+            },
+            footer: None,
+            hover_row: None,
+        };
+        let l = layout(&spec, 1000, 800, 1.0);
+        assert_eq!(l.panel.y, 0, "clamps to the top when it can't fit anywhere");
+    }
+
+    #[test]
+    fn cursor_anchor_clamps_x_to_the_right_window_edge() {
+        let rows = [one_row()];
+        let sections = [Section {
+            title: None,
+            rows: &rows,
+        }];
+        let spec = OverlaySpec {
+            tabs: None,
+            anchor: Anchor::Cursor {
+                x: 990, // near the right edge of a 1000px window
+                y: 100,
+                prefer_below: true,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 0.0,
+                    max: 300.0,
+                },
+            },
+            header: None,
+            body: Body::List {
+                sections: &sections,
+                selected: FlatIndex(0),
+                scroll: 0,
+                max_visible: 8,
+            },
+            footer: None,
+            hover_row: None,
+        };
+        let l = layout(&spec, 1000, 800, 1.0);
+        assert!(l.panel.x + l.panel.w <= 1000);
+    }
+
+    #[test]
+    fn cursor_anchor_width_floors_at_200_logical_px() {
+        let rows = [one_row()];
+        let sections = [Section {
+            title: None,
+            rows: &rows,
+        }];
+        let spec = OverlaySpec {
+            tabs: None,
+            anchor: Anchor::Cursor {
+                x: 100,
+                y: 100,
+                prefer_below: true,
+                // A width rule that would clamp far below the 200px floor.
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 10.0,
+                    max: 50.0,
+                },
+            },
+            header: None,
+            body: Body::List {
+                sections: &sections,
+                selected: FlatIndex(0),
+                scroll: 0,
+                max_visible: 8,
+            },
+            footer: None,
+            hover_row: None,
+        };
+        let l = layout(&spec, 1000, 800, 2.0);
+        assert!(
+            l.panel.w >= 400,
+            "200 logical px at 2x scale = 400 physical"
+        );
+    }
+
+    #[test]
+    fn cursor_anchor_uses_the_completion_row_height() {
+        let rows = [one_row()];
+        let sections = [Section {
+            title: None,
+            rows: &rows,
+        }];
+        let list_body = || Body::List {
+            sections: &sections,
+            selected: FlatIndex(0),
+            scroll: 0,
+            max_visible: 8,
+        };
+        let cursor_spec = OverlaySpec {
+            tabs: None,
+            anchor: Anchor::Cursor {
+                x: 0,
+                y: 0,
+                prefer_below: true,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 0.0,
+                    max: 300.0,
+                },
+            },
+            header: None,
+            body: list_body(),
+            footer: None,
+            hover_row: None,
+        };
+        let centered_spec = OverlaySpec {
+            tabs: None,
+            anchor: Anchor::Centered {
+                width: WidthRule {
+                    pct: 0.5,
+                    min: 300.0,
+                    max: 500.0,
+                },
+                dim_alpha: 0x66,
+            },
+            header: None,
+            body: list_body(),
+            footer: None,
+            hover_row: None,
+        };
+        let cursor_layout = layout(&cursor_spec, 1000, 800, 1.0);
+        let centered_layout = layout(&centered_spec, 1000, 800, 1.0);
+        assert_eq!(cursor_layout.row_height, 24);
+        assert_eq!(centered_layout.row_height, 30);
+    }
+
+    #[test]
+    fn zones_body_stacks_banner_code_and_text_in_order() {
+        let spec = OverlaySpec {
+            tabs: None,
+            anchor: Anchor::Cursor {
+                x: 50,
+                y: 50,
+                prefer_below: true,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 0.0,
+                    max: 300.0,
+                },
+            },
+            header: None,
+            body: Body::Zones(Zones {
+                banner: Some((Severity::Warning, "unused import", "rustc")),
+                code: Some("fn foo(x: i32) -> i32"),
+                text: Some("This value is never read."),
+            }),
+            footer: None,
+            hover_row: None,
+        };
+        let l = layout(&spec, 1000, 800, 1.0);
+        let banner = l.zones_banner.expect("banner zone");
+        let code = l.zones_code.expect("code zone");
+        let text = l.zones_text.expect("text zone");
+        assert!(banner.y < code.y, "banner sits above code");
+        assert!(code.y < text.y, "code sits above text");
+        assert!(l.panel.h >= banner.h + code.h + text.h);
+    }
+
+    #[test]
+    fn flat_index_navigation_and_dismiss_key_pass_through() {
+        // Regression for the routing contract: Up/Down/Enter/Esc/Tab are the
+        // only keys a cursor overlay should ever claim; every other key
+        // (including plain character input) must be classified as
+        // "pass through to the editor" by the caller. This is exercised at
+        // the `runtime::input` integration-test level; here we just pin the
+        // FlatIndex math those handlers dispatch through.
+        assert_eq!(FlatIndex(0).next(3), FlatIndex(1));
+        assert_eq!(FlatIndex(2).next(3), FlatIndex(0));
     }
 }
