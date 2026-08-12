@@ -893,7 +893,9 @@ impl<'a> TextPainter<'a> {
                     if bitmap_idx < bitmap.len() {
                         let alpha = bitmap[bitmap_idx];
                         if alpha > 0 {
-                            let px = current_x as isize + bitmap_x as isize + metrics.xmin as isize;
+                            let px = current_x.round() as isize
+                                + bitmap_x as isize
+                                + metrics.xmin as isize;
                             let py = (glyph_top + bitmap_y as f32) as isize;
 
                             if px >= 0 && py >= 0 {
@@ -961,7 +963,9 @@ impl<'a> TextPainter<'a> {
                     if bitmap_idx < bitmap.len() {
                         let alpha = bitmap[bitmap_idx];
                         if alpha > 0 {
-                            let px = current_x as isize + bitmap_x as isize + metrics.xmin as isize;
+                            let px = current_x.round() as isize
+                                + bitmap_x as isize
+                                + metrics.xmin as isize;
                             let py = (glyph_top + bitmap_y as f32) as isize;
 
                             if px >= 0 && py >= 0 {
@@ -977,7 +981,12 @@ impl<'a> TextPainter<'a> {
                 }
             }
 
-            current_x += metrics.advance_width + tracking;
+            // Integer advances: JetBrains Mono's advance is 0.6*size —
+            // fractional below ~20px — and truncating a float pen makes
+            // inter-letter gaps alternate by 1px. Rounding the advance gives
+            // uniform cells, and measure_sized applies the same rule so
+            // paint == measurement by construction.
+            current_x += (metrics.advance_width + tracking).round();
         }
 
         current_x - x as f32
@@ -992,7 +1001,8 @@ impl<'a> TextPainter<'a> {
                 .glyph_cache
                 .entry(key)
                 .or_insert_with(|| self.font.rasterize(ch, size));
-            width += metrics.advance_width + tracking;
+            // Same integer-advance rule as draw_sized.
+            width += (metrics.advance_width + tracking).round();
         }
         width
     }
@@ -1090,7 +1100,9 @@ impl<'a> TextPainter<'a> {
                     if bitmap_idx < bitmap.len() {
                         let alpha = bitmap[bitmap_idx];
                         if alpha > 0 {
-                            let px = current_x as isize + bitmap_x as isize + metrics.xmin as isize;
+                            let px = current_x.round() as isize
+                                + bitmap_x as isize
+                                + metrics.xmin as isize;
                             let py = (glyph_top + bitmap_y as f32) as isize;
 
                             if px >= 0 && py >= 0 {
@@ -1605,6 +1617,28 @@ mod tests {
         assert_ne!(px, 0, "shadow ring must paint just outside the panel edge");
         // Far outside all three rings, nothing should be painted.
         assert_eq!(frame.get_pixel(0, 0), 0);
+    }
+
+    #[test]
+    fn measure_sized_uses_uniform_integer_cells() {
+        // JetBrains Mono's advance is 0.6*size — fractional at 13px/11px.
+        // draw_sized/measure_sized round each advance so every glyph gets
+        // the same integer cell (uneven 7/8/8/8/8 gaps were visible in the
+        // palette), and paint == measurement by construction.
+        let font = Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .expect("test font should load");
+        let mut glyph_cache = super::super::GlyphCache::default();
+        let mut painter = TextPainter::new(&font, &mut glyph_cache, 14.0, 11.0, 8.0, 18);
+
+        for size in [13.0f32, 11.0] {
+            let one = painter.measure_sized("M", size, 0.0);
+            let five = painter.measure_sized("MMMMM", size, 0.0);
+            assert_eq!(one.fract(), 0.0, "cell at {size}px must be integer");
+            assert_eq!(five, one * 5.0, "cells at {size}px must be uniform");
+        }
     }
 
     #[test]

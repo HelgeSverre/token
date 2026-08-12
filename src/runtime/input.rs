@@ -477,6 +477,10 @@ fn classify_text_editing_key(key: &Key, modifiers: KeyModifiers) -> Option<TextE
 fn dispatch_modal_text_edit(model: &mut AppModel, action: TextEditingKeyAction) -> Option<Cmd> {
     use TextEditingKeyAction::*;
 
+    // Caret stays solid while in motion, same as the editor's
+    // per-edit/per-move reset.
+    model.ui.reset_cursor_blink();
+
     match action {
         MoveLeft { extend: false } => {
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::MoveCursorLeft)))
@@ -1285,5 +1289,24 @@ mod tests {
         assert!(cmd.as_ref().is_some_and(Cmd::needs_redraw));
         assert_eq!(model.terminal.active_session().unwrap().scroll_offset, 0);
         assert!(pty_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn modal_text_edit_resets_cursor_blink() {
+        use token::messages::{ModalId, UiMsg};
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)),
+        );
+        model.ui.cursor_visible = false;
+
+        dispatch_modal_text_edit(&mut model, TextEditingKeyAction::MoveLeft { extend: false });
+
+        assert!(
+            model.ui.cursor_visible,
+            "modal caret must go solid on caret motion, like the editor"
+        );
     }
 }

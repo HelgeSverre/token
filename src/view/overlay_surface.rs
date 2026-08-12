@@ -1408,7 +1408,7 @@ fn caret_x_for_column(
     size: f32,
 ) -> usize {
     let before: String = text.chars().take(col).collect();
-    base_x + painter.measure_sized(&before, size, 0.0).ceil() as usize + 1
+    base_x + painter.measure_sized(&before, size, 0.0) as usize
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2701,7 +2701,7 @@ mod tests {
         let at_end = caret_x_for_column(&mut painter, 100, text, 4, SIZE_INPUT);
         assert!(at_start < at_mid);
         assert!(at_mid < at_end);
-        assert_eq!(at_start, 101, "column 0 caret sits right at the text start");
+        assert_eq!(at_start, 100, "column 0 caret sits flush at the text start");
     }
 
     #[test]
@@ -2712,7 +2712,7 @@ mod tests {
         // `header.text.is_empty()`, so an empty palette input drew no
         // caret at all.
         let caret_x = caret_x_for_column(&mut painter, 100, "", 0, SIZE_INPUT);
-        assert_eq!(caret_x, 101);
+        assert_eq!(caret_x, 100);
     }
 
     #[test]
