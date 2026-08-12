@@ -239,6 +239,9 @@ pub struct App {
     /// that construct `App` without a real event loop (matches
     /// `automation_proxy`'s optionality).
     lsp_wake: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    /// Debounced `didChange` deadlines (max-wait capped), keyed by
+    /// document — mirrors `syntax_deadlines`'s shape.
+    lsp_change_deadlines: lsp::sync::DidChangeDeadlines<token::model::editor_area::DocumentId>,
 }
 
 struct AutomationProfile {
@@ -267,6 +270,11 @@ const MAX_DETACHED_ROOTS: usize = 4;
 /// Crash-restart attempts before a server gives up and reports `Failed`.
 const MAX_RESTART_ATTEMPTS: u8 = 3;
 
+/// Exponential crash-restart backoff: `RESTART_BACKOFF_BASE_MS * 2^(attempt-1)`,
+/// capped at `RESTART_BACKOFF_MAX_MS`.
+const RESTART_BACKOFF_BASE_MS: u64 = 200;
+const RESTART_BACKOFF_MAX_MS: u64 = 5_000;
+
 /// Owns every running language server's process handle. Authoritative —
 /// `AppModel.lsp` (`LspUiState`) is a render-only mirror driven by
 /// `Msg::Lsp(ServerStateChanged)`; this stays out of the model per the
@@ -286,6 +294,39 @@ struct LspManager {
     /// knows the server id — has somewhere to respawn. Cleared once a
     /// restart is attempted for that id.
     failed_roots: HashMap<LspServerId, Vec<PathBuf>>,
+    /// Crash-restart respawns scheduled after an exponential backoff
+    /// delay (see `MAX_RESTART_ATTEMPTS`'s doc and
+    /// `handle_lsp_server_exited`), fired by `check_lsp_restart_deadlines`.
+    /// A manual `Cmd::LspRestartServer` bypasses this and respawns
+    /// immediately.
+    restart_deadlines: HashMap<(LspServerId, PathBuf), Instant>,
+    /// Documents currently `didOpen`'d against a running server —
+    /// authoritative record of "is this doc LSP-synced, and against
+    /// which (server, root)". Populated by `lsp_open_document`, removed
+    /// by `lsp_close_document`; survives a crash so a restart knows
+    /// which documents to re-`didOpen`.
+    open_documents: HashMap<token::model::editor_area::DocumentId, OpenDocState>,
+    /// Set for the duration of `Cmd::Quit`'s teardown — suppresses the
+    /// crash-restarter from reacting to the `ServerExited` a deliberate
+    /// kill produces (design doc's `ShuttingDown` state).
+    shutting_down: bool,
+    /// `(server_id, root)` pairs whose next `Ready` should re-`didOpen`
+    /// every tracked document — set by any respawn (crash-restart or
+    /// manual `RestartLanguageServer`), since a fresh process has no
+    /// memory of what the previous one had open.
+    resync_pending: std::collections::HashSet<(LspServerId, PathBuf)>,
+}
+
+/// What `LspManager` remembers about a `didOpen`'d document — enough to
+/// send `didChange`/`didSave`/`didClose` without touching the model, and
+/// to re-`didOpen` it against a freshly restarted server.
+struct OpenDocState {
+    server_id: LspServerId,
+    root: PathBuf,
+    uri: lsp_types::Uri,
+    /// Revision most recently sent to the server (via `didOpen` or
+    /// `didChange`) — lets `send_lsp_did_change` skip a no-op resend.
+    synced_revision: u64,
 }
 
 impl LspManager {
@@ -295,6 +336,10 @@ impl LspManager {
             detached_roots: Vec::new(),
             restart_attempts: HashMap::new(),
             failed_roots: HashMap::new(),
+            restart_deadlines: HashMap::new(),
+            open_documents: HashMap::new(),
+            shutting_down: false,
+            resync_pending: std::collections::HashSet::new(),
         }
     }
 
@@ -312,12 +357,6 @@ impl LspManager {
             .collect()
     }
 
-    fn kill_all(&mut self) {
-        for handle in self.servers.values_mut() {
-            handle.kill();
-        }
-        self.servers.clear();
-    }
 }
 
 impl App {
@@ -398,6 +437,7 @@ impl App {
             latest_syntax_performance: None,
             lsp: LspManager::new(),
             lsp_wake,
+            lsp_change_deadlines: lsp::sync::DidChangeDeadlines::new(),
         };
 
         // Trigger initial syntax parsing for all loaded documents
@@ -434,6 +474,21 @@ impl App {
             {
                 tracing::warn!("Failed to send initial syntax parse request: {}", e);
             }
+        }
+
+        // CLI-opened files (`token foo.rs`) never go through
+        // `open_file_in_new_tab`'s didOpen wiring — catch them here so a
+        // startup session is synced from the first frame.
+        let docs_to_open: Vec<_> = self
+            .model
+            .editor_area
+            .documents
+            .iter()
+            .filter_map(|(&id, doc)| doc.file_path.clone().map(|path| (id, path, doc.language)))
+            .collect();
+        for (document_id, file_path, language) in docs_to_open {
+            self.ensure_lsp_server(language, &file_path);
+            self.lsp_open_document(document_id, file_path, language);
         }
     }
 
@@ -1269,6 +1324,21 @@ impl App {
         update(&mut self.model, Msg::Ui(UiMsg::BlinkCursor))
     }
 
+    /// Quit-time teardown for every running server: the design doc's
+    /// `shutdown` -> await response -> `exit` -> await process exit ->
+    /// kill sequence, run per server (`ServerHandle::graceful_shutdown`).
+    /// `shutting_down` is set first so the `ServerExited` each kill
+    /// produces never triggers a restart.
+    fn graceful_lsp_teardown(&mut self) {
+        self.lsp.shutting_down = true;
+        let keys: Vec<_> = self.lsp.servers.keys().cloned().collect();
+        for key in keys {
+            if let Some(mut handle) = self.lsp.servers.remove(&key) {
+                handle.graceful_shutdown(&self.msg_rx, Duration::from_secs(2));
+            }
+        }
+    }
+
     fn process_cmd(&mut self, cmd: Cmd) {
         match cmd {
             Cmd::None => {}
@@ -1619,7 +1689,36 @@ impl App {
                 self.lsp
                     .restart_attempts
                     .retain(|(id, _), _| *id != server_id);
+                self.lsp
+                    .restart_deadlines
+                    .retain(|(id, _), _| *id != server_id);
                 self.restart_lsp_server(&server_id);
+            }
+            Cmd::LspDidOpen {
+                document_id,
+                file_path,
+                language,
+            } => {
+                self.lsp_open_document(document_id, file_path, language);
+            }
+            Cmd::LspScheduleDidChange {
+                document_id,
+                revision,
+            } => {
+                self.lsp_change_deadlines.record_edit(
+                    document_id,
+                    revision,
+                    Instant::now(),
+                    Duration::from_millis(lsp::sync::DID_CHANGE_DEBOUNCE_MS),
+                    Duration::from_millis(lsp::sync::DID_CHANGE_MAX_WAIT_MS),
+                );
+            }
+            Cmd::LspDidSave { document_id } => {
+                self.flush_lsp_did_change(document_id);
+                self.lsp_save_document(document_id);
+            }
+            Cmd::LspDidClose { document_id } => {
+                self.lsp_close_document(document_id);
             }
 
             // =====================================================================
@@ -1628,10 +1727,10 @@ impl App {
             Cmd::Quit => {
                 // No quit-time teardown existed anywhere in the runtime
                 // before this (not even for PTY children); this is the
-                // first one. It only kills the child here rather than
-                // running the full shutdown/exit handshake from the
-                // design doc — see `ServerHandle::kill`'s doc comment.
-                self.lsp.kill_all();
+                // first one. Runs the design doc's shutdown sequence per
+                // server: `shutdown` request -> await response (2s) ->
+                // `exit` notification -> await process exit (2s) -> kill.
+                self.graceful_lsp_teardown();
                 self.should_quit = true;
             }
 
@@ -1693,7 +1792,18 @@ impl App {
                 self.handle_lsp_server_exited(&server_id, generation);
             }
             if let Some((server_id, root)) = lsp_ready {
-                self.lsp.restart_attempts.remove(&(server_id, root));
+                self.lsp.restart_attempts.remove(&(server_id.clone(), root.clone()));
+                if self
+                    .lsp
+                    .resync_pending
+                    .remove(&(server_id.clone(), root.clone()))
+                {
+                    // A fresh process has no memory of documents opened
+                    // against the one that crashed/was restarted —
+                    // re-`didOpen` them (design doc's "after any restart"
+                    // rule).
+                    self.resync_open_documents(&server_id, &root);
+                }
             }
             if let Some((document_id, revision, timing, apply_started)) = syntax_completion {
                 let applied = self
@@ -1745,21 +1855,15 @@ impl App {
     /// (`Cmd::LspEnsureServer`; see design doc's Process Model — lazy
     /// spawn on first matching `didOpen`, wired by the next unit).
     fn ensure_lsp_server(&mut self, language: token::syntax::LanguageId, file_path: &Path) {
-        let Some(def) = lsp::lsp_server_def(language) else {
+        let Some((resolved, root)) = self.resolved_server_and_root(language, file_path) else {
             return;
         };
-        let Some(resolved) = lsp::resolve_server(def, &self.model.config.lsp) else {
-            return;
-        };
-        let workspace_root = self.model.workspace.as_ref().map(|w| w.root.as_path());
-        let root = lsp::client::resolve_root(file_path, workspace_root, def.project_markers, |p| {
-            p.is_file()
-        });
 
         if self.lsp.is_running(&resolved.id, &root) {
             return;
         }
 
+        let workspace_root = self.model.workspace.as_ref().map(|w| w.root.as_path());
         let is_detached = workspace_root.is_none_or(|ws| !root.starts_with(ws));
         if is_detached && !self.lsp.detached_roots.contains(&root) {
             if self.lsp.detached_roots.len() >= MAX_DETACHED_ROOTS {
@@ -1799,6 +1903,9 @@ impl App {
             if let Some(mut handle) = self.lsp.servers.remove(&(server_id.clone(), root.clone())) {
                 handle.kill();
             }
+            self.lsp
+                .resync_pending
+                .insert((server_id.clone(), root.clone()));
             self.spawn_lsp_server_at(&resolved, &root);
         }
     }
@@ -1825,6 +1932,199 @@ impl App {
         }
     }
 
+    /// Resolves which server (config-overridden) and root a file's
+    /// language maps to, or `None` if no server is registered/enabled
+    /// for it. Shared by `ensure_lsp_server` and `lsp_open_document` so
+    /// they never disagree about which `(server_id, root)` a document
+    /// belongs to.
+    fn resolved_server_and_root(
+        &self,
+        language: token::syntax::LanguageId,
+        file_path: &Path,
+    ) -> Option<(lsp::ResolvedServer, PathBuf)> {
+        let def = lsp::lsp_server_def(language)?;
+        let resolved = lsp::resolve_server(def, &self.model.config.lsp)?;
+        let workspace_root = self.model.workspace.as_ref().map(|w| w.root.as_path());
+        let root = lsp::client::resolve_root(file_path, workspace_root, def.project_markers, |p| {
+            p.is_file()
+        });
+        Some((resolved, root))
+    }
+
+    /// `textDocument/didOpen` — sends the document's current full text
+    /// if a server is registered/ready for it; otherwise a silent no-op
+    /// (no server, or `ensure_lsp_server` hasn't produced a handle yet —
+    /// the notification is dropped since nothing sent it will ever ask
+    /// again; a later edit's `didChange` would target a document the
+    /// server never opened, so `lsp_change_deadlines`/`send_lsp_did_change`
+    /// guard on `open_documents` containing this id).
+    fn lsp_open_document(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        file_path: PathBuf,
+        language: token::syntax::LanguageId,
+    ) {
+        let Some((resolved, root)) = self.resolved_server_and_root(language, &file_path) else {
+            return;
+        };
+        let Some(language_id) = lsp::sync::language_id_str(language) else {
+            return;
+        };
+        let Some(handle) = self.lsp.servers.get(&(resolved.id.clone(), root.clone())) else {
+            return;
+        };
+        let Some(doc) = self.model.editor_area.documents.get(&document_id) else {
+            return;
+        };
+        let text = doc.buffer.to_string();
+        let revision = doc.revision;
+        let uri = lsp::path_to_uri(&file_path);
+
+        let params = serde_json::json!({
+            "textDocument": {
+                "uri": uri.as_str(),
+                "languageId": language_id,
+                "version": revision as i64,
+                "text": text,
+            }
+        });
+        let _ = handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
+            method: "textDocument/didOpen".to_owned(),
+            params,
+        });
+        self.lsp.open_documents.insert(
+            document_id,
+            OpenDocState {
+                server_id: resolved.id,
+                root,
+                uri,
+                synced_revision: revision,
+            },
+        );
+    }
+
+    /// `textDocument/didChange`, full-text sync. `text` reuses an
+    /// already-snapshotted buffer (shared with a coincident syntax parse
+    /// — see `check_syntax_and_lsp_deadlines`) when given, otherwise
+    /// snapshots the buffer itself. A no-op if `document_id` isn't
+    /// currently open on a server, or already at `revision` (flushing a
+    /// deadline that another flush already fired).
+    fn send_lsp_did_change(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        revision: u64,
+        text: Option<String>,
+    ) {
+        let Some(state) = self.lsp.open_documents.get_mut(&document_id) else {
+            return;
+        };
+        if state.synced_revision == revision {
+            return;
+        }
+        let Some(handle) = self.lsp.servers.get(&(state.server_id.clone(), state.root.clone()))
+        else {
+            return;
+        };
+        let text = match text {
+            Some(text) => text,
+            None => match self.model.editor_area.documents.get(&document_id) {
+                Some(doc) => doc.buffer.to_string(),
+                None => return,
+            },
+        };
+        let params = serde_json::json!({
+            "textDocument": { "uri": state.uri.as_str(), "version": revision as i64 },
+            "contentChanges": [{ "text": text }],
+        });
+        let _ = handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
+            method: "textDocument/didChange".to_owned(),
+            params,
+        });
+        state.synced_revision = revision;
+    }
+
+    /// The flush-before-request invariant
+    /// (docs/feature/lsp-integration.md "Document Synchronization"): if
+    /// there's a debounced `didChange` still pending for `document_id`,
+    /// send it now, ahead of whatever the caller sends next. A no-op if
+    /// nothing is pending.
+    fn flush_lsp_did_change(&mut self, document_id: token::model::editor_area::DocumentId) {
+        if let Some(revision) = self.lsp_change_deadlines.take(document_id) {
+            self.send_lsp_did_change(document_id, revision, None);
+        }
+    }
+
+    /// `textDocument/didSave` — with text iff the server's capabilities
+    /// asked for it (`save: { includeText: true }`).
+    fn lsp_save_document(&mut self, document_id: token::model::editor_area::DocumentId) {
+        let Some(state) = self.lsp.open_documents.get(&document_id) else {
+            return;
+        };
+        let Some(handle) = self.lsp.servers.get(&(state.server_id.clone(), state.root.clone()))
+        else {
+            return;
+        };
+        let caps = handle.capabilities_snapshot().unwrap_or_default();
+        if !lsp::client::wants_did_save(&caps) {
+            return;
+        }
+        let mut params = serde_json::json!({ "textDocument": { "uri": state.uri.as_str() } });
+        if lsp::client::save_includes_text(&caps) {
+            if let Some(doc) = self.model.editor_area.documents.get(&document_id) {
+                params["text"] = serde_json::json!(doc.buffer.to_string());
+            }
+        }
+        let _ = handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
+            method: "textDocument/didSave".to_owned(),
+            params,
+        });
+    }
+
+    /// `textDocument/didClose` — call only when the document is released
+    /// (never on tab close alone). Drops any still-pending `didChange`
+    /// for it without sending: the server is about to be told the
+    /// document is gone, so a `didChange` for it afterward would be
+    /// invalid.
+    fn lsp_close_document(&mut self, document_id: token::model::editor_area::DocumentId) {
+        self.lsp_change_deadlines.take(document_id);
+        let Some(state) = self.lsp.open_documents.remove(&document_id) else {
+            return;
+        };
+        let Some(handle) = self.lsp.servers.get(&(state.server_id, state.root)) else {
+            return;
+        };
+        let params = serde_json::json!({ "textDocument": { "uri": state.uri.as_str() } });
+        let _ = handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
+            method: "textDocument/didClose".to_owned(),
+            params,
+        });
+    }
+
+    /// Re-sends `didOpen` for every document tracked as open against
+    /// `(server_id, root)` — the design doc's "after any restart,
+    /// `didOpen` is re-sent for every currently-open matching document"
+    /// (a fresh process has no memory of documents opened against the
+    /// one that crashed).
+    fn resync_open_documents(&mut self, server_id: &LspServerId, root: &Path) {
+        let document_ids: Vec<_> = self
+            .lsp
+            .open_documents
+            .iter()
+            .filter(|(_, state)| &state.server_id == server_id && state.root == root)
+            .map(|(&doc_id, _)| doc_id)
+            .collect();
+        for document_id in document_ids {
+            let Some(doc) = self.model.editor_area.documents.get(&document_id) else {
+                continue;
+            };
+            let Some(file_path) = doc.file_path.clone() else {
+                continue;
+            };
+            let language = doc.language;
+            self.lsp_open_document(document_id, file_path, language);
+        }
+    }
+
     /// Routes a server-state change through `Msg::Lsp(ServerStateChanged)`
     /// — the same path the worker threads use — instead of poking
     /// `model.lsp.servers` directly, so the mirror stays "driven only by
@@ -1847,14 +2147,15 @@ impl App {
     }
 
     /// A server's worker thread hit EOF/error on stdout — the child
-    /// exited (crash or otherwise). Removes the dead handle and retries
-    /// with a simple attempt cap; giving up reports `Failed`.
-    ///
-    /// ponytail: no exponential delay between attempts (the design doc
-    /// specifies backoff); this retries immediately, capped at
-    /// `MAX_RESTART_ATTEMPTS`. Add a delay if a flapping server ever
-    /// makes that matter in practice.
+    /// exited (crash or otherwise). Removes the dead handle and schedules
+    /// a respawn after an exponential backoff, capped at
+    /// `MAX_RESTART_ATTEMPTS`; giving up reports `Failed`.
+    /// `LspManager::shutting_down` (quit teardown) suppresses this
+    /// entirely — a deliberate kill's EOF must never trigger a restart.
     fn handle_lsp_server_exited(&mut self, server_id: &LspServerId, generation: u64) {
+        if self.lsp.shutting_down {
+            return;
+        }
         // Only remove/restart handles whose generation matches the one
         // that actually exited — a deliberate kill+respawn (restart,
         // quit) can race this message against a replacement handle
@@ -1874,15 +2175,9 @@ impl App {
             self.lsp.servers.remove(&(server_id.clone(), root.clone()));
         }
 
-        let Some(def) = lsp::server_def_by_id(&server_id.0) else {
-            return;
-        };
-        let Some(resolved) = lsp::resolve_server(def, &self.model.config.lsp) else {
-            return;
-        };
         for root in roots {
             let key = (server_id.clone(), root.clone());
-            let entry = self.lsp.restart_attempts.entry(key).or_insert(0);
+            let entry = self.lsp.restart_attempts.entry(key.clone()).or_insert(0);
             *entry += 1;
             let attempts = *entry;
             if attempts > MAX_RESTART_ATTEMPTS {
@@ -1899,6 +2194,40 @@ impl App {
                 &root,
                 ServerState::Restarting { attempt: attempts },
             );
+            // Exponential backoff: 200ms, 400ms, 800ms, ... capped so a
+            // flapping server doesn't spin the event loop.
+            let delay_ms = RESTART_BACKOFF_BASE_MS.saturating_mul(1u64 << (attempts - 1));
+            let delay_ms = delay_ms.min(RESTART_BACKOFF_MAX_MS);
+            self.lsp
+                .restart_deadlines
+                .insert(key, Instant::now() + Duration::from_millis(delay_ms));
+        }
+    }
+
+    /// Fires respawns scheduled by `handle_lsp_server_exited`'s backoff.
+    fn check_lsp_restart_deadlines(&mut self) {
+        if self.lsp.restart_deadlines.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        let due: Vec<(LspServerId, PathBuf)> = self
+            .lsp
+            .restart_deadlines
+            .iter()
+            .filter(|(_, deadline)| now >= **deadline)
+            .map(|(key, _)| key.clone())
+            .collect();
+        for (server_id, root) in due {
+            self.lsp.restart_deadlines.remove(&(server_id.clone(), root.clone()));
+            let Some(def) = lsp::server_def_by_id(&server_id.0) else {
+                continue;
+            };
+            let Some(resolved) = lsp::resolve_server(def, &self.model.config.lsp) else {
+                continue;
+            };
+            self.lsp
+                .resync_pending
+                .insert((server_id.clone(), root.clone()));
             self.spawn_lsp_server_at(&resolved, &root);
         }
     }
@@ -2095,10 +2424,16 @@ impl ApplicationHandler for App {
             needs_redraw = true;
         }
 
-        // Check syntax debounce deadlines
-        if self.check_syntax_deadlines() {
+        // Check syntax debounce deadlines, capturing any snapshot the
+        // fired parses took — the LSP did-change check below reuses them
+        // for documents whose deadlines coincide (design doc: "must not
+        // double" the rope `to_string()`).
+        let (syntax_redraw, syntax_snapshots) = self.check_syntax_deadlines();
+        if syntax_redraw {
             needs_redraw = true;
         }
+        self.check_lsp_did_change_deadlines(&syntax_snapshots);
+        self.check_lsp_restart_deadlines();
 
         // Expire status flash messages
         if self.model.ui.expire_status_message() {
@@ -2136,6 +2471,12 @@ impl ApplicationHandler for App {
         let mut next_wake = self.last_tick + blink_interval;
         if let Some(earliest_deadline) = self.syntax_deadlines.values().map(|(d, _)| *d).min() {
             next_wake = next_wake.min(earliest_deadline);
+        }
+        if let Some(earliest_deadline) = self.lsp_change_deadlines.next_deadline() {
+            next_wake = next_wake.min(earliest_deadline);
+        }
+        if let Some(earliest_deadline) = self.lsp.restart_deadlines.values().min() {
+            next_wake = next_wake.min(*earliest_deadline);
         }
         if let Some(transient) = &self.model.ui.transient_message {
             next_wake = next_wake.min(transient.expires_at);
@@ -2350,10 +2691,18 @@ fn clamped_document_position(model: &AppModel, line: usize, column: usize) -> (u
 }
 
 impl App {
-    /// Check syntax debounce deadlines and fire ParseReady for expired ones
-    fn check_syntax_deadlines(&mut self) -> bool {
+    /// Check syntax debounce deadlines and fire ParseReady for expired
+    /// ones. Returns whether a redraw is needed, plus the buffer
+    /// snapshot `update_syntax` took for each document whose parse fired
+    /// this tick — `check_lsp_did_change_deadlines` reuses these instead
+    /// of paying its own `buffer.to_string()` when both deadlines
+    /// coincide (design doc: "must not double" the rope-to-string cost).
+    fn check_syntax_deadlines(
+        &mut self,
+    ) -> (bool, HashMap<token::model::editor_area::DocumentId, String>) {
+        let mut snapshots = HashMap::new();
         if self.syntax_deadlines.is_empty() {
-            return false;
+            return (false, snapshots);
         }
         let now = Instant::now();
         let expired: Vec<_> = self
@@ -2364,7 +2713,7 @@ impl App {
             .collect();
 
         if expired.is_empty() {
-            return false;
+            return (false, snapshots);
         }
 
         let mut needs_redraw = false;
@@ -2382,6 +2731,9 @@ impl App {
                     revision,
                 }),
             ) {
+                if let Cmd::RunSyntaxParse { ref source, .. } = cmd {
+                    snapshots.insert(document_id, source.clone());
+                }
                 if cmd.needs_redraw() {
                     needs_redraw = true;
                 }
@@ -2389,7 +2741,33 @@ impl App {
                 self.process_cmd(cmd);
             }
         }
-        needs_redraw
+        (needs_redraw, snapshots)
+    }
+
+    /// Fires debounced `didChange` for expired deadlines
+    /// (`Cmd::LspScheduleDidChange`'s deadline map). Discards stale
+    /// entries whose document was closed/removed, or whose buffer moved
+    /// on to a newer revision since the deadline was scheduled (the next
+    /// edit's own `record_edit` call will have already re-armed the
+    /// deadline for that newer revision).
+    fn check_lsp_did_change_deadlines(
+        &mut self,
+        shared_snapshots: &HashMap<token::model::editor_area::DocumentId, String>,
+    ) {
+        let now = Instant::now();
+        for (document_id, revision) in self.lsp_change_deadlines.take_expired(now) {
+            let current_revision = self
+                .model
+                .editor_area
+                .documents
+                .get(&document_id)
+                .map(|doc| doc.revision);
+            if current_revision != Some(revision) {
+                continue; // document closed, or a newer edit superseded this deadline
+            }
+            let text = shared_snapshots.get(&document_id).cloned();
+            self.send_lsp_did_change(document_id, revision, text);
+        }
     }
 
     /// Poll file system watcher and dispatch events
@@ -2877,6 +3255,315 @@ mod tests {
         for root in &roots[..MAX_DETACHED_ROOTS] {
             assert!(app.lsp.detached_roots.contains(root));
         }
+    }
+
+    // ---- Phase 1 gate: fake-lsp-server integration ----
+    //
+    // Drives the real spawn/handshake/didOpen/didChange/shutdown code
+    // paths against a real child process (`fake-lsp-server`, built as a
+    // sibling `[[bin]]` — docs/feature/lsp-integration.md's "Integration:
+    // scriptable fake server"), instead of asserting on `App`'s own
+    // bookkeeping alone. The fake server's `record_until_exit` op writes
+    // one line per message it actually received, in receipt order, to a
+    // transcript file this test reads back.
+
+    /// Locates the `fake-lsp-server` binary built alongside the test
+    /// binary. `env!("CARGO_BIN_EXE_<name>")` only works from files under
+    /// `tests/`; this is a unit test inside the `token` binary crate, so
+    /// the path is derived from the test binary's own location instead
+    /// (`cargo test` still builds every `[[bin]]` target first).
+    fn fake_lsp_server_path() -> PathBuf {
+        let mut path = std::env::current_exe().expect("current test exe");
+        path.pop(); // drop the test binary's own filename
+        if path.ends_with("deps") {
+            path.pop();
+        }
+        path.push(if cfg!(windows) {
+            "fake-lsp-server.exe"
+        } else {
+            "fake-lsp-server"
+        });
+        assert!(
+            path.is_file(),
+            "fake-lsp-server not found at {} — `cargo test` should have built it as a [[bin]]",
+            path.display()
+        );
+        path
+    }
+
+    /// Points `rust-analyzer` at the fake server for this test's config,
+    /// running the single-step `record_until_exit` scenario that writes
+    /// every received message to `transcript_path`.
+    fn configure_fake_rust_analyzer(app: &mut App, dir: &Path, transcript_path: &Path) {
+        let scenario_path = dir.join("scenario.json");
+        std::fs::write(
+            &scenario_path,
+            serde_json::json!([{
+                "op": "record_until_exit",
+                "file": transcript_path.to_string_lossy(),
+            }])
+            .to_string(),
+        )
+        .expect("write scenario file");
+
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
+                enabled: None,
+            },
+        );
+    }
+
+    fn read_transcript_lines(transcript_path: &Path) -> Vec<String> {
+        std::fs::read_to_string(transcript_path)
+            .map(|s| s.lines().map(str::to_owned).collect())
+            .unwrap_or_default()
+    }
+
+    /// Blocks (bounded) until the transcript file has at least
+    /// `min_lines` lines — the fake server writes asynchronously from a
+    /// separate process, so assertions can't run the instant a `Cmd` is
+    /// processed.
+    fn wait_for_transcript_lines(transcript_path: &Path, min_lines: usize) -> Vec<String> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let lines = read_transcript_lines(transcript_path);
+            if lines.len() >= min_lines || Instant::now() >= deadline {
+                return lines;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn edit_heavy_session_stays_in_sync_with_fake_lsp_server() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write fixture file");
+        let transcript_path = dir.path().join("transcript.log");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        configure_fake_rust_analyzer(&mut app, dir.path(), &transcript_path);
+
+        // Open the document as a real editor session would.
+        let doc_id = token::model::editor_area::DocumentId(1);
+        let mut doc = token::model::Document::from_file(file_path.clone()).unwrap();
+        doc.id = Some(doc_id);
+        app.model.editor_area.documents.insert(doc_id, doc);
+
+        app.process_cmd(Cmd::LspEnsureServer {
+            language: LanguageId::Rust,
+            file_path: file_path.clone(),
+        });
+        app.process_cmd(Cmd::LspDidOpen {
+            document_id: doc_id,
+            file_path: file_path.clone(),
+            language: LanguageId::Rust,
+        });
+
+        // initialize (+ the handshake's `initialized`) + didOpen must
+        // all land before anything else.
+        let lines = wait_for_transcript_lines(&transcript_path, 3);
+        assert!(
+            lines[0].starts_with("request:initialize"),
+            "expected initialize first, got {lines:?}"
+        );
+        assert!(
+            lines[1].starts_with("notify:initialized"),
+            "expected initialized second, got {lines:?}"
+        );
+        assert!(
+            lines[2].starts_with("notify:textDocument/didOpen"),
+            "expected didOpen third, got {lines:?}"
+        );
+
+        // Edit-heavy burst: schedule several debounced didChange calls in
+        // quick succession (well under the 30ms debounce each time), the
+        // way `schedule_lsp_did_change` does after every keystroke.
+        for revision in 1..=5u64 {
+            if let Some(doc) = app.model.editor_area.documents.get_mut(&doc_id) {
+                doc.revision = revision;
+            }
+            app.process_cmd(Cmd::LspScheduleDidChange {
+                document_id: doc_id,
+                revision,
+            });
+        }
+        assert!(
+            app.lsp_change_deadlines.is_pending(doc_id),
+            "a debounce should still be pending mid-burst"
+        );
+
+        // A request issued mid-debounce (the flush-before-request
+        // invariant — Phase 1 wires this generically via
+        // `flush_lsp_did_change`; Phase 3+ feature requests call through
+        // it before their own request frame).
+        app.flush_lsp_did_change(doc_id);
+        assert!(
+            !app.lsp_change_deadlines.is_pending(doc_id),
+            "flush must fire the pending didChange immediately, not wait for its deadline"
+        );
+
+        let lines = wait_for_transcript_lines(&transcript_path, 4);
+        assert!(
+            lines[3].starts_with("notify:textDocument/didChange"),
+            "expected the flushed didChange fourth, got {lines:?}"
+        );
+        assert!(
+            lines[3].contains("version=Some(Number(5))"),
+            "flush must send the latest revision, got {lines:?}"
+        );
+
+        // Save: didSave (with text, since the fake server's initialize
+        // response advertised `save: { includeText: true }`).
+        app.process_cmd(Cmd::LspDidSave {
+            document_id: doc_id,
+        });
+        let lines = wait_for_transcript_lines(&transcript_path, 5);
+        assert!(
+            lines[4].starts_with("notify:textDocument/didSave"),
+            "expected didSave fifth, got {lines:?}"
+        );
+
+        // Close: didClose, and the document is forgotten by the manager.
+        app.process_cmd(Cmd::LspDidClose {
+            document_id: doc_id,
+        });
+        assert!(!app.lsp.open_documents.contains_key(&doc_id));
+        let lines = wait_for_transcript_lines(&transcript_path, 6);
+        assert!(
+            lines[5].starts_with("notify:textDocument/didClose"),
+            "expected didClose sixth, got {lines:?}"
+        );
+
+        // Quit teardown: shutdown -> (fake server acks) -> exit -> process
+        // exit, all within the 2s budget, no hang.
+        app.process_cmd(Cmd::Quit);
+        assert!(app.lsp.servers.is_empty());
+    }
+
+    /// Pumps `process_async_messages` until `cond` holds or `timeout`
+    /// elapses — worker `Msg`s arrive from a real subprocess
+    /// asynchronously, same as `wait_for_transcript_lines`.
+    fn pump_until(app: &mut App, timeout: Duration, cond: impl Fn(&App) -> bool) -> bool {
+        let deadline = Instant::now() + timeout;
+        loop {
+            app.process_async_messages();
+            if cond(app) {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn crash_restart_resyncs_previously_open_documents() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write fixture file");
+
+        // First incarnation: answers `initialize`, then exits (crash).
+        let scenario_a = dir.path().join("scenario_a.json");
+        std::fs::write(
+            &scenario_a,
+            serde_json::json!([
+                { "op": "expect_request", "method": "initialize", "respond": { "capabilities": {} } },
+                { "op": "exit", "code": 1 },
+            ])
+            .to_string(),
+        )
+        .unwrap();
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_a.to_string_lossy().into_owned()]),
+                enabled: None,
+            },
+        );
+
+        let doc_id = token::model::editor_area::DocumentId(1);
+        let mut doc = token::model::Document::from_file(file_path.clone()).unwrap();
+        doc.id = Some(doc_id);
+        app.model.editor_area.documents.insert(doc_id, doc);
+
+        app.process_cmd(Cmd::LspEnsureServer {
+            language: LanguageId::Rust,
+            file_path: file_path.clone(),
+        });
+        app.process_cmd(Cmd::LspDidOpen {
+            document_id: doc_id,
+            file_path: file_path.clone(),
+            language: LanguageId::Rust,
+        });
+        assert!(
+            pump_until(&mut app, Duration::from_secs(5), |app| app
+                .lsp
+                .open_documents
+                .contains_key(&doc_id)),
+            "didOpen should have registered the document against the first incarnation"
+        );
+
+        // Now point the (still-live) config override at a second scenario
+        // that records everything it receives — the crash-restart below
+        // will spawn a fresh process with *these* args.
+        let transcript_b = dir.path().join("transcript_b.log");
+        let scenario_b = dir.path().join("scenario_b.json");
+        std::fs::write(
+            &scenario_b,
+            serde_json::json!([{
+                "op": "record_until_exit",
+                "file": transcript_b.to_string_lossy(),
+            }])
+            .to_string(),
+        )
+        .unwrap();
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_b.to_string_lossy().into_owned()]),
+                enabled: None,
+            },
+        );
+
+        // Wait for the crash (`ServerExited`) to be processed and a
+        // restart scheduled (backoff), then fire it immediately instead
+        // of waiting out the real delay.
+        assert!(
+            pump_until(&mut app, Duration::from_secs(5), |app| !app
+                .lsp
+                .restart_deadlines
+                .is_empty()),
+            "a crash should schedule a backoff restart"
+        );
+        for deadline in app.lsp.restart_deadlines.values_mut() {
+            *deadline = Instant::now();
+        }
+        app.check_lsp_restart_deadlines();
+
+        // The new incarnation reaches Ready and re-`didOpen`s the
+        // document (design doc: "after any restart, didOpen is re-sent
+        // for every currently-open matching document").
+        assert!(
+            pump_until(&mut app, Duration::from_secs(5), |_| {
+                read_transcript_lines(&transcript_b)
+                    .iter()
+                    .any(|l| l.starts_with("notify:textDocument/didOpen"))
+            }),
+            "expected the restarted server to receive a re-sent didOpen"
+        );
+        let lines = read_transcript_lines(&transcript_b);
+        assert!(lines[0].starts_with("request:initialize"));
+
+        app.process_cmd(Cmd::Quit);
     }
 }
 

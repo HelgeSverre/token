@@ -534,6 +534,14 @@ pub enum WorkerCmd {
         method: String,
         params: Value,
     },
+    /// A client -> server request (`shutdown` today; future phases add
+    /// definition/hover/completion). The id must already be registered
+    /// in `PendingRequests` — `ServerHandle::begin_request` does both.
+    Request {
+        id: i64,
+        method: String,
+        params: Value,
+    },
     /// Reader thread signals "the `initialize` response just arrived":
     /// writer sends `initialized`, then flushes the queue.
     HandshakeReady,
@@ -553,6 +561,10 @@ pub struct ServerHandle {
     pub id: LspServerId,
     pub outbound_tx: Sender<WorkerCmd>,
     pub capabilities: Arc<Mutex<Option<lsp_types::ServerCapabilities>>>,
+    /// Shared with the reader thread so the main thread can allocate ids
+    /// for its own requests (`shutdown` today) without a second
+    /// correlation table.
+    pub pending: Arc<Mutex<PendingRequests>>,
     /// Distinguishes this incarnation from a later restart at the same
     /// `(id, root)` — the reader thread echoes it back in
     /// `LspMsg::ServerExited` so a deliberate kill's EOF doesn't get
@@ -572,11 +584,76 @@ impl ServerHandle {
         self.capabilities.lock().unwrap().clone()
     }
 
-    /// Best-effort: ask the writer thread to stop and kill the process.
-    /// The full `shutdown`/`exit` handshake sequence from the design
-    /// doc's "Crash and shutdown" section is not built yet — deferred to
-    /// the unit that wires `Cmd::Quit` teardown (see
-    /// docs/feature/lsp-integration.md deviations).
+    /// Registers and sends a client -> server request, returning its id
+    /// for correlation.
+    pub fn begin_request(&self, method: impl Into<String>, params: Value) -> i64 {
+        let method = method.into();
+        let id = self.pending.lock().unwrap().begin(method.clone());
+        let _ = self.outbound_tx.send(WorkerCmd::Request { id, method, params });
+        id
+    }
+
+    /// The design doc's shutdown sequence: `shutdown` request -> await
+    /// its response (capped) -> `exit` notification -> await process
+    /// exit (capped) -> kill. Sending `exit` before the `shutdown`
+    /// response makes rust-analyzer/gopls exit non-zero, indistinguishable
+    /// from a crash — hence the wait in between.
+    ///
+    /// `await_shutdown_ack` polls `msg_rx` itself (blocking, up to
+    /// `timeout`) rather than going through the normal async message
+    /// loop: this only ever runs during quit teardown, where the loop
+    /// has already stopped pumping messages for the frame.
+    pub fn graceful_shutdown(
+        &mut self,
+        msg_rx: &Receiver<Msg>,
+        timeout: std::time::Duration,
+    ) -> bool {
+        let _id = self.begin_request("shutdown", Value::Null);
+        let deadline = std::time::Instant::now() + timeout;
+        let mut acked = false;
+        while std::time::Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            match msg_rx.recv_timeout(remaining) {
+                Ok(Msg::Lsp(LspMsg::ShutdownAcked {
+                    server_id,
+                    generation,
+                })) if server_id == self.id && generation == self.generation => {
+                    acked = true;
+                    break;
+                }
+                Ok(_) => continue, // unrelated traffic; the app is quitting anyway
+                Err(_) => break,   // timeout or disconnected sender
+            }
+        }
+        let _ = self.outbound_tx.send(WorkerCmd::Notify {
+            method: "exit".to_owned(),
+            params: Value::Null,
+        });
+
+        let exit_deadline = std::time::Instant::now() + timeout;
+        let mut exited = false;
+        while std::time::Instant::now() < exit_deadline {
+            match self.child.try_wait() {
+                Ok(Some(_)) => {
+                    exited = true;
+                    break;
+                }
+                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(20)),
+                Err(_) => break,
+            }
+        }
+        if !exited {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+        let _ = self.outbound_tx.send(WorkerCmd::Shutdown);
+        acked && exited
+    }
+
+    /// Best-effort: ask the writer thread to stop and kill the process
+    /// immediately, no handshake. Used for crash-restart (the old
+    /// process is already misbehaving) and as `graceful_shutdown`'s own
+    /// fallback; quit teardown prefers `graceful_shutdown`.
     pub fn kill(&mut self) {
         let _ = self.outbound_tx.send(WorkerCmd::Shutdown);
         let _ = self.child.kill();
@@ -679,6 +756,7 @@ pub fn spawn_server(
         id: server_id,
         outbound_tx,
         capabilities,
+        pending,
         generation,
         child,
     })
@@ -736,6 +814,13 @@ fn writer_loop(
             }
             WorkerCmd::Notify { method, params } => {
                 if let Some(frame) = gate.offer(Frame::Notification { method, params }) {
+                    if write_message(&mut stdin, &frame.to_json()).is_err() {
+                        return;
+                    }
+                }
+            }
+            WorkerCmd::Request { id, method, params } => {
+                if let Some(frame) = gate.offer(Frame::Request { id, method, params }) {
                     if write_message(&mut stdin, &frame.to_json()).is_err() {
                         return;
                     }
@@ -843,10 +928,20 @@ fn reader_loop(
                 *capabilities.lock().unwrap() = parsed;
                 let _ = outbound_tx.send(WorkerCmd::HandshakeReady);
                 send_state(&server_id, &root, ServerState::Ready, &msg_tx, wake.as_deref());
+            } else if entry.method == "shutdown" {
+                // Quit teardown (`ServerHandle::graceful_shutdown`) polls
+                // `msg_rx` directly for this rather than going through
+                // `update()` — see its doc comment.
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::ShutdownAcked {
+                    server_id: server_id.clone(),
+                    generation,
+                }));
+                if let Some(wake) = wake.as_deref() {
+                    wake();
+                }
             }
-            // Other request kinds (definition/hover/completion/shutdown)
-            // are routed by future phases; Phase 1 only issues
-            // `initialize`.
+            // Other request kinds (definition/hover/completion) are
+            // routed by future phases.
         }
     }
 }
