@@ -87,6 +87,7 @@ Detailed specifications for major features, located in `docs/feature/`:
 | Code Folding | 4 - Hard Problems | planned |
 | Diff Gutter | 5 - Insight Tools | [diff-gutter.md](feature/diff-gutter.md) |
 | Snippets | 6 - Productivity | [snippets.md](feature/snippets.md) |
+| Settings Page | 6 - Productivity | [settings-page.md](feature/settings-page.md) |
 
 ---
 
