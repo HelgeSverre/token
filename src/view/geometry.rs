@@ -609,6 +609,47 @@ impl GutterLayout {
             + self.fold_w as usize
             + self.diff_w as usize
     }
+
+    /// Which lane, if any, contains `x_in_gutter` (pixels from the group's
+    /// left edge). Lanes left to right: marks, line numbers, fold, diff —
+    /// matching the visual order in editor-decorations.md. A zero-width
+    /// lane (no active consumer) is skipped, never matched.
+    pub fn lane_at(&self, x_in_gutter: usize) -> Option<LaneId> {
+        let mut cursor = 0usize;
+        for (lane, width) in [
+            (LaneId::Marks, self.marks_w as usize),
+            (LaneId::LineNumbers, self.numbers_w as usize),
+            (LaneId::Fold, self.fold_w as usize),
+            (LaneId::Diff, self.diff_w as usize),
+        ] {
+            if width == 0 {
+                continue;
+            }
+            if x_in_gutter < cursor + width {
+                return Some(lane);
+            }
+            cursor += width;
+        }
+        None
+    }
+}
+
+/// One of the gutter's vertical lanes (see `GutterLayout`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaneId {
+    Marks,
+    LineNumbers,
+    Fold,
+    Diff,
+}
+
+impl LaneId {
+    /// Interactive lanes consume gutter press/drag instead of falling
+    /// through to the default focus/drag-select behavior (see
+    /// editor-decorations.md's Hit-Testing & Interaction section).
+    pub fn is_interactive(&self) -> bool {
+        matches!(self, LaneId::Fold | LaneId::Marks)
+    }
 }
 
 // ============================================================================
@@ -1442,6 +1483,46 @@ mod tests {
         };
 
         assert_eq!(layout.visible_columns(10.0), 14);
+    }
+
+    #[test]
+    fn test_gutter_layout_lane_at_skips_zero_width_lanes() {
+        // Only the line-numbers lane is active (today's shipped state) —
+        // any x in the gutter resolves to LineNumbers, never Marks/Fold/Diff.
+        let gutter = GutterLayout {
+            marks_w: 0,
+            numbers_w: 40,
+            fold_w: 0,
+            diff_w: 0,
+        };
+        assert_eq!(gutter.lane_at(0), Some(LaneId::LineNumbers));
+        assert_eq!(gutter.lane_at(39), Some(LaneId::LineNumbers));
+        assert_eq!(gutter.lane_at(40), None);
+    }
+
+    #[test]
+    fn test_gutter_layout_lane_at_orders_active_lanes_left_to_right() {
+        let gutter = GutterLayout {
+            marks_w: 8,
+            numbers_w: 40,
+            fold_w: 8,
+            diff_w: 4,
+        };
+        assert_eq!(gutter.lane_at(0), Some(LaneId::Marks));
+        assert_eq!(gutter.lane_at(7), Some(LaneId::Marks));
+        assert_eq!(gutter.lane_at(8), Some(LaneId::LineNumbers));
+        assert_eq!(gutter.lane_at(47), Some(LaneId::LineNumbers));
+        assert_eq!(gutter.lane_at(48), Some(LaneId::Fold));
+        assert_eq!(gutter.lane_at(56), Some(LaneId::Diff));
+        assert_eq!(gutter.lane_at(60), None);
+    }
+
+    #[test]
+    fn test_lane_id_interactivity() {
+        assert!(LaneId::Marks.is_interactive());
+        assert!(LaneId::Fold.is_interactive());
+        assert!(!LaneId::LineNumbers.is_interactive());
+        assert!(!LaneId::Diff.is_interactive());
     }
 
     #[test]

@@ -4,7 +4,7 @@
 use std::time::{Duration, Instant};
 
 use crate::model::editor::Selection;
-use crate::model::{AppModel, Document, EditorState, TextViewportMap};
+use crate::model::{collect_line_marks, AppModel, Document, EditorState, Mark, TextViewportMap};
 use crate::perf::{PerfStage, PerfStats};
 
 use super::frame::{Frame, TextPainter};
@@ -14,6 +14,44 @@ use super::geometry::{self, char_col_to_visual_col, column_to_pixel_x, expand_ta
 const CURSOR_WIDTH: usize = 2;
 /// Cursor inset from top of line in pixels.
 const CURSOR_INSET: usize = 1;
+
+/// A text-area overdraw decoration spanning a (line, char-col) range.
+///
+/// Pure pixels on positions the text pass already computed — decorations
+/// never move text. `start`/`end` are half-open, like `Selection`. No
+/// producer exists yet (see `docs/feature/editor-decorations.md`); the pass
+/// below is exercised with synthetic decorations in tests until
+/// find-enhancements or LSP diagnostics plug in a real source.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RangeDecoration {
+    pub start: (usize, usize),
+    pub end: (usize, usize),
+    pub kind: DecorationKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DecorationKind {
+    Underline(u32),
+    /// `draw_wavy_underline` from overlay-surface.md.
+    Wavy(u32),
+    /// Find matches, documentHighlight, bracket match.
+    BackgroundTint(u32),
+    /// Diagnostic tag `Unnecessary`.
+    Faded,
+    /// Diagnostic tag `Deprecated`.
+    Strikethrough(u32),
+}
+
+impl DecorationKind {
+    /// Tints draw first (blended under), then line-style decorations, per
+    /// editor-decorations.md's Range Decorations rules.
+    fn is_tint(self) -> bool {
+        matches!(
+            self,
+            DecorationKind::BackgroundTint(_) | DecorationKind::Faded
+        )
+    }
+}
 
 /// Shared theme colors for text editor rendering.
 #[derive(Debug, Clone, Copy)]
@@ -58,6 +96,7 @@ struct EditorRenderContext {
     rect_w: usize,
     content_y: usize,
     content_h: usize,
+    gutter: geometry::GutterLayout,
     gutter_right_x: usize,
     gutter_width: usize,
     text_start_x: usize,
@@ -85,6 +124,7 @@ impl EditorRenderContext {
             rect_w: layout.rect_w(),
             content_y: layout.content_y(),
             content_h: layout.content_h(),
+            gutter: layout.gutter,
             gutter_right_x: layout.gutter_right_x,
             gutter_width: layout.gutter_width(),
             text_start_x: layout.text_start_x,
@@ -279,6 +319,43 @@ impl<'a> TextEditorRenderer<'a> {
         }
 
         Some(ctx.clipped_span_x(start_visual, end_visual, viewport_left))
+    }
+
+    /// Pixel span of `decoration` on `doc_line`, clamped against the
+    /// buffer's current line length. Char-cols go through
+    /// `char_col_to_visual_col` for tab expansion, exactly as cursors do.
+    fn decoration_span_for_line(
+        document: &Document,
+        ctx: &EditorRenderContext,
+        viewport_left: usize,
+        decoration: &RangeDecoration,
+        doc_line: usize,
+        line_text: &str,
+    ) -> Option<(usize, usize)> {
+        let (start_line, start_col) = decoration.start;
+        let (end_line, end_col) = decoration.end;
+        if start_line > end_line || doc_line < start_line || doc_line > end_line {
+            return None;
+        }
+
+        let line_len = document.line_length(doc_line);
+        let col_start = if doc_line == start_line {
+            start_col.min(line_len)
+        } else {
+            0
+        };
+        let col_end = if doc_line == end_line {
+            end_col.min(line_len)
+        } else {
+            line_len
+        };
+        if col_end <= col_start {
+            return None;
+        }
+
+        let visual_start = char_col_to_visual_col(line_text, col_start);
+        let visual_end = char_col_to_visual_col(line_text, col_end);
+        Some(ctx.clipped_span_x(visual_start, visual_end, viewport_left))
     }
 
     fn clear_line_background(
@@ -514,6 +591,127 @@ impl<'a> TextEditorRenderer<'a> {
         painter.draw(frame, text_x, line.y, &line_num_str, line_color);
     }
 
+    /// Marks-lane glyph for a visible gutter line, if the marks lane is
+    /// active and the line has a mark. A no-op today: `GutterLayout` keeps
+    /// `marks_w == 0` until a consumer ships (editor-decorations.md).
+    fn render_gutter_mark(&self, frame: &mut Frame, line: &VisibleTextLine) {
+        let marks_w = self.ctx.gutter.marks_w as usize;
+        if marks_w == 0 {
+            return;
+        }
+        let Some(mark) = collect_line_marks(self.document, line.doc_line).mark else {
+            return;
+        };
+
+        let inset = (marks_w / 4).max(1);
+        let size = marks_w.saturating_sub(inset * 2).max(1);
+        let x = self.ctx.rect_x + inset;
+        let y = line.y + line.height.saturating_sub(size) / 2;
+        frame.fill_rect_px(x, y, size, size, self.mark_color(mark));
+    }
+
+    fn mark_color(&self, mark: Mark) -> u32 {
+        let overlay = &self.model.theme.overlay;
+        match mark {
+            Mark::Bookmark => overlay.severity_hint.to_argb_u32(),
+            Mark::Info => overlay.severity_info.to_argb_u32(),
+            Mark::Warning => overlay.severity_warning.to_argb_u32(),
+            Mark::Error => overlay.severity_error.to_argb_u32(),
+            Mark::Breakpoint => self.palette.primary_cursor,
+        }
+    }
+
+    /// Overdraw pass for range decorations — after text, before cursors, per
+    /// editor-decorations.md's pass order. Iterates only decorations
+    /// intersecting the viewport; stale ranges clamp against the current
+    /// buffer or are skipped, never panicking.
+    fn render_range_decorations_stage(&self, frame: &mut Frame, decorations: &[RangeDecoration]) {
+        if decorations.is_empty() {
+            return;
+        }
+
+        for decoration in decorations.iter().filter(|d| d.kind.is_tint()) {
+            self.render_one_decoration(frame, decoration);
+        }
+        for decoration in decorations.iter().filter(|d| !d.kind.is_tint()) {
+            self.render_one_decoration(frame, decoration);
+        }
+    }
+
+    fn render_one_decoration(&self, frame: &mut Frame, decoration: &RangeDecoration) {
+        let (start_line, _) = decoration.start;
+        let (end_line, _) = decoration.end;
+        if start_line > end_line {
+            return;
+        }
+
+        let viewport = &self.ctx.viewport;
+        let first_line = start_line.max(viewport.top_line());
+        let last_line = end_line.min(viewport.bottom_line());
+        if first_line > last_line {
+            return;
+        }
+
+        let viewport_left = self.viewport_left();
+        for doc_line in first_line..=last_line {
+            let Some(y) = self.ctx.line_y(doc_line) else {
+                continue;
+            };
+            let Some(line_text) = self.document.get_line_cow(doc_line) else {
+                continue;
+            };
+            let Some((x_start, x_end)) = Self::decoration_span_for_line(
+                self.document,
+                &self.ctx,
+                viewport_left,
+                decoration,
+                doc_line,
+                &line_text,
+            ) else {
+                continue;
+            };
+
+            self.paint_decoration(frame, x_start, x_end, y, decoration.kind);
+        }
+    }
+
+    fn paint_decoration(
+        &self,
+        frame: &mut Frame,
+        x_start: usize,
+        x_end: usize,
+        y: usize,
+        kind: DecorationKind,
+    ) {
+        let width = x_end.saturating_sub(x_start);
+        if width == 0 {
+            return;
+        }
+        let height = self.ctx.line_height;
+
+        match kind {
+            DecorationKind::BackgroundTint(color) => {
+                frame.blend_rect_px(x_start, y, width, height, color);
+            }
+            DecorationKind::Faded => {
+                let faded = (self.palette.background & 0x00FF_FFFF) | 0x66_00_00_00;
+                frame.blend_rect_px(x_start, y, width, height, faded);
+            }
+            DecorationKind::Underline(color) => {
+                let line_y = y + height.saturating_sub(1);
+                frame.fill_rect_px(x_start, line_y, width, 1, color | 0xFF00_0000);
+            }
+            DecorationKind::Wavy(color) => {
+                let line_y = y + height.saturating_sub(2);
+                frame.draw_wavy_underline(x_start, line_y, width, color | 0xFF00_0000);
+            }
+            DecorationKind::Strikethrough(color) => {
+                let line_y = y + height / 2;
+                frame.fill_rect_px(x_start, line_y, width, 1, color | 0xFF00_0000);
+            }
+        }
+    }
+
     fn render_cursor_at(
         &self,
         frame: &mut Frame,
@@ -644,6 +842,7 @@ impl<'a> TextEditorRenderer<'a> {
         frame: &mut Frame,
         painter: &mut TextPainter,
         is_focused: bool,
+        decorations: &[RangeDecoration],
         perf: &mut PerfStats,
     ) {
         #[cfg(not(debug_assertions))]
@@ -692,6 +891,8 @@ impl<'a> TextEditorRenderer<'a> {
             self.render_line_content_stages(frame, painter, &line);
         }
 
+        self.render_range_decorations_stage(frame, decorations);
+
         if is_focused {
             #[cfg(debug_assertions)]
             {
@@ -735,6 +936,7 @@ impl<'a> TextEditorRenderer<'a> {
             }
 
             let line = self.prepare_visible_line(doc_line, y);
+            self.render_gutter_mark(frame, &line);
             self.render_gutter_line_number(frame, painter, &line);
         }
 
@@ -799,6 +1001,9 @@ pub fn render_cursor_lines_only(
 }
 
 /// Render text content (lines, selections, cursors) for an editor group.
+///
+/// `decorations` are overdrawn after text, before cursors (see
+/// `RangeDecoration`); pass `&[]` where no producer is wired yet.
 #[allow(clippy::too_many_arguments)]
 pub fn render_text_area(
     frame: &mut Frame,
@@ -808,13 +1013,14 @@ pub fn render_text_area(
     document: &Document,
     layout: &geometry::GroupLayout,
     is_focused: bool,
+    decorations: &[RangeDecoration],
     perf: &mut PerfStats,
 ) {
     let char_width = painter.char_width();
     let line_height = painter.line_height();
     let mut renderer =
         TextEditorRenderer::new(model, editor, document, layout, char_width, line_height);
-    renderer.render_text_area(frame, painter, is_focused, perf);
+    renderer.render_text_area(frame, painter, is_focused, decorations, perf);
 }
 
 /// Render the gutter (line numbers) for an editor group.
@@ -837,7 +1043,9 @@ pub fn render_gutter(
 #[cfg(test)]
 mod tests {
     use super::render_cursor_lines_only;
-    use super::{EditorRenderContext, TextEditorRenderer};
+    use super::{
+        render_text_area, DecorationKind, EditorRenderContext, RangeDecoration, TextEditorRenderer,
+    };
     use crate::model::editor::RectangleSelectionState;
     use crate::model::{AppModel, Cursor, Position, Rect, Selection};
     use crate::view::geometry::GroupLayout;
@@ -947,6 +1155,151 @@ mod tests {
         assert!(
             no_overlap.is_none(),
             "a line fully left of the rectangle should still have no selection span"
+        );
+    }
+
+    fn make_render_context(model: &AppModel, char_width: f32) -> EditorRenderContext {
+        let group = model
+            .editor_area
+            .groups
+            .get(&model.editor_area.focused_group_id)
+            .unwrap();
+        let layout = GroupLayout::new(group, model, char_width);
+        EditorRenderContext::new(&layout, model.editor(), model.document(), char_width, 16)
+    }
+
+    #[test]
+    fn decoration_span_clamps_columns_past_end_of_line() {
+        let model = make_text_model();
+        let char_width = 8.0;
+        let ctx = make_render_context(&model, char_width);
+        let document = model.document();
+
+        // "alpha" (line 0) is 5 chars; a decoration claiming column 999
+        // must clamp to the line's real length, not panic or overshoot.
+        let decoration = RangeDecoration {
+            start: (0, 0),
+            end: (0, 999),
+            kind: DecorationKind::Underline(0xFFFFFFFF),
+        };
+        let line_text = document.get_line_cow(0).unwrap();
+        let span = TextEditorRenderer::decoration_span_for_line(
+            document,
+            &ctx,
+            0,
+            &decoration,
+            0,
+            &line_text,
+        );
+        assert!(span.is_some());
+        let (x_start, x_end) = span.unwrap();
+        assert!(x_start < x_end);
+        assert!(x_end <= ctx.text_right_x());
+    }
+
+    #[test]
+    fn decoration_span_fuzz_stale_ranges_against_shrunk_document_never_panics() {
+        let model = make_text_model();
+        let char_width = 8.0;
+        let ctx = make_render_context(&model, char_width);
+        let document = model.document();
+        let real_line_count = document.line_count();
+
+        // Sweep a grid of (start_line, start_col) x (end_line, end_col)
+        // combinations well past the document's real bounds — simulating
+        // decorations computed before edits shrank the buffer.
+        for start_line in 0..real_line_count + 4 {
+            for start_col in [0usize, 3, 50, 999] {
+                for end_line in start_line..start_line + 4 {
+                    for end_col in [0usize, 3, 50, 999] {
+                        let decoration = RangeDecoration {
+                            start: (start_line, start_col),
+                            end: (end_line, end_col),
+                            kind: DecorationKind::BackgroundTint(0x80FF0000),
+                        };
+                        for doc_line in 0..real_line_count {
+                            let Some(line_text) = document.get_line_cow(doc_line) else {
+                                continue;
+                            };
+                            if let Some((x_start, x_end)) =
+                                TextEditorRenderer::decoration_span_for_line(
+                                    document,
+                                    &ctx,
+                                    0,
+                                    &decoration,
+                                    doc_line,
+                                    &line_text,
+                                )
+                            {
+                                assert!(x_start <= x_end, "span must not be inverted");
+                                assert!(
+                                    x_end <= ctx.text_right_x(),
+                                    "span must not overshoot the text area"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn render_text_area_survives_decorations_referencing_vanished_lines() {
+        let model = make_text_model();
+        let width = model.window_size.0 as usize;
+        let height = model.window_size.1 as usize;
+        let mut buffer = vec![0u32; width * height];
+        let mut frame = Frame::new(&mut buffer, width, height);
+        let (font, font_size, ascent, char_width, line_height) = load_test_font();
+        let mut glyph_cache = GlyphCache::default();
+        let mut painter = TextPainter::new(
+            &font,
+            &mut glyph_cache,
+            font_size,
+            ascent,
+            char_width,
+            line_height,
+        );
+        let group = model
+            .editor_area
+            .groups
+            .get(&model.editor_area.focused_group_id)
+            .unwrap();
+        let layout = GroupLayout::new(group, &model, char_width);
+        let mut perf = crate::perf::PerfStats::default();
+
+        // A mix of an in-range tint and decorations referencing lines the
+        // 3-line test document doesn't have — must render without panicking
+        // and must skip the vanished-line decorations entirely.
+        let decorations = [
+            RangeDecoration {
+                start: (0, 0),
+                end: (0, 3),
+                kind: DecorationKind::BackgroundTint(0x80FF0000),
+            },
+            RangeDecoration {
+                start: (999, 0),
+                end: (999, 5),
+                kind: DecorationKind::Wavy(0xFFFF0000),
+            },
+            RangeDecoration {
+                start: (1, 0),
+                end: (500, 5),
+                kind: DecorationKind::Underline(0xFF00FF00),
+            },
+        ];
+
+        render_text_area(
+            &mut frame,
+            &mut painter,
+            &model,
+            model.editor(),
+            model.document(),
+            &layout,
+            true,
+            &decorations,
+            &mut perf,
         );
     }
 

@@ -2,6 +2,7 @@
 //!
 //! This module contains all the state types following the Elm Architecture pattern.
 
+pub mod decorations;
 pub mod document;
 pub mod editor;
 pub mod editor_area;
@@ -9,6 +10,7 @@ pub mod status_bar;
 pub mod ui;
 pub mod workspace;
 
+pub use decorations::{best_mark, collect_line_marks, LineMarks, Mark};
 pub use document::{Document, EditOperation};
 pub use editor::{
     BinaryPlaceholderState, Cursor, EditorState, OccurrenceState, Position,

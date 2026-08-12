@@ -413,6 +413,9 @@ impl<'a> EditorGroupScene<'a> {
                     document,
                     &self.layout,
                     self.is_focused,
+                    // No decoration producer is wired yet (see
+                    // editor-decorations.md); the next consumer replaces this.
+                    &[],
                     perf,
                 );
                 editor_text::render_gutter(

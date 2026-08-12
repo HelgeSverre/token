@@ -73,6 +73,16 @@ pub(crate) struct EditorSnapshot {
     /// The active overlay (command palette, etc.), if one is open —
     /// `None` when no modal/overlay is showing.
     pub overlay: Option<OverlaySnapshot>,
+    /// Marks-lane gutter state for each visible line, per
+    /// editor-decorations.md. Empty today — no mark producer is wired yet.
+    pub gutter_marks: Vec<GutterMarkSnapshot>,
+}
+
+/// One line's gutter mark, as reported to automation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct GutterMarkSnapshot {
+    pub line: usize,
+    pub mark: String,
 }
 
 /// A read-only view of the active overlay, for automation to inspect
@@ -157,8 +167,31 @@ impl EditorSnapshot {
             viewport_top_line: viewport.top_line,
             viewport_left_column: viewport.left_column,
             overlay: model.ui.active_modal.as_ref().and_then(overlay_snapshot),
+            gutter_marks: gutter_marks_snapshot(document, viewport),
         }
     }
+}
+
+/// Marks-lane state for each visible line, per editor-decorations.md.
+fn gutter_marks_snapshot(
+    document: &token::model::Document,
+    viewport: &token::model::Viewport,
+) -> Vec<GutterMarkSnapshot> {
+    let end_line = viewport
+        .top_line
+        .saturating_add(viewport.visible_lines)
+        .min(document.line_count());
+
+    (viewport.top_line..end_line)
+        .filter_map(|line| {
+            token::model::collect_line_marks(document, line)
+                .mark
+                .map(|mark| GutterMarkSnapshot {
+                    line,
+                    mark: format!("{mark:?}"),
+                })
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
