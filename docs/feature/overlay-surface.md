@@ -424,12 +424,14 @@ Mockups for the picker contexts: [B1 recent-grouped](assets/palette-b1.png), [B2
 
 **Effort:** M
 
-- [ ] Tab bar region (counts, `Pending`, `Unavailable`, click-to-switch); merged All view with per-group caps, non-scrolling.
-- [ ] Merged state struct per the State-merge rules (lazy file index, per-tab selection/scroll, no-workspace = disabled tabs, restore incl. active tab).
-- [ ] Prefix routing (`>`, `@`) in `on_modal_input_changed`; ⇥/⇧⇥ arms; query persists across tabs.
-- [ ] `CommandHistory` persistence (c-p-e shapes, `recent_files.rs` template); Recently-used section on empty query; recency-boosted ranking; `is_pinned` + `⌘.`.
-- [ ] `Cmd+Shift+O` → Files tab; `Cmd+Shift+A` → All; standalone File Finder retired.
-- [ ] Symbols tab ships **disabled-state only** (its provider is LSP-Future work — see Future).
+- [x] Tab bar region (counts, `Unavailable`, click-to-switch); merged All view with per-group caps (5), non-scrolling. Status: `TabBar`/`TabCount` (Hidden/N/Pending/Unavailable) added to `overlay_surface.rs`'s spec/layout/render/hit-test; `Pending` is a real enum variant with no live producer (no async provider exists yet — same posture as the Symbols tab). Tab click dispatches `HitTarget::ModalTab` → `ModalMsg::ActivateTab`.
+- [~] Merged state struct per the State-merge rules (lazy file index, per-tab selection/scroll, no-workspace = disabled tabs, restore incl. active tab). Status: the merge rules are implemented (lazy `files: Option<FileFinderState>` populated only on first Files-tab activation; `files_available` drives `Unavailable` instead of erroring; `active_tab` round-trips through `last_command_palette` same as `query`), but rather than a new `SearchEverywhereState` type, `CommandPaletteState` itself was extended in place (`active_tab`, `files`, `files_available`, `all_selected`, `recent_count` fields) — smaller diff, same behavior, but the doc's "one state struct absorbing CommandPaletteState + FileFinderState" naming is not literal: `FileFinderState` is nested inside, not merged field-by-field.
+- [x] Prefix routing (`>`, `@`) as query parsing on `InsertChar`/`DeleteBackward` (not `on_modal_input_changed`, which runs after the char is already applied — routing needs the *pre-insert* empty check); ⇥/⇧⇥ arms (`ModalMsg::NextTab`/`PrevTab`, skip `Unavailable`); query persists across tabs (one shared `editable`, mirrored into the lazily-populated Files tab's own `FileFinderState.editable`).
+- [x] `CommandHistory` persistence (c-p-e shapes verbatim: `CommandHistory{commands, version}`, `CommandUsage{execution_count, last_used, is_pinned}`, `command-history.json`, cloned off `recent_files.rs`) — new `src/command_history.rs`; loaded once onto `AppModel.command_history` (mirrors `RecentFiles`), saved via a new `Cmd::SaveCommandHistory` (matches `Cmd::SaveRecentFiles` — I/O happens in the runtime's `Cmd` executor, not inline in `update()`, which the first draft of this got wrong and caught via a flaky ordering test). Recently-used section (top 3, empty query only, `state.recent_count`); recency-boosted ranking (`pinned > recency > fuzzy score`, stable sort keeps registry order when history is empty); `⌘.` toggles `is_pinned` on the Commands tab.
+- [x] `Cmd+Shift+O` → Search Everywhere pre-focused on Files (lazy-loads the file index, `Unavailable` with no workspace instead of refusing to open); `Cmd+Shift+A` → All; standalone File Finder modal (`ModalId::FileFinder`/`ModalState::FileFinder`) is no longer reachable from any keybinding — the type itself was left in place (`FileFinderState` is reused as the Files tab's backing state) rather than deleted.
+- [x] Symbols tab ships **disabled-state only**: `TabCount::Unavailable` always, ⇥-skipped, body shows a dim "No language server for this file" row.
+
+**Not done / simplified**: the merged All view's row anatomy is a plain command/file row (no per-kind accessory variation beyond what Commands/Files already render); no manual verification of the tab bar against the mockups at 1x/1.25x/2x was performed (same outstanding gap noted in Phase 1/2's status).
 
 ### Phase 5: Cursor-anchored mode — *ships with its first consumer*
 
