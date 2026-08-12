@@ -29,6 +29,8 @@ pub struct VisibleTreeRow<'a, T> {
     pub node: &'a T,
     pub depth: usize,
     pub index: usize,
+    /// Flattened visible index of this row's parent, or `None` for a root.
+    pub parent_index: Option<usize>,
 }
 
 /// Count visible nodes in a tree using the caller's expansion rule.
@@ -74,6 +76,7 @@ where
         target: usize,
         current: &mut usize,
         depth: usize,
+        parent_index: Option<usize>,
         is_expanded: &FExpanded,
     ) -> Option<VisibleTreeRow<'a, T>>
     where
@@ -85,13 +88,22 @@ where
                 node,
                 depth,
                 index: *current,
+                parent_index,
             });
         }
+        let node_index = *current;
         *current += 1;
 
         if is_expanded(node) {
             for child in node.children() {
-                if let Some(found) = row_at_index(child, target, current, depth + 1, is_expanded) {
+                if let Some(found) = row_at_index(
+                    child,
+                    target,
+                    current,
+                    depth + 1,
+                    Some(node_index),
+                    is_expanded,
+                ) {
                     return Some(found);
                 }
             }
@@ -102,7 +114,7 @@ where
 
     let mut current = 0;
     for node in roots {
-        if let Some(found) = row_at_index(node, target, &mut current, 0, &is_expanded) {
+        if let Some(found) = row_at_index(node, target, &mut current, 0, None, &is_expanded) {
             return Some(found);
         }
     }
@@ -125,6 +137,7 @@ where
         node: &'a T,
         current: &mut usize,
         depth: usize,
+        parent_index: Option<usize>,
         is_expanded: &FExpanded,
         matches: &FMatch,
     ) -> Option<VisibleTreeRow<'a, T>>
@@ -138,13 +151,22 @@ where
                 node,
                 depth,
                 index: *current,
+                parent_index,
             });
         }
+        let node_index = *current;
         *current += 1;
 
         if is_expanded(node) {
             for child in node.children() {
-                if let Some(found) = row_matching(child, current, depth + 1, is_expanded, matches) {
+                if let Some(found) = row_matching(
+                    child,
+                    current,
+                    depth + 1,
+                    Some(node_index),
+                    is_expanded,
+                    matches,
+                ) {
                     return Some(found);
                 }
             }
@@ -155,7 +177,7 @@ where
 
     let mut current = 0;
     for node in roots {
-        if let Some(found) = row_matching(node, &mut current, 0, &is_expanded, &matches) {
+        if let Some(found) = row_matching(node, &mut current, 0, None, &is_expanded, &matches) {
             return Some(found);
         }
     }
@@ -244,6 +266,7 @@ mod tests {
         assert_eq!(row.node.id, "grandchild");
         assert_eq!(row.depth, 2);
         assert_eq!(row.index, 3);
+        assert_eq!(row.parent_index, Some(2));
     }
 
     #[test]
@@ -255,6 +278,7 @@ mod tests {
 
         assert_eq!(row.depth, 0);
         assert_eq!(row.index, 4);
+        assert_eq!(row.parent_index, None);
         assert_eq!(
             visible_tree_index_of(&roots, |node| node.expanded, |node| node.id == "child-b"),
             Some(2)

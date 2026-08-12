@@ -5,7 +5,7 @@ use crate::messages::OutlineMsg;
 use crate::model::AppModel;
 use crate::outline::OutlineNode;
 use crate::update::navigation::{clamp_to_document, push_history};
-use crate::util::{visible_tree_count, visible_tree_row_at_index};
+use crate::util::{visible_tree_count, visible_tree_row_at_index, VisibleTreeRow};
 use crate::view::geometry::{DockHeaderLayout, OutlinePanelLayout, WindowLayout};
 
 fn count_visible_items(nodes: &[OutlineNode], panel: &crate::model::OutlinePanelState) -> usize {
@@ -14,15 +14,14 @@ fn count_visible_items(nodes: &[OutlineNode], panel: &crate::model::OutlinePanel
     })
 }
 
-fn visible_node_at_index<'a>(
+fn visible_row_at_index<'a>(
     nodes: &'a [OutlineNode],
     panel: &crate::model::OutlinePanelState,
     target: usize,
-) -> Option<&'a OutlineNode> {
+) -> Option<VisibleTreeRow<'a, OutlineNode>> {
     visible_tree_row_at_index(nodes, target, |node: &OutlineNode| {
         node.is_collapsible() && !panel.is_collapsed(node)
     })
-    .map(|row| row.node)
 }
 
 fn outline_visible_capacity(model: &AppModel) -> usize {
@@ -177,53 +176,92 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
 
         OutlineMsg::ExpandSelected => {
             if let Some(idx) = model.outline_panel.selected_index {
-                let outline = model
+                let selected = model
                     .editor_area
                     .focused_document()
-                    .and_then(|doc| doc.outline.as_ref());
+                    .and_then(|doc| doc.outline.as_ref())
+                    .and_then(|outline| {
+                        visible_row_at_index(&outline.roots, &model.outline_panel, idx)
+                    })
+                    .map(|row| {
+                        let node = row.node;
+                        (
+                            node.is_collapsible() && model.outline_panel.is_collapsed(node),
+                            crate::model::OutlinePanelState::node_key(node),
+                        )
+                    });
 
-                if let Some(outline) = outline {
-                    if let Some(node) =
-                        visible_node_at_index(&outline.roots, &model.outline_panel, idx)
-                    {
-                        if node.is_collapsible() {
-                            let key = crate::model::OutlinePanelState::node_key(node);
-                            model.outline_panel.collapsed.remove(&key);
+                if let Some((should_expand, key)) = selected {
+                    if should_expand {
+                        model.outline_panel.collapsed.remove(&key);
+                    } else {
+                        let total = model
+                            .editor_area
+                            .focused_document()
+                            .and_then(|doc| doc.outline.as_ref())
+                            .map(|outline| {
+                                count_visible_items(&outline.roots, &model.outline_panel)
+                            })
+                            .unwrap_or(0);
+                        if idx < total.saturating_sub(1) {
+                            model.outline_panel.selected_index = Some(idx + 1);
                         }
                     }
-                    let total = count_visible_items(&outline.roots, &model.outline_panel);
+
+                    let total = model
+                        .editor_area
+                        .focused_document()
+                        .and_then(|doc| doc.outline.as_ref())
+                        .map(|outline| count_visible_items(&outline.roots, &model.outline_panel))
+                        .unwrap_or(0);
                     model.outline_panel.scroll_offset = model
                         .outline_panel
                         .scroll_offset
                         .min(total.saturating_sub(1));
                 }
             }
+            reveal_outline_selection(model);
             Some(Cmd::Redraw)
         }
 
         OutlineMsg::CollapseSelected => {
             if let Some(idx) = model.outline_panel.selected_index {
-                let outline = model
+                let selected = model
                     .editor_area
                     .focused_document()
-                    .and_then(|doc| doc.outline.as_ref());
+                    .and_then(|doc| doc.outline.as_ref())
+                    .and_then(|outline| {
+                        visible_row_at_index(&outline.roots, &model.outline_panel, idx)
+                    })
+                    .map(|row| {
+                        let node = row.node;
+                        (
+                            node.is_collapsible() && !model.outline_panel.is_collapsed(node),
+                            crate::model::OutlinePanelState::node_key(node),
+                            row.parent_index,
+                        )
+                    });
 
-                if let Some(outline) = outline {
-                    if let Some(node) =
-                        visible_node_at_index(&outline.roots, &model.outline_panel, idx)
-                    {
-                        if node.is_collapsible() {
-                            let key = crate::model::OutlinePanelState::node_key(node);
-                            model.outline_panel.collapsed.insert(key);
-                        }
+                if let Some((should_collapse, key, parent_index)) = selected {
+                    if should_collapse {
+                        model.outline_panel.collapsed.insert(key);
+                    } else if let Some(parent_index) = parent_index {
+                        model.outline_panel.selected_index = Some(parent_index);
                     }
-                    let total = count_visible_items(&outline.roots, &model.outline_panel);
+
+                    let total = model
+                        .editor_area
+                        .focused_document()
+                        .and_then(|doc| doc.outline.as_ref())
+                        .map(|outline| count_visible_items(&outline.roots, &model.outline_panel))
+                        .unwrap_or(0);
                     model.outline_panel.scroll_offset = model
                         .outline_panel
                         .scroll_offset
                         .min(total.saturating_sub(1));
                 }
             }
+            reveal_outline_selection(model);
             Some(Cmd::Redraw)
         }
 
@@ -235,9 +273,10 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                     .and_then(|doc| doc.outline.as_ref());
 
                 if let Some(outline) = outline {
-                    if let Some(node) =
-                        visible_node_at_index(&outline.roots, &model.outline_panel, idx)
+                    if let Some(row) =
+                        visible_row_at_index(&outline.roots, &model.outline_panel, idx)
                     {
+                        let node = row.node;
                         let line = node.range.start_line;
                         let col = node.range.start_col;
                         // Jump to symbol and focus editor
@@ -297,9 +336,9 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                 .and_then(|doc| doc.outline.as_ref());
 
             if let Some(outline) = outline {
-                if let Some(node) =
-                    visible_node_at_index(&outline.roots, &model.outline_panel, index)
+                if let Some(row) = visible_row_at_index(&outline.roots, &model.outline_panel, index)
                 {
+                    let node = row.node;
                     model.outline_panel.selected_index = Some(index);
                     if on_chevron && node.is_collapsible() {
                         model.outline_panel.toggle_collapsed(node);
@@ -328,6 +367,7 @@ mod refresh_tests {
     use super::*;
     use crate::commands::Cmd;
     use crate::messages::LayoutMsg;
+    use crate::model::OutlinePanelState;
     use crate::outline::{OutlineData, OutlineKind, OutlineRange};
     use crate::panel::PanelId;
 
@@ -355,6 +395,38 @@ mod refresh_tests {
                     children: Vec::new(),
                 })
                 .collect(),
+        });
+    }
+
+    fn outline_node(name: &str, line: usize, children: Vec<OutlineNode>) -> OutlineNode {
+        OutlineNode {
+            kind: OutlineKind::Function,
+            name: name.to_owned(),
+            range: OutlineRange {
+                start_line: line,
+                start_col: 0,
+                end_line: line,
+                end_col: 1,
+            },
+            children,
+        }
+    }
+
+    fn populate_nested_outline(model: &mut AppModel) {
+        let revision = model.document().revision;
+        model.document_mut().outline = Some(OutlineData {
+            revision,
+            roots: vec![
+                outline_node(
+                    "root",
+                    0,
+                    vec![
+                        outline_node("child", 1, vec![outline_node("grandchild", 2, vec![])]),
+                        outline_node("leaf", 3, vec![]),
+                    ],
+                ),
+                outline_node("sibling", 4, vec![]),
+            ],
         });
     }
 
@@ -417,6 +489,78 @@ mod refresh_tests {
 
         assert_eq!(model.outline_panel.selected_index, Some(4));
         assert_eq!(model.outline_panel.scroll_offset, 4);
+    }
+
+    #[test]
+    fn left_collapses_expanded_branch_then_traverses_to_parent() {
+        let mut model = model_with_open_outline_panel();
+        populate_nested_outline(&mut model);
+
+        model.outline_panel.selected_index = Some(1);
+        update_outline(&mut model, OutlineMsg::CollapseSelected);
+        assert_eq!(model.outline_panel.selected_index, Some(1));
+        let child_key = model
+            .document()
+            .outline
+            .as_ref()
+            .map(|outline| OutlinePanelState::node_key(&outline.roots[0].children[0]))
+            .expect("nested outline should exist");
+        assert!(model.outline_panel.collapsed.contains(&child_key));
+
+        update_outline(&mut model, OutlineMsg::CollapseSelected);
+        assert_eq!(model.outline_panel.selected_index, Some(0));
+
+        update_outline(&mut model, OutlineMsg::CollapseSelected);
+        assert_eq!(model.outline_panel.selected_index, Some(0));
+        let root_key = model
+            .document()
+            .outline
+            .as_ref()
+            .map(|outline| OutlinePanelState::node_key(&outline.roots[0]))
+            .expect("nested outline should exist");
+        assert!(model.outline_panel.collapsed.contains(&root_key));
+
+        update_outline(&mut model, OutlineMsg::CollapseSelected);
+        assert_eq!(model.outline_panel.selected_index, Some(0));
+    }
+
+    #[test]
+    fn repeated_left_walks_from_grandchild_to_root() {
+        let mut model = model_with_open_outline_panel();
+        populate_nested_outline(&mut model);
+        model.outline_panel.selected_index = Some(2);
+
+        update_outline(&mut model, OutlineMsg::CollapseSelected);
+        assert_eq!(model.outline_panel.selected_index, Some(1));
+        update_outline(&mut model, OutlineMsg::CollapseSelected);
+        assert_eq!(model.outline_panel.selected_index, Some(1));
+        update_outline(&mut model, OutlineMsg::CollapseSelected);
+        assert_eq!(model.outline_panel.selected_index, Some(0));
+    }
+
+    #[test]
+    fn right_expands_collapsed_branch_or_advances_to_next_row() {
+        let mut model = model_with_open_outline_panel();
+        populate_nested_outline(&mut model);
+        let root_key = model
+            .document()
+            .outline
+            .as_ref()
+            .map(|outline| OutlinePanelState::node_key(&outline.roots[0]))
+            .expect("nested outline should exist");
+        model.outline_panel.collapsed.insert(root_key);
+        model.outline_panel.selected_index = Some(0);
+
+        update_outline(&mut model, OutlineMsg::ExpandSelected);
+        assert_eq!(model.outline_panel.selected_index, Some(0));
+        assert!(!model.outline_panel.collapsed.contains(&root_key));
+
+        update_outline(&mut model, OutlineMsg::ExpandSelected);
+        assert_eq!(model.outline_panel.selected_index, Some(1));
+
+        model.outline_panel.selected_index = Some(4);
+        update_outline(&mut model, OutlineMsg::ExpandSelected);
+        assert_eq!(model.outline_panel.selected_index, Some(4));
     }
 
     #[test]

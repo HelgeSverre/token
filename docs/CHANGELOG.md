@@ -10,6 +10,10 @@ All notable changes to rust-editor are documented in this file.
 
 - Allowed manual outline scrolling to move beyond the selected symbol without
   the viewport snapping back to keep that symbol visible.
+- Restored outline keyboard navigation by preventing focused outline keys from
+  being handled as editor keybindings.
+- Matched outline tree traversal to the file tree: Left collapses or selects
+  the parent, while Right expands or advances to the next visible symbol.
 - Added the copyright notice to the standard macOS About panel.
 
 ## v0.5.1 - 2026-08-12
