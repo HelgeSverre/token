@@ -623,14 +623,22 @@ impl App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse_position = Some((position.x, position.y));
+                let prev_modal_hover_row = self.model.ui.modal_hover_row;
                 self.update_cursor_icon(position.x, position.y);
 
-                // Modals already force Damage::Full while visible, and row
-                // hover wash (overlay-surface.md Pointer) needs a repaint on
-                // every hover change — simplest correct behavior is to just
-                // redraw every mouse move while a modal is open.
-                if self.model.ui.has_modal() {
-                    return Some(Cmd::Redraw);
+                // A modal being open doesn't rule out a drag that started
+                // before it opened (splitter/scrollbar/etc.), so those
+                // branches still take priority below. Otherwise, row hover
+                // wash (overlay-surface.md Pointer) only needs a repaint
+                // when the hovered row actually changes, not on every move.
+                if self.model.ui.has_modal()
+                    && self.model.ui.splitter_drag.is_none()
+                    && self.model.ui.scrollbar_drag.is_none()
+                    && self.model.ui.sidebar_resize.is_none()
+                    && self.model.ui.dock_resize.is_none()
+                {
+                    return (self.model.ui.modal_hover_row != prev_modal_hover_row)
+                        .then_some(Cmd::Redraw);
                 }
 
                 // Handle splitter drag first (highest priority)

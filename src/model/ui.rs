@@ -773,12 +773,14 @@ impl UiState {
     pub fn open_modal(&mut self, state: ModalState) {
         self.active_modal = Some(state);
         self.focus = FocusTarget::Modal;
+        self.modal_hover_row = None;
     }
 
     /// Close the active modal (returns focus to Editor)
     pub fn close_modal(&mut self) {
         self.active_modal = None;
         self.focus = FocusTarget::Editor;
+        self.modal_hover_row = None;
     }
 
     /// Set focus to the editor
