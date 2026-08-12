@@ -1054,7 +1054,12 @@ fn render_tab_bar(
             suffix => format!("{label}  {suffix}"),
         };
         let color = if !count.is_available() {
-            colors.text_dim
+            // Unavailable tabs dim further than a merely-inactive one
+            // (Visual Language > TabCount states: "Unavailable also dims
+            // the label") — same alpha-reduction idiom the scrollbar wash
+            // below uses.
+            let alpha = (colors.text_dim >> 24) & 0xFF;
+            (((alpha * 60 / 100) & 0xFF) << 24) | (colors.text_dim & 0x00FF_FFFF)
         } else if is_active {
             colors.text_primary
         } else {

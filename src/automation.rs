@@ -126,19 +126,23 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                     state.files.as_ref().map(|f| f.selected_index).unwrap_or(0),
                 ),
                 SearchTab::All => {
+                    use token::update::ALL_TAB_GROUP_CAP;
+
                     let mut rows: Vec<OverlayRowSnapshot> = state
                         .matches
                         .iter()
-                        .take(5)
+                        .take(ALL_TAB_GROUP_CAP)
                         .map(|m| OverlayRowSnapshot {
                             label: m.def.label.to_owned(),
                             section: Some("Commands".to_owned()),
                         })
                         .collect();
                     if let Some(files) = &state.files {
-                        rows.extend(files.results.iter().take(5).map(|m| OverlayRowSnapshot {
-                            label: m.filename.clone(),
-                            section: Some("Files".to_owned()),
+                        rows.extend(files.results.iter().take(ALL_TAB_GROUP_CAP).map(|m| {
+                            OverlayRowSnapshot {
+                                label: m.filename.clone(),
+                                section: Some("Files".to_owned()),
+                            }
                         }));
                     }
                     (rows, state.all_selected)
