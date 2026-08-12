@@ -2574,6 +2574,47 @@ mod find_match_decoration_tests {
         );
     }
 
+    /// Crosses the state->query seam (`FindReplaceState::build_query`) with
+    /// a non-default `whole_word`, not just `(false, false)` like every
+    /// other case in this module — regression coverage for swapping
+    /// `SearchQuery::new`'s positional bool args (find-enhancements.md
+    /// Phase 2's "exercised transitively" claim didn't actually hold).
+    #[test]
+    fn active_find_matches_respects_whole_word() {
+        let mut model = model_with_text("foo foobar foo");
+        let mut state = FindReplaceState::default();
+        state.set_query("foo");
+        state.whole_word = true;
+        model.ui.open_modal(ModalState::FindReplace(state));
+
+        let matches = active_find_matches(&model, model.document());
+
+        // Only the two standalone "foo"s match; "foobar"'s "foo" prefix
+        // doesn't, since it isn't at a word boundary on both sides.
+        assert_eq!(
+            matches,
+            vec![
+                crate::search::Match { start: 0, end: 3 },
+                crate::search::Match { start: 11, end: 14 },
+            ]
+        );
+    }
+
+    /// Same seam as above, for `case_sensitive` — a swapped/misrouted bool
+    /// here would silently case-fold (or over-restrict) every find.
+    #[test]
+    fn active_find_matches_respects_case_sensitive() {
+        let mut model = model_with_text("Foo foo FOO");
+        let mut state = FindReplaceState::default();
+        state.set_query("foo");
+        state.case_sensitive = true;
+        model.ui.open_modal(ModalState::FindReplace(state));
+
+        let matches = active_find_matches(&model, model.document());
+
+        assert_eq!(matches, vec![crate::search::Match { start: 4, end: 7 }]);
+    }
+
     #[test]
     fn active_find_matches_empty_on_regex_error() {
         let mut model = model_with_text("foo bar foo");
