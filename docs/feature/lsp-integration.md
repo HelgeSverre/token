@@ -316,10 +316,10 @@ Binary not found on `PATH` (after `PATHEXT` resolution on Windows) → `ServerSt
 - [x] **Server→client request replies** (the table above) + `MethodNotFound` default + ignore-unknown-notifications.
 - [x] `LspManager` in runtime; `LspUiState` mirror in model driven by `ServerStateChanged`; `Indexing` from `$/progress`.
 - [x] `LspServerDef` via a side table (`lsp::lsp_server_def`) keyed by `LanguageId`, not a field added to the registry macro — same "~85 call sites untouched" outcome without growing the macro's arity; YAML config overrides + master switch; root resolution (workspace → project marker → parent, detached cap).
-- [ ] Debounced `didChange` with max-wait cap; shared snapshot with syntax parse; flush-before-request plumbing; `didClose` on `release_document_if_unreferenced`; Save As close/open pair; revision-bump-on-every-mutation test.
-- [ ] Crash backoff + `RestartLanguageServer`; **build the quit-time teardown hook** (none exists) with the shutdown sequence (await shutdown response → exit → wait → kill) and `ShuttingDown` suppressing restart; `processId` in initialize.
-- [ ] Status bar transient on state changes; automation snapshot exposes server states.
-- [ ] **Gate:** logs prove a rust-analyzer session stays in sync across an edit-heavy session, including a request issued mid-debounce (flush test), with zero UI change.
+- [x] Debounced `didChange` with max-wait cap; shared snapshot with syntax parse; flush-before-request plumbing; `didClose` on `release_document_if_unreferenced`; Save As close/open pair; revision-bump-on-every-mutation test.
+- [x] Crash backoff + `RestartLanguageServer`; **build the quit-time teardown hook** (none exists) with the shutdown sequence (await shutdown response → exit → wait → kill) and `ShuttingDown` suppressing restart; `processId` in initialize.
+- [x] Status bar transient on state changes; automation snapshot exposes server states.
+- [x] **Gate:** logs prove a rust-analyzer session stays in sync across an edit-heavy session, including a request issued mid-debounce (flush test), with zero UI change.
 
 ### Phase 2: Diagnostics
 
@@ -382,6 +382,8 @@ Binary not found on `PATH` (after `PATHEXT` resolution on Windows) → `ServerSt
 ### Integration: scriptable fake server
 
 A stub binary speaking JSON-RPC, driven by **per-test scenario scripts, not canned fixtures** — the design leans on failure modes a fixture can't produce. Scenarios: full lifecycle; `workspace/configuration` request mid-init (client must reply or the test hangs — by design); never-responds (abandonment); exit mid-request → backoff → restart → documents re-opened; malformed/partial frames; duplicate and unknown response ids; publish for a never-opened URI (retained in store); publish with stale version (dropped); response to a cancelled request (consumed, discarded); stderr flood (no wedge). One `#[ignore]`d test runs real rust-analyzer locally.
+
+Phase 1 implementation: `src/bin/fake_lsp_server.rs` (a `[[bin]]` target, JSON scenario-step interpreter reusing `lsp::transport`), driven from `tests/lsp_fake_server_scenarios.rs` (lifecycle, `workspace/configuration` mid-init, never-responds, exit-mid-request, malformed frames, duplicate/unknown ids, stderr flood, `initialize` error, `#[ignore]`d real rust-analyzer) via `spawn_server` directly, and from a `runtime::app::tests` gate test (`edit_heavy_session_stays_in_sync_with_fake_lsp_server`) that drives the full `App`/`LspManager` path — didOpen, a debounced burst of didChange, a flush-before-request mid-debounce, didSave, didClose, and quit teardown — asserting on a transcript file the fake server writes in receipt order. Publish/cancel-related scenarios (retained-store, stale-version, cancelled-response) are deferred to Phase 2/3 alongside the features that produce that traffic; exit-mid-request → backoff → restart → re-open is exercised at the unit level (`runtime::app::tests`) rather than through the fake server, since the restart path doesn't yet drive real request traffic in Phase 1.
 
 ### Manual checklist
 
