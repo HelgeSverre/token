@@ -186,8 +186,8 @@ fn test_all_segments_iteration() {
     let bar = StatusBar::new();
     let all: Vec<_> = bar.all_segments().collect();
 
-    // Should have 7 segments total (including CaretCount)
-    assert_eq!(all.len(), 7);
+    // Should have 8 segments total (including CaretCount and Diagnostics)
+    assert_eq!(all.len(), 8);
 }
 
 // =============================================================================

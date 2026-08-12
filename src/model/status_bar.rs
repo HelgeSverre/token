@@ -471,10 +471,18 @@ pub fn sync_status_bar(model: &mut AppModel) {
         .update_segment(SegmentId::Diagnostics, diagnostics_content);
 
     // Message of the highest-severity diagnostic under the cursor, in the
-    // same segment a status flash uses — a flash always wins (it's
-    // explicit user/action feedback); once it expires this takes over
-    // again on the next sync.
-    if model.ui.transient_message.is_none() {
+    // same segment a status flash uses — a flash (or any explicit
+    // `UpdateSegment`) always wins over this fallback; it only refreshes
+    // text it owns (previously set by itself) or an empty segment, so it
+    // never clobbers an explicit message that isn't backed by
+    // `transient_message` (e.g. `UiMsg::UpdateSegment`).
+    let owns_status_message = model.ui.status_message_is_diagnostic
+        || model
+            .ui
+            .status_bar
+            .get_segment(SegmentId::StatusMessage)
+            .is_some_and(|s| s.content.is_empty());
+    if model.ui.transient_message.is_none() && owns_status_message {
         let cursor = model.editor().active_cursor();
         let cursor_position = super::editor::Position::new(cursor.line, cursor.column);
         let message_content = match diagnostic_message_at_cursor(model.document(), cursor_position)
@@ -482,6 +490,7 @@ pub fn sync_status_bar(model: &mut AppModel) {
             Some(text) => SegmentContent::Text(truncate_status_message(&text)),
             None => SegmentContent::Empty,
         };
+        model.ui.status_message_is_diagnostic = !message_content.is_empty();
         model
             .ui
             .status_bar
@@ -578,5 +587,91 @@ fn calculate_selection_info(model: &AppModel) -> SegmentContent {
         }
     } else {
         SegmentContent::Empty
+    }
+}
+
+#[cfg(test)]
+mod diagnostics_tests {
+    use super::*;
+    use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
+
+    fn diagnostic(
+        start_line: u32,
+        start_char: u32,
+        end_line: u32,
+        end_char: u32,
+        severity: DiagnosticSeverity,
+        message: &str,
+    ) -> Diagnostic {
+        Diagnostic {
+            range: Range {
+                start: Position::new(start_line, start_char),
+                end: Position::new(end_line, end_char),
+            },
+            severity: Some(severity),
+            message: message.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn count_diagnostics_splits_errors_and_warnings_and_ignores_info() {
+        let diagnostics = vec![
+            diagnostic(0, 0, 0, 1, DiagnosticSeverity::ERROR, "e1"),
+            diagnostic(0, 0, 0, 1, DiagnosticSeverity::ERROR, "e2"),
+            diagnostic(0, 0, 0, 1, DiagnosticSeverity::WARNING, "w1"),
+            diagnostic(0, 0, 0, 1, DiagnosticSeverity::INFORMATION, "i1"),
+        ];
+        assert_eq!(count_diagnostics(&diagnostics), (2, 1));
+    }
+
+    #[test]
+    fn count_diagnostics_empty_is_zero() {
+        assert_eq!(count_diagnostics(&[]), (0, 0));
+    }
+
+    #[test]
+    fn truncate_status_message_flattens_whitespace_under_limit() {
+        let text = "line one\n  line two\tline three";
+        assert_eq!(
+            truncate_status_message(text),
+            "line one line two line three"
+        );
+    }
+
+    #[test]
+    fn truncate_status_message_caps_length_with_ellipsis() {
+        let text = "a".repeat(MAX_STATUS_MESSAGE_CHARS + 50);
+        let truncated = truncate_status_message(&text);
+        assert_eq!(truncated.chars().count(), MAX_STATUS_MESSAGE_CHARS);
+        assert!(truncated.ends_with('…'));
+    }
+
+    #[test]
+    fn diagnostic_message_at_cursor_picks_highest_severity_in_range() {
+        let mut document = crate::model::Document::with_text("hello world\nfoo bar\n");
+        document.diagnostics = vec![
+            diagnostic(0, 0, 0, 5, DiagnosticSeverity::WARNING, "warn: hello"),
+            diagnostic(0, 0, 0, 5, DiagnosticSeverity::ERROR, "error: hello"),
+        ];
+        let message =
+            diagnostic_message_at_cursor(&document, super::super::editor::Position::new(0, 2));
+        assert_eq!(message.as_deref(), Some("error: hello"));
+    }
+
+    #[test]
+    fn diagnostic_message_at_cursor_none_outside_range() {
+        let mut document = crate::model::Document::with_text("hello world\n");
+        document.diagnostics = vec![diagnostic(
+            0,
+            0,
+            0,
+            5,
+            DiagnosticSeverity::ERROR,
+            "error: hello",
+        )];
+        let message =
+            diagnostic_message_at_cursor(&document, super::super::editor::Position::new(0, 8));
+        assert_eq!(message, None);
     }
 }

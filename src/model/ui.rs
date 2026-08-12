@@ -855,6 +855,12 @@ pub struct UiState {
     /// Lines that contained cursors in the previous frame (for damage tracking)
     /// Used by cursor blink to determine which lines need redrawing
     pub previous_cursor_lines: Vec<usize>,
+    /// Whether the current `StatusMessage` segment text was set by
+    /// `sync_status_bar`'s diagnostic-under-cursor fallback rather than an
+    /// explicit flash/`UpdateSegment` — lets the fallback refresh/clear its
+    /// own text each sync without clobbering an explicit message
+    /// (lsp-integration.md Phase 2).
+    pub status_message_is_diagnostic: bool,
     /// `FlatIndex` of the modal row currently under the mouse, if any
     /// (overlay-surface.md Pointer: hover wash). Cleared whenever the mouse
     /// isn't over a row.
@@ -889,6 +895,7 @@ impl UiState {
             tab_drag: None,
             focus: FocusTarget::Editor,
             hover: HoverRegion::None,
+            status_message_is_diagnostic: false,
             previous_cursor_lines: Vec::new(),
             modal_hover_row: None,
             cursor_overlay: None,
@@ -989,6 +996,7 @@ impl UiState {
     pub fn set_status_for(&mut self, message: impl Into<String>, duration: Duration) {
         let message = message.into();
         self.transient_message = Some(TransientMessage::new(message.clone(), duration));
+        self.status_message_is_diagnostic = false;
         self.status_bar
             .update_segment(SegmentId::StatusMessage, SegmentContent::Text(message));
     }
@@ -1002,6 +1010,7 @@ impl UiState {
             .is_some_and(|t| t.is_expired())
         {
             self.transient_message = None;
+            self.status_message_is_diagnostic = false;
             self.status_bar
                 .update_segment(SegmentId::StatusMessage, SegmentContent::Empty);
             true

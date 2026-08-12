@@ -53,6 +53,9 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
         }
 
         UiMsg::UpdateSegment { id, content } => {
+            if id == SegmentId::StatusMessage {
+                model.ui.status_message_is_diagnostic = false;
+            }
             model.ui.status_bar.update_segment(id, content);
             Some(Cmd::redraw_status_bar())
         }
@@ -66,6 +69,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
 
         UiMsg::ClearTransientMessage => {
             model.ui.transient_message = None;
+            model.ui.status_message_is_diagnostic = false;
             model
                 .ui
                 .status_bar
