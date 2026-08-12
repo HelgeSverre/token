@@ -3056,6 +3056,13 @@ impl App {
                     self.lsp.definition_request_by_doc.get(&pending.document_id) == Some(&key)
                 });
             if !is_current {
+                // Superseded: the newer request already replaced this
+                // entry in `definition_request_by_doc`, but the old key
+                // is still sitting in `definition_requests` — without
+                // removing it here it leaks for the rest of the session
+                // (see `LspManager::definition_requests`'s doc comment on
+                // supersession only clearing the `_by_doc` half).
+                self.lsp.definition_requests.remove(&key);
                 continue;
             }
             let Some(pending) = self.lsp.definition_requests.remove(&key) else {
@@ -3105,6 +3112,9 @@ impl App {
                 .get(&key)
                 .is_some_and(|pending| self.lsp.hover_request_by_doc.get(&pending.document_id) == Some(&key));
             if !is_current {
+                // Superseded — mirrors `check_lsp_definition_deadlines`:
+                // remove the stale entry instead of leaking it.
+                self.lsp.hover_requests.remove(&key);
                 continue;
             }
             let Some(pending) = self.lsp.hover_requests.remove(&key) else {
@@ -4893,9 +4903,13 @@ mod tests {
 
         app.check_lsp_definition_deadlines();
 
+        // The stale entry's deadline firing must clean up its
+        // `definition_requests` bookkeeping too — leaving it behind would
+        // leak for the rest of the session (nothing else ever removes a
+        // superseded entry once its `_by_doc` half is gone).
         assert!(
-            app.lsp.definition_requests.contains_key(&stale_key),
-            "a superseded request's own bookkeeping is untouched by its stale deadline"
+            !app.lsp.definition_requests.contains_key(&stale_key),
+            "a superseded request's stale deadline must remove its bookkeeping, not leak it"
         );
         assert_eq!(
             app.lsp.definition_request_by_doc.get(&doc_id),
@@ -5109,6 +5123,46 @@ mod tests {
 
         let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
         handle.kill();
+    }
+
+    /// Mirrors `a_deadline_for_an_already_superseded_request_is_dropped_silently`
+    /// for hover: a superseded entry's stale deadline must remove its
+    /// `hover_requests` bookkeeping, not just skip over it and leak.
+    #[test]
+    fn a_hover_deadline_for_an_already_superseded_request_removes_its_bookkeeping() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-hover-timeout-superseded");
+        let cursor = test_cursor(&app);
+
+        let stale_key = (server_id.clone(), root.clone(), 1);
+        app.lsp.hover_requests.insert(
+            stale_key.clone(),
+            PendingHover {
+                document_id: doc_id,
+                revision,
+                cursor,
+            },
+        );
+        let current_key = (server_id.clone(), root.clone(), 2);
+        app.lsp.hover_request_by_doc.insert(doc_id, current_key.clone());
+        app.lsp
+            .hover_deadlines
+            .insert(stale_key.clone(), Instant::now() - Duration::from_secs(1));
+
+        app.check_lsp_hover_deadlines();
+
+        assert!(
+            !app.lsp.hover_requests.contains_key(&stale_key),
+            "a superseded hover request's stale deadline must remove its bookkeeping, not leak it"
+        );
+        assert_eq!(
+            app.lsp.hover_request_by_doc.get(&doc_id),
+            Some(&current_key),
+            "the newer request must still own the doc's outcome"
+        );
     }
 
     /// End-to-end "hover resolved and rendered" (design doc's Testing
