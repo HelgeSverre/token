@@ -11,8 +11,15 @@ use super::Document;
 ///
 /// Declaration order is priority order, lowest to highest: derived `Ord`
 /// resolves "breakpoint > error > warning > info > bookmark" via `max()`.
+///
+/// `Match` (a find/replace search hit) sits below every other variant —
+/// it's only ever used for scrollbar overview ticks (find-enhancements
+/// opts out of the gutter marks lane entirely), so its relative priority
+/// only matters if a real gutter-marks producer ever collides with it on
+/// the same track row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Mark {
+    Match,
     Bookmark,
     Info,
     Warning,

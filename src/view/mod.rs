@@ -314,6 +314,81 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
     }
 }
 
+/// Char-offset matches for the active find/replace query, if the modal is
+/// open with a non-empty, successfully-compiled query. Shared by match
+/// highlighting decorations and scrollbar overview ticks — this is the
+/// first consumer of the decoration pipeline from editor-decorations.md
+/// (see find-enhancements.md).
+fn active_find_matches(
+    model: &AppModel,
+    document: &crate::model::Document,
+) -> Vec<crate::search::Match> {
+    let Some(crate::model::ModalState::FindReplace(state)) = &model.ui.active_modal else {
+        return Vec::new();
+    };
+    if state.query().is_empty() {
+        return Vec::new();
+    }
+    let query = state.build_query();
+    if query.has_error() {
+        return Vec::new();
+    }
+    document.search_matches(&query)
+}
+
+/// `BackgroundTint` decorations for every find match except the one
+/// currently selected (find-next/find-previous already highlight that one
+/// via the ordinary selection background, so tinting it again would just
+/// muddy the color).
+fn find_match_decorations(
+    model: &AppModel,
+    document: &crate::model::Document,
+    current_selection: &crate::model::Selection,
+) -> Vec<editor_text::RangeDecoration> {
+    let matches = active_find_matches(model, document);
+    if matches.is_empty() {
+        return Vec::new();
+    }
+
+    let current_range = (!current_selection.is_empty()).then(|| {
+        let start = current_selection.start();
+        let end = current_selection.end();
+        (
+            document.cursor_to_offset(start.line, start.column),
+            document.cursor_to_offset(end.line, end.column),
+        )
+    });
+
+    let color = model.theme.editor.bracket_match_background.to_argb_u32();
+    matches
+        .into_iter()
+        .filter(|m| current_range != Some((m.start, m.end)))
+        .map(|m| editor_text::RangeDecoration {
+            start: document.offset_to_cursor(m.start),
+            end: document.offset_to_cursor(m.end),
+            kind: editor_text::DecorationKind::BackgroundTint(color),
+        })
+        .collect()
+}
+
+/// One scrollbar overview tick per find match, keyed by the line it starts
+/// on — collisions onto the same track row are resolved by
+/// `editor_scrollbars::render_overview_marks`.
+fn find_match_ticks(
+    model: &AppModel,
+    document: &crate::model::Document,
+) -> Vec<(usize, crate::model::Mark)> {
+    active_find_matches(model, document)
+        .into_iter()
+        .map(|m| {
+            (
+                document.offset_to_cursor(m.start).0,
+                crate::model::Mark::Match,
+            )
+        })
+        .collect()
+}
+
 enum EditorContentKind<'a> {
     Text {
         document: &'a crate::model::Document,
@@ -405,6 +480,14 @@ impl<'a> EditorGroupScene<'a> {
     ) {
         match &self.content {
             EditorContentKind::Text { document } => {
+                // Match highlighting only applies to the focused pane — find
+                // navigation only ever operates on it (see
+                // find-enhancements.md).
+                let decorations = if self.is_focused {
+                    find_match_decorations(model, document, &self.editor.selections[0])
+                } else {
+                    Vec::new()
+                };
                 editor_text::render_text_area(
                     frame,
                     painter,
@@ -413,9 +496,7 @@ impl<'a> EditorGroupScene<'a> {
                     document,
                     &self.layout,
                     self.is_focused,
-                    // No decoration producer is wired yet (see
-                    // editor-decorations.md); the next consumer replaces this.
-                    &[],
+                    &decorations,
                     perf,
                 );
                 editor_text::render_gutter(
@@ -471,7 +552,19 @@ impl<'a> EditorGroupScene<'a> {
             _ => return,
         };
 
-        Renderer::render_editor_scrollbars(frame, model, self.editor, document, &self.layout);
+        let ticks = if self.is_focused {
+            find_match_ticks(model, document)
+        } else {
+            Vec::new()
+        };
+        Renderer::render_editor_scrollbars(
+            frame,
+            model,
+            self.editor,
+            document,
+            &self.layout,
+            &ticks,
+        );
     }
 
     fn render_unfocused_dim(&self, frame: &mut Frame, model: &AppModel) {
@@ -1150,8 +1243,16 @@ impl Renderer {
         editor_state: &crate::model::editor::EditorState,
         document: &crate::model::document::Document,
         layout: &geometry::GroupLayout,
+        ticks: &[(usize, crate::model::Mark)],
     ) {
-        editor_scrollbars::render_editor_scrollbars(frame, model, editor_state, document, layout);
+        editor_scrollbars::render_editor_scrollbars(
+            frame,
+            model,
+            editor_state,
+            document,
+            layout,
+            ticks,
+        );
     }
 
     /// Redraw the focused group's scrollbars on top of whatever was just
@@ -1180,7 +1281,8 @@ impl Renderer {
         }
 
         let layout = geometry::GroupLayout::new(group, model, char_width);
-        Self::render_editor_scrollbars(frame, model, editor, document, &layout);
+        let ticks = find_match_ticks(model, document);
+        Self::render_editor_scrollbars(frame, model, editor, document, &layout, &ticks);
     }
 
     fn render_image_tab(
@@ -2385,5 +2487,90 @@ mod cursor_fast_path_scrollbar_tests {
             is_scrollbar_color(after_fix),
             "redraw_scrollbars_for_focused_group should restore the scrollbar pixel on top of the fast-path redraw, got {after_fix:#010x}"
         );
+    }
+}
+
+#[cfg(test)]
+mod find_match_decoration_tests {
+    use super::*;
+    use crate::model::{FindReplaceState, Mark, ModalState, Position, Selection};
+
+    fn model_with_text(text: &str) -> AppModel {
+        let mut model = AppModel::new(400, 300, 1.0, vec![]);
+        model.document_mut().buffer = ropey::Rope::from(text);
+        model
+    }
+
+    fn open_find(model: &mut AppModel, query: &str, whole_word: bool, use_regex: bool) {
+        let mut state = FindReplaceState::default();
+        state.set_query(query);
+        state.whole_word = whole_word;
+        state.use_regex = use_regex;
+        model.ui.open_modal(ModalState::FindReplace(state));
+    }
+
+    #[test]
+    fn active_find_matches_empty_when_no_modal_open() {
+        let model = model_with_text("foo bar foo");
+        assert!(active_find_matches(&model, model.document()).is_empty());
+    }
+
+    #[test]
+    fn active_find_matches_finds_all_literal_occurrences() {
+        let mut model = model_with_text("foo bar foo");
+        open_find(&mut model, "foo", false, false);
+        let matches = active_find_matches(&model, model.document());
+        assert_eq!(
+            matches,
+            vec![
+                crate::search::Match { start: 0, end: 3 },
+                crate::search::Match { start: 8, end: 11 },
+            ]
+        );
+    }
+
+    #[test]
+    fn active_find_matches_empty_on_regex_error() {
+        let mut model = model_with_text("foo bar foo");
+        open_find(&mut model, "[invalid", false, true);
+        assert!(active_find_matches(&model, model.document()).is_empty());
+    }
+
+    #[test]
+    fn find_match_decorations_excludes_the_current_selection() {
+        let mut model = model_with_text("foo bar foo");
+        open_find(&mut model, "foo", false, false);
+        // Select the first "foo" (char offsets 0..3) as the "current match".
+        model.editor_mut().selections[0] =
+            Selection::from_anchor_head(Position::new(0, 0), Position::new(0, 3));
+
+        let document = model.document();
+        let current_selection = model.editor().selections[0];
+        let decorations = find_match_decorations(&model, document, &current_selection);
+
+        // Only the second "foo" is decorated; the first is already shown via
+        // the ordinary selection highlight.
+        assert_eq!(decorations.len(), 1);
+        assert_eq!(decorations[0].start, (0, 8));
+        assert_eq!(decorations[0].end, (0, 11));
+        assert!(matches!(
+            decorations[0].kind,
+            editor_text::DecorationKind::BackgroundTint(_)
+        ));
+    }
+
+    #[test]
+    fn find_match_decorations_empty_without_an_open_find_modal() {
+        let model = model_with_text("foo bar foo");
+        let no_selection = Selection::from_anchor_head(Position::new(0, 0), Position::new(0, 0));
+        assert!(find_match_decorations(&model, model.document(), &no_selection).is_empty());
+    }
+
+    #[test]
+    fn find_match_ticks_map_matches_to_their_starting_line() {
+        let mut model = model_with_text("foo\nbar\nfoo\n");
+        open_find(&mut model, "foo", false, false);
+        let ticks = find_match_ticks(&model, model.document());
+        assert_eq!(ticks, vec![(0, Mark::Match), (2, Mark::Match)]);
     }
 }

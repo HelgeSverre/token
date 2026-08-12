@@ -18,10 +18,11 @@ const CURSOR_INSET: usize = 1;
 /// A text-area overdraw decoration spanning a (line, char-col) range.
 ///
 /// Pure pixels on positions the text pass already computed — decorations
-/// never move text. `start`/`end` are half-open, like `Selection`. No
-/// producer exists yet (see `docs/feature/editor-decorations.md`); the pass
-/// below is exercised with synthetic decorations in tests until
-/// find-enhancements or LSP diagnostics plug in a real source.
+/// never move text. `start`/`end` are half-open, like `Selection`. Fed
+/// find/replace match highlights (`BackgroundTint`) from
+/// `view::mod::find_match_decorations` today (see
+/// `docs/feature/find-enhancements.md`); LSP diagnostics is the next
+/// planned producer for the other `DecorationKind` variants.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RangeDecoration {
     pub start: (usize, usize),
@@ -613,6 +614,12 @@ impl<'a> TextEditorRenderer<'a> {
     fn mark_color(&self, mark: Mark) -> u32 {
         let overlay = &self.model.theme.overlay;
         match mark {
+            Mark::Match => self
+                .model
+                .theme
+                .editor
+                .bracket_match_background
+                .to_argb_u32(),
             Mark::Bookmark => overlay.severity_hint.to_argb_u32(),
             Mark::Info => overlay.severity_info.to_argb_u32(),
             Mark::Warning => overlay.severity_warning.to_argb_u32(),
