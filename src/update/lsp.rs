@@ -270,8 +270,7 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                         .find_open_file(&path)
                         .and_then(|(doc_id, _, _)| model.editor_area.documents.get(&doc_id))
                         .map(|doc| {
-                            let position =
-                                crate::lsp::lsp_to_position(doc, location.range.start);
+                            let position = crate::lsp::lsp_to_position(doc, location.range.start);
                             (position.line, position.column)
                         })
                         .unwrap_or((

@@ -301,7 +301,10 @@ mod tests {
         let a_path = dir.path().join("a.txt");
         jump_to_location(&mut model, None, &a_path, 0, 1);
 
-        assert_eq!(model.document().file_path.as_deref(), Some(a_path.as_path()));
+        assert_eq!(
+            model.document().file_path.as_deref(),
+            Some(a_path.as_path())
+        );
         assert_eq!(model.editor().cursors[0].line, 0);
         assert_eq!(model.editor().cursors[0].column, 1);
 

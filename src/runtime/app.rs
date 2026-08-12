@@ -40,6 +40,7 @@ use token::update::update;
 use super::input::{
     handle_cursor_overlay_key, handle_key, is_outline_dock_focused, KeyModifiers, OptionKeyGesture,
 };
+use super::lsp_slot::{FeatureSlot, PendingRequest, RequestKey};
 use super::mouse::{
     end_tab_drag, handle_mouse_press, handle_mouse_wheel, make_mouse_event, update_tab_drag,
     ClickTracker, DragState,
@@ -351,35 +352,21 @@ struct LspManager {
     /// `Document.revision` equality guard (see the design doc's
     /// diagnostics exception).
     diagnostics_versions: HashMap<lsp_types::Uri, i64>,
-    /// In-flight `textDocument/definition` requests, keyed by the triple
-    /// the worker's response echoes back — enough to build
-    /// `LspMsg::DefinitionResolved` once it arrives (or discard it
-    /// silently if superseded; see `PendingDefinition` and
-    /// `process_async_messages`'s interception pass). An entry survives
-    /// being superseded (matching `PendingRequests`' abandoned-entry
-    /// semantics) until its response actually arrives.
-    definition_requests: HashMap<(LspServerId, PathBuf, i64), PendingDefinition>,
-    /// Which `(server_id, root, request_id)` is the *current*
-    /// (non-superseded) definition request for a document — looked up to
-    /// send `$/cancelRequest` when a newer `GotoDefinition` supersedes it
-    /// (design doc's "one outstanding request per feature per document").
-    definition_request_by_doc:
-        HashMap<token::model::editor_area::DocumentId, (LspServerId, PathBuf, i64)>,
-    /// `~30s` UI-level abandonment deadlines for in-flight definition
-    /// requests (design doc's "folded into the runtime's existing
-    /// `next_wake` computation in `about_to_wait`"), keyed the same as
-    /// `definition_requests`. Fired by `check_lsp_definition_deadlines`.
-    definition_deadlines: HashMap<(LspServerId, PathBuf, i64), Instant>,
+    /// In-flight `textDocument/definition` requests — see `FeatureSlot`'s
+    /// doc comment; drives `LspMsg::DefinitionResolved` via
+    /// `process_async_messages`'s interception pass and is swept for
+    /// abandonment by `check_lsp_definition_deadlines`.
+    definition: FeatureSlot<PendingDefinition>,
     /// In-flight `textDocument/hover` requests, mirroring
-    /// `definition_requests` — keyed by the triple the worker's response
-    /// echoes back.
+    /// `definition` — keyed by the triple the worker's response echoes
+    /// back. Migrates onto `FeatureSlot` in the next refactor step.
     hover_requests: HashMap<(LspServerId, PathBuf, i64), PendingHover>,
     /// Which `(server_id, root, request_id)` is the *current* hover
-    /// request for a document, mirroring `definition_request_by_doc`.
+    /// request for a document.
     hover_request_by_doc:
         HashMap<token::model::editor_area::DocumentId, (LspServerId, PathBuf, i64)>,
-    /// `~30s` UI-level abandonment deadlines for in-flight hover requests,
-    /// mirroring `definition_deadlines`. Fired by `check_lsp_hover_deadlines`.
+    /// `~30s` UI-level abandonment deadlines for in-flight hover requests.
+    /// Fired by `check_lsp_hover_deadlines`.
     hover_deadlines: HashMap<(LspServerId, PathBuf, i64), Instant>,
     /// `(server_id, root)` pairs whose spawn attempt already reported
     /// `ServerState::Missing` — `ensure_lsp_server` skips these outright
@@ -408,12 +395,24 @@ struct PendingDefinition {
     root: PathBuf,
 }
 
+impl PendingRequest for PendingDefinition {
+    fn document_id(&self) -> token::model::editor_area::DocumentId {
+        self.document_id
+    }
+}
+
 /// What `LspManager` needs to turn a `textDocument/hover` response into
 /// `LspMsg::HoverResolved` — mirrors `PendingDefinition`.
 struct PendingHover {
     document_id: token::model::editor_area::DocumentId,
     revision: u64,
     cursor: token::model::editor::Position,
+}
+
+impl PendingRequest for PendingHover {
+    fn document_id(&self) -> token::model::editor_area::DocumentId {
+        self.document_id
+    }
 }
 
 /// What `LspManager` remembers about a `didOpen`'d document — enough to
@@ -441,9 +440,7 @@ impl LspManager {
             resync_pending: std::collections::HashSet::new(),
             diagnostics: HashMap::new(),
             diagnostics_versions: HashMap::new(),
-            definition_requests: HashMap::new(),
-            definition_request_by_doc: HashMap::new(),
-            definition_deadlines: HashMap::new(),
+            definition: FeatureSlot::new(DEFINITION_TIMEOUT),
             hover_requests: HashMap::new(),
             hover_request_by_doc: HashMap::new(),
             hover_deadlines: HashMap::new(),
@@ -2092,13 +2089,7 @@ impl App {
                     return Some(msg);
                 };
                 let key = (server_id, root, request_id);
-                let pending = self.lsp.definition_requests.remove(&key)?;
-                self.lsp.definition_deadlines.remove(&key);
-                if self.lsp.definition_request_by_doc.get(&pending.document_id) == Some(&key) {
-                    self.lsp
-                        .definition_request_by_doc
-                        .remove(&pending.document_id);
-                }
+                let pending = self.lsp.definition.take_response(&key)?;
                 if abandoned {
                     return None;
                 }
@@ -2481,15 +2472,7 @@ impl App {
     /// and cause `check_lsp_definition_deadlines`/hover's deadline sweep
     /// to abandon a live request that happens to reuse the old id).
     fn clear_pending_requests_for_roots(&mut self, server_id: &LspServerId, roots: &[PathBuf]) {
-        self.lsp
-            .definition_requests
-            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
-        self.lsp
-            .definition_request_by_doc
-            .retain(|_, (id, root, _)| !(id == server_id && roots.contains(root)));
-        self.lsp
-            .definition_deadlines
-            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
+        self.lsp.definition.clear_for_roots(server_id, roots);
         self.lsp
             .hover_requests
             .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
@@ -2499,6 +2482,20 @@ impl App {
         self.lsp
             .hover_deadlines
             .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
+    }
+
+    /// Advisory `$/cancelRequest` + local abandonment for a superseded or
+    /// timed-out feature request — the shared half of the four identical
+    /// blocks `request_lsp_definition`/`request_lsp_hover`/the deadline
+    /// sweeps used to hand-roll. A no-op if the server has since exited.
+    fn cancel_lsp_request(&self, key: &RequestKey) {
+        if let Some(handle) = self.lsp.servers.get(&(key.0.clone(), key.1.clone())) {
+            handle.pending.lock().unwrap().abandon(key.2);
+            let _ = handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
+                method: "$/cancelRequest".to_owned(),
+                params: serde_json::json!({ "id": key.2 }),
+            });
+        }
     }
 
     /// Returns whether the spawn succeeded — callers that reserve a
@@ -2905,16 +2902,8 @@ impl App {
         let root = state.root.clone();
         let uri = state.uri.clone();
 
-        if let Some((old_server_id, old_root, old_request_id)) =
-            self.lsp.definition_request_by_doc.remove(&document_id)
-        {
-            if let Some(old_handle) = self.lsp.servers.get(&(old_server_id, old_root)) {
-                old_handle.pending.lock().unwrap().abandon(old_request_id);
-                let _ = old_handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
-                    method: "$/cancelRequest".to_owned(),
-                    params: serde_json::json!({ "id": old_request_id }),
-                });
-            }
+        if let Some(old_key) = self.lsp.definition.supersede(document_id) {
+            self.cancel_lsp_request(&old_key);
         }
 
         let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
@@ -2966,8 +2955,9 @@ impl App {
         });
         let request_id = handle.begin_request("textDocument/definition", params);
         let key = (server_id.clone(), root.clone(), request_id);
-        self.lsp.definition_requests.insert(
+        self.lsp.definition.insert(
             key.clone(),
+            document_id,
             PendingDefinition {
                 document_id,
                 revision,
@@ -2976,12 +2966,7 @@ impl App {
                 root,
             },
         );
-        self.lsp
-            .definition_request_by_doc
-            .insert(document_id, key.clone());
-        self.lsp
-            .definition_deadlines
-            .insert(key, Instant::now() + DEFINITION_TIMEOUT);
+        self.lsp.definition.arm_deadline(key);
     }
 
     /// Synchronously routes a definition outcome that never reached the
@@ -3242,50 +3227,11 @@ impl App {
     /// dropped silently — the newer request owns whatever outcome the
     /// user eventually sees.
     fn check_lsp_definition_deadlines(&mut self) {
-        if self.lsp.definition_deadlines.is_empty() {
+        if self.lsp.definition.is_empty_deadlines() {
             return;
         }
-        let now = Instant::now();
-        let due: Vec<(LspServerId, PathBuf, i64)> = self
-            .lsp
-            .definition_deadlines
-            .iter()
-            .filter(|(_, deadline)| now >= **deadline)
-            .map(|(key, _)| key.clone())
-            .collect();
-        for key in due {
-            self.lsp.definition_deadlines.remove(&key);
-            let is_current = self
-                .lsp
-                .definition_requests
-                .get(&key)
-                .is_some_and(|pending| {
-                    self.lsp.definition_request_by_doc.get(&pending.document_id) == Some(&key)
-                });
-            if !is_current {
-                // Superseded: the newer request already replaced this
-                // entry in `definition_request_by_doc`, but the old key
-                // is still sitting in `definition_requests` — without
-                // removing it here it leaks for the rest of the session
-                // (see `LspManager::definition_requests`'s doc comment on
-                // supersession only clearing the `_by_doc` half).
-                self.lsp.definition_requests.remove(&key);
-                continue;
-            }
-            let Some(pending) = self.lsp.definition_requests.remove(&key) else {
-                continue;
-            };
-            self.lsp
-                .definition_request_by_doc
-                .remove(&pending.document_id);
-            let (server_id, root, request_id) = key;
-            if let Some(handle) = self.lsp.servers.get(&(server_id, root)) {
-                handle.pending.lock().unwrap().abandon(request_id);
-                let _ = handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
-                    method: "$/cancelRequest".to_owned(),
-                    params: serde_json::json!({ "id": request_id }),
-                });
-            }
+        for (key, pending) in self.lsp.definition.take_due(Instant::now()) {
+            self.cancel_lsp_request(&key);
             self.emit_definition_outcome(
                 pending.document_id,
                 pending.revision,
@@ -3601,8 +3547,8 @@ impl ApplicationHandler for App {
         if let Some(earliest_deadline) = self.lsp.restart_deadlines.values().min() {
             next_wake = next_wake.min(*earliest_deadline);
         }
-        if let Some(earliest_deadline) = self.lsp.definition_deadlines.values().min() {
-            next_wake = next_wake.min(*earliest_deadline);
+        if let Some(earliest_deadline) = self.lsp.definition.earliest_deadline() {
+            next_wake = next_wake.min(earliest_deadline);
         }
         if let Some(earliest_deadline) = self.lsp.hover_deadlines.values().min() {
             next_wake = next_wake.min(*earliest_deadline);
@@ -4442,8 +4388,9 @@ mod tests {
             .insert((server_id.clone(), root.clone()), handle);
 
         let key = (server_id.clone(), root.clone(), 2i64);
-        app.lsp.definition_requests.insert(
+        app.lsp.definition.insert(
             key.clone(),
+            doc_id,
             PendingDefinition {
                 document_id: doc_id,
                 revision: 0,
@@ -4452,12 +4399,7 @@ mod tests {
                 root: root.clone(),
             },
         );
-        app.lsp
-            .definition_request_by_doc
-            .insert(doc_id, key.clone());
-        app.lsp
-            .definition_deadlines
-            .insert(key, Instant::now() + Duration::from_secs(30));
+        app.lsp.definition.arm_deadline(key);
         let hover_key = (server_id.clone(), root.clone(), 3i64);
         app.lsp.hover_requests.insert(
             hover_key.clone(),
@@ -4476,9 +4418,9 @@ mod tests {
 
         app.restart_lsp_server(&server_id);
 
-        assert!(app.lsp.definition_requests.is_empty());
-        assert!(app.lsp.definition_request_by_doc.is_empty());
-        assert!(app.lsp.definition_deadlines.is_empty());
+        assert!(app.lsp.definition.requests.is_empty());
+        assert!(app.lsp.definition.by_doc.is_empty());
+        assert!(app.lsp.definition.deadlines.is_empty());
         assert!(app.lsp.hover_requests.is_empty());
         assert!(app.lsp.hover_request_by_doc.is_empty());
         assert!(app.lsp.hover_deadlines.is_empty());
@@ -4834,12 +4776,8 @@ mod tests {
             revision,
             test_origin(&app),
         );
-        let (first_server, first_root, first_id) = app
-            .lsp
-            .definition_request_by_doc
-            .get(&doc_id)
-            .cloned()
-            .unwrap();
+        let (first_server, first_root, first_id) =
+            app.lsp.definition.by_doc.get(&doc_id).cloned().unwrap();
 
         app.request_lsp_definition(
             doc_id,
@@ -4850,18 +4788,13 @@ mod tests {
             revision,
             test_origin(&app),
         );
-        let (_, _, second_id) = app
-            .lsp
-            .definition_request_by_doc
-            .get(&doc_id)
-            .cloned()
-            .unwrap();
+        let (_, _, second_id) = app.lsp.definition.by_doc.get(&doc_id).cloned().unwrap();
 
         assert_ne!(first_id, second_id, "a new request id must be allocated");
         // The superseded entry stays pending (abandoned, not dropped —
         // the server still owns the id and will reply) until its
         // response actually arrives.
-        assert_eq!(app.lsp.definition_requests.len(), 2);
+        assert_eq!(app.lsp.definition.requests.len(), 2);
         let handle = app.lsp.servers.get(&(first_server, first_root)).unwrap();
         assert!(
             handle
@@ -4886,8 +4819,9 @@ mod tests {
         let server_id = LspServerId::from("rust-analyzer");
         let root = PathBuf::from("/tmp/proj-def-abandoned");
         let origin = test_origin(&app);
-        app.lsp.definition_requests.insert(
+        app.lsp.definition.insert(
             (server_id.clone(), root.clone(), 7),
+            doc_id,
             PendingDefinition {
                 document_id: doc_id,
                 revision,
@@ -4896,9 +4830,6 @@ mod tests {
                 root: root.clone(),
             },
         );
-        app.lsp
-            .definition_request_by_doc
-            .insert(doc_id, (server_id.clone(), root.clone(), 7));
 
         app.msg_tx
             .send(Msg::Lsp(LspMsg::DefinitionResponseFromServer {
@@ -4911,8 +4842,8 @@ mod tests {
             .unwrap();
         app.process_async_messages();
 
-        assert!(app.lsp.definition_requests.is_empty());
-        assert!(app.lsp.definition_request_by_doc.is_empty());
+        assert!(app.lsp.definition.requests.is_empty());
+        assert!(app.lsp.definition.by_doc.is_empty());
         assert!(
             app.model.jump_history.is_empty(),
             "a discarded (cancelled) response must never push jump history or navigate"
@@ -4933,8 +4864,9 @@ mod tests {
         let server_id = LspServerId::from("rust-analyzer");
         let root = PathBuf::from("/tmp/proj-def-empty-indexing");
         let origin = test_origin(&app);
-        app.lsp.definition_requests.insert(
+        app.lsp.definition.insert(
             (server_id.clone(), root.clone(), 9),
+            doc_id,
             PendingDefinition {
                 document_id: doc_id,
                 revision,
@@ -4943,9 +4875,6 @@ mod tests {
                 root: root.clone(),
             },
         );
-        app.lsp
-            .definition_request_by_doc
-            .insert(doc_id, (server_id.clone(), root.clone(), 9));
         app.model
             .lsp
             .servers
@@ -4971,8 +4900,9 @@ mod tests {
 
         // The same empty reply once the server is `Ready` is a genuine
         // "no definition found".
-        app.lsp.definition_requests.insert(
+        app.lsp.definition.insert(
             (server_id.clone(), root.clone(), 10),
+            doc_id,
             PendingDefinition {
                 document_id: doc_id,
                 revision,
@@ -4981,9 +4911,6 @@ mod tests {
                 root: root.clone(),
             },
         );
-        app.lsp
-            .definition_request_by_doc
-            .insert(doc_id, (server_id.clone(), root.clone(), 10));
         app.model
             .lsp
             .servers
@@ -5076,8 +5003,9 @@ mod tests {
             .insert((server_id.clone(), root.clone()), handle);
 
         let key = (server_id.clone(), root.clone(), request_id);
-        app.lsp.definition_requests.insert(
+        app.lsp.definition.insert(
             key.clone(),
+            doc_id,
             PendingDefinition {
                 document_id: doc_id,
                 revision,
@@ -5086,19 +5014,17 @@ mod tests {
                 root: root.clone(),
             },
         );
-        app.lsp
-            .definition_request_by_doc
-            .insert(doc_id, key.clone());
         // Already past due, rather than sleeping 30s in a test.
         app.lsp
-            .definition_deadlines
+            .definition
+            .deadlines
             .insert(key.clone(), Instant::now() - Duration::from_secs(1));
 
         app.check_lsp_definition_deadlines();
 
-        assert!(app.lsp.definition_requests.is_empty());
-        assert!(app.lsp.definition_request_by_doc.is_empty());
-        assert!(app.lsp.definition_deadlines.is_empty());
+        assert!(app.lsp.definition.requests.is_empty());
+        assert!(app.lsp.definition.by_doc.is_empty());
+        assert!(app.lsp.definition.deadlines.is_empty());
         assert!(app
             .model
             .ui
@@ -5136,7 +5062,7 @@ mod tests {
         let origin = test_origin(&app);
 
         let stale_key = (server_id.clone(), root.clone(), 1);
-        app.lsp.definition_requests.insert(
+        app.lsp.definition.requests.insert(
             stale_key.clone(),
             PendingDefinition {
                 document_id: doc_id,
@@ -5146,30 +5072,31 @@ mod tests {
                 root: root.clone(),
             },
         );
-        // A newer request now owns `definition_request_by_doc` for this
-        // document — `stale_key` is superseded but its deadline is still
-        // ticking.
+        // A newer request now owns `by_doc` for this document — `stale_key`
+        // is superseded but its deadline is still ticking.
         let current_key = (server_id.clone(), root.clone(), 2);
         app.lsp
-            .definition_request_by_doc
+            .definition
+            .by_doc
             .insert(doc_id, current_key.clone());
         app.lsp
-            .definition_deadlines
+            .definition
+            .deadlines
             .insert(stale_key.clone(), Instant::now() - Duration::from_secs(1));
         let status_before = app.model.ui.transient_message.clone();
 
         app.check_lsp_definition_deadlines();
 
-        // The stale entry's deadline firing must clean up its
-        // `definition_requests` bookkeeping too — leaving it behind would
-        // leak for the rest of the session (nothing else ever removes a
-        // superseded entry once its `_by_doc` half is gone).
+        // The stale entry's deadline firing must clean up its `requests`
+        // bookkeeping too — leaving it behind would leak for the rest of
+        // the session (nothing else ever removes a superseded entry once
+        // its `by_doc` half is gone).
         assert!(
-            !app.lsp.definition_requests.contains_key(&stale_key),
+            !app.lsp.definition.requests.contains_key(&stale_key),
             "a superseded request's stale deadline must remove its bookkeeping, not leak it"
         );
         assert_eq!(
-            app.lsp.definition_request_by_doc.get(&doc_id),
+            app.lsp.definition.by_doc.get(&doc_id),
             Some(&current_key),
             "the newer request must still own the doc's outcome"
         );

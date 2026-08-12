@@ -8,6 +8,7 @@
 
 pub mod app;
 pub mod input;
+mod lsp_slot;
 #[cfg(target_os = "macos")]
 mod macos_menu;
 pub mod mouse;
