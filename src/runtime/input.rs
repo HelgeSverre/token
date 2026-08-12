@@ -104,7 +104,7 @@ pub fn handle_key(
     // (overlay-surface.md Phase 5). Anything not matched here falls out of
     // this `if` and is handled by the normal editor key path below.
     if model.ui.cursor_overlay.is_some() {
-        if let Some(cmd) = handle_cursor_overlay_key(model, &key) {
+        if let Some(cmd) = handle_cursor_overlay_key(model, &key, modifiers) {
             return cmd;
         }
     }
@@ -283,7 +283,11 @@ pub fn handle_key(
 /// `MoveCursorUp`/`MoveCursorDown`/`InsertNewline` before this module ever
 /// saw them); `handle_key` below runs it again as the non-keymap fallback
 /// path (and is what the unit tests below exercise directly).
-pub(crate) fn handle_cursor_overlay_key(model: &mut AppModel, key: &Key) -> Option<Option<Cmd>> {
+pub(crate) fn handle_cursor_overlay_key(
+    model: &mut AppModel,
+    key: &Key,
+    modifiers: KeyModifiers,
+) -> Option<Option<Cmd>> {
     let kind = model.ui.cursor_overlay?.kind;
     if kind == token::model::CursorOverlayKind::DebugHover {
         // Hover = any keypress dismisses (overlay-surface.md: "a keyboard-
@@ -291,6 +295,19 @@ pub(crate) fn handle_cursor_overlay_key(model: &mut AppModel, key: &Key) -> Opti
         // Dismiss as a side effect and fall through so the key still
         // reaches the editor normally (e.g. typing, arrow movement).
         model.ui.cursor_overlay = None;
+        return None;
+    }
+    // The five claimed keys are unmodified only — Shift+Up/Down (selection
+    // extension), Ctrl/Cmd+Tab (group focus), Shift+Enter (find-previous in
+    // modals reusing this path), etc. must fall through to the keymap
+    // instead of being swallowed as menu navigation.
+    let KeyModifiers {
+        ctrl,
+        shift,
+        alt,
+        logo,
+    } = modifiers;
+    if ctrl || shift || alt || logo {
         return None;
     }
     if kind == token::model::CursorOverlayKind::Completion {
@@ -574,9 +591,12 @@ fn handle_modal_key(model: &mut AppModel, key: Key, modifiers: KeyModifiers) -> 
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::TogglePin)))
         }
 
-        // Shift+Enter: find previous (Find/Replace only — a no-op elsewhere,
-        // same guard `ModalMsg::FindPrevious`'s handler already has).
-        Key::Named(NamedKey::Enter) if shift => {
+        // Shift+Enter: find previous, but only in Find/Replace — everywhere
+        // else Shift+Enter still confirms (e.g. a capital letter typed just
+        // before Enter must not turn Enter into a dead key).
+        Key::Named(NamedKey::Enter)
+            if shift && matches!(model.ui.active_modal, Some(ModalState::FindReplace(_))) =>
+        {
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::FindPrevious)))
         }
 
@@ -1087,6 +1107,106 @@ mod tests {
         // The popup stays open — only the five claimed keys dismiss/consume it.
         assert!(model.ui.cursor_overlay.is_some());
         assert_eq!(model.document().buffer.to_string(), "x");
+    }
+
+    #[test]
+    fn cursor_overlay_ignores_the_five_keys_when_modified() {
+        // Shift+Down (selection extension), Ctrl+Tab (group focus), etc.
+        // must reach the keymap instead of being swallowed as menu nav.
+        for (key, modifiers) in [
+            (
+                Key::Named(NamedKey::ArrowDown),
+                KeyModifiers {
+                    shift: true,
+                    ..KeyModifiers::default()
+                },
+            ),
+            (
+                Key::Named(NamedKey::Tab),
+                KeyModifiers {
+                    ctrl: true,
+                    ..KeyModifiers::default()
+                },
+            ),
+            (
+                Key::Named(NamedKey::Enter),
+                KeyModifiers {
+                    shift: true,
+                    ..KeyModifiers::default()
+                },
+            ),
+        ] {
+            let mut model = model_with_completion_demo_open();
+            let result = handle_cursor_overlay_key(&mut model, &key, modifiers);
+            assert!(
+                result.is_none(),
+                "{key:?} with {modifiers:?} must not be claimed by the overlay"
+            );
+            assert!(model.ui.cursor_overlay.is_some());
+        }
+    }
+
+    #[test]
+    fn cursor_overlay_still_claims_the_five_keys_unmodified() {
+        let mut model = model_with_completion_demo_open();
+        let result = handle_cursor_overlay_key(
+            &mut model,
+            &Key::Named(NamedKey::ArrowDown),
+            KeyModifiers::default(),
+        );
+        assert!(result.is_some());
+    }
+
+    /// The real menu-completion popup's key routing (as opposed to the
+    /// `DebugCompletion` demo shell above), driven the same way production
+    /// does: `sync_after_document_edit` opens it as the user types, then
+    /// `handle_key` (the pre-keymap path) routes Up/Down/Enter through
+    /// `update()` into `MenuPrev`/`MenuNext`/`AcceptMenuItem`.
+    #[test]
+    fn real_completion_popup_routes_navigation_and_accept() {
+        use token::messages::DocumentMsg;
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.document_mut().buffer = ropey::Rope::from("value_one\nvalue_two\n");
+        model.editor_mut().cursors[0] = token::model::Cursor::at(2, 0);
+        model.editor_mut().clear_selection();
+
+        for ch in "val".chars() {
+            update(&mut model, Msg::Document(DocumentMsg::InsertChar(ch)));
+        }
+        assert!(model.ui.completion_menu.is_some(), "menu should open");
+        assert_eq!(
+            model.ui.cursor_overlay.map(|o| o.kind),
+            Some(token::model::CursorOverlayKind::Completion)
+        );
+        assert_eq!(model.ui.cursor_overlay.unwrap().selected, 0);
+
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::ArrowDown),
+            PhysicalKey::Code(KeyCode::ArrowDown),
+            KeyModifiers::default(),
+            false,
+        );
+        assert_eq!(
+            model.ui.cursor_overlay.unwrap().selected,
+            1,
+            "ArrowDown should move the real menu's selection"
+        );
+
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::Enter),
+            PhysicalKey::Code(KeyCode::Enter),
+            KeyModifiers::default(),
+            false,
+        );
+        assert!(
+            model.ui.completion_menu.is_none(),
+            "Enter should accept and close the real menu"
+        );
+        let line = model.document().get_line_cow(2).unwrap();
+        assert_eq!(line, "value_two");
     }
 
     /// Hover is not the completion popup: overlay-surface.md's Contexts

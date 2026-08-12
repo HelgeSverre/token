@@ -574,9 +574,11 @@ impl App {
                     // modifiers, Cmd+C/V/X/Z/A, ...) falls through to the normal
                     // keymap/handle_key path below unaffected.
                     if self.model.ui.cursor_overlay.is_some() {
-                        if let Some(cmd) =
-                            handle_cursor_overlay_key(&mut self.model, &event.logical_key)
-                        {
+                        if let Some(cmd) = handle_cursor_overlay_key(
+                            &mut self.model,
+                            &event.logical_key,
+                            modifiers,
+                        ) {
                             return cmd;
                         }
                     }

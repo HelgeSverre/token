@@ -1044,6 +1044,39 @@ mod tests {
     }
 
     #[test]
+    fn test_modal_shift_enter_still_confirms_outside_find_replace() {
+        // Shift+Enter is only special-cased to `FindPrevious` inside the
+        // Find/Replace modal; everywhere else it must still confirm, so a
+        // capital letter held into Enter (Shift not yet released) doesn't
+        // turn Enter into a dead key.
+        use token::model::GotoLineState;
+
+        let mut model = test_model_with_modal("line one\nline two\nline three\n");
+        let mut goto = GotoLineState::default();
+        goto.set_input("3");
+        model.ui.open_modal(ModalState::GotoLine(goto));
+
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::Enter),
+            PhysicalKey::Code(KeyCode::Enter),
+            KeyModifiers {
+                ctrl: false,
+                shift: true,
+                alt: false,
+                logo: false,
+            },
+            false,
+        );
+
+        assert!(
+            !model.ui.has_modal(),
+            "Shift+Enter should confirm and close GotoLine"
+        );
+        assert_eq!(model.editor().cursors[0].line, 2);
+    }
+
+    #[test]
     fn test_modal_escape_closes_modal_not_clear_editor_selection() {
         let mut model = test_model_with_selection("hello world", 0, 0, 0, 5);
         // Open modal
