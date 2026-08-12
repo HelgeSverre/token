@@ -289,12 +289,14 @@ pub(crate) fn handle_cursor_overlay_key(
     modifiers: KeyModifiers,
 ) -> Option<Option<Cmd>> {
     let kind = model.ui.cursor_overlay?.kind;
-    if kind == token::model::CursorOverlayKind::DebugHover {
+    if kind == token::model::CursorOverlayKind::DebugHover || kind == token::model::CursorOverlayKind::Hover
+    {
         // Hover = any keypress dismisses (overlay-surface.md: "a keyboard-
         // invoked card that any key dismisses needs no key routing at all").
         // Dismiss as a side effect and fall through so the key still
         // reaches the editor normally (e.g. typing, arrow movement).
         model.ui.cursor_overlay = None;
+        model.ui.hover_card = None;
         return None;
     }
     // The five claimed keys are unmodified only — Shift+Up/Down (selection
@@ -364,7 +366,7 @@ fn row_count_for(kind: token::model::CursorOverlayKind) -> usize {
     use token::model::CursorOverlayKind;
     match kind {
         CursorOverlayKind::DebugCompletion => token::view::modal::debug_completion_row_count(),
-        CursorOverlayKind::DebugHover => 0,
+        CursorOverlayKind::DebugHover | CursorOverlayKind::Hover => 0,
         // Handled earlier in `handle_cursor_overlay_key` (routes through
         // `update()` instead of this raw index math).
         CursorOverlayKind::Completion => 0,
@@ -1240,6 +1242,34 @@ mod tests {
             "any key should dismiss a hover card"
         );
         assert_eq!(model.document().buffer.to_string(), "x");
+    }
+
+    #[test]
+    fn real_hover_card_dismisses_on_any_key_and_clears_hover_card_state() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::Hover,
+        ));
+        model.ui.hover_card = Some(token::model::HoverCardState {
+            content: Some("fn foo() -> i32".to_owned()),
+        });
+        model.document_mut().buffer = ropey::Rope::from("");
+
+        let cmd = handle_key(
+            &mut model,
+            Key::Character("x".into()),
+            PhysicalKey::Code(KeyCode::KeyX),
+            KeyModifiers::default(),
+            false,
+        );
+
+        assert!(cmd.is_some(), "the key must still reach the editor");
+        assert_eq!(model.document().buffer.to_string(), "x");
+        assert!(model.ui.cursor_overlay.is_none());
+        assert!(
+            model.ui.hover_card.is_none(),
+            "hover_card must be cleared alongside cursor_overlay"
+        );
     }
 
     #[test]

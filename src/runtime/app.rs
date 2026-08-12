@@ -28,8 +28,8 @@ use token::keymap::{
 };
 use token::lsp::{self, client::ServerHandle, LspServerId, ServerState};
 use token::messages::{
-    AppMsg, DefinitionOutcome, EditorMsg, ImageMsg, LayoutMsg, LspMsg, ModalMsg, Msg, SyntaxMsg,
-    UiMsg, WorkspaceMsg,
+    AppMsg, DefinitionOutcome, EditorMsg, HoverOutcome, ImageMsg, LayoutMsg, LspMsg, ModalMsg, Msg,
+    SyntaxMsg, UiMsg, WorkspaceMsg,
 };
 use token::model::editor::Position;
 use token::model::{AppModel, JumpEntry};
@@ -284,6 +284,10 @@ const RESTART_BACKOFF_MAX_MS: u64 = 5_000;
 /// late reply is simply consumed and discarded (same as supersession).
 const DEFINITION_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// UI-level abandonment timeout for `textDocument/hover` — same class as
+/// `DEFINITION_TIMEOUT` per the design doc.
+const HOVER_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Owns every running language server's process handle. Authoritative —
 /// `AppModel.lsp` (`LspUiState`) is a render-only mirror driven by
 /// `Msg::Lsp(ServerStateChanged)`; this stays out of the model per the
@@ -355,6 +359,16 @@ struct LspManager {
     /// `next_wake` computation in `about_to_wait`"), keyed the same as
     /// `definition_requests`. Fired by `check_lsp_definition_deadlines`.
     definition_deadlines: HashMap<(LspServerId, PathBuf, i64), Instant>,
+    /// In-flight `textDocument/hover` requests, mirroring
+    /// `definition_requests` — keyed by the triple the worker's response
+    /// echoes back.
+    hover_requests: HashMap<(LspServerId, PathBuf, i64), PendingHover>,
+    /// Which `(server_id, root, request_id)` is the *current* hover
+    /// request for a document, mirroring `definition_request_by_doc`.
+    hover_request_by_doc: HashMap<token::model::editor_area::DocumentId, (LspServerId, PathBuf, i64)>,
+    /// `~30s` UI-level abandonment deadlines for in-flight hover requests,
+    /// mirroring `definition_deadlines`. Fired by `check_lsp_hover_deadlines`.
+    hover_deadlines: HashMap<(LspServerId, PathBuf, i64), Instant>,
 }
 
 /// What `LspManager` needs to turn a `textDocument/definition` response
@@ -371,6 +385,14 @@ struct PendingDefinition {
     /// `LspUiState::route_hint`.
     server_id: LspServerId,
     root: PathBuf,
+}
+
+/// What `LspManager` needs to turn a `textDocument/hover` response into
+/// `LspMsg::HoverResolved` — mirrors `PendingDefinition`.
+struct PendingHover {
+    document_id: token::model::editor_area::DocumentId,
+    revision: u64,
+    cursor: token::model::editor::Position,
 }
 
 /// What `LspManager` remembers about a `didOpen`'d document — enough to
@@ -401,6 +423,9 @@ impl LspManager {
             definition_requests: HashMap::new(),
             definition_request_by_doc: HashMap::new(),
             definition_deadlines: HashMap::new(),
+            hover_requests: HashMap::new(),
+            hover_request_by_doc: HashMap::new(),
+            hover_deadlines: HashMap::new(),
         }
     }
 
@@ -1805,6 +1830,14 @@ impl App {
             } => {
                 self.request_lsp_definition(document_id, position, revision, origin);
             }
+            Cmd::LspRequestHover {
+                document_id,
+                position,
+                cursor,
+                revision,
+            } => {
+                self.request_lsp_hover(document_id, position, cursor, revision);
+            }
             Cmd::LspDidOpenOnServer {
                 document_id,
                 file_path,
@@ -1896,6 +1929,38 @@ impl App {
                     revision: pending.revision,
                     origin: pending.origin,
                     outcome,
+                }))
+            })
+            .collect();
+        // Same interception for `textDocument/hover` replies, mirroring
+        // the definition pass above.
+        messages = messages
+            .into_iter()
+            .filter_map(|msg| {
+                let Msg::Lsp(LspMsg::HoverResponseFromServer {
+                    server_id,
+                    root,
+                    request_id,
+                    content,
+                    abandoned,
+                }) = msg
+                else {
+                    return Some(msg);
+                };
+                let key = (server_id, root, request_id);
+                let pending = self.lsp.hover_requests.remove(&key)?;
+                self.lsp.hover_deadlines.remove(&key);
+                if self.lsp.hover_request_by_doc.get(&pending.document_id) == Some(&key) {
+                    self.lsp.hover_request_by_doc.remove(&pending.document_id);
+                }
+                if abandoned {
+                    return None;
+                }
+                Some(Msg::Lsp(LspMsg::HoverResolved {
+                    document_id: pending.document_id,
+                    revision: pending.revision,
+                    cursor: pending.cursor,
+                    outcome: HoverOutcome::Content(content),
                 }))
             })
             .collect();
@@ -2547,6 +2612,98 @@ impl App {
         }
     }
 
+    /// `textDocument/hover` (lsp-integration.md Phase 4). Mirrors
+    /// `request_lsp_definition` exactly — same gating, flush-before-
+    /// request, and supersede/cancel handling — with `cursor` (the
+    /// char-column position at request time) threaded through instead of
+    /// a jump-history `origin`.
+    fn request_lsp_hover(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        position: lsp_types::Position,
+        cursor: token::model::editor::Position,
+        revision: u64,
+    ) {
+        let Some(state) = self.lsp.open_documents.get(&document_id) else {
+            self.emit_hover_outcome(document_id, revision, cursor, HoverOutcome::NotSupported);
+            return;
+        };
+        let server_id = state.server_id.clone();
+        let root = state.root.clone();
+        let uri = state.uri.clone();
+
+        if let Some((old_server_id, old_root, old_request_id)) =
+            self.lsp.hover_request_by_doc.remove(&document_id)
+        {
+            if let Some(old_handle) = self.lsp.servers.get(&(old_server_id, old_root)) {
+                old_handle.pending.lock().unwrap().abandon(old_request_id);
+                let _ = old_handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
+                    method: "$/cancelRequest".to_owned(),
+                    params: serde_json::json!({ "id": old_request_id }),
+                });
+            }
+        }
+
+        let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
+            self.emit_hover_outcome(document_id, revision, cursor, HoverOutcome::StillIndexing);
+            return;
+        };
+        let Some(caps) = handle.capabilities_snapshot() else {
+            self.emit_hover_outcome(document_id, revision, cursor, HoverOutcome::StillIndexing);
+            return;
+        };
+        if !lsp::client::supports_hover(&caps) {
+            self.emit_hover_outcome(document_id, revision, cursor, HoverOutcome::NotSupported);
+            return;
+        }
+
+        // Flush-before-request invariant.
+        self.flush_lsp_did_change(document_id);
+
+        let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
+            self.emit_hover_outcome(document_id, revision, cursor, HoverOutcome::StillIndexing);
+            return;
+        };
+        let params = serde_json::json!({
+            "textDocument": { "uri": uri.as_str() },
+            "position": { "line": position.line, "character": position.character },
+        });
+        let request_id = handle.begin_request("textDocument/hover", params);
+        let key = (server_id.clone(), root.clone(), request_id);
+        self.lsp.hover_requests.insert(
+            key.clone(),
+            PendingHover {
+                document_id,
+                revision,
+                cursor,
+            },
+        );
+        self.lsp.hover_request_by_doc.insert(document_id, key.clone());
+        self.lsp
+            .hover_deadlines
+            .insert(key, Instant::now() + HOVER_TIMEOUT);
+    }
+
+    /// Synchronously routes a hover outcome that never reached the server
+    /// through `Msg::Lsp(HoverResolved)` — mirrors `emit_definition_outcome`.
+    fn emit_hover_outcome(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        revision: u64,
+        cursor: token::model::editor::Position,
+        outcome: HoverOutcome,
+    ) {
+        self.process_automation_msg(Msg::Lsp(LspMsg::HoverResolved {
+            document_id,
+            revision,
+            cursor,
+            outcome,
+        }));
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
     /// Routes a server-state change through `Msg::Lsp(ServerStateChanged)`
     /// — the same path the worker threads use — instead of poking
     /// `model.lsp.servers` directly, so the mirror stays "driven only by
@@ -2609,6 +2766,15 @@ impl App {
             .retain(|_, (id, root, _)| !(id == server_id && roots.contains(root)));
         self.lsp
             .definition_deadlines
+            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
+        self.lsp
+            .hover_requests
+            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
+        self.lsp
+            .hover_request_by_doc
+            .retain(|_, (id, root, _)| !(id == server_id && roots.contains(root)));
+        self.lsp
+            .hover_deadlines
             .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
 
         for root in roots {
@@ -2718,6 +2884,55 @@ impl App {
                 pending.revision,
                 pending.origin,
                 DefinitionOutcome::NoResult,
+            );
+        }
+    }
+
+    /// Fires `HOVER_TIMEOUT` UI-level abandonment for hover requests a
+    /// server never answered — mirrors `check_lsp_definition_deadlines`.
+    /// Since `HoverOutcome` has no "no result" variant distinct from
+    /// `Content(None)`, an abandoned request resolves as `Content(None)`
+    /// (the same "the server had nothing to say" outcome a fast `null`
+    /// reply would have produced).
+    fn check_lsp_hover_deadlines(&mut self) {
+        if self.lsp.hover_deadlines.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        let due: Vec<(LspServerId, PathBuf, i64)> = self
+            .lsp
+            .hover_deadlines
+            .iter()
+            .filter(|(_, deadline)| now >= **deadline)
+            .map(|(key, _)| key.clone())
+            .collect();
+        for key in due {
+            self.lsp.hover_deadlines.remove(&key);
+            let is_current = self
+                .lsp
+                .hover_requests
+                .get(&key)
+                .is_some_and(|pending| self.lsp.hover_request_by_doc.get(&pending.document_id) == Some(&key));
+            if !is_current {
+                continue;
+            }
+            let Some(pending) = self.lsp.hover_requests.remove(&key) else {
+                continue;
+            };
+            self.lsp.hover_request_by_doc.remove(&pending.document_id);
+            let (server_id, root, request_id) = key;
+            if let Some(handle) = self.lsp.servers.get(&(server_id, root)) {
+                handle.pending.lock().unwrap().abandon(request_id);
+                let _ = handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
+                    method: "$/cancelRequest".to_owned(),
+                    params: serde_json::json!({ "id": request_id }),
+                });
+            }
+            self.emit_hover_outcome(
+                pending.document_id,
+                pending.revision,
+                pending.cursor,
+                HoverOutcome::Content(None),
             );
         }
     }
@@ -2930,6 +3145,7 @@ impl ApplicationHandler for App {
         self.check_lsp_did_change_deadlines(&syntax_snapshots);
         self.check_lsp_restart_deadlines();
         self.check_lsp_definition_deadlines();
+        self.check_lsp_hover_deadlines();
 
         // Expire status flash messages
         if self.model.ui.expire_status_message() {
@@ -2975,6 +3191,9 @@ impl ApplicationHandler for App {
             next_wake = next_wake.min(*earliest_deadline);
         }
         if let Some(earliest_deadline) = self.lsp.definition_deadlines.values().min() {
+            next_wake = next_wake.min(*earliest_deadline);
+        }
+        if let Some(earliest_deadline) = self.lsp.hover_deadlines.values().min() {
             next_wake = next_wake.min(*earliest_deadline);
         }
         if let Some(transient) = &self.model.ui.transient_message {
@@ -4077,6 +4296,393 @@ mod tests {
             app.model.ui.transient_message.map(|t| t.text),
             status_before.map(|t| t.text),
             "an already-superseded request's timeout must not flash a status"
+        );
+    }
+
+    // ---- Phase 4: hover request plumbing ----
+
+    fn test_cursor(app: &App) -> token::model::editor::Position {
+        app.model.editor().active_cursor().to_position()
+    }
+
+    #[test]
+    fn hover_request_with_no_synced_document_reports_not_supported() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let cursor = test_cursor(&app);
+
+        app.request_lsp_hover(
+            doc_id,
+            lsp_types::Position { line: 0, character: 0 },
+            cursor,
+            revision,
+        );
+
+        assert!(app
+            .model
+            .ui
+            .transient_message
+            .as_ref()
+            .is_some_and(|t| t.text.contains("not supported")));
+    }
+
+    #[test]
+    fn hover_request_reports_not_supported_when_capabilities_lack_hover_provider() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let cursor = test_cursor(&app);
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-hover-nosupport");
+        let uri = lsp::path_to_uri(&PathBuf::from("/tmp/proj-hover-nosupport/main.rs"));
+        install_open_document(&mut app, doc_id, &server_id, &root, uri);
+
+        let handle = spawn_fake_handle(&server_id);
+        *handle.capabilities.lock().unwrap() = Some(lsp_types::ServerCapabilities::default());
+        app.lsp
+            .servers
+            .insert((server_id.clone(), root.clone()), handle);
+
+        app.request_lsp_hover(
+            doc_id,
+            lsp_types::Position { line: 0, character: 0 },
+            cursor,
+            revision,
+        );
+
+        assert!(app
+            .model
+            .ui
+            .transient_message
+            .as_ref()
+            .is_some_and(|t| t.text.contains("not supported")));
+
+        let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+        handle.kill();
+    }
+
+    #[test]
+    fn a_newer_hover_request_supersedes_and_cancels_the_previous_one() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-hover-supersede");
+        let uri = lsp::path_to_uri(&PathBuf::from("/tmp/proj-hover-supersede/main.rs"));
+        install_open_document(&mut app, doc_id, &server_id, &root, uri);
+
+        let handle = spawn_fake_handle(&server_id);
+        *handle.capabilities.lock().unwrap() = Some(lsp_types::ServerCapabilities {
+            hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
+            ..Default::default()
+        });
+        app.lsp
+            .servers
+            .insert((server_id.clone(), root.clone()), handle);
+
+        app.request_lsp_hover(
+            doc_id,
+            lsp_types::Position { line: 0, character: 0 },
+            test_cursor(&app),
+            revision,
+        );
+        let (first_server, first_root, first_id) =
+            app.lsp.hover_request_by_doc.get(&doc_id).cloned().unwrap();
+
+        app.request_lsp_hover(
+            doc_id,
+            lsp_types::Position { line: 1, character: 0 },
+            test_cursor(&app),
+            revision,
+        );
+        let (_, _, second_id) = app.lsp.hover_request_by_doc.get(&doc_id).cloned().unwrap();
+
+        assert_ne!(first_id, second_id, "a new request id must be allocated");
+        assert_eq!(app.lsp.hover_requests.len(), 2);
+        let handle = app.lsp.servers.get(&(first_server, first_root)).unwrap();
+        assert!(
+            handle.pending.lock().unwrap().resolve(first_id).unwrap().abandoned,
+            "the superseded request must be marked abandoned"
+        );
+
+        let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+        handle.kill();
+    }
+
+    #[test]
+    fn an_abandoned_hover_response_is_consumed_and_discarded() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-hover-abandoned");
+        let cursor = test_cursor(&app);
+        app.lsp.hover_requests.insert(
+            (server_id.clone(), root.clone(), 7),
+            PendingHover {
+                document_id: doc_id,
+                revision,
+                cursor,
+            },
+        );
+        app.lsp
+            .hover_request_by_doc
+            .insert(doc_id, (server_id.clone(), root.clone(), 7));
+
+        app.msg_tx
+            .send(Msg::Lsp(LspMsg::HoverResponseFromServer {
+                server_id,
+                root,
+                request_id: 7,
+                content: Some("should never be seen".to_owned()),
+                abandoned: true,
+            }))
+            .unwrap();
+        app.process_async_messages();
+
+        assert!(app.lsp.hover_requests.is_empty());
+        assert!(app.lsp.hover_request_by_doc.is_empty());
+        assert!(
+            app.model.ui.cursor_overlay.is_none(),
+            "a discarded (cancelled) response must never open the hover card"
+        );
+    }
+
+    #[test]
+    fn a_hover_request_past_its_deadline_is_abandoned_with_no_content() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-hover-timeout");
+        let cursor = test_cursor(&app);
+        let handle = spawn_fake_handle(&server_id);
+        let request_id = handle.begin_request("textDocument/hover", serde_json::json!({}));
+        app.lsp
+            .servers
+            .insert((server_id.clone(), root.clone()), handle);
+
+        let key = (server_id.clone(), root.clone(), request_id);
+        app.lsp.hover_requests.insert(
+            key.clone(),
+            PendingHover {
+                document_id: doc_id,
+                revision,
+                cursor,
+            },
+        );
+        app.lsp.hover_request_by_doc.insert(doc_id, key.clone());
+        app.lsp
+            .hover_deadlines
+            .insert(key.clone(), Instant::now() - Duration::from_secs(1));
+
+        app.check_lsp_hover_deadlines();
+
+        assert!(app.lsp.hover_requests.is_empty());
+        assert!(app.lsp.hover_request_by_doc.is_empty());
+        assert!(app.lsp.hover_deadlines.is_empty());
+        assert!(
+            app.model.ui.cursor_overlay.is_none(),
+            "no content and no diagnostics -> nothing to show"
+        );
+        let handle = app.lsp.servers.get(&(server_id.clone(), root.clone())).unwrap();
+        assert!(
+            handle
+                .pending
+                .lock()
+                .unwrap()
+                .resolve(request_id)
+                .unwrap()
+                .abandoned
+        );
+
+        let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+        handle.kill();
+    }
+
+    /// End-to-end "hover resolved and rendered" (design doc's Testing
+    /// Strategy fake-server scenario): markdown content is stripped to
+    /// plaintext and lands on `ui.hover_card`, the card opens
+    /// (`CursorOverlayKind::Hover`).
+    #[test]
+    fn hover_resolved_opens_the_card_with_plaintext_content() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write fixture file");
+
+        let scenario_path = dir.path().join("scenario.json");
+        std::fs::write(
+            &scenario_path,
+            serde_json::json!([
+                { "op": "expect_request", "method": "initialize", "respond": {
+                    "capabilities": { "hoverProvider": true }
+                }},
+                { "op": "expect_request", "method": "textDocument/hover", "respond": {
+                    "contents": { "kind": "markdown", "value": "**fn** main() -> ()" },
+                }},
+                { "op": "sleep_ms", "ms": 60000 },
+            ])
+            .to_string(),
+        )
+        .expect("write scenario file");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
+                enabled: None,
+            },
+        );
+
+        app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+        let server_id = LspServerId::from("rust-analyzer");
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready)
+        }));
+
+        app.process_automation_msg(Msg::Lsp(LspMsg::ShowHover));
+
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            app.model.ui.cursor_overlay.is_some()
+        }));
+
+        assert_eq!(
+            app.model.ui.cursor_overlay.map(|o| o.kind),
+            Some(token::model::CursorOverlayKind::Hover)
+        );
+        assert_eq!(
+            app.model.ui.hover_card.as_ref().and_then(|s| s.content.as_deref()),
+            Some("fn main() -> ()"),
+            "markdown emphasis must be stripped to plaintext"
+        );
+
+        app.process_cmd(Cmd::Quit);
+    }
+
+    /// A hover response for a revision the document has since moved past
+    /// (an edit landed between request and reply) must never open the
+    /// card — the design doc's revision guard, exercised end-to-end.
+    #[test]
+    fn a_stale_hover_response_after_a_revision_bump_is_dropped() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write fixture file");
+
+        let scenario_path = dir.path().join("scenario.json");
+        std::fs::write(
+            &scenario_path,
+            serde_json::json!([
+                { "op": "expect_request", "method": "initialize", "respond": {
+                    "capabilities": { "hoverProvider": true }
+                }},
+                { "op": "expect_request", "method": "textDocument/hover", "respond": {
+                    "contents": { "kind": "plaintext", "value": "stale hover" },
+                }},
+                { "op": "sleep_ms", "ms": 60000 },
+            ])
+            .to_string(),
+        )
+        .expect("write scenario file");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
+                enabled: None,
+            },
+        );
+
+        app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+        let server_id = LspServerId::from("rust-analyzer");
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready)
+        }));
+
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let cursor = test_cursor(&app);
+        // Issue the request directly (bypassing the flush the real
+        // `ShowHover` -> `request_lsp_hover` path would run) so the edit
+        // below is guaranteed to land after the request is already
+        // in flight, deterministically reproducing the race.
+        app.request_lsp_hover(
+            doc_id,
+            lsp_types::Position { line: 0, character: 0 },
+            cursor,
+            revision,
+        );
+        app.model.document_mut().buffer.insert(0, "x");
+        app.model.document_mut().revision += 1;
+
+        // Drain every async message the scenario produces — the response
+        // arrives, fails the revision guard, and must never open a card.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline && !app.lsp.hover_requests.is_empty() {
+            app.process_async_messages();
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        assert!(
+            app.model.ui.cursor_overlay.is_none(),
+            "a stale (revision-bumped) hover response must be dropped, not rendered"
+        );
+
+        app.process_cmd(Cmd::Quit);
+    }
+
+    /// Hover on a line with a diagnostic whose `relatedInformation` points
+    /// elsewhere ("first borrow occurs here") surfaces that related
+    /// message alongside the primary diagnostic — the automation-visible
+    /// projection `hover_snapshot`/`related_information_text` build.
+    #[test]
+    fn hover_on_a_diagnostic_line_includes_related_information() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.document_mut().buffer = ropey::Rope::from_str("let x = y;\n");
+        let doc = app.model.document_mut();
+        doc.diagnostics = vec![lsp_types::Diagnostic {
+            range: lsp_types::Range {
+                start: lsp_types::Position { line: 0, character: 8 },
+                end: lsp_types::Position { line: 0, character: 9 },
+            },
+            severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+            message: "cannot find value `y`".to_owned(),
+            related_information: Some(vec![lsp_types::DiagnosticRelatedInformation {
+                location: lsp_types::Location {
+                    uri: lsp::path_to_uri(&PathBuf::from("/tmp/other.rs")),
+                    range: lsp_types::Range {
+                        start: lsp_types::Position { line: 11, character: 0 },
+                        end: lsp_types::Position { line: 11, character: 1 },
+                    },
+                },
+                message: "first borrow occurs here".to_owned(),
+            }]),
+            ..Default::default()
+        }];
+        app.model.editor_mut().cursors[0] = token::model::editor::Cursor::at(0, 8);
+        app.model.editor_mut().clear_selection();
+
+        // No hover content from the server (the diagnostic alone is
+        // reason enough to open the card).
+        app.model.ui.hover_card = Some(token::model::HoverCardState { content: None });
+        app.model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::Hover,
+        ));
+
+        let snapshot = crate::automation::EditorSnapshot::from_model(&app.model);
+        let hover = snapshot.hover.expect("hover card must be reflected in the snapshot");
+        assert_eq!(hover.banner_message.as_deref(), Some("cannot find value `y`"));
+        assert!(
+            hover
+                .related_information
+                .as_deref()
+                .is_some_and(|t| t.contains("first borrow occurs here")),
+            "relatedInformation must reach the card: {:?}",
+            hover.related_information
         );
     }
 

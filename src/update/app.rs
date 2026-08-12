@@ -398,6 +398,7 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::NavigateBack => {
             crate::update::update_lsp(model, crate::messages::LspMsg::NavigateBack)
         }
+        CommandId::ShowHover => crate::update::update_lsp(model, crate::messages::LspMsg::ShowHover),
         CommandId::SplitHorizontal => {
             update_layout(model, LayoutMsg::SplitFocused(SplitDirection::Horizontal))
         }

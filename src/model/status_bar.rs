@@ -520,39 +520,15 @@ fn count_diagnostics(diagnostics: &[lsp_types::Diagnostic]) -> (usize, usize) {
 /// The message of the highest-severity diagnostic whose range contains
 /// `cursor`, if any (lsp-integration.md: "readable, not just visible").
 /// `relatedInformation` isn't included here — it arrives with the hover
-/// card in Phase 4.
+/// card in Phase 4 (`super::decorations::diagnostics_at_position`, shared
+/// with this lookup).
 fn diagnostic_message_at_cursor(
     document: &super::Document,
     cursor: super::editor::Position,
 ) -> Option<String> {
-    document
-        .diagnostics
-        .iter()
-        .filter(|d| diagnostic_contains_position(document, d, cursor))
-        .max_by_key(|d| super::diagnostic_mark(d.severity))
+    super::decorations::diagnostics_at_position(document, cursor)
+        .first()
         .map(|d| d.message.clone())
-}
-
-fn diagnostic_contains_position(
-    document: &super::Document,
-    diagnostic: &lsp_types::Diagnostic,
-    cursor: super::editor::Position,
-) -> bool {
-    if crate::lsp::position::range_vanished(document, diagnostic.range) {
-        return false;
-    }
-    let start = crate::lsp::position::lsp_to_position(document, diagnostic.range.start);
-    let end = crate::lsp::position::lsp_to_position(document, diagnostic.range.end);
-    if cursor.line < start.line || cursor.line > end.line {
-        return false;
-    }
-    if cursor.line == start.line && cursor.column < start.column {
-        return false;
-    }
-    if cursor.line == end.line && cursor.column > end.column {
-        return false;
-    }
-    true
 }
 
 /// Flattens whitespace/newlines and caps the message length so a

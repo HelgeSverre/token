@@ -35,6 +35,7 @@ pub enum CommandId {
     GotoLine,
     GotoDefinition,
     NavigateBack,
+    ShowHover,
 
     // View operations
     SplitHorizontal,
@@ -228,6 +229,12 @@ pub static COMMANDS: &[CommandDef] = &[
         category: CommandCategory::Nav,
         label: "Navigate Back",
         keybinding: Some("⌘["),
+    },
+    CommandDef {
+        id: CommandId::ShowHover,
+        category: CommandCategory::Nav,
+        label: "Show Hover",
+        keybinding: Some("⌃⇧Space"),
     },
     CommandDef {
         id: CommandId::SplitHorizontal,
@@ -446,6 +453,7 @@ impl CommandId {
             CommandId::GotoLine => Some(KeymapCommand::ToggleGotoLine),
             CommandId::GotoDefinition => Some(KeymapCommand::GotoDefinition),
             CommandId::NavigateBack => Some(KeymapCommand::NavigateBack),
+            CommandId::ShowHover => Some(KeymapCommand::ShowHover),
             CommandId::SplitHorizontal => Some(KeymapCommand::SplitHorizontal),
             CommandId::SplitVertical => Some(KeymapCommand::SplitVertical),
             CommandId::CloseGroup => None, // No direct mapping yet
@@ -826,6 +834,17 @@ pub enum Cmd {
         server_id: crate::lsp::LspServerId,
         root: PathBuf,
     },
+    /// `textDocument/hover` for `document_id` at `position` (already
+    /// UTF-16-converted), tagged with the document's `revision` and
+    /// (char-column) `cursor` at request time — mirrors
+    /// `LspRequestDefinition`. Supersedes any still-pending hover request
+    /// for the same document via `$/cancelRequest`.
+    LspRequestHover {
+        document_id: DocumentId,
+        position: lsp_types::Position,
+        cursor: crate::model::editor::Position,
+        revision: u64,
+    },
 
     // === Debug Commands ===
     /// Toggle performance overlay (debug builds only)
@@ -917,6 +936,7 @@ impl Cmd {
             Cmd::LspClearDiagnostics { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestDefinition { .. } => Damage::Areas(vec![]),
             Cmd::LspDidOpenOnServer { .. } => Damage::Areas(vec![]),
+            Cmd::LspRequestHover { .. } => Damage::Areas(vec![]),
             // Debug overlay toggle triggers full redraw
             #[cfg(debug_assertions)]
             Cmd::TogglePerfOverlay => Damage::Full,

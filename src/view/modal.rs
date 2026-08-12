@@ -17,7 +17,7 @@ use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry::WidgetRect;
 use super::overlay_surface::{
     self, Accessory, Anchor, Body, Field, FlatIndex, Footer, Header, OverlayLayout, OverlaySpec,
-    Row, RowIcon, Section, TabBar, WidthRule,
+    Row, RowIcon, Section, TabBar, WidthRule, Zones,
 };
 use super::text_field::{TextFieldContent, TextFieldRenderer};
 
@@ -1448,6 +1448,44 @@ pub fn debug_completion_row_count() -> usize {
     debug_completion_rows().len()
 }
 
+/// Maps an LSP diagnostic severity onto the overlay surface's severity
+/// palette. `None` (server left severity to the client) and `ERROR` both
+/// resolve to `Error` — matches `model::decorations::diagnostic_mark`'s
+/// same "more visible when unstated" rule.
+fn diagnostic_severity_to_overlay(
+    severity: Option<lsp_types::DiagnosticSeverity>,
+) -> overlay_surface::Severity {
+    use lsp_types::DiagnosticSeverity as S;
+    match severity {
+        Some(S::WARNING) => overlay_surface::Severity::Warning,
+        Some(S::INFORMATION) => overlay_surface::Severity::Info,
+        Some(S::HINT) => overlay_surface::Severity::Hint,
+        _ => overlay_surface::Severity::Error,
+    }
+}
+
+/// Flattens every `relatedInformation` entry across `diagnostics` into
+/// "note: <message> (<file>:<line>)" lines — rust-analyzer's "first borrow
+/// occurs here" is half the value of the error (lsp-integration.md Phase
+/// 4). `None` when nothing has related info.
+fn related_information_text(diagnostics: &[&lsp_types::Diagnostic]) -> Option<String> {
+    let lines: Vec<String> = diagnostics
+        .iter()
+        .flat_map(|d| d.related_information.iter().flatten())
+        .map(|info| {
+            let file = crate::lsp::uri_to_path(&info.location.uri)
+                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+                .unwrap_or_else(|| info.location.uri.as_str().to_owned());
+            format!(
+                "note: {} ({file}:{})",
+                info.message,
+                info.location.range.start.line + 1
+            )
+        })
+        .collect();
+    (!lines.is_empty()).then(|| lines.join("\n"))
+}
+
 /// Dummy content exercising the hover `Zones` card (banner/code/text,
 /// severity conventions) — manual-testing content only; the real hover
 /// source is [lsp-integration.md](lsp-integration.md) Phase 4.
@@ -1573,6 +1611,51 @@ pub(crate) fn with_cursor_overlay_layout<R>(
                 },
                 header: None,
                 body: Body::Zones(debug_hover_zones()),
+                footer: None,
+                hover_row: None,
+            };
+            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            Some(f(&spec, &l))
+        }
+        crate::model::CursorOverlayKind::Hover => {
+            let doc = model.try_document()?;
+            let cursor = model.editor().active_cursor().to_position();
+            let diagnostics = crate::model::decorations::diagnostics_at_position(doc, cursor);
+            let banner = diagnostics.first().map(|d| {
+                (
+                    diagnostic_severity_to_overlay(d.severity),
+                    d.message.as_str(),
+                    d.source.as_deref().unwrap_or(""),
+                )
+            });
+            let hover_text = model.ui.hover_card.as_ref().and_then(|s| s.content.as_deref());
+            let related = related_information_text(&diagnostics);
+            let text = match (hover_text, related.as_deref()) {
+                (Some(h), Some(r)) => format!("{h}\n\n{r}"),
+                (Some(h), None) => h.to_owned(),
+                (None, Some(r)) => r.to_owned(),
+                (None, None) => String::new(),
+            };
+            let spec = OverlaySpec {
+                tabs: None,
+                anchor: Anchor::Cursor {
+                    x,
+                    y,
+                    h,
+                    // "Cursor, above-preferred" per the Contexts table.
+                    prefer_below: false,
+                    width: WidthRule {
+                        pct: 0.0,
+                        min: 280.0,
+                        max: 420.0,
+                    },
+                },
+                header: None,
+                body: Body::Zones(Zones {
+                    banner,
+                    code: None,
+                    text: (!text.is_empty()).then_some(text.as_str()),
+                }),
                 footer: None,
                 hover_row: None,
             };

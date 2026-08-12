@@ -87,6 +87,9 @@ pub(crate) struct EditorSnapshot {
     /// Phase 2), queryable independent of the gutter marks visible in
     /// the current viewport.
     pub diagnostics: DiagnosticsSnapshot,
+    /// The hover card (lsp-integration.md Phase 4), if open — `None` when
+    /// no hover card is showing.
+    pub hover: Option<HoverSnapshot>,
 }
 
 /// Per-severity diagnostic counts for the focused document.
@@ -144,6 +147,62 @@ fn completion_snapshot(model: &AppModel) -> Option<CompletionSnapshot> {
         selected,
         items,
     })
+}
+
+/// A read-only view of the hover card, for automation to assert content
+/// (lsp-integration.md Phase 4) without a rendering backend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct HoverSnapshot {
+    /// Plaintext hover content, if the server returned any.
+    pub content: Option<String>,
+    /// The primary (highest-severity) diagnostic banner shown alongside
+    /// the hover content, if any diagnostic covers the cursor.
+    pub banner_message: Option<String>,
+    /// `relatedInformation` flattened the same way the card renders it
+    /// ("note: <message> (<file>:<line>)" per entry), if any.
+    pub related_information: Option<String>,
+}
+
+fn hover_snapshot(model: &AppModel) -> Option<HoverSnapshot> {
+    if !matches!(
+        model.ui.cursor_overlay,
+        Some(token::model::CursorOverlayState {
+            kind: token::model::CursorOverlayKind::Hover,
+            ..
+        })
+    ) {
+        return None;
+    }
+    let doc = model.try_document()?;
+    let cursor = model.editor().active_cursor().to_position();
+    let diagnostics = token::model::decorations::diagnostics_at_position(doc, cursor);
+    Some(HoverSnapshot {
+        content: model.ui.hover_card.as_ref().and_then(|s| s.content.clone()),
+        banner_message: diagnostics.first().map(|d| d.message.clone()),
+        related_information: hover_related_information_text(&diagnostics),
+    })
+}
+
+/// Flattens `relatedInformation` the same way the real hover card does
+/// (`view::modal::related_information_text`) — duplicated rather than
+/// shared since that's a view-layer helper and this is the automation
+/// snapshot's own plaintext projection.
+fn hover_related_information_text(diagnostics: &[&lsp_types::Diagnostic]) -> Option<String> {
+    let lines: Vec<String> = diagnostics
+        .iter()
+        .flat_map(|d| d.related_information.iter().flatten())
+        .map(|info| {
+            let file = token::lsp::uri_to_path(&info.location.uri)
+                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+                .unwrap_or_else(|| info.location.uri.as_str().to_owned());
+            format!(
+                "note: {} ({file}:{})",
+                info.message,
+                info.location.range.start.line + 1
+            )
+        })
+        .collect();
+    (!lines.is_empty()).then(|| lines.join("\n"))
 }
 
 /// One line's gutter mark, as reported to automation.
@@ -380,6 +439,7 @@ impl EditorSnapshot {
                 })
                 .collect(),
             diagnostics: diagnostics_snapshot(document),
+            hover: hover_snapshot(model),
         }
     }
 }

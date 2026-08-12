@@ -390,6 +390,9 @@ impl FromStr for Command {
             "GotoDefinition" => Ok(Command::GotoDefinition),
             "NavigateBack" => Ok(Command::NavigateBack),
 
+            // Hover (lsp-integration.md Phase 4)
+            "ShowHover" => Ok(Command::ShowHover),
+
             // Image viewer
             "ImageZoomIn" => Ok(Command::ImageZoomIn),
             "ImageZoomOut" => Ok(Command::ImageZoomOut),

@@ -978,9 +978,21 @@ fn reader_loop(
                 if let Some(wake) = wake.as_deref() {
                     wake();
                 }
+            } else if entry.method == "textDocument/hover" {
+                let content = parse_hover_result(message.get("result"));
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::HoverResponseFromServer {
+                    server_id: server_id.clone(),
+                    root: root.clone(),
+                    request_id: id,
+                    content,
+                    abandoned: entry.abandoned,
+                }));
+                if let Some(wake) = wake.as_deref() {
+                    wake();
+                }
             }
-            // Other request kinds (hover/completion) are routed by
-            // future phases.
+            // Other request kinds (completion) are routed by future
+            // phases.
         }
     }
 }
@@ -1003,6 +1015,94 @@ fn parse_definition_result(result: Option<&Value>) -> Vec<lsp_types::Location> {
         return vec![location];
     }
     serde_json::from_value::<Vec<lsp_types::Location>>(result.clone()).unwrap_or_default()
+}
+
+/// Parses a `textDocument/hover` response's `result` into plaintext
+/// (lsp-integration.md: "hover markdown lightly processed to plain text").
+/// `null` (no hover at this position) and a malformed result both become
+/// `None` — permissive-and-collapsed, same posture as
+/// `parse_definition_result`.
+fn parse_hover_result(result: Option<&Value>) -> Option<String> {
+    let result = result?;
+    if result.is_null() {
+        return None;
+    }
+    let hover: lsp_types::Hover = serde_json::from_value(result.clone()).ok()?;
+    let text = hover_contents_to_plain_text(&hover.contents);
+    (!text.trim().is_empty()).then_some(text)
+}
+
+/// Collapses the three legal shapes of `HoverContents` into one plaintext
+/// string. `MarkupContent` respects its own `kind` (only markdown needs
+/// stripping); the deprecated `MarkedString` shapes are always markdown per
+/// the pre-3.0 spec.
+fn hover_contents_to_plain_text(contents: &lsp_types::HoverContents) -> String {
+    match contents {
+        lsp_types::HoverContents::Scalar(marked) => marked_string_to_plain_text(marked),
+        lsp_types::HoverContents::Array(items) => items
+            .iter()
+            .map(marked_string_to_plain_text)
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+        lsp_types::HoverContents::Markup(markup) => match markup.kind {
+            MarkupKind::PlainText => markup.value.clone(),
+            MarkupKind::Markdown => markdown_to_plain_text(&markup.value),
+        },
+    }
+}
+
+fn marked_string_to_plain_text(marked: &lsp_types::MarkedString) -> String {
+    match marked {
+        lsp_types::MarkedString::String(markdown) => markdown_to_plain_text(markdown),
+        // Already a bare code block by construction — no markdown syntax
+        // to strip.
+        lsp_types::MarkedString::LanguageString(ls) => ls.value.clone(),
+    }
+}
+
+/// Light markdown -> plaintext: strips code-fence delimiters (keeping the
+/// code itself), inline-code backticks, emphasis markers, and leading
+/// heading `#`s. Not a full markdown parser — good enough for the
+/// monospace hover card overlay-surface.md renders (v1 has no rich-text
+/// zones; see its `Zones` doc comment).
+fn markdown_to_plain_text(markdown: &str) -> String {
+    markdown
+        .lines()
+        .filter_map(strip_markdown_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Strips a single line's markdown syntax, or `None` to drop the line
+/// entirely (a code-fence delimiter contributes no content of its own).
+fn strip_markdown_line(line: &str) -> Option<String> {
+    let trimmed = line.trim_start();
+    // Code-fence delimiter (```rust, ```, ~~~) -> drop the whole line; the
+    // code itself is plain text already and needs no stripping.
+    if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+        return None;
+    }
+    let without_heading = trimmed.trim_start_matches('#').trim_start();
+    let line = if without_heading.len() != trimmed.len() {
+        without_heading
+    } else {
+        line
+    };
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            // Bold/italic markers (`**x**`, `*x*`, `__x__`, `_x_`) and
+            // inline-code backticks: drop the marker, keep the content.
+            '*' | '_' | '`' => {
+                while chars.peek() == Some(&ch) {
+                    chars.next();
+                }
+            }
+            _ => out.push(ch),
+        }
+    }
+    Some(out)
 }
 
 fn handle_progress(
@@ -1603,5 +1703,64 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
     fn definition_result_malformed_is_no_locations_not_a_panic() {
         let result = json!({ "not": "a location" });
         assert!(parse_definition_result(Some(&result)).is_empty());
+    }
+
+    // ---- textDocument/hover response parsing ----
+
+    #[test]
+    fn hover_result_null_is_none() {
+        assert!(parse_hover_result(Some(&Value::Null)).is_none());
+        assert!(parse_hover_result(None).is_none());
+    }
+
+    #[test]
+    fn hover_result_malformed_is_none_not_a_panic() {
+        let result = json!({ "not": "a hover" });
+        assert!(parse_hover_result(Some(&result)).is_none());
+    }
+
+    #[test]
+    fn hover_result_plaintext_markup_passes_through_unchanged() {
+        let result = json!({ "contents": { "kind": "plaintext", "value": "fn foo() -> i32" } });
+        assert_eq!(
+            parse_hover_result(Some(&result)).as_deref(),
+            Some("fn foo() -> i32")
+        );
+    }
+
+    #[test]
+    fn hover_result_markdown_markup_strips_fences_and_emphasis() {
+        let result = json!({ "contents": {
+            "kind": "markdown",
+            "value": "```rust\nfn foo() -> i32\n```\n**bold** and *italic* and `code`",
+        }});
+        let text = parse_hover_result(Some(&result)).unwrap();
+        assert_eq!(text, "fn foo() -> i32\nbold and italic and code");
+    }
+
+    #[test]
+    fn hover_result_scalar_marked_string_is_treated_as_markdown() {
+        let result = json!({ "contents": "**bold**" });
+        assert_eq!(parse_hover_result(Some(&result)).as_deref(), Some("bold"));
+    }
+
+    #[test]
+    fn hover_result_array_of_marked_strings_joins_with_blank_line() {
+        let result = json!({ "contents": ["one", { "language": "rust", "value": "two()" }] });
+        assert_eq!(
+            parse_hover_result(Some(&result)).as_deref(),
+            Some("one\n\ntwo()")
+        );
+    }
+
+    #[test]
+    fn hover_result_blank_content_is_none() {
+        let result = json!({ "contents": { "kind": "plaintext", "value": "   " } });
+        assert!(parse_hover_result(Some(&result)).is_none());
+    }
+
+    #[test]
+    fn markdown_to_plain_text_strips_headings() {
+        assert_eq!(markdown_to_plain_text("## Signature"), "Signature");
     }
 }

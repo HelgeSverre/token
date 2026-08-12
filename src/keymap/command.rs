@@ -282,6 +282,12 @@ pub enum Command {
     /// Pop the focused group's most recent jump-history entry.
     NavigateBack,
 
+    // ========================================================================
+    // Hover (lsp-integration.md Phase 4)
+    // ========================================================================
+    /// `textDocument/hover` for the symbol under the cursor.
+    ShowHover,
+
     // Image viewer
     /// Zoom in (image mode)
     ImageZoomIn,
@@ -491,6 +497,7 @@ impl Command {
             RestartLanguageServer => vec![Msg::App(AppMsg::RestartLanguageServer)],
             GotoDefinition => vec![Msg::Lsp(LspMsg::GotoDefinition)],
             NavigateBack => vec![Msg::Lsp(LspMsg::NavigateBack)],
+            ShowHover => vec![Msg::Lsp(LspMsg::ShowHover)],
 
             // Image viewer
             ImageZoomIn => vec![Msg::Image(ImageMsg::Zoom {
@@ -663,6 +670,7 @@ impl Command {
             RestartLanguageServer => "Restart Language Server",
             GotoDefinition => "Go to Definition",
             NavigateBack => "Navigate Back",
+            ShowHover => "Show Hover",
 
             ImageZoomIn => "Image: Zoom In",
             ImageZoomOut => "Image: Zoom Out",

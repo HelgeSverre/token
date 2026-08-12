@@ -74,6 +74,47 @@ fn diagnostic_touches_line(diagnostic: &lsp_types::Diagnostic, doc_line: usize) 
     diagnostic.range.start.line <= line && line <= diagnostic.range.end.line
 }
 
+/// Diagnostics under `cursor`, most-severe first — shared by the status
+/// bar's single-line summary (`diagnostic_message_at_cursor`) and the
+/// hover card's banner + `relatedInformation` (lsp-integration.md Phase 4).
+pub fn diagnostics_at_position(
+    document: &Document,
+    cursor: super::editor::Position,
+) -> Vec<&lsp_types::Diagnostic> {
+    let mut found: Vec<&lsp_types::Diagnostic> = document
+        .diagnostics
+        .iter()
+        .filter(|d| diagnostic_contains_position(document, d, cursor))
+        .collect();
+    found.sort_by_key(|d| std::cmp::Reverse(diagnostic_mark(d.severity)));
+    found
+}
+
+/// Whether `diagnostic`'s (LSP, 0-based) range contains `cursor`. A range on
+/// a line an edit has since deleted (`range_vanished`) never matches,
+/// rather than clamping onto whatever now occupies that line number.
+pub fn diagnostic_contains_position(
+    document: &Document,
+    diagnostic: &lsp_types::Diagnostic,
+    cursor: super::editor::Position,
+) -> bool {
+    if crate::lsp::position::range_vanished(document, diagnostic.range) {
+        return false;
+    }
+    let start = crate::lsp::position::lsp_to_position(document, diagnostic.range.start);
+    let end = crate::lsp::position::lsp_to_position(document, diagnostic.range.end);
+    if cursor.line < start.line || cursor.line > end.line {
+        return false;
+    }
+    if cursor.line == start.line && cursor.column < start.column {
+        return false;
+    }
+    if cursor.line == end.line && cursor.column > end.column {
+        return false;
+    }
+    true
+}
+
 /// Maps an LSP severity to a gutter `Mark`. `None` (server left severity
 /// to the client) and `ERROR` both resolve to `Mark::Error` — the more
 /// visible choice when a server declines to say. `HINT` folds into

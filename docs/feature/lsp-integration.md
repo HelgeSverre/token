@@ -347,8 +347,8 @@ Binary not found on `PATH` (after `PATHEXT` resolution on Windows) → `ServerSt
 
 **Effort:** M — depends on overlay-surface.md Phase 5 (`Anchor::Cursor`)
 
-- [ ] `ShowHover` on the overlay-surface cursor card; plaintext-preferred content; dismiss rules.
-- [ ] Diagnostics with `relatedInformation` in the card.
+- [x] `ShowHover` on the overlay-surface cursor card; plaintext-preferred content; dismiss rules.
+- [x] Diagnostics with `relatedInformation` in the card.
 
 ### Phase 5: Completion
 

@@ -505,6 +505,7 @@ pub fn handle_mouse_press(
     {
         model.ui.cursor_overlay = None;
         model.ui.completion_menu = None;
+        model.ui.hover_card = None;
         true
     } else {
         false
@@ -1395,7 +1396,9 @@ pub fn handle_mouse_wheel(
                     token::view::modal::debug_completion_row_count()
                         .saturating_sub(token::view::overlay_surface::MAX_VISIBLE_COMPLETION)
                 }
-                token::model::CursorOverlayKind::DebugHover => 0,
+                token::model::CursorOverlayKind::DebugHover | token::model::CursorOverlayKind::Hover => {
+                    0
+                }
                 token::model::CursorOverlayKind::Completion => completion_rows
                     .saturating_sub(token::view::overlay_surface::MAX_VISIBLE_COMPLETION),
             };

@@ -7,9 +7,9 @@
 
 use crate::commands::Cmd;
 use crate::lsp::ServerState;
-use crate::messages::{DefinitionOutcome, LspMsg};
+use crate::messages::{DefinitionOutcome, HoverOutcome, LspMsg};
 use crate::model::editor_area::DocumentId;
-use crate::model::AppModel;
+use crate::model::{AppModel, CursorOverlayKind, CursorOverlayState, HoverCardState};
 use crate::update::navigation;
 
 /// A short status-bar transient for a server-state change, or `None` for
@@ -220,6 +220,72 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
         // Consumed by `process_async_messages`'s interception pass before
         // reaching here — see the message's doc comment.
         LspMsg::DefinitionResponseFromServer { .. } => None,
+
+        LspMsg::ShowHover => {
+            let doc = model.try_document()?;
+            let document_id = doc.id?;
+            let revision = doc.revision;
+            // Untitled documents are never LSP-synced — nothing to
+            // request against (same rule as `GotoDefinition`).
+            doc.file_path.as_ref()?;
+            let cursor = model.editor().active_cursor().to_position();
+            let position = crate::lsp::position_to_lsp(doc, cursor);
+            Some(Cmd::LspRequestHover {
+                document_id,
+                position,
+                cursor,
+                revision,
+            })
+        }
+
+        LspMsg::HoverResolved {
+            document_id,
+            revision,
+            cursor,
+            outcome,
+        } => {
+            // Revision guard, same as `DefinitionResolved`, plus a cursor
+            // guard: a document edit doesn't necessarily bump the cursor,
+            // but a bare cursor move (no edit) doesn't bump the revision
+            // either — a stale reply for a position the user has since
+            // moved away from must never open, per the design doc's "any
+            // ... cursor move" dismissal rule extended to in-flight
+            // requests.
+            let doc = model.editor_area.documents.get(&document_id)?;
+            if doc.revision != revision {
+                return None;
+            }
+            if model.editor().active_cursor().to_position() != cursor {
+                return None;
+            }
+            match outcome {
+                HoverOutcome::Content(content) => {
+                    let has_diagnostics =
+                        !crate::model::decorations::diagnostics_at_position(doc, cursor).is_empty();
+                    if content.is_none() && !has_diagnostics {
+                        model.ui.set_status("No hover information");
+                        return Some(Cmd::redraw_status_bar());
+                    }
+                    model.ui.hover_card = Some(HoverCardState { content });
+                    model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Hover));
+                    Some(Cmd::Redraw)
+                }
+                HoverOutcome::StillIndexing => {
+                    model.ui.set_status("Language server still indexing…");
+                    Some(Cmd::redraw_status_bar())
+                }
+                HoverOutcome::NotSupported => {
+                    model
+                        .ui
+                        .set_status("Hover not supported by this server");
+                    Some(Cmd::redraw_status_bar())
+                }
+            }
+        }
+
+        // Consumed by `process_async_messages`'s interception pass before
+        // reaching here — mirrors `DefinitionResponseFromServer`.
+        LspMsg::HoverResponseFromServer { .. } => None,
     }
 }
 

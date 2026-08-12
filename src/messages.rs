@@ -960,6 +960,55 @@ pub enum LspMsg {
         /// `DefinitionResolved`.
         abandoned: bool,
     },
+
+    // ==== Hover (lsp-integration.md Phase 4) ====
+    /// User intent (keybinding / palette). `update_lsp` reads the focused
+    /// document + cursor synchronously and captures
+    /// `(document_id, revision, position)` into `Cmd::LspRequestHover`,
+    /// mirroring `GotoDefinition`'s message flow.
+    ShowHover,
+    /// Runtime -> update: the outcome of a `textDocument/hover` request
+    /// issued from `(document_id, revision, cursor)`. Revision- *and*
+    /// cursor-guarded: dropped if the document has been edited, or the
+    /// cursor has moved, since the request was sent — a late reply must
+    /// never open a card anchored at a position it wasn't computed for.
+    HoverResolved {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        cursor: crate::model::editor::Position,
+        outcome: HoverOutcome,
+    },
+    /// Worker -> runtime only: the raw response (or discard-worthy
+    /// supersession) to a `textDocument/hover` request, keyed by
+    /// `(server_id, root, request_id)` — the runtime's `LspManager` looks
+    /// up the request's `(document_id, revision, cursor)` context (only it
+    /// has that mapping) and translates this into `HoverResolved` before
+    /// `update()` ever sees it, mirroring `DefinitionResponseFromServer`.
+    /// Never reaches `update_lsp` in practice, but the match must stay
+    /// exhaustive.
+    HoverResponseFromServer {
+        server_id: LspServerId,
+        root: std::path::PathBuf,
+        request_id: i64,
+        /// Already reduced to plaintext (markdown lightly stripped) by
+        /// `lsp::client::parse_hover_result` — `None` for a `null` or
+        /// unparseable result, matching the definition parser's
+        /// permissive-and-collapsed handling.
+        content: Option<String>,
+        abandoned: bool,
+    },
+}
+
+/// The result of a `textDocument/hover` request, distinguishing the two
+/// status transients the design doc calls for from an actual result. A
+/// server that supports hover but genuinely has nothing to say for this
+/// position (`result: null`) is `Content(None)`, not `NoResult` — the card
+/// can still open showing diagnostics-only content in that case.
+#[derive(Debug, Clone)]
+pub enum HoverOutcome {
+    Content(Option<String>),
+    StillIndexing,
+    NotSupported,
 }
 
 /// The result of a `textDocument/definition` request, distinguishing the

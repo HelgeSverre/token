@@ -593,9 +593,10 @@ impl ModalState {
 // Cursor-anchored popups (overlay-surface.md Phase 5)
 // ============================================================================
 
-/// Which cursor-anchored popup is currently open. Only debug/demo shells
-/// exist so far — the real consumers (completion, hover) are a later unit;
-/// see `docs/feature/overlay-surface.md` Phase 5.
+/// Which cursor-anchored popup is currently open. Demo shells still exist
+/// for manual exercising of the geometry/routing; the real consumers are
+/// `Completion` (autocomplete.md Phase 1) and `Hover` (lsp-integration.md
+/// Phase 4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CursorOverlayKind {
     /// Demonstrates the Completion list shell (kind badges, dim signature).
@@ -605,6 +606,10 @@ pub enum CursorOverlayKind {
     /// The real menu-completion popup (autocomplete.md Phase 1), backed by
     /// `UiState::completion_menu`.
     Completion,
+    /// The real `textDocument/hover` card (lsp-integration.md Phase 4),
+    /// backed by `UiState::hover_card`. Dismissed on any keypress/edit/
+    /// cursor move, same as `DebugHover`.
+    Hover,
 }
 
 /// State for a cursor-anchored popup (`ui.cursor_overlay`), distinct from
@@ -627,6 +632,19 @@ impl CursorOverlayState {
             scroll: 0,
         }
     }
+}
+
+/// Content for the currently open real hover card (`ui.cursor_overlay` ==
+/// `Some(CursorOverlayState { kind: CursorOverlayKind::Hover, .. })`).
+/// Diagnostics aren't stored here — the card always reads
+/// `diagnostics_at_position` live against the current cursor, which stays
+/// correct because the card is dismissed on any cursor move.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HoverCardState {
+    /// Plaintext-processed `textDocument/hover` content, or `None` when the
+    /// server returned no hover info at this position (the card can still
+    /// be showing diagnostics-only content).
+    pub content: Option<String>,
 }
 
 // ============================================================================
@@ -872,6 +890,10 @@ pub struct UiState {
     /// `cursor_overlay` being `Some(CursorOverlayKind::Completion)`. `None`
     /// whenever the completion popup is closed.
     pub completion_menu: Option<crate::completion::CompletionMenuState>,
+    /// Hover-card content (lsp-integration.md Phase 4), set alongside
+    /// `cursor_overlay` being `Some(CursorOverlayKind::Hover)`. `None`
+    /// whenever the hover card is closed.
+    pub hover_card: Option<HoverCardState>,
 }
 
 impl UiState {
@@ -900,6 +922,7 @@ impl UiState {
             modal_hover_row: None,
             cursor_overlay: None,
             completion_menu: None,
+            hover_card: None,
         }
     }
 
