@@ -357,6 +357,9 @@ pub struct ThemePickerState {
     pub themes: Vec<ThemeInfo>,
     /// Original theme ID for restore on cancel
     pub original_theme_id: String,
+    /// Per-theme representative colors, parallel to `themes` (accent dot +
+    /// palette strip in the picker rows).
+    pub swatches: Vec<crate::theme::ThemeSwatch>,
     /// Scroll offset (in rows) for keeping a long theme list clipped and the
     /// selection visible instead of overflowing the modal.
     pub scroll_offset: usize,
@@ -365,9 +368,21 @@ pub struct ThemePickerState {
 impl ThemePickerState {
     /// Create a new theme picker state with the current theme for restore
     pub fn new(current_theme_id: String) -> Self {
+        let themes = list_available_themes();
+        // One theme parse per listed theme, same cost class as the live
+        // preview-on-selection the picker already does.
+        let swatches = themes
+            .iter()
+            .map(|info| {
+                crate::theme::load_theme(&info.id)
+                    .map(|t| t.swatch())
+                    .unwrap_or_else(|_| crate::theme::ThemeSwatch::fallback())
+            })
+            .collect();
         Self {
             selected_index: 0,
-            themes: list_available_themes(),
+            themes,
+            swatches,
             original_theme_id: current_theme_id,
             scroll_offset: 0,
         }
@@ -1207,5 +1222,22 @@ mod tests {
         ui.set_status("still here");
         assert!(!ui.expire_status_message());
         assert!(ui.transient_message.is_some());
+    }
+
+    #[test]
+    fn theme_picker_swatches_parallel_the_theme_list() {
+        let state = ThemePickerState::new("default-dark".to_string());
+        assert_eq!(
+            state.swatches.len(),
+            state.themes.len(),
+            "every listed theme needs a swatch (fallback on load failure)"
+        );
+        // Bundled themes all load, so at least one swatch must differ from
+        // the neutral fallback.
+        let fallback = crate::theme::ThemeSwatch::fallback();
+        assert!(
+            state.swatches.iter().any(|s| s.accent != fallback.accent),
+            "bundled themes should produce real accent colors"
+        );
     }
 }

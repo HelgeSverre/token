@@ -683,29 +683,32 @@ fn render_theme_picker_modal(
     ctx: &ModalRenderCtx,
     mask_cache: &mut RoundedRectMaskCache,
 ) {
-    let icon_color = model.theme.overlay.text_dim.to_argb_u32();
+    let fallback_swatch = crate::theme::ThemeSwatch::fallback();
     let groups = theme_picker_groups(&state.themes);
 
     let row_groups: Vec<Vec<Row>> = groups
         .iter()
         .map(|(_, range)| {
-            state.themes[range.clone()]
-                .iter()
-                .map(|theme_info| {
+            range
+                .clone()
+                .map(|idx| {
+                    let theme_info = &state.themes[idx];
+                    // `swatches` is parallel to `themes`; guard anyway so a
+                    // stale state never panics rendering.
+                    let swatch = state.swatches.get(idx).unwrap_or(&fallback_swatch);
                     let is_active =
                         model.theme.name == theme_info.name || model.config.theme == theme_info.id;
                     Row {
                         icon: RowIcon::Glyph {
                             ch: '\u{25CF}',
-                            color: icon_color,
+                            color: swatch.accent,
                         },
                         label: &theme_info.name,
                         match_indices: &[],
                         detail: None,
-                        accessory: if is_active {
-                            Accessory::Check
-                        } else {
-                            Accessory::None
+                        accessory: Accessory::Swatches {
+                            colors: &swatch.colors,
+                            active: is_active,
                         },
                     }
                 })

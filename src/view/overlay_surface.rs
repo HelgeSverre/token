@@ -51,6 +51,11 @@ mod dims {
     pub const ZONE_GAP: f32 = 8.0;
     /// Gap between chips within one chord step's keycap accessory.
     pub const CHIP_GAP: f32 = 4.0;
+    /// Theme-swatch dots (theme picker): diameter, intra-strip gap, and the
+    /// gap between the strip and the ✓ active mark.
+    pub const SWATCH_D: f32 = 7.0;
+    pub const SWATCH_GAP: f32 = 3.0;
+    pub const SWATCH_CHECK_GAP: f32 = 6.0;
     /// Gap between chord steps in a keycap accessory (Visual Language >
     /// Keycaps: "6px gap between steps").
     pub const CHIP_STEP_GAP: f32 = 6.0;
@@ -296,6 +301,13 @@ pub enum Accessory<'a> {
     /// `binding_chips`; more than 4 chips total should fall back to
     /// `DimText` before reaching here (Visual Language > Keycaps).
     Keycaps(&'a [Vec<Chip>]),
+    /// A strip of small color dots (theme picker palette preview), with the
+    /// ✓ active mark appended when `active` — one accessory slot, so the
+    /// check rides along instead of competing for it.
+    Swatches {
+        colors: &'a [u32],
+        active: bool,
+    },
 }
 
 /// One keycap chip's label (e.g. `"⌘"`, `"⇧"`, `"T"`, `"F12"`).
@@ -1878,6 +1890,54 @@ fn render_list(
                                 }
                             }
                         }
+                        Accessory::Swatches {
+                            colors: dots,
+                            active,
+                        } => {
+                            let d = scaled(dims::SWATCH_D, scale_factor);
+                            let gap = scaled(dims::SWATCH_GAP, scale_factor);
+                            let dot_y = rect.y + (rect.h.saturating_sub(d)) / 2;
+                            let mut cx = acc_x;
+                            for &dot in *dots {
+                                // Hairline ring first, swatch inset 1px on
+                                // top — keeps a swatch that matches the
+                                // panel background visible.
+                                frame.fill_rounded_rect(
+                                    cx,
+                                    dot_y,
+                                    d,
+                                    d,
+                                    d / 2,
+                                    colors.hairline,
+                                    mask_cache,
+                                );
+                                if d > 2 {
+                                    frame.fill_rounded_rect(
+                                        cx + 1,
+                                        dot_y + 1,
+                                        d - 2,
+                                        d - 2,
+                                        (d - 2) / 2,
+                                        dot,
+                                        mask_cache,
+                                    );
+                                }
+                                cx += d + gap;
+                            }
+                            if *active {
+                                let check_x =
+                                    cx - gap + scaled(dims::SWATCH_CHECK_GAP, scale_factor);
+                                painter.draw_sized(
+                                    frame,
+                                    check_x,
+                                    acc_y,
+                                    "\u{2713}",
+                                    meta_size,
+                                    0.0,
+                                    colors.accent_bright,
+                                );
+                            }
+                        }
                         Accessory::None => {}
                     }
                 }
@@ -1903,6 +1963,16 @@ fn accessory_width(
         Accessory::DimText(text) => painter.measure_sized(text, meta_size, 0.0).ceil() as usize,
         Accessory::Check => painter.measure_sized("\u{2713}", meta_size, 0.0).ceil() as usize,
         Accessory::Keycaps(steps) => keycaps_width(painter, steps, scale_factor),
+        Accessory::Swatches { colors, active } => {
+            let d = scaled(dims::SWATCH_D, scale_factor);
+            let gap = scaled(dims::SWATCH_GAP, scale_factor);
+            let mut w = colors.len() * d + colors.len().saturating_sub(1) * gap;
+            if *active {
+                w += scaled(dims::SWATCH_CHECK_GAP, scale_factor)
+                    + painter.measure_sized("\u{2713}", meta_size, 0.0).ceil() as usize;
+            }
+            w
+        }
     }
 }
 
@@ -2435,6 +2505,37 @@ mod tests {
         )
         .expect("test font should load");
         (font, super::super::GlyphCache::default())
+    }
+
+    #[test]
+    fn swatches_accessory_width_counts_dots_gaps_and_check() {
+        let (font, mut cache) = test_painter_and_frame();
+        let mut painter = TextPainter::new(&font, &mut cache, 13.0, 10.0, 8.0, 16);
+        let dots = [0xFF112233u32, 0xFF445566, 0xFF778899, 0xFFAABBCC];
+
+        let plain = accessory_width(
+            &mut painter,
+            &Accessory::Swatches {
+                colors: &dots,
+                active: false,
+            },
+            SIZE_META,
+            1.0,
+        );
+        // 4 dots of 7px + 3 gaps of 3px at 1x.
+        assert_eq!(plain, 4 * 7 + 3 * 3);
+
+        let with_check = accessory_width(
+            &mut painter,
+            &Accessory::Swatches {
+                colors: &dots,
+                active: true,
+            },
+            SIZE_META,
+            1.0,
+        );
+        let check_w = painter.measure_sized("\u{2713}", SIZE_META, 0.0).ceil() as usize;
+        assert_eq!(with_check, plain + 6 + check_w);
     }
 
     #[test]

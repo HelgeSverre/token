@@ -1293,7 +1293,8 @@ mod tests {
 
     #[test]
     fn modal_text_edit_resets_cursor_blink() {
-        use token::messages::{ModalId, UiMsg};
+        use token::messages::UiMsg;
+        use token::model::ModalId;
 
         let mut model = AppModel::new(800, 600, 1.0, vec![]);
         update(

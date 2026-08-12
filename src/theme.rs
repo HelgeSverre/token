@@ -90,6 +90,26 @@ pub struct ThemeInfo {
     pub source: ThemeSource,
 }
 
+/// Representative colors of a theme for the theme picker rows: accent for
+/// the leading dot, and a 4-color palette strip (editor background,
+/// keyword, string, function).
+#[derive(Debug, Clone, Copy)]
+pub struct ThemeSwatch {
+    pub accent: u32,
+    pub colors: [u32; 4],
+}
+
+impl ThemeSwatch {
+    /// Neutral placeholder used when a listed theme fails to load — the
+    /// row still renders, just colorless.
+    pub fn fallback() -> Self {
+        Self {
+            accent: 0xFF8A_8E95,
+            colors: [0xFF2B_2D30; 4],
+        }
+    }
+}
+
 /// Load a theme from a YAML file
 pub fn from_file(path: &Path) -> Result<Theme, String> {
     let content = std::fs::read_to_string(path)
@@ -1285,6 +1305,19 @@ impl SyntaxTheme {
 }
 
 impl Theme {
+    /// Representative picker-row colors (see `ThemeSwatch`).
+    pub fn swatch(&self) -> ThemeSwatch {
+        ThemeSwatch {
+            accent: self.overlay.accent.to_argb_u32(),
+            colors: [
+                self.editor.background.to_argb_u32(),
+                self.syntax.keyword.to_argb_u32(),
+                self.syntax.string.to_argb_u32(),
+                self.syntax.function.to_argb_u32(),
+            ],
+        }
+    }
+
     /// Whether this theme's overlay panel reads as a light surface —
     /// relative luminance of `overlay.background` above 0.5. Flips the
     /// direction overlay derivations mix in (see `resolve_overlay_theme`),
