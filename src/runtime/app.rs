@@ -1430,6 +1430,13 @@ impl App {
     fn graceful_lsp_teardown(&mut self) {
         self.lsp.shutting_down = true;
         let keys: Vec<_> = self.lsp.servers.keys().cloned().collect();
+        // One shared deadline for the *entire* teardown, not per server —
+        // otherwise N running servers pay up to N * (2s + 2s) sequentially
+        // (see `ServerHandle::graceful_shutdown`'s doc comment). Each
+        // server still gets at most 2s per phase, but a server reached
+        // late in the loop gets whatever's left of this budget instead of
+        // a fresh 4s on top of what earlier servers already spent.
+        let shared_deadline = std::time::Instant::now() + Duration::from_secs(4);
         for key in keys {
             self.set_lsp_server_state(key.0.clone(), &key.1, ServerState::ShuttingDown);
             if let Some(mut handle) = self.lsp.servers.remove(&key) {
@@ -1442,7 +1449,7 @@ impl App {
                 // that case; there is no live handshake to shut down
                 // gracefully.
                 if handle.capabilities_snapshot().is_some() {
-                    handle.graceful_shutdown(&self.msg_rx, Duration::from_secs(2));
+                    handle.graceful_shutdown(&self.msg_rx, Duration::from_secs(2), shared_deadline);
                 } else {
                     handle.kill();
                 }
