@@ -1978,14 +1978,20 @@ impl App {
                 if abandoned {
                     return None;
                 }
-                let outcome = if locations.is_empty() {
-                    DefinitionOutcome::NoResult
-                } else {
+                let outcome = if !locations.is_empty() {
                     DefinitionOutcome::Locations {
                         locations,
                         resolving_server: pending.server_id,
                         resolving_root: pending.root,
                     }
+                } else if self.is_lsp_indexing(&pending.server_id) {
+                    // An empty reply while the server is still `Starting`/
+                    // `Indexing` means it hasn't finished analyzing the
+                    // workspace, not that the symbol doesn't exist (design
+                    // doc lines 101/212: never "not found" before `Ready`).
+                    DefinitionOutcome::StillIndexing
+                } else {
+                    DefinitionOutcome::NoResult
                 };
                 Some(Msg::Lsp(LspMsg::DefinitionResolved {
                     document_id: pending.document_id,
@@ -2019,11 +2025,20 @@ impl App {
                 if abandoned {
                     return None;
                 }
+                // A null/empty hover reply while the server is still
+                // `Starting`/`Indexing` means it hasn't finished analyzing
+                // yet, not that there's genuinely nothing to show (design
+                // doc lines 101/212) — mirrors the definition arm above.
+                let outcome = if content.is_some() || !self.is_lsp_indexing(&key.0) {
+                    HoverOutcome::Content(content)
+                } else {
+                    HoverOutcome::StillIndexing
+                };
                 Some(Msg::Lsp(LspMsg::HoverResolved {
                     document_id: pending.document_id,
                     revision: pending.revision,
                     cursor: pending.cursor,
-                    outcome: HoverOutcome::Content(content),
+                    outcome,
                 }))
             })
             .collect();
@@ -2885,6 +2900,17 @@ impl App {
     /// `model.lsp.servers` directly, so the mirror stays "driven only by
     /// messages" (design doc's Process Model) and redraw damage is never
     /// skipped.
+    /// Whether the model mirror has `server_id` in `Starting` or
+    /// `Indexing` — used to tell "hasn't finished analyzing yet" apart
+    /// from a genuine empty/not-found result for definition/hover replies
+    /// (design doc lines 101/212: "never 'not found' before `Ready`").
+    fn is_lsp_indexing(&self, server_id: &LspServerId) -> bool {
+        matches!(
+            self.model.lsp.servers.get(server_id),
+            Some(ServerState::Starting | ServerState::Indexing)
+        )
+    }
+
     fn set_lsp_server_state(&mut self, server_id: LspServerId, root: &Path, state: ServerState) {
         self.process_automation_msg(Msg::Lsp(LspMsg::ServerStateChanged {
             server_id,
@@ -4632,6 +4658,142 @@ mod tests {
         assert!(
             app.model.jump_history.is_empty(),
             "a discarded (cancelled) response must never push jump history or navigate"
+        );
+    }
+
+    /// An empty `textDocument/definition` reply while the server is still
+    /// `Starting`/`Indexing` must report "still indexing…", never "no
+    /// definition found" — the design doc's "while not Ready, empty
+    /// feature results display 'still indexing…', never 'not found'"
+    /// (lines 101/212). Once the mirror reports `Ready`, the same empty
+    /// reply is a genuine `NoResult`.
+    #[test]
+    fn an_empty_definition_reply_reports_still_indexing_before_ready() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-def-empty-indexing");
+        let origin = test_origin(&app);
+        app.lsp.definition_requests.insert(
+            (server_id.clone(), root.clone(), 9),
+            PendingDefinition {
+                document_id: doc_id,
+                revision,
+                origin: origin.clone(),
+                server_id: server_id.clone(),
+                root: root.clone(),
+            },
+        );
+        app.lsp
+            .definition_request_by_doc
+            .insert(doc_id, (server_id.clone(), root.clone(), 9));
+        app.model
+            .lsp
+            .servers
+            .insert(server_id.clone(), ServerState::Indexing);
+
+        app.msg_tx
+            .send(Msg::Lsp(LspMsg::DefinitionResponseFromServer {
+                server_id: server_id.clone(),
+                root: root.clone(),
+                request_id: 9,
+                locations: vec![],
+                abandoned: false,
+            }))
+            .unwrap();
+        app.process_async_messages();
+
+        assert!(app
+            .model
+            .ui
+            .transient_message
+            .as_ref()
+            .is_some_and(|t| t.text.contains("indexing")));
+
+        // The same empty reply once the server is `Ready` is a genuine
+        // "no definition found".
+        app.lsp.definition_requests.insert(
+            (server_id.clone(), root.clone(), 10),
+            PendingDefinition {
+                document_id: doc_id,
+                revision,
+                origin,
+                server_id: server_id.clone(),
+                root: root.clone(),
+            },
+        );
+        app.lsp
+            .definition_request_by_doc
+            .insert(doc_id, (server_id.clone(), root.clone(), 10));
+        app.model.lsp.servers.insert(server_id.clone(), ServerState::Ready);
+        app.msg_tx
+            .send(Msg::Lsp(LspMsg::DefinitionResponseFromServer {
+                server_id,
+                root,
+                request_id: 10,
+                locations: vec![],
+                abandoned: false,
+            }))
+            .unwrap();
+        app.process_async_messages();
+
+        assert!(app
+            .model
+            .ui
+            .transient_message
+            .as_ref()
+            .is_some_and(|t| t.text.contains("No definition found")));
+    }
+
+    /// Mirrors `an_empty_definition_reply_reports_still_indexing_before_ready`
+    /// for hover: a null hover reply while the server is still
+    /// `Starting`/`Indexing` must report "still indexing…", not "no hover
+    /// information".
+    #[test]
+    fn a_null_hover_reply_reports_still_indexing_before_ready() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-hover-empty-indexing");
+        let cursor = test_cursor(&app);
+        app.lsp.hover_requests.insert(
+            (server_id.clone(), root.clone(), 9),
+            PendingHover {
+                document_id: doc_id,
+                revision,
+                cursor,
+            },
+        );
+        app.lsp
+            .hover_request_by_doc
+            .insert(doc_id, (server_id.clone(), root.clone(), 9));
+        app.model
+            .lsp
+            .servers
+            .insert(server_id.clone(), ServerState::Indexing);
+
+        app.msg_tx
+            .send(Msg::Lsp(LspMsg::HoverResponseFromServer {
+                server_id,
+                root,
+                request_id: 9,
+                content: None,
+                abandoned: false,
+            }))
+            .unwrap();
+        app.process_async_messages();
+
+        assert!(app
+            .model
+            .ui
+            .transient_message
+            .as_ref()
+            .is_some_and(|t| t.text.contains("indexing")));
+        assert!(
+            app.model.ui.cursor_overlay.is_none(),
+            "still-indexing must not open the hover card"
         );
     }
 
