@@ -608,9 +608,10 @@ impl GutterLayout {
         } else {
             0
         };
-        let border_w =
-            crate::model::gutter_border_x_scaled(char_width, metrics, line_count, has_marks)
-                .round() as u16;
+        let border_w = crate::model::gutter_border_x_scaled(
+            char_width, metrics, line_count, has_marks,
+        )
+        .round() as u16;
         let numbers_w = border_w.saturating_sub(marks_w);
         Self {
             marks_w,

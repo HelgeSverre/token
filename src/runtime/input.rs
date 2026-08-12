@@ -289,7 +289,8 @@ pub(crate) fn handle_cursor_overlay_key(
     modifiers: KeyModifiers,
 ) -> Option<Option<Cmd>> {
     let kind = model.ui.cursor_overlay?.kind;
-    if kind == token::model::CursorOverlayKind::DebugHover || kind == token::model::CursorOverlayKind::Hover
+    if kind == token::model::CursorOverlayKind::DebugHover
+        || kind == token::model::CursorOverlayKind::Hover
     {
         // Hover = any keypress dismisses (overlay-surface.md: "a keyboard-
         // invoked card that any key dismisses needs no key routing at all").

@@ -131,15 +131,9 @@ mod tests {
     fn language_id_maps_ts_family_to_lsp_conventional_strings() {
         assert_eq!(language_id_str(LanguageId::Rust), Some("rust"));
         assert_eq!(language_id_str(LanguageId::TypeScript), Some("typescript"));
-        assert_eq!(
-            language_id_str(LanguageId::Tsx),
-            Some("typescriptreact")
-        );
+        assert_eq!(language_id_str(LanguageId::Tsx), Some("typescriptreact"));
         assert_eq!(language_id_str(LanguageId::JavaScript), Some("javascript"));
-        assert_eq!(
-            language_id_str(LanguageId::Jsx),
-            Some("javascriptreact")
-        );
+        assert_eq!(language_id_str(LanguageId::Jsx), Some("javascriptreact"));
         assert_eq!(language_id_str(LanguageId::Python), Some("python"));
     }
 
@@ -172,11 +166,19 @@ mod tests {
 
         // Re-edit every 10ms, well under the 30ms debounce each time.
         for i in 0..5 {
-            map.record_edit(1, i, start + Duration::from_millis(i * 10), debounce, max_wait);
+            map.record_edit(
+                1,
+                i,
+                start + Duration::from_millis(i * 10),
+                debounce,
+                max_wait,
+            );
         }
         // 20ms after the last edit (t=40): debounce not yet elapsed for the
         // latest edit (would need t=70).
-        assert!(map.take_expired(start + Duration::from_millis(60)).is_empty());
+        assert!(map
+            .take_expired(start + Duration::from_millis(60))
+            .is_empty());
     }
 
     #[test]

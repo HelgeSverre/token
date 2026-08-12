@@ -140,7 +140,10 @@ fn never_responding_server_does_not_wedge_the_reader() {
     // wedged; if it had, `kill()` (which waits on the child) would hang
     // too and the test's own harness timeout would catch it.
     let ready = recv_until(&msg_rx, Duration::from_millis(500), is_ready);
-    assert!(ready.is_none(), "a never-responding server must never report Ready");
+    assert!(
+        ready.is_none(),
+        "a never-responding server must never report Ready"
+    );
 
     handle.kill();
 }
@@ -246,14 +249,15 @@ fn duplicate_and_unknown_response_ids_are_dropped_not_fatal() {
     .expect("spawn fake-lsp-server");
 
     assert!(recv_until(&msg_rx, Duration::from_secs(5), is_ready).is_some());
-    let indexing = recv_until(
-        &msg_rx,
-        Duration::from_secs(5),
-        |m| matches!(
+    let indexing = recv_until(&msg_rx, Duration::from_secs(5), |m| {
+        matches!(
             m,
-            Msg::Lsp(LspMsg::ServerStateChanged { state: ServerState::Indexing, .. })
-        ),
-    );
+            Msg::Lsp(LspMsg::ServerStateChanged {
+                state: ServerState::Indexing,
+                ..
+            })
+        )
+    });
     assert!(
         indexing.is_some(),
         "reader thread must still be dispatching after duplicate/unknown ids"

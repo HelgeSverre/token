@@ -113,7 +113,9 @@ pub(crate) fn focused_tab_shows(model: &AppModel, path: &std::path::Path) -> boo
     let Some(focused) = model.try_document().and_then(|d| d.file_path.as_deref()) else {
         return false;
     };
-    let canonical_focused = focused.canonicalize().unwrap_or_else(|_| focused.to_path_buf());
+    let canonical_focused = focused
+        .canonicalize()
+        .unwrap_or_else(|_| focused.to_path_buf());
     let canonical_target = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     canonical_focused == canonical_target
 }
@@ -224,10 +226,16 @@ mod tests {
         // Jump away to a.txt.
         let a_path = dir.path().join("a.txt");
         update_layout(&mut model, LayoutMsg::OpenFileInNewTab(a_path));
-        assert_ne!(model.document().file_path.as_deref(), Some(b_path.as_path()));
+        assert_ne!(
+            model.document().file_path.as_deref(),
+            Some(b_path.as_path())
+        );
 
         navigate_back(&mut model);
-        assert_eq!(model.document().file_path.as_deref(), Some(b_path.as_path()));
+        assert_eq!(
+            model.document().file_path.as_deref(),
+            Some(b_path.as_path())
+        );
         assert_eq!(model.editor().cursors[0].line, 1);
         assert_eq!(model.editor().cursors[0].column, 2);
     }

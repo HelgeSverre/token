@@ -1353,7 +1353,11 @@ mod tests {
             "opening a file already open elsewhere must not move focus off the requesting group"
         );
         assert_eq!(
-            model.document().file_path.as_deref().map(|p| p.canonicalize().unwrap()),
+            model
+                .document()
+                .file_path
+                .as_deref()
+                .map(|p| p.canonicalize().unwrap()),
             Some(b.canonicalize().unwrap()),
         );
     }

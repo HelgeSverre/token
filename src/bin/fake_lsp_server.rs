@@ -58,7 +58,9 @@ fn main() {
 /// ordering and version monotonicity without parsing full JSON back out
 /// in the test.
 fn body_of(message: &Value) -> String {
-    let uri = message.pointer("/params/textDocument/uri").and_then(Value::as_str);
+    let uri = message
+        .pointer("/params/textDocument/uri")
+        .and_then(Value::as_str);
     let version = message.pointer("/params/textDocument/version");
     format!("uri={uri:?} version={version:?}")
 }
@@ -73,7 +75,8 @@ fn run_step(step: &Value, reader: &mut impl BufRead, writer: &mut impl Write) {
                     Ok(m) => m,
                     Err(_) => return, // stream closed; nothing left to do
                 };
-                if expected_method.is_some_and(|m| message.get("method").and_then(Value::as_str) != Some(m))
+                if expected_method
+                    .is_some_and(|m| message.get("method").and_then(Value::as_str) != Some(m))
                 {
                     continue; // not the message this step is waiting for
                 }
