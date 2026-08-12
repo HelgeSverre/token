@@ -1025,23 +1025,12 @@ pub fn layout(
             let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
             let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
             let gap = scaled(dims::ZONE_GAP, scale_factor);
-            // Zone line height is a shared const, not the painter's
-            // metrics (layout is painter-free); sizing rows by the *font
-            // size* previously left the panel too short and let content
-            // spill past its bottom.
-            let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
-            let banner_h = scaled(dims::ZONE_BANNER_H, scale_factor);
-            let content_w = panel_w.saturating_sub(2 * pad_x);
-            let cols = zone_wrap_cols(content_w, scale_factor);
-            let code_h = zones
-                .code
-                .map(|s| wrap_zone_text(s, cols).len().max(1) * line_h + 2 * (gap / 2));
-            let text_h = zones.text.map(|s| {
-                let lines = wrap_zone_text(s, cols);
-                let shown = lines.len().min(MAX_ZONE_TEXT_LINES);
-                let ellipsis = usize::from(lines.len() > MAX_ZONE_TEXT_LINES);
-                (shown + ellipsis).max(1) * line_h
-            });
+            // One measured plan drives every height; render re-derives the
+            // identical plan from the same inputs (see `ZonePlan`).
+            let plan = plan_zones(zones, panel_w, scale_factor);
+            let banner_h = plan.banner.as_ref().map(|b| b.h).unwrap_or(0);
+            let code_h = plan.code.as_ref().map(|(_, h)| *h);
+            let text_h = plan.text.as_ref().map(|(_, _, h)| *h);
 
             let mut panel_h = pad_y * 2;
             let mut y_off = 0;
@@ -2152,34 +2141,63 @@ fn render_zones(
     scale_factor: f64,
 ) {
     let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
+    let gap = scaled(dims::ZONE_GAP, scale_factor);
+    let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
+    // Identical inputs to the layout pass -> identical plan (see ZonePlan).
+    let plan = plan_zones(zones, layout.panel.w, scale_factor);
 
-    if let (Some((severity, message, source)), Some(r)) = (zones.banner, layout.zones_banner) {
+    // Hard backstop: nothing in any zone may paint outside the panel.
+    frame.set_clip(crate::model::editor_area::Rect {
+        x: layout.panel.x as f32,
+        y: layout.panel.y as f32,
+        width: layout.panel.w as f32,
+        height: layout.panel.h as f32,
+    });
+
+    if let (Some((severity, _, source)), Some(bp), Some(r)) =
+        (zones.banner, plan.banner.as_ref(), layout.zones_banner)
+    {
         frame.fill_rect_px(r.x, r.y, r.w, r.h, colors.severity_wash(severity));
         let size = size_px(SIZE_ROW, scale_factor);
-        let text_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(size))) / 2;
-        let mut buf = [0u8; 4];
         let text_color = colors.severity_text(severity);
+        let top = r.y
+            + (gap / 2).max(
+                r.h.saturating_sub((bp.lines.len() + usize::from(bp.truncated)).max(1) * line_h)
+                    / 2,
+            );
+        let mut buf = [0u8; 4];
         let glyph_w = painter.draw_sized(
             frame,
             r.x + pad_x,
-            text_y,
+            top,
             severity.glyph().encode_utf8(&mut buf),
             size,
             0.0,
             text_color,
         );
         let msg_x = r.x + pad_x + glyph_w.ceil() as usize + pad_x / 2;
-        painter.draw_sized(frame, msg_x, text_y, message, size, 0.0, text_color);
-
+        for (i, line) in bp.lines.iter().enumerate() {
+            painter.draw_sized(frame, msg_x, top + i * line_h, line, size, 0.0, text_color);
+        }
+        if bp.truncated {
+            painter.draw_sized(
+                frame,
+                msg_x,
+                top + bp.lines.len() * line_h,
+                "\u{2026}",
+                size,
+                0.0,
+                text_color,
+            );
+        }
         if !source.is_empty() {
             let meta_size = size_px(SIZE_META, scale_factor);
             let source_w = painter.measure_sized(source, meta_size, 0.0).ceil() as usize;
             let source_x = r.x + r.w.saturating_sub(pad_x + source_w);
-            let source_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(meta_size))) / 2;
             painter.draw_sized(
                 frame,
                 source_x,
-                source_y,
+                top,
                 source,
                 meta_size,
                 0.0,
@@ -2188,23 +2206,13 @@ fn render_zones(
         }
     }
 
-    // Hard backstop for anything the wrapping math misses: nothing in the
-    // zones may paint outside the panel.
-    frame.set_clip(crate::model::editor_area::Rect {
-        x: layout.panel.x as f32,
-        y: layout.panel.y as f32,
-        width: layout.panel.w as f32,
-        height: layout.panel.h as f32,
-    });
-
-    if let (Some(code), Some(r)) = (zones.code, layout.zones_code) {
+    if let (Some((lines, _)), Some(r)) = (plan.code.as_ref(), layout.zones_code) {
         frame.fill_rect_px(r.x, r.y, r.w, r.h, colors.panel_secondary);
-        let lines = wrap_zone_text(code, zone_wrap_cols(r.w, scale_factor));
         draw_text_lines(
             frame,
             painter,
             r,
-            &lines,
+            lines,
             false,
             SIZE_ROW,
             colors.text_primary,
@@ -2212,7 +2220,9 @@ fn render_zones(
         );
     }
 
-    if let (Some(text), Some(r)) = (zones.text, layout.zones_text) {
+    if let (Some(text), Some((lines, truncated, _)), Some(r)) =
+        (zones.text, plan.text.as_ref(), layout.zones_text)
+    {
         if zones.banner.is_none() && zones.code.is_none() && text.lines().count() <= 1 {
             // Single-line, zone-only body (drop overlay): centered, matching
             // the pre-migration look.
@@ -2222,15 +2232,12 @@ fn render_zones(
             let text_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(size))) / 2;
             painter.draw_sized(frame, text_x, text_y, text, size, 0.0, colors.text_primary);
         } else {
-            let mut lines = wrap_zone_text(text, zone_wrap_cols(r.w, scale_factor));
-            let truncated = lines.len() > MAX_ZONE_TEXT_LINES;
-            lines.truncate(MAX_ZONE_TEXT_LINES);
             draw_text_lines(
                 frame,
                 painter,
                 r,
-                &lines,
-                truncated,
+                lines,
+                *truncated,
                 SIZE_ROW,
                 colors.text_primary,
                 scale_factor,
@@ -2241,12 +2248,79 @@ fn render_zones(
     frame.clear_clip();
 }
 
-/// Draw `text` as left-aligned, stacked lines within `rect` (no wrapping —
-/// callers pre-wrap or accept clipping; the real hover-card consumer owns
-/// wrapping policy per lsp-integration.md).
 /// Cap on wrapped text-zone lines (hover docs can be pages long); a
 /// truncated zone shows a trailing ellipsis line.
 const MAX_ZONE_TEXT_LINES: usize = 14;
+
+/// Cap on wrapped banner-message lines.
+const MAX_ZONE_BANNER_LINES: usize = 4;
+
+/// The fully measured plan for a `Body::Zones` body: every wrapped line and
+/// zone height, computed ONCE from `(zones, panel_w, scale)` and consumed by
+/// both `layout()` and `render_zones` — the previous scheme derived heights
+/// and line breaks independently in each, and every divergence was a
+/// text-outside-the-panel bug (font-size-as-line-height, unwrapped text,
+/// unwrapped banner).
+pub(crate) struct ZonePlan {
+    pub banner: Option<BannerPlan>,
+    pub code: Option<(Vec<String>, usize)>,
+    pub text: Option<(Vec<String>, bool, usize)>, // lines, truncated, height
+}
+
+pub(crate) struct BannerPlan {
+    pub lines: Vec<String>,
+    pub truncated: bool,
+    pub h: usize,
+}
+
+pub(crate) fn plan_zones(zones: &Zones, panel_w: usize, scale_factor: f64) -> ZonePlan {
+    let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
+    let gap = scaled(dims::ZONE_GAP, scale_factor);
+    let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
+    let content_w = panel_w.saturating_sub(2 * pad_x);
+    let cols = zone_wrap_cols(content_w, scale_factor);
+
+    let banner = zones.banner.map(|(_, message, source)| {
+        // Budget: glyph column (2 cells) always; the right-aligned source
+        // tag shares the first line, so reserve its columns too (measured
+        // with the row cell — an overestimate for the smaller meta size,
+        // which errs toward earlier wrapping, never collision).
+        let glyph_cols = 2;
+        let source_cols = if source.is_empty() {
+            0
+        } else {
+            source.chars().count() + 2
+        };
+        let msg_cols = cols.saturating_sub(glyph_cols + source_cols).max(8);
+        let mut lines = wrap_zone_text(message, msg_cols);
+        let truncated = lines.len() > MAX_ZONE_BANNER_LINES;
+        lines.truncate(MAX_ZONE_BANNER_LINES);
+        let text_rows = lines.len() + usize::from(truncated);
+        let h = (text_rows.max(1) * line_h + 2 * (gap / 2))
+            .max(scaled(dims::ZONE_BANNER_H, scale_factor));
+        BannerPlan {
+            lines,
+            truncated,
+            h,
+        }
+    });
+
+    let code = zones.code.map(|s| {
+        let lines = wrap_zone_text(s, cols);
+        let h = lines.len().max(1) * line_h + 2 * (gap / 2);
+        (lines, h)
+    });
+
+    let text = zones.text.map(|s| {
+        let mut lines = wrap_zone_text(s, cols);
+        let truncated = lines.len() > MAX_ZONE_TEXT_LINES;
+        lines.truncate(MAX_ZONE_TEXT_LINES);
+        let h = (lines.len() + usize::from(truncated)).max(1) * line_h;
+        (lines, truncated, h)
+    });
+
+    ZonePlan { banner, code, text }
+}
 
 /// Columns available for zone text in `max_w` pixels (const cell width —
 /// see `dims::ZONE_CELL_W`).
@@ -2625,8 +2699,105 @@ mod tests {
                 Severity::Info => palette.severity_info,
                 Severity::Hint => palette.severity_hint,
             };
-            assert_ne!(wash, raw, "{sev:?}: banner must be a wash, not full strength");
+            assert_ne!(
+                wash, raw,
+                "{sev:?}: banner must be a wash, not full strength"
+            );
             assert_ne!(wash, palette.panel_bg, "{sev:?}: wash must tint the panel");
+        }
+    }
+
+    #[test]
+    fn banner_plan_wraps_long_messages_within_budget() {
+        // Regression: the banner drew one unwrapped, unclipped line that
+        // ran past the panel and collided with the source tag.
+        let zones = Zones {
+            banner: Some((
+                Severity::Warning,
+                "Class 'DateTimeImmutable' not found in the current scope of this file",
+                "phpantom",
+            )),
+            code: None,
+            text: None,
+        };
+        let plan = plan_zones(&zones, 320, 1.0);
+        let banner = plan.banner.expect("banner plan");
+        assert!(banner.lines.len() > 1, "long message must wrap");
+        let cols = zone_wrap_cols(320 - 2 * scaled(dims::HEADER_PAD_X, 1.0), 1.0);
+        let budget = cols - 2 - ("phpantom".len() + 2);
+        assert!(
+            banner.lines.iter().all(|l| l.chars().count() <= budget),
+            "lines must respect the glyph+source budget: {:?}",
+            banner.lines
+        );
+        assert!(
+            banner.h >= banner.lines.len() * scaled(dims::ZONE_LINE_H, 1.0),
+            "banner height must fit its wrapped lines"
+        );
+    }
+
+    #[test]
+    fn banner_plan_caps_pathological_messages() {
+        let long = "word ".repeat(500);
+        let zones = Zones {
+            banner: Some((Severity::Error, &long, "rust-analyzer")),
+            code: None,
+            text: None,
+        };
+        let plan = plan_zones(&zones, 480, 1.0);
+        let banner = plan.banner.unwrap();
+        assert_eq!(banner.lines.len(), MAX_ZONE_BANNER_LINES);
+        assert!(banner.truncated);
+    }
+
+    #[test]
+    fn layout_and_render_derive_the_same_plan() {
+        // The drift-class regression test: the panel height layout computes
+        // must exactly fit the zones the (re-derived) render plan draws.
+        let msg = "Class 'DateTimeImmutable' not found and quite a bit more explanation text";
+        let doc = "line one of documentation ".repeat(12);
+        let zones = Zones {
+            banner: Some((Severity::Warning, msg, "phpantom")),
+            code: Some("pub const fn black_box<T>(dummy: T) -> T"),
+            text: Some(&doc),
+        };
+        let spec = OverlaySpec {
+            anchor: Anchor::Cursor {
+                x: 40,
+                y: 40,
+                h: 19,
+                prefer_below: true,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 320.0,
+                    max: 480.0,
+                },
+            },
+            tabs: None,
+            header: None,
+            body: Body::Zones(zones),
+            footer: None,
+            hover_row: None,
+        };
+        let layout = layout(&spec, 1200, 900, 1.0);
+        let zones2 = match &spec.body {
+            Body::Zones(z) => z,
+            _ => unreachable!(),
+        };
+        let plan = plan_zones(zones2, layout.panel.w, 1.0);
+        let line_h = scaled(dims::ZONE_LINE_H, 1.0);
+
+        let br = layout.zones_banner.unwrap();
+        assert_eq!(br.h, plan.banner.as_ref().unwrap().h);
+        let cr = layout.zones_code.unwrap();
+        assert_eq!(cr.h, plan.code.as_ref().unwrap().1);
+        let tr = layout.zones_text.unwrap();
+        let (t_lines, t_trunc, t_h) = plan.text.as_ref().unwrap();
+        assert_eq!(tr.h, *t_h);
+        assert!(tr.h >= (t_lines.len() + usize::from(*t_trunc)) * line_h);
+        // Everything inside the panel.
+        for r in [br, cr, tr] {
+            assert!(r.y >= layout.panel.y && r.y + r.h <= layout.panel.y + layout.panel.h);
         }
     }
 
