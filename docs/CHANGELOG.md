@@ -8,6 +8,8 @@ All notable changes to rust-editor are documented in this file.
 
 ### Fixed
 
+- Allowed manual outline scrolling to move beyond the selected symbol without
+  the viewport snapping back to keep that symbol visible.
 - Added the copyright notice to the standard macOS About panel.
 
 ## v0.5.1 - 2026-08-12

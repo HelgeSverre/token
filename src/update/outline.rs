@@ -35,6 +35,40 @@ fn visible_node_at_index<'a>(
     .map(|row| row.node)
 }
 
+fn outline_visible_capacity(model: &AppModel) -> usize {
+    WindowLayout::compute(model)
+        .right_dock_rect
+        .map(|rect| {
+            let dock_layout = DockHeaderLayout::new(
+                &model.dock_layout.right,
+                rect,
+                &model.metrics,
+                model.char_width,
+            );
+            OutlinePanelLayout::new(dock_layout.content_rect, &model.metrics).visible_capacity()
+        })
+        .unwrap_or(0)
+}
+
+fn reveal_outline_selection(model: &mut AppModel) {
+    let Some(selected_index) = model.outline_panel.selected_index else {
+        return;
+    };
+    let visible_capacity = outline_visible_capacity(model);
+    if visible_capacity == 0 {
+        return;
+    }
+
+    let scroll_offset = model.outline_panel.scroll_offset;
+    model.outline_panel.scroll_offset = if selected_index < scroll_offset {
+        selected_index
+    } else if selected_index >= scroll_offset.saturating_add(visible_capacity) {
+        selected_index.saturating_add(1) - visible_capacity
+    } else {
+        scroll_offset
+    };
+}
+
 /// Handle outline panel messages
 /// Schedule an outline extraction for the focused document when the outline
 /// panel is open and its cached outline is missing or stale. Returns `None`
@@ -126,6 +160,7 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
             } else {
                 model.outline_panel.selected_index = Some(0);
             }
+            reveal_outline_selection(model);
             Some(Cmd::Redraw)
         }
 
@@ -145,6 +180,7 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                     model.outline_panel.selected_index = Some(0);
                 }
             }
+            reveal_outline_selection(model);
             Some(Cmd::Redraw)
         }
 
@@ -242,19 +278,7 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
 
             if let Some(outline) = outline {
                 let total = count_visible_items(&outline.roots, &model.outline_panel);
-                let visible_capacity = WindowLayout::compute(model)
-                    .right_dock_rect
-                    .map(|rect| {
-                        let dock_layout = DockHeaderLayout::new(
-                            &model.dock_layout.right,
-                            rect,
-                            &model.metrics,
-                            model.char_width,
-                        );
-                        OutlinePanelLayout::new(dock_layout.content_rect, &model.metrics)
-                            .visible_capacity()
-                    })
-                    .unwrap_or(0);
+                let visible_capacity = outline_visible_capacity(model);
 
                 model.outline_panel.scroll_offset = if visible_capacity == 0 {
                     0
@@ -312,6 +336,7 @@ mod refresh_tests {
     use super::*;
     use crate::commands::Cmd;
     use crate::messages::LayoutMsg;
+    use crate::outline::{OutlineData, OutlineKind, OutlineRange};
     use crate::panel::PanelId;
 
     fn model_with_open_outline_panel() -> AppModel {
@@ -319,6 +344,26 @@ mod refresh_tests {
         model.document_mut().language = crate::syntax::LanguageId::Markdown;
         model.dock_layout.right.activate(PanelId::OUTLINE);
         model
+    }
+
+    fn populate_outline(model: &mut AppModel, count: usize) {
+        let revision = model.document().revision;
+        model.document_mut().outline = Some(OutlineData {
+            revision,
+            roots: (0..count)
+                .map(|line| OutlineNode {
+                    kind: OutlineKind::Function,
+                    name: format!("symbol_{line}"),
+                    range: OutlineRange {
+                        start_line: line,
+                        start_col: 0,
+                        end_line: line,
+                        end_col: 1,
+                    },
+                    children: Vec::new(),
+                })
+                .collect(),
+        });
     }
 
     #[test]
@@ -359,5 +404,37 @@ mod refresh_tests {
         assert!(cmds
             .iter()
             .any(|c| matches!(c, Cmd::DebouncedSyntaxParse { delay_ms: 0, .. })));
+    }
+
+    #[test]
+    fn keyboard_navigation_reveals_selection_minimally() {
+        let mut model = model_with_open_outline_panel();
+        populate_outline(&mut model, 100);
+        let visible_capacity = outline_visible_capacity(&model);
+        assert!(visible_capacity > 0);
+
+        model.outline_panel.selected_index = Some(visible_capacity - 1);
+        update_outline(&mut model, OutlineMsg::SelectNext);
+
+        assert_eq!(model.outline_panel.selected_index, Some(visible_capacity));
+        assert_eq!(model.outline_panel.scroll_offset, 1);
+
+        model.outline_panel.scroll_offset = 20;
+        model.outline_panel.selected_index = Some(5);
+        update_outline(&mut model, OutlineMsg::SelectPrevious);
+
+        assert_eq!(model.outline_panel.selected_index, Some(4));
+        assert_eq!(model.outline_panel.scroll_offset, 4);
+    }
+
+    #[test]
+    fn manual_scroll_can_move_selection_out_of_view() {
+        let mut model = model_with_open_outline_panel();
+        populate_outline(&mut model, 100);
+        model.outline_panel.selected_index = Some(0);
+
+        update_outline(&mut model, OutlineMsg::Scroll { lines: 10 });
+
+        assert_eq!(model.outline_panel.scroll_offset, 10);
     }
 }

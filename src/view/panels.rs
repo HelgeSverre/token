@@ -342,39 +342,6 @@ pub fn render_dock(
     scene.render(frame, painter, model);
 }
 
-/// Compute the scroll offset that keeps `selected_index` visible within a
-/// window of `visible_capacity` rows, starting from the model's last-known
-/// `scroll_offset`.
-///
-/// This performs a "minimal reveal": it only scrolls the minimum amount
-/// needed to bring the selection into view (matching IDE-style list
-/// scrolling), rather than always re-centering the selection. Keyboard
-/// navigation (`OutlineMsg::SelectPrevious`/`SelectNext`) only mutates
-/// `selected_index` and never touches `scroll_offset`, so the render path
-/// has to derive an up-to-date offset itself instead of trusting a
-/// potentially stale value from the model.
-fn resolve_outline_scroll_offset(
-    scroll_offset: usize,
-    selected_index: Option<usize>,
-    visible_capacity: usize,
-) -> usize {
-    let Some(selected_index) = selected_index else {
-        return scroll_offset;
-    };
-
-    if visible_capacity == 0 {
-        return scroll_offset;
-    }
-
-    if selected_index < scroll_offset {
-        selected_index
-    } else if selected_index >= scroll_offset + visible_capacity {
-        selected_index + 1 - visible_capacity
-    } else {
-        scroll_offset
-    }
-}
-
 /// Render the outline panel showing document symbols as a tree
 pub fn render_outline_panel(
     frame: &mut Frame,
@@ -413,11 +380,7 @@ pub fn render_outline_panel(
     };
 
     let selected_index = model.outline_panel.selected_index;
-    let scroll_offset = resolve_outline_scroll_offset(
-        model.outline_panel.scroll_offset,
-        selected_index,
-        outline_layout.visible_capacity(),
-    );
+    let scroll_offset = model.outline_panel.scroll_offset;
 
     let ctx = OutlineRenderContext {
         layout: outline_layout,
@@ -500,41 +463,6 @@ pub fn render_outline_panel(
             painter.draw(frame, name_x, text_y, &display, fg);
         },
     );
-}
-
-#[cfg(test)]
-mod outline_scroll_tests {
-    use super::resolve_outline_scroll_offset;
-
-    #[test]
-    fn keeps_scroll_when_selection_already_visible() {
-        // Selection at index 3 is within [2, 2+5) so scroll shouldn't move.
-        assert_eq!(resolve_outline_scroll_offset(2, Some(3), 5), 2);
-    }
-
-    #[test]
-    fn scrolls_down_minimally_when_selection_moves_past_bottom() {
-        // Visible window is [0, 5). Selecting row 7 should reveal it with the
-        // smallest possible scroll (row 7 becomes the last visible row).
-        assert_eq!(resolve_outline_scroll_offset(0, Some(7), 5), 3);
-    }
-
-    #[test]
-    fn scrolls_up_minimally_when_selection_moves_before_top() {
-        // Visible window is [4, 9). Selecting row 1 should reveal it by
-        // scrolling exactly up to that row, not re-centering.
-        assert_eq!(resolve_outline_scroll_offset(4, Some(1), 5), 1);
-    }
-
-    #[test]
-    fn leaves_scroll_untouched_when_nothing_selected() {
-        assert_eq!(resolve_outline_scroll_offset(6, None, 5), 6);
-    }
-
-    #[test]
-    fn leaves_scroll_untouched_when_capacity_is_zero() {
-        assert_eq!(resolve_outline_scroll_offset(3, Some(10), 0), 3);
-    }
 }
 
 #[cfg(test)]
