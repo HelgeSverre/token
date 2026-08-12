@@ -139,16 +139,6 @@ fn file_rows(results: &[crate::model::FileMatch], icon_color: u32) -> Vec<Row<'_
         .collect()
 }
 
-fn message_row(text: &str) -> Row<'_> {
-    Row {
-        icon: RowIcon::None,
-        label: text,
-        match_indices: &[],
-        detail: None,
-        accessory: Accessory::None,
-    }
-}
-
 /// Search Everywhere tab labels + match counts, in `SearchTab::ORDER`
 /// (overlay-surface.md Phase 4 "Search Everywhere tabs"). Counts are
 /// `Hidden` on an empty query — depth lives in the tabs, so this is also
@@ -161,6 +151,11 @@ fn search_tab_bar<'a>(
 
     let query_empty = state.input().is_empty();
     let commands_total = state.matches.len() - state.recent_count;
+    let file_total = if state.files_available {
+        state.files.as_ref().map(|f| f.results.len()).unwrap_or(0)
+    } else {
+        0
+    };
     let count_for = |n: usize| {
         if query_empty {
             TabCount::Hidden
@@ -170,7 +165,10 @@ fn search_tab_bar<'a>(
     };
 
     let tabs = vec![
-        ("All", TabCount::Hidden),
+        // "All" is a match count for the current query too — the union of
+        // the Commands and Files counts (overlay-surface.md Phase 4: "Tab
+        // counts are match counts for the current query").
+        ("All", count_for(commands_total + file_total)),
         ("Commands", count_for(commands_total)),
         (
             "Files",
@@ -202,7 +200,7 @@ fn render_command_palette_modal(
     mask_cache: &mut RoundedRectMaskCache,
 ) {
     use crate::model::SearchTab;
-    use crate::update::ALL_TAB_GROUP_CAP;
+    use crate::update::search_everywhere_sections;
 
     let input_text = state.input();
     let icon_color = model.theme.overlay.text_dim.to_argb_u32();
@@ -228,28 +226,26 @@ fn render_command_palette_modal(
         active: active_tab_idx,
     };
 
-    let no_workspace_row = message_row("No workspace open — use \u{2318}\u{21e7}O after Cmd+O");
-    let no_symbols_row = message_row("No language server for this file");
-
+    // `search_everywhere_sections` (`update::ui`) is the ordering authority
+    // for section boundaries — the same counts drive `Confirm`/
+    // `SelectNext` and the shape-only spec `with_modal_overlay_layout`
+    // builds below, so real rows, selection, and hit-testing can't drift
+    // apart (overlay-surface.md "Hit-testing": one layout, two consumers).
+    // Empty-state messages are drawn as decoration after `render()`, not as
+    // rows, keeping `FlatIndex` space limited to real, actionable rows.
+    let sections_spec = search_everywhere_sections(state);
     let (sections, selected_index, scroll, max_visible): (Vec<Section>, usize, usize, usize) =
         match state.active_tab {
             SearchTab::Commands => {
-                let mut sections = Vec::new();
-                if state.recent_count > 0 {
-                    sections.push(Section {
-                        title: Some("Recently Used"),
-                        rows: &cmd_rows[..state.recent_count],
-                    });
-                    sections.push(Section {
-                        title: None,
-                        rows: &cmd_rows[state.recent_count..],
-                    });
-                } else {
-                    sections.push(Section {
-                        title: None,
-                        rows: &cmd_rows,
-                    });
-                }
+                let mut offset = 0;
+                let sections = sections_spec
+                    .iter()
+                    .map(|&(title, len)| {
+                        let rows = &cmd_rows[offset..offset + len];
+                        offset += len;
+                        Section { title, rows }
+                    })
+                    .collect();
                 let sel = state.selected_index.min(cmd_rows.len().saturating_sub(1));
                 (
                     sections,
@@ -259,24 +255,13 @@ fn render_command_palette_modal(
                 )
             }
             SearchTab::Files => {
-                let sections = if state.files_available {
-                    if file_rows_all.is_empty() {
-                        vec![Section {
-                            title: None,
-                            rows: std::slice::from_ref(&no_workspace_row),
-                        }]
-                    } else {
-                        vec![Section {
-                            title: None,
-                            rows: &file_rows_all,
-                        }]
-                    }
-                } else {
-                    vec![Section {
-                        title: None,
-                        rows: std::slice::from_ref(&no_workspace_row),
-                    }]
-                };
+                let sections = sections_spec
+                    .iter()
+                    .map(|&(title, len)| Section {
+                        title,
+                        rows: &file_rows_all[..len],
+                    })
+                    .collect();
                 let files_selected = state.files.as_ref().map(|f| f.selected_index).unwrap_or(0);
                 let files_scroll = state.files.as_ref().map(|f| f.scroll_offset).unwrap_or(0);
                 (
@@ -287,35 +272,26 @@ fn render_command_palette_modal(
                 )
             }
             SearchTab::All => {
-                let commands_cap = cmd_rows.len().min(ALL_TAB_GROUP_CAP);
-                let files_cap = file_rows_all.len().min(ALL_TAB_GROUP_CAP);
-                let mut sections = vec![Section {
-                    title: Some("Commands"),
-                    rows: &cmd_rows[..commands_cap],
-                }];
-                if !file_rows_all.is_empty() {
-                    sections.push(Section {
-                        title: Some("Files"),
-                        rows: &file_rows_all[..files_cap],
-                    });
-                }
-                let total = commands_cap
-                    + if file_rows_all.is_empty() {
-                        0
-                    } else {
-                        files_cap
-                    };
+                let mut cmd_offset = 0;
+                let mut file_offset = 0;
+                let sections = sections_spec
+                    .iter()
+                    .map(|&(title, len)| {
+                        if title == Some("Files") {
+                            let rows = &file_rows_all[file_offset..file_offset + len];
+                            file_offset += len;
+                            Section { title, rows }
+                        } else {
+                            let rows = &cmd_rows[cmd_offset..cmd_offset + len];
+                            cmd_offset += len;
+                            Section { title, rows }
+                        }
+                    })
+                    .collect();
+                let total: usize = sections_spec.iter().map(|&(_, len)| len).sum();
                 (sections, state.all_selected, 0, total.max(1))
             }
-            SearchTab::Symbols => (
-                vec![Section {
-                    title: None,
-                    rows: std::slice::from_ref(&no_symbols_row),
-                }],
-                0,
-                0,
-                COMMAND_PALETTE_MAX_VISIBLE,
-            ),
+            SearchTab::Symbols => (Vec::new(), 0, 0, COMMAND_PALETTE_MAX_VISIBLE),
         };
 
     let spec = OverlaySpec {
@@ -362,6 +338,29 @@ fn render_command_palette_modal(
         ctx.scale_factor,
         model.ui.cursor_visible,
     );
+
+    // Empty-state messages (existing strings preserved) — decoration only,
+    // drawn outside `Body::List` so they don't occupy `FlatIndex` space
+    // (fixes reusing the "no workspace" message when a workspace *is* open
+    // but the query matches nothing, overlay-surface.md Phase 4 tabs).
+    let empty_message: Option<&str> = match state.active_tab {
+        SearchTab::Files if !state.files_available => {
+            Some("No workspace open \u{2014} use \u{2318}\u{21e7}O after Cmd+O")
+        }
+        SearchTab::Files if file_rows_all.is_empty() && !input_text.is_empty() => {
+            Some("No files match your query")
+        }
+        SearchTab::Symbols => Some("No language server for this file"),
+        _ => None,
+    };
+    if let Some(text) = empty_message {
+        let l =
+            overlay_surface::layout(&spec, ctx.window_width, ctx.window_height, ctx.scale_factor);
+        if let Some(header) = l.header {
+            let y = header.y + header.h + ctx.line_height / 4;
+            painter.draw(frame, l.panel.x + 16, y, text, ctx.colors.dim);
+        }
+    }
 }
 
 // ============================================================================
@@ -911,19 +910,72 @@ pub(crate) fn with_modal_overlay_layout<R>(
     let modal = model.ui.active_modal.as_ref()?;
     match modal {
         ModalState::CommandPalette(state) => {
-            let rows = placeholder_rows(state.matches.len());
-            let sections = [Section {
-                title: None,
-                rows: &rows,
-            }];
-            let spec = list_shape_spec(
-                PALETTE_WIDTH,
-                Some(state.input().chars().count()),
-                &sections,
-                state.selected_index.min(rows.len().saturating_sub(1)),
-                state.scroll_offset,
-                true,
-            );
+            use crate::model::SearchTab;
+            use crate::update::search_everywhere_sections;
+
+            // Mirrors `render_command_palette_modal` exactly: same tab bar
+            // (`search_tab_bar`), same section boundaries
+            // (`search_everywhere_sections`), same per-tab selection/scroll
+            // — the one-layout-two-consumers invariant this function exists
+            // for (overlay-surface.md "Hit-testing").
+            let (tab_labels, active_tab_idx) = search_tab_bar(state);
+            let tabs = TabBar {
+                tabs: &tab_labels,
+                active: active_tab_idx,
+            };
+
+            let sections_spec = search_everywhere_sections(state);
+            let row_groups: Vec<Vec<Row>> = sections_spec
+                .iter()
+                .map(|&(_, len)| placeholder_rows(len))
+                .collect();
+            let sections: Vec<Section> = sections_spec
+                .iter()
+                .zip(&row_groups)
+                .map(|(&(title, _), rows)| Section { title, rows })
+                .collect();
+            let total: usize = sections_spec.iter().map(|&(_, len)| len).sum();
+
+            let (selected_index, scroll, max_visible) = match state.active_tab {
+                SearchTab::Commands => (
+                    state.selected_index.min(total.saturating_sub(1)),
+                    state.scroll_offset,
+                    COMMAND_PALETTE_MAX_VISIBLE,
+                ),
+                SearchTab::Files => (
+                    state.files.as_ref().map(|f| f.selected_index).unwrap_or(0),
+                    state.files.as_ref().map(|f| f.scroll_offset).unwrap_or(0),
+                    COMMAND_PALETTE_MAX_VISIBLE,
+                ),
+                SearchTab::All => (state.all_selected, 0, total.max(1)),
+                SearchTab::Symbols => (0, 0, COMMAND_PALETTE_MAX_VISIBLE),
+            };
+
+            let spec = OverlaySpec {
+                tabs: Some(tabs),
+                anchor: Anchor::Centered {
+                    width: width_rule(PALETTE_WIDTH),
+                    dim_alpha: MODAL_DIM_ALPHA,
+                },
+                header: Some(Header {
+                    glyph: None,
+                    text: "",
+                    placeholder: "",
+                    caret: Some(state.input().chars().count()),
+                    scope: None,
+                }),
+                body: Body::List {
+                    sections: &sections,
+                    selected: FlatIndex(selected_index),
+                    scroll,
+                    max_visible,
+                },
+                footer: Some(Footer {
+                    leading: "",
+                    trailing: "",
+                }),
+                hover_row: None,
+            };
             let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
             Some(f(&spec, &l))
         }
@@ -1250,4 +1302,102 @@ pub fn render_drop_overlay(
         model.metrics.scale_factor,
         model.ui.cursor_visible,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::messages::{ModalMsg, UiMsg};
+    use crate::model::ModalId;
+    use crate::update::update_ui;
+    use crate::view::hit_test::{hit_test_modal, HitTarget, Point};
+
+    /// A Search Everywhere modal open on the Commands tab with a non-empty
+    /// query — real rows exist, so row-rect assertions below aren't testing
+    /// against an empty list. Window size/scale mirror the drift reported
+    /// against overlay-surface.md's Hit-testing invariant.
+    fn opened_palette_model() -> AppModel {
+        let mut model = AppModel::new(1200, 800, 1.0, vec![]);
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::InsertChar('o')));
+        model
+    }
+
+    /// Regression for the reported blocker: the shape-only spec
+    /// `with_modal_overlay_layout` builds for hit-testing/caret placement
+    /// used to hardcode `tabs: None`, silently dropping the tab bar the
+    /// renderer draws — this is exactly what overlay-surface.md's
+    /// Hit-testing section forbids ("one layout, two consumers").
+    #[test]
+    fn shape_spec_includes_the_tab_bar_the_renderer_draws() {
+        let model = opened_palette_model();
+        let result = with_modal_overlay_layout(&model, 1200, 800, 1.0, |spec, layout| {
+            assert!(spec.tabs.is_some(), "shape spec dropped the tab bar");
+            assert_eq!(layout.tab_rects.len(), 4, "All/Commands/Files/Symbols");
+        });
+        assert!(result.is_some(), "expected an active modal");
+    }
+
+    /// A click inside the tab bar must resolve to `HitTarget::ModalTab`,
+    /// not fall through to `Modal { inside: true }` — the failure mode the
+    /// tab-bar-less shape spec produced (click-to-switch unreachable).
+    #[test]
+    fn tab_bar_click_resolves_to_a_modal_tab_not_a_generic_inside_hit() {
+        let model = opened_palette_model();
+        let commands_tab_rect =
+            with_modal_overlay_layout(&model, 1200, 800, 1.0, |_, layout| layout.tab_rects[1])
+                .expect("expected an active modal");
+        let pt = Point::new(
+            (commands_tab_rect.x + commands_tab_rect.w / 2) as f64,
+            (commands_tab_rect.y + commands_tab_rect.h / 2) as f64,
+        );
+        assert!(
+            matches!(
+                hit_test_modal(&model, pt),
+                Some(HitTarget::ModalTab { index: 1 })
+            ),
+            "expected a click on the Commands tab to hit ModalTab {{ index: 1 }}"
+        );
+    }
+
+    /// A click on the first rendered row must activate flat index 0, not a
+    /// different row — reproduces the reported drift where the renderer's
+    /// row 0 and the hit-test layout's row 0 disagreed once the tab bar
+    /// was missing from one of the two consumers.
+    #[test]
+    fn row_click_activates_the_row_actually_rendered_there() {
+        let model = opened_palette_model();
+        let row_rect =
+            with_modal_overlay_layout(&model, 1200, 800, 1.0, |_, layout| layout.rows[0])
+                .expect("expected an active modal");
+        let pt = Point::new(
+            (row_rect.x + row_rect.w / 2) as f64,
+            (row_rect.y + row_rect.h / 2) as f64,
+        );
+        assert!(
+            matches!(
+                hit_test_modal(&model, pt),
+                Some(HitTarget::ModalRow { flat_index: 0 })
+            ),
+            "expected a click on the first rendered row to hit ModalRow {{ flat_index: 0 }}"
+        );
+    }
+
+    /// The header input rect (used to place the IME caret) must sit
+    /// *below* the tab bar, not overlap it — the caret-drift symptom of the
+    /// same shape-spec bug.
+    #[test]
+    fn header_input_rect_sits_below_the_tab_bar() {
+        let model = opened_palette_model();
+        let (tab_bottom, header_top) = with_modal_overlay_layout(&model, 1200, 800, 1.0, |_, l| {
+            let tab_bar = l.tab_bar.expect("shape spec should lay out a tab bar");
+            let header = l.header.expect("palette always has a header");
+            (tab_bar.y + tab_bar.h, header.y)
+        })
+        .expect("expected an active modal");
+        assert!(
+            header_top >= tab_bottom,
+            "header (y={header_top}) overlaps the tab bar (bottom={tab_bottom})"
+        );
+    }
 }

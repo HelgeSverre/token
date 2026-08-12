@@ -973,35 +973,70 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
 /// (overlay-surface.md Phase 4: "per-group cap 4–5 rows").
 pub const ALL_TAB_GROUP_CAP: usize = 5;
 
+/// `(title, row_count)` for the sections of whichever Search Everywhere tab
+/// is active — real, selectable rows only (empty-state messages are drawn
+/// as decoration outside `Body::List`, so they don't occupy `FlatIndex`
+/// space). The single source of truth both the view's content spec and its
+/// shape-only twin (hit-testing/caret placement) slice against, and that
+/// [`commands_tab_shapes`]/[`all_tab_total`] below derive their counts
+/// from — one function, so render, hit-test, and Confirm/SelectNext can't
+/// drift out of step (overlay-surface.md "Hit-testing": one layout, two
+/// consumers).
+pub fn search_everywhere_sections(
+    state: &CommandPaletteState,
+) -> Vec<(Option<&'static str>, usize)> {
+    match state.active_tab {
+        SearchTab::Commands => {
+            if state.recent_count > 0 {
+                vec![
+                    (Some("Recently Used"), state.recent_count),
+                    (None, state.matches.len() - state.recent_count),
+                ]
+            } else {
+                vec![(None, state.matches.len())]
+            }
+        }
+        SearchTab::Files => {
+            let count = state.files.as_ref().map(|f| f.results.len()).unwrap_or(0);
+            if count > 0 {
+                vec![(None, count)]
+            } else {
+                Vec::new()
+            }
+        }
+        SearchTab::All => {
+            let commands_cap = state.matches.len().min(ALL_TAB_GROUP_CAP);
+            let file_count = state.files.as_ref().map(|f| f.results.len()).unwrap_or(0);
+            let files_cap = file_count.min(ALL_TAB_GROUP_CAP);
+            let mut sections = vec![(Some("Commands"), commands_cap)];
+            if file_count > 0 {
+                sections.push((Some("Files"), files_cap));
+            }
+            sections
+        }
+        SearchTab::Symbols => Vec::new(),
+    }
+}
+
 /// Total selectable rows on the All tab: capped Commands + capped Files
 /// (Symbols never contributes — disabled-state only).
 fn all_tab_total(state: &CommandPaletteState) -> usize {
-    let commands_shown = state.matches.len().min(ALL_TAB_GROUP_CAP);
-    let files_shown = state
-        .files
-        .as_ref()
-        .map(|f| f.results.len().min(ALL_TAB_GROUP_CAP))
-        .unwrap_or(0);
-    commands_shown + files_shown
+    search_everywhere_sections(state)
+        .iter()
+        .map(|(_, len)| len)
+        .sum()
 }
 
 /// Section shapes for the Commands tab: an optional "Recently used" header
 /// (only when `recent_count > 0` — the query is empty) plus the full list.
 fn commands_tab_shapes(state: &CommandPaletteState) -> Vec<SectionShape> {
-    if state.recent_count > 0 {
-        vec![
-            SectionShape {
-                has_title: true,
-                len: state.recent_count,
-            },
-            SectionShape {
-                has_title: false,
-                len: state.matches.len() - state.recent_count,
-            },
-        ]
-    } else {
-        flat_shapes(state.matches.len()).to_vec()
-    }
+    search_everywhere_sections(state)
+        .into_iter()
+        .map(|(title, len)| SectionShape {
+            has_title: title.is_some(),
+            len,
+        })
+        .collect()
 }
 
 /// `ModalMsg::Confirm` for the Search Everywhere modal (overlay-surface.md
@@ -1570,7 +1605,14 @@ pub fn resolve_palette_rows(state: &mut CommandPaletteState, history: &CommandHi
             .filter_map(|id| matches.iter().find(|m| m.def.id == *id).cloned())
             .collect();
         let n = recent.len();
-        matches = recent.into_iter().chain(matches).collect();
+        // The "Recently used" section sits *above* unfiltered commands
+        // (overlay-surface.md Phase 4) — drop the promoted entries from the
+        // list below it so they don't also show up as their own (recency-
+        // sorted) row immediately after the section.
+        let rest = matches
+            .into_iter()
+            .filter(|m| !recent_ids.contains(&m.def.id));
+        matches = recent.into_iter().chain(rest).collect();
         n
     } else {
         0
@@ -1742,7 +1784,9 @@ fn fuzzy_match_files(
 
 #[cfg(test)]
 mod tests {
-    use super::{get_current_cursor_lines, resolve_palette_rows, update_ui};
+    use super::{
+        get_current_cursor_lines, resolve_palette_rows, search_everywhere_sections, update_ui,
+    };
     use crate::command_history::CommandHistory;
     use crate::commands::{Cmd, CommandId, DamageArea};
     use crate::image::ImageState;
@@ -1850,6 +1894,35 @@ mod tests {
         assert!(
             opened_file_dialog,
             "Confirm should have executed OpenFile (the cached row selected), got {cmd:?}"
+        );
+    }
+
+    #[test]
+    fn resolve_palette_rows_empty_query_does_not_duplicate_recents_below_the_section() {
+        let mut history = CommandHistory::default();
+        history.record_execution(CommandId::SaveFile);
+        history.record_execution(CommandId::GotoLine);
+
+        let mut state = CommandPaletteState::default();
+        resolve_palette_rows(&mut state, &history);
+
+        assert_eq!(state.recent_count, 2);
+        let ids: Vec<CommandId> = state.matches.iter().map(|m| m.def.id).collect();
+        // Both commands were recorded within the same wall-clock second in
+        // this test, so their exact relative order (a `last_used` tie) is
+        // not under test here — only that both lead and neither repeats.
+        let mut head = ids[..2].to_vec();
+        head.sort_by_key(|id| format!("{id:?}"));
+        assert_eq!(head, [CommandId::GotoLine, CommandId::SaveFile]);
+        assert!(
+            !ids[2..].contains(&CommandId::GotoLine) && !ids[2..].contains(&CommandId::SaveFile),
+            "recent commands should not also appear in the unfiltered list below the \
+             Recently Used section, got {ids:?}"
+        );
+        assert_eq!(
+            ids.len(),
+            crate::commands::all_commands().len(),
+            "no commands should be dropped, only reordered"
         );
     }
 
@@ -1992,6 +2065,101 @@ mod tests {
         );
         // NewFile (registry index 0) was executed — history now remembers it.
         assert!(model.command_history.recency_score(CommandId::NewFile) > 0);
+    }
+
+    /// Regression for the test-coverage gap overlay-surface.md Phase 4
+    /// flags: the pre-existing confirm-order test never ran with a
+    /// non-empty `CommandHistory` (a "Recently Used" section) or a Files
+    /// group, so neither the recents offset nor the All tab's per-group
+    /// cap offset into the second group was covered by a
+    /// view-order == confirm-order assertion.
+    #[test]
+    fn all_tab_confirm_order_matches_view_order_with_recents_and_a_files_group() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        model.command_history.record_execution(CommandId::SaveFile);
+        model.command_history.record_execution(CommandId::GotoLine);
+
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+        assert_tab(&model, SearchTab::All);
+
+        // Inject a Files group directly (bypassing real workspace file
+        // indexing, which isn't under test here) so the All tab's merged
+        // view has both a "Recently Used" offset *and* a Files group at the
+        // Commands-cap boundary.
+        let expected_path = std::path::PathBuf::from("/test/beta.rs");
+        match &mut model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => {
+                state.files_available = true;
+                let mut files =
+                    crate::model::FileFinderState::new(vec![], std::path::PathBuf::from("/test"));
+                files.results = vec![
+                    crate::model::FileMatch {
+                        path: std::path::PathBuf::from("/test/alpha.rs"),
+                        filename: "alpha.rs".to_string(),
+                        relative_path: "alpha.rs".to_string(),
+                        score: 0,
+                        indices: Vec::new(),
+                    },
+                    crate::model::FileMatch {
+                        path: expected_path.clone(),
+                        filename: "beta.rs".to_string(),
+                        relative_path: "beta.rs".to_string(),
+                        score: 0,
+                        indices: Vec::new(),
+                    },
+                ];
+                state.files = Some(files);
+                // Flat index `ALL_TAB_GROUP_CAP + 1`: past the (recents +
+                // commands) group, at the second file in the Files group —
+                // exactly the offset-into-second-group case the old test
+                // never reached.
+                state.all_selected = super::ALL_TAB_GROUP_CAP + 1;
+            }
+            other => panic!("expected command palette modal, got {other:?}"),
+        }
+
+        // The view slices `state.matches`/Files results using the same
+        // `search_everywhere_sections` boundaries Confirm indexes into —
+        // assert the row at `all_selected` really is `beta.rs` before
+        // confirming, so this test fails loudly if the two ever drift.
+        {
+            let state = match &model.ui.active_modal {
+                Some(ModalState::CommandPalette(state)) => state,
+                other => panic!("expected command palette modal, got {other:?}"),
+            };
+            let sections = search_everywhere_sections(state);
+            let commands_cap: usize = sections
+                .iter()
+                .filter(|(title, _)| *title != Some("Files"))
+                .map(|(_, len)| len)
+                .sum();
+            assert_eq!(commands_cap, super::ALL_TAB_GROUP_CAP);
+            let files = state.files.as_ref().unwrap();
+            assert_eq!(
+                files.results[state.all_selected - commands_cap].path,
+                expected_path
+            );
+        }
+
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::Confirm));
+        assert!(model.ui.active_modal.is_none(), "palette closes on confirm");
+
+        let status = match model
+            .ui
+            .status_bar
+            .get_segment(crate::model::SegmentId::StatusMessage)
+        {
+            Some(crate::model::StatusSegment {
+                content: crate::model::SegmentContent::Text(text),
+                ..
+            }) => text.clone(),
+            other => panic!("expected a status message, got {other:?}"),
+        };
+        assert!(
+            status.contains("beta.rs"),
+            "Confirm should have opened the row selected in the cached view order \
+             (beta.rs, index ALL_TAB_GROUP_CAP+1), got status {status:?}"
+        );
     }
 
     #[test]

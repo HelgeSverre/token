@@ -38,7 +38,7 @@ pub use preview::update_preview;
 pub use syntax::{schedule_syntax_parse, update_syntax, SYNTAX_DEBOUNCE_MS};
 pub use terminal::update_terminal;
 pub use text_edit::{apply_text_edit_msg, update_text_edit};
-pub use ui::{resolve_palette_rows, update_ui, ALL_TAB_GROUP_CAP};
+pub use ui::{resolve_palette_rows, search_everywhere_sections, update_ui, ALL_TAB_GROUP_CAP};
 pub use workspace::update_workspace;
 
 /// Main update function - dispatches to sub-handlers
