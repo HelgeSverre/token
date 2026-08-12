@@ -356,10 +356,24 @@ fn active_find_matches(
 /// currently selected (find-next/find-previous already highlight that one
 /// via the ordinary selection background, so tinting it again would just
 /// muddy the color).
+///
+/// `visible_lines` bounds the *decoration* Vec to the on-screen line range
+/// (editor-decorations.md: "collection must be O(viewport) by
+/// construction") — matches outside it paint nothing and would otherwise
+/// grow this Vec (and its `offset_to_cursor` calls) with total match count
+/// instead of viewport size.
+///
+/// ponytail: `active_find_matches` underneath still does one whole-buffer
+/// `to_string()` + regex scan per call (`Document::search_matches`) — this
+/// only bounds what's built from that result, not the scan itself. Add a
+/// viewport-scoped/incremental search if profiling ever shows the full-
+/// document copy costing real frame time (find-enhancements.md dropped the
+/// cached `SearchResults` type on purpose for v1).
 fn find_match_decorations(
     model: &AppModel,
     document: &crate::model::Document,
     current_selection: &crate::model::Selection,
+    visible_lines: std::ops::Range<usize>,
 ) -> Vec<editor_text::RangeDecoration> {
     let matches = active_find_matches(model, document);
     if matches.is_empty() {
@@ -384,6 +398,7 @@ fn find_match_decorations(
             end: document.offset_to_cursor(m.end),
             kind: editor_text::DecorationKind::BackgroundTint(color),
         })
+        .filter(|d| visible_lines.contains(&d.start.0) || visible_lines.contains(&d.end.0))
         .collect()
 }
 
@@ -500,7 +515,15 @@ impl<'a> EditorGroupScene<'a> {
                 // navigation only ever operates on it (see
                 // find-enhancements.md).
                 let decorations = if self.is_focused {
-                    find_match_decorations(model, document, &self.editor.selections[0])
+                    let viewport = &self.editor.viewport;
+                    let visible_lines =
+                        viewport.top_line..viewport.top_line + viewport.visible_lines;
+                    find_match_decorations(
+                        model,
+                        document,
+                        &self.editor.selections[0],
+                        visible_lines,
+                    )
                 } else {
                     Vec::new()
                 };
@@ -2632,7 +2655,7 @@ mod find_match_decoration_tests {
 
         let document = model.document();
         let current_selection = model.editor().selections[0];
-        let decorations = find_match_decorations(&model, document, &current_selection);
+        let decorations = find_match_decorations(&model, document, &current_selection, 0..25);
 
         // Only the second "foo" is decorated; the first is already shown via
         // the ordinary selection highlight.
@@ -2649,7 +2672,29 @@ mod find_match_decoration_tests {
     fn find_match_decorations_empty_without_an_open_find_modal() {
         let model = model_with_text("foo bar foo");
         let no_selection = Selection::from_anchor_head(Position::new(0, 0), Position::new(0, 0));
-        assert!(find_match_decorations(&model, model.document(), &no_selection).is_empty());
+        assert!(find_match_decorations(&model, model.document(), &no_selection, 0..25).is_empty());
+    }
+
+    /// `find_match_decorations` must bound its output to the visible line
+    /// range, not the total match count — editor-decorations.md's Testing
+    /// Strategy: "collection is O(viewport) by construction". A match well
+    /// outside `visible_lines` must not produce a decoration.
+    #[test]
+    fn find_match_decorations_are_bounded_to_the_visible_line_range() {
+        let text = "foo\n".repeat(50);
+        let mut model = model_with_text(&text);
+        open_find(&mut model, "foo", false, false);
+
+        let document = model.document();
+        let no_selection = Selection::from_anchor_head(Position::new(0, 0), Position::new(0, 0));
+        let visible_lines = 10..20;
+        let decorations =
+            find_match_decorations(&model, document, &no_selection, visible_lines.clone());
+
+        assert_eq!(decorations.len(), visible_lines.len());
+        for d in &decorations {
+            assert!(visible_lines.contains(&d.start.0));
+        }
     }
 
     #[test]
