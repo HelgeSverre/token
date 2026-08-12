@@ -255,6 +255,14 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             if doc.revision != revision {
                 return None;
             }
+            // The cursor guard only makes sense against the document the
+            // request was issued for — if the focus has since moved to a
+            // different tab/split, comparing against the *focused* editor's
+            // cursor would compare unrelated positions (both commonly at
+            // 0,0) and could open the card over the wrong document.
+            if model.try_document().and_then(|d| d.id) != Some(document_id) {
+                return None;
+            }
             if model.editor().active_cursor().to_position() != cursor {
                 return None;
             }
@@ -327,6 +335,46 @@ mod tests {
 
     fn model() -> AppModel {
         AppModel::new(800, 600, 1.0, vec![])
+    }
+
+    /// A `HoverResolved` reply for a document the user has since switched
+    /// away from must never open the card, even when the now-focused
+    /// editor's cursor happens to coincide with the request's captured
+    /// position (both at 0,0 is the common case for a freshly opened
+    /// file) — the cursor guard must compare against the *requested*
+    /// document, not merely whatever editor is currently focused.
+    #[test]
+    fn hover_resolved_for_a_document_no_longer_focused_is_dropped() {
+        let mut model = model();
+        let requested_doc = model.document().id.unwrap();
+
+        // Simulate the focused editor switching to a different document
+        // (tab/split change) between request and reply — the new
+        // document's cursor starts at (0, 0), matching the stale
+        // request's captured cursor below.
+        let other_id = DocumentId(requested_doc.0 + 1);
+        let mut other_doc = crate::model::Document::with_text("second file\n");
+        other_doc.id = Some(other_id);
+        model.editor_area.documents.insert(other_id, other_doc);
+        model.editor_area.focused_editor_mut().unwrap().document_id = Some(other_id);
+        assert_eq!(model.try_document().and_then(|d| d.id), Some(other_id));
+
+        let revision = model.editor_area.documents[&requested_doc].revision;
+        update_lsp(
+            &mut model,
+            LspMsg::HoverResolved {
+                document_id: requested_doc,
+                revision,
+                cursor: crate::model::editor::Position::new(0, 0),
+                outcome: HoverOutcome::Content(Some("stale hover".to_owned())),
+            },
+        );
+
+        assert!(
+            model.ui.hover_card.is_none(),
+            "hover reply must not open the card once focus has left the requested document"
+        );
+        assert!(model.ui.cursor_overlay.is_none());
     }
 
     #[test]
