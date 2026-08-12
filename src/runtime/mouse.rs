@@ -85,6 +85,63 @@ mod tests {
         model
     }
 
+    // ========================================================================
+    // Interactive gutter lane suppression (editor-decorations.md)
+    // ========================================================================
+
+    fn gutter_target(lane: Option<token::view::geometry::LaneId>) -> HitTarget {
+        HitTarget::EditorGutter {
+            group_id: token::model::editor_area::GroupId(0),
+            editor_id: token::model::editor_area::EditorId(0),
+            line: 0,
+            lane,
+        }
+    }
+
+    #[test]
+    fn interactive_lane_press_does_not_arm_content_drag() {
+        use token::view::geometry::LaneId;
+
+        assert!(
+            !arms_content_drag(&gutter_target(Some(LaneId::Fold))),
+            "a chevron click must not arm text-selection drag"
+        );
+    }
+
+    #[test]
+    fn non_interactive_gutter_press_arms_content_drag() {
+        assert!(
+            arms_content_drag(&gutter_target(None)),
+            "line-number gutter clicks must keep arming drag, same as today"
+        );
+    }
+
+    #[test]
+    fn editor_content_press_arms_content_drag() {
+        let target = HitTarget::EditorContent {
+            group_id: token::model::editor_area::GroupId(0),
+            editor_id: token::model::editor_area::EditorId(0),
+            document_id: token::model::editor_area::DocumentId(0),
+        };
+        assert!(arms_content_drag(&target));
+    }
+
+    #[test]
+    fn interactive_lane_click_is_suppressed() {
+        use token::view::geometry::LaneId;
+
+        let result = interactive_gutter_lane_click(Some(LaneId::Fold));
+        assert!(matches!(
+            result,
+            Some(EventResult::Consumed { redraw: false, .. })
+        ));
+    }
+
+    #[test]
+    fn non_interactive_lane_click_falls_through() {
+        assert!(interactive_gutter_lane_click(None).is_none());
+    }
+
     #[test]
     fn cursor_overlay_row_click_accepts_a_completion_item() {
         use token::messages::DocumentMsg;
@@ -457,13 +514,7 @@ pub fn handle_mouse_press(
     // Interactive gutter lanes (fold chevron, marks) consume the press
     // themselves (see `handle_left_click`) — a chevron click must not
     // arm text-selection drag tracking.
-    let is_editor_content = matches!(
-        target,
-        HitTarget::EditorContent { .. } | HitTarget::ImageContent { .. }
-    ) || matches!(
-        target,
-        HitTarget::EditorGutter { lane, .. } if !lane.is_some_and(|lane| lane.is_interactive())
-    );
+    let is_editor_content = arms_content_drag(&target);
     let is_left_click = matches!(event.button, MouseButton::Left);
 
     // Dispatch based on target and button
@@ -498,6 +549,33 @@ pub fn handle_mouse_press(
         cmd,
         start_drag_tracking: is_editor_content && is_left_click,
     }
+}
+
+/// Whether a press on `target` should arm text-selection drag tracking:
+/// editor content, or a gutter click outside any interactive lane. A press
+/// on an interactive lane (fold chevron, marks — editor-decorations.md)
+/// consumes itself in `handle_left_click`/`handle_middle_click` and must
+/// not also start a text selection.
+fn arms_content_drag(target: &HitTarget) -> bool {
+    matches!(
+        target,
+        HitTarget::EditorContent { .. } | HitTarget::ImageContent { .. }
+    ) || matches!(
+        target,
+        HitTarget::EditorGutter { lane, .. } if !lane.is_some_and(|lane| lane.is_interactive())
+    )
+}
+
+/// A press on an interactive gutter lane (fold chevron, marks) consumes
+/// itself as a no-op rather than falling through to the default
+/// focus/rectangle-selection gutter behavior — no lane owner has shipped
+/// yet, but `handle_left_click`/`handle_middle_click` must actively
+/// suppress it rather than let it fall through (editor-decorations.md).
+fn interactive_gutter_lane_click(
+    lane: Option<token::view::geometry::LaneId>,
+) -> Option<EventResult> {
+    lane.is_some_and(|lane| lane.is_interactive())
+        .then(EventResult::consumed_no_redraw)
 }
 
 /// Dispatch a mouse press to the appropriate handler based on target and button
@@ -712,17 +790,19 @@ fn handle_left_click(
         // owning feature instead of falling through to the default
         // focus/drag-select behavior (editor-decorations.md). No lane owner
         // has shipped yet, so those consume the press as a no-op.
-        HitTarget::EditorGutter { group_id, lane, .. } => match lane {
-            Some(lane) if lane.is_interactive() => EventResult::consumed_no_redraw(),
-            _ => {
-                if *group_id != model.editor_area.focused_group_id {
-                    update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
+        HitTarget::EditorGutter { group_id, lane, .. } => {
+            match interactive_gutter_lane_click(*lane) {
+                Some(result) => result,
+                None => {
+                    if *group_id != model.editor_area.focused_group_id {
+                        update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
+                    }
+                    // For now, treat like editor content click
+                    // Future: could select entire line
+                    EventResult::consumed_with_focus(FocusTarget::Editor)
                 }
-                // For now, treat like editor content click
-                // Future: could select entire line
-                EventResult::consumed_with_focus(FocusTarget::Editor)
             }
-        },
+        }
 
         // Editor content - handled specially due to complex selection logic
         HitTarget::EditorContent { group_id, .. } => {
@@ -1119,8 +1199,8 @@ fn handle_middle_click(
         HitTarget::EditorGutter { group_id, lane, .. } => {
             use token::messages::EditorMsg;
 
-            if lane.is_some_and(|lane| lane.is_interactive()) {
-                return EventResult::consumed_no_redraw();
+            if let Some(result) = interactive_gutter_lane_click(*lane) {
+                return result;
             }
 
             if *group_id != model.editor_area.focused_group_id {
