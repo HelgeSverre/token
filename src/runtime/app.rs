@@ -34,7 +34,7 @@ use token::panel::DockPosition;
 use token::syntax::{LanguageId, ParserState};
 use token::update::update;
 
-use super::input::{handle_key, KeyModifiers, OptionKeyGesture};
+use super::input::{handle_cursor_overlay_key, handle_key, KeyModifiers, OptionKeyGesture};
 use super::mouse::{
     end_tab_drag, handle_mouse_press, handle_mouse_wheel, make_mouse_event, update_tab_drag,
     ClickTracker, DragState,
@@ -555,6 +555,22 @@ impl App {
                         logo,
                     );
 
+                    // Cursor-anchored popups aren't modals — they claim exactly
+                    // Up/Down/Enter/Esc/Tab (overlay-surface.md Phase 5) and must
+                    // claim them *before* the keymap runs, or bindings like
+                    // Up -> MoveCursorUp / Enter -> InsertNewline (both
+                    // `is_simple()`, non-global) would dispatch and consume the
+                    // key first. Every other key (Backspace, Delete, arrows with
+                    // modifiers, Cmd+C/V/X/Z/A, ...) falls through to the normal
+                    // keymap/handle_key path below unaffected.
+                    if self.model.ui.cursor_overlay.is_some() {
+                        if let Some(cmd) =
+                            handle_cursor_overlay_key(&mut self.model, &event.logical_key)
+                        {
+                            return cmd;
+                        }
+                    }
+
                     // Check for global commands first (work regardless of focus state)
                     // These include command palette, save, quit, etc.
                     if let Some(keystroke) = keystroke {
@@ -586,7 +602,6 @@ impl App {
                         && self.model.dock_layout.bottom.active_panel()
                             == Some(token::panel::PanelId::TERMINAL);
                     let skip_keymap = self.model.ui.has_modal()
-                        || self.model.ui.cursor_overlay.is_some()
                         || (self.option_gesture.double_tapped && alt)
                         || sidebar_focused
                         || terminal_focused

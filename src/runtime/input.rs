@@ -276,7 +276,23 @@ pub fn handle_key(
 /// overlay-surface.md Phase 5); `None` means "not one of ours", so the
 /// caller falls through to the normal editor key path (typing reaches the
 /// document while a completion/hover popup is open).
-fn handle_cursor_overlay_key(model: &mut AppModel, key: &Key) -> Option<Option<Cmd>> {
+///
+/// Called from two places: `runtime::app`'s window-event handler runs it
+/// *before* the keymap so the five claimed keys never reach `is_simple()`
+/// keymap bindings (Up/Down/Enter would otherwise dispatch as
+/// `MoveCursorUp`/`MoveCursorDown`/`InsertNewline` before this module ever
+/// saw them); `handle_key` below runs it again as the non-keymap fallback
+/// path (and is what the unit tests below exercise directly).
+pub(crate) fn handle_cursor_overlay_key(model: &mut AppModel, key: &Key) -> Option<Option<Cmd>> {
+    let kind = model.ui.cursor_overlay?.kind;
+    if kind == token::model::CursorOverlayKind::DebugHover {
+        // Hover = any keypress dismisses (overlay-surface.md: "a keyboard-
+        // invoked card that any key dismisses needs no key routing at all").
+        // Dismiss as a side effect and fall through so the key still
+        // reaches the editor normally (e.g. typing, arrow movement).
+        model.ui.cursor_overlay = None;
+        return None;
+    }
     let state = model.ui.cursor_overlay.as_mut()?;
     match key {
         Key::Named(NamedKey::ArrowUp) => {
@@ -1044,6 +1060,35 @@ mod tests {
         assert!(cmd.is_some(), "character input should still be handled");
         // The popup stays open — only the five claimed keys dismiss/consume it.
         assert!(model.ui.cursor_overlay.is_some());
+        assert_eq!(model.document().buffer.to_string(), "x");
+    }
+
+    /// Hover is not the completion popup: overlay-surface.md's Contexts
+    /// table says "Dismissal is per-context ... Hover = any keypress
+    /// dismisses" — unlike Completion, arrow keys don't cycle a selection
+    /// (there's nothing to select) and every key, not just the five
+    /// claimed ones, closes it while still reaching the editor normally.
+    #[test]
+    fn hover_overlay_dismisses_on_any_key_and_still_passes_it_through() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::DebugHover,
+        ));
+        model.document_mut().buffer = ropey::Rope::from("");
+
+        let cmd = handle_key(
+            &mut model,
+            Key::Character("x".into()),
+            PhysicalKey::Code(KeyCode::KeyX),
+            KeyModifiers::default(),
+            false,
+        );
+
+        assert!(cmd.is_some(), "character input should still be handled");
+        assert!(
+            model.ui.cursor_overlay.is_none(),
+            "any key should dismiss a hover card"
+        );
         assert_eq!(model.document().buffer.to_string(), "x");
     }
 
