@@ -171,12 +171,15 @@ pub enum Anchor {
     /// the backdrop at `dim_alpha`.
     Centered { width: WidthRule, dim_alpha: u8 },
     /// Anchored to a pixel point (physical px — the text caret rect from
-    /// `view::caret::active_text_input_rect`). Flips above the anchor line
-    /// when there isn't `panel_h` of space below; clamps to the window
-    /// edges; no backdrop dim (Visual Language > Chrome).
+    /// `view::caret::active_text_input_rect`). `(x, y)` is the caret's
+    /// top-left corner and `h` its line height, so flipping above can clear
+    /// the caret's own line instead of just its bottom edge. Flips above
+    /// the anchor line when there isn't `panel_h` of space below; clamps to
+    /// the window edges; no backdrop dim (Visual Language > Chrome).
     Cursor {
         x: usize,
         y: usize,
+        h: usize,
         prefer_below: bool,
         width: WidthRule,
     },
@@ -723,18 +726,23 @@ fn position_panel(
             (x, y)
         }
         Anchor::Cursor {
-            x, y, prefer_below, ..
+            x,
+            y,
+            h,
+            prefer_below,
+            ..
         } => {
             let gap = scaled(dims::CURSOR_GAP, scale_factor);
             let px = (*x).min(window_width.saturating_sub(panel_w));
-            let fits_below = y.saturating_add(gap).saturating_add(panel_h) <= window_height;
+            let below_y = y.saturating_add(*h).saturating_add(gap);
+            let fits_below = below_y.saturating_add(panel_h) <= window_height;
             let fits_above = *y >= panel_h.saturating_add(gap);
             let py = if *prefer_below && fits_below {
-                y + gap
+                below_y
             } else if fits_above {
                 y - gap - panel_h
             } else if fits_below {
-                y + gap
+                below_y
             } else {
                 // Neither direction has room: clamp to the window.
                 window_height.saturating_sub(panel_h)
@@ -2736,6 +2744,7 @@ mod tests {
             anchor: Anchor::Cursor {
                 x: 100,
                 y: 200,
+                h: 0,
                 prefer_below: true,
                 width: WidthRule {
                     pct: 0.0,
@@ -2772,6 +2781,7 @@ mod tests {
             anchor: Anchor::Cursor {
                 x: 100,
                 y: 780,
+                h: 20, // caret line height: line spans 780..800
                 prefer_below: true,
                 width: WidthRule {
                     pct: 0.0,
@@ -2814,6 +2824,7 @@ mod tests {
             anchor: Anchor::Cursor {
                 x: 100,
                 y: 10, // near the top: no room above, and "prefer_below" is off
+                h: 0,
                 prefer_below: false,
                 width: WidthRule {
                     pct: 0.0,
@@ -2854,6 +2865,7 @@ mod tests {
             anchor: Anchor::Cursor {
                 x: 100,
                 y: 400,
+                h: 0,
                 prefer_below: true,
                 width: WidthRule {
                     pct: 0.0,
@@ -2890,6 +2902,7 @@ mod tests {
             anchor: Anchor::Cursor {
                 x: 10,
                 y: 100,
+                h: 0,
                 prefer_below: true,
                 width: WidthRule {
                     pct: 0.0,
@@ -2929,6 +2942,7 @@ mod tests {
             anchor: Anchor::Cursor {
                 x: 990, // near the right edge of a 1000px window
                 y: 100,
+                h: 0,
                 prefer_below: true,
                 width: WidthRule {
                     pct: 0.0,
@@ -2962,6 +2976,7 @@ mod tests {
             anchor: Anchor::Cursor {
                 x: 100,
                 y: 100,
+                h: 0,
                 prefer_below: true,
                 // A width rule that would clamp far below the 200px floor.
                 width: WidthRule {
@@ -3005,6 +3020,7 @@ mod tests {
             anchor: Anchor::Cursor {
                 x: 0,
                 y: 0,
+                h: 0,
                 prefer_below: true,
                 width: WidthRule {
                     pct: 0.0,
@@ -3045,6 +3061,7 @@ mod tests {
             anchor: Anchor::Cursor {
                 x: 50,
                 y: 50,
+                h: 0,
                 prefer_below: true,
                 width: WidthRule {
                     pct: 0.0,

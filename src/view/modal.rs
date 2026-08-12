@@ -1313,14 +1313,16 @@ pub fn render_drop_overlay(
 // Cursor-anchored popups (overlay-surface.md Phase 5)
 // ============================================================================
 
-/// The (physical-px) anchor point for a cursor-anchored popup: the text
-/// caret's rect, per overlay-surface.md Phase 5 ("pixel rect from view
-/// geometry ... `active_text_input_rect`"). `None` when there's no live text
-/// caret to anchor to (no modal is open, so this reduces to the editor
-/// caret).
-fn cursor_overlay_anchor(model: &AppModel) -> Option<(usize, usize)> {
+/// The (physical-px) anchor rect for a cursor-anchored popup: the text
+/// caret's top-left corner and line height, per overlay-surface.md Phase 5
+/// ("pixel rect from view geometry ... `active_text_input_rect`"). Carrying
+/// the height lets `Anchor::Cursor` flip above the caret's own *top* edge
+/// instead of just its bottom, so a flipped popup never covers the line
+/// being edited. `None` when there's no live text caret to anchor to (no
+/// modal is open, so this reduces to the editor caret).
+fn cursor_overlay_anchor(model: &AppModel) -> Option<(usize, usize, usize)> {
     let rect = super::caret::active_text_input_rect(model, model.char_width, model.line_height)?;
-    Some((rect.x, rect.y + rect.h))
+    Some((rect.x, rect.y, rect.h))
 }
 
 /// Dummy rows exercising the Completion list shell (kind badges, dim
@@ -1397,7 +1399,7 @@ pub(crate) fn with_cursor_overlay_layout<R>(
     f: impl FnOnce(&OverlaySpec, &OverlayLayout) -> R,
 ) -> Option<R> {
     let state = model.ui.cursor_overlay?;
-    let (x, y) = cursor_overlay_anchor(model)?;
+    let (x, y, h) = cursor_overlay_anchor(model)?;
 
     match state.kind {
         crate::model::CursorOverlayKind::DebugCompletion => {
@@ -1411,6 +1413,7 @@ pub(crate) fn with_cursor_overlay_layout<R>(
                 anchor: Anchor::Cursor {
                     x,
                     y,
+                    h,
                     prefer_below: true,
                     width: WidthRule {
                         pct: 0.0,
@@ -1437,7 +1440,10 @@ pub(crate) fn with_cursor_overlay_layout<R>(
                 anchor: Anchor::Cursor {
                     x,
                     y,
-                    prefer_below: true,
+                    h,
+                    // Hover is "Cursor, above-preferred" (Contexts table),
+                    // unlike Completion.
+                    prefer_below: false,
                     width: WidthRule {
                         pct: 0.0,
                         min: 280.0,
@@ -1581,6 +1587,53 @@ mod tests {
         assert!(
             header_top >= tab_bottom,
             "header (y={header_top}) overlaps the tab bar (bottom={tab_bottom})"
+        );
+    }
+
+    /// Regression: a cursor overlay flipped above the caret must clear the
+    /// caret's own *line* (top edge), not just its bottom edge — the caret
+    /// rect passed to `Anchor::Cursor` has real height, and an early
+    /// version anchored both directions off the caret's bottom, so a
+    /// flipped popup's bottom edge sat just above the caret bottom while
+    /// still covering the line being edited.
+    #[test]
+    fn cursor_overlay_flip_above_clears_the_caret_line_not_just_its_bottom() {
+        use crate::model::editor::Cursor;
+        use crate::model::CursorOverlayKind;
+        let mut model = AppModel::new(400, 800, 1.0, vec![]);
+        model.line_height = 20;
+        model.document_mut().buffer = ropey::Rope::from("\n".repeat(50));
+        model.editor_mut().cursors = vec![Cursor::at(36, 0)];
+        model.editor_mut().viewport.top_line = 0;
+        model.editor_mut().viewport.visible_lines = 40;
+        model
+            .editor_area
+            .focused_group_mut()
+            .expect("focused group")
+            .rect = crate::model::editor_area::Rect::new(0.0, 0.0, 400.0, 800.0);
+        // Line 36 lands near the bottom of the window: not enough room
+        // below for an 8-row completion popup, plenty of room above.
+        let caret =
+            crate::view::caret::active_text_input_rect(&model, model.char_width, model.line_height)
+                .expect("text caret");
+        assert!(
+            800 - (caret.y + caret.h) < 192,
+            "test setup: caret (y={} h={}) should leave less than one popup's worth of room below",
+            caret.y,
+            caret.h
+        );
+
+        model.ui.cursor_overlay = Some(crate::model::CursorOverlayState::new(
+            CursorOverlayKind::DebugCompletion,
+        ));
+        let l = with_cursor_overlay_layout(&model, 400, 800, 1.0, |_, l| l.panel)
+            .expect("cursor overlay open");
+        assert!(
+            l.y + l.h <= caret.y,
+            "flipped popup (y={} h={}) overlaps the caret's own line (top={})",
+            l.y,
+            l.h,
+            caret.y
         );
     }
 }
