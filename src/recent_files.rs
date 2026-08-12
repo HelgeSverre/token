@@ -146,17 +146,27 @@ impl RecentFiles {
     pub const CURRENT_VERSION: u32 = 1;
 
     /// Load recent files from disk
+    /// Under `cfg(test)` this always returns empty — same isolation rule as
+    /// `CommandHistory::load`: unit tests must not observe the developer's
+    /// real `recent.json`.
     pub fn load() -> Self {
-        let Some(path) = crate::config_paths::recent_files_path() else {
-            return Self::default();
-        };
-        match std::fs::read_to_string(&path) {
-            Ok(contents) => {
-                let mut recent: Self = serde_json::from_str(&contents).unwrap_or_default();
-                recent.prune_missing();
-                recent
+        #[cfg(test)]
+        {
+            Self::default()
+        }
+        #[cfg(not(test))]
+        {
+            let Some(path) = crate::config_paths::recent_files_path() else {
+                return Self::default();
+            };
+            match std::fs::read_to_string(&path) {
+                Ok(contents) => {
+                    let mut recent: Self = serde_json::from_str(&contents).unwrap_or_default();
+                    recent.prune_missing();
+                    recent
+                }
+                Err(_) => Self::default(),
             }
-            Err(_) => Self::default(),
         }
     }
 

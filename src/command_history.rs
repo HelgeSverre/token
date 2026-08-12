@@ -48,11 +48,23 @@ impl CommandHistory {
 
     /// Load history from disk, returning empty history on any error
     /// (missing file, unreadable, corrupt JSON).
+    ///
+    /// Under `cfg(test)` this always returns empty: unit tests build
+    /// `AppModel`s by the dozen and must not observe the developer's real
+    /// `command-history.json` (ranking assertions would depend on ambient
+    /// state). Real file I/O is covered explicitly via `load_from`.
     pub fn load() -> Self {
-        let Some(path) = crate::config_paths::command_history_path() else {
-            return Self::default();
-        };
-        Self::load_from(&path)
+        #[cfg(test)]
+        {
+            Self::default()
+        }
+        #[cfg(not(test))]
+        {
+            let Some(path) = crate::config_paths::command_history_path() else {
+                return Self::default();
+            };
+            Self::load_from(&path)
+        }
     }
 
     /// Save history to disk.
