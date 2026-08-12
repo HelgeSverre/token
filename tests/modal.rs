@@ -207,16 +207,70 @@ fn test_command_palette_select_previous() {
 }
 
 #[test]
-fn test_command_palette_select_previous_at_zero() {
+fn test_command_palette_select_previous_at_zero_wraps_to_last() {
+    // overlay-surface.md Behaviour: "Up/Down skip headers and wrap at the
+    // ends" — unlike the theme picker/file finder/recent files lists
+    // (unchanged, saturating), the command palette wraps.
+    let mut model = test_model("hello\n", 0, 0);
+    model
+        .ui
+        .open_modal(ModalState::CommandPalette(CommandPaletteState::default()));
+    let total = if let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal {
+        state.matches.len()
+    } else {
+        panic!("Expected command palette modal");
+    };
+
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectPrevious)));
+
+    if let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal {
+        assert_eq!(state.selected_index, total - 1);
+    } else {
+        panic!("Expected command palette modal");
+    }
+}
+
+#[test]
+fn test_command_palette_select_next_at_end_wraps_to_zero() {
+    let mut model = test_model("hello\n", 0, 0);
+    model
+        .ui
+        .open_modal(ModalState::CommandPalette(CommandPaletteState::default()));
+    let total = if let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal {
+        state.matches.len()
+    } else {
+        panic!("Expected command palette modal");
+    };
+
+    for _ in 0..total {
+        update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)));
+    }
+
+    if let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal {
+        assert_eq!(state.selected_index, 0);
+    } else {
+        panic!("Expected command palette modal");
+    }
+}
+
+#[test]
+fn test_command_palette_page_down_then_page_up_returns_to_start() {
     let mut model = test_model("hello\n", 0, 0);
     model
         .ui
         .open_modal(ModalState::CommandPalette(CommandPaletteState::default()));
 
-    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectPrevious)));
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::PageDown)));
+    let after_page_down = if let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal {
+        state.selected_index
+    } else {
+        panic!("Expected command palette modal");
+    };
+    assert!(after_page_down > 0, "PageDown should move the selection");
 
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::PageUp)));
     if let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal {
-        assert_eq!(state.selected_index, 0); // Stays at 0
+        assert_eq!(state.selected_index, 0);
     } else {
         panic!("Expected command palette modal");
     }
@@ -574,6 +628,48 @@ fn test_open_goto_line_message() {
     assert_eq!(
         model.ui.active_modal.as_ref().unwrap().id(),
         ModalId::GotoLine
+    );
+}
+
+// ========================================================================
+// Automation: type -> filter -> accept
+// ========================================================================
+
+/// `AutomationRequest::SetOverlayInput` (src/automation.rs) dispatches
+/// exactly `ModalMsg::SetInput` — this exercises that same path end to end:
+/// open the palette, "type" a query the way automation does, and confirm
+/// the row it filtered down to actually runs.
+#[test]
+fn test_overlay_input_type_filter_accept_runs_the_filtered_command() {
+    let mut model = test_model("hello\n", 0, 0);
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)),
+    );
+
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("go to line".to_string()))),
+    );
+
+    if let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal {
+        assert_eq!(state.input(), "go to line");
+        assert!(
+            !state.matches.is_empty(),
+            "typing should filter down to at least one match"
+        );
+        assert_eq!(state.selected_index, 0, "typing resets selection to top");
+    } else {
+        panic!("Expected command palette modal");
+    }
+
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::Confirm)));
+
+    // Confirming "go to line" opens the Go to Line modal.
+    assert_eq!(
+        model.ui.active_modal.as_ref().map(|m| m.id()),
+        Some(ModalId::GotoLine),
+        "Confirm should have run the filtered GotoLine command"
     );
 }
 

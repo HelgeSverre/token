@@ -1052,6 +1052,7 @@ mod tests {
         model.editor_mut().viewport.visible_lines = 20;
         model.editor_mut().viewport.top_line = 50;
         model.editor_mut().primary_cursor_mut().line = 55;
+        model.editor_mut().selections[0] = Selection::new(Position::new(55, 0));
 
         let initial_viewport = model.editor().viewport.top_line;
         let initial_cursor_line = model.editor().active_cursor().line;

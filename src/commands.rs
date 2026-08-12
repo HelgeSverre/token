@@ -91,198 +91,265 @@ pub enum CommandId {
     ToggleDebugOverlay,
 }
 
+/// Broad grouping used to pick the command palette row icon (see the "Rows"
+/// section of overlay-surface.md's Visual Language). Deliberately coarse:
+/// per-command icon curation is an open question, not scoped here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandCategory {
+    File,
+    Edit,
+    Nav,
+    View,
+    Panel,
+    System,
+}
+
+impl CommandCategory {
+    /// Row icon glyph for this category, drawn in the palette's icon slot.
+    /// Chosen from JetBrains Mono's confirmed glyph coverage (see the font's
+    /// `cmap`), not for literal semantics.
+    pub fn glyph(self) -> char {
+        match self {
+            CommandCategory::File => '▫',
+            CommandCategory::Edit => '¶',
+            CommandCategory::Nav => '→',
+            CommandCategory::View => '◇',
+            CommandCategory::Panel => '☰',
+            CommandCategory::System => '§',
+        }
+    }
+}
+
 /// A command definition for the command palette
 #[derive(Debug, Clone)]
 pub struct CommandDef {
     pub id: CommandId,
     pub label: &'static str,
     pub keybinding: Option<&'static str>,
+    pub category: CommandCategory,
 }
 
 /// Static registry of all available commands
 pub static COMMANDS: &[CommandDef] = &[
     CommandDef {
         id: CommandId::NewFile,
+        category: CommandCategory::File,
         label: "New File",
         keybinding: Some("⇧⌘N"),
     },
     CommandDef {
         id: CommandId::OpenFile,
+        category: CommandCategory::File,
         label: "Open File...",
         keybinding: Some("⌘O"),
     },
     CommandDef {
         id: CommandId::FuzzyFileFinder,
+        category: CommandCategory::File,
         label: "Go to File...",
         keybinding: Some("⇧⌘O"),
     },
     CommandDef {
         id: CommandId::SaveFile,
+        category: CommandCategory::File,
         label: "Save File",
         keybinding: Some("⌘S"),
     },
     CommandDef {
         id: CommandId::SaveFileAs,
+        category: CommandCategory::File,
         label: "Save File As...",
         keybinding: Some("⇧⌘S"),
     },
     CommandDef {
         id: CommandId::Undo,
+        category: CommandCategory::Edit,
         label: "Undo",
         keybinding: Some("⌘Z"),
     },
     CommandDef {
         id: CommandId::Redo,
+        category: CommandCategory::Edit,
         label: "Redo",
         keybinding: Some("⇧⌘Z"),
     },
     CommandDef {
         id: CommandId::Cut,
+        category: CommandCategory::Edit,
         label: "Cut",
         keybinding: Some("⌘X"),
     },
     CommandDef {
         id: CommandId::Copy,
+        category: CommandCategory::Edit,
         label: "Copy",
         keybinding: Some("⌘C"),
     },
     CommandDef {
         id: CommandId::Paste,
+        category: CommandCategory::Edit,
         label: "Paste",
         keybinding: Some("⌘V"),
     },
     CommandDef {
         id: CommandId::SelectAll,
+        category: CommandCategory::Edit,
         label: "Select All",
         keybinding: Some("⌘A"),
     },
     CommandDef {
         id: CommandId::GotoLine,
+        category: CommandCategory::Nav,
         label: "Go to Line...",
         keybinding: Some("⌘L"),
     },
     CommandDef {
         id: CommandId::SplitHorizontal,
+        category: CommandCategory::View,
         label: "Split Editor Right",
         keybinding: Some("⇧⌥⌘H"),
     },
     CommandDef {
         id: CommandId::SplitVertical,
+        category: CommandCategory::View,
         label: "Split Editor Down",
         keybinding: Some("⇧⌥⌘V"),
     },
     CommandDef {
         id: CommandId::CloseGroup,
+        category: CommandCategory::View,
         label: "Close Editor Group",
         keybinding: None,
     },
     CommandDef {
         id: CommandId::NextTab,
+        category: CommandCategory::View,
         label: "Next Tab",
         keybinding: Some("⌥⌘→"),
     },
     CommandDef {
         id: CommandId::PrevTab,
+        category: CommandCategory::View,
         label: "Previous Tab",
         keybinding: Some("⌥⌘←"),
     },
     CommandDef {
         id: CommandId::CloseTab,
+        category: CommandCategory::View,
         label: "Close Tab",
         keybinding: Some("⌘W"),
     },
     CommandDef {
         id: CommandId::Find,
+        category: CommandCategory::Nav,
         label: "Find...",
         keybinding: Some("⌘F"),
     },
     CommandDef {
         id: CommandId::ShowCommandPalette,
+        category: CommandCategory::System,
         label: "Show Command Palette",
         keybinding: Some("⇧⌘A"),
     },
     CommandDef {
         id: CommandId::SwitchTheme,
+        category: CommandCategory::View,
         label: "Switch Theme...",
         keybinding: None,
     },
     CommandDef {
         id: CommandId::OpenConfigDirectory,
+        category: CommandCategory::System,
         label: "Open Config Directory",
         keybinding: None,
     },
     CommandDef {
         id: CommandId::OpenKeybindings,
+        category: CommandCategory::System,
         label: "Open Keymap",
         keybinding: None,
     },
     CommandDef {
         id: CommandId::ReloadConfiguration,
+        category: CommandCategory::System,
         label: "Reload Configuration",
         keybinding: None,
     },
     CommandDef {
         id: CommandId::ToggleCsvView,
+        category: CommandCategory::View,
         label: "Toggle CSV View",
         keybinding: None,
     },
     CommandDef {
         id: CommandId::ToggleMarkdownPreview,
+        category: CommandCategory::View,
         label: "Markdown: Toggle Preview",
         keybinding: Some("⇧⌘V"),
     },
     CommandDef {
         id: CommandId::OpenLogFile,
+        category: CommandCategory::System,
         label: "Open Log File",
         keybinding: None,
     },
     CommandDef {
         id: CommandId::OpenFolder,
+        category: CommandCategory::File,
         label: "Open Folder...",
         keybinding: None,
     },
     CommandDef {
         id: CommandId::ToggleFileExplorer,
+        category: CommandCategory::Panel,
         label: "View: Toggle File Explorer",
         keybinding: Some("⌘1"),
     },
     CommandDef {
         id: CommandId::ToggleTerminal,
+        category: CommandCategory::Panel,
         label: "View: Toggle Terminal",
         keybinding: Some("⌘2"),
     },
     CommandDef {
         id: CommandId::ToggleOutline,
+        category: CommandCategory::Panel,
         label: "View: Toggle Outline",
         keybinding: Some("⌘7"),
     },
     CommandDef {
         id: CommandId::CloseFocusedDock,
+        category: CommandCategory::Panel,
         label: "View: Close Panel",
         keybinding: None,
     },
     CommandDef {
         id: CommandId::RevealInFinder,
+        category: CommandCategory::File,
         label: "Reveal Current File in Finder",
         keybinding: None,
     },
     CommandDef {
         id: CommandId::CopyAbsolutePath,
+        category: CommandCategory::File,
         label: "Copy Absolute Path",
         keybinding: None,
     },
     CommandDef {
         id: CommandId::CopyRelativePath,
+        category: CommandCategory::File,
         label: "Copy Relative Path",
         keybinding: None,
     },
     CommandDef {
         id: CommandId::OpenRecentFiles,
+        category: CommandCategory::File,
         label: "Open Recent Files",
         keybinding: Some("⌘E"),
     },
     CommandDef {
         id: CommandId::Quit,
+        category: CommandCategory::System,
         label: "Quit",
         keybinding: Some("⌘Q"),
     },
@@ -293,97 +360,28 @@ pub static COMMANDS: &[CommandDef] = &[
 pub static DEBUG_COMMANDS: &[CommandDef] = &[
     CommandDef {
         id: CommandId::TogglePerfOverlay,
+        category: CommandCategory::System,
         label: "Toggle Performance Overlay",
         keybinding: Some("F2"),
     },
     CommandDef {
         id: CommandId::ToggleDebugOverlay,
+        category: CommandCategory::System,
         label: "Toggle Debug Overlay",
         keybinding: Some("F8"),
     },
 ];
 
-/// Calculate fuzzy match score. Returns None if no match, Some(score) if matches.
-/// Higher score = better match. Consecutive matches and word-start matches score higher.
-fn fuzzy_match_score(query: &str, target: &str) -> Option<i32> {
-    let query_chars: Vec<char> = query.to_lowercase().chars().collect();
-    let target_lower = target.to_lowercase();
-    let target_chars: Vec<char> = target_lower.chars().collect();
-
-    if query_chars.is_empty() {
-        return Some(0);
-    }
-
-    let mut query_idx = 0;
-    let mut score = 0;
-    let mut prev_matched = false;
-    let mut prev_was_separator = true; // Start of string counts as separator
-
-    for (i, &tc) in target_chars.iter().enumerate() {
-        let is_separator = tc == ' ' || tc == '_' || tc == '-';
-
-        if query_idx < query_chars.len() && tc == query_chars[query_idx] {
-            // Match found
-            score += 1;
-
-            // Bonus for consecutive matches
-            if prev_matched {
-                score += 2;
-            }
-
-            // Bonus for matching at word start (after separator or at beginning)
-            if prev_was_separator {
-                score += 3;
-            }
-
-            // Bonus for matching at string start
-            if i == 0 {
-                score += 5;
-            }
-
-            query_idx += 1;
-            prev_matched = true;
-        } else {
-            prev_matched = false;
-        }
-
-        prev_was_separator = is_separator;
-    }
-
-    // All query chars must be found
-    if query_idx == query_chars.len() {
-        Some(score)
-    } else {
-        None
-    }
-}
-
-/// Get all available commands (including debug commands in debug builds)
-fn all_commands() -> Vec<&'static CommandDef> {
+/// Get all available commands (including debug commands in debug builds), in
+/// registry order. Fuzzy filtering/ranking lives in `update::ui` alongside
+/// the file finder's nucleo matching (`resolve_palette_rows`) — this just
+/// hands back the raw pool.
+pub(crate) fn all_commands() -> Vec<&'static CommandDef> {
     #[allow(unused_mut)]
     let mut cmds: Vec<&'static CommandDef> = COMMANDS.iter().collect();
     #[cfg(debug_assertions)]
     cmds.extend(DEBUG_COMMANDS.iter());
     cmds
-}
-
-/// Filter commands by a search query (fuzzy match on label)
-pub fn filter_commands(query: &str) -> Vec<&'static CommandDef> {
-    let all = all_commands();
-
-    if query.is_empty() {
-        return all;
-    }
-
-    let mut matches: Vec<(&'static CommandDef, i32)> = all
-        .into_iter()
-        .filter_map(|cmd| fuzzy_match_score(query, cmd.label).map(|score| (cmd, score)))
-        .collect();
-
-    // Sort by score descending (best matches first)
-    matches.sort_by_key(|a| std::cmp::Reverse(a.1));
-
-    matches.into_iter().map(|(cmd, _)| cmd).collect()
 }
 
 /// Map CommandId to keymap::Command for keybinding lookup

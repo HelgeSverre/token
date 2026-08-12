@@ -83,13 +83,35 @@ pub enum ModalId {
     RecentFiles,
 }
 
+/// Palette/pickers cap at 10 visible rows (overlay-surface.md Visual
+/// Language > Overflow), shared by the update-layer scroll math and the view
+/// so they can't drift apart.
+pub const COMMAND_PALETTE_MAX_VISIBLE: usize = 10;
+
+/// One row in the command palette's ordering-authority cache
+/// (`update::ui::resolve_palette_rows`): a command plus the nucleo match
+/// indices for the current query, used for match highlighting.
+#[derive(Debug, Clone)]
+pub struct CommandMatch {
+    pub def: &'static crate::commands::CommandDef,
+    pub indices: Vec<u32>,
+}
+
 /// State for the command palette modal
 #[derive(Debug, Clone)]
 pub struct CommandPaletteState {
     /// Editable state for the input field
     pub editable: EditableState<StringBuffer>,
-    /// Index of selected command in filtered list
+    /// Index of selected command in `matches` (the ordering authority)
     pub selected_index: usize,
+    /// Filtered and ranked commands for the current query — the single
+    /// source of truth the view and `ModalMsg::Confirm`/`SelectNext` both
+    /// read from, recomputed by `resolve_palette_rows` whenever the input
+    /// changes. See overlay-surface.md "Ordering authority".
+    pub matches: Vec<CommandMatch>,
+    /// Scroll offset (in rows) for the visible window, maintained by the
+    /// update layer (minimal-reveal scrolling) as selection moves.
+    pub scroll_offset: usize,
 }
 
 impl Default for CommandPaletteState {
@@ -97,6 +119,14 @@ impl Default for CommandPaletteState {
         Self {
             editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
             selected_index: 0,
+            matches: crate::commands::all_commands()
+                .into_iter()
+                .map(|def| CommandMatch {
+                    def,
+                    indices: Vec::new(),
+                })
+                .collect(),
+            scroll_offset: 0,
         }
     }
 }

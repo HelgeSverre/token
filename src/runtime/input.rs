@@ -484,6 +484,16 @@ fn handle_modal_key(model: &mut AppModel, key: Key, modifiers: KeyModifiers) -> 
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)))
         }
 
+        // PageUp/PageDown page the command palette by a full visible page
+        // (Home/End stay bound to the input caret via
+        // `classify_text_editing_key` below — overlay-surface.md Key routing).
+        Key::Named(NamedKey::PageUp) if !shift && !alt => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::PageUp)))
+        }
+        Key::Named(NamedKey::PageDown) if !shift && !alt => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::PageDown)))
+        }
+
         // Movement / selection / clipboard / insertion shared with CSV cell editing
         _ => match classify_text_editing_key(&key, modifiers) {
             Some(action) => dispatch_modal_text_edit(model, action),

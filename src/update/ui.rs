@@ -2,16 +2,18 @@
 
 use std::time::Duration;
 
-use crate::commands::{filter_commands, Cmd};
+use crate::commands::Cmd;
 use crate::editable::{EditableState, StringBuffer};
 use crate::messages::LayoutMsg;
 use crate::messages::{ModalMsg, UiMsg};
 use crate::model::{
-    AppModel, FileFinderState, GotoLineState, ModalId, ModalState, RecentFilesState,
-    SegmentContent, SegmentId, ThemePickerState, TransientMessage,
+    AppModel, CommandPaletteState, FileFinderState, GotoLineState, ModalId, ModalState,
+    RecentFilesState, SegmentContent, SegmentId, ThemePickerState, TransientMessage,
+    COMMAND_PALETTE_MAX_VISIBLE,
 };
 use crate::theme::load_theme;
 use crate::update::layout::update_layout;
+use crate::view::selectable_list::SelectableListViewport;
 
 use super::app::execute_command;
 
@@ -85,7 +87,8 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             // Open the requested modal
             let state = match modal_id {
                 ModalId::CommandPalette => {
-                    let state = model.ui.last_command_palette.clone().unwrap_or_default();
+                    let mut state = model.ui.last_command_palette.clone().unwrap_or_default();
+                    resolve_palette_rows(&mut state);
                     ModalState::CommandPalette(state)
                 }
                 ModalId::GotoLine => ModalState::GotoLine(GotoLineState::default()),
@@ -271,7 +274,7 @@ fn modal_editable_mut(modal: &mut ModalState) -> Option<&mut EditableState<Strin
 /// no such side effect.
 fn on_modal_input_changed(modal: &mut ModalState) {
     match modal {
-        ModalState::CommandPalette(state) => state.selected_index = 0,
+        ModalState::CommandPalette(state) => resolve_palette_rows(state),
         ModalState::FileFinder(state) => update_file_finder_results(state),
         ModalState::RecentFiles(state) => state.selected_index = 0,
         ModalState::GotoLine(_) | ModalState::FindReplace(_) | ModalState::ThemePicker(_) => {}
@@ -282,7 +285,8 @@ fn on_modal_input_changed(modal: &mut ModalState) {
 fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
     match msg {
         ModalMsg::OpenCommandPalette => {
-            let state = model.ui.last_command_palette.clone().unwrap_or_default();
+            let mut state = model.ui.last_command_palette.clone().unwrap_or_default();
+            resolve_palette_rows(&mut state);
             model.ui.open_modal(ModalState::CommandPalette(state));
             Some(Cmd::Redraw)
         }
@@ -318,15 +322,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     ModalState::GotoLine(state) => state.set_input(&text),
                     ModalState::FindReplace(state) => state.set_query(&text),
                     ModalState::ThemePicker(_) => {} // No text input for theme picker
-                    ModalState::FileFinder(state) => {
-                        state.set_input(&text);
-                        update_file_finder_results(state);
-                    }
-                    ModalState::RecentFiles(state) => {
-                        state.editable.set_content(&text);
-                        state.selected_index = 0;
-                    }
+                    ModalState::FileFinder(state) => state.set_input(&text),
+                    ModalState::RecentFiles(state) => state.editable.set_content(&text),
                 }
+                on_modal_input_changed(modal);
                 Some(Cmd::Redraw)
             } else {
                 None
@@ -555,7 +554,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             if let Some(ref mut modal) = model.ui.active_modal {
                 let preview_theme_id = match modal {
                     ModalState::CommandPalette(state) => {
-                        state.selected_index = state.selected_index.saturating_sub(1);
+                        move_palette_selection(state, -1);
                         None
                     }
                     ModalState::ThemePicker(state) => {
@@ -588,11 +587,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             if let Some(ref mut modal) = model.ui.active_modal {
                 let preview_theme_id = match modal {
                     ModalState::CommandPalette(state) => {
-                        let input_text = state.input();
-                        let filtered = filter_commands(&input_text);
-                        let max_index = filtered.len().saturating_sub(1);
-                        state.selected_index =
-                            state.selected_index.saturating_add(1).min(max_index);
+                        move_palette_selection(state, 1);
                         None
                     }
                     ModalState::ThemePicker(state) => {
@@ -628,6 +623,24 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             }
         }
 
+        ModalMsg::PageUp => {
+            if let Some(ModalState::CommandPalette(state)) = &mut model.ui.active_modal {
+                page_palette_selection(state, false);
+                Some(Cmd::Redraw)
+            } else {
+                None
+            }
+        }
+
+        ModalMsg::PageDown => {
+            if let Some(ModalState::CommandPalette(state)) = &mut model.ui.active_modal {
+                page_palette_selection(state, true);
+                Some(Cmd::Redraw)
+            } else {
+                None
+            }
+        }
+
         ModalMsg::Confirm => {
             // Handle confirmation based on modal type
             // Clone the modal state to avoid borrow issues
@@ -635,14 +648,13 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             if let Some(modal) = modal {
                 match modal {
                     ModalState::CommandPalette(state) => {
-                        // Get the selected command
-                        let input_text = state.input();
-                        let filtered = filter_commands(&input_text);
-                        let selected_index =
-                            state.selected_index.min(filtered.len().saturating_sub(1));
-
-                        if let Some(cmd_def) = filtered.get(selected_index) {
-                            let cmd_id = cmd_def.id;
+                        // Read the selected command from the same `matches`
+                        // cache the view rendered — the ordering-authority
+                        // hazard this closes: Confirm used to re-derive the
+                        // filtered list independently via `filter_commands`.
+                        let selected_index = state.selected_index.min(state.matches.len());
+                        if let Some(cmd_match) = state.matches.get(selected_index) {
+                            let cmd_id = cmd_match.def.id;
                             // Save state for next time (only on successful execution)
                             model.ui.last_command_palette = Some(state);
                             model.ui.close_modal();
@@ -1038,6 +1050,114 @@ fn get_current_cursor_lines(model: &AppModel) -> Vec<usize> {
 }
 
 // ============================================================================
+// Command Palette Ordering Authority
+// ============================================================================
+
+use crate::commands::CommandDef;
+use crate::model::CommandMatch;
+
+/// The ordering authority for the command palette (overlay-surface.md
+/// "Ordering authority"): the *only* place that filters/ranks commands.
+/// Both the palette's spec builder and `ModalMsg::Confirm`/`SelectNext`
+/// consume this cache instead of re-deriving the list, so Enter always
+/// activates the row the user actually sees selected.
+pub fn resolve_palette_rows(state: &mut CommandPaletteState) {
+    state.matches = fuzzy_match_commands(&state.input());
+    state.selected_index = 0;
+    state.scroll_offset = 0;
+}
+
+/// Fuzzy-match commands against `query` using nucleo, the same pattern the
+/// file finder uses below (`fuzzy_match_files`) — replaces the old bespoke
+/// `fuzzy_match_score`. An empty query returns every command, unranked, in
+/// registry order.
+fn fuzzy_match_commands(query: &str) -> Vec<CommandMatch> {
+    let all: Vec<&'static CommandDef> = crate::commands::all_commands();
+
+    if query.is_empty() {
+        return all
+            .into_iter()
+            .map(|def| CommandMatch {
+                def,
+                indices: Vec::new(),
+            })
+            .collect();
+    }
+
+    let mut matcher = Matcher::new(Config::DEFAULT);
+    // Lower-case both sides: nucleo's smart-case path (triggered by an
+    // uppercase query char) has a known crash against some target lengths
+    // (nucleo-matcher#footgun — "should have been caught by prefilter" in
+    // `fuzzy_optimal.rs`); forcing case-insensitive matching here also
+    // matches the bespoke matcher's prior behavior and the file finder's
+    // typically-lowercase filenames.
+    let query_lower = query.to_lowercase();
+    let mut query_buf = Vec::new();
+    let needle = Utf32Str::new(&query_lower, &mut query_buf);
+
+    let mut results: Vec<(CommandMatch, u16)> = all
+        .into_iter()
+        .filter_map(|def| {
+            let label_lower = def.label.to_lowercase();
+            let mut label_buf = Vec::new();
+            let haystack = Utf32Str::new(&label_lower, &mut label_buf);
+            let score = matcher.fuzzy_match(haystack, needle)?;
+
+            let mut indices = vec![];
+            matcher.fuzzy_indices(haystack, needle, &mut indices);
+
+            Some((CommandMatch { def, indices }, score))
+        })
+        .collect();
+
+    results.sort_by_key(|(_, score)| std::cmp::Reverse(*score));
+    results.into_iter().map(|(m, _)| m).collect()
+}
+
+/// Move `state.selected_index` by `delta` rows, wrapping at both ends
+/// (overlay-surface.md Behaviour: "Up/Down skip headers and wrap at the
+/// ends"), and keep `scroll_offset` following it (minimal-reveal scrolling).
+fn move_palette_selection(state: &mut CommandPaletteState, delta: isize) {
+    let total = state.matches.len();
+    if total == 0 {
+        return;
+    }
+    let current = state.selected_index as isize;
+    state.selected_index = (current + delta).rem_euclid(total as isize) as usize;
+    state.scroll_offset = SelectableListViewport::compute_from(
+        total,
+        state.selected_index,
+        COMMAND_PALETTE_MAX_VISIBLE,
+        state.scroll_offset,
+    )
+    .scroll_offset;
+}
+
+/// Page `state.selected_index` by a full visible page, clamping (not
+/// wrapping — PageUp/PageDown are jumps, not cyclic navigation).
+fn page_palette_selection(state: &mut CommandPaletteState, forward: bool) {
+    let total = state.matches.len();
+    if total == 0 {
+        return;
+    }
+    let max_index = total - 1;
+    state.selected_index = if forward {
+        (state.selected_index + COMMAND_PALETTE_MAX_VISIBLE).min(max_index)
+    } else {
+        state
+            .selected_index
+            .saturating_sub(COMMAND_PALETTE_MAX_VISIBLE)
+    };
+    state.scroll_offset = SelectableListViewport::compute_from(
+        total,
+        state.selected_index,
+        COMMAND_PALETTE_MAX_VISIBLE,
+        state.scroll_offset,
+    )
+    .scroll_offset;
+}
+
+// ============================================================================
 // Fuzzy File Finder
 // ============================================================================
 
@@ -1106,11 +1226,11 @@ fn fuzzy_match_files(
 
 #[cfg(test)]
 mod tests {
-    use super::{get_current_cursor_lines, update_ui};
-    use crate::commands::{Cmd, DamageArea};
+    use super::{get_current_cursor_lines, resolve_palette_rows, update_ui};
+    use crate::commands::{Cmd, CommandId, DamageArea};
     use crate::image::ImageState;
-    use crate::messages::UiMsg;
-    use crate::model::{AppModel, ViewMode};
+    use crate::messages::{ModalMsg, UiMsg};
+    use crate::model::{AppModel, CommandPaletteState, ModalId, ModalState, ViewMode};
 
     #[test]
     fn current_cursor_lines_are_reported_for_plain_text_editors() {
@@ -1170,5 +1290,71 @@ mod tests {
         let mut updated_previous = model.ui.previous_cursor_lines.clone();
         updated_previous.sort_unstable();
         assert_eq!(updated_previous, vec![3, 5]);
+    }
+
+    // ========================================================================
+    // Command Palette Ordering Authority
+    // ========================================================================
+
+    /// Regression for the pre-existing hazard overlay-surface.md calls out:
+    /// `Confirm` used to re-derive the filtered list independently via
+    /// `filter_commands`, which only worked because nothing reordered. Now
+    /// both the view and `Confirm` read `state.matches` — this proves Enter
+    /// activates the exact row the cache (and thus the view) showed as
+    /// selected, not an independently re-derived list.
+    #[test]
+    fn confirm_executes_the_row_selected_in_the_cached_view_order() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+
+        // Empty query: `matches` is every command in registry order —
+        // deterministic, so index 1 is known ahead of time (`OpenFile`).
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::SelectNext));
+
+        let expected_id = match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => state.matches[state.selected_index].def.id,
+            other => panic!("expected command palette modal, got {other:?}"),
+        };
+        assert_eq!(expected_id, CommandId::OpenFile);
+
+        let cmd = update_ui(&mut model, UiMsg::Modal(ModalMsg::Confirm));
+
+        assert!(model.ui.active_modal.is_none(), "palette closes on confirm");
+        assert!(
+            matches!(cmd, Some(Cmd::ShowOpenFileDialog { .. })),
+            "Confirm should have executed OpenFile (the cached row selected), got {cmd:?}"
+        );
+    }
+
+    #[test]
+    fn resolve_palette_rows_ranks_fuzzy_matches_and_resets_selection() {
+        let mut state = CommandPaletteState {
+            selected_index: 5,
+            ..Default::default()
+        };
+        state.set_input("gtln"); // fuzzy subsequence of "Go to Line..."
+        resolve_palette_rows(&mut state);
+
+        assert_eq!(state.selected_index, 0);
+        assert_eq!(state.scroll_offset, 0);
+        assert!(!state.matches.is_empty());
+        assert_eq!(state.matches[0].def.id, CommandId::GotoLine);
+        assert!(
+            !state.matches[0].indices.is_empty(),
+            "match indices should be populated for a non-empty query"
+        );
+    }
+
+    #[test]
+    fn resolve_palette_rows_empty_query_returns_all_commands_in_registry_order() {
+        let mut state = CommandPaletteState::default();
+        resolve_palette_rows(&mut state);
+        assert_eq!(
+            state.matches.iter().map(|m| m.def.id).collect::<Vec<_>>(),
+            crate::commands::all_commands()
+                .iter()
+                .map(|d| d.id)
+                .collect::<Vec<_>>()
+        );
     }
 }

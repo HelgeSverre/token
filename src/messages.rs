@@ -219,6 +219,10 @@ pub enum ModalMsg {
     SelectPrevious,
     /// Move selection down in list
     SelectNext,
+    /// Page selection up by a full visible page (command palette)
+    PageUp,
+    /// Page selection down by a full visible page (command palette)
+    PageDown,
     /// Confirm/execute the modal action (Enter)
     Confirm,
 

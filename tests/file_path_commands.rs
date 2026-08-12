@@ -5,9 +5,9 @@ mod common;
 use std::path::PathBuf;
 
 use common::test_model;
-use token::commands::{filter_commands, Cmd, CommandId};
-use token::model::{AppModel, SegmentId};
-use token::update::execute_command;
+use token::commands::{Cmd, CommandId};
+use token::model::{AppModel, CommandPaletteState, SegmentId};
+use token::update::{execute_command, resolve_palette_rows};
 
 fn status_message(model: &AppModel) -> &str {
     model
@@ -21,35 +21,36 @@ fn status_message(model: &AppModel) -> &str {
 // Command Palette Registration Tests
 // ============================================================================
 
+fn palette_matches(query: &str) -> Vec<CommandId> {
+    let mut state = CommandPaletteState::default();
+    state.set_input(query);
+    resolve_palette_rows(&mut state);
+    state.matches.iter().map(|m| m.def.id).collect()
+}
+
 #[test]
 fn test_reveal_in_finder_appears_in_palette() {
-    let results = filter_commands("Reveal");
+    let results = palette_matches("Reveal");
     assert!(
-        results
-            .iter()
-            .any(|cmd| cmd.id == CommandId::RevealInFinder),
+        results.contains(&CommandId::RevealInFinder),
         "RevealInFinder should appear when searching 'Reveal'"
     );
 }
 
 #[test]
 fn test_copy_absolute_path_appears_in_palette() {
-    let results = filter_commands("Copy Absolute");
+    let results = palette_matches("Copy Absolute");
     assert!(
-        results
-            .iter()
-            .any(|cmd| cmd.id == CommandId::CopyAbsolutePath),
+        results.contains(&CommandId::CopyAbsolutePath),
         "CopyAbsolutePath should appear when searching 'Copy Absolute'"
     );
 }
 
 #[test]
 fn test_copy_relative_path_appears_in_palette() {
-    let results = filter_commands("Copy Relative");
+    let results = palette_matches("Copy Relative");
     assert!(
-        results
-            .iter()
-            .any(|cmd| cmd.id == CommandId::CopyRelativePath),
+        results.contains(&CommandId::CopyRelativePath),
         "CopyRelativePath should appear when searching 'Copy Relative'"
     );
 }
