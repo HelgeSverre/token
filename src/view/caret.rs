@@ -5,7 +5,7 @@ use crate::model::editor::TextViewportMap;
 use crate::model::ui::{FindReplaceField, ModalState};
 use crate::model::{AppModel, FocusTarget};
 
-use super::geometry::{self, char_col_to_visual_col, column_to_pixel_x, GroupLayout, WidgetRect};
+use super::geometry::{char_col_to_visual_col, column_to_pixel_x, GroupLayout, WidgetRect};
 use super::{TextFieldOptions, TextFieldRenderer};
 
 const CARET_WIDTH: usize = 2;
@@ -88,43 +88,43 @@ fn modal_caret_rect(
     let height = model.window_size.1 as usize;
     let scale_factor = model.metrics.scale_factor;
 
-    let (content, input_rect) = match modal {
+    let (content, input_rect): (&dyn super::TextFieldContent, WidgetRect) = match modal {
         ModalState::CommandPalette(state) => {
-            let input_rect = super::modal::command_palette_input_rect(width, height, scale_factor);
+            let input_rect =
+                super::modal::modal_header_input_rect(model, width, height, scale_factor)?;
+            (&state.editable, input_rect)
+        }
+        ModalState::FileFinder(state) => {
+            let input_rect =
+                super::modal::modal_header_input_rect(model, width, height, scale_factor)?;
+            (&state.editable, input_rect)
+        }
+        ModalState::RecentFiles(state) => {
+            let input_rect =
+                super::modal::modal_header_input_rect(model, width, height, scale_factor)?;
             (&state.editable, input_rect)
         }
         ModalState::GotoLine(state) => {
-            let (layout, widgets) =
-                geometry::goto_line_layout(width, height, line_height, scale_factor);
-            (&state.editable, *layout.widget(widgets.input))
+            let input_rect =
+                super::modal::modal_field_input_rect(model, width, height, scale_factor, 0)?;
+            (&state.editable, input_rect)
         }
         ModalState::FindReplace(state) => {
-            let (layout, widgets) = geometry::find_replace_layout(
+            let field_index = match state.focused_field {
+                FindReplaceField::Query => 0,
+                FindReplaceField::Replace => 1,
+            };
+            let input_rect = super::modal::modal_field_input_rect(
+                model,
                 width,
                 height,
-                line_height,
-                state.replace_mode,
                 scale_factor,
-            );
+                field_index,
+            )?;
             match state.focused_field {
-                FindReplaceField::Query => {
-                    (&state.query_editable, *layout.widget(widgets.find_input))
-                }
-                FindReplaceField::Replace => {
-                    let input = widgets.replace_input?;
-                    (&state.replace_editable, *layout.widget(input))
-                }
+                FindReplaceField::Query => (&state.query_editable, input_rect),
+                FindReplaceField::Replace => (&state.replace_editable, input_rect),
             }
-        }
-        ModalState::FileFinder(state) => {
-            let (layout, widgets) =
-                geometry::file_finder_layout(width, height, line_height, 0, false, scale_factor);
-            (&state.editable, *layout.widget(widgets.input))
-        }
-        ModalState::RecentFiles(state) => {
-            let (layout, widgets) =
-                geometry::file_finder_layout(width, height, line_height, 0, false, scale_factor);
-            (&state.editable, *layout.widget(widgets.input))
         }
         ModalState::ThemePicker(_) => return None,
     };
@@ -206,10 +206,10 @@ mod tests {
         model.ui.active_modal = Some(ModalState::GotoLine(state));
 
         let rect = active_text_input_rect(&model, 8.0, 20).expect("modal caret");
-        let (layout, widgets) = geometry::goto_line_layout(800, 600, 20, 1.0);
-        let input = layout.widget(widgets.input);
+        let input = super::super::modal::modal_field_input_rect(&model, 800, 600, 1.0, 0)
+            .expect("field input rect");
 
-        assert!(rect.x >= input.x + geometry::ModalSpacing::input_pad_x(1.0));
+        assert!(rect.x >= input.x);
         assert!(rect.x < input.x + input.w);
         assert!(rect.y >= input.y);
         assert_ne!((rect.x, rect.y), (0, 0));

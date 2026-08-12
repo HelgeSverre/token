@@ -456,14 +456,24 @@ fn handle_left_click(
         // Modal handling
         HitTarget::Modal { inside } => {
             if *inside {
-                // Click inside modal - consume but don't close
-                // Future: could handle clicking on list items
+                // Click inside modal (header/footer/padding) - consume but
+                // don't close or act.
                 EventResult::consumed_redraw()
             } else {
                 // Click outside modal - close it
                 update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Close)));
                 EventResult::consumed_redraw()
             }
+        }
+
+        // Row click: select and activate in one step (overlay-surface.md
+        // Pointer: "a click sets selection and activates in one step").
+        HitTarget::ModalRow { flat_index } => {
+            update(
+                model,
+                Msg::Ui(UiMsg::Modal(ModalMsg::ActivateRow(*flat_index))),
+            );
+            EventResult::consumed_redraw()
         }
 
         // Status bar - consume but do nothing
@@ -1024,7 +1034,7 @@ fn handle_middle_click(
         HitTarget::CsvCell { .. } => EventResult::consumed_no_redraw(),
 
         // Modal - consume, no action
-        HitTarget::Modal { .. } => EventResult::consumed_no_redraw(),
+        HitTarget::Modal { .. } | HitTarget::ModalRow { .. } => EventResult::consumed_no_redraw(),
 
         // Sidebar targets - consume, no action for middle-click
         HitTarget::SidebarEmpty | HitTarget::SidebarItem { .. } => {
@@ -1146,9 +1156,19 @@ pub fn handle_mouse_wheel(
             )
         }
 
-        // Modal/StatusBar/Splitter/DockResize/Button: ignore scroll
-        HoverRegion::Modal
-        | HoverRegion::StatusBar
+        // Modal: scroll the visible window by 3 rows, selection unchanged
+        // (overlay-surface.md Pointer: "Scroll wheel moves the viewport by
+        // 3 rows without moving selection").
+        HoverRegion::Modal => {
+            if v_delta == 0 {
+                return None;
+            }
+            let rows = (v_delta.signum() * 3) as isize;
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Scroll(rows))))
+        }
+
+        // StatusBar/Splitter/DockResize/Button: ignore scroll
+        HoverRegion::StatusBar
         | HoverRegion::Splitter
         | HoverRegion::SidebarResize
         | HoverRegion::DockResize(_)

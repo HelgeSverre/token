@@ -15,7 +15,6 @@ pub mod modal;
 pub mod overlay_surface;
 pub mod panels;
 pub mod scrollbar;
-pub mod selectable_list;
 pub mod text_field;
 pub mod tree_view;
 
@@ -243,6 +242,7 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
             self.model,
             self.plan.window_width,
             self.plan.window_height,
+            self.overlay_mask_cache,
         );
     }
 
@@ -1709,8 +1709,16 @@ impl Renderer {
         model: &AppModel,
         window_width: usize,
         window_height: usize,
+        overlay_mask_cache: &mut RoundedRectMaskCache,
     ) {
-        modal::render_drop_overlay(frame, painter, model, window_width, window_height);
+        modal::render_drop_overlay(
+            frame,
+            painter,
+            model,
+            window_width,
+            window_height,
+            overlay_mask_cache,
+        );
     }
 
     pub fn render(

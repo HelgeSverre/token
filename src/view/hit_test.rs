@@ -17,7 +17,7 @@ use winit::event::MouseButton;
 use winit::keyboard::ModifiersState;
 
 use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, TabId};
-use crate::model::{AppModel, FocusTarget, ModalState, TextViewportMap};
+use crate::model::{AppModel, FocusTarget, TextViewportMap};
 
 use super::geometry::{
     is_in_status_bar, DockHeaderLayout, PreviewPaneLayout, TabBarLayout, TreeListLayout,
@@ -88,9 +88,15 @@ impl MouseEvent {
 /// future use (e.g., context menus, detailed click handling).
 #[derive(Clone, Debug)]
 pub enum HitTarget {
-    /// Modal overlay (command palette, goto line, find/replace, etc.)
-    /// `inside` indicates whether the click was inside or outside the modal bounds
+    /// Modal overlay (command palette, goto line, find/replace, etc.), hit
+    /// somewhere that isn't a selectable row (header, footer, panel
+    /// padding). `inside` indicates whether the click was inside or outside
+    /// the modal bounds — outside dismisses.
     Modal { inside: bool },
+
+    /// A selectable row within a `Body::List` modal — row click sets
+    /// selection and activates in one step (overlay-surface.md Pointer).
+    ModalRow { flat_index: usize },
 
     /// Status bar at the bottom of the window
     StatusBar,
@@ -261,7 +267,7 @@ impl HitTarget {
         use crate::model::HoverRegion;
 
         match self {
-            HitTarget::Modal { .. } => HoverRegion::Modal,
+            HitTarget::Modal { .. } | HitTarget::ModalRow { .. } => HoverRegion::Modal,
             HitTarget::StatusBar => HoverRegion::StatusBar,
             HitTarget::SidebarResize => HoverRegion::SidebarResize,
             HitTarget::SidebarEmpty | HitTarget::SidebarItem { .. } => HoverRegion::Sidebar,
@@ -366,73 +372,21 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
 
     let ww = model.window_size.0 as usize;
     let wh = model.window_size.1 as usize;
-    let lh = model.line_height;
     let sf = model.metrics.scale_factor;
+    let (x, y) = (pt.x as usize, pt.y as usize);
 
-    // Use the same layout functions as rendering — single source of truth
-    let layout = match &model.ui.active_modal {
-        Some(ModalState::CommandPalette(state)) => {
-            let panel = super::modal::command_palette_overlay_panel(state, ww, wh, sf);
-            super::geometry::ModalLayout {
-                x: panel.x,
-                y: panel.y,
-                w: panel.w,
-                h: panel.h,
-                widgets: Vec::new(),
-            }
+    // Build the exact same shape-only spec+layout the renderer computes
+    // (one layout, two consumers — overlay-surface.md "Hit-testing") and
+    // test the point against it.
+    super::modal::with_modal_overlay_layout(model, ww, wh, sf, |spec, layout| {
+        match super::overlay_surface::hit_test(spec, layout, x, y) {
+            super::overlay_surface::OverlayHit::Outside => HitTarget::Modal { inside: false },
+            super::overlay_surface::OverlayHit::Row(flat_index) => HitTarget::ModalRow {
+                flat_index: flat_index.0,
+            },
+            super::overlay_surface::OverlayHit::Inside => HitTarget::Modal { inside: true },
         }
-        Some(ModalState::FileFinder(state)) => {
-            let (l, _) = super::geometry::file_finder_layout(
-                ww,
-                wh,
-                lh,
-                state.results.len(),
-                !state.input().is_empty(),
-                sf,
-            );
-            l
-        }
-        Some(ModalState::ThemePicker(state)) => {
-            use crate::theme::ThemeSource;
-            let themes = &state.themes;
-            let has_user = themes.iter().any(|t| t.source == ThemeSource::User);
-            let has_builtin = themes.iter().any(|t| t.source == ThemeSource::Builtin);
-            let section_count = has_user as usize + has_builtin as usize;
-            let total_rows = themes.len() + section_count;
-            // Must match the cap `render_theme_picker_modal` applies, or
-            // hit-testing computes a taller/shorter layout than what's
-            // actually drawn.
-            let visible_rows =
-                total_rows.min(super::geometry::THEME_PICKER_MAX_VISIBLE_ROWS.max(1));
-            let (l, _) = super::geometry::theme_picker_layout(ww, wh, lh, visible_rows, sf);
-            l
-        }
-        Some(ModalState::GotoLine(_)) => {
-            let (l, _) = super::geometry::goto_line_layout(ww, wh, lh, sf);
-            l
-        }
-        Some(ModalState::FindReplace(state)) => {
-            let (l, _) = super::geometry::find_replace_layout(ww, wh, lh, state.replace_mode, sf);
-            l
-        }
-        Some(ModalState::RecentFiles(state)) => {
-            let filtered = state.filtered_entries();
-            let (l, _) = super::geometry::file_finder_layout(
-                ww,
-                wh,
-                lh,
-                filtered.len(),
-                !state.input().is_empty(),
-                sf,
-            );
-            l
-        }
-        None => return None,
-    };
-
-    let inside = layout.contains(pt.x as usize, pt.y as usize);
-
-    Some(HitTarget::Modal { inside })
+    })
 }
 
 /// Hit-test the status bar at the bottom of the window.

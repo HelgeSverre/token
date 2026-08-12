@@ -13,7 +13,7 @@ use crate::model::{
 };
 use crate::theme::load_theme;
 use crate::update::layout::update_layout;
-use crate::view::selectable_list::SelectableListViewport;
+use crate::view::overlay_surface::SelectableListViewport;
 
 use super::app::execute_command;
 
@@ -276,7 +276,7 @@ fn on_modal_input_changed(modal: &mut ModalState) {
     match modal {
         ModalState::CommandPalette(state) => resolve_palette_rows(state),
         ModalState::FileFinder(state) => update_file_finder_results(state),
-        ModalState::RecentFiles(state) => state.selected_index = 0,
+        ModalState::RecentFiles(state) => resolve_recent_rows(state),
         ModalState::GotoLine(_) | ModalState::FindReplace(_) | ModalState::ThemePicker(_) => {}
     }
 }
@@ -550,207 +550,58 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             }
         }
 
-        ModalMsg::SelectPrevious => {
+        ModalMsg::SelectPrevious => modal_select(model, -1),
+
+        ModalMsg::SelectNext => modal_select(model, 1),
+
+        ModalMsg::PageUp => modal_page(model, false),
+
+        ModalMsg::PageDown => modal_page(model, true),
+
+        ModalMsg::Scroll(delta) => modal_scroll(model, delta),
+
+        ModalMsg::ActivateRow(row) => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                let preview_theme_id = match modal {
-                    ModalState::CommandPalette(state) => {
-                        move_palette_selection(state, -1);
-                        None
+                set_modal_selected_index(modal, row);
+            }
+            confirm_active_modal(model)
+        }
+
+        ModalMsg::TogglePin => {
+            if let Some(ModalState::RecentFiles(ref mut state)) = model.ui.active_modal {
+                if let Some(path) = state.selected_entry().map(|e| e.path.clone()) {
+                    model.recent_files.toggle_pin(&path);
+                    if let Some(e) = state.entries.iter_mut().find(|e| e.path == path) {
+                        e.pinned = !e.pinned;
                     }
-                    ModalState::ThemePicker(state) => {
-                        state.selected_index = state.selected_index.saturating_sub(1);
-                        state.themes.get(state.selected_index).map(|t| t.id.clone())
+                    state.recompute_filtered_rows();
+                    // Keep the same entry selected even though the
+                    // Pinned/date grouping just reordered it.
+                    if let Some(new_idx) = state
+                        .filtered_rows
+                        .iter()
+                        .position(|&i| state.entries[i].path == path)
+                    {
+                        state.selected_index = new_idx;
+                        state.scroll_offset = SelectableListViewport::compute_from(
+                            state.filtered_rows.len(),
+                            new_idx,
+                            COMMAND_PALETTE_MAX_VISIBLE,
+                            state.scroll_offset,
+                        )
+                        .scroll_offset;
                     }
-                    ModalState::FileFinder(state) => {
-                        state.selected_index = state.selected_index.saturating_sub(1);
-                        None
-                    }
-                    ModalState::RecentFiles(state) => {
-                        state.selected_index = state.selected_index.saturating_sub(1);
-                        None
-                    }
-                    _ => None,
-                };
-                // Apply preview theme for instant preview
-                if let Some(theme_id) = preview_theme_id {
-                    if let Ok(theme) = load_theme(&theme_id) {
-                        model.theme = theme;
-                    }
+                    let recent = model.recent_files.clone();
+                    return Some(Cmd::Batch(vec![
+                        Cmd::Redraw,
+                        Cmd::SaveRecentFiles { recent },
+                    ]));
                 }
-                Some(Cmd::Redraw)
-            } else {
-                None
             }
+            Some(Cmd::Redraw)
         }
 
-        ModalMsg::SelectNext => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                let preview_theme_id = match modal {
-                    ModalState::CommandPalette(state) => {
-                        move_palette_selection(state, 1);
-                        None
-                    }
-                    ModalState::ThemePicker(state) => {
-                        let max_index = state.themes.len().saturating_sub(1);
-                        state.selected_index =
-                            state.selected_index.saturating_add(1).min(max_index);
-                        state.themes.get(state.selected_index).map(|t| t.id.clone())
-                    }
-                    ModalState::FileFinder(state) => {
-                        let max_index = state.results.len().saturating_sub(1);
-                        state.selected_index =
-                            state.selected_index.saturating_add(1).min(max_index);
-                        None
-                    }
-                    ModalState::RecentFiles(state) => {
-                        let filtered = state.filtered_entries();
-                        let max_index = filtered.len().saturating_sub(1);
-                        state.selected_index =
-                            state.selected_index.saturating_add(1).min(max_index);
-                        None
-                    }
-                    _ => None,
-                };
-                // Apply preview theme for instant preview
-                if let Some(theme_id) = preview_theme_id {
-                    if let Ok(theme) = load_theme(&theme_id) {
-                        model.theme = theme;
-                    }
-                }
-                Some(Cmd::Redraw)
-            } else {
-                None
-            }
-        }
-
-        ModalMsg::PageUp => {
-            if let Some(ModalState::CommandPalette(state)) = &mut model.ui.active_modal {
-                page_palette_selection(state, false);
-                Some(Cmd::Redraw)
-            } else {
-                None
-            }
-        }
-
-        ModalMsg::PageDown => {
-            if let Some(ModalState::CommandPalette(state)) = &mut model.ui.active_modal {
-                page_palette_selection(state, true);
-                Some(Cmd::Redraw)
-            } else {
-                None
-            }
-        }
-
-        ModalMsg::Confirm => {
-            // Handle confirmation based on modal type
-            // Clone the modal state to avoid borrow issues
-            let modal = model.ui.active_modal.clone();
-            if let Some(modal) = modal {
-                match modal {
-                    ModalState::CommandPalette(state) => {
-                        // Read the selected command from the same `matches`
-                        // cache the view rendered — the ordering-authority
-                        // hazard this closes: Confirm used to re-derive the
-                        // filtered list independently via `filter_commands`.
-                        let selected_index = state.selected_index.min(state.matches.len());
-                        if let Some(cmd_match) = state.matches.get(selected_index) {
-                            let cmd_id = cmd_match.def.id;
-                            // Save state for next time (only on successful execution)
-                            model.ui.last_command_palette = Some(state);
-                            model.ui.close_modal();
-                            return execute_command(model, cmd_id);
-                        }
-                        model.ui.close_modal();
-                        Some(Cmd::Redraw)
-                    }
-                    ModalState::GotoLine(state) => {
-                        // Parse line:col or just line format
-                        let input_text = state.input();
-                        let (target_line, target_col) =
-                            if let Some((line_str, col_str)) = input_text.split_once(':') {
-                                let line = line_str.parse::<usize>().unwrap_or(1);
-                                let col = col_str.parse::<usize>().unwrap_or(1);
-                                (line, col)
-                            } else {
-                                let line = input_text.parse::<usize>().unwrap_or(1);
-                                (line, 1)
-                            };
-
-                        // Convert to 0-indexed
-                        let target_line = target_line.saturating_sub(1);
-                        let target_col = target_col.saturating_sub(1);
-                        let total_lines = model.document().buffer.len_lines();
-                        let clamped_line = target_line.min(total_lines.saturating_sub(1));
-
-                        // Get line length to clamp column
-                        let line_len = model
-                            .document()
-                            .buffer
-                            .line(clamped_line)
-                            .len_chars()
-                            .saturating_sub(1); // exclude newline
-                        let clamped_col = target_col.min(line_len);
-
-                        // Move cursor to the line:col
-                        let editor = model.editor_mut();
-                        editor.cursors[0].line = clamped_line;
-                        editor.cursors[0].column = clamped_col;
-                        editor.clear_selection();
-                        model.ui.close_modal();
-                        model.ensure_cursor_visible();
-                        Some(Cmd::Redraw)
-                    }
-                    ModalState::FindReplace(state) => {
-                        // For Confirm, treat it as FindNext
-                        let query = state.query();
-                        if !query.is_empty() {
-                            let case_sensitive = state.case_sensitive;
-                            model.ui.last_find_replace = Some(state);
-                            return find_next_in_document(model, &query, case_sensitive);
-                        }
-                        model.ui.close_modal();
-                        Some(Cmd::Redraw)
-                    }
-                    ModalState::ThemePicker(state) => {
-                        // Apply selected theme and save config
-                        if let Some(theme_info) = state.themes.get(state.selected_index) {
-                            let theme_id = theme_info.id.clone();
-                            if let Ok(theme) = load_theme(&theme_id) {
-                                model.theme = theme;
-                                // Save theme preference to config
-                                if let Err(e) = model.config.set_theme(&theme_id) {
-                                    tracing::warn!("Failed to save theme preference: {}", e);
-                                }
-                            }
-                        }
-                        model.ui.close_modal();
-                        Some(Cmd::Redraw)
-                    }
-                    ModalState::FileFinder(state) => {
-                        // Open selected file
-                        if let Some(file_match) = state.results.get(state.selected_index) {
-                            let path = file_match.path.clone();
-                            model.ui.close_modal();
-                            return update_layout(model, LayoutMsg::OpenFileInNewTab(path));
-                        }
-                        model.ui.close_modal();
-                        Some(Cmd::Redraw)
-                    }
-                    ModalState::RecentFiles(state) => {
-                        let filtered = state.filtered_entries();
-                        if let Some(entry) = filtered.get(state.selected_index) {
-                            let path = entry.path.clone();
-                            model.ui.close_modal();
-                            return update_layout(model, LayoutMsg::OpenFileInNewTab(path));
-                        }
-                        model.ui.close_modal();
-                        Some(Cmd::Redraw)
-                    }
-                }
-            } else {
-                None
-            }
-        }
+        ModalMsg::Confirm => confirm_active_modal(model),
 
         ModalMsg::ToggleFindReplaceField => {
             if let Some(ModalState::FindReplace(ref mut state)) = model.ui.active_modal {
@@ -844,6 +695,278 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
     }
+}
+
+/// Set the `FlatIndex`-space selected row for whichever list-body modal is
+/// active — used by `ModalMsg::ActivateRow` (row click) ahead of confirming.
+/// A no-op for `Fields`/no-list contexts.
+fn set_modal_selected_index(modal: &mut ModalState, row: usize) {
+    match modal {
+        ModalState::CommandPalette(state) => state.selected_index = row.min(state.matches.len()),
+        ModalState::ThemePicker(state) => state.selected_index = row.min(state.themes.len()),
+        ModalState::FileFinder(state) => state.selected_index = row.min(state.results.len()),
+        ModalState::RecentFiles(state) => state.selected_index = row.min(state.filtered_rows.len()),
+        ModalState::GotoLine(_) | ModalState::FindReplace(_) => {}
+    }
+}
+
+/// Confirm/execute the modal action (Enter, or a row click via
+/// `ActivateRow`). The single place every list-body context reads its
+/// selection from the same ordering-authority cache the view rendered —
+/// see overlay-surface.md "Ordering authority".
+fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
+    // Clone the modal state to avoid borrow issues
+    let modal = model.ui.active_modal.clone();
+    if let Some(modal) = modal {
+        match modal {
+            ModalState::CommandPalette(state) => {
+                // Read the selected command from the same `matches` cache
+                // the view rendered — the ordering-authority hazard this
+                // closes: Confirm used to re-derive the filtered list
+                // independently via `filter_commands`.
+                let selected_index = state.selected_index.min(state.matches.len());
+                if let Some(cmd_match) = state.matches.get(selected_index) {
+                    let cmd_id = cmd_match.def.id;
+                    // Save state for next time (only on successful execution)
+                    model.ui.last_command_palette = Some(state);
+                    model.ui.close_modal();
+                    return execute_command(model, cmd_id);
+                }
+                model.ui.close_modal();
+                Some(Cmd::Redraw)
+            }
+            ModalState::GotoLine(state) => {
+                // Parse line:col or just line format
+                let input_text = state.input();
+                let (target_line, target_col) =
+                    if let Some((line_str, col_str)) = input_text.split_once(':') {
+                        let line = line_str.parse::<usize>().unwrap_or(1);
+                        let col = col_str.parse::<usize>().unwrap_or(1);
+                        (line, col)
+                    } else {
+                        let line = input_text.parse::<usize>().unwrap_or(1);
+                        (line, 1)
+                    };
+
+                // Convert to 0-indexed
+                let target_line = target_line.saturating_sub(1);
+                let target_col = target_col.saturating_sub(1);
+                let total_lines = model.document().buffer.len_lines();
+                let clamped_line = target_line.min(total_lines.saturating_sub(1));
+
+                // Get line length to clamp column
+                let line_len = model
+                    .document()
+                    .buffer
+                    .line(clamped_line)
+                    .len_chars()
+                    .saturating_sub(1); // exclude newline
+                let clamped_col = target_col.min(line_len);
+
+                // Move cursor to the line:col
+                let editor = model.editor_mut();
+                editor.cursors[0].line = clamped_line;
+                editor.cursors[0].column = clamped_col;
+                editor.clear_selection();
+                model.ui.close_modal();
+                model.ensure_cursor_visible();
+                Some(Cmd::Redraw)
+            }
+            ModalState::FindReplace(state) => {
+                // For Confirm, treat it as FindNext
+                let query = state.query();
+                if !query.is_empty() {
+                    let case_sensitive = state.case_sensitive;
+                    model.ui.last_find_replace = Some(state);
+                    return find_next_in_document(model, &query, case_sensitive);
+                }
+                model.ui.close_modal();
+                Some(Cmd::Redraw)
+            }
+            ModalState::ThemePicker(state) => {
+                // Apply selected theme and save config
+                if let Some(theme_info) = state.themes.get(state.selected_index) {
+                    let theme_id = theme_info.id.clone();
+                    if let Ok(theme) = load_theme(&theme_id) {
+                        model.theme = theme;
+                        // Save theme preference to config
+                        if let Err(e) = model.config.set_theme(&theme_id) {
+                            tracing::warn!("Failed to save theme preference: {}", e);
+                        }
+                    }
+                }
+                model.ui.close_modal();
+                Some(Cmd::Redraw)
+            }
+            ModalState::FileFinder(state) => {
+                // Open selected file
+                if let Some(file_match) = state.results.get(state.selected_index) {
+                    let path = file_match.path.clone();
+                    model.ui.close_modal();
+                    return update_layout(model, LayoutMsg::OpenFileInNewTab(path));
+                }
+                model.ui.close_modal();
+                Some(Cmd::Redraw)
+            }
+            ModalState::RecentFiles(state) => {
+                if let Some(entry) = state.selected_entry() {
+                    let path = entry.path.clone();
+                    model.ui.close_modal();
+                    return update_layout(model, LayoutMsg::OpenFileInNewTab(path));
+                }
+                model.ui.close_modal();
+                Some(Cmd::Redraw)
+            }
+        }
+    } else {
+        None
+    }
+}
+
+/// Move `*selected` by `delta`, wrapping at both ends, keeping `*scroll`
+/// following it (minimal-reveal scrolling) — shared by every list-body
+/// modal context (overlay-surface.md Behaviour: "Up/Down skip headers and
+/// wrap at the ends").
+fn move_list_selection(selected: &mut usize, scroll: &mut usize, total: usize, delta: isize) {
+    if total == 0 {
+        return;
+    }
+    let current = *selected as isize;
+    *selected = (current + delta).rem_euclid(total as isize) as usize;
+    *scroll = SelectableListViewport::compute_from(
+        total,
+        *selected,
+        COMMAND_PALETTE_MAX_VISIBLE,
+        *scroll,
+    )
+    .scroll_offset;
+}
+
+/// Page `*selected` by a full visible page, clamping (not wrapping —
+/// PageUp/PageDown are jumps, not cyclic navigation).
+fn page_list_selection(selected: &mut usize, scroll: &mut usize, total: usize, forward: bool) {
+    if total == 0 {
+        return;
+    }
+    let max_index = total - 1;
+    *selected = if forward {
+        (*selected + COMMAND_PALETTE_MAX_VISIBLE).min(max_index)
+    } else {
+        selected.saturating_sub(COMMAND_PALETTE_MAX_VISIBLE)
+    };
+    *scroll = SelectableListViewport::compute_from(
+        total,
+        *selected,
+        COMMAND_PALETTE_MAX_VISIBLE,
+        *scroll,
+    )
+    .scroll_offset;
+}
+
+/// `ModalMsg::SelectPrevious`/`SelectNext`: move selection by `delta`
+/// (-1/+1) in whichever list-body modal is active. Theme Picker previews
+/// the newly-selected theme live.
+fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
+    let modal = model.ui.active_modal.as_mut()?;
+    let preview_theme_id = match modal {
+        ModalState::CommandPalette(state) => {
+            move_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                state.matches.len(),
+                delta,
+            );
+            None
+        }
+        ModalState::ThemePicker(state) => {
+            move_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                state.themes.len(),
+                delta,
+            );
+            state.themes.get(state.selected_index).map(|t| t.id.clone())
+        }
+        ModalState::FileFinder(state) => {
+            move_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                state.results.len(),
+                delta,
+            );
+            None
+        }
+        ModalState::RecentFiles(state) => {
+            move_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                state.filtered_rows.len(),
+                delta,
+            );
+            None
+        }
+        ModalState::GotoLine(_) | ModalState::FindReplace(_) => None,
+    };
+    if let Some(theme_id) = preview_theme_id {
+        if let Ok(theme) = load_theme(&theme_id) {
+            model.theme = theme;
+        }
+    }
+    Some(Cmd::Redraw)
+}
+
+/// `ModalMsg::PageUp`/`PageDown`: page selection by a full visible page in
+/// whichever list-body modal is active.
+fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
+    let modal = model.ui.active_modal.as_mut()?;
+    match modal {
+        ModalState::CommandPalette(state) => page_list_selection(
+            &mut state.selected_index,
+            &mut state.scroll_offset,
+            state.matches.len(),
+            forward,
+        ),
+        ModalState::ThemePicker(state) => page_list_selection(
+            &mut state.selected_index,
+            &mut state.scroll_offset,
+            state.themes.len(),
+            forward,
+        ),
+        ModalState::FileFinder(state) => page_list_selection(
+            &mut state.selected_index,
+            &mut state.scroll_offset,
+            state.results.len(),
+            forward,
+        ),
+        ModalState::RecentFiles(state) => page_list_selection(
+            &mut state.selected_index,
+            &mut state.scroll_offset,
+            state.filtered_rows.len(),
+            forward,
+        ),
+        ModalState::GotoLine(_) | ModalState::FindReplace(_) => {}
+    }
+    Some(Cmd::Redraw)
+}
+
+/// `ModalMsg::Scroll`: move the visible window by `delta` rows without
+/// moving selection (mouse wheel over a list-body modal).
+fn modal_scroll(model: &mut AppModel, delta: isize) -> Option<Cmd> {
+    let modal = model.ui.active_modal.as_mut()?;
+    let (scroll, total) = match modal {
+        ModalState::CommandPalette(state) => (&mut state.scroll_offset, state.matches.len()),
+        ModalState::ThemePicker(state) => (&mut state.scroll_offset, state.themes.len()),
+        ModalState::FileFinder(state) => (&mut state.scroll_offset, state.results.len()),
+        ModalState::RecentFiles(state) => (&mut state.scroll_offset, state.filtered_rows.len()),
+        ModalState::GotoLine(_) | ModalState::FindReplace(_) => return None,
+    };
+    let max_scroll = total.saturating_sub(COMMAND_PALETTE_MAX_VISIBLE) as isize;
+    let new_scroll = (*scroll as isize + delta).clamp(0, max_scroll.max(0)) as usize;
+    if new_scroll == *scroll {
+        return None;
+    }
+    *scroll = new_scroll;
+    Some(Cmd::Redraw)
 }
 
 /// Find next occurrence in the document and select it
@@ -1114,49 +1237,6 @@ fn fuzzy_match_commands(query: &str) -> Vec<CommandMatch> {
     results.into_iter().map(|(m, _)| m).collect()
 }
 
-/// Move `state.selected_index` by `delta` rows, wrapping at both ends
-/// (overlay-surface.md Behaviour: "Up/Down skip headers and wrap at the
-/// ends"), and keep `scroll_offset` following it (minimal-reveal scrolling).
-fn move_palette_selection(state: &mut CommandPaletteState, delta: isize) {
-    let total = state.matches.len();
-    if total == 0 {
-        return;
-    }
-    let current = state.selected_index as isize;
-    state.selected_index = (current + delta).rem_euclid(total as isize) as usize;
-    state.scroll_offset = SelectableListViewport::compute_from(
-        total,
-        state.selected_index,
-        COMMAND_PALETTE_MAX_VISIBLE,
-        state.scroll_offset,
-    )
-    .scroll_offset;
-}
-
-/// Page `state.selected_index` by a full visible page, clamping (not
-/// wrapping — PageUp/PageDown are jumps, not cyclic navigation).
-fn page_palette_selection(state: &mut CommandPaletteState, forward: bool) {
-    let total = state.matches.len();
-    if total == 0 {
-        return;
-    }
-    let max_index = total - 1;
-    state.selected_index = if forward {
-        (state.selected_index + COMMAND_PALETTE_MAX_VISIBLE).min(max_index)
-    } else {
-        state
-            .selected_index
-            .saturating_sub(COMMAND_PALETTE_MAX_VISIBLE)
-    };
-    state.scroll_offset = SelectableListViewport::compute_from(
-        total,
-        state.selected_index,
-        COMMAND_PALETTE_MAX_VISIBLE,
-        state.scroll_offset,
-    )
-    .scroll_offset;
-}
-
 // ============================================================================
 // Fuzzy File Finder
 // ============================================================================
@@ -1171,6 +1251,23 @@ pub fn update_file_finder_results(state: &mut FileFinderState) {
     state.results = fuzzy_match_files(&state.all_files, &query, &state.workspace_root);
     // Reset selection to first item
     state.selected_index = 0;
+    state.scroll_offset = 0;
+}
+
+// ============================================================================
+// Recent Files Ordering Authority
+// ============================================================================
+
+/// The ordering authority for the Recent Files modal (overlay-surface.md
+/// "Ordering authority"): recomputes `state.filtered_rows` (filtered +
+/// Pinned/date-grouped) and resets selection, mirroring
+/// `resolve_palette_rows`. Both the view's spec builder and
+/// `ModalMsg::Confirm`/`SelectNext` read `filtered_rows` instead of
+/// re-deriving it.
+pub fn resolve_recent_rows(state: &mut RecentFilesState) {
+    state.recompute_filtered_rows();
+    state.selected_index = 0;
+    state.scroll_offset = 0;
 }
 
 /// Perform fuzzy matching on file paths

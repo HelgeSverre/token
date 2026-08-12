@@ -781,6 +781,40 @@ mod tests {
     }
 
     #[test]
+    fn test_modal_cmd_dot_toggles_pin_on_recent_files() {
+        // overlay-surface.md Phase 3: Cmd+. is the Recent Files pin toggle
+        // keybinding, routed through handle_modal_key -> ModalMsg::TogglePin.
+        let mut model = test_model_with_modal("hello\n");
+        let mut recent = token::recent_files::RecentFiles::default();
+        recent.add(std::path::PathBuf::from(file!()), None);
+        model.recent_files = recent.clone();
+        let state = token::model::RecentFilesState::new(&recent, None);
+        model.ui.open_modal(ModalState::RecentFiles(state));
+
+        handle_key(
+            &mut model,
+            Key::Character(".".into()),
+            PhysicalKey::Code(KeyCode::Period),
+            KeyModifiers {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: true,
+            },
+            false,
+        );
+
+        if let Some(ModalState::RecentFiles(state)) = &model.ui.active_modal {
+            assert!(
+                state.selected_entry().expect("selected entry").pinned,
+                "Cmd+. should have pinned the selected recent-files row"
+            );
+        } else {
+            panic!("Expected recent files modal");
+        }
+    }
+
+    #[test]
     fn test_modal_arrow_keys_dont_move_editor_cursor() {
         let mut model = test_model_with_modal("hello\nworld\nfoo\nbar\n");
 

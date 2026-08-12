@@ -490,7 +490,10 @@ fn test_theme_picker_select_previous() {
 }
 
 #[test]
-fn test_theme_picker_select_next_respects_bounds() {
+fn test_theme_picker_select_next_wraps_at_end() {
+    // overlay-surface.md Phase 3 Behaviour: "Up/Down skip headers and wrap
+    // at the ends" applies to every list-body modal, not just the command
+    // palette (was: saturate at the last item).
     let mut model = test_model("hello\n", 0, 0);
     let mut picker_state = ThemePickerState::new("default-dark".to_string());
     let max_index = picker_state.themes.len().saturating_sub(1);
@@ -500,7 +503,7 @@ fn test_theme_picker_select_next_respects_bounds() {
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)));
 
     if let Some(ModalState::ThemePicker(state)) = &model.ui.active_modal {
-        assert_eq!(state.selected_index, max_index); // Stays at max
+        assert_eq!(state.selected_index, 0); // Wraps to the first item
     } else {
         panic!("Expected theme picker modal");
     }
@@ -683,5 +686,74 @@ fn test_open_find_replace_message() {
     assert_eq!(
         model.ui.active_modal.as_ref().unwrap().id(),
         ModalId::FindReplace
+    );
+}
+
+// ========================================================================
+// Row activation / pin toggle (overlay-surface.md Phase 3)
+// ========================================================================
+
+#[test]
+fn test_activate_row_selects_and_confirms_the_clicked_command() {
+    // ActivateRow(idx) is what a row click dispatches: set selection to the
+    // clicked row, then confirm in the same step (Pointer: "a click sets
+    // selection and activates in one step"). Selection starts at 0 (the
+    // top match); clicking row 0 while filtered to a single match must run
+    // that command, not silently no-op.
+    let mut model = test_model("hello\n", 0, 0);
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::Modal(ModalMsg::OpenCommandPalette)),
+    );
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("go to line".to_string()))),
+    );
+
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::ActivateRow(0))));
+
+    assert_eq!(
+        model.ui.active_modal.as_ref().map(|m| m.id()),
+        Some(ModalId::GotoLine),
+        "ActivateRow(0) should have run the top filtered match (Go to Line)"
+    );
+}
+
+#[test]
+fn test_toggle_pin_moves_entry_into_pinned_section_and_persists() {
+    use std::path::PathBuf;
+    use token::recent_files::{RecentEntry, RecentFiles};
+
+    let mut model = test_model("hello\n", 0, 0);
+    model.recent_files = RecentFiles {
+        version: 1,
+        entries: vec![
+            RecentEntry::new(PathBuf::from("/a.rs"), None),
+            RecentEntry::new(PathBuf::from("/b.rs"), None),
+        ],
+    };
+    // Canonicalize like `RecentFiles::add` would, so paths match exactly.
+    for e in &mut model.recent_files.entries {
+        e.path = e.path.canonicalize().unwrap_or_else(|_| e.path.clone());
+    }
+
+    let state = token::model::RecentFilesState::new(&model.recent_files, None);
+    model.ui.open_modal(ModalState::RecentFiles(state));
+
+    // Select the first (unpinned) entry and pin it.
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::TogglePin)));
+
+    if let Some(ModalState::RecentFiles(state)) = &model.ui.active_modal {
+        let selected = state.selected_entry().expect("selection after pin toggle");
+        assert!(selected.pinned, "the toggled entry should now be pinned");
+    } else {
+        panic!("Expected recent files modal");
+    }
+
+    // The persistent store (not just the modal's cached copy) is updated,
+    // since pins persist across restarts.
+    assert!(
+        model.recent_files.entries.iter().any(|e| e.pinned),
+        "pin should be mirrored into the persistent recent-files store"
     );
 }

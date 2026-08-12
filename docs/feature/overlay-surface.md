@@ -415,10 +415,10 @@ Mockups for the picker contexts: [B1 recent-grouped](assets/palette-b1.png), [B2
 
 **Effort:** L
 
-- [ ] File Finder and Recent Files on `Body::List` (`scroll_offset` added to both states); Recent Files grouping (Pinned/Today/Yesterday/Earlier) + `RecentEntry.pinned` persistence + `⌘.` toggle arm.
-- [ ] Go to Line, Find/Replace on `Body::Fields`; Theme Picker with sections + `Check`; drop overlay on `Zones` (dim 0x80 preserved).
-- [ ] **`hit_test_modal` rewritten** against the shared layout; row-click activation, tab groundwork, wheel scrolling, hover wash; the old inside-click drop removed.
-- [ ] Delete `render_modal_shell`, `selectable_list.rs` (verified: no consumers outside `modal.rs`), and the per-modal `*_layout` functions in `geometry.rs` (~400 lines), including the theme-picker placement duplication.
+- [x] File Finder and Recent Files on `Body::List` (`scroll_offset` added to both states); Recent Files grouping (Pinned/Today/Yesterday/Earlier) + `RecentEntry.pinned` persistence + `⌘.` toggle arm.
+- [x] Go to Line, Find/Replace on `Body::Fields`; Theme Picker with sections + `Check`; drop overlay on `Zones` (dim 0x80 preserved).
+- [x] **`hit_test_modal` rewritten** against the shared layout; row-click activation, tab groundwork, wheel scrolling, hover wash; the old inside-click drop removed.
+- [x] Delete `render_modal_shell` and the per-modal `*_layout` functions in `geometry.rs` (~400 lines), including the theme-picker placement duplication. **Correction**: `selectable_list.rs` was deleted, but not for the doc's stated reason — `SelectableListViewport` (the minimal-reveal scroll-window math) was consumed by `update/ui.rs`, not just `modal.rs`, so "no consumers outside modal.rs" was inaccurate for that struct. It was moved into `overlay_surface.rs` (its only remaining home) rather than deleted; only the file's *rendering* helpers (`render_selectable_list`, `SelectableListLayout`, `SelectableListColors`), which genuinely had no consumers left, were dropped along with the file.
 
 ### Phase 4: Search Everywhere
 

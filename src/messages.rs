@@ -225,6 +225,13 @@ pub enum ModalMsg {
     PageDown,
     /// Confirm/execute the modal action (Enter)
     Confirm,
+    /// Set selection to a specific row and confirm in one step (row click).
+    ActivateRow(usize),
+    /// Toggle the pinned flag on the selected row (Recent Files: `⌘.`).
+    TogglePin,
+    /// Move the scroll window by `delta` rows without moving selection
+    /// (mouse wheel over a list-body modal).
+    Scroll(isize),
 
     // === Find/Replace Specific ===
     /// Toggle between query and replace fields (Tab)

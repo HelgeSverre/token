@@ -467,11 +467,19 @@ fn dispatch_csv_text_edit(model: &mut AppModel, action: TextEditingKeyAction) ->
 ///
 /// This captures focus and routes keys to the modal instead of the editor.
 fn handle_modal_key(model: &mut AppModel, key: Key, modifiers: KeyModifiers) -> Option<Cmd> {
-    let KeyModifiers { shift, alt, .. } = modifiers;
+    let KeyModifiers {
+        shift, alt, logo, ..
+    } = modifiers;
 
     match key {
         // Escape: close modal
         Key::Named(NamedKey::Escape) => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Close))),
+
+        // Cmd+.: toggle pin on the selected row (Recent Files only —
+        // ModalMsg::TogglePin is a no-op for every other modal).
+        Key::Character(ref s) if logo && s.as_str() == "." => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::TogglePin)))
+        }
 
         // Enter: confirm modal action
         Key::Named(NamedKey::Enter) => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Confirm))),

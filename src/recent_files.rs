@@ -23,6 +23,31 @@ pub struct RecentEntry {
     /// Number of times file has been opened (for ranking)
     #[serde(default)]
     pub open_count: u32,
+    /// Whether the entry is pinned to the top of the Recent Files list
+    /// (overlay-surface.md: `⌘.` toggle, Pinned section).
+    #[serde(default)]
+    pub pinned: bool,
+}
+
+/// Which section of the Recent Files modal an entry belongs in
+/// (overlay-surface.md Phase 3: Pinned / Today / Yesterday / Earlier).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecentGroup {
+    Pinned,
+    Today,
+    Yesterday,
+    Earlier,
+}
+
+impl RecentGroup {
+    pub fn title(&self) -> &'static str {
+        match self {
+            RecentGroup::Pinned => "Pinned",
+            RecentGroup::Today => "Today",
+            RecentGroup::Yesterday => "Yesterday",
+            RecentGroup::Earlier => "Earlier",
+        }
+    }
 }
 
 impl RecentEntry {
@@ -33,6 +58,7 @@ impl RecentEntry {
             opened_at: now_epoch_secs(),
             workspace,
             open_count: 1,
+            pinned: false,
         }
     }
 
@@ -80,6 +106,22 @@ impl RecentEntry {
     /// Check if file still exists
     pub fn exists(&self) -> bool {
         self.path.exists()
+    }
+
+    /// Which Recent Files section this entry belongs in: pinned entries
+    /// always sort first regardless of recency; the rest are bucketed by
+    /// calendar day (UTC — no timezone dependency in this crate).
+    pub fn group(&self) -> RecentGroup {
+        if self.pinned {
+            return RecentGroup::Pinned;
+        }
+        let now = now_epoch_secs();
+        let diff_days = (now / 86400).saturating_sub(self.opened_at / 86400);
+        match diff_days {
+            0 => RecentGroup::Today,
+            1 => RecentGroup::Yesterday,
+            _ => RecentGroup::Earlier,
+        }
     }
 }
 
@@ -153,6 +195,13 @@ impl RecentFiles {
 
         // Enforce capacity limit
         self.entries.truncate(MAX_ENTRIES);
+    }
+
+    /// Toggle the pinned flag for an entry, if present.
+    pub fn toggle_pin(&mut self, path: &Path) {
+        if let Some(idx) = self.find_index(path) {
+            self.entries[idx].pinned = !self.entries[idx].pinned;
+        }
     }
 
     /// Remove a file from recent list
@@ -235,6 +284,7 @@ mod tests {
             opened_at: 0,
             workspace: Some(PathBuf::from("/project")),
             open_count: 1,
+            pinned: false,
         };
 
         assert_eq!(entry.display_path(), "src/main.rs");
@@ -247,6 +297,7 @@ mod tests {
             opened_at: 0,
             workspace: None,
             open_count: 1,
+            pinned: false,
         };
 
         assert_eq!(entry.display_path(), "main.rs");
@@ -351,6 +402,7 @@ mod tests {
             opened_at: now - 120,
             workspace: None,
             open_count: 1,
+            pinned: false,
         };
         assert_eq!(entry.time_ago(), "2 mins ago");
 
@@ -360,6 +412,7 @@ mod tests {
             opened_at: now - 60,
             workspace: None,
             open_count: 1,
+            pinned: false,
         };
         assert_eq!(entry.time_ago(), "1 min ago");
 
@@ -369,6 +422,7 @@ mod tests {
             opened_at: now - 7200,
             workspace: None,
             open_count: 1,
+            pinned: false,
         };
         assert_eq!(entry.time_ago(), "2 hours ago");
 
@@ -378,6 +432,7 @@ mod tests {
             opened_at: now - 3600,
             workspace: None,
             open_count: 1,
+            pinned: false,
         };
         assert_eq!(entry.time_ago(), "1 hour ago");
 
@@ -387,6 +442,7 @@ mod tests {
             opened_at: now - 172800,
             workspace: None,
             open_count: 1,
+            pinned: false,
         };
         assert_eq!(entry.time_ago(), "2 days ago");
 
@@ -396,6 +452,7 @@ mod tests {
             opened_at: now - 1209600,
             workspace: None,
             open_count: 1,
+            pinned: false,
         };
         assert_eq!(entry.time_ago(), "2 weeks ago");
     }
@@ -407,6 +464,7 @@ mod tests {
             opened_at: 0,
             workspace: None,
             open_count: 1,
+            pinned: false,
         };
         // Root path has no file_name(), should fall back to full path
         assert_eq!(entry.display_path(), "/");
@@ -428,5 +486,64 @@ mod tests {
         let recent = RecentFiles::default();
         assert!(recent.entries.is_empty());
         assert_eq!(recent.version, 0);
+    }
+
+    #[test]
+    fn test_group_pinned_wins_regardless_of_age() {
+        let now = now_epoch_secs();
+        let entry = RecentEntry {
+            path: PathBuf::from("/old.rs"),
+            opened_at: now.saturating_sub(1_000_000),
+            workspace: None,
+            open_count: 1,
+            pinned: true,
+        };
+        assert_eq!(entry.group(), RecentGroup::Pinned);
+    }
+
+    #[test]
+    fn test_group_buckets_by_calendar_day() {
+        let now = now_epoch_secs();
+        let today = RecentEntry {
+            path: PathBuf::from("/t.rs"),
+            opened_at: now,
+            workspace: None,
+            open_count: 1,
+            pinned: false,
+        };
+        let yesterday = RecentEntry {
+            path: PathBuf::from("/y.rs"),
+            opened_at: now.saturating_sub(86400),
+            workspace: None,
+            open_count: 1,
+            pinned: false,
+        };
+        let earlier = RecentEntry {
+            path: PathBuf::from("/e.rs"),
+            opened_at: now.saturating_sub(86400 * 5),
+            workspace: None,
+            open_count: 1,
+            pinned: false,
+        };
+        assert_eq!(today.group(), RecentGroup::Today);
+        assert_eq!(yesterday.group(), RecentGroup::Yesterday);
+        assert_eq!(earlier.group(), RecentGroup::Earlier);
+    }
+
+    #[test]
+    fn test_toggle_pin_flips_flag_and_is_idempotent_on_missing_path() {
+        let mut recent = RecentFiles::default();
+        recent.add(PathBuf::from("/a.rs"), None);
+        let path = recent.entries[0].path.clone();
+
+        recent.toggle_pin(&path);
+        assert!(recent.entries[0].pinned);
+
+        recent.toggle_pin(&path);
+        assert!(!recent.entries[0].pinned);
+
+        // Toggling a path that isn't in the list is a no-op, not a panic.
+        recent.toggle_pin(&PathBuf::from("/does-not-exist.rs"));
+        assert!(!recent.entries[0].pinned);
     }
 }

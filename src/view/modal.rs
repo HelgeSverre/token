@@ -1,49 +1,51 @@
 //! Modal overlay rendering (command palette, goto line, find/replace, etc.)
+//!
+//! Every modal renders through `overlay_surface::OverlaySurface` — chrome,
+//! header, sectioned list, fields, and footer are drawn by that one
+//! component; this module builds the per-context `OverlaySpec` (real row
+//! content) and, for hit-testing/caret placement, a cheaper *shape-only*
+//! spec (placeholder row content, real counts/titles/sections) via
+//! `with_modal_overlay_layout` — both go through the same
+//! `overlay_surface::layout()`, so geometry can't drift between paint and
+//! hit-test (overlay-surface.md "Hit-testing": one layout, two consumers).
 
+use crate::model::ui::{FindReplaceField, RecentFilesState, ThemePickerState};
 use crate::model::AppModel;
+use crate::theme::ThemeInfo;
 
 use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
-use super::geometry;
-use super::overlay_surface;
-use super::selectable_list::{
-    render_selectable_list, SelectableListColors, SelectableListLayout, SelectableListViewport,
+use super::geometry::WidgetRect;
+use super::overlay_surface::{
+    self, Accessory, Anchor, Body, Field, FlatIndex, Footer, Header, OverlayLayout, OverlaySpec,
+    Row, RowIcon, Section, WidthRule,
 };
 use super::text_field::{TextFieldContent, TextFieldRenderer};
 
+use crate::model::COMMAND_PALETTE_MAX_VISIBLE;
+
+/// Modal dim background alpha (102/255 ≈ 40% opacity)
+const MODAL_DIM_ALPHA: u8 = 0x66;
+
 #[derive(Clone, Copy)]
 struct ModalColors {
-    bg: u32,
     fg: u32,
-    highlight: u32,
     dim: u32,
-    selection_bg: u32,
     input_bg: u32,
-    border: u32,
 }
 
 impl ModalColors {
     fn from_model(model: &AppModel) -> Self {
         Self {
-            bg: model.theme.overlay.background.to_argb_u32(),
             fg: model.theme.overlay.foreground.to_argb_u32(),
-            highlight: model.theme.overlay.highlight.to_argb_u32(),
             dim: model.theme.overlay.foreground.with_alpha(128).to_argb_u32(),
-            selection_bg: model.theme.overlay.selection_background.to_argb_u32(),
             input_bg: model.theme.overlay.input_background.to_argb_u32(),
-            border: model
-                .theme
-                .overlay
-                .border
-                .map(|c| c.to_argb_u32())
-                .unwrap_or(0xFF444444),
         }
     }
 }
 
 /// Constant rendering context shared by every modal for the duration of a
 /// single `render_modals` call: window size, the shared line/char metrics,
-/// and the resolved theme colors. Bundling these avoids threading the same
-/// 5-6 parameters through every `render_*_modal` function individually.
+/// and the resolved theme colors.
 struct ModalRenderCtx {
     window_width: usize,
     window_height: usize,
@@ -53,134 +55,21 @@ struct ModalRenderCtx {
     scale_factor: f64,
 }
 
-fn render_modal_shell(frame: &mut Frame, layout: &geometry::ModalLayout, colors: &ModalColors) {
-    frame.draw_bordered_rect(
-        layout.x,
-        layout.y,
-        layout.w,
-        layout.h,
-        colors.bg,
-        colors.border,
-    );
+// ============================================================================
+// Width rules (Visual Language > Chrome)
+// ============================================================================
+
+const PALETTE_WIDTH: (f32, f32, f32) = (0.5, 480.0, 640.0);
+const PICKER_WIDTH: (f32, f32, f32) = (0.7, 520.0, 900.0);
+const SMALL_MODAL_WIDTH: (f32, f32, f32) = (0.5, 300.0, 500.0);
+
+fn width_rule((pct, min, max): (f32, f32, f32)) -> WidthRule {
+    WidthRule { pct, min, max }
 }
 
-/// A single rendered row in the theme picker: either a section header or a
-/// theme entry (indexing back into `state.themes`).
-enum ThemeRow<'a> {
-    Header(&'static str),
-    Theme(usize, &'a crate::theme::ThemeInfo),
-}
-
-use geometry::THEME_PICKER_MAX_VISIBLE_ROWS;
-
-fn render_theme_picker_modal(
-    frame: &mut Frame,
-    painter: &mut TextPainter,
-    model: &AppModel,
-    state: &crate::model::ui::ThemePickerState,
-    ctx: &ModalRenderCtx,
-) {
-    use crate::theme::ThemeSource;
-
-    let colors = &ctx.colors;
-    let line_height = ctx.line_height;
-
-    let themes = &state.themes;
-    let clamped_selected = state.selected_index.min(themes.len().saturating_sub(1));
-
-    // Flatten themes + section headers into a single row list so scrolling
-    // and clipping can treat them uniformly.
-    let mut rows: Vec<ThemeRow> = Vec::with_capacity(themes.len() + 2);
-    let mut current_source: Option<ThemeSource> = None;
-    let mut selected_row_index = 0;
-    for (i, theme_info) in themes.iter().enumerate() {
-        if current_source != Some(theme_info.source) {
-            current_source = Some(theme_info.source);
-            let header = match theme_info.source {
-                ThemeSource::User => "User Themes",
-                ThemeSource::Builtin => "Built-in Themes",
-            };
-            rows.push(ThemeRow::Header(header));
-        }
-        if i == clamped_selected {
-            selected_row_index = rows.len();
-        }
-        rows.push(ThemeRow::Theme(i, theme_info));
-    }
-
-    let max_visible_rows = THEME_PICKER_MAX_VISIBLE_ROWS.min(rows.len().max(1));
-    let viewport = SelectableListViewport::compute_from(
-        rows.len(),
-        selected_row_index,
-        max_visible_rows,
-        state.scroll_offset,
-    );
-
-    let (layout, w) = geometry::theme_picker_layout(
-        ctx.window_width,
-        ctx.window_height,
-        line_height,
-        rows.len().min(max_visible_rows),
-        ctx.scale_factor,
-    );
-
-    render_modal_shell(frame, &layout, colors);
-
-    let title_r = layout.widget(w.title);
-    painter.draw(frame, title_r.x, title_r.y, "Switch Theme", colors.fg);
-
-    let list_r = layout.widget(w.list);
-    let section_color = 0xFF666666;
-
-    frame.set_clip(crate::model::Rect::new(
-        list_r.x as f32,
-        list_r.y as f32,
-        list_r.w as f32,
-        list_r.h as f32,
-    ));
-
-    let mut current_y = list_r.y;
-    for row in rows
-        .iter()
-        .skip(viewport.scroll_offset)
-        .take(max_visible_rows)
-    {
-        match row {
-            ThemeRow::Header(header) => {
-                painter.draw(frame, layout.x + 12, current_y, header, section_color);
-            }
-            ThemeRow::Theme(i, theme_info) => {
-                let is_selected = *i == clamped_selected;
-                if is_selected {
-                    frame.fill_rect_px(
-                        layout.x + 4,
-                        current_y,
-                        layout.w - 8,
-                        line_height,
-                        colors.selection_bg,
-                    );
-                }
-
-                let label_x = layout.x + 24;
-                painter.draw(frame, label_x, current_y, &theme_info.name, colors.fg);
-
-                if model.theme.name == theme_info.name || model.config.theme == theme_info.id {
-                    let check_x = layout.x + layout.w - 30;
-                    painter.draw(frame, check_x, current_y, "✓", colors.highlight);
-                }
-            }
-        }
-        current_y += line_height;
-    }
-
-    frame.clear_clip();
-}
-
-/// Palette width: 50% of window, clamped 480-640 logical px (Visual
-/// Language > Chrome).
-const COMMAND_PALETTE_WIDTH: (f32, f32, f32) = (0.5, 480.0, 640.0);
-
-use crate::model::COMMAND_PALETTE_MAX_VISIBLE;
+// ============================================================================
+// Command Palette
+// ============================================================================
 
 /// Per-row accessory decision: a keybinding renders as keycap chips unless
 /// it has more than 4 chips total, in which case it falls back to dim text
@@ -207,106 +96,6 @@ fn palette_accessory(keybinding: Option<&'static str>) -> PaletteAccessory {
     }
 }
 
-/// Panel geometry for the command palette, shared by
-/// `render_command_palette_modal` and `hit_test::hit_test_modal` so a click
-/// is tested against the geometry actually painted (one layout, two
-/// consumers).
-pub(crate) fn command_palette_overlay_panel(
-    state: &crate::model::ui::CommandPaletteState,
-    window_width: usize,
-    window_height: usize,
-    scale_factor: f64,
-) -> super::geometry::WidgetRect {
-    use crate::view::overlay_surface::{
-        self, Accessory, Anchor, Body, FlatIndex, Header, Row, RowIcon, Section, WidthRule,
-    };
-
-    let count = state.matches.len();
-    // Layout only depends on row count/height, not row content, so
-    // placeholder rows are sufficient here.
-    let rows: Vec<Row> = (0..count)
-        .map(|_| Row {
-            icon: RowIcon::None,
-            label: "",
-            match_indices: &[],
-            detail: None,
-            accessory: Accessory::None,
-        })
-        .collect();
-    let sections = [Section {
-        title: None,
-        rows: &rows,
-    }];
-    let selected_index = state.selected_index.min(count.saturating_sub(1));
-    let (pct, min, max) = COMMAND_PALETTE_WIDTH;
-    let spec = overlay_surface::OverlaySpec {
-        anchor: Anchor::Centered {
-            width: WidthRule { pct, min, max },
-            dim_alpha: MODAL_DIM_ALPHA,
-        },
-        header: Header {
-            glyph: None,
-            text: "",
-            placeholder: "",
-            caret: None,
-            scope: None,
-        },
-        body: Body::List {
-            sections: &sections,
-            selected: FlatIndex(selected_index),
-            scroll: state.scroll_offset,
-            max_visible: COMMAND_PALETTE_MAX_VISIBLE,
-        },
-        footer: Some(overlay_surface::Footer {
-            leading: "",
-            trailing: "",
-        }),
-    };
-    overlay_surface::layout(&spec, window_width, window_height, scale_factor).panel
-}
-
-/// The command palette's header text-input rect (inside the panel, minus
-/// header padding), used by `view::caret` to place the IME caret. Content
-/// doesn't affect this geometry, so an empty spec is enough.
-pub(crate) fn command_palette_input_rect(
-    window_width: usize,
-    window_height: usize,
-    scale_factor: f64,
-) -> super::geometry::WidgetRect {
-    use crate::view::overlay_surface::{self, Anchor, Body, FlatIndex, Header, WidthRule};
-
-    let sections: [overlay_surface::Section; 0] = [];
-    let (pct, min, max) = COMMAND_PALETTE_WIDTH;
-    let spec = overlay_surface::OverlaySpec {
-        anchor: Anchor::Centered {
-            width: WidthRule { pct, min, max },
-            dim_alpha: MODAL_DIM_ALPHA,
-        },
-        header: Header {
-            glyph: None,
-            text: "",
-            placeholder: "",
-            caret: None,
-            scope: None,
-        },
-        body: Body::List {
-            sections: &sections,
-            selected: FlatIndex(0),
-            scroll: 0,
-            max_visible: COMMAND_PALETTE_MAX_VISIBLE,
-        },
-        footer: None,
-    };
-    let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
-    let pad = overlay_surface::header_pad_x(scale_factor);
-    super::geometry::WidgetRect {
-        x: l.header.x + pad,
-        y: l.header.y,
-        w: l.header.w.saturating_sub(pad * 2),
-        h: l.header.h,
-    }
-}
-
 fn render_command_palette_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -315,10 +104,6 @@ fn render_command_palette_modal(
     ctx: &ModalRenderCtx,
     mask_cache: &mut RoundedRectMaskCache,
 ) {
-    use crate::view::overlay_surface::{
-        self, Accessory, Anchor, Body, FlatIndex, Header, Row, RowIcon, Section, WidthRule,
-    };
-
     let input_text = state.input();
     let icon_color = model.theme.overlay.text_dim.to_argb_u32();
 
@@ -357,13 +142,12 @@ fn render_command_palette_modal(
 
     let selected_index = state.selected_index.min(rows.len().saturating_sub(1));
 
-    let (pct, min, max) = COMMAND_PALETTE_WIDTH;
-    let spec = overlay_surface::OverlaySpec {
+    let spec = OverlaySpec {
         anchor: Anchor::Centered {
-            width: WidthRule { pct, min, max },
+            width: width_rule(PALETTE_WIDTH),
             dim_alpha: MODAL_DIM_ALPHA,
         },
-        header: Header {
+        header: Some(Header {
             glyph: Some('\u{276F}'),
             text: &input_text,
             placeholder: "Type a command...",
@@ -376,17 +160,18 @@ fn render_command_palette_modal(
                     .unwrap_or(0),
             ),
             scope: None,
-        },
+        }),
         body: Body::List {
             sections: &sections,
             selected: FlatIndex(selected_index),
             scroll: state.scroll_offset,
             max_visible: COMMAND_PALETTE_MAX_VISIBLE,
         },
-        footer: Some(overlay_surface::Footer {
+        footer: Some(Footer {
             leading: "\u{2191}\u{2193} navigate \u{00b7} \u{21b5} run",
             trailing: "esc dismiss",
         }),
+        hover_row: model.ui.modal_hover_row.map(FlatIndex),
     };
 
     overlay_surface::render(
@@ -402,44 +187,426 @@ fn render_command_palette_modal(
     );
 }
 
+// ============================================================================
+// File Finder
+// ============================================================================
+
+fn render_file_finder_modal(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    state: &crate::model::ui::FileFinderState,
+    ctx: &ModalRenderCtx,
+    mask_cache: &mut RoundedRectMaskCache,
+) {
+    let input_text = state.input();
+    let icon_color = model.theme.overlay.text_dim.to_argb_u32();
+
+    let rows: Vec<Row> = state
+        .results
+        .iter()
+        .map(|m| Row {
+            icon: RowIcon::Glyph {
+                ch: file_icon_char(&m.path),
+                color: icon_color,
+            },
+            label: &m.filename,
+            match_indices: &m.indices,
+            detail: Some(&m.relative_path),
+            accessory: Accessory::None,
+        })
+        .collect();
+    let sections = [Section {
+        title: None,
+        rows: &rows,
+    }];
+    let selected_index = state.selected_index.min(rows.len().saturating_sub(1));
+
+    let spec = OverlaySpec {
+        anchor: Anchor::Centered {
+            width: width_rule(PICKER_WIDTH),
+            dim_alpha: MODAL_DIM_ALPHA,
+        },
+        header: Some(Header {
+            glyph: None,
+            text: &input_text,
+            placeholder: "Go to File...",
+            caret: Some(
+                state
+                    .editable
+                    .cursors()
+                    .first()
+                    .map(|c| c.column)
+                    .unwrap_or(0),
+            ),
+            scope: None,
+        }),
+        body: Body::List {
+            sections: &sections,
+            selected: FlatIndex(selected_index),
+            scroll: state.scroll_offset,
+            max_visible: COMMAND_PALETTE_MAX_VISIBLE,
+        },
+        footer: Some(Footer {
+            leading: "\u{2191}\u{2193} navigate \u{00b7} \u{21b5} open",
+            trailing: "esc dismiss",
+        }),
+        hover_row: model.ui.modal_hover_row.map(FlatIndex),
+    };
+
+    overlay_surface::render(
+        frame,
+        painter,
+        mask_cache,
+        &model.theme.overlay,
+        &spec,
+        ctx.window_width,
+        ctx.window_height,
+        ctx.scale_factor,
+        model.ui.cursor_visible,
+    );
+
+    if state.results.is_empty() && !input_text.is_empty() {
+        // Empty-state message row (existing string preserved).
+        let l =
+            overlay_surface::layout(&spec, ctx.window_width, ctx.window_height, ctx.scale_factor);
+        if let Some(header) = l.header {
+            let y = header.y + header.h + ctx.line_height / 4;
+            painter.draw(
+                frame,
+                l.panel.x + 16,
+                y,
+                "No files match your query",
+                ctx.colors.dim,
+            );
+        }
+    }
+}
+
+fn file_icon_char(path: &std::path::Path) -> char {
+    crate::model::FileExtension::from_path(path)
+        .icon()
+        .chars()
+        .next()
+        .unwrap_or('?')
+}
+
+// ============================================================================
+// Recent Files
+// ============================================================================
+
+/// Group `state.filtered_rows` into contiguous (title, entry-index) runs by
+/// `RecentGroup` — the single source of truth for Recent Files section
+/// boundaries, shared by the content spec (real rows) and the shape spec
+/// (hit-testing/caret placement) so they can't drift.
+fn recent_files_groups(state: &RecentFilesState) -> Vec<(&'static str, Vec<usize>)> {
+    let mut groups: Vec<(&'static str, Vec<usize>)> = Vec::new();
+    for &entry_idx in &state.filtered_rows {
+        let title = state.entries[entry_idx].group().title();
+        match groups.last_mut() {
+            Some((last_title, indices)) if *last_title == title => indices.push(entry_idx),
+            _ => groups.push((title, vec![entry_idx])),
+        }
+    }
+    groups
+}
+
+fn render_recent_files_modal(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    state: &RecentFilesState,
+    ctx: &ModalRenderCtx,
+    mask_cache: &mut RoundedRectMaskCache,
+) {
+    let input_text = state.input();
+    let icon_color = model.theme.overlay.text_dim.to_argb_u32();
+    let groups = recent_files_groups(state);
+
+    // Per-row time-ago strings live here so `Row::accessory` can borrow them
+    // for the render call.
+    let time_strings: Vec<Vec<String>> = groups
+        .iter()
+        .map(|(_, indices)| {
+            indices
+                .iter()
+                .map(|&i| state.entries[i].time_ago())
+                .collect()
+        })
+        .collect();
+    let display_paths: Vec<Vec<String>> = groups
+        .iter()
+        .map(|(_, indices)| {
+            indices
+                .iter()
+                .map(|&i| state.entries[i].display_path())
+                .collect()
+        })
+        .collect();
+
+    let row_groups: Vec<Vec<Row>> = groups
+        .iter()
+        .enumerate()
+        .map(|(gi, (_, indices))| {
+            indices
+                .iter()
+                .enumerate()
+                .map(|(ri, &entry_idx)| Row {
+                    icon: RowIcon::Glyph {
+                        ch: file_icon_char(&state.entries[entry_idx].path),
+                        color: icon_color,
+                    },
+                    label: &display_paths[gi][ri],
+                    match_indices: &[],
+                    detail: None,
+                    accessory: Accessory::DimText(&time_strings[gi][ri]),
+                })
+                .collect()
+        })
+        .collect();
+    let sections: Vec<Section> = groups
+        .iter()
+        .zip(&row_groups)
+        .map(|((title, _), rows)| Section {
+            title: Some(title),
+            rows,
+        })
+        .collect();
+
+    let total_rows = state.filtered_rows.len();
+    let selected_index = state.selected_index.min(total_rows.saturating_sub(1));
+
+    let spec = OverlaySpec {
+        anchor: Anchor::Centered {
+            width: width_rule(PICKER_WIDTH),
+            dim_alpha: MODAL_DIM_ALPHA,
+        },
+        header: Some(Header {
+            glyph: None,
+            text: &input_text,
+            placeholder: "Recent Files...",
+            caret: Some(
+                state
+                    .editable
+                    .cursors()
+                    .first()
+                    .map(|c| c.column)
+                    .unwrap_or(0),
+            ),
+            scope: None,
+        }),
+        body: Body::List {
+            sections: &sections,
+            selected: FlatIndex(selected_index),
+            scroll: state.scroll_offset,
+            max_visible: COMMAND_PALETTE_MAX_VISIBLE,
+        },
+        footer: Some(Footer {
+            leading: "\u{2191}\u{2193} navigate \u{00b7} \u{21b5} open \u{00b7} \u{2318}. pin",
+            trailing: "esc dismiss",
+        }),
+        hover_row: model.ui.modal_hover_row.map(FlatIndex),
+    };
+
+    overlay_surface::render(
+        frame,
+        painter,
+        mask_cache,
+        &model.theme.overlay,
+        &spec,
+        ctx.window_width,
+        ctx.window_height,
+        ctx.scale_factor,
+        model.ui.cursor_visible,
+    );
+
+    if total_rows == 0 && !input_text.is_empty() {
+        let l =
+            overlay_surface::layout(&spec, ctx.window_width, ctx.window_height, ctx.scale_factor);
+        if let Some(header) = l.header {
+            let y = header.y + header.h + ctx.line_height / 4;
+            painter.draw(
+                frame,
+                l.panel.x + 16,
+                y,
+                "No recent files match your query",
+                ctx.colors.dim,
+            );
+        }
+    }
+}
+
+// ============================================================================
+// Theme Picker
+// ============================================================================
+
+/// Group `themes` into contiguous (title, theme-index) runs by source — the
+/// single source of truth for Theme Picker section boundaries. `FlatIndex`
+/// equals the theme's index in `themes` directly (the list is static per
+/// modal-open, no filtering/reordering happens), so no separate
+/// ordering-authority cache is needed the way Recent Files needs one.
+fn theme_picker_groups(themes: &[ThemeInfo]) -> Vec<(&'static str, std::ops::Range<usize>)> {
+    use crate::theme::ThemeSource;
+
+    let mut groups: Vec<(&'static str, std::ops::Range<usize>)> = Vec::new();
+    for (i, theme_info) in themes.iter().enumerate() {
+        let title = match theme_info.source {
+            ThemeSource::User => "User Themes",
+            ThemeSource::Builtin => "Built-in Themes",
+        };
+        match groups.last_mut() {
+            Some((last_title, range)) if *last_title == title => range.end = i + 1,
+            _ => groups.push((title, i..i + 1)),
+        }
+    }
+    groups
+}
+
+fn render_theme_picker_modal(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    state: &ThemePickerState,
+    ctx: &ModalRenderCtx,
+    mask_cache: &mut RoundedRectMaskCache,
+) {
+    let icon_color = model.theme.overlay.text_dim.to_argb_u32();
+    let groups = theme_picker_groups(&state.themes);
+
+    let row_groups: Vec<Vec<Row>> = groups
+        .iter()
+        .map(|(_, range)| {
+            state.themes[range.clone()]
+                .iter()
+                .map(|theme_info| {
+                    let is_active =
+                        model.theme.name == theme_info.name || model.config.theme == theme_info.id;
+                    Row {
+                        icon: RowIcon::Glyph {
+                            ch: '\u{25CF}',
+                            color: icon_color,
+                        },
+                        label: &theme_info.name,
+                        match_indices: &[],
+                        detail: None,
+                        accessory: if is_active {
+                            Accessory::Check
+                        } else {
+                            Accessory::None
+                        },
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    let sections: Vec<Section> = groups
+        .iter()
+        .zip(&row_groups)
+        .map(|((title, _), rows)| Section {
+            title: Some(title),
+            rows,
+        })
+        .collect();
+
+    let selected_index = state
+        .selected_index
+        .min(state.themes.len().saturating_sub(1));
+
+    let spec = OverlaySpec {
+        anchor: Anchor::Centered {
+            width: WidthRule {
+                pct: 0.0,
+                min: 400.0,
+                max: 400.0,
+            },
+            dim_alpha: MODAL_DIM_ALPHA,
+        },
+        header: Some(Header {
+            glyph: None,
+            text: "",
+            placeholder: "Switch Theme",
+            caret: None,
+            scope: None,
+        }),
+        body: Body::List {
+            sections: &sections,
+            selected: FlatIndex(selected_index),
+            scroll: state.scroll_offset,
+            max_visible: COMMAND_PALETTE_MAX_VISIBLE,
+        },
+        footer: None,
+        hover_row: model.ui.modal_hover_row.map(FlatIndex),
+    };
+
+    overlay_surface::render(
+        frame,
+        painter,
+        mask_cache,
+        &model.theme.overlay,
+        &spec,
+        ctx.window_width,
+        ctx.window_height,
+        ctx.scale_factor,
+        model.ui.cursor_visible,
+    );
+}
+
+// ============================================================================
+// Go to Line / Find & Replace (Body::Fields)
+// ============================================================================
+
 fn render_goto_line_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
     state: &crate::model::ui::GotoLineState,
     ctx: &ModalRenderCtx,
+    mask_cache: &mut RoundedRectMaskCache,
 ) {
-    let colors = &ctx.colors;
-    let line_height = ctx.line_height;
-    let char_width = ctx.char_width;
+    let fields = [Field { label: "Line:" }];
+    let spec = OverlaySpec {
+        anchor: Anchor::Centered {
+            width: width_rule(SMALL_MODAL_WIDTH),
+            dim_alpha: MODAL_DIM_ALPHA,
+        },
+        header: None,
+        body: Body::Fields {
+            fields: &fields,
+            focused: 0,
+        },
+        footer: None,
+        hover_row: None,
+    };
 
-    let (layout, w) = geometry::goto_line_layout(
-        ctx.window_width,
-        ctx.window_height,
-        line_height,
-        ctx.scale_factor,
-    );
-
-    render_modal_shell(frame, &layout, colors);
-
-    let title_r = layout.widget(w.title);
-    painter.draw(frame, title_r.x, title_r.y, "Go to Line", colors.fg);
-
-    let input_r = layout.widget(w.input);
-    TextFieldRenderer::render_modal_input(
+    overlay_surface::render(
         frame,
         painter,
-        &state.editable,
-        input_r,
-        line_height,
-        char_width,
-        colors.input_bg,
-        colors.fg,
-        colors.highlight,
-        colors.selection_bg,
-        model.ui.cursor_visible,
+        mask_cache,
+        &model.theme.overlay,
+        &spec,
+        ctx.window_width,
+        ctx.window_height,
         ctx.scale_factor,
+        model.ui.cursor_visible,
     );
+
+    let l = overlay_surface::layout(&spec, ctx.window_width, ctx.window_height, ctx.scale_factor);
+    if let Some(field) = l.fields.first() {
+        TextFieldRenderer::render_modal_input(
+            frame,
+            painter,
+            &state.editable,
+            &field.input,
+            ctx.line_height,
+            ctx.char_width,
+            ctx.colors.input_bg,
+            ctx.colors.fg,
+            model.theme.overlay.highlight.to_argb_u32(),
+            model.theme.overlay.selection_background.to_argb_u32(),
+            model.ui.cursor_visible,
+            ctx.scale_factor,
+        );
+    }
 }
 
 fn render_find_replace_modal(
@@ -448,272 +615,372 @@ fn render_find_replace_modal(
     model: &AppModel,
     state: &crate::model::ui::FindReplaceState,
     ctx: &ModalRenderCtx,
+    mask_cache: &mut RoundedRectMaskCache,
 ) {
-    use crate::model::ui::FindReplaceField;
-
-    let colors = &ctx.colors;
-    let line_height = ctx.line_height;
-    let char_width = ctx.char_width;
-
-    let (layout, w) = geometry::find_replace_layout(
-        ctx.window_width,
-        ctx.window_height,
-        line_height,
-        state.replace_mode,
-        ctx.scale_factor,
-    );
-
-    render_modal_shell(frame, &layout, colors);
-
-    let title_r = layout.widget(w.title);
-    let title = if state.replace_mode {
-        "Find and Replace"
+    let fields = if state.replace_mode {
+        vec![Field { label: "Find:" }, Field { label: "Replace:" }]
     } else {
-        "Find"
+        vec![Field { label: "Find:" }]
     };
-    painter.draw(frame, title_r.x, title_r.y, title, colors.fg);
+    let focused = match state.focused_field {
+        FindReplaceField::Query => 0,
+        FindReplaceField::Replace => 1,
+    };
 
-    if let Some(label_idx) = w.find_label {
-        let label_r = layout.widget(label_idx);
-        let label_color = match state.focused_field {
-            FindReplaceField::Query => colors.fg,
-            FindReplaceField::Replace => colors.dim,
-        };
-        painter.draw(frame, label_r.x, label_r.y, "Find:", label_color);
-    }
+    let spec = OverlaySpec {
+        anchor: Anchor::Centered {
+            width: width_rule(SMALL_MODAL_WIDTH),
+            dim_alpha: MODAL_DIM_ALPHA,
+        },
+        header: None,
+        body: Body::Fields {
+            fields: &fields,
+            focused,
+        },
+        footer: if state.replace_mode {
+            Some(Footer {
+                leading: "\u{21b5} find \u{00b7} \u{2318}\u{21b5} replace all",
+                trailing: "esc dismiss",
+            })
+        } else {
+            None
+        },
+        hover_row: None,
+    };
 
-    let find_r = layout.widget(w.find_input);
-    let find_cursor_visible =
-        model.ui.cursor_visible && matches!(state.focused_field, FindReplaceField::Query);
-    TextFieldRenderer::render_modal_input(
+    overlay_surface::render(
         frame,
         painter,
-        &state.query_editable,
-        find_r,
-        line_height,
-        char_width,
-        colors.input_bg,
-        colors.fg,
-        colors.highlight,
-        colors.selection_bg,
-        find_cursor_visible,
+        mask_cache,
+        &model.theme.overlay,
+        &spec,
+        ctx.window_width,
+        ctx.window_height,
         ctx.scale_factor,
+        model.ui.cursor_visible,
     );
 
-    if let Some(label_idx) = w.replace_label {
-        let label_r = layout.widget(label_idx);
-        let label_color = match state.focused_field {
-            FindReplaceField::Replace => colors.fg,
-            FindReplaceField::Query => colors.dim,
-        };
-        painter.draw(frame, label_r.x, label_r.y, "Replace:", label_color);
-    }
+    let l = overlay_surface::layout(&spec, ctx.window_width, ctx.window_height, ctx.scale_factor);
+    let highlight = model.theme.overlay.highlight.to_argb_u32();
+    let selection_bg = model.theme.overlay.selection_background.to_argb_u32();
 
-    if let Some(input_idx) = w.replace_input {
-        let repl_r = layout.widget(input_idx);
-        let replace_cursor_visible =
-            model.ui.cursor_visible && matches!(state.focused_field, FindReplaceField::Replace);
+    if let Some(find_field) = l.fields.first() {
+        let cursor_visible =
+            model.ui.cursor_visible && matches!(state.focused_field, FindReplaceField::Query);
         TextFieldRenderer::render_modal_input(
             frame,
             painter,
-            &state.replace_editable,
-            repl_r,
-            line_height,
-            char_width,
-            colors.input_bg,
-            colors.fg,
-            colors.highlight,
-            colors.selection_bg,
-            replace_cursor_visible,
+            &state.query_editable,
+            &find_field.input,
+            ctx.line_height,
+            ctx.char_width,
+            ctx.colors.input_bg,
+            ctx.colors.fg,
+            highlight,
+            selection_bg,
+            cursor_visible,
             ctx.scale_factor,
         );
     }
-}
 
-/// Shared shell for the two "search a list, filtered by a text input" modals
-/// (file finder and recent files): modal shell + title + filter input +
-/// selectable list + "no results" fallback message.
-///
-/// The two modals differ only in title, item type, per-row rendering, and
-/// empty-state copy, so those are the only things callers need to supply.
-#[allow(clippy::too_many_arguments)]
-fn render_search_list_modal<T>(
-    frame: &mut Frame,
-    painter: &mut TextPainter,
-    model: &AppModel,
-    ctx: &ModalRenderCtx,
-    title: &str,
-    input: &dyn TextFieldContent,
-    input_is_empty: bool,
-    empty_message: &str,
-    items: &[T],
-    selected_index: usize,
-    max_visible_items: usize,
-    mut render_row: impl FnMut(&mut Frame, &mut TextPainter, &T, usize, usize, usize, f32, u32, u32),
-) {
-    let colors = &ctx.colors;
-    let line_height = ctx.line_height;
-    let char_width = ctx.char_width;
-
-    let (layout, w) = geometry::file_finder_layout(
-        ctx.window_width,
-        ctx.window_height,
-        line_height,
-        items.len(),
-        !input_is_empty,
-        ctx.scale_factor,
-    );
-
-    render_modal_shell(frame, &layout, colors);
-
-    let title_r = layout.widget(w.title);
-    painter.draw(frame, title_r.x, title_r.y, title, colors.fg);
-
-    let input_r = layout.widget(w.input);
-    TextFieldRenderer::render_modal_input(
-        frame,
-        painter,
-        input,
-        input_r,
-        line_height,
-        char_width,
-        colors.input_bg,
-        colors.fg,
-        colors.highlight,
-        colors.selection_bg,
-        model.ui.cursor_visible,
-        ctx.scale_factor,
-    );
-
-    let results_y = if let Some(list_idx) = w.list {
-        layout.widget(list_idx).y
-    } else {
-        input_r.y + input_r.h + geometry::ModalSpacing::gap_md(ctx.scale_factor)
-    };
-    let dim_color = 0xFF888888;
-    let list_layout = SelectableListLayout {
-        x: layout.x,
-        y: results_y,
-        width: layout.w,
-        row_height: line_height,
-        max_visible_items,
-        selection_inset: 4,
-    };
-    let list_colors = SelectableListColors {
-        selection_bg: colors.selection_bg,
-    };
-    render_selectable_list(
-        frame,
-        items,
-        selected_index,
-        &list_layout,
-        &list_colors,
-        |frame, item, _actual_index, item_y, _is_selected| {
-            render_row(
-                frame, painter, item, item_y, layout.x, layout.w, char_width, colors.fg, dim_color,
+    if state.replace_mode {
+        if let Some(replace_field) = l.fields.get(1) {
+            let cursor_visible =
+                model.ui.cursor_visible && matches!(state.focused_field, FindReplaceField::Replace);
+            TextFieldRenderer::render_modal_input(
+                frame,
+                painter,
+                &state.replace_editable,
+                &replace_field.input,
+                ctx.line_height,
+                ctx.char_width,
+                ctx.colors.input_bg,
+                ctx.colors.fg,
+                highlight,
+                selection_bg,
+                cursor_visible,
+                ctx.scale_factor,
             );
-        },
-    );
-
-    if items.is_empty() && !input_is_empty {
-        painter.draw(frame, layout.x + 12, results_y, empty_message, dim_color);
+        }
     }
 }
 
-fn render_file_finder_modal(
-    frame: &mut Frame,
-    painter: &mut TextPainter,
+// ============================================================================
+// Shape-only layouts (hit-testing, caret placement)
+// ============================================================================
+
+/// Build the shape-only `OverlaySpec` (placeholder row content, real
+/// counts/titles/sections/scroll) for whichever modal is active, call
+/// `overlay_surface::layout()` on it, and hand both to `f`. Used by
+/// `hit_test::hit_test_modal` (row/tab/scrollbar hit-testing) and
+/// `view::caret` (IME caret placement) so both consume the exact geometry
+/// the renderer computes without re-deriving row content.
+pub(crate) fn with_modal_overlay_layout<R>(
     model: &AppModel,
-    state: &crate::model::ui::FileFinderState,
-    ctx: &ModalRenderCtx,
-) {
-    let input_text = state.input();
-    render_search_list_modal(
-        frame,
-        painter,
-        model,
-        ctx,
-        "Go to File",
-        &state.editable,
-        input_text.is_empty(),
-        "No files match your query",
-        state.results.as_slice(),
-        state.selected_index,
-        10,
-        |frame, painter, file_match, item_y, layout_x, layout_w, char_width, fg, dim| {
-            let icon = crate::model::FileExtension::from_path(&file_match.path).icon();
-            let icon_x = layout_x + 12;
-            painter.draw(frame, icon_x, item_y, icon, fg);
+    window_width: usize,
+    window_height: usize,
+    scale_factor: f64,
+    f: impl FnOnce(&OverlaySpec, &OverlayLayout) -> R,
+) -> Option<R> {
+    use crate::model::ModalState;
 
-            let name_x = layout_x + 36;
-            painter.draw(frame, name_x, item_y, &file_match.filename, fg);
-
-            let filename_width = (file_match.filename.len() as f32 * char_width) as usize;
-            let path_x = name_x + filename_width + (char_width as usize * 2);
-            let available_width = (layout_x + layout_w).saturating_sub(path_x + 16);
-            let max_path_chars = (available_width as f32 / char_width) as usize;
-
-            if max_path_chars > 5 {
-                let path_display = if file_match.relative_path.chars().count() > max_path_chars {
-                    let truncated: String = file_match
-                        .relative_path
-                        .chars()
-                        .take(max_path_chars - 1)
-                        .collect();
-                    format!("{}…", truncated)
+    let modal = model.ui.active_modal.as_ref()?;
+    match modal {
+        ModalState::CommandPalette(state) => {
+            let rows = placeholder_rows(state.matches.len());
+            let sections = [Section {
+                title: None,
+                rows: &rows,
+            }];
+            let spec = list_shape_spec(
+                PALETTE_WIDTH,
+                Some(state.input().chars().count()),
+                &sections,
+                state.selected_index.min(rows.len().saturating_sub(1)),
+                state.scroll_offset,
+                true,
+            );
+            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            Some(f(&spec, &l))
+        }
+        ModalState::FileFinder(state) => {
+            let rows = placeholder_rows(state.results.len());
+            let sections = [Section {
+                title: None,
+                rows: &rows,
+            }];
+            let spec = list_shape_spec(
+                PICKER_WIDTH,
+                Some(state.input().chars().count()),
+                &sections,
+                state.selected_index.min(rows.len().saturating_sub(1)),
+                state.scroll_offset,
+                true,
+            );
+            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            Some(f(&spec, &l))
+        }
+        ModalState::RecentFiles(state) => {
+            let groups = recent_files_groups(state);
+            let row_groups: Vec<Vec<Row>> = groups
+                .iter()
+                .map(|(_, indices)| placeholder_rows(indices.len()))
+                .collect();
+            let sections: Vec<Section> = groups
+                .iter()
+                .zip(&row_groups)
+                .map(|((title, _), rows)| Section {
+                    title: Some(title),
+                    rows,
+                })
+                .collect();
+            let total = state.filtered_rows.len();
+            let spec = list_shape_spec(
+                PICKER_WIDTH,
+                Some(state.input().chars().count()),
+                &sections,
+                state.selected_index.min(total.saturating_sub(1)),
+                state.scroll_offset,
+                true,
+            );
+            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            Some(f(&spec, &l))
+        }
+        ModalState::ThemePicker(state) => {
+            let groups = theme_picker_groups(&state.themes);
+            let row_groups: Vec<Vec<Row>> = groups
+                .iter()
+                .map(|(_, range)| placeholder_rows(range.len()))
+                .collect();
+            let sections: Vec<Section> = groups
+                .iter()
+                .zip(&row_groups)
+                .map(|((title, _), rows)| Section {
+                    title: Some(title),
+                    rows,
+                })
+                .collect();
+            let spec = OverlaySpec {
+                anchor: Anchor::Centered {
+                    width: WidthRule {
+                        pct: 0.0,
+                        min: 400.0,
+                        max: 400.0,
+                    },
+                    dim_alpha: MODAL_DIM_ALPHA,
+                },
+                header: Some(Header {
+                    glyph: None,
+                    text: "",
+                    placeholder: "",
+                    caret: None,
+                    scope: None,
+                }),
+                body: Body::List {
+                    sections: &sections,
+                    selected: FlatIndex(
+                        state
+                            .selected_index
+                            .min(state.themes.len().saturating_sub(1)),
+                    ),
+                    scroll: state.scroll_offset,
+                    max_visible: COMMAND_PALETTE_MAX_VISIBLE,
+                },
+                footer: None,
+                hover_row: None,
+            };
+            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            Some(f(&spec, &l))
+        }
+        ModalState::GotoLine(_) => {
+            let fields = [Field { label: "" }];
+            let spec = OverlaySpec {
+                anchor: Anchor::Centered {
+                    width: width_rule(SMALL_MODAL_WIDTH),
+                    dim_alpha: MODAL_DIM_ALPHA,
+                },
+                header: None,
+                body: Body::Fields {
+                    fields: &fields,
+                    focused: 0,
+                },
+                footer: None,
+                hover_row: None,
+            };
+            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            Some(f(&spec, &l))
+        }
+        ModalState::FindReplace(state) => {
+            let fields = if state.replace_mode {
+                vec![Field { label: "" }, Field { label: "" }]
+            } else {
+                vec![Field { label: "" }]
+            };
+            let focused = match state.focused_field {
+                FindReplaceField::Query => 0,
+                FindReplaceField::Replace => 1,
+            };
+            let spec = OverlaySpec {
+                anchor: Anchor::Centered {
+                    width: width_rule(SMALL_MODAL_WIDTH),
+                    dim_alpha: MODAL_DIM_ALPHA,
+                },
+                header: None,
+                body: Body::Fields {
+                    fields: &fields,
+                    focused,
+                },
+                footer: if state.replace_mode {
+                    Some(Footer {
+                        leading: "",
+                        trailing: "",
+                    })
                 } else {
-                    file_match.relative_path.clone()
-                };
-                painter.draw(frame, path_x, item_y, &path_display, dim);
-            }
-        },
-    );
+                    None
+                },
+                hover_row: None,
+            };
+            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            Some(f(&spec, &l))
+        }
+    }
 }
 
-fn render_recent_files_modal(
-    frame: &mut Frame,
-    painter: &mut TextPainter,
+/// Placeholder rows for a shape-only spec — layout only depends on row
+/// count/height, not content.
+fn placeholder_rows(count: usize) -> Vec<Row<'static>> {
+    (0..count)
+        .map(|_| Row {
+            icon: RowIcon::None,
+            label: "",
+            match_indices: &[],
+            detail: None,
+            accessory: Accessory::None,
+        })
+        .collect()
+}
+
+/// Shared shape for the input-as-header list contexts (palette, file
+/// finder, recent files): same width rule shape, header-with-caret,
+/// optional footer presence mirrored from the real render (footer
+/// content doesn't matter for hit-testing/caret, only its Some/None-ness
+/// affects panel height).
+fn list_shape_spec<'a>(
+    width: (f32, f32, f32),
+    input_len: Option<usize>,
+    sections: &'a [Section<'a>],
+    selected_index: usize,
+    scroll: usize,
+    has_footer: bool,
+) -> OverlaySpec<'a> {
+    OverlaySpec {
+        anchor: Anchor::Centered {
+            width: width_rule(width),
+            dim_alpha: MODAL_DIM_ALPHA,
+        },
+        header: Some(Header {
+            glyph: None,
+            text: "",
+            placeholder: "",
+            caret: input_len,
+            scope: None,
+        }),
+        body: Body::List {
+            sections,
+            selected: FlatIndex(selected_index),
+            scroll,
+            max_visible: COMMAND_PALETTE_MAX_VISIBLE,
+        },
+        footer: has_footer.then_some(Footer {
+            leading: "",
+            trailing: "",
+        }),
+        hover_row: None,
+    }
+}
+
+/// The header text-input rect (inside the panel, minus header padding) for
+/// whichever modal has an input-as-header, used by `view::caret` to place
+/// the IME caret.
+pub(crate) fn modal_header_input_rect(
     model: &AppModel,
-    state: &crate::model::ui::RecentFilesState,
-    ctx: &ModalRenderCtx,
-) {
-    let filtered = state.filtered_entries();
-    let input_text = state.input();
-    render_search_list_modal(
-        frame,
-        painter,
-        model,
-        ctx,
-        "Recent Files",
-        &state.editable,
-        input_text.is_empty(),
-        "No recent files match your query",
-        filtered.as_slice(),
-        state.selected_index,
-        10,
-        |frame, painter, entry, item_y, layout_x, layout_w, char_width, fg, dim| {
-            let icon = crate::model::FileExtension::from_path(&entry.path).icon();
-            let icon_x = layout_x + 12;
-            painter.draw(frame, icon_x, item_y, icon, fg);
-
-            let display = entry.display_path();
-            let name_x = layout_x + 36;
-            painter.draw(frame, name_x, item_y, &display, fg);
-
-            let time_str = entry.time_ago();
-            let time_width = (time_str.len() as f32 * char_width) as usize;
-            let time_x = (layout_x + layout_w).saturating_sub(time_width + 12);
-            painter.draw(frame, time_x, item_y, &time_str, dim);
-        },
-    );
+    window_width: usize,
+    window_height: usize,
+    scale_factor: f64,
+) -> Option<WidgetRect> {
+    with_modal_overlay_layout(model, window_width, window_height, scale_factor, |_, l| {
+        let header = l.header?;
+        let pad = overlay_surface::header_pad_x(scale_factor);
+        Some(WidgetRect {
+            x: header.x + pad,
+            y: header.y,
+            w: header.w.saturating_sub(pad * 2),
+            h: header.h,
+        })
+    })
+    .flatten()
 }
+
+/// The input rect for field `field_index` of a `Body::Fields` modal (Go to
+/// Line, Find/Replace), used by `view::caret` to place the IME caret.
+pub(crate) fn modal_field_input_rect(
+    model: &AppModel,
+    window_width: usize,
+    window_height: usize,
+    scale_factor: f64,
+    field_index: usize,
+) -> Option<WidgetRect> {
+    with_modal_overlay_layout(model, window_width, window_height, scale_factor, |_, l| {
+        l.fields.get(field_index).map(|f| f.input)
+    })
+    .flatten()
+}
+
+// ============================================================================
+// Top-level modal / drop-overlay rendering
+// ============================================================================
 
 /// Render the active modal overlay.
-///
-/// Draws:
-/// - Dimmed background over entire window
-/// - Modal dialog box (centered)
-/// - Modal content (title, input field, command list for palette)
 pub fn render_modals(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -728,13 +995,6 @@ pub fn render_modals(
         return;
     };
 
-    // 1. Dim background (40% black overlay). Skipped for the command
-    // palette: it renders through `OverlaySurface`, which owns its own
-    // backdrop dim as part of the component's chrome.
-    if !matches!(modal, ModalState::CommandPalette(_)) {
-        frame.dim(MODAL_DIM_ALPHA); // 102/255 ≈ 40% opacity
-    }
-
     let ctx = ModalRenderCtx {
         window_width,
         window_height,
@@ -744,23 +1004,24 @@ pub fn render_modals(
         scale_factor: model.metrics.scale_factor,
     };
 
-    // Handle different modal types
     match modal {
         ModalState::ThemePicker(state) => {
-            render_theme_picker_modal(frame, painter, model, state, &ctx)
+            render_theme_picker_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
         }
         ModalState::CommandPalette(state) => {
             render_command_palette_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
         }
-        ModalState::GotoLine(state) => render_goto_line_modal(frame, painter, model, state, &ctx),
+        ModalState::GotoLine(state) => {
+            render_goto_line_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
+        }
         ModalState::FindReplace(state) => {
-            render_find_replace_modal(frame, painter, model, state, &ctx)
+            render_find_replace_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
         }
         ModalState::FileFinder(state) => {
-            render_file_finder_modal(frame, painter, model, state, &ctx)
+            render_file_finder_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
         }
         ModalState::RecentFiles(state) => {
-            render_recent_files_modal(frame, painter, model, state, &ctx)
+            render_recent_files_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
         }
     }
 }
@@ -772,34 +1033,32 @@ pub fn render_drop_overlay(
     model: &AppModel,
     window_width: usize,
     window_height: usize,
+    mask_cache: &mut RoundedRectMaskCache,
 ) {
-    let char_width = painter.char_width();
-    let line_height = painter.line_height();
-
-    // Semi-transparent overlay covering the entire window
-    frame.dim(0x80); // 50% dim
-
-    // Draw centered drop zone
     let text = model.ui.drop_state.display_text();
-    let text_len = text.chars().count();
 
-    let box_width = ((text_len as f32 + 4.0) * char_width).round() as usize;
-    let box_height = line_height * 3;
-    let box_x = (window_width.saturating_sub(box_width)) / 2;
-    let box_y = (window_height.saturating_sub(box_height)) / 2;
+    let spec = OverlaySpec {
+        anchor: Anchor::Centered {
+            width: width_rule(SMALL_MODAL_WIDTH),
+            // The drop overlay dims darker than regular modals (0x80 vs
+            // 0x66) — preserved from the pre-migration behavior.
+            dim_alpha: 0x80,
+        },
+        header: None,
+        body: Body::Zones { text: &text },
+        footer: None,
+        hover_row: None,
+    };
 
-    let bg_color = model.theme.overlay.background.to_argb_u32();
-    let border_color = model.theme.overlay.highlight.to_argb_u32();
-    let fg_color = model.theme.overlay.foreground.to_argb_u32();
-
-    frame.draw_bordered_rect(box_x, box_y, box_width, box_height, bg_color, border_color);
-
-    // Centered text
-    let text_x = box_x + (box_width - (text_len as f32 * char_width).round() as usize) / 2;
-    let text_y = box_y + line_height;
-
-    painter.draw(frame, text_x, text_y, &text, fg_color);
+    overlay_surface::render(
+        frame,
+        painter,
+        mask_cache,
+        &model.theme.overlay,
+        &spec,
+        window_width,
+        window_height,
+        model.metrics.scale_factor,
+        model.ui.cursor_visible,
+    );
 }
-
-/// Modal dim background alpha (102/255 ≈ 40% opacity)
-const MODAL_DIM_ALPHA: u8 = 0x66;

@@ -438,8 +438,15 @@ impl App {
         if let Some(target) = hit_test_ui(&self.model, pt, renderer.char_width()) {
             window.set_cursor(target.cursor_icon());
             self.model.ui.hover = target.hover_region();
+            self.model.ui.modal_hover_row =
+                if let token::view::hit_test::HitTarget::ModalRow { flat_index } = target {
+                    Some(flat_index)
+                } else {
+                    None
+                };
         } else {
             self.model.ui.hover = HoverRegion::None;
+            self.model.ui.modal_hover_row = None;
             window.set_cursor(CursorIcon::Default);
         }
     }
@@ -617,6 +624,14 @@ impl App {
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse_position = Some((position.x, position.y));
                 self.update_cursor_icon(position.x, position.y);
+
+                // Modals already force Damage::Full while visible, and row
+                // hover wash (overlay-surface.md Pointer) needs a repaint on
+                // every hover change — simplest correct behavior is to just
+                // redraw every mouse move while a modal is open.
+                if self.model.ui.has_modal() {
+                    return Some(Cmd::Redraw);
+                }
 
                 // Handle splitter drag first (highest priority)
                 if self.model.ui.splitter_drag.is_some() {

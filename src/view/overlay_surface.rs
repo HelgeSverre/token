@@ -36,12 +36,87 @@ mod dims {
     /// Gap between chord steps in a keycap accessory (Visual Language >
     /// Keycaps: "6px gap between steps").
     pub const CHIP_STEP_GAP: f32 = 6.0;
+    /// Top/bottom panel padding for `Fields`/`Zones` bodies, which have no
+    /// header row to anchor against.
+    pub const PANEL_PAD_Y: f32 = 12.0;
+    /// Label row height in a `Fields` body (one line of `SIZE_INPUT` text).
+    pub const FIELD_LABEL_H: f32 = 20.0;
+    /// Gap between a field's label and its input box.
+    pub const FIELD_LABEL_GAP: f32 = 4.0;
+    /// Gap between successive fields in a `Fields` body.
+    pub const FIELD_SPACING: f32 = 12.0;
 }
 
 /// The three-size type scale (input / rows / metadata), in logical px.
 pub const SIZE_INPUT: f32 = 14.0;
 pub const SIZE_ROW: f32 = 13.0;
 pub const SIZE_META: f32 = 11.0;
+
+/// Minimal-reveal scroll-window math for a flat list of selectable rows —
+/// shared by every list-body modal context (command palette, file finder,
+/// recent files, theme picker). Moved here from the now-deleted
+/// `view::selectable_list` (Phase 3: that module's *rendering* helpers had
+/// no consumers outside `modal.rs` once every context migrated to
+/// `OverlaySurface`, but this scroll math is the one piece every context
+/// still needs — it becomes the only path, per overlay-surface.md
+/// Behaviour).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SelectableListViewport {
+    pub selected_index: usize,
+    pub scroll_offset: usize,
+    pub visible_count: usize,
+    pub items_after: usize,
+}
+
+impl SelectableListViewport {
+    /// Computes a viewport assuming no prior scroll position (window starts at
+    /// the top). Kept for callers that don't track scroll state across
+    /// renders; prefer [`Self::compute_from`] when a previous scroll offset is
+    /// available, since it implements minimal-reveal scrolling instead of
+    /// always pinning to an edge.
+    #[cfg(test)]
+    pub fn compute(total_items: usize, selected_index: usize, max_visible_items: usize) -> Self {
+        Self::compute_from(total_items, selected_index, max_visible_items, 0)
+    }
+
+    /// Minimal-reveal scrolling: the visible window is only moved when
+    /// `selected_index` falls outside `[previous_scroll_offset,
+    /// previous_scroll_offset + max_visible_items)`. When it does, the window
+    /// moves by the minimum amount needed to bring the selection back into
+    /// view — scrolling up just enough if the selection moved above the
+    /// window, or down just enough if it moved below — rather than
+    /// unconditionally recomputing from scratch and pinning the selection to
+    /// an edge.
+    pub fn compute_from(
+        total_items: usize,
+        selected_index: usize,
+        max_visible_items: usize,
+        previous_scroll_offset: usize,
+    ) -> Self {
+        let selected_index = selected_index.min(total_items.saturating_sub(1));
+        let visible_count = total_items.min(max_visible_items);
+
+        let max_scroll_offset = total_items.saturating_sub(max_visible_items);
+        let mut scroll_offset = previous_scroll_offset.min(max_scroll_offset);
+
+        if selected_index < scroll_offset {
+            // Selection moved above the visible window: scroll up just enough.
+            scroll_offset = selected_index;
+        } else if selected_index >= scroll_offset + max_visible_items {
+            // Selection moved below the visible window: scroll down just enough.
+            scroll_offset = selected_index + 1 - max_visible_items;
+        }
+
+        let items_after = total_items.saturating_sub(scroll_offset + max_visible_items);
+
+        Self {
+            selected_index,
+            scroll_offset,
+            visible_count,
+            items_after,
+        }
+    }
+}
 
 #[inline]
 fn scaled(v: f32, scale_factor: f64) -> usize {
@@ -182,6 +257,14 @@ pub struct Footer<'a> {
     pub trailing: &'a str,
 }
 
+/// One labeled input field in a `Body::Fields` context (Go to Line,
+/// Find/Replace). The caller renders the actual editable text/selection via
+/// `TextFieldRenderer` into the `WidgetRect` this layout produces —
+/// `Field::text`/`caret` describe the label styling only (focused vs. dim).
+pub struct Field<'a> {
+    pub label: &'a str,
+}
+
 pub enum Body<'a> {
     List {
         sections: &'a [Section<'a>],
@@ -189,22 +272,41 @@ pub enum Body<'a> {
         scroll: usize,
         max_visible: usize,
     },
+    /// Goto line, Find/Replace: labeled input fields. Field content is
+    /// painted by the caller (`TextFieldRenderer`) into the geometry this
+    /// layout produces (`OverlayLayout::fields`); this variant only owns the
+    /// label text and which field is focused (bright vs. dim label).
+    Fields {
+        fields: &'a [Field<'a>],
+        focused: usize,
+    },
+    /// Drop overlay: a single block of centered text, no list/fields.
+    Zones { text: &'a str },
 }
 
 impl<'a> Body<'a> {
-    /// Total selectable rows across all sections (headers excluded).
+    /// Total selectable rows across all sections (headers excluded); 0 for
+    /// non-list bodies.
     pub fn total_rows(&self) -> usize {
         match self {
             Body::List { sections, .. } => sections.iter().map(|s| s.rows.len()).sum(),
+            Body::Fields { .. } | Body::Zones { .. } => 0,
         }
     }
 }
 
 pub struct OverlaySpec<'a> {
     pub anchor: Anchor,
-    pub header: Header<'a>,
+    /// `None` for `Fields`/`Zones` contexts, which have no header row —
+    /// input-as-header is a `Body::List` convention (Visual Language >
+    /// Header/input).
+    pub header: Option<Header<'a>>,
     pub body: Body<'a>,
     pub footer: Option<Footer<'a>>,
+    /// The row currently under the mouse in a `Body::List` — hover wash, no
+    /// text lift (Visual Language "Pointer"); distinct from `selected`,
+    /// which is keyboard-authoritative. Ignored for other body kinds.
+    pub hover_row: Option<FlatIndex>,
 }
 
 /// One entry in the flattened, on-screen row list: either a section header
@@ -321,23 +423,39 @@ pub fn truncate_head(painter: &mut TextPainter, size: f32, text: &str, max_width
     out
 }
 
+/// Geometry for one `Field` in a `Body::Fields` layout: the label row above
+/// an input box. The caller paints actual field content (text, selection,
+/// caret) into `input` via `TextFieldRenderer`.
+#[derive(Clone, Copy, Debug)]
+pub struct FieldLayout {
+    pub label: WidgetRect,
+    pub input: WidgetRect,
+}
+
 /// Computed geometry for an `Anchor::Centered` surface — panel chrome,
-/// header, list rows (already scrolled to the visible window), footer, and
-/// scrollbar thumb. The single source of truth shared by `render()` today
-/// and by hit-testing once Phase 3 lands.
+/// header, list rows (already scrolled to the visible window), fields,
+/// footer, and scrollbar thumb. The single source of truth shared by
+/// `render()` and by hit-testing (`hit_test::hit_test_modal`) — one layout,
+/// two consumers.
 pub struct OverlayLayout {
     pub panel: WidgetRect,
-    pub header: WidgetRect,
+    /// `None` when `spec.header` is `None` (`Fields`/`Zones` bodies).
+    pub header: Option<WidgetRect>,
     pub row_height: usize,
     /// One rect per visible display row (headers included), in list order.
+    /// Empty for non-`List` bodies.
     pub rows: Vec<WidgetRect>,
+    /// One entry per `Body::Fields` field, in order. Empty otherwise.
+    pub fields: Vec<FieldLayout>,
+    /// The single text block for a `Body::Zones` body. `None` otherwise.
+    pub zones_text: Option<WidgetRect>,
     pub footer: Option<WidgetRect>,
     pub scrollbar: Option<WidgetRect>,
 }
 
 /// Layout an `Anchor::Centered` surface against the (physical-px) window
 /// size. This is the one layout function the doc calls for — paint and
-/// (later) hit-testing both consume it.
+/// hit-testing both consume it.
 pub fn layout(
     spec: &OverlaySpec,
     window_width: usize,
@@ -353,86 +471,222 @@ pub fn layout(
         .clamp(min_w, max_w)
         .min(window_width.saturating_sub(margin));
 
-    let header_h = scaled(SIZE_INPUT, scale_factor) + 2 * scaled(dims::PAD_Y, scale_factor);
+    let header_h = spec
+        .header
+        .as_ref()
+        .map(|_| scaled(SIZE_INPUT, scale_factor) + 2 * scaled(dims::PAD_Y, scale_factor));
     let row_h = scaled(dims::ROW_HEIGHT, scale_factor);
     let footer_h = spec
         .footer
         .as_ref()
         .map(|_| scaled(dims::FOOTER_HEIGHT, scale_factor));
 
-    let Body::List {
+    let panel_x_for = |panel_w: usize| window_width.saturating_sub(panel_w) / 2;
+    let panel_y = scaled(dims::Y, scale_factor).min(window_height / 4);
+
+    match &spec.body {
+        Body::List {
+            sections,
+            scroll,
+            max_visible,
+            ..
+        } => {
+            let display_rows = flatten_rows(sections);
+            let (start, visible) = resolve_visible_window(&display_rows, *scroll, *max_visible);
+            let list_h = visible * row_h;
+            let header_h = header_h.unwrap_or(0);
+
+            let panel_h = header_h + list_h + footer_h.unwrap_or(0);
+            let panel = WidgetRect {
+                x: panel_x_for(panel_w),
+                y: panel_y,
+                w: panel_w,
+                h: panel_h,
+            };
+            let header = spec.header.as_ref().map(|_| WidgetRect {
+                x: panel.x,
+                y: panel.y,
+                w: panel.w,
+                h: header_h,
+            });
+
+            let list_top = panel.y + header_h;
+            let rows: Vec<WidgetRect> = (0..visible)
+                .map(|i| WidgetRect {
+                    x: panel.x,
+                    y: list_top + i * row_h,
+                    w: panel.w,
+                    h: row_h,
+                })
+                .collect();
+
+            let footer = footer_h.map(|h| WidgetRect {
+                x: panel.x,
+                y: list_top + list_h,
+                w: panel.w,
+                h,
+            });
+
+            let total = display_rows.len();
+            let scrollbar = if total > *max_visible {
+                let inset = scaled(dims::SCROLLBAR_INSET, scale_factor);
+                let sb_w = scaled(dims::SCROLLBAR_WIDTH, scale_factor);
+                let min_len = scaled(dims::SCROLLBAR_MIN_LEN, scale_factor);
+                let track_h = list_h;
+                let thumb_h = ((visible as f32 / total as f32) * track_h as f32).round() as usize;
+                let thumb_h = thumb_h.max(min_len).min(track_h);
+                let max_thumb_y = track_h.saturating_sub(thumb_h);
+                let scroll_range = total.saturating_sub(visible).max(1);
+                let thumb_y = (start * max_thumb_y) / scroll_range;
+                Some(WidgetRect {
+                    x: panel.x + panel.w.saturating_sub(sb_w + inset),
+                    y: list_top + thumb_y,
+                    w: sb_w,
+                    h: thumb_h,
+                })
+            } else {
+                None
+            };
+
+            OverlayLayout {
+                panel,
+                header,
+                row_height: row_h,
+                rows,
+                fields: Vec::new(),
+                zones_text: None,
+                footer,
+                scrollbar,
+            }
+        }
+        Body::Fields { fields, .. } => {
+            let label_h = scaled(dims::FIELD_LABEL_H, scale_factor);
+            let gap = scaled(dims::FIELD_LABEL_GAP, scale_factor);
+            let input_h = scaled(SIZE_INPUT, scale_factor) + 2 * scaled(dims::PAD_Y, scale_factor);
+            let spacing = scaled(dims::FIELD_SPACING, scale_factor);
+            let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
+            let field_h = label_h + gap + input_h;
+
+            let panel_h =
+                pad_y * 2 + fields.len() * field_h + fields.len().saturating_sub(1) * spacing;
+            let panel = WidgetRect {
+                x: panel_x_for(panel_w),
+                y: panel_y,
+                w: panel_w,
+                h: panel_h,
+            };
+
+            let mut y = panel.y + pad_y;
+            let field_layouts: Vec<FieldLayout> = fields
+                .iter()
+                .map(|_| {
+                    let label = WidgetRect {
+                        x: panel.x,
+                        y,
+                        w: panel.w,
+                        h: label_h,
+                    };
+                    let input = WidgetRect {
+                        x: panel.x,
+                        y: y + label_h + gap,
+                        w: panel.w,
+                        h: input_h,
+                    };
+                    y += field_h + spacing;
+                    FieldLayout { label, input }
+                })
+                .collect();
+
+            OverlayLayout {
+                panel,
+                header: None,
+                row_height: row_h,
+                rows: Vec::new(),
+                fields: field_layouts,
+                zones_text: None,
+                footer: None,
+                scrollbar: None,
+            }
+        }
+        Body::Zones { .. } => {
+            let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
+            let text_h = scaled(SIZE_INPUT, scale_factor);
+            let panel_h = pad_y * 2 + text_h;
+            let panel = WidgetRect {
+                x: panel_x_for(panel_w),
+                y: panel_y,
+                w: panel_w,
+                h: panel_h,
+            };
+            let zones_text = Some(WidgetRect {
+                x: panel.x,
+                y: panel.y + pad_y,
+                w: panel.w,
+                h: text_h,
+            });
+
+            OverlayLayout {
+                panel,
+                header: None,
+                row_height: row_h,
+                rows: Vec::new(),
+                fields: Vec::new(),
+                zones_text,
+                footer: None,
+                scrollbar: None,
+            }
+        }
+    }
+}
+
+/// Where a point landed within a rendered `OverlaySpec`/`OverlayLayout` —
+/// consumed by `hit_test::hit_test_modal`, which builds the exact same spec
+/// the renderer draws and calls `layout()` + this function against it (one
+/// layout, two consumers, so a click is always tested against the geometry
+/// actually painted).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverlayHit {
+    /// Outside the panel entirely (dismiss on click).
+    Outside,
+    /// A selectable row (`Body::List` only).
+    Row(FlatIndex),
+    /// Inside the panel but not on a specific row (header, footer, section
+    /// header, padding, a `Fields`/`Zones` body) — consumed, no action.
+    Inside,
+}
+
+/// Hit-test a point (physical px) against a laid-out `OverlaySpec`.
+pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) -> OverlayHit {
+    let inside_panel = x >= layout.panel.x
+        && x < layout.panel.x + layout.panel.w
+        && y >= layout.panel.y
+        && y < layout.panel.y + layout.panel.h;
+    if !inside_panel {
+        return OverlayHit::Outside;
+    }
+
+    if let Body::List {
         sections,
         scroll,
         max_visible,
         ..
-    } = &spec.body;
-    let display_rows = flatten_rows(sections);
-    let (start, visible) = resolve_visible_window(&display_rows, *scroll, *max_visible);
-    let list_h = visible * row_h;
-
-    let panel_h = header_h + list_h + footer_h.unwrap_or(0);
-    let panel_x = window_width.saturating_sub(panel_w) / 2;
-    let panel_y = scaled(dims::Y, scale_factor).min(window_height / 4);
-
-    let panel = WidgetRect {
-        x: panel_x,
-        y: panel_y,
-        w: panel_w,
-        h: panel_h,
-    };
-    let header = WidgetRect {
-        x: panel.x,
-        y: panel.y,
-        w: panel.w,
-        h: header_h,
-    };
-
-    let list_top = header.y + header.h;
-    let rows: Vec<WidgetRect> = (0..visible)
-        .map(|i| WidgetRect {
-            x: panel.x,
-            y: list_top + i * row_h,
-            w: panel.w,
-            h: row_h,
-        })
-        .collect();
-
-    let footer = footer_h.map(|h| WidgetRect {
-        x: panel.x,
-        y: list_top + list_h,
-        w: panel.w,
-        h,
-    });
-
-    let total = display_rows.len();
-    let scrollbar = if total > *max_visible {
-        let inset = scaled(dims::SCROLLBAR_INSET, scale_factor);
-        let sb_w = scaled(dims::SCROLLBAR_WIDTH, scale_factor);
-        let min_len = scaled(dims::SCROLLBAR_MIN_LEN, scale_factor);
-        let track_h = list_h;
-        let thumb_h = ((visible as f32 / total as f32) * track_h as f32).round() as usize;
-        let thumb_h = thumb_h.max(min_len).min(track_h);
-        let max_thumb_y = track_h.saturating_sub(thumb_h);
-        let scroll_range = total.saturating_sub(visible).max(1);
-        let thumb_y = (start * max_thumb_y) / scroll_range;
-        Some(WidgetRect {
-            x: panel.x + panel.w.saturating_sub(sb_w + inset),
-            y: list_top + thumb_y,
-            w: sb_w,
-            h: thumb_h,
-        })
-    } else {
-        None
-    };
-
-    OverlayLayout {
-        panel,
-        header,
-        row_height: row_h,
-        rows,
-        footer,
-        scrollbar,
+    } = &spec.body
+    {
+        let display_rows = flatten_rows(sections);
+        let (start, _) = resolve_visible_window(&display_rows, *scroll, *max_visible);
+        for (slot, rect) in layout.rows.iter().enumerate() {
+            let hit = x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
+            if !hit {
+                continue;
+            }
+            return match display_rows.get(start + slot) {
+                Some(DisplayRow::Row(_, flat_index)) => OverlayHit::Row(*flat_index),
+                _ => OverlayHit::Inside,
+            };
+        }
     }
+
+    OverlayHit::Inside
 }
 
 /// Resolved colors pulled once from `OverlayTheme` per render call.
@@ -442,6 +696,7 @@ struct Palette {
     text_primary: u32,
     text_bright: u32,
     text_dim: u32,
+    accent: u32,
     accent_bright: u32,
     match_on_selection: u32,
     selection_wash: u32,
@@ -459,6 +714,7 @@ impl Palette {
             text_primary: theme.text_primary.to_argb_u32(),
             text_bright: theme.text_bright.to_argb_u32(),
             text_dim: theme.text_dim.to_argb_u32(),
+            accent: theme.accent.to_argb_u32(),
             accent_bright: theme.accent_bright.to_argb_u32(),
             match_on_selection: theme.match_on_selection.to_argb_u32(),
             selection_wash: theme.selection_wash.to_argb_u32(),
@@ -521,24 +777,40 @@ pub fn render(
         mask_cache,
     );
 
-    render_header(
-        frame,
-        painter,
-        &colors,
-        &spec.header,
-        &layout,
-        scale_factor,
-        cursor_visible,
-    );
-    render_list(
-        frame,
-        painter,
-        mask_cache,
-        &colors,
-        spec,
-        &layout,
-        scale_factor,
-    );
+    if let Some(header) = &spec.header {
+        render_header(
+            frame,
+            painter,
+            &colors,
+            header,
+            &layout,
+            scale_factor,
+            cursor_visible,
+        );
+    }
+    match &spec.body {
+        Body::List { .. } => render_list(
+            frame,
+            painter,
+            mask_cache,
+            &colors,
+            spec,
+            &layout,
+            scale_factor,
+        ),
+        Body::Fields { fields, focused } => render_fields(
+            frame,
+            painter,
+            &colors,
+            fields,
+            *focused,
+            &layout,
+            scale_factor,
+        ),
+        Body::Zones { text } => {
+            render_zones_text(frame, painter, &colors, text, &layout, scale_factor)
+        }
+    }
     if let (Some(footer_spec), Some(footer_rect)) = (&spec.footer, layout.footer) {
         render_footer(
             frame,
@@ -578,7 +850,7 @@ fn render_header(
 ) {
     let size = size_px(SIZE_INPUT, scale_factor);
     let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
-    let r = layout.header;
+    let Some(r) = layout.header else { return };
 
     // Bottom hairline separating the header from the list.
     frame.fill_rect_px(r.x, r.y + r.h.saturating_sub(1), r.w, 1, colors.hairline);
@@ -662,7 +934,10 @@ fn render_list(
         selected,
         scroll,
         max_visible,
-    } = &spec.body;
+    } = &spec.body
+    else {
+        return;
+    };
     let display_rows = flatten_rows(sections);
     let (start, _visible) = resolve_visible_window(&display_rows, *scroll, *max_visible);
 
@@ -705,6 +980,17 @@ fn render_list(
                         row_radius,
                         colors.selection_wash,
                         mask_cache,
+                    );
+                } else if spec.hover_row == Some(*flat_index) {
+                    // Hover is not selection — 12% wash, no text lift
+                    // (Visual Language > Pointer).
+                    let hover_wash = (0x1F << 24) | (colors.accent & 0x00FF_FFFF);
+                    frame.blend_rect_px(
+                        rect.x + inset,
+                        rect.y,
+                        rect.w.saturating_sub(inset * 2),
+                        rect.h,
+                        hover_wash,
                     );
                 }
                 let text_color = if is_selected {
@@ -988,9 +1274,177 @@ fn render_footer(
     );
 }
 
+/// Draw the field labels for a `Body::Fields` context (Go to Line,
+/// Find/Replace). Field content (text, selection, caret) is painted by the
+/// caller via `TextFieldRenderer` into `layout.fields[i].input` — this only
+/// draws the label above it, bright when focused, dim otherwise.
+fn render_fields(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    colors: &Palette,
+    fields: &[Field],
+    focused: usize,
+    layout: &OverlayLayout,
+    scale_factor: f64,
+) {
+    let size = size_px(SIZE_INPUT, scale_factor);
+    let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
+    for (i, field) in fields.iter().enumerate() {
+        let Some(field_layout) = layout.fields.get(i) else {
+            continue;
+        };
+        let color = if i == focused {
+            colors.text_bright
+        } else {
+            colors.text_dim
+        };
+        let r = field_layout.label;
+        let text_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(size))) / 2;
+        painter.draw_sized(frame, r.x + pad_x, text_y, field.label, size, 0.0, color);
+    }
+}
+
+/// Draw the single centered text block of a `Body::Zones` context (drop
+/// overlay).
+fn render_zones_text(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    colors: &Palette,
+    text: &str,
+    layout: &OverlayLayout,
+    scale_factor: f64,
+) {
+    let Some(r) = layout.zones_text else { return };
+    let size = size_px(SIZE_INPUT, scale_factor);
+    let text_w = painter.measure_sized(text, size, 0.0).ceil() as usize;
+    let text_x = r.x + (r.w.saturating_sub(text_w)) / 2;
+    let text_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(size))) / 2;
+    painter.draw_sized(frame, text_x, text_y, text, size, 0.0, colors.text_primary);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn viewport_clamps_selection_without_scroll() {
+        let viewport = SelectableListViewport::compute(3, 10, 8);
+        assert_eq!(viewport.selected_index, 2);
+        assert_eq!(viewport.scroll_offset, 0);
+        assert_eq!(viewport.visible_count, 3);
+        assert_eq!(viewport.items_after, 0);
+    }
+
+    #[test]
+    fn viewport_scrolls_to_keep_selection_visible() {
+        let viewport = SelectableListViewport::compute(15, 12, 8);
+        assert_eq!(viewport.selected_index, 12);
+        assert_eq!(viewport.scroll_offset, 5);
+        assert_eq!(viewport.visible_count, 8);
+        assert_eq!(viewport.items_after, 2);
+    }
+
+    /// M12 regression: moving the selection down one row at a time should
+    /// only nudge the scroll offset by exactly one row at a time, once the
+    /// selection actually leaves the visible window — never jump/pin
+    /// unconditionally.
+    #[test]
+    fn compute_from_scrolls_down_minimally_one_row_at_a_time() {
+        let total = 20;
+        let max_visible = 8;
+        let mut offset = 0usize;
+        let mut changes = 0;
+
+        for selected in 0..total {
+            let viewport =
+                SelectableListViewport::compute_from(total, selected, max_visible, offset);
+            if viewport.scroll_offset != offset {
+                changes += 1;
+                assert_eq!(
+                    viewport.scroll_offset,
+                    offset + 1,
+                    "scroll offset should move by exactly one row when the selection \
+                     leaves the window from below"
+                );
+            }
+            offset = viewport.scroll_offset;
+        }
+
+        // Once selection reaches the last item, the window should be pinned
+        // just enough to show it (20 - 8 = 12), and it should only have
+        // scrolled once per row past the initial page.
+        assert_eq!(offset, total - max_visible);
+        assert_eq!(changes, total - max_visible);
+    }
+
+    /// M12 regression: after scrolling down to the bottom, moving the
+    /// selection back up should also only move the window by the minimum
+    /// amount needed — and once it settles back within a stable window,
+    /// further moves within that window must not change scroll_offset at all.
+    #[test]
+    fn compute_from_scrolls_up_minimally_and_holds_steady_within_window() {
+        let total = 20;
+        let max_visible = 8;
+
+        // Start from the bottom-pinned window (as if the user had scrolled
+        // all the way down previously).
+        let bottom = SelectableListViewport::compute_from(total, total - 1, max_visible, 0);
+        assert_eq!(bottom.scroll_offset, 12);
+
+        // Move the selection up one row at a time and ensure the offset only
+        // decreases by exactly one row at a time, right when selection
+        // leaves the window from above.
+        let mut offset = bottom.scroll_offset;
+        let mut changes = 0;
+        for selected in (0..total).rev() {
+            let viewport =
+                SelectableListViewport::compute_from(total, selected, max_visible, offset);
+            if viewport.scroll_offset != offset {
+                changes += 1;
+                assert_eq!(
+                    viewport.scroll_offset,
+                    offset - 1,
+                    "scroll offset should move by exactly one row when the selection \
+                     leaves the window from above"
+                );
+            }
+            offset = viewport.scroll_offset;
+        }
+        assert_eq!(offset, 0);
+        assert_eq!(changes, total - max_visible);
+
+        // Within a stable window, moving selection but staying inside the
+        // visible range must not touch scroll_offset at all.
+        let steady = SelectableListViewport::compute_from(total, 12, max_visible, 10);
+        assert_eq!(steady.scroll_offset, 10, "selection stays within window");
+    }
+
+    /// M12 regression: this is the exact bug scenario. After the window has
+    /// scrolled down to the bottom, jumping the selection directly to a row
+    /// far above the window must scroll up by only the minimum amount needed
+    /// (so the selection lands at the top edge of the window), not reset the
+    /// window all the way back to the start the way the old
+    /// "recompute from scratch and pin to an edge" logic did.
+    #[test]
+    fn compute_from_jump_above_window_scrolls_minimally_not_to_start() {
+        let total = 20;
+        let max_visible = 8;
+
+        // Window pinned at the bottom: [12, 20).
+        let previous_offset = 12;
+
+        // Jump the selection up to row 5, which is above the window but far
+        // from the very top of the list.
+        let viewport = SelectableListViewport::compute_from(total, 5, max_visible, previous_offset);
+
+        // Minimal reveal: offset should move to exactly the selected row so
+        // that it sits at the top edge of the new window, not jump to 0.
+        assert_eq!(viewport.scroll_offset, 5);
+        assert_ne!(
+            viewport.scroll_offset, 0,
+            "must not unconditionally pin to the start of the list"
+        );
+    }
 
     #[test]
     fn flat_index_wraps_in_both_directions() {
@@ -1096,13 +1550,13 @@ mod tests {
                 },
                 dim_alpha: 0x66,
             },
-            header: Header {
+            header: Some(Header {
                 glyph: None,
                 text: "",
                 placeholder: "",
                 caret: Some(0),
                 scope: None,
-            },
+            }),
             body: Body::List {
                 sections: &sections,
                 selected: FlatIndex(0),
@@ -1110,6 +1564,7 @@ mod tests {
                 max_visible: 8,
             },
             footer: None,
+            hover_row: None,
         };
         let l = layout(&spec, 500, 800, 1.0);
         assert_eq!(l.panel.w, 300, "must clamp up to the logical-px minimum");
@@ -1133,13 +1588,13 @@ mod tests {
                 },
                 dim_alpha: 0x66,
             },
-            header: Header {
+            header: Some(Header {
                 glyph: None,
                 text: "",
                 placeholder: "",
                 caret: Some(0),
                 scope: None,
-            },
+            }),
             body: Body::List {
                 sections: &sections,
                 selected: FlatIndex(0),
@@ -1147,6 +1602,7 @@ mod tests {
                 max_visible: 8,
             },
             footer: None,
+            hover_row: None,
         };
         let l = layout(&spec, 2000, 4000, 2.0);
         assert_eq!(
@@ -1179,13 +1635,13 @@ mod tests {
                 },
                 dim_alpha: 0x66,
             },
-            header: Header {
+            header: Some(Header {
                 glyph: None,
                 text: "",
                 placeholder: "",
                 caret: Some(0),
                 scope: None,
-            },
+            }),
             body: Body::List {
                 sections: &sections,
                 selected: FlatIndex(0),
@@ -1193,6 +1649,7 @@ mod tests {
                 max_visible: 10,
             },
             footer: None,
+            hover_row: None,
         };
         let l = layout(&spec, 1000, 800, 1.0);
         assert!(l.scrollbar.is_some());
@@ -1301,5 +1758,156 @@ mod tests {
         let over_threshold = binding_chips("\u{21e7}\u{2318}K \u{2318}C");
         assert_eq!(chip_count(&over_threshold), 5);
         assert!(chip_count(&over_threshold) > 4);
+    }
+
+    fn list_spec<'a>(sections: &'a [Section<'a>]) -> OverlaySpec<'a> {
+        OverlaySpec {
+            anchor: Anchor::Centered {
+                width: WidthRule {
+                    pct: 0.5,
+                    min: 300.0,
+                    max: 500.0,
+                },
+                dim_alpha: 0x66,
+            },
+            header: Some(Header {
+                glyph: None,
+                text: "",
+                placeholder: "",
+                caret: Some(0),
+                scope: None,
+            }),
+            body: Body::List {
+                sections,
+                selected: FlatIndex(0),
+                scroll: 0,
+                max_visible: 10,
+            },
+            footer: None,
+            hover_row: None,
+        }
+    }
+
+    #[test]
+    fn hit_test_outside_panel_returns_outside() {
+        let rows: Vec<Row> = (0..3)
+            .map(|_| Row {
+                icon: RowIcon::None,
+                label: "row",
+                match_indices: &[],
+                detail: None,
+                accessory: Accessory::None,
+            })
+            .collect();
+        let sections = [Section {
+            title: None,
+            rows: &rows,
+        }];
+        let spec = list_spec(&sections);
+        let l = layout(&spec, 1000, 800, 1.0);
+        assert_eq!(hit_test(&spec, &l, 0, 0), OverlayHit::Outside);
+    }
+
+    #[test]
+    fn hit_test_row_returns_its_flat_index() {
+        let rows: Vec<Row> = (0..3)
+            .map(|_| Row {
+                icon: RowIcon::None,
+                label: "row",
+                match_indices: &[],
+                detail: None,
+                accessory: Accessory::None,
+            })
+            .collect();
+        let sections = [Section {
+            title: None,
+            rows: &rows,
+        }];
+        let spec = list_spec(&sections);
+        let l = layout(&spec, 1000, 800, 1.0);
+        let second_row = l.rows[1];
+        let x = second_row.x + 1;
+        let y = second_row.y + 1;
+        assert_eq!(hit_test(&spec, &l, x, y), OverlayHit::Row(FlatIndex(1)));
+    }
+
+    #[test]
+    fn hit_test_section_header_returns_inside_not_a_row() {
+        let rows: Vec<Row> = (0..2)
+            .map(|_| Row {
+                icon: RowIcon::None,
+                label: "row",
+                match_indices: &[],
+                detail: None,
+                accessory: Accessory::None,
+            })
+            .collect();
+        let sections = [Section {
+            title: Some("Group"),
+            rows: &rows,
+        }];
+        let spec = list_spec(&sections);
+        let l = layout(&spec, 1000, 800, 1.0);
+        // Slot 0 is the section header, not a selectable row.
+        let header_row = l.rows[0];
+        let x = header_row.x + 1;
+        let y = header_row.y + 1;
+        assert_eq!(hit_test(&spec, &l, x, y), OverlayHit::Inside);
+    }
+
+    #[test]
+    fn layout_fields_stacks_label_then_input_per_field() {
+        let fields = [Field { label: "Find:" }, Field { label: "Replace:" }];
+        let spec = OverlaySpec {
+            anchor: Anchor::Centered {
+                width: WidthRule {
+                    pct: 0.5,
+                    min: 300.0,
+                    max: 500.0,
+                },
+                dim_alpha: 0x66,
+            },
+            header: None,
+            body: Body::Fields {
+                fields: &fields,
+                focused: 0,
+            },
+            footer: None,
+            hover_row: None,
+        };
+        let l = layout(&spec, 1000, 800, 1.0);
+        assert!(l.header.is_none());
+        assert_eq!(l.fields.len(), 2);
+        // Each field's input sits below its own label...
+        assert!(l.fields[0].input.y > l.fields[0].label.y);
+        // ...and the second field sits fully below the first.
+        assert!(l.fields[1].label.y >= l.fields[0].input.y + l.fields[0].input.h);
+    }
+
+    #[test]
+    fn layout_zones_sizes_panel_around_a_single_text_block() {
+        let spec = OverlaySpec {
+            anchor: Anchor::Centered {
+                width: WidthRule {
+                    pct: 0.5,
+                    min: 300.0,
+                    max: 500.0,
+                },
+                dim_alpha: 0x80,
+            },
+            header: None,
+            body: Body::Zones {
+                text: "Drop to open: file.rs",
+            },
+            footer: None,
+            hover_row: None,
+        };
+        let l = layout(&spec, 1000, 800, 1.0);
+        assert!(l.zones_text.is_some());
+        assert!(l.fields.is_empty());
+        assert!(l.rows.is_empty());
+        let text_rect = l.zones_text.unwrap();
+        assert!(text_rect.w > 0 && text_rect.h > 0);
+        assert!(l.panel.h >= text_rect.h);
     }
 }

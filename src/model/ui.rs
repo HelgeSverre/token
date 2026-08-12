@@ -334,6 +334,9 @@ pub struct FileFinderState {
     pub all_files: Vec<PathBuf>,
     /// Workspace root path (for computing relative paths)
     pub workspace_root: PathBuf,
+    /// Scroll offset (in rows) for the visible window, maintained by the
+    /// update layer (minimal-reveal scrolling) as selection moves.
+    pub scroll_offset: usize,
 }
 
 impl FileFinderState {
@@ -345,6 +348,7 @@ impl FileFinderState {
             results: Vec::new(),
             all_files,
             workspace_root,
+            scroll_offset: 0,
         }
     }
 
@@ -362,12 +366,23 @@ impl FileFinderState {
 /// State for the recent files modal
 #[derive(Debug, Clone)]
 pub struct RecentFilesState {
-    /// Index of selected file
+    /// Index into `filtered_rows` (the ordering authority) — `FlatIndex`
+    /// space, not `entries` space.
     pub selected_index: usize,
     /// Cached entries for display
     pub entries: Vec<crate::recent_files::RecentEntry>,
     /// Editable state for optional filter input
     pub editable: EditableState<StringBuffer>,
+    /// Scroll offset (in rows) for the visible window, maintained by the
+    /// update layer (minimal-reveal scrolling) as selection moves.
+    pub scroll_offset: usize,
+    /// Ordering authority: indices into `entries`, filtered by the current
+    /// query and grouped Pinned / Today / Yesterday / Earlier
+    /// (overlay-surface.md "Ordering authority") — recomputed by
+    /// `recompute_filtered_rows` whenever the input or entries change. The
+    /// view's spec builder and `ModalMsg::Confirm`/`SelectNext` both index
+    /// through this instead of re-deriving it independently.
+    pub filtered_rows: Vec<usize>,
 }
 
 impl RecentFilesState {
@@ -392,11 +407,22 @@ impl RecentFilesState {
             }
             _ => 0,
         };
-        Self {
+        let mut state = Self {
             selected_index,
             entries,
             editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
-        }
+            scroll_offset: 0,
+            filtered_rows: Vec::new(),
+        };
+        state.recompute_filtered_rows();
+        // Re-map the preselected entry index (computed above in `entries`
+        // space) into `filtered_rows` space now that it's populated.
+        state.selected_index = state
+            .filtered_rows
+            .iter()
+            .position(|&i| i == selected_index)
+            .unwrap_or(0);
+        state
     }
 
     /// Get the filter text
@@ -404,7 +430,8 @@ impl RecentFilesState {
         self.editable.text()
     }
 
-    /// Get filtered entries based on current input
+    /// Get filtered entries based on current input (unordered/ungrouped;
+    /// used by callers that don't need the Pinned/date grouping, e.g. tests).
     pub fn filtered_entries(&self) -> Vec<&crate::recent_files::RecentEntry> {
         let filter = self.input();
         if filter.is_empty() {
@@ -416,6 +443,30 @@ impl RecentFilesState {
                 .filter(|e| e.display_path().to_lowercase().contains(&filter_lower))
                 .collect()
         }
+    }
+
+    /// Recompute `filtered_rows`: entries matching the current query,
+    /// stable-sorted by group (Pinned first, then Today/Yesterday/Earlier),
+    /// preserving MRU order within each group. The ordering authority for
+    /// the Recent Files modal — see `filtered_rows` doc comment.
+    pub fn recompute_filtered_rows(&mut self) {
+        let filter = self.input().to_lowercase();
+        let mut order: Vec<usize> = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| filter.is_empty() || e.display_path().to_lowercase().contains(&filter))
+            .map(|(i, _)| i)
+            .collect();
+        order.sort_by_key(|&i| self.entries[i].group() as u8);
+        self.filtered_rows = order;
+    }
+
+    /// The entry currently selected in `FlatIndex` space, if any.
+    pub fn selected_entry(&self) -> Option<&crate::recent_files::RecentEntry> {
+        self.filtered_rows
+            .get(self.selected_index)
+            .and_then(|&i| self.entries.get(i))
     }
 }
 
@@ -670,6 +721,10 @@ pub struct UiState {
     /// Lines that contained cursors in the previous frame (for damage tracking)
     /// Used by cursor blink to determine which lines need redrawing
     pub previous_cursor_lines: Vec<usize>,
+    /// `FlatIndex` of the modal row currently under the mouse, if any
+    /// (overlay-surface.md Pointer: hover wash). Cleared whenever the mouse
+    /// isn't over a row.
+    pub modal_hover_row: Option<usize>,
 }
 
 impl UiState {
@@ -694,6 +749,7 @@ impl UiState {
             focus: FocusTarget::Editor,
             hover: HoverRegion::None,
             previous_cursor_lines: Vec::new(),
+            modal_hover_row: None,
         }
     }
 
@@ -807,6 +863,7 @@ mod tests {
             opened_at: 0,
             workspace: workspace.map(PathBuf::from),
             open_count: 1,
+            pinned: false,
         }
     }
 
@@ -907,5 +964,55 @@ mod tests {
         let recent = make_recent(vec![make_entry("/a.rs", None), make_entry("/b.rs", None)]);
         let state = RecentFilesState::new(&recent, None);
         assert_eq!(state.selected_index, 0);
+    }
+
+    #[test]
+    fn test_recompute_filtered_rows_puts_pinned_first_preserving_mru_order() {
+        let mut a = make_entry("/a.rs", None);
+        a.pinned = true;
+        let mut c = make_entry("/c.rs", None);
+        c.pinned = true;
+        let recent = make_recent(vec![
+            make_entry("/z.rs", None), // unpinned, MRU-first
+            a,                         // pinned
+            make_entry("/y.rs", None), // unpinned
+            c,                         // pinned
+        ]);
+        let mut state = RecentFilesState::new(&recent, None);
+        state.recompute_filtered_rows();
+
+        // Pinned entries (a, c) sort before unpinned (z, y), each group
+        // keeping its original MRU-relative order — not re-sorted by name.
+        let ordered_paths: Vec<_> = state
+            .filtered_rows
+            .iter()
+            .map(|&i| state.entries[i].path.clone())
+            .collect();
+        assert_eq!(
+            ordered_paths,
+            vec![
+                PathBuf::from("/a.rs"),
+                PathBuf::from("/c.rs"),
+                PathBuf::from("/z.rs"),
+                PathBuf::from("/y.rs"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_recompute_filtered_rows_respects_query_filter() {
+        let recent = make_recent(vec![
+            make_entry("/project/main.rs", Some("/project")),
+            make_entry("/project/lib.rs", Some("/project")),
+        ]);
+        let mut state = RecentFilesState::new(&recent, None);
+        state.editable.set_content("main");
+        state.recompute_filtered_rows();
+
+        assert_eq!(state.filtered_rows.len(), 1);
+        assert_eq!(
+            state.entries[state.filtered_rows[0]].path,
+            PathBuf::from("/project/main.rs")
+        );
     }
 }
