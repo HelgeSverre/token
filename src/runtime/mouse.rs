@@ -387,6 +387,18 @@ pub fn handle_mouse_press(
         };
     };
 
+    // Cursor-anchored popups are non-blocking (overlay-surface.md Phase 5):
+    // a click that lands outside the popup dismisses it but still falls
+    // through to whatever's actually under the cursor.
+    let dismissed_cursor_overlay = if model.ui.cursor_overlay.is_some()
+        && !matches!(target, HitTarget::CursorOverlay { .. })
+    {
+        model.ui.cursor_overlay = None;
+        true
+    } else {
+        false
+    };
+
     // Track if we're clicking on editor content (for drag tracking).
     // Interactive gutter lanes (fold chevron, marks) consume the press
     // themselves (see `handle_left_click`) — a chevron click must not
@@ -420,7 +432,11 @@ pub fn handle_mouse_press(
     let cmd = match &result {
         EventResult::Consumed { cmd: Some(c), .. } => Some(c.clone()),
         EventResult::Consumed { redraw: true, .. } => Some(Cmd::Redraw),
+        EventResult::Consumed { redraw: false, .. } if dismissed_cursor_overlay => {
+            Some(Cmd::Redraw)
+        }
         EventResult::Consumed { redraw: false, .. } => None,
+        EventResult::Bubble if dismissed_cursor_overlay => Some(Cmd::Redraw),
         EventResult::Bubble => None,
     };
 
@@ -484,6 +500,17 @@ fn handle_left_click(
         // Pointer: "Tab click switches tabs").
         HitTarget::ModalTab { index } => {
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::ActivateTab(*index))));
+            EventResult::consumed_redraw()
+        }
+
+        // Cursor-anchored popup: consume the click without dismissing the
+        // popup or moving the text cursor (overlay-surface.md Phase 5). Row
+        // clicks update the popup's own selection; no consumer to activate
+        // into yet, so that's the whole behavior for now.
+        HitTarget::CursorOverlay { flat_index } => {
+            if let (Some(idx), Some(state)) = (flat_index, &mut model.ui.cursor_overlay) {
+                state.selected = *idx;
+            }
             EventResult::consumed_redraw()
         }
 
@@ -1083,6 +1110,9 @@ fn handle_middle_click(
         | HitTarget::ScrollbarTrackVertical { .. }
         | HitTarget::ScrollbarThumbHorizontal { .. }
         | HitTarget::ScrollbarTrackHorizontal { .. } => EventResult::consumed_no_redraw(),
+
+        // Cursor overlay - no middle-click action
+        HitTarget::CursorOverlay { .. } => EventResult::consumed_no_redraw(),
     }
 }
 
@@ -1189,6 +1219,24 @@ pub fn handle_mouse_wheel(
             }
             let rows = (v_delta.signum() * 3) as isize;
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Scroll(rows))))
+        }
+
+        // Cursor overlay: scroll its own window, same 3-rows-per-notch
+        // convention as modals (overlay-surface.md Phase 5).
+        HoverRegion::CursorOverlay => {
+            if v_delta == 0 {
+                return None;
+            }
+            let Some(state) = &mut model.ui.cursor_overlay else {
+                return None;
+            };
+            let delta = v_delta.signum() * 3;
+            state.scroll = if delta < 0 {
+                state.scroll.saturating_sub(delta.unsigned_abs() as usize)
+            } else {
+                state.scroll.saturating_add(delta as usize)
+            };
+            Some(Cmd::Redraw)
         }
 
         // StatusBar/Splitter/DockResize/Button: ignore scroll

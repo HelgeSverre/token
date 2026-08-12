@@ -440,6 +440,18 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             }
             Some(Cmd::Redraw)
         }
+        #[cfg(debug_assertions)]
+        CommandId::CycleCursorOverlayDemo => {
+            use crate::model::{CursorOverlayKind, CursorOverlayState};
+            model.ui.cursor_overlay = match model.ui.cursor_overlay {
+                None => Some(CursorOverlayState::new(CursorOverlayKind::DebugCompletion)),
+                Some(state) if state.kind == CursorOverlayKind::DebugCompletion => {
+                    Some(CursorOverlayState::new(CursorOverlayKind::DebugHover))
+                }
+                Some(_) => None,
+            };
+            Some(Cmd::Redraw)
+        }
     }
 }
 

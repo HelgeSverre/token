@@ -18,6 +18,10 @@ pub struct KeyContext {
     pub editor_focused: bool,
     /// Whether the sidebar file tree has focus
     pub sidebar_focused: bool,
+    /// Whether a cursor-anchored popup (completion/hover) is open and
+    /// routing keys per overlay-surface.md Phase 5 — distinct from
+    /// `modal_active`, since popups don't hard-capture the keymap.
+    pub overlay_routes_keys: bool,
 }
 
 impl KeyContext {
@@ -29,6 +33,7 @@ impl KeyContext {
             modal_active: false,
             editor_focused: true,
             sidebar_focused: false,
+            overlay_routes_keys: false,
         }
     }
 
@@ -40,6 +45,7 @@ impl KeyContext {
             modal_active: true,
             editor_focused: false,
             sidebar_focused: false,
+            overlay_routes_keys: false,
         }
     }
 }
@@ -66,6 +72,9 @@ pub enum Condition {
     EditorFocused,
     /// Binding only active when sidebar has focus
     SidebarFocused,
+    /// Binding only active while a cursor-anchored popup is open and
+    /// routing keys (overlay-surface.md Phase 5)
+    OverlayRoutesKeys,
 }
 
 impl Condition {
@@ -80,6 +89,7 @@ impl Condition {
             Condition::ModalInactive => !ctx.modal_active,
             Condition::EditorFocused => ctx.editor_focused,
             Condition::SidebarFocused => ctx.sidebar_focused,
+            Condition::OverlayRoutesKeys => ctx.overlay_routes_keys,
         }
     }
 

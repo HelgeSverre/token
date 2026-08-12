@@ -823,14 +823,10 @@ fn cycle_search_tab(model: &mut AppModel, forward: bool) -> Option<Cmd> {
                 state.active_tab = candidate;
                 // The All tab also renders a Files group, so it needs the
                 // index loaded just as much as the Files tab itself.
-                if matches!(candidate, SearchTab::Files | SearchTab::All) && state.files.is_none()
-                {
+                if matches!(candidate, SearchTab::Files | SearchTab::All) && state.files.is_none() {
                     if let Some((all_files, root)) = workspace_files {
-                        state.files = Some(seeded_file_finder_state(
-                            all_files,
-                            root,
-                            &state.input(),
-                        ));
+                        state.files =
+                            Some(seeded_file_finder_state(all_files, root, &state.input()));
                     }
                 }
                 break;
@@ -857,11 +853,7 @@ fn activate_search_tab(model: &mut AppModel, index: usize) -> Option<Cmd> {
         state.active_tab = candidate;
         if matches!(candidate, SearchTab::Files | SearchTab::All) && state.files.is_none() {
             if let Some((all_files, root)) = workspace_files {
-                state.files = Some(seeded_file_finder_state(
-                    all_files,
-                    root,
-                    &state.input(),
-                ));
+                state.files = Some(seeded_file_finder_state(all_files, root, &state.input()));
             }
         }
         return Some(Cmd::Redraw);
@@ -1730,7 +1722,11 @@ use std::path::{Path, PathBuf};
 /// `query` — the palette's shared query, so the newly-populated Files tab's
 /// own results match what the header already shows instead of starting
 /// unfiltered (overlay-surface.md Phase 4: "query persists across tabs").
-fn seeded_file_finder_state(all_files: Vec<PathBuf>, root: PathBuf, query: &str) -> FileFinderState {
+fn seeded_file_finder_state(
+    all_files: Vec<PathBuf>,
+    root: PathBuf,
+    query: &str,
+) -> FileFinderState {
     let mut state = FileFinderState::new(all_files, root);
     state.set_input(query);
     update_file_finder_results(&mut state);
@@ -2264,7 +2260,10 @@ mod tests {
         let mut model = AppModel::new(80, 60, 1.0, vec![]);
         model.open_workspace(dir.path().to_path_buf());
         update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
-        update_ui(&mut model, UiMsg::Modal(ModalMsg::SetInput(query.to_owned())));
+        update_ui(
+            &mut model,
+            UiMsg::Modal(ModalMsg::SetInput(query.to_owned())),
+        );
         (model, dir)
     }
 
@@ -2279,8 +2278,7 @@ mod tests {
             Some(ModalState::CommandPalette(state)) => {
                 let files = state.files.as_ref().expect("files tab populated");
                 assert_eq!(files.input(), "alpha");
-                let names: Vec<&str> =
-                    files.results.iter().map(|m| m.filename.as_str()).collect();
+                let names: Vec<&str> = files.results.iter().map(|m| m.filename.as_str()).collect();
                 assert_eq!(names, vec!["alpha.rs"]);
             }
             other => panic!("expected command palette modal, got {other:?}"),
@@ -2337,11 +2335,16 @@ mod tests {
 
         match &model.ui.active_modal {
             Some(ModalState::CommandPalette(state)) => {
-                let files = state.files.as_ref().expect("All tab should eagerly load files");
+                let files = state
+                    .files
+                    .as_ref()
+                    .expect("All tab should eagerly load files");
                 assert_eq!(files.results.len(), 1);
                 let sections = search_everywhere_sections(state);
                 assert!(
-                    sections.iter().any(|&(title, len)| title == Some("Files") && len == 1),
+                    sections
+                        .iter()
+                        .any(|&(title, len)| title == Some("Files") && len == 1),
                     "expected a Files group with 1 row, got {sections:?}"
                 );
             }

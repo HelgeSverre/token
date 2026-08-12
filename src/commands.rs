@@ -89,6 +89,11 @@ pub enum CommandId {
     TogglePerfOverlay,
     #[cfg(debug_assertions)]
     ToggleDebugOverlay,
+    /// Cycle the cursor-anchored popup shell for manual testing
+    /// (overlay-surface.md Phase 5: closed -> completion demo -> hover
+    /// demo -> closed).
+    #[cfg(debug_assertions)]
+    CycleCursorOverlayDemo,
 }
 
 /// Broad grouping used to pick the command palette row icon (see the "Rows"
@@ -370,6 +375,12 @@ pub static DEBUG_COMMANDS: &[CommandDef] = &[
         label: "Toggle Debug Overlay",
         keybinding: Some("F8"),
     },
+    CommandDef {
+        id: CommandId::CycleCursorOverlayDemo,
+        category: CommandCategory::System,
+        label: "Cycle Cursor Overlay Demo",
+        keybinding: Some("F9"),
+    },
 ];
 
 /// Get all available commands (including debug commands in debug builds), in
@@ -429,6 +440,8 @@ impl CommandId {
             CommandId::TogglePerfOverlay => None,
             #[cfg(debug_assertions)]
             CommandId::ToggleDebugOverlay => None,
+            #[cfg(debug_assertions)]
+            CommandId::CycleCursorOverlayDemo => None,
         }
     }
 }

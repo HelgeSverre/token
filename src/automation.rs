@@ -154,8 +154,7 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                         .iter()
                         .enumerate()
                         .map(|(i, m)| OverlayRowSnapshot {
-                            section: (i < state.recent_count)
-                                .then(|| "Recently Used".to_owned()),
+                            section: (i < state.recent_count).then(|| "Recently Used".to_owned()),
                             ..command_row(m)
                         })
                         .collect(),

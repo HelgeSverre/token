@@ -26,10 +26,11 @@ pub use status_bar::{
     StatusBarLayout, StatusSegment, TransientMessage,
 };
 pub use ui::{
-    CommandMatch, CommandPaletteState, DropState, FileFinderState, FileMatch, FindReplaceField,
-    FindReplaceState, FocusTarget, GotoLineState, HoverRegion, ModalId, ModalState,
-    OutlinePanelState, RecentFilesState, ScrollbarDragAxis, ScrollbarDragState, SearchTab,
-    SidebarResizeState, ThemePickerState, UiState, COMMAND_PALETTE_MAX_VISIBLE,
+    CommandMatch, CommandPaletteState, CursorOverlayKind, CursorOverlayState, DropState,
+    FileFinderState, FileMatch, FindReplaceField, FindReplaceState, FocusTarget, GotoLineState,
+    HoverRegion, ModalId, ModalState, OutlinePanelState, RecentFilesState, ScrollbarDragAxis,
+    ScrollbarDragState, SearchTab, SidebarResizeState, ThemePickerState, UiState,
+    COMMAND_PALETTE_MAX_VISIBLE,
 };
 pub use workspace::{FileExtension, FileNode, FileTree, Workspace};
 

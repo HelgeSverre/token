@@ -347,6 +347,7 @@ impl App {
             modal_active: self.model.ui.has_modal(),
             editor_focused: matches!(focus, FocusTarget::Editor),
             sidebar_focused: matches!(focus, FocusTarget::Dock(DockPosition::Left)),
+            overlay_routes_keys: self.model.ui.cursor_overlay.is_some(),
         }
     }
 

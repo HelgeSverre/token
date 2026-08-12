@@ -47,6 +47,10 @@ pub enum HoverRegion {
     StatusBar,
     /// Hovering over a modal dialog
     Modal,
+    /// Hovering over a cursor-anchored popup (completion/hover) — distinct
+    /// from `Modal` since wheel/scroll routes to `ui.cursor_overlay`, not
+    /// `ui.active_modal` (overlay-surface.md Phase 5).
+    CursorOverlay,
     /// Hovering over a splitter (split view resize handle)
     Splitter,
     /// Hovering over a dock panel (right or bottom)
@@ -571,6 +575,43 @@ impl ModalState {
 }
 
 // ============================================================================
+// Cursor-anchored popups (overlay-surface.md Phase 5)
+// ============================================================================
+
+/// Which cursor-anchored popup is currently open. Only debug/demo shells
+/// exist so far — the real consumers (completion, hover) are a later unit;
+/// see `docs/feature/overlay-surface.md` Phase 5.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CursorOverlayKind {
+    /// Demonstrates the Completion list shell (kind badges, dim signature).
+    DebugCompletion,
+    /// Demonstrates the hover `Zones` card (banner/code/text).
+    DebugHover,
+}
+
+/// State for a cursor-anchored popup (`ui.cursor_overlay`), distinct from
+/// `active_modal`: it does not hard-capture keyboard input — a dedicated
+/// pre-editor branch in `runtime/input.rs::handle_key` consumes only
+/// Up/Down/Enter/Esc/Tab while one is open and passes every other key
+/// through to the editor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CursorOverlayState {
+    pub kind: CursorOverlayKind,
+    pub selected: usize,
+    pub scroll: usize,
+}
+
+impl CursorOverlayState {
+    pub fn new(kind: CursorOverlayKind) -> Self {
+        Self {
+            kind,
+            selected: 0,
+            scroll: 0,
+        }
+    }
+}
+
+// ============================================================================
 // Drop State (file drag-and-drop feedback)
 // ============================================================================
 
@@ -800,6 +841,9 @@ pub struct UiState {
     /// (overlay-surface.md Pointer: hover wash). Cleared whenever the mouse
     /// isn't over a row.
     pub modal_hover_row: Option<usize>,
+    /// Cursor-anchored popup (completion/hover/debug demo), if one is open.
+    /// Distinct from `active_modal` — see `CursorOverlayState`.
+    pub cursor_overlay: Option<CursorOverlayState>,
 }
 
 impl UiState {
@@ -825,6 +869,7 @@ impl UiState {
             hover: HoverRegion::None,
             previous_cursor_lines: Vec::new(),
             modal_hover_row: None,
+            cursor_overlay: None,
         }
     }
 

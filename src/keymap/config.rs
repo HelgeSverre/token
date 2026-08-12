@@ -210,6 +210,7 @@ fn parse_condition(cond: &str) -> Result<Condition, KeymapError> {
         "modal_active" | "modalactive" | "modal" => Ok(Condition::ModalActive),
         "modal_inactive" | "modalinactive" | "no_modal" | "nomodal" => Ok(Condition::ModalInactive),
         "editor_focused" | "editorfocused" | "editor" => Ok(Condition::EditorFocused),
+        "overlay_routes_keys" | "overlayrouteskeys" | "overlay" => Ok(Condition::OverlayRoutesKeys),
         _ => Err(KeymapError::InvalidCondition(cond.to_string())),
     }
 }

@@ -99,6 +99,16 @@ pub fn handle_key(
         return handle_modal_key(model, key, modifiers);
     }
 
+    // Cursor-anchored popups are not modals — they consume exactly
+    // Up/Down/Enter/Esc/Tab and pass every other key through to the editor
+    // (overlay-surface.md Phase 5). Anything not matched here falls out of
+    // this `if` and is handled by the normal editor key path below.
+    if model.ui.cursor_overlay.is_some() {
+        if let Some(cmd) = handle_cursor_overlay_key(model, &key) {
+            return cmd;
+        }
+    }
+
     // Focus capture: route keys to CSV cell editor when editing
     if model.is_csv_editing() {
         return handle_csv_edit_key(model, key, modifiers);
@@ -258,6 +268,47 @@ pub fn handle_key(
         }
 
         _ => None,
+    }
+}
+
+/// Handle a keystroke while a cursor-anchored popup is open. Returns
+/// `Some(cmd)` for the five keys the popup claims (Up/Down/Enter/Esc/Tab —
+/// overlay-surface.md Phase 5); `None` means "not one of ours", so the
+/// caller falls through to the normal editor key path (typing reaches the
+/// document while a completion/hover popup is open).
+fn handle_cursor_overlay_key(model: &mut AppModel, key: &Key) -> Option<Option<Cmd>> {
+    let state = model.ui.cursor_overlay.as_mut()?;
+    match key {
+        Key::Named(NamedKey::ArrowUp) => {
+            let total = row_count_for(state.kind);
+            if total > 0 {
+                state.selected = (state.selected + total - 1) % total;
+            }
+            Some(Some(Cmd::Redraw))
+        }
+        Key::Named(NamedKey::ArrowDown) => {
+            let total = row_count_for(state.kind);
+            if total > 0 {
+                state.selected = (state.selected + 1) % total;
+            }
+            Some(Some(Cmd::Redraw))
+        }
+        // Enter/Tab would accept the selection in a real consumer
+        // (autocomplete.md / lsp-integration.md); this demo shell just
+        // dismisses, matching Escape.
+        Key::Named(NamedKey::Enter | NamedKey::Tab | NamedKey::Escape) => {
+            model.ui.cursor_overlay = None;
+            Some(Some(Cmd::Redraw))
+        }
+        _ => None,
+    }
+}
+
+fn row_count_for(kind: token::model::CursorOverlayKind) -> usize {
+    use token::model::CursorOverlayKind;
+    match kind {
+        CursorOverlayKind::DebugCompletion => token::view::modal::debug_completion_row_count(),
+        CursorOverlayKind::DebugHover => 0,
     }
 }
 
@@ -894,6 +945,106 @@ mod tests {
         assert!(matches!(cmd, Some(Cmd::Redraw)));
         assert!(matches!(model.ui.focus, FocusTarget::Editor));
         assert!(pty_rx.try_recv().is_err());
+    }
+
+    // =========================================================================
+    // Cursor-anchored popups (overlay-surface.md Phase 5)
+    // =========================================================================
+
+    fn model_with_completion_demo_open() -> AppModel {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::DebugCompletion,
+        ));
+        model
+    }
+
+    #[test]
+    fn cursor_overlay_claims_up_down_enter_esc_tab() {
+        for key in [
+            Key::Named(NamedKey::ArrowUp),
+            Key::Named(NamedKey::ArrowDown),
+            Key::Named(NamedKey::Enter),
+            Key::Named(NamedKey::Escape),
+            Key::Named(NamedKey::Tab),
+        ] {
+            let mut model = model_with_completion_demo_open();
+            let cmd = handle_key(
+                &mut model,
+                key.clone(),
+                PhysicalKey::Code(KeyCode::ArrowUp),
+                KeyModifiers::default(),
+                false,
+            );
+            assert!(
+                matches!(cmd, Some(Cmd::Redraw)),
+                "{key:?} should be claimed by the cursor overlay"
+            );
+        }
+    }
+
+    #[test]
+    fn cursor_overlay_up_down_wrap_the_selection() {
+        let mut model = model_with_completion_demo_open();
+        let total = token::view::modal::debug_completion_row_count();
+        assert_eq!(model.ui.cursor_overlay.unwrap().selected, 0);
+
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::ArrowUp),
+            PhysicalKey::Code(KeyCode::ArrowUp),
+            KeyModifiers::default(),
+            false,
+        );
+        // Wraps to the last row when moving up from the first.
+        assert_eq!(model.ui.cursor_overlay.unwrap().selected, total - 1);
+
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::ArrowDown),
+            PhysicalKey::Code(KeyCode::ArrowDown),
+            KeyModifiers::default(),
+            false,
+        );
+        assert_eq!(model.ui.cursor_overlay.unwrap().selected, 0);
+    }
+
+    #[test]
+    fn cursor_overlay_enter_esc_tab_dismiss_it() {
+        for key in [
+            Key::Named(NamedKey::Enter),
+            Key::Named(NamedKey::Escape),
+            Key::Named(NamedKey::Tab),
+        ] {
+            let mut model = model_with_completion_demo_open();
+            handle_key(
+                &mut model,
+                key,
+                PhysicalKey::Code(KeyCode::Escape),
+                KeyModifiers::default(),
+                false,
+            );
+            assert!(model.ui.cursor_overlay.is_none());
+        }
+    }
+
+    #[test]
+    fn cursor_overlay_passes_every_other_key_through_to_the_editor() {
+        let mut model = model_with_completion_demo_open();
+        model.document_mut().buffer = ropey::Rope::from("");
+
+        let cmd = handle_key(
+            &mut model,
+            Key::Character("x".into()),
+            PhysicalKey::Code(KeyCode::KeyX),
+            KeyModifiers::default(),
+            false,
+        );
+
+        assert!(cmd.is_some(), "character input should still be handled");
+        // The popup stays open — only the five claimed keys dismiss/consume it.
+        assert!(model.ui.cursor_overlay.is_some());
+        assert_eq!(model.document().buffer.to_string(), "x");
     }
 
     #[test]

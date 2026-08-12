@@ -99,6 +99,7 @@ struct RenderPlan {
     render_status_bar: bool,
     cursor_lines_only: Option<Vec<usize>>,
     show_modal: bool,
+    show_cursor_overlay: bool,
     show_drop_overlay: bool,
     show_tab_drag_ghost: bool,
     #[cfg(debug_assertions)]
@@ -222,6 +223,21 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
         }
 
         Renderer::render_modals(
+            &mut self.frame,
+            &mut self.painter,
+            self.model,
+            self.plan.window_width,
+            self.plan.window_height,
+            self.overlay_mask_cache,
+        );
+    }
+
+    fn render_cursor_overlay_phase(&mut self) {
+        if !self.plan.show_cursor_overlay {
+            return;
+        }
+
+        Renderer::render_cursor_overlay(
             &mut self.frame,
             &mut self.painter,
             self.model,
@@ -801,6 +817,13 @@ impl Renderer {
             return Damage::Full;
         }
 
+        // Cursor-anchored popups force Full while visible, same as modals
+        // (overlay-surface.md Phase 5); a normal (possibly partial) redraw
+        // resumes once dismissed — no pixel-save mechanism.
+        if model.ui.cursor_overlay.is_some() {
+            return Damage::Full;
+        }
+
         if model.ui.drop_state.is_hovering {
             return Damage::Full;
         }
@@ -872,6 +895,7 @@ impl Renderer {
             render_status_bar,
             cursor_lines_only,
             show_modal: model.ui.active_modal.is_some(),
+            show_cursor_overlay: model.ui.cursor_overlay.is_some(),
             show_drop_overlay: model.ui.drop_state.is_hovering,
             show_tab_drag_ghost: model.ui.tab_drag.is_some_and(|d| d.active),
             #[cfg(debug_assertions)]
@@ -1759,6 +1783,24 @@ impl Renderer {
         );
     }
 
+    pub fn render_cursor_overlay(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        window_width: usize,
+        window_height: usize,
+        overlay_mask_cache: &mut RoundedRectMaskCache,
+    ) {
+        modal::render_cursor_overlay(
+            frame,
+            painter,
+            model,
+            window_width,
+            window_height,
+            overlay_mask_cache,
+        );
+    }
+
     /// Render a floating semi-transparent copy of the dragged tab at the
     /// cursor position (drawn topmost, after all panes and overlays).
     fn render_tab_drag_ghost(frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
@@ -1960,6 +2002,9 @@ impl Renderer {
                 perf.measure_stage(crate::perf::PerfStage::Modal, || {
                     session.render_modal_phase();
                 });
+            }
+            if plan.show_cursor_overlay {
+                session.render_cursor_overlay_phase();
             }
             if plan.show_drop_overlay {
                 perf.measure_stage(crate::perf::PerfStage::DropOverlay, || {

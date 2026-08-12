@@ -102,6 +102,12 @@ pub enum HitTarget {
     /// (overlay-surface.md Pointer: "Tab click switches tabs").
     ModalTab { index: usize },
 
+    /// Inside a cursor-anchored popup (completion/hover) — non-blocking, per
+    /// overlay-surface.md Phase 5: the click lands in the popup instead of
+    /// falling through to the editor, and doesn't move the text cursor.
+    /// `flat_index` is `Some` when a selectable row (`Body::List`) was hit.
+    CursorOverlay { flat_index: Option<usize> },
+
     /// Status bar at the bottom of the window
     StatusBar,
 
@@ -279,6 +285,7 @@ impl HitTarget {
             HitTarget::Modal { .. } | HitTarget::ModalRow { .. } | HitTarget::ModalTab { .. } => {
                 HoverRegion::Modal
             }
+            HitTarget::CursorOverlay { .. } => HoverRegion::CursorOverlay,
             HitTarget::StatusBar => HoverRegion::StatusBar,
             HitTarget::SidebarResize => HoverRegion::SidebarResize,
             HitTarget::SidebarEmpty | HitTarget::SidebarItem { .. } => HoverRegion::Sidebar,
@@ -399,6 +406,34 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
             super::overlay_surface::OverlayHit::Tab(index) => HitTarget::ModalTab { index },
         }
     })
+}
+
+/// Hit-test a cursor-anchored popup. Unlike `hit_test_modal`, this only
+/// returns `Some` for points *inside* the popup panel — a click outside
+/// isn't claimed here (overlay-surface.md Phase 5: popups are non-blocking,
+/// so an outside click still falls through to whatever's under it; the
+/// caller is responsible for dismissing the popup separately).
+pub fn hit_test_cursor_overlay(model: &AppModel, pt: Point) -> Option<HitTarget> {
+    model.ui.cursor_overlay?;
+
+    let ww = model.window_size.0 as usize;
+    let wh = model.window_size.1 as usize;
+    let sf = model.metrics.scale_factor;
+    let (x, y) = (pt.x as usize, pt.y as usize);
+
+    super::modal::with_cursor_overlay_layout(model, ww, wh, sf, |spec, layout| {
+        match super::overlay_surface::hit_test(spec, layout, x, y) {
+            super::overlay_surface::OverlayHit::Outside => None,
+            super::overlay_surface::OverlayHit::Row(flat_index) => Some(HitTarget::CursorOverlay {
+                flat_index: Some(flat_index.0),
+            }),
+            super::overlay_surface::OverlayHit::Inside
+            | super::overlay_surface::OverlayHit::Tab(_) => {
+                Some(HitTarget::CursorOverlay { flat_index: None })
+            }
+        }
+    })
+    .flatten()
 }
 
 /// Hit-test the status bar at the bottom of the window.
@@ -814,6 +849,13 @@ pub fn hit_test_docks(model: &AppModel, pt: Point) -> Option<HitTarget> {
 /// 7. Preview panes (header and content)
 /// 8. Editor groups (tab bar, gutter, content)
 pub fn hit_test_ui(model: &AppModel, pt: Point, char_width: f32) -> Option<HitTarget> {
+    // 0. Cursor-anchored popup (non-blocking: only claims points inside its
+    // own panel, so an outside click still reaches whatever's under it —
+    // see `hit_test_cursor_overlay`).
+    if let Some(target) = hit_test_cursor_overlay(model, pt) {
+        return Some(target);
+    }
+
     // 1. Modal overlay (highest priority)
     if let Some(target) = hit_test_modal(model, pt) {
         return Some(target);
