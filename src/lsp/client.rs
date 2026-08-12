@@ -679,7 +679,6 @@ impl ServerHandle {
         // every manual restart).
         let _ = self.child.wait();
     }
-
 }
 
 static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -1043,9 +1042,7 @@ fn parse_definition_result(result: Option<&Value>) -> Vec<lsp_types::Location> {
     if let Ok(location) = serde_json::from_value::<lsp_types::Location>(result.clone()) {
         return vec![location];
     }
-    if let Ok(locations) =
-        serde_json::from_value::<Vec<lsp_types::Location>>(result.clone())
-    {
+    if let Ok(locations) = serde_json::from_value::<Vec<lsp_types::Location>>(result.clone()) {
         return locations;
     }
     if let Ok(links) = serde_json::from_value::<Vec<lsp_types::LocationLink>>(result.clone()) {
@@ -1126,6 +1123,13 @@ fn markdown_to_plain_text(markdown: &str) -> String {
             if in_fence {
                 return Some(line.to_string());
             }
+            // Thematic breaks (---, ***, ___) render as blank separators —
+            // the raw dashes read as noise in a plaintext card.
+            let is_break =
+                trimmed.len() >= 3 && trimmed.chars().all(|c| matches!(c, '-' | '*' | '_' | ' '));
+            if is_break && !trimmed.is_empty() {
+                return Some(String::new());
+            }
             Some(strip_markdown_line(line))
         })
         .collect::<Vec<_>>()
@@ -1141,6 +1145,10 @@ fn strip_markdown_line(line: &str) -> String {
     } else {
         line
     };
+    // Inline links: `[text](url)` -> `text` (the url is dead weight in a
+    // non-interactive card; bare `[refs]` are left alone — rustdoc uses
+    // them as plain intra-doc names).
+    let line = strip_inline_links(line);
     let mut out = String::with_capacity(line.len());
     let mut chars = line.chars().peekable();
     while let Some(ch) = chars.next() {
@@ -1155,6 +1163,30 @@ fn strip_markdown_line(line: &str) -> String {
             _ => out.push(ch),
         }
     }
+    out
+}
+
+/// `[text](url)` -> `text`, non-greedy, leaving unmatched brackets intact.
+fn strip_inline_links(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(open) = rest.find('[') {
+        let Some(close_rel) = rest[open..].find(']') else {
+            break;
+        };
+        let close = open + close_rel;
+        if rest[close + 1..].starts_with('(') {
+            if let Some(paren_rel) = rest[close + 1..].find(')') {
+                out.push_str(&rest[..open]);
+                out.push_str(&rest[open + 1..close]);
+                rest = &rest[close + 1 + paren_rel + 1..];
+                continue;
+            }
+        }
+        out.push_str(&rest[..close + 1]);
+        rest = &rest[close + 1..];
+    }
+    out.push_str(rest);
     out
 }
 
@@ -1883,6 +1915,14 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
     #[test]
     fn markdown_to_plain_text_strips_headings() {
         assert_eq!(markdown_to_plain_text("## Signature"), "Signature");
+        // Thematic breaks become blank separators, not literal dashes.
+        assert_eq!(markdown_to_plain_text("a\n---\nb"), "a\n\nb");
+        assert_eq!(markdown_to_plain_text("a\n* * *\nb"), "a\n\nb");
+        // Inline links keep the text, drop the url; bare refs survive.
+        assert_eq!(
+            markdown_to_plain_text("see [docs](https://example.com) and [valid]"),
+            "see docs and [valid]"
+        );
     }
 
     #[test]

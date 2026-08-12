@@ -51,6 +51,13 @@ mod dims {
     pub const ZONE_GAP: f32 = 8.0;
     /// Gap between chips within one chord step's keycap accessory.
     pub const CHIP_GAP: f32 = 4.0;
+    /// Zone text metrics (hover card / drop overlay): stacking line height
+    /// and the monospace cell width at SIZE_ROW. Constants (not painter
+    /// metrics) because `layout()` is painter-free and paint must stack
+    /// identically — 0.6·13 = 7.8 rounds to 8 at every scale factor, and
+    /// 17px clears the 13px glyphs.
+    pub const ZONE_LINE_H: f32 = 17.0;
+    pub const ZONE_CELL_W: f32 = 8.0;
     /// Theme-swatch dots (theme picker): diameter, intra-strip gap, and the
     /// gap between the strip and the ✓ active mark.
     pub const SWATCH_D: f32 = 7.0;
@@ -1018,12 +1025,23 @@ pub fn layout(
             let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
             let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
             let gap = scaled(dims::ZONE_GAP, scale_factor);
-            let line_h = scaled(SIZE_ROW, scale_factor);
+            // Zone line height is a shared const, not the painter's
+            // metrics (layout is painter-free); sizing rows by the *font
+            // size* previously left the panel too short and let content
+            // spill past its bottom.
+            let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
             let banner_h = scaled(dims::ZONE_BANNER_H, scale_factor);
+            let content_w = panel_w.saturating_sub(2 * pad_x);
+            let cols = zone_wrap_cols(content_w, scale_factor);
             let code_h = zones
                 .code
-                .map(|s| s.lines().count().max(1) * line_h + 2 * (gap / 2));
-            let text_h = zones.text.map(|s| s.lines().count().max(1) * line_h);
+                .map(|s| wrap_zone_text(s, cols).len().max(1) * line_h + 2 * (gap / 2));
+            let text_h = zones.text.map(|s| {
+                let lines = wrap_zone_text(s, cols);
+                let shown = lines.len().min(MAX_ZONE_TEXT_LINES);
+                let ellipsis = usize::from(lines.len() > MAX_ZONE_TEXT_LINES);
+                (shown + ellipsis).max(1) * line_h
+            });
 
             let mut panel_h = pad_y * 2;
             let mut y_off = 0;
@@ -2165,13 +2183,24 @@ fn render_zones(
         }
     }
 
+    // Hard backstop for anything the wrapping math misses: nothing in the
+    // zones may paint outside the panel.
+    frame.set_clip(crate::model::editor_area::Rect {
+        x: layout.panel.x as f32,
+        y: layout.panel.y as f32,
+        width: layout.panel.w as f32,
+        height: layout.panel.h as f32,
+    });
+
     if let (Some(code), Some(r)) = (zones.code, layout.zones_code) {
         frame.fill_rect_px(r.x, r.y, r.w, r.h, colors.panel_secondary);
+        let lines = wrap_zone_text(code, zone_wrap_cols(r.w, scale_factor));
         draw_text_lines(
             frame,
             painter,
             r,
-            code,
+            &lines,
+            false,
             SIZE_ROW,
             colors.text_primary,
             scale_factor,
@@ -2188,35 +2217,100 @@ fn render_zones(
             let text_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(size))) / 2;
             painter.draw_sized(frame, text_x, text_y, text, size, 0.0, colors.text_primary);
         } else {
+            let mut lines = wrap_zone_text(text, zone_wrap_cols(r.w, scale_factor));
+            let truncated = lines.len() > MAX_ZONE_TEXT_LINES;
+            lines.truncate(MAX_ZONE_TEXT_LINES);
             draw_text_lines(
                 frame,
                 painter,
                 r,
-                text,
+                &lines,
+                truncated,
                 SIZE_ROW,
                 colors.text_primary,
                 scale_factor,
             );
         }
     }
+
+    frame.clear_clip();
 }
 
 /// Draw `text` as left-aligned, stacked lines within `rect` (no wrapping —
 /// callers pre-wrap or accept clipping; the real hover-card consumer owns
 /// wrapping policy per lsp-integration.md).
+/// Cap on wrapped text-zone lines (hover docs can be pages long); a
+/// truncated zone shows a trailing ellipsis line.
+const MAX_ZONE_TEXT_LINES: usize = 14;
+
+/// Columns available for zone text in `max_w` pixels (const cell width —
+/// see `dims::ZONE_CELL_W`).
+fn zone_wrap_cols(max_w: usize, scale_factor: f64) -> usize {
+    (max_w / scaled(dims::ZONE_CELL_W, scale_factor).max(1)).max(8)
+}
+
+/// Word-wrap `text` to `cols` monospace columns, hard-breaking tokens
+/// longer than a line.
+fn wrap_zone_text(text: &str, cols: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let chars: Vec<char> = line.chars().collect();
+        if chars.len() <= cols {
+            out.push(line.to_string());
+            continue;
+        }
+        let mut start = 0;
+        while start < chars.len() {
+            let hard_end = (start + cols).min(chars.len());
+            let end = if hard_end < chars.len() {
+                // Prefer the last space inside the window; hard-break when
+                // a single token exceeds the line.
+                chars[start..hard_end]
+                    .iter()
+                    .rposition(|c| c.is_whitespace())
+                    .map(|p| start + p)
+                    .filter(|&p| p > start)
+                    .unwrap_or(hard_end)
+            } else {
+                hard_end
+            };
+            out.push(chars[start..end].iter().collect::<String>());
+            start = end;
+            while start < chars.len() && chars[start].is_whitespace() {
+                start += 1;
+            }
+        }
+    }
+    out
+}
+
+/// Draw pre-wrapped `lines` stacked in `rect`, clipped to it; a zone
+/// truncated by `MAX_ZONE_TEXT_LINES` ends with an ellipsis line.
 fn draw_text_lines(
     frame: &mut Frame,
     painter: &mut TextPainter,
     rect: WidgetRect,
-    text: &str,
+    lines: &[String],
+    truncated: bool,
     size: f32,
     color: u32,
     scale_factor: f64,
 ) {
     let size = size_px(size, scale_factor);
-    let line_h = painter.line_height_for_size(size);
-    for (i, line) in text.lines().enumerate() {
+    let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
+    for (i, line) in lines.iter().enumerate() {
         painter.draw_sized(frame, rect.x, rect.y + i * line_h, line, size, 0.0, color);
+    }
+    if truncated {
+        painter.draw_sized(
+            frame,
+            rect.x,
+            rect.y + lines.len() * line_h,
+            "\u{2026}",
+            size,
+            0.0,
+            color,
+        );
     }
 }
 
@@ -2506,6 +2600,75 @@ mod tests {
         )
         .expect("test font should load");
         (font, super::super::GlyphCache::default())
+    }
+
+    #[test]
+    fn zone_wrap_breaks_long_lines_at_word_boundaries() {
+        let lines = wrap_zone_text("implements notable traits for the blackbox function", 20);
+        assert!(lines.iter().all(|l| l.chars().count() <= 20), "{lines:?}");
+        assert_eq!(lines[0], "implements notable");
+        // No content lost.
+        let rejoined = lines.join(" ");
+        assert_eq!(
+            rejoined,
+            "implements notable traits for the blackbox function"
+        );
+    }
+
+    #[test]
+    fn zone_wrap_hard_breaks_oversized_tokens() {
+        let token = "a".repeat(50);
+        let lines = wrap_zone_text(&token, 20);
+        assert!(lines.len() >= 3);
+        assert!(lines.iter().all(|l| l.chars().count() <= 20));
+        assert_eq!(lines.concat(), token);
+    }
+
+    #[test]
+    fn zones_panel_height_fits_wrapped_text() {
+        // Regression: hover panels were sized by raw line count at the
+        // font size (13px) instead of wrapped count at the line height,
+        // so long single-line docs overflowed the panel bottom.
+        let long = "word ".repeat(120);
+        let zones = Zones {
+            banner: None,
+            code: None,
+            text: Some(&long),
+        };
+        let spec = OverlaySpec {
+            anchor: Anchor::Cursor {
+                x: 10,
+                y: 10,
+                h: 19,
+                prefer_below: true,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 320.0,
+                    max: 480.0,
+                },
+            },
+            tabs: None,
+            header: None,
+            body: Body::Zones(zones),
+            footer: None,
+            hover_row: None,
+        };
+        let layout = layout(&spec, 800, 600, 1.0);
+        let r = layout.zones_text.expect("text zone rect");
+        let cols = zone_wrap_cols(r.w, 1.0);
+        let wrapped = wrap_zone_text(&long, cols).len().min(MAX_ZONE_TEXT_LINES) + 1; // +ellipsis
+        let line_h = scaled(dims::ZONE_LINE_H, 1.0);
+        assert!(
+            r.h >= wrapped * line_h,
+            "zone rect {}px must fit {} wrapped lines of {}px",
+            r.h,
+            wrapped,
+            line_h
+        );
+        assert!(
+            r.y + r.h <= layout.panel.y + layout.panel.h,
+            "text zone must stay inside the panel"
+        );
     }
 
     #[test]
