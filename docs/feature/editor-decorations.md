@@ -206,7 +206,7 @@ Ships ahead of all consumers as its own change: it fixes the live >99,999-line r
 ### Phase 3: Interaction + Overview Marks
 
 - [x] `lane` on `EditorGutter`; `lane_at` resolution; press/drag suppression for interactive lanes; dispatch table (no-ops until owners ship). `HitTarget::EditorGutter` gained `lane: Option<LaneId>` resolved via `GutterLayout::lane_at`; `runtime/mouse.rs`'s press (left + middle) and the drag-arming check in `handle_mouse_press` all consume/suppress for `Fold`/`Marks` lanes instead of falling through to focus/drag-select. The `Marks` lane is now live whenever the focused document has diagnostics (`marks_w` follows `has_marks`); `fold_w` still stays 0 (folding doesn't exist yet). Suppression logic is exercised via synthetic `GutterLayout`s in `src/view/geometry.rs` tests.
-- [x] Scrollbar: line→track-y mapping, `needs_scroll` guard, ticks with per-pixel-row priority. `scrollbar::track_row_for_position` maps a line to a track pixel row; `editor_scrollbars::render_overview_marks` draws one tick per occupied row (highest-priority mark wins on collisions), gated by `v_state.needs_scroll()` so ticks never appear on documents that fit the viewport. Called with an empty tick iterator today (no producer).
+- [x] Scrollbar: line→track-y mapping, `needs_scroll` guard, ticks with per-pixel-row priority. `scrollbar::track_row_for_position` maps a line to a track pixel row; `editor_scrollbars::render_overview_marks` draws one tick per occupied row (highest-priority mark wins on collisions), gated by `v_state.needs_scroll()` so ticks never appear on documents that fit the viewport. Producers: `diagnostic_ticks` (lsp-integration.md Phase 2) and `find_match_ticks`.
 
 ---
 

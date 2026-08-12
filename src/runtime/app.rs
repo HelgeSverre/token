@@ -1794,8 +1794,15 @@ impl App {
         // a server can (and the fake-server harness deliberately does,
         // to test staleness) enqueue an older-versioned publish after a
         // newer one within the same drain.
+        // `lsp_types::Uri` (fluent-uri) trips `mutable_key_type`: it caches
+        // parsed auth data in a `Cell` the way `Uri`'s own `Hash`/`Eq`
+        // never reads, same false positive the existing `diagnostics`/
+        // `diagnostics_versions` fields on this struct are exempt from
+        // only because clippy doesn't lint struct fields.
+        #[allow(clippy::mutable_key_type)]
         let mut running_version: std::collections::HashMap<lsp_types::Uri, i64> =
             std::collections::HashMap::new();
+        #[allow(clippy::mutable_key_type)]
         let mut winner_idx: std::collections::HashMap<lsp_types::Uri, usize> =
             std::collections::HashMap::new();
         for (idx, msg) in messages.iter().enumerate() {
@@ -2145,6 +2152,9 @@ impl App {
             .filter(|(_, state)| &state.server_id == server_id && roots.contains(&state.root))
             .map(|(doc_id, state)| (*doc_id, state.uri.clone()))
             .collect();
+        // See the `mutable_key_type` note in `process_async_messages` —
+        // same `lsp_types::Uri` false positive.
+        #[allow(clippy::mutable_key_type)]
         let mut stale_uris: std::collections::HashSet<_> =
             affected_docs.iter().map(|(_, uri)| uri.clone()).collect();
         stale_uris.extend(self.lsp.diagnostics.keys().filter_map(|uri| {

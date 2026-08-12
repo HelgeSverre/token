@@ -115,11 +115,25 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
 /// Finds the open document whose file path canonicalizes to `uri`, per
 /// `lsp::path_to_uri` (the "raw `PathBuf`s are never compared" rule from
 /// the design doc's URIs and Paths section).
+///
+/// `path_to_uri` canonicalizes (an `fs::canonicalize` syscall), so calling
+/// it for every open document on every publish is wasteful — a
+/// workspace-wide publish burst over many distinct URIs costs O(open
+/// docs) syscalls per publish. `uri_to_path` is a pure string decode (no
+/// syscall); filtering on file name first shrinks the canonicalize calls
+/// to the (normally 0-or-1) documents that could plausibly match.
 fn find_document_by_uri(model: &AppModel, uri: &lsp_types::Uri) -> Option<DocumentId> {
+    let target_name = crate::lsp::uri_to_path(uri)?.file_name()?.to_owned();
     model
         .editor_area
         .documents
         .iter()
+        .filter(|(_, doc)| {
+            doc.file_path
+                .as_deref()
+                .and_then(std::path::Path::file_name)
+                .is_some_and(|name| name == target_name)
+        })
         .find(|(_, doc)| {
             doc.file_path
                 .as_deref()
