@@ -308,9 +308,9 @@ Binary not found on `PATH` (after `PATHEXT` resolution on Windows) → `ServerSt
 
 **Effort:** L
 
-- [ ] `lsp/transport.rs`: Content-Length framing over child stdio, unit-tested against canned byte streams (partial reads, multiple messages per read, malformed headers).
-- [ ] Adopt `lsp-types`; `lsp/uri.rs` canonical path↔URI helper with symlink test.
-- [ ] `lsp/position.rs`: char-col ↔ UTF-16, document-parameterized; CRLF/surrogate/line-end tests.
+- [x] `lsp/transport.rs`: Content-Length framing over child stdio, unit-tested against canned byte streams (partial reads, multiple messages per read, malformed headers).
+- [x] Adopt `lsp-types`; `lsp/uri.rs` canonical path↔URI helper with symlink test.
+- [x] `lsp/position.rs`: char-col ↔ UTF-16, document-parameterized; CRLF/surrogate/line-end tests.
 - [ ] `lsp/client.rs` worker: spawn (with `PATHEXT`), handshake with outbound queueing, request-id correlation with abandoned-entry semantics, stderr drain thread, dispatch loop.
 - [ ] **Client capabilities block** (as specified above) + parse/store/gate on `ServerCapabilities`.
 - [ ] **Server→client request replies** (the table above) + `MethodNotFound` default + ignore-unknown-notifications.
