@@ -2,7 +2,7 @@
 
 A pluggable completion system with two rendering surfaces — a popup menu at the cursor and ghost-text inline suggestions — fed by swappable providers: buffer words and snippets first, LSP when it lands, and LLM fill-in-the-middle backends (local or remote) behind one backend abstraction.
 
-> **Status:** 📋 Planned
+> **Status:** 🚧 In Progress — Phase 1 (menu completion: words + snippets) shipped; Phases 2+ (inline suggestions, FIM backends, LSP source) not started.
 > **Priority:** P2 (Important)
 > **Effort:** XL (phased — each phase ships independently)
 > **Created:** 2026-08-11
@@ -498,14 +498,14 @@ Automation/MCP: all commands (`TriggerMenu`, `AcceptInline`, …) are `is_simple
 
 **Effort:** M — proves the entire UI with zero async complexity
 
-- [ ] `CompletionMenuState` on `UiState`; `Msg::Completion` + `update/completion.rs`.
-- [ ] WordsSource (rope scan, dedup, cap) + SnippetsSource (registry table, a handful of snippets for 2–3 languages to prove the path).
-- [ ] nucleo filtering + tiered sort; refilter-on-type; dismiss rules (non-word char, cursor line change, focus loss, Escape).
-- [ ] Popup rendering: build the `OverlaySpec` for the overlay-surface Completion context (prerequisite: overlay-surface Phases 1 + 5); `EditorArea` damage while visible.
-- [ ] `completion_menu_visible` KeyContext + `Condition`; bindings (Ctrl+Space, arrows, Enter/Tab, Escape); resolves the Tab-conditional keymap TODO.
-- [ ] Accept via `EditOperation::Batch` at all cursors; single undo step; multi-byte-safe.
-- [ ] Config block (menu), automation snapshot fields, palette entries.
-- [ ] **Gate:** automation test drives type → menu → filter → accept → undo, including a multi-cursor and an emoji-adjacent case.
+- [x] `CompletionMenuState` on `UiState`; `Msg::Completion` + `update/completion.rs`. **Deviation:** `selected`/`viewport_offset` aren't duplicated on `CompletionMenuState` — they live on `ui.cursor_overlay` (`CursorOverlayState`, added by the overlay-p5 unit after this doc was written), the same shared home every other cursor-anchored popup uses. `CompletionMenuState` owns `document_id`/`revision`/`query_start`/`items`/`filtered` only.
+- [x] WordsSource (rope scan, dedup, cap) + SnippetsSource (a handful of snippets for Rust/JavaScript+TypeScript/Python to prove the path). **Deviation:** snippets are a plain `match` in `completion/sources.rs`, not a new `&'static [(prefix, body)]` field on `LanguageDefinition` — the registry's `language!` macro has ~40 call sites, and threading a new field through all of them is a large mechanical diff for "a handful of snippets to prove the path." Add the `LanguageDefinition` field (following `selection`/`outline`'s pattern) if/when the per-language snippet count outgrows a match arm.
+- [x] nucleo filtering + tiered sort; refilter-on-type; dismiss rules (non-word char, cursor line change, Escape). **Partial:** no "focus loss" dismiss hook (e.g. window losing OS focus) — not wired to anything in this unit; low-risk gap since the popup is also killed by the next keystroke/click almost always.
+- [x] Popup rendering: build the `OverlaySpec` for the overlay-surface Completion context; `EditorArea` damage while visible (for free — `view::mod::compute_effective_damage` already forces `Damage::Full` whenever `ui.cursor_overlay.is_some()`, generically for every cursor-anchored popup kind since overlay-p5).
+- [x] Key routing: Ctrl+Space (`Command::TriggerCompletionMenu`, keymap-bindable) opens explicitly; arrows/Enter/Tab/Escape are claimed by the existing pre-keymap `handle_cursor_overlay_key` dispatch (overlay-p5's `overlay_routes_keys` mechanism) when `cursor_overlay.kind == Completion`, exactly as this doc's Key Handling section specified ("this document does not introduce a separate `completion_menu_visible` field ... `menu_visible` compiles to `overlay_routes_keys` + the active overlay context being Completion") — no new `Condition` variant needed. Tab falls through to `InsertTab` when the menu isn't open, resolving the standing keymap TODO for this one case.
+- [x] Accept via `EditOperation::Batch` at all cursors; single undo step; multi-byte-safe (tested with an emoji elsewhere on the line and rope char-offsets throughout, never byte offsets).
+- [~] Config block (menu), automation snapshot fields, palette entries. Automation (`EditorSnapshot.completion`) and a palette entry (`Trigger Completion`) are done. **Not done:** no `completion.menu.*` YAML config block — Phase 1 menu completion is always-on with the constants in `completion/sources.rs` (`MIN_WORD_LEN`, `WINDOW_LINES`, `MAX_WORDS`) hardcoded, not user-configurable. Add `src/config.rs` wiring when a real need for tuning surfaces.
+- [~] **Gate:** covered by unit tests in `src/update/completion.rs` driving the exact same `update()` entry point automation uses (type → menu opens → filter → `MenuNext` wraps → `AcceptMenuItem` → `Undo`), including a multi-cursor case (one undo reverts both cursors) and a multi-byte case (emoji elsewhere on the line, char-offset correctness). **Not done:** no test through the actual `AutomationRequest` socket/MCP-tool path — the existing automation test depth in this codebase (see `src/command_history.rs`, `src/update/ui.rs`) is unit tests against `update()` directly, which is what these follow, but a true end-to-end `tests/*.rs` integration test wasn't added.
 
 ### Phase 2: Inline suggestions — infrastructure + first FIM backend
 
