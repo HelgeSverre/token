@@ -664,6 +664,11 @@ pub struct HoverCardState {
     /// server returned no hover info at this position (the card can still
     /// be showing diagnostics-only content).
     pub content: Option<String>,
+    /// The hovered text cell this card is anchored to, for a mouse-dwell
+    /// hover (`LspMsg::ShowHoverAt`). `None` for a keyboard-invoked hover
+    /// (Shift+Cmd+D), which anchors to the caret rect instead — see
+    /// `view::modal::with_cursor_overlay_layout`'s `Hover` branch.
+    pub anchor: Option<(usize, usize)>,
 }
 
 // ============================================================================
@@ -913,6 +918,13 @@ pub struct UiState {
     /// `cursor_overlay` being `Some(CursorOverlayKind::Hover)`. `None`
     /// whenever the hover card is closed.
     pub hover_card: Option<HoverCardState>,
+    /// The position captured by the most recently fired mouse-dwell hover
+    /// request (`LspMsg::ShowHoverAt`) — the `Mouse`-origin analogue of
+    /// comparing a keyboard `ShowHover` reply against the *live* caret
+    /// position in `LspMsg::HoverResolved`'s guard. The runtime clears this
+    /// whenever the dwell resets (pointer moved away before the reply
+    /// landed), so a stale reply for an abandoned dwell never opens a card.
+    pub mouse_hover_target: Option<crate::model::editor::Position>,
 }
 
 impl UiState {
@@ -942,6 +954,7 @@ impl UiState {
             cursor_overlay: None,
             completion_menu: None,
             hover_card: None,
+            mouse_hover_target: None,
         }
     }
 

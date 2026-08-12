@@ -194,6 +194,12 @@ pub struct App {
     last_tick: Instant,
     modifiers: ModifiersState,
     mouse_position: Option<(f64, f64)>,
+    /// Mouse-dwell hover tracking (Zed-style `hover_on_mouse`): the pixel
+    /// position + timestamp the pointer last settled at, cleared on any
+    /// significant move, button press, or while a modal/cursor-overlay is
+    /// open. `about_to_wait` fires `LspMsg::ShowHoverAt` once this has aged
+    /// past `config.hover_delay_ms` — see `check_hover_dwell`.
+    hover_dwell: Option<(f64, f64, Instant)>,
     /// Carries sub-line trackpad scroll remainders between wheel events.
     scroll_accumulator: ScrollAccumulator,
     option_gesture: OptionKeyGesture,
@@ -287,6 +293,10 @@ const DEFINITION_TIMEOUT: Duration = Duration::from_secs(30);
 /// UI-level abandonment timeout for `textDocument/hover` — same class as
 /// `DEFINITION_TIMEOUT` per the design doc.
 const HOVER_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Pointer movement (px) past which mouse-dwell hover tracking (`hover_dwell`)
+/// resets — small jitter within this radius doesn't restart the delay.
+const HOVER_DWELL_MOVE_THRESHOLD_PX: f64 = 3.0;
 
 /// Owns every running language server's process handle. Authoritative —
 /// `AppModel.lsp` (`LspUiState`) is a render-only mirror driven by
@@ -507,6 +517,7 @@ impl App {
             last_tick: Instant::now(),
             modifiers: ModifiersState::empty(),
             mouse_position: None,
+            hover_dwell: None,
             scroll_accumulator: ScrollAccumulator::default(),
             option_gesture: OptionKeyGesture::default(),
             drag: DragState::default(),
@@ -724,6 +735,83 @@ impl App {
         }
     }
 
+    /// Mouse-dwell hover bookkeeping for `CursorMoved` — call after
+    /// `update_cursor_icon` so `self.model.ui.hover` already reflects the
+    /// new position. `prev` is the mouse position before this move (`None`
+    /// on the very first move, treated as significant).
+    fn update_hover_dwell(&mut self, prev: Option<(f64, f64)>, x: f64, y: f64) {
+        use token::model::{CursorOverlayKind, CursorOverlayState, HoverRegion};
+
+        let moved_significantly = prev
+            .map(|(px, py)| {
+                let (dx, dy) = (x - px, y - py);
+                (dx * dx + dy * dy).sqrt() > HOVER_DWELL_MOVE_THRESHOLD_PX
+            })
+            .unwrap_or(true);
+        if !moved_significantly {
+            return;
+        }
+
+        // A Hover card is dismissed by a significant move that lands
+        // outside its own panel — moving inside the card (it's
+        // scrollable/clickable, hit_test_ui claims it first) must not
+        // dismiss it (overlay-surface.md Phase 5 pointer spec).
+        let showing_hover_card = matches!(
+            self.model.ui.cursor_overlay,
+            Some(CursorOverlayState {
+                kind: CursorOverlayKind::Hover,
+                ..
+            })
+        );
+        if showing_hover_card && self.model.ui.hover != HoverRegion::CursorOverlay {
+            self.model.ui.cursor_overlay = None;
+            self.model.ui.hover_card = None;
+        }
+
+        // No fresh dwell while a modal or any cursor-anchored popup is up
+        // (including one that just got dismissed above) — moving within
+        // the editor to a new position only re-arms dwell once nothing is
+        // showing.
+        self.hover_dwell = (!self.model.ui.has_modal() && self.model.ui.cursor_overlay.is_none())
+            .then_some((x, y, Instant::now()));
+    }
+
+    /// Fires `LspMsg::ShowHoverAt` once the pointer has dwelled past
+    /// `config.hover_delay_ms` over editor text — the mouse-driven
+    /// counterpart to `CommandId::ShowHover`'s caret-anchored request.
+    /// Returns whether a redraw is needed.
+    fn check_hover_dwell(&mut self) -> bool {
+        if !self.model.config.hover_on_mouse {
+            return false;
+        }
+        let Some((x, y, started)) = self.hover_dwell else {
+            return false;
+        };
+        if self.model.ui.has_modal() || self.model.ui.cursor_overlay.is_some() {
+            return false;
+        }
+        if self.model.ui.hover != token::model::HoverRegion::EditorText {
+            return false;
+        }
+        if started.elapsed() < Duration::from_millis(self.model.config.hover_delay_ms) {
+            return false;
+        }
+        let Some(renderer) = &mut self.renderer else {
+            return false;
+        };
+        // One-shot: don't refire every tick once the delay has elapsed —
+        // a fresh dwell starts only after the next significant move.
+        self.hover_dwell = None;
+        let (line, col) = renderer.pixel_to_cursor(x, y, &self.model);
+        let Some(cmd) = update(&mut self.model, Msg::Lsp(LspMsg::ShowHoverAt { line, col })) else {
+            return false;
+        };
+        let needs_redraw = cmd.needs_redraw();
+        self.pending_damage.merge(cmd.damage());
+        self.process_cmd(cmd);
+        needs_redraw
+    }
+
     fn sync_text_input_rect(&self) {
         let Some(window) = &self.window else { return };
         let Some(rect) = token::view::caret::active_text_input_rect(
@@ -913,9 +1001,11 @@ impl App {
                 None
             }
             WindowEvent::CursorMoved { position, .. } => {
+                let prev_mouse_position = self.mouse_position;
                 self.mouse_position = Some((position.x, position.y));
                 let prev_modal_hover_row = self.model.ui.modal_hover_row;
                 self.update_cursor_icon(position.x, position.y);
+                self.update_hover_dwell(prev_mouse_position, position.x, position.y);
 
                 // A modal being open doesn't rule out a drag that started
                 // before it opened (splitter/scrollbar/etc.), so those
@@ -1058,6 +1148,7 @@ impl App {
                 button: MouseButton::Left,
                 ..
             } => {
+                self.hover_dwell = None;
                 if let Some((x, y)) = self.mouse_position {
                     if let Some(renderer) = &mut self.renderer {
                         let event = make_mouse_event(x, y, MouseButton::Left, self.modifiers);
@@ -1136,6 +1227,7 @@ impl App {
                 button: MouseButton::Back,
                 ..
             } => {
+                self.hover_dwell = None;
                 // Mouse "back" button navigates the jump history globally,
                 // matching JetBrains.
                 update(&mut self.model, Msg::Lsp(LspMsg::NavigateBack))
@@ -1144,12 +1236,16 @@ impl App {
                 state: ElementState::Pressed,
                 button: MouseButton::Forward,
                 ..
-            } => update(&mut self.model, Msg::Lsp(LspMsg::NavigateForward)),
+            } => {
+                self.hover_dwell = None;
+                update(&mut self.model, Msg::Lsp(LspMsg::NavigateForward))
+            }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Middle,
                 ..
             } => {
+                self.hover_dwell = None;
                 if let Some((x, y)) = self.mouse_position {
                     if let Some(renderer) = &mut self.renderer {
                         let event = make_mouse_event(x, y, MouseButton::Middle, self.modifiers);
@@ -3458,6 +3554,9 @@ impl ApplicationHandler for App {
         self.check_lsp_restart_deadlines();
         self.check_lsp_definition_deadlines();
         self.check_lsp_hover_deadlines();
+        if self.check_hover_dwell() {
+            needs_redraw = true;
+        }
 
         // Expire status flash messages
         if self.model.ui.expire_status_message() {
@@ -3513,6 +3612,10 @@ impl ApplicationHandler for App {
         }
         if let Some(deferred_startup_at) = self.deferred_startup_at {
             next_wake = next_wake.min(deferred_startup_at);
+        }
+        if let Some((_, _, started)) = self.hover_dwell {
+            let delay = Duration::from_millis(self.model.config.hover_delay_ms);
+            next_wake = next_wake.min(started + delay);
         }
         event_loop.set_control_flow(ControlFlow::WaitUntil(next_wake));
     }
@@ -5341,6 +5444,146 @@ mod tests {
             Some(&current_key),
             "the newer request must still own the doc's outcome"
         );
+    }
+
+    // ========================================================================
+    // Mouse-dwell hover (`hover_dwell` state machine)
+    // ========================================================================
+
+    #[test]
+    fn hover_dwell_arms_on_the_first_move() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        assert!(app.hover_dwell.is_none());
+
+        app.update_hover_dwell(None, 10.0, 20.0);
+
+        let (x, y, _) = app.hover_dwell.expect("first move arms the dwell timer");
+        assert_eq!((x, y), (10.0, 20.0));
+    }
+
+    #[test]
+    fn a_small_move_does_not_reset_the_dwell_position() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.update_hover_dwell(None, 10.0, 10.0);
+        let armed_at = app.hover_dwell.unwrap().2;
+
+        // 1px move, under HOVER_DWELL_MOVE_THRESHOLD_PX — jitter, not a
+        // real move.
+        app.update_hover_dwell(Some((10.0, 10.0)), 11.0, 10.0);
+
+        let (x, y, started) = app.hover_dwell.expect("still armed");
+        assert_eq!((x, y), (10.0, 10.0), "position must not move for jitter");
+        assert_eq!(started, armed_at, "timer must not restart for jitter");
+    }
+
+    #[test]
+    fn a_significant_move_restarts_the_dwell_at_the_new_position() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.update_hover_dwell(None, 10.0, 10.0);
+
+        app.update_hover_dwell(Some((10.0, 10.0)), 200.0, 10.0);
+
+        let (x, y, _) = app.hover_dwell.expect("still armed at the new position");
+        assert_eq!((x, y), (200.0, 10.0));
+    }
+
+    #[test]
+    fn dwell_does_not_arm_while_a_modal_is_open() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.ui.open_modal(token::model::ModalState::GotoLine(
+            token::model::GotoLineState::default(),
+        ));
+
+        app.update_hover_dwell(None, 10.0, 10.0);
+
+        assert!(app.hover_dwell.is_none());
+    }
+
+    #[test]
+    fn dwell_does_not_arm_while_a_cursor_overlay_is_open() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::DebugCompletion,
+        ));
+
+        app.update_hover_dwell(None, 10.0, 10.0);
+
+        assert!(app.hover_dwell.is_none());
+    }
+
+    #[test]
+    fn moving_outside_the_hover_card_panel_dismisses_it() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::Hover,
+        ));
+        app.model.ui.hover_card = Some(token::model::HoverCardState {
+            content: Some("fn main()".to_owned()),
+            ..Default::default()
+        });
+        // Simulates `update_cursor_icon` having hit-tested the new point
+        // outside the card's panel.
+        app.model.ui.hover = token::model::HoverRegion::EditorText;
+
+        app.update_hover_dwell(Some((10.0, 10.0)), 200.0, 200.0);
+
+        assert!(app.model.ui.cursor_overlay.is_none());
+        assert!(app.model.ui.hover_card.is_none());
+    }
+
+    #[test]
+    fn moving_within_the_hover_card_panel_does_not_dismiss_it() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::Hover,
+        ));
+        app.model.ui.hover_card = Some(token::model::HoverCardState {
+            content: Some("fn main()".to_owned()),
+            ..Default::default()
+        });
+        // Simulates `update_cursor_icon` having hit-tested the new point
+        // as still inside the card's own (scrollable/clickable) panel.
+        app.model.ui.hover = token::model::HoverRegion::CursorOverlay;
+
+        app.update_hover_dwell(Some((10.0, 10.0)), 200.0, 200.0);
+
+        assert!(
+            app.model.ui.cursor_overlay.is_some(),
+            "moving within the card must not dismiss it"
+        );
+        assert!(app.model.ui.hover_card.is_some());
+    }
+
+    #[test]
+    fn check_hover_dwell_is_a_noop_when_disabled_in_config() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.hover_on_mouse = false;
+        app.model.ui.hover = token::model::HoverRegion::EditorText;
+        app.hover_dwell = Some((10.0, 10.0, Instant::now() - Duration::from_secs(1)));
+
+        assert!(!app.check_hover_dwell());
+        assert!(
+            app.hover_dwell.is_some(),
+            "a disabled feature must leave the armed dwell alone (no surprise clear)"
+        );
+    }
+
+    #[test]
+    fn check_hover_dwell_does_not_fire_before_the_delay_elapses() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.ui.hover = token::model::HoverRegion::EditorText;
+        app.hover_dwell = Some((10.0, 10.0, Instant::now()));
+
+        assert!(!app.check_hover_dwell());
+    }
+
+    #[test]
+    fn check_hover_dwell_does_not_fire_outside_editor_text() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.ui.hover = token::model::HoverRegion::Sidebar;
+        app.hover_dwell = Some((10.0, 10.0, Instant::now() - Duration::from_secs(1)));
+
+        assert!(!app.check_hover_dwell());
     }
 
     /// End-to-end "hover resolved and rendered" (design doc's Testing

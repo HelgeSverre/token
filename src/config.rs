@@ -48,6 +48,18 @@ pub struct EditorConfig {
     #[serde(default = "default_status_bar_font_size")]
     pub status_bar_font_size: f32,
 
+    /// Show the LSP hover card when the mouse dwells over editor text,
+    /// Zed-style (default: true). The keyboard binding (Shift+Cmd+D,
+    /// caret-anchored) is unaffected by this setting.
+    #[serde(default = "default_true")]
+    pub hover_on_mouse: bool,
+
+    /// How long the mouse must stay still over editor text before
+    /// `hover_on_mouse` triggers, in milliseconds (default: 300, mirrors
+    /// Zed's `hover_popover_delay`).
+    #[serde(default = "default_hover_delay_ms")]
+    pub hover_delay_ms: u64,
+
     /// Language server settings (see `LspConfig`).
     #[serde(default)]
     pub lsp: LspConfig,
@@ -110,6 +122,10 @@ fn default_status_bar_font_size() -> f32 {
     12.0
 }
 
+fn default_hover_delay_ms() -> u64 {
+    300
+}
+
 impl Default for EditorConfig {
     fn default() -> Self {
         Self {
@@ -119,6 +135,8 @@ impl Default for EditorConfig {
             bracket_matching: true,
             show_scrollbar: true,
             status_bar_font_size: default_status_bar_font_size(),
+            hover_on_mouse: true,
+            hover_delay_ms: default_hover_delay_ms(),
             lsp: LspConfig::default(),
         }
     }
@@ -224,6 +242,13 @@ impl EditorConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hover_on_mouse_defaults_to_enabled_with_a_300ms_delay() {
+        let config = EditorConfig::default();
+        assert!(config.hover_on_mouse);
+        assert_eq!(config.hover_delay_ms, 300);
+    }
 
     #[test]
     fn save_to_round_trips_the_lsp_master_switch() {

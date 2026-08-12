@@ -982,6 +982,16 @@ pub enum LspMsg {
     /// `(document_id, revision, position)` into `Cmd::LspRequestHover`,
     /// mirroring `GotoDefinition`'s message flow.
     ShowHover,
+    /// Mouse-dwell intent (the Zed-style hover-on-mouse feature): the
+    /// runtime fires this from `about_to_wait` once the pointer has sat
+    /// still over editor text for `hover_delay_ms`, carrying the hovered
+    /// text position rather than reading the caret. Shares
+    /// `Cmd::LspRequestHover`'s request path with `ShowHover` — only the
+    /// captured position differs.
+    ShowHoverAt {
+        line: usize,
+        col: usize,
+    },
     /// Runtime -> update: the outcome of a `textDocument/hover` request
     /// issued from `(document_id, revision, cursor)`. Revision- *and*
     /// cursor-guarded: dropped if the document has been edited, or the

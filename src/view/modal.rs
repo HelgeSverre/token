@@ -1715,7 +1715,26 @@ pub fn with_cursor_overlay_layout<R>(
         return Some(f(&spec, &l));
     }
 
-    let (x, y, h) = cursor_overlay_anchor(model)?;
+    // A mouse-dwell hover anchors to the hovered text cell instead of the
+    // caret (`HoverCardState::anchor`, set only for `ShowHoverAt` replies);
+    // every other kind — including a keyboard-invoked hover — keeps
+    // anchoring to the live caret rect.
+    let dwell_anchor = (state.kind == crate::model::CursorOverlayKind::Hover)
+        .then(|| model.ui.hover_card.as_ref().and_then(|c| c.anchor))
+        .flatten();
+    let (x, y, h) = match dwell_anchor {
+        Some((line, col)) => {
+            let rect = super::caret::editor_text_rect_at(
+                model,
+                line,
+                col,
+                model.char_width,
+                model.line_height,
+            )?;
+            (rect.x, rect.y, rect.h)
+        }
+        None => cursor_overlay_anchor(model)?,
+    };
 
     match state.kind {
         crate::model::CursorOverlayKind::Completion => unreachable!("handled above"),
@@ -1777,7 +1796,12 @@ pub fn with_cursor_overlay_layout<R>(
         }
         crate::model::CursorOverlayKind::Hover => {
             let doc = model.try_document()?;
-            let cursor = model.editor().active_cursor().to_position();
+            // Diagnostics-under-hover reads at the hovered cell for a
+            // dwell card, or the caret for a keyboard-invoked one — same
+            // position `HoverResolved` resolved content against.
+            let cursor = dwell_anchor
+                .map(|(line, col)| crate::model::editor::Position::new(line, col))
+                .unwrap_or_else(|| model.editor().active_cursor().to_position());
             let diagnostics = crate::model::decorations::diagnostics_at_position(doc, cursor);
             let banner = diagnostics.first().map(|d| {
                 (

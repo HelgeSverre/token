@@ -1253,6 +1253,7 @@ mod tests {
         ));
         model.ui.hover_card = Some(token::model::HoverCardState {
             content: Some("fn foo() -> i32".to_owned()),
+            ..Default::default()
         });
         model.document_mut().buffer = ropey::Rope::from("");
 
