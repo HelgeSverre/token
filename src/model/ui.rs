@@ -191,6 +191,10 @@ pub struct FindReplaceState {
     pub replace_mode: bool,
     /// Case-sensitive search
     pub case_sensitive: bool,
+    /// Match whole words only (`\b` boundaries)
+    pub whole_word: bool,
+    /// Interpret the query as a regular expression
+    pub use_regex: bool,
 }
 
 impl Default for FindReplaceState {
@@ -204,6 +208,8 @@ impl Default for FindReplaceState {
             focused_field: FindReplaceField::Query,
             replace_mode: false,
             case_sensitive: false,
+            whole_word: false,
+            use_regex: false,
         }
     }
 }
@@ -251,6 +257,18 @@ impl FindReplaceState {
             FindReplaceField::Query => FindReplaceField::Replace,
             FindReplaceField::Replace => FindReplaceField::Query,
         };
+    }
+
+    /// Build a compiled search query from the current text and options —
+    /// the single source both find navigation and match-highlighting
+    /// decorations read from, so they can never drift apart.
+    pub fn build_query(&self) -> crate::search::SearchQuery {
+        crate::search::SearchQuery::new(
+            &self.query(),
+            self.case_sensitive,
+            self.whole_word,
+            self.use_regex,
+        )
     }
 }
 

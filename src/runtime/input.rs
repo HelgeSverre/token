@@ -481,8 +481,22 @@ fn handle_modal_key(model: &mut AppModel, key: Key, modifiers: KeyModifiers) -> 
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::TogglePin)))
         }
 
+        // Shift+Enter: find previous (Find/Replace only — a no-op elsewhere,
+        // same guard `ModalMsg::FindPrevious`'s handler already has).
+        Key::Named(NamedKey::Enter) if shift => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::FindPrevious)))
+        }
+
         // Enter: confirm modal action
         Key::Named(NamedKey::Enter) => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Confirm))),
+
+        // Tab: toggle between the query/replace fields (Find/Replace only —
+        // a no-op elsewhere, same guard `ModalMsg::ToggleFindReplaceField`'s
+        // handler already has).
+        Key::Named(NamedKey::Tab) if !shift => update(
+            model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::ToggleFindReplaceField)),
+        ),
 
         // Arrow Up/Down for navigation in modal lists (only without modifiers)
         Key::Named(NamedKey::ArrowUp) if !shift && !alt => {

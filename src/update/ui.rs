@@ -621,11 +621,28 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             }
         }
 
+        ModalMsg::ToggleFindReplaceWholeWord => {
+            if let Some(ModalState::FindReplace(ref mut state)) = model.ui.active_modal {
+                state.whole_word = !state.whole_word;
+                Some(Cmd::Redraw)
+            } else {
+                None
+            }
+        }
+
+        ModalMsg::ToggleFindReplaceRegex => {
+            if let Some(ModalState::FindReplace(ref mut state)) = model.ui.active_modal {
+                state.use_regex = !state.use_regex;
+                Some(Cmd::Redraw)
+            } else {
+                None
+            }
+        }
+
         ModalMsg::FindNext => {
             if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
-                let query = state.query();
-                let case_sensitive = state.case_sensitive;
-                if !query.is_empty() {
+                let query = state.build_query();
+                if !state.query().is_empty() {
                     model.ui.last_find_replace = model.ui.active_modal.clone().and_then(|m| {
                         if let ModalState::FindReplace(s) = m {
                             Some(s)
@@ -633,7 +650,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                             None
                         }
                     });
-                    return find_next_in_document(model, &query, case_sensitive);
+                    return find_next_in_document(model, &query);
                 }
             }
             Some(Cmd::Redraw)
@@ -641,9 +658,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::FindPrevious => {
             if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
-                let query = state.query();
-                let case_sensitive = state.case_sensitive;
-                if !query.is_empty() {
+                let query = state.build_query();
+                if !state.query().is_empty() {
                     model.ui.last_find_replace = model.ui.active_modal.clone().and_then(|m| {
                         if let ModalState::FindReplace(s) = m {
                             Some(s)
@@ -651,7 +667,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                             None
                         }
                     });
-                    return find_prev_in_document(model, &query, case_sensitive);
+                    return find_prev_in_document(model, &query);
                 }
             }
             Some(Cmd::Redraw)
@@ -659,10 +675,9 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::ReplaceAndFindNext => {
             if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
-                let query = state.query();
+                let query = state.build_query();
                 let replacement = state.replacement();
-                let case_sensitive = state.case_sensitive;
-                if !query.is_empty() {
+                if !state.query().is_empty() {
                     model.ui.last_find_replace = model.ui.active_modal.clone().and_then(|m| {
                         if let ModalState::FindReplace(s) = m {
                             Some(s)
@@ -670,7 +685,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                             None
                         }
                     });
-                    return replace_and_find_next(model, &query, &replacement, case_sensitive);
+                    return replace_and_find_next(model, &query, &replacement);
                 }
             }
             Some(Cmd::Redraw)
@@ -678,10 +693,9 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::ReplaceAll => {
             if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
-                let query = state.query();
+                let query = state.build_query();
                 let replacement = state.replacement();
-                let case_sensitive = state.case_sensitive;
-                if !query.is_empty() {
+                if !state.query().is_empty() {
                     model.ui.last_find_replace = model.ui.active_modal.clone().and_then(|m| {
                         if let ModalState::FindReplace(s) = m {
                             Some(s)
@@ -689,7 +703,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                             None
                         }
                     });
-                    return replace_all(model, &query, &replacement, case_sensitive);
+                    return replace_all(model, &query, &replacement);
                 }
             }
             Some(Cmd::Redraw)
@@ -774,11 +788,10 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
             }
             ModalState::FindReplace(state) => {
                 // For Confirm, treat it as FindNext
-                let query = state.query();
-                if !query.is_empty() {
-                    let case_sensitive = state.case_sensitive;
+                if !state.query().is_empty() {
+                    let query = state.build_query();
                     model.ui.last_find_replace = Some(state);
-                    return find_next_in_document(model, &query, case_sensitive);
+                    return find_next_in_document(model, &query);
                 }
                 model.ui.close_modal();
                 Some(Cmd::Redraw)
@@ -1035,8 +1048,18 @@ fn modal_scroll(model: &mut AppModel, delta: isize) -> Option<Cmd> {
     Some(Cmd::Redraw)
 }
 
+/// Show "No matches found", or the regex error if the query failed to
+/// compile — shared by find-next/find-previous/replace-all.
+fn report_no_matches(model: &mut AppModel, query: &crate::search::SearchQuery) {
+    let text = match &query.error {
+        Some(err) => format!("Invalid regex: {}", err),
+        None => "No matches found".to_string(),
+    };
+    model.ui.transient_message = Some(TransientMessage::new(text, Duration::from_secs(2)));
+}
+
 /// Find next occurrence in the document and select it
-fn find_next_in_document(model: &mut AppModel, query: &str, case_sensitive: bool) -> Option<Cmd> {
+fn find_next_in_document(model: &mut AppModel, query: &crate::search::SearchQuery) -> Option<Cmd> {
     let editor = model.editor();
     let doc = model.document();
 
@@ -1049,11 +1072,16 @@ fn find_next_in_document(model: &mut AppModel, query: &str, case_sensitive: bool
         doc.cursor_to_offset(editor.cursors[0].line, editor.cursors[0].column)
     };
 
-    if let Some((start, end)) =
-        doc.find_next_occurrence_with_options(query, start_offset, case_sensitive)
-    {
-        let (start_line, start_col) = doc.offset_to_cursor(start);
-        let (end_line, end_col) = doc.offset_to_cursor(end);
+    let matches = doc.search_matches(query);
+    let found = matches
+        .iter()
+        .find(|m| m.start > start_offset)
+        .or_else(|| matches.first())
+        .copied();
+
+    if let Some(m) = found {
+        let (start_line, start_col) = doc.offset_to_cursor(m.start);
+        let (end_line, end_col) = doc.offset_to_cursor(m.end);
 
         let editor = model.editor_mut();
         // Set cursor to end of match
@@ -1070,17 +1098,13 @@ fn find_next_in_document(model: &mut AppModel, query: &str, case_sensitive: bool
         model.ensure_cursor_visible();
         Some(Cmd::redraw_editor())
     } else {
-        // No match found - show transient message
-        model.ui.transient_message = Some(TransientMessage::new(
-            "No matches found".to_string(),
-            Duration::from_secs(2),
-        ));
+        report_no_matches(model, query);
         Some(Cmd::redraw_editor())
     }
 }
 
 /// Find previous occurrence in the document and select it
-fn find_prev_in_document(model: &mut AppModel, query: &str, case_sensitive: bool) -> Option<Cmd> {
+fn find_prev_in_document(model: &mut AppModel, query: &crate::search::SearchQuery) -> Option<Cmd> {
     let editor = model.editor();
     let doc = model.document();
 
@@ -1093,11 +1117,17 @@ fn find_prev_in_document(model: &mut AppModel, query: &str, case_sensitive: bool
         doc.cursor_to_offset(editor.cursors[0].line, editor.cursors[0].column)
     };
 
-    if let Some((start, end)) =
-        doc.find_prev_occurrence_with_options(query, start_offset, case_sensitive)
-    {
-        let (start_line, start_col) = doc.offset_to_cursor(start);
-        let (end_line, end_col) = doc.offset_to_cursor(end);
+    let matches = doc.search_matches(query);
+    let found = matches
+        .iter()
+        .rev()
+        .find(|m| m.start < start_offset)
+        .or_else(|| matches.last())
+        .copied();
+
+    if let Some(m) = found {
+        let (start_line, start_col) = doc.offset_to_cursor(m.start);
+        let (end_line, end_col) = doc.offset_to_cursor(m.end);
 
         let editor = model.editor_mut();
         // Set cursor to start of match (for prev, cursor goes to start)
@@ -1114,10 +1144,7 @@ fn find_prev_in_document(model: &mut AppModel, query: &str, case_sensitive: bool
         model.ensure_cursor_visible();
         Some(Cmd::redraw_editor())
     } else {
-        model.ui.transient_message = Some(TransientMessage::new(
-            "No matches found".to_string(),
-            Duration::from_secs(2),
-        ));
+        report_no_matches(model, query);
         Some(Cmd::redraw_editor())
     }
 }
@@ -1125,9 +1152,8 @@ fn find_prev_in_document(model: &mut AppModel, query: &str, case_sensitive: bool
 /// Replace current selection if it matches, then find next
 fn replace_and_find_next(
     model: &mut AppModel,
-    query: &str,
+    query: &crate::search::SearchQuery,
     replacement: &str,
-    case_sensitive: bool,
 ) -> Option<Cmd> {
     // First, gather all the info we need without holding borrows
     let should_replace = {
@@ -1143,18 +1169,12 @@ fn replace_and_find_next(
             let start_offset = doc.cursor_to_offset(start.line, start.column);
             let end_offset = doc.cursor_to_offset(end.line, end.column);
 
-            let selected_text = doc.buffer.slice(start_offset..end_offset).to_string();
-            let matches = if case_sensitive {
-                selected_text == query
-            } else {
-                selected_text.to_lowercase() == query.to_lowercase()
-            };
+            let is_match = doc
+                .search_matches(query)
+                .iter()
+                .any(|m| m.start == start_offset && m.end == end_offset);
 
-            if matches {
-                Some((start_offset, end_offset))
-            } else {
-                None
-            }
+            is_match.then_some((start_offset, end_offset))
         }
     };
 
@@ -1177,24 +1197,20 @@ fn replace_and_find_next(
     }
 
     // Now find next
-    find_next_in_document(model, query, case_sensitive)
+    find_next_in_document(model, query)
 }
 
 /// Replace all occurrences
 fn replace_all(
     model: &mut AppModel,
-    query: &str,
+    query: &crate::search::SearchQuery,
     replacement: &str,
-    case_sensitive: bool,
 ) -> Option<Cmd> {
     let doc = model.document();
-    let occurrences = doc.find_all_occurrences_with_options(query, case_sensitive);
+    let occurrences = doc.search_matches(query);
 
     if occurrences.is_empty() {
-        model.ui.transient_message = Some(TransientMessage::new(
-            "No matches found".to_string(),
-            Duration::from_secs(2),
-        ));
+        report_no_matches(model, query);
         return Some(Cmd::Redraw);
     }
 
@@ -1203,9 +1219,9 @@ fn replace_all(
     // Replace from end to start to preserve offsets
     let doc = model.document_mut();
     let replacement_char_len = replacement.chars().count();
-    for (start, end) in occurrences.into_iter().rev() {
-        doc.buffer.remove(start..end);
-        doc.buffer.insert(start, replacement);
+    for m in occurrences.into_iter().rev() {
+        doc.buffer.remove(m.start..m.end);
+        doc.buffer.insert(m.start, replacement);
     }
     doc.is_modified = true;
     doc.revision += 1;

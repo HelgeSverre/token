@@ -238,6 +238,10 @@ pub enum ModalMsg {
     ToggleFindReplaceField,
     /// Toggle case sensitivity for find/replace
     ToggleFindReplaceCaseSensitive,
+    /// Toggle whole-word matching for find/replace
+    ToggleFindReplaceWholeWord,
+    /// Toggle regex interpretation for find/replace
+    ToggleFindReplaceRegex,
     /// Find next occurrence (Enter in find field or F3)
     FindNext,
     /// Find previous occurrence (Shift+Enter or Shift+F3)
