@@ -16,7 +16,6 @@ use std::path::PathBuf;
 use winit::event::MouseButton;
 use winit::keyboard::ModifiersState;
 
-use crate::commands::filter_commands;
 use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, TabId};
 use crate::model::{AppModel, FocusTarget, ModalState, TextViewportMap};
 
@@ -373,25 +372,13 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
     // Use the same layout functions as rendering — single source of truth
     let layout = match &model.ui.active_modal {
         Some(ModalState::CommandPalette(state)) => {
-            if super::modal::overlay_surface_gate_enabled() {
-                let panel = super::modal::command_palette_overlay_panel(state, ww, wh, sf);
-                super::geometry::ModalLayout {
-                    x: panel.x,
-                    y: panel.y,
-                    w: panel.w,
-                    h: panel.h,
-                    widgets: Vec::new(),
-                }
-            } else {
-                let input_text = state.input();
-                let (l, _) = super::geometry::command_palette_layout(
-                    ww,
-                    wh,
-                    lh,
-                    filter_commands(&input_text).len(),
-                    sf,
-                );
-                l
+            let panel = super::modal::command_palette_overlay_panel(state, ww, wh, sf);
+            super::geometry::ModalLayout {
+                x: panel.x,
+                y: panel.y,
+                w: panel.w,
+                h: panel.h,
+                widgets: Vec::new(),
             }
         }
         Some(ModalState::FileFinder(state)) => {

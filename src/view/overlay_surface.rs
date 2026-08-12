@@ -31,6 +31,11 @@ mod dims {
     pub const SCROLLBAR_INSET: f32 = 2.0;
     pub const SCROLLBAR_MIN_LEN: f32 = 20.0;
     pub const Y: f32 = 64.0;
+    /// Gap between chips within one chord step's keycap accessory.
+    pub const CHIP_GAP: f32 = 4.0;
+    /// Gap between chord steps in a keycap accessory (Visual Language >
+    /// Keycaps: "6px gap between steps").
+    pub const CHIP_STEP_GAP: f32 = 6.0;
 }
 
 /// The three-size type scale (input / rows / metadata), in logical px.
@@ -46,6 +51,13 @@ fn scaled(v: f32, scale_factor: f64) -> usize {
 #[inline]
 fn size_px(logical: f32, scale_factor: f64) -> f32 {
     (logical as f64 * scale_factor) as f32
+}
+
+/// Horizontal padding inside the header, in physical px — exposed so
+/// `view::caret` can position the IME caret rect inside the header without
+/// duplicating the layout constant.
+pub fn header_pad_x(scale_factor: f64) -> usize {
+    scaled(dims::HEADER_PAD_X, scale_factor)
 }
 
 /// A modal width rule: percent of window width, clamped to a logical-px
@@ -82,6 +94,49 @@ pub enum Accessory<'a> {
     None,
     DimText(&'a str),
     Check,
+    /// Keycap chips for a keybinding: outer = chord steps, inner = the
+    /// chips within a step (one per modifier, one for the key). Built by
+    /// `binding_chips`; more than 4 chips total should fall back to
+    /// `DimText` before reaching here (Visual Language > Keycaps).
+    Keycaps(&'a [Vec<Chip>]),
+}
+
+/// One keycap chip's label (e.g. `"⌘"`, `"⇧"`, `"T"`, `"F12"`).
+#[derive(Debug, Clone)]
+pub struct Chip {
+    pub label: String,
+}
+
+/// Split a platform keybinding display string (e.g. `"⇧⌘N"`, `"⌘K ⌘C"`) into
+/// chord steps of chips — one chip per leading modifier glyph, one chip for
+/// the trailing key (kept together regardless of how many glyphs it has, so
+/// `"F12"` is one chip, not four). Space separates chord steps.
+pub fn binding_chips(binding: &str) -> Vec<Vec<Chip>> {
+    const MODIFIERS: [char; 4] = ['⌃', '⌥', '⇧', '⌘'];
+    binding
+        .split(' ')
+        .filter(|step| !step.is_empty())
+        .map(|step| {
+            let mut chips: Vec<Chip> = step
+                .chars()
+                .take_while(|c| MODIFIERS.contains(c))
+                .map(|c| Chip {
+                    label: c.to_string(),
+                })
+                .collect();
+            let key: String = step.chars().skip_while(|c| MODIFIERS.contains(c)).collect();
+            if !key.is_empty() {
+                chips.push(Chip { label: key });
+            }
+            chips
+        })
+        .collect()
+}
+
+/// Total chip count across all chord steps — callers use this against the
+/// >4-chip fallback threshold (Visual Language > Keycaps).
+pub fn chip_count(steps: &[Vec<Chip>]) -> usize {
+    steps.iter().map(Vec::len).sum()
 }
 
 pub struct Row<'a> {
@@ -391,6 +446,9 @@ struct Palette {
     match_on_selection: u32,
     selection_wash: u32,
     recessed_wash: u32,
+    keycap_bg: u32,
+    keycap_border: u32,
+    keycap_fg: u32,
 }
 
 impl Palette {
@@ -405,6 +463,9 @@ impl Palette {
             match_on_selection: theme.match_on_selection.to_argb_u32(),
             selection_wash: theme.selection_wash.to_argb_u32(),
             recessed_wash: theme.recessed_wash.to_argb_u32(),
+            keycap_bg: theme.keycap_bg.to_argb_u32(),
+            keycap_border: theme.keycap_border.to_argb_u32(),
+            keycap_fg: theme.keycap_fg.to_argb_u32(),
         }
     }
 }
@@ -678,7 +739,7 @@ fn render_list(
                 x += icon_w;
 
                 // Reserve the accessory's measured width so it never truncates.
-                let accessory_w = accessory_width(painter, &row.accessory, meta_size);
+                let accessory_w = accessory_width(painter, &row.accessory, meta_size, scale_factor);
                 let label_right = rect.x + rect.w.saturating_sub(inset + text_pad + accessory_w);
                 let available = label_right.saturating_sub(x);
                 let text_y = rect.y
@@ -766,6 +827,37 @@ fn render_list(
                                 colors.accent_bright,
                             );
                         }
+                        Accessory::Keycaps(steps) => {
+                            let chip_h = painter.line_height_for_size(meta_size)
+                                + 2 * scaled(2.0, scale_factor);
+                            let chip_y = rect.y + (rect.h.saturating_sub(chip_h)) / 2;
+                            let chip_gap = scaled(dims::CHIP_GAP, scale_factor);
+                            let step_gap = scaled(dims::CHIP_STEP_GAP, scale_factor);
+                            let mut cx = acc_x;
+                            for (i, step) in steps.iter().enumerate() {
+                                if i > 0 {
+                                    cx += step_gap;
+                                }
+                                for (j, chip) in step.iter().enumerate() {
+                                    if j > 0 {
+                                        cx += chip_gap;
+                                    }
+                                    let w = super::frame::draw_keycap(
+                                        frame,
+                                        painter,
+                                        mask_cache,
+                                        cx,
+                                        chip_y,
+                                        &chip.label,
+                                        colors.keycap_bg,
+                                        colors.keycap_border,
+                                        colors.keycap_fg,
+                                        scale_factor,
+                                    );
+                                    cx += w;
+                                }
+                            }
+                        }
                         Accessory::None => {}
                     }
                 }
@@ -780,12 +872,38 @@ fn render_list(
     }
 }
 
-fn accessory_width(painter: &mut TextPainter, accessory: &Accessory, meta_size: f32) -> usize {
+fn accessory_width(
+    painter: &mut TextPainter,
+    accessory: &Accessory,
+    meta_size: f32,
+    scale_factor: f64,
+) -> usize {
     match accessory {
         Accessory::None => 0,
         Accessory::DimText(text) => painter.measure_sized(text, meta_size, 0.0).ceil() as usize,
         Accessory::Check => painter.measure_sized("\u{2713}", meta_size, 0.0).ceil() as usize,
+        Accessory::Keycaps(steps) => keycaps_width(painter, steps, scale_factor),
     }
+}
+
+/// Total width of a row of keycap chips: chip widths plus the intra-step and
+/// inter-step gaps (Visual Language > Keycaps).
+fn keycaps_width(painter: &mut TextPainter, steps: &[Vec<Chip>], scale_factor: f64) -> usize {
+    let chip_gap = scaled(dims::CHIP_GAP, scale_factor);
+    let step_gap = scaled(dims::CHIP_STEP_GAP, scale_factor);
+    let mut w = 0;
+    for (i, step) in steps.iter().enumerate() {
+        if i > 0 {
+            w += step_gap;
+        }
+        for (j, chip) in step.iter().enumerate() {
+            if j > 0 {
+                w += chip_gap;
+            }
+            w += super::frame::keycap_width(painter, &chip.label, scale_factor);
+        }
+    }
+    w
 }
 
 /// Draw `label` with matched-character runs (from `match_indices`,
@@ -1141,5 +1259,47 @@ mod tests {
         // caret at all.
         let caret_x = caret_x_for_column(&mut painter, 100, "", 0, SIZE_INPUT);
         assert_eq!(caret_x, 101);
+    }
+
+    #[test]
+    fn binding_chips_splits_modifiers_and_key_into_separate_chips() {
+        let steps = binding_chips("\u{21e7}\u{2318}T"); // ⇧⌘T
+        assert_eq!(steps.len(), 1, "single keystroke is one chord step");
+        let labels: Vec<&str> = steps[0].iter().map(|c| c.label.as_str()).collect();
+        assert_eq!(labels, vec!["\u{21e7}", "\u{2318}", "T"]);
+    }
+
+    #[test]
+    fn binding_chips_keeps_multi_glyph_function_keys_as_one_chip() {
+        let steps = binding_chips("F12");
+        assert_eq!(steps.len(), 1);
+        assert_eq!(
+            steps[0].len(),
+            1,
+            "F12 is one chip regardless of glyph count"
+        );
+        assert_eq!(steps[0][0].label, "F12");
+    }
+
+    #[test]
+    fn binding_chips_splits_chords_into_separate_steps() {
+        let steps = binding_chips("\u{2318}K \u{2318}C"); // ⌘K ⌘C
+        assert_eq!(steps.len(), 2, "space-separated chord has two steps");
+        assert_eq!(steps[0].len(), 2); // ⌘, K
+        assert_eq!(steps[1].len(), 2); // ⌘, C
+    }
+
+    #[test]
+    fn chip_count_sums_across_chord_steps_for_the_dim_text_fallback() {
+        // ⇧⌥⌘H: 3 modifiers + 1 key = 4 chips, at the fallback threshold.
+        let steps = binding_chips("\u{21e7}\u{2325}\u{2318}H");
+        assert_eq!(chip_count(&steps), 4);
+
+        // A two-step chord where the first step alone has 3 chips crosses
+        // the >4-chip fallback threshold (Visual Language > Keycaps: "more
+        // than 4 chips total falls back to Accessory::DimText").
+        let over_threshold = binding_chips("\u{21e7}\u{2318}K \u{2318}C");
+        assert_eq!(chip_count(&over_threshold), 5);
+        assert!(chip_count(&over_threshold) > 4);
     }
 }

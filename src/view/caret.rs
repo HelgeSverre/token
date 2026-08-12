@@ -90,9 +90,8 @@ fn modal_caret_rect(
 
     let (content, input_rect) = match modal {
         ModalState::CommandPalette(state) => {
-            let (layout, widgets) =
-                geometry::command_palette_layout(width, height, line_height, 0, scale_factor);
-            (&state.editable, *layout.widget(widgets.input))
+            let input_rect = super::modal::command_palette_input_rect(width, height, scale_factor);
+            (&state.editable, input_rect)
         }
         ModalState::GotoLine(state) => {
             let (layout, widgets) =

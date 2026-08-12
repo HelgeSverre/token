@@ -1007,6 +1007,22 @@ impl<'a> TextPainter<'a> {
     }
 }
 
+const KEYCAP_SIZE_LOGICAL: f32 = 11.0;
+const KEYCAP_MIN_WIDTH_LOGICAL: f32 = 17.0;
+const KEYCAP_PAD_X_LOGICAL: f32 = 4.0;
+
+/// The width `draw_keycap` will paint at, without painting anything — lets
+/// callers reserve layout space for a chip (e.g. accessory width in
+/// `overlay_surface::render_list`) before drawing it.
+pub fn keycap_width(painter: &mut TextPainter, label: &str, scale_factor: f64) -> usize {
+    let scale = |v: f32| (v as f64 * scale_factor).round().max(1.0) as usize;
+    let size = (KEYCAP_SIZE_LOGICAL as f64 * scale_factor) as f32;
+    let text_w = painter.measure_sized(label, size, 0.0);
+    let pad_x = scale(KEYCAP_PAD_X_LOGICAL);
+    let min_width = scale(KEYCAP_MIN_WIDTH_LOGICAL);
+    (text_w.ceil() as usize + pad_x * 2).max(min_width)
+}
+
 /// A single keycap chip: bordered rounded rect + centered 11px label.
 /// Returns the chip's width, so callers laying out a row of chips
 /// (`binding_chips`) can advance past it. Sizes/paddings are 11px-scale
@@ -1024,26 +1040,20 @@ pub fn draw_keycap(
     fg: u32,
     scale_factor: f64,
 ) -> usize {
-    const SIZE_LOGICAL: f32 = 11.0;
-    const MIN_WIDTH_LOGICAL: f32 = 17.0;
-    const PAD_X_LOGICAL: f32 = 4.0;
     const PAD_Y_LOGICAL: f32 = 2.0;
     const RADIUS_LOGICAL: f32 = 4.0;
 
     let scale = |v: f32| (v as f64 * scale_factor).round().max(1.0) as usize;
 
-    let size = (SIZE_LOGICAL as f64 * scale_factor) as f32;
+    let size = (KEYCAP_SIZE_LOGICAL as f64 * scale_factor) as f32;
     let text_w = painter.measure_sized(label, size, 0.0);
-    let pad_x = scale(PAD_X_LOGICAL);
     let pad_y = scale(PAD_Y_LOGICAL);
     let radius = scale(RADIUS_LOGICAL);
-    let min_width = scale(MIN_WIDTH_LOGICAL);
     let border_w = scale(1.0);
     let border_bottom_w = border_w + scale(1.0);
 
     let text_h = painter.line_height_for_size(size);
-    let content_w = text_w.ceil() as usize + pad_x * 2;
-    let width = content_w.max(min_width);
+    let width = keycap_width(painter, label, scale_factor);
     let height = text_h + pad_y * 2;
 
     frame.fill_rounded_rect(x, y, width, height, radius, border, mask_cache);

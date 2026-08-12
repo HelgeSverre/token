@@ -4,6 +4,7 @@ use crate::model::AppModel;
 
 use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry;
+use super::overlay_surface;
 use super::selectable_list::{
     render_selectable_list, SelectableListColors, SelectableListLayout, SelectableListViewport,
 };
@@ -175,36 +176,52 @@ fn render_theme_picker_modal(
     frame.clear_clip();
 }
 
-/// overlay-surface.md Phase 1 gate: render the command palette through the
-/// new `OverlaySurface` component instead of the legacy shell, so the new
-/// primitives/palette can be checked against the mockups without changing
-/// default behavior. Off by default; Phase 2 makes this the only path.
-pub(crate) fn overlay_surface_gate_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var_os("TOKEN_OVERLAY_SURFACE").is_some())
-}
-
-/// Palette/pickers cap at 10 visible rows (Visual Language > Overflow).
-const COMMAND_PALETTE_MAX_VISIBLE: usize = 10;
+/// Palette width: 50% of window, clamped 480-640 logical px (Visual
+/// Language > Chrome).
 const COMMAND_PALETTE_WIDTH: (f32, f32, f32) = (0.5, 480.0, 640.0);
 
-/// Panel geometry for the overlay-surface command palette, shared by
-/// `render_command_palette_modal_via_overlay_surface` and
-/// `hit_test::hit_test_modal` so a click just outside the legacy layout but
-/// inside the panel actually painted isn't treated as an outside-click.
+use crate::model::COMMAND_PALETTE_MAX_VISIBLE;
+
+/// Per-row accessory decision: a keybinding renders as keycap chips unless
+/// it has more than 4 chips total, in which case it falls back to dim text
+/// (Visual Language > Keycaps).
+enum PaletteAccessory {
+    None,
+    DimText(&'static str),
+    Keycaps(Vec<Vec<overlay_surface::Chip>>),
+}
+
+fn palette_accessory(keybinding: Option<&'static str>) -> PaletteAccessory {
+    use crate::view::overlay_surface::{binding_chips, chip_count};
+
+    match keybinding {
+        None => PaletteAccessory::None,
+        Some(kb) => {
+            let steps = binding_chips(kb);
+            if chip_count(&steps) > 4 {
+                PaletteAccessory::DimText(kb)
+            } else {
+                PaletteAccessory::Keycaps(steps)
+            }
+        }
+    }
+}
+
+/// Panel geometry for the command palette, shared by
+/// `render_command_palette_modal` and `hit_test::hit_test_modal` so a click
+/// is tested against the geometry actually painted (one layout, two
+/// consumers).
 pub(crate) fn command_palette_overlay_panel(
     state: &crate::model::ui::CommandPaletteState,
     window_width: usize,
     window_height: usize,
     scale_factor: f64,
 ) -> super::geometry::WidgetRect {
-    use crate::commands::filter_commands;
     use crate::view::overlay_surface::{
         self, Accessory, Anchor, Body, FlatIndex, Header, Row, RowIcon, Section, WidthRule,
     };
-    use crate::view::selectable_list::SelectableListViewport;
 
-    let count = filter_commands(&state.input()).len();
+    let count = state.matches.len();
     // Layout only depends on row count/height, not row content, so
     // placeholder rows are sufficient here.
     let rows: Vec<Row> = (0..count)
@@ -221,8 +238,6 @@ pub(crate) fn command_palette_overlay_panel(
         rows: &rows,
     }];
     let selected_index = state.selected_index.min(count.saturating_sub(1));
-    let viewport =
-        SelectableListViewport::compute(count, selected_index, COMMAND_PALETTE_MAX_VISIBLE);
     let (pct, min, max) = COMMAND_PALETTE_WIDTH;
     let spec = overlay_surface::OverlaySpec {
         anchor: Anchor::Centered {
@@ -239,7 +254,7 @@ pub(crate) fn command_palette_overlay_panel(
         body: Body::List {
             sections: &sections,
             selected: FlatIndex(selected_index),
-            scroll: viewport.scroll_offset,
+            scroll: state.scroll_offset,
             max_visible: COMMAND_PALETTE_MAX_VISIBLE,
         },
         footer: Some(overlay_surface::Footer {
@@ -250,8 +265,49 @@ pub(crate) fn command_palette_overlay_panel(
     overlay_surface::layout(&spec, window_width, window_height, scale_factor).panel
 }
 
-#[allow(clippy::too_many_arguments)]
-fn render_command_palette_modal_via_overlay_surface(
+/// The command palette's header text-input rect (inside the panel, minus
+/// header padding), used by `view::caret` to place the IME caret. Content
+/// doesn't affect this geometry, so an empty spec is enough.
+pub(crate) fn command_palette_input_rect(
+    window_width: usize,
+    window_height: usize,
+    scale_factor: f64,
+) -> super::geometry::WidgetRect {
+    use crate::view::overlay_surface::{self, Anchor, Body, FlatIndex, Header, WidthRule};
+
+    let sections: [overlay_surface::Section; 0] = [];
+    let (pct, min, max) = COMMAND_PALETTE_WIDTH;
+    let spec = overlay_surface::OverlaySpec {
+        anchor: Anchor::Centered {
+            width: WidthRule { pct, min, max },
+            dim_alpha: MODAL_DIM_ALPHA,
+        },
+        header: Header {
+            glyph: None,
+            text: "",
+            placeholder: "",
+            caret: None,
+            scope: None,
+        },
+        body: Body::List {
+            sections: &sections,
+            selected: FlatIndex(0),
+            scroll: 0,
+            max_visible: COMMAND_PALETTE_MAX_VISIBLE,
+        },
+        footer: None,
+    };
+    let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+    let pad = overlay_surface::header_pad_x(scale_factor);
+    super::geometry::WidgetRect {
+        x: l.header.x + pad,
+        y: l.header.y,
+        w: l.header.w.saturating_sub(pad * 2),
+        h: l.header.h,
+    }
+}
+
+fn render_command_palette_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
@@ -259,30 +315,38 @@ fn render_command_palette_modal_via_overlay_surface(
     ctx: &ModalRenderCtx,
     mask_cache: &mut RoundedRectMaskCache,
 ) {
-    use crate::commands::filter_commands;
     use crate::view::overlay_surface::{
         self, Accessory, Anchor, Body, FlatIndex, Header, Row, RowIcon, Section, WidthRule,
     };
-    use crate::view::selectable_list::SelectableListViewport;
-
-    // `CommandPaletteState` doesn't track a scroll offset yet (that lands
-    // with Phase 2's `resolve_palette_rows`); `compute` still keeps the
-    // selection on-screen so the gate demonstrates real scrolling instead of
-    // pinning to a fixed 8-row window with no way to see past it.
-    const MAX_VISIBLE: usize = COMMAND_PALETTE_MAX_VISIBLE;
 
     let input_text = state.input();
-    let filtered = filter_commands(&input_text);
-    let rows: Vec<Row> = filtered
+    let icon_color = model.theme.overlay.text_dim.to_argb_u32();
+
+    // Per-row keycap chip storage lives here so `Row::accessory` can borrow
+    // into it for the duration of this render call (spec lifetime: built
+    // and consumed in one scope — see overlay-surface.md "The spec").
+    let accessories: Vec<PaletteAccessory> = state
+        .matches
         .iter()
-        .map(|cmd| Row {
-            icon: RowIcon::None,
-            label: cmd.label,
-            match_indices: &[],
+        .map(|m| palette_accessory(m.def.keybinding))
+        .collect();
+
+    let rows: Vec<Row> = state
+        .matches
+        .iter()
+        .zip(&accessories)
+        .map(|(m, accessory)| Row {
+            icon: RowIcon::Glyph {
+                ch: m.def.category.glyph(),
+                color: icon_color,
+            },
+            label: m.def.label,
+            match_indices: &m.indices,
             detail: None,
-            accessory: match cmd.keybinding {
-                Some(kb) => Accessory::DimText(kb),
-                None => Accessory::None,
+            accessory: match accessory {
+                PaletteAccessory::None => Accessory::None,
+                PaletteAccessory::DimText(kb) => Accessory::DimText(kb),
+                PaletteAccessory::Keycaps(steps) => Accessory::Keycaps(steps),
             },
         })
         .collect();
@@ -292,7 +356,6 @@ fn render_command_palette_modal_via_overlay_surface(
     }];
 
     let selected_index = state.selected_index.min(rows.len().saturating_sub(1));
-    let viewport = SelectableListViewport::compute(rows.len(), selected_index, MAX_VISIBLE);
 
     let (pct, min, max) = COMMAND_PALETTE_WIDTH;
     let spec = overlay_surface::OverlaySpec {
@@ -317,8 +380,8 @@ fn render_command_palette_modal_via_overlay_surface(
         body: Body::List {
             sections: &sections,
             selected: FlatIndex(selected_index),
-            scroll: viewport.scroll_offset,
-            max_visible: MAX_VISIBLE,
+            scroll: state.scroll_offset,
+            max_visible: COMMAND_PALETTE_MAX_VISIBLE,
         },
         footer: Some(overlay_surface::Footer {
             leading: "\u{2191}\u{2193} navigate \u{00b7} \u{21b5} run",
@@ -337,97 +400,6 @@ fn render_command_palette_modal_via_overlay_surface(
         ctx.scale_factor,
         model.ui.cursor_visible,
     );
-}
-
-fn render_command_palette_modal(
-    frame: &mut Frame,
-    painter: &mut TextPainter,
-    model: &AppModel,
-    state: &crate::model::ui::CommandPaletteState,
-    ctx: &ModalRenderCtx,
-    mask_cache: &mut RoundedRectMaskCache,
-) {
-    use crate::commands::filter_commands;
-
-    if overlay_surface_gate_enabled() {
-        return render_command_palette_modal_via_overlay_surface(
-            frame, painter, model, state, ctx, mask_cache,
-        );
-    }
-
-    let colors = &ctx.colors;
-    let line_height = ctx.line_height;
-    let char_width = ctx.char_width;
-
-    let input_text = state.input();
-    let filtered_commands = filter_commands(&input_text);
-    let max_visible_items = 8;
-
-    let (layout, w) = geometry::command_palette_layout(
-        ctx.window_width,
-        ctx.window_height,
-        line_height,
-        filtered_commands.len(),
-        ctx.scale_factor,
-    );
-
-    render_modal_shell(frame, &layout, colors);
-
-    let title_r = layout.widget(w.title);
-    painter.draw(frame, title_r.x, title_r.y, "Command Palette", colors.fg);
-
-    let input_r = layout.widget(w.input);
-    TextFieldRenderer::render_modal_input(
-        frame,
-        painter,
-        &state.editable,
-        input_r,
-        line_height,
-        char_width,
-        colors.input_bg,
-        colors.fg,
-        colors.highlight,
-        colors.selection_bg,
-        model.ui.cursor_visible,
-        ctx.scale_factor,
-    );
-
-    if let Some(list_idx) = w.list {
-        let list_r = layout.widget(list_idx);
-        let list_layout = SelectableListLayout {
-            x: layout.x,
-            y: list_r.y,
-            width: layout.w,
-            row_height: line_height,
-            max_visible_items,
-            selection_inset: 4,
-        };
-        let list_colors = SelectableListColors {
-            selection_bg: colors.selection_bg,
-        };
-        let viewport = render_selectable_list(
-            frame,
-            filtered_commands.as_slice(),
-            state.selected_index,
-            &list_layout,
-            &list_colors,
-            |frame, cmd, _actual_index, item_y, _is_selected| {
-                painter.draw(frame, layout.x + 16, item_y, cmd.label, colors.fg);
-
-                if let Some(kb) = cmd.keybinding {
-                    let kb_width = (kb.chars().count() as f32 * char_width).round() as usize;
-                    let kb_x = layout.x + layout.w - kb_width - 16;
-                    painter.draw(frame, kb_x, item_y, kb, colors.dim);
-                }
-            },
-        );
-
-        if viewport.items_after > 0 {
-            let more_y = list_r.y + max_visible_items * line_height;
-            let more_text = format!("... and {} more", viewport.items_after);
-            painter.draw(frame, layout.x + 16, more_y, &more_text, colors.dim);
-        }
-    }
 }
 
 fn render_goto_line_modal(
@@ -757,11 +729,9 @@ pub fn render_modals(
     };
 
     // 1. Dim background (40% black overlay). Skipped for the command
-    // palette when the overlay-surface gate is on: that path owns its own
+    // palette: it renders through `OverlaySurface`, which owns its own
     // backdrop dim as part of the component's chrome.
-    let palette_via_overlay_surface =
-        overlay_surface_gate_enabled() && matches!(modal, ModalState::CommandPalette(_));
-    if !palette_via_overlay_surface {
+    if !matches!(modal, ModalState::CommandPalette(_)) {
         frame.dim(MODAL_DIM_ALPHA); // 102/255 ≈ 40% opacity
     }
 

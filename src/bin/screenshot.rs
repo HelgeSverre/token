@@ -29,7 +29,7 @@ use token::model::AppModel;
 use token::model::ScaledMetrics;
 use token::syntax::{LanguageId, ParserState};
 use token::theme::Theme;
-use token::update::update;
+use token::update::{resolve_palette_rows, update};
 use token::view::{Frame, GlyphCache, PreviewRenderMode, Renderer, TextPainter};
 
 // ---------------------------------------------------------------------------
@@ -505,6 +505,7 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
             let mut state = CommandPaletteState::default();
             if let Some(ref input) = config.input {
                 state.set_input(input);
+                resolve_palette_rows(&mut state);
             }
             if let Some(idx) = config.selected_index {
                 state.selected_index = idx;
