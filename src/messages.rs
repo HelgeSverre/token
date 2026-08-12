@@ -680,8 +680,14 @@ pub enum ProblemsMsg {
     OpenSelected,
     /// Scroll the panel.
     Scroll { lines: i32 },
-    /// Click on a row in the panel.
-    ClickRow { index: usize, click_count: u8 },
+    /// Click on a row in the panel. `on_chevron` mirrors outline's
+    /// `OutlineMsg::ClickRow`: only a chevron click toggles a File row's
+    /// collapse state, so a click elsewhere on the row just selects it.
+    ClickRow {
+        index: usize,
+        click_count: u8,
+        on_chevron: bool,
+    },
 }
 
 /// Terminal panel messages.

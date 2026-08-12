@@ -86,6 +86,32 @@ fn problems_visible_capacity(model: &AppModel) -> usize {
         .unwrap_or(0)
 }
 
+/// Clamps `problems_panel.selected_index`/`scroll_offset` to the current
+/// row count. Must run after anything that can shrink `model.lsp.diagnostics`
+/// out from under a stored selection — a fresh publish or a clear — or a
+/// stale index renders as no visible selection and `OpenSelected` silently
+/// no-ops (same defense `ToggleGroup`'s inline clamp gives its own resize).
+pub fn clamp_problems_selection(model: &mut AppModel) {
+    let total = problems_rows(model).len();
+    if total == 0 {
+        model.problems_panel.selected_index = None;
+        model.problems_panel.scroll_offset = 0;
+        return;
+    }
+    if let Some(idx) = model.problems_panel.selected_index {
+        model.problems_panel.selected_index = Some(idx.min(total - 1));
+    }
+    let visible_capacity = problems_visible_capacity(model);
+    model.problems_panel.scroll_offset = if visible_capacity == 0 {
+        0
+    } else {
+        model
+            .problems_panel
+            .scroll_offset
+            .min(total.saturating_sub(visible_capacity))
+    };
+}
+
 fn reveal_problems_selection(model: &mut AppModel) {
     let Some(selected_index) = model.problems_panel.selected_index else {
         return;
@@ -199,11 +225,15 @@ pub fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
 
-        ProblemsMsg::ClickRow { index, click_count } => {
+        ProblemsMsg::ClickRow {
+            index,
+            click_count,
+            on_chevron,
+        } => {
             let row = problems_rows(model).get(index).cloned();
             model.problems_panel.selected_index = Some(index);
             match row {
-                Some(ProblemsRow::File { path, .. }) => {
+                Some(ProblemsRow::File { path, .. }) if on_chevron => {
                     if !model.problems_panel.collapsed.remove(&path) {
                         model.problems_panel.collapsed.insert(path);
                     }
@@ -397,5 +427,83 @@ mod tests {
             update_problems(&mut model, ProblemsMsg::SelectPrevious);
         }
         assert_eq!(model.problems_panel.selected_index, Some(0));
+    }
+
+    /// Mirrors outline's `OutlineMsg::ClickRow`: a click anywhere on a File
+    /// row other than its chevron must select without collapsing, so a
+    /// user can select a file group without toggling it every click.
+    #[test]
+    fn click_row_off_chevron_selects_a_file_row_without_toggling_it() {
+        let mut model = model_with_open_problems_panel();
+        populate_two_files(&mut model);
+
+        update_problems(
+            &mut model,
+            ProblemsMsg::ClickRow {
+                index: 0,
+                click_count: 1,
+                on_chevron: false,
+            },
+        );
+
+        assert_eq!(model.problems_panel.selected_index, Some(0));
+        assert!(!model
+            .problems_panel
+            .collapsed
+            .contains(&PathBuf::from("/proj/a.rs")));
+    }
+
+    #[test]
+    fn click_row_on_chevron_toggles_the_file_row_collapse() {
+        let mut model = model_with_open_problems_panel();
+        populate_two_files(&mut model);
+
+        update_problems(
+            &mut model,
+            ProblemsMsg::ClickRow {
+                index: 0,
+                click_count: 1,
+                on_chevron: true,
+            },
+        );
+
+        assert!(model
+            .problems_panel
+            .collapsed
+            .contains(&PathBuf::from("/proj/a.rs")));
+    }
+
+    /// The whole point of clamping: a stale selection/scroll from before a
+    /// shrinking publish must never point past the end of the new row
+    /// list, or it renders with no visible selection and `OpenSelected`
+    /// silently no-ops.
+    #[test]
+    fn clamp_problems_selection_pulls_a_stale_index_back_onto_the_new_row_list() {
+        let mut model = model_with_open_problems_panel();
+        populate_two_files(&mut model);
+        model.problems_panel.selected_index = Some(4); // last row, b.rs diagnostic
+        model.problems_panel.scroll_offset = 4;
+
+        // Server re-publishes b.rs with zero diagnostics -- it drops out
+        // of the mirror entirely, shrinking the row list to 3.
+        model.lsp.diagnostics.remove(&PathBuf::from("/proj/b.rs"));
+
+        clamp_problems_selection(&mut model);
+
+        assert_eq!(model.problems_panel.selected_index, Some(2));
+        assert_eq!(model.problems_panel.scroll_offset, 0);
+    }
+
+    #[test]
+    fn clamp_problems_selection_clears_selection_when_the_mirror_goes_empty() {
+        let mut model = model_with_open_problems_panel();
+        populate_two_files(&mut model);
+        model.problems_panel.selected_index = Some(3);
+
+        model.lsp.diagnostics.clear();
+        clamp_problems_selection(&mut model);
+
+        assert_eq!(model.problems_panel.selected_index, None);
+        assert_eq!(model.problems_panel.scroll_offset, 0);
     }
 }

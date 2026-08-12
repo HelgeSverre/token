@@ -1087,7 +1087,12 @@ fn handle_left_click(
                 if let Some(clicked_index) = problems_layout
                     .row_index_at_y(event.pos.y as f32, model.problems_panel.scroll_offset)
                 {
-                    if clicked_index < problems_rows(model).len() {
+                    let rows = problems_rows(model);
+                    if let Some(row) = rows.get(clicked_index) {
+                        // Only File rows (depth 0) have a chevron.
+                        let on_chevron = matches!(row, token::update::problems::ProblemsRow::File { .. })
+                            && problems_layout.is_on_chevron(0, event.pos.x as f32);
+
                         let click_count =
                             click_tracker.track_click(ClickRegion::Problems { row: clicked_index });
                         update(
@@ -1095,6 +1100,7 @@ fn handle_left_click(
                             Msg::Problems(ProblemsMsg::ClickRow {
                                 index: clicked_index,
                                 click_count,
+                                on_chevron,
                             }),
                         );
                     }
