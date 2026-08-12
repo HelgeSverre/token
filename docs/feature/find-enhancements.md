@@ -2,7 +2,7 @@
 
 Regex support, whole word matching, match count display, and visual highlighting.
 
-> **Status:** Planned
+> **Status:** Partially implemented — search engine (regex/whole-word/case), decoration-pipeline match highlighting + scrollbar overview marks, and Find Previous/Tab keybindings shipped; UI rendering (Phase 5: toggle buttons, match count, regex error display) and selection scope (Phase 7) remain
 > **Priority:** P1
 > **Effort:** M
 > **Created:** 2025-12-19
@@ -575,82 +575,78 @@ impl Default for SearchHighlightTheme {
 
 **Files:** `src/search.rs`
 
-- [ ] Create `SearchQuery` struct with compilation
-- [ ] Implement literal search with case sensitivity
-- [ ] Add whole word matching with `\b` boundaries
-- [ ] Add regex support with error handling
-- [ ] Create `Match` and `SearchResults` types
-- [ ] Add unit tests for search patterns
+- [x] Create `SearchQuery` struct with compilation
+- [x] Implement literal search with case sensitivity
+- [x] Add whole word matching with `\b` boundaries
+- [x] Add regex support with error handling
+- [~] Create `Match` and `SearchResults` types — `Match` shipped as specified (char offsets, not byte offsets like the doc's sketch — this codebase's `Document` API is char-offset throughout). `SearchResults` (the cached-results/current-index/revision wrapper) was **not** built: there is no caching layer at all — `Document::search_matches` recomputes from the live buffer on every call, exactly like the pre-existing `find_all_occurrences_with_options` it sits next to. See Phase 3 note for why.
+- [x] Add unit tests for search patterns
 
-**Test:** `SearchQuery::find_all("hello", "hello world hello")` returns 2 matches.
+**Test:** `SearchQuery::find_all("hello", "hello world hello")` returns 2 matches — see `search::tests::literal_search_is_case_insensitive_by_default`.
+
+**Status:** Real and live — `find_next_in_document`/`find_prev_in_document`/`replace_and_find_next`/`replace_all` (src/update/ui.rs) and the decoration/tick builders (src/view/mod.rs) all route through `Document::search_matches`/`SearchQuery`, replacing the old literal-only `find_*_occurrence_with_options` call sites.
 
 ### Phase 2: Enhanced State
 
 **Files:** `src/model/ui.rs`
 
-- [ ] Add search option fields to `FindReplaceState`
-- [ ] Add `SearchResults` field
-- [ ] Implement `build_query()` method
-- [ ] Implement `search()` method
-- [ ] Add toggle methods for each option
+- [x] Add search option fields to `FindReplaceState` — `whole_word`, `use_regex` (alongside the pre-existing `case_sensitive`).
+- [ ] Add `SearchResults` field — not built; see Phase 1 note (no caching layer).
+- [x] Implement `build_query()` method
+- [~] Implement `search()` method — no stateful `search()`/results cache exists (see above); `build_query()` + `Document::search_matches` is the equivalent stateless call.
+- [x] Add toggle methods for each option — `ModalMsg::ToggleFindReplaceWholeWord`/`ToggleFindReplaceRegex` added, mirroring the pre-existing (already-shipped but keyboard-unreachable) `ToggleFindReplaceCaseSensitive`. **Not done:** no keybinding or button drives these two new toggles either — same gap `case_sensitive` already had before this unit; Phase 5 (buttons) is the only place a user could reach them, and that's explicitly out of scope here. They're reachable today via `ModalMsg` dispatch (automation/tests) only.
 
-**Test:** Toggling case sensitivity updates search results.
+**Test:** Toggling case sensitivity updates search results — exercised transitively via `search::tests` (options feed `SearchQuery::new` identically regardless of toggle path) and `view::find_match_decoration_tests`.
 
 ### Phase 3: Incremental Search
 
 **Files:** `src/update/modal.rs`
 
-- [ ] Re-search on query input change (debounced)
-- [ ] Re-search on option toggle
-- [ ] Invalidate results on document edit
-- [ ] Lazy re-search on next navigation
+- [~] Re-search on query input change (debounced) — happens for free: every render recomputes `active_find_matches` from the live query text, no debounce needed since there's no caching layer to invalidate.
+- [~] Re-search on option toggle — same: stateless recompute makes this automatic.
+- [ ] Invalidate results on document edit — not applicable; nothing is cached to go stale.
+- [x] Lazy re-search on next navigation — `find_next_in_document`/`find_prev_in_document` call `Document::search_matches` fresh each time, same as the pre-existing behavior.
 
-**Test:** Typing in find bar updates match count in real-time.
+**Deviation:** the doc's `SearchResults` caching design (Phase 1–3) was deliberately skipped in favor of always recomputing from the buffer, matching the codebase's existing find/replace precedent (`find_all_occurrences_with_options` was never cached either). This trades a small amount of redundant scanning per redraw for a much smaller diff and zero staleness bugs; a cache is the natural next step if profiling ever shows find-heavy redraws on huge files are slow.
+
+**Test:** Typing in find bar updates match count in real-time — not directly testable without Phase 5 UI (no match-count display exists to assert against); the underlying live-recompute behavior is covered by `view::find_match_decoration_tests`.
 
 ### Phase 4: Match Highlighting
 
-**Files:** `src/view/editor_text.rs`, `src/theme.rs`
+**Files:** `src/view/mod.rs`, `src/view/editor_text.rs`, `src/view/editor_scrollbars.rs`, `src/model/decorations.rs`
 
-- [ ] Add `SearchHighlightTheme` to theme
-- [ ] Render match highlights in visible viewport through the text decoration pipeline — the `BackgroundTint` range decorations and scrollbar overview marks from [editor-decorations.md](editor-decorations.md) (Phases 2–3; this feature is likely its first consumer and does not need the gutter lane system)
-- [ ] Distinguish current match from other matches
-- [ ] Use semi-transparent overlays for readability
+- [ ] Add `SearchHighlightTheme` to theme — **not done, by design.** `DecorationKind::BackgroundTint`'s own doc comment (editor-decorations.md) already scopes it to "Find matches, documentHighlight, bracket match" sharing one tint; match highlighting reuses the existing `theme.editor.bracket_match_background` instead of adding a parallel color struct nobody themes independently yet. Per the assignment brief, the decoration doc's shapes win where the two docs disagree.
+- [x] Render match highlights in visible viewport through the text decoration pipeline — `view::find_match_decorations` builds `BackgroundTint` `RangeDecoration`s from `Document::search_matches`, wired into `render_text_area` for the focused pane only (find navigation only ever targets the focused pane). Off-screen matches are cheap no-ops (`render_one_decoration` clips to the viewport already).
+- [x] Distinguish current match from other matches — the match under the current selection (set by find-next/find-previous) is excluded from the tint list, since the ordinary selection-background pass already highlights it distinctly; tinting it again would just muddy the color.
+- [x] Use semi-transparent overlays for readability — `BackgroundTint` paints via `Frame::blend_rect_px`, and `bracket_match_background` is already a translucent color in the bundled themes.
+- [x] (Beyond the doc's Phase 4 list, but explicitly named as in-scope by editor-decorations.md's producer table) Scrollbar overview marks — `view::find_match_ticks` + a new `Mark::Match` variant (`src/model/decorations.rs`) feed `editor_scrollbars::render_overview_marks` with one tick per match's starting line, for the focused pane.
 
-**Test:** All matches visible in viewport are highlighted.
+**Test:** All matches visible in viewport are highlighted — `view::find_match_decoration_tests` (`find_match_decorations_excludes_the_current_selection`, `find_match_ticks_map_matches_to_their_starting_line`, etc.).
 
 ### Phase 5: UI Rendering
 
 **Files:** `src/view/modal.rs`
 
-- [ ] Render option toggles (Aa, W, .*, =) as buttons
-- [ ] Show match count ("3 of 42")
-- [ ] Highlight active toggles
-- [ ] Show regex error message when applicable
-- [ ] Show "No matches" when query has no results
-
-**Test:** Toggle buttons reflect current state.
+**Out of scope for this unit** (per assignment brief: "this unit is about search behavior + decorations, not modal chrome"). None of this phase's checkboxes were attempted; the find/replace modal's visual chrome is unchanged from the OverlaySurface Fields-body migration. `whole_word`/`use_regex` toggles and regex-error/match-count display all need this phase's button/label rendering to become reachable by a human user.
 
 ### Phase 6: Navigation
 
-**Files:** `src/update/modal.rs`
+**Files:** `src/update/ui.rs`, `src/runtime/input.rs`
 
-- [ ] Find Next jumps to next match, scrolling if needed
-- [ ] Find Previous jumps to previous match
-- [ ] Wrap around at document boundaries
-- [ ] Set current match near cursor on first search
+- [x] Find Next jumps to next match, scrolling if needed — pre-existing, now routed through `SearchQuery`/`Document::search_matches`.
+- [x] Find Previous jumps to previous match — the logic already existed (`find_prev_in_document`) but was **keyboard-unreachable** (no key dispatched `ModalMsg::FindPrevious`); this unit wires Shift+Enter to it in `handle_modal_key`.
+- [x] Wrap around at document boundaries — pre-existing behavior, preserved (first/last match on no match past the cursor).
+- [ ] Set current match near cursor on first search — not implemented; find-next/find-previous already start from the cursor/selection position on every call (not just "first search"), so a separate "on first search" special case wasn't needed for the shipped behavior, but the doc's specific `SearchResults::set_current_near` API doesn't exist since there's no `SearchResults` cache (see Phase 1).
 
-**Test:** Find Next cycles through all matches.
+**Also wired (not in the doc's Phase 6 list but a direct consequence of making Find Previous reachable):** Tab now toggles between the query/replace fields (`ModalMsg::ToggleFindReplaceField`, previously also keyboard-unreachable).
+
+**Test:** Find Next cycles through all matches — pre-existing document.rs find tests, plus the new `search.rs`/`view::find_match_decoration_tests` coverage of the underlying engine.
 
 ### Phase 7: Selection Scope
 
-**Files:** `src/update/modal.rs`
+**Files:** `src/update/ui.rs`
 
-- [ ] Store selection range when find opened
-- [ ] Filter matches to selection range
-- [ ] Show selection indicator in UI
-- [ ] Handle selection changes gracefully
-
-**Test:** Find with selection only matches within selection.
+**Not implemented.** `selection_only` scoping depends on a UI affordance to turn it on (Phase 5, out of scope) exactly like `whole_word`/`use_regex`, and unlike those two, filtering an already-computed match list to a stored selection range is cheap to add later with zero risk to the shipped behavior — deferred rather than adding an unreachable field with no consumer.
 
 ---
 
