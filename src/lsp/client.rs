@@ -669,6 +669,7 @@ impl ServerHandle {
         // every manual restart).
         let _ = self.child.wait();
     }
+
 }
 
 static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -925,8 +926,16 @@ fn reader_loop(
                 if let Some(error) = message.get("error") {
                     // A server that rejects `initialize` is not healthy —
                     // never open the handshake gate or report Ready for
-                    // it; leave capabilities None so every send stays
-                    // gated off, and surface the failure like a crash.
+                    // it. Routed through the same `ServerExited` path a
+                    // crash takes (rather than a one-off `Failed` and
+                    // `continue`) so the runtime's normal backoff/kill/
+                    // cleanup machinery applies: without this the handle
+                    // stayed in `LspManager::servers` forever with
+                    // capabilities permanently `None`, so every future
+                    // sync send stayed queued in the writer's unbounded
+                    // `VecDeque` behind a gate that could never open, and
+                    // quit teardown blocked the full shutdown timeout on
+                    // an ack that could never arrive.
                     tracing::warn!("[{}] initialize failed: {:?}", server_id.0, error);
                     send_state(
                         &server_id,
@@ -935,7 +944,14 @@ fn reader_loop(
                         &msg_tx,
                         wake.as_deref(),
                     );
-                    continue;
+                    let _ = msg_tx.send(Msg::Lsp(LspMsg::ServerExited {
+                        server_id: server_id.clone(),
+                        generation,
+                    }));
+                    if let Some(wake) = wake.as_deref() {
+                        wake();
+                    }
+                    break;
                 }
                 let result = message.get("result").cloned();
                 let parsed: Option<lsp_types::ServerCapabilities> = result

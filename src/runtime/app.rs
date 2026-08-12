@@ -1423,7 +1423,19 @@ impl App {
         for key in keys {
             self.set_lsp_server_state(key.0.clone(), &key.1, ServerState::ShuttingDown);
             if let Some(mut handle) = self.lsp.servers.remove(&key) {
-                handle.graceful_shutdown(&self.msg_rx, Duration::from_secs(2));
+                // `shutdown`/`exit` both pass through the handshake gate —
+                // if `initialize` hasn't answered yet (or answered with an
+                // error, which never opens the gate at all — see the
+                // reader's `initialize` error arm), they'd sit queued
+                // forever and this would block the full 2s+2s waiting for
+                // acks that can never arrive. Skip straight to `kill` in
+                // that case; there is no live handshake to shut down
+                // gracefully.
+                if handle.capabilities_snapshot().is_some() {
+                    handle.graceful_shutdown(&self.msg_rx, Duration::from_secs(2));
+                } else {
+                    handle.kill();
+                }
             }
         }
     }
@@ -1454,6 +1466,26 @@ impl App {
                     let result = std::fs::write(&path, content).map_err(|e| e.to_string());
                     if let Err(e) = tx.send(Msg::App(AppMsg::SaveCompleted(result))) {
                         tracing::warn!("Failed to send save completion to main thread: {}", e);
+                    }
+                });
+            }
+            Cmd::SaveFileAs {
+                document_id,
+                old_path,
+                new_path,
+                content,
+            } => {
+                let tx = self.msg_tx.clone();
+                std::thread::spawn(move || {
+                    let result = std::fs::write(&new_path, content).map_err(|e| e.to_string());
+                    let msg = Msg::App(AppMsg::SaveAsCompleted {
+                        document_id,
+                        old_path,
+                        new_path,
+                        result,
+                    });
+                    if let Err(e) = tx.send(msg) {
+                        tracing::warn!("Failed to send save-as completion to main thread: {}", e);
                     }
                 });
             }
@@ -2190,6 +2222,7 @@ impl App {
             roots = self.lsp.failed_roots.remove(server_id).unwrap_or_default();
         }
         self.clear_diagnostics_for_roots(server_id, &roots);
+        self.clear_pending_requests_for_roots(server_id, &roots);
         for root in roots {
             if let Some(mut handle) = self.lsp.servers.remove(&(server_id.clone(), root.clone())) {
                 handle.kill();
@@ -2199,6 +2232,34 @@ impl App {
                 .insert((server_id.clone(), root.clone()));
             self.spawn_lsp_server_at(&resolved, &root);
         }
+    }
+
+    /// Drops definition/hover request bookkeeping for `(server_id, root)`
+    /// pairs in `roots` — shared by `handle_lsp_server_exited` (the old
+    /// worker will never answer) and `restart_lsp_server` (same reasoning,
+    /// plus: a fresh `ServerHandle` restarts request-id allocation at 1,
+    /// so a stale entry left behind can collide with a new request's id
+    /// and cause `check_lsp_definition_deadlines`/hover's deadline sweep
+    /// to abandon a live request that happens to reuse the old id).
+    fn clear_pending_requests_for_roots(&mut self, server_id: &LspServerId, roots: &[PathBuf]) {
+        self.lsp
+            .definition_requests
+            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
+        self.lsp
+            .definition_request_by_doc
+            .retain(|_, (id, root, _)| !(id == server_id && roots.contains(root)));
+        self.lsp
+            .definition_deadlines
+            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
+        self.lsp
+            .hover_requests
+            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
+        self.lsp
+            .hover_request_by_doc
+            .retain(|_, (id, root, _)| !(id == server_id && roots.contains(root)));
+        self.lsp
+            .hover_deadlines
+            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
     }
 
     fn spawn_lsp_server_at(&mut self, resolved: &lsp::ResolvedServer, root: &Path) {
@@ -2280,6 +2341,20 @@ impl App {
         let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
             return;
         };
+        // Gate on `textDocumentSync` once capabilities are known — the
+        // design doc's "absent: no sync messages at all". Every other
+        // sync send (`didChange`/`didClose`/`didSave`) is a no-op when
+        // `document_id` isn't in `open_documents`, so gating here (the
+        // one place that inserts into it) is enough to keep the rest of
+        // the pipeline honest without repeating the check at every send.
+        // Unknown capabilities (handshake still in flight) fall through —
+        // the outbound `didOpen` still queues correctly behind the
+        // transport's own handshake gate.
+        if let Some(caps) = handle.capabilities_snapshot() {
+            if lsp::client::sync_mode(&caps) == lsp::client::SyncMode::None {
+                return;
+            }
+        }
         let Some(doc) = self.model.editor_area.documents.get(&document_id) else {
             return;
         };
@@ -2374,9 +2449,18 @@ impl App {
             }
         }
         // Marks-lane deactivation changes gutter width — see
-        // `AppModel::resync_viewports`'s doc comment.
+        // `AppModel::resync_viewports`'s doc comment. The only damage a
+        // caller of this helper otherwise merges is `redraw_status_bar`
+        // (via `set_lsp_server_state`), which `Renderer::render` doesn't
+        // treat as covering the editor area — without merging editor
+        // damage directly here, cleared marks/underlines stay painted
+        // until an unrelated event happens to damage the editor.
         if any_had_marks {
             self.model.resync_viewports();
+            self.pending_damage.merge(Cmd::redraw_editor().damage());
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
         }
     }
 
@@ -2751,31 +2835,20 @@ impl App {
             return;
         }
         for root in &roots {
-            self.lsp.servers.remove(&(server_id.clone(), root.clone()));
+            if let Some(mut handle) = self.lsp.servers.remove(&(server_id.clone(), root.clone())) {
+                // The reader thread only observed EOF/exit; nothing has
+                // `wait()`ed on this child yet. `kill()` is safe to call
+                // on an already-dead process (it just errors) and its
+                // `wait()` is what actually reaps it — without this every
+                // server that exits on its own (or whose `initialize`
+                // failed, which routes through here too — see the
+                // reader's `initialize` error arm) becomes an unreaped
+                // zombie for the rest of the session.
+                handle.kill();
+            }
         }
         self.clear_diagnostics_for_roots(server_id, &roots);
-        // A dead worker thread will never send these requests' responses
-        // — drop the bookkeeping rather than leaking it across
-        // crash-restart cycles. No status transient: `GotoDefinition`
-        // never showed a "waiting" indicator in the first place.
-        self.lsp
-            .definition_requests
-            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
-        self.lsp
-            .definition_request_by_doc
-            .retain(|_, (id, root, _)| !(id == server_id && roots.contains(root)));
-        self.lsp
-            .definition_deadlines
-            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
-        self.lsp
-            .hover_requests
-            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
-        self.lsp
-            .hover_request_by_doc
-            .retain(|_, (id, root, _)| !(id == server_id && roots.contains(root)));
-        self.lsp
-            .hover_deadlines
-            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
+        self.clear_pending_requests_for_roots(server_id, &roots);
 
         for root in roots {
             let key = (server_id.clone(), root.clone());
@@ -3957,6 +4030,127 @@ mod tests {
         assert!(!app.lsp.failed_roots.contains_key(&server_id));
     }
 
+    /// `restart_lsp_server` must clear pending definition/hover
+    /// bookkeeping for the roots it restarts, exactly like
+    /// `handle_lsp_server_exited` does — otherwise a stale entry can
+    /// collide with a request id the *new* process allocates (fresh
+    /// `PendingRequests` restart at 1) and its deadline sweep abandons a
+    /// live request that happens to reuse the old id.
+    #[test]
+    fn manual_restart_clears_stale_pending_requests_for_the_restarted_root() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-restart-pending");
+        let doc_id = app.model.document().id.unwrap();
+
+        let handle = spawn_fake_handle(&server_id);
+        app.lsp
+            .servers
+            .insert((server_id.clone(), root.clone()), handle);
+
+        let key = (server_id.clone(), root.clone(), 2i64);
+        app.lsp.definition_requests.insert(
+            key.clone(),
+            PendingDefinition {
+                document_id: doc_id,
+                revision: 0,
+                origin: test_origin(&app),
+                server_id: server_id.clone(),
+                root: root.clone(),
+            },
+        );
+        app.lsp.definition_request_by_doc.insert(doc_id, key.clone());
+        app.lsp
+            .definition_deadlines
+            .insert(key, Instant::now() + Duration::from_secs(30));
+        let hover_key = (server_id.clone(), root.clone(), 3i64);
+        app.lsp.hover_requests.insert(
+            hover_key.clone(),
+            PendingHover {
+                document_id: doc_id,
+                revision: 0,
+                cursor: token::model::editor::Position::new(0, 0),
+            },
+        );
+        app.lsp.hover_request_by_doc.insert(doc_id, hover_key.clone());
+        app.lsp
+            .hover_deadlines
+            .insert(hover_key, Instant::now() + Duration::from_secs(30));
+
+        app.restart_lsp_server(&server_id);
+
+        assert!(app.lsp.definition_requests.is_empty());
+        assert!(app.lsp.definition_request_by_doc.is_empty());
+        assert!(app.lsp.definition_deadlines.is_empty());
+        assert!(app.lsp.hover_requests.is_empty());
+        assert!(app.lsp.hover_request_by_doc.is_empty());
+        assert!(app.lsp.hover_deadlines.is_empty());
+    }
+
+    /// Clearing diagnostics on server exit/restart must damage the editor
+    /// area, not just the status bar — otherwise painted squiggles/gutter
+    /// marks survive on screen until an unrelated event happens to
+    /// repaint the editor (`Renderer::render` skips the editor entirely
+    /// for status-bar-only damage).
+    #[test]
+    fn clearing_diagnostics_for_a_root_damages_the_editor_area() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-clear-damage");
+        let uri = lsp::path_to_uri(&PathBuf::from("/tmp/proj-clear-damage/main.rs"));
+        install_open_document(&mut app, doc_id, &server_id, &root, uri);
+        app.model.document_mut().diagnostics = vec![lsp_types::Diagnostic {
+            range: lsp_types::Range::default(),
+            severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+            message: "boom".to_owned(),
+            ..Default::default()
+        }];
+        app.pending_damage = Damage::None;
+
+        app.clear_diagnostics_for_roots(&server_id, &[root]);
+
+        assert!(app.model.document().diagnostics.is_empty());
+        assert!(
+            app.pending_damage.includes_editor(),
+            "clearing diagnostics must merge editor damage, got {:?}",
+            app.pending_damage
+        );
+    }
+
+    /// Quitting while a server's handshake never completed (still
+    /// starting, or `initialize` answered with an error — both leave
+    /// `capabilities_snapshot()` `None` forever) must not pay the full
+    /// shutdown-ack + exit-wait budget: `shutdown`/`exit` would sit queued
+    /// behind a handshake gate that can never open. `graceful_lsp_teardown`
+    /// must recognize this and kill directly instead.
+    #[test]
+    fn quit_with_an_unhandshaked_server_does_not_pay_the_graceful_shutdown_timeout() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-quit-unhandshaked");
+
+        // A handle whose capabilities were never set, mirroring both
+        // "still starting" and "initialize answered with an error" (the
+        // reader never opens the gate or sets capabilities in either
+        // case).
+        let handle = spawn_fake_handle(&server_id);
+        assert!(handle.capabilities_snapshot().is_none());
+        app.lsp
+            .servers
+            .insert((server_id.clone(), root.clone()), handle);
+
+        let started = Instant::now();
+        app.process_cmd(Cmd::Quit);
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "quit must not block on shutdown/exit acks a stuck handshake can never send, took {elapsed:?}"
+        );
+        assert!(app.lsp.servers.is_empty());
+    }
+
     #[test]
     fn detached_roots_are_capped_and_further_roots_are_not_spawned() {
         let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
@@ -4090,6 +4284,36 @@ mod tests {
             .transient_message
             .as_ref()
             .is_some_and(|t| t.text.contains("not supported")));
+
+        let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+        handle.kill();
+    }
+
+    /// A server that advertises no `textDocumentSync` at all gets no sync
+    /// traffic (design doc: "absent: no sync messages at all") — checked
+    /// via `open_documents`, since `lsp_open_document_on` is the one place
+    /// that populates it and every other sync send is a no-op without an
+    /// entry there.
+    #[test]
+    fn open_document_is_not_registered_for_sync_when_the_server_advertises_no_sync() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let file_path = PathBuf::from("/tmp/proj-nosync/main.rs");
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-nosync");
+
+        let handle = spawn_fake_handle(&server_id);
+        *handle.capabilities.lock().unwrap() = Some(lsp_types::ServerCapabilities::default());
+        app.lsp
+            .servers
+            .insert((server_id.clone(), root.clone()), handle);
+
+        app.lsp_open_document_on(doc_id, file_path, server_id.clone(), root.clone(), "rust");
+
+        assert!(
+            !app.lsp.open_documents.contains_key(&doc_id),
+            "a server with no textDocumentSync must never be told about an open document"
+        );
 
         let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
         handle.kill();
@@ -4922,6 +5146,160 @@ mod tests {
         assert!(app.lsp.servers.is_empty());
     }
 
+    /// The debounce/max-wait timer path itself — not the flush helper —
+    /// actually reaches the wire: schedules through the real
+    /// `Cmd::LspScheduleDidChange` -> `record_edit` wiring
+    /// (`DID_CHANGE_DEBOUNCE_MS`/`DID_CHANGE_MAX_WAIT_MS`), lets the
+    /// deadline elapse for real, then drives it through
+    /// `check_lsp_did_change_deadlines` (`about_to_wait`'s real per-tick
+    /// call, zero test callers before this) instead of `flush_lsp_did_change`.
+    #[test]
+    fn did_change_deadline_check_sends_the_debounced_change_over_the_wire() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write fixture file");
+        let transcript_path = dir.path().join("transcript.log");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        configure_fake_rust_analyzer(&mut app, dir.path(), &transcript_path);
+
+        let doc_id = token::model::editor_area::DocumentId(1);
+        let mut doc = token::model::Document::from_file(file_path.clone()).unwrap();
+        doc.id = Some(doc_id);
+        app.model.editor_area.documents.insert(doc_id, doc);
+
+        app.process_cmd(Cmd::LspEnsureServer {
+            language: LanguageId::Rust,
+            file_path: file_path.clone(),
+        });
+        app.process_cmd(Cmd::LspDidOpen {
+            document_id: doc_id,
+            file_path: file_path.clone(),
+            language: LanguageId::Rust,
+        });
+        wait_for_transcript_lines(&transcript_path, 3);
+
+        if let Some(doc) = app.model.editor_area.documents.get_mut(&doc_id) {
+            doc.revision = 7;
+        }
+        app.process_cmd(Cmd::LspScheduleDidChange {
+            document_id: doc_id,
+            revision: 7,
+        });
+        assert!(app.lsp_change_deadlines.is_pending(doc_id));
+
+        // Let the real 30ms debounce elapse, then let the real per-tick
+        // check (not the flush shortcut) fire it — repeatedly, since a
+        // single call right at the boundary can race the clock.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while app.lsp_change_deadlines.is_pending(doc_id) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+            app.check_lsp_did_change_deadlines(&HashMap::new());
+        }
+        assert!(
+            !app.lsp_change_deadlines.is_pending(doc_id),
+            "the real deadline check must fire the debounce on its own, with no flush call"
+        );
+
+        let lines = wait_for_transcript_lines(&transcript_path, 4);
+        assert!(
+            lines[3].starts_with("notify:textDocument/didChange"),
+            "expected the deadline-fired didChange fourth, got {lines:?}"
+        );
+        assert!(
+            lines[3].contains("version=Some(Number(7))"),
+            "expected the scheduled revision on the wire, got {lines:?}"
+        );
+
+        app.process_cmd(Cmd::Quit);
+    }
+
+    /// The max-wait cap actually caps traffic sent to the wire under
+    /// continuous edits (not just the pure `DidChangeDeadlines` map), and
+    /// successive `didChange` versions the wire actually receives
+    /// strictly increase across a burst — the on-wire counterpart of
+    /// `lsp::sync::tests::revisions_only_increase_across_a_burst`, which
+    /// only proves it for the bookkeeping map.
+    #[test]
+    fn did_change_max_wait_cap_sends_strictly_increasing_versions_under_continuous_edits() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write fixture file");
+        let transcript_path = dir.path().join("transcript.log");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        configure_fake_rust_analyzer(&mut app, dir.path(), &transcript_path);
+
+        let doc_id = token::model::editor_area::DocumentId(1);
+        let mut doc = token::model::Document::from_file(file_path.clone()).unwrap();
+        doc.id = Some(doc_id);
+        app.model.editor_area.documents.insert(doc_id, doc);
+
+        app.process_cmd(Cmd::LspEnsureServer {
+            language: LanguageId::Rust,
+            file_path: file_path.clone(),
+        });
+        app.process_cmd(Cmd::LspDidOpen {
+            document_id: doc_id,
+            file_path: file_path.clone(),
+            language: LanguageId::Rust,
+        });
+        wait_for_transcript_lines(&transcript_path, 3);
+
+        // Two bursts back to back, each re-editing every 20ms (well under
+        // the 30ms plain debounce, so only the 300ms max-wait cap can ever
+        // fire it) for longer than the cap — the plain debounce alone
+        // would never fire this, only `about_to_wait`'s per-tick check
+        // honoring `DID_CHANGE_MAX_WAIT_MS`.
+        let mut revision = 8u64;
+        for _burst in 0..2 {
+            let burst_deadline = Instant::now() + Duration::from_millis(360);
+            while Instant::now() < burst_deadline {
+                if let Some(doc) = app.model.editor_area.documents.get_mut(&doc_id) {
+                    doc.revision = revision;
+                }
+                app.process_cmd(Cmd::LspScheduleDidChange {
+                    document_id: doc_id,
+                    revision,
+                });
+                revision += 1;
+                app.check_lsp_did_change_deadlines(&HashMap::new());
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+        // Drain whatever's left pending from the tail of the second burst.
+        let flush_deadline = Instant::now() + Duration::from_secs(1);
+        while app.lsp_change_deadlines.is_pending(doc_id) && Instant::now() < flush_deadline {
+            std::thread::sleep(Duration::from_millis(10));
+            app.check_lsp_did_change_deadlines(&HashMap::new());
+        }
+
+        let lines = read_transcript_lines(&transcript_path);
+        let did_change_versions: Vec<i64> = lines
+            .iter()
+            .filter(|l| l.starts_with("notify:textDocument/didChange"))
+            .filter_map(|l| {
+                let marker = "version=Some(Number(";
+                let start = l.find(marker)? + marker.len();
+                let rest = &l[start..];
+                let end = rest.find(')')?;
+                rest[..end].parse::<i64>().ok()
+            })
+            .collect();
+        assert!(
+            did_change_versions.len() >= 2,
+            "the max-wait cap must fire more than once across two 360ms bursts, got {lines:?}"
+        );
+        for pair in did_change_versions.windows(2) {
+            assert!(
+                pair[1] > pair[0],
+                "on-wire didChange versions must strictly increase, got {did_change_versions:?}"
+            );
+        }
+
+        app.process_cmd(Cmd::Quit);
+    }
+
     /// End-to-end "go to definition into an unopened file" (design doc's
     /// Testing Strategy fake-server scenario): the fake server responds
     /// to `textDocument/definition` with a location in a file that was
@@ -5017,6 +5395,136 @@ mod tests {
         app.process_cmd(Cmd::Quit);
     }
 
+    /// The flush-before-request invariant as `request_lsp_definition` and
+    /// `request_lsp_hover` themselves apply it — not via a direct
+    /// `flush_lsp_did_change` call — asserted on the fake server's
+    /// receipt-order transcript (design doc: "any `textDocument/*`
+    /// request first flushes the document's pending `didChange`"). A
+    /// pending debounced edit is left in place (never manually flushed)
+    /// right before each request message; if the flush call were ever
+    /// dropped from either request function (as happened to the old
+    /// `flush_before_request` helper), the request frame would land on
+    /// the wire *before* the edit and this test would catch it.
+    #[test]
+    fn goto_definition_and_hover_flush_a_pending_did_change_ahead_of_their_request() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write fixture file");
+        let transcript_path = dir.path().join("transcript.log");
+
+        let scenario_path = dir.path().join("scenario.json");
+        std::fs::write(
+            &scenario_path,
+            serde_json::json!([
+                { "op": "expect_request", "method": "initialize", "respond": {
+                    "capabilities": {
+                        "textDocumentSync": { "openClose": true, "change": 1 },
+                        "definitionProvider": true,
+                        "hoverProvider": true,
+                    }
+                }},
+                { "op": "record_until_exit", "file": transcript_path.to_string_lossy() },
+            ])
+            .to_string(),
+        )
+        .expect("write scenario file");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
+                enabled: None,
+            },
+        );
+
+        app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+        let server_id = LspServerId::from("rust-analyzer");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            app.process_async_messages();
+            if app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready) {
+                break;
+            }
+            assert!(Instant::now() < deadline, "server never reached Ready");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let doc_id = app.model.document().id.unwrap();
+        wait_for_transcript_lines(&transcript_path, 3); // initialize, initialized, didOpen
+
+        // Leave a debounced didChange pending — never flushed by hand —
+        // then immediately request a definition. Only
+        // `request_lsp_definition`'s own flush can put the didChange on
+        // the wire ahead of the request.
+        if let Some(doc) = app.model.editor_area.documents.get_mut(&doc_id) {
+            doc.revision = 9;
+        }
+        app.process_cmd(Cmd::LspScheduleDidChange {
+            document_id: doc_id,
+            revision: 9,
+        });
+        assert!(app.lsp_change_deadlines.is_pending(doc_id));
+        app.process_automation_msg(Msg::Lsp(LspMsg::GotoDefinition));
+        assert!(
+            !app.lsp_change_deadlines.is_pending(doc_id),
+            "request_lsp_definition must flush the pending didChange itself"
+        );
+
+        let lines = wait_for_transcript_lines(&transcript_path, 5);
+        let change_idx = lines
+            .iter()
+            .position(|l| l.starts_with("notify:textDocument/didChange"))
+            .expect("didChange must reach the wire");
+        let definition_idx = lines
+            .iter()
+            .position(|l| l.starts_with("request:textDocument/definition"))
+            .expect("definition request must reach the wire");
+        assert!(
+            change_idx < definition_idx,
+            "the flushed didChange must land ahead of the definition request, got {lines:?}"
+        );
+        assert!(
+            lines[change_idx].contains("version=Some(Number(9))"),
+            "expected the pending revision on the wire, got {lines:?}"
+        );
+
+        // Same invariant for hover, on a fresh pending edit.
+        if let Some(doc) = app.model.editor_area.documents.get_mut(&doc_id) {
+            doc.revision = 10;
+        }
+        app.process_cmd(Cmd::LspScheduleDidChange {
+            document_id: doc_id,
+            revision: 10,
+        });
+        assert!(app.lsp_change_deadlines.is_pending(doc_id));
+        app.process_automation_msg(Msg::Lsp(LspMsg::ShowHover));
+        assert!(
+            !app.lsp_change_deadlines.is_pending(doc_id),
+            "request_lsp_hover must flush the pending didChange itself"
+        );
+
+        let lines = wait_for_transcript_lines(&transcript_path, 7);
+        let second_change_idx = lines
+            .iter()
+            .rposition(|l| l.starts_with("notify:textDocument/didChange"))
+            .expect("second didChange must reach the wire");
+        let hover_idx = lines
+            .iter()
+            .position(|l| l.starts_with("request:textDocument/hover"))
+            .expect("hover request must reach the wire");
+        assert!(
+            second_change_idx < hover_idx,
+            "the flushed didChange must land ahead of the hover request, got {lines:?}"
+        );
+        assert!(
+            lines[second_change_idx].contains("version=Some(Number(10))"),
+            "expected the pending revision on the wire, got {lines:?}"
+        );
+
+        app.process_cmd(Cmd::Quit);
+    }
+
     /// A `publishDiagnostics` for a file with no open document is
     /// retained in `LspManager`'s authoritative store (never dropped for
     /// lack of a projection target) and applied to the document's
@@ -5033,7 +5541,13 @@ mod tests {
         std::fs::write(
             &scenario_path,
             serde_json::json!([
-                { "op": "expect_request", "method": "initialize", "respond": { "capabilities": {} } },
+                // `textDocumentSync` present (a diagnostics-only server
+                // still needs it for `didOpen`; a bare `{}` here would
+                // mean "no sync messages at all", suppressing `didOpen`
+                // and thus the projection pull this test asserts on).
+                { "op": "expect_request", "method": "initialize", "respond": {
+                    "capabilities": { "textDocumentSync": { "openClose": true, "change": 1 } }
+                }},
                 { "op": "notify", "method": "textDocument/publishDiagnostics", "params": {
                     "uri": uri.as_str(),
                     "diagnostics": [{
