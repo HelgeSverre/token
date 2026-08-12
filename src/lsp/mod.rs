@@ -122,6 +122,30 @@ pub fn server_def_by_id(id: &str) -> Option<&'static LspServerDef> {
     ALL_SERVER_DEFS.iter().copied().find(|def| def.id == id)
 }
 
+/// Every registered server def, in a stable order — the Language Servers
+/// picker modal's row source (one row per entry) and the `FlatIndex`
+/// selection/clamp math that mirrors it.
+pub fn all_server_defs() -> &'static [&'static LspServerDef] {
+    ALL_SERVER_DEFS
+}
+
+/// Languages a registered server def handles, for display (the picker's
+/// "TypeScript, JavaScript" detail text). The reverse direction of
+/// `lsp_server_def`'s match, kept as a small static table rather than
+/// scanning all of `LanguageId`'s ~85 variants for the 5 that have a
+/// server registered.
+pub fn languages_for_server(id: &str) -> &'static [LanguageId] {
+    use LanguageId::*;
+    match id {
+        "rust-analyzer" => &[Rust],
+        "typescript-language-server" => &[TypeScript, Tsx, JavaScript, Jsx],
+        "pyright" => &[Python],
+        "phpantom" => &[Php],
+        "sema" => &[Sema],
+        _ => &[],
+    }
+}
+
 /// Looks up the default server definition for a language. `None` means
 /// "no LSP support registered for this language" — not "disabled"; see
 /// `config::LspConfig` for user-facing enable/disable and overrides.
@@ -255,5 +279,25 @@ mod tests {
         );
         assert!(resolve_server(&PYRIGHT, &config).is_none());
         assert!(resolve_server(&RUST_ANALYZER, &config).is_some());
+    }
+
+    #[test]
+    fn all_server_defs_matches_the_registry() {
+        assert_eq!(all_server_defs().len(), ALL_SERVER_DEFS.len());
+        assert!(all_server_defs()
+            .iter()
+            .any(|def| def.id == "rust-analyzer"));
+    }
+
+    #[test]
+    fn languages_for_server_covers_every_registered_def() {
+        for def in all_server_defs() {
+            assert!(
+                !languages_for_server(def.id).is_empty(),
+                "{} has no languages mapped",
+                def.id
+            );
+        }
+        assert!(languages_for_server("not-a-real-server").is_empty());
     }
 }

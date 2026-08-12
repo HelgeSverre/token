@@ -145,7 +145,7 @@ fn modal_caret_rect(
                 FindReplaceField::Replace => (&state.replace_editable, input_rect),
             }
         }
-        ModalState::ThemePicker(_) => return None,
+        ModalState::ThemePicker(_) | ModalState::LspServers(_) => return None,
     };
 
     let options =

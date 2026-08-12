@@ -7,13 +7,13 @@ use crate::editable::{EditableState, StringBuffer};
 use crate::messages::LayoutMsg;
 use crate::messages::{ModalMsg, UiMsg};
 use crate::model::{
-    AppModel, CommandPaletteState, FileFinderState, GotoLineState, ModalId, ModalState,
-    RecentFilesState, SearchTab, SegmentContent, SegmentId, ThemePickerState, TransientMessage,
-    COMMAND_PALETTE_MAX_VISIBLE,
+    AppModel, CommandPaletteState, FileFinderState, GotoLineState, LspServersState, ModalId,
+    ModalState, RecentFilesState, SearchTab, SegmentContent, SegmentId, ThemePickerState,
+    TransientMessage, COMMAND_PALETTE_MAX_VISIBLE,
 };
 use crate::theme::load_theme;
 use crate::update::layout::update_layout;
-use crate::update::lsp::schedule_lsp_did_change;
+use crate::update::lsp::{schedule_lsp_did_change, toggle_lsp_server_enabled};
 use crate::update::navigation::push_history;
 use crate::update::syntax::schedule_syntax_parse;
 use crate::view::modal::{recent_files_groups, theme_picker_groups};
@@ -135,6 +135,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                         current_file.as_deref(),
                     ))
                 }
+                ModalId::LspServers => ModalState::LspServers(LspServersState::default()),
             };
             model.ui.open_modal(state);
             Some(Cmd::Redraw)
@@ -265,6 +266,7 @@ fn modal_editable_mut(modal: &mut ModalState) -> Option<&mut EditableState<Strin
         ModalState::ThemePicker(_) => None,
         ModalState::FileFinder(state) => Some(&mut state.editable),
         ModalState::RecentFiles(state) => Some(&mut state.editable),
+        ModalState::LspServers(_) => None,
     }
 }
 
@@ -288,7 +290,10 @@ fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
         }
         ModalState::FileFinder(state) => update_file_finder_results(state),
         ModalState::RecentFiles(state) => resolve_recent_rows(state),
-        ModalState::GotoLine(_) | ModalState::FindReplace(_) | ModalState::ThemePicker(_) => {}
+        ModalState::GotoLine(_)
+        | ModalState::FindReplace(_)
+        | ModalState::ThemePicker(_)
+        | ModalState::LspServers(_) => {}
     }
 }
 
@@ -339,6 +344,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     ModalState::ThemePicker(_) => {} // No text input for theme picker
                     ModalState::FileFinder(state) => state.set_input(&text),
                     ModalState::RecentFiles(state) => state.editable.set_content(&text),
+                    ModalState::LspServers(_) => {} // No text input for the servers picker
                 }
                 on_modal_input_changed(modal, &model.command_history);
                 Some(Cmd::Redraw)
@@ -881,6 +887,9 @@ fn set_modal_selected_index(modal: &mut ModalState, row: usize) {
         ModalState::ThemePicker(state) => state.selected_index = row.min(state.themes.len()),
         ModalState::FileFinder(state) => state.selected_index = row.min(state.results.len()),
         ModalState::RecentFiles(state) => state.selected_index = row.min(state.filtered_rows.len()),
+        ModalState::LspServers(state) => {
+            state.selected_index = row.min(crate::lsp::all_server_defs().len())
+        }
         ModalState::GotoLine(_) | ModalState::FindReplace(_) => {}
     }
 }
@@ -978,6 +987,19 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
                 }
                 model.ui.close_modal();
                 Some(Cmd::Redraw)
+            }
+            // A management surface, not a picker: toggling a server's
+            // enabled override neither selects nor closes anything, so
+            // unlike every other Confirm arm above, the modal stays open
+            // (Escape is the only way out).
+            ModalState::LspServers(state) => {
+                let server_id = crate::lsp::all_server_defs()
+                    .get(state.selected_index)
+                    .map(|def| def.id);
+                match server_id.and_then(|id| toggle_lsp_server_enabled(model, id)) {
+                    Some(cmd) => Some(cmd),
+                    None => Some(Cmd::Redraw),
+                }
             }
         }
     } else {
@@ -1160,6 +1182,13 @@ fn theme_picker_shapes(state: &ThemePickerState) -> Vec<SectionShape> {
         .collect()
 }
 
+/// Section shapes for the Language Servers picker: a single, untitled
+/// section (like the Command Palette/File Finder) sized off the static
+/// registry rather than any per-modal cached count.
+fn lsp_servers_shapes() -> [SectionShape; 1] {
+    flat_shapes(crate::lsp::all_server_defs().len())
+}
+
 /// Move `*selected` by `delta`, wrapping at both ends, keeping `*scroll`
 /// following it (minimal-reveal scrolling, header-aware) — shared by
 /// every list-body modal context (overlay-surface.md Behaviour: "Up/Down
@@ -1276,6 +1305,16 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
             );
             None
         }
+        ModalState::LspServers(state) => {
+            let shapes = lsp_servers_shapes();
+            move_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                &shapes,
+                delta,
+            );
+            None
+        }
         ModalState::GotoLine(_) | ModalState::FindReplace(_) => None,
     };
     if let Some(theme_id) = preview_theme_id {
@@ -1356,6 +1395,15 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
                 forward,
             );
         }
+        ModalState::LspServers(state) => {
+            let shapes = lsp_servers_shapes();
+            page_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                &shapes,
+                forward,
+            );
+        }
         ModalState::GotoLine(_) | ModalState::FindReplace(_) => {}
     }
     Some(Cmd::Redraw)
@@ -1391,6 +1439,7 @@ fn modal_scroll(model: &mut AppModel, delta: isize) -> Option<Cmd> {
             let shapes = recent_files_shapes(state);
             (&mut state.scroll_offset, shapes)
         }
+        ModalState::LspServers(state) => (&mut state.scroll_offset, lsp_servers_shapes().to_vec()),
         ModalState::GotoLine(_) | ModalState::FindReplace(_) => return None,
     };
     let total: usize = shapes.iter().map(|s| s.len).sum();
@@ -2546,5 +2595,104 @@ mod tests {
                 .any(|c| matches!(c, Cmd::LspScheduleDidChange { .. })),
             "expected LspScheduleDidChange in {cmds:?}"
         );
+    }
+
+    #[test]
+    fn escape_closes_the_lsp_servers_modal() {
+        use crate::model::LspServersState;
+
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        model
+            .ui
+            .open_modal(ModalState::LspServers(LspServersState::default()));
+
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::Close));
+
+        assert!(model.ui.active_modal.is_none());
+    }
+
+    /// `EditorConfig::save()` has no explicit-path test seam (unlike
+    /// `CommandHistory::save_to`), so it always resolves the real
+    /// `~/.config/token-editor/config.yaml` — exercising `ModalMsg::Confirm`
+    /// for real here would overwrite the developer's actual config file.
+    /// Redirect `XDG_CONFIG_HOME` to a scratch dir for the duration of this
+    /// one test instead, restoring it on drop.
+    ///
+    /// ponytail: process-global env mutation, not race-proof against other
+    /// tests' concurrent `AppModel::new()`/`EditorConfig::load()` calls (a
+    /// transient "no config file found" read falls back to defaults, which
+    /// none of them assert against, so this is a correctness no-op for
+    /// them) — upgrade to an injectable config path if this ever causes
+    /// real flakiness.
+    struct ScratchConfigHome {
+        previous: Option<std::ffi::OsString>,
+        _dir: tempfile::TempDir,
+    }
+
+    impl ScratchConfigHome {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let previous = std::env::var_os("XDG_CONFIG_HOME");
+            // SAFETY: test-only; restored by `Drop` before this guard's
+            // scope ends.
+            unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.path()) };
+            Self {
+                previous,
+                _dir: dir,
+            }
+        }
+    }
+
+    impl Drop for ScratchConfigHome {
+        fn drop(&mut self) {
+            // SAFETY: see `new()`.
+            unsafe {
+                match &self.previous {
+                    Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                    None => std::env::remove_var("XDG_CONFIG_HOME"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn confirm_toggles_the_selected_server_persists_and_keeps_the_modal_open() {
+        use crate::model::LspServersState;
+
+        let _scratch = ScratchConfigHome::new();
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        model
+            .ui
+            .open_modal(ModalState::LspServers(LspServersState::default()));
+
+        let cmd = update_ui(&mut model, UiMsg::Modal(ModalMsg::Confirm));
+
+        let first_id = crate::lsp::all_server_defs()[0].id;
+        assert_eq!(
+            model
+                .config
+                .lsp
+                .servers
+                .get(first_id)
+                .and_then(|o| o.enabled),
+            Some(false),
+            "a default-enabled server toggles to disabled"
+        );
+        assert!(
+            matches!(cmd, Some(Cmd::Batch(_))),
+            "expected a batch of the runtime teardown cmd + redraw, got {cmd:?}"
+        );
+        assert!(
+            matches!(model.ui.active_modal, Some(ModalState::LspServers(_))),
+            "the servers picker is a management surface: it stays open after a toggle"
+        );
+
+        // Round-trips through the real `save()` path against the scratch
+        // dir, confirming the toggle actually persisted rather than only
+        // mutating the in-memory model.
+        let saved = crate::config_paths::config_file().unwrap();
+        let content = std::fs::read_to_string(saved).unwrap();
+        let reloaded: crate::config::EditorConfig = serde_yaml::from_str(&content).unwrap();
+        assert_eq!(reloaded.lsp.servers[first_id].enabled, Some(false));
     }
 }

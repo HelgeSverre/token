@@ -9,7 +9,7 @@
 //! `overlay_surface::layout()`, so geometry can't drift between paint and
 //! hit-test (overlay-surface.md "Hit-testing": one layout, two consumers).
 
-use crate::model::ui::{FindReplaceField, RecentFilesState, ThemePickerState};
+use crate::model::ui::{FindReplaceField, LspServersState, RecentFilesState, ThemePickerState};
 use crate::model::AppModel;
 use crate::theme::ThemeInfo;
 
@@ -771,6 +771,144 @@ fn render_theme_picker_modal(
 }
 
 // ============================================================================
+// Language Servers picker
+// ============================================================================
+
+/// `(icon color, state label)` for a server's live state, dimming anything
+/// that isn't `Ready`/`Failed`/`Missing` — `Starting`/`Indexing` and
+/// "never started"/`ShuttingDown`/`Restarting` all read as the same "not
+/// actively serving" dim dot (overlay-surface.md's Row color table for this
+/// modal only calls out the four states worth a distinct color).
+fn lsp_server_state_visual(model: &AppModel, server_id: &str) -> (u32, &'static str) {
+    use crate::lsp::ServerState;
+    let overlay = &model.theme.overlay;
+    match model
+        .lsp
+        .servers
+        .get(&crate::lsp::LspServerId::from(server_id))
+    {
+        Some(ServerState::Ready) => (overlay.accent.to_argb_u32(), "Ready"),
+        Some(ServerState::Starting) => (overlay.text_dim.to_argb_u32(), "Starting"),
+        Some(ServerState::Indexing) => (overlay.text_dim.to_argb_u32(), "Indexing"),
+        Some(ServerState::Failed) => (overlay.severity_error.to_argb_u32(), "Failed"),
+        Some(ServerState::Missing) => (overlay.severity_warning.to_argb_u32(), "Missing"),
+        _ => (overlay.text_dim.to_argb_u32(), "Off"),
+    }
+}
+
+/// Whether `lsp.servers.<id>.enabled` allows this server to run (absent ==
+/// enabled — same default `lsp::resolve_server` uses).
+fn lsp_server_config_enabled(model: &AppModel, server_id: &str) -> bool {
+    model
+        .config
+        .lsp
+        .servers
+        .get(server_id)
+        .and_then(|o| o.enabled)
+        .unwrap_or(true)
+}
+
+/// Row accessory for a server's config-enabled state — extracted so
+/// "disabled renders `DimText`" is unit-testable without a renderer.
+fn lsp_server_accessory(enabled: bool) -> Accessory<'static> {
+    if enabled {
+        Accessory::Check
+    } else {
+        Accessory::DimText("disabled")
+    }
+}
+
+/// Detail text for one server row: affected languages, then its live
+/// state — e.g. `"TypeScript, JavaScript · Ready"`.
+fn lsp_server_detail(model: &AppModel, server_id: &str) -> String {
+    let (_, state_label) = lsp_server_state_visual(model, server_id);
+    let languages: Vec<&str> = crate::lsp::languages_for_server(server_id)
+        .iter()
+        .map(|l| l.display_name())
+        .collect();
+    format!("{} \u{b7} {}", languages.join(", "), state_label)
+}
+
+fn render_lsp_servers_modal(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    state: &LspServersState,
+    ctx: &ModalRenderCtx,
+    mask_cache: &mut RoundedRectMaskCache,
+) {
+    let defs = crate::lsp::all_server_defs();
+    let details: Vec<String> = defs
+        .iter()
+        .map(|def| lsp_server_detail(model, def.id))
+        .collect();
+    let rows: Vec<Row> = defs
+        .iter()
+        .zip(&details)
+        .map(|(def, detail)| {
+            let (color, _) = lsp_server_state_visual(model, def.id);
+            let enabled = lsp_server_config_enabled(model, def.id);
+            Row {
+                icon: RowIcon::Glyph {
+                    ch: '\u{25CF}',
+                    color,
+                },
+                label: def.id,
+                match_indices: &[],
+                detail: Some(detail.as_str()),
+                accessory: lsp_server_accessory(enabled),
+            }
+        })
+        .collect();
+    let sections = [Section {
+        title: None,
+        rows: &rows,
+    }];
+
+    let selected_index = state.selected_index.min(defs.len().saturating_sub(1));
+
+    let spec = OverlaySpec {
+        tabs: None,
+        anchor: Anchor::Centered {
+            width: WidthRule {
+                pct: 0.0,
+                min: 420.0,
+                max: 420.0,
+            },
+            dim_alpha: MODAL_DIM_ALPHA,
+        },
+        header: Some(Header {
+            glyph: None,
+            text: "",
+            placeholder: "Language Servers",
+            caret: None,
+            selection: None,
+            scope: None,
+        }),
+        body: Body::List {
+            sections: &sections,
+            selected: FlatIndex(selected_index),
+            scroll: state.scroll_offset,
+            max_visible: COMMAND_PALETTE_MAX_VISIBLE,
+        },
+        footer: None,
+        hover_row: model.ui.modal_hover_row.map(FlatIndex),
+    };
+
+    overlay_surface::render(
+        frame,
+        painter,
+        mask_cache,
+        &model.theme.overlay,
+        &spec,
+        ctx.window_width,
+        ctx.window_height,
+        ctx.scale_factor,
+        model.ui.cursor_visible,
+    );
+}
+
+// ============================================================================
 // Go to Line / Find & Replace (Body::Fields)
 // ============================================================================
 
@@ -1109,6 +1247,23 @@ pub(crate) fn with_modal_overlay_layout<R>(
             let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
             Some(f(&spec, &l))
         }
+        ModalState::LspServers(state) => {
+            let rows = placeholder_rows(crate::lsp::all_server_defs().len());
+            let sections = [Section {
+                title: None,
+                rows: &rows,
+            }];
+            let spec = list_shape_spec(
+                (0.0, 420.0, 420.0),
+                None,
+                &sections,
+                state.selected_index.min(rows.len().saturating_sub(1)),
+                state.scroll_offset,
+                false,
+            );
+            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            Some(f(&spec, &l))
+        }
         ModalState::GotoLine(_) => {
             let fields = [Field { label: "" }];
             let spec = OverlaySpec {
@@ -1303,6 +1458,9 @@ pub fn render_modals(
         }
         ModalState::RecentFiles(state) => {
             render_recent_files_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
+        }
+        ModalState::LspServers(state) => {
+            render_lsp_servers_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
         }
     }
 }
@@ -1628,7 +1786,11 @@ pub fn with_cursor_overlay_layout<R>(
                     d.source.as_deref().unwrap_or(""),
                 )
             });
-            let hover_text = model.ui.hover_card.as_ref().and_then(|s| s.content.as_deref());
+            let hover_text = model
+                .ui
+                .hover_card
+                .as_ref()
+                .and_then(|s| s.content.as_deref());
             let related = related_information_text(&diagnostics);
             let text = match (hover_text, related.as_deref()) {
                 (Some(h), Some(r)) => format!("{h}\n\n{r}"),
@@ -1921,5 +2083,41 @@ mod tests {
             l.h,
             caret.y
         );
+    }
+
+    #[test]
+    fn opening_the_lsp_servers_modal_lists_a_row_per_registered_server() {
+        let mut model = AppModel::new(1200, 800, 1.0, vec![]);
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::LspServers));
+
+        let row_count =
+            with_modal_overlay_layout(&model, 1200, 800, 1.0, |_, layout| layout.rows.len())
+                .expect("expected an active modal");
+        assert_eq!(row_count, crate::lsp::all_server_defs().len());
+    }
+
+    #[test]
+    fn lsp_server_config_enabled_defaults_true_and_reflects_a_disabled_override() {
+        let mut model = AppModel::new(1200, 800, 1.0, vec![]);
+        let server_id = crate::lsp::all_server_defs()[0].id;
+        assert!(lsp_server_config_enabled(&model, server_id));
+
+        model.config.lsp.servers.insert(
+            server_id.to_owned(),
+            crate::config::LspServerOverride {
+                enabled: Some(false),
+                ..Default::default()
+            },
+        );
+        assert!(!lsp_server_config_enabled(&model, server_id));
+    }
+
+    #[test]
+    fn disabled_server_gets_the_dim_text_accessory_enabled_gets_the_check() {
+        assert!(matches!(lsp_server_accessory(true), Accessory::Check));
+        assert!(matches!(
+            lsp_server_accessory(false),
+            Accessory::DimText("disabled")
+        ));
     }
 }

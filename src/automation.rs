@@ -346,6 +346,19 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                 .collect(),
             selected: state.selected_index,
         }),
+        token::model::ModalState::LspServers(state) => Some(OverlaySnapshot {
+            context: "lsp_servers".to_owned(),
+            query: String::new(),
+            active_tab: None,
+            rows: token::lsp::all_server_defs()
+                .iter()
+                .map(|def| OverlayRowSnapshot {
+                    label: def.id.to_owned(),
+                    section: None,
+                })
+                .collect(),
+            selected: state.selected_index,
+        }),
     }
 }
 
@@ -873,5 +886,21 @@ mod tests {
         assert_eq!(snapshot.context, "recent_files");
         assert_eq!(snapshot.rows.len(), 2);
         assert_eq!(snapshot.selected, 0);
+    }
+
+    #[test]
+    fn lsp_servers_overlay_snapshot_reports_a_row_per_registered_server() {
+        use token::model::ui::LspServersState;
+
+        let state = LspServersState {
+            selected_index: 1,
+            scroll_offset: 0,
+        };
+        let modal = ModalState::LspServers(state);
+        let snapshot = overlay_snapshot(&modal).expect("lsp servers must report an overlay");
+        assert_eq!(snapshot.context, "lsp_servers");
+        assert_eq!(snapshot.rows.len(), token::lsp::all_server_defs().len());
+        assert_eq!(snapshot.rows[0].label, token::lsp::all_server_defs()[0].id);
+        assert_eq!(snapshot.selected, 1);
     }
 }

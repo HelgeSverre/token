@@ -85,6 +85,9 @@ pub enum ModalId {
     FileFinder,
     /// Recent files list (Cmd+E)
     RecentFiles,
+    /// Language Servers picker — one row per registered server def, toggles
+    /// `lsp.servers.<id>.enabled` (see `CommandId::ManageLanguageServers`).
+    LspServers,
 }
 
 /// Palette/pickers cap at 10 visible rows (overlay-surface.md Visual
@@ -389,6 +392,20 @@ impl ThemePickerState {
     }
 }
 
+/// State for the Language Servers picker modal (dynamic — one row per
+/// entry in `lsp::all_server_defs()`, built fresh from `model.lsp` /
+/// `model.config.lsp` at render time each frame instead of cached here,
+/// since the registry is static and the live state already lives in the
+/// model — see `docs/feature/lsp-integration.md`).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LspServersState {
+    /// Index of selected server in `lsp::all_server_defs()`
+    pub selected_index: usize,
+    /// Scroll offset (in rows) for keeping a long server list clipped and
+    /// the selection visible instead of overflowing the modal.
+    pub scroll_offset: usize,
+}
+
 /// A file match result from fuzzy search
 #[derive(Debug, Clone)]
 pub struct FileMatch {
@@ -573,6 +590,7 @@ pub enum ModalState {
     ThemePicker(ThemePickerState),
     FileFinder(FileFinderState),
     RecentFiles(RecentFilesState),
+    LspServers(LspServersState),
 }
 
 impl ModalState {
@@ -585,6 +603,7 @@ impl ModalState {
             ModalState::ThemePicker(_) => ModalId::ThemePicker,
             ModalState::FileFinder(_) => ModalId::FileFinder,
             ModalState::RecentFiles(_) => ModalId::RecentFiles,
+            ModalState::LspServers(_) => ModalId::LspServers,
         }
     }
 }

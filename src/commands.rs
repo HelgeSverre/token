@@ -91,6 +91,8 @@ pub enum CommandId {
 
     // Language servers (lsp-integration.md Phase 1)
     RestartLanguageServer,
+    ToggleLsp,
+    ManageLanguageServers,
 
     // Application
     Quit,
@@ -400,6 +402,18 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: None,
     },
     CommandDef {
+        id: CommandId::ToggleLsp,
+        category: CommandCategory::System,
+        label: "Toggle LSP",
+        keybinding: None,
+    },
+    CommandDef {
+        id: CommandId::ManageLanguageServers,
+        category: CommandCategory::System,
+        label: "Language Servers...",
+        keybinding: None,
+    },
+    CommandDef {
         id: CommandId::Quit,
         category: CommandCategory::System,
         label: "Quit",
@@ -488,6 +502,8 @@ impl CommandId {
             CommandId::OpenRecentFiles => Some(KeymapCommand::OpenRecentFiles),
             CommandId::TriggerCompletionMenu => Some(KeymapCommand::TriggerCompletionMenu),
             CommandId::RestartLanguageServer => Some(KeymapCommand::RestartLanguageServer),
+            CommandId::ToggleLsp => None,
+            CommandId::ManageLanguageServers => None,
             CommandId::Quit => Some(KeymapCommand::Quit),
             #[cfg(debug_assertions)]
             CommandId::TogglePerfOverlay => None,
@@ -866,6 +882,20 @@ pub enum Cmd {
         cursor: crate::model::editor::Position,
         revision: u64,
     },
+    /// The master `lsp.enabled` switch flipped (`CommandId::ToggleLsp`).
+    /// Disabling tears down every running server — a non-quit variant of
+    /// `Cmd::Quit`'s graceful teardown, with the same bounded grace — and
+    /// clears their diagnostics; enabling clears the missing-server memo
+    /// so `ensure_lsp_server` can re-attempt spawns lazily on the next
+    /// open/edit rather than staying skipped forever.
+    LspSetEnabled { enabled: bool },
+    /// A single server's `lsp.servers.<id>.enabled` override flipped from
+    /// the Language Servers picker modal — same semantics as
+    /// `LspSetEnabled`, scoped to one server id.
+    LspSetServerEnabled {
+        server_id: crate::lsp::LspServerId,
+        enabled: bool,
+    },
 
     // === Debug Commands ===
     /// Toggle performance overlay (debug builds only)
@@ -958,6 +988,11 @@ impl Cmd {
             Cmd::LspRequestDefinition { .. } => Damage::Areas(vec![]),
             Cmd::LspDidOpenOnServer { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestHover { .. } => Damage::Areas(vec![]),
+            // No immediate visual effect; a `ServerStateChanged` (or the
+            // batched `Cmd::Redraw`/`redraw_status_bar` these are always
+            // paired with at the call site) requests its own redraw.
+            Cmd::LspSetEnabled { .. } => Damage::Areas(vec![]),
+            Cmd::LspSetServerEnabled { .. } => Damage::Areas(vec![]),
             // Debug overlay toggle triggers full redraw
             #[cfg(debug_assertions)]
             Cmd::TogglePerfOverlay => Damage::Full,

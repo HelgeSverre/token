@@ -190,7 +190,14 @@ impl EditorConfig {
     pub fn save(&self) -> Result<(), String> {
         let path = crate::config_paths::config_file()
             .ok_or_else(|| "No config directory available".to_string())?;
+        self.save_to(&path)
+    }
 
+    /// Save to an explicit path — factored out of `save()` so tests can
+    /// exercise real file I/O against a scratch dir without mutating the
+    /// process-global `XDG_CONFIG_HOME` (mirrors `CommandHistory::save_to`,
+    /// which has the same race-under-parallel-tests concern).
+    fn save_to(&self, path: &std::path::Path) -> Result<(), String> {
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
@@ -200,7 +207,7 @@ impl EditorConfig {
         let content = serde_yaml::to_string(self)
             .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
-        std::fs::write(&path, content)
+        std::fs::write(path, content)
             .map_err(|e| format!("Failed to write config to {}: {}", path.display(), e))?;
 
         tracing::info!("Saved config to {}", path.display());
@@ -211,5 +218,47 @@ impl EditorConfig {
     pub fn set_theme(&mut self, theme_id: &str) -> Result<(), String> {
         self.theme = theme_id.to_string();
         self.save()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_to_round_trips_the_lsp_master_switch() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        let config = EditorConfig {
+            lsp: LspConfig {
+                enabled: false,
+                ..LspConfig::default()
+            },
+            ..EditorConfig::default()
+        };
+        config.save_to(&path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let reloaded: EditorConfig = serde_yaml::from_str(&content).unwrap();
+        assert!(!reloaded.lsp.enabled);
+    }
+
+    #[test]
+    fn save_to_round_trips_a_per_server_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        let mut config = EditorConfig::default();
+        config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            LspServerOverride {
+                enabled: Some(false),
+                ..Default::default()
+            },
+        );
+        config.save_to(&path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let reloaded: EditorConfig = serde_yaml::from_str(&content).unwrap();
+        assert_eq!(reloaded.lsp.servers["rust-analyzer"].enabled, Some(false));
     }
 }

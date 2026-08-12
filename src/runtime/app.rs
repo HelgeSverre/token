@@ -1927,6 +1927,20 @@ impl App {
                     self.lsp_open_document_on(document_id, file_path, server_id, root, language_id);
                 }
             }
+            Cmd::LspSetEnabled { enabled } => {
+                if enabled {
+                    self.lsp.missing_servers.clear();
+                } else {
+                    self.teardown_all_lsp_servers();
+                }
+            }
+            Cmd::LspSetServerEnabled { server_id, enabled } => {
+                if enabled {
+                    self.lsp.missing_servers.retain(|(id, _)| *id != server_id);
+                } else {
+                    self.teardown_lsp_server(&server_id);
+                }
+            }
 
             // =====================================================================
             // Application Commands
@@ -2301,6 +2315,61 @@ impl App {
                 .resync_pending
                 .insert((server_id.clone(), root.clone()));
             self.spawn_lsp_server_at(&resolved, &root);
+        }
+    }
+
+    /// Kills every running instance of `server_id` and clears its
+    /// diagnostics, without respawning — `Cmd::LspSetServerEnabled { enabled:
+    /// false }` (Language Servers picker). Mirrors `restart_lsp_server`
+    /// minus the respawn half.
+    fn teardown_lsp_server(&mut self, server_id: &LspServerId) {
+        let roots = self.lsp.roots_for(server_id);
+        self.clear_diagnostics_for_roots(server_id, &roots);
+        self.clear_pending_requests_for_roots(server_id, &roots);
+        for root in roots {
+            self.set_lsp_server_state(server_id.clone(), &root, ServerState::ShuttingDown);
+            if let Some(mut handle) = self.lsp.servers.remove(&(server_id.clone(), root)) {
+                handle.kill();
+            }
+        }
+        // A disabled server that previously gave up shouldn't keep
+        // `RestartLanguageServer` pointed at roots it's not allowed to run
+        // at anymore.
+        self.lsp.failed_roots.remove(server_id);
+    }
+
+    /// Tears down every running language server without quitting the app —
+    /// `Cmd::LspSetEnabled { enabled: false }` (`CommandId::ToggleLsp`
+    /// disabling the master switch). Mirrors `graceful_lsp_teardown`'s
+    /// shutdown sequence and shared grace budget, but restores
+    /// `lsp.shutting_down` afterward instead of leaving quit's teardown
+    /// flag set, and clears every torn-down server's diagnostics — a
+    /// disabled server has no process left to ever refresh them.
+    fn teardown_all_lsp_servers(&mut self) {
+        let was_shutting_down = self.lsp.shutting_down;
+        self.lsp.shutting_down = true;
+        let keys: Vec<(LspServerId, PathBuf)> = self.lsp.servers.keys().cloned().collect();
+        let shared_deadline = std::time::Instant::now() + Duration::from_secs(4);
+        for (server_id, root) in &keys {
+            self.set_lsp_server_state(server_id.clone(), root, ServerState::ShuttingDown);
+            if let Some(mut handle) = self.lsp.servers.remove(&(server_id.clone(), root.clone())) {
+                if handle.capabilities_snapshot().is_some() {
+                    handle.graceful_shutdown(&self.msg_rx, Duration::from_secs(2), shared_deadline);
+                } else {
+                    handle.kill();
+                }
+            }
+        }
+        self.lsp.shutting_down = was_shutting_down;
+
+        let mut roots_by_server: HashMap<LspServerId, Vec<PathBuf>> = HashMap::new();
+        for (server_id, root) in keys {
+            roots_by_server.entry(server_id).or_default().push(root);
+        }
+        for (server_id, roots) in roots_by_server {
+            self.clear_diagnostics_for_roots(&server_id, &roots);
+            self.clear_pending_requests_for_roots(&server_id, &roots);
+            self.lsp.failed_roots.remove(&server_id);
         }
     }
 

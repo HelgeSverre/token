@@ -87,6 +87,70 @@ pub fn schedule_lsp_did_change(model: &AppModel, document_id: DocumentId) -> Opt
     })
 }
 
+/// Flips `config.lsp.enabled` in place and returns the new value —
+/// factored out of `toggle_lsp_enabled` so the state transition is
+/// testable without going through `EditorConfig::save()`'s real disk path
+/// (mirrors `EditorConfig::save_to`'s own explicit-path test seam).
+fn apply_lsp_master_toggle(config: &mut crate::config::EditorConfig) -> bool {
+    let enabled = !config.lsp.enabled;
+    config.lsp.enabled = enabled;
+    enabled
+}
+
+/// Flips `lsp.servers.<id>.enabled` (absent means enabled) in place and
+/// returns the new value — the `toggle_lsp_server_enabled` counterpart to
+/// `apply_lsp_master_toggle`.
+fn apply_lsp_server_toggle(lsp: &mut crate::config::LspConfig, server_id: &str) -> bool {
+    let currently_enabled = lsp
+        .servers
+        .get(server_id)
+        .and_then(|o| o.enabled)
+        .unwrap_or(true);
+    let enabled = !currently_enabled;
+    lsp.servers.entry(server_id.to_owned()).or_default().enabled = Some(enabled);
+    enabled
+}
+
+/// `CommandId::ToggleLsp`: flips the master `lsp.enabled` switch, persists
+/// it, and applies it live. Disabling tears down every running server (a
+/// non-quit variant of `Cmd::Quit`'s graceful teardown, bounded by the same
+/// grace budget) and clears their diagnostics; enabling just clears the
+/// missing-server memo — a fresh spawn is attempted lazily on the next
+/// matching open/edit, matching the design doc's Process Model.
+pub fn toggle_lsp_enabled(model: &mut AppModel) -> Option<Cmd> {
+    let enabled = apply_lsp_master_toggle(&mut model.config);
+    if let Err(e) = model.config.save() {
+        tracing::warn!("Failed to save LSP toggle: {}", e);
+    }
+    model.ui.set_status(if enabled {
+        "LSP enabled"
+    } else {
+        "LSP disabled"
+    });
+    Some(Cmd::Batch(vec![
+        Cmd::LspSetEnabled { enabled },
+        Cmd::redraw_status_bar(),
+    ]))
+}
+
+/// Toggles `lsp.servers.<id>.enabled` (absent means enabled) for one
+/// server — the Language Servers picker's row action. Same persist/
+/// apply-live shape as `toggle_lsp_enabled`, scoped to a single server;
+/// `None` only if the config can't be reached (never for a valid `id`).
+pub fn toggle_lsp_server_enabled(model: &mut AppModel, server_id: &str) -> Option<Cmd> {
+    let enabled = apply_lsp_server_toggle(&mut model.config.lsp, server_id);
+    if let Err(e) = model.config.save() {
+        tracing::warn!("Failed to save LSP server toggle: {}", e);
+    }
+    Some(Cmd::Batch(vec![
+        Cmd::LspSetServerEnabled {
+            server_id: crate::lsp::LspServerId::from(server_id),
+            enabled,
+        },
+        Cmd::Redraw,
+    ]))
+}
+
 pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
     match msg {
         LspMsg::ServerStateChanged {
@@ -142,7 +206,8 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             // `current_jump_entry` use, so a go-to-definition request and
             // the back-stack entry it pushes always agree on "where the
             // user was".
-            let position = crate::lsp::position_to_lsp(doc, model.editor().active_cursor().to_position());
+            let position =
+                crate::lsp::position_to_lsp(doc, model.editor().active_cursor().to_position());
             let origin = navigation::current_jump_entry(model)?;
             Some(Cmd::LspRequestDefinition {
                 document_id,
@@ -192,7 +257,8 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                         .as_ref()
                         .is_none_or(|ws| !path.starts_with(&ws.root));
                     if outside_every_root {
-                        model.lsp.route_hint = Some((path.clone(), resolving_server, resolving_root));
+                        model.lsp.route_hint =
+                            Some((path.clone(), resolving_server, resolving_root));
                     }
                     navigation::push_history_entry(model, origin);
                     let open_cmd = navigation::open_or_focus(model, path.clone());
@@ -206,7 +272,8 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                         && navigation::focused_tab_shows(model, &path)
                     {
                         let target_doc = model.document();
-                        let position = crate::lsp::lsp_to_position(target_doc, location.range.start);
+                        let position =
+                            crate::lsp::lsp_to_position(target_doc, location.range.start);
                         navigation::place_cursor_char(model, position.line, position.column)
                     } else {
                         None
@@ -288,7 +355,8 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                         return Some(Cmd::redraw_status_bar());
                     }
                     model.ui.hover_card = Some(HoverCardState { content });
-                    model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Hover));
+                    model.ui.cursor_overlay =
+                        Some(CursorOverlayState::new(CursorOverlayKind::Hover));
                     Some(Cmd::Redraw)
                 }
                 HoverOutcome::StillIndexing => {
@@ -296,9 +364,7 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                     Some(Cmd::redraw_status_bar())
                 }
                 HoverOutcome::NotSupported => {
-                    model
-                        .ui
-                        .set_status("Hover not supported by this server");
+                    model.ui.set_status("Hover not supported by this server");
                     Some(Cmd::redraw_status_bar())
                 }
             }
@@ -366,6 +432,34 @@ mod tests {
 
     fn model() -> AppModel {
         AppModel::new(800, 600, 1.0, vec![])
+    }
+
+    #[test]
+    fn apply_lsp_master_toggle_flips_and_returns_the_new_value() {
+        let mut config = crate::config::EditorConfig::default();
+        assert!(config.lsp.enabled);
+
+        assert!(!apply_lsp_master_toggle(&mut config));
+        assert!(!config.lsp.enabled);
+
+        assert!(apply_lsp_master_toggle(&mut config));
+        assert!(config.lsp.enabled);
+    }
+
+    #[test]
+    fn apply_lsp_server_toggle_defaults_to_enabled_and_flips_in_place() {
+        let mut lsp = crate::config::LspConfig::default();
+        assert!(
+            !lsp.servers.contains_key("rust-analyzer"),
+            "test setup: no override yet"
+        );
+
+        // Absent override reads as enabled, so the first toggle disables.
+        assert!(!apply_lsp_server_toggle(&mut lsp, "rust-analyzer"));
+        assert_eq!(lsp.servers["rust-analyzer"].enabled, Some(false));
+
+        assert!(apply_lsp_server_toggle(&mut lsp, "rust-analyzer"));
+        assert_eq!(lsp.servers["rust-analyzer"].enabled, Some(true));
     }
 
     /// A `HoverResolved` reply for a document the user has since switched
@@ -530,7 +624,10 @@ mod tests {
             "a failed open must leave the origin document focused"
         );
         assert_eq!(
-            (model.editor().cursors[0].line, model.editor().cursors[0].column),
+            (
+                model.editor().cursors[0].line,
+                model.editor().cursors[0].column
+            ),
             (0, 0),
             "the origin document's cursor must not move for a target that never opened"
         );
@@ -575,9 +672,13 @@ mod tests {
         fn contains_did_open_on_server(cmd: &Cmd, server_id: &LspServerId, root: &PathBuf) -> bool {
             match cmd {
                 Cmd::LspDidOpenOnServer {
-                    server_id: s, root: r, ..
+                    server_id: s,
+                    root: r,
+                    ..
                 } => s == server_id && r == root,
-                Cmd::Batch(cmds) => cmds.iter().any(|c| contains_did_open_on_server(c, server_id, root)),
+                Cmd::Batch(cmds) => cmds
+                    .iter()
+                    .any(|c| contains_did_open_on_server(c, server_id, root)),
                 _ => false,
             }
         }
@@ -620,7 +721,10 @@ mod tests {
 
         let model = AppModel::new(800, 600, 1.0, vec![link_path.clone()]);
         let doc_id = model.document().id.unwrap();
-        assert_eq!(model.document().file_path.as_deref(), Some(link_path.as_path()));
+        assert_eq!(
+            model.document().file_path.as_deref(),
+            Some(link_path.as_path())
+        );
 
         // The server publishes under the canonical URI it resolved the
         // symlink to, not the one it was opened with.
