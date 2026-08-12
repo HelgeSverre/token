@@ -17,7 +17,7 @@ use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry::WidgetRect;
 use super::overlay_surface::{
     self, Accessory, Anchor, Body, Field, FlatIndex, Footer, Header, OverlayLayout, OverlaySpec,
-    Row, RowIcon, Section, WidthRule,
+    Row, RowIcon, Section, TabBar, WidthRule,
 };
 use super::text_field::{TextFieldContent, TextFieldRenderer};
 
@@ -96,30 +96,16 @@ fn palette_accessory(keybinding: Option<&'static str>) -> PaletteAccessory {
     }
 }
 
-fn render_command_palette_modal(
-    frame: &mut Frame,
-    painter: &mut TextPainter,
-    model: &AppModel,
-    state: &crate::model::ui::CommandPaletteState,
-    ctx: &ModalRenderCtx,
-    mask_cache: &mut RoundedRectMaskCache,
-) {
-    let input_text = state.input();
-    let icon_color = model.theme.overlay.text_dim.to_argb_u32();
-
-    // Per-row keycap chip storage lives here so `Row::accessory` can borrow
-    // into it for the duration of this render call (spec lifetime: built
-    // and consumed in one scope — see overlay-surface.md "The spec").
-    let accessories: Vec<PaletteAccessory> = state
-        .matches
+/// Build the row set for the Commands tab's `matches` cache, plus the
+/// accessory storage its `Row::accessory`s borrow into for the render call.
+fn command_rows<'a>(
+    matches: &'a [crate::model::CommandMatch],
+    accessories: &'a [PaletteAccessory],
+    icon_color: u32,
+) -> Vec<Row<'a>> {
+    matches
         .iter()
-        .map(|m| palette_accessory(m.def.keybinding))
-        .collect();
-
-    let rows: Vec<Row> = state
-        .matches
-        .iter()
-        .zip(&accessories)
+        .zip(accessories)
         .map(|(m, accessory)| Row {
             icon: RowIcon::Glyph {
                 ch: m.def.category.glyph(),
@@ -134,15 +120,206 @@ fn render_command_palette_modal(
                 PaletteAccessory::Keycaps(steps) => Accessory::Keycaps(steps),
             },
         })
-        .collect();
-    let sections = [Section {
-        title: None,
-        rows: &rows,
-    }];
+        .collect()
+}
 
-    let selected_index = state.selected_index.min(rows.len().saturating_sub(1));
+fn file_rows(results: &[crate::model::FileMatch], icon_color: u32) -> Vec<Row<'_>> {
+    results
+        .iter()
+        .map(|m| Row {
+            icon: RowIcon::Glyph {
+                ch: file_icon_char(&m.path),
+                color: icon_color,
+            },
+            label: &m.filename,
+            match_indices: &m.indices,
+            detail: Some(&m.relative_path),
+            accessory: Accessory::None,
+        })
+        .collect()
+}
+
+fn message_row(text: &str) -> Row<'_> {
+    Row {
+        icon: RowIcon::None,
+        label: text,
+        match_indices: &[],
+        detail: None,
+        accessory: Accessory::None,
+    }
+}
+
+/// Search Everywhere tab labels + match counts, in `SearchTab::ORDER`
+/// (overlay-surface.md Phase 4 "Search Everywhere tabs"). Counts are
+/// `Hidden` on an empty query — depth lives in the tabs, so this is also
+/// what makes tab counts meaningful once a query is typed.
+fn search_tab_bar<'a>(
+    state: &crate::model::ui::CommandPaletteState,
+) -> (Vec<(&'a str, overlay_surface::TabCount)>, usize) {
+    use crate::model::SearchTab;
+    use overlay_surface::TabCount;
+
+    let query_empty = state.input().is_empty();
+    let commands_total = state.matches.len() - state.recent_count;
+    let count_for = |n: usize| {
+        if query_empty {
+            TabCount::Hidden
+        } else {
+            TabCount::N(n)
+        }
+    };
+
+    let tabs = vec![
+        ("All", TabCount::Hidden),
+        ("Commands", count_for(commands_total)),
+        (
+            "Files",
+            if !state.files_available {
+                TabCount::Unavailable
+            } else {
+                state
+                    .files
+                    .as_ref()
+                    .map(|f| count_for(f.results.len()))
+                    .unwrap_or(TabCount::Hidden)
+            },
+        ),
+        ("Symbols", TabCount::Unavailable),
+    ];
+    let active = SearchTab::ORDER
+        .iter()
+        .position(|&t| t == state.active_tab)
+        .unwrap_or(0);
+    (tabs, active)
+}
+
+fn render_command_palette_modal(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    state: &crate::model::ui::CommandPaletteState,
+    ctx: &ModalRenderCtx,
+    mask_cache: &mut RoundedRectMaskCache,
+) {
+    use crate::model::SearchTab;
+    use crate::update::ALL_TAB_GROUP_CAP;
+
+    let input_text = state.input();
+    let icon_color = model.theme.overlay.text_dim.to_argb_u32();
+
+    // Per-row keycap chip storage lives here so `Row::accessory` can borrow
+    // into it for the duration of this render call (spec lifetime: built
+    // and consumed in one scope — see overlay-surface.md "The spec").
+    let accessories: Vec<PaletteAccessory> = state
+        .matches
+        .iter()
+        .map(|m| palette_accessory(m.def.keybinding))
+        .collect();
+    let cmd_rows = command_rows(&state.matches, &accessories, icon_color);
+    let file_rows_all = state
+        .files
+        .as_ref()
+        .map(|f| file_rows(&f.results, icon_color))
+        .unwrap_or_default();
+
+    let (tab_labels, active_tab_idx) = search_tab_bar(state);
+    let tabs = TabBar {
+        tabs: &tab_labels,
+        active: active_tab_idx,
+    };
+
+    let no_workspace_row = message_row("No workspace open — use \u{2318}\u{21e7}O after Cmd+O");
+    let no_symbols_row = message_row("No language server for this file");
+
+    let (sections, selected_index, scroll, max_visible): (Vec<Section>, usize, usize, usize) =
+        match state.active_tab {
+            SearchTab::Commands => {
+                let mut sections = Vec::new();
+                if state.recent_count > 0 {
+                    sections.push(Section {
+                        title: Some("Recently Used"),
+                        rows: &cmd_rows[..state.recent_count],
+                    });
+                    sections.push(Section {
+                        title: None,
+                        rows: &cmd_rows[state.recent_count..],
+                    });
+                } else {
+                    sections.push(Section {
+                        title: None,
+                        rows: &cmd_rows,
+                    });
+                }
+                let sel = state.selected_index.min(cmd_rows.len().saturating_sub(1));
+                (
+                    sections,
+                    sel,
+                    state.scroll_offset,
+                    COMMAND_PALETTE_MAX_VISIBLE,
+                )
+            }
+            SearchTab::Files => {
+                let sections = if state.files_available {
+                    if file_rows_all.is_empty() {
+                        vec![Section {
+                            title: None,
+                            rows: std::slice::from_ref(&no_workspace_row),
+                        }]
+                    } else {
+                        vec![Section {
+                            title: None,
+                            rows: &file_rows_all,
+                        }]
+                    }
+                } else {
+                    vec![Section {
+                        title: None,
+                        rows: std::slice::from_ref(&no_workspace_row),
+                    }]
+                };
+                let files_selected = state.files.as_ref().map(|f| f.selected_index).unwrap_or(0);
+                let files_scroll = state.files.as_ref().map(|f| f.scroll_offset).unwrap_or(0);
+                (
+                    sections,
+                    files_selected,
+                    files_scroll,
+                    COMMAND_PALETTE_MAX_VISIBLE,
+                )
+            }
+            SearchTab::All => {
+                let commands_cap = cmd_rows.len().min(ALL_TAB_GROUP_CAP);
+                let files_cap = file_rows_all.len().min(ALL_TAB_GROUP_CAP);
+                let mut sections = vec![Section {
+                    title: Some("Commands"),
+                    rows: &cmd_rows[..commands_cap],
+                }];
+                if !file_rows_all.is_empty() {
+                    sections.push(Section {
+                        title: Some("Files"),
+                        rows: &file_rows_all[..files_cap],
+                    });
+                }
+                let total = commands_cap
+                    + if file_rows_all.is_empty() {
+                        0
+                    } else {
+                        files_cap
+                    };
+                (sections, state.all_selected, 0, total.max(1))
+            }
+            SearchTab::Symbols => (
+                vec![Section {
+                    title: None,
+                    rows: std::slice::from_ref(&no_symbols_row),
+                }],
+                0,
+                0,
+                COMMAND_PALETTE_MAX_VISIBLE,
+            ),
+        };
 
     let spec = OverlaySpec {
+        tabs: Some(tabs),
         anchor: Anchor::Centered {
             width: width_rule(PALETTE_WIDTH),
             dim_alpha: MODAL_DIM_ALPHA,
@@ -150,7 +327,7 @@ fn render_command_palette_modal(
         header: Some(Header {
             glyph: Some('\u{276F}'),
             text: &input_text,
-            placeholder: "Type a command...",
+            placeholder: "Search commands, files\u{2026}",
             caret: Some(
                 state
                     .editable
@@ -164,11 +341,11 @@ fn render_command_palette_modal(
         body: Body::List {
             sections: &sections,
             selected: FlatIndex(selected_index),
-            scroll: state.scroll_offset,
-            max_visible: COMMAND_PALETTE_MAX_VISIBLE,
+            scroll,
+            max_visible,
         },
         footer: Some(Footer {
-            leading: "\u{2191}\u{2193} navigate \u{00b7} \u{21b5} run",
+            leading: "\u{2191}\u{2193} navigate \u{00b7} \u{21b5} run \u{00b7} \u{21e5} tab",
             trailing: "esc dismiss",
         }),
         hover_row: model.ui.modal_hover_row.map(FlatIndex),
@@ -223,6 +400,7 @@ fn render_file_finder_modal(
     let selected_index = state.selected_index.min(rows.len().saturating_sub(1));
 
     let spec = OverlaySpec {
+        tabs: None,
         anchor: Anchor::Centered {
             width: width_rule(PICKER_WIDTH),
             dim_alpha: MODAL_DIM_ALPHA,
@@ -377,6 +555,7 @@ fn render_recent_files_modal(
     let selected_index = state.selected_index.min(total_rows.saturating_sub(1));
 
     let spec = OverlaySpec {
+        tabs: None,
         anchor: Anchor::Centered {
             width: width_rule(PICKER_WIDTH),
             dim_alpha: MODAL_DIM_ALPHA,
@@ -515,6 +694,7 @@ fn render_theme_picker_modal(
         .min(state.themes.len().saturating_sub(1));
 
     let spec = OverlaySpec {
+        tabs: None,
         anchor: Anchor::Centered {
             width: WidthRule {
                 pct: 0.0,
@@ -567,6 +747,7 @@ fn render_goto_line_modal(
 ) {
     let fields = [Field { label: "Line:" }];
     let spec = OverlaySpec {
+        tabs: None,
         anchor: Anchor::Centered {
             width: width_rule(SMALL_MODAL_WIDTH),
             dim_alpha: MODAL_DIM_ALPHA,
@@ -630,6 +811,7 @@ fn render_find_replace_modal(
     };
 
     let spec = OverlaySpec {
+        tabs: None,
         anchor: Anchor::Centered {
             width: width_rule(SMALL_MODAL_WIDTH),
             dim_alpha: MODAL_DIM_ALPHA,
@@ -803,6 +985,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
                 })
                 .collect();
             let spec = OverlaySpec {
+                tabs: None,
                 anchor: Anchor::Centered {
                     width: WidthRule {
                         pct: 0.0,
@@ -837,6 +1020,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
         ModalState::GotoLine(_) => {
             let fields = [Field { label: "" }];
             let spec = OverlaySpec {
+                tabs: None,
                 anchor: Anchor::Centered {
                     width: width_rule(SMALL_MODAL_WIDTH),
                     dim_alpha: MODAL_DIM_ALPHA,
@@ -863,6 +1047,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
                 FindReplaceField::Replace => 1,
             };
             let spec = OverlaySpec {
+                tabs: None,
                 anchor: Anchor::Centered {
                     width: width_rule(SMALL_MODAL_WIDTH),
                     dim_alpha: MODAL_DIM_ALPHA,
@@ -916,6 +1101,7 @@ fn list_shape_spec<'a>(
     has_footer: bool,
 ) -> OverlaySpec<'a> {
     OverlaySpec {
+        tabs: None,
         anchor: Anchor::Centered {
             width: width_rule(width),
             dim_alpha: MODAL_DIM_ALPHA,
@@ -1040,6 +1226,7 @@ pub fn render_drop_overlay(
     let text = model.ui.drop_state.display_text();
 
     let spec = OverlaySpec {
+        tabs: None,
         anchor: Anchor::Centered {
             width: width_rule(SMALL_MODAL_WIDTH),
             // The drop overlay dims darker than regular modals (0x80 vs

@@ -39,6 +39,11 @@ mod dims {
     /// Top/bottom panel padding for `Fields`/`Zones` bodies, which have no
     /// header row to anchor against.
     pub const PANEL_PAD_Y: f32 = 12.0;
+    /// Tab bar region height (Search Everywhere only — overlay-surface.md
+    /// Regions: "TabBar (optional, 32h)").
+    pub const TAB_BAR_HEIGHT: f32 = 32.0;
+    pub const TAB_PAD_X: f32 = 12.0;
+    pub const TAB_UNDERLINE_H: f32 = 2.0;
     /// Label row height in a `Fields` body (one line of `SIZE_INPUT` text).
     pub const FIELD_LABEL_H: f32 = 20.0;
     /// Gap between a field's label and its input box.
@@ -147,6 +152,38 @@ pub enum Anchor {
     /// Centered X; Y follows the Chrome table's `min(h/4, Y)` class. Dims
     /// the backdrop at `dim_alpha`.
     Centered { width: WidthRule, dim_alpha: u8 },
+}
+
+/// A Search Everywhere tab's match-count state (overlay-surface.md Search
+/// Everywhere tabs table): rendered as `""` | `"142"` | animated `"···"` |
+/// `"—"`. `Unavailable` also dims the label, is unclickable, and is
+/// skipped by ⇥.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabCount {
+    Hidden,
+    N(usize),
+    Pending,
+    Unavailable,
+}
+
+impl TabCount {
+    pub fn label(self) -> String {
+        match self {
+            TabCount::Hidden => String::new(),
+            TabCount::N(n) => n.to_string(),
+            TabCount::Pending => "\u{22ef}".to_string(), // ⋯
+            TabCount::Unavailable => "\u{2014}".to_string(), // —
+        }
+    }
+
+    pub fn is_available(self) -> bool {
+        !matches!(self, TabCount::Unavailable)
+    }
+}
+
+pub struct TabBar<'a> {
+    pub tabs: &'a [(&'a str, TabCount)],
+    pub active: usize,
 }
 
 pub struct Header<'a> {
@@ -297,6 +334,8 @@ impl<'a> Body<'a> {
 
 pub struct OverlaySpec<'a> {
     pub anchor: Anchor,
+    /// Search Everywhere only — `None` for every other context.
+    pub tabs: Option<TabBar<'a>>,
     /// `None` for `Fields`/`Zones` contexts, which have no header row —
     /// input-as-header is a `Body::List` convention (Visual Language >
     /// Header/input).
@@ -500,6 +539,11 @@ pub struct FieldLayout {
 /// two consumers.
 pub struct OverlayLayout {
     pub panel: WidgetRect,
+    /// `None` unless `spec.tabs` is `Some` (Search Everywhere only).
+    pub tab_bar: Option<WidgetRect>,
+    /// One rect per tab, in `spec.tabs` order. Empty unless `spec.tabs` is
+    /// `Some`.
+    pub tab_rects: Vec<WidgetRect>,
     /// `None` when `spec.header` is `None` (`Fields`/`Zones` bodies).
     pub header: Option<WidgetRect>,
     pub row_height: usize,
@@ -541,6 +585,10 @@ pub fn layout(
         .footer
         .as_ref()
         .map(|_| scaled(dims::FOOTER_HEIGHT, scale_factor));
+    let tab_bar_h = spec
+        .tabs
+        .as_ref()
+        .map(|_| scaled(dims::TAB_BAR_HEIGHT, scale_factor));
 
     let panel_x_for = |panel_w: usize| window_width.saturating_sub(panel_w) / 2;
     let panel_y = scaled(dims::Y, scale_factor).min(window_height / 4);
@@ -560,22 +608,45 @@ pub fn layout(
             let visible = visible.max(usize::from(display_rows.is_empty()));
             let list_h = visible * row_h;
             let header_h = header_h.unwrap_or(0);
+            let tab_bar_h_v = tab_bar_h.unwrap_or(0);
 
-            let panel_h = header_h + list_h + footer_h.unwrap_or(0);
+            let panel_h = tab_bar_h_v + header_h + list_h + footer_h.unwrap_or(0);
             let panel = WidgetRect {
                 x: panel_x_for(panel_w),
                 y: panel_y,
                 w: panel_w,
                 h: panel_h,
             };
-            let header = spec.header.as_ref().map(|_| WidgetRect {
+            let tab_bar = tab_bar_h.map(|h| WidgetRect {
                 x: panel.x,
                 y: panel.y,
+                w: panel.w,
+                h,
+            });
+            let tab_rects: Vec<WidgetRect> = spec
+                .tabs
+                .as_ref()
+                .map(|tab_bar_spec| {
+                    let n = tab_bar_spec.tabs.len().max(1);
+                    let tab_w = panel.w / n;
+                    (0..tab_bar_spec.tabs.len())
+                        .map(|i| WidgetRect {
+                            x: panel.x + i * tab_w,
+                            y: panel.y,
+                            w: tab_w,
+                            h: tab_bar_h_v,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let header = spec.header.as_ref().map(|_| WidgetRect {
+                x: panel.x,
+                y: panel.y + tab_bar_h_v,
                 w: panel.w,
                 h: header_h,
             });
 
-            let list_top = panel.y + header_h;
+            let list_top = panel.y + tab_bar_h_v + header_h;
             let rows: Vec<WidgetRect> = (0..visible)
                 .map(|i| WidgetRect {
                     x: panel.x,
@@ -615,6 +686,8 @@ pub fn layout(
 
             OverlayLayout {
                 panel,
+                tab_bar,
+                tab_rects,
                 header,
                 row_height: row_h,
                 rows,
@@ -676,6 +749,8 @@ pub fn layout(
 
             OverlayLayout {
                 panel,
+                tab_bar: None,
+                tab_rects: Vec::new(),
                 header: None,
                 row_height: row_h,
                 rows: Vec::new(),
@@ -704,6 +779,8 @@ pub fn layout(
 
             OverlayLayout {
                 panel,
+                tab_bar: None,
+                tab_rects: Vec::new(),
                 header: None,
                 row_height: row_h,
                 rows: Vec::new(),
@@ -727,6 +804,9 @@ pub enum OverlayHit {
     Outside,
     /// A selectable row (`Body::List` only).
     Row(FlatIndex),
+    /// An available tab (`Unavailable` tabs are unclickable — the click
+    /// lands as `Inside` instead, per Visual Language > TabCount states).
+    Tab(usize),
     /// Inside the panel but not on a specific row (header, footer, section
     /// header, padding, a `Fields`/`Zones` body) — consumed, no action.
     Inside,
@@ -740,6 +820,25 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
         && y < layout.panel.y + layout.panel.h;
     if !inside_panel {
         return OverlayHit::Outside;
+    }
+
+    if let Some(tab_bar) = &spec.tabs {
+        for (i, rect) in layout.tab_rects.iter().enumerate() {
+            let hit = x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
+            if !hit {
+                continue;
+            }
+            let available = tab_bar
+                .tabs
+                .get(i)
+                .map(|(_, c)| c.is_available())
+                .unwrap_or(false);
+            return if available {
+                OverlayHit::Tab(i)
+            } else {
+                OverlayHit::Inside
+            };
+        }
     }
 
     if let Body::List {
@@ -854,6 +953,10 @@ pub fn render(
         mask_cache,
     );
 
+    if let Some(tab_bar) = &spec.tabs {
+        render_tab_bar(frame, painter, &colors, tab_bar, &layout, scale_factor);
+    }
+
     if let Some(header) = &spec.header {
         render_header(
             frame,
@@ -916,6 +1019,63 @@ fn caret_x_for_column(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Render the Search Everywhere tab bar: recessed wash background, per-tab
+/// label + count suffix, active tab lifted with a 2px accent underline,
+/// `Unavailable` tabs dimmed (Visual Language > Regions/TabBar).
+fn render_tab_bar(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    colors: &Palette,
+    tab_bar: &TabBar,
+    layout: &OverlayLayout,
+    scale_factor: f64,
+) {
+    let Some(bar) = layout.tab_bar else { return };
+    frame.fill_rect_px(bar.x, bar.y, bar.w, bar.h, colors.recessed_wash);
+    frame.fill_rect_px(
+        bar.x,
+        bar.y + bar.h.saturating_sub(1),
+        bar.w,
+        1,
+        colors.hairline,
+    );
+
+    let size = size_px(SIZE_META, scale_factor);
+    let underline_h = scaled(dims::TAB_UNDERLINE_H, scale_factor);
+    let pad_x = scaled(dims::TAB_PAD_X, scale_factor);
+
+    for (i, rect) in layout.tab_rects.iter().enumerate() {
+        let Some(&(label, count)) = tab_bar.tabs.get(i) else {
+            continue;
+        };
+        let is_active = i == tab_bar.active;
+        let text = match count.label() {
+            suffix if suffix.is_empty() => label.to_string(),
+            suffix => format!("{label}  {suffix}"),
+        };
+        let color = if !count.is_available() {
+            colors.text_dim
+        } else if is_active {
+            colors.text_primary
+        } else {
+            colors.text_dim
+        };
+        let text_h = painter.line_height_for_size(size);
+        let text_y = rect.y + (rect.h.saturating_sub(text_h)) / 2;
+        painter.draw_sized(frame, rect.x + pad_x, text_y, &text, size, 1.0, color);
+
+        if is_active {
+            frame.fill_rect_px(
+                rect.x,
+                rect.y + rect.h.saturating_sub(underline_h),
+                rect.w,
+                underline_h,
+                colors.accent,
+            );
+        }
+    }
+}
+
 fn render_header(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -1618,6 +1778,7 @@ mod tests {
     fn layout_panel_width_clamps_between_min_and_max() {
         let sections: [Section; 0] = [];
         let spec = OverlaySpec {
+            tabs: None,
             anchor: Anchor::Centered {
                 width: WidthRule {
                     pct: 0.5,
@@ -1656,6 +1817,7 @@ mod tests {
         // wins the `.min(window_height / 4)` clamp.
         let sections: [Section; 0] = [];
         let spec = OverlaySpec {
+            tabs: None,
             anchor: Anchor::Centered {
                 width: WidthRule {
                     pct: 0.5,
@@ -1703,6 +1865,7 @@ mod tests {
             rows: &rows,
         }];
         let spec = OverlaySpec {
+            tabs: None,
             anchor: Anchor::Centered {
                 width: WidthRule {
                     pct: 0.5,
@@ -1903,6 +2066,7 @@ mod tests {
 
     fn list_spec<'a>(sections: &'a [Section<'a>]) -> OverlaySpec<'a> {
         OverlaySpec {
+            tabs: None,
             anchor: Anchor::Centered {
                 width: WidthRule {
                     pct: 0.5,
@@ -2000,6 +2164,7 @@ mod tests {
     fn layout_fields_stacks_label_then_input_per_field() {
         let fields = [Field { label: "Find:" }, Field { label: "Replace:" }];
         let spec = OverlaySpec {
+            tabs: None,
             anchor: Anchor::Centered {
                 width: WidthRule {
                     pct: 0.5,
@@ -2028,6 +2193,7 @@ mod tests {
     #[test]
     fn layout_zones_sizes_panel_around_a_single_text_block() {
         let spec = OverlaySpec {
+            tabs: None,
             anchor: Anchor::Centered {
                 width: WidthRule {
                     pct: 0.5,

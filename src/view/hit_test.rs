@@ -98,6 +98,10 @@ pub enum HitTarget {
     /// selection and activates in one step (overlay-surface.md Pointer).
     ModalRow { flat_index: usize },
 
+    /// A tab in the Search Everywhere tab bar — click switches tabs
+    /// (overlay-surface.md Pointer: "Tab click switches tabs").
+    ModalTab { index: usize },
+
     /// Status bar at the bottom of the window
     StatusBar,
 
@@ -272,7 +276,9 @@ impl HitTarget {
         use crate::model::HoverRegion;
 
         match self {
-            HitTarget::Modal { .. } | HitTarget::ModalRow { .. } => HoverRegion::Modal,
+            HitTarget::Modal { .. } | HitTarget::ModalRow { .. } | HitTarget::ModalTab { .. } => {
+                HoverRegion::Modal
+            }
             HitTarget::StatusBar => HoverRegion::StatusBar,
             HitTarget::SidebarResize => HoverRegion::SidebarResize,
             HitTarget::SidebarEmpty | HitTarget::SidebarItem { .. } => HoverRegion::Sidebar,
@@ -390,6 +396,7 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
                 flat_index: flat_index.0,
             },
             super::overlay_surface::OverlayHit::Inside => HitTarget::Modal { inside: true },
+            super::overlay_surface::OverlayHit::Tab(index) => HitTarget::ModalTab { index },
         }
     })
 }
