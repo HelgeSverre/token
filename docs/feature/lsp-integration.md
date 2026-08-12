@@ -311,11 +311,11 @@ Binary not found on `PATH` (after `PATHEXT` resolution on Windows) → `ServerSt
 - [x] `lsp/transport.rs`: Content-Length framing over child stdio, unit-tested against canned byte streams (partial reads, multiple messages per read, malformed headers).
 - [x] Adopt `lsp-types`; `lsp/uri.rs` canonical path↔URI helper with symlink test.
 - [x] `lsp/position.rs`: char-col ↔ UTF-16, document-parameterized; CRLF/surrogate/line-end tests.
-- [ ] `lsp/client.rs` worker: spawn (with `PATHEXT`), handshake with outbound queueing, request-id correlation with abandoned-entry semantics, stderr drain thread, dispatch loop.
-- [ ] **Client capabilities block** (as specified above) + parse/store/gate on `ServerCapabilities`.
-- [ ] **Server→client request replies** (the table above) + `MethodNotFound` default + ignore-unknown-notifications.
-- [ ] `LspManager` in runtime; `LspUiState` mirror in model driven by `ServerStateChanged`; `Indexing` from `$/progress`.
-- [ ] `LspServerDef` via defaulted registry-macro arm; YAML config overrides + master switch; root resolution (workspace → project marker → parent, detached cap).
+- [x] `lsp/client.rs` worker: spawn (with `PATHEXT`), handshake with outbound queueing, request-id correlation with abandoned-entry semantics, stderr drain thread, dispatch loop.
+- [x] **Client capabilities block** (as specified above) + parse/store/gate on `ServerCapabilities`.
+- [x] **Server→client request replies** (the table above) + `MethodNotFound` default + ignore-unknown-notifications.
+- [x] `LspManager` in runtime; `LspUiState` mirror in model driven by `ServerStateChanged`; `Indexing` from `$/progress`.
+- [x] `LspServerDef` via a side table (`lsp::lsp_server_def`) keyed by `LanguageId`, not a field added to the registry macro — same "~85 call sites untouched" outcome without growing the macro's arity; YAML config overrides + master switch; root resolution (workspace → project marker → parent, detached cap).
 - [ ] Debounced `didChange` with max-wait cap; shared snapshot with syntax parse; flush-before-request plumbing; `didClose` on `release_document_if_unreferenced`; Save As close/open pair; revision-bump-on-every-mutation test.
 - [ ] Crash backoff + `RestartLanguageServer`; **build the quit-time teardown hook** (none exists) with the shutdown sequence (await shutdown response → exit → wait → kill) and `ShuttingDown` suppressing restart; `processId` in initialize.
 - [ ] Status bar transient on state changes; automation snapshot exposes server states.
