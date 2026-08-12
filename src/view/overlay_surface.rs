@@ -352,6 +352,67 @@ fn resolve_visible_window(
     (start, visible)
 }
 
+/// Row-count shape of one section, without the borrowed `Row` data —
+/// enough for `resolve_scroll_for_selection` to know how many display
+/// slots a section's header consumes, mirroring [`Section`] for callers
+/// (`update::ui`'s selection movement) that only need counts.
+#[derive(Clone, Copy)]
+pub struct SectionShape {
+    pub has_title: bool,
+    pub len: usize,
+}
+
+/// Header-aware equivalent of [`SelectableListViewport::compute_from`]:
+/// minimal-reveal scrolling computed in *display-row* space (accounting
+/// for section header slots) but expressed, like every `scroll` field, as
+/// a `FlatIndex`-space row offset — so `update::ui`'s list-movement
+/// helpers and [`resolve_visible_window`] (used by `layout`/`render`)
+/// agree on what's visible even when sections add headers to the window.
+/// With a single untitled section this reduces to exactly
+/// `compute_from`'s result.
+pub fn resolve_scroll_for_selection(
+    shapes: &[SectionShape],
+    selected: usize,
+    max_visible: usize,
+    previous_scroll: usize,
+) -> usize {
+    let mut display_len = 0usize;
+    let mut flat_to_display = Vec::new();
+    for shape in shapes {
+        if shape.has_title {
+            display_len += 1;
+        }
+        for _ in 0..shape.len {
+            flat_to_display.push(display_len);
+            display_len += 1;
+        }
+    }
+    if flat_to_display.is_empty() {
+        return 0;
+    }
+    let last_flat = flat_to_display.len() - 1;
+    let visible = display_len.min(max_visible);
+
+    let selected = selected.min(last_flat);
+    let selected_display = flat_to_display[selected];
+
+    let prev_display = flat_to_display[previous_scroll.min(last_flat)];
+    let start = prev_display.min(display_len.saturating_sub(visible));
+
+    let target_display = if selected_display < start {
+        selected_display
+    } else if selected_display >= start + visible {
+        selected_display + 1 - visible
+    } else {
+        start
+    };
+
+    flat_to_display
+        .iter()
+        .position(|&d| d >= target_display)
+        .unwrap_or(last_flat)
+}
+
 /// Coalesce ascending, deduplicated nucleo match char-indices into
 /// contiguous `[start, end)` runs, so match highlighting can paint one
 /// blend region per run instead of one per matched character.
@@ -493,6 +554,10 @@ pub fn layout(
         } => {
             let display_rows = flatten_rows(sections);
             let (start, visible) = resolve_visible_window(&display_rows, *scroll, *max_visible);
+            // Reserve one row of body height even when there are zero rows,
+            // so an empty-state message ("No files match your query") has
+            // somewhere to paint instead of landing in the footer band.
+            let visible = visible.max(usize::from(display_rows.is_empty()));
             let list_h = visible * row_h;
             let header_h = header_h.unwrap_or(0);
 
@@ -565,37 +630,49 @@ pub fn layout(
             let input_h = scaled(SIZE_INPUT, scale_factor) + 2 * scaled(dims::PAD_Y, scale_factor);
             let spacing = scaled(dims::FIELD_SPACING, scale_factor);
             let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
+            let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
             let field_h = label_h + gap + input_h;
 
-            let panel_h =
-                pad_y * 2 + fields.len() * field_h + fields.len().saturating_sub(1) * spacing;
+            let panel_h = pad_y * 2
+                + fields.len() * field_h
+                + fields.len().saturating_sub(1) * spacing
+                + footer_h.unwrap_or(0);
             let panel = WidgetRect {
                 x: panel_x_for(panel_w),
                 y: panel_y,
                 w: panel_w,
                 h: panel_h,
             };
+            let field_x = panel.x + pad_x;
+            let field_w = panel.w.saturating_sub(2 * pad_x);
 
             let mut y = panel.y + pad_y;
             let field_layouts: Vec<FieldLayout> = fields
                 .iter()
                 .map(|_| {
                     let label = WidgetRect {
-                        x: panel.x,
+                        x: field_x,
                         y,
-                        w: panel.w,
+                        w: field_w,
                         h: label_h,
                     };
                     let input = WidgetRect {
-                        x: panel.x,
+                        x: field_x,
                         y: y + label_h + gap,
-                        w: panel.w,
+                        w: field_w,
                         h: input_h,
                     };
                     y += field_h + spacing;
                     FieldLayout { label, input }
                 })
                 .collect();
+
+            let footer = footer_h.map(|h| WidgetRect {
+                x: panel.x,
+                y: panel.y + panel_h - h,
+                w: panel.w,
+                h,
+            });
 
             OverlayLayout {
                 panel,
@@ -604,7 +681,7 @@ pub fn layout(
                 rows: Vec::new(),
                 fields: field_layouts,
                 zones_text: None,
-                footer: None,
+                footer,
                 scrollbar: None,
             }
         }
@@ -1288,7 +1365,6 @@ fn render_fields(
     scale_factor: f64,
 ) {
     let size = size_px(SIZE_INPUT, scale_factor);
-    let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
     for (i, field) in fields.iter().enumerate() {
         let Some(field_layout) = layout.fields.get(i) else {
             continue;
@@ -1300,7 +1376,7 @@ fn render_fields(
         };
         let r = field_layout.label;
         let text_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(size))) / 2;
-        painter.draw_sized(frame, r.x + pad_x, text_y, field.label, size, 0.0, color);
+        painter.draw_sized(frame, r.x, text_y, field.label, size, 0.0, color);
     }
 }
 
@@ -1689,6 +1765,71 @@ mod tests {
             display_rows[start],
             DisplayRow::Row(_, FlatIndex(3))
         ));
+    }
+
+    #[test]
+    fn resolve_scroll_for_selection_keeps_last_row_of_sectioned_list_visible() {
+        // Regression: two 8-row titled sections (16 rows, 2 headers) with
+        // max_visible 10 — the same shape as Recent Files'
+        // Pinned/Today/Yesterday/Earlier grouping or the Theme Picker's
+        // User/Built-in split. Walking Down through every row must always
+        // land the selection inside the display window that
+        // `resolve_visible_window` will actually paint.
+        let shapes = [
+            SectionShape {
+                has_title: true,
+                len: 8,
+            },
+            SectionShape {
+                has_title: true,
+                len: 8,
+            },
+        ];
+        let mut scroll = 0usize;
+        for selected in 0..16 {
+            scroll = resolve_scroll_for_selection(&shapes, selected, 10, scroll);
+            // Rebuild the display-row skeleton the view would render for
+            // this scroll/selection and assert the selected FlatIndex's
+            // display slot actually falls inside the visible window.
+            let mut display_len = 0usize;
+            let mut flat_to_display = Vec::new();
+            for shape in &shapes {
+                if shape.has_title {
+                    display_len += 1;
+                }
+                for _ in 0..shape.len {
+                    flat_to_display.push(display_len);
+                    display_len += 1;
+                }
+            }
+            let visible = display_len.min(10);
+            let scroll_display = flat_to_display[scroll];
+            let start = scroll_display.min(display_len.saturating_sub(visible));
+            let selected_display = flat_to_display[selected];
+            assert!(
+                selected_display >= start && selected_display < start + visible,
+                "selected {selected} (display {selected_display}) not in window [{start}, {})",
+                start + visible
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_scroll_for_selection_matches_compute_from_without_sections() {
+        // Single untitled section (Command Palette / File Finder shape):
+        // must reduce to exactly SelectableListViewport::compute_from.
+        let shapes = [SectionShape {
+            has_title: false,
+            len: 15,
+        }];
+        let mut scroll_a = 0usize;
+        let mut scroll_b = 0usize;
+        for selected in [0, 5, 9, 12, 8, 14, 0] {
+            scroll_a = resolve_scroll_for_selection(&shapes, selected, 8, scroll_a);
+            scroll_b =
+                SelectableListViewport::compute_from(15, selected, 8, scroll_b).scroll_offset;
+            assert_eq!(scroll_a, scroll_b);
+        }
     }
 
     #[test]

@@ -13,7 +13,8 @@ use crate::model::{
 };
 use crate::theme::load_theme;
 use crate::update::layout::update_layout;
-use crate::view::overlay_surface::SelectableListViewport;
+use crate::view::modal::{recent_files_groups, theme_picker_groups};
+use crate::view::overlay_surface::{resolve_scroll_for_selection, SectionShape};
 
 use super::app::execute_command;
 
@@ -583,13 +584,12 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                         .position(|&i| state.entries[i].path == path)
                     {
                         state.selected_index = new_idx;
-                        state.scroll_offset = SelectableListViewport::compute_from(
-                            state.filtered_rows.len(),
+                        state.scroll_offset = resolve_scroll_for_selection(
+                            &recent_files_shapes(state),
                             new_idx,
                             COMMAND_PALETTE_MAX_VISIBLE,
                             state.scroll_offset,
-                        )
-                        .scroll_offset;
+                        );
                     }
                     let recent = model.recent_files.clone();
                     return Some(Cmd::Batch(vec![
@@ -823,28 +823,67 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
     }
 }
 
+/// Section shapes for a flat (untitled, single-section) list body — the
+/// Command Palette and File Finder, which have no headers.
+fn flat_shapes(total: usize) -> [SectionShape; 1] {
+    [SectionShape {
+        has_title: false,
+        len: total,
+    }]
+}
+
+/// Section shapes for the Recent Files modal's Pinned/Today/Yesterday/
+/// Earlier grouping — the same boundaries `recent_files_groups` renders,
+/// so selection movement and the view agree on where headers fall.
+fn recent_files_shapes(state: &RecentFilesState) -> Vec<SectionShape> {
+    recent_files_groups(state)
+        .iter()
+        .map(|(_, indices)| SectionShape {
+            has_title: true,
+            len: indices.len(),
+        })
+        .collect()
+}
+
+/// Section shapes for the Theme Picker's User/Built-in grouping.
+fn theme_picker_shapes(state: &ThemePickerState) -> Vec<SectionShape> {
+    theme_picker_groups(&state.themes)
+        .iter()
+        .map(|(_, range)| SectionShape {
+            has_title: true,
+            len: range.len(),
+        })
+        .collect()
+}
+
 /// Move `*selected` by `delta`, wrapping at both ends, keeping `*scroll`
-/// following it (minimal-reveal scrolling) — shared by every list-body
-/// modal context (overlay-surface.md Behaviour: "Up/Down skip headers and
-/// wrap at the ends").
-fn move_list_selection(selected: &mut usize, scroll: &mut usize, total: usize, delta: isize) {
+/// following it (minimal-reveal scrolling, header-aware) — shared by
+/// every list-body modal context (overlay-surface.md Behaviour: "Up/Down
+/// skip headers and wrap at the ends").
+fn move_list_selection(
+    selected: &mut usize,
+    scroll: &mut usize,
+    shapes: &[SectionShape],
+    delta: isize,
+) {
+    let total: usize = shapes.iter().map(|s| s.len).sum();
     if total == 0 {
         return;
     }
     let current = *selected as isize;
     *selected = (current + delta).rem_euclid(total as isize) as usize;
-    *scroll = SelectableListViewport::compute_from(
-        total,
-        *selected,
-        COMMAND_PALETTE_MAX_VISIBLE,
-        *scroll,
-    )
-    .scroll_offset;
+    *scroll = resolve_scroll_for_selection(shapes, *selected, COMMAND_PALETTE_MAX_VISIBLE, *scroll);
 }
 
 /// Page `*selected` by a full visible page, clamping (not wrapping —
 /// PageUp/PageDown are jumps, not cyclic navigation).
-fn page_list_selection(selected: &mut usize, scroll: &mut usize, total: usize, forward: bool) {
+fn page_list_selection(
+    selected: &mut usize,
+    scroll: &mut usize,
+    shapes: &[SectionShape],
+    forward: bool,
+) {
+    let total: usize = shapes.iter().map(|s| s.len).sum();
     if total == 0 {
         return;
     }
@@ -854,13 +893,7 @@ fn page_list_selection(selected: &mut usize, scroll: &mut usize, total: usize, f
     } else {
         selected.saturating_sub(COMMAND_PALETTE_MAX_VISIBLE)
     };
-    *scroll = SelectableListViewport::compute_from(
-        total,
-        *selected,
-        COMMAND_PALETTE_MAX_VISIBLE,
-        *scroll,
-    )
-    .scroll_offset;
+    *scroll = resolve_scroll_for_selection(shapes, *selected, COMMAND_PALETTE_MAX_VISIBLE, *scroll);
 }
 
 /// `ModalMsg::SelectPrevious`/`SelectNext`: move selection by `delta`
@@ -870,37 +903,41 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
     let modal = model.ui.active_modal.as_mut()?;
     let preview_theme_id = match modal {
         ModalState::CommandPalette(state) => {
+            let shapes = flat_shapes(state.matches.len());
             move_list_selection(
                 &mut state.selected_index,
                 &mut state.scroll_offset,
-                state.matches.len(),
+                &shapes,
                 delta,
             );
             None
         }
         ModalState::ThemePicker(state) => {
+            let shapes = theme_picker_shapes(state);
             move_list_selection(
                 &mut state.selected_index,
                 &mut state.scroll_offset,
-                state.themes.len(),
+                &shapes,
                 delta,
             );
             state.themes.get(state.selected_index).map(|t| t.id.clone())
         }
         ModalState::FileFinder(state) => {
+            let shapes = flat_shapes(state.results.len());
             move_list_selection(
                 &mut state.selected_index,
                 &mut state.scroll_offset,
-                state.results.len(),
+                &shapes,
                 delta,
             );
             None
         }
         ModalState::RecentFiles(state) => {
+            let shapes = recent_files_shapes(state);
             move_list_selection(
                 &mut state.selected_index,
                 &mut state.scroll_offset,
-                state.filtered_rows.len(),
+                &shapes,
                 delta,
             );
             None
@@ -920,30 +957,42 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
 fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
     let modal = model.ui.active_modal.as_mut()?;
     match modal {
-        ModalState::CommandPalette(state) => page_list_selection(
-            &mut state.selected_index,
-            &mut state.scroll_offset,
-            state.matches.len(),
-            forward,
-        ),
-        ModalState::ThemePicker(state) => page_list_selection(
-            &mut state.selected_index,
-            &mut state.scroll_offset,
-            state.themes.len(),
-            forward,
-        ),
-        ModalState::FileFinder(state) => page_list_selection(
-            &mut state.selected_index,
-            &mut state.scroll_offset,
-            state.results.len(),
-            forward,
-        ),
-        ModalState::RecentFiles(state) => page_list_selection(
-            &mut state.selected_index,
-            &mut state.scroll_offset,
-            state.filtered_rows.len(),
-            forward,
-        ),
+        ModalState::CommandPalette(state) => {
+            let shapes = flat_shapes(state.matches.len());
+            page_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                &shapes,
+                forward,
+            );
+        }
+        ModalState::ThemePicker(state) => {
+            let shapes = theme_picker_shapes(state);
+            page_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                &shapes,
+                forward,
+            );
+        }
+        ModalState::FileFinder(state) => {
+            let shapes = flat_shapes(state.results.len());
+            page_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                &shapes,
+                forward,
+            );
+        }
+        ModalState::RecentFiles(state) => {
+            let shapes = recent_files_shapes(state);
+            page_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                &shapes,
+                forward,
+            );
+        }
         ModalState::GotoLine(_) | ModalState::FindReplace(_) => {}
     }
     Some(Cmd::Redraw)
@@ -953,14 +1002,31 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
 /// moving selection (mouse wheel over a list-body modal).
 fn modal_scroll(model: &mut AppModel, delta: isize) -> Option<Cmd> {
     let modal = model.ui.active_modal.as_mut()?;
-    let (scroll, total) = match modal {
-        ModalState::CommandPalette(state) => (&mut state.scroll_offset, state.matches.len()),
-        ModalState::ThemePicker(state) => (&mut state.scroll_offset, state.themes.len()),
-        ModalState::FileFinder(state) => (&mut state.scroll_offset, state.results.len()),
-        ModalState::RecentFiles(state) => (&mut state.scroll_offset, state.filtered_rows.len()),
+    let (scroll, shapes): (&mut usize, Vec<SectionShape>) = match modal {
+        ModalState::CommandPalette(state) => (
+            &mut state.scroll_offset,
+            flat_shapes(state.matches.len()).to_vec(),
+        ),
+        ModalState::ThemePicker(state) => {
+            let shapes = theme_picker_shapes(state);
+            (&mut state.scroll_offset, shapes)
+        }
+        ModalState::FileFinder(state) => (
+            &mut state.scroll_offset,
+            flat_shapes(state.results.len()).to_vec(),
+        ),
+        ModalState::RecentFiles(state) => {
+            let shapes = recent_files_shapes(state);
+            (&mut state.scroll_offset, shapes)
+        }
         ModalState::GotoLine(_) | ModalState::FindReplace(_) => return None,
     };
-    let max_scroll = total.saturating_sub(COMMAND_PALETTE_MAX_VISIBLE) as isize;
+    let total: usize = shapes.iter().map(|s| s.len).sum();
+    if total == 0 {
+        return None;
+    }
+    let max_scroll =
+        resolve_scroll_for_selection(&shapes, total - 1, COMMAND_PALETTE_MAX_VISIBLE, 0) as isize;
     let new_scroll = (*scroll as isize + delta).clamp(0, max_scroll.max(0)) as usize;
     if new_scroll == *scroll {
         return None;

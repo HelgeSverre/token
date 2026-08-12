@@ -299,7 +299,7 @@ fn file_icon_char(path: &std::path::Path) -> char {
 /// `RecentGroup` — the single source of truth for Recent Files section
 /// boundaries, shared by the content spec (real rows) and the shape spec
 /// (hit-testing/caret placement) so they can't drift.
-fn recent_files_groups(state: &RecentFilesState) -> Vec<(&'static str, Vec<usize>)> {
+pub(crate) fn recent_files_groups(state: &RecentFilesState) -> Vec<(&'static str, Vec<usize>)> {
     let mut groups: Vec<(&'static str, Vec<usize>)> = Vec::new();
     for &entry_idx in &state.filtered_rows {
         let title = state.entries[entry_idx].group().title();
@@ -445,7 +445,9 @@ fn render_recent_files_modal(
 /// equals the theme's index in `themes` directly (the list is static per
 /// modal-open, no filtering/reordering happens), so no separate
 /// ordering-authority cache is needed the way Recent Files needs one.
-fn theme_picker_groups(themes: &[ThemeInfo]) -> Vec<(&'static str, std::ops::Range<usize>)> {
+pub(crate) fn theme_picker_groups(
+    themes: &[ThemeInfo],
+) -> Vec<(&'static str, std::ops::Range<usize>)> {
     use crate::theme::ThemeSource;
 
     let mut groups: Vec<(&'static str, std::ops::Range<usize>)> = Vec::new();
