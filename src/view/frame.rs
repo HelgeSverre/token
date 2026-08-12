@@ -715,6 +715,7 @@ impl<'a> Frame<'a> {
     /// Modal/popup drop shadow: an opaque outline ring plus two nested
     /// translucent rings, each one physical pixel further out. No blur pass
     /// — the software renderer can't afford a full-viewport convolution.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_shadow_rings(
         &mut self,
         x: usize,
