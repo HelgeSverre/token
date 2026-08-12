@@ -1836,6 +1836,14 @@ impl App {
             root: root.to_path_buf(),
             state,
         }));
+        // Unlike worker-originated `ServerStateChanged` (routed through
+        // `process_async_messages`, which returns `needs_redraw` to its
+        // caller), this is called synchronously from inside `process_cmd`
+        // — nothing downstream will otherwise notice the status-bar
+        // damage `process_automation_msg` merged into `pending_damage`.
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
     }
 
     /// A server's worker thread hit EOF/error on stdout — the child
@@ -2699,6 +2707,176 @@ mod tests {
             .completion
             .expect("completion popup should be open after the trigger action");
         assert!(completion.items.contains(&"value_one".to_string()));
+    }
+
+    // ---- LspManager lifecycle bookkeeping ----
+
+    /// A cheap, always-available real child (`sh` sleeping) standing in for
+    /// a language server, so `handle_lsp_server_exited`/`restart_lsp_server`
+    /// can be exercised against a real `ServerHandle` without depending on
+    /// an actual LSP server binary being installed.
+    fn spawn_fake_handle(server_id: &LspServerId) -> ServerHandle {
+        let (msg_tx, _msg_rx) = mpsc::channel();
+        lsp::client::spawn_server(
+            "sh",
+            &["-c".to_owned(), "sleep 5".to_owned()],
+            Path::new("/tmp"),
+            server_id.clone(),
+            msg_tx,
+            None,
+        )
+        .expect("spawning `sh` for a fake handle should succeed")
+    }
+
+    #[test]
+    fn exited_message_with_stale_generation_is_ignored() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-a");
+        let mut handle = spawn_fake_handle(&server_id);
+        let real_generation = handle.generation;
+        app.lsp
+            .servers
+            .insert((server_id.clone(), root.clone()), handle);
+
+        // A generation that doesn't match the live handle (e.g. an EOF
+        // from a process already killed and replaced) must not touch the
+        // current handle or bump restart_attempts.
+        app.handle_lsp_server_exited(&server_id, real_generation.wrapping_add(1));
+
+        assert!(app.lsp.servers.contains_key(&(server_id.clone(), root.clone())));
+        assert!(app
+            .lsp
+            .restart_attempts
+            .get(&(server_id.clone(), root.clone()))
+            .is_none());
+
+        // Clean up the still-live fake child.
+        handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+        handle.kill();
+    }
+
+    #[test]
+    fn exited_message_with_matching_generation_removes_handle_and_bumps_attempts() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-b");
+        let handle = spawn_fake_handle(&server_id);
+        let generation = handle.generation;
+        app.lsp
+            .servers
+            .insert((server_id.clone(), root.clone()), handle);
+
+        app.handle_lsp_server_exited(&server_id, generation);
+
+        assert!(!app.lsp.servers.contains_key(&(server_id.clone(), root.clone())));
+        assert_eq!(
+            app.lsp.restart_attempts.get(&(server_id, root)).copied(),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn restart_attempts_are_scoped_per_root_not_per_server_id() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let server_id = LspServerId::from("rust-analyzer");
+        let root_a = PathBuf::from("/tmp/proj-c");
+        let root_b = PathBuf::from("/tmp/proj-d");
+
+        let handle_a = spawn_fake_handle(&server_id);
+        let gen_a = handle_a.generation;
+        app.lsp
+            .servers
+            .insert((server_id.clone(), root_a.clone()), handle_a);
+        app.handle_lsp_server_exited(&server_id, gen_a);
+
+        // root_b never crashed; its count must stay untouched by root_a's.
+        assert_eq!(
+            app.lsp
+                .restart_attempts
+                .get(&(server_id.clone(), root_a.clone()))
+                .copied(),
+            Some(1)
+        );
+        assert!(app
+            .lsp
+            .restart_attempts
+            .get(&(server_id, root_b))
+            .is_none());
+    }
+
+    #[test]
+    fn exceeding_max_restart_attempts_reports_failed_and_retains_the_root() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-e");
+
+        // Drive it past the cap: each iteration simulates "it respawned,
+        // then crashed again" by reinserting a fresh fake handle before
+        // reporting the exit — the real respawn attempt inside
+        // `handle_lsp_server_exited` targets the actual `rust-analyzer`
+        // binary and is allowed to fail (Missing) without affecting the
+        // counters under test.
+        for _ in 0..=MAX_RESTART_ATTEMPTS {
+            let handle = spawn_fake_handle(&server_id);
+            let generation = handle.generation;
+            app.lsp
+                .servers
+                .insert((server_id.clone(), root.clone()), handle);
+            app.handle_lsp_server_exited(&server_id, generation);
+        }
+
+        assert_eq!(
+            app.lsp
+                .restart_attempts
+                .get(&(server_id.clone(), root.clone()))
+                .copied(),
+            Some(MAX_RESTART_ATTEMPTS + 1)
+        );
+        assert_eq!(
+            app.lsp.failed_roots.get(&server_id).map(Vec::as_slice),
+            Some([root.clone()].as_slice())
+        );
+        assert!(!app.lsp.servers.contains_key(&(server_id, root)));
+    }
+
+    #[test]
+    fn manual_restart_falls_back_to_failed_roots_when_no_handle_is_running() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-f");
+        app.lsp
+            .failed_roots
+            .insert(server_id.clone(), vec![root.clone()]);
+
+        // No live handle for `server_id` anywhere — `roots_for` is empty,
+        // so `restart_lsp_server` must fall back to `failed_roots` instead
+        // of silently doing nothing.
+        app.restart_lsp_server(&server_id);
+
+        assert!(app.lsp.failed_roots.get(&server_id).is_none());
+    }
+
+    #[test]
+    fn detached_roots_are_capped_and_further_roots_are_not_spawned() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        // No workspace is set, so every root below is "detached".
+        assert!(app.model.workspace.is_none());
+
+        let mut roots = Vec::new();
+        for i in 0..MAX_DETACHED_ROOTS + 1 {
+            let file = dir.path().join(format!("proj{i}")).join("main.rs");
+            app.ensure_lsp_server(token::syntax::LanguageId::Rust, &file);
+            roots.push(file.parent().unwrap().to_path_buf());
+        }
+
+        assert_eq!(app.lsp.detached_roots.len(), MAX_DETACHED_ROOTS);
+        // The last root (over the cap) was never admitted.
+        assert!(!app.lsp.detached_roots.contains(roots.last().unwrap()));
+        for root in &roots[..MAX_DETACHED_ROOTS] {
+            assert!(app.lsp.detached_roots.contains(root));
+        }
     }
 }
 
