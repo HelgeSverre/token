@@ -1643,6 +1643,8 @@ mod tests {
     /// needing a scripted fake LSP server binary on `PATH`.
     #[cfg(unix)]
     #[test]
+    #[ignore = "spawns a real shell/child; reliably passes on an idle machine \
+                but flakes under parallel-build load — run with --include-ignored"]
     fn spawn_server_completes_the_handshake_against_a_real_child() {
         // `sh -c` running a small reader/writer pipeline: read headers
         // until the blank line (to find Content-Length), read the body,

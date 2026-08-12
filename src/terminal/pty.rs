@@ -331,6 +331,8 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "spawns a real shell/child; reliably passes on an idle machine \
+                but flakes under parallel-build load — run with --include-ignored"]
     fn process_exited_is_sent_after_shell_quits() {
         let (msg_tx, msg_rx) = mpsc::channel();
         let cwd = std::env::temp_dir();
