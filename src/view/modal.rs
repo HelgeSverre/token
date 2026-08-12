@@ -1468,7 +1468,7 @@ fn diagnostic_severity_to_overlay(
 /// "note: <message> (<file>:<line>)" lines — rust-analyzer's "first borrow
 /// occurs here" is half the value of the error (lsp-integration.md Phase
 /// 4). `None` when nothing has related info.
-fn related_information_text(diagnostics: &[&lsp_types::Diagnostic]) -> Option<String> {
+pub fn related_information_text(diagnostics: &[&lsp_types::Diagnostic]) -> Option<String> {
     let lines: Vec<String> = diagnostics
         .iter()
         .flat_map(|d| d.related_information.iter().flatten())
@@ -1507,7 +1507,7 @@ fn debug_hover_zones() -> overlay_surface::Zones<'static> {
 /// and hit-testing can't disagree on geometry. Content here is static (no
 /// per-frame temporaries), so unlike the modal version there's no need for a
 /// separate placeholder-content path.
-pub(crate) fn with_cursor_overlay_layout<R>(
+pub fn with_cursor_overlay_layout<R>(
     model: &AppModel,
     window_width: usize,
     window_height: usize,

@@ -179,30 +179,8 @@ fn hover_snapshot(model: &AppModel) -> Option<HoverSnapshot> {
     Some(HoverSnapshot {
         content: model.ui.hover_card.as_ref().and_then(|s| s.content.clone()),
         banner_message: diagnostics.first().map(|d| d.message.clone()),
-        related_information: hover_related_information_text(&diagnostics),
+        related_information: token::view::modal::related_information_text(&diagnostics),
     })
-}
-
-/// Flattens `relatedInformation` the same way the real hover card does
-/// (`view::modal::related_information_text`) — duplicated rather than
-/// shared since that's a view-layer helper and this is the automation
-/// snapshot's own plaintext projection.
-fn hover_related_information_text(diagnostics: &[&lsp_types::Diagnostic]) -> Option<String> {
-    let lines: Vec<String> = diagnostics
-        .iter()
-        .flat_map(|d| d.related_information.iter().flatten())
-        .map(|info| {
-            let file = token::lsp::uri_to_path(&info.location.uri)
-                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-                .unwrap_or_else(|| info.location.uri.as_str().to_owned());
-            format!(
-                "note: {} ({file}:{})",
-                info.message,
-                info.location.range.start.line + 1
-            )
-        })
-        .collect();
-    (!lines.is_empty()).then(|| lines.join("\n"))
 }
 
 /// One line's gutter mark, as reported to automation.

@@ -4636,54 +4636,103 @@ mod tests {
     }
 
     /// Hover on a line with a diagnostic whose `relatedInformation` points
-    /// elsewhere ("first borrow occurs here") surfaces that related
-    /// message alongside the primary diagnostic — the automation-visible
-    /// projection `hover_snapshot`/`related_information_text` build.
+    /// elsewhere ("first borrow occurs here") surfaces that related message
+    /// alongside the primary diagnostic — driven end-to-end through a fake
+    /// server (`publishDiagnostics` + `ShowHover`) and asserted against the
+    /// real render path (`view::modal::with_cursor_overlay_layout`), not a
+    /// hand-set model plus a duplicated automation-only projection.
     #[test]
     fn hover_on_a_diagnostic_line_includes_related_information() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "let x = y;\n").expect("write fixture file");
+        let file_uri = lsp::path_to_uri(&file_path);
+
+        let scenario_path = dir.path().join("scenario.json");
+        std::fs::write(
+            &scenario_path,
+            serde_json::json!([
+                { "op": "expect_request", "method": "initialize", "respond": {
+                    "capabilities": { "hoverProvider": true }
+                }},
+                { "op": "notify", "method": "textDocument/publishDiagnostics", "params": {
+                    "uri": file_uri.as_str(),
+                    "diagnostics": [{
+                        "range": {
+                            "start": { "line": 0, "character": 8 },
+                            "end": { "line": 0, "character": 9 },
+                        },
+                        "severity": 1,
+                        "message": "cannot find value `y`",
+                        "relatedInformation": [{
+                            "location": {
+                                "uri": lsp::path_to_uri(&dir.path().join("other.rs")).as_str(),
+                                "range": {
+                                    "start": { "line": 11, "character": 0 },
+                                    "end": { "line": 11, "character": 1 },
+                                },
+                            },
+                            "message": "first borrow occurs here",
+                        }],
+                    }],
+                }},
+                // No hover content from the server — the diagnostic alone
+                // is reason enough to open the card.
+                { "op": "expect_request", "method": "textDocument/hover", "respond": serde_json::Value::Null },
+                { "op": "sleep_ms", "ms": 60000 },
+            ])
+            .to_string(),
+        )
+        .expect("write scenario file");
+
         let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
-        app.model.document_mut().buffer = ropey::Rope::from_str("let x = y;\n");
-        let doc = app.model.document_mut();
-        doc.diagnostics = vec![lsp_types::Diagnostic {
-            range: lsp_types::Range {
-                start: lsp_types::Position { line: 0, character: 8 },
-                end: lsp_types::Position { line: 0, character: 9 },
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
+                enabled: None,
             },
-            severity: Some(lsp_types::DiagnosticSeverity::ERROR),
-            message: "cannot find value `y`".to_owned(),
-            related_information: Some(vec![lsp_types::DiagnosticRelatedInformation {
-                location: lsp_types::Location {
-                    uri: lsp::path_to_uri(&PathBuf::from("/tmp/other.rs")),
-                    range: lsp_types::Range {
-                        start: lsp_types::Position { line: 11, character: 0 },
-                        end: lsp_types::Position { line: 11, character: 1 },
-                    },
-                },
-                message: "first borrow occurs here".to_owned(),
-            }]),
-            ..Default::default()
-        }];
+        );
+
+        app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+        let server_id = LspServerId::from("rust-analyzer");
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready)
+        }));
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            !app.model.document().diagnostics.is_empty()
+        }));
+
         app.model.editor_mut().cursors[0] = token::model::editor::Cursor::at(0, 8);
         app.model.editor_mut().clear_selection();
+        app.process_automation_msg(Msg::Lsp(LspMsg::ShowHover));
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            app.model.ui.cursor_overlay.is_some()
+        }));
 
-        // No hover content from the server (the diagnostic alone is
-        // reason enough to open the card).
-        app.model.ui.hover_card = Some(token::model::HoverCardState { content: None });
-        app.model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
-            token::model::CursorOverlayKind::Hover,
-        ));
+        let (banner, text) = token::view::modal::with_cursor_overlay_layout(
+            &app.model,
+            800,
+            600,
+            1.0,
+            |spec, _| match &spec.body {
+                token::view::overlay_surface::Body::Zones(zones) => (
+                    zones.banner.map(|(_, message, _)| message.to_owned()),
+                    zones.text.map(str::to_owned),
+                ),
+                _ => panic!("hover card must render a Zones body"),
+            },
+        )
+        .expect("hover overlay must be open");
 
-        let snapshot = crate::automation::EditorSnapshot::from_model(&app.model);
-        let hover = snapshot.hover.expect("hover card must be reflected in the snapshot");
-        assert_eq!(hover.banner_message.as_deref(), Some("cannot find value `y`"));
+        assert_eq!(banner.as_deref(), Some("cannot find value `y`"));
         assert!(
-            hover
-                .related_information
-                .as_deref()
-                .is_some_and(|t| t.contains("first borrow occurs here")),
-            "relatedInformation must reach the card: {:?}",
-            hover.related_information
+            text.as_deref().is_some_and(|t| t.contains("first borrow occurs here")),
+            "relatedInformation must reach the rendered card: {text:?}"
         );
+
+        app.process_cmd(Cmd::Quit);
     }
 
     // ---- Phase 1 gate: fake-lsp-server integration ----

@@ -77,6 +77,11 @@ fn diagnostic_touches_line(diagnostic: &lsp_types::Diagnostic, doc_line: usize) 
 /// Diagnostics under `cursor`, most-severe first — shared by the status
 /// bar's single-line summary (`diagnostic_message_at_cursor`) and the
 /// hover card's banner + `relatedInformation` (lsp-integration.md Phase 4).
+/// Diagnostics whose range contains `cursor`, highest severity first. Ties
+/// keep the server's original publish order (`sort_by_key` is stable) —
+/// unlike `Iterator::max_by_key`, which would surface the *last* of equally
+/// severe diagnostics. Either tie-break is defensible; this pins the current
+/// one so a future refactor doesn't flip it silently.
 pub fn diagnostics_at_position(
     document: &Document,
     cursor: super::editor::Position,
@@ -217,5 +222,19 @@ mod tests {
         diagnostic.range.end.line = 2;
         doc.diagnostics = vec![diagnostic];
         assert_eq!(collect_line_marks(&doc, 1).mark, Some(Mark::Error));
+    }
+
+    #[test]
+    fn diagnostics_at_position_ties_keep_publish_order() {
+        let mut doc = Document::new();
+        doc.buffer = ropey::Rope::from("aaaa\n");
+        let mut first = diagnostic_at(0, Some(lsp_types::DiagnosticSeverity::ERROR));
+        first.message = "first".into();
+        let mut second = diagnostic_at(0, Some(lsp_types::DiagnosticSeverity::ERROR));
+        second.message = "second".into();
+        doc.diagnostics = vec![first, second];
+        let found = diagnostics_at_position(&doc, super::super::editor::Position::new(0, 1));
+        assert_eq!(found[0].message, "first");
+        assert_eq!(found[1].message, "second");
     }
 }
