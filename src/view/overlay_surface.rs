@@ -1313,7 +1313,16 @@ pub fn render(
     );
 
     if let Some(tab_bar) = &spec.tabs {
-        render_tab_bar(frame, painter, &colors, tab_bar, &layout, scale_factor);
+        render_tab_bar(
+            frame,
+            painter,
+            &colors,
+            tab_bar,
+            &layout,
+            scale_factor,
+            radius,
+            mask_cache,
+        );
     }
 
     if let Some(header) = &spec.header {
@@ -1356,6 +1365,8 @@ pub fn render(
             footer_spec,
             footer_rect,
             scale_factor,
+            radius,
+            mask_cache,
         );
     }
 }
@@ -1386,9 +1397,22 @@ fn render_tab_bar(
     tab_bar: &TabBar,
     layout: &OverlayLayout,
     scale_factor: f64,
+    radius: usize,
+    mask_cache: &mut RoundedRectMaskCache,
 ) {
     let Some(bar) = layout.tab_bar else { return };
-    frame.fill_rect_px(bar.x, bar.y, bar.w, bar.h, colors.recessed_wash);
+    // The tab bar sits flush against the panel's top edge — a plain
+    // `fill_rect_px` would square off the panel's antialiased top corners
+    // (Visual Language > Chrome radius).
+    frame.fill_rect_top_rounded(
+        bar.x,
+        bar.y,
+        bar.w,
+        bar.h,
+        radius,
+        colors.recessed_wash,
+        mask_cache,
+    );
     frame.fill_rect_px(
         bar.x,
         bar.y + bar.h.saturating_sub(1),
@@ -1878,6 +1902,7 @@ fn draw_label_with_matches(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_footer(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -1885,14 +1910,20 @@ fn render_footer(
     footer: &Footer,
     rect: WidgetRect,
     scale_factor: f64,
+    radius: usize,
+    mask_cache: &mut RoundedRectMaskCache,
 ) {
     frame.fill_rect_px(rect.x, rect.y, rect.w, 1, colors.hairline);
-    frame.fill_rect_px(
+    // The footer sits flush against the panel's bottom edge — see
+    // `render_tab_bar`'s matching top-corner note.
+    frame.fill_rect_bottom_rounded(
         rect.x,
         rect.y + 1,
         rect.w,
         rect.h.saturating_sub(1),
+        radius,
         colors.recessed_wash,
+        mask_cache,
     );
 
     let size = size_px(SIZE_META, scale_factor);
@@ -2059,6 +2090,104 @@ fn draw_text_lines(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fontdue::Font;
+
+    fn test_painter<'a>(
+        font: &'a Font,
+        glyph_cache: &'a mut super::super::GlyphCache,
+    ) -> TextPainter<'a> {
+        TextPainter::new(font, glyph_cache, 14.0, 11.0, 8.0, 18)
+    }
+
+    /// Regression: the tab bar and footer used to `fill_rect_px` a plain
+    /// square band flush against the panel's rounded top/bottom edges,
+    /// overwriting the antialiased corners `fill_rounded_rect` left
+    /// transparent (Visual Language > Chrome radius 10). With tabs+footer
+    /// present, the four panel corners must read the same as with neither.
+    #[test]
+    fn tab_bar_and_footer_do_not_square_the_panel_corners() {
+        let font = Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .expect("test font should load");
+        let mut glyph_cache = super::super::GlyphCache::default();
+        let theme = OverlayTheme::default_dark();
+
+        let mut render_corners = |tabs: bool, footer: bool| -> [u32; 4] {
+            let (w, h) = (1200usize, 800usize);
+            let mut buffer = vec![0u32; w * h];
+            let mut frame = Frame::new(&mut buffer, w, h);
+            let mut painter = test_painter(&font, &mut glyph_cache);
+            let mut mask_cache = RoundedRectMaskCache::new();
+
+            let tab_list = [("All", TabCount::Hidden)];
+            let sections = [Section {
+                title: None,
+                rows: &[],
+            }];
+            let spec = OverlaySpec {
+                anchor: Anchor::Centered {
+                    width: WidthRule {
+                        pct: 0.5,
+                        min: 480.0,
+                        max: 640.0,
+                    },
+                    dim_alpha: 0x66,
+                },
+                tabs: tabs.then_some(TabBar {
+                    tabs: &tab_list,
+                    active: 0,
+                }),
+                header: Some(Header {
+                    glyph: None,
+                    text: "",
+                    placeholder: "",
+                    caret: Some(0),
+                    scope: None,
+                }),
+                body: Body::List {
+                    sections: &sections,
+                    selected: FlatIndex(0),
+                    scroll: 0,
+                    max_visible: 8,
+                },
+                footer: footer.then_some(Footer {
+                    leading: "",
+                    trailing: "",
+                }),
+                hover_row: None,
+            };
+
+            render(
+                &mut frame,
+                &mut painter,
+                &mut mask_cache,
+                &theme,
+                &spec,
+                w,
+                h,
+                1.0,
+                true,
+            );
+
+            let l = layout(&spec, w, h, 1.0);
+            [
+                frame.get_pixel(l.panel.x, l.panel.y),
+                frame.get_pixel(l.panel.x + l.panel.w - 1, l.panel.y),
+                frame.get_pixel(l.panel.x, l.panel.y + l.panel.h - 1),
+                frame.get_pixel(l.panel.x + l.panel.w - 1, l.panel.y + l.panel.h - 1),
+            ]
+        };
+
+        let without_chrome = render_corners(false, false);
+        let with_chrome = render_corners(true, true);
+
+        assert_eq!(
+            with_chrome, without_chrome,
+            "tab bar/footer must not paint over the panel's rounded corners"
+        );
+    }
 
     #[test]
     fn viewport_clamps_selection_without_scroll() {

@@ -543,6 +543,110 @@ impl<'a> Frame<'a> {
         }
     }
 
+    /// Fill a rectangle with only its top two corners rounded (bottom edge
+    /// stays square) — for chrome bands (tab bar, list rows) that sit flush
+    /// against the top of a `fill_rounded_rect` panel and must not paint
+    /// over its already-antialiased top corners with a square fill.
+    #[allow(clippy::too_many_arguments)]
+    pub fn fill_rect_top_rounded(
+        &mut self,
+        x: usize,
+        y: usize,
+        w: usize,
+        h: usize,
+        radius: usize,
+        color: u32,
+        mask_cache: &mut RoundedRectMaskCache,
+    ) {
+        if w == 0 || h == 0 {
+            return;
+        }
+        let radius = radius.min(w / 2).min(h);
+        if radius == 0 {
+            self.blend_rect_px(x, y, w, h, color);
+            return;
+        }
+
+        // Everything below the corner rows: full width, square.
+        if h > radius {
+            self.blend_rect_px(x, y + radius, w, h - radius, color);
+        }
+
+        let mask = mask_cache
+            .entry(radius)
+            .or_insert_with(|| RoundedCornerMask::compute(radius));
+        let base_alpha = ((color >> 24) & 0xFF) as f32;
+        let rgb = color & 0x00FF_FFFF;
+
+        for dy in 0..radius {
+            if w > 2 * radius {
+                self.blend_rect_px(x + radius, y + dy, w - 2 * radius, 1, color);
+            }
+            for dx in 0..radius {
+                let cov = mask.coverage(dx, dy);
+                if cov == 0 {
+                    continue;
+                }
+                let a = (base_alpha * cov as f32 / 255.0).round() as u32;
+                let c = (a.min(255) << 24) | rgb;
+                self.blend_pixel(x + dx, y + dy, c);
+                self.blend_pixel(x + w - 1 - dx, y + dy, c);
+            }
+        }
+    }
+
+    /// Fill a rectangle with only its bottom two corners rounded (top edge
+    /// stays square) — the footer-band counterpart of
+    /// [`Frame::fill_rect_top_rounded`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn fill_rect_bottom_rounded(
+        &mut self,
+        x: usize,
+        y: usize,
+        w: usize,
+        h: usize,
+        radius: usize,
+        color: u32,
+        mask_cache: &mut RoundedRectMaskCache,
+    ) {
+        if w == 0 || h == 0 {
+            return;
+        }
+        let radius = radius.min(w / 2).min(h);
+        if radius == 0 {
+            self.blend_rect_px(x, y, w, h, color);
+            return;
+        }
+
+        // Everything above the corner rows: full width, square.
+        if h > radius {
+            self.blend_rect_px(x, y, w, h - radius, color);
+        }
+
+        let mask = mask_cache
+            .entry(radius)
+            .or_insert_with(|| RoundedCornerMask::compute(radius));
+        let base_alpha = ((color >> 24) & 0xFF) as f32;
+        let rgb = color & 0x00FF_FFFF;
+
+        for dy in 0..radius {
+            let row_y = y + h - 1 - dy;
+            if w > 2 * radius {
+                self.blend_rect_px(x + radius, row_y, w - 2 * radius, 1, color);
+            }
+            for dx in 0..radius {
+                let cov = mask.coverage(dx, dy);
+                if cov == 0 {
+                    continue;
+                }
+                let a = (base_alpha * cov as f32 / 255.0).round() as u32;
+                let c = (a.min(255) << 24) | rgb;
+                self.blend_pixel(x + dx, row_y, c);
+                self.blend_pixel(x + w - 1 - dx, row_y, c);
+            }
+        }
+    }
+
     /// 1px rounded-rect outline: straight edges plus the antialiased arc
     /// band of the corner mask (skipping the solid interior, so a corner
     /// reads as a thin arc rather than a filled quarter-circle).
@@ -1418,6 +1522,52 @@ mod tests {
         frame_b.blend_rect_px(1, 1, 6, 6, 0xFF0000FF);
 
         assert_eq!(buffer_a, buffer_b);
+    }
+
+    #[test]
+    fn fill_rect_top_rounded_leaves_top_corners_transparent_and_squares_the_bottom() {
+        let mut buffer = vec![0u32; 20 * 20];
+        let mut frame = Frame::new(&mut buffer, 20, 20);
+        let mut cache = RoundedRectMaskCache::new();
+
+        frame.fill_rect_top_rounded(2, 2, 16, 16, 6, 0xFFFF0000, &mut cache);
+
+        assert_eq!(
+            frame.get_pixel(2, 2),
+            0,
+            "top-left corner must stay untouched, matching fill_rounded_rect"
+        );
+        assert_eq!(
+            frame.get_pixel(17, 2),
+            0,
+            "top-right corner must stay untouched, matching fill_rounded_rect"
+        );
+        // Bottom corners are square, not rounded: fully painted.
+        assert_eq!(frame.get_pixel(2, 17), 0xFFFF0000);
+        assert_eq!(frame.get_pixel(17, 17), 0xFFFF0000);
+    }
+
+    #[test]
+    fn fill_rect_bottom_rounded_leaves_bottom_corners_transparent_and_squares_the_top() {
+        let mut buffer = vec![0u32; 20 * 20];
+        let mut frame = Frame::new(&mut buffer, 20, 20);
+        let mut cache = RoundedRectMaskCache::new();
+
+        frame.fill_rect_bottom_rounded(2, 2, 16, 16, 6, 0xFFFF0000, &mut cache);
+
+        assert_eq!(
+            frame.get_pixel(2, 17),
+            0,
+            "bottom-left corner must stay untouched, matching fill_rounded_rect"
+        );
+        assert_eq!(
+            frame.get_pixel(17, 17),
+            0,
+            "bottom-right corner must stay untouched, matching fill_rounded_rect"
+        );
+        // Top corners are square, not rounded: fully painted.
+        assert_eq!(frame.get_pixel(2, 2), 0xFFFF0000);
+        assert_eq!(frame.get_pixel(17, 2), 0xFFFF0000);
     }
 
     #[test]
