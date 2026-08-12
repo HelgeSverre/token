@@ -441,11 +441,18 @@ Mockups for the picker contexts: [B1 recent-grouped](assets/palette-b1.png), [B2
 
 **Effort:** M — sequenced with [autocomplete.md](autocomplete.md) Phase 1 (or LSP Phase 4, whichever lands first); the shells are not built to sit unused
 
-- [ ] `Anchor::Cursor`: pixel rect from geometry, flip + edge clamping + width floor.
-- [ ] `ui.cursor_overlay: Option<CursorOverlayState>`; pre-editor key branch (consume Up/Down/Enter/Esc/Tab, pass the rest); `overlay_routes_keys` plumbing (field + `Condition` + serde + eval).
-- [ ] Non-blocking pointer hit-testing for popups (row clicks, wheel, no dismiss-on-enter).
-- [ ] Completion list shell (kind badges, signatures) and hover `Zones` card, handed to their consumers; code-action shell when its consumer exists.
-- [ ] Damage: popups force `Damage::Full` while visible, like modals; dismissal is followed by a normal full redraw — no pixel-save mechanism exists or is needed.
+- [x] `Anchor::Cursor`: pixel rect from geometry, flip + edge clamping + width floor.
+- [x] `ui.cursor_overlay: Option<CursorOverlayState>`; pre-editor key branch (consume Up/Down/Enter/Esc/Tab, pass the rest); `overlay_routes_keys` plumbing (field + `Condition` + serde + eval).
+- [x] Non-blocking pointer hit-testing for popups (row clicks, wheel, no dismiss-on-enter).
+- [~] Completion list shell (kind badges, signatures) and hover `Zones` card, handed to their consumers; code-action shell when its consumer exists.
+- [x] Damage: popups force `Damage::Full` while visible, like modals; dismissal is followed by a normal full redraw — no pixel-save mechanism exists or is needed.
+
+**Status.** This unit (overlay-p5) ships the shells, routing, and hit-testing with a debug command (`Cycle Cursor Overlay Demo`, F9 in debug builds — `CommandId::CycleCursorOverlayDemo`) that opens a dummy popup at the editor caret so the geometry/routing can be exercised manually; there is still no real consumer. Notes on what shipped vs. what's deferred:
+
+- `RowIcon::KindBadge(CompletionKind)` renders the 16×16 r4 badge, but its color comes from the existing `overlay.*` palette (blended to opaque over the panel at paint time, `CompletionKind::badge_color`) rather than new persisted `overlay.kind_*` theme keys with per-theme tuning — see the `ponytail:` comment on `CompletionKind` in `overlay_surface.rs`. Add the real keys (+ 9-theme tuning + contrast tests, matching the Phase 1 pattern) when autocomplete.md's Phase 1 ships a live completion source and the badge colors need polish.
+- The hover `Zones` card renders banner/code/text through `overlay_surface::render_zones`, sharing layout/paint with the drop overlay (`Body::Zones` was generalized from a bare `text: &str` to the full `Zones<'a>` struct). Text wrapping is not implemented — `text`/`code` are drawn as pre-split lines (`str::lines()`), no reflow; the real hover consumer (lsp-integration.md Phase 4) owns wrapping policy.
+- Code-action shell: not started — no consumer exists yet (LSP Future), per the doc's own scope note.
+- Cursor-anchored popups get their own `HoverRegion::CursorOverlay` (distinct from `HoverRegion::Modal`) so wheel-scroll routes to `ui.cursor_overlay.scroll` instead of `ui.active_modal`; `HitTarget::CursorOverlay` is checked with the highest priority in `hit_test_ui`, ahead of the modal check, and only claims points *inside* the popup panel — an outside click falls through to whatever's actually there (e.g. the editor) while a `handle_mouse_press` preamble dismisses the popup as a side effect, satisfying "clicks land in the popup without dismissing it" for inside clicks and "non-blocking" for outside ones.
 
 ### Future
 
