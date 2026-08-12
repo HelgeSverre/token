@@ -5732,7 +5732,9 @@ mod tests {
         std::fs::write(
             &scenario_a,
             serde_json::json!([
-                { "op": "expect_request", "method": "initialize", "respond": { "capabilities": {} } },
+                { "op": "expect_request", "method": "initialize", "respond": {
+                    "capabilities": { "textDocumentSync": { "openClose": true, "change": 1 } }
+                }},
                 { "op": "exit", "code": 1 },
             ])
             .to_string(),
