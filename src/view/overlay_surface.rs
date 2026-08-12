@@ -643,6 +643,28 @@ pub fn truncate_head(painter: &mut TextPainter, size: f32, text: &str, max_width
     out
 }
 
+/// The list-context header's query text, clipped to `max_width` — full text
+/// when it fits, otherwise head-ellipsized so the *tail* (nearest the caret,
+/// which sits at/after the end while typing) stays visible instead of
+/// running off the panel. Returns `(visible, kept_from)`, `kept_from` being
+/// the char index into the original `text` where the kept tail begins (0
+/// when untruncated) — the caller uses it to re-express the caret's column
+/// against the possibly-shorter visible string.
+fn visible_header_text(
+    painter: &mut TextPainter,
+    size: f32,
+    text: &str,
+    max_width: f32,
+) -> (String, usize) {
+    if painter.measure_sized(text, size, 0.0) <= max_width {
+        return (text.to_string(), 0);
+    }
+    let visible = truncate_head(painter, size, text, max_width);
+    let total_chars = text.chars().count();
+    let kept_chars = visible.chars().count().saturating_sub(1); // minus the ellipsis
+    (visible, total_chars.saturating_sub(kept_chars))
+}
+
 /// Geometry for one `Field` in a `Body::Fields` layout: the label row above
 /// an input box. The caller paints actual field content (text, selection,
 /// caret) into `input` via `TextFieldRenderer`.
@@ -1495,7 +1517,28 @@ fn render_header(
         x += w.ceil() as usize + pad_x / 2;
     }
 
-    if header.text.is_empty() {
+    // How much horizontal room is left for the query text (and its caret)
+    // before it would run under the right-aligned `scope` text or off the
+    // panel entirely. Everything drawn from here on is clipped to this
+    // band too, as a hard backstop — `visible_header_text` should already
+    // keep drawing within it, but a long paste/IME composition must never
+    // paint outside the rounded panel regardless.
+    let scope_w = header
+        .scope
+        .map(|s| {
+            let scope_size = size_px(SIZE_META, scale_factor);
+            painter.measure_sized(s, scope_size, 0.0).ceil() as usize + pad_x
+        })
+        .unwrap_or(0);
+    let content_w = (r.x + r.w).saturating_sub(x + scope_w + pad_x / 2);
+    frame.set_clip(crate::model::editor_area::Rect {
+        x: x as f32,
+        y: r.y as f32,
+        width: content_w as f32,
+        height: r.h as f32,
+    });
+
+    let (visible, kept_from) = if header.text.is_empty() {
         painter.draw_sized(
             frame,
             x,
@@ -1505,25 +1548,27 @@ fn render_header(
             0.0,
             colors.text_dim,
         );
+        (String::new(), 0)
     } else {
-        painter.draw_sized(
-            frame,
-            x,
-            text_y,
-            header.text,
-            size,
-            0.0,
-            colors.text_primary,
-        );
-    }
+        let (visible, kept_from) =
+            visible_header_text(painter, size, header.text, content_w as f32);
+        painter.draw_sized(frame, x, text_y, &visible, size, 0.0, colors.text_primary);
+        (visible, kept_from)
+    };
 
     if let Some(col) = header.caret {
         if cursor_visible {
-            let caret_x = caret_x_for_column(painter, x, header.text, col, size);
+            // The caret's column is in the *full* text's char space;
+            // re-express it against the (possibly head-truncated) visible
+            // string so it never lands off-screen.
+            let visible_col = col.saturating_sub(kept_from) + usize::from(kept_from > 0);
+            let caret_x = caret_x_for_column(painter, x, &visible, visible_col, size);
             let caret_w = scaled(1.5, scale_factor);
             frame.fill_rect_px(caret_x, text_y, caret_w, text_h, colors.accent_bright);
         }
     }
+
+    frame.clear_clip();
 
     if let Some(scope) = header.scope {
         let scope_size = size_px(SIZE_META, scale_factor);
@@ -2647,6 +2692,106 @@ mod tests {
         // caret at all.
         let caret_x = caret_x_for_column(&mut painter, 100, "", 0, SIZE_INPUT);
         assert_eq!(caret_x, 101);
+    }
+
+    #[test]
+    fn visible_header_text_keeps_short_text_unchanged() {
+        let (font, mut cache) = test_painter_and_frame();
+        let mut painter = TextPainter::new(&font, &mut cache, 13.0, 10.0, 8.0, 16);
+        let (visible, kept_from) = visible_header_text(&mut painter, SIZE_INPUT, "short", 1000.0);
+        assert_eq!(visible, "short");
+        assert_eq!(kept_from, 0);
+    }
+
+    #[test]
+    fn visible_header_text_head_truncates_a_long_query_keeping_the_tail() {
+        let (font, mut cache) = test_painter_and_frame();
+        let mut painter = TextPainter::new(&font, &mut cache, 13.0, 10.0, 8.0, 16);
+        let text = "a".repeat(200);
+        let (visible, kept_from) = visible_header_text(&mut painter, SIZE_INPUT, &text, 80.0);
+        assert!(visible.starts_with('\u{2026}'));
+        assert!(kept_from > 0);
+        assert!(visible.chars().count() < text.chars().count());
+    }
+
+    /// Regression: a long/pasted query used to spill `draw_sized` text past
+    /// the panel's right edge with no clipping or truncation. Rendering the
+    /// full header (list-context input, e.g. the command palette) with a
+    /// long query must paint the same dimmed backdrop right of the panel as
+    /// an empty query does — nothing extra from the overflowing text.
+    #[test]
+    fn long_header_query_stays_within_the_panel() {
+        let font = fontdue::Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .expect("test font should load");
+        let mut glyph_cache = super::super::GlyphCache::default();
+        let theme = OverlayTheme::default_dark();
+        let (w, h) = (1200usize, 800usize);
+
+        let mut render_row_right_of_panel = |query: &str| -> Vec<u32> {
+            let mut painter = TextPainter::new(&font, &mut glyph_cache, 14.0, 11.0, 8.0, 18);
+            let mut buffer = vec![0u32; w * h];
+            let mut frame = Frame::new(&mut buffer, w, h);
+            let mut mask_cache = RoundedRectMaskCache::new();
+
+            let sections: [Section; 0] = [];
+            let spec = OverlaySpec {
+                anchor: Anchor::Centered {
+                    width: WidthRule {
+                        pct: 0.5,
+                        min: 480.0,
+                        max: 640.0,
+                    },
+                    dim_alpha: 0x66,
+                },
+                tabs: None,
+                header: Some(Header {
+                    glyph: Some('\u{276F}'),
+                    text: query,
+                    placeholder: "",
+                    caret: Some(query.chars().count()),
+                    scope: None,
+                }),
+                body: Body::List {
+                    sections: &sections,
+                    selected: FlatIndex(0),
+                    scroll: 0,
+                    max_visible: 8,
+                },
+                footer: None,
+                hover_row: None,
+            };
+
+            render(
+                &mut frame,
+                &mut painter,
+                &mut mask_cache,
+                &theme,
+                &spec,
+                w,
+                h,
+                1.0,
+                true,
+            );
+
+            let l = layout(&spec, w, h, 1.0);
+            let panel_right = l.panel.x + l.panel.w;
+            let header = l.header.unwrap();
+            (header.y..header.y + header.h)
+                .flat_map(|y| (panel_right..w).map(move |x| (x, y)))
+                .map(|(x, y)| frame.get_pixel(x, y))
+                .collect()
+        };
+
+        let baseline = render_row_right_of_panel("");
+        let with_long_query = render_row_right_of_panel(&"x".repeat(200));
+
+        assert_eq!(
+            with_long_query, baseline,
+            "a long query must not paint past the panel's right edge"
+        );
     }
 
     #[test]
