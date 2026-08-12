@@ -827,6 +827,7 @@ impl<'a> TextEditorRenderer<'a> {
         frame: &mut Frame,
         painter: &mut TextPainter,
         dirty_lines: &[usize],
+        decorations: &[RangeDecoration],
     ) {
         for &doc_line in dirty_lines {
             if !self.ctx.viewport.contains_doc_line(doc_line) {
@@ -840,9 +841,15 @@ impl<'a> TextEditorRenderer<'a> {
             let line = self.prepare_visible_line(doc_line, y);
             self.render_line_background_stage(frame, &line);
             self.render_gutter_line_number(frame, painter, &line);
+            // Regression guard: this fast path repaints lines the full pass
+            // decorated — skipping the marks lane and range decorations
+            // erased squiggles and gutter dots whenever the cursor or a
+            // selection touched a diagnostic line.
+            self.render_gutter_mark(frame, &line);
             self.render_line_content_stages(frame, painter, &line);
             self.render_dirty_line_cursor_stage(frame, &line);
         }
+        self.render_range_decorations_stage(frame, decorations);
     }
 
     fn render_text_area(
@@ -1003,9 +1010,32 @@ pub fn render_cursor_lines_only(
     }
 
     let layout = geometry::GroupLayout::new(group, model, char_width);
+    // The same producers the full pass uses, scoped to the dirty lines so a
+    // repainted line keeps its squiggles/tints (the focused pane also gets
+    // find-match tints, mirroring render_editor_content's is_focused rule —
+    // this path only ever runs for the focused editor).
+    let lo = dirty_lines.iter().copied().min().unwrap_or(0);
+    let hi = dirty_lines.iter().copied().max().unwrap_or(0) + 1;
+    let mut decorations =
+        super::find_match_decorations(model, document, &editor.selections[0], lo..hi);
+    decorations.extend(super::diagnostic_decorations(model, document, lo..hi));
     let mut renderer =
         TextEditorRenderer::new(model, editor, document, &layout, char_width, line_height);
-    renderer.render_cursor_lines_only(frame, painter, dirty_lines);
+    // The full pass repaints the scrollbar band after text; this fast path
+    // doesn't, so keep every stage out of that band or a line repaint
+    // overwrites the track/ticks with line background.
+    let clip_w = layout
+        .v_scrollbar_rect(model.metrics.scrollbar_width)
+        .map(|sb| (sb.x.max(0.0) as usize).saturating_sub(layout.rect_x()))
+        .unwrap_or_else(|| layout.rect_w());
+    frame.set_clip(crate::model::editor_area::Rect {
+        x: layout.rect_x() as f32,
+        y: layout.content_y() as f32,
+        width: clip_w as f32,
+        height: layout.content_h() as f32,
+    });
+    renderer.render_cursor_lines_only(frame, painter, dirty_lines, &decorations);
+    frame.clear_clip();
 }
 
 /// Render text content (lines, selections, cursors) for an editor group.
@@ -1389,6 +1419,57 @@ mod tests {
         }
 
         band
+    }
+
+    #[test]
+    fn cursor_line_fast_path_keeps_diagnostics_on_the_repainted_line() {
+        // Regression: the fast path skipped the marks lane and the range-
+        // decorations stage, so moving the cursor onto (or selecting) a
+        // diagnostic line erased its squiggle and gutter dot until the
+        // next full redraw.
+        let mut model = make_text_model();
+        model.ui.cursor_visible = true;
+        model.document_mut().diagnostics = vec![lsp_types::Diagnostic {
+            range: lsp_types::Range {
+                start: lsp_types::Position {
+                    line: 1,
+                    character: 0,
+                },
+                end: lsp_types::Position {
+                    line: 1,
+                    character: 3,
+                },
+            },
+            severity: Some(lsp_types::DiagnosticSeverity::WARNING),
+            message: "boom".into(),
+            ..Default::default()
+        }];
+
+        let before = render_full_editor_group(&model);
+        let mut dirty_redraw = before.clone();
+
+        model.ui.cursor_visible = false;
+        rerender_cursor_lines(&model, &mut dirty_redraw, &[1]);
+
+        model.ui.cursor_visible = true;
+        rerender_cursor_lines(&model, &mut dirty_redraw, &[1]);
+
+        if dirty_redraw != before {
+            let width = model.window_size.0 as usize;
+            let diffs: Vec<(usize, usize)> = dirty_redraw
+                .iter()
+                .zip(before.iter())
+                .enumerate()
+                .filter(|(_, (a, b))| a != b)
+                .map(|(i, _)| (i % width, i / width))
+                .collect();
+            panic!(
+                "fast-path repaint of a diagnostic line must be pixel-identical \
+                 to the full render; {} px differ, first at {:?}",
+                diffs.len(),
+                diffs.first()
+            );
+        }
     }
 
     #[test]
