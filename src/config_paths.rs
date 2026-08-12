@@ -58,6 +58,11 @@ pub fn recent_files_path() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("recent.json"))
 }
 
+/// `~/.config/token-editor/command-history.json`
+pub fn command_history_path() -> Option<PathBuf> {
+    config_dir().map(|dir| dir.join("command-history.json"))
+}
+
 /// `~/.config/token-editor/logs/`
 pub fn logs_dir() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("logs"))

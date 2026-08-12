@@ -4,6 +4,7 @@
 //! implementing the Elm Architecture pattern.
 
 pub mod cli;
+pub mod command_history;
 pub mod commands;
 pub mod config;
 pub mod config_paths;

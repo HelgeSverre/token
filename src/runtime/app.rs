@@ -1228,6 +1228,13 @@ impl App {
                     }
                 });
             }
+            Cmd::SaveCommandHistory { history } => {
+                std::thread::spawn(move || {
+                    if let Err(e) = history.save() {
+                        tracing::warn!("Failed to save command history: {}", e);
+                    }
+                });
+            }
             Cmd::CopyToClipboard(text) => {
                 std::thread::spawn(move || {
                     if let Ok(mut clipboard) = arboard::Clipboard::new() {

@@ -678,6 +678,11 @@ pub enum Cmd {
     SaveRecentFiles {
         recent: crate::recent_files::RecentFiles,
     },
+    /// Save command palette usage/pin history asynchronously
+    /// (overlay-surface.md Phase 4).
+    SaveCommandHistory {
+        history: crate::command_history::CommandHistory,
+    },
     /// Copy a string to the system clipboard
     CopyToClipboard(String),
     /// Request pasting text from the system clipboard
@@ -767,6 +772,7 @@ impl Cmd {
             // Quit doesn't need redraw - app is exiting
             Cmd::Quit => Damage::Areas(vec![]),
             Cmd::SaveRecentFiles { .. } => Damage::Areas(vec![]),
+            Cmd::SaveCommandHistory { .. } => Damage::Areas(vec![]),
             Cmd::CopyToClipboard(_) => Damage::Areas(vec![]),
             Cmd::RequestClipboardPaste => Damage::Areas(vec![]),
             Cmd::CreateDefaultKeymapFile { .. } => Damage::Areas(vec![]),
