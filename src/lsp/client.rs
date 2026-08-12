@@ -610,13 +610,23 @@ impl ServerHandle {
     /// `timeout`) rather than going through the normal async message
     /// loop: this only ever runs during quit teardown, where the loop
     /// has already stopped pumping messages for the frame.
+    ///
+    /// `shared_deadline` bounds *total* quit latency across every server
+    /// being torn down (the caller computes one deadline and passes it to
+    /// every call) — `timeout` still caps each phase (shutdown-ack,
+    /// exit-wait) individually, but the two combine as a minimum: a
+    /// server reached late in the teardown loop gets whatever's left of
+    /// `shared_deadline`, never the full `timeout` again on top of what
+    /// prior servers already spent. Without this, N servers pay up to
+    /// `2 * timeout` sequentially instead of `2 * timeout` in total.
     pub fn graceful_shutdown(
         &mut self,
         msg_rx: &Receiver<Msg>,
         timeout: std::time::Duration,
+        shared_deadline: std::time::Instant,
     ) -> bool {
         let _id = self.begin_request("shutdown", Value::Null);
-        let deadline = std::time::Instant::now() + timeout;
+        let deadline = (std::time::Instant::now() + timeout).min(shared_deadline);
         let mut acked = false;
         while std::time::Instant::now() < deadline {
             let remaining = deadline.saturating_duration_since(std::time::Instant::now());
@@ -637,7 +647,7 @@ impl ServerHandle {
             params: Value::Null,
         });
 
-        let exit_deadline = std::time::Instant::now() + timeout;
+        let exit_deadline = (std::time::Instant::now() + timeout).min(shared_deadline);
         let mut exited = false;
         while std::time::Instant::now() < exit_deadline {
             match self.child.try_wait() {
@@ -1645,6 +1655,47 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
         }
         assert!(saw_ready, "expected ServerStateChanged(Ready) within 5s");
         handle.kill();
+    }
+
+    /// `graceful_shutdown`'s two phases (shutdown-ack wait, exit wait) are
+    /// each capped by `timeout`, but must also respect `shared_deadline`
+    /// — the caller's *total* teardown budget across every server being
+    /// torn down. A child that never acks `shutdown` and never exits on
+    /// `exit` would normally pay the full `2 * timeout`; with an
+    /// already-elapsed `shared_deadline` (as if prior servers in the
+    /// teardown loop already spent the whole budget), both phases must
+    /// return almost immediately instead.
+    #[cfg(unix)]
+    #[test]
+    fn graceful_shutdown_is_bounded_by_the_shared_deadline_not_the_per_phase_cap() {
+        let (msg_tx, msg_rx) = std::sync::mpsc::channel();
+        let dir = std::env::temp_dir();
+        let mut handle = spawn_server(
+            "sh",
+            &["-c".to_owned(), "sleep 30".to_owned()],
+            &dir,
+            LspServerId::from("fake-server"),
+            msg_tx,
+            None,
+        )
+        .expect("failed to spawn fake server");
+
+        let shared_deadline = std::time::Instant::now();
+        let started = std::time::Instant::now();
+        let acked_and_exited =
+            handle.graceful_shutdown(&msg_rx, Duration::from_secs(2), shared_deadline);
+        let elapsed = started.elapsed();
+
+        assert!(!acked_and_exited);
+        // Generous margin against scheduling jitter under a loaded test
+        // run — the point is distinguishing this from the *unbounded*
+        // per-phase cap (2s ack-wait + 2s exit-wait = 4s minimum without
+        // the shared deadline), not pinning an exact figure.
+        assert!(
+            elapsed < Duration::from_secs(3),
+            "an already-elapsed shared deadline must short-circuit both phases instead of \
+             paying the full per-phase cap (2s ack-wait + 2s exit-wait), took {elapsed:?}"
+        );
     }
 
     // ---- publishDiagnostics ----

@@ -369,6 +369,15 @@ struct LspManager {
     /// `~30s` UI-level abandonment deadlines for in-flight hover requests,
     /// mirroring `definition_deadlines`. Fired by `check_lsp_hover_deadlines`.
     hover_deadlines: HashMap<(LspServerId, PathBuf, i64), Instant>,
+    /// `(server_id, root)` pairs whose spawn attempt already reported
+    /// `ServerState::Missing` — `ensure_lsp_server` skips these outright
+    /// (design doc's "one-time transient, no error spam"). Without this,
+    /// every matching file-open re-attempts the spawn: two transients
+    /// per open, and (worse) each attempt consumed a `detached_roots`
+    /// slot *before* spawning, so a handful of opens for a missing
+    /// server permanently exhausted `MAX_DETACHED_ROOTS`. Cleared by
+    /// `Cmd::LspRestartServer` (the user's explicit "try again").
+    missing_servers: std::collections::HashSet<(LspServerId, PathBuf)>,
 }
 
 /// What `LspManager` needs to turn a `textDocument/definition` response
@@ -426,6 +435,7 @@ impl LspManager {
             hover_requests: HashMap::new(),
             hover_request_by_doc: HashMap::new(),
             hover_deadlines: HashMap::new(),
+            missing_servers: std::collections::HashSet::new(),
         }
     }
 
@@ -1813,6 +1823,13 @@ impl App {
                 self.lsp
                     .restart_deadlines
                     .retain(|(id, _), _| *id != server_id);
+                // Clear the missing-server memo too — a manual restart is
+                // the user's explicit "try again" (e.g. after installing
+                // the binary), so `ensure_lsp_server` must be allowed to
+                // re-attempt the spawn instead of skipping it forever.
+                self.lsp
+                    .missing_servers
+                    .retain(|(id, _)| *id != server_id);
                 self.restart_lsp_server(&server_id);
             }
             Cmd::LspDidOpen {
@@ -2184,22 +2201,37 @@ impl App {
         if self.lsp.is_running(&resolved.id, &root) {
             return;
         }
+        // Already know this `(server_id, root)` has no binary — skip the
+        // re-attempt entirely (see `LspManager::missing_servers`'s doc
+        // comment). Without this a matching file-open re-flashes the
+        // transient and re-consumes a detached-root slot every time.
+        if self
+            .lsp
+            .missing_servers
+            .contains(&(resolved.id.clone(), root.clone()))
+        {
+            return;
+        }
 
         let workspace_root = self.model.workspace.as_ref().map(|w| w.root.as_path());
         let is_detached = workspace_root.is_none_or(|ws| !root.starts_with(ws));
-        if is_detached && !self.lsp.detached_roots.contains(&root) {
-            if self.lsp.detached_roots.len() >= MAX_DETACHED_ROOTS {
-                tracing::debug!(
-                    "Detached LSP root cap ({MAX_DETACHED_ROOTS}) reached; not spawning {} for {}",
-                    resolved.id,
-                    root.display()
-                );
-                return;
-            }
-            self.lsp.detached_roots.push(root.clone());
+        let already_detached = self.lsp.detached_roots.contains(&root);
+        if is_detached && !already_detached && self.lsp.detached_roots.len() >= MAX_DETACHED_ROOTS
+        {
+            tracing::debug!(
+                "Detached LSP root cap ({MAX_DETACHED_ROOTS}) reached; not spawning {} for {}",
+                resolved.id,
+                root.display()
+            );
+            return;
         }
 
-        self.spawn_lsp_server_at(&resolved, &root);
+        // The slot is only spent once the spawn actually succeeds — a
+        // failed spawn (`Missing`) must not permanently claim one of the
+        // limited detached-root slots (see `LspManager::missing_servers`).
+        if self.spawn_lsp_server_at(&resolved, &root) && is_detached && !already_detached {
+            self.lsp.detached_roots.push(root);
+        }
     }
 
     /// Kills every running instance of `server_id` and respawns it at
@@ -2262,7 +2294,28 @@ impl App {
             .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
     }
 
-    fn spawn_lsp_server_at(&mut self, resolved: &lsp::ResolvedServer, root: &Path) {
+    /// Returns whether the spawn succeeded — callers that reserve a
+    /// limited resource on the strength of "a server is now running here"
+    /// (the detached-roots cap) must only do so after this returns `true`.
+    fn spawn_lsp_server_at(&mut self, resolved: &lsp::ResolvedServer, root: &Path) -> bool {
+        // Funnel guard against the backoff-window duplicate-spawn race: a
+        // crash removes the dead handle and arms a backoff deadline; a
+        // file-open during that window can reach here via
+        // `ensure_lsp_server` (which checked `is_running` before the
+        // backoff fired) and then `check_lsp_restart_deadlines` fires the
+        // same respawn again. `restart_lsp_server` always removes the old
+        // handle first, so a live server is never mistaken for stale here.
+        if self.lsp.is_running(&resolved.id, root) {
+            return true;
+        }
+        // A restart (manual or crash-backoff) re-attempts a spawn for a
+        // root previously memoized as missing — e.g. the user installed
+        // the binary and ran `RestartLanguageServer`, which clears the
+        // memo. Stale entries left behind would otherwise wedge
+        // `ensure_lsp_server` even after a successful respawn here.
+        self.lsp
+            .missing_servers
+            .remove(&(resolved.id.clone(), root.to_path_buf()));
         self.set_lsp_server_state(resolved.id.clone(), root, ServerState::Starting);
         match lsp::client::spawn_server(
             &resolved.command,
@@ -2276,10 +2329,15 @@ impl App {
                 self.lsp
                     .servers
                     .insert((resolved.id.clone(), root.to_path_buf()), handle);
+                true
             }
             Err(e) => {
                 tracing::warn!("Failed to spawn LSP server {}: {}", resolved.id, e);
                 self.set_lsp_server_state(resolved.id.clone(), root, ServerState::Missing);
+                self.lsp
+                    .missing_servers
+                    .insert((resolved.id.clone(), root.to_path_buf()));
+                false
             }
         }
     }
@@ -3953,6 +4011,57 @@ mod tests {
         );
     }
 
+    /// The backoff-window duplicate-spawn race: a crash removes the dead
+    /// handle and arms a backoff deadline; a file-open during that window
+    /// (`ensure_lsp_server`, which only sees `is_running` false since the
+    /// handle isn't installed yet) spawns a replacement directly, then
+    /// `check_lsp_restart_deadlines` fires for the same `(server_id,
+    /// root)` and must not spawn a *second* process on top of it —
+    /// `servers.insert` would silently overwrite the first handle,
+    /// orphaning a live process with nothing left to `kill()`/`wait()` it.
+    #[test]
+    fn restart_deadline_does_not_duplicate_spawn_a_root_already_running() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-backoff-race");
+
+        // Simulate the concurrent respawn that happened during the
+        // backoff window (a file-open's `ensure_lsp_server` beat the
+        // deadline sweep to it).
+        let handle = spawn_fake_handle(&server_id);
+        let generation = handle.generation;
+        app.lsp
+            .servers
+            .insert((server_id.clone(), root.clone()), handle);
+
+        // A backoff deadline for the same root, already due — as if
+        // `handle_lsp_server_exited` armed it before the race above
+        // resolved.
+        app.lsp
+            .restart_deadlines
+            .insert((server_id.clone(), root.clone()), Instant::now());
+
+        app.check_lsp_restart_deadlines();
+
+        // The deadline fired (consumed), but the *funnel guard* in
+        // `spawn_lsp_server_at` must have short-circuited before touching
+        // `servers` — same generation means the original handle survived
+        // untouched, not overwritten by a second spawn.
+        assert!(app.lsp.restart_deadlines.is_empty());
+        let surviving = app
+            .lsp
+            .servers
+            .get(&(server_id.clone(), root.clone()))
+            .expect("the concurrently spawned handle must still be present");
+        assert_eq!(
+            surviving.generation, generation,
+            "a duplicate spawn must not replace the already-running handle"
+        );
+
+        let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+        handle.kill();
+    }
+
     #[test]
     fn restart_attempts_are_scoped_per_root_not_per_server_id() {
         let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
@@ -4160,9 +4269,15 @@ mod tests {
 
         let mut roots = Vec::new();
         for i in 0..MAX_DETACHED_ROOTS + 1 {
-            let file = dir.path().join(format!("proj{i}")).join("main.rs");
+            let root_dir = dir.path().join(format!("proj{i}"));
+            // The spawn sets this as the child's cwd (`Command::current_dir`)
+            // — it must exist or the spawn fails and (after the missing-
+            // server fix) never claims a detached-root slot at all, which
+            // would collapse this test into the one below it.
+            std::fs::create_dir_all(&root_dir).expect("root dir should be created");
+            let file = root_dir.join("main.rs");
             app.ensure_lsp_server(token::syntax::LanguageId::Rust, &file);
-            roots.push(file.parent().unwrap().to_path_buf());
+            roots.push(root_dir);
         }
 
         assert_eq!(app.lsp.detached_roots.len(), MAX_DETACHED_ROOTS);
@@ -4171,6 +4286,81 @@ mod tests {
         for root in &roots[..MAX_DETACHED_ROOTS] {
             assert!(app.lsp.detached_roots.contains(root));
         }
+    }
+
+    /// A server binary that isn't on `PATH` must be memoized as `Missing`
+    /// per `(server_id, root)` — repeated `ensure_lsp_server` calls for
+    /// the same root (every matching file-open funnels through it) must
+    /// neither re-flash the transient nor re-attempt the spawn, and must
+    /// never consume a detached-root slot at all (a failed spawn has no
+    /// server running there to justify spending one of the limited
+    /// slots).
+    #[test]
+    fn missing_server_is_memoized_and_not_retried_on_repeated_opens() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some("/definitely/not/a/real/binary-xyz".to_owned()),
+                args: None,
+                enabled: None,
+            },
+        );
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let root_dir = dir.path().join("proj");
+        std::fs::create_dir_all(&root_dir).expect("root dir should be created");
+        let file = root_dir.join("main.rs");
+        let server_id = LspServerId::from("rust-analyzer");
+
+        app.ensure_lsp_server(token::syntax::LanguageId::Rust, &file);
+        assert_eq!(app.model.lsp.servers.get(&server_id), Some(&ServerState::Missing));
+        assert!(app
+            .lsp
+            .missing_servers
+            .contains(&(server_id.clone(), root_dir.clone())));
+        assert!(
+            app.lsp.detached_roots.is_empty(),
+            "a failed spawn must not consume a detached-root slot"
+        );
+
+        // Repeated opens of the same missing-server file (e.g. reopening
+        // the tab, or opening a sibling file under the same root) must be
+        // a silent no-op: no new transient, no new attempt.
+        app.model.ui.transient_message = None;
+        for _ in 0..3 {
+            app.ensure_lsp_server(token::syntax::LanguageId::Rust, &file);
+        }
+        assert!(
+            app.model.ui.transient_message.is_none(),
+            "a memoized-missing server must not re-flash a transient on repeated opens"
+        );
+        assert!(
+            app.lsp.detached_roots.is_empty(),
+            "repeated opens of a memoized-missing server must never consume a detached-root slot"
+        );
+    }
+
+    /// `Cmd::LspRestartServer` clears the missing-server memo so a later
+    /// `ensure_lsp_server` (the next matching file-open) can retry — e.g.
+    /// after the user installs the binary the editor previously couldn't
+    /// find.
+    #[test]
+    fn restart_command_clears_the_missing_server_memo() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-missing-restart");
+        app.lsp
+            .missing_servers
+            .insert((server_id.clone(), root.clone()));
+
+        app.process_cmd(Cmd::LspRestartServer {
+            server_id: server_id.clone(),
+        });
+
+        assert!(!app
+            .lsp
+            .missing_servers
+            .contains(&(server_id.clone(), root)));
     }
 
     // ---- Phase 3: go-to-definition request plumbing ----
