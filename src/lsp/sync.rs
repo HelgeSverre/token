@@ -123,20 +123,6 @@ impl<K: Eq + Hash + Copy> DidChangeDeadlines<K> {
     }
 }
 
-/// The flush-before-request invariant
-/// (docs/feature/lsp-integration.md "Document Synchronization"): if
-/// there's a pending `didChange` for the document a request targets, it
-/// must be written to the outbound channel *before* the request frame —
-/// never after, and never dropped. Pure ordering logic; the runtime just
-/// forwards each frame to the worker's `outbound_tx` in the order
-/// returned here.
-pub fn flush_before_request<T>(pending_did_change: Option<T>, request: T) -> Vec<T> {
-    let mut frames = Vec::with_capacity(2);
-    frames.extend(pending_did_change);
-    frames.push(request);
-    frames
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,17 +254,5 @@ mod tests {
             }
         }
         assert_eq!(last_seen, Some(10));
-    }
-
-    #[test]
-    fn flush_before_request_orders_pending_change_first() {
-        let frames = flush_before_request(Some("didChange"), "definition");
-        assert_eq!(frames, vec!["didChange", "definition"]);
-    }
-
-    #[test]
-    fn flush_before_request_with_nothing_pending_sends_only_the_request() {
-        let frames = flush_before_request(None, "definition");
-        assert_eq!(frames, vec!["definition"]);
     }
 }
