@@ -1,9 +1,8 @@
 //! Gutter marks contract shared by find/diagnostics/bookmark producers.
 //!
-//! See `docs/feature/editor-decorations.md`. No feature currently populates
-//! a mark source — this module is the collection seam the next consumer
-//! (find-enhancements or LSP diagnostics) extends with one branch in
-//! `collect_line_marks`, per the doc's acceptance criteria.
+//! See `docs/feature/editor-decorations.md`. LSP diagnostics
+//! (lsp-integration.md Phase 2) is the first real mark source, wired into
+//! `collect_line_marks` below.
 
 use super::Document;
 
@@ -42,18 +41,51 @@ pub struct LineMarks {
 
 /// Collect marks-lane state for `doc_line`.
 ///
-/// No producer exists yet (see module docs), so this always returns
-/// `LineMarks::default()` — the hook point is wired into the real gutter
-/// render pass already so a future producer adds one candidate-gathering
-/// branch here, not new plumbing.
+/// LSP diagnostics is the first producer: any diagnostic whose range
+/// touches `doc_line` contributes a candidate, highest severity winning
+/// via `best_mark`.
+///
+/// ponytail: this is a linear scan over every diagnostic per visible
+/// line (O(diagnostics × viewport) per frame), not the "O(log n) or
+/// better" the design doc asks a source to hit on its own. Diagnostic
+/// counts are typically dozens and viewports dozens of lines, so this is
+/// unmeasured-but-fine; switch `Document.diagnostics` to a
+/// sorted-by-start-line `Vec` plus a binary search (or a per-line map)
+/// if profiling ever shows otherwise.
 pub fn collect_line_marks(doc: &Document, doc_line: usize) -> LineMarks {
     if doc_line >= doc.line_count() {
         return LineMarks::default();
     }
 
-    let candidates: [Option<Mark>; 0] = [];
+    let candidates = doc
+        .diagnostics
+        .iter()
+        .filter(|d| diagnostic_touches_line(d, doc_line))
+        .map(|d| diagnostic_mark(d.severity));
+
     LineMarks {
-        mark: best_mark(candidates.into_iter().flatten()),
+        mark: best_mark(candidates),
+    }
+}
+
+/// Whether a diagnostic's (LSP, 0-based) range covers `doc_line`.
+fn diagnostic_touches_line(diagnostic: &lsp_types::Diagnostic, doc_line: usize) -> bool {
+    let line = doc_line as u32;
+    diagnostic.range.start.line <= line && line <= diagnostic.range.end.line
+}
+
+/// Maps an LSP severity to a gutter `Mark`. `None` (server left severity
+/// to the client) and `ERROR` both resolve to `Mark::Error` — the more
+/// visible choice when a server declines to say. `HINT` folds into
+/// `Mark::Info`: the marks lane has no separate hint glyph. Shared with
+/// the scrollbar-overview-tick and range-decoration producers
+/// (`view::mod`) so every diagnostic surface agrees on severity->Mark.
+pub fn diagnostic_mark(severity: Option<lsp_types::DiagnosticSeverity>) -> Mark {
+    match severity {
+        Some(lsp_types::DiagnosticSeverity::WARNING) => Mark::Warning,
+        Some(lsp_types::DiagnosticSeverity::INFORMATION)
+        | Some(lsp_types::DiagnosticSeverity::HINT) => Mark::Info,
+        _ => Mark::Error,
     }
 }
 
@@ -87,9 +119,62 @@ mod tests {
     }
 
     #[test]
-    fn collect_line_marks_in_bounds_line_has_no_marks_yet() {
+    fn collect_line_marks_in_bounds_line_without_diagnostics_is_default() {
         let mut doc = Document::new();
         doc.buffer = ropey::Rope::from("a\nb\nc\n");
         assert_eq!(collect_line_marks(&doc, 1), LineMarks::default());
+    }
+
+    fn diagnostic_at(
+        line: u32,
+        severity: Option<lsp_types::DiagnosticSeverity>,
+    ) -> lsp_types::Diagnostic {
+        lsp_types::Diagnostic {
+            range: lsp_types::Range {
+                start: lsp_types::Position { line, character: 0 },
+                end: lsp_types::Position { line, character: 3 },
+            },
+            severity,
+            message: "test".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn collect_line_marks_surfaces_a_diagnostic_on_its_line() {
+        let mut doc = Document::new();
+        doc.buffer = ropey::Rope::from("a\nb\nc\n");
+        doc.diagnostics = vec![diagnostic_at(1, Some(lsp_types::DiagnosticSeverity::ERROR))];
+        assert_eq!(collect_line_marks(&doc, 1).mark, Some(Mark::Error));
+        assert_eq!(collect_line_marks(&doc, 0).mark, None);
+    }
+
+    #[test]
+    fn collect_line_marks_picks_the_highest_severity_on_a_shared_line() {
+        let mut doc = Document::new();
+        doc.buffer = ropey::Rope::from("a\nb\nc\n");
+        doc.diagnostics = vec![
+            diagnostic_at(0, Some(lsp_types::DiagnosticSeverity::HINT)),
+            diagnostic_at(0, Some(lsp_types::DiagnosticSeverity::WARNING)),
+        ];
+        assert_eq!(collect_line_marks(&doc, 0).mark, Some(Mark::Warning));
+    }
+
+    #[test]
+    fn collect_line_marks_treats_missing_severity_as_error() {
+        let mut doc = Document::new();
+        doc.buffer = ropey::Rope::from("a\nb\nc\n");
+        doc.diagnostics = vec![diagnostic_at(0, None)];
+        assert_eq!(collect_line_marks(&doc, 0).mark, Some(Mark::Error));
+    }
+
+    #[test]
+    fn collect_line_marks_spans_a_multi_line_diagnostic_range() {
+        let mut doc = Document::new();
+        doc.buffer = ropey::Rope::from("a\nb\nc\n");
+        let mut diagnostic = diagnostic_at(0, Some(lsp_types::DiagnosticSeverity::ERROR));
+        diagnostic.range.end.line = 2;
+        doc.diagnostics = vec![diagnostic];
+        assert_eq!(collect_line_marks(&doc, 1).mark, Some(Mark::Error));
     }
 }

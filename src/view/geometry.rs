@@ -508,6 +508,7 @@ pub fn pixel_to_line_and_visual_column_in_group(
         char_width,
         &model.metrics,
         document.line_count(),
+        !document.diagnostics.is_empty(),
     )
     .round() as f64;
 
@@ -545,6 +546,7 @@ pub fn pixel_to_cursor_in_group(
         char_width,
         &model.metrics,
         document.line_count(),
+        !document.diagnostics.is_empty(),
     )
     .round() as f64;
     let text_start_y = model.metrics.tab_bar_height as f64;
@@ -572,9 +574,11 @@ pub fn pixel_to_cursor_in_group(
 ///
 /// `Copy` and allocation-free: it's rebuilt as part of `GroupLayout` on the
 /// per-mouse-move hit-test path, so it must stay a plain widths struct with
-/// no `Vec`. Phase 1 only activates the line-numbers lane (`numbers_w`,
-/// which includes the trailing gutter padding up to the border); marks/fold/
-/// diff lanes stay 0 until their consumers ship (see editor-decorations.md).
+/// no `Vec`. The line-numbers lane (`numbers_w`, which includes the trailing
+/// gutter padding up to the border) is always active; the marks lane
+/// activates per-document once it has diagnostics (LSP Phase 2, the first
+/// consumer — see editor-decorations.md); fold/diff lanes stay 0 until their
+/// consumers ship.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct GutterLayout {
     pub marks_w: u16,
@@ -585,11 +589,23 @@ pub struct GutterLayout {
 
 impl GutterLayout {
     /// Build the gutter layout for a document with `line_count` lines.
-    pub fn new(char_width: f32, metrics: &crate::model::ScaledMetrics, line_count: usize) -> Self {
-        let numbers_w =
-            crate::model::gutter_border_x_scaled(char_width, metrics, line_count).round() as u16;
+    /// `has_marks` activates the marks lane (~1 char wide, left of line
+    /// numbers per editor-decorations.md's lane order).
+    pub fn new(
+        char_width: f32,
+        metrics: &crate::model::ScaledMetrics,
+        line_count: usize,
+        has_marks: bool,
+    ) -> Self {
+        let marks_w = if has_marks {
+            char_width.round() as u16
+        } else {
+            0
+        };
+        let numbers_w = crate::model::gutter_border_x_scaled(char_width, metrics, line_count, false)
+            .round() as u16;
         Self {
-            marks_w: 0,
+            marks_w,
             numbers_w,
             fold_w: 0,
             diff_w: 0,
@@ -695,17 +711,16 @@ impl GroupLayout {
             (group_rect.height - tab_bar_height as f32).max(0.0),
         );
 
-        let line_count = model
-            .editor_area
-            .document_for_group(group)
-            .map(|doc| doc.line_count())
-            .unwrap_or(1);
+        let document = model.editor_area.document_for_group(group);
+        let line_count = document.map(|doc| doc.line_count()).unwrap_or(1);
+        let has_marks = document.is_some_and(|doc| !doc.diagnostics.is_empty());
 
         let rect_x = group_rect.x.round() as usize;
-        let gutter = GutterLayout::new(char_width, metrics, line_count);
+        let gutter = GutterLayout::new(char_width, metrics, line_count, has_marks);
         let gutter_right_x = rect_x + gutter.total_width();
         let text_start_x = rect_x
-            + crate::model::text_start_x_scaled(char_width, metrics, line_count).round() as usize;
+            + crate::model::text_start_x_scaled(char_width, metrics, line_count, has_marks).round()
+                as usize;
 
         Self {
             group_rect,

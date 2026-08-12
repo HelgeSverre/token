@@ -87,7 +87,37 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
         // poll of `msg_rx` during quit teardown — never reaches `update()`
         // in practice, but the match must stay exhaustive.
         LspMsg::ShutdownAcked { .. } => None,
+        LspMsg::DiagnosticsPublished {
+            uri, diagnostics, ..
+        } => {
+            // Staleness (out-of-order `version`) is already filtered by
+            // the runtime before this reaches `update()`; the
+            // authoritative store lives there too. This is purely the
+            // model projection onto whatever document (if any) has
+            // `uri` open — a publish for an unopened file is a silent
+            // no-op here (still retained in the runtime's store).
+            let document_id = find_document_by_uri(model, &uri)?;
+            let doc = model.editor_area.documents.get_mut(&document_id)?;
+            doc.diagnostics = diagnostics;
+            Some(Cmd::redraw_editor())
+        }
     }
+}
+
+/// Finds the open document whose file path canonicalizes to `uri`, per
+/// `lsp::path_to_uri` (the "raw `PathBuf`s are never compared" rule from
+/// the design doc's URIs and Paths section).
+fn find_document_by_uri(model: &AppModel, uri: &lsp_types::Uri) -> Option<DocumentId> {
+    model
+        .editor_area
+        .documents
+        .iter()
+        .find(|(_, doc)| {
+            doc.file_path
+                .as_deref()
+                .is_some_and(|path| &crate::lsp::path_to_uri(path) == uri)
+        })
+        .map(|(id, _)| *id)
 }
 
 #[cfg(test)]

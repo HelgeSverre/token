@@ -420,6 +420,90 @@ fn find_match_ticks(
         .collect()
 }
 
+/// Severity color for a diagnostic's `Wavy`/`Strikethrough` decoration —
+/// the same overlay-surface.md convention `editor_text::mark_color` uses
+/// for the gutter glyph, so squiggle and dot always agree.
+fn diagnostic_severity_color(
+    model: &AppModel,
+    severity: Option<lsp_types::DiagnosticSeverity>,
+) -> u32 {
+    let overlay = &model.theme.overlay;
+    match crate::model::diagnostic_mark(severity) {
+        crate::model::Mark::Warning => overlay.severity_warning.to_argb_u32(),
+        crate::model::Mark::Info => overlay.severity_info.to_argb_u32(),
+        _ => overlay.severity_error.to_argb_u32(),
+    }
+}
+
+/// `Wavy` underlines (severity-colored) plus `Faded`/`Strikethrough` tags
+/// for every diagnostic touching `visible_lines` — unlike find matches,
+/// diagnostics render regardless of focus (they're document state, not a
+/// focused-pane search). Positions come from `lsp::position::lsp_to_position`,
+/// which clamps into the current buffer, so a diagnostic whose range has
+/// gone stale against later edits degrades to a clamped (never panicking)
+/// decoration rather than disappearing outright — full render-time
+/// clamping (skipping a vanished line entirely) happens one layer down in
+/// `editor_text::render_one_decoration`.
+fn diagnostic_decorations(
+    model: &AppModel,
+    document: &crate::model::Document,
+    visible_lines: std::ops::Range<usize>,
+) -> Vec<editor_text::RangeDecoration> {
+    if document.diagnostics.is_empty() {
+        return Vec::new();
+    }
+
+    document
+        .diagnostics
+        .iter()
+        .filter(|d| {
+            let start = d.range.start.line as usize;
+            let end = d.range.end.line as usize;
+            end >= visible_lines.start && start < visible_lines.end
+        })
+        .flat_map(|d| {
+            let start = crate::lsp::position::lsp_to_position(document, d.range.start);
+            let end = crate::lsp::position::lsp_to_position(document, d.range.end);
+            let color = diagnostic_severity_color(model, d.severity);
+            let mut decorations = vec![editor_text::RangeDecoration {
+                start: (start.line, start.column),
+                end: (end.line, end.column),
+                kind: editor_text::DecorationKind::Wavy(color),
+            }];
+            let tags = d.tags.as_deref().unwrap_or(&[]);
+            if tags.contains(&lsp_types::DiagnosticTag::UNNECESSARY) {
+                decorations.push(editor_text::RangeDecoration {
+                    start: (start.line, start.column),
+                    end: (end.line, end.column),
+                    kind: editor_text::DecorationKind::Faded,
+                });
+            }
+            if tags.contains(&lsp_types::DiagnosticTag::DEPRECATED) {
+                decorations.push(editor_text::RangeDecoration {
+                    start: (start.line, start.column),
+                    end: (end.line, end.column),
+                    kind: editor_text::DecorationKind::Strikethrough(color),
+                });
+            }
+            decorations
+        })
+        .collect()
+}
+
+/// One scrollbar overview tick per diagnostic, keyed by its starting
+/// line — `Mark`'s existing severity priority already resolves
+/// collisions the same way the gutter marks lane does.
+fn diagnostic_ticks(document: &crate::model::Document) -> Vec<(usize, crate::model::Mark)> {
+    document
+        .diagnostics
+        .iter()
+        .map(|d| {
+            let line = crate::lsp::position::lsp_to_position(document, d.range.start).line;
+            (line, crate::model::diagnostic_mark(d.severity))
+        })
+        .collect()
+}
+
 enum EditorContentKind<'a> {
     Text {
         document: &'a crate::model::Document,
@@ -511,22 +595,24 @@ impl<'a> EditorGroupScene<'a> {
     ) {
         match &self.content {
             EditorContentKind::Text { document } => {
+                let viewport = &self.editor.viewport;
+                let visible_lines = viewport.top_line..viewport.top_line + viewport.visible_lines;
                 // Match highlighting only applies to the focused pane — find
                 // navigation only ever operates on it (see
-                // find-enhancements.md).
-                let decorations = if self.is_focused {
-                    let viewport = &self.editor.viewport;
-                    let visible_lines =
-                        viewport.top_line..viewport.top_line + viewport.visible_lines;
+                // find-enhancements.md). Diagnostics are document state,
+                // not a focused-pane search, so they render in every pane
+                // showing the document.
+                let mut decorations = if self.is_focused {
                     find_match_decorations(
                         model,
                         document,
                         &self.editor.selections[0],
-                        visible_lines,
+                        visible_lines.clone(),
                     )
                 } else {
                     Vec::new()
                 };
+                decorations.extend(diagnostic_decorations(model, document, visible_lines));
                 editor_text::render_text_area(
                     frame,
                     painter,
@@ -591,11 +677,12 @@ impl<'a> EditorGroupScene<'a> {
             _ => return,
         };
 
-        let ticks = if self.is_focused {
+        let mut ticks = if self.is_focused {
             find_match_ticks(model, document)
         } else {
             Vec::new()
         };
+        ticks.extend(diagnostic_ticks(document));
         Renderer::render_editor_scrollbars(
             frame,
             model,
@@ -1337,7 +1424,8 @@ impl Renderer {
         }
 
         let layout = geometry::GroupLayout::new(group, model, char_width);
-        let ticks = find_match_ticks(model, document);
+        let mut ticks = find_match_ticks(model, document);
+        ticks.extend(diagnostic_ticks(document));
         Self::render_editor_scrollbars(frame, model, editor, document, &layout, &ticks);
     }
 
@@ -2721,5 +2809,114 @@ mod find_match_decoration_tests {
         open_find(&mut model, "foo", false, false);
         let ticks = find_match_ticks(&model, model.document());
         assert_eq!(ticks, vec![(0, Mark::Match), (2, Mark::Match)]);
+    }
+
+    // ---- LSP diagnostics decorations/ticks (lsp-integration.md Phase 2) ----
+
+    fn diagnostic(
+        start_line: u32,
+        end_line: u32,
+        severity: Option<lsp_types::DiagnosticSeverity>,
+    ) -> lsp_types::Diagnostic {
+        lsp_types::Diagnostic {
+            range: lsp_types::Range {
+                start: lsp_types::Position {
+                    line: start_line,
+                    character: 0,
+                },
+                end: lsp_types::Position {
+                    line: end_line,
+                    character: 3,
+                },
+            },
+            severity,
+            message: "boom".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn diagnostic_decorations_emit_wavy_underline_for_a_visible_diagnostic() {
+        let mut model = model_with_text("foo\nbar\n");
+        model.document_mut().diagnostics =
+            vec![diagnostic(0, 0, Some(lsp_types::DiagnosticSeverity::ERROR))];
+        let document = model.document();
+        let decorations = diagnostic_decorations(&model, document, 0..10);
+        assert_eq!(decorations.len(), 1);
+        assert!(matches!(
+            decorations[0].kind,
+            editor_text::DecorationKind::Wavy(_)
+        ));
+    }
+
+    #[test]
+    fn diagnostic_decorations_add_faded_and_strikethrough_for_tags() {
+        let mut model = model_with_text("foo\n");
+        let mut d = diagnostic(0, 0, Some(lsp_types::DiagnosticSeverity::WARNING));
+        d.tags = Some(vec![
+            lsp_types::DiagnosticTag::UNNECESSARY,
+            lsp_types::DiagnosticTag::DEPRECATED,
+        ]);
+        model.document_mut().diagnostics = vec![d];
+        let document = model.document();
+        let decorations = diagnostic_decorations(&model, document, 0..10);
+        assert_eq!(decorations.len(), 3);
+        assert!(decorations
+            .iter()
+            .any(|d| matches!(d.kind, editor_text::DecorationKind::Faded)));
+        assert!(decorations
+            .iter()
+            .any(|d| matches!(d.kind, editor_text::DecorationKind::Strikethrough(_))));
+    }
+
+    #[test]
+    fn diagnostic_decorations_outside_the_visible_range_are_skipped() {
+        let text = "line\n".repeat(50);
+        let mut model = model_with_text(&text);
+        model.document_mut().diagnostics = vec![diagnostic(
+            40,
+            40,
+            Some(lsp_types::DiagnosticSeverity::ERROR),
+        )];
+        let document = model.document();
+        assert!(diagnostic_decorations(&model, document, 0..10).is_empty());
+        assert!(!diagnostic_decorations(&model, document, 35..45).is_empty());
+    }
+
+    /// Diagnostic ranges computed before a shrinking edit (stale line
+    /// numbers, including well past `u32` document sizes) must never
+    /// panic when turned into decorations or ticks — clamping happens
+    /// via `lsp::position::lsp_to_position` (fuzzed against random stale
+    /// ranges here) and, one layer down, `editor_text`'s render-time
+    /// clamp (its own fuzz test).
+    #[test]
+    fn diagnostic_decorations_and_ticks_never_panic_on_stale_ranges() {
+        let mut model = model_with_text("a\nb\nc\n");
+        let severities = [
+            None,
+            Some(lsp_types::DiagnosticSeverity::ERROR),
+            Some(lsp_types::DiagnosticSeverity::WARNING),
+            Some(lsp_types::DiagnosticSeverity::HINT),
+        ];
+        let mut diagnostics = Vec::new();
+        for start in [0u32, 2, 5, 1000, u32::MAX] {
+            for end in [start, start.saturating_add(3), u32::MAX] {
+                for severity in severities {
+                    diagnostics.push(diagnostic(start, end, severity));
+                }
+            }
+        }
+        let diagnostics_len = diagnostics.len();
+        model.document_mut().diagnostics = diagnostics;
+        let document = model.document();
+
+        for visible in [0..10, 2..2, 0..1000] {
+            let decorations = diagnostic_decorations(&model, document, visible);
+            for d in &decorations {
+                assert!(d.start.0 <= d.end.0, "decoration lines must not invert");
+            }
+        }
+        let ticks = diagnostic_ticks(document);
+        assert_eq!(ticks.len(), diagnostics_len);
     }
 }

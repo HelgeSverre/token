@@ -316,6 +316,19 @@ struct LspManager {
     /// manual `RestartLanguageServer`), since a fresh process has no
     /// memory of what the previous one had open.
     resync_pending: std::collections::HashSet<(LspServerId, PathBuf)>,
+    /// Authoritative diagnostics store (lsp-integration.md Phase 2),
+    /// keyed by canonical URI. Full replacement per publish; retains
+    /// entries for URIs with no open document (rust-analyzer publishes
+    /// workspace-wide from `cargo check`) so a later `didOpen` can pull
+    /// them and a future Problems panel gets them for free.
+    /// `Document.diagnostics` (model-side) is only ever a projection of
+    /// this for currently-open documents.
+    diagnostics: HashMap<lsp_types::Uri, Vec<lsp_types::Diagnostic>>,
+    /// The last `version` seen per URI (when the server sends one) —
+    /// used only to drop out-of-order publishes, never as a
+    /// `Document.revision` equality guard (see the design doc's
+    /// diagnostics exception).
+    diagnostics_versions: HashMap<lsp_types::Uri, i64>,
 }
 
 /// What `LspManager` remembers about a `didOpen`'d document — enough to
@@ -341,6 +354,8 @@ impl LspManager {
             open_documents: HashMap::new(),
             shutting_down: false,
             resync_pending: std::collections::HashSet::new(),
+            diagnostics: HashMap::new(),
+            diagnostics_versions: HashMap::new(),
         }
     }
 
@@ -357,7 +372,6 @@ impl LspManager {
             .map(|(_, root)| root.clone())
             .collect()
     }
-
 }
 
 impl App {
@@ -1752,6 +1766,26 @@ impl App {
     fn process_async_messages(&mut self) -> bool {
         let mut needs_redraw = self.process_terminal_spawn_results();
         while let Ok(msg) = self.msg_rx.try_recv() {
+            if let Msg::Lsp(LspMsg::DiagnosticsPublished {
+                ref uri,
+                version,
+                ref diagnostics,
+            }) = msg
+            {
+                if self.is_stale_diagnostics_publish(uri, version) {
+                    // Out-of-order publish for a URI we've already seen a
+                    // newer version of — dropped before it touches the
+                    // authoritative store or the model (design doc's
+                    // diagnostics-version-ordering rule).
+                    continue;
+                }
+                self.lsp
+                    .diagnostics
+                    .insert(uri.clone(), diagnostics.clone());
+                if let Some(version) = version {
+                    self.lsp.diagnostics_versions.insert(uri.clone(), version);
+                }
+            }
             let syntax_completion = match &msg {
                 Msg::Syntax(SyntaxMsg::ParseCompleted {
                     document_id,
@@ -1797,7 +1831,9 @@ impl App {
                 self.handle_lsp_server_exited(&server_id, generation);
             }
             if let Some((server_id, root)) = lsp_ready {
-                self.lsp.restart_attempts.remove(&(server_id.clone(), root.clone()));
+                self.lsp
+                    .restart_attempts
+                    .remove(&(server_id.clone(), root.clone()));
                 if self
                     .lsp
                     .resync_pending
@@ -1904,6 +1940,7 @@ impl App {
         if roots.is_empty() {
             roots = self.lsp.failed_roots.remove(server_id).unwrap_or_default();
         }
+        self.clear_diagnostics_for_roots(server_id, &roots);
         for root in roots {
             if let Some(mut handle) = self.lsp.servers.remove(&(server_id.clone(), root.clone())) {
                 handle.kill();
@@ -1997,6 +2034,14 @@ impl App {
             method: "textDocument/didOpen".to_owned(),
             params,
         });
+        // Pull any diagnostics the store already retained for this URI
+        // (a publish that arrived before this document was open) — the
+        // design doc's "retains publishes for unopened files" rule.
+        if let Some(diagnostics) = self.lsp.diagnostics.get(&uri) {
+            if let Some(doc) = self.model.editor_area.documents.get_mut(&document_id) {
+                doc.diagnostics = diagnostics.clone();
+            }
+        }
         self.lsp.open_documents.insert(
             document_id,
             OpenDocState {
@@ -2006,6 +2051,39 @@ impl App {
                 synced_revision: revision,
             },
         );
+    }
+
+    /// Whether a `publishDiagnostics` `version` for `uri` is older than
+    /// the last one applied — the design doc's "version used only to
+    /// discard out-of-order publishes" rule. A publish with no version
+    /// (or the first ever seen for `uri`) is never stale.
+    fn is_stale_diagnostics_publish(&self, uri: &lsp_types::Uri, version: Option<i64>) -> bool {
+        match (version, self.lsp.diagnostics_versions.get(uri)) {
+            (Some(incoming), Some(&last)) => incoming < last,
+            _ => false,
+        }
+    }
+
+    /// Drops the diagnostics store entry and any open document's
+    /// projection for every URI `didOpen`'d against `(server_id, root)`
+    /// in `roots` — called on crash-exit and on a manual restart, since
+    /// diagnostics from a server that's gone (or about to be replaced)
+    /// are stale (design doc's "cleared on ... server exit").
+    fn clear_diagnostics_for_roots(&mut self, server_id: &LspServerId, roots: &[PathBuf]) {
+        let affected: Vec<_> = self
+            .lsp
+            .open_documents
+            .iter()
+            .filter(|(_, state)| &state.server_id == server_id && roots.contains(&state.root))
+            .map(|(doc_id, state)| (*doc_id, state.uri.clone()))
+            .collect();
+        for (doc_id, uri) in affected {
+            self.lsp.diagnostics.remove(&uri);
+            self.lsp.diagnostics_versions.remove(&uri);
+            if let Some(doc) = self.model.editor_area.documents.get_mut(&doc_id) {
+                doc.diagnostics.clear();
+            }
+        }
     }
 
     /// `textDocument/didChange`, full-text sync. `text` reuses an
@@ -2026,7 +2104,10 @@ impl App {
         if state.synced_revision == revision {
             return;
         }
-        let Some(handle) = self.lsp.servers.get(&(state.server_id.clone(), state.root.clone()))
+        let Some(handle) = self
+            .lsp
+            .servers
+            .get(&(state.server_id.clone(), state.root.clone()))
         else {
             return;
         };
@@ -2065,7 +2146,10 @@ impl App {
         let Some(state) = self.lsp.open_documents.get(&document_id) else {
             return;
         };
-        let Some(handle) = self.lsp.servers.get(&(state.server_id.clone(), state.root.clone()))
+        let Some(handle) = self
+            .lsp
+            .servers
+            .get(&(state.server_id.clone(), state.root.clone()))
         else {
             return;
         };
@@ -2179,6 +2263,7 @@ impl App {
         for root in &roots {
             self.lsp.servers.remove(&(server_id.clone(), root.clone()));
         }
+        self.clear_diagnostics_for_roots(server_id, &roots);
 
         for root in roots {
             let key = (server_id.clone(), root.clone());
@@ -2223,7 +2308,9 @@ impl App {
             .map(|(key, _)| key.clone())
             .collect();
         for (server_id, root) in due {
-            self.lsp.restart_deadlines.remove(&(server_id.clone(), root.clone()));
+            self.lsp
+                .restart_deadlines
+                .remove(&(server_id.clone(), root.clone()));
             let Some(def) = lsp::server_def_by_id(&server_id.0) else {
                 continue;
             };
@@ -2709,7 +2796,10 @@ impl App {
     /// coincide (design doc: "must not double" the rope-to-string cost).
     fn check_syntax_deadlines(
         &mut self,
-    ) -> (bool, HashMap<token::model::editor_area::DocumentId, Arc<str>>) {
+    ) -> (
+        bool,
+        HashMap<token::model::editor_area::DocumentId, Arc<str>>,
+    ) {
         let mut snapshots = HashMap::new();
         if self.syntax_deadlines.is_empty() {
             return (false, snapshots);
@@ -3132,7 +3222,10 @@ mod tests {
         // current handle or bump restart_attempts.
         app.handle_lsp_server_exited(&server_id, real_generation.wrapping_add(1));
 
-        assert!(app.lsp.servers.contains_key(&(server_id.clone(), root.clone())));
+        assert!(app
+            .lsp
+            .servers
+            .contains_key(&(server_id.clone(), root.clone())));
         assert!(!app
             .lsp
             .restart_attempts
@@ -3156,7 +3249,10 @@ mod tests {
 
         app.handle_lsp_server_exited(&server_id, generation);
 
-        assert!(!app.lsp.servers.contains_key(&(server_id.clone(), root.clone())));
+        assert!(!app
+            .lsp
+            .servers
+            .contains_key(&(server_id.clone(), root.clone())));
         assert_eq!(
             app.lsp.restart_attempts.get(&(server_id, root)).copied(),
             Some(1)
@@ -3185,10 +3281,7 @@ mod tests {
                 .copied(),
             Some(1)
         );
-        assert!(!app
-            .lsp
-            .restart_attempts
-            .contains_key(&(server_id, root_b)));
+        assert!(!app.lsp.restart_attempts.contains_key(&(server_id, root_b)));
     }
 
     #[test]
@@ -3450,6 +3543,179 @@ mod tests {
         // exit, all within the 2s budget, no hang.
         app.process_cmd(Cmd::Quit);
         assert!(app.lsp.servers.is_empty());
+    }
+
+    /// A `publishDiagnostics` for a file with no open document is
+    /// retained in `LspManager`'s authoritative store (never dropped for
+    /// lack of a projection target) and applied to the document's
+    /// `diagnostics` projection the moment it's opened — the design
+    /// doc's "retains publishes for unopened files" rule.
+    #[test]
+    fn diagnostics_publish_for_an_unopened_file_is_retained_and_applied_on_open() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write fixture file");
+        let uri = token::lsp::path_to_uri(&file_path);
+
+        let scenario_path = dir.path().join("scenario.json");
+        std::fs::write(
+            &scenario_path,
+            serde_json::json!([
+                { "op": "expect_request", "method": "initialize", "respond": { "capabilities": {} } },
+                { "op": "notify", "method": "textDocument/publishDiagnostics", "params": {
+                    "uri": uri.as_str(),
+                    "diagnostics": [{
+                        "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } },
+                        "severity": 1,
+                        "message": "retained before open",
+                    }],
+                }},
+                { "op": "sleep_ms", "ms": 60000 },
+            ])
+            .to_string(),
+        )
+        .expect("write scenario file");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
+                enabled: None,
+            },
+        );
+
+        app.process_cmd(Cmd::LspEnsureServer {
+            language: LanguageId::Rust,
+            file_path: file_path.clone(),
+        });
+
+        // The publish arrives before any document is open — it must land
+        // in the store without a target document to project onto.
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| app
+            .lsp
+            .diagnostics
+            .contains_key(&uri)));
+
+        let doc_id = token::model::editor_area::DocumentId(1);
+        let mut doc = token::model::Document::from_file(file_path.clone()).unwrap();
+        doc.id = Some(doc_id);
+        app.model.editor_area.documents.insert(doc_id, doc);
+        assert!(app
+            .model
+            .editor_area
+            .documents
+            .get(&doc_id)
+            .unwrap()
+            .diagnostics
+            .is_empty());
+
+        app.process_cmd(Cmd::LspDidOpen {
+            document_id: doc_id,
+            file_path,
+            language: LanguageId::Rust,
+        });
+
+        let projected = &app
+            .model
+            .editor_area
+            .documents
+            .get(&doc_id)
+            .unwrap()
+            .diagnostics;
+        assert_eq!(projected.len(), 1);
+        assert_eq!(projected[0].message, "retained before open");
+
+        app.process_cmd(Cmd::Quit);
+    }
+
+    /// An out-of-order (older-`version`) `publishDiagnostics` for a URI
+    /// must not clobber a newer one already applied — the design doc's
+    /// "version used only to discard out-of-order publishes" rule.
+    #[test]
+    fn stale_version_diagnostics_publish_is_dropped() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write fixture file");
+        let uri = token::lsp::path_to_uri(&file_path);
+
+        let scenario_path = dir.path().join("scenario.json");
+        std::fs::write(
+            &scenario_path,
+            serde_json::json!([
+                { "op": "expect_request", "method": "initialize", "respond": { "capabilities": {} } },
+                { "op": "notify", "method": "textDocument/publishDiagnostics", "params": {
+                    "uri": uri.as_str(),
+                    "version": 2,
+                    "diagnostics": [{
+                        "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } },
+                        "severity": 1,
+                        "message": "newer",
+                    }],
+                }},
+                { "op": "notify", "method": "textDocument/publishDiagnostics", "params": {
+                    "uri": uri.as_str(),
+                    "version": 1,
+                    "diagnostics": [{
+                        "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } },
+                        "severity": 1,
+                        "message": "stale",
+                    }],
+                }},
+                { "op": "sleep_ms", "ms": 60000 },
+            ])
+            .to_string(),
+        )
+        .expect("write scenario file");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
+                enabled: None,
+            },
+        );
+
+        let doc_id = token::model::editor_area::DocumentId(1);
+        let mut doc = token::model::Document::from_file(file_path.clone()).unwrap();
+        doc.id = Some(doc_id);
+        app.model.editor_area.documents.insert(doc_id, doc);
+
+        app.process_cmd(Cmd::LspEnsureServer {
+            language: LanguageId::Rust,
+            file_path: file_path.clone(),
+        });
+
+        // The document only needs to be present in the model for
+        // `update_lsp` to find and project onto it — no `didOpen`
+        // required for this test (projection doesn't gate on it).
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            app.model
+                .editor_area
+                .documents
+                .get(&doc_id)
+                .is_some_and(|d| d.diagnostics.iter().any(|d| d.message == "newer"))
+        }));
+        // Give the (already-sent) stale publish a moment to be drained
+        // too, so a regression that applies it wouldn't race the assert.
+        std::thread::sleep(Duration::from_millis(200));
+        app.process_async_messages();
+
+        let projected = &app
+            .model
+            .editor_area
+            .documents
+            .get(&doc_id)
+            .unwrap()
+            .diagnostics;
+        assert_eq!(projected.len(), 1);
+        assert_eq!(projected[0].message, "newer");
+        assert_eq!(app.lsp.diagnostics_versions.get(&uri).copied(), Some(2));
+
+        app.process_cmd(Cmd::Quit);
     }
 
     /// Pumps `process_async_messages` until `cond` holds or `timeout`

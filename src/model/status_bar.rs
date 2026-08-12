@@ -21,6 +21,9 @@ pub enum SegmentId {
     StatusMessage,
     /// Caret count for multi-cursor (e.g., "4 carets")
     CaretCount,
+    /// LSP diagnostics count for the focused document (e.g., "✗ 2 ⚠ 5"),
+    /// hidden when clean (lsp-integration.md Phase 2).
+    Diagnostics,
 }
 
 /// Position of a segment in the status bar
@@ -92,7 +95,8 @@ impl StatusSegment {
             SegmentId::Selection
             | SegmentId::CursorPosition
             | SegmentId::LineCount
-            | SegmentId::CaretCount => SegmentPosition::Right,
+            | SegmentId::CaretCount
+            | SegmentId::Diagnostics => SegmentPosition::Right,
         };
 
         Self {
@@ -144,6 +148,7 @@ impl StatusBar {
                 StatusSegment::new(SegmentId::StatusMessage, SegmentContent::Empty)
                     .with_priority(50),
                 // Right segments
+                StatusSegment::new(SegmentId::Diagnostics, SegmentContent::Empty).with_priority(70),
                 StatusSegment::new(SegmentId::CaretCount, SegmentContent::Empty).with_priority(45),
                 StatusSegment::new(SegmentId::Selection, SegmentContent::Empty).with_priority(40),
                 StatusSegment::new(
@@ -451,6 +456,103 @@ pub fn sync_status_bar(model: &mut AppModel) {
         .ui
         .status_bar
         .update_segment(SegmentId::CaretCount, caret_content);
+
+    // Diagnostics segment (lsp-integration.md Phase 2): hidden when clean
+    // (which also covers "no server" — no server means no diagnostics).
+    let (errors, warnings) = count_diagnostics(&model.document().diagnostics);
+    let diagnostics_content = if errors == 0 && warnings == 0 {
+        SegmentContent::Empty
+    } else {
+        SegmentContent::Text(format!("✗ {errors} ⚠ {warnings}"))
+    };
+    model
+        .ui
+        .status_bar
+        .update_segment(SegmentId::Diagnostics, diagnostics_content);
+
+    // Message of the highest-severity diagnostic under the cursor, in the
+    // same segment a status flash uses — a flash always wins (it's
+    // explicit user/action feedback); once it expires this takes over
+    // again on the next sync.
+    if model.ui.transient_message.is_none() {
+        let cursor = model.editor().active_cursor();
+        let cursor_position = super::editor::Position::new(cursor.line, cursor.column);
+        let message_content = match diagnostic_message_at_cursor(model.document(), cursor_position)
+        {
+            Some(text) => SegmentContent::Text(truncate_status_message(&text)),
+            None => SegmentContent::Empty,
+        };
+        model
+            .ui
+            .status_bar
+            .update_segment(SegmentId::StatusMessage, message_content);
+    }
+}
+
+/// Counts `(errors, warnings)` — diagnostics is the design doc's "✗ n ⚠ n"
+/// shape; info/hint aren't counted in this segment.
+fn count_diagnostics(diagnostics: &[lsp_types::Diagnostic]) -> (usize, usize) {
+    diagnostics.iter().fold(
+        (0, 0),
+        |(errors, warnings), d| match super::diagnostic_mark(d.severity) {
+            super::Mark::Warning => (errors, warnings + 1),
+            super::Mark::Info => (errors, warnings),
+            _ => (errors + 1, warnings),
+        },
+    )
+}
+
+/// The message of the highest-severity diagnostic whose range contains
+/// `cursor`, if any (lsp-integration.md: "readable, not just visible").
+/// `relatedInformation` isn't included here — it arrives with the hover
+/// card in Phase 4.
+fn diagnostic_message_at_cursor(
+    document: &super::Document,
+    cursor: super::editor::Position,
+) -> Option<String> {
+    document
+        .diagnostics
+        .iter()
+        .filter(|d| diagnostic_contains_position(document, d, cursor))
+        .max_by_key(|d| super::diagnostic_mark(d.severity))
+        .map(|d| d.message.clone())
+}
+
+fn diagnostic_contains_position(
+    document: &super::Document,
+    diagnostic: &lsp_types::Diagnostic,
+    cursor: super::editor::Position,
+) -> bool {
+    let start = crate::lsp::position::lsp_to_position(document, diagnostic.range.start);
+    let end = crate::lsp::position::lsp_to_position(document, diagnostic.range.end);
+    if cursor.line < start.line || cursor.line > end.line {
+        return false;
+    }
+    if cursor.line == start.line && cursor.column < start.column {
+        return false;
+    }
+    if cursor.line == end.line && cursor.column > end.column {
+        return false;
+    }
+    true
+}
+
+/// Flattens whitespace/newlines and caps the message length so a
+/// multi-line `relatedInformation`-heavy message doesn't blow out the
+/// status bar.
+const MAX_STATUS_MESSAGE_CHARS: usize = 120;
+
+fn truncate_status_message(text: &str) -> String {
+    let flattened = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flattened.chars().count() <= MAX_STATUS_MESSAGE_CHARS {
+        return flattened;
+    }
+    let mut truncated: String = flattened
+        .chars()
+        .take(MAX_STATUS_MESSAGE_CHARS.saturating_sub(1))
+        .collect();
+    truncated.push('…');
+    truncated
 }
 
 /// Calculate selection info for the Selection segment

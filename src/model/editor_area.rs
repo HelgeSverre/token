@@ -728,13 +728,13 @@ impl EditorArea {
 
             for editor_id in editor_ids {
                 if let Some(editor) = self.editors.get_mut(&editor_id) {
-                    let line_count = editor
-                        .document_id
-                        .and_then(|id| self.documents.get(&id))
-                        .map(|doc| doc.line_count())
-                        .unwrap_or(1);
-                    let text_x =
-                        crate::model::text_start_x_scaled(char_width, metrics, line_count).round();
+                    let doc = editor.document_id.and_then(|id| self.documents.get(&id));
+                    let line_count = doc.map(|d| d.line_count()).unwrap_or(1);
+                    let has_marks = doc.is_some_and(|d| !d.diagnostics.is_empty());
+                    let text_x = crate::model::text_start_x_scaled(
+                        char_width, metrics, line_count, has_marks,
+                    )
+                    .round();
                     let visible_columns = if char_width > 0.0 {
                         ((width as f32 - text_x) / char_width).floor().max(1.0) as usize
                     } else {

@@ -236,6 +236,10 @@ enum NotificationAction {
     Log,
     /// `$/progress`: drives `ServerState::Indexing`/`Ready`.
     Progress,
+    /// `textDocument/publishDiagnostics`: forwarded as `Msg` (lsp-integration.md
+    /// Phase 2) — the one notification besides `$/progress` allowed to wake
+    /// the render loop, since it carries data the UI must show.
+    PublishDiagnostics,
     /// Unknown notification: ignored silently.
     Ignore,
 }
@@ -244,6 +248,7 @@ fn classify_notification(method: &str) -> NotificationAction {
     match method {
         "window/logMessage" | "window/showMessage" | "telemetry/event" => NotificationAction::Log,
         "$/progress" => NotificationAction::Progress,
+        "textDocument/publishDiagnostics" => NotificationAction::PublishDiagnostics,
         _ => NotificationAction::Ignore,
     }
 }
@@ -589,7 +594,9 @@ impl ServerHandle {
     pub fn begin_request(&self, method: impl Into<String>, params: Value) -> i64 {
         let method = method.into();
         let id = self.pending.lock().unwrap().begin(method.clone());
-        let _ = self.outbound_tx.send(WorkerCmd::Request { id, method, params });
+        let _ = self
+            .outbound_tx
+            .send(WorkerCmd::Request { id, method, params });
         id
     }
 
@@ -898,6 +905,9 @@ fn reader_loop(
                     NotificationAction::Progress => {
                         handle_progress(&server_id, &root, &message, &msg_tx, wake.as_deref());
                     }
+                    NotificationAction::PublishDiagnostics => {
+                        handle_publish_diagnostics(&message, &msg_tx, wake.as_deref());
+                    }
                     NotificationAction::Ignore => {}
                 }
             }
@@ -918,7 +928,13 @@ fn reader_loop(
                     // it; leave capabilities None so every send stays
                     // gated off, and surface the failure like a crash.
                     tracing::warn!("[{}] initialize failed: {:?}", server_id.0, error);
-                    send_state(&server_id, &root, ServerState::Failed, &msg_tx, wake.as_deref());
+                    send_state(
+                        &server_id,
+                        &root,
+                        ServerState::Failed,
+                        &msg_tx,
+                        wake.as_deref(),
+                    );
                     continue;
                 }
                 let result = message.get("result").cloned();
@@ -927,7 +943,13 @@ fn reader_loop(
                     .and_then(|c| serde_json::from_value(c).ok());
                 *capabilities.lock().unwrap() = parsed;
                 let _ = outbound_tx.send(WorkerCmd::HandshakeReady);
-                send_state(&server_id, &root, ServerState::Ready, &msg_tx, wake.as_deref());
+                send_state(
+                    &server_id,
+                    &root,
+                    ServerState::Ready,
+                    &msg_tx,
+                    wake.as_deref(),
+                );
             } else if entry.method == "shutdown" {
                 // Quit teardown (`ServerHandle::graceful_shutdown`) polls
                 // `msg_rx` directly for this rather than going through
@@ -960,6 +982,60 @@ fn handle_progress(
         Some("begin") => send_state(server_id, root, ServerState::Indexing, msg_tx, wake),
         Some("end") => send_state(server_id, root, ServerState::Ready, msg_tx, wake),
         _ => {}
+    }
+}
+
+/// Parses a `textDocument/publishDiagnostics` notification's `params` into
+/// `(uri, version, diagnostics)`. Pulled out of `handle_publish_diagnostics`
+/// so it's testable without spinning up threads/channels.
+fn parse_publish_diagnostics(
+    params: &Value,
+) -> Option<(lsp_types::Uri, Option<i64>, Vec<lsp_types::Diagnostic>)> {
+    let parsed: lsp_types::PublishDiagnosticsParams =
+        serde_json::from_value(params.clone()).ok()?;
+    Some((
+        parsed.uri,
+        parsed.version.map(i64::from),
+        parsed.diagnostics,
+    ))
+}
+
+/// `textDocument/publishDiagnostics`: forwarded straight to `Msg` — the
+/// runtime's `LspManager` (not this worker) owns the authoritative store
+/// and the out-of-order/version bookkeeping (see `LspMsg::DiagnosticsPublished`'s
+/// doc comment).
+///
+/// ponytail: successive publishes for the same URI aren't coalesced here
+/// before sending — each one becomes its own `Msg`. Correctness is
+/// unaffected (each publish is a full replacement, so processing them in
+/// arrival order converges on the same end state as coalescing would);
+/// this only costs redundant projection/redraw work if a server floods
+/// publishes for one URI within a single drain of `msg_rx`. Add
+/// last-wins coalescing in the `App::process_async_messages` drain loop
+/// if profiling ever shows that redundant work matters.
+fn handle_publish_diagnostics(
+    message: &Value,
+    msg_tx: &Sender<Msg>,
+    wake: Option<&(dyn Fn() + Send + Sync)>,
+) {
+    let Some(params) = message.get("params") else {
+        return;
+    };
+    let Some((uri, version, diagnostics)) = parse_publish_diagnostics(params) else {
+        return;
+    };
+    if msg_tx
+        .send(Msg::Lsp(LspMsg::DiagnosticsPublished {
+            uri,
+            version,
+            diagnostics,
+        }))
+        .is_err()
+    {
+        return;
+    }
+    if let Some(wake) = wake {
+        wake();
     }
 }
 
@@ -1396,5 +1472,66 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
         }
         assert!(saw_ready, "expected ServerStateChanged(Ready) within 5s");
         handle.kill();
+    }
+
+    // ---- publishDiagnostics ----
+
+    #[test]
+    fn classifies_publish_diagnostics_distinctly_from_log_and_progress() {
+        assert!(matches!(
+            classify_notification("textDocument/publishDiagnostics"),
+            NotificationAction::PublishDiagnostics
+        ));
+        assert!(matches!(
+            classify_notification("$/progress"),
+            NotificationAction::Progress
+        ));
+        assert!(matches!(
+            classify_notification("window/logMessage"),
+            NotificationAction::Log
+        ));
+    }
+
+    #[test]
+    fn parses_publish_diagnostics_params_including_version_and_severity() {
+        let params = json!({
+            "uri": "file:///tmp/foo.rs",
+            "version": 3,
+            "diagnostics": [{
+                "range": {
+                    "start": { "line": 1, "character": 0 },
+                    "end": { "line": 1, "character": 5 }
+                },
+                "severity": 1,
+                "message": "unresolved import",
+            }],
+        });
+        let (uri, version, diagnostics) =
+            parse_publish_diagnostics(&params).expect("valid publishDiagnostics params");
+        assert_eq!(uri.as_str(), "file:///tmp/foo.rs");
+        assert_eq!(version, Some(3));
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].message, "unresolved import");
+        assert_eq!(
+            diagnostics[0].severity,
+            Some(lsp_types::DiagnosticSeverity::ERROR)
+        );
+    }
+
+    #[test]
+    fn parses_publish_diagnostics_params_without_a_version() {
+        let params = json!({
+            "uri": "file:///tmp/foo.rs",
+            "diagnostics": [],
+        });
+        let (_, version, diagnostics) =
+            parse_publish_diagnostics(&params).expect("valid publishDiagnostics params");
+        assert_eq!(version, None);
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn rejects_malformed_publish_diagnostics_params() {
+        assert!(parse_publish_diagnostics(&json!({ "not": "valid" })).is_none());
     }
 }

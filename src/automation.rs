@@ -83,6 +83,34 @@ pub(crate) struct EditorSnapshot {
     /// `"rust-analyzer"`) — the render-only mirror `LspMsg::ServerStateChanged`
     /// drives, not the runtime's authoritative `LspManager`.
     pub lsp_servers: Vec<LspServerSnapshot>,
+    /// Diagnostics counts for the focused document (lsp-integration.md
+    /// Phase 2), queryable independent of the gutter marks visible in
+    /// the current viewport.
+    pub diagnostics: DiagnosticsSnapshot,
+}
+
+/// Per-severity diagnostic counts for the focused document.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct DiagnosticsSnapshot {
+    pub errors: usize,
+    pub warnings: usize,
+    pub info: usize,
+}
+
+fn diagnostics_snapshot(document: &token::model::Document) -> DiagnosticsSnapshot {
+    let mut snapshot = DiagnosticsSnapshot {
+        errors: 0,
+        warnings: 0,
+        info: 0,
+    };
+    for diagnostic in &document.diagnostics {
+        match token::model::diagnostic_mark(diagnostic.severity) {
+            token::model::Mark::Warning => snapshot.warnings += 1,
+            token::model::Mark::Info => snapshot.info += 1,
+            _ => snapshot.errors += 1,
+        }
+    }
+    snapshot
 }
 
 /// One entry in `EditorSnapshot::lsp_servers`.
@@ -351,6 +379,7 @@ impl EditorSnapshot {
                     state: format!("{state:?}"),
                 })
                 .collect(),
+            diagnostics: diagnostics_snapshot(document),
         }
     }
 }
@@ -678,7 +707,9 @@ fn parse_arg<T: std::str::FromStr>(value: Option<String>, name: &str) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::{document_size_error, overlay_snapshot, EditorSnapshot, MAX_DOCUMENT_SIZE, MAX_MESSAGE_SIZE};
+    use super::{
+        document_size_error, overlay_snapshot, EditorSnapshot, MAX_DOCUMENT_SIZE, MAX_MESSAGE_SIZE,
+    };
     use token::lsp::{LspServerId, ServerState};
     use token::model::ui::{FindReplaceState, GotoLineState, RecentFilesState, ThemePickerState};
     use token::model::{AppModel, ModalState};

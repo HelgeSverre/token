@@ -179,10 +179,14 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
         } => {
             let doc = model.editor_area.documents.get_mut(&document_id)?;
 
-            // Update language and clear old highlights
+            // Update language and clear old highlights. Diagnostics are
+            // language-server-specific (lsp-integration.md's "cleared on
+            // ... language change") — stale errors for the old language
+            // must not linger under the new one.
             doc.language = language;
             doc.syntax_highlights = None;
             doc.syntax_tree = None;
+            doc.diagnostics.clear();
 
             // Trigger a new parse
             let revision = doc.revision;

@@ -907,6 +907,20 @@ pub enum LspMsg {
         server_id: LspServerId,
         generation: u64,
     },
+    /// Worker -> update: `textDocument/publishDiagnostics` for `uri`, a
+    /// full replacement of that URI's diagnostics (lsp-integration.md
+    /// Phase 2). `version`, when the server sends one, is used only to
+    /// discard out-of-order publishes — never as a `Document.revision`
+    /// equality guard (diagnostics are explicitly exempt; see the design
+    /// doc's Requests, Guards, Timeouts). The runtime's `LspManager`
+    /// checks staleness and updates its authoritative store *before*
+    /// this reaches `update()`; `update_lsp` only projects onto whatever
+    /// document (if any) has `uri` open.
+    DiagnosticsPublished {
+        uri: lsp_types::Uri,
+        version: Option<i64>,
+        diagnostics: Vec<lsp_types::Diagnostic>,
+    },
 }
 
 /// Menu completion messages (autocomplete.md Phase 1: "words + snippets,

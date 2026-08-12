@@ -325,12 +325,12 @@ Binary not found on `PATH` (after `PATHEXT` resolution on Windows) → `ServerSt
 
 **Effort:** L (includes decoration-layer work unless find-enhancements built it first)
 
-- [ ] Authoritative diagnostics store in `LspManager` keyed by canonical URI (retains unopened-file publishes); `Document.diagnostics` projection refreshed on publish/open; version used for ordering only — **no equality guard**.
-- [ ] Decoration layer Phases 2 of [editor-decorations.md](editor-decorations.md) (its Phase 1, dynamic gutter width, ships standalone beforehand — see that doc).
-- [ ] Severity gutter marks + wavy underlines + tag-driven faded/strikethrough, clamped at render.
-- [ ] `SegmentId::Diagnostics` count segment **and** message-under-cursor in the status bar (the phase is not shippable as marks-only).
-- [ ] Clear on release / server exit / language change.
-- [ ] Automation: per-line gutter marks and diagnostics counts queryable (needed *in this phase* for its own tests).
+- [x] Authoritative diagnostics store in `LspManager` keyed by canonical URI (retains unopened-file publishes); `Document.diagnostics` projection refreshed on publish/open; version used for ordering only — **no equality guard**.
+- [x] Decoration layer Phases 2 of [editor-decorations.md](editor-decorations.md) (its Phase 1, dynamic gutter width, ships standalone beforehand — see that doc).
+- [x] Severity gutter marks + wavy underlines + tag-driven faded/strikethrough, clamped at render.
+- [x] `SegmentId::Diagnostics` count segment **and** message-under-cursor in the status bar (the phase is not shippable as marks-only).
+- [x] Clear on release / server exit / language change.
+- [x] Automation: per-line gutter marks and diagnostics counts queryable (needed *in this phase* for its own tests).
 
 ### Phase 3: Go to Definition + Jump History
 

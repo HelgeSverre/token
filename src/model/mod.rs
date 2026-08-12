@@ -10,7 +10,7 @@ pub mod status_bar;
 pub mod ui;
 pub mod workspace;
 
-pub use decorations::{best_mark, collect_line_marks, LineMarks, Mark};
+pub use decorations::{best_mark, collect_line_marks, diagnostic_mark, LineMarks, Mark};
 pub use document::{Document, EditOperation};
 pub use editor::{
     BinaryPlaceholderState, Cursor, EditorState, OccurrenceState, Position,
@@ -113,7 +113,11 @@ impl ViewportGeometry {
         if char_width <= 0.0 {
             return 80; // fallback
         }
-        let text_x = text_start_x_scaled(char_width, &ScaledMetrics::default(), line_count).round();
+        // No document (hence no diagnostics) is known at the call sites that
+        // use this placeholder-geometry path — the marks lane is never active
+        // here.
+        let text_x =
+            text_start_x_scaled(char_width, &ScaledMetrics::default(), line_count, false).round();
         ((window_width as f32 - text_x) / char_width).floor() as usize
     }
 }
@@ -393,20 +397,35 @@ impl Default for ScaledMetrics {
 }
 
 /// Calculate the x-coordinate where text content begins (with metrics),
-/// for a document with `line_count` lines.
+/// for a document with `line_count` lines. `has_marks` reserves the
+/// gutter marks lane (editor-decorations.md) ahead of the line numbers —
+/// active once a document has diagnostics (or any other marks-lane
+/// source).
 #[inline]
-pub fn text_start_x_scaled(char_width: f32, metrics: &ScaledMetrics, line_count: usize) -> f32 {
+pub fn text_start_x_scaled(
+    char_width: f32,
+    metrics: &ScaledMetrics,
+    line_count: usize,
+    has_marks: bool,
+) -> f32 {
     let border_width = metrics.border_width as f32;
-    gutter_border_x_scaled(char_width, metrics, line_count)
+    gutter_border_x_scaled(char_width, metrics, line_count, has_marks)
         + border_width
         + metrics.text_area_padding
 }
 
 /// Calculate the x-coordinate of the gutter border (with metrics),
-/// for a document with `line_count` lines.
+/// for a document with `line_count` lines. See `text_start_x_scaled` for
+/// `has_marks`.
 #[inline]
-pub fn gutter_border_x_scaled(char_width: f32, metrics: &ScaledMetrics, line_count: usize) -> f32 {
-    char_width * gutter_number_chars(line_count) as f32 + metrics.gutter_padding
+pub fn gutter_border_x_scaled(
+    char_width: f32,
+    metrics: &ScaledMetrics,
+    line_count: usize,
+    has_marks: bool,
+) -> f32 {
+    let marks_w = if has_marks { char_width } else { 0.0 };
+    marks_w + char_width * gutter_number_chars(line_count) as f32 + metrics.gutter_padding
 }
 
 /// Render-only mirror of language server lifecycle state (see
@@ -694,12 +713,10 @@ impl AppModel {
             editors, documents, ..
         } = &mut self.editor_area;
         for editor in editors.values_mut() {
-            let line_count = editor
-                .document_id
-                .and_then(|id| documents.get(&id))
-                .map(|doc| doc.line_count())
-                .unwrap_or(1);
-            let text_x = text_start_x_scaled(char_width, &metrics, line_count).round();
+            let doc = editor.document_id.and_then(|id| documents.get(&id));
+            let line_count = doc.map(|d| d.line_count()).unwrap_or(1);
+            let has_marks = doc.is_some_and(|d| !d.diagnostics.is_empty());
+            let text_x = text_start_x_scaled(char_width, &metrics, line_count, has_marks).round();
             let visible_columns =
                 ((effective_width - text_x) / char_width).floor().max(1.0) as usize;
             editor.resize_viewport(visible_lines, visible_columns);
@@ -728,12 +745,10 @@ impl AppModel {
             editors, documents, ..
         } = &mut self.editor_area;
         for editor in editors.values_mut() {
-            let line_count = editor
-                .document_id
-                .and_then(|id| documents.get(&id))
-                .map(|doc| doc.line_count())
-                .unwrap_or(1);
-            let text_x = text_start_x_scaled(char_width, &metrics, line_count).round();
+            let doc = editor.document_id.and_then(|id| documents.get(&id));
+            let line_count = doc.map(|d| d.line_count()).unwrap_or(1);
+            let has_marks = doc.is_some_and(|d| !d.diagnostics.is_empty());
+            let text_x = text_start_x_scaled(char_width, &metrics, line_count, has_marks).round();
             let visible_columns = ((window_width as f32 - text_x) / char_width).floor() as usize;
             editor.viewport.visible_columns = visible_columns;
         }
@@ -1018,7 +1033,7 @@ mod tests {
     fn test_text_start_x_scaled() {
         let metrics = ScaledMetrics::new(1.0);
         let char_width = 10.0;
-        let result = text_start_x_scaled(char_width, &metrics, 1);
+        let result = text_start_x_scaled(char_width, &metrics, 1, false);
         let expected = char_width * LINE_NUMBER_GUTTER_CHARS_MIN as f32 + 4.0 + 1.0 + 8.0;
         assert_eq!(result, expected);
     }
@@ -1027,9 +1042,18 @@ mod tests {
     fn test_gutter_border_x_scaled() {
         let metrics = ScaledMetrics::new(2.0);
         let char_width = 10.0;
-        let result = gutter_border_x_scaled(char_width, &metrics, 1);
+        let result = gutter_border_x_scaled(char_width, &metrics, 1, false);
         let expected = char_width * LINE_NUMBER_GUTTER_CHARS_MIN as f32 + 8.0;
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_gutter_border_x_scaled_reserves_the_marks_lane_when_active() {
+        let metrics = ScaledMetrics::new(1.0);
+        let char_width = 10.0;
+        let without_marks = gutter_border_x_scaled(char_width, &metrics, 1, false);
+        let with_marks = gutter_border_x_scaled(char_width, &metrics, 1, true);
+        assert_eq!(with_marks, without_marks + char_width);
     }
 
     #[test]
@@ -1048,8 +1072,8 @@ mod tests {
     fn test_gutter_border_x_scaled_grows_with_line_count() {
         let metrics = ScaledMetrics::new(1.0);
         let char_width = 10.0;
-        let narrow = gutter_border_x_scaled(char_width, &metrics, 9_999);
-        let wide = gutter_border_x_scaled(char_width, &metrics, 100_000);
+        let narrow = gutter_border_x_scaled(char_width, &metrics, 9_999, false);
+        let wide = gutter_border_x_scaled(char_width, &metrics, 100_000, false);
         assert_eq!(narrow, char_width * 5.0 + metrics.gutter_padding);
         assert_eq!(wide, char_width * 6.0 + metrics.gutter_padding);
         assert!(wide > narrow);

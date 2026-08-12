@@ -593,8 +593,9 @@ impl<'a> TextEditorRenderer<'a> {
     }
 
     /// Marks-lane glyph for a visible gutter line, if the marks lane is
-    /// active and the line has a mark. A no-op today: `GutterLayout` keeps
-    /// `marks_w == 0` until a consumer ships (editor-decorations.md).
+    /// active and the line has a mark. LSP diagnostics (lsp-integration.md
+    /// Phase 2) is the first producer — `GutterLayout` activates `marks_w`
+    /// per-document once it has diagnostics (see `GroupLayout::new`).
     fn render_gutter_mark(&self, frame: &mut Frame, line: &VisibleTextLine) {
         let marks_w = self.ctx.gutter.marks_w as usize;
         if marks_w == 0 {

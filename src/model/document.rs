@@ -77,6 +77,16 @@ pub struct Document {
     /// Document revision counter (incremented on each edit)
     /// Used for staleness checking in async parsing
     pub revision: u64,
+
+    // === LSP ===
+    /// Diagnostics projection for this document (lsp-integration.md Phase
+    /// 2) — refreshed from `LspManager`'s authoritative
+    /// `HashMap<Uri, Vec<Diagnostic>>` store on publish and on open.
+    /// Positions are LSP (UTF-16) coordinates; converted to editor
+    /// char-columns lazily at render/collection time via
+    /// `lsp::position::lsp_to_position`, which also clamps into the
+    /// current buffer (see `model::collect_line_marks`).
+    pub diagnostics: Vec<lsp_types::Diagnostic>,
 }
 
 impl Document {
@@ -96,6 +106,7 @@ impl Document {
             syntax_tree: None,
             outline: None,
             revision: 0,
+            diagnostics: Vec::new(),
         }
     }
 
