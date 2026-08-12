@@ -109,6 +109,9 @@ bindings:
   - key: "cmd+2"
     command: ToggleTerminal
 
+  - key: "cmd+4"
+    command: ToggleProblems
+
   - key: "cmd+7"
     command: ToggleOutline
 

@@ -361,6 +361,7 @@ impl FromStr for Command {
             "ToggleFileExplorer" => Ok(Command::ToggleFileExplorer),
             "ToggleTerminal" => Ok(Command::ToggleTerminal),
             "ToggleOutline" => Ok(Command::ToggleOutline),
+            "ToggleProblems" => Ok(Command::ToggleProblems),
             "CloseFocusedDock" => Ok(Command::CloseFocusedDock),
 
             // CSV mode

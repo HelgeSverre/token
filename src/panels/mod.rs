@@ -32,5 +32,6 @@ pub fn panel_icon(panel_id: PanelId) -> &'static str {
         PanelId::TaskRunner => "",    // tasks/play
         PanelId::AiChat => "",        // chat/comment
         PanelId::TodoList => "",      // checklist
+        PanelId::Problems => "",      // warning/problems
     }
 }

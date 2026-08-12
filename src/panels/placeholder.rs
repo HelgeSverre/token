@@ -30,6 +30,7 @@ impl PlaceholderPanel {
             PanelId::AiChat => "AI chat coming soon...",
             PanelId::TodoList => "TODO list coming soon...",
             PanelId::FileExplorer => "File explorer",
+            PanelId::Problems => "No problems",
         }
     }
 }

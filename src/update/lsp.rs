@@ -175,10 +175,22 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
         } => {
             // Staleness (out-of-order `version`) is already filtered by
             // the runtime before this reaches `update()`; the
-            // authoritative store lives there too. This is purely the
-            // model projection onto whatever document (if any) has
-            // `uri` open — a publish for an unopened file is a silent
-            // no-op here (still retained in the runtime's store).
+            // authoritative store lives there too. This mirrors the
+            // publish into `model.lsp.diagnostics` (feeds the Problems
+            // panel + status counts) BEFORE the open-document projection
+            // below, which early-returns for unopened files — the mirror
+            // must still update for those.
+            if let Some(path) = crate::lsp::uri_to_path(&uri) {
+                if diagnostics.is_empty() {
+                    model.lsp.diagnostics.remove(&path);
+                } else {
+                    model.lsp.diagnostics.insert(path, diagnostics.clone());
+                }
+            }
+            // The rest is purely the model projection onto whatever
+            // document (if any) has `uri` open — a publish for an
+            // unopened file is a no-op past this point (still retained in
+            // the runtime's store and now in the mirror above).
             let document_id = find_document_by_uri(model, &uri)?;
             let doc = model.editor_area.documents.get_mut(&document_id)?;
             let had_marks = !doc.diagnostics.is_empty();
@@ -528,6 +540,58 @@ mod tests {
             "hover reply must not open the card once focus has left the requested document"
         );
         assert!(model.ui.cursor_overlay.is_none());
+    }
+
+    fn diagnostic_at(line: u32) -> lsp_types::Diagnostic {
+        lsp_types::Diagnostic {
+            range: lsp_types::Range {
+                start: lsp_types::Position { line, character: 0 },
+                end: lsp_types::Position { line, character: 3 },
+            },
+            severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+            message: "boom".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn diagnostics_published_mirrors_into_the_model_even_for_an_unopened_file() {
+        let mut model = model();
+        let uri = crate::lsp::path_to_uri(&PathBuf::from("/tmp/problems-mirror/unopened.rs"));
+        let path = crate::lsp::uri_to_path(&uri).unwrap();
+
+        update_lsp(
+            &mut model,
+            LspMsg::DiagnosticsPublished {
+                uri: uri.clone(),
+                version: None,
+                diagnostics: vec![diagnostic_at(1)],
+            },
+        );
+
+        assert_eq!(model.lsp.diagnostics.get(&path).map(Vec::len), Some(1));
+    }
+
+    #[test]
+    fn diagnostics_published_with_empty_list_removes_the_mirror_entry() {
+        let mut model = model();
+        let uri = crate::lsp::path_to_uri(&PathBuf::from("/tmp/problems-mirror/cleared.rs"));
+        let path = crate::lsp::uri_to_path(&uri).unwrap();
+        model
+            .lsp
+            .diagnostics
+            .insert(path.clone(), vec![diagnostic_at(0)]);
+
+        update_lsp(
+            &mut model,
+            LspMsg::DiagnosticsPublished {
+                uri,
+                version: None,
+                diagnostics: vec![],
+            },
+        );
+
+        assert!(!model.lsp.diagnostics.contains_key(&path));
     }
 
     #[test]

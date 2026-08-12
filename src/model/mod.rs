@@ -445,6 +445,14 @@ pub struct LspUiState {
     /// possibly spawn a server for) a fresh root — see the design doc's
     /// "never spawn a new server rooted in a toolchain directory".
     pub route_hint: Option<(std::path::PathBuf, LspServerId, std::path::PathBuf)>,
+    /// Render mirror of the runtime's authoritative diagnostics store
+    /// (`LspManager.diagnostics`), keyed by decoded path (`BTreeMap` =>
+    /// stable file ordering for the Problems panel for free). Includes
+    /// unopened files. Empty vecs are removed, never stored. Populated by
+    /// `LspMsg::DiagnosticsPublished`; cleared to mirror the manager's own
+    /// clearing rules (server exit/restart, LSP toggle-off, language
+    /// change) — see `App::clear_diagnostics_for_roots`.
+    pub diagnostics: std::collections::BTreeMap<std::path::PathBuf, Vec<lsp_types::Diagnostic>>,
 }
 
 /// One entry in the general, group-tagged jump-history back stack

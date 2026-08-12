@@ -221,6 +221,8 @@ pub enum Command {
     ToggleTerminal,
     /// Toggle outline panel (right dock)
     ToggleOutline,
+    /// Toggle problems panel (bottom dock)
+    ToggleProblems,
     /// Close the currently focused dock
     CloseFocusedDock,
 
@@ -456,6 +458,7 @@ impl Command {
             ))],
             ToggleTerminal => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::TERMINAL))],
             ToggleOutline => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::OUTLINE))],
+            ToggleProblems => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::PROBLEMS))],
             CloseFocusedDock => vec![Msg::Dock(DockMsg::CloseFocusedDock)],
 
             // Special - these need context-aware handling
@@ -540,6 +543,7 @@ impl Command {
                 | Command::ToggleFileExplorer
                 | Command::ToggleTerminal
                 | Command::ToggleOutline
+                | Command::ToggleProblems
                 | Command::CloseFocusedDock
                 | Command::Quit
                 | Command::SaveFile
@@ -644,6 +648,7 @@ impl Command {
             ToggleFileExplorer => "View: Toggle File Explorer",
             ToggleTerminal => "View: Toggle Terminal",
             ToggleOutline => "View: Toggle Outline",
+            ToggleProblems => "View: Toggle Problems",
             CloseFocusedDock => "View: Close Panel",
 
             EscapeSmartClear => "Escape",

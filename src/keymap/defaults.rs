@@ -186,6 +186,7 @@ pub fn default_bindings() -> Vec<Keybinding> {
         // ====================================================================
         bind(KeyCode::Char('1'), cmd, Command::ToggleFileExplorer),
         bind(KeyCode::Char('2'), cmd, Command::ToggleTerminal),
+        bind(KeyCode::Char('4'), cmd, Command::ToggleProblems),
         bind(KeyCode::Char('7'), cmd, Command::ToggleOutline),
         // ====================================================================
         // Basic Navigation (no selection)

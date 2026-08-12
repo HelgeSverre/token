@@ -57,6 +57,7 @@ pub enum PanelId {
     TaskRunner,
     AiChat,
     TodoList,
+    Problems,
 }
 
 impl PanelId {
@@ -66,6 +67,7 @@ impl PanelId {
     pub const TASK_RUNNER: PanelId = PanelId::TaskRunner;
     pub const AI_CHAT: PanelId = PanelId::AiChat;
     pub const TODO_LIST: PanelId = PanelId::TodoList;
+    pub const PROBLEMS: PanelId = PanelId::Problems;
 
     /// Get the display name for this panel
     pub fn display_name(&self) -> &'static str {
@@ -76,6 +78,7 @@ impl PanelId {
             PanelId::TaskRunner => "Tasks",
             PanelId::AiChat => "Chat",
             PanelId::TodoList => "TODOs",
+            PanelId::Problems => "Problems",
         }
     }
 
@@ -84,7 +87,9 @@ impl PanelId {
         match self {
             PanelId::FileExplorer => DockPosition::Left,
             PanelId::Outline => DockPosition::Right,
-            PanelId::Terminal | PanelId::TaskRunner | PanelId::TodoList => DockPosition::Bottom,
+            PanelId::Terminal | PanelId::TaskRunner | PanelId::TodoList | PanelId::Problems => {
+                DockPosition::Bottom
+            }
             PanelId::AiChat => DockPosition::Right,
         }
     }
@@ -231,6 +236,7 @@ impl Default for DockLayout {
         layout.left.register_panel(PanelId::FILE_EXPLORER);
         layout.right.register_panel(PanelId::OUTLINE);
         layout.bottom.register_panel(PanelId::TERMINAL);
+        layout.bottom.register_panel(PanelId::PROBLEMS);
 
         // Left dock (file explorer) is open by default
         layout.left.is_open = true;

@@ -76,6 +76,7 @@ pub enum CommandId {
     ToggleFileExplorer,
     ToggleTerminal,
     ToggleOutline,
+    ToggleProblems,
     CloseFocusedDock,
 
     // File path operations
@@ -361,6 +362,12 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: Some("⌘7"),
     },
     CommandDef {
+        id: CommandId::ToggleProblems,
+        category: CommandCategory::Panel,
+        label: "View: Toggle Problems",
+        keybinding: Some("⌘4"),
+    },
+    CommandDef {
         id: CommandId::CloseFocusedDock,
         category: CommandCategory::Panel,
         label: "View: Close Panel",
@@ -502,6 +509,7 @@ impl CommandId {
             CommandId::ToggleFileExplorer => Some(KeymapCommand::ToggleFileExplorer),
             CommandId::ToggleTerminal => Some(KeymapCommand::ToggleTerminal),
             CommandId::ToggleOutline => Some(KeymapCommand::ToggleOutline),
+            CommandId::ToggleProblems => Some(KeymapCommand::ToggleProblems),
             CommandId::CloseFocusedDock => Some(KeymapCommand::CloseFocusedDock),
             CommandId::RevealInFinder => None,
             CommandId::RevealInSidebar => Some(KeymapCommand::RevealInSidebar),

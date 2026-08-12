@@ -514,6 +514,10 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             // Command palette uses focus-agnostic toggle (pure open/close)
             super::dock::update_dock(model, DockMsg::TogglePanel(PanelId::OUTLINE))
         }
+        CommandId::ToggleProblems => {
+            // Command palette uses focus-agnostic toggle (pure open/close)
+            super::dock::update_dock(model, DockMsg::TogglePanel(PanelId::PROBLEMS))
+        }
         CommandId::CloseFocusedDock => super::dock::update_dock(model, DockMsg::CloseFocusedDock),
         CommandId::RevealInSidebar => super::workspace::update_workspace(
             model,

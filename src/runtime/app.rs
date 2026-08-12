@@ -1991,6 +1991,7 @@ impl App {
                     let uri = lsp::path_to_uri(&file_path);
                     self.lsp.diagnostics.remove(&uri);
                     self.lsp.diagnostics_versions.remove(&uri);
+                    self.model.lsp.diagnostics.remove(&file_path);
                 }
             }
             Cmd::LspRequestDefinition {
@@ -2688,9 +2689,14 @@ impl App {
                 .any(|root| path.starts_with(root))
                 .then(|| uri.clone())
         }));
-        for uri in stale_uris {
-            self.lsp.diagnostics.remove(&uri);
-            self.lsp.diagnostics_versions.remove(&uri);
+        for uri in &stale_uris {
+            self.lsp.diagnostics.remove(uri);
+            self.lsp.diagnostics_versions.remove(uri);
+        }
+        for uri in &stale_uris {
+            if let Some(path) = lsp::uri_to_path(uri) {
+                self.model.lsp.diagnostics.remove(&path);
+            }
         }
         let mut any_had_marks = false;
         for (doc_id, _) in affected_docs {
@@ -2706,9 +2712,19 @@ impl App {
         // treat as covering the editor area — without merging editor
         // damage directly here, cleared marks/underlines stay painted
         // until an unrelated event happens to damage the editor.
-        if any_had_marks {
+        // The Problems panel has no dedicated damage area (it isn't a text
+        // buffer), so a clear while it's open needs a full repaint to drop
+        // the stale rows — same reasoning as the editor-marks merge below.
+        let problems_panel_open = self.model.dock_layout.bottom.is_open
+            && self.model.dock_layout.bottom.active_panel()
+                == Some(token::panel::PanelId::PROBLEMS);
+        if any_had_marks || problems_panel_open {
             self.model.resync_viewports();
-            self.pending_damage.merge(Cmd::redraw_editor().damage());
+            self.pending_damage.merge(if problems_panel_open {
+                Damage::Full
+            } else {
+                Cmd::redraw_editor().damage()
+            });
             if let Some(window) = &self.window {
                 window.request_redraw();
             }
@@ -4402,6 +4418,39 @@ mod tests {
             app.pending_damage.includes_editor(),
             "clearing diagnostics must merge editor damage, got {:?}",
             app.pending_damage
+        );
+    }
+
+    /// `clear_diagnostics_for_roots` must sweep `model.lsp.diagnostics`
+    /// (the Problems panel's render mirror) in exact parity with the
+    /// runtime's own store — including entries for files that were never
+    /// opened, which the editor-side `doc.diagnostics` clear above never
+    /// touches.
+    #[test]
+    fn clearing_diagnostics_for_a_root_sweeps_the_model_mirror_including_unopened_files() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-clear-mirror");
+        let unopened_uri = lsp::path_to_uri(&PathBuf::from("/tmp/proj-clear-mirror/unopened.rs"));
+        let unopened_path = lsp::uri_to_path(&unopened_uri).unwrap();
+        app.model.lsp.diagnostics.insert(
+            unopened_path.clone(),
+            vec![lsp_types::Diagnostic {
+                range: lsp_types::Range::default(),
+                severity: Some(lsp_types::DiagnosticSeverity::WARNING),
+                message: "unopened boom".to_owned(),
+                ..Default::default()
+            }],
+        );
+        app.lsp
+            .diagnostics
+            .insert(unopened_uri, vec![lsp_types::Diagnostic::default()]);
+
+        app.clear_diagnostics_for_roots(&server_id, &[root]);
+
+        assert!(
+            !app.model.lsp.diagnostics.contains_key(&unopened_path),
+            "the mirror must drop unopened-file entries too, not just open documents"
         );
     }
 
