@@ -97,21 +97,73 @@ pub struct CommandMatch {
     pub indices: Vec<u32>,
 }
 
-/// State for the command palette modal
+/// Which tab of Search Everywhere (overlay-surface.md Phase 4) is active.
+/// The palette modal absorbs the file finder: `Files` and `Symbols` are
+/// `Unavailable` (dimmed, ⇥-skipped, unclickable) whenever no workspace is
+/// open / no LSP workspace-symbols provider exists (always, today).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchTab {
+    All,
+    Commands,
+    Files,
+    Symbols,
+}
+
+impl SearchTab {
+    pub const ORDER: [SearchTab; 4] = [
+        SearchTab::All,
+        SearchTab::Commands,
+        SearchTab::Files,
+        SearchTab::Symbols,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SearchTab::All => "All",
+            SearchTab::Commands => "Commands",
+            SearchTab::Files => "Files",
+            SearchTab::Symbols => "Symbols",
+        }
+    }
+}
+
+/// State for the Search Everywhere modal (overlay-surface.md Phase 4: All /
+/// Commands / Files / Symbols tabs over one shared query). Absorbs the old
+/// standalone File Finder — `files` is the finder's own state, populated
+/// lazily on first activation of the Files tab rather than eagerly at open
+/// time, so opening the palette to run a command never pays the file-tree
+/// walk.
 #[derive(Debug, Clone)]
 pub struct CommandPaletteState {
-    /// Editable state for the input field
+    /// Editable state for the input field, shared across all tabs (the
+    /// query persists when switching tabs).
     pub editable: EditableState<StringBuffer>,
-    /// Index of selected command in `matches` (the ordering authority)
+    /// Index of selected command in `matches` — the Commands tab's
+    /// selection (the ordering authority).
     pub selected_index: usize,
     /// Filtered and ranked commands for the current query — the single
     /// source of truth the view and `ModalMsg::Confirm`/`SelectNext` both
     /// read from, recomputed by `resolve_palette_rows` whenever the input
-    /// changes. See overlay-surface.md "Ordering authority".
+    /// changes. See overlay-surface.md "Ordering authority". When
+    /// `recent_count > 0` the first `recent_count` entries are also the
+    /// "Recently used" section (duplicated into the tail of the full list).
     pub matches: Vec<CommandMatch>,
-    /// Scroll offset (in rows) for the visible window, maintained by the
-    /// update layer (minimal-reveal scrolling) as selection moves.
+    /// Scroll offset (in rows) for the Commands tab's visible window.
     pub scroll_offset: usize,
+    /// How many of `matches`' leading entries form the "Recently used"
+    /// section (0 unless the query is empty — overlay-surface.md: the
+    /// section disappears on the first typed character).
+    pub recent_count: usize,
+    /// Which tab is active.
+    pub active_tab: SearchTab,
+    /// The Files tab's backing state — `None` until first activated (lazy
+    /// population) or when no workspace is open.
+    pub files: Option<FileFinderState>,
+    /// Whether a workspace is open (Files/Symbols availability).
+    pub files_available: bool,
+    /// The All tab's flat selection (its own tab, not scrollable — capped
+    /// per-group summary).
+    pub all_selected: usize,
 }
 
 impl Default for CommandPaletteState {
@@ -127,6 +179,15 @@ impl Default for CommandPaletteState {
                 })
                 .collect(),
             scroll_offset: 0,
+            recent_count: 0,
+            // `Commands` (not `All`) so existing callers that construct
+            // this directly (tests, restore-without-explicit-tab) keep
+            // today's flat Commands-list behavior; `Cmd+Shift+A`
+            // explicitly forces `All` at open time.
+            active_tab: SearchTab::Commands,
+            files: None,
+            files_available: false,
+            all_selected: 0,
         }
     }
 }
@@ -140,6 +201,17 @@ impl CommandPaletteState {
     /// Set the input text (replaces content)
     pub fn set_input(&mut self, text: &str) {
         self.editable.set_content(text);
+    }
+
+    /// Whether tab `t` is selectable right now (Files/Symbols require a
+    /// workspace — Symbols always `Unavailable` until an LSP
+    /// workspace-symbols provider exists).
+    pub fn tab_available(&self, t: SearchTab) -> bool {
+        match t {
+            SearchTab::All | SearchTab::Commands => true,
+            SearchTab::Files => self.files_available,
+            SearchTab::Symbols => false,
+        }
     }
 }
 

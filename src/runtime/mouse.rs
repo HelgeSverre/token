@@ -480,6 +480,13 @@ fn handle_left_click(
             EventResult::consumed_redraw()
         }
 
+        // Tab click: switch the Search Everywhere tab (overlay-surface.md
+        // Pointer: "Tab click switches tabs").
+        HitTarget::ModalTab { index } => {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::ActivateTab(*index))));
+            EventResult::consumed_redraw()
+        }
+
         // Status bar - consume but do nothing
         HitTarget::StatusBar => EventResult::consumed_no_redraw(),
 
@@ -1049,7 +1056,9 @@ fn handle_middle_click(
         HitTarget::CsvCell { .. } => EventResult::consumed_no_redraw(),
 
         // Modal - consume, no action
-        HitTarget::Modal { .. } | HitTarget::ModalRow { .. } => EventResult::consumed_no_redraw(),
+        HitTarget::Modal { .. } | HitTarget::ModalRow { .. } | HitTarget::ModalTab { .. } => {
+            EventResult::consumed_no_redraw()
+        }
 
         // Sidebar targets - consume, no action for middle-click
         HitTarget::SidebarEmpty | HitTarget::SidebarItem { .. } => {

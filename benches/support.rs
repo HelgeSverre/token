@@ -41,6 +41,7 @@ pub fn make_model(lines: usize) -> AppModel {
         terminal: token::terminal::TerminalState::default(),
         outline_panel: token::model::OutlinePanelState::default(),
         recent_files: token::recent_files::RecentFiles::default(),
+        command_history: token::command_history::CommandHistory::default(),
         #[cfg(debug_assertions)]
         debug_overlay: None,
     }

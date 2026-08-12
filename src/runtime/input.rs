@@ -20,7 +20,7 @@ use token::messages::{
     CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, OutlineMsg, TerminalMsg,
     UiMsg, WorkspaceMsg,
 };
-use token::model::AppModel;
+use token::model::{AppModel, ModalState};
 use token::panel::{DockPosition, PanelId};
 use token::terminal::{translate_key, TerminalKeyModifiers};
 use token::update::update;
@@ -490,13 +490,27 @@ fn handle_modal_key(model: &mut AppModel, key: Key, modifiers: KeyModifiers) -> 
         // Enter: confirm modal action
         Key::Named(NamedKey::Enter) => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Confirm))),
 
-        // Tab: toggle between the query/replace fields (Find/Replace only —
-        // a no-op elsewhere, same guard `ModalMsg::ToggleFindReplaceField`'s
-        // handler already has).
-        Key::Named(NamedKey::Tab) if !shift => update(
-            model,
-            Msg::Ui(UiMsg::Modal(ModalMsg::ToggleFindReplaceField)),
-        ),
+        // Tab/Shift+Tab: Search Everywhere tab cycling on the command
+        // palette (overlay-surface.md Phase 4); Find/Replace field toggle
+        // otherwise (a no-op elsewhere, same guard
+        // `ModalMsg::ToggleFindReplaceField`'s handler already has).
+        Key::Named(NamedKey::Tab) if !shift => {
+            if matches!(model.ui.active_modal, Some(ModalState::CommandPalette(_))) {
+                update(model, Msg::Ui(UiMsg::Modal(ModalMsg::NextTab)))
+            } else {
+                update(
+                    model,
+                    Msg::Ui(UiMsg::Modal(ModalMsg::ToggleFindReplaceField)),
+                )
+            }
+        }
+        Key::Named(NamedKey::Tab) if shift => {
+            if matches!(model.ui.active_modal, Some(ModalState::CommandPalette(_))) {
+                update(model, Msg::Ui(UiMsg::Modal(ModalMsg::PrevTab)))
+            } else {
+                Some(Cmd::Redraw)
+            }
+        }
 
         // Arrow Up/Down for navigation in modal lists (only without modifiers)
         Key::Named(NamedKey::ArrowUp) if !shift && !alt => {

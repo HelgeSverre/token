@@ -227,8 +227,17 @@ pub enum ModalMsg {
     Confirm,
     /// Set selection to a specific row and confirm in one step (row click).
     ActivateRow(usize),
-    /// Toggle the pinned flag on the selected row (Recent Files: `⌘.`).
+    /// Toggle the pinned flag on the selected row (Recent Files, Commands
+    /// tab: `⌘.`).
     TogglePin,
+    /// Search Everywhere: switch to the next tab, skipping `Unavailable`
+    /// ones (⇥).
+    NextTab,
+    /// Search Everywhere: switch to the previous tab (⇧⇥).
+    PrevTab,
+    /// Search Everywhere: switch to tab `index` (`SearchTab::ORDER` order) —
+    /// a no-op if that tab is `Unavailable` (tab click).
+    ActivateTab(usize),
     /// Move the scroll window by `delta` rows without moving selection
     /// (mouse wheel over a list-body modal).
     Scroll(isize),

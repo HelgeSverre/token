@@ -104,20 +104,60 @@ pub(crate) struct OverlayRowSnapshot {
 
 fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot> {
     match modal {
-        token::model::ModalState::CommandPalette(state) => Some(OverlaySnapshot {
-            context: "command_palette".to_owned(),
-            query: state.input(),
-            active_tab: None,
-            rows: state
-                .matches
-                .iter()
-                .map(|m| OverlayRowSnapshot {
-                    label: m.def.label.to_owned(),
-                    section: None,
-                })
-                .collect(),
-            selected: state.selected_index,
-        }),
+        token::model::ModalState::CommandPalette(state) => {
+            use token::model::SearchTab;
+
+            let command_row = |m: &token::model::CommandMatch| OverlayRowSnapshot {
+                label: m.def.label.to_owned(),
+                section: None,
+            };
+            let file_row = |m: &token::model::FileMatch| OverlayRowSnapshot {
+                label: m.filename.clone(),
+                section: None,
+            };
+
+            let (rows, selected): (Vec<OverlayRowSnapshot>, usize) = match state.active_tab {
+                SearchTab::Files => (
+                    state
+                        .files
+                        .as_ref()
+                        .map(|f| f.results.iter().map(file_row).collect())
+                        .unwrap_or_default(),
+                    state.files.as_ref().map(|f| f.selected_index).unwrap_or(0),
+                ),
+                SearchTab::All => {
+                    let mut rows: Vec<OverlayRowSnapshot> = state
+                        .matches
+                        .iter()
+                        .take(5)
+                        .map(|m| OverlayRowSnapshot {
+                            label: m.def.label.to_owned(),
+                            section: Some("Commands".to_owned()),
+                        })
+                        .collect();
+                    if let Some(files) = &state.files {
+                        rows.extend(files.results.iter().take(5).map(|m| OverlayRowSnapshot {
+                            label: m.filename.clone(),
+                            section: Some("Files".to_owned()),
+                        }));
+                    }
+                    (rows, state.all_selected)
+                }
+                SearchTab::Symbols => (Vec::new(), 0),
+                SearchTab::Commands => (
+                    state.matches.iter().map(command_row).collect(),
+                    state.selected_index,
+                ),
+            };
+
+            Some(OverlaySnapshot {
+                context: "command_palette".to_owned(),
+                query: state.input(),
+                active_tab: Some(format!("{:?}", state.active_tab)),
+                rows,
+                selected,
+            })
+        }
         _ => None,
     }
 }

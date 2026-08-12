@@ -8,7 +8,7 @@ use crate::messages::LayoutMsg;
 use crate::messages::{ModalMsg, UiMsg};
 use crate::model::{
     AppModel, CommandPaletteState, FileFinderState, GotoLineState, ModalId, ModalState,
-    RecentFilesState, SegmentContent, SegmentId, ThemePickerState, TransientMessage,
+    RecentFilesState, SearchTab, SegmentContent, SegmentId, ThemePickerState, TransientMessage,
     COMMAND_PALETTE_MAX_VISIBLE,
 };
 use crate::theme::load_theme;
@@ -88,8 +88,12 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             // Open the requested modal
             let state = match modal_id {
                 ModalId::CommandPalette => {
+                    // Cmd+Shift+A: Search Everywhere, pre-focused on All
+                    // (overlay-surface.md Phase 4 "Bindings").
                     let mut state = model.ui.last_command_palette.clone().unwrap_or_default();
-                    resolve_palette_rows(&mut state);
+                    state.files_available = model.workspace.is_some();
+                    resolve_palette_rows(&mut state, &model.command_history);
+                    state.active_tab = SearchTab::All;
                     ModalState::CommandPalette(state)
                 }
                 ModalId::GotoLine => ModalState::GotoLine(GotoLineState::default()),
@@ -130,28 +134,18 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
         }
 
         UiMsg::OpenFuzzyFileFinder => {
-            // Check if workspace is open
-            if model.workspace.is_none() {
-                model
-                    .ui
-                    .set_status("No workspace open - use Cmd+O to open a file");
-                return Some(Cmd::Redraw);
+            // Cmd+Shift+O retargets to Search Everywhere pre-focused on the
+            // Files tab (overlay-surface.md Phase 4: the standalone File
+            // Finder modal is retired). With no workspace, Files is
+            // `Unavailable` rather than refusing to open.
+            let mut state = model.ui.last_command_palette.clone().unwrap_or_default();
+            state.files_available = model.workspace.is_some();
+            resolve_palette_rows(&mut state, &model.command_history);
+            state.active_tab = SearchTab::Files;
+            if state.files.is_none() {
+                state.files = build_file_finder_state(model);
             }
-
-            // Get files from workspace
-            let (all_files, workspace_root) = if let Some(ref workspace) = model.workspace {
-                (
-                    workspace.file_tree.get_all_file_paths(),
-                    workspace.root.clone(),
-                )
-            } else {
-                return Some(Cmd::Redraw);
-            };
-
-            let mut state = FileFinderState::new(all_files, workspace_root);
-            // Initialize results with all files (empty query shows all)
-            update_file_finder_results(&mut state);
-            model.ui.open_modal(ModalState::FileFinder(state));
+            model.ui.open_modal(ModalState::CommandPalette(state));
             Some(Cmd::Redraw)
         }
 
@@ -273,9 +267,19 @@ fn modal_editable_mut(modal: &mut ModalState) -> Option<&mut EditableState<Strin
 /// `RecentFiles` reset their selected index back to the top of the list;
 /// `FileFinder` refreshes its fuzzy-matched results. Other modal types have
 /// no such side effect.
-fn on_modal_input_changed(modal: &mut ModalState) {
+fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
     match modal {
-        ModalState::CommandPalette(state) => resolve_palette_rows(state),
+        ModalState::CommandPalette(state) => {
+            resolve_palette_rows(state, history);
+            // Query is shared across tabs — keep the (lazily-populated)
+            // Files tab's own results in sync (overlay-surface.md Phase 4:
+            // "query persists across tabs").
+            let query = state.input();
+            if let Some(files) = state.files.as_mut() {
+                files.set_input(&query);
+                update_file_finder_results(files);
+            }
+        }
         ModalState::FileFinder(state) => update_file_finder_results(state),
         ModalState::RecentFiles(state) => resolve_recent_rows(state),
         ModalState::GotoLine(_) | ModalState::FindReplace(_) | ModalState::ThemePicker(_) => {}
@@ -287,7 +291,9 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
     match msg {
         ModalMsg::OpenCommandPalette => {
             let mut state = model.ui.last_command_palette.clone().unwrap_or_default();
-            resolve_palette_rows(&mut state);
+            state.files_available = model.workspace.is_some();
+            resolve_palette_rows(&mut state, &model.command_history);
+            state.active_tab = SearchTab::All;
             model.ui.open_modal(ModalState::CommandPalette(state));
             Some(Cmd::Redraw)
         }
@@ -326,7 +332,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     ModalState::FileFinder(state) => state.set_input(&text),
                     ModalState::RecentFiles(state) => state.editable.set_content(&text),
                 }
-                on_modal_input_changed(modal);
+                on_modal_input_changed(modal, &model.command_history);
                 Some(Cmd::Redraw)
             } else {
                 None
@@ -335,10 +341,21 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::InsertChar(ch) => {
             if let Some(ref mut modal) = model.ui.active_modal {
+                // Prefix routing (overlay-surface.md Phase 4): `>`/`@` as
+                // char 0 of a *previously empty* query pins the Commands/
+                // Symbols tab and is consumed, not inserted.
+                if let ModalState::CommandPalette(state) = modal {
+                    if state.input().is_empty() {
+                        if let Some(tab) = search_tab_for_prefix(ch) {
+                            state.active_tab = tab;
+                            return Some(Cmd::Redraw);
+                        }
+                    }
+                }
                 if let Some(editable) = modal_editable_mut(modal) {
                     editable.insert_char(ch);
                 }
-                on_modal_input_changed(modal);
+                on_modal_input_changed(modal, &model.command_history);
                 Some(Cmd::Redraw)
             } else {
                 None
@@ -347,10 +364,17 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::DeleteBackward => {
             if let Some(ref mut modal) = model.ui.active_modal {
+                // Backspace on an already-empty query returns to the All
+                // tab — the mirror of prefix routing above.
+                if let ModalState::CommandPalette(state) = modal {
+                    if state.input().is_empty() {
+                        state.active_tab = SearchTab::All;
+                    }
+                }
                 if let Some(editable) = modal_editable_mut(modal) {
                     editable.delete_backward();
                 }
-                on_modal_input_changed(modal);
+                on_modal_input_changed(modal, &model.command_history);
                 Some(Cmd::Redraw)
             } else {
                 None
@@ -362,7 +386,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                 if let Some(editable) = modal_editable_mut(modal) {
                     editable.delete_word_backward();
                 }
-                on_modal_input_changed(modal);
+                on_modal_input_changed(modal, &model.command_history);
                 Some(Cmd::Redraw)
             } else {
                 None
@@ -509,7 +533,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     if let Some(editable) = modal_editable_mut(modal) {
                         editable.delete_backward();
                     }
-                    on_modal_input_changed(modal);
+                    on_modal_input_changed(modal, &model.command_history);
                     cmd = Cmd::Batch(vec![cmd, Cmd::CopyToClipboard(text)]);
                 }
             }
@@ -532,7 +556,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                         if let Some(editable) = modal_editable_mut(modal) {
                             editable.insert_text(&filtered);
                         }
-                        on_modal_input_changed(modal);
+                        on_modal_input_changed(modal, &model.command_history);
                     }
                 }
             }
@@ -544,7 +568,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                 if let Some(editable) = modal_editable_mut(modal) {
                     editable.delete_forward();
                 }
-                on_modal_input_changed(modal);
+                on_modal_input_changed(modal, &model.command_history);
                 Some(Cmd::Redraw)
             } else {
                 None
@@ -569,6 +593,38 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::TogglePin => {
+            // Commands tab: pin/unpin the selected command
+            // (overlay-surface.md Phase 4 Behaviour: "Pinning: commands via
+            // CommandUsage.is_pinned (⌘. toggle in the Commands tab)").
+            if let Some(ModalState::CommandPalette(ref mut state)) = model.ui.active_modal {
+                if state.active_tab == SearchTab::Commands {
+                    if let Some(cmd_id) = state.matches.get(state.selected_index).map(|m| m.def.id)
+                    {
+                        model.command_history.toggle_pin(cmd_id);
+                        if let Some(ModalState::CommandPalette(ref mut state)) =
+                            model.ui.active_modal
+                        {
+                            resolve_palette_rows(state, &model.command_history);
+                            if let Some(idx) = state.matches.iter().position(|m| m.def.id == cmd_id)
+                            {
+                                state.selected_index = idx;
+                                let shapes = flat_shapes(state.matches.len());
+                                state.scroll_offset = resolve_scroll_for_selection(
+                                    &shapes,
+                                    idx,
+                                    COMMAND_PALETTE_MAX_VISIBLE,
+                                    state.scroll_offset,
+                                );
+                            }
+                        }
+                        let history = model.command_history.clone();
+                        return Some(Cmd::Batch(vec![
+                            Cmd::Redraw,
+                            Cmd::SaveCommandHistory { history },
+                        ]));
+                    }
+                }
+            }
             if let Some(ModalState::RecentFiles(ref mut state)) = model.ui.active_modal {
                 if let Some(path) = state.selected_entry().map(|e| e.path.clone()) {
                     model.recent_files.toggle_pin(&path);
@@ -600,6 +656,12 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             }
             Some(Cmd::Redraw)
         }
+
+        ModalMsg::NextTab => cycle_search_tab(model, true),
+
+        ModalMsg::PrevTab => cycle_search_tab(model, false),
+
+        ModalMsg::ActivateTab(index) => activate_search_tab(model, index),
 
         ModalMsg::Confirm => confirm_active_modal(model),
 
@@ -711,12 +773,98 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
     }
 }
 
+/// Prefix routing (overlay-surface.md Phase 4 Key routing): `>` pins the
+/// Commands tab, `@` pins Symbols. No other prefix is recognized (`:`
+/// goto-line was explicitly dropped — Cmd+L already exists).
+fn search_tab_for_prefix(ch: char) -> Option<SearchTab> {
+    match ch {
+        '>' => Some(SearchTab::Commands),
+        '@' => Some(SearchTab::Symbols),
+        _ => None,
+    }
+}
+
+/// `ModalMsg::NextTab`/`PrevTab` (⇥/⇧⇥): cycle Search Everywhere's tabs,
+/// skipping `Unavailable` ones (Symbols always; Files with no workspace).
+/// A no-op for every other modal.
+fn cycle_search_tab(model: &mut AppModel, forward: bool) -> Option<Cmd> {
+    // Computed up front (owned data, not borrowed from `model`) so it can
+    // still be used after `state` takes a mutable borrow of
+    // `model.ui.active_modal` below.
+    let workspace_files = model
+        .workspace
+        .as_ref()
+        .map(|w| (w.file_tree.get_all_file_paths(), w.root.clone()));
+
+    if let Some(ModalState::CommandPalette(ref mut state)) = model.ui.active_modal {
+        let order = SearchTab::ORDER;
+        let current = order.iter().position(|&t| t == state.active_tab)?;
+        let n = order.len();
+        for step in 1..=n {
+            let idx = if forward {
+                (current + step) % n
+            } else {
+                (current + n - step) % n
+            };
+            let candidate = order[idx];
+            if state.tab_available(candidate) {
+                state.active_tab = candidate;
+                if candidate == SearchTab::Files && state.files.is_none() {
+                    if let Some((all_files, root)) = workspace_files {
+                        let mut fs = FileFinderState::new(all_files, root);
+                        update_file_finder_results(&mut fs);
+                        state.files = Some(fs);
+                    }
+                }
+                break;
+            }
+        }
+        return Some(Cmd::Redraw);
+    }
+    None
+}
+
+/// `ModalMsg::ActivateTab` (tab click): switch to `SearchTab::ORDER[index]`,
+/// a no-op if out of range or `Unavailable`.
+fn activate_search_tab(model: &mut AppModel, index: usize) -> Option<Cmd> {
+    let workspace_files = model
+        .workspace
+        .as_ref()
+        .map(|w| (w.file_tree.get_all_file_paths(), w.root.clone()));
+
+    if let Some(ModalState::CommandPalette(ref mut state)) = model.ui.active_modal {
+        let candidate = *SearchTab::ORDER.get(index)?;
+        if !state.tab_available(candidate) {
+            return Some(Cmd::Redraw);
+        }
+        state.active_tab = candidate;
+        if candidate == SearchTab::Files && state.files.is_none() {
+            if let Some((all_files, root)) = workspace_files {
+                let mut fs = FileFinderState::new(all_files, root);
+                update_file_finder_results(&mut fs);
+                state.files = Some(fs);
+            }
+        }
+        return Some(Cmd::Redraw);
+    }
+    None
+}
+
 /// Set the `FlatIndex`-space selected row for whichever list-body modal is
 /// active — used by `ModalMsg::ActivateRow` (row click) ahead of confirming.
 /// A no-op for `Fields`/no-list contexts.
 fn set_modal_selected_index(modal: &mut ModalState, row: usize) {
     match modal {
-        ModalState::CommandPalette(state) => state.selected_index = row.min(state.matches.len()),
+        ModalState::CommandPalette(state) => match state.active_tab {
+            SearchTab::Commands => state.selected_index = row.min(state.matches.len()),
+            SearchTab::Files => {
+                if let Some(files) = state.files.as_mut() {
+                    files.selected_index = row.min(files.results.len());
+                }
+            }
+            SearchTab::All => state.all_selected = row.min(all_tab_total(state)),
+            SearchTab::Symbols => {}
+        },
         ModalState::ThemePicker(state) => state.selected_index = row.min(state.themes.len()),
         ModalState::FileFinder(state) => state.selected_index = row.min(state.results.len()),
         ModalState::RecentFiles(state) => state.selected_index = row.min(state.filtered_rows.len()),
@@ -733,22 +881,7 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
     let modal = model.ui.active_modal.clone();
     if let Some(modal) = modal {
         match modal {
-            ModalState::CommandPalette(state) => {
-                // Read the selected command from the same `matches` cache
-                // the view rendered — the ordering-authority hazard this
-                // closes: Confirm used to re-derive the filtered list
-                // independently via `filter_commands`.
-                let selected_index = state.selected_index.min(state.matches.len());
-                if let Some(cmd_match) = state.matches.get(selected_index) {
-                    let cmd_id = cmd_match.def.id;
-                    // Save state for next time (only on successful execution)
-                    model.ui.last_command_palette = Some(state);
-                    model.ui.close_modal();
-                    return execute_command(model, cmd_id);
-                }
-                model.ui.close_modal();
-                Some(Cmd::Redraw)
-            }
+            ModalState::CommandPalette(state) => confirm_search_everywhere(model, state),
             ModalState::GotoLine(state) => {
                 // Parse line:col or just line format
                 let input_text = state.input();
@@ -836,6 +969,104 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
     }
 }
 
+/// Per-group cap on the All tab's merged, non-scrolling summary
+/// (overlay-surface.md Phase 4: "per-group cap 4–5 rows").
+pub const ALL_TAB_GROUP_CAP: usize = 5;
+
+/// Total selectable rows on the All tab: capped Commands + capped Files
+/// (Symbols never contributes — disabled-state only).
+fn all_tab_total(state: &CommandPaletteState) -> usize {
+    let commands_shown = state.matches.len().min(ALL_TAB_GROUP_CAP);
+    let files_shown = state
+        .files
+        .as_ref()
+        .map(|f| f.results.len().min(ALL_TAB_GROUP_CAP))
+        .unwrap_or(0);
+    commands_shown + files_shown
+}
+
+/// Section shapes for the Commands tab: an optional "Recently used" header
+/// (only when `recent_count > 0` — the query is empty) plus the full list.
+fn commands_tab_shapes(state: &CommandPaletteState) -> Vec<SectionShape> {
+    if state.recent_count > 0 {
+        vec![
+            SectionShape {
+                has_title: true,
+                len: state.recent_count,
+            },
+            SectionShape {
+                has_title: false,
+                len: state.matches.len() - state.recent_count,
+            },
+        ]
+    } else {
+        flat_shapes(state.matches.len()).to_vec()
+    }
+}
+
+/// `ModalMsg::Confirm` for the Search Everywhere modal (overlay-surface.md
+/// Phase 4): reads whichever tab's ordering-authority cache is active.
+fn confirm_search_everywhere(model: &mut AppModel, state: CommandPaletteState) -> Option<Cmd> {
+    match state.active_tab {
+        SearchTab::Commands => {
+            let idx = state.selected_index.min(state.matches.len());
+            if let Some(cmd_match) = state.matches.get(idx) {
+                let cmd_id = cmd_match.def.id;
+                model.command_history.record_execution(cmd_id);
+                let history = model.command_history.clone();
+                model.ui.last_command_palette = Some(state);
+                model.ui.close_modal();
+                let exec = execute_command(model, cmd_id).unwrap_or(Cmd::Redraw);
+                return Some(Cmd::Batch(vec![exec, Cmd::SaveCommandHistory { history }]));
+            }
+            model.ui.close_modal();
+            Some(Cmd::Redraw)
+        }
+        SearchTab::Files => {
+            let path = state
+                .files
+                .as_ref()
+                .and_then(|f| f.results.get(f.selected_index))
+                .map(|m| m.path.clone());
+            model.ui.close_modal();
+            match path {
+                Some(path) => update_layout(model, LayoutMsg::OpenFileInNewTab(path)),
+                None => Some(Cmd::Redraw),
+            }
+        }
+        SearchTab::All => {
+            let commands_shown = state.matches.len().min(ALL_TAB_GROUP_CAP);
+            if state.all_selected < commands_shown {
+                if let Some(cmd_match) = state.matches.get(state.all_selected) {
+                    let cmd_id = cmd_match.def.id;
+                    model.command_history.record_execution(cmd_id);
+                    let history = model.command_history.clone();
+                    model.ui.last_command_palette = Some(state);
+                    model.ui.close_modal();
+                    let exec = execute_command(model, cmd_id).unwrap_or(Cmd::Redraw);
+                    return Some(Cmd::Batch(vec![exec, Cmd::SaveCommandHistory { history }]));
+                }
+                model.ui.close_modal();
+                return Some(Cmd::Redraw);
+            }
+            let path = state
+                .files
+                .as_ref()
+                .and_then(|f| f.results.get(state.all_selected - commands_shown))
+                .map(|m| m.path.clone());
+            model.ui.close_modal();
+            match path {
+                Some(path) => update_layout(model, LayoutMsg::OpenFileInNewTab(path)),
+                None => Some(Cmd::Redraw),
+            }
+        }
+        SearchTab::Symbols => {
+            model.ui.close_modal();
+            Some(Cmd::Redraw)
+        }
+    }
+}
+
 /// Section shapes for a flat (untitled, single-section) list body — the
 /// Command Palette and File Finder, which have no headers.
 fn flat_shapes(total: usize) -> [SectionShape; 1] {
@@ -909,6 +1140,42 @@ fn page_list_selection(
     *scroll = resolve_scroll_for_selection(shapes, *selected, COMMAND_PALETTE_MAX_VISIBLE, *scroll);
 }
 
+/// Move the active tab's selection by `delta` (-1/+1), wrapping — the
+/// Search Everywhere equivalent of `move_list_selection`, dispatched by
+/// `state.active_tab` (overlay-surface.md Phase 4: per-tab selection).
+fn move_search_everywhere_selection(state: &mut CommandPaletteState, delta: isize) {
+    match state.active_tab {
+        SearchTab::Commands => {
+            let shapes = commands_tab_shapes(state);
+            move_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                &shapes,
+                delta,
+            );
+        }
+        SearchTab::Files => {
+            if let Some(files) = state.files.as_mut() {
+                let shapes = flat_shapes(files.results.len());
+                move_list_selection(
+                    &mut files.selected_index,
+                    &mut files.scroll_offset,
+                    &shapes,
+                    delta,
+                );
+            }
+        }
+        SearchTab::All => {
+            let total = all_tab_total(state);
+            if total > 0 {
+                state.all_selected =
+                    (state.all_selected as isize + delta).rem_euclid(total as isize) as usize;
+            }
+        }
+        SearchTab::Symbols => {}
+    }
+}
+
 /// `ModalMsg::SelectPrevious`/`SelectNext`: move selection by `delta`
 /// (-1/+1) in whichever list-body modal is active. Theme Picker previews
 /// the newly-selected theme live.
@@ -916,13 +1183,7 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
     let modal = model.ui.active_modal.as_mut()?;
     let preview_theme_id = match modal {
         ModalState::CommandPalette(state) => {
-            let shapes = flat_shapes(state.matches.len());
-            move_list_selection(
-                &mut state.selected_index,
-                &mut state.scroll_offset,
-                &shapes,
-                delta,
-            );
+            move_search_everywhere_selection(state, delta);
             None
         }
         ModalState::ThemePicker(state) => {
@@ -970,15 +1231,30 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
 fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
     let modal = model.ui.active_modal.as_mut()?;
     match modal {
-        ModalState::CommandPalette(state) => {
-            let shapes = flat_shapes(state.matches.len());
-            page_list_selection(
-                &mut state.selected_index,
-                &mut state.scroll_offset,
-                &shapes,
-                forward,
-            );
-        }
+        ModalState::CommandPalette(state) => match state.active_tab {
+            SearchTab::Commands => {
+                let shapes = commands_tab_shapes(state);
+                page_list_selection(
+                    &mut state.selected_index,
+                    &mut state.scroll_offset,
+                    &shapes,
+                    forward,
+                );
+            }
+            SearchTab::Files => {
+                if let Some(files) = state.files.as_mut() {
+                    let shapes = flat_shapes(files.results.len());
+                    page_list_selection(
+                        &mut files.selected_index,
+                        &mut files.scroll_offset,
+                        &shapes,
+                        forward,
+                    );
+                }
+            }
+            // All is a non-scrolling summary — no paging.
+            SearchTab::All | SearchTab::Symbols => {}
+        },
         ModalState::ThemePicker(state) => {
             let shapes = theme_picker_shapes(state);
             page_list_selection(
@@ -1016,10 +1292,19 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
 fn modal_scroll(model: &mut AppModel, delta: isize) -> Option<Cmd> {
     let modal = model.ui.active_modal.as_mut()?;
     let (scroll, shapes): (&mut usize, Vec<SectionShape>) = match modal {
-        ModalState::CommandPalette(state) => (
-            &mut state.scroll_offset,
-            flat_shapes(state.matches.len()).to_vec(),
-        ),
+        ModalState::CommandPalette(state) => match state.active_tab {
+            SearchTab::Commands => {
+                let shapes = commands_tab_shapes(state);
+                (&mut state.scroll_offset, shapes)
+            }
+            SearchTab::Files => {
+                let files = state.files.as_mut()?;
+                let shapes = flat_shapes(files.results.len()).to_vec();
+                (&mut files.scroll_offset, shapes)
+            }
+            // All is a non-scrolling summary.
+            SearchTab::All | SearchTab::Symbols => return None,
+        },
         ModalState::ThemePicker(state) => {
             let shapes = theme_picker_shapes(state);
             (&mut state.scroll_offset, shapes)
@@ -1258,6 +1543,7 @@ fn get_current_cursor_lines(model: &AppModel) -> Vec<usize> {
 // Command Palette Ordering Authority
 // ============================================================================
 
+use crate::command_history::CommandHistory;
 use crate::commands::CommandDef;
 use crate::model::CommandMatch;
 
@@ -1266,56 +1552,94 @@ use crate::model::CommandMatch;
 /// Both the palette's spec builder and `ModalMsg::Confirm`/`SelectNext`
 /// consume this cache instead of re-deriving the list, so Enter always
 /// activates the row the user actually sees selected.
-pub fn resolve_palette_rows(state: &mut CommandPaletteState) {
-    state.matches = fuzzy_match_commands(&state.input());
+///
+/// On an empty query the leading `state.recent_count` entries of
+/// `state.matches` are duplicated from the "Recently used" (top 3 by
+/// recency) set — overlay-surface.md Phase 4: "on an empty query, the
+/// Commands tab (and All) show a 'Recently used' section ... above
+/// unfiltered commands. On the first typed char the section disappears".
+pub fn resolve_palette_rows(state: &mut CommandPaletteState, history: &CommandHistory) {
+    let query = state.input();
+    let mut matches = fuzzy_match_commands(&query, history);
+
+    state.recent_count = if query.is_empty() {
+        let all_ids: Vec<crate::commands::CommandId> = matches.iter().map(|m| m.def.id).collect();
+        let recent_ids = history.recent_commands(&all_ids, 3);
+        let recent: Vec<CommandMatch> = recent_ids
+            .iter()
+            .filter_map(|id| matches.iter().find(|m| m.def.id == *id).cloned())
+            .collect();
+        let n = recent.len();
+        matches = recent.into_iter().chain(matches).collect();
+        n
+    } else {
+        0
+    };
+
+    state.matches = matches;
     state.selected_index = 0;
     state.scroll_offset = 0;
+    state.all_selected = 0;
 }
 
 /// Fuzzy-match commands against `query` using nucleo, the same pattern the
 /// file finder uses below (`fuzzy_match_files`) — replaces the old bespoke
-/// `fuzzy_match_score`. An empty query returns every command, unranked, in
-/// registry order.
-fn fuzzy_match_commands(query: &str) -> Vec<CommandMatch> {
+/// `fuzzy_match_score`. An empty query returns every command in registry
+/// order. Ranking (overlay-surface.md Phase 4 Behaviour): pinned first,
+/// then recency-boosted fuzzy score — ties (e.g. an empty query with no
+/// usage history) keep registry order via the stable sort.
+fn fuzzy_match_commands(query: &str, history: &CommandHistory) -> Vec<CommandMatch> {
     let all: Vec<&'static CommandDef> = crate::commands::all_commands();
 
-    if query.is_empty() {
-        return all
-            .into_iter()
-            .map(|def| CommandMatch {
-                def,
-                indices: Vec::new(),
+    let scored: Vec<(CommandMatch, u32)> = if query.is_empty() {
+        all.into_iter()
+            .map(|def| {
+                (
+                    CommandMatch {
+                        def,
+                        indices: Vec::new(),
+                    },
+                    0u32,
+                )
             })
-            .collect();
-    }
+            .collect()
+    } else {
+        let mut matcher = Matcher::new(Config::DEFAULT);
+        // Lower-case both sides: nucleo's smart-case path (triggered by an
+        // uppercase query char) has a known crash against some target lengths
+        // (nucleo-matcher#footgun — "should have been caught by prefilter" in
+        // `fuzzy_optimal.rs`); forcing case-insensitive matching here also
+        // matches the bespoke matcher's prior behavior and the file finder's
+        // typically-lowercase filenames.
+        let query_lower = query.to_lowercase();
+        let mut query_buf = Vec::new();
+        let needle = Utf32Str::new(&query_lower, &mut query_buf);
 
-    let mut matcher = Matcher::new(Config::DEFAULT);
-    // Lower-case both sides: nucleo's smart-case path (triggered by an
-    // uppercase query char) has a known crash against some target lengths
-    // (nucleo-matcher#footgun — "should have been caught by prefilter" in
-    // `fuzzy_optimal.rs`); forcing case-insensitive matching here also
-    // matches the bespoke matcher's prior behavior and the file finder's
-    // typically-lowercase filenames.
-    let query_lower = query.to_lowercase();
-    let mut query_buf = Vec::new();
-    let needle = Utf32Str::new(&query_lower, &mut query_buf);
+        all.into_iter()
+            .filter_map(|def| {
+                let label_lower = def.label.to_lowercase();
+                let mut label_buf = Vec::new();
+                let haystack = Utf32Str::new(&label_lower, &mut label_buf);
+                let score = matcher.fuzzy_match(haystack, needle)?;
 
-    let mut results: Vec<(CommandMatch, u16)> = all
-        .into_iter()
-        .filter_map(|def| {
-            let label_lower = def.label.to_lowercase();
-            let mut label_buf = Vec::new();
-            let haystack = Utf32Str::new(&label_lower, &mut label_buf);
-            let score = matcher.fuzzy_match(haystack, needle)?;
+                let mut indices = vec![];
+                matcher.fuzzy_indices(haystack, needle, &mut indices);
 
-            let mut indices = vec![];
-            matcher.fuzzy_indices(haystack, needle, &mut indices);
+                Some((CommandMatch { def, indices }, score as u32))
+            })
+            .collect()
+    };
 
-            Some((CommandMatch { def, indices }, score))
-        })
-        .collect();
-
-    results.sort_by_key(|(_, score)| std::cmp::Reverse(*score));
+    let mut results = scored;
+    results.sort_by_key(|(m, score)| {
+        let pinned = history.is_pinned(m.def.id);
+        let recency = history.recency_score(m.def.id);
+        (
+            std::cmp::Reverse(pinned),
+            std::cmp::Reverse(recency),
+            std::cmp::Reverse(*score),
+        )
+    });
     results.into_iter().map(|(m, _)| m).collect()
 }
 
@@ -1326,6 +1650,19 @@ fn fuzzy_match_commands(query: &str) -> Vec<CommandMatch> {
 use crate::model::FileMatch;
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use std::path::Path;
+
+/// Build the Files tab's backing state from the open workspace, matched
+/// against whatever query is already in `state.editable` — `None` when no
+/// workspace is open (the tab is `Unavailable` in that case, per
+/// overlay-surface.md Phase 4 State merge). Lazy: only called on first
+/// activation of the Files tab, not at Search Everywhere open time.
+fn build_file_finder_state(model: &AppModel) -> Option<FileFinderState> {
+    let workspace = model.workspace.as_ref()?;
+    let all_files = workspace.file_tree.get_all_file_paths();
+    let mut state = FileFinderState::new(all_files, workspace.root.clone());
+    update_file_finder_results(&mut state);
+    Some(state)
+}
 
 /// Update file finder results based on current query
 pub fn update_file_finder_results(state: &mut FileFinderState) {
@@ -1406,10 +1743,11 @@ fn fuzzy_match_files(
 #[cfg(test)]
 mod tests {
     use super::{get_current_cursor_lines, resolve_palette_rows, update_ui};
+    use crate::command_history::CommandHistory;
     use crate::commands::{Cmd, CommandId, DamageArea};
     use crate::image::ImageState;
     use crate::messages::{ModalMsg, UiMsg};
-    use crate::model::{AppModel, CommandPaletteState, ModalId, ModalState, ViewMode};
+    use crate::model::{AppModel, CommandPaletteState, ModalId, ModalState, SearchTab, ViewMode};
 
     #[test]
     fn current_cursor_lines_are_reported_for_plain_text_editors() {
@@ -1484,6 +1822,7 @@ mod tests {
     #[test]
     fn confirm_executes_the_row_selected_in_the_cached_view_order() {
         let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        // Cmd+Shift+A opens on the All tab (overlay-surface.md Phase 4).
         update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
 
         // Empty query: `matches` is every command in registry order —
@@ -1491,7 +1830,7 @@ mod tests {
         update_ui(&mut model, UiMsg::Modal(ModalMsg::SelectNext));
 
         let expected_id = match &model.ui.active_modal {
-            Some(ModalState::CommandPalette(state)) => state.matches[state.selected_index].def.id,
+            Some(ModalState::CommandPalette(state)) => state.matches[state.all_selected].def.id,
             other => panic!("expected command palette modal, got {other:?}"),
         };
         assert_eq!(expected_id, CommandId::OpenFile);
@@ -1499,8 +1838,17 @@ mod tests {
         let cmd = update_ui(&mut model, UiMsg::Modal(ModalMsg::Confirm));
 
         assert!(model.ui.active_modal.is_none(), "palette closes on confirm");
+        // Batched with `Cmd::SaveCommandHistory` (overlay-surface.md Phase 4
+        // usage tracking) — dig out the `ShowOpenFileDialog` among the batch.
+        let opened_file_dialog = match &cmd {
+            Some(Cmd::Batch(cmds)) => cmds
+                .iter()
+                .any(|c| matches!(c, Cmd::ShowOpenFileDialog { .. })),
+            Some(Cmd::ShowOpenFileDialog { .. }) => true,
+            _ => false,
+        };
         assert!(
-            matches!(cmd, Some(Cmd::ShowOpenFileDialog { .. })),
+            opened_file_dialog,
             "Confirm should have executed OpenFile (the cached row selected), got {cmd:?}"
         );
     }
@@ -1512,7 +1860,7 @@ mod tests {
             ..Default::default()
         };
         state.set_input("gtln"); // fuzzy subsequence of "Go to Line..."
-        resolve_palette_rows(&mut state);
+        resolve_palette_rows(&mut state, &CommandHistory::default());
 
         assert_eq!(state.selected_index, 0);
         assert_eq!(state.scroll_offset, 0);
@@ -1527,7 +1875,7 @@ mod tests {
     #[test]
     fn resolve_palette_rows_empty_query_returns_all_commands_in_registry_order() {
         let mut state = CommandPaletteState::default();
-        resolve_palette_rows(&mut state);
+        resolve_palette_rows(&mut state, &CommandHistory::default());
         assert_eq!(
             state.matches.iter().map(|m| m.def.id).collect::<Vec<_>>(),
             crate::commands::all_commands()
@@ -1535,5 +1883,132 @@ mod tests {
                 .map(|d| d.id)
                 .collect::<Vec<_>>()
         );
+    }
+
+    // ========================================================================
+    // Search Everywhere: prefix routing, tab cycling, All tab (Phase 4)
+    // ========================================================================
+
+    #[test]
+    fn insert_char_gt_on_empty_query_pins_commands_tab_and_is_consumed() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+        assert!(matches!(
+            &model.ui.active_modal,
+            Some(ModalState::CommandPalette(s)) if s.active_tab == SearchTab::All
+        ));
+
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::InsertChar('>')));
+
+        match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => {
+                assert_eq!(state.active_tab, SearchTab::Commands);
+                assert_eq!(state.input(), "", "prefix char is consumed, not inserted");
+            }
+            other => panic!("expected command palette modal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn insert_char_at_on_empty_query_pins_symbols_tab() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::InsertChar('@')));
+        match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => {
+                assert_eq!(state.active_tab, SearchTab::Symbols);
+            }
+            other => panic!("expected command palette modal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn prefix_char_only_recognized_on_previously_empty_query() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::InsertChar('g')));
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::InsertChar('>')));
+        match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => {
+                // Not a prefix mid-query — inserted literally, tab unchanged.
+                assert_eq!(state.input(), "g>");
+                assert_eq!(state.active_tab, SearchTab::All);
+            }
+            other => panic!("expected command palette modal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn backspace_on_empty_query_returns_to_all_tab() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::InsertChar('>')));
+        // Consumed the prefix; query is empty, tab is Commands.
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::DeleteBackward));
+        match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => {
+                assert_eq!(state.active_tab, SearchTab::All);
+            }
+            other => panic!("expected command palette modal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn next_tab_skips_unavailable_files_and_symbols_with_no_workspace() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        assert!(model.workspace.is_none());
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+        // All -> Commands -> (Files unavailable, Symbols unavailable) -> All
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::NextTab));
+        assert_tab(&model, SearchTab::Commands);
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::NextTab));
+        assert_tab(&model, SearchTab::All);
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::PrevTab));
+        assert_tab(&model, SearchTab::Commands);
+    }
+
+    fn assert_tab(model: &AppModel, expected: SearchTab) {
+        match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => assert_eq!(state.active_tab, expected),
+            other => panic!("expected command palette modal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn all_tab_confirm_executes_the_selected_command_and_records_history() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+        assert_tab(&model, SearchTab::All);
+
+        let cmd = update_ui(&mut model, UiMsg::Modal(ModalMsg::Confirm));
+        assert!(model.ui.active_modal.is_none());
+        let batched_save = matches!(
+            &cmd,
+            Some(Cmd::Batch(cmds)) if cmds.iter().any(|c| matches!(c, Cmd::SaveCommandHistory { .. }))
+        );
+        assert!(
+            batched_save,
+            "confirming a command should batch Cmd::SaveCommandHistory, got {cmd:?}"
+        );
+        // NewFile (registry index 0) was executed — history now remembers it.
+        assert!(model.command_history.recency_score(CommandId::NewFile) > 0);
+    }
+
+    #[test]
+    fn toggle_pin_on_commands_tab_pins_selected_command() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let state = CommandPaletteState {
+            active_tab: SearchTab::Commands,
+            ..Default::default()
+        };
+        model.ui.open_modal(ModalState::CommandPalette(state));
+
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::TogglePin));
+
+        let first_id = match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => state.matches[0].def.id,
+            other => panic!("expected command palette modal, got {other:?}"),
+        };
+        assert!(model.command_history.is_pinned(first_id));
     }
 }

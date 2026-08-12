@@ -28,8 +28,8 @@ pub use status_bar::{
 pub use ui::{
     CommandMatch, CommandPaletteState, DropState, FileFinderState, FileMatch, FindReplaceField,
     FindReplaceState, FocusTarget, GotoLineState, HoverRegion, ModalId, ModalState,
-    OutlinePanelState, RecentFilesState, ScrollbarDragAxis, ScrollbarDragState, SidebarResizeState,
-    ThemePickerState, UiState, COMMAND_PALETTE_MAX_VISIBLE,
+    OutlinePanelState, RecentFilesState, ScrollbarDragAxis, ScrollbarDragState, SearchTab,
+    SidebarResizeState, ThemePickerState, UiState, COMMAND_PALETTE_MAX_VISIBLE,
 };
 pub use workspace::{FileExtension, FileNode, FileTree, Workspace};
 
@@ -436,6 +436,9 @@ pub struct AppModel {
     pub outline_panel: crate::model::ui::OutlinePanelState,
     /// Recent files list (persistent across sessions)
     pub recent_files: RecentFiles,
+    /// Command palette usage/pin history (persistent across sessions) —
+    /// overlay-surface.md Phase 4.
+    pub command_history: crate::command_history::CommandHistory,
     /// Debug overlay state (debug builds only)
     #[cfg(debug_assertions)]
     pub debug_overlay: Option<DebugOverlay>,
@@ -461,6 +464,9 @@ impl AppModel {
         // Load recent files from disk
         let recent_files = RecentFiles::load();
 
+        // Load command palette usage/pin history from disk
+        let command_history = crate::command_history::CommandHistory::load();
+
         // Create initial session with documents
         let InitialSession {
             editor_area,
@@ -481,6 +487,7 @@ impl AppModel {
             terminal: crate::terminal::TerminalState::default(),
             outline_panel: crate::model::ui::OutlinePanelState::default(),
             recent_files,
+            command_history,
             #[cfg(debug_assertions)]
             debug_overlay: Some(DebugOverlay::new()),
         }

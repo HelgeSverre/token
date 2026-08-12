@@ -284,6 +284,7 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         terminal: token::terminal::TerminalState::default(),
         outline_panel: token::model::OutlinePanelState::default(),
         recent_files: token::recent_files::RecentFiles::default(),
+        command_history: token::command_history::CommandHistory::default(),
         #[cfg(debug_assertions)]
         debug_overlay: None,
     };
@@ -505,7 +506,10 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
             let mut state = CommandPaletteState::default();
             if let Some(ref input) = config.input {
                 state.set_input(input);
-                resolve_palette_rows(&mut state);
+                resolve_palette_rows(
+                    &mut state,
+                    &token::command_history::CommandHistory::default(),
+                );
             }
             if let Some(idx) = config.selected_index {
                 state.selected_index = idx;

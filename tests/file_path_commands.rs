@@ -5,6 +5,7 @@ mod common;
 use std::path::PathBuf;
 
 use common::test_model;
+use token::command_history::CommandHistory;
 use token::commands::{Cmd, CommandId};
 use token::model::{AppModel, CommandPaletteState, SegmentId};
 use token::update::{execute_command, resolve_palette_rows};
@@ -24,7 +25,7 @@ fn status_message(model: &AppModel) -> &str {
 fn palette_matches(query: &str) -> Vec<CommandId> {
     let mut state = CommandPaletteState::default();
     state.set_input(query);
-    resolve_palette_rows(&mut state);
+    resolve_palette_rows(&mut state, &CommandHistory::default());
     state.matches.iter().map(|m| m.def.id).collect()
 }
 
