@@ -45,6 +45,7 @@ pub fn make_model(lines: usize) -> AppModel {
         command_history: token::command_history::CommandHistory::default(),
         #[cfg(debug_assertions)]
         debug_overlay: None,
+        lsp: token::model::LspUiState::default(),
     }
 }
 

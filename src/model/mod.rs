@@ -38,9 +38,11 @@ use crate::config::EditorConfig;
 use crate::config_paths;
 #[cfg(debug_assertions)]
 use crate::debug_overlay::DebugOverlay;
+use crate::lsp::{LspServerId, ServerState};
 use crate::recent_files::RecentFiles;
 use crate::theme::{load_theme, Theme};
 use crate::util::{is_likely_binary, validate_file_for_opening, FileOpenError};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 // ============================================================================
@@ -407,6 +409,16 @@ pub fn gutter_border_x_scaled(char_width: f32, metrics: &ScaledMetrics, line_cou
     char_width * gutter_number_chars(line_count) as f32 + metrics.gutter_padding
 }
 
+/// Render-only mirror of language server lifecycle state (see
+/// `docs/feature/lsp-integration.md`'s Process Model). The runtime's
+/// `LspManager` owns the actual process handles and is authoritative;
+/// this is what the status bar and automation read, updated only by
+/// `LspMsg::ServerStateChanged`.
+#[derive(Debug, Clone, Default)]
+pub struct LspUiState {
+    pub servers: HashMap<LspServerId, ServerState>,
+}
+
 /// The complete application model
 #[derive(Debug)]
 pub struct AppModel {
@@ -447,6 +459,8 @@ pub struct AppModel {
     /// Debug overlay state (debug builds only)
     #[cfg(debug_assertions)]
     pub debug_overlay: Option<DebugOverlay>,
+    /// Language server lifecycle state mirror (see `LspUiState`)
+    pub lsp: LspUiState,
 }
 
 impl AppModel {
@@ -496,6 +510,7 @@ impl AppModel {
             command_history,
             #[cfg(debug_assertions)]
             debug_overlay: Some(DebugOverlay::new()),
+            lsp: LspUiState::default(),
         }
     }
 

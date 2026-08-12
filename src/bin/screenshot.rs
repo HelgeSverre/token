@@ -298,6 +298,7 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         command_history: token::command_history::CommandHistory::default(),
         #[cfg(debug_assertions)]
         debug_overlay: None,
+        lsp: token::model::LspUiState::default(),
     };
 
     // Add additional files as splits

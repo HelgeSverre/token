@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 
 use crate::editable::{EditContext, TextEditMsg};
+use crate::lsp::{LspServerId, ServerState};
 
 /// Direction for cursor movement
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -864,6 +865,30 @@ pub enum Msg {
     Terminal(TerminalMsg),
     /// Menu completion messages (autocomplete.md Phase 1)
     Completion(CompletionMsg),
+    /// Language server messages (lsp-integration.md)
+    Lsp(LspMsg),
+}
+
+/// Language server lifecycle messages (lsp-integration.md Phase 1).
+/// Feature messages (diagnostics, definition, hover, completion) are
+/// added by later phases once there is data to route.
+#[derive(Debug, Clone)]
+pub enum LspMsg {
+    /// Worker -> update: drives the `LspUiState` model mirror.
+    ServerStateChanged {
+        server_id: LspServerId,
+        state: ServerState,
+    },
+    /// Worker -> update: the child process exited (crash or clean
+    /// shutdown); the runtime's `LspManager` owns backoff/restart.
+    /// `generation` disambiguates this incarnation from a replacement
+    /// spawned at the same id/root (see `lsp::client::spawn_server`).
+    ServerExited {
+        server_id: LspServerId,
+        generation: u64,
+    },
+    /// User/automation-initiated restart (palette, `RestartLanguageServer`).
+    RestartServer { server_id: LspServerId },
 }
 
 /// Menu completion messages (autocomplete.md Phase 1: "words + snippets,

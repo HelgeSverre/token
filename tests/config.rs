@@ -106,6 +106,7 @@ fn test_config_serialize_deserialize() {
         bracket_matching: true,
         show_scrollbar: true,
         status_bar_font_size: 12.0,
+        lsp: token::config::LspConfig::default(),
     };
     let yaml = serde_yaml::to_string(&config).unwrap();
     let parsed: EditorConfig = serde_yaml::from_str(&yaml).unwrap();

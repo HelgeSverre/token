@@ -268,6 +268,7 @@ fn create_model(args: &Args) -> Result<token::model::AppModel> {
         command_history: token::command_history::CommandHistory::default(),
         #[cfg(debug_assertions)]
         debug_overlay: None,
+        lsp: token::model::LspUiState::default(),
     };
 
     // Add more splits using the layout system

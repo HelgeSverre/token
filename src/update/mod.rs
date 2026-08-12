@@ -10,6 +10,7 @@ mod document;
 mod editor;
 mod image;
 pub mod layout;
+mod lsp;
 mod outline;
 mod preview;
 mod syntax;
@@ -36,6 +37,7 @@ pub use dock::update_dock;
 pub use document::update_document;
 pub use editor::update_editor;
 pub use layout::update_layout;
+pub use lsp::update_lsp;
 pub use outline::update_outline;
 pub use preview::update_preview;
 pub use syntax::{schedule_syntax_parse, update_syntax, SYNTAX_DEBOUNCE_MS};
@@ -153,6 +155,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::TextEdit(context, m) => text_edit::update_text_edit(model, context, m),
         Msg::Terminal(m) => terminal::update_terminal(model, m),
         Msg::Completion(m) => completion::update_completion(model, m),
+        Msg::Lsp(m) => lsp::update_lsp(model, m),
     };
 
     // Any focus change away from the editor (modal open, dock/sidebar
@@ -308,5 +311,6 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::TextEdit(ctx, m) => format!("TextEdit::{:?}::{:?}", ctx, m),
         Msg::Terminal(m) => format!("Terminal::{:?}", m),
         Msg::Completion(m) => format!("Completion::{:?}", m),
+        Msg::Lsp(m) => format!("Lsp::{:?}", m),
     }
 }

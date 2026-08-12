@@ -727,6 +727,19 @@ pub enum Cmd {
         cols: u16,
     },
 
+    // === Language Server Commands (lsp-integration.md) ===
+    /// Spawn a server for `language` rooted for `file_path`, if one is
+    /// registered, enabled, and not already running for that root.
+    /// Idempotent — the runtime's `LspManager` is the source of truth
+    /// for "already spawned".
+    LspEnsureServer {
+        language: LanguageId,
+        file_path: PathBuf,
+    },
+    /// Kill and respawn every running instance of a server (manual
+    /// restart, e.g. from the command palette).
+    LspRestartServer { server_id: crate::lsp::LspServerId },
+
     // === Debug Commands ===
     /// Toggle performance overlay (debug builds only)
     #[cfg(debug_assertions)]
@@ -806,6 +819,10 @@ impl Cmd {
             // Spawning doesn't need immediate redraw; the PtyOutput that
             // follows shortly after will request one.
             Cmd::SpawnTerminal { .. } => Damage::Areas(vec![]),
+            // Spawning/restarting a server has no immediate visual effect;
+            // ServerStateChanged (once it arrives) requests its own redraw.
+            Cmd::LspEnsureServer { .. } => Damage::Areas(vec![]),
+            Cmd::LspRestartServer { .. } => Damage::Areas(vec![]),
             // Debug overlay toggle triggers full redraw
             #[cfg(debug_assertions)]
             Cmd::TogglePerfOverlay => Damage::Full,

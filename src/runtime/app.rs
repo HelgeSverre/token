@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -25,8 +25,9 @@ use token::fs_watcher::{FileSystemEvent, FileSystemWatcher};
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
 };
+use token::lsp::{self, client::ServerHandle, LspServerId, ServerState};
 use token::messages::{
-    AppMsg, EditorMsg, ImageMsg, LayoutMsg, ModalMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg,
+    AppMsg, EditorMsg, ImageMsg, LayoutMsg, LspMsg, ModalMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg,
 };
 use token::model::editor::Position;
 use token::model::AppModel;
@@ -210,6 +211,11 @@ pub struct App {
     syntax_present_pending: Vec<SyntaxPresentationPending>,
     automation_syntax_profile: Option<AutomationSyntaxProfile>,
     latest_syntax_performance: Option<crate::automation::SyntaxPerfSnapshot>,
+    lsp: LspManager,
+    /// Wakes the event loop from an LSP worker thread; `None` in tests
+    /// that construct `App` without a real event loop (matches
+    /// `automation_proxy`'s optionality).
+    lsp_wake: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
 
 struct AutomationProfile {
@@ -229,6 +235,57 @@ struct SyntaxPresentationPending {
     response_tx: Option<mpsc::SyncSender<AutomationResponse>>,
 }
 
+/// Non-workspace roots (stdlib, `~/.cargo/registry`, ...) are capped per
+/// session so opening files scattered across the filesystem doesn't
+/// spawn an unbounded number of servers (see design doc's Root
+/// resolution).
+const MAX_DETACHED_ROOTS: usize = 4;
+
+/// Crash-restart attempts before a server gives up and reports `Failed`.
+const MAX_RESTART_ATTEMPTS: u8 = 3;
+
+/// Owns every running language server's process handle. Authoritative —
+/// `AppModel.lsp` (`LspUiState`) is a render-only mirror driven by
+/// `Msg::Lsp(ServerStateChanged)`; this stays out of the model per the
+/// design doc's Process Model (non-`Debug`/`Clone` handles must never
+/// reach `AppModel`, which the automation layer snapshots wholesale).
+struct LspManager {
+    servers: HashMap<(LspServerId, PathBuf), ServerHandle>,
+    detached_roots: Vec<PathBuf>,
+    restart_attempts: HashMap<LspServerId, u8>,
+}
+
+impl LspManager {
+    fn new() -> Self {
+        Self {
+            servers: HashMap::new(),
+            detached_roots: Vec::new(),
+            restart_attempts: HashMap::new(),
+        }
+    }
+
+    fn is_running(&self, id: &LspServerId, root: &Path) -> bool {
+        self.servers.contains_key(&(id.clone(), root.to_path_buf()))
+    }
+
+    /// Roots a server id is currently running at (there can be more than
+    /// one — a server is keyed by `(id, root)`, not just `id`).
+    fn roots_for(&self, id: &LspServerId) -> Vec<PathBuf> {
+        self.servers
+            .keys()
+            .filter(|(server_id, _)| server_id == id)
+            .map(|(_, root)| root.clone())
+            .collect()
+    }
+
+    fn kill_all(&mut self) {
+        for handle in self.servers.values_mut() {
+            handle.kill();
+        }
+        self.servers.clear();
+    }
+}
+
 impl App {
     pub fn new(
         window_width: u32,
@@ -245,6 +302,14 @@ impl App {
         if let Some(proxy) = automation_proxy.clone() {
             automation::start_server(automation_tx, proxy);
         }
+        // LSP worker threads wake the event loop the same way the syntax
+        // worker does; cloned before `automation_proxy` is moved below.
+        let lsp_wake: Option<std::sync::Arc<dyn Fn() + Send + Sync>> =
+            automation_proxy.clone().map(|proxy| {
+                std::sync::Arc::new(move || {
+                    let _ = proxy.send_event(());
+                }) as std::sync::Arc<dyn Fn() + Send + Sync>
+            });
         // Spawn syntax highlighting worker thread
         let (syntax_tx, syntax_rx) = mpsc::channel::<SyntaxWorkerRequest>();
         {
@@ -297,6 +362,8 @@ impl App {
             syntax_present_pending: Vec::new(),
             automation_syntax_profile: None,
             latest_syntax_performance: None,
+            lsp: LspManager::new(),
+            lsp_wake,
         };
 
         // Trigger initial syntax parsing for all loaded documents
@@ -1512,9 +1579,31 @@ impl App {
             }
 
             // =====================================================================
+            // Language Server Commands
+            // =====================================================================
+            Cmd::LspEnsureServer {
+                language,
+                file_path,
+            } => {
+                self.ensure_lsp_server(language, &file_path);
+            }
+            Cmd::LspRestartServer { server_id } => {
+                // Manual restart resets backoff: a user/automation-driven
+                // restart is a deliberate retry, not another crash.
+                self.lsp.restart_attempts.insert(server_id.clone(), 0);
+                self.restart_lsp_server(&server_id);
+            }
+
+            // =====================================================================
             // Application Commands
             // =====================================================================
             Cmd::Quit => {
+                // No quit-time teardown existed anywhere in the runtime
+                // before this (not even for PTY children); this is the
+                // first one. It only kills the child here rather than
+                // running the full shutdown/exit handshake from the
+                // design doc — see `ServerHandle::kill`'s doc comment.
+                self.lsp.kill_all();
                 self.should_quit = true;
             }
 
@@ -1540,6 +1629,13 @@ impl App {
                 }) => Some((*document_id, *revision, **timing, Instant::now())),
                 _ => None,
             };
+            let lsp_exited = match &msg {
+                Msg::Lsp(LspMsg::ServerExited {
+                    server_id,
+                    generation,
+                }) => Some((server_id.clone(), *generation)),
+                _ => None,
+            };
             // Log syntax-related messages for debugging
             if let Msg::Syntax(ref syntax_msg) = msg {
                 tracing::debug!("Received async syntax message: {:?}", syntax_msg);
@@ -1552,6 +1648,9 @@ impl App {
                 // Accumulate damage from async message
                 self.pending_damage.merge(cmd.damage());
                 self.process_cmd(cmd);
+            }
+            if let Some((server_id, generation)) = lsp_exited {
+                self.handle_lsp_server_exited(&server_id, generation);
             }
             if let Some((document_id, revision, timing, apply_started)) = syntax_completion {
                 let applied = self
@@ -1596,6 +1695,145 @@ impl App {
             }
         }
         needs_redraw
+    }
+
+    /// Spawns a server for `language` rooted for `file_path`, if one is
+    /// registered, enabled, and not already running for that root
+    /// (`Cmd::LspEnsureServer`; see design doc's Process Model — lazy
+    /// spawn on first matching `didOpen`, wired by the next unit).
+    fn ensure_lsp_server(&mut self, language: token::syntax::LanguageId, file_path: &Path) {
+        let Some(def) = lsp::lsp_server_def(language) else {
+            return;
+        };
+        let Some(resolved) = lsp::resolve_server(def, &self.model.config.lsp) else {
+            return;
+        };
+        let workspace_root = self.model.workspace.as_ref().map(|w| w.root.as_path());
+        let root = lsp::client::resolve_root(file_path, workspace_root, def.project_markers, |p| {
+            p.is_file()
+        });
+
+        if self.lsp.is_running(&resolved.id, &root) {
+            return;
+        }
+
+        let is_detached = workspace_root.is_none_or(|ws| !root.starts_with(ws));
+        if is_detached && !self.lsp.detached_roots.contains(&root) {
+            if self.lsp.detached_roots.len() >= MAX_DETACHED_ROOTS {
+                tracing::debug!(
+                    "Detached LSP root cap ({MAX_DETACHED_ROOTS}) reached; not spawning {} for {}",
+                    resolved.id,
+                    root.display()
+                );
+                return;
+            }
+            self.lsp.detached_roots.push(root.clone());
+        }
+
+        self.spawn_lsp_server_at(&resolved, &root);
+    }
+
+    /// Kills every running instance of `server_id` and respawns it at
+    /// the same root(s) — used both for manual restart and, capped at
+    /// `MAX_RESTART_ATTEMPTS`, crash backoff.
+    fn restart_lsp_server(&mut self, server_id: &LspServerId) {
+        let Some(def) = lsp::server_def_by_id(&server_id.0) else {
+            return;
+        };
+        let Some(resolved) = lsp::resolve_server(def, &self.model.config.lsp) else {
+            return;
+        };
+        for root in self.lsp.roots_for(server_id) {
+            if let Some(mut handle) = self.lsp.servers.remove(&(server_id.clone(), root.clone())) {
+                handle.kill();
+            }
+            self.spawn_lsp_server_at(&resolved, &root);
+        }
+    }
+
+    fn spawn_lsp_server_at(&mut self, resolved: &lsp::ResolvedServer, root: &Path) {
+        self.model
+            .lsp
+            .servers
+            .insert(resolved.id.clone(), ServerState::Starting);
+        match lsp::client::spawn_server(
+            &resolved.command,
+            &resolved.args,
+            root,
+            resolved.id.clone(),
+            self.msg_tx.clone(),
+            self.lsp_wake.clone(),
+        ) {
+            Ok(handle) => {
+                self.lsp
+                    .servers
+                    .insert((resolved.id.clone(), root.to_path_buf()), handle);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to spawn LSP server {}: {}", resolved.id, e);
+                self.model
+                    .lsp
+                    .servers
+                    .insert(resolved.id.clone(), ServerState::Missing);
+            }
+        }
+    }
+
+    /// A server's worker thread hit EOF/error on stdout — the child
+    /// exited (crash or otherwise). Removes the dead handle and retries
+    /// with a simple attempt cap; giving up reports `Failed`.
+    ///
+    /// ponytail: no exponential delay between attempts (the design doc
+    /// specifies backoff); this retries immediately, capped at
+    /// `MAX_RESTART_ATTEMPTS`. Add a delay if a flapping server ever
+    /// makes that matter in practice.
+    fn handle_lsp_server_exited(&mut self, server_id: &LspServerId, generation: u64) {
+        // Only remove/restart handles whose generation matches the one
+        // that actually exited — a deliberate kill+respawn (restart,
+        // quit) can race this message against a replacement handle
+        // already being installed at the same (id, root) key. See
+        // `ServerHandle::generation`'s doc comment.
+        let roots: Vec<PathBuf> = self
+            .lsp
+            .servers
+            .iter()
+            .filter(|((id, _), handle)| id == server_id && handle.generation == generation)
+            .map(|((_, root), _)| root.clone())
+            .collect();
+        if roots.is_empty() {
+            return;
+        }
+        for root in &roots {
+            self.lsp.servers.remove(&(server_id.clone(), root.clone()));
+        }
+
+        let attempts = self
+            .lsp
+            .restart_attempts
+            .entry(server_id.clone())
+            .or_insert(0);
+        *attempts += 1;
+        if *attempts > MAX_RESTART_ATTEMPTS {
+            self.model
+                .lsp
+                .servers
+                .insert(server_id.clone(), ServerState::Failed);
+            return;
+        }
+        self.model.lsp.servers.insert(
+            server_id.clone(),
+            ServerState::Restarting { attempt: *attempts },
+        );
+
+        let Some(def) = lsp::server_def_by_id(&server_id.0) else {
+            return;
+        };
+        let Some(resolved) = lsp::resolve_server(def, &self.model.config.lsp) else {
+            return;
+        };
+        for root in roots {
+            self.spawn_lsp_server_at(&resolved, &root);
+        }
     }
 
     /// Drain any pending background PTY spawn results and create the

@@ -171,6 +171,7 @@ mod tests {
             command_history: token::command_history::CommandHistory::default(),
             #[cfg(debug_assertions)]
             debug_overlay: None,
+            lsp: token::model::LspUiState::default(),
         }
     }
 
@@ -774,6 +775,7 @@ mod tests {
             command_history: token::command_history::CommandHistory::default(),
             #[cfg(debug_assertions)]
             debug_overlay: None,
+            lsp: token::model::LspUiState::default(),
         };
 
         // Open command palette

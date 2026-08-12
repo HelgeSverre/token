@@ -62,6 +62,7 @@ pub fn test_model(text: &str, line: usize, column: usize) -> AppModel {
         command_history: token::command_history::CommandHistory::default(),
         #[cfg(debug_assertions)]
         debug_overlay: None,
+        lsp: token::model::LspUiState::default(),
     }
 }
 
@@ -131,6 +132,7 @@ pub fn test_model_with_selection(
         command_history: token::command_history::CommandHistory::default(),
         #[cfg(debug_assertions)]
         debug_overlay: None,
+        lsp: token::model::LspUiState::default(),
     }
 }
 
@@ -197,5 +199,6 @@ pub fn test_model_multi_cursor(text: &str, positions: &[(usize, usize)]) -> AppM
         command_history: token::command_history::CommandHistory::default(),
         #[cfg(debug_assertions)]
         debug_overlay: None,
+        lsp: token::model::LspUiState::default(),
     }
 }
