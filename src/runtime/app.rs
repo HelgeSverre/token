@@ -1333,6 +1333,7 @@ impl App {
         self.lsp.shutting_down = true;
         let keys: Vec<_> = self.lsp.servers.keys().cloned().collect();
         for key in keys {
+            self.set_lsp_server_state(key.0.clone(), &key.1, ServerState::ShuttingDown);
             if let Some(mut handle) = self.lsp.servers.remove(&key) {
                 handle.graceful_shutdown(&self.msg_rx, Duration::from_secs(2));
             }
@@ -2393,6 +2394,11 @@ impl ApplicationHandler for App {
         };
 
         if should_exit || self.should_quit {
+            // Window-close (titlebar X / OS gesture) bypasses Cmd::Quit, so
+            // run the same LSP shutdown->exit->kill sequence here.
+            if should_exit {
+                self.graceful_lsp_teardown();
+            }
             event_loop.exit();
         } else if should_redraw {
             if let Some(window) = &self.window {
