@@ -357,17 +357,9 @@ struct LspManager {
     /// `process_async_messages`'s interception pass and is swept for
     /// abandonment by `check_lsp_definition_deadlines`.
     definition: FeatureSlot<PendingDefinition>,
-    /// In-flight `textDocument/hover` requests, mirroring
-    /// `definition` — keyed by the triple the worker's response echoes
-    /// back. Migrates onto `FeatureSlot` in the next refactor step.
-    hover_requests: HashMap<(LspServerId, PathBuf, i64), PendingHover>,
-    /// Which `(server_id, root, request_id)` is the *current* hover
-    /// request for a document.
-    hover_request_by_doc:
-        HashMap<token::model::editor_area::DocumentId, (LspServerId, PathBuf, i64)>,
-    /// `~30s` UI-level abandonment deadlines for in-flight hover requests.
-    /// Fired by `check_lsp_hover_deadlines`.
-    hover_deadlines: HashMap<(LspServerId, PathBuf, i64), Instant>,
+    /// In-flight `textDocument/hover` requests, mirroring `definition`;
+    /// swept for abandonment by `check_lsp_hover_deadlines`.
+    hover: FeatureSlot<PendingHover>,
     /// `(server_id, root)` pairs whose spawn attempt already reported
     /// `ServerState::Missing` — `ensure_lsp_server` skips these outright
     /// (design doc's "one-time transient, no error spam"). Without this,
@@ -441,9 +433,7 @@ impl LspManager {
             diagnostics: HashMap::new(),
             diagnostics_versions: HashMap::new(),
             definition: FeatureSlot::new(DEFINITION_TIMEOUT),
-            hover_requests: HashMap::new(),
-            hover_request_by_doc: HashMap::new(),
-            hover_deadlines: HashMap::new(),
+            hover: FeatureSlot::new(HOVER_TIMEOUT),
             missing_servers: std::collections::HashSet::new(),
         }
     }
@@ -2132,11 +2122,7 @@ impl App {
                     return Some(msg);
                 };
                 let key = (server_id, root, request_id);
-                let pending = self.lsp.hover_requests.remove(&key)?;
-                self.lsp.hover_deadlines.remove(&key);
-                if self.lsp.hover_request_by_doc.get(&pending.document_id) == Some(&key) {
-                    self.lsp.hover_request_by_doc.remove(&pending.document_id);
-                }
+                let pending = self.lsp.hover.take_response(&key)?;
                 if abandoned {
                     return None;
                 }
@@ -2473,15 +2459,7 @@ impl App {
     /// to abandon a live request that happens to reuse the old id).
     fn clear_pending_requests_for_roots(&mut self, server_id: &LspServerId, roots: &[PathBuf]) {
         self.lsp.definition.clear_for_roots(server_id, roots);
-        self.lsp
-            .hover_requests
-            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
-        self.lsp
-            .hover_request_by_doc
-            .retain(|_, (id, root, _)| !(id == server_id && roots.contains(root)));
-        self.lsp
-            .hover_deadlines
-            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
+        self.lsp.hover.clear_for_roots(server_id, roots);
     }
 
     /// Advisory `$/cancelRequest` + local abandonment for a superseded or
@@ -3013,16 +2991,8 @@ impl App {
         let root = state.root.clone();
         let uri = state.uri.clone();
 
-        if let Some((old_server_id, old_root, old_request_id)) =
-            self.lsp.hover_request_by_doc.remove(&document_id)
-        {
-            if let Some(old_handle) = self.lsp.servers.get(&(old_server_id, old_root)) {
-                old_handle.pending.lock().unwrap().abandon(old_request_id);
-                let _ = old_handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
-                    method: "$/cancelRequest".to_owned(),
-                    params: serde_json::json!({ "id": old_request_id }),
-                });
-            }
+        if let Some(old_key) = self.lsp.hover.supersede(document_id) {
+            self.cancel_lsp_request(&old_key);
         }
 
         let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
@@ -3051,20 +3021,16 @@ impl App {
         });
         let request_id = handle.begin_request("textDocument/hover", params);
         let key = (server_id.clone(), root.clone(), request_id);
-        self.lsp.hover_requests.insert(
+        self.lsp.hover.insert(
             key.clone(),
+            document_id,
             PendingHover {
                 document_id,
                 revision,
                 cursor,
             },
         );
-        self.lsp
-            .hover_request_by_doc
-            .insert(document_id, key.clone());
-        self.lsp
-            .hover_deadlines
-            .insert(key, Instant::now() + HOVER_TIMEOUT);
+        self.lsp.hover.arm_deadline(key);
     }
 
     /// Synchronously routes a hover outcome that never reached the server
@@ -3248,40 +3214,11 @@ impl App {
     /// (the same "the server had nothing to say" outcome a fast `null`
     /// reply would have produced).
     fn check_lsp_hover_deadlines(&mut self) {
-        if self.lsp.hover_deadlines.is_empty() {
+        if self.lsp.hover.is_empty_deadlines() {
             return;
         }
-        let now = Instant::now();
-        let due: Vec<(LspServerId, PathBuf, i64)> = self
-            .lsp
-            .hover_deadlines
-            .iter()
-            .filter(|(_, deadline)| now >= **deadline)
-            .map(|(key, _)| key.clone())
-            .collect();
-        for key in due {
-            self.lsp.hover_deadlines.remove(&key);
-            let is_current = self.lsp.hover_requests.get(&key).is_some_and(|pending| {
-                self.lsp.hover_request_by_doc.get(&pending.document_id) == Some(&key)
-            });
-            if !is_current {
-                // Superseded — mirrors `check_lsp_definition_deadlines`:
-                // remove the stale entry instead of leaking it.
-                self.lsp.hover_requests.remove(&key);
-                continue;
-            }
-            let Some(pending) = self.lsp.hover_requests.remove(&key) else {
-                continue;
-            };
-            self.lsp.hover_request_by_doc.remove(&pending.document_id);
-            let (server_id, root, request_id) = key;
-            if let Some(handle) = self.lsp.servers.get(&(server_id, root)) {
-                handle.pending.lock().unwrap().abandon(request_id);
-                let _ = handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
-                    method: "$/cancelRequest".to_owned(),
-                    params: serde_json::json!({ "id": request_id }),
-                });
-            }
+        for (key, pending) in self.lsp.hover.take_due(Instant::now()) {
+            self.cancel_lsp_request(&key);
             self.emit_hover_outcome(
                 pending.document_id,
                 pending.revision,
@@ -3550,8 +3487,8 @@ impl ApplicationHandler for App {
         if let Some(earliest_deadline) = self.lsp.definition.earliest_deadline() {
             next_wake = next_wake.min(earliest_deadline);
         }
-        if let Some(earliest_deadline) = self.lsp.hover_deadlines.values().min() {
-            next_wake = next_wake.min(*earliest_deadline);
+        if let Some(earliest_deadline) = self.lsp.hover.earliest_deadline() {
+            next_wake = next_wake.min(earliest_deadline);
         }
         if let Some(transient) = &self.model.ui.transient_message {
             next_wake = next_wake.min(transient.expires_at);
@@ -4401,29 +4338,25 @@ mod tests {
         );
         app.lsp.definition.arm_deadline(key);
         let hover_key = (server_id.clone(), root.clone(), 3i64);
-        app.lsp.hover_requests.insert(
+        app.lsp.hover.insert(
             hover_key.clone(),
+            doc_id,
             PendingHover {
                 document_id: doc_id,
                 revision: 0,
                 cursor: token::model::editor::Position::new(0, 0),
             },
         );
-        app.lsp
-            .hover_request_by_doc
-            .insert(doc_id, hover_key.clone());
-        app.lsp
-            .hover_deadlines
-            .insert(hover_key, Instant::now() + Duration::from_secs(30));
+        app.lsp.hover.arm_deadline(hover_key);
 
         app.restart_lsp_server(&server_id);
 
         assert!(app.lsp.definition.requests.is_empty());
         assert!(app.lsp.definition.by_doc.is_empty());
         assert!(app.lsp.definition.deadlines.is_empty());
-        assert!(app.lsp.hover_requests.is_empty());
-        assert!(app.lsp.hover_request_by_doc.is_empty());
-        assert!(app.lsp.hover_deadlines.is_empty());
+        assert!(app.lsp.hover.requests.is_empty());
+        assert!(app.lsp.hover.by_doc.is_empty());
+        assert!(app.lsp.hover.deadlines.is_empty());
     }
 
     /// Clearing diagnostics on server exit/restart must damage the editor
@@ -4946,17 +4879,15 @@ mod tests {
         let server_id = LspServerId::from("rust-analyzer");
         let root = PathBuf::from("/tmp/proj-hover-empty-indexing");
         let cursor = test_cursor(&app);
-        app.lsp.hover_requests.insert(
+        app.lsp.hover.insert(
             (server_id.clone(), root.clone(), 9),
+            doc_id,
             PendingHover {
                 document_id: doc_id,
                 revision,
                 cursor,
             },
         );
-        app.lsp
-            .hover_request_by_doc
-            .insert(doc_id, (server_id.clone(), root.clone(), 9));
         app.model
             .lsp
             .servers
@@ -5205,7 +5136,7 @@ mod tests {
             revision,
         );
         let (first_server, first_root, first_id) =
-            app.lsp.hover_request_by_doc.get(&doc_id).cloned().unwrap();
+            app.lsp.hover.by_doc.get(&doc_id).cloned().unwrap();
 
         app.request_lsp_hover(
             doc_id,
@@ -5216,10 +5147,10 @@ mod tests {
             test_cursor(&app),
             revision,
         );
-        let (_, _, second_id) = app.lsp.hover_request_by_doc.get(&doc_id).cloned().unwrap();
+        let (_, _, second_id) = app.lsp.hover.by_doc.get(&doc_id).cloned().unwrap();
 
         assert_ne!(first_id, second_id, "a new request id must be allocated");
-        assert_eq!(app.lsp.hover_requests.len(), 2);
+        assert_eq!(app.lsp.hover.requests.len(), 2);
         let handle = app.lsp.servers.get(&(first_server, first_root)).unwrap();
         assert!(
             handle
@@ -5244,17 +5175,15 @@ mod tests {
         let server_id = LspServerId::from("rust-analyzer");
         let root = PathBuf::from("/tmp/proj-hover-abandoned");
         let cursor = test_cursor(&app);
-        app.lsp.hover_requests.insert(
+        app.lsp.hover.insert(
             (server_id.clone(), root.clone(), 7),
+            doc_id,
             PendingHover {
                 document_id: doc_id,
                 revision,
                 cursor,
             },
         );
-        app.lsp
-            .hover_request_by_doc
-            .insert(doc_id, (server_id.clone(), root.clone(), 7));
 
         app.msg_tx
             .send(Msg::Lsp(LspMsg::HoverResponseFromServer {
@@ -5267,8 +5196,8 @@ mod tests {
             .unwrap();
         app.process_async_messages();
 
-        assert!(app.lsp.hover_requests.is_empty());
-        assert!(app.lsp.hover_request_by_doc.is_empty());
+        assert!(app.lsp.hover.requests.is_empty());
+        assert!(app.lsp.hover.by_doc.is_empty());
         assert!(
             app.model.ui.cursor_overlay.is_none(),
             "a discarded (cancelled) response must never open the hover card"
@@ -5290,24 +5219,25 @@ mod tests {
             .insert((server_id.clone(), root.clone()), handle);
 
         let key = (server_id.clone(), root.clone(), request_id);
-        app.lsp.hover_requests.insert(
+        app.lsp.hover.insert(
             key.clone(),
+            doc_id,
             PendingHover {
                 document_id: doc_id,
                 revision,
                 cursor,
             },
         );
-        app.lsp.hover_request_by_doc.insert(doc_id, key.clone());
         app.lsp
-            .hover_deadlines
+            .hover
+            .deadlines
             .insert(key.clone(), Instant::now() - Duration::from_secs(1));
 
         app.check_lsp_hover_deadlines();
 
-        assert!(app.lsp.hover_requests.is_empty());
-        assert!(app.lsp.hover_request_by_doc.is_empty());
-        assert!(app.lsp.hover_deadlines.is_empty());
+        assert!(app.lsp.hover.requests.is_empty());
+        assert!(app.lsp.hover.by_doc.is_empty());
+        assert!(app.lsp.hover.deadlines.is_empty());
         assert!(
             app.model.ui.cursor_overlay.is_none(),
             "no content and no diagnostics -> nothing to show"
@@ -5344,7 +5274,7 @@ mod tests {
         let cursor = test_cursor(&app);
 
         let stale_key = (server_id.clone(), root.clone(), 1);
-        app.lsp.hover_requests.insert(
+        app.lsp.hover.requests.insert(
             stale_key.clone(),
             PendingHover {
                 document_id: doc_id,
@@ -5353,21 +5283,20 @@ mod tests {
             },
         );
         let current_key = (server_id.clone(), root.clone(), 2);
+        app.lsp.hover.by_doc.insert(doc_id, current_key.clone());
         app.lsp
-            .hover_request_by_doc
-            .insert(doc_id, current_key.clone());
-        app.lsp
-            .hover_deadlines
+            .hover
+            .deadlines
             .insert(stale_key.clone(), Instant::now() - Duration::from_secs(1));
 
         app.check_lsp_hover_deadlines();
 
         assert!(
-            !app.lsp.hover_requests.contains_key(&stale_key),
+            !app.lsp.hover.requests.contains_key(&stale_key),
             "a superseded hover request's stale deadline must remove its bookkeeping, not leak it"
         );
         assert_eq!(
-            app.lsp.hover_request_by_doc.get(&doc_id),
+            app.lsp.hover.by_doc.get(&doc_id),
             Some(&current_key),
             "the newer request must still own the doc's outcome"
         );
@@ -5641,7 +5570,7 @@ mod tests {
         // Drain every async message the scenario produces — the response
         // arrives, fails the revision guard, and must never open a card.
         let deadline = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < deadline && !app.lsp.hover_requests.is_empty() {
+        while Instant::now() < deadline && !app.lsp.hover.requests.is_empty() {
             app.process_async_messages();
             std::thread::sleep(Duration::from_millis(20));
         }
