@@ -523,6 +523,8 @@ pub fn render_problems_panel(
     let icon_color = theme.folder_icon.to_argb_u32();
     let error_color = overlay.severity_error.to_argb_u32();
     let warning_color = overlay.severity_warning.to_argb_u32();
+    let dim_color = overlay.text_dim.to_argb_u32();
+    let workspace_root = model.workspace_root();
 
     let line_height = painter.line_height();
     let layout = OutlinePanelLayout::new(rect, &model.metrics);
@@ -590,23 +592,37 @@ pub fn render_problems_panel(
                 };
                 painter.draw(frame, icon_x, pos.text_y, chevron, chevron_color);
 
+                let file_icon = crate::model::FileExtension::from_path(path).icon();
+                painter.draw(frame, text_x, pos.text_y, file_icon, icon_color);
+                let name_x = text_x + 2 * char_w;
+
                 let name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| path.display().to_string());
-                let dir = path
-                    .parent()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_default();
-                let label = if dir.is_empty() {
-                    format!("{name}  ({count})")
-                } else {
-                    format!("{name}  {dir}  ({count})")
+                let dir = path.parent().map(|p| {
+                    workspace_root
+                        .and_then(|root| p.strip_prefix(root).ok())
+                        .unwrap_or(p)
+                        .display()
+                        .to_string()
+                });
+                let suffix = match dir.filter(|d| !d.is_empty()) {
+                    Some(dir) => format!("  {dir} \u{b7} {count}"),
+                    None => format!("  {count}"),
                 };
-                let available = layout.tree.available_text_width(container_width, text_x);
-                let max_chars = available.checked_div(char_w).unwrap_or(80);
-                let display = truncate_with_ellipsis(&label, max_chars);
-                painter.draw(frame, text_x, pos.text_y, &display, fg);
+                let name_available = layout.tree.available_text_width(container_width, name_x);
+                let name_max_chars = name_available.checked_div(char_w).unwrap_or(80);
+                let name_display = truncate_with_ellipsis(&name, name_max_chars);
+                painter.draw(frame, name_x, pos.text_y, &name_display, fg);
+
+                let suffix_x = name_x + name_display.chars().count() * char_w;
+                let suffix_available =
+                    layout.tree.available_text_width(container_width, suffix_x);
+                let suffix_max_chars = suffix_available.checked_div(char_w).unwrap_or(0);
+                let suffix_display = truncate_with_ellipsis(&suffix, suffix_max_chars);
+                let dim = if is_selected { selection_fg } else { dim_color };
+                painter.draw(frame, suffix_x, pos.text_y, &suffix_display, dim);
             }
             ProblemsRow::Diagnostic { path, index } => {
                 let pos = layout.tree.node_position(1, row_y);
