@@ -127,7 +127,14 @@ pub fn filter_and_sort(items: &[MenuItem], query: &str) -> Vec<(u32, usize, Vec<
         return idxs;
     }
 
-    let query_lower = query.to_lowercase();
+    // ASCII-only lowercasing, not `str::to_lowercase`: the matched-char
+    // indices below are char positions into this lowercased string, but
+    // `completion_rows` (view/modal.rs) applies them to `item.label`
+    // unchanged. Full Unicode lowercasing can change a string's char count
+    // (e.g. 'İ' -> 2 chars), which would desync the indices from the label
+    // they're bolding; ASCII case-folding is length-preserving by
+    // construction, at the cost of not case-folding non-ASCII letters.
+    let query_lower = query.to_ascii_lowercase();
     let mut matcher = Matcher::new(Config::DEFAULT);
     let mut query_buf = Vec::new();
     let needle = Utf32Str::new(&query_lower, &mut query_buf);
@@ -139,7 +146,7 @@ pub fn filter_and_sort(items: &[MenuItem], query: &str) -> Vec<(u32, usize, Vec<
         .iter()
         .enumerate()
         .filter_map(|(i, item)| {
-            let haystack_lower = item.filter_text.to_lowercase();
+            let haystack_lower = item.filter_text.to_ascii_lowercase();
             let mut haystack_buf = Vec::new();
             let haystack = Utf32Str::new(&haystack_lower, &mut haystack_buf);
             let mut indices = Vec::new();
@@ -149,7 +156,12 @@ pub fn filter_and_sort(items: &[MenuItem], query: &str) -> Vec<(u32, usize, Vec<
         .collect();
 
     scored.sort_by(|(s1, i1, l1, _), (s2, i2, l2, _)| {
-        tier_key(&items[*i1], l1, &query_lower, *s1).cmp(&tier_key(&items[*i2], l2, &query_lower, *s2))
+        tier_key(&items[*i1], l1, &query_lower, *s1).cmp(&tier_key(
+            &items[*i2],
+            l2,
+            &query_lower,
+            *s2,
+        ))
     });
     scored
         .into_iter()
