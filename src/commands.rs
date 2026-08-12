@@ -674,6 +674,16 @@ pub enum Cmd {
     RedrawAreas(Vec<DamageArea>),
     /// Save file asynchronously
     SaveFile { path: PathBuf, content: String },
+    /// Save-As write, asynchronously — distinct from `SaveFile` so its
+    /// completion (`AppMsg::SaveAsCompleted`) can carry the document/path
+    /// identity needed to defer the LSP didClose/didOpen pair until the
+    /// file actually exists on disk (see that message's doc comment).
+    SaveFileAs {
+        document_id: crate::model::editor_area::DocumentId,
+        old_path: Option<PathBuf>,
+        new_path: PathBuf,
+        content: String,
+    },
     /// Load file asynchronously
     LoadFile { path: PathBuf },
     /// Open a path in the system file explorer/finder
@@ -887,7 +897,7 @@ impl Cmd {
                 }
             }
             // File operations may cause full redraw (file load changes content)
-            Cmd::SaveFile { .. } => Damage::Full,
+            Cmd::SaveFile { .. } | Cmd::SaveFileAs { .. } => Damage::Full,
             Cmd::LoadFile { .. } => Damage::Full,
             Cmd::OpenInExplorer { .. } => Damage::Full,
             Cmd::RevealFileInFinder { .. } => Damage::Areas(vec![]),

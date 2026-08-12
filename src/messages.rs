@@ -443,6 +443,18 @@ pub enum AppMsg {
     SaveFileAs,
     /// Save As dialog returned a path (or None if cancelled)
     SaveFileAsDialogResult { path: Option<PathBuf> },
+    /// Save-As write completed (async result) — the LSP identity swap
+    /// (didClose(old) + didOpen(new)) and the diagnostics-projection clear
+    /// wait for this rather than firing in `SaveFileAsDialogResult`, since
+    /// `path_to_uri` canonicalizes and a not-yet-written file resolves to
+    /// a different URI than the same path once it exists on disk (see
+    /// design doc's URIs and Paths section).
+    SaveAsCompleted {
+        document_id: crate::model::editor_area::DocumentId,
+        old_path: Option<PathBuf>,
+        new_path: PathBuf,
+        result: Result<(), String>,
+    },
 
     /// User requested "Open File..." dialog
     OpenFileDialog,

@@ -261,29 +261,72 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
         }
 
         AppMsg::SaveFileAsDialogResult { path } => {
-            if let Some(path) = path {
+            if let Some(new_path) = path {
                 // Save As is a didClose(old) + didOpen(new) pair, not a
-                // rename — the document keeps its id, but the LSP URI
-                // changes identity (see design doc's Document Synchronization).
+                // rename (design doc's Document Synchronization) — but the
+                // file doesn't exist at `new_path` yet, and `path_to_uri`
+                // canonicalizes only once it does, so `file_path` and the
+                // LSP traffic wait for `SaveAsCompleted` rather than firing
+                // here against a URI the write will invalidate.
                 let old_path = model.document().file_path.clone();
-                let doc_id = model.document().id;
-                model.document_mut().file_path = Some(path.clone());
+                let Some(document_id) = model.document().id else {
+                    model.ui.set_status("Save cancelled");
+                    return Some(Cmd::redraw_status_bar());
+                };
                 let content = model.document().buffer.to_string();
                 model.ui.is_saving = true;
                 model.ui.set_status("Saving...");
-                let mut cmds = vec![Cmd::SaveFile { path, content }];
-                if let Some(doc_id) = doc_id {
-                    if old_path.is_some() {
-                        cmds.push(super::close_lsp_document(doc_id));
-                    }
-                    if let Some(open_cmd) = super::open_lsp_document(model, doc_id) {
-                        cmds.push(open_cmd);
-                    }
-                }
-                Some(Cmd::Batch(cmds))
+                Some(Cmd::SaveFileAs {
+                    document_id,
+                    old_path,
+                    new_path,
+                    content,
+                })
             } else {
                 model.ui.set_status("Save cancelled");
                 Some(Cmd::redraw_status_bar())
+            }
+        }
+
+        AppMsg::SaveAsCompleted {
+            document_id,
+            old_path,
+            new_path,
+            result,
+        } => {
+            model.ui.is_saving = false;
+            match result {
+                Ok(_) => {
+                    let mut had_marks = false;
+                    if let Some(doc) = model.editor_area.documents.get_mut(&document_id) {
+                        doc.file_path = Some(new_path.clone());
+                        doc.is_modified = false;
+                        doc.saved_revision = Some(doc.undo_stack.len());
+                        // The old path's diagnostics no longer describe
+                        // this document's identity — Save As is otherwise
+                        // the one didClose/didOpen pair with no
+                        // `LanguageChanged`-style projection clear (that
+                        // handler's the only existing sibling).
+                        had_marks = !doc.diagnostics.is_empty();
+                        doc.diagnostics.clear();
+                    }
+                    if had_marks {
+                        model.resync_viewports();
+                    }
+                    model.ui.set_status(format!("Saved: {}", new_path.display()));
+                    let mut cmds = vec![Cmd::redraw_editor()];
+                    if old_path.is_some() {
+                        cmds.push(super::close_lsp_document(document_id));
+                    }
+                    if let Some(open_cmd) = super::open_lsp_document(model, document_id) {
+                        cmds.push(open_cmd);
+                    }
+                    Some(Cmd::Batch(cmds))
+                }
+                Err(e) => {
+                    model.ui.set_status(format!("Error: {}", e));
+                    Some(Cmd::redraw_status_bar())
+                }
             }
         }
 
@@ -686,12 +729,12 @@ mod tests {
     }
 
     #[test]
-    fn save_file_as_updates_path_and_emits_lsp_close_open_pair() {
+    fn save_file_as_dialog_result_defers_the_path_swap_to_completion() {
         let mut model = test_model();
         // Give the document a path first so Save As has an "old" URI to
         // close — the design doc's "Save As = didClose(old) + didOpen(new)".
         model.document_mut().file_path = Some(PathBuf::from("/tmp/old.rs"));
-        let doc_id = model.document().id;
+        let doc_id = model.document().id.unwrap();
 
         let cmd = update_app(
             &mut model,
@@ -701,16 +744,86 @@ mod tests {
         )
         .expect("Save As should produce a command");
 
+        // `file_path` (and thus every `path_to_uri` call) must not change
+        // until the write actually lands — computing the URI against a
+        // not-yet-existing path yields a non-canonical URI that a later
+        // canonicalizing lookup (`find_document_by_uri`) would never match
+        // (see design doc's URIs and Paths section).
+        assert_eq!(
+            model.document().file_path,
+            Some(PathBuf::from("/tmp/old.rs")),
+            "file_path must stay unchanged until SaveAsCompleted"
+        );
+        assert!(matches!(
+            cmd,
+            Cmd::SaveFileAs { document_id, old_path: Some(_), new_path, .. }
+                if document_id == doc_id && new_path.as_path() == std::path::Path::new("/tmp/new.rs")
+        ));
+    }
+
+    #[test]
+    fn save_as_completed_swaps_path_and_emits_lsp_close_open_pair() {
+        let mut model = test_model();
+        model.document_mut().file_path = Some(PathBuf::from("/tmp/old.rs"));
+        let doc_id = model.document().id.unwrap();
+        model.document_mut().diagnostics = vec![lsp_types::Diagnostic {
+            range: lsp_types::Range::default(),
+            severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+            message: "stale".to_owned(),
+            ..Default::default()
+        }];
+
+        let cmd = update_app(
+            &mut model,
+            AppMsg::SaveAsCompleted {
+                document_id: doc_id,
+                old_path: Some(PathBuf::from("/tmp/old.rs")),
+                new_path: PathBuf::from("/tmp/new.rs"),
+                result: Ok(()),
+            },
+        )
+        .expect("SaveAsCompleted should produce a command");
+
         assert_eq!(
             model.document().file_path,
             Some(PathBuf::from("/tmp/new.rs"))
         );
+        assert!(
+            model.document().diagnostics.is_empty(),
+            "the old file's diagnostics must not survive onto the new path"
+        );
         let Cmd::Batch(cmds) = cmd else {
-            panic!("expected a Batch of [SaveFile, LspDidClose, ...LspDidOpen batch]");
+            panic!("expected a Batch of [redraw, LspDidClose, ...LspDidOpen batch]");
         };
-        assert!(matches!(cmds[0], Cmd::SaveFile { .. }));
-        assert!(cmds.iter().any(
-            |c| matches!(c, Cmd::LspDidClose { document_id } if Some(*document_id) == doc_id)
-        ));
+        assert!(cmds
+            .iter()
+            .any(|c| matches!(c, Cmd::LspDidClose { document_id } if *document_id == doc_id)));
+        assert!(cmds.iter().any(|c| match c {
+            Cmd::Batch(inner) => inner.iter().any(|c| matches!(c, Cmd::LspDidOpen { .. })),
+            _ => false,
+        }));
+    }
+
+    #[test]
+    fn save_as_completed_reports_the_error_and_leaves_path_unchanged_on_failure() {
+        let mut model = test_model();
+        model.document_mut().file_path = Some(PathBuf::from("/tmp/old.rs"));
+        let doc_id = model.document().id.unwrap();
+
+        update_app(
+            &mut model,
+            AppMsg::SaveAsCompleted {
+                document_id: doc_id,
+                old_path: Some(PathBuf::from("/tmp/old.rs")),
+                new_path: PathBuf::from("/tmp/new.rs"),
+                result: Err("permission denied".to_owned()),
+            },
+        );
+
+        assert_eq!(
+            model.document().file_path,
+            Some(PathBuf::from("/tmp/old.rs")),
+            "a failed write must not swap the document onto the unwritten path"
+        );
     }
 }
