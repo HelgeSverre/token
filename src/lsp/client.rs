@@ -1066,22 +1066,32 @@ fn marked_string_to_plain_text(marked: &lsp_types::MarkedString) -> String {
 /// monospace hover card overlay-surface.md renders (v1 has no rich-text
 /// zones; see its `Zones` doc comment).
 fn markdown_to_plain_text(markdown: &str) -> String {
+    let mut in_fence = false;
     markdown
         .lines()
-        .filter_map(strip_markdown_line)
+        .filter_map(|line| {
+            let trimmed = line.trim_start();
+            // Code-fence delimiter (```rust, ```, ~~~) -> drop the whole
+            // line and toggle fence state; the code itself is plain text
+            // already and needs no stripping (and must not be stripped,
+            // since `*`/`_`/`` ` `` are legal identifier/operator
+            // characters in code).
+            if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+                in_fence = !in_fence;
+                return None;
+            }
+            if in_fence {
+                return Some(line.to_string());
+            }
+            Some(strip_markdown_line(line))
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-/// Strips a single line's markdown syntax, or `None` to drop the line
-/// entirely (a code-fence delimiter contributes no content of its own).
-fn strip_markdown_line(line: &str) -> Option<String> {
+/// Strips a single (non-code-fence) line's markdown syntax.
+fn strip_markdown_line(line: &str) -> String {
     let trimmed = line.trim_start();
-    // Code-fence delimiter (```rust, ```, ~~~) -> drop the whole line; the
-    // code itself is plain text already and needs no stripping.
-    if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-        return None;
-    }
     let without_heading = trimmed.trim_start_matches('#').trim_start();
     let line = if without_heading.len() != trimmed.len() {
         without_heading
@@ -1102,7 +1112,7 @@ fn strip_markdown_line(line: &str) -> Option<String> {
             _ => out.push(ch),
         }
     }
-    Some(out)
+    out
 }
 
 fn handle_progress(
@@ -1762,5 +1772,17 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
     #[test]
     fn markdown_to_plain_text_strips_headings() {
         assert_eq!(markdown_to_plain_text("## Signature"), "Signature");
+    }
+
+    #[test]
+    fn markdown_to_plain_text_preserves_code_fence_identifiers() {
+        // Code-fence contents must pass through untouched: `*`, `_`, and
+        // backtick are legal in identifiers/operators/generics, not markdown
+        // emphasis, once inside a fence.
+        let markdown = "```rust\npub fn read_to_string(path: &Path)\n__init__\n5 * 3\n```";
+        assert_eq!(
+            markdown_to_plain_text(markdown),
+            "pub fn read_to_string(path: &Path)\n__init__\n5 * 3"
+        );
     }
 }
