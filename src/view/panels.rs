@@ -10,6 +10,7 @@ use super::tree_view::{render_tree, TreeRenderLayout};
 enum DockContentKind {
     Outline,
     Terminal,
+    Problems,
     Placeholder { message: &'static str },
 }
 
@@ -39,6 +40,7 @@ impl DockPaneScene {
         let content = match active_panel {
             crate::panel::PanelId::Outline => DockContentKind::Outline,
             crate::panel::PanelId::Terminal => DockContentKind::Terminal,
+            crate::panel::PanelId::Problems => DockContentKind::Problems,
             _ => {
                 let placeholder = crate::panels::PlaceholderPanel::new(active_panel);
                 DockContentKind::Placeholder {
@@ -61,7 +63,7 @@ impl DockPaneScene {
 
     fn render(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
         self.render_chrome(frame);
-        self.render_header(frame, painter);
+        self.render_header(frame, painter, model);
 
         match &self.content {
             DockContentKind::Outline => {
@@ -79,6 +81,15 @@ impl DockPaneScene {
                     painter,
                     model,
                     self.layout.content_rect,
+                );
+            }
+            DockContentKind::Problems => {
+                render_problems_panel(
+                    frame,
+                    painter,
+                    model,
+                    self.layout.content_rect,
+                    self.text_color,
                 );
             }
             DockContentKind::Placeholder { message } => {
@@ -125,7 +136,7 @@ impl DockPaneScene {
         }
     }
 
-    fn render_header(&self, frame: &mut Frame, painter: &mut TextPainter) {
+    fn render_header(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
         for tab in &self.layout.tabs {
             if tab.is_active {
                 // The active-tab highlight is a translucent color (e.g. white
@@ -135,17 +146,45 @@ impl DockPaneScene {
                 frame.blend_rect_px(tab.x, tab.y, tab.width, tab.height, self.active_tab_bg);
             }
 
-            painter.draw(
-                frame,
-                tab.text_x,
-                tab.text_y,
-                tab.title,
-                if tab.is_active {
-                    self.active_tab_fg
-                } else {
-                    self.text_color
-                },
-            );
+            let fg = if tab.is_active {
+                self.active_tab_fg
+            } else {
+                self.text_color
+            };
+            painter.draw(frame, tab.text_x, tab.text_y, tab.title, fg);
+
+            // "PROBLEMS ✗3 ⚠2" — counts drawn right after the tab title,
+            // reusing the gutter/status-bar severity colors (no new theme
+            // keys per the design doc's non-goals).
+            if tab.panel_id == crate::panel::PanelId::Problems {
+                let (errors, warnings) = crate::update::problems::severity_counts(model);
+                if errors > 0 || warnings > 0 {
+                    let char_w = painter.char_width();
+                    let mut x = tab.text_x + (tab.title.len() as f32 * char_w) as usize + 6;
+                    let overlay = &model.theme.overlay;
+                    if errors > 0 {
+                        let text = format!("\u{2717}{errors}");
+                        painter.draw(
+                            frame,
+                            x,
+                            tab.text_y,
+                            &text,
+                            overlay.severity_error.to_argb_u32(),
+                        );
+                        x += (text.len() as f32 * char_w) as usize + 6;
+                    }
+                    if warnings > 0 {
+                        let text = format!("\u{26A0}{warnings}");
+                        painter.draw(
+                            frame,
+                            x,
+                            tab.text_y,
+                            &text,
+                            overlay.severity_warning.to_argb_u32(),
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -463,6 +502,161 @@ pub fn render_outline_panel(
             painter.draw(frame, name_x, text_y, &display, fg);
         },
     );
+}
+
+/// Render the Problems panel: collapsible per-file groups over
+/// `model.lsp.diagnostics`, `problems_rows(model)` as the single ordering
+/// authority (view, keyboard nav, and click hit-mapping all consume it).
+pub fn render_problems_panel(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    rect: Rect,
+    text_color: u32,
+) {
+    use crate::update::problems::{problems_rows, ProblemsRow};
+
+    let theme = &model.theme.sidebar;
+    let overlay = &model.theme.overlay;
+    let selection_bg = theme.selection_background.to_argb_u32();
+    let selection_fg = theme.selection_foreground.to_argb_u32();
+    let icon_color = theme.folder_icon.to_argb_u32();
+    let error_color = overlay.severity_error.to_argb_u32();
+    let warning_color = overlay.severity_warning.to_argb_u32();
+
+    let line_height = painter.line_height();
+    let layout = OutlinePanelLayout::new(rect, &model.metrics);
+    let rows = problems_rows(model);
+
+    if rows.is_empty() {
+        let msg = "No problems";
+        let char_width = painter.char_width();
+        let text_width = msg.len() as f32 * char_width;
+        let text_x = rect.x + (rect.width - text_width) / 2.0;
+        let text_y =
+            layout.content_rect.y + (layout.content_rect.height - line_height as f32) / 2.0;
+        painter.draw(frame, text_x as usize, text_y as usize, msg, text_color);
+        return;
+    }
+
+    let selected_index = model.problems_panel.selected_index;
+    let scroll_offset = model.problems_panel.scroll_offset;
+    let base_x = layout.content_rect.x as usize;
+    let container_width = base_x + layout.content_rect.width as usize;
+    let char_w = painter.char_width() as usize;
+
+    let visible = rows
+        .iter()
+        .enumerate()
+        .skip(scroll_offset)
+        .take(layout.visible_capacity());
+
+    for (index, row) in visible {
+        let row_y = layout.content_rect.y as usize + (index - scroll_offset) * layout.row_height;
+        let is_selected = selected_index == Some(index);
+
+        if is_selected {
+            frame.fill_rect_blended(
+                Rect::new(
+                    layout.content_rect.x,
+                    row_y as f32,
+                    layout.content_rect.width,
+                    layout.row_height as f32,
+                ),
+                selection_bg,
+            );
+        }
+
+        let fg = if is_selected {
+            selection_fg
+        } else {
+            text_color
+        };
+
+        match row {
+            ProblemsRow::File {
+                path,
+                count,
+                collapsed,
+            } => {
+                let pos = layout.tree.node_position(0, row_y);
+                let icon_x = pos.icon_x + base_x;
+                let text_x = pos.text_x + base_x;
+                let chevron = if *collapsed { "\u{25B8}" } else { "\u{25BE}" };
+                let chevron_color = if is_selected {
+                    selection_fg
+                } else {
+                    icon_color
+                };
+                painter.draw(frame, icon_x, pos.text_y, chevron, chevron_color);
+
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.display().to_string());
+                let dir = path
+                    .parent()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default();
+                let label = if dir.is_empty() {
+                    format!("{name}  ({count})")
+                } else {
+                    format!("{name}  {dir}  ({count})")
+                };
+                let available = layout.tree.available_text_width(container_width, text_x);
+                let max_chars = available.checked_div(char_w).unwrap_or(80);
+                let display = truncate_with_ellipsis(&label, max_chars);
+                painter.draw(frame, text_x, pos.text_y, &display, fg);
+            }
+            ProblemsRow::Diagnostic { path, index } => {
+                let pos = layout.tree.node_position(1, row_y);
+                let icon_x = pos.icon_x + base_x;
+                let text_x = pos.text_x + base_x;
+
+                let diagnostic = model
+                    .lsp
+                    .diagnostics
+                    .get(path)
+                    .and_then(|diags| diags.get(*index));
+                let Some(diagnostic) = diagnostic else {
+                    continue;
+                };
+
+                let mark = crate::model::diagnostic_mark(diagnostic.severity);
+                let (glyph, glyph_color) = match mark {
+                    crate::model::Mark::Error => ("\u{2717}", error_color),
+                    crate::model::Mark::Warning => ("\u{26A0}", warning_color),
+                    _ => ("\u{2022}", icon_color),
+                };
+                let glyph_color = if is_selected {
+                    selection_fg
+                } else {
+                    glyph_color
+                };
+                painter.draw(frame, icon_x, pos.text_y, glyph, glyph_color);
+
+                let accessory = format!(
+                    "{}:{}",
+                    diagnostic.range.start.line + 1,
+                    diagnostic.range.start.character + 1
+                );
+                let accessory_width = (accessory.len() * char_w) as f32;
+                let accessory_x =
+                    (layout.content_rect.x + layout.content_rect.width - accessory_width) as usize;
+                let accessory_color = if is_selected {
+                    selection_fg
+                } else {
+                    icon_color
+                };
+                painter.draw(frame, accessory_x, pos.text_y, &accessory, accessory_color);
+
+                let available = accessory_x.saturating_sub(text_x + layout.tree.left_padding);
+                let max_chars = available.checked_div(char_w).unwrap_or(80);
+                let display = truncate_with_ellipsis(&diagnostic.message, max_chars);
+                painter.draw(frame, text_x, pos.text_y, &display, fg);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

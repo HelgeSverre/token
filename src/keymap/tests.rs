@@ -304,6 +304,9 @@ fn test_dock_keybindings_exist() {
     let outline_binding = bindings
         .iter()
         .find(|b| b.command == Command::ToggleOutline);
+    let problems_binding = bindings
+        .iter()
+        .find(|b| b.command == Command::ToggleProblems);
 
     assert!(
         file_explorer_binding.is_some(),
@@ -317,6 +320,10 @@ fn test_dock_keybindings_exist() {
         outline_binding.is_some(),
         "ToggleOutline binding should exist"
     );
+    assert!(
+        problems_binding.is_some(),
+        "ToggleProblems binding should exist"
+    );
 
     // Check that Cmd+1 (META on macOS, CTRL elsewhere) maps to ToggleFileExplorer
     let cmd_1 = Keystroke::new(KeyCode::Char('1'), Modifiers::cmd());
@@ -325,6 +332,16 @@ fn test_dock_keybindings_exist() {
         result,
         Some(Command::ToggleFileExplorer),
         "Cmd+1 should map to ToggleFileExplorer, got {:?}",
+        result
+    );
+
+    // Check that Cmd+4 maps to ToggleProblems
+    let cmd_4 = Keystroke::new(KeyCode::Char('4'), Modifiers::cmd());
+    let result = keymap.lookup(&cmd_4);
+    assert_eq!(
+        result,
+        Some(Command::ToggleProblems),
+        "Cmd+4 should map to ToggleProblems, got {:?}",
         result
     );
 }

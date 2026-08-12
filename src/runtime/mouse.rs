@@ -41,6 +41,9 @@ pub enum ClickRegion {
     Outline {
         row: usize,
     },
+    Problems {
+        row: usize,
+    },
     BinaryPlaceholder {
         group: token::model::editor_area::GroupId,
     },
@@ -1062,6 +1065,44 @@ fn handle_left_click(
                 return EventResult::consumed_with_focus(FocusTarget::Dock(*position));
             }
 
+            // Handle problems panel clicks
+            if *active_panel_id == token::panel::PanelId::Problems {
+                use token::messages::ProblemsMsg;
+                use token::update::problems::problems_rows;
+
+                let window_layout = WindowLayout::compute(model);
+                let dock_rect = match position {
+                    token::panel::DockPosition::Bottom => window_layout.bottom_dock_rect,
+                    _ => None,
+                };
+                let Some(dock_rect) = dock_rect else {
+                    return EventResult::consumed_with_focus(FocusTarget::Dock(*position));
+                };
+                let dock = model.dock_layout.dock(*position);
+                let dock_layout =
+                    DockHeaderLayout::new(dock, dock_rect, &model.metrics, model.char_width);
+                let problems_layout =
+                    OutlinePanelLayout::new(dock_layout.content_rect, &model.metrics);
+
+                if let Some(clicked_index) = problems_layout
+                    .row_index_at_y(event.pos.y as f32, model.problems_panel.scroll_offset)
+                {
+                    if clicked_index < problems_rows(model).len() {
+                        let click_count =
+                            click_tracker.track_click(ClickRegion::Problems { row: clicked_index });
+                        update(
+                            model,
+                            Msg::Problems(ProblemsMsg::ClickRow {
+                                index: clicked_index,
+                                click_count,
+                            }),
+                        );
+                    }
+                }
+
+                return EventResult::consumed_with_focus(FocusTarget::Dock(*position));
+            }
+
             // The left dock hosts the file explorer; other dock content handled
             // above has already returned with its dock focus.
             match position {
@@ -1342,6 +1383,11 @@ pub fn handle_mouse_wheel(
             };
             if active_panel == Some(token::panel::PanelId::Outline) && v_delta != 0 {
                 update(model, Msg::Outline(OutlineMsg::Scroll { lines: v_delta }))
+            } else if active_panel == Some(token::panel::PanelId::PROBLEMS) && v_delta != 0 {
+                update(
+                    model,
+                    Msg::Problems(token::messages::ProblemsMsg::Scroll { lines: v_delta }),
+                )
             } else if active_panel == Some(token::panel::PanelId::TERMINAL) && v_delta != 0 {
                 let lines = v_delta.unsigned_abs() as usize;
                 let msg = if v_delta < 0 {

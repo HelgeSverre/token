@@ -857,6 +857,17 @@ impl OutlinePanelState {
     }
 }
 
+/// UI state for the Problems panel (mirrors `OutlinePanelState`).
+#[derive(Debug, Clone, Default)]
+pub struct ProblemsPanelState {
+    /// Index into the flat `problems_rows()` list.
+    pub selected_index: Option<usize>,
+    /// Scroll offset (in rows).
+    pub scroll_offset: usize,
+    /// Collapsed file groups.
+    pub collapsed: std::collections::HashSet<std::path::PathBuf>,
+}
+
 /// UI state - status messages and cursor animation
 #[derive(Debug, Clone)]
 pub struct UiState {

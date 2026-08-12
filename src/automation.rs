@@ -90,6 +90,63 @@ pub(crate) struct EditorSnapshot {
     /// The hover card (lsp-integration.md Phase 4), if open — `None` when
     /// no hover card is showing.
     pub hover: Option<HoverSnapshot>,
+    /// The Problems panel, if open — `None` when the bottom dock isn't
+    /// showing it.
+    pub problems: Option<ProblemsSnapshot>,
+}
+
+/// A read-only view of the Problems panel, for automation to drive
+/// navigate→confirm flows without a rendering backend. `rows` walks
+/// `problems_rows(model)` — the panel's own ordering authority — so this
+/// can never drift from what the view renders or Enter activates.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ProblemsSnapshot {
+    pub errors: usize,
+    pub warnings: usize,
+    pub rows: Vec<ProblemsRowSnapshot>,
+    pub selected: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ProblemsRowSnapshot {
+    pub label: String,
+    pub kind: String,
+}
+
+fn problems_snapshot(model: &AppModel) -> Option<ProblemsSnapshot> {
+    let dock = model.dock_layout.dock(token::panel::DockPosition::Bottom);
+    if !(dock.is_open && dock.active_panel() == Some(token::panel::PanelId::PROBLEMS)) {
+        return None;
+    }
+    let (errors, warnings) = token::update::problems::severity_counts(model);
+    let rows = token::update::problems::problems_rows(model)
+        .into_iter()
+        .map(|row| match row {
+            token::update::problems::ProblemsRow::File { path, count, .. } => ProblemsRowSnapshot {
+                label: format!("{} ({count})", path.display()),
+                kind: "file".to_owned(),
+            },
+            token::update::problems::ProblemsRow::Diagnostic { path, index } => {
+                let message = model
+                    .lsp
+                    .diagnostics
+                    .get(&path)
+                    .and_then(|diags| diags.get(index))
+                    .map(|d| d.message.clone())
+                    .unwrap_or_default();
+                ProblemsRowSnapshot {
+                    label: message,
+                    kind: "diagnostic".to_owned(),
+                }
+            }
+        })
+        .collect();
+    Some(ProblemsSnapshot {
+        errors,
+        warnings,
+        rows,
+        selected: model.problems_panel.selected_index,
+    })
 }
 
 /// Per-severity diagnostic counts for the focused document.
@@ -431,6 +488,7 @@ impl EditorSnapshot {
                 .collect(),
             diagnostics: diagnostics_snapshot(document),
             hover: hover_snapshot(model),
+            problems: problems_snapshot(model),
         }
     }
 }
@@ -778,6 +836,43 @@ mod tests {
         assert_eq!(snapshot.lsp_servers.len(), 1);
         assert_eq!(snapshot.lsp_servers[0].id, "rust-analyzer");
         assert_eq!(snapshot.lsp_servers[0].state, "Ready");
+    }
+
+    #[test]
+    fn problems_snapshot_is_none_when_the_panel_is_closed() {
+        let model = AppModel::new(800, 600, 1.0, vec![]);
+        let snapshot = EditorSnapshot::from_model(&model);
+        assert!(snapshot.problems.is_none());
+    }
+
+    #[test]
+    fn problems_snapshot_reports_rows_counts_and_selection_when_open() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model
+            .dock_layout
+            .bottom
+            .activate(token::panel::PanelId::PROBLEMS);
+        model.lsp.diagnostics.insert(
+            std::path::PathBuf::from("/proj/a.rs"),
+            vec![lsp_types::Diagnostic {
+                range: lsp_types::Range::default(),
+                severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+                message: "boom".to_owned(),
+                ..Default::default()
+            }],
+        );
+        model.problems_panel.selected_index = Some(1);
+
+        let snapshot = EditorSnapshot::from_model(&model)
+            .problems
+            .expect("open Problems panel must report a snapshot");
+        assert_eq!(snapshot.errors, 1);
+        assert_eq!(snapshot.warnings, 0);
+        assert_eq!(snapshot.rows.len(), 2);
+        assert_eq!(snapshot.rows[0].kind, "file");
+        assert_eq!(snapshot.rows[1].kind, "diagnostic");
+        assert_eq!(snapshot.rows[1].label, "boom");
+        assert_eq!(snapshot.selected, Some(1));
     }
 
     #[test]

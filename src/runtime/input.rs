@@ -18,7 +18,7 @@ use winit::keyboard::{Key, NamedKey};
 use token::commands::Cmd;
 use token::messages::{
     CompletionMsg, CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, OutlineMsg,
-    TerminalMsg, UiMsg, WorkspaceMsg,
+    ProblemsMsg, TerminalMsg, UiMsg, WorkspaceMsg,
 };
 use token::model::{AppModel, ModalState};
 use token::panel::{DockPosition, PanelId};
@@ -123,6 +123,11 @@ pub fn handle_key(
     // Focus capture: route keys to outline panel when right dock outline has focus
     if is_outline_dock_focused(model) {
         return handle_outline_dock_key(model, &key).or(Some(Cmd::Redraw));
+    }
+
+    // Focus capture: route keys to problems panel when bottom dock problems has focus
+    if is_problems_dock_focused(model) {
+        return handle_problems_dock_key(model, &key).or(Some(Cmd::Redraw));
     }
 
     // Focus capture: route keys to terminal panel when bottom dock terminal has focus
@@ -847,6 +852,60 @@ fn handle_outline_dock_key(model: &mut AppModel, key: &Key) -> Option<Cmd> {
     }
 }
 
+/// Check if the problems panel (bottom dock) has keyboard focus
+pub(crate) fn is_problems_dock_focused(model: &AppModel) -> bool {
+    if model.ui.focused_dock() != Some(DockPosition::Bottom) {
+        return false;
+    }
+
+    let bottom_dock = model.dock_layout.dock(DockPosition::Bottom);
+    bottom_dock.is_open && bottom_dock.active_panel() == Some(PanelId::PROBLEMS)
+}
+
+/// Handle keyboard input when the problems panel is focused. Left/Right/
+/// Enter on a `File` row toggle its group; Enter on a `Diagnostic` row
+/// jumps to it (outline's collapsible-node key pattern, flattened).
+fn handle_problems_dock_key(model: &mut AppModel, key: &Key) -> Option<Cmd> {
+    use token::update::problems::{problems_rows, ProblemsRow};
+
+    match key {
+        Key::Named(NamedKey::ArrowUp) => update(model, Msg::Problems(ProblemsMsg::SelectPrevious)),
+        Key::Named(NamedKey::ArrowDown) => update(model, Msg::Problems(ProblemsMsg::SelectNext)),
+        Key::Named(NamedKey::ArrowLeft) | Key::Named(NamedKey::ArrowRight) => {
+            let is_file_row = model
+                .problems_panel
+                .selected_index
+                .and_then(|idx| problems_rows(model).get(idx).cloned())
+                .is_some_and(|row| matches!(row, ProblemsRow::File { .. }));
+            if is_file_row {
+                update(model, Msg::Problems(ProblemsMsg::ToggleGroup))
+            } else {
+                None
+            }
+        }
+        Key::Named(NamedKey::Enter) => {
+            let selected_row = model
+                .problems_panel
+                .selected_index
+                .and_then(|idx| problems_rows(model).get(idx).cloned());
+            match selected_row {
+                Some(ProblemsRow::File { .. }) => {
+                    update(model, Msg::Problems(ProblemsMsg::ToggleGroup))
+                }
+                Some(ProblemsRow::Diagnostic { .. }) => {
+                    update(model, Msg::Problems(ProblemsMsg::OpenSelected))
+                }
+                None => None,
+            }
+        }
+        Key::Named(NamedKey::Escape) => {
+            model.ui.focus_editor();
+            Some(Cmd::Redraw)
+        }
+        _ => None,
+    }
+}
+
 /// Check if the terminal panel (bottom dock) has keyboard focus.
 fn is_terminal_dock_focused(model: &AppModel) -> bool {
     if model.ui.focused_dock() != Some(DockPosition::Bottom) {
@@ -943,6 +1002,79 @@ mod tests {
             .push(TerminalSession::new(7, 24, 80, pty, msg_tx));
 
         (model, pty_rx)
+    }
+
+    #[test]
+    fn problems_dock_enter_on_a_diagnostic_row_jumps_through_the_editor() {
+        use token::messages::Msg;
+        use token::update::update;
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.dock_layout.bottom.activate(PanelId::PROBLEMS);
+        model.ui.focus_dock(DockPosition::Bottom);
+        let dir = std::env::temp_dir().join("problems-input-jump-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("target.rs");
+        std::fs::write(&target, "a\nb\nc\n").unwrap();
+        model.lsp.diagnostics.insert(
+            target.clone(),
+            vec![lsp_types::Diagnostic {
+                range: lsp_types::Range {
+                    start: lsp_types::Position {
+                        line: 2,
+                        character: 0,
+                    },
+                    end: lsp_types::Position {
+                        line: 2,
+                        character: 1,
+                    },
+                },
+                severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+                message: "boom".to_owned(),
+                ..Default::default()
+            }],
+        );
+        assert!(is_problems_dock_focused(&model));
+
+        // Row 0 = File, row 1 = Diagnostic; select the diagnostic directly
+        // (mirrors clicking it) rather than round-tripping SelectNext.
+        update(&mut model, Msg::Problems(ProblemsMsg::SelectNext));
+        update(&mut model, Msg::Problems(ProblemsMsg::SelectNext));
+        assert_eq!(model.problems_panel.selected_index, Some(1));
+
+        let cmd = handle_key(
+            &mut model,
+            Key::Named(NamedKey::Enter),
+            PhysicalKey::Code(KeyCode::Enter),
+            KeyModifiers::default(),
+            false,
+        );
+        assert!(cmd.is_some());
+
+        assert_eq!(
+            model.document().file_path.as_deref(),
+            Some(target.as_path())
+        );
+        assert_eq!(model.editor().active_cursor().line, 2);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn problems_dock_escape_returns_focus_to_the_editor() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.dock_layout.bottom.activate(PanelId::PROBLEMS);
+        model.ui.focus_dock(DockPosition::Bottom);
+
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::Escape),
+            PhysicalKey::Code(KeyCode::Escape),
+            KeyModifiers::default(),
+            false,
+        );
+
+        assert_eq!(model.ui.focus, FocusTarget::Editor);
     }
 
     #[test]

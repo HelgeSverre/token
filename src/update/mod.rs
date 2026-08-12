@@ -14,6 +14,7 @@ mod lsp;
 pub mod navigation;
 mod outline;
 mod preview;
+pub mod problems;
 mod syntax;
 mod terminal;
 mod text_edit;
@@ -155,6 +156,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::Workspace(m) => workspace::update_workspace(model, m),
         Msg::Dock(m) => dock::update_dock(model, m),
         Msg::Outline(m) => outline::update_outline(model, m),
+        Msg::Problems(m) => problems::update_problems(model, m),
         Msg::TextEdit(context, m) => text_edit::update_text_edit(model, context, m),
         Msg::Terminal(m) => terminal::update_terminal(model, m),
         Msg::Completion(m) => completion::update_completion(model, m),
@@ -311,6 +313,7 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Workspace(m) => format!("Workspace::{:?}", m),
         Msg::Dock(m) => format!("Dock::{:?}", m),
         Msg::Outline(m) => format!("Outline::{:?}", m),
+        Msg::Problems(m) => format!("Problems::{:?}", m),
         Msg::TextEdit(ctx, m) => format!("TextEdit::{:?}::{:?}", ctx, m),
         Msg::Terminal(m) => format!("Terminal::{:?}", m),
         Msg::Completion(m) => format!("Completion::{:?}", m),

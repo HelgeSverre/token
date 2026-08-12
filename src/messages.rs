@@ -665,6 +665,25 @@ pub enum OutlineMsg {
     Scroll { lines: i32 },
 }
 
+/// Problems panel messages (mirrors `OutlineMsg`'s shape, flattened since
+/// the panel has no nested tree — just collapsible per-file groups).
+#[derive(Debug, Clone)]
+pub enum ProblemsMsg {
+    /// Navigate up in the flat row list.
+    SelectPrevious,
+    /// Navigate down in the flat row list.
+    SelectNext,
+    /// Enter/Left/Right on a File row: Left collapses, Right expands
+    /// (outline semantics).
+    ToggleGroup,
+    /// Enter on a Diagnostic row: jump to its location.
+    OpenSelected,
+    /// Scroll the panel.
+    Scroll { lines: i32 },
+    /// Click on a row in the panel.
+    ClickRow { index: usize, click_count: u8 },
+}
+
 /// Terminal panel messages.
 ///
 /// Toggle/focus/panel switching is handled by the existing `DockMsg` --
@@ -876,6 +895,8 @@ pub enum Msg {
     Dock(DockMsg),
     /// Outline panel messages
     Outline(OutlineMsg),
+    /// Problems panel messages
+    Problems(ProblemsMsg),
     /// Unified text editing messages.
     TextEdit(EditContext, TextEditMsg),
     /// Terminal panel messages

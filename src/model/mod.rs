@@ -29,8 +29,8 @@ pub use ui::{
     CommandMatch, CommandPaletteState, CursorOverlayKind, CursorOverlayState, DropState,
     FileFinderState, FileMatch, FindReplaceField, FindReplaceState, FocusTarget, GotoLineState,
     HoverCardState, HoverRegion, LspServersState, ModalId, ModalState, OutlinePanelState,
-    RecentFilesState, ScrollbarDragAxis, ScrollbarDragState, SearchTab, SidebarResizeState,
-    ThemePickerState, UiState, COMMAND_PALETTE_MAX_VISIBLE,
+    ProblemsPanelState, RecentFilesState, ScrollbarDragAxis, ScrollbarDragState, SearchTab,
+    SidebarResizeState, ThemePickerState, UiState, COMMAND_PALETTE_MAX_VISIBLE,
 };
 pub use workspace::{FileExtension, FileNode, FileTree, Workspace};
 
@@ -503,6 +503,8 @@ pub struct AppModel {
     pub terminal: crate::terminal::TerminalState,
     /// Outline panel UI state (expand/collapse, selection, scroll)
     pub outline_panel: crate::model::ui::OutlinePanelState,
+    /// Problems panel UI state (selection, scroll, collapsed file groups)
+    pub problems_panel: crate::model::ui::ProblemsPanelState,
     /// Recent files list (persistent across sessions)
     pub recent_files: RecentFiles,
     /// Command palette usage/pin history (persistent across sessions) —
@@ -579,6 +581,7 @@ impl AppModel {
             dock_layout: crate::panel::DockLayout::default(),
             terminal: crate::terminal::TerminalState::default(),
             outline_panel: crate::model::ui::OutlinePanelState::default(),
+            problems_panel: crate::model::ui::ProblemsPanelState::default(),
             recent_files,
             command_history,
             #[cfg(debug_assertions)]

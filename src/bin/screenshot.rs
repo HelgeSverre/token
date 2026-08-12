@@ -294,6 +294,7 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         dock_layout: token::panel::DockLayout::default(),
         terminal: token::terminal::TerminalState::default(),
         outline_panel: token::model::OutlinePanelState::default(),
+        problems_panel: token::model::ProblemsPanelState::default(),
         recent_files: token::recent_files::RecentFiles::default(),
         command_history: token::command_history::CommandHistory::default(),
         #[cfg(debug_assertions)]
