@@ -13,6 +13,8 @@ use crate::model::{
 };
 use crate::theme::load_theme;
 use crate::update::layout::update_layout;
+use crate::update::lsp::schedule_lsp_did_change;
+use crate::update::syntax::schedule_syntax_parse;
 use crate::view::modal::{recent_files_groups, theme_picker_groups};
 use crate::view::overlay_surface::{resolve_scroll_for_selection, SectionShape};
 
@@ -1522,6 +1524,7 @@ fn replace_and_find_next(
     };
 
     // Now do the replacement if needed
+    let mut sync_cmds = Vec::new();
     if let Some((start_offset, end_offset)) = should_replace {
         let doc = model.document_mut();
         doc.buffer.remove(start_offset..end_offset);
@@ -1537,10 +1540,21 @@ fn replace_and_find_next(
         editor.cursors[0].line = new_line;
         editor.cursors[0].column = new_col;
         editor.clear_selection();
+
+        if let Some(doc_id) = model.document().id {
+            sync_cmds.extend(schedule_syntax_parse(model, doc_id));
+            sync_cmds.extend(schedule_lsp_did_change(model, doc_id));
+        }
     }
 
     // Now find next
-    find_next_in_document(model, query)
+    let next_cmd = find_next_in_document(model, query);
+    if sync_cmds.is_empty() {
+        next_cmd
+    } else {
+        sync_cmds.extend(next_cmd);
+        Some(Cmd::Batch(sync_cmds))
+    }
 }
 
 /// Replace all occurrences
@@ -1579,7 +1593,17 @@ fn replace_all(
         format!("Replaced {} occurrences", count),
         Duration::from_secs(2),
     ));
-    Some(Cmd::redraw_editor())
+
+    let mut cmds = vec![Cmd::redraw_editor()];
+    if let Some(doc_id) = model.document().id {
+        cmds.extend(schedule_syntax_parse(model, doc_id));
+        cmds.extend(schedule_lsp_did_change(model, doc_id));
+    }
+    if cmds.len() > 1 {
+        Some(Cmd::Batch(cmds))
+    } else {
+        Some(Cmd::redraw_editor())
+    }
 }
 
 /// Get the line numbers of all cursors in the focused editor
@@ -1837,13 +1861,15 @@ fn fuzzy_match_files(
 #[cfg(test)]
 mod tests {
     use super::{
-        get_current_cursor_lines, resolve_palette_rows, search_everywhere_sections, update_ui,
+        get_current_cursor_lines, replace_all, replace_and_find_next, resolve_palette_rows,
+        search_everywhere_sections, update_ui,
     };
     use crate::command_history::CommandHistory;
     use crate::commands::{Cmd, CommandId, DamageArea};
     use crate::image::ImageState;
     use crate::messages::{ModalMsg, UiMsg};
     use crate::model::{AppModel, CommandPaletteState, ModalId, ModalState, SearchTab, ViewMode};
+    use crate::search::SearchQuery;
 
     #[test]
     fn current_cursor_lines_are_reported_for_plain_text_editors() {
@@ -2454,5 +2480,57 @@ mod tests {
             }
             other => panic!("expected command palette modal, got {other:?}"),
         }
+    }
+
+    /// Replace All mutates `doc.buffer`/`doc.revision` directly (bypassing
+    /// `redraw_with_syntax_parse_shift`), so it must schedule its own
+    /// syntax-parse and LSP didChange like every other mutation site — see
+    /// docs/feature/lsp-integration.md's flush-before-request invariant.
+    #[test]
+    fn replace_all_schedules_syntax_parse_and_lsp_did_change() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        model.document_mut().buffer = ropey::Rope::from_str("foo foo foo");
+        let before_revision = model.document().revision;
+
+        let query = SearchQuery::new("foo", true, false, false);
+        let cmd = replace_all(&mut model, &query, "bar");
+
+        assert_eq!(model.document().buffer.to_string(), "bar bar bar");
+        assert!(model.document().revision > before_revision);
+
+        let cmds = match cmd {
+            Some(Cmd::Batch(cmds)) => cmds,
+            other => panic!("expected a batch of sync commands, got {other:?}"),
+        };
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, Cmd::LspScheduleDidChange { .. })),
+            "expected LspScheduleDidChange in {cmds:?}"
+        );
+    }
+
+    #[test]
+    fn replace_and_find_next_schedules_lsp_did_change_when_it_replaces() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        model.document_mut().buffer = ropey::Rope::from_str("foo bar");
+        model.editor_mut().selections[0].anchor.column = 0;
+        model.editor_mut().selections[0].head.column = 3;
+        let before_revision = model.document().revision;
+
+        let query = SearchQuery::new("foo", true, false, false);
+        let cmd = replace_and_find_next(&mut model, &query, "baz");
+
+        assert_eq!(model.document().buffer.to_string(), "baz bar");
+        assert!(model.document().revision > before_revision);
+
+        let cmds = match cmd {
+            Some(Cmd::Batch(cmds)) => cmds,
+            other => panic!("expected a batch of sync commands, got {other:?}"),
+        };
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, Cmd::LspScheduleDidChange { .. })),
+            "expected LspScheduleDidChange in {cmds:?}"
+        );
     }
 }

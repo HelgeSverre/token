@@ -6,6 +6,8 @@ use crate::commands::Cmd;
 use crate::csv::{detect_delimiter, escape_csv_value, parse_csv, CellEdit, CsvState, Delimiter};
 use crate::messages::CsvMsg;
 use crate::model::{AppModel, ViewMode};
+use crate::update::lsp::schedule_lsp_did_change;
+use crate::update::syntax::schedule_syntax_parse;
 
 /// Handle CSV mode messages
 pub fn update_csv(model: &mut AppModel, msg: CsvMsg) -> Option<Cmd> {
@@ -315,11 +317,15 @@ fn confirm_edit(model: &mut AppModel, row_delta: i32) -> Option<Cmd> {
         (csv.confirm_edit(), delimiter)
     };
 
+    let mut sync_cmds = Vec::new();
     if let Some(cell_edit) = edit {
         let doc_id = editor.document_id?;
         if let Some(doc) = model.editor_area.documents.get_mut(&doc_id) {
             sync_cell_edit_to_document(doc, &cell_edit, delimiter);
         }
+
+        sync_cmds.extend(schedule_syntax_parse(model, doc_id));
+        sync_cmds.extend(schedule_lsp_did_change(model, doc_id));
 
         // Keep current column width - already correctly sized from grow-only updates during editing
     }
@@ -331,7 +337,8 @@ fn confirm_edit(model: &mut AppModel, row_delta: i32) -> Option<Cmd> {
         }
     }
 
-    Some(Cmd::redraw_editor())
+    sync_cmds.push(Cmd::redraw_editor());
+    Some(Cmd::Batch(sync_cmds))
 }
 
 /// Cancel edit and discard changes
@@ -901,6 +908,36 @@ fn find_field_byte_range(
 mod tests {
     use super::*;
     use crate::csv::CellPosition;
+    use crate::model::AppModel;
+
+    /// `confirm_edit` mutates `doc.buffer`/`doc.revision` directly (like
+    /// Replace All), so it must schedule syntax-parse and LSP didChange
+    /// itself rather than relying on the generic editor-mutation path.
+    #[test]
+    fn confirm_edit_schedules_syntax_parse_and_lsp_did_change() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        model.document_mut().buffer = ropey::Rope::from_str("a,b\n1,2\n");
+
+        update_csv(&mut model, CsvMsg::Toggle).expect("csv toggle should produce a redraw cmd");
+        assert!(model.editor().view_mode.is_csv(), "expected CSV mode");
+
+        update_csv(&mut model, CsvMsg::StartEditing);
+        let before_revision = model.document().revision;
+        update_csv(&mut model, CsvMsg::EditInsertChar('x'));
+        let cmd = update_csv(&mut model, CsvMsg::ConfirmEdit);
+
+        assert!(model.document().revision > before_revision);
+
+        let cmds = match cmd {
+            Some(Cmd::Batch(cmds)) => cmds,
+            other => panic!("expected a batch of sync commands, got {other:?}"),
+        };
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, Cmd::LspScheduleDidChange { .. })),
+            "expected LspScheduleDidChange in {cmds:?}"
+        );
+    }
 
     #[test]
     fn test_find_row_byte_range() {
