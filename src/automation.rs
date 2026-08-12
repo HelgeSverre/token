@@ -47,6 +47,12 @@ pub(crate) enum AutomationRequest {
     ProfileFrames {
         frames: usize,
     },
+    /// Type into the active overlay's input (command palette, etc.) — the
+    /// only way automation can drive type→filter→accept without a real
+    /// keyboard. Errors if no overlay is open.
+    SetOverlayInput {
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +70,46 @@ pub(crate) struct EditorSnapshot {
     pub selections: Vec<SelectionSnapshot>,
     pub viewport_top_line: usize,
     pub viewport_left_column: usize,
+    /// The active overlay (command palette, etc.), if one is open —
+    /// `None` when no modal/overlay is showing.
+    pub overlay: Option<OverlaySnapshot>,
+}
+
+/// A read-only view of the active overlay, for automation to inspect
+/// type→filter→accept flows without a rendering backend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct OverlaySnapshot {
+    pub context: String,
+    pub query: String,
+    pub active_tab: Option<String>,
+    pub rows: Vec<OverlayRowSnapshot>,
+    pub selected: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct OverlayRowSnapshot {
+    pub label: String,
+    pub section: Option<String>,
+}
+
+fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot> {
+    match modal {
+        token::model::ModalState::CommandPalette(state) => Some(OverlaySnapshot {
+            context: "command_palette".to_owned(),
+            query: state.input(),
+            active_tab: None,
+            rows: state
+                .matches
+                .iter()
+                .map(|m| OverlayRowSnapshot {
+                    label: m.def.label.to_owned(),
+                    section: None,
+                })
+                .collect(),
+            selected: state.selected_index,
+        }),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +156,7 @@ impl EditorSnapshot {
                 .collect(),
             viewport_top_line: viewport.top_line,
             viewport_left_column: viewport.left_column,
+            overlay: model.ui.active_modal.as_ref().and_then(overlay_snapshot),
         }
     }
 }
@@ -389,9 +436,12 @@ pub(crate) fn run_cli(mut args: impl Iterator<Item = String>) -> Result<(), Stri
         "profile" => AutomationRequest::ProfileFrames {
             frames: parse_arg(args.next(), "frames")?,
         },
+        "overlay-input" => AutomationRequest::SetOverlayInput {
+            text: args.collect::<Vec<_>>().join(" "),
+        },
         _ => {
             return Err(format!(
-            "unknown automation command `{command}`; use state, document, actions, text, cursor, selection, action, scroll, profile, or syntax-profile"
+            "unknown automation command `{command}`; use state, document, actions, text, cursor, selection, action, scroll, profile, syntax-profile, or overlay-input"
         ))
         }
     };

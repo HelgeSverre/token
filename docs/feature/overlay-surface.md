@@ -398,18 +398,18 @@ Mockups for the picker contexts: [B1 recent-grouped](assets/palette-b1.png), [B2
 - [x] **Thread `scale_factor` through modal geometry**: `ModalSpacing` becomes scaled accessors; layout clamps against logical width. (Today's modals are effectively half-size on 2x displays — this is a bug fix, not a refactor.)
 - [x] `overlay_surface.rs`: layout + paint for `Anchor::Centered`, `Header`, `Body::List` (sections, `FlatIndex`, match-index coalescing, accessories, truncation rules, scrollbar), `Footer`; **one layout function**, shared later with hit-testing.
 - [~] Theme: new `overlay.*` keys, `is_light()`, luminance-relative + min-contrast resolution; **tuned values for all 9 bundled themes**; the per-theme 4.5:1 contrast unit test. Status: `is_light()` (shared with `resolve_overlay_theme` via `is_light_background`), the derivation resolution, and the per-theme 4.5:1 contrast unit test are done. **Not done as originally scoped**: only `default-dark` got a hand-tuned literal `overlay.*` block (matching this doc's color table) — the other 8 bundled themes got a tuned `accent` (their real brand color) and otherwise rely on the derivation fallbacks, unverified against this doc's color table by eye. The fallback derivation was hardened after an adversarial review found it degenerate — `accent` no longer collapses onto `panel_background` when `status_bar.background` is chrome-colored (nord: exact match), and `text_secondary`/`text_dim` no longer both resolve to `foreground` (8/9 themes had a single-color "ramp"); both are covered by regression tests (`bundled_themes_have_a_real_derived_accent_and_wash`, `bundled_themes_derive_a_non_degenerate_text_ramp`) in `tests/theme.rs`. The 4.5:1 contrast test passing means the fallback is *not broken*, not that the 8 themes were tuned — hand-tuning the remaining 8 is left for a follow-up pass.
-- [~] **Gate:** command palette rendered through OverlaySurface behind a debug flag (`TOKEN_OVERLAY_SURFACE` env var, off by default); **checked against mockup A1 at 1x/1.25x/2x on default-dark and github-light; frame time within existing budget**. Status: the gate itself is wired and uses `SelectableListViewport::compute` with the spec's 10-row cap so it demonstrates real scrolling. **Not done**: no windowed manual check against mockup A1 at 1x/1.25x/2x on default-dark or github-light, and no frame-time profiling, were run in this environment — do both before Phase 2 default-flips this on.
+- [~] **Gate:** command palette rendered through OverlaySurface behind a debug flag (`TOKEN_OVERLAY_SURFACE` env var, off by default); **checked against mockup A1 at 1x/1.25x/2x on default-dark and github-light; frame time within existing budget**. Status: the gate itself is wired and uses `SelectableListViewport::compute` with the spec's 10-row cap so it demonstrates real scrolling. **Not done**: no windowed manual check against mockup A1 at 1x/1.25x/2x on default-dark or github-light, and no frame-time profiling, were run in this environment. **Superseded by Phase 2**: the `TOKEN_OVERLAY_SURFACE` env var and `overlay_surface_gate_enabled()` are gone — the command palette renders through `OverlaySurface` unconditionally now (`view::modal::render_command_palette_modal`, `hit_test::hit_test_modal`, `view::caret::modal_caret_rect` all route through it); the still-outstanding manual mockup/frame-time check was not run as part of Phase 2 either and should happen before Phase 3 migrates the remaining modals.
 
 ### Phase 2: Command palette on the new surface (A1 look)
 
 **Effort:** M
 
-- [ ] `resolve_palette_rows` ordering authority, cached in state; `Confirm`/`SelectNext` and the spec builder all consume it; view-order == confirm-order unit test.
-- [ ] nucleo for commands (indices cached per the file-finder pattern); bespoke `fuzzy_match_score` deleted.
-- [ ] `category` field on `CommandDef` (defaulted; the ~40 defs get one of a small per-category glyph set: file / edit / nav / view / panel / system).
-- [ ] `scroll_offset` in `CommandPaletteState`; scrolling replaces "... and N more"; PgUp/PgDn + wrap-around arms in `handle_modal_key`.
-- [ ] Input-as-header, keycap accessories via `binding_chips`, footer hints.
-- [ ] **Automation**: `overlay` snapshot block + `SetOverlayInput` request; type→filter→accept automation test.
+- [x] `resolve_palette_rows` ordering authority, cached in state; `Confirm`/`SelectNext` and the spec builder all consume it; view-order == confirm-order unit test.
+- [x] nucleo for commands (indices cached per the file-finder pattern); bespoke `fuzzy_match_score` deleted.
+- [x] `category` field on `CommandDef` (the ~40 defs get one of a small per-category glyph set: file / edit / nav / view / panel / system).
+- [x] `scroll_offset` in `CommandPaletteState`; scrolling replaces "... and N more"; PgUp/PgDn + wrap-around arms in `handle_modal_key`.
+- [x] Input-as-header, keycap accessories via `binding_chips`, footer hints.
+- [x] **Automation**: `overlay` snapshot block + `SetOverlayInput` request; type→filter→accept automation test.
 
 ### Phase 3: Migrate all remaining modals
 

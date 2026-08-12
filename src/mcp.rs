@@ -136,6 +136,16 @@ impl TokenMcp {
     ) -> CallToolResult {
         response(AutomationRequest::ProfileFrames { frames }).await
     }
+
+    #[tool(
+        description = "Type into the active overlay's input (e.g. the command palette) — the state response's `overlay` field reports the filtered rows and selection"
+    )]
+    async fn set_overlay_input(
+        &self,
+        Parameters(TextParams { text }): Parameters<TextParams>,
+    ) -> CallToolResult {
+        response(AutomationRequest::SetOverlayInput { text }).await
+    }
 }
 
 #[tool_handler]

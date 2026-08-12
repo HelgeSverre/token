@@ -26,7 +26,7 @@ use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
 };
 use token::messages::{
-    AppMsg, EditorMsg, ImageMsg, LayoutMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg,
+    AppMsg, EditorMsg, ImageMsg, LayoutMsg, ModalMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg,
 };
 use token::model::editor::Position;
 use token::model::AppModel;
@@ -1857,6 +1857,21 @@ impl App {
                         .response_tx
                         .send(self.automation_response("scrolled"));
                     redraw = true;
+                }
+                AutomationRequest::SetOverlayInput { text } => {
+                    if self.model.ui.active_modal.is_some() {
+                        self.process_automation_msg(Msg::Ui(UiMsg::Modal(ModalMsg::SetInput(
+                            text,
+                        ))));
+                        redraw = true;
+                        let _ = envelope
+                            .response_tx
+                            .send(self.automation_response("overlay input set"));
+                    } else {
+                        let _ = envelope
+                            .response_tx
+                            .send(AutomationResponse::error("no overlay is open"));
+                    }
                 }
                 AutomationRequest::ProfileSyntax { text } => {
                     if text.is_empty() {
