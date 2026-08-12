@@ -2630,6 +2630,18 @@ impl App {
     /// `didOpen` is re-sent for every currently-open matching document"
     /// (a fresh process has no memory of documents opened against the
     /// one that crashed).
+    ///
+    /// Reuses each document's *stored* `(server_id, root, uri)`
+    /// (`OpenDocState`) rather than re-resolving them from
+    /// `language`/`file_path` — `lsp_open_document`'s generic resolution
+    /// re-derives the root from the file's own project markers, which
+    /// silently disagrees with a document that was opened via the
+    /// out-of-root route hint (e.g. a registry file reached through a
+    /// definition jump, tracked under the *resolving* server/root, not
+    /// its own crate's). Re-resolving on resync would pick that crate's
+    /// own root, find no handle there, and return without ever
+    /// re-`didOpen`ing — leaving `didChange`/hover/definition silently
+    /// targeting a server that never saw the document.
     fn resync_open_documents(&mut self, server_id: &LspServerId, root: &Path) {
         let document_ids: Vec<_> = self
             .lsp
@@ -2645,8 +2657,16 @@ impl App {
             let Some(file_path) = doc.file_path.clone() else {
                 continue;
             };
-            let language = doc.language;
-            self.lsp_open_document(document_id, file_path, language);
+            let Some(language_id) = lsp::sync::language_id_str(doc.language) else {
+                continue;
+            };
+            self.lsp_open_document_on(
+                document_id,
+                file_path,
+                server_id.clone(),
+                root.to_path_buf(),
+                language_id,
+            );
         }
     }
 
@@ -6014,6 +6034,69 @@ mod tests {
         );
         let lines = read_transcript_lines(&transcript_b);
         assert!(lines[0].starts_with("request:initialize"));
+
+        app.process_cmd(Cmd::Quit);
+    }
+
+    /// A document opened through the out-of-root route hint (a
+    /// definition jump into e.g. a registry crate) is tracked under the
+    /// *resolving* server/root, not the root its own file path would
+    /// naturally resolve to (it has no project markers of its own under
+    /// test, and lives in a directory with no LSP handle at all).
+    /// `resync_open_documents` must re-`didOpen` it against the *stored*
+    /// `(server_id, root)` — re-resolving from `file_path`/`language`
+    /// (the pre-fix behavior) would derive the file's own directory,
+    /// find no handle there, and silently send nothing.
+    #[test]
+    fn resync_uses_the_stored_server_and_root_not_a_re_resolved_one() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        // The document's own directory: no project markers, no LSP
+        // handle ever spawned here — this is what the buggy re-resolve
+        // would have picked.
+        let registry_dir = dir.path().join("registry_pkg");
+        std::fs::create_dir_all(&registry_dir).unwrap();
+        let file_path = registry_dir.join("lib.rs");
+        std::fs::write(&file_path, "pub fn util() {}\n").unwrap();
+
+        // The root the document was actually opened against, via the
+        // route hint — a live handle only exists here.
+        let resolving_root = dir.path().join("resolving_root");
+        std::fs::create_dir_all(&resolving_root).unwrap();
+        let transcript_path = dir.path().join("transcript.log");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        configure_fake_rust_analyzer(&mut app, dir.path(), &transcript_path);
+
+        let server_id = LspServerId::from("rust-analyzer");
+        let def = lsp::server_def_by_id(&server_id.0).unwrap();
+        let resolved = lsp::resolve_server(def, &app.model.config.lsp).unwrap();
+        app.spawn_lsp_server_at(&resolved, &resolving_root);
+
+        let doc_id = token::model::editor_area::DocumentId(1);
+        let mut doc = token::model::Document::from_file(file_path.clone()).unwrap();
+        doc.id = Some(doc_id);
+        let revision = doc.revision;
+        app.model.editor_area.documents.insert(doc_id, doc);
+
+        // Mirrors what `Cmd::LspDidOpenOnServer` installs for a route-hint
+        // open — tracked under `resolving_root`, never the file's own.
+        app.lsp.open_documents.insert(
+            doc_id,
+            OpenDocState {
+                server_id: server_id.clone(),
+                root: resolving_root.clone(),
+                uri: lsp::path_to_uri(&file_path),
+                synced_revision: revision,
+            },
+        );
+
+        app.resync_open_documents(&server_id, &resolving_root);
+
+        let lines = wait_for_transcript_lines(&transcript_path, 3);
+        assert!(
+            lines.iter().any(|l| l.starts_with("notify:textDocument/didOpen")),
+            "expected a re-sent didOpen against the stored (resolving) root, got {lines:?}"
+        );
 
         app.process_cmd(Cmd::Quit);
     }
