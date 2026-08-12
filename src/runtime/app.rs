@@ -199,6 +199,12 @@ pub struct App {
     /// because `portable_pty` startup can block on shell initialization.
     terminal_spawn_rx: Option<(usize, TerminalSpawnReceiver)>,
     automation_rx: Receiver<AutomationEnvelope>,
+    /// A sender into `automation_rx`, kept around only so tests can push
+    /// requests through the exact same `process_automation_requests` path
+    /// the socket/MCP server feeds in production, without standing up a
+    /// real socket.
+    #[cfg(test)]
+    automation_tx: Sender<AutomationEnvelope>,
     automation_profile: Option<AutomationProfile>,
     syntax_scheduled: HashMap<(token::model::editor_area::DocumentId, u64), Instant>,
     syntax_present_pending: Vec<SyntaxPresentationPending>,
@@ -234,6 +240,8 @@ impl App {
     ) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
         let (automation_tx, automation_rx) = mpsc::channel();
+        #[cfg(test)]
+        let automation_tx_for_tests = automation_tx.clone();
         if let Some(proxy) = automation_proxy.clone() {
             automation::start_server(automation_tx, proxy);
         }
@@ -282,6 +290,8 @@ impl App {
             syntax_deadlines: HashMap::new(),
             terminal_spawn_rx: None,
             automation_rx,
+            #[cfg(test)]
+            automation_tx: automation_tx_for_tests,
             automation_profile: None,
             syntax_scheduled: HashMap::new(),
             syntax_present_pending: Vec::new(),
@@ -2228,6 +2238,67 @@ mod tests {
         });
 
         assert!(app.model.terminal.is_spawn_pending(7));
+    }
+
+    /// Push a request through `automation_tx` -> `automation_rx` and drain
+    /// it with `process_automation_requests`, the same path a real socket
+    /// client (MCP tool, CLI) drives — exercises `AutomationRequest`
+    /// end-to-end instead of calling `update()` directly.
+    fn send_automation_request(app: &mut App, request: AutomationRequest) -> AutomationResponse {
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        app.automation_tx
+            .send(AutomationEnvelope {
+                request,
+                response_tx,
+            })
+            .expect("automation channel should still be open");
+        app.process_automation_requests();
+        response_rx
+            .try_recv()
+            .expect("a response should have been sent for the request")
+    }
+
+    #[test]
+    fn automation_flow_triggers_menu_and_reports_completion_snapshot() {
+        // autocomplete.md Phase 1 Gate: type -> menu opens -> filter,
+        // driven through the actual `AutomationRequest` socket path
+        // (`EditorSnapshot.completion` exists for exactly this).
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model
+            .editor_area
+            .documents
+            .values_mut()
+            .next()
+            .unwrap()
+            .buffer
+            .insert(0, "value_one\nval");
+
+        let response = send_automation_request(
+            &mut app,
+            AutomationRequest::SetCursor { line: 1, column: 3 },
+        );
+        assert!(response.ok);
+        let state = response.state.expect("state should be present");
+        assert!(
+            state.completion.is_none(),
+            "cursor move alone shouldn't open the popup"
+        );
+
+        let response = send_automation_request(
+            &mut app,
+            AutomationRequest::ExecuteAction {
+                name: "TriggerCompletionMenu".to_string(),
+            },
+        );
+        assert!(response.ok, "{}", response.message);
+
+        let response = send_automation_request(&mut app, AutomationRequest::State);
+        let completion = response
+            .state
+            .expect("state should be present")
+            .completion
+            .expect("completion popup should be open after the trigger action");
+        assert!(completion.items.contains(&"value_one".to_string()));
     }
 }
 
