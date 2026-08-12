@@ -3,6 +3,7 @@
 //! Commands represent side effects that should be performed after an update.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::keymap::{Command as KeymapCommand, Keymap};
 use crate::model::editor_area::DocumentId;
@@ -83,6 +84,9 @@ pub enum CommandId {
 
     // Completion (autocomplete.md Phase 1)
     TriggerCompletionMenu,
+
+    // Language servers (lsp-integration.md Phase 1)
+    RestartLanguageServer,
 
     // Application
     Quit,
@@ -362,6 +366,12 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: Some("⌃Space"),
     },
     CommandDef {
+        id: CommandId::RestartLanguageServer,
+        category: CommandCategory::System,
+        label: "Restart Language Server",
+        keybinding: None,
+    },
+    CommandDef {
         id: CommandId::Quit,
         category: CommandCategory::System,
         label: "Quit",
@@ -445,6 +455,7 @@ impl CommandId {
             CommandId::CopyRelativePath => None,
             CommandId::OpenRecentFiles => Some(KeymapCommand::OpenRecentFiles),
             CommandId::TriggerCompletionMenu => Some(KeymapCommand::TriggerCompletionMenu),
+            CommandId::RestartLanguageServer => Some(KeymapCommand::RestartLanguageServer),
             CommandId::Quit => Some(KeymapCommand::Quit),
             #[cfg(debug_assertions)]
             CommandId::TogglePerfOverlay => None,
@@ -682,7 +693,11 @@ pub enum Cmd {
     RunSyntaxParse {
         document_id: DocumentId,
         revision: u64,
-        source: String,
+        // Arc<str>, not String: `check_lsp_did_change_deadlines` shares
+        // this exact snapshot with a coincident LSP didChange deadline
+        // via a cheap refcount clone instead of a second full-buffer
+        // copy (lsp-integration.md's Document Synchronization).
+        source: Arc<str>,
         language: LanguageId,
         snapshot_ms: f64,
     },

@@ -432,6 +432,11 @@ pub enum AppMsg {
     Quit,
     /// Reload configuration from disk
     ReloadConfiguration,
+    /// Restart the language server for the active document's language
+    /// (palette/automation entry point for `LspMsg::RestartServer`; the
+    /// server id is resolved from the active document here, since the
+    /// palette command carries no arguments).
+    RestartLanguageServer,
 
     // === File Dialog Messages ===
     /// User requested "Save As..." dialog

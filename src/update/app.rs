@@ -117,6 +117,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                 Ok(content) => {
                     // Detect language from file extension
                     let language = LanguageId::from_path(&path);
+                    let old_path = model.document().file_path.clone();
 
                     let doc = model.document_mut();
                     doc.buffer = ropey::Rope::from(content);
@@ -129,6 +130,23 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                     doc.syntax_highlights = None;
                     doc.syntax_tree = None;
                     doc.revision = doc.revision.wrapping_add(1);
+
+                    // External reload = revision bump = normal didChange
+                    // (see design doc's Document Synchronization). If the
+                    // path itself changed (tab reused for a different
+                    // file), the LSP identity changes too: didClose(old) +
+                    // didOpen(new), same as Save As.
+                    let mut lsp_cmds = Vec::new();
+                    if let Some(doc_id) = model.document().id {
+                        if old_path.as_deref() == Some(path.as_path()) {
+                            lsp_cmds.extend(super::schedule_lsp_did_change(model, doc_id));
+                        } else {
+                            if old_path.is_some() {
+                                lsp_cmds.push(super::close_lsp_document(doc_id));
+                            }
+                            lsp_cmds.extend(super::open_lsp_document(model, doc_id));
+                        }
+                    }
 
                     // Cmd::OpenFileInEditor (e.g. OpenKeybindings/OpenLogFile)
                     // reuses the focused tab regardless of what it was
@@ -148,7 +166,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                     if language.has_highlighting() {
                         if let Some(doc_id) = model.document().id {
                             let revision = model.document().revision;
-                            return Some(Cmd::Batch(vec![
+                            let mut cmds = vec![
                                 Cmd::redraw_editor(),
                                 Cmd::DebouncedSyntaxParse {
                                     document_id: doc_id,
@@ -158,15 +176,19 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                                 Cmd::SaveRecentFiles {
                                     recent: model.recent_files.clone(),
                                 },
-                            ]));
+                            ];
+                            cmds.extend(lsp_cmds);
+                            return Some(Cmd::Batch(cmds));
                         }
                     }
-                    Some(Cmd::Batch(vec![
+                    let mut cmds = vec![
                         Cmd::redraw_editor(),
                         Cmd::SaveRecentFiles {
                             recent: model.recent_files.clone(),
                         },
-                    ]))
+                    ];
+                    cmds.extend(lsp_cmds);
+                    Some(Cmd::Batch(cmds))
                 }
                 Err(e) => {
                     model.ui.set_status(format!("Error: {}", e));
@@ -205,6 +227,27 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             // SyncStatusBarMetrics re-derives the bar height in case
             // `status_bar_font_size` changed.
             Some(Cmd::Batch(vec![Cmd::SyncStatusBarMetrics, Cmd::Redraw]))
+        }
+
+        AppMsg::RestartLanguageServer => {
+            let language = model.document().language;
+            match crate::lsp::lsp_server_def(language).map(|def| {
+                crate::lsp::LspServerId::from(def.id)
+            }) {
+                Some(server_id) if model.lsp.servers.contains_key(&server_id) => {
+                    super::update_lsp(model, crate::messages::LspMsg::RestartServer { server_id })
+                }
+                Some(server_id) => {
+                    model
+                        .ui
+                        .set_status(format!("{server_id}: no running server to restart"));
+                    Some(Cmd::redraw_status_bar())
+                }
+                None => {
+                    model.ui.set_status("No language server for this file");
+                    Some(Cmd::redraw_status_bar())
+                }
+            }
         }
 
         // =====================================================================
@@ -456,6 +499,7 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::TriggerCompletionMenu => {
             crate::update::update_completion(model, crate::messages::CompletionMsg::TriggerMenu)
         }
+        CommandId::RestartLanguageServer => update_app(model, AppMsg::RestartLanguageServer),
         CommandId::Quit => update_app(model, AppMsg::Quit),
         #[cfg(debug_assertions)]
         CommandId::TogglePerfOverlay => Some(Cmd::TogglePerfOverlay),
@@ -580,6 +624,9 @@ mod tests {
     #[test]
     fn file_loaded_bumps_revision_forcing_a_resync() {
         let mut model = test_model();
+        // Same path before and after: a reload, not an identity change —
+        // must resync via a normal didChange, not didClose/didOpen.
+        model.document_mut().file_path = Some(PathBuf::from("/tmp/reloaded.rs"));
         let before = model.document().revision;
 
         let cmd = update_app(
@@ -588,10 +635,47 @@ mod tests {
                 path: PathBuf::from("/tmp/reloaded.rs"),
                 result: Ok("fn main() {}".to_owned()),
             },
-        );
+        )
+        .expect("FileLoaded should produce a command");
 
-        assert!(cmd.is_some());
         assert_eq!(model.document().revision, before.wrapping_add(1));
+        let Cmd::Batch(cmds) = cmd else {
+            panic!("expected a Batch including LspScheduleDidChange");
+        };
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, Cmd::LspScheduleDidChange { .. })),
+            "expected LspScheduleDidChange in {cmds:?}"
+        );
+    }
+
+    #[test]
+    fn file_loaded_into_a_reused_tab_with_a_different_path_emits_lsp_close_open_pair() {
+        let mut model = test_model();
+        // Tab previously showed a different file (e.g. Open Log File reusing
+        // the focused tab) — the LSP identity changes, same as Save As.
+        model.document_mut().file_path = Some(PathBuf::from("/tmp/old.rs"));
+        let doc_id = model.document().id;
+
+        let cmd = update_app(
+            &mut model,
+            AppMsg::FileLoaded {
+                path: PathBuf::from("/tmp/new.rs"),
+                result: Ok("fn main() {}".to_owned()),
+            },
+        )
+        .expect("FileLoaded should produce a command");
+
+        let Cmd::Batch(cmds) = cmd else {
+            panic!("expected a Batch including LspDidClose/LspDidOpen");
+        };
+        assert!(cmds.iter().any(
+            |c| matches!(c, Cmd::LspDidClose { document_id } if Some(*document_id) == doc_id)
+        ));
+        assert!(cmds.iter().any(|c| match c {
+            Cmd::Batch(inner) => inner.iter().any(|c| matches!(c, Cmd::LspDidOpen { .. })),
+            _ => false,
+        }));
     }
 
     #[test]

@@ -268,6 +268,12 @@ pub enum Command {
     /// Explicitly open the menu-completion popup (Ctrl+Space)
     TriggerCompletionMenu,
 
+    // ========================================================================
+    // Language servers (lsp-integration.md Phase 1)
+    // ========================================================================
+    /// Restart the language server for the active document's language
+    RestartLanguageServer,
+
     // Image viewer
     /// Zoom in (image mode)
     ImageZoomIn,
@@ -474,6 +480,7 @@ impl Command {
 
             // Completion
             TriggerCompletionMenu => vec![Msg::Completion(CompletionMsg::TriggerMenu)],
+            RestartLanguageServer => vec![Msg::App(AppMsg::RestartLanguageServer)],
 
             // Image viewer
             ImageZoomIn => vec![Msg::Image(ImageMsg::Zoom {
@@ -643,6 +650,7 @@ impl Command {
             CsvExit => "Exit CSV View",
 
             TriggerCompletionMenu => "Trigger Completion",
+            RestartLanguageServer => "Restart Language Server",
 
             ImageZoomIn => "Image: Zoom In",
             ImageZoomOut => "Image: Zoom Out",
