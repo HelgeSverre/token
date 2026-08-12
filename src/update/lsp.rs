@@ -190,8 +190,16 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                         model.lsp.route_hint = Some((path.clone(), resolving_server, resolving_root));
                     }
                     navigation::push_history_entry(model, origin);
-                    let open_cmd = navigation::open_or_focus(model, path);
-                    let cursor_cmd = if navigation::focused_tab_is_text(model) {
+                    let open_cmd = navigation::open_or_focus(model, path.clone());
+                    // `open_or_focus` can fall through without changing
+                    // focus (target failed to open, or was reused into a
+                    // different split) — `focused_tab_shows` catches that
+                    // so a bad open never moves the *origin* document's
+                    // cursor (design doc: "no stale result ever moves a
+                    // cursor").
+                    let cursor_cmd = if navigation::focused_tab_is_text(model)
+                        && navigation::focused_tab_shows(model, &path)
+                    {
                         let target_doc = model.document();
                         let position = crate::lsp::lsp_to_position(target_doc, location.range.start);
                         navigation::place_cursor_char(model, position.line, position.column)
@@ -309,7 +317,7 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
 /// to the (normally 0-or-1) documents that could plausibly match.
 fn find_document_by_uri(model: &AppModel, uri: &lsp_types::Uri) -> Option<DocumentId> {
     let target_name = crate::lsp::uri_to_path(uri)?.file_name()?.to_owned();
-    model
+    let fast_path = model
         .editor_area
         .documents
         .iter()
@@ -324,7 +332,25 @@ fn find_document_by_uri(model: &AppModel, uri: &lsp_types::Uri) -> Option<Docume
                 .as_deref()
                 .is_some_and(|path| &crate::lsp::path_to_uri(path) == uri)
         })
-        .map(|(id, _)| *id)
+        .map(|(id, _)| *id);
+    // The file-name prefilter above is a fast-path optimization only — it
+    // assumes the open document's raw basename matches the canonical
+    // publish URI's, which a symlink to a differently-named target
+    // (bazel/node_modules/dotfile layouts) breaks. Fall back to a full
+    // canonicalizing scan rather than silently dropping the publish; still
+    // O(open docs), same as every other document already pays here.
+    fast_path.or_else(|| {
+        model
+            .editor_area
+            .documents
+            .iter()
+            .find(|(_, doc)| {
+                doc.file_path
+                    .as_deref()
+                    .is_some_and(|path| &crate::lsp::path_to_uri(path) == uri)
+            })
+            .map(|(id, _)| *id)
+    })
 }
 
 #[cfg(test)]
@@ -441,6 +467,70 @@ mod tests {
         );
     }
 
+    /// A definition target that fails to open (permission denied, gone,
+    /// binary the loader rejects) must never move the cursor in the
+    /// *origin* document — `open_or_focus` falls through leaving the
+    /// origin focused, and `focused_tab_shows` must catch that mismatch
+    /// (design doc: "no stale result ever moves a cursor").
+    #[test]
+    fn definition_resolved_to_an_unopenable_target_does_not_move_the_origin_cursor() {
+        let dir = tempfile::tempdir().unwrap();
+        let origin_path = dir.path().join("origin.rs");
+        std::fs::write(&origin_path, "one\ntwo\nthree\n").unwrap();
+        let mut model = AppModel::new(800, 600, 1.0, vec![origin_path.clone()]);
+        model.editor_mut().cursors[0].line = 0;
+        model.editor_mut().cursors[0].column = 0;
+
+        let origin = navigation::current_jump_entry(&model).unwrap();
+        let doc_id = model.document().id.unwrap();
+        let revision = model.document().revision;
+
+        // A directory "location" (a server bug, but not one the client may
+        // trust) makes `validate_file_for_opening` reject it as
+        // `IsDirectory` — `open_file_in_new_tab` returns without touching
+        // focus, exactly the real failure mode this guard exists for.
+        let target_path = dir.path().join("target_dir");
+        std::fs::create_dir(&target_path).unwrap();
+        let target_uri = crate::lsp::path_to_uri(&target_path);
+
+        update_lsp(
+            &mut model,
+            LspMsg::DefinitionResolved {
+                document_id: doc_id,
+                revision,
+                origin,
+                outcome: DefinitionOutcome::Locations {
+                    locations: vec![lsp_types::Location {
+                        uri: target_uri,
+                        range: lsp_types::Range {
+                            start: lsp_types::Position {
+                                line: 2,
+                                character: 0,
+                            },
+                            end: lsp_types::Position {
+                                line: 2,
+                                character: 0,
+                            },
+                        },
+                    }],
+                    resolving_server: LspServerId::from("rust-analyzer"),
+                    resolving_root: PathBuf::from("/tmp"),
+                },
+            },
+        );
+
+        assert_eq!(
+            model.document().file_path.as_deref(),
+            Some(origin_path.as_path()),
+            "a failed open must leave the origin document focused"
+        );
+        assert_eq!(
+            (model.editor().cursors[0].line, model.editor().cursors[0].column),
+            (0, 0),
+            "the origin document's cursor must not move for a target that never opened"
+        );
+    }
+
     #[test]
     fn definition_outside_the_workspace_sets_a_route_hint_the_open_path_consumes() {
         let ws_dir = tempfile::tempdir().unwrap();
@@ -506,6 +596,32 @@ mod tests {
             Some(target_path.canonicalize().unwrap().as_path()),
             "the new tab must focus the out-of-workspace target"
         );
+    }
+
+    /// A publish for a document opened through a symlink to a
+    /// differently-named target (bazel/node_modules/dotfile layouts) must
+    /// still match — the fast filename prefilter must not silently drop
+    /// every diagnostic for it.
+    #[test]
+    #[cfg(unix)]
+    fn find_document_by_uri_matches_through_a_renaming_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let real_path = dir.path().join("real.rs");
+        std::fs::write(&real_path, "fn main() {}\n").unwrap();
+        let link_path = dir.path().join("link.rs");
+        symlink(&real_path, &link_path).unwrap();
+
+        let model = AppModel::new(800, 600, 1.0, vec![link_path.clone()]);
+        let doc_id = model.document().id.unwrap();
+        assert_eq!(model.document().file_path.as_deref(), Some(link_path.as_path()));
+
+        // The server publishes under the canonical URI it resolved the
+        // symlink to, not the one it was opened with.
+        let canonical_uri = crate::lsp::path_to_uri(&real_path);
+        let found = find_document_by_uri(&model, &canonical_uri);
+        assert_eq!(found, Some(doc_id));
     }
 
     #[test]

@@ -346,18 +346,45 @@ fn new_tab_in_focused_group(model: &mut AppModel) {
 /// Open a file in a new tab in the focused group
 fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
     let filename = filename_for_display(&path);
+    let group_id = model.editor_area.focused_group_id;
 
-    // 0. Check if file is already open - if so, focus it instead
-    if let Some((_doc_id, group_id, tab_idx)) = model.editor_area.find_open_file(&path) {
-        model.editor_area.focused_group_id = group_id;
-        if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
-            group.active_tab_index = tab_idx;
+    // 0. Check if file is already open - if so, reuse it, but never leave
+    // the focused group: a jump/navigation issued in split A must land in
+    // split A, never steal focus into whichever split happened to have the
+    // file open already (design doc's "a jump in split A never yanks split
+    // B"). Already open in the focused group -> just switch tabs there;
+    // open only in a different group -> share the document but open a new
+    // tab/editor for it in the focused group (same pattern `split_group`
+    // uses), rather than reloading it from disk.
+    if let Some((doc_id, found_group_id, tab_idx)) = model.editor_area.find_open_file(&path) {
+        if found_group_id == group_id {
+            if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
+                group.active_tab_index = tab_idx;
+            }
+            model.ui.set_status(format!("Switched to: {}", filename));
+            return Some(Cmd::Redraw);
         }
-        model.ui.set_status(format!("Switched to: {}", filename));
+
+        let editor_id = model.editor_area.next_editor_id();
+        let mut editor = EditorState::new();
+        editor.id = Some(editor_id);
+        editor.document_id = Some(doc_id);
+        model.editor_area.editors.insert(editor_id, editor);
+
+        let tab_id = model.editor_area.next_tab_id();
+        let tab = Tab {
+            id: tab_id,
+            editor_id,
+            is_pinned: false,
+            is_preview: false,
+        };
+        if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
+            group.tabs.push(tab);
+            group.active_tab_index = group.tabs.len() - 1;
+        }
+        model.ui.set_status(format!("Opened: {}", filename));
         return Some(Cmd::Redraw);
     }
-
-    let group_id = model.editor_area.focused_group_id;
 
     // 1. Validate file and load/create document
     let doc_id = model.editor_area.next_document_id();
@@ -1286,4 +1313,48 @@ fn release_document_if_unreferenced(
 /// Call after creating new editors or changing group layout.
 fn sync_viewports(model: &mut AppModel) {
     model.resync_viewports();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::messages::LayoutMsg;
+
+    /// Opening a file already open in another split group must never
+    /// steal focus into that group — it opens/reuses the document in the
+    /// *focused* group instead (design doc's "a jump in split A never
+    /// yanks split B").
+    #[test]
+    fn open_file_already_open_in_another_group_stays_in_the_focused_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.rs");
+        let b = dir.path().join("b.rs");
+        std::fs::write(&a, "fn a() {}\n").unwrap();
+        std::fs::write(&b, "fn b() {}\n").unwrap();
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![a.clone()]);
+        let group_a = model.editor_area.focused_group_id;
+
+        split_focused_group(&mut model, SplitDirection::Vertical);
+        let group_b = model.editor_area.focused_group_id;
+        assert_ne!(group_a, group_b, "split must focus the new group");
+
+        // Open `b.rs` in group B, then jump back to group A and reopen it
+        // from there — group A must end up showing `b.rs`, not steal focus
+        // into group B.
+        update_layout(&mut model, LayoutMsg::OpenFileInNewTab(b.clone()));
+        assert_eq!(model.editor_area.focused_group_id, group_b);
+
+        model.editor_area.focused_group_id = group_a;
+        update_layout(&mut model, LayoutMsg::OpenFileInNewTab(b.clone()));
+
+        assert_eq!(
+            model.editor_area.focused_group_id, group_a,
+            "opening a file already open elsewhere must not move focus off the requesting group"
+        );
+        assert_eq!(
+            model.document().file_path.as_deref().map(|p| p.canonicalize().unwrap()),
+            Some(b.canonicalize().unwrap()),
+        );
+    }
 }

@@ -96,6 +96,24 @@ pub(crate) fn focused_tab_is_text(model: &AppModel) -> bool {
         .is_some_and(|e| matches!(e.tab_content, TabContent::Text) && !e.view_mode.is_image())
 }
 
+/// Whether the now-focused tab is actually showing `path` — the guard
+/// that keeps a failed or redirected open (permission denied, invalid
+/// UTF-8, or a reused-in-another-group tab) from letting a caller mistake
+/// the *origin* document for the target and move its cursor instead
+/// (design doc: "no stale result ever moves a cursor"; `open_or_focus`
+/// falling through without changing focus is exactly the case this
+/// catches). Paths are canonicalized before comparing — one may come
+/// from a decoded LSP URI, the other from `Document.file_path` — falling
+/// back to the raw path when canonicalization fails (nonexistent file).
+pub(crate) fn focused_tab_shows(model: &AppModel, path: &std::path::Path) -> bool {
+    let Some(focused) = model.try_document().and_then(|d| d.file_path.as_deref()) else {
+        return false;
+    };
+    let canonical_focused = focused.canonicalize().unwrap_or_else(|_| focused.to_path_buf());
+    let canonical_target = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    canonical_focused == canonical_target
+}
+
 /// Clamp + set cursor + center + focus on the currently focused
 /// document/editor, in char coordinates — the `JumpToSymbol` body,
 /// generalized so LSP jumps and jump-history navigation can reuse it
@@ -134,8 +152,12 @@ pub fn navigate_back(model: &mut AppModel) -> Option<Cmd> {
         .get(&entry.document_id)
         .and_then(|doc| doc.file_path.clone())
         .unwrap_or(entry.path);
-    let open_cmd = open_or_focus(model, path);
-    let cursor_cmd = place_cursor_char(model, entry.line, entry.col);
+    let open_cmd = open_or_focus(model, path.clone());
+    let cursor_cmd = if focused_tab_shows(model, &path) {
+        place_cursor_char(model, entry.line, entry.col)
+    } else {
+        None
+    };
     Some(combine(open_cmd, cursor_cmd).unwrap_or(Cmd::Redraw))
 }
 
