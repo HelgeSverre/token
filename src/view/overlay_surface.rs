@@ -1260,13 +1260,18 @@ impl Palette {
         }
     }
 
+    /// Banner ground: the severity color at 15% over the panel — the SAME
+    /// mix `theme.rs::banner_ground` calibrates `severity_*_text` against.
+    /// Filling with the raw severity color made the calibrated text
+    /// illegible on a full-strength band.
     fn severity_wash(&self, severity: Severity) -> u32 {
-        match severity {
+        let raw = match severity {
             Severity::Error => self.severity_error,
             Severity::Warning => self.severity_warning,
             Severity::Info => self.severity_info,
             Severity::Hint => self.severity_hint,
-        }
+        };
+        super::frame::blend_colors(self.panel_bg, raw, 0.15)
     }
 
     fn severity_text(&self, severity: Severity) -> u32 {
@@ -2286,6 +2291,7 @@ fn wrap_zone_text(text: &str, cols: usize) -> Vec<String> {
 
 /// Draw pre-wrapped `lines` stacked in `rect`, clipped to it; a zone
 /// truncated by `MAX_ZONE_TEXT_LINES` ends with an ellipsis line.
+#[allow(clippy::too_many_arguments)]
 fn draw_text_lines(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -2600,6 +2606,28 @@ mod tests {
         )
         .expect("test font should load");
         (font, super::super::GlyphCache::default())
+    }
+
+    #[test]
+    fn banner_wash_is_a_tint_not_the_raw_severity_color() {
+        let theme = crate::theme::Theme::default();
+        let palette = Palette::from_theme(&theme.overlay);
+        for sev in [
+            Severity::Error,
+            Severity::Warning,
+            Severity::Info,
+            Severity::Hint,
+        ] {
+            let wash = palette.severity_wash(sev);
+            let raw = match sev {
+                Severity::Error => palette.severity_error,
+                Severity::Warning => palette.severity_warning,
+                Severity::Info => palette.severity_info,
+                Severity::Hint => palette.severity_hint,
+            };
+            assert_ne!(wash, raw, "{sev:?}: banner must be a wash, not full strength");
+            assert_ne!(wash, palette.panel_bg, "{sev:?}: wash must tint the panel");
+        }
     }
 
     #[test]
