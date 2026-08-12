@@ -1850,6 +1850,13 @@ impl App {
                 document_id,
                 revision,
             } => {
+                // No-op unless a server actually has this document open —
+                // otherwise every keystroke in a zero-server session, or
+                // in a plaintext/markdown/untitled buffer, arms a 30ms
+                // deadline that will only ever no-op when it fires.
+                if !self.lsp.open_documents.contains_key(&document_id) {
+                    return;
+                }
                 self.lsp_change_deadlines.record_edit(
                     document_id,
                     revision,
@@ -5429,6 +5436,28 @@ mod tests {
         );
 
         app.process_cmd(Cmd::Quit);
+    }
+
+    /// `Cmd::LspScheduleDidChange` for a document no server has open
+    /// (no server for the language, `didOpen` never sent, plaintext/
+    /// untitled buffer) must be a no-op — otherwise every keystroke in a
+    /// zero-server session arms a 30ms deadline that only ever no-ops
+    /// when it fires.
+    #[test]
+    fn schedule_did_change_is_a_no_op_for_a_document_no_server_has_open() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        assert!(!app.lsp.open_documents.contains_key(&doc_id));
+
+        app.process_cmd(Cmd::LspScheduleDidChange {
+            document_id: doc_id,
+            revision: 1,
+        });
+
+        assert!(
+            !app.lsp_change_deadlines.is_pending(doc_id),
+            "no server has this document open — nothing should arm a debounce deadline"
+        );
     }
 
     /// The max-wait cap actually caps traffic sent to the wire under
