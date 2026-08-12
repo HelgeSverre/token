@@ -2646,22 +2646,23 @@ mod cursor_fast_path_scrollbar_tests {
             "expected a scrollbar track/thumb color at the sampled pixel after a full render, got {before:#010x}"
         );
 
-        // Simulate a cursor-blink dirty-line redraw on the same row via the
-        // real production fast path, with no scrollbar redraw yet.
+        // Contract change (decoration fast-path fix): the fast path now
+        // clips itself out of the scrollbar band entirely, so the pixel
+        // must survive the dirty-line redraw with no restore step needed.
         editor_text::render_cursor_lines_only(&mut frame, &mut painter, &model, &[0]);
         let after_fast_path_alone = frame.get_pixel(sample_x, sample_y);
         assert!(
-            !is_scrollbar_color(after_fast_path_alone),
-            "cursor-lines-only redraw should have overwritten the scrollbar pixel (proving the bug is real), got {after_fast_path_alone:#010x}"
+            is_scrollbar_color(after_fast_path_alone),
+            "cursor-lines-only redraw must leave the scrollbar band untouched (clipped), got {after_fast_path_alone:#010x}"
         );
 
-        // Now apply the fix: redraw the scrollbar on top, as render() does
-        // after the fast path.
+        // The follow-up scrollbar redraw render() performs must remain a
+        // pixel-level no-op on an already-correct band.
         Renderer::redraw_scrollbars_for_focused_group(&mut frame, &model, char_width);
-        let after_fix = frame.get_pixel(sample_x, sample_y);
+        let after_redraw = frame.get_pixel(sample_x, sample_y);
         assert!(
-            is_scrollbar_color(after_fix),
-            "redraw_scrollbars_for_focused_group should restore the scrollbar pixel on top of the fast-path redraw, got {after_fix:#010x}"
+            is_scrollbar_color(after_redraw),
+            "scrollbar redraw should keep the band correct, got {after_redraw:#010x}"
         );
     }
 }
