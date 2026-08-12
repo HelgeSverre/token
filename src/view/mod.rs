@@ -438,12 +438,12 @@ fn diagnostic_severity_color(
 /// `Wavy` underlines (severity-colored) plus `Faded`/`Strikethrough` tags
 /// for every diagnostic touching `visible_lines` — unlike find matches,
 /// diagnostics render regardless of focus (they're document state, not a
-/// focused-pane search). Positions come from `lsp::position::lsp_to_position`,
-/// which clamps into the current buffer, so a diagnostic whose range has
-/// gone stale against later edits degrades to a clamped (never panicking)
-/// decoration rather than disappearing outright — full render-time
-/// clamping (skipping a vanished line entirely) happens one layer down in
-/// `editor_text::render_one_decoration`.
+/// focused-pane search). A diagnostic whose start line an edit deleted
+/// (`lsp::position::range_vanished`) is skipped outright rather than
+/// rendered on whatever line `lsp_to_position` would clamp it onto;
+/// everything else goes through `lsp_to_position`, which clamps columns
+/// and in-bounds-but-stale lines into the current buffer so a decoration
+/// never panics.
 fn diagnostic_decorations(
     model: &AppModel,
     document: &crate::model::Document,
@@ -461,6 +461,7 @@ fn diagnostic_decorations(
             let end = d.range.end.line as usize;
             end >= visible_lines.start && start < visible_lines.end
         })
+        .filter(|d| !crate::lsp::position::range_vanished(document, d.range))
         .flat_map(|d| {
             let start = crate::lsp::position::lsp_to_position(document, d.range.start);
             let end = crate::lsp::position::lsp_to_position(document, d.range.end);
@@ -497,6 +498,7 @@ fn diagnostic_ticks(document: &crate::model::Document) -> Vec<(usize, crate::mod
     document
         .diagnostics
         .iter()
+        .filter(|d| !crate::lsp::position::range_vanished(document, d.range))
         .map(|d| {
             let line = crate::lsp::position::lsp_to_position(document, d.range.start).line;
             (line, crate::model::diagnostic_mark(d.severity))
@@ -2885,10 +2887,11 @@ mod find_match_decoration_tests {
 
     /// Diagnostic ranges computed before a shrinking edit (stale line
     /// numbers, including well past `u32` document sizes) must never
-    /// panic when turned into decorations or ticks — clamping happens
-    /// via `lsp::position::lsp_to_position` (fuzzed against random stale
-    /// ranges here) and, one layer down, `editor_text`'s render-time
-    /// clamp (its own fuzz test).
+    /// panic when turned into decorations or ticks — in-bounds-but-stale
+    /// columns/lines clamp via `lsp::position::lsp_to_position`, and a
+    /// diagnostic whose start line no longer exists
+    /// (`lsp::position::range_vanished`) is dropped rather than rendered
+    /// on a clamped line.
     #[test]
     fn diagnostic_decorations_and_ticks_never_panic_on_stale_ranges() {
         let mut model = model_with_text("a\nb\nc\n");
@@ -2906,7 +2909,6 @@ mod find_match_decoration_tests {
                 }
             }
         }
-        let diagnostics_len = diagnostics.len();
         model.document_mut().diagnostics = diagnostics;
         let document = model.document();
 
@@ -2914,9 +2916,29 @@ mod find_match_decoration_tests {
             let decorations = diagnostic_decorations(&model, document, visible);
             for d in &decorations {
                 assert!(d.start.0 <= d.end.0, "decoration lines must not invert");
+                assert!(d.start.0 < document.line_count(), "line must be in bounds");
             }
         }
+        // Only the in-bounds start lines (0 and 2 — "a\nb\nc\n" has 4 lines,
+        // indices 0..=3) survive; 5, 1000 and u32::MAX are vanished.
         let ticks = diagnostic_ticks(document);
-        assert_eq!(ticks.len(), diagnostics_len);
+        assert!(!ticks.is_empty());
+        for (line, _) in &ticks {
+            assert!(*line < document.line_count());
+        }
+    }
+
+    #[test]
+    fn diagnostic_on_a_line_an_edit_deleted_is_skipped_not_clamped() {
+        // Verifier probe: a diagnostic published against a since-shrunk
+        // buffer must not be clamped onto the last line for either
+        // decorations or scrollbar ticks.
+        let mut model = model_with_text("aaaa\nbbbb");
+        model.document_mut().diagnostics =
+            vec![diagnostic(9, 9, Some(lsp_types::DiagnosticSeverity::ERROR))];
+        let document = model.document();
+
+        assert!(diagnostic_decorations(&model, document, 0..10).is_empty());
+        assert!(diagnostic_ticks(document).is_empty());
     }
 }

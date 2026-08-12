@@ -395,6 +395,12 @@ pub fn sync_status_bar(model: &mut AppModel) {
             .ui
             .status_bar
             .update_segment(SegmentId::ModifiedIndicator, SegmentContent::Empty);
+        // Image tabs have no diagnostics — clear a stale `✗ n ⚠ n` segment
+        // left over from a previously focused text tab.
+        model
+            .ui
+            .status_bar
+            .update_segment(SegmentId::Diagnostics, SegmentContent::Empty);
         return;
     }
 
@@ -532,6 +538,9 @@ fn diagnostic_contains_position(
     diagnostic: &lsp_types::Diagnostic,
     cursor: super::editor::Position,
 ) -> bool {
+    if crate::lsp::position::range_vanished(document, diagnostic.range) {
+        return false;
+    }
     let start = crate::lsp::position::lsp_to_position(document, diagnostic.range.start);
     let end = crate::lsp::position::lsp_to_position(document, diagnostic.range.end);
     if cursor.line < start.line || cursor.line > end.line {
@@ -672,6 +681,17 @@ mod diagnostics_tests {
         )];
         let message =
             diagnostic_message_at_cursor(&document, super::super::editor::Position::new(0, 8));
+        assert_eq!(message, None);
+    }
+
+    #[test]
+    fn diagnostic_message_at_cursor_none_for_a_line_an_edit_deleted() {
+        // A diagnostic published against a since-shrunk buffer must not
+        // be reported as if it were on whatever line it clamps onto.
+        let mut document = crate::model::Document::with_text("aaaa\nbbbb");
+        document.diagnostics = vec![diagnostic(9, 0, 9, 3, DiagnosticSeverity::ERROR, "boom")];
+        let message =
+            diagnostic_message_at_cursor(&document, super::super::editor::Position::new(1, 0));
         assert_eq!(message, None);
     }
 }

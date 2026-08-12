@@ -30,6 +30,18 @@ pub fn position_to_lsp(document: &Document, position: Position) -> lsp_types::Po
     }
 }
 
+/// Whether a diagnostic range's start line no longer exists in the
+/// document (an edit deleted the line after the server computed the
+/// range). `lsp_to_position` clamps such a line onto the last line
+/// instead of erroring, which is right for cursor/selection math but
+/// wrong for diagnostic rendering — per lsp-integration.md, "a vanished
+/// line's diagnostic is skipped, never a panic" and never a false mark
+/// on whatever line happens to clamp onto. Callers check this *before*
+/// calling `lsp_to_position` and skip the diagnostic outright.
+pub fn range_vanished(document: &Document, range: lsp_types::Range) -> bool {
+    range.start.line as usize >= document.line_count()
+}
+
 /// Converts an LSP position (UTF-16 columns) to an editor position
 /// (char columns), clamped into the document.
 pub fn lsp_to_position(document: &Document, lsp_position: lsp_types::Position) -> Position {
@@ -170,5 +182,19 @@ mod tests {
         let document = doc("abc\n");
         let position = lsp_to_position(&document, lsp(0, 999));
         assert_eq!(position, Position::new(0, 3));
+    }
+
+    #[test]
+    fn range_vanished_detects_a_start_line_past_the_document() {
+        let document = doc("a\nb\n");
+        let range = lsp_types::Range::new(lsp(9, 0), lsp(9, 3));
+        assert!(range_vanished(&document, range));
+    }
+
+    #[test]
+    fn range_vanished_is_false_for_an_in_bounds_line() {
+        let document = doc("a\nb\n");
+        let range = lsp_types::Range::new(lsp(1, 0), lsp(1, 1));
+        assert!(!range_vanished(&document, range));
     }
 }
