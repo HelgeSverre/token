@@ -94,6 +94,9 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                     state.files_available = model.workspace.is_some();
                     resolve_palette_rows(&mut state, &model.command_history);
                     state.active_tab = SearchTab::All;
+                    if state.files.is_none() {
+                        state.files = build_file_finder_state(model, &state.input());
+                    }
                     ModalState::CommandPalette(state)
                 }
                 ModalId::GotoLine => ModalState::GotoLine(GotoLineState::default()),
@@ -143,7 +146,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             resolve_palette_rows(&mut state, &model.command_history);
             state.active_tab = SearchTab::Files;
             if state.files.is_none() {
-                state.files = build_file_finder_state(model);
+                state.files = build_file_finder_state(model, &state.input());
             }
             model.ui.open_modal(ModalState::CommandPalette(state));
             Some(Cmd::Redraw)
@@ -294,6 +297,9 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             state.files_available = model.workspace.is_some();
             resolve_palette_rows(&mut state, &model.command_history);
             state.active_tab = SearchTab::All;
+            if state.files.is_none() {
+                state.files = build_file_finder_state(model, &state.input());
+            }
             model.ui.open_modal(ModalState::CommandPalette(state));
             Some(Cmd::Redraw)
         }
@@ -347,8 +353,14 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                 if let ModalState::CommandPalette(state) = modal {
                     if state.input().is_empty() {
                         if let Some(tab) = search_tab_for_prefix(ch) {
-                            state.active_tab = tab;
-                            return Some(Cmd::Redraw);
+                            // Mirror `activate_search_tab`/`cycle_search_tab`:
+                            // never park on an `Unavailable` tab (Symbols is
+                            // always `Unavailable` today) — fall through to
+                            // inserting the char instead.
+                            if state.tab_available(tab) {
+                                state.active_tab = tab;
+                                return Some(Cmd::Redraw);
+                            }
                         }
                     }
                 }
@@ -809,11 +821,16 @@ fn cycle_search_tab(model: &mut AppModel, forward: bool) -> Option<Cmd> {
             let candidate = order[idx];
             if state.tab_available(candidate) {
                 state.active_tab = candidate;
-                if candidate == SearchTab::Files && state.files.is_none() {
+                // The All tab also renders a Files group, so it needs the
+                // index loaded just as much as the Files tab itself.
+                if matches!(candidate, SearchTab::Files | SearchTab::All) && state.files.is_none()
+                {
                     if let Some((all_files, root)) = workspace_files {
-                        let mut fs = FileFinderState::new(all_files, root);
-                        update_file_finder_results(&mut fs);
-                        state.files = Some(fs);
+                        state.files = Some(seeded_file_finder_state(
+                            all_files,
+                            root,
+                            &state.input(),
+                        ));
                     }
                 }
                 break;
@@ -838,11 +855,13 @@ fn activate_search_tab(model: &mut AppModel, index: usize) -> Option<Cmd> {
             return Some(Cmd::Redraw);
         }
         state.active_tab = candidate;
-        if candidate == SearchTab::Files && state.files.is_none() {
+        if matches!(candidate, SearchTab::Files | SearchTab::All) && state.files.is_none() {
             if let Some((all_files, root)) = workspace_files {
-                let mut fs = FileFinderState::new(all_files, root);
-                update_file_finder_results(&mut fs);
-                state.files = Some(fs);
+                state.files = Some(seeded_file_finder_state(
+                    all_files,
+                    root,
+                    &state.input(),
+                ));
             }
         }
         return Some(Cmd::Redraw);
@@ -1008,7 +1027,10 @@ pub fn search_everywhere_sections(
             let commands_cap = state.matches.len().min(ALL_TAB_GROUP_CAP);
             let file_count = state.files.as_ref().map(|f| f.results.len()).unwrap_or(0);
             let files_cap = file_count.min(ALL_TAB_GROUP_CAP);
-            let mut sections = vec![(Some("Commands"), commands_cap)];
+            let mut sections = Vec::new();
+            if commands_cap > 0 {
+                sections.push((Some("Commands"), commands_cap));
+            }
             if file_count > 0 {
                 sections.push((Some("Files"), files_cap));
             }
@@ -1624,12 +1646,23 @@ pub fn resolve_palette_rows(state: &mut CommandPaletteState, history: &CommandHi
     state.all_selected = 0;
 }
 
+/// A used-at-all command's fuzzy score is nudged up by this much before
+/// ranking — small enough that a strictly better match still wins, but
+/// enough to break ties/near-ties in a recently-used command's favor.
+/// ponytail: flat boost rather than a normalized recency curve; revisit
+/// with a decaying bonus (e.g. score + k / (1 + hours_since_use)) if a
+/// heavily-used command's staleness starts to matter.
+const RECENCY_BOOST: u32 = 3;
+
 /// Fuzzy-match commands against `query` using nucleo, the same pattern the
 /// file finder uses below (`fuzzy_match_files`) — replaces the old bespoke
 /// `fuzzy_match_score`. An empty query returns every command in registry
 /// order. Ranking (overlay-surface.md Phase 4 Behaviour): pinned first,
-/// then recency-boosted fuzzy score — ties (e.g. an empty query with no
-/// usage history) keep registry order via the stable sort.
+/// then recency-*boosted* fuzzy score (a used command's score gets
+/// `RECENCY_BOOST` added, not an outright recency-major sort — a strictly
+/// better match still outranks a single stale execution) — ties (e.g. an
+/// empty query with no usage history) keep registry order via the stable
+/// sort.
 fn fuzzy_match_commands(query: &str, history: &CommandHistory) -> Vec<CommandMatch> {
     let all: Vec<&'static CommandDef> = crate::commands::all_commands();
 
@@ -1675,12 +1708,12 @@ fn fuzzy_match_commands(query: &str, history: &CommandHistory) -> Vec<CommandMat
     let mut results = scored;
     results.sort_by_key(|(m, score)| {
         let pinned = history.is_pinned(m.def.id);
-        let recency = history.recency_score(m.def.id);
-        (
-            std::cmp::Reverse(pinned),
-            std::cmp::Reverse(recency),
-            std::cmp::Reverse(*score),
-        )
+        let boosted = if history.recency_score(m.def.id) > 0 {
+            score.saturating_add(RECENCY_BOOST)
+        } else {
+            *score
+        };
+        (std::cmp::Reverse(pinned), std::cmp::Reverse(boosted))
     });
     results.into_iter().map(|(m, _)| m).collect()
 }
@@ -1691,19 +1724,33 @@ fn fuzzy_match_commands(query: &str, history: &CommandHistory) -> Vec<CommandMat
 
 use crate::model::FileMatch;
 use nucleo_matcher::{Config, Matcher, Utf32Str};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Build the Files tab's backing state from `all_files`/`root`, seeded with
+/// `query` — the palette's shared query, so the newly-populated Files tab's
+/// own results match what the header already shows instead of starting
+/// unfiltered (overlay-surface.md Phase 4: "query persists across tabs").
+fn seeded_file_finder_state(all_files: Vec<PathBuf>, root: PathBuf, query: &str) -> FileFinderState {
+    let mut state = FileFinderState::new(all_files, root);
+    state.set_input(query);
+    update_file_finder_results(&mut state);
+    state
+}
 
 /// Build the Files tab's backing state from the open workspace, matched
-/// against whatever query is already in `state.editable` — `None` when no
-/// workspace is open (the tab is `Unavailable` in that case, per
-/// overlay-surface.md Phase 4 State merge). Lazy: only called on first
-/// activation of the Files tab, not at Search Everywhere open time.
-fn build_file_finder_state(model: &AppModel) -> Option<FileFinderState> {
+/// against `query` — `None` when no workspace is open (the tab is
+/// `Unavailable` in that case, per overlay-surface.md Phase 4 State merge).
+/// Lazy: only called on first activation of the Files tab or the All tab
+/// (which also renders a Files group), not unconditionally at Search
+/// Everywhere open time.
+fn build_file_finder_state(model: &AppModel, query: &str) -> Option<FileFinderState> {
     let workspace = model.workspace.as_ref()?;
     let all_files = workspace.file_tree.get_all_file_paths();
-    let mut state = FileFinderState::new(all_files, workspace.root.clone());
-    update_file_finder_results(&mut state);
-    Some(state)
+    Some(seeded_file_finder_state(
+        all_files,
+        workspace.root.clone(),
+        query,
+    ))
 }
 
 /// Update file finder results based on current query
@@ -1946,6 +1993,26 @@ mod tests {
     }
 
     #[test]
+    fn recency_boosts_but_does_not_dominate_a_strictly_better_match() {
+        // "gl" fuzzy-matches "Go to Line..." (score 55) well above "Go to
+        // File..." (score 43) — a single stale execution of the weaker
+        // match must not permanently outrank it; recency is a tie-breaking
+        // boost, not a primary sort key.
+        let mut history = CommandHistory::default();
+        history.record_execution(CommandId::FuzzyFileFinder);
+
+        let mut state = CommandPaletteState::default();
+        state.set_input("gl");
+        resolve_palette_rows(&mut state, &history);
+
+        assert_eq!(
+            state.matches[0].def.id,
+            CommandId::GotoLine,
+            "expected the stronger fuzzy match to win despite the weaker match's recency"
+        );
+    }
+
+    #[test]
     fn resolve_palette_rows_empty_query_returns_all_commands_in_registry_order() {
         let mut state = CommandPaletteState::default();
         resolve_palette_rows(&mut state, &CommandHistory::default());
@@ -1983,13 +2050,18 @@ mod tests {
     }
 
     #[test]
-    fn insert_char_at_on_empty_query_pins_symbols_tab() {
+    fn insert_char_at_on_empty_query_does_not_pin_unavailable_symbols_tab() {
+        // Symbols is always `Unavailable` (no workspace-symbols provider
+        // exists yet) — `@` must not park the user on a dead tab; it falls
+        // through to a literal char insert instead, same as any other
+        // prefix routed to an `Unavailable` tab.
         let mut model = AppModel::new(80, 60, 1.0, vec![]);
         update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
         update_ui(&mut model, UiMsg::Modal(ModalMsg::InsertChar('@')));
         match &model.ui.active_modal {
             Some(ModalState::CommandPalette(state)) => {
-                assert_eq!(state.active_tab, SearchTab::Symbols);
+                assert_eq!(state.active_tab, SearchTab::All);
+                assert_eq!(state.input(), "@");
             }
             other => panic!("expected command palette modal, got {other:?}"),
         }
@@ -2178,5 +2250,102 @@ mod tests {
             other => panic!("expected command palette modal, got {other:?}"),
         };
         assert!(model.command_history.is_pinned(first_id));
+    }
+
+    /// Build a real tempdir workspace with a couple of files matching one
+    /// query and one that doesn't, for the Files-tab/All-tab regression
+    /// tests below.
+    fn workspace_model_with_query(query: &str) -> (AppModel, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("alpha.rs"), "").unwrap();
+        std::fs::write(dir.path().join("beta.rs"), "").unwrap();
+        std::fs::write(dir.path().join("gamma.txt"), "").unwrap();
+
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        model.open_workspace(dir.path().to_path_buf());
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::SetInput(query.to_owned())));
+        (model, dir)
+    }
+
+    #[test]
+    fn switching_to_files_tab_seeds_it_with_the_shared_query() {
+        let (mut model, _dir) = workspace_model_with_query("alpha");
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::NextTab)); // All -> Commands
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::NextTab)); // Commands -> Files
+        assert_tab(&model, SearchTab::Files);
+
+        match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => {
+                let files = state.files.as_ref().expect("files tab populated");
+                assert_eq!(files.input(), "alpha");
+                let names: Vec<&str> =
+                    files.results.iter().map(|m| m.filename.as_str()).collect();
+                assert_eq!(names, vec!["alpha.rs"]);
+            }
+            other => panic!("expected command palette modal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn open_fuzzy_file_finder_seeds_files_tab_with_restored_query() {
+        // `last_command_palette` is how a query round-trips across a close
+        // + reopen (see the Commands/Files confirm paths that populate it);
+        // simulate a restored session with a query already typed.
+        let (model, _dir) = workspace_model_with_query("alpha");
+        let mut model = model;
+        let mut restored = match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => state.clone(),
+            other => panic!("expected command palette modal, got {other:?}"),
+        };
+        // Force the lazy-population path in `OpenFuzzyFileFinder` itself,
+        // rather than trivially passing off the All tab's already-loaded
+        // `files` from above.
+        restored.files = None;
+        model.ui.last_command_palette = Some(restored);
+        model.ui.close_modal();
+
+        update_ui(&mut model, UiMsg::OpenFuzzyFileFinder);
+        assert_tab(&model, SearchTab::Files);
+        match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => {
+                let files = state.files.as_ref().expect("files tab populated");
+                assert_eq!(files.input(), "alpha");
+                assert_eq!(files.results.len(), 1);
+            }
+            other => panic!("expected command palette modal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn all_tab_sections_are_empty_when_nothing_matches() {
+        // No bare "Commands" header with zero rows underneath it — the
+        // empty-state message in `view::modal` relies on `sections` being
+        // genuinely empty to know when to render "No matches".
+        let state = CommandPaletteState {
+            active_tab: SearchTab::All,
+            matches: Vec::new(),
+            ..Default::default()
+        };
+        assert!(search_everywhere_sections(&state).is_empty());
+    }
+
+    #[test]
+    fn all_tab_includes_matching_files_without_visiting_the_files_tab() {
+        let (model, _dir) = workspace_model_with_query("alpha");
+        assert_tab(&model, SearchTab::All);
+
+        match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => {
+                let files = state.files.as_ref().expect("All tab should eagerly load files");
+                assert_eq!(files.results.len(), 1);
+                let sections = search_everywhere_sections(state);
+                assert!(
+                    sections.iter().any(|&(title, len)| title == Some("Files") && len == 1),
+                    "expected a Files group with 1 row, got {sections:?}"
+                );
+            }
+            other => panic!("expected command palette modal, got {other:?}"),
+        }
     }
 }

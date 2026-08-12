@@ -149,7 +149,16 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                 }
                 SearchTab::Symbols => (Vec::new(), 0),
                 SearchTab::Commands => (
-                    state.matches.iter().map(command_row).collect(),
+                    state
+                        .matches
+                        .iter()
+                        .enumerate()
+                        .map(|(i, m)| OverlayRowSnapshot {
+                            section: (i < state.recent_count)
+                                .then(|| "Recently Used".to_owned()),
+                            ..command_row(m)
+                        })
+                        .collect(),
                     state.selected_index,
                 ),
             };

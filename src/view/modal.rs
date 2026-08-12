@@ -350,6 +350,7 @@ fn render_command_palette_modal(
         SearchTab::Files if file_rows_all.is_empty() && !input_text.is_empty() => {
             Some("No files match your query")
         }
+        SearchTab::All if sections.is_empty() => Some("No matches"),
         SearchTab::Symbols => Some("No language server for this file"),
         _ => None,
     };
