@@ -197,16 +197,16 @@ Ships ahead of all consumers as its own change: it fixes the live >99,999-line r
 
 ### Phase 2: Marks + Decoration Passes — *with first consumer (find or LSP diagnostics)*
 
-- [ ] `LineMarks` + `collect_line_marks` through `TextViewportMap`; priority within the marks slot.
-- [ ] Gutter mark pass; range-decoration overdraw pass in `editor_text.rs` with clamping and tab-expansion.
-- [ ] `Wavy`/severity rendering wired to overlay-surface.md's primitives.
-- [ ] Automation: per-line gutter marks exposed in the editor snapshot (**this phase**, not later — the first consumer's integration tests assert on it).
-- [ ] Unit tests: slot priority, clamping against shrunk documents, collapsed-range hoisting rule (behind folding, when it exists).
+- [x] `LineMarks` + `collect_line_marks` through `TextViewportMap`; priority within the marks slot. Built against synthetic state: no feature (bookmarks, LSP diagnostics) has a real mark source yet, so `collect_line_marks` always returns `LineMarks::default()` today — it's wired into the real gutter render loop (called per visible row with the `doc_line` `TextViewportMap` already resolved) so the next consumer adds one candidate-gathering branch, not new plumbing. Priority resolution (`best_mark`, breakpoint > error > warning > info > bookmark via derived `Ord`) is real and tested.
+- [x] Gutter mark pass; range-decoration overdraw pass in `editor_text.rs` with clamping and tab-expansion. `render_gutter_mark` draws in the marks lane (a no-op today since `marks_w` stays 0 until a consumer activates it — see Phase 1's `GutterLayout` note). `RangeDecoration`/`DecorationKind` and the overdraw pass are real, threaded through `render_text_area(..., decorations: &[RangeDecoration], ...)`; the production call site in `view/mod.rs` passes `&[]` until a producer exists.
+- [x] `Wavy`/severity rendering wired to overlay-surface.md's primitives. `DecorationKind::Wavy` calls `Frame::draw_wavy_underline`; both the marks-lane glyph color and `Wavy`'s caller-supplied color are expected to come from `model.theme.overlay.severity_*`.
+- [x] Automation: per-line gutter marks exposed in the editor snapshot (**this phase**, not later — the first consumer's integration tests assert on it). `EditorSnapshot.gutter_marks: Vec<GutterMarkSnapshot>`, populated via `collect_line_marks` over the visible viewport range — empty today, real once a producer lands.
+- [~] Unit tests: slot priority, clamping against shrunk documents, collapsed-range hoisting rule (behind folding, when it exists). Slot priority (`src/model/decorations.rs`) and clamping — including a stale-range fuzz sweep and a full `render_text_area` pass with decorations referencing vanished lines (`src/view/editor_text.rs`) — are done. Collapsed-range hoisting is explicitly deferred: folding doesn't exist yet.
 
 ### Phase 3: Interaction + Overview Marks
 
-- [ ] `lane` on `EditorGutter`; `lane_at` resolution; press/drag suppression for interactive lanes; dispatch table (no-ops until owners ship).
-- [ ] Scrollbar: line→track-y mapping, `needs_scroll` guard, ticks with per-pixel-row priority.
+- [x] `lane` on `EditorGutter`; `lane_at` resolution; press/drag suppression for interactive lanes; dispatch table (no-ops until owners ship). `HitTarget::EditorGutter` gained `lane: Option<LaneId>` resolved via `GutterLayout::lane_at`; `runtime/mouse.rs`'s press (left + middle) and the drag-arming check in `handle_mouse_press` all consume/suppress for `Fold`/`Marks` lanes instead of falling through to focus/drag-select. Inert in production today since no lane is ever active (`marks_w`/`fold_w` stay 0), but the suppression logic itself is exercised via synthetic `GutterLayout`s in `src/view/geometry.rs` tests.
+- [x] Scrollbar: line→track-y mapping, `needs_scroll` guard, ticks with per-pixel-row priority. `scrollbar::track_row_for_position` maps a line to a track pixel row; `editor_scrollbars::render_overview_marks` draws one tick per occupied row (highest-priority mark wins on collisions), gated by `v_state.needs_scroll()` so ticks never appear on documents that fit the viewport. Called with an empty tick iterator today (no producer).
 
 ---
 
