@@ -40,10 +40,14 @@ pub fn update_completion(model: &mut AppModel, msg: CompletionMsg) -> Option<Cmd
 }
 
 /// Close the popup and drop its state, if open. A no-op if it's already
-/// closed (every call site can call this unconditionally).
-pub(crate) fn dismiss(model: &mut AppModel) {
+/// closed (every call site can call this unconditionally). Returns whether
+/// anything was actually open, so callers that don't already redraw for
+/// other reasons can decide whether a redraw is needed.
+pub(crate) fn dismiss(model: &mut AppModel) -> bool {
+    let mut was_open = false;
     if model.ui.completion_menu.is_some() {
         model.ui.completion_menu = None;
+        was_open = true;
     }
     if matches!(
         model.ui.cursor_overlay,
@@ -53,7 +57,9 @@ pub(crate) fn dismiss(model: &mut AppModel) {
         })
     ) {
         model.ui.cursor_overlay = None;
+        was_open = true;
     }
+    was_open
 }
 
 /// The word-prefix query at `cursor`: `(query_start_offset, cursor_offset)`,
@@ -473,6 +479,35 @@ mod tests {
         assert!(
             model.ui.completion_menu.is_none(),
             "an open modal must claim keys instead of the stale completion popup"
+        );
+        assert!(model.ui.cursor_overlay.is_none());
+    }
+
+    #[test]
+    fn dock_focus_dismisses_the_completion_menu() {
+        // Reproduces the hijack a modal-only dismiss check misses: focusing
+        // a dock panel (e.g. Cmd+J -> terminal) never routes through
+        // `Msg::Ui`/`has_modal()`, but still moves focus off the editor —
+        // and `cursor_overlay.is_some()` alone still claims Up/Down/Enter/
+        // Tab/Escape pre-keymap (runtime/app.rs) regardless of focus.
+        use crate::messages::DockMsg;
+        use crate::panel::PanelId;
+
+        let mut model = model_with_text("value_one\n\n");
+        place_cursor(&mut model, 1, 0);
+        type_str(&mut model, "val");
+        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.cursor_overlay.is_some());
+
+        update(
+            &mut model,
+            Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::TERMINAL)),
+        );
+
+        assert_ne!(model.ui.focus, crate::model::FocusTarget::Editor);
+        assert!(
+            model.ui.completion_menu.is_none(),
+            "dock focus must claim keys instead of the stale completion popup"
         );
         assert!(model.ui.cursor_overlay.is_none());
     }

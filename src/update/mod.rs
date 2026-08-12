@@ -69,8 +69,12 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
             // Up/Down/Enter/Tab/Escape never reach here while the menu is
             // open — they're claimed by the pre-keymap cursor-overlay
             // branch in runtime/input.rs before an `EditorMsg` is ever
-            // built, so this only fires for keys that should dismiss.
-            completion::dismiss(model);
+            // built, so this only fires for keys that should dismiss. Most
+            // editor messages already redraw, but some (e.g. a no-op
+            // cursor move) return `None`, so the dismiss needs its own
+            // redraw merged in or the now-stale popup stays on screen.
+            let was_dismissed = completion::dismiss(model);
+            let redraw_for_dismiss = was_dismissed.then(Cmd::redraw_editor);
 
             // Block editor messages in image mode and binary placeholder mode
             let is_non_text = model.editor_area.focused_editor().is_some_and(|e| {
@@ -81,7 +85,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
                     )
             });
             if is_non_text {
-                return None;
+                return redraw_for_dismiss;
             }
 
             // When in CSV mode, intercept navigation messages and route to CSV
@@ -92,11 +96,11 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
 
             if let Some((true, is_editing)) = csv_info {
                 if let Some(csv_msg) = map_editor_to_csv(&m, is_editing) {
-                    return csv::update_csv(model, csv_msg);
+                    return merge_cmds(csv::update_csv(model, csv_msg), redraw_for_dismiss);
                 }
-                return None;
+                return redraw_for_dismiss;
             }
-            editor::update_editor(model, m)
+            merge_cmds(editor::update_editor(model, m), redraw_for_dismiss)
         }
         Msg::Document(m) => {
             // Block document messages in image mode and binary placeholder mode
@@ -136,19 +140,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
                 completion::sync_after_document_edit(model, is_copy, opens_on_word_char);
             merge_cmds(result, completion_cmd)
         }
-        Msg::Ui(m) => {
-            let result = ui::update_ui(model, m);
-            // A modal opening (any `UiMsg`/`ModalMsg` path — command
-            // palette, goto-line, find/replace, fuzzy finder, ...) must
-            // dismiss the completion popup: `cursor_overlay` is claimed
-            // pre-keymap (runtime/app.rs), so a still-open completion menu
-            // would hijack the modal's Up/Down/Enter/Tab/Escape instead of
-            // the modal ever seeing them.
-            if model.ui.has_modal() {
-                completion::dismiss(model);
-            }
-            result
-        }
+        Msg::Ui(m) => ui::update_ui(model, m),
         Msg::Layout(m) => layout::update_layout(model, m),
         Msg::App(m) => app::update_app(model, m),
         Msg::Syntax(m) => syntax::update_syntax(model, m),
@@ -162,6 +154,20 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::Terminal(m) => terminal::update_terminal(model, m),
         Msg::Completion(m) => completion::update_completion(model, m),
     };
+
+    // Any focus change away from the editor (modal open, dock/sidebar
+    // focus, ...) must dismiss the completion popup: `cursor_overlay` is
+    // claimed pre-keymap purely on `.is_some()` regardless of focus
+    // (runtime/app.rs), so a still-open menu would hijack Up/Down/Enter/Tab
+    // meant for whatever now actually has focus. This single check covers
+    // every message that can move focus (`Msg::Ui` modals, `Msg::Dock`,
+    // `Msg::App`, ...) instead of chasing each one individually.
+    let result =
+        if model.ui.focus != crate::model::FocusTarget::Editor && completion::dismiss(model) {
+            merge_cmds(result, Some(Cmd::redraw_editor()))
+        } else {
+            result
+        };
 
     sync_status_bar(model);
     result
