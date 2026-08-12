@@ -72,6 +72,9 @@ clap = { version = "4", features = ["derive"] }
 rmcp = { version = "3.0.1", features = ["server", "transport-io"] }
 tokio = { version = "1", features = ["io-std", "rt", "sync"] }
 
+# LSP protocol types (serde-only; framing is hand-rolled, see src/lsp/transport.rs)
+lsp-types = "0.97"
+
 # For Markdown preview
 pulldown-cmark = "0.12"
 wry = "0.54"
