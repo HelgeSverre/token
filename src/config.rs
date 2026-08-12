@@ -47,6 +47,51 @@ pub struct EditorConfig {
     /// Status bar font size in logical px (default: 12, editor text is 14)
     #[serde(default = "default_status_bar_font_size")]
     pub status_bar_font_size: f32,
+
+    /// Language server settings (see `LspConfig`).
+    #[serde(default)]
+    pub lsp: LspConfig,
+}
+
+/// Language server settings, stored under `lsp:` in `config.yaml`:
+///
+/// ```yaml
+/// lsp:
+///   enabled: true
+///   servers:
+///     rust-analyzer:
+///       command: /custom/path/rust-analyzer
+///     pyright:
+///       enabled: false
+/// ```
+///
+/// Overrides are keyed by `LspServerDef::id`, not by language — to run
+/// `laravel-lsp` instead of the default `phpantom`, override the
+/// `phpantom` entry's `command`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LspConfig {
+    /// Master switch; `false` disables every server regardless of
+    /// per-server settings.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub servers: std::collections::HashMap<String, LspServerOverride>,
+}
+
+impl Default for LspConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            servers: std::collections::HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LspServerOverride {
+    pub command: Option<String>,
+    pub args: Option<Vec<String>>,
+    pub enabled: Option<bool>,
 }
 
 fn default_theme() -> String {
@@ -74,6 +119,7 @@ impl Default for EditorConfig {
             bracket_matching: true,
             show_scrollbar: true,
             status_bar_font_size: default_status_bar_font_size(),
+            lsp: LspConfig::default(),
         }
     }
 }
