@@ -1352,15 +1352,11 @@ fn completion_rows(state: &crate::completion::CompletionMenuState) -> Vec<Row<'_
     state
         .filtered
         .iter()
-        .filter_map(|&(_, idx)| state.items.get(idx))
-        .map(|item| Row {
+        .filter_map(|(_, idx, indices)| state.items.get(*idx).map(|item| (item, indices)))
+        .map(|(item, indices)| Row {
             icon: RowIcon::KindBadge(completion_kind_badge(item.kind)),
             label: &item.label,
-            // ponytail: no match-index highlighting yet — filter_and_sort
-            // only computes a score, not `fuzzy_indices` (the debug shell
-            // this replaces also passed `&[]`). Add if/when a real user
-            // notices Phase 1's popup not bolding the typed substring.
-            match_indices: &[],
+            match_indices: indices,
             detail: item.detail.as_deref(),
             accessory: Accessory::None,
         })

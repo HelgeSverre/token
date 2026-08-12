@@ -97,7 +97,7 @@ fn completion_snapshot(model: &AppModel) -> Option<CompletionSnapshot> {
     let items = menu
         .filtered
         .iter()
-        .filter_map(|&(_, idx)| menu.items.get(idx))
+        .filter_map(|(_, idx, _)| menu.items.get(*idx))
         .map(|item| item.label.clone())
         .collect::<Vec<_>>();
     Some(CompletionSnapshot {

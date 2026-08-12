@@ -13,8 +13,8 @@ use winit::keyboard::ModifiersState;
 
 use token::commands::Cmd;
 use token::messages::{
-    CsvMsg, EditorMsg, ImageMsg, LayoutMsg, ModalMsg, Msg, OutlineMsg, PreviewMsg, TerminalMsg,
-    UiMsg, WorkspaceMsg,
+    CompletionMsg, CsvMsg, EditorMsg, ImageMsg, LayoutMsg, ModalMsg, Msg, OutlineMsg, PreviewMsg,
+    TerminalMsg, UiMsg, WorkspaceMsg,
 };
 use token::model::AppModel;
 use token::panel::DockPosition;
@@ -83,6 +83,32 @@ mod tests {
         session.apply_bytes(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\nseven\r\n");
         model.terminal.sessions.push(session);
         model
+    }
+
+    #[test]
+    fn cursor_overlay_row_click_accepts_a_completion_item() {
+        use token::messages::DocumentMsg;
+        use token::model::{Cursor, CursorOverlayKind, CursorOverlayState};
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.document_mut().buffer = ropey::Rope::from_str("value_one\n\n");
+        model.editor_mut().cursors[0] = Cursor::at(1, 0);
+        model.editor_mut().clear_selection();
+        for ch in "val".chars() {
+            update(&mut model, Msg::Document(DocumentMsg::InsertChar(ch)));
+        }
+        assert!(model.ui.completion_menu.is_some(), "menu should be open");
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Completion));
+
+        let result = handle_cursor_overlay_click(&mut model, Some(0));
+
+        assert!(matches!(result, EventResult::Consumed { redraw: true, .. }));
+        assert!(
+            model.ui.completion_menu.is_none(),
+            "a row click must accept and close the menu, not just select the row"
+        );
+        let line = model.document().get_line_cow(1).unwrap();
+        assert_eq!(line.trim_end_matches('\n'), "value_one");
     }
 
     #[test]
@@ -490,6 +516,29 @@ fn dispatch_mouse_press(
     }
 }
 
+/// Click on a cursor-anchored popup row: update selection, and — for the
+/// Completion popup specifically — accept the clicked item (the same
+/// message `Enter` sends).
+fn handle_cursor_overlay_click(model: &mut AppModel, flat_index: Option<usize>) -> EventResult {
+    let Some(idx) = flat_index else {
+        return EventResult::consumed_redraw();
+    };
+    let is_completion = matches!(
+        model.ui.cursor_overlay,
+        Some(token::model::CursorOverlayState {
+            kind: token::model::CursorOverlayKind::Completion,
+            ..
+        })
+    );
+    if let Some(state) = &mut model.ui.cursor_overlay {
+        state.selected = idx;
+    }
+    if is_completion {
+        update(model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+    }
+    EventResult::consumed_redraw()
+}
+
 /// Handle left mouse button clicks
 fn handle_left_click(
     model: &mut AppModel,
@@ -533,14 +582,11 @@ fn handle_left_click(
 
         // Cursor-anchored popup: consume the click without dismissing the
         // popup or moving the text cursor (overlay-surface.md Phase 5). Row
-        // clicks update the popup's own selection; no consumer to activate
-        // into yet, so that's the whole behavior for now.
-        HitTarget::CursorOverlay { flat_index } => {
-            if let (Some(idx), Some(state)) = (flat_index, &mut model.ui.cursor_overlay) {
-                state.selected = *idx;
-            }
-            EventResult::consumed_redraw()
-        }
+        // clicks update the popup's own selection; the Completion popup
+        // additionally accepts on click (the mouse-driven equivalent of
+        // Enter — otherwise the real popup could only ever be used with the
+        // keyboard).
+        HitTarget::CursorOverlay { flat_index } => handle_cursor_overlay_click(model, *flat_index),
 
         // Status bar - consume but do nothing
         HitTarget::StatusBar => EventResult::consumed_no_redraw(),

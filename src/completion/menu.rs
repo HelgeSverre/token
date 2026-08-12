@@ -76,15 +76,16 @@ pub struct CompletionMenuState {
     /// Word start; `query = text[query_start..cursor]`.
     pub query_start: Cursor,
     pub items: Vec<MenuItem>,
-    /// `(score, index into items)`, filtered and sorted; empty query keeps
-    /// every item in source/label order (score `0`).
-    pub filtered: Vec<(u32, usize)>,
+    /// `(score, index into items, nucleo match indices into
+    /// `items[index].filter_text`)`, filtered and sorted; empty query keeps
+    /// every item in source/label order (score `0`, no indices).
+    pub filtered: Vec<(u32, usize, Vec<u32>)>,
 }
 
 impl CompletionMenuState {
     pub fn selected_item(&self, selected: usize) -> Option<&MenuItem> {
-        let &(_, idx) = self.filtered.get(selected)?;
-        self.items.get(idx)
+        let (_, idx, _) = self.filtered.get(selected)?;
+        self.items.get(*idx)
     }
 }
 
@@ -94,12 +95,12 @@ impl CompletionMenuState {
 /// source tier ..., label)").
 fn tier_key<'a>(
     item: &'a MenuItem,
+    filter_text_lower: &str,
     query_lower: &str,
     score: u32,
 ) -> (bool, bool, u32, u8, &'a str) {
-    let label_lower_starts = item.filter_text.to_lowercase();
-    let exact = label_lower_starts == query_lower;
-    let starts = label_lower_starts.starts_with(query_lower);
+    let exact = filter_text_lower == query_lower;
+    let starts = filter_text_lower.starts_with(query_lower);
     (
         !exact,
         !starts,
@@ -111,13 +112,17 @@ fn tier_key<'a>(
 
 /// Fuzzy-filter `items` against `query` and sort by the tiered rule above.
 /// Empty query keeps every item (source tier, then label order) — the same
-/// bypass `resolve_palette_rows` uses for the command palette.
-pub fn filter_and_sort(items: &[MenuItem], query: &str) -> Vec<(u32, usize)> {
+/// bypass `resolve_palette_rows` uses for the command palette. The third
+/// tuple element is nucleo's matched-char indices into `filter_text`, for
+/// the popup to bold the typed substring (autocomplete.md's Rendering
+/// section: rows are `KindBadge` + label with `match_indices`).
+pub fn filter_and_sort(items: &[MenuItem], query: &str) -> Vec<(u32, usize, Vec<u32>)> {
     if query.is_empty() {
-        let mut idxs: Vec<(u32, usize)> = (0..items.len()).map(|i| (0u32, i)).collect();
-        idxs.sort_by(|&(_, a), &(_, b)| {
-            (items[a].source.tier(), items[a].label.as_str())
-                .cmp(&(items[b].source.tier(), items[b].label.as_str()))
+        let mut idxs: Vec<(u32, usize, Vec<u32>)> =
+            (0..items.len()).map(|i| (0u32, i, Vec::new())).collect();
+        idxs.sort_by(|(_, a, _), (_, b, _)| {
+            (items[*a].source.tier(), items[*a].label.as_str())
+                .cmp(&(items[*b].source.tier(), items[*b].label.as_str()))
         });
         return idxs;
     }
@@ -127,22 +132,29 @@ pub fn filter_and_sort(items: &[MenuItem], query: &str) -> Vec<(u32, usize)> {
     let mut query_buf = Vec::new();
     let needle = Utf32Str::new(&query_lower, &mut query_buf);
 
-    let mut scored: Vec<(u32, usize)> = items
+    // Keep each item's lowercased `filter_text` alongside its score so the
+    // sort comparator below reuses it instead of re-lowercasing (and
+    // reallocating) on every comparison.
+    let mut scored: Vec<(u32, usize, String, Vec<u32>)> = items
         .iter()
         .enumerate()
         .filter_map(|(i, item)| {
             let haystack_lower = item.filter_text.to_lowercase();
             let mut haystack_buf = Vec::new();
             let haystack = Utf32Str::new(&haystack_lower, &mut haystack_buf);
-            let score = matcher.fuzzy_match(haystack, needle)?;
-            Some((score as u32, i))
+            let mut indices = Vec::new();
+            let score = matcher.fuzzy_indices(haystack, needle, &mut indices)?;
+            Some((score as u32, i, haystack_lower, indices))
         })
         .collect();
 
-    scored.sort_by(|&(s1, i1), &(s2, i2)| {
-        tier_key(&items[i1], &query_lower, s1).cmp(&tier_key(&items[i2], &query_lower, s2))
+    scored.sort_by(|(s1, i1, l1, _), (s2, i2, l2, _)| {
+        tier_key(&items[*i1], l1, &query_lower, *s1).cmp(&tier_key(&items[*i2], l2, &query_lower, *s2))
     });
     scored
+        .into_iter()
+        .map(|(s, i, _, indices)| (s, i, indices))
+        .collect()
 }
 
 #[cfg(test)]
@@ -170,7 +182,7 @@ mod tests {
         let filtered = filter_and_sort(&items, "");
         let labels: Vec<&str> = filtered
             .iter()
-            .map(|&(_, i)| items[i].label.as_str())
+            .map(|(_, i, _)| items[*i].label.as_str())
             .collect();
         // Snippets (tier 0) before Words (tier 1); label order within a tier.
         assert_eq!(labels, vec!["apple", "mango", "zebra"]);
@@ -205,6 +217,14 @@ mod tests {
         ];
         let filtered = filter_and_sort(&items, "format");
         assert_eq!(items[filtered[0].1].source, MenuSourceId::Snippets);
+    }
+
+    #[test]
+    fn filtered_carries_match_indices_for_highlighting() {
+        let items = vec![item("word_start", MenuSourceId::Words)];
+        let filtered = filter_and_sort(&items, "wo");
+        let (_, _, indices) = &filtered[0];
+        assert_eq!(indices.as_slice(), &[0u32, 1u32]);
     }
 
     #[test]
