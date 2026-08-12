@@ -910,7 +910,9 @@ pub enum LspMsg {
         generation: u64,
     },
     /// User/automation-initiated restart (palette, `RestartLanguageServer`).
-    RestartServer { server_id: LspServerId },
+    RestartServer {
+        server_id: LspServerId,
+    },
     /// Worker -> main thread: the response to a `shutdown` request this
     /// server's handle sent arrived. Consumed by
     /// `ServerHandle::graceful_shutdown`'s own blocking poll of `msg_rx`
@@ -943,6 +945,7 @@ pub enum LspMsg {
     /// User intent (palette / default keybinding): pop the focused
     /// group's most recent jump-history entry (`update/navigation.rs`).
     NavigateBack,
+    NavigateForward,
     /// Runtime -> update: the outcome of a `textDocument/definition`
     /// request issued from `(document_id, revision, origin)`.
     /// Revision-guarded: dropped if `document_id`'s revision has since

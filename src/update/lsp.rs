@@ -218,6 +218,7 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
         }
 
         LspMsg::NavigateBack => navigation::navigate_back(model),
+        LspMsg::NavigateForward => navigation::navigate_forward(model),
 
         LspMsg::DefinitionResolved {
             document_id,

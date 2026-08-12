@@ -389,6 +389,7 @@ impl FromStr for Command {
             // Go to Definition + Jump History (lsp-integration.md Phase 3)
             "GotoDefinition" => Ok(Command::GotoDefinition),
             "NavigateBack" => Ok(Command::NavigateBack),
+            "NavigateForward" => Ok(Command::NavigateForward),
 
             // Hover (lsp-integration.md Phase 4)
             "ShowHover" => Ok(Command::ShowHover),

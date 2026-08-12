@@ -443,6 +443,9 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::NavigateBack => {
             crate::update::update_lsp(model, crate::messages::LspMsg::NavigateBack)
         }
+        CommandId::NavigateForward => {
+            crate::update::update_lsp(model, crate::messages::LspMsg::NavigateForward)
+        }
         CommandId::ShowHover => {
             crate::update::update_lsp(model, crate::messages::LspMsg::ShowHover)
         }

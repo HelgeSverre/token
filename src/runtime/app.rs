@@ -1137,10 +1137,14 @@ impl App {
                 ..
             } => {
                 // Mouse "back" button navigates the jump history globally,
-                // matching JetBrains. No forward stack exists, so the
-                // "forward" button stays unbound.
+                // matching JetBrains.
                 update(&mut self.model, Msg::Lsp(LspMsg::NavigateBack))
             }
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Forward,
+                ..
+            } => update(&mut self.model, Msg::Lsp(LspMsg::NavigateForward)),
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Middle,

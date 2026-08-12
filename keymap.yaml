@@ -360,6 +360,8 @@ bindings:
     command: GotoDefinition
   - key: "cmd+["
     command: NavigateBack
+  - key: "cmd+]"
+    command: NavigateForward
 
   # ===========================================================================
   # Hover (lsp-integration.md Phase 4)

@@ -35,6 +35,7 @@ pub enum CommandId {
     GotoLine,
     GotoDefinition,
     NavigateBack,
+    NavigateForward,
     ShowHover,
 
     // View operations
@@ -232,6 +233,12 @@ pub static COMMANDS: &[CommandDef] = &[
         category: CommandCategory::Nav,
         label: "Navigate Back",
         keybinding: Some("⌘["),
+    },
+    CommandDef {
+        id: CommandId::NavigateForward,
+        category: CommandCategory::Nav,
+        label: "Navigate Forward",
+        keybinding: Some("⌘]"),
     },
     CommandDef {
         id: CommandId::ShowHover,
@@ -474,6 +481,7 @@ impl CommandId {
             CommandId::GotoLine => Some(KeymapCommand::ToggleGotoLine),
             CommandId::GotoDefinition => Some(KeymapCommand::GotoDefinition),
             CommandId::NavigateBack => Some(KeymapCommand::NavigateBack),
+            CommandId::NavigateForward => Some(KeymapCommand::NavigateForward),
             CommandId::ShowHover => Some(KeymapCommand::ShowHover),
             CommandId::SplitHorizontal => Some(KeymapCommand::SplitHorizontal),
             CommandId::SplitVertical => Some(KeymapCommand::SplitVertical),

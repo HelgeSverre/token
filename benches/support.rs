@@ -47,6 +47,7 @@ pub fn make_model(lines: usize) -> AppModel {
         debug_overlay: None,
         lsp: token::model::LspUiState::default(),
         jump_history: Vec::new(),
+        forward_history: Vec::new(),
     }
 }
 

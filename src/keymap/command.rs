@@ -281,6 +281,7 @@ pub enum Command {
     GotoDefinition,
     /// Pop the focused group's most recent jump-history entry.
     NavigateBack,
+    NavigateForward,
 
     // ========================================================================
     // Hover (lsp-integration.md Phase 4)
@@ -497,6 +498,7 @@ impl Command {
             RestartLanguageServer => vec![Msg::App(AppMsg::RestartLanguageServer)],
             GotoDefinition => vec![Msg::Lsp(LspMsg::GotoDefinition)],
             NavigateBack => vec![Msg::Lsp(LspMsg::NavigateBack)],
+            NavigateForward => vec![Msg::Lsp(LspMsg::NavigateForward)],
             ShowHover => vec![Msg::Lsp(LspMsg::ShowHover)],
 
             // Image viewer
@@ -670,6 +672,7 @@ impl Command {
             RestartLanguageServer => "Restart Language Server",
             GotoDefinition => "Go to Definition",
             NavigateBack => "Navigate Back",
+            NavigateForward => "Navigate Forward",
             ShowHover => "Show Hover",
 
             ImageZoomIn => "Image: Zoom In",

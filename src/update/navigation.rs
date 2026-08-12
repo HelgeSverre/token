@@ -69,11 +69,27 @@ pub(crate) fn current_jump_entry(model: &AppModel) -> Option<JumpEntry> {
 }
 
 /// Pushes an already-built entry (the LSP go-to-definition path, which
-/// captures the origin at request time — see `update/lsp.rs`).
+/// captures the origin at request time — see `update/lsp.rs`). A *new*
+/// jump invalidates the group's forward chain, standard back/forward
+/// semantics — `navigate_back`/`navigate_forward` use the raw push
+/// instead, since moving along the chain must not clear it.
 pub(crate) fn push_history_entry(model: &mut AppModel, entry: JumpEntry) {
+    let group = entry.group_id;
+    model.forward_history.retain(|e| e.group_id != group);
+    push_back_raw(model, entry);
+}
+
+fn push_back_raw(model: &mut AppModel, entry: JumpEntry) {
     model.jump_history.push(entry);
     if model.jump_history.len() > JUMP_HISTORY_CAP {
         model.jump_history.remove(0);
+    }
+}
+
+fn push_forward_raw(model: &mut AppModel, entry: JumpEntry) {
+    model.forward_history.push(entry);
+    if model.forward_history.len() > JUMP_HISTORY_CAP {
+        model.forward_history.remove(0);
     }
 }
 
@@ -152,6 +168,30 @@ pub fn navigate_back(model: &mut AppModel) -> Option<Cmd> {
         .iter()
         .rposition(|entry| entry.group_id == focused_group)?;
     let entry = model.jump_history.remove(idx);
+    // The position we're leaving becomes forward-navigable.
+    if let Some(current) = current_jump_entry(model) {
+        push_forward_raw(model, current);
+    }
+    navigate_to_entry(model, entry)
+}
+
+/// `Command::NavigateForward`: the mirror of `navigate_back` — pops the
+/// focused group's most recent forward entry, pushing the position being
+/// left back onto the back stack (without clearing forward).
+pub fn navigate_forward(model: &mut AppModel) -> Option<Cmd> {
+    let focused_group = model.editor_area.focused_group_id;
+    let idx = model
+        .forward_history
+        .iter()
+        .rposition(|entry| entry.group_id == focused_group)?;
+    let entry = model.forward_history.remove(idx);
+    if let Some(current) = current_jump_entry(model) {
+        push_back_raw(model, current);
+    }
+    navigate_to_entry(model, entry)
+}
+
+fn navigate_to_entry(model: &mut AppModel, entry: JumpEntry) -> Option<Cmd> {
     let path = model
         .editor_area
         .documents
@@ -258,5 +298,43 @@ mod tests {
         });
         assert!(navigate_back(&mut model).is_none());
         assert_eq!(model.jump_history.len(), 1); // untouched
+    }
+
+    #[test]
+    fn forward_returns_after_back_and_new_jumps_clear_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut model = model_with_two_files(dir.path());
+        let origin_path = model.document().file_path.clone().unwrap();
+
+        // Jump: push origin, open a.txt.
+        push_history(&mut model);
+        let a_path = dir.path().join("a.txt");
+        update_layout(&mut model, LayoutMsg::OpenFileInNewTab(a_path.clone()));
+
+        // Back returns to the origin and arms forward.
+        navigate_back(&mut model);
+        assert_eq!(
+            model.document().file_path.as_deref(),
+            Some(origin_path.as_path())
+        );
+        assert_eq!(model.forward_history.len(), 1);
+
+        // Forward returns to a.txt.
+        navigate_forward(&mut model).expect("forward entry should exist");
+        assert_eq!(
+            model.document().file_path.as_deref(),
+            Some(a_path.as_path())
+        );
+        assert!(model.forward_history.is_empty());
+
+        // Back again, then a NEW jump clears the forward chain.
+        navigate_back(&mut model);
+        assert_eq!(model.forward_history.len(), 1);
+        push_history(&mut model);
+        assert!(
+            model.forward_history.is_empty(),
+            "a new jump must invalidate the forward chain"
+        );
+        assert!(navigate_forward(&mut model).is_none());
     }
 }

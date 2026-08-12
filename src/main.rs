@@ -173,6 +173,7 @@ mod tests {
             debug_overlay: None,
             lsp: token::model::LspUiState::default(),
             jump_history: Vec::new(),
+            forward_history: Vec::new(),
         }
     }
 
@@ -778,6 +779,7 @@ mod tests {
             debug_overlay: None,
             lsp: token::model::LspUiState::default(),
             jump_history: Vec::new(),
+            forward_history: Vec::new(),
         };
 
         // Open command palette

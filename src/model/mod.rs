@@ -509,6 +509,9 @@ pub struct AppModel {
     /// last. `Command::NavigateBack` pops the focused group's most recent
     /// entry — see `update/navigation.rs`.
     pub jump_history: Vec<JumpEntry>,
+    /// Forward stack: positions popped off `jump_history` by NavigateBack,
+    /// re-navigable with NavigateForward until a new jump invalidates them.
+    pub forward_history: Vec<JumpEntry>,
 }
 
 impl AppModel {
@@ -574,6 +577,7 @@ impl AppModel {
             debug_overlay: Some(DebugOverlay::new()),
             lsp: LspUiState::default(),
             jump_history: Vec::new(),
+            forward_history: Vec::new(),
         }
     }
 
