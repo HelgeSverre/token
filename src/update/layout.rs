@@ -23,6 +23,19 @@ const DRAG_THRESHOLD_PIXELS: f32 = 4.0;
 const MIN_PANE_SIZE_PIXELS: f32 = 100.0;
 
 /// Handle layout messages (split views, tabs, groups)
+/// Reset the outline panel's view state for a focus/tab change and schedule
+/// an outline refresh if the newly-focused document needs one (see
+/// `refresh_outline_if_stale` — without this, a document focused after the
+/// panel opened shows "No outline available" until its next edit).
+fn on_focused_document_changed(model: &mut AppModel) -> Option<Cmd> {
+    model.outline_panel.scroll_offset = 0;
+    model.outline_panel.selected_index = None;
+    match crate::update::outline::refresh_outline_if_stale(model) {
+        Some(refresh) => Some(Cmd::Batch(vec![Cmd::redraw_editor(), refresh])),
+        None => Some(Cmd::redraw_editor()),
+    }
+}
+
 pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
     match msg {
         LayoutMsg::NewTab => {
@@ -71,19 +84,17 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
             if model.editor_area.groups.contains_key(&group_id) {
                 model.editor_area.focused_group_id = group_id;
             }
-            model.outline_panel.scroll_offset = 0;
-            model.outline_panel.selected_index = None;
-            Some(Cmd::redraw_editor())
+            on_focused_document_changed(model)
         }
 
         LayoutMsg::FocusNextGroup => {
             focus_adjacent_group(model, true);
-            Some(Cmd::redraw_editor())
+            on_focused_document_changed(model)
         }
 
         LayoutMsg::FocusPrevGroup => {
             focus_adjacent_group(model, false);
-            Some(Cmd::redraw_editor())
+            on_focused_document_changed(model)
         }
 
         LayoutMsg::FocusGroupByIndex(index) => {
@@ -92,7 +103,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
             if index > 0 && index <= group_ids.len() {
                 model.editor_area.focused_group_id = group_ids[index - 1];
             }
-            Some(Cmd::redraw_editor())
+            on_focused_document_changed(model)
         }
 
         LayoutMsg::MoveTab { tab_id, to_group } => {
@@ -144,10 +155,8 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                 }
             }
             close_preview_if_not_markdown(model);
-            model.outline_panel.scroll_offset = 0;
-            model.outline_panel.selected_index = None;
             ensure_focused_tab_visible(model);
-            Some(Cmd::redraw_editor())
+            on_focused_document_changed(model)
         }
 
         LayoutMsg::PrevTab => {
@@ -161,10 +170,8 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                 }
             }
             close_preview_if_not_markdown(model);
-            model.outline_panel.scroll_offset = 0;
-            model.outline_panel.selected_index = None;
             ensure_focused_tab_visible(model);
-            Some(Cmd::redraw_editor())
+            on_focused_document_changed(model)
         }
 
         LayoutMsg::SwitchToTab(index) => {
@@ -174,10 +181,8 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
                 }
             }
             close_preview_if_not_markdown(model);
-            model.outline_panel.scroll_offset = 0;
-            model.outline_panel.selected_index = None;
             ensure_focused_tab_visible(model);
-            Some(Cmd::redraw_editor())
+            on_focused_document_changed(model)
         }
 
         // === Splitter Dragging ===

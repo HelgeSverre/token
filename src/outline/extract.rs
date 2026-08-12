@@ -1884,4 +1884,46 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn markdown_outline_through_the_real_worker_path() {
+        // Exactly what the syntax worker does (runtime/app.rs): parse via
+        // ParserState (injection-aware), then extract from the cached tree.
+        use crate::syntax::ParserState;
+
+        let source = "# Title\n\ntext\n\n## Section A\n\n### Sub A1\n";
+        let doc_id = crate::model::DocumentId(1);
+        let mut parser_state = ParserState::new();
+        parser_state.parse_and_highlight(source, LanguageId::Markdown, doc_id, 1);
+        let (tree, lang) = parser_state
+            .get_cached_tree(doc_id)
+            .expect("markdown parse must cache a tree");
+        let outline = extract_outline(tree, source, lang, 1);
+        assert_eq!(
+            outline.roots.len(),
+            1,
+            "one H1 root, got {:?}",
+            outline.roots
+        );
+        assert_eq!(outline.roots[0].name, "Title");
+        assert_eq!(outline.roots[0].children[0].name, "Section A");
+    }
+
+    #[test]
+    fn markdown_headings_nest_by_level() {
+        let source = "# Title\n\ntext\n\n## Section A\n\n### Sub A1\n\n## Section B\n";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_md::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let outline = extract_outline(&tree, source, LanguageId::Markdown, 1);
+        assert_eq!(outline.roots.len(), 1);
+        let title = &outline.roots[0];
+        assert_eq!(title.name, "Title");
+        assert_eq!(title.children.len(), 2);
+        assert_eq!(title.children[0].name, "Section A");
+        assert_eq!(title.children[0].children[0].name, "Sub A1");
+        assert_eq!(title.children[1].name, "Section B");
+    }
 }

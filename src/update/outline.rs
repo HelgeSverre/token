@@ -36,6 +36,39 @@ fn visible_node_at_index<'a>(
 }
 
 /// Handle outline panel messages
+/// Schedule an outline extraction for the focused document when the outline
+/// panel is open and its cached outline is missing or stale. Returns `None`
+/// when nothing needs doing.
+///
+/// This must run on every focused-document change, not just when the panel
+/// is activated: a document focused *after* the panel opened has had all its
+/// parses run with `extract_outline: false`, and without a refresh its
+/// outline stays empty until the next edit (most visible with markdown,
+/// which is often read without ever being edited).
+pub(crate) fn refresh_outline_if_stale(model: &AppModel) -> Option<Cmd> {
+    let dock = &model.dock_layout.right;
+    if !(dock.is_open && dock.active_panel() == Some(crate::panel::PanelId::OUTLINE)) {
+        return None;
+    }
+    let document = model.document();
+    if !document.language.has_highlighting() {
+        return None;
+    }
+    let outline_is_current = document
+        .outline
+        .as_ref()
+        .is_some_and(|outline| outline.revision == document.revision);
+    if outline_is_current {
+        return None;
+    }
+    let document_id = document.id?;
+    Some(Cmd::DebouncedSyntaxParse {
+        document_id,
+        revision: document.revision,
+        delay_ms: 0,
+    })
+}
+
 pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
     match msg {
         OutlineMsg::JumpToSymbol { line, col } => {
@@ -271,5 +304,60 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
             }
             Some(Cmd::Redraw)
         }
+    }
+}
+
+#[cfg(test)]
+mod refresh_tests {
+    use super::*;
+    use crate::commands::Cmd;
+    use crate::messages::LayoutMsg;
+    use crate::panel::PanelId;
+
+    fn model_with_open_outline_panel() -> AppModel {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.document_mut().language = crate::syntax::LanguageId::Markdown;
+        model.dock_layout.right.activate(PanelId::OUTLINE);
+        model
+    }
+
+    #[test]
+    fn stale_outline_schedules_a_refresh() {
+        let model = model_with_open_outline_panel();
+        assert!(matches!(
+            refresh_outline_if_stale(&model),
+            Some(Cmd::DebouncedSyntaxParse { delay_ms: 0, .. })
+        ));
+    }
+
+    #[test]
+    fn current_outline_schedules_nothing() {
+        let mut model = model_with_open_outline_panel();
+        let revision = model.document().revision;
+        model.document_mut().outline = Some(crate::outline::OutlineData::empty(revision));
+        assert!(refresh_outline_if_stale(&model).is_none());
+    }
+
+    #[test]
+    fn closed_panel_schedules_nothing() {
+        let mut model = model_with_open_outline_panel();
+        model.dock_layout.right.is_open = false;
+        assert!(refresh_outline_if_stale(&model).is_none());
+    }
+
+    #[test]
+    fn focus_change_with_open_panel_batches_the_refresh() {
+        // Regression: switching to a document after the outline panel was
+        // opened showed "No outline available" until the next edit —
+        // tab/group focus changes never scheduled an extraction.
+        let mut model = model_with_open_outline_panel();
+        let group_id = model.editor_area.focused_group_id;
+        let cmd = crate::update::layout::update_layout(&mut model, LayoutMsg::FocusGroup(group_id));
+        let Some(Cmd::Batch(cmds)) = cmd else {
+            panic!("focus change with a stale outline must batch a refresh, got {cmd:?}");
+        };
+        assert!(cmds
+            .iter()
+            .any(|c| matches!(c, Cmd::DebouncedSyntaxParse { delay_ms: 0, .. })));
     }
 }

@@ -121,28 +121,10 @@ fn with_opened_panel_sync(model: &mut AppModel, panel_id: PanelId, cmd: Cmd) -> 
         return cmd;
     }
 
-    let dock = &model.dock_layout.right;
-    let outline_is_open = dock.is_open && dock.active_panel() == Some(PanelId::OUTLINE);
-    let document = model.document();
-    let outline_is_current = document
-        .outline
-        .as_ref()
-        .is_some_and(|outline| outline.revision == document.revision);
-    if !outline_is_open || outline_is_current || !document.language.has_highlighting() {
-        return cmd;
+    match crate::update::outline::refresh_outline_if_stale(model) {
+        Some(refresh) => Cmd::Batch(vec![cmd, refresh]),
+        None => cmd,
     }
-
-    let Some(document_id) = document.id else {
-        return cmd;
-    };
-    Cmd::Batch(vec![
-        cmd,
-        Cmd::DebouncedSyntaxParse {
-            document_id,
-            revision: document.revision,
-            delay_ms: 0,
-        },
-    ])
 }
 
 /// Update function for dock messages
