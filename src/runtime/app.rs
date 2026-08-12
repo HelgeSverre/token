@@ -407,6 +407,17 @@ impl PendingRequest for PendingHover {
     }
 }
 
+/// Why `send_lsp_feature_request` couldn't put a request on the wire — the
+/// caller maps this to its own outcome enum. `NoServer` and `Unsupported`
+/// happen to map to the same outcome (`NotSupported`) for both definition
+/// and hover today, but stay distinct here since a future feature might
+/// tell them apart.
+enum FeatureGateError {
+    NoServer,
+    NotReady,
+    Unsupported,
+}
+
 /// What `LspManager` remembers about a `didOpen`'d document — enough to
 /// send `didChange`/`didSave`/`didClose` without touching the model, and
 /// to re-`didOpen` it against a freshly restarted server.
@@ -2852,6 +2863,65 @@ impl App {
         }
     }
 
+    /// The shared gate/flush/send skeleton every LSP feature request
+    /// (definition, hover, ...) goes through: `open_documents` lookup →
+    /// handle lookup → capability check → flush-before-request → re-lookup
+    /// the handle (flush can drop it) → send. Gates on the same
+    /// information `didOpen` already established (`open_documents`)
+    /// rather than re-resolving the server/root, so this and
+    /// `lsp_open_document` never disagree about which server a document
+    /// belongs to. Returns the request's key once it's on the wire; the
+    /// caller still owns supersede/insert/deadline-arming since those are
+    /// feature-specific (different pending-payload shapes).
+    fn send_lsp_feature_request(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        method: &'static str,
+        position: lsp_types::Position,
+        supports: fn(&lsp_types::ServerCapabilities) -> bool,
+        extra_params: Option<serde_json::Value>,
+    ) -> Result<RequestKey, FeatureGateError> {
+        let Some(state) = self.lsp.open_documents.get(&document_id) else {
+            // No server registered/synced for this document at all —
+            // untitled buffer, or a language with no registered server.
+            return Err(FeatureGateError::NoServer);
+        };
+        let server_id = state.server_id.clone();
+        let root = state.root.clone();
+        let uri = state.uri.clone();
+
+        let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
+            return Err(FeatureGateError::NotReady);
+        };
+        let Some(caps) = handle.capabilities_snapshot() else {
+            // Handshake hasn't completed yet — indistinguishable from
+            // "still indexing" from the user's point of view.
+            return Err(FeatureGateError::NotReady);
+        };
+        if !supports(&caps) {
+            return Err(FeatureGateError::Unsupported);
+        }
+
+        // Flush-before-request invariant: a request issued inside the
+        // debounce window must not be answered against stale text.
+        self.flush_lsp_did_change(document_id);
+
+        let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
+            return Err(FeatureGateError::NotReady);
+        };
+        let mut params = serde_json::json!({
+            "textDocument": { "uri": uri.as_str() },
+            "position": { "line": position.line, "character": position.character },
+        });
+        if let Some(extra) = extra_params {
+            if let (Some(dst), Some(src)) = (params.as_object_mut(), extra.as_object()) {
+                dst.extend(src.clone());
+            }
+        }
+        let request_id = handle.begin_request(method, params);
+        Ok((server_id, root, request_id))
+    }
+
     /// `textDocument/definition` (lsp-integration.md Phase 3). Gates on
     /// the same information `didOpen` already established
     /// (`open_documents`) rather than re-resolving the server/root, so
@@ -2865,74 +2935,37 @@ impl App {
         revision: u64,
         origin: JumpEntry,
     ) {
-        let Some(state) = self.lsp.open_documents.get(&document_id) else {
-            // No server registered/synced for this document at all —
-            // untitled buffer, or a language with no registered server.
-            self.emit_definition_outcome(
-                document_id,
-                revision,
-                origin,
-                DefinitionOutcome::NotSupported,
-            );
-            return;
-        };
-        let server_id = state.server_id.clone();
-        let root = state.root.clone();
-        let uri = state.uri.clone();
-
         if let Some(old_key) = self.lsp.definition.supersede(document_id) {
             self.cancel_lsp_request(&old_key);
         }
-
-        let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
-            self.emit_definition_outcome(
-                document_id,
-                revision,
-                origin,
-                DefinitionOutcome::StillIndexing,
-            );
-            return;
+        let key = match self.send_lsp_feature_request(
+            document_id,
+            "textDocument/definition",
+            position,
+            lsp::client::supports_definition,
+            None,
+        ) {
+            Ok(key) => key,
+            Err(FeatureGateError::NoServer | FeatureGateError::Unsupported) => {
+                self.emit_definition_outcome(
+                    document_id,
+                    revision,
+                    origin,
+                    DefinitionOutcome::NotSupported,
+                );
+                return;
+            }
+            Err(FeatureGateError::NotReady) => {
+                self.emit_definition_outcome(
+                    document_id,
+                    revision,
+                    origin,
+                    DefinitionOutcome::StillIndexing,
+                );
+                return;
+            }
         };
-        let Some(caps) = handle.capabilities_snapshot() else {
-            // Handshake hasn't completed yet — indistinguishable from
-            // "still indexing" from the user's point of view.
-            self.emit_definition_outcome(
-                document_id,
-                revision,
-                origin,
-                DefinitionOutcome::StillIndexing,
-            );
-            return;
-        };
-        if !lsp::client::supports_definition(&caps) {
-            self.emit_definition_outcome(
-                document_id,
-                revision,
-                origin,
-                DefinitionOutcome::NotSupported,
-            );
-            return;
-        }
-
-        // Flush-before-request invariant: a request issued inside the
-        // debounce window must not be answered against stale text.
-        self.flush_lsp_did_change(document_id);
-
-        let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
-            self.emit_definition_outcome(
-                document_id,
-                revision,
-                origin,
-                DefinitionOutcome::StillIndexing,
-            );
-            return;
-        };
-        let params = serde_json::json!({
-            "textDocument": { "uri": uri.as_str() },
-            "position": { "line": position.line, "character": position.character },
-        });
-        let request_id = handle.begin_request("textDocument/definition", params);
-        let key = (server_id.clone(), root.clone(), request_id);
+        let (server_id, root, _) = key.clone();
         self.lsp.definition.insert(
             key.clone(),
             document_id,
@@ -2983,44 +3016,26 @@ impl App {
         cursor: token::model::editor::Position,
         revision: u64,
     ) {
-        let Some(state) = self.lsp.open_documents.get(&document_id) else {
-            self.emit_hover_outcome(document_id, revision, cursor, HoverOutcome::NotSupported);
-            return;
-        };
-        let server_id = state.server_id.clone();
-        let root = state.root.clone();
-        let uri = state.uri.clone();
-
         if let Some(old_key) = self.lsp.hover.supersede(document_id) {
             self.cancel_lsp_request(&old_key);
         }
-
-        let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
-            self.emit_hover_outcome(document_id, revision, cursor, HoverOutcome::StillIndexing);
-            return;
+        let key = match self.send_lsp_feature_request(
+            document_id,
+            "textDocument/hover",
+            position,
+            lsp::client::supports_hover,
+            None,
+        ) {
+            Ok(key) => key,
+            Err(FeatureGateError::NoServer | FeatureGateError::Unsupported) => {
+                self.emit_hover_outcome(document_id, revision, cursor, HoverOutcome::NotSupported);
+                return;
+            }
+            Err(FeatureGateError::NotReady) => {
+                self.emit_hover_outcome(document_id, revision, cursor, HoverOutcome::StillIndexing);
+                return;
+            }
         };
-        let Some(caps) = handle.capabilities_snapshot() else {
-            self.emit_hover_outcome(document_id, revision, cursor, HoverOutcome::StillIndexing);
-            return;
-        };
-        if !lsp::client::supports_hover(&caps) {
-            self.emit_hover_outcome(document_id, revision, cursor, HoverOutcome::NotSupported);
-            return;
-        }
-
-        // Flush-before-request invariant.
-        self.flush_lsp_did_change(document_id);
-
-        let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
-            self.emit_hover_outcome(document_id, revision, cursor, HoverOutcome::StillIndexing);
-            return;
-        };
-        let params = serde_json::json!({
-            "textDocument": { "uri": uri.as_str() },
-            "position": { "line": position.line, "character": position.character },
-        });
-        let request_id = handle.begin_request("textDocument/hover", params);
-        let key = (server_id.clone(), root.clone(), request_id);
         self.lsp.hover.insert(
             key.clone(),
             document_id,
