@@ -186,10 +186,18 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
             doc.language = language;
             doc.syntax_highlights = None;
             doc.syntax_tree = None;
+            let had_marks = !doc.diagnostics.is_empty();
             doc.diagnostics.clear();
+            let file_path = doc.file_path.clone();
 
             // Trigger a new parse
             let revision = doc.revision;
+
+            // Marks-lane activation changes gutter width — see
+            // `AppModel::resync_viewports`'s doc comment.
+            if had_marks {
+                model.resync_viewports();
+            }
 
             #[cfg(debug_assertions)]
             if let Some(ref mut overlay) = model.debug_overlay {
@@ -201,11 +209,36 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
                 );
             }
 
-            Some(Cmd::DebouncedSyntaxParse {
-                document_id,
-                revision,
-                delay_ms: 0, // Immediate parse on language change
-            })
+            let mut cmds = vec![
+                Cmd::DebouncedSyntaxParse {
+                    document_id,
+                    revision,
+                    delay_ms: 0, // Immediate parse on language change
+                },
+                // Drop any retained diagnostics for this URI so a later
+                // didOpen (below, or a future close/reopen) can't pull
+                // stale-language diagnostics back in
+                // (`LspManager::lsp_open_document`'s retained-publish
+                // pull otherwise would).
+                Cmd::LspClearDiagnostics { document_id },
+            ];
+            // Re-sync with the language server under the new language:
+            // close against whatever server was tracking it (a no-op if
+            // none was), then reopen — may route to a different
+            // server/root than before.
+            if let Some(file_path) = file_path {
+                cmds.push(Cmd::LspDidClose { document_id });
+                cmds.push(Cmd::LspEnsureServer {
+                    language,
+                    file_path: file_path.clone(),
+                });
+                cmds.push(Cmd::LspDidOpen {
+                    document_id,
+                    file_path,
+                    language,
+                });
+            }
+            Some(Cmd::Batch(cmds))
         }
     }
 }

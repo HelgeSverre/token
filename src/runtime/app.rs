@@ -1739,6 +1739,19 @@ impl App {
             Cmd::LspDidClose { document_id } => {
                 self.lsp_close_document(document_id);
             }
+            Cmd::LspClearDiagnostics { document_id } => {
+                if let Some(file_path) = self
+                    .model
+                    .editor_area
+                    .documents
+                    .get(&document_id)
+                    .and_then(|doc| doc.file_path.clone())
+                {
+                    let uri = lsp::path_to_uri(&file_path);
+                    self.lsp.diagnostics.remove(&uri);
+                    self.lsp.diagnostics_versions.remove(&uri);
+                }
+            }
 
             // =====================================================================
             // Application Commands
@@ -1765,7 +1778,54 @@ impl App {
 
     fn process_async_messages(&mut self) -> bool {
         let mut needs_redraw = self.process_terminal_spawn_results();
+        let mut messages: Vec<Msg> = Vec::new();
         while let Ok(msg) = self.msg_rx.try_recv() {
+            messages.push(msg);
+        }
+        // Coalesce successive `publishDiagnostics` for the same URI within
+        // this drain, newest wins — each publish is a full replacement, so
+        // dropping the superseded ones here converges on the same end
+        // state as processing every one, but without the redundant
+        // store-insert/`find_document_by_uri`/projection/redraw work a
+        // flood of publishes for one URI would otherwise cost
+        // (lsp-integration.md's "successive publishes ... coalesce before
+        // drain"). "Newest" is by version order (mirroring
+        // `is_stale_diagnostics_publish`), not literal batch position —
+        // a server can (and the fake-server harness deliberately does,
+        // to test staleness) enqueue an older-versioned publish after a
+        // newer one within the same drain.
+        let mut running_version: std::collections::HashMap<lsp_types::Uri, i64> =
+            std::collections::HashMap::new();
+        let mut winner_idx: std::collections::HashMap<lsp_types::Uri, usize> =
+            std::collections::HashMap::new();
+        for (idx, msg) in messages.iter().enumerate() {
+            if let Msg::Lsp(LspMsg::DiagnosticsPublished { uri, version, .. }) = msg {
+                let baseline = running_version
+                    .get(uri)
+                    .copied()
+                    .or_else(|| self.lsp.diagnostics_versions.get(uri).copied());
+                let stale = matches!((version, baseline), (Some(v), Some(last)) if *v < last);
+                if stale {
+                    continue;
+                }
+                if let Some(v) = version {
+                    running_version.insert(uri.clone(), *v);
+                }
+                winner_idx.insert(uri.clone(), idx);
+            }
+        }
+        let mut idx = 0usize;
+        messages.retain(|msg| {
+            let this_idx = idx;
+            idx += 1;
+            match msg {
+                Msg::Lsp(LspMsg::DiagnosticsPublished { uri, .. }) => {
+                    winner_idx.get(uri) == Some(&this_idx)
+                }
+                _ => true,
+            }
+        });
+        for msg in messages {
             if let Msg::Lsp(LspMsg::DiagnosticsPublished {
                 ref uri,
                 version,
@@ -2038,8 +2098,14 @@ impl App {
         // (a publish that arrived before this document was open) — the
         // design doc's "retains publishes for unopened files" rule.
         if let Some(diagnostics) = self.lsp.diagnostics.get(&uri) {
+            let has_marks = !diagnostics.is_empty();
             if let Some(doc) = self.model.editor_area.documents.get_mut(&document_id) {
                 doc.diagnostics = diagnostics.clone();
+            }
+            // Marks-lane activation changes gutter width — see
+            // `AppModel::resync_viewports`'s doc comment.
+            if has_marks {
+                self.model.resync_viewports();
             }
         }
         self.lsp.open_documents.insert(
@@ -2065,24 +2131,44 @@ impl App {
     }
 
     /// Drops the diagnostics store entry and any open document's
-    /// projection for every URI `didOpen`'d against `(server_id, root)`
-    /// in `roots` — called on crash-exit and on a manual restart, since
+    /// projection for every URI under `(server_id, root)` in `roots` —
+    /// open or not — called on crash-exit and on a manual restart, since
     /// diagnostics from a server that's gone (or about to be replaced)
-    /// are stale (design doc's "cleared on ... server exit").
+    /// are stale (design doc's "cleared on ... server exit"). Retained
+    /// entries for unopened files must be swept too, or a crashed
+    /// server's stale publish survives to be pulled by a later `didOpen`.
     fn clear_diagnostics_for_roots(&mut self, server_id: &LspServerId, roots: &[PathBuf]) {
-        let affected: Vec<_> = self
+        let affected_docs: Vec<_> = self
             .lsp
             .open_documents
             .iter()
             .filter(|(_, state)| &state.server_id == server_id && roots.contains(&state.root))
             .map(|(doc_id, state)| (*doc_id, state.uri.clone()))
             .collect();
-        for (doc_id, uri) in affected {
+        let mut stale_uris: std::collections::HashSet<_> =
+            affected_docs.iter().map(|(_, uri)| uri.clone()).collect();
+        stale_uris.extend(self.lsp.diagnostics.keys().filter_map(|uri| {
+            let path = lsp::uri_to_path(uri)?;
+            roots
+                .iter()
+                .any(|root| path.starts_with(root))
+                .then(|| uri.clone())
+        }));
+        for uri in stale_uris {
             self.lsp.diagnostics.remove(&uri);
             self.lsp.diagnostics_versions.remove(&uri);
+        }
+        let mut any_had_marks = false;
+        for (doc_id, _) in affected_docs {
             if let Some(doc) = self.model.editor_area.documents.get_mut(&doc_id) {
+                any_had_marks |= !doc.diagnostics.is_empty();
                 doc.diagnostics.clear();
             }
+        }
+        // Marks-lane deactivation changes gutter width — see
+        // `AppModel::resync_viewports`'s doc comment.
+        if any_had_marks {
+            self.model.resync_viewports();
         }
     }
 

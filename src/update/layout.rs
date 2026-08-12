@@ -1285,9 +1285,5 @@ fn release_document_if_unreferenced(
 /// Sync all editor viewports to their group's actual dimensions.
 /// Call after creating new editors or changing group layout.
 fn sync_viewports(model: &mut AppModel) {
-    let line_height = model.line_height;
-    let char_width = model.char_width;
-    model
-        .editor_area
-        .sync_all_viewports(line_height, char_width, &model.metrics);
+    model.resync_viewports();
 }

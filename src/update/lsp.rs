@@ -98,7 +98,15 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             // no-op here (still retained in the runtime's store).
             let document_id = find_document_by_uri(model, &uri)?;
             let doc = model.editor_area.documents.get_mut(&document_id)?;
+            let had_marks = !doc.diagnostics.is_empty();
+            let has_marks = !diagnostics.is_empty();
             doc.diagnostics = diagnostics;
+            // Marks-lane activation changes gutter width, which
+            // `visible_columns` must track (see `resync_viewports`'s doc
+            // comment) — only worth the pass when it actually flipped.
+            if had_marks != has_marks {
+                model.resync_viewports();
+            }
             Some(Cmd::redraw_editor())
         }
     }

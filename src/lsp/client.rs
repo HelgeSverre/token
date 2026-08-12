@@ -1003,16 +1003,9 @@ fn parse_publish_diagnostics(
 /// `textDocument/publishDiagnostics`: forwarded straight to `Msg` — the
 /// runtime's `LspManager` (not this worker) owns the authoritative store
 /// and the out-of-order/version bookkeeping (see `LspMsg::DiagnosticsPublished`'s
-/// doc comment).
-///
-/// ponytail: successive publishes for the same URI aren't coalesced here
-/// before sending — each one becomes its own `Msg`. Correctness is
-/// unaffected (each publish is a full replacement, so processing them in
-/// arrival order converges on the same end state as coalescing would);
-/// this only costs redundant projection/redraw work if a server floods
-/// publishes for one URI within a single drain of `msg_rx`. Add
-/// last-wins coalescing in the `App::process_async_messages` drain loop
-/// if profiling ever shows that redundant work matters.
+/// doc comment). Each publish becomes its own `Msg`; successive publishes
+/// for the same URI are coalesced (newest wins) in
+/// `App::process_async_messages`'s drain loop, not here.
 fn handle_publish_diagnostics(
     message: &Value,
     msg_tx: &Sender<Msg>,

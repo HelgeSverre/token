@@ -483,6 +483,20 @@ pub struct AppModel {
 }
 
 impl AppModel {
+    /// Re-derives every editor's viewport (`visible_lines`/`visible_columns`)
+    /// from its group's current rect and its document's current gutter
+    /// width. Call after anything that changes gutter width without a
+    /// resize — e.g. a document's marks lane (editor-decorations.md)
+    /// activating/deactivating as diagnostics arrive or clear
+    /// (lsp-integration.md) — or `visible_columns` silently disagrees
+    /// with the actually-rendered text area until the next resize.
+    pub fn resync_viewports(&mut self) {
+        let line_height = self.line_height;
+        let char_width = self.char_width;
+        self.editor_area
+            .sync_all_viewports(line_height, char_width, &self.metrics);
+    }
+
     /// Create a new application model with the given window size and scale factor
     pub fn new(
         window_width: u32,

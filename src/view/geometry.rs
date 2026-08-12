@@ -597,13 +597,21 @@ impl GutterLayout {
         line_count: usize,
         has_marks: bool,
     ) -> Self {
+        // Round the marks lane and the combined gutter-border width from
+        // the *same* single sum `gutter_border_x_scaled` uses, then
+        // derive `numbers_w` as the remainder — rounding `marks_w` and
+        // `numbers_w` independently could disagree by a pixel with
+        // `text_start_x_scaled`'s one combined round (fractional
+        // `char_width`), drifting the gutter border and text start apart.
         let marks_w = if has_marks {
             char_width.round() as u16
         } else {
             0
         };
-        let numbers_w = crate::model::gutter_border_x_scaled(char_width, metrics, line_count, false)
-            .round() as u16;
+        let border_w =
+            crate::model::gutter_border_x_scaled(char_width, metrics, line_count, has_marks)
+                .round() as u16;
+        let numbers_w = border_w.saturating_sub(marks_w);
         Self {
             marks_w,
             numbers_w,

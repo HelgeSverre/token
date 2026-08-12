@@ -775,6 +775,14 @@ pub enum Cmd {
     /// released (`release_document_if_unreferenced`), never on tab
     /// close alone (documents are refcounted).
     LspDidClose { document_id: DocumentId },
+    /// Drop the authoritative diagnostics-store entry for `document_id`'s
+    /// current file (lsp-integration.md "cleared on ... language
+    /// change") — unlike `LspDidClose`, which never touches the store
+    /// (diagnostics for unopened files are meant to be retained), this
+    /// is for the one case where the *same* URI's retained diagnostics
+    /// must not survive: the language association changed, so a
+    /// subsequent `didOpen` must not resurrect them.
+    LspClearDiagnostics { document_id: DocumentId },
 
     // === Debug Commands ===
     /// Toggle performance overlay (debug builds only)
@@ -863,6 +871,7 @@ impl Cmd {
             Cmd::LspScheduleDidChange { .. } => Damage::Areas(vec![]),
             Cmd::LspDidSave { .. } => Damage::Areas(vec![]),
             Cmd::LspDidClose { .. } => Damage::Areas(vec![]),
+            Cmd::LspClearDiagnostics { .. } => Damage::Areas(vec![]),
             // Debug overlay toggle triggers full redraw
             #[cfg(debug_assertions)]
             Cmd::TogglePerfOverlay => Damage::Full,
