@@ -22,8 +22,9 @@ use lsp_types::{
     ClientCapabilities, CompletionClientCapabilities, CompletionItemCapability,
     CompletionItemCapabilityResolveSupport, DidChangeWatchedFilesClientCapabilities,
     GeneralClientCapabilities, GotoCapability, HoverClientCapabilities, MarkupKind,
-    PositionEncodingKind, PublishDiagnosticsClientCapabilities, TagSupport,
-    TextDocumentClientCapabilities, TextDocumentSyncClientCapabilities, WindowClientCapabilities,
+    PositionEncodingKind, PublishDiagnosticsClientCapabilities, ServerCapabilities, TagSupport,
+    TextDocumentClientCapabilities, TextDocumentSyncCapability, TextDocumentSyncClientCapabilities,
+    TextDocumentSyncKind, TextDocumentSyncSaveOptions, WindowClientCapabilities,
     WorkspaceClientCapabilities,
 };
 use serde_json::{json, Value};
@@ -97,6 +98,87 @@ pub fn client_capabilities() -> ClientCapabilities {
         }),
         ..Default::default()
     }
+}
+
+// ============================================================================
+// Server capability gating
+// ============================================================================
+//
+// `InitializeResult.capabilities` is parsed and stored on `ServerHandle`
+// (see `spawn_server`'s reader loop); these are the read side future
+// sends gate on (design doc's "Server capability gating"). `textDocumentSync`
+// may be a bare number, a full options object, or absent entirely — all
+// three mean something different and are handled here rather than at
+// every call site.
+
+/// What kind of document sync a server wants, collapsing the
+/// number/object/absent shapes of `textDocumentSync` into one type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncMode {
+    /// Field absent, or explicitly `None`: send no sync messages at all.
+    None,
+    Full,
+    Incremental,
+}
+
+fn sync_mode_from_kind(kind: TextDocumentSyncKind) -> SyncMode {
+    match kind {
+        TextDocumentSyncKind::FULL => SyncMode::Full,
+        TextDocumentSyncKind::INCREMENTAL => SyncMode::Incremental,
+        _ => SyncMode::None,
+    }
+}
+
+/// The document-sync mode a server advertised, per the doc's
+/// "`textDocumentSync` may be a number, an object, or absent" rule.
+pub fn sync_mode(caps: &ServerCapabilities) -> SyncMode {
+    match &caps.text_document_sync {
+        None => SyncMode::None,
+        Some(TextDocumentSyncCapability::Kind(kind)) => sync_mode_from_kind(*kind),
+        Some(TextDocumentSyncCapability::Options(opts)) => {
+            opts.change.map_or(SyncMode::None, sync_mode_from_kind)
+        }
+    }
+}
+
+/// Whether `didSave` should carry full text (`save: { includeText: true
+/// }`) — `save` absent means no `didSave` at all; `save: true`/a bare
+/// options object with no `includeText` means send `didSave` without
+/// text.
+pub fn save_includes_text(caps: &ServerCapabilities) -> bool {
+    let Some(TextDocumentSyncCapability::Options(opts)) = &caps.text_document_sync else {
+        return false;
+    };
+    matches!(
+        &opts.save,
+        Some(TextDocumentSyncSaveOptions::SaveOptions(o)) if o.include_text == Some(true)
+    )
+}
+
+/// Whether the server advertised `save` support at all (bare `true` or an
+/// options object) — gates whether `didSave` is sent, independent of
+/// whether it carries text.
+pub fn wants_did_save(caps: &ServerCapabilities) -> bool {
+    match &caps.text_document_sync {
+        Some(TextDocumentSyncCapability::Options(opts)) => matches!(
+            &opts.save,
+            Some(TextDocumentSyncSaveOptions::Supported(true))
+                | Some(TextDocumentSyncSaveOptions::SaveOptions(_))
+        ),
+        _ => false,
+    }
+}
+
+pub fn supports_definition(caps: &ServerCapabilities) -> bool {
+    caps.definition_provider.is_some()
+}
+
+pub fn supports_hover(caps: &ServerCapabilities) -> bool {
+    caps.hover_provider.is_some()
+}
+
+pub fn supports_completion(caps: &ServerCapabilities) -> bool {
+    caps.completion_provider.is_some()
 }
 
 // ============================================================================
@@ -343,6 +425,15 @@ impl PendingRequests {
 // Root resolution
 // ============================================================================
 
+/// Canonicalizes when the path exists, otherwise returns it unchanged —
+/// same fallback `lsp/uri.rs::path_to_uri` uses. Raw `PathBuf` comparison
+/// breaks on macOS (`/tmp` -> `/private/tmp`) and home-dir symlinks: a
+/// workspace opened through a symlink would miss the workspace-root
+/// branch below and get charged against the detached-root cap instead.
+fn canonicalize_or_self(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
 /// Workspace root if the file is under it; else the nearest ancestor
 /// directory containing one of `project_markers`; else the file's own
 /// parent directory. `marker_exists` is injected so this is testable
@@ -354,7 +445,9 @@ pub fn resolve_root(
     marker_exists: impl Fn(&Path) -> bool,
 ) -> PathBuf {
     if let Some(root) = workspace_root {
-        if file_path.starts_with(root) {
+        let canonical_file = canonicalize_or_self(file_path);
+        let canonical_root = canonicalize_or_self(root);
+        if canonical_file.starts_with(&canonical_root) {
             return root.to_path_buf();
         }
     }
@@ -471,6 +564,14 @@ pub struct ServerHandle {
 }
 
 impl ServerHandle {
+    /// Snapshot of the parsed `InitializeResult.capabilities`, `None`
+    /// until the `initialize` response has arrived. Every future send
+    /// (`didOpen`/`didChange`/`didSave`, feature requests) gates on this
+    /// rather than assuming a server supports everything.
+    pub fn capabilities_snapshot(&self) -> Option<ServerCapabilities> {
+        self.capabilities.lock().unwrap().clone()
+    }
+
     /// Best-effort: ask the writer thread to stop and kill the process.
     /// The full `shutdown`/`exit` handshake sequence from the design
     /// doc's "Crash and shutdown" section is not built yet — deferred to
@@ -502,6 +603,7 @@ pub fn spawn_server(
     msg_tx: Sender<Msg>,
     wake: Option<Arc<dyn Fn() + Send + Sync>>,
 ) -> std::io::Result<ServerHandle> {
+    let root_for_state = root.to_path_buf();
     let resolved_command = resolve_command(command);
     let mut cmd = Command::new(&resolved_command);
     cmd.args(args)
@@ -558,6 +660,7 @@ pub fn spawn_server(
                 reader_loop(
                     stdout,
                     server_id,
+                    root_for_state,
                     generation,
                     msg_tx,
                     wake,
@@ -660,6 +763,7 @@ fn uri_to_root_path(uri: &lsp_types::Uri) -> Option<String> {
 fn reader_loop(
     stdout: ChildStdout,
     server_id: LspServerId,
+    root: PathBuf,
     generation: u64,
     msg_tx: Sender<Msg>,
     wake: Option<Arc<dyn Fn() + Send + Sync>>,
@@ -703,7 +807,7 @@ fn reader_loop(
                         );
                     }
                     NotificationAction::Progress => {
-                        handle_progress(&server_id, &message, &msg_tx, wake.as_deref());
+                        handle_progress(&server_id, &root, &message, &msg_tx, wake.as_deref());
                     }
                     NotificationAction::Ignore => {}
                 }
@@ -725,7 +829,7 @@ fn reader_loop(
                     .and_then(|c| serde_json::from_value(c).ok());
                 *capabilities.lock().unwrap() = parsed;
                 let _ = outbound_tx.send(WorkerCmd::HandshakeReady);
-                send_state(&server_id, ServerState::Ready, &msg_tx, wake.as_deref());
+                send_state(&server_id, &root, ServerState::Ready, &msg_tx, wake.as_deref());
             }
             // Other request kinds (definition/hover/completion/shutdown)
             // are routed by future phases; Phase 1 only issues
@@ -736,6 +840,7 @@ fn reader_loop(
 
 fn handle_progress(
     server_id: &LspServerId,
+    root: &Path,
     message: &Value,
     msg_tx: &Sender<Msg>,
     wake: Option<&(dyn Fn() + Send + Sync)>,
@@ -744,14 +849,15 @@ fn handle_progress(
         .pointer("/params/value/kind")
         .and_then(Value::as_str);
     match kind {
-        Some("begin") => send_state(server_id, ServerState::Indexing, msg_tx, wake),
-        Some("end") => send_state(server_id, ServerState::Ready, msg_tx, wake),
+        Some("begin") => send_state(server_id, root, ServerState::Indexing, msg_tx, wake),
+        Some("end") => send_state(server_id, root, ServerState::Ready, msg_tx, wake),
         _ => {}
     }
 }
 
 fn send_state(
     server_id: &LspServerId,
+    root: &Path,
     state: ServerState,
     msg_tx: &Sender<Msg>,
     wake: Option<&(dyn Fn() + Send + Sync)>,
@@ -759,6 +865,7 @@ fn send_state(
     if msg_tx
         .send(Msg::Lsp(LspMsg::ServerStateChanged {
             server_id: server_id.clone(),
+            root: root.to_path_buf(),
             state,
         }))
         .is_err()
@@ -841,6 +948,81 @@ mod tests {
     fn advertises_work_done_progress() {
         let caps = client_capabilities();
         assert_eq!(caps.window.unwrap().work_done_progress, Some(true));
+    }
+
+    // ---- server capability gating ----
+
+    fn caps_with_sync(sync: Option<TextDocumentSyncCapability>) -> ServerCapabilities {
+        ServerCapabilities {
+            text_document_sync: sync,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn sync_mode_is_none_when_field_absent() {
+        assert_eq!(sync_mode(&caps_with_sync(None)), SyncMode::None);
+    }
+
+    #[test]
+    fn sync_mode_reads_bare_number() {
+        let caps = caps_with_sync(Some(TextDocumentSyncCapability::Kind(
+            TextDocumentSyncKind::FULL,
+        )));
+        assert_eq!(sync_mode(&caps), SyncMode::Full);
+    }
+
+    #[test]
+    fn sync_mode_reads_options_object() {
+        let caps = caps_with_sync(Some(TextDocumentSyncCapability::Options(
+            lsp_types::TextDocumentSyncOptions {
+                change: Some(TextDocumentSyncKind::INCREMENTAL),
+                ..Default::default()
+            },
+        )));
+        assert_eq!(sync_mode(&caps), SyncMode::Incremental);
+    }
+
+    #[test]
+    fn save_includes_text_requires_explicit_include_text_true() {
+        let no_save = caps_with_sync(Some(TextDocumentSyncCapability::Options(
+            lsp_types::TextDocumentSyncOptions::default(),
+        )));
+        assert!(!save_includes_text(&no_save));
+        assert!(!wants_did_save(&no_save));
+
+        let bare_save = caps_with_sync(Some(TextDocumentSyncCapability::Options(
+            lsp_types::TextDocumentSyncOptions {
+                save: Some(TextDocumentSyncSaveOptions::Supported(true)),
+                ..Default::default()
+            },
+        )));
+        assert!(!save_includes_text(&bare_save));
+        assert!(wants_did_save(&bare_save));
+
+        let full_save = caps_with_sync(Some(TextDocumentSyncCapability::Options(
+            lsp_types::TextDocumentSyncOptions {
+                save: Some(TextDocumentSyncSaveOptions::SaveOptions(
+                    lsp_types::SaveOptions {
+                        include_text: Some(true),
+                    },
+                )),
+                ..Default::default()
+            },
+        )));
+        assert!(save_includes_text(&full_save));
+        assert!(wants_did_save(&full_save));
+    }
+
+    #[test]
+    fn feature_support_reads_provider_presence() {
+        let caps = ServerCapabilities {
+            definition_provider: Some(lsp_types::OneOf::Left(true)),
+            ..Default::default()
+        };
+        assert!(supports_definition(&caps));
+        assert!(!supports_hover(&caps));
+        assert!(!supports_completion(&caps));
     }
 
     // ---- server -> client reply table ----
@@ -995,6 +1177,29 @@ mod tests {
             |p| p == Path::new("/a/b/pyproject.toml"),
         );
         assert_eq!(root, PathBuf::from("/a/b"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_root_matches_through_a_symlink() {
+        // A file opened via a symlinked path (e.g. macOS's /tmp ->
+        // /private/tmp) must still resolve to the workspace root — raw
+        // PathBuf::starts_with would miss this and charge it against the
+        // detached-root cap instead.
+        let dir = tempfile::tempdir().unwrap();
+        let real_root = dir.path().join("real_root");
+        std::fs::create_dir(&real_root).unwrap();
+        let src_dir = real_root.join("src");
+        std::fs::create_dir(&src_dir).unwrap();
+        let file_path = src_dir.join("main.rs");
+        std::fs::write(&file_path, b"fn main() {}").unwrap();
+
+        let link_root = dir.path().join("link_root");
+        std::os::unix::fs::symlink(&real_root, &link_root).unwrap();
+        let file_via_link = link_root.join("src").join("main.rs");
+
+        let root = resolve_root(&file_via_link, Some(&real_root), &["Cargo.toml"], |_| false);
+        assert_eq!(root, real_root);
     }
 
     // ---- command resolution ----
