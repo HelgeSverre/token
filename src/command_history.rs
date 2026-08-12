@@ -8,6 +8,7 @@
 use crate::commands::CommandId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use std::time::SystemTime;
 
 /// Tracks usage statistics for a single command.
@@ -51,10 +52,7 @@ impl CommandHistory {
         let Some(path) = crate::config_paths::command_history_path() else {
             return Self::default();
         };
-        match std::fs::read_to_string(&path) {
-            Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
-            Err(_) => Self::default(),
-        }
+        Self::load_from(&path)
     }
 
     /// Save history to disk.
@@ -66,6 +64,24 @@ impl CommandHistory {
             ));
         };
         crate::config_paths::ensure_all_config_dirs();
+        self.save_to(&path)
+    }
+
+    /// Load from an explicit path — factored out of `load()` so tests can
+    /// exercise real file I/O against a scratch dir without mutating the
+    /// process-global `XDG_CONFIG_HOME` (which would race every other
+    /// test's `AppModel::new()` -> `CommandHistory::load()` call under
+    /// `cargo test`'s default parallel threads).
+    fn load_from(path: &Path) -> Self {
+        match std::fs::read_to_string(path) {
+            Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
+            Err(_) => Self::default(),
+        }
+    }
+
+    /// Save to an explicit path — the `save()` test-facing counterpart to
+    /// `load_from`.
+    fn save_to(&self, path: &Path) -> std::io::Result<()> {
         let contents = serde_json::to_string_pretty(self)?;
         std::fs::write(path, contents)
     }
@@ -75,12 +91,14 @@ impl CommandHistory {
         let entry = self.commands.entry(key(id)).or_default();
         entry.execution_count += 1;
         entry.last_used = now_epoch_secs();
+        self.version = Self::CURRENT_VERSION;
     }
 
     /// Toggle pin status for a command.
     pub fn toggle_pin(&mut self, id: CommandId) {
         let entry = self.commands.entry(key(id)).or_default();
         entry.is_pinned = !entry.is_pinned;
+        self.version = Self::CURRENT_VERSION;
     }
 
     /// Check if a command is pinned.
@@ -122,59 +140,37 @@ fn now_epoch_secs() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    // `XDG_CONFIG_HOME` is process-wide state; serialize the tests below
-    // that point it at a scratch dir so they can't interleave with each
-    // other across `cargo test`'s parallel threads.
-    static XDG_CONFIG_HOME_LOCK: Mutex<()> = Mutex::new(());
-
-    /// Run `body` with `XDG_CONFIG_HOME` pointed at a fresh scratch dir,
-    /// restoring the previous value afterwards.
-    fn with_scratch_config_dir(body: impl FnOnce()) {
-        let _guard = XDG_CONFIG_HOME_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let dir = tempfile::tempdir().unwrap();
-        let previous = std::env::var_os("XDG_CONFIG_HOME");
-        std::env::set_var("XDG_CONFIG_HOME", dir.path());
-
-        body();
-
-        match previous {
-            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
-            None => std::env::remove_var("XDG_CONFIG_HOME"),
-        }
-    }
 
     #[test]
     fn load_returns_empty_history_for_missing_file() {
-        // Point XDG_CONFIG_HOME at a scratch dir with no command-history.json
-        // in it, so `load()` genuinely exercises its missing-file branch
-        // rather than asserting properties of `Default` in isolation.
-        with_scratch_config_dir(|| {
-            let history = CommandHistory::load();
-            assert!(history.commands.is_empty());
-            assert_eq!(history.version, 0);
-        });
+        // A scratch dir with no command-history.json in it, so `load_from`
+        // genuinely exercises its missing-file branch rather than asserting
+        // properties of `Default` in isolation. Exercised via the explicit-
+        // path helpers (not `load()`/`XDG_CONFIG_HOME`) so this test can run
+        // concurrently with every other test in the binary without racing
+        // `AppModel::new()`'s own `CommandHistory::load()` calls.
+        let dir = tempfile::tempdir().unwrap();
+        let history = CommandHistory::load_from(&dir.path().join("command-history.json"));
+        assert!(history.commands.is_empty());
+        assert_eq!(history.version, 0);
     }
 
     #[test]
     fn load_round_trips_a_saved_history() {
-        with_scratch_config_dir(|| {
-            let mut saved = CommandHistory {
-                version: CommandHistory::CURRENT_VERSION,
-                ..Default::default()
-            };
-            saved.record_execution(CommandId::SaveFile);
-            saved.save().unwrap();
-            let loaded = CommandHistory::load();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("command-history.json");
+        let mut saved = CommandHistory {
+            version: CommandHistory::CURRENT_VERSION,
+            ..Default::default()
+        };
+        saved.record_execution(CommandId::SaveFile);
+        saved.save_to(&path).unwrap();
+        let loaded = CommandHistory::load_from(&path);
 
-            assert_eq!(
-                loaded.commands[&key(CommandId::SaveFile)].execution_count,
-                1
-            );
-        });
+        assert_eq!(
+            loaded.commands[&key(CommandId::SaveFile)].execution_count,
+            1
+        );
     }
 
     #[test]
@@ -236,6 +232,14 @@ mod tests {
         let recent = history.recent_commands(&all, 2);
         assert_eq!(recent.len(), 2);
         assert!(!recent.contains(&CommandId::Undo));
+    }
+
+    #[test]
+    fn record_execution_stamps_current_version() {
+        let mut history = CommandHistory::default();
+        assert_eq!(history.version, 0);
+        history.record_execution(CommandId::SaveFile);
+        assert_eq!(history.version, CommandHistory::CURRENT_VERSION);
     }
 
     #[test]
