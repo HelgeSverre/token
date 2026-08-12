@@ -268,7 +268,7 @@ struct LspManager {
 
 ### Server Registry & Config
 
-`LspServerDef { id, command, args, project_markers }` as an `Option` field on `LanguageDefinition`, added via a defaulted arm in the registry macros (the table is positional with ~85 call sites; nobody edits them all). Initial: `rust-analyzer` (Rust), `typescript-language-server --stdio` (TS/TSX/JS/JSX — one server instance per root for all four), `pyright-langserver --stdio` (Python).
+`LspServerDef { id, command, args, project_markers }` as a side table (`lsp::lsp_server_def`, keyed by `LanguageId`), not a field on `LanguageDefinition` — the registry table is positional with ~85 call sites, and a side table gets the same "one place to register a server" ergonomics without touching every call site or growing the macro's arity. Initial: `rust-analyzer` (Rust), `typescript-language-server --stdio` (TS/TSX/JS/JSX — one server instance per root for all four), `pyright-langserver --stdio` (Python), `phpantom_lsp` (PHP), `sema lsp` (Sema).
 
 User config — **YAML**, in the existing `~/.config/token-editor/config.yaml`:
 
@@ -312,7 +312,7 @@ Binary not found on `PATH` (after `PATHEXT` resolution on Windows) → `ServerSt
 - [x] Adopt `lsp-types`; `lsp/uri.rs` canonical path↔URI helper with symlink test.
 - [x] `lsp/position.rs`: char-col ↔ UTF-16, document-parameterized; CRLF/surrogate/line-end tests.
 - [x] `lsp/client.rs` worker: spawn (with `PATHEXT`), handshake with outbound queueing, request-id correlation with abandoned-entry semantics, stderr drain thread, dispatch loop.
-- [x] **Client capabilities block** (as specified above) + parse/store/gate on `ServerCapabilities`.
+- [x] **Client capabilities block** (as specified above) + parse/store `ServerCapabilities`, with gating primitives (`sync_mode`, `supports_definition`/`hover`/`completion`, …); wiring them into actual send paths lands with `didOpen`/`didChange` in the next unit.
 - [x] **Server→client request replies** (the table above) + `MethodNotFound` default + ignore-unknown-notifications.
 - [x] `LspManager` in runtime; `LspUiState` mirror in model driven by `ServerStateChanged`; `Indexing` from `$/progress`.
 - [x] `LspServerDef` via a side table (`lsp::lsp_server_def`) keyed by `LanguageId`, not a field added to the registry macro — same "~85 call sites untouched" outcome without growing the macro's arity; YAML config overrides + master switch; root resolution (workspace → project marker → parent, detached cap).

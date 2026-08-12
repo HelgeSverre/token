@@ -580,6 +580,10 @@ impl ServerHandle {
     pub fn kill(&mut self) {
         let _ = self.outbound_tx.send(WorkerCmd::Shutdown);
         let _ = self.child.kill();
+        // Reap immediately: without wait(), a killed child stays a zombie
+        // until the editor exits (up to MAX_RESTART_ATTEMPTS per root, plus
+        // every manual restart).
+        let _ = self.child.wait();
     }
 }
 
@@ -823,6 +827,15 @@ fn reader_loop(
                 continue;
             };
             if entry.method == "initialize" {
+                if let Some(error) = message.get("error") {
+                    // A server that rejects `initialize` is not healthy —
+                    // never open the handshake gate or report Ready for
+                    // it; leave capabilities None so every send stays
+                    // gated off, and surface the failure like a crash.
+                    tracing::warn!("[{}] initialize failed: {:?}", server_id.0, error);
+                    send_state(&server_id, &root, ServerState::Failed, &msg_tx, wake.as_deref());
+                    continue;
+                }
                 let result = message.get("result").cloned();
                 let parsed: Option<lsp_types::ServerCapabilities> = result
                     .and_then(|r| r.get("capabilities").cloned())
