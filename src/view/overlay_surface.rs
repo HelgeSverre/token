@@ -1325,6 +1325,7 @@ pub fn render(
         layout.panel.w,
         layout.panel.h,
         radius,
+        scale_factor,
         mask_cache,
     );
     frame.fill_rounded_rect(

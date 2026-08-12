@@ -696,8 +696,9 @@ fn render_theme_picker_modal(
                     // `swatches` is parallel to `themes`; guard anyway so a
                     // stale state never panics rendering.
                     let swatch = state.swatches.get(idx).unwrap_or(&fallback_swatch);
-                    let is_active =
-                        model.theme.name == theme_info.name || model.config.theme == theme_info.id;
+                    // ✓ marks only the theme that is *set* (config), never
+                    // a merely-loaded/previewed one.
+                    let is_active = model.config.theme == theme_info.id;
                     Row {
                         icon: RowIcon::Glyph {
                             ch: '\u{25CF}',

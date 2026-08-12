@@ -722,16 +722,25 @@ impl<'a> Frame<'a> {
         w: usize,
         h: usize,
         radius: usize,
+        scale_factor: f64,
         mask_cache: &mut RoundedRectMaskCache,
     ) {
-        const RINGS: [(usize, u8); 3] = [(1, 0x8C), (2, 0x40), (3, 0x1F)];
-        for (offset, alpha) in RINGS {
-            let rx = x.saturating_sub(offset);
-            let ry = y.saturating_sub(offset);
-            let rw = w + offset * 2;
-            let rh = h + offset * 2;
+        // Soft falloff, not an outline: a 22% core fading through a 4%
+        // tail. Offsets scale with the display so 2x gets the same logical
+        // softness (each base ring strokes `s` consecutive physical
+        // offsets).
+        const RINGS: [(usize, u8); 4] = [(1, 0x38), (2, 0x22), (3, 0x14), (4, 0x0A)];
+        let s = (scale_factor.round() as usize).max(1);
+        for (base_offset, alpha) in RINGS {
             let color = (alpha as u32) << 24;
-            self.stroke_rounded_rect(rx, ry, rw, rh, radius + offset, color, mask_cache);
+            for k in 0..s {
+                let offset = base_offset * s - k;
+                let rx = x.saturating_sub(offset);
+                let ry = y.saturating_sub(offset);
+                let rw = w + offset * 2;
+                let rh = h + offset * 2;
+                self.stroke_rounded_rect(rx, ry, rw, rh, radius + offset, color, mask_cache);
+            }
         }
     }
 
@@ -1609,14 +1618,28 @@ mod tests {
         let mut frame = Frame::new(&mut buffer, 30, 30);
         let mut cache = RoundedRectMaskCache::new();
 
-        frame.draw_shadow_rings(10, 10, 10, 10, 4, &mut cache);
+        // White ground so translucent black rings are observable in the
+        // blended result.
+        frame.fill_rect_px(0, 0, 30, 30, 0xFFFF_FFFF);
+        frame.draw_shadow_rings(10, 10, 10, 10, 4, 1.0, &mut cache);
 
         // A pixel just outside the panel's straight edge (top, above the
-        // corner band) should be touched by the first ring.
-        let px = frame.get_pixel(15, 9);
-        assert_ne!(px, 0, "shadow ring must paint just outside the panel edge");
-        // Far outside all three rings, nothing should be painted.
-        assert_eq!(frame.get_pixel(0, 0), 0);
+        // corner band) should be darkened by the first ring.
+        let near = frame.get_pixel(15, 9) & 0xFF;
+        assert_ne!(
+            near, 0xFF,
+            "shadow ring must paint just outside the panel edge"
+        );
+        // The falloff property: the outermost ring is fainter (lighter on
+        // white) than the innermost — a soft shadow, not an outline.
+        let far = frame.get_pixel(15, 6) & 0xFF;
+        assert_ne!(far, 0xFF, "tail ring must paint at offset 4");
+        assert!(
+            far > near,
+            "shadow must fade outward (near {near:#04X} vs far {far:#04X})"
+        );
+        // Far outside all rings, untouched white.
+        assert_eq!(frame.get_pixel(0, 0) & 0xFF, 0xFF);
     }
 
     #[test]
