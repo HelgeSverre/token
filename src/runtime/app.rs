@@ -1992,6 +1992,7 @@ impl App {
                     self.lsp.diagnostics.remove(&uri);
                     self.lsp.diagnostics_versions.remove(&uri);
                     self.model.lsp.diagnostics.remove(&file_path);
+                    token::update::problems::clamp_problems_selection(&mut self.model);
                 }
             }
             Cmd::LspRequestDefinition {
@@ -2698,6 +2699,10 @@ impl App {
                 self.model.lsp.diagnostics.remove(&path);
             }
         }
+        // Bypasses `update()`, so the Problems panel's selection needs the
+        // same clamp `DiagnosticsPublished` gives it on the publish side —
+        // a clear can shrink the mirror out from under a stored selection.
+        token::update::problems::clamp_problems_selection(&mut self.model);
         let mut any_had_marks = false;
         for (doc_id, _) in affected_docs {
             if let Some(doc) = self.model.editor_area.documents.get_mut(&doc_id) {
@@ -5740,6 +5745,185 @@ mod tests {
             text.as_deref()
                 .is_some_and(|t| t.contains("first borrow occurs here")),
             "relatedInformation must reach the rendered card: {text:?}"
+        );
+
+        app.process_cmd(Cmd::Quit);
+    }
+
+    /// End-to-end Problems panel flow driven through a fake server: a
+    /// publish lands rows in the mirror, `CommandId::ToggleProblems` (the
+    /// palette's own confirm path — "invoke by command name") opens the
+    /// dock and the automation snapshot reports them, and keyboard nav
+    /// (Down, Enter) jumps to the selected diagnostic's file and cursor.
+    #[test]
+    fn problems_panel_end_to_end_via_fake_server_publish_and_command() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\nlet x = y;\n").expect("write fixture file");
+        let file_uri = lsp::path_to_uri(&file_path);
+
+        let scenario_path = dir.path().join("scenario.json");
+        std::fs::write(
+            &scenario_path,
+            serde_json::json!([
+                { "op": "expect_request", "method": "initialize", "respond": { "capabilities": {} } },
+                { "op": "notify", "method": "textDocument/publishDiagnostics", "params": {
+                    "uri": file_uri.as_str(),
+                    "diagnostics": [{
+                        "range": {
+                            "start": { "line": 1, "character": 8 },
+                            "end": { "line": 1, "character": 9 },
+                        },
+                        "severity": 1,
+                        "message": "cannot find value `y`",
+                    }],
+                }},
+                { "op": "sleep_ms", "ms": 60000 },
+            ])
+            .to_string(),
+        )
+        .expect("write scenario file");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
+                enabled: None,
+            },
+        );
+
+        // The publish targets a file that isn't open yet -- the mirror
+        // must still populate (design doc: retained for unopened files).
+        app.process_cmd(Cmd::LspEnsureServer {
+            language: LanguageId::Rust,
+            file_path: file_path.clone(),
+        });
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            !app.model.lsp.diagnostics.is_empty()
+        }));
+
+        // "Invoke by command name": the same `execute_command` path the
+        // command palette's confirm handler runs.
+        let cmd = token::update::execute_command(
+            &mut app.model,
+            token::commands::CommandId::ToggleProblems,
+        );
+        if let Some(cmd) = cmd {
+            app.process_cmd(cmd);
+        }
+
+        let snapshot = crate::automation::EditorSnapshot::from_model(&app.model);
+        let problems = snapshot.problems.expect("panel must be open after the toggle");
+        assert_eq!(problems.errors, 1);
+        assert_eq!(problems.rows.len(), 2, "a File row plus its one Diagnostic row");
+        assert_eq!(problems.rows[0].kind, "file");
+        assert_eq!(problems.rows[1].kind, "diagnostic");
+
+        app.process_automation_msg(Msg::Problems(token::messages::ProblemsMsg::SelectNext)); // File row
+        app.process_automation_msg(Msg::Problems(token::messages::ProblemsMsg::SelectNext)); // Diagnostic row
+        assert_eq!(app.model.problems_panel.selected_index, Some(1));
+
+        app.process_automation_msg(Msg::Problems(token::messages::ProblemsMsg::OpenSelected));
+
+        // macOS's /tmp -> /private/tmp symlink means the opened tab's path
+        // and the fixture's raw `tempdir()` path canonicalize the same but
+        // aren't byte-identical.
+        assert_eq!(
+            app.model
+                .document()
+                .file_path
+                .as_ref()
+                .map(|p| std::fs::canonicalize(p).unwrap()),
+            Some(std::fs::canonicalize(&file_path).unwrap())
+        );
+        assert_eq!(app.model.editor().active_cursor().line, 1);
+        assert_eq!(app.model.editor().active_cursor().column, 8);
+
+        app.process_cmd(Cmd::Quit);
+    }
+
+    /// Server exit must sweep the mirror, and with it the Problems panel:
+    /// a stale row must never survive a crash — this is the model-side
+    /// consequence `clear_diagnostics_for_roots` exists for, driven here
+    /// through the real crash path instead of calling the sweep directly.
+    #[test]
+    fn server_exit_empties_the_open_problems_panel() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        // Canonicalize the root so `clear_diagnostics_for_roots`'s
+        // `path.starts_with(root)` prefix check agrees with the URI's
+        // (also-canonicalized) path -- macOS's /tmp -> /private/tmp
+        // symlink otherwise makes them disagree.
+        let dir_path = dir.path().canonicalize().unwrap();
+        let file_path = dir_path.join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write fixture file");
+        let file_uri = lsp::path_to_uri(&file_path);
+
+        let scenario_path = dir.path().join("scenario.json");
+        std::fs::write(
+            &scenario_path,
+            serde_json::json!([
+                { "op": "expect_request", "method": "initialize", "respond": { "capabilities": {} } },
+                { "op": "notify", "method": "textDocument/publishDiagnostics", "params": {
+                    "uri": file_uri.as_str(),
+                    "diagnostics": [{
+                        "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } },
+                        "severity": 1,
+                        "message": "boom",
+                    }],
+                }},
+                // Give the client a window to observe the published row
+                // before the crash, so this test can assert the panel
+                // really held it (not just that it ends up empty).
+                { "op": "sleep_ms", "ms": 300 },
+                { "op": "exit", "code": 1 },
+            ])
+            .to_string(),
+        )
+        .expect("write scenario file");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
+                enabled: None,
+            },
+        );
+
+        app.process_cmd(Cmd::LspEnsureServer {
+            language: LanguageId::Rust,
+            file_path: file_path.clone(),
+        });
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            !app.model.lsp.diagnostics.is_empty()
+        }));
+
+        app.model.dock_layout.bottom.activate(token::panel::PanelId::PROBLEMS);
+        app.model.problems_panel.selected_index = Some(1);
+        assert!(
+            crate::automation::EditorSnapshot::from_model(&app.model)
+                .problems
+                .is_some_and(|p| !p.rows.is_empty()),
+            "panel must show the published row before the crash"
+        );
+
+        // The scenario's `exit` op crashes the fake server; the manager's
+        // crash-handling path is `clear_diagnostics_for_roots`, same as a
+        // manual restart or `ToggleLsp` off.
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            app.model.lsp.diagnostics.is_empty()
+        }));
+
+        let problems = crate::automation::EditorSnapshot::from_model(&app.model)
+            .problems
+            .expect("panel stays open, just empty");
+        assert!(problems.rows.is_empty(), "rows: {:?}", problems.rows);
+        assert_eq!(
+            problems.selected, None,
+            "a stale selection must be clamped away, not just the rows"
         );
 
         app.process_cmd(Cmd::Quit);
