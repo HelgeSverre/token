@@ -187,11 +187,29 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                     model.lsp.diagnostics.insert(path, diagnostics.clone());
                 }
             }
+            // A shrinking publish (fewer/no diagnostics for this file) can
+            // leave a stale selected_index/scroll_offset in the Problems
+            // panel — clamp unconditionally, same as any other mutation of
+            // the mirror.
+            crate::update::problems::clamp_problems_selection(model);
             // The rest is purely the model projection onto whatever
             // document (if any) has `uri` open — a publish for an
             // unopened file is a no-op past this point (still retained in
-            // the runtime's store and now in the mirror above).
-            let document_id = find_document_by_uri(model, &uri)?;
+            // the runtime's store and now in the mirror above). But if the
+            // Problems panel is open, that mirror update still needs a
+            // repaint request — this is exactly the workspace-wide,
+            // other-files case the mirror was hoisted above the early
+            // return for (mirrors `clear_diagnostics_for_roots`'s
+            // `problems_panel_open` handling on the clearing side).
+            let document_id = match find_document_by_uri(model, &uri) {
+                Some(id) => id,
+                None => {
+                    let problems_panel_open = model.dock_layout.bottom.is_open
+                        && model.dock_layout.bottom.active_panel()
+                            == Some(crate::panel::PanelId::PROBLEMS);
+                    return problems_panel_open.then_some(Cmd::Redraw);
+                }
+            };
             let doc = model.editor_area.documents.get_mut(&document_id)?;
             let had_marks = !doc.diagnostics.is_empty();
             let has_marks = !diagnostics.is_empty();
@@ -592,6 +610,48 @@ mod tests {
         );
 
         assert!(!model.lsp.diagnostics.contains_key(&path));
+    }
+
+    /// The whole reason the mirror update was hoisted above the
+    /// unopened-document early return: an open Problems panel must repaint
+    /// on a publish for a file that isn't open, or its rows/header counts
+    /// go stale until an unrelated event happens to repaint.
+    #[test]
+    fn diagnostics_published_for_an_unopened_file_redraws_when_the_problems_panel_is_open() {
+        let mut model = model();
+        model
+            .dock_layout
+            .bottom
+            .activate(crate::panel::PanelId::PROBLEMS);
+        let uri = crate::lsp::path_to_uri(&PathBuf::from("/tmp/problems-mirror/other.rs"));
+
+        let cmd = update_lsp(
+            &mut model,
+            LspMsg::DiagnosticsPublished {
+                uri,
+                version: None,
+                diagnostics: vec![diagnostic_at(1)],
+            },
+        );
+
+        assert!(matches!(cmd, Some(Cmd::Redraw)));
+    }
+
+    #[test]
+    fn diagnostics_published_for_an_unopened_file_is_a_noop_when_the_problems_panel_is_closed() {
+        let mut model = model();
+        let uri = crate::lsp::path_to_uri(&PathBuf::from("/tmp/problems-mirror/other.rs"));
+
+        let cmd = update_lsp(
+            &mut model,
+            LspMsg::DiagnosticsPublished {
+                uri,
+                version: None,
+                diagnostics: vec![diagnostic_at(1)],
+            },
+        );
+
+        assert!(cmd.is_none());
     }
 
     #[test]
