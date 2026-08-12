@@ -408,7 +408,18 @@ fn reveal_active_file(model: &mut AppModel) {
         return;
     }
 
-    workspace.reveal_file(&path);
+    // Show + focus the sidebar first (opens the dock if hidden, sets
+    // FocusTarget::Dock(Left), syncs sidebar_visible, recalculates
+    // viewports), then expand/select/scroll — so the scroll math runs
+    // against the visible tree.
+    crate::update::dock::update_dock(
+        model,
+        crate::messages::DockMsg::ActivatePanel(crate::panel::PanelId::FILE_EXPLORER),
+    );
+    if let Some(workspace) = &mut model.workspace {
+        workspace.reveal_file(&path);
+    }
+    ensure_selection_visible(model);
 }
 
 #[cfg(test)]
@@ -428,6 +439,52 @@ mod tests {
             sidebar_width_logical: metrics.sidebar_default_width_logical,
             scroll_offset: 0,
         }
+    }
+
+    #[test]
+    fn reveal_active_file_expands_selects_and_focuses_the_sidebar() {
+        use crate::model::FocusTarget;
+        use crate::panel::DockPosition;
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut ws = test_workspace();
+        ws.sidebar_visible = false; // hidden sidebar must be shown by reveal
+        model.workspace = Some(ws);
+        model.dock_layout.left.is_open = false;
+        model.document_mut().file_path = Some(PathBuf::from("/test/src/deep/nested/file.rs"));
+
+        update_workspace(&mut model, WorkspaceMsg::RevealActiveFile);
+
+        let ws = model.workspace.as_ref().unwrap();
+        assert!(ws.sidebar_visible, "reveal must show a hidden sidebar");
+        assert!(ws.expanded_folders.contains(&PathBuf::from("/test/src")));
+        assert!(ws
+            .expanded_folders
+            .contains(&PathBuf::from("/test/src/deep/nested")));
+        assert_eq!(
+            ws.selected_item,
+            Some(PathBuf::from("/test/src/deep/nested/file.rs"))
+        );
+        assert_eq!(
+            model.ui.focus,
+            FocusTarget::Dock(DockPosition::Left),
+            "reveal must move keyboard focus to the file explorer"
+        );
+    }
+
+    #[test]
+    fn reveal_active_file_outside_workspace_keeps_status_behavior() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.workspace = Some(test_workspace());
+        model.document_mut().file_path = Some(PathBuf::from("/elsewhere/file.rs"));
+
+        update_workspace(&mut model, WorkspaceMsg::RevealActiveFile);
+
+        assert!(model.workspace.as_ref().unwrap().selected_item.is_none());
+        assert!(!matches!(
+            model.ui.focus,
+            crate::model::FocusTarget::Dock(_)
+        ));
     }
 
     #[test]

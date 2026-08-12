@@ -353,7 +353,8 @@ struct LspManager {
     /// (non-superseded) definition request for a document — looked up to
     /// send `$/cancelRequest` when a newer `GotoDefinition` supersedes it
     /// (design doc's "one outstanding request per feature per document").
-    definition_request_by_doc: HashMap<token::model::editor_area::DocumentId, (LspServerId, PathBuf, i64)>,
+    definition_request_by_doc:
+        HashMap<token::model::editor_area::DocumentId, (LspServerId, PathBuf, i64)>,
     /// `~30s` UI-level abandonment deadlines for in-flight definition
     /// requests (design doc's "folded into the runtime's existing
     /// `next_wake` computation in `about_to_wait`"), keyed the same as
@@ -365,7 +366,8 @@ struct LspManager {
     hover_requests: HashMap<(LspServerId, PathBuf, i64), PendingHover>,
     /// Which `(server_id, root, request_id)` is the *current* hover
     /// request for a document, mirroring `definition_request_by_doc`.
-    hover_request_by_doc: HashMap<token::model::editor_area::DocumentId, (LspServerId, PathBuf, i64)>,
+    hover_request_by_doc:
+        HashMap<token::model::editor_area::DocumentId, (LspServerId, PathBuf, i64)>,
     /// `~30s` UI-level abandonment deadlines for in-flight hover requests,
     /// mirroring `definition_deadlines`. Fired by `check_lsp_hover_deadlines`.
     hover_deadlines: HashMap<(LspServerId, PathBuf, i64), Instant>,
@@ -1131,6 +1133,16 @@ impl App {
             }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
+                button: MouseButton::Back,
+                ..
+            } => {
+                // Mouse "back" button navigates the jump history globally,
+                // matching JetBrains. No forward stack exists, so the
+                // "forward" button stays unbound.
+                update(&mut self.model, Msg::Lsp(LspMsg::NavigateBack))
+            }
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
                 button: MouseButton::Middle,
                 ..
             } => {
@@ -1834,9 +1846,7 @@ impl App {
                 // the user's explicit "try again" (e.g. after installing
                 // the binary), so `ensure_lsp_server` must be allowed to
                 // re-attempt the spawn instead of skipping it forever.
-                self.lsp
-                    .missing_servers
-                    .retain(|(id, _)| *id != server_id);
+                self.lsp.missing_servers.retain(|(id, _)| *id != server_id);
                 self.restart_lsp_server(&server_id);
             }
             Cmd::LspDidOpen {
@@ -1913,9 +1923,7 @@ impl App {
                     .documents
                     .get(&document_id)
                     .map(|doc| doc.language);
-                if let Some(language_id) =
-                    language.and_then(lsp::sync::language_id_str)
-                {
+                if let Some(language_id) = language.and_then(lsp::sync::language_id_str) {
                     self.lsp_open_document_on(document_id, file_path, server_id, root, language_id);
                 }
             }
@@ -1973,7 +1981,9 @@ impl App {
                 let pending = self.lsp.definition_requests.remove(&key)?;
                 self.lsp.definition_deadlines.remove(&key);
                 if self.lsp.definition_request_by_doc.get(&pending.document_id) == Some(&key) {
-                    self.lsp.definition_request_by_doc.remove(&pending.document_id);
+                    self.lsp
+                        .definition_request_by_doc
+                        .remove(&pending.document_id);
                 }
                 if abandoned {
                     return None;
@@ -2245,8 +2255,7 @@ impl App {
         let workspace_root = self.model.workspace.as_ref().map(|w| w.root.as_path());
         let is_detached = workspace_root.is_none_or(|ws| !root.starts_with(ws));
         let already_detached = self.lsp.detached_roots.contains(&root);
-        if is_detached && !already_detached && self.lsp.detached_roots.len() >= MAX_DETACHED_ROOTS
-        {
+        if is_detached && !already_detached && self.lsp.detached_roots.len() >= MAX_DETACHED_ROOTS {
             tracing::debug!(
                 "Detached LSP root cap ({MAX_DETACHED_ROOTS}) reached; not spawning {} for {}",
                 resolved.id,
@@ -2715,7 +2724,12 @@ impl App {
         let Some(state) = self.lsp.open_documents.get(&document_id) else {
             // No server registered/synced for this document at all —
             // untitled buffer, or a language with no registered server.
-            self.emit_definition_outcome(document_id, revision, origin, DefinitionOutcome::NotSupported);
+            self.emit_definition_outcome(
+                document_id,
+                revision,
+                origin,
+                DefinitionOutcome::NotSupported,
+            );
             return;
         };
         let server_id = state.server_id.clone();
@@ -2735,17 +2749,32 @@ impl App {
         }
 
         let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
-            self.emit_definition_outcome(document_id, revision, origin, DefinitionOutcome::StillIndexing);
+            self.emit_definition_outcome(
+                document_id,
+                revision,
+                origin,
+                DefinitionOutcome::StillIndexing,
+            );
             return;
         };
         let Some(caps) = handle.capabilities_snapshot() else {
             // Handshake hasn't completed yet — indistinguishable from
             // "still indexing" from the user's point of view.
-            self.emit_definition_outcome(document_id, revision, origin, DefinitionOutcome::StillIndexing);
+            self.emit_definition_outcome(
+                document_id,
+                revision,
+                origin,
+                DefinitionOutcome::StillIndexing,
+            );
             return;
         };
         if !lsp::client::supports_definition(&caps) {
-            self.emit_definition_outcome(document_id, revision, origin, DefinitionOutcome::NotSupported);
+            self.emit_definition_outcome(
+                document_id,
+                revision,
+                origin,
+                DefinitionOutcome::NotSupported,
+            );
             return;
         }
 
@@ -2754,7 +2783,12 @@ impl App {
         self.flush_lsp_did_change(document_id);
 
         let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
-            self.emit_definition_outcome(document_id, revision, origin, DefinitionOutcome::StillIndexing);
+            self.emit_definition_outcome(
+                document_id,
+                revision,
+                origin,
+                DefinitionOutcome::StillIndexing,
+            );
             return;
         };
         let params = serde_json::json!({
@@ -2773,7 +2807,9 @@ impl App {
                 root,
             },
         );
-        self.lsp.definition_request_by_doc.insert(document_id, key.clone());
+        self.lsp
+            .definition_request_by_doc
+            .insert(document_id, key.clone());
         self.lsp
             .definition_deadlines
             .insert(key, Instant::now() + DEFINITION_TIMEOUT);
@@ -2869,7 +2905,9 @@ impl App {
                 cursor,
             },
         );
-        self.lsp.hover_request_by_doc.insert(document_id, key.clone());
+        self.lsp
+            .hover_request_by_doc
+            .insert(document_id, key.clone());
         self.lsp
             .hover_deadlines
             .insert(key, Instant::now() + HOVER_TIMEOUT);
@@ -3068,7 +3106,9 @@ impl App {
             let Some(pending) = self.lsp.definition_requests.remove(&key) else {
                 continue;
             };
-            self.lsp.definition_request_by_doc.remove(&pending.document_id);
+            self.lsp
+                .definition_request_by_doc
+                .remove(&pending.document_id);
             let (server_id, root, request_id) = key;
             if let Some(handle) = self.lsp.servers.get(&(server_id, root)) {
                 handle.pending.lock().unwrap().abandon(request_id);
@@ -3106,11 +3146,9 @@ impl App {
             .collect();
         for key in due {
             self.lsp.hover_deadlines.remove(&key);
-            let is_current = self
-                .lsp
-                .hover_requests
-                .get(&key)
-                .is_some_and(|pending| self.lsp.hover_request_by_doc.get(&pending.document_id) == Some(&key));
+            let is_current = self.lsp.hover_requests.get(&key).is_some_and(|pending| {
+                self.lsp.hover_request_by_doc.get(&pending.document_id) == Some(&key)
+            });
             if !is_current {
                 // Superseded — mirrors `check_lsp_definition_deadlines`:
                 // remove the stale entry instead of leaking it.
@@ -4238,7 +4276,9 @@ mod tests {
                 root: root.clone(),
             },
         );
-        app.lsp.definition_request_by_doc.insert(doc_id, key.clone());
+        app.lsp
+            .definition_request_by_doc
+            .insert(doc_id, key.clone());
         app.lsp
             .definition_deadlines
             .insert(key, Instant::now() + Duration::from_secs(30));
@@ -4251,7 +4291,9 @@ mod tests {
                 cursor: token::model::editor::Position::new(0, 0),
             },
         );
-        app.lsp.hover_request_by_doc.insert(doc_id, hover_key.clone());
+        app.lsp
+            .hover_request_by_doc
+            .insert(doc_id, hover_key.clone());
         app.lsp
             .hover_deadlines
             .insert(hover_key, Instant::now() + Duration::from_secs(30));
@@ -4383,7 +4425,10 @@ mod tests {
         let server_id = LspServerId::from("rust-analyzer");
 
         app.ensure_lsp_server(token::syntax::LanguageId::Rust, &file);
-        assert_eq!(app.model.lsp.servers.get(&server_id), Some(&ServerState::Missing));
+        assert_eq!(
+            app.model.lsp.servers.get(&server_id),
+            Some(&ServerState::Missing)
+        );
         assert!(app
             .lsp
             .missing_servers
@@ -4427,10 +4472,7 @@ mod tests {
             server_id: server_id.clone(),
         });
 
-        assert!(!app
-            .lsp
-            .missing_servers
-            .contains(&(server_id.clone(), root)));
+        assert!(!app.lsp.missing_servers.contains(&(server_id.clone(), root)));
     }
 
     // ---- Phase 3: go-to-definition request plumbing ----
@@ -4472,7 +4514,10 @@ mod tests {
 
         app.request_lsp_definition(
             doc_id,
-            lsp_types::Position { line: 0, character: 0 },
+            lsp_types::Position {
+                line: 0,
+                character: 0,
+            },
             revision,
             origin,
         );
@@ -4501,7 +4546,10 @@ mod tests {
 
         app.request_lsp_definition(
             doc_id,
-            lsp_types::Position { line: 0, character: 0 },
+            lsp_types::Position {
+                line: 0,
+                character: 0,
+            },
             revision,
             origin,
         );
@@ -4533,7 +4581,10 @@ mod tests {
 
         app.request_lsp_definition(
             doc_id,
-            lsp_types::Position { line: 0, character: 0 },
+            lsp_types::Position {
+                line: 0,
+                character: 0,
+            },
             revision,
             origin,
         );
@@ -4600,20 +4651,35 @@ mod tests {
 
         app.request_lsp_definition(
             doc_id,
-            lsp_types::Position { line: 0, character: 0 },
+            lsp_types::Position {
+                line: 0,
+                character: 0,
+            },
             revision,
             test_origin(&app),
         );
-        let (first_server, first_root, first_id) =
-            app.lsp.definition_request_by_doc.get(&doc_id).cloned().unwrap();
+        let (first_server, first_root, first_id) = app
+            .lsp
+            .definition_request_by_doc
+            .get(&doc_id)
+            .cloned()
+            .unwrap();
 
         app.request_lsp_definition(
             doc_id,
-            lsp_types::Position { line: 1, character: 0 },
+            lsp_types::Position {
+                line: 1,
+                character: 0,
+            },
             revision,
             test_origin(&app),
         );
-        let (_, _, second_id) = app.lsp.definition_request_by_doc.get(&doc_id).cloned().unwrap();
+        let (_, _, second_id) = app
+            .lsp
+            .definition_request_by_doc
+            .get(&doc_id)
+            .cloned()
+            .unwrap();
 
         assert_ne!(first_id, second_id, "a new request id must be allocated");
         // The superseded entry stays pending (abandoned, not dropped —
@@ -4622,7 +4688,13 @@ mod tests {
         assert_eq!(app.lsp.definition_requests.len(), 2);
         let handle = app.lsp.servers.get(&(first_server, first_root)).unwrap();
         assert!(
-            handle.pending.lock().unwrap().resolve(first_id).unwrap().abandoned,
+            handle
+                .pending
+                .lock()
+                .unwrap()
+                .resolve(first_id)
+                .unwrap()
+                .abandoned,
             "the superseded request must be marked abandoned"
         );
 
@@ -4736,7 +4808,10 @@ mod tests {
         app.lsp
             .definition_request_by_doc
             .insert(doc_id, (server_id.clone(), root.clone(), 10));
-        app.model.lsp.servers.insert(server_id.clone(), ServerState::Ready);
+        app.model
+            .lsp
+            .servers
+            .insert(server_id.clone(), ServerState::Ready);
         app.msg_tx
             .send(Msg::Lsp(LspMsg::DefinitionResponseFromServer {
                 server_id,
@@ -4835,7 +4910,9 @@ mod tests {
                 root: root.clone(),
             },
         );
-        app.lsp.definition_request_by_doc.insert(doc_id, key.clone());
+        app.lsp
+            .definition_request_by_doc
+            .insert(doc_id, key.clone());
         // Already past due, rather than sleeping 30s in a test.
         app.lsp
             .definition_deadlines
@@ -4854,7 +4931,11 @@ mod tests {
             .is_some_and(|t| t.text.contains("No definition found")));
         // The abandoned id must still be tracked as such on the handle
         // (advisory `$/cancelRequest`) so a late reply is discarded.
-        let handle = app.lsp.servers.get(&(server_id.clone(), root.clone())).unwrap();
+        let handle = app
+            .lsp
+            .servers
+            .get(&(server_id.clone(), root.clone()))
+            .unwrap();
         assert!(
             handle
                 .pending
@@ -4938,7 +5019,10 @@ mod tests {
 
         app.request_lsp_hover(
             doc_id,
-            lsp_types::Position { line: 0, character: 0 },
+            lsp_types::Position {
+                line: 0,
+                character: 0,
+            },
             cursor,
             revision,
         );
@@ -4970,7 +5054,10 @@ mod tests {
 
         app.request_lsp_hover(
             doc_id,
-            lsp_types::Position { line: 0, character: 0 },
+            lsp_types::Position {
+                line: 0,
+                character: 0,
+            },
             cursor,
             revision,
         );
@@ -5007,7 +5094,10 @@ mod tests {
 
         app.request_lsp_hover(
             doc_id,
-            lsp_types::Position { line: 0, character: 0 },
+            lsp_types::Position {
+                line: 0,
+                character: 0,
+            },
             test_cursor(&app),
             revision,
         );
@@ -5016,7 +5106,10 @@ mod tests {
 
         app.request_lsp_hover(
             doc_id,
-            lsp_types::Position { line: 1, character: 0 },
+            lsp_types::Position {
+                line: 1,
+                character: 0,
+            },
             test_cursor(&app),
             revision,
         );
@@ -5026,7 +5119,13 @@ mod tests {
         assert_eq!(app.lsp.hover_requests.len(), 2);
         let handle = app.lsp.servers.get(&(first_server, first_root)).unwrap();
         assert!(
-            handle.pending.lock().unwrap().resolve(first_id).unwrap().abandoned,
+            handle
+                .pending
+                .lock()
+                .unwrap()
+                .resolve(first_id)
+                .unwrap()
+                .abandoned,
             "the superseded request must be marked abandoned"
         );
 
@@ -5110,7 +5209,11 @@ mod tests {
             app.model.ui.cursor_overlay.is_none(),
             "no content and no diagnostics -> nothing to show"
         );
-        let handle = app.lsp.servers.get(&(server_id.clone(), root.clone())).unwrap();
+        let handle = app
+            .lsp
+            .servers
+            .get(&(server_id.clone(), root.clone()))
+            .unwrap();
         assert!(
             handle
                 .pending
@@ -5147,7 +5250,9 @@ mod tests {
             },
         );
         let current_key = (server_id.clone(), root.clone(), 2);
-        app.lsp.hover_request_by_doc.insert(doc_id, current_key.clone());
+        app.lsp
+            .hover_request_by_doc
+            .insert(doc_id, current_key.clone());
         app.lsp
             .hover_deadlines
             .insert(stale_key.clone(), Instant::now() - Duration::from_secs(1));
@@ -5218,7 +5323,11 @@ mod tests {
             Some(token::model::CursorOverlayKind::Hover)
         );
         assert_eq!(
-            app.model.ui.hover_card.as_ref().and_then(|s| s.content.as_deref()),
+            app.model
+                .ui
+                .hover_card
+                .as_ref()
+                .and_then(|s| s.content.as_deref()),
             Some("fn main() -> ()"),
             "markdown emphasis must be stripped to plaintext"
         );
@@ -5276,7 +5385,10 @@ mod tests {
         // in flight, deterministically reproducing the race.
         app.request_lsp_hover(
             doc_id,
-            lsp_types::Position { line: 0, character: 0 },
+            lsp_types::Position {
+                line: 0,
+                character: 0,
+            },
             cursor,
             revision,
         );
@@ -5375,24 +5487,22 @@ mod tests {
             app.model.ui.cursor_overlay.is_some()
         }));
 
-        let (banner, text) = token::view::modal::with_cursor_overlay_layout(
-            &app.model,
-            800,
-            600,
-            1.0,
-            |spec, _| match &spec.body {
-                token::view::overlay_surface::Body::Zones(zones) => (
-                    zones.banner.map(|(_, message, _)| message.to_owned()),
-                    zones.text.map(str::to_owned),
-                ),
-                _ => panic!("hover card must render a Zones body"),
-            },
-        )
-        .expect("hover overlay must be open");
+        let (banner, text) =
+            token::view::modal::with_cursor_overlay_layout(&app.model, 800, 600, 1.0, |spec, _| {
+                match &spec.body {
+                    token::view::overlay_surface::Body::Zones(zones) => (
+                        zones.banner.map(|(_, message, _)| message.to_owned()),
+                        zones.text.map(str::to_owned),
+                    ),
+                    _ => panic!("hover card must render a Zones body"),
+                }
+            })
+            .expect("hover overlay must be open");
 
         assert_eq!(banner.as_deref(), Some("cannot find value `y`"));
         assert!(
-            text.as_deref().is_some_and(|t| t.contains("first borrow occurs here")),
+            text.as_deref()
+                .is_some_and(|t| t.contains("first borrow occurs here")),
             "relatedInformation must reach the rendered card: {text:?}"
         );
 
@@ -5809,7 +5919,10 @@ mod tests {
         // Open main.rs the way a real session does — synchronous open,
         // synchronous `LspEnsureServer`/`LspDidOpen` dispatch.
         app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
-        assert_eq!(app.model.document().file_path.as_deref(), Some(file_path.as_path()));
+        assert_eq!(
+            app.model.document().file_path.as_deref(),
+            Some(file_path.as_path())
+        );
 
         let server_id = LspServerId::from("rust-analyzer");
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -6346,7 +6459,9 @@ mod tests {
 
         let lines = wait_for_transcript_lines(&transcript_path, 3);
         assert!(
-            lines.iter().any(|l| l.starts_with("notify:textDocument/didOpen")),
+            lines
+                .iter()
+                .any(|l| l.starts_with("notify:textDocument/didOpen")),
             "expected a re-sent didOpen against the stored (resolving) root, got {lines:?}"
         );
 

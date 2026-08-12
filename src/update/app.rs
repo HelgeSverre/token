@@ -231,9 +231,9 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
 
         AppMsg::RestartLanguageServer => {
             let language = model.document().language;
-            match crate::lsp::lsp_server_def(language).map(|def| {
-                crate::lsp::LspServerId::from(def.id)
-            }) {
+            match crate::lsp::lsp_server_def(language)
+                .map(|def| crate::lsp::LspServerId::from(def.id))
+            {
                 Some(server_id) if model.lsp.servers.contains_key(&server_id) => {
                     super::update_lsp(model, crate::messages::LspMsg::RestartServer { server_id })
                 }
@@ -313,7 +313,9 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                     if had_marks {
                         model.resync_viewports();
                     }
-                    model.ui.set_status(format!("Saved: {}", new_path.display()));
+                    model
+                        .ui
+                        .set_status(format!("Saved: {}", new_path.display()));
                     let mut cmds = vec![Cmd::redraw_editor()];
                     if old_path.is_some() {
                         cmds.push(super::close_lsp_document(document_id));
@@ -441,7 +443,9 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::NavigateBack => {
             crate::update::update_lsp(model, crate::messages::LspMsg::NavigateBack)
         }
-        CommandId::ShowHover => crate::update::update_lsp(model, crate::messages::LspMsg::ShowHover),
+        CommandId::ShowHover => {
+            crate::update::update_lsp(model, crate::messages::LspMsg::ShowHover)
+        }
         CommandId::SplitHorizontal => {
             update_layout(model, LayoutMsg::SplitFocused(SplitDirection::Horizontal))
         }
@@ -508,6 +512,10 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             super::dock::update_dock(model, DockMsg::TogglePanel(PanelId::OUTLINE))
         }
         CommandId::CloseFocusedDock => super::dock::update_dock(model, DockMsg::CloseFocusedDock),
+        CommandId::RevealInSidebar => super::workspace::update_workspace(
+            model,
+            crate::messages::WorkspaceMsg::RevealActiveFile,
+        ),
         CommandId::RevealInFinder => {
             if let Some(path) = model.document().file_path.clone() {
                 Some(Cmd::Batch(vec![

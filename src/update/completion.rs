@@ -272,6 +272,16 @@ fn accept_selected(model: &mut AppModel) -> Option<Cmd> {
         model.editor_mut().selections[idx] = Selection::new(new_pos);
     }
 
+    // The same edit-invalidation every DocumentMsg runs: an accept is a
+    // buffer mutation, so occurrence tracking and the expand-selection
+    // history are stale (they could repaint ranges over the inserted text).
+    {
+        let editor = model.editor_mut();
+        editor.occurrence_state = None;
+        editor.clear_selection_history();
+    }
+    model.reset_cursor_blink();
+
     dismiss(model);
 
     if operations.is_empty() {
@@ -417,6 +427,52 @@ mod tests {
                 .unwrap()
                 .trim_end_matches('\n'),
             "val"
+        );
+    }
+
+    #[test]
+    fn accept_leaves_no_selection_at_the_insertion_site() {
+        // Regression: Tab-accepting a completion left a stale selection
+        // highlight behind (visible immediately with stale occurrence /
+        // expand-selection state, and after undo/redo via
+        // restore_batch_cursors keeping old anchors).
+        let mut model = model_with_text("value_one\n\n");
+        place_cursor(&mut model, 1, 0);
+        type_str(&mut model, "val");
+        assert!(model.ui.completion_menu.is_some());
+
+        update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+
+        assert!(
+            model.editor().selections.iter().all(|s| s.is_empty()),
+            "accept must not leave a selection"
+        );
+        assert!(model.editor().occurrence_state.is_none());
+        assert!(model.ui.cursor_visible, "accept resets the caret blink");
+    }
+
+    #[test]
+    fn undo_redo_across_an_accept_keeps_selections_collapsed() {
+        let mut model = model_with_text("value_one\n\n");
+        place_cursor(&mut model, 1, 0);
+        type_str(&mut model, "val");
+        update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+
+        update(
+            &mut model,
+            Msg::Document(crate::messages::DocumentMsg::Undo),
+        );
+        assert!(
+            model.editor().selections.iter().all(|s| s.is_empty()),
+            "undo across a Batch must rebuild collapsed selections"
+        );
+        update(
+            &mut model,
+            Msg::Document(crate::messages::DocumentMsg::Redo),
+        );
+        assert!(
+            model.editor().selections.iter().all(|s| s.is_empty()),
+            "redo across a Batch must rebuild collapsed selections"
         );
     }
 

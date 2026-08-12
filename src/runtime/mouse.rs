@@ -1117,6 +1117,17 @@ fn handle_editor_content_click(
     });
 
     // Handle modifiers
+    if event.cmd() {
+        // Cmd+Click = go to definition at the clicked position (JetBrains /
+        // VS Code convention: the caret moves to the click first).
+        update(
+            model,
+            Msg::Editor(EditorMsg::SetCursorPosition { line, column }),
+        );
+        update(model, Msg::Lsp(token::messages::LspMsg::GotoDefinition));
+        return EventResult::consumed_with_focus(FocusTarget::Editor);
+    }
+
     if event.shift() {
         update(
             model,
@@ -1396,9 +1407,8 @@ pub fn handle_mouse_wheel(
                     token::view::modal::debug_completion_row_count()
                         .saturating_sub(token::view::overlay_surface::MAX_VISIBLE_COMPLETION)
                 }
-                token::model::CursorOverlayKind::DebugHover | token::model::CursorOverlayKind::Hover => {
-                    0
-                }
+                token::model::CursorOverlayKind::DebugHover
+                | token::model::CursorOverlayKind::Hover => 0,
                 token::model::CursorOverlayKind::Completion => completion_rows
                     .saturating_sub(token::view::overlay_surface::MAX_VISIBLE_COMPLETION),
             };

@@ -63,6 +63,10 @@ impl MouseEvent {
 
     /// Check if shift modifier is active
     #[inline]
+    pub fn cmd(&self) -> bool {
+        self.modifiers.super_key()
+    }
+
     pub fn shift(&self) -> bool {
         self.modifiers.shift_key()
     }

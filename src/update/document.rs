@@ -2093,10 +2093,14 @@ fn edit_cursor_after(edit: &EditOperation) -> Option<Cursor> {
 fn restore_batch_cursors(model: &mut AppModel, cursors: &[Cursor]) {
     let editor = model.editor_mut();
     editor.cursors = cursors.to_vec();
-    while editor.selections.len() < editor.cursors.len() {
-        editor.selections.push(Selection::new(Position::new(0, 0)));
-    }
-    editor.selections.truncate(editor.cursors.len());
+    // Rebuild selections collapsed onto the restored cursors — reusing the
+    // old Selection values would keep stale anchors and leave a phantom
+    // highlight after undo/redo across a Batch edit.
+    editor.selections = editor
+        .cursors
+        .iter()
+        .map(|c| Selection::new(c.to_position()))
+        .collect();
 }
 
 /// Apply an undo operation to the model (reverses the edit)

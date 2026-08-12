@@ -79,6 +79,7 @@ pub enum CommandId {
 
     // File path operations
     RevealInFinder,
+    RevealInSidebar,
     CopyAbsolutePath,
     CopyRelativePath,
 
@@ -222,7 +223,7 @@ pub static COMMANDS: &[CommandDef] = &[
         id: CommandId::GotoDefinition,
         category: CommandCategory::Nav,
         label: "Go to Definition",
-        keybinding: Some("F12"),
+        keybinding: Some("⌘B"),
     },
     CommandDef {
         id: CommandId::NavigateBack,
@@ -234,7 +235,7 @@ pub static COMMANDS: &[CommandDef] = &[
         id: CommandId::ShowHover,
         category: CommandCategory::Nav,
         label: "Show Hover",
-        keybinding: Some("⌃⇧Space"),
+        keybinding: Some("⇧⌘D"),
     },
     CommandDef {
         id: CommandId::SplitHorizontal,
@@ -363,6 +364,12 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: None,
     },
     CommandDef {
+        id: CommandId::RevealInSidebar,
+        category: CommandCategory::File,
+        label: "Reveal in File Explorer",
+        keybinding: Some("\u{2318}\u{21e7}R"),
+    },
+    CommandDef {
         id: CommandId::CopyAbsolutePath,
         category: CommandCategory::File,
         label: "Copy Absolute Path",
@@ -475,6 +482,7 @@ impl CommandId {
             CommandId::ToggleOutline => Some(KeymapCommand::ToggleOutline),
             CommandId::CloseFocusedDock => Some(KeymapCommand::CloseFocusedDock),
             CommandId::RevealInFinder => None,
+            CommandId::RevealInSidebar => Some(KeymapCommand::RevealInSidebar),
             CommandId::CopyAbsolutePath => None,
             CommandId::CopyRelativePath => None,
             CommandId::OpenRecentFiles => Some(KeymapCommand::OpenRecentFiles),
@@ -801,7 +809,10 @@ pub enum Cmd {
     /// Debounce an edit's `didChange` (deadline-map + max-wait cap,
     /// mirroring `DebouncedSyntaxParse`). A no-op if `document_id` isn't
     /// currently open on any server.
-    LspScheduleDidChange { document_id: DocumentId, revision: u64 },
+    LspScheduleDidChange {
+        document_id: DocumentId,
+        revision: u64,
+    },
     /// Send `textDocument/didSave` for a just-saved document, with text
     /// iff the server's capabilities asked for it.
     LspDidSave { document_id: DocumentId },
