@@ -155,25 +155,33 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                     state.files.as_ref().map(|f| f.selected_index).unwrap_or(0),
                 ),
                 SearchTab::All => {
-                    use token::update::ALL_TAB_GROUP_CAP;
-
-                    let mut rows: Vec<OverlayRowSnapshot> = state
-                        .matches
+                    // Walk `search_everywhere_sections` — the doc's single
+                    // ordering authority — instead of re-deriving group caps
+                    // here, so automation's row order can't drift from what
+                    // the view actually renders/selects against.
+                    let mut commands = state.matches.iter().map(command_row);
+                    let mut files = state
+                        .files
                         .iter()
-                        .take(ALL_TAB_GROUP_CAP)
-                        .map(|m| OverlayRowSnapshot {
-                            label: m.def.label.to_owned(),
-                            section: Some("Commands".to_owned()),
+                        .flat_map(|f| f.results.iter().map(file_row));
+                    let rows = token::update::search_everywhere_sections(state)
+                        .into_iter()
+                        .flat_map(|(title, len)| {
+                            let source: &mut dyn Iterator<Item = OverlayRowSnapshot> =
+                                if title == Some("Files") {
+                                    &mut files
+                                } else {
+                                    &mut commands
+                                };
+                            source
+                                .take(len)
+                                .map(|row| OverlayRowSnapshot {
+                                    section: title.map(|t| t.to_owned()),
+                                    ..row
+                                })
+                                .collect::<Vec<_>>()
                         })
                         .collect();
-                    if let Some(files) = &state.files {
-                        rows.extend(files.results.iter().take(ALL_TAB_GROUP_CAP).map(|m| {
-                            OverlayRowSnapshot {
-                                label: m.filename.clone(),
-                                section: Some("Files".to_owned()),
-                            }
-                        }));
-                    }
                     (rows, state.all_selected)
                 }
                 SearchTab::Symbols => (Vec::new(), 0),
@@ -199,8 +207,81 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                 selected,
             })
         }
-        _ => None,
+        token::model::ModalState::GotoLine(state) => Some(OverlaySnapshot {
+            context: "goto_line".to_owned(),
+            query: state.input(),
+            active_tab: None,
+            rows: Vec::new(),
+            selected: 0,
+        }),
+        token::model::ModalState::FindReplace(state) => Some(OverlaySnapshot {
+            context: "find_replace".to_owned(),
+            query: state.query(),
+            active_tab: None,
+            rows: Vec::new(),
+            selected: 0,
+        }),
+        token::model::ModalState::ThemePicker(state) => Some(OverlaySnapshot {
+            context: "theme_picker".to_owned(),
+            query: String::new(),
+            active_tab: None,
+            rows: state
+                .themes
+                .iter()
+                .map(|t| OverlayRowSnapshot {
+                    label: t.name.clone(),
+                    section: Some(theme_source_title(t.source).to_owned()),
+                })
+                .collect(),
+            selected: state.selected_index,
+        }),
+        token::model::ModalState::FileFinder(state) => Some(OverlaySnapshot {
+            context: "file_finder".to_owned(),
+            query: state.input(),
+            active_tab: None,
+            rows: state
+                .results
+                .iter()
+                .map(|m| OverlayRowSnapshot {
+                    label: m.filename.clone(),
+                    section: None,
+                })
+                .collect(),
+            selected: state.selected_index,
+        }),
+        token::model::ModalState::RecentFiles(state) => Some(OverlaySnapshot {
+            context: "recent_files".to_owned(),
+            query: state.input(),
+            active_tab: None,
+            rows: state
+                .filtered_rows
+                .iter()
+                .map(|&i| {
+                    let entry = &state.entries[i];
+                    OverlayRowSnapshot {
+                        label: entry
+                            .path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                        section: Some(recent_group_title(entry).to_owned()),
+                    }
+                })
+                .collect(),
+            selected: state.selected_index,
+        }),
     }
+}
+
+fn theme_source_title(source: token::theme::ThemeSource) -> &'static str {
+    match source {
+        token::theme::ThemeSource::User => "User Themes",
+        token::theme::ThemeSource::Builtin => "Built-in Themes",
+    }
+}
+
+fn recent_group_title(entry: &token::recent_files::RecentEntry) -> &'static str {
+    entry.group().title()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -577,7 +658,10 @@ fn parse_arg<T: std::str::FromStr>(value: Option<String>, name: &str) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::{document_size_error, MAX_DOCUMENT_SIZE, MAX_MESSAGE_SIZE};
+    use super::{document_size_error, overlay_snapshot, MAX_DOCUMENT_SIZE, MAX_MESSAGE_SIZE};
+    use token::model::ui::{FindReplaceState, GotoLineState, RecentFilesState, ThemePickerState};
+    use token::model::ModalState;
+    use token::recent_files::RecentEntry;
     use token::util::ByteSize;
 
     #[test]
@@ -589,5 +673,102 @@ mod tests {
             document_size_error(MAX_DOCUMENT_SIZE.as_usize() + 1).as_deref(),
             Some("document is 3.0 MiB; automation reads are limited to 3.0 MiB")
         );
+    }
+
+    // overlay-surface.md's Testing Strategy: "Automation: open each
+    // context, assert the `overlay` snapshot". Every context must return
+    // `Some`, not just CommandPalette — a client reading `state.overlay`
+    // on Find/Replace, Go to Line, the theme picker, or recent files must
+    // not see `null`.
+
+    #[test]
+    fn goto_line_overlay_snapshot_reports_the_query() {
+        let mut state = GotoLineState::default();
+        state.set_input("42");
+        let modal = ModalState::GotoLine(state);
+        let snapshot = overlay_snapshot(&modal).expect("Go to Line must report an overlay");
+        assert_eq!(snapshot.context, "goto_line");
+        assert_eq!(snapshot.query, "42");
+    }
+
+    #[test]
+    fn find_replace_overlay_snapshot_reports_the_query() {
+        let mut state = FindReplaceState::default();
+        state.set_query("needle");
+        let modal = ModalState::FindReplace(state);
+        let snapshot = overlay_snapshot(&modal).expect("Find/Replace must report an overlay");
+        assert_eq!(snapshot.context, "find_replace");
+        assert_eq!(snapshot.query, "needle");
+    }
+
+    #[test]
+    fn theme_picker_overlay_snapshot_reports_rows_and_selection() {
+        let mut state = ThemePickerState::new("dark".to_owned());
+        state.selected_index = 1;
+        let expected_len = state.themes.len();
+        let modal = ModalState::ThemePicker(state);
+        let snapshot = overlay_snapshot(&modal).expect("theme picker must report an overlay");
+        assert_eq!(snapshot.context, "theme_picker");
+        assert_eq!(snapshot.rows.len(), expected_len);
+        assert_eq!(snapshot.selected, 1);
+    }
+
+    #[test]
+    fn all_tab_overlay_snapshot_matches_search_everywhere_sections_order() {
+        use token::model::ui::{FileFinderState, FileMatch};
+        use token::model::{CommandPaletteState, SearchTab};
+
+        let mut default_state = CommandPaletteState::default();
+        default_state.matches.truncate(2);
+        let mut state = CommandPaletteState {
+            active_tab: SearchTab::All,
+            files_available: true,
+            ..default_state
+        };
+        let root = std::path::PathBuf::from("/ws");
+        let mut files = FileFinderState::new(Vec::new(), root.clone());
+        files.results = vec![FileMatch::from_path(
+            &root.join("a.rs"),
+            &root,
+            0,
+            Vec::new(),
+        )];
+        state.files = Some(files);
+
+        let sections = token::update::search_everywhere_sections(&state);
+        let modal = ModalState::CommandPalette(state);
+        let snapshot = overlay_snapshot(&modal).expect("command palette must report an overlay");
+
+        assert_eq!(
+            snapshot.rows.len(),
+            sections.iter().map(|(_, len)| len).sum::<usize>(),
+            "row count must equal search_everywhere_sections' row count"
+        );
+        // Section boundaries in the snapshot must line up with the
+        // ordering authority's own (title, len) groups.
+        let mut idx = 0;
+        for (title, len) in sections {
+            for row in &snapshot.rows[idx..idx + len] {
+                assert_eq!(row.section.as_deref(), title);
+            }
+            idx += len;
+        }
+    }
+
+    #[test]
+    fn recent_files_overlay_snapshot_reports_filtered_rows_in_order() {
+        let recent = token::recent_files::RecentFiles {
+            version: token::recent_files::RecentFiles::CURRENT_VERSION,
+            entries: vec![
+                RecentEntry::new("/ws/a.rs".into(), None),
+                RecentEntry::new("/ws/b.rs".into(), None),
+            ],
+        };
+        let state = RecentFilesState::new(&recent, None);
+        let modal = ModalState::RecentFiles(state);
+        let snapshot = overlay_snapshot(&modal).expect("recent files must report an overlay");
+        assert_eq!(snapshot.context, "recent_files");
+        assert_eq!(snapshot.rows.len(), 2);
+        assert_eq!(snapshot.selected, 0);
     }
 }
