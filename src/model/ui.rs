@@ -430,21 +430,6 @@ impl RecentFilesState {
         self.editable.text()
     }
 
-    /// Get filtered entries based on current input (unordered/ungrouped;
-    /// used by callers that don't need the Pinned/date grouping, e.g. tests).
-    pub fn filtered_entries(&self) -> Vec<&crate::recent_files::RecentEntry> {
-        let filter = self.input();
-        if filter.is_empty() {
-            self.entries.iter().collect()
-        } else {
-            let filter_lower = filter.to_lowercase();
-            self.entries
-                .iter()
-                .filter(|e| e.display_path().to_lowercase().contains(&filter_lower))
-                .collect()
-        }
-    }
-
     /// Recompute `filtered_rows`: entries matching the current query,
     /// stable-sorted by group (Pinned first, then Today/Yesterday/Earlier),
     /// preserving MRU order within each group. The ordering authority for
@@ -936,13 +921,17 @@ mod tests {
         let mut state = RecentFilesState::new(&recent, None);
 
         // No filter — all entries
-        assert_eq!(state.filtered_entries().len(), 3);
+        state.recompute_filtered_rows();
+        assert_eq!(state.filtered_rows.len(), 3);
 
         // Filter by "main"
         state.editable.set_content("main");
-        let filtered = state.filtered_entries();
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].path, PathBuf::from("/project/src/main.rs"));
+        state.recompute_filtered_rows();
+        assert_eq!(state.filtered_rows.len(), 1);
+        assert_eq!(
+            state.entries[state.filtered_rows[0]].path,
+            PathBuf::from("/project/src/main.rs")
+        );
     }
 
     #[test]
@@ -950,7 +939,8 @@ mod tests {
         let recent = make_recent(vec![make_entry("/project/src/Main.rs", Some("/project"))]);
         let mut state = RecentFilesState::new(&recent, None);
         state.editable.set_content("main");
-        assert_eq!(state.filtered_entries().len(), 1);
+        state.recompute_filtered_rows();
+        assert_eq!(state.filtered_rows.len(), 1);
     }
 
     #[test]
