@@ -28,7 +28,7 @@ pub fn collect_words(document: &Document, cursor: Cursor, query: &str) -> Vec<Me
 
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    for line_idx in start_line..=end_line {
+    for line_idx in lines_nearest_first(start_line, cursor.line.min(end_line), end_line) {
         let Some(line) = document.get_line_cow(line_idx) else {
             continue;
         };
@@ -47,6 +47,36 @@ pub fn collect_words(document: &Document, cursor: Cursor, query: &str) -> Vec<Me
             if out.len() >= MAX_WORDS {
                 return out;
             }
+        }
+    }
+    out
+}
+
+/// Line indices from `start..=end` ordered by distance to `center`
+/// (`center` first, then alternating outward: center+1, center-1, center+2,
+/// center-2, ...). `collect_words` scans in this order so the `MAX_WORDS`
+/// cap — which a large window can hit well before the whole range is
+/// scanned — is spent on lines nearest the cursor rather than always on the
+/// top of the window.
+fn lines_nearest_first(start: usize, center: usize, end: usize) -> Vec<usize> {
+    let mut out = Vec::with_capacity(end - start + 1);
+    out.push(center);
+    let mut below = center + 1;
+    let mut above = center;
+    loop {
+        let mut moved = false;
+        if below <= end {
+            out.push(below);
+            below += 1;
+            moved = true;
+        }
+        if above > start {
+            above -= 1;
+            out.push(above);
+            moved = true;
+        }
+        if !moved {
+            break;
         }
     }
     out
@@ -162,6 +192,29 @@ mod tests {
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
         assert!(!labels.contains(&"value"));
         assert!(labels.contains(&"valueOther"));
+    }
+
+    #[test]
+    fn a_word_near_the_cursor_survives_the_max_words_cap() {
+        // MAX_WORDS unique filler identifiers, each on its own line, all
+        // above the cursor — enough to fill the cap on their own. A
+        // distinct word sits on the line directly above the cursor. If the
+        // scan fills the cap from the top of the window (the regression),
+        // the near-cursor word is never reached.
+        let mut text = String::new();
+        for i in 0..MAX_WORDS + 100 {
+            text.push_str(&format!("let filler_word_{i} = 0;\n"));
+        }
+        text.push_str("let target_word_here = 1;\n");
+        let cursor_line = text.matches('\n').count(); // line after the last one
+        let doc = doc_with(&text);
+
+        let items = collect_words(&doc, Cursor::at(cursor_line, 0), "targ");
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert!(
+            labels.contains(&"target_word_here"),
+            "word on the line directly above the cursor must survive the MAX_WORDS cap"
+        );
     }
 
     #[test]
