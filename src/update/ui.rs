@@ -2315,6 +2315,77 @@ mod tests {
     }
 
     #[test]
+    fn reopening_the_palette_picks_up_files_created_since_last_open() {
+        // The Files/All-tab index used to populate once (`files.is_none()`
+        // gate) and stick around in `last_command_palette` forever after —
+        // creating a file and reopening the palette must see it, not the
+        // stale cached list.
+        let (mut model, dir) = workspace_model_with_query("delta");
+        assert!(
+            model
+                .ui
+                .active_modal
+                .as_ref()
+                .is_some_and(|m| matches!(m, ModalState::CommandPalette(s) if s.files.is_some())),
+            "files tab should already be populated (All tab renders a Files group)"
+        );
+        // Cache the (now stale) state the way a real close does, and close.
+        model.ui.last_command_palette = match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => Some(state.clone()),
+            other => panic!("expected command palette modal, got {other:?}"),
+        };
+        model.ui.close_modal();
+
+        std::fs::write(dir.path().join("delta.rs"), "").unwrap();
+        // Mirrors what the fs-watcher-driven sidebar refresh does: rebuild
+        // the workspace's file tree in place.
+        model.open_workspace(dir.path().to_path_buf());
+
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+        update_ui(
+            &mut model,
+            UiMsg::Modal(ModalMsg::SetInput("delta".to_owned())),
+        );
+
+        match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => {
+                let files = state.files.as_ref().expect("files tab populated");
+                let names: Vec<&str> = files.results.iter().map(|m| m.filename.as_str()).collect();
+                assert_eq!(
+                    names,
+                    vec!["delta.rs"],
+                    "reopening the palette must re-scan the workspace, not reuse a stale index"
+                );
+            }
+            other => panic!("expected command palette modal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reopening_the_palette_after_closing_the_workspace_drops_stale_files() {
+        let (mut model, _dir) = workspace_model_with_query("alpha");
+        model.ui.last_command_palette = match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => Some(state.clone()),
+            other => panic!("expected command palette modal, got {other:?}"),
+        };
+        model.ui.close_modal();
+        model.close_workspace();
+
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+
+        match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => {
+                assert!(!state.files_available, "Files tab must be unavailable");
+                assert!(
+                    state.files.is_none(),
+                    "no workspace means no stale file index to fall back on"
+                );
+            }
+            other => panic!("expected command palette modal, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn all_tab_sections_are_empty_when_nothing_matches() {
         // No bare "Commands" header with zero rows underneath it — the
         // empty-state message in `view::modal` relies on `sections` being
