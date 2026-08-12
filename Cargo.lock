@@ -4537,6 +4537,7 @@ dependencies = [
  "open",
  "portable-pty",
  "pulldown-cmark",
+ "regex",
  "rfd",
  "rmcp",
  "ropey",

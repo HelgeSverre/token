@@ -87,6 +87,9 @@ notify-debouncer-mini = "0.4"
 # For CSV parsing (RFC 4180 compliant)
 csv = "1.3"
 
+# For find/replace regex + whole-word search
+regex = "1"
+
 # Syntax highlighting with tree-sitter
 tree-sitter = "0.25"
 tree-sitter-language = "0.1"

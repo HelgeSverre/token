@@ -387,6 +387,14 @@ impl Document {
         // Wrap around to last occurrence
         occurrences.last().copied()
     }
+
+    /// Run a `search::SearchQuery` (regex/whole-word/case options) against
+    /// the whole document, returning char-offset matches — the richer
+    /// engine used by find/replace navigation and match-highlighting
+    /// decorations. See `find-enhancements.md`.
+    pub fn search_matches(&self, query: &crate::search::SearchQuery) -> Vec<crate::search::Match> {
+        query.find_all(&self.buffer.to_string())
+    }
 }
 
 impl Default for Document {
