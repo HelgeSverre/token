@@ -54,7 +54,11 @@ pub(crate) fn current_jump_entry(model: &AppModel) -> Option<JumpEntry> {
     let doc = model.try_document()?;
     let document_id = doc.id?;
     let path = doc.file_path.clone()?;
-    let cursor = model.editor().cursors[0];
+    // The user's most recently active cursor (multi-cursor editing), same
+    // source `ShowHover` uses — `GotoDefinition` previously read
+    // `cursors[0]` instead, so a jump could be captured/requested from a
+    // different position than the one the user was actually at.
+    let cursor = *model.editor().active_cursor();
     Some(JumpEntry {
         group_id: model.editor_area.focused_group_id,
         document_id,
@@ -182,6 +186,29 @@ mod tests {
         assert!(model.try_document().unwrap().file_path.is_none());
         push_history(&mut model);
         assert!(model.jump_history.is_empty());
+    }
+
+    /// Multi-cursor editing: `current_jump_entry` (and by extension
+    /// `Command::GotoDefinition`, which shares this source) must capture
+    /// the *active* cursor, not `cursors[0]` — otherwise a jump/request
+    /// issued with a secondary cursor active would silently use the
+    /// primary cursor's position instead of where the user actually was.
+    #[test]
+    fn current_jump_entry_uses_the_active_cursor_not_the_primary_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut model = model_with_two_files(dir.path());
+        model.editor_mut().cursors[0].line = 0;
+        model.editor_mut().cursors[0].column = 0;
+        model.editor_mut().add_cursor_at(1, 2);
+        assert_eq!(model.editor().active_cursor_index, 1);
+
+        let entry = current_jump_entry(&model).unwrap();
+
+        assert_eq!(
+            (entry.line, entry.col),
+            (1, 2),
+            "must capture the active (secondary) cursor's position, not cursors[0]"
+        );
     }
 
     #[test]

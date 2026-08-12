@@ -137,7 +137,12 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             // Document Synchronization section) — nothing to request
             // against.
             doc.file_path.as_ref()?;
-            let position = crate::lsp::position_to_lsp(doc, model.editor().cursors[0].to_position());
+            // The user's most recently active cursor (multi-cursor
+            // editing) — same source `ShowHover` and jump history's
+            // `current_jump_entry` use, so a go-to-definition request and
+            // the back-stack entry it pushes always agree on "where the
+            // user was".
+            let position = crate::lsp::position_to_lsp(doc, model.editor().active_cursor().to_position());
             let origin = navigation::current_jump_entry(model)?;
             Some(Cmd::LspRequestDefinition {
                 document_id,
