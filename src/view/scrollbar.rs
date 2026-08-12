@@ -280,6 +280,18 @@ fn thumb_offset(position: usize, max_position: usize, travel: f32) -> f32 {
     (ratio * travel).clamp(0.0, travel)
 }
 
+/// Map a content position (e.g. a document line) to a track-relative pixel
+/// row, for overview marks (diagnostics/search ticks) on the vertical
+/// scrollbar. `ScrollbarGeometry` only maps thumb extent — this is the
+/// separate line-to-track-y mapping editor-decorations.md needs.
+pub fn track_row_for_position(track_len: f32, total: usize, position: usize) -> usize {
+    if total <= 1 || track_len <= 1.0 {
+        return 0;
+    }
+    let ratio = (position as f32 / (total - 1) as f32).clamp(0.0, 1.0);
+    (ratio * (track_len - 1.0)).round() as usize
+}
+
 /// Shrink a rect uniformly by `amount` on each side.
 fn inset_rect(r: Rect, amount: f32) -> Rect {
     Rect::new(
@@ -417,6 +429,22 @@ mod tests {
         assert!(geo.needed);
         // Thumb should be 25% of track width = 150px
         assert!((geo.thumb_rect.width - 150.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_track_row_for_position_spans_first_to_last_row() {
+        assert_eq!(track_row_for_position(400.0, 100, 0), 0);
+        assert_eq!(track_row_for_position(400.0, 100, 99), 399);
+        // Midpoint line lands roughly at the midpoint row.
+        let mid = track_row_for_position(400.0, 100, 50);
+        assert!((190..=210).contains(&mid), "got {mid}");
+    }
+
+    #[test]
+    fn test_track_row_for_position_degenerate_inputs_do_not_panic() {
+        assert_eq!(track_row_for_position(400.0, 0, 0), 0);
+        assert_eq!(track_row_for_position(400.0, 1, 0), 0);
+        assert_eq!(track_row_for_position(0.0, 100, 50), 0);
     }
 
     #[test]

@@ -137,11 +137,16 @@ pub enum HitTarget {
     /// Empty area of a group's tab bar (no specific tab)
     GroupTabBarEmpty { group_id: GroupId },
 
-    /// Editor gutter (line numbers)
+    /// Editor gutter (line numbers, and once shipped: marks/fold/diff lanes)
     EditorGutter {
         group_id: GroupId,
         editor_id: EditorId,
         line: usize,
+        /// Which lane was clicked, if any active lane covers the x
+        /// coordinate (see `GutterLayout::lane_at`). `None` for today's
+        /// line-numbers-only gutter width past the active lanes, or when
+        /// no lane is active at all.
+        lane: Option<super::geometry::LaneId>,
     },
 
     /// Editor text content area
@@ -668,10 +673,13 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
         let local_y = pt.y - content_y_start;
         let viewport = TextViewportMap::new(&editor.viewport, document.line_count());
         let line = viewport.doc_line_for_pixel_y(local_y, model.line_height as f64);
+        let x_in_gutter = (pt.x - group.rect.x as f64).max(0.0) as usize;
+        let lane = layout.gutter.lane_at(x_in_gutter);
         return Some(HitTarget::EditorGutter {
             group_id,
             editor_id,
             line,
+            lane,
         });
     }
 

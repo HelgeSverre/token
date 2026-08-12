@@ -387,12 +387,16 @@ pub fn handle_mouse_press(
         };
     };
 
-    // Track if we're clicking on editor content (for drag tracking)
+    // Track if we're clicking on editor content (for drag tracking).
+    // Interactive gutter lanes (fold chevron, marks) consume the press
+    // themselves (see `handle_left_click`) — a chevron click must not
+    // arm text-selection drag tracking.
     let is_editor_content = matches!(
         target,
-        HitTarget::EditorContent { .. }
-            | HitTarget::EditorGutter { .. }
-            | HitTarget::ImageContent { .. }
+        HitTarget::EditorContent { .. } | HitTarget::ImageContent { .. }
+    ) || matches!(
+        target,
+        HitTarget::EditorGutter { lane, .. } if !lane.is_some_and(|lane| lane.is_interactive())
     );
     let is_left_click = matches!(event.button, MouseButton::Left);
 
@@ -596,15 +600,21 @@ fn handle_left_click(
             EventResult::consumed_with_focus(FocusTarget::Editor)
         }
 
-        // Editor gutter (line numbers) - could be used for line selection
-        HitTarget::EditorGutter { group_id, .. } => {
-            if *group_id != model.editor_area.focused_group_id {
-                update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
+        // Editor gutter: interactive lanes (fold/marks) dispatch to their
+        // owning feature instead of falling through to the default
+        // focus/drag-select behavior (editor-decorations.md). No lane owner
+        // has shipped yet, so those consume the press as a no-op.
+        HitTarget::EditorGutter { group_id, lane, .. } => match lane {
+            Some(lane) if lane.is_interactive() => EventResult::consumed_no_redraw(),
+            _ => {
+                if *group_id != model.editor_area.focused_group_id {
+                    update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
+                }
+                // For now, treat like editor content click
+                // Future: could select entire line
+                EventResult::consumed_with_focus(FocusTarget::Editor)
             }
-            // For now, treat like editor content click
-            // Future: could select entire line
-            EventResult::consumed_with_focus(FocusTarget::Editor)
-        }
+        },
 
         // Editor content - handled specially due to complex selection logic
         HitTarget::EditorContent { group_id, .. } => {
@@ -996,9 +1006,14 @@ fn handle_middle_click(
         // Empty tab bar area - consume but no action
         HitTarget::GroupTabBarEmpty { .. } => EventResult::consumed_no_redraw(),
 
-        // Editor gutter - treat like editor content for rectangle selection
-        HitTarget::EditorGutter { group_id, .. } => {
+        // Editor gutter - treat like editor content for rectangle selection,
+        // unless an interactive lane (fold/marks) owns the click.
+        HitTarget::EditorGutter { group_id, lane, .. } => {
             use token::messages::EditorMsg;
+
+            if lane.is_some_and(|lane| lane.is_interactive()) {
+                return EventResult::consumed_no_redraw();
+            }
 
             if *group_id != model.editor_area.focused_group_id {
                 update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
