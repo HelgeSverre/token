@@ -122,15 +122,59 @@ fn now_epoch_secs() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // `XDG_CONFIG_HOME` is process-wide state; serialize the tests below
+    // that point it at a scratch dir so they can't interleave with each
+    // other across `cargo test`'s parallel threads.
+    static XDG_CONFIG_HOME_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Run `body` with `XDG_CONFIG_HOME` pointed at a fresh scratch dir,
+    /// restoring the previous value afterwards.
+    fn with_scratch_config_dir(body: impl FnOnce()) {
+        let _guard = XDG_CONFIG_HOME_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("XDG_CONFIG_HOME");
+        std::env::set_var("XDG_CONFIG_HOME", dir.path());
+
+        body();
+
+        match previous {
+            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+    }
 
     #[test]
     fn load_returns_empty_history_for_missing_file() {
-        // No config dir override in tests — this exercises the error path
-        // whenever the real path doesn't exist yet, and always the
-        // default-on-any-error contract otherwise.
-        let history = CommandHistory::default();
-        assert!(history.commands.is_empty());
-        assert_eq!(history.version, 0);
+        // Point XDG_CONFIG_HOME at a scratch dir with no command-history.json
+        // in it, so `load()` genuinely exercises its missing-file branch
+        // rather than asserting properties of `Default` in isolation.
+        with_scratch_config_dir(|| {
+            let history = CommandHistory::load();
+            assert!(history.commands.is_empty());
+            assert_eq!(history.version, 0);
+        });
+    }
+
+    #[test]
+    fn load_round_trips_a_saved_history() {
+        with_scratch_config_dir(|| {
+            let mut saved = CommandHistory {
+                version: CommandHistory::CURRENT_VERSION,
+                ..Default::default()
+            };
+            saved.record_execution(CommandId::SaveFile);
+            saved.save().unwrap();
+            let loaded = CommandHistory::load();
+
+            assert_eq!(
+                loaded.commands[&key(CommandId::SaveFile)].execution_count,
+                1
+            );
+        });
     }
 
     #[test]
