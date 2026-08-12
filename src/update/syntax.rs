@@ -61,7 +61,7 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
 
             // Snapshot the document content for parsing
             let snapshot_started = Instant::now();
-            let source = doc.buffer.to_string();
+            let source: std::sync::Arc<str> = doc.buffer.to_string().into();
             let snapshot_ms = snapshot_started.elapsed().as_secs_f64() * 1000.0;
             let language = doc.language;
 
@@ -316,7 +316,7 @@ mod tests {
         {
             assert_eq!(document_id, doc_id);
             assert_eq!(revision, 5);
-            assert_eq!(source, "fn main() {}");
+            assert_eq!(&*source, "fn main() {}");
             assert_eq!(language, LanguageId::Rust);
         } else {
             panic!("Expected RunSyntaxParse command");

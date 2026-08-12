@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -54,7 +55,7 @@ use winit::keyboard::ModifiersState;
 struct SyntaxParseRequest {
     document_id: token::model::editor_area::DocumentId,
     revision: u64,
-    source: String,
+    source: Arc<str>,
     language: LanguageId,
     snapshot_ms: f64,
     queued_at: Instant,
@@ -455,7 +456,10 @@ impl App {
             .documents
             .iter()
             .filter(|(_, doc)| doc.language.has_highlighting())
-            .map(|(&id, doc)| (id, doc.revision, doc.buffer.to_string(), doc.language))
+            .map(|(&id, doc)| {
+                let source: Arc<str> = doc.buffer.to_string().into();
+                (id, doc.revision, source, doc.language)
+            })
             .collect();
 
         // Send parse requests for each document
@@ -2014,7 +2018,7 @@ impl App {
         &mut self,
         document_id: token::model::editor_area::DocumentId,
         revision: u64,
-        text: Option<String>,
+        text: Option<Arc<str>>,
     ) {
         let Some(state) = self.lsp.open_documents.get_mut(&document_id) else {
             return;
@@ -2026,16 +2030,16 @@ impl App {
         else {
             return;
         };
-        let text = match text {
+        let text: Arc<str> = match text {
             Some(text) => text,
             None => match self.model.editor_area.documents.get(&document_id) {
-                Some(doc) => doc.buffer.to_string(),
+                Some(doc) => doc.buffer.to_string().into(),
                 None => return,
             },
         };
         let params = serde_json::json!({
             "textDocument": { "uri": state.uri.as_str(), "version": revision as i64 },
-            "contentChanges": [{ "text": text }],
+            "contentChanges": [{ "text": text.as_ref() }],
         });
         let _ = handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
             method: "textDocument/didChange".to_owned(),
@@ -2705,7 +2709,7 @@ impl App {
     /// coincide (design doc: "must not double" the rope-to-string cost).
     fn check_syntax_deadlines(
         &mut self,
-    ) -> (bool, HashMap<token::model::editor_area::DocumentId, String>) {
+    ) -> (bool, HashMap<token::model::editor_area::DocumentId, Arc<str>>) {
         let mut snapshots = HashMap::new();
         if self.syntax_deadlines.is_empty() {
             return (false, snapshots);
@@ -2758,7 +2762,7 @@ impl App {
     /// deadline for that newer revision).
     fn check_lsp_did_change_deadlines(
         &mut self,
-        shared_snapshots: &HashMap<token::model::editor_area::DocumentId, String>,
+        shared_snapshots: &HashMap<token::model::editor_area::DocumentId, Arc<str>>,
     ) {
         let now = Instant::now();
         for (document_id, revision) in self.lsp_change_deadlines.take_expired(now) {
@@ -3129,11 +3133,10 @@ mod tests {
         app.handle_lsp_server_exited(&server_id, real_generation.wrapping_add(1));
 
         assert!(app.lsp.servers.contains_key(&(server_id.clone(), root.clone())));
-        assert!(app
+        assert!(!app
             .lsp
             .restart_attempts
-            .get(&(server_id.clone(), root.clone()))
-            .is_none());
+            .contains_key(&(server_id.clone(), root.clone())));
 
         // Clean up the still-live fake child.
         handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
@@ -3182,11 +3185,10 @@ mod tests {
                 .copied(),
             Some(1)
         );
-        assert!(app
+        assert!(!app
             .lsp
             .restart_attempts
-            .get(&(server_id, root_b))
-            .is_none());
+            .contains_key(&(server_id, root_b)));
     }
 
     #[test]
@@ -3238,7 +3240,7 @@ mod tests {
         // of silently doing nothing.
         app.restart_lsp_server(&server_id);
 
-        assert!(app.lsp.failed_roots.get(&server_id).is_none());
+        assert!(!app.lsp.failed_roots.contains_key(&server_id));
     }
 
     #[test]
