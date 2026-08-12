@@ -998,9 +998,12 @@ fn reader_loop(
 }
 
 /// Parses a `textDocument/definition` response's `result` into
-/// `Location`s. We advertise `linkSupport: false`, so a `LocationLink[]`
-/// response is a non-conforming server and its extra fields are ignored
-/// by `Location`'s deserializer (permissive, not strict). `null` (no
+/// `Location`s. We advertise `linkSupport: false`, but that's advisory —
+/// a real server (`laravel-lsp`, observed live) sends `LocationLink[]`
+/// regardless. `LocationLink` has no `uri`/`range` fields at all
+/// (`targetUri`/`targetRange` instead), so `Location`'s deserializer
+/// rejects it outright rather than ignoring extra fields — falling back
+/// to `LocationLink` parsing is required, not optional. `null` (no
 /// definition) and a malformed result both become an empty vec — the
 /// caller can't tell "no result" from "unparseable result" here, which is
 /// fine: both status transient to "no definition found".
@@ -1014,7 +1017,21 @@ fn parse_definition_result(result: Option<&Value>) -> Vec<lsp_types::Location> {
     if let Ok(location) = serde_json::from_value::<lsp_types::Location>(result.clone()) {
         return vec![location];
     }
-    serde_json::from_value::<Vec<lsp_types::Location>>(result.clone()).unwrap_or_default()
+    if let Ok(locations) =
+        serde_json::from_value::<Vec<lsp_types::Location>>(result.clone())
+    {
+        return locations;
+    }
+    if let Ok(links) = serde_json::from_value::<Vec<lsp_types::LocationLink>>(result.clone()) {
+        return links
+            .into_iter()
+            .map(|link| lsp_types::Location {
+                uri: link.target_uri,
+                range: link.target_selection_range,
+            })
+            .collect();
+    }
+    Vec::new()
 }
 
 /// Parses a `textDocument/hover` response's `result` into plaintext
@@ -1713,6 +1730,33 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
     fn definition_result_malformed_is_no_locations_not_a_panic() {
         let result = json!({ "not": "a location" });
         assert!(parse_definition_result(Some(&result)).is_empty());
+    }
+
+    #[test]
+    fn definition_result_accepts_location_link_array_despite_advertised_link_support_false() {
+        // laravel-lsp (observed live) ignores our `linkSupport: false` and
+        // replies with `LocationLink[]` regardless — a non-conforming but
+        // real server, not a hypothetical.
+        let result = json!([{
+            "originSelectionRange": {
+                "start": { "line": 5, "character": 17 },
+                "end": { "line": 5, "character": 24 },
+            },
+            "targetUri": "file:///tmp/welcome.blade.php",
+            "targetRange": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 10, "character": 0 },
+            },
+            "targetSelectionRange": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 1 },
+            },
+        }]);
+        let locations = parse_definition_result(Some(&result));
+        assert_eq!(locations.len(), 1);
+        assert_eq!(locations[0].uri.as_str(), "file:///tmp/welcome.blade.php");
+        assert_eq!(locations[0].range.start.line, 0);
+        assert_eq!(locations[0].range.end.character, 1);
     }
 
     // ---- textDocument/hover response parsing ----
