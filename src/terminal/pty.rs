@@ -338,7 +338,10 @@ mod tests {
 
         pty.write(b"exit\n".to_vec());
 
-        let deadline = Instant::now() + Duration::from_secs(5);
+        // Generous deadline: shell spawn + prompt init inside a real pty
+        // takes ~0.5s idle but several seconds on a loaded machine (parallel
+        // cargo builds), and a tight deadline makes this test flake.
+        let deadline = Instant::now() + Duration::from_secs(20);
         let mut saw_exit = false;
         while Instant::now() < deadline {
             match msg_rx.recv_timeout(Duration::from_millis(100)) {
@@ -351,6 +354,6 @@ mod tests {
                 Err(_) => {}
             }
         }
-        assert!(saw_exit, "expected ProcessExited within 5s of shell exit");
+        assert!(saw_exit, "expected ProcessExited within 20s of shell exit");
     }
 }
