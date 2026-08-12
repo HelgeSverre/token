@@ -15,6 +15,7 @@ use crate::util::{
     FileOpenError,
 };
 
+use super::lsp::{close_lsp_document, open_lsp_document};
 use super::syntax::schedule_syntax_parse;
 
 /// Drag threshold in pixels before drag becomes active
@@ -524,6 +525,9 @@ fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
     ];
     if let Some(parse_cmd) = schedule_syntax_parse(model, doc_id) {
         cmds.push(parse_cmd);
+    }
+    if let Some(lsp_cmd) = open_lsp_document(model, doc_id) {
+        cmds.push(lsp_cmd);
     }
     Some(Cmd::Batch(cmds))
 }
@@ -1255,13 +1259,14 @@ fn with_released_documents(
         return base;
     }
 
-    let mut cmds = Vec::with_capacity(1 + released_documents.len());
+    let mut cmds = Vec::with_capacity(1 + released_documents.len() * 2);
     cmds.push(base);
-    cmds.extend(
-        released_documents
-            .into_iter()
-            .map(|document_id| Cmd::ClearSyntaxState { document_id }),
-    );
+    for document_id in released_documents {
+        cmds.push(Cmd::ClearSyntaxState { document_id });
+        // `didClose` — never on tab close alone, only when the document
+        // is actually released (refcounted across splits/groups).
+        cmds.push(close_lsp_document(document_id));
+    }
     Cmd::Batch(cmds)
 }
 

@@ -24,6 +24,7 @@ use crate::view::overlay_surface::MAX_VISIBLE_COMPLETION;
 
 use super::document::word_start_before;
 use super::editor::cursors_in_reverse_order;
+use super::lsp::schedule_lsp_did_change;
 use super::schedule_syntax_parse;
 
 pub fn update_completion(model: &mut AppModel, msg: CompletionMsg) -> Option<Cmd> {
@@ -287,8 +288,15 @@ fn accept_selected(model: &mut AppModel) -> Option<Cmd> {
     model.ensure_cursor_visible();
 
     if let Some(doc_id) = model.document().id {
+        let mut cmds = vec![Cmd::redraw_editor()];
         if let Some(parse_cmd) = schedule_syntax_parse(model, doc_id) {
-            return Some(Cmd::Batch(vec![Cmd::redraw_editor(), parse_cmd]));
+            cmds.push(parse_cmd);
+        }
+        if let Some(lsp_cmd) = schedule_lsp_did_change(model, doc_id) {
+            cmds.push(lsp_cmd);
+        }
+        if cmds.len() > 1 {
+            return Some(Cmd::Batch(cmds));
         }
     }
     Some(Cmd::redraw_editor())

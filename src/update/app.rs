@@ -78,6 +78,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
 
         AppMsg::SaveCompleted(result) => {
             model.ui.is_saving = false;
+            let mut lsp_cmd = None;
             match result {
                 Ok(_) => {
                     let doc = model.document_mut();
@@ -86,12 +87,18 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                     if let Some(path) = &model.document().file_path {
                         model.ui.set_status(format!("Saved: {}", path.display()));
                     }
+                    if let Some(doc_id) = model.document().id {
+                        lsp_cmd = Some(super::save_lsp_document(doc_id));
+                    }
                 }
                 Err(e) => {
                     model.ui.set_status(format!("Error: {}", e));
                 }
             }
-            Some(Cmd::redraw_status_bar())
+            match lsp_cmd {
+                Some(cmd) => Some(Cmd::Batch(vec![Cmd::redraw_status_bar(), cmd])),
+                None => Some(Cmd::redraw_status_bar()),
+            }
         }
 
         AppMsg::KeymapCreated { path, result } => match result {
@@ -212,11 +219,25 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
 
         AppMsg::SaveFileAsDialogResult { path } => {
             if let Some(path) = path {
+                // Save As is a didClose(old) + didOpen(new) pair, not a
+                // rename — the document keeps its id, but the LSP URI
+                // changes identity (see design doc's Document Synchronization).
+                let old_path = model.document().file_path.clone();
+                let doc_id = model.document().id;
                 model.document_mut().file_path = Some(path.clone());
                 let content = model.document().buffer.to_string();
                 model.ui.is_saving = true;
                 model.ui.set_status("Saving...");
-                Some(Cmd::SaveFile { path, content })
+                let mut cmds = vec![Cmd::SaveFile { path, content }];
+                if let Some(doc_id) = doc_id {
+                    if old_path.is_some() {
+                        cmds.push(super::close_lsp_document(doc_id));
+                    }
+                    if let Some(open_cmd) = super::open_lsp_document(model, doc_id) {
+                        cmds.push(open_cmd);
+                    }
+                }
+                Some(Cmd::Batch(cmds))
             } else {
                 model.ui.set_status("Save cancelled");
                 Some(Cmd::redraw_status_bar())
@@ -549,5 +570,56 @@ mod tests {
         assert!(cmd.is_none());
         assert_eq!(model.document().buffer.to_string(), document_before);
         assert_eq!(pty_rx.try_recv().unwrap(), b"terminal paste".to_vec());
+    }
+
+    // lsp-integration.md's "every rope mutation bumps `Document.revision`"
+    // invariant: an external file reload (`AppMsg::FileLoaded`) must bump
+    // the revision too — the LSP sync test for this in this same commit
+    // (`push_edit` already covers the ordinary-edit path in
+    // `model/document.rs`'s own tests).
+    #[test]
+    fn file_loaded_bumps_revision_forcing_a_resync() {
+        let mut model = test_model();
+        let before = model.document().revision;
+
+        let cmd = update_app(
+            &mut model,
+            AppMsg::FileLoaded {
+                path: PathBuf::from("/tmp/reloaded.rs"),
+                result: Ok("fn main() {}".to_owned()),
+            },
+        );
+
+        assert!(cmd.is_some());
+        assert_eq!(model.document().revision, before.wrapping_add(1));
+    }
+
+    #[test]
+    fn save_file_as_updates_path_and_emits_lsp_close_open_pair() {
+        let mut model = test_model();
+        // Give the document a path first so Save As has an "old" URI to
+        // close — the design doc's "Save As = didClose(old) + didOpen(new)".
+        model.document_mut().file_path = Some(PathBuf::from("/tmp/old.rs"));
+        let doc_id = model.document().id;
+
+        let cmd = update_app(
+            &mut model,
+            AppMsg::SaveFileAsDialogResult {
+                path: Some(PathBuf::from("/tmp/new.rs")),
+            },
+        )
+        .expect("Save As should produce a command");
+
+        assert_eq!(
+            model.document().file_path,
+            Some(PathBuf::from("/tmp/new.rs"))
+        );
+        let Cmd::Batch(cmds) = cmd else {
+            panic!("expected a Batch of [SaveFile, LspDidClose, ...LspDidOpen batch]");
+        };
+        assert!(matches!(cmds[0], Cmd::SaveFile { .. }));
+        assert!(cmds.iter().any(
+            |c| matches!(c, Cmd::LspDidClose { document_id } if Some(*document_id) == doc_id)
+        ));
     }
 }

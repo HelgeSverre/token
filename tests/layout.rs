@@ -817,6 +817,11 @@ fn test_close_tab_removes_unreferenced_document_and_clears_syntax_state() {
     assert!(cmds.iter().any(
         |cmd| matches!(cmd, Cmd::ClearSyntaxState { document_id } if *document_id == new_doc_id)
     ));
+    // lsp-integration.md: didClose fires exactly when the document is
+    // actually released, never on tab close alone.
+    assert!(cmds.iter().any(
+        |cmd| matches!(cmd, Cmd::LspDidClose { document_id } if *document_id == new_doc_id)
+    ));
 }
 
 #[test]

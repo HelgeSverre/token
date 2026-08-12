@@ -894,6 +894,14 @@ pub enum LspMsg {
     },
     /// User/automation-initiated restart (palette, `RestartLanguageServer`).
     RestartServer { server_id: LspServerId },
+    /// Worker -> main thread: the response to a `shutdown` request this
+    /// server's handle sent arrived. Consumed by
+    /// `ServerHandle::graceful_shutdown`'s own blocking poll of `msg_rx`
+    /// during quit teardown, not by `update()` — see its doc comment.
+    ShutdownAcked {
+        server_id: LspServerId,
+        generation: u64,
+    },
 }
 
 /// Menu completion messages (autocomplete.md Phase 1: "words + snippets,

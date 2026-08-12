@@ -10,6 +10,7 @@ use super::editor::{
     shift_sibling_cursors, sync_other_editor_cursors, sync_other_editor_cursors_for_deleted_text,
     sync_other_editor_cursors_for_single_char_delete, sync_other_editor_cursors_for_text,
 };
+use super::lsp::schedule_lsp_did_change;
 use super::syntax::schedule_syntax_parse;
 
 /// Returns the matching closing character for an opening surround character.
@@ -45,8 +46,15 @@ fn redraw_with_syntax_parse_shift(
                 }
             }
         }
+        let mut cmds = vec![Cmd::redraw_editor()];
         if let Some(parse_cmd) = schedule_syntax_parse(model, doc_id) {
-            return Cmd::Batch(vec![Cmd::redraw_editor(), parse_cmd]);
+            cmds.push(parse_cmd);
+        }
+        if let Some(lsp_cmd) = schedule_lsp_did_change(model, doc_id) {
+            cmds.push(lsp_cmd);
+        }
+        if cmds.len() > 1 {
+            return Cmd::Batch(cmds);
         }
     }
     Cmd::redraw_editor()

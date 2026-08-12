@@ -739,6 +739,27 @@ pub enum Cmd {
     /// Kill and respawn every running instance of a server (manual
     /// restart, e.g. from the command palette).
     LspRestartServer { server_id: crate::lsp::LspServerId },
+    /// A matching document gained a file path + language — send
+    /// `textDocument/didOpen` (spawning the server first if needed).
+    /// Idempotent from the model's point of view; the runtime's
+    /// `LspManager` decides whether a server is actually registered/
+    /// ready and no-ops otherwise.
+    LspDidOpen {
+        document_id: DocumentId,
+        file_path: PathBuf,
+        language: LanguageId,
+    },
+    /// Debounce an edit's `didChange` (deadline-map + max-wait cap,
+    /// mirroring `DebouncedSyntaxParse`). A no-op if `document_id` isn't
+    /// currently open on any server.
+    LspScheduleDidChange { document_id: DocumentId, revision: u64 },
+    /// Send `textDocument/didSave` for a just-saved document, with text
+    /// iff the server's capabilities asked for it.
+    LspDidSave { document_id: DocumentId },
+    /// Send `textDocument/didClose` — call only when the document is
+    /// released (`release_document_if_unreferenced`), never on tab
+    /// close alone (documents are refcounted).
+    LspDidClose { document_id: DocumentId },
 
     // === Debug Commands ===
     /// Toggle performance overlay (debug builds only)
@@ -823,6 +844,10 @@ impl Cmd {
             // ServerStateChanged (once it arrives) requests its own redraw.
             Cmd::LspEnsureServer { .. } => Damage::Areas(vec![]),
             Cmd::LspRestartServer { .. } => Damage::Areas(vec![]),
+            Cmd::LspDidOpen { .. } => Damage::Areas(vec![]),
+            Cmd::LspScheduleDidChange { .. } => Damage::Areas(vec![]),
+            Cmd::LspDidSave { .. } => Damage::Areas(vec![]),
+            Cmd::LspDidClose { .. } => Damage::Areas(vec![]),
             // Debug overlay toggle triggers full redraw
             #[cfg(debug_assertions)]
             Cmd::TogglePerfOverlay => Damage::Full,

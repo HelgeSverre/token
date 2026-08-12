@@ -79,6 +79,17 @@ pub(crate) struct EditorSnapshot {
     /// The menu-completion popup (autocomplete.md Phase 1), if open —
     /// `None` when no completion popup is showing.
     pub completion: Option<CompletionSnapshot>,
+    /// LSP server states (lsp-integration.md), keyed by server id (e.g.
+    /// `"rust-analyzer"`) — the render-only mirror `LspMsg::ServerStateChanged`
+    /// drives, not the runtime's authoritative `LspManager`.
+    pub lsp_servers: Vec<LspServerSnapshot>,
+}
+
+/// One entry in `EditorSnapshot::lsp_servers`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct LspServerSnapshot {
+    pub id: String,
+    pub state: String,
 }
 
 /// A read-only view of the menu-completion popup, for automation to drive
@@ -331,6 +342,15 @@ impl EditorSnapshot {
             overlay: model.ui.active_modal.as_ref().and_then(overlay_snapshot),
             gutter_marks: gutter_marks_snapshot(document, viewport),
             completion: completion_snapshot(model),
+            lsp_servers: model
+                .lsp
+                .servers
+                .iter()
+                .map(|(id, state)| LspServerSnapshot {
+                    id: id.0.clone(),
+                    state: format!("{state:?}"),
+                })
+                .collect(),
         }
     }
 }
@@ -658,11 +678,25 @@ fn parse_arg<T: std::str::FromStr>(value: Option<String>, name: &str) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::{document_size_error, overlay_snapshot, MAX_DOCUMENT_SIZE, MAX_MESSAGE_SIZE};
+    use super::{document_size_error, overlay_snapshot, EditorSnapshot, MAX_DOCUMENT_SIZE, MAX_MESSAGE_SIZE};
+    use token::lsp::{LspServerId, ServerState};
     use token::model::ui::{FindReplaceState, GotoLineState, RecentFilesState, ThemePickerState};
-    use token::model::ModalState;
+    use token::model::{AppModel, ModalState};
     use token::recent_files::RecentEntry;
     use token::util::ByteSize;
+
+    #[test]
+    fn snapshot_exposes_lsp_server_states() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model
+            .lsp
+            .servers
+            .insert(LspServerId::from("rust-analyzer"), ServerState::Ready);
+        let snapshot = EditorSnapshot::from_model(&model);
+        assert_eq!(snapshot.lsp_servers.len(), 1);
+        assert_eq!(snapshot.lsp_servers[0].id, "rust-analyzer");
+        assert_eq!(snapshot.lsp_servers[0].state, "Ready");
+    }
 
     #[test]
     fn automation_limits_preserve_binary_thresholds() {

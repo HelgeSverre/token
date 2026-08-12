@@ -37,7 +37,9 @@ pub use dock::update_dock;
 pub use document::update_document;
 pub use editor::update_editor;
 pub use layout::update_layout;
-pub use lsp::update_lsp;
+pub use lsp::{
+    close_lsp_document, open_lsp_document, save_lsp_document, schedule_lsp_did_change, update_lsp,
+};
 pub use outline::update_outline;
 pub use preview::update_preview;
 pub use syntax::{schedule_syntax_parse, update_syntax, SYNTAX_DEBOUNCE_MS};

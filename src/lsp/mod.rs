@@ -9,6 +9,7 @@
 
 pub mod client;
 pub mod position;
+pub mod sync;
 pub mod transport;
 pub mod uri;
 
