@@ -232,9 +232,13 @@ fn accept_selected(model: &mut AppModel) -> Option<Cmd> {
 
     for idx in indices {
         let cursor = model.editor().cursors[idx];
-        let Some((start_offset, cursor_offset)) = word_query_offsets(model, cursor) else {
-            continue;
-        };
+        let doc = model.document();
+        let cursor_offset = doc.cursor_to_offset(cursor.line, cursor.column);
+        // No word prefix at this cursor (e.g. an explicit trigger on an
+        // empty line) -> insert at the cursor rather than skipping it, so
+        // Ctrl+Space's "always works" promise holds through accept too.
+        let start_offset =
+            word_query_offsets(model, cursor).map_or(cursor_offset, |(start, _)| start);
         let deleted_text: String = model
             .document()
             .buffer
@@ -520,5 +524,24 @@ mod tests {
         let state = model.ui.completion_menu.as_ref().expect("menu open");
         assert_eq!(state.query_start.line, 1);
         assert_eq!(state.query_start.column, 0);
+    }
+
+    /// Ctrl+Space on an empty-prefix cursor (e.g. an empty line) opens the
+    /// menu against an empty query; accepting it must insert at the cursor
+    /// instead of silently doing nothing (`word_query_offsets` has no word
+    /// range to re-derive there).
+    #[test]
+    fn accept_after_explicit_trigger_on_empty_query_inserts_at_cursor() {
+        let mut model = model_with_text("value_one\n\n");
+        place_cursor(&mut model, 1, 0);
+        update(&mut model, Msg::Completion(CompletionMsg::TriggerMenu));
+        assert!(model.ui.completion_menu.is_some());
+
+        update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+
+        assert!(model.ui.completion_menu.is_none());
+        let line = model.document().get_line_cow(1).unwrap();
+        assert_eq!(line.trim_end_matches('\n'), "value_one");
+        assert_eq!(model.editor().cursors[0].column, "value_one".len());
     }
 }
