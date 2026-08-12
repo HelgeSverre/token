@@ -35,7 +35,9 @@ use token::panel::DockPosition;
 use token::syntax::{LanguageId, ParserState};
 use token::update::update;
 
-use super::input::{handle_cursor_overlay_key, handle_key, KeyModifiers, OptionKeyGesture};
+use super::input::{
+    handle_cursor_overlay_key, handle_key, is_outline_dock_focused, KeyModifiers, OptionKeyGesture,
+};
 use super::mouse::{
     end_tab_drag, handle_mouse_press, handle_mouse_wheel, make_mouse_event, update_tab_drag,
     ClickTracker, DragState,
@@ -67,6 +69,27 @@ enum SyntaxWorkerRequest {
 type TerminalSpawnReceiver = Receiver<Result<token::terminal::TerminalSpawnResult, String>>;
 
 const POST_FIRST_FRAME_STARTUP_DELAY: Duration = Duration::from_millis(50);
+
+fn should_skip_non_global_keymap(
+    model: &AppModel,
+    option_double_tapped: bool,
+    alt_pressed: bool,
+) -> bool {
+    let sidebar_focused = matches!(
+        model.ui.focus,
+        token::model::FocusTarget::Dock(token::panel::DockPosition::Left)
+    );
+    let terminal_focused = model.ui.focused_dock() == Some(token::panel::DockPosition::Bottom)
+        && model.dock_layout.bottom.is_open
+        && model.dock_layout.bottom.active_panel() == Some(token::panel::PanelId::TERMINAL);
+
+    model.ui.has_modal()
+        || (option_double_tapped && alt_pressed)
+        || sidebar_focused
+        || is_outline_dock_focused(model)
+        || terminal_focused
+        || model.is_csv_editing()
+}
 
 struct PreparedApp {
     model: AppModel,
@@ -252,7 +275,17 @@ const MAX_RESTART_ATTEMPTS: u8 = 3;
 struct LspManager {
     servers: HashMap<(LspServerId, PathBuf), ServerHandle>,
     detached_roots: Vec<PathBuf>,
-    restart_attempts: HashMap<LspServerId, u8>,
+    /// Crash count per `(server_id, root)` — keyed the same as `servers`
+    /// so a crash loop at one root never counts against, or exhausts,
+    /// another root running the same server binary. Cleared when that
+    /// root reaches `Ready` (see `process_async_messages`'s `lsp_ready`
+    /// handling) and on a manual `Cmd::LspRestartServer`.
+    restart_attempts: HashMap<(LspServerId, PathBuf), u8>,
+    /// Roots a server gave up on (`ServerState::Failed`), retained after
+    /// its handle is removed so `Cmd::LspRestartServer` — which only
+    /// knows the server id — has somewhere to respawn. Cleared once a
+    /// restart is attempted for that id.
+    failed_roots: HashMap<LspServerId, Vec<PathBuf>>,
 }
 
 impl LspManager {
@@ -261,6 +294,7 @@ impl LspManager {
             servers: HashMap::new(),
             detached_roots: Vec::new(),
             restart_attempts: HashMap::new(),
+            failed_roots: HashMap::new(),
         }
     }
 
@@ -676,21 +710,13 @@ impl App {
                     // - No modal is active (modals handled by handle_modal_key in input.rs)
                     // - Not in option double-tap mode with alt pressed (multi-cursor gesture)
                     // - Sidebar is not focused (sidebar keys handled by handle_sidebar_key in input.rs)
+                    // - Outline is not focused (outline keys handled by handle_outline_dock_key in input.rs)
                     // - Not editing a CSV cell (CSV cell editor handled by handle_csv_edit_key in input.rs)
-                    let sidebar_focused = matches!(
-                        self.model.ui.focus,
-                        token::model::FocusTarget::Dock(token::panel::DockPosition::Left)
+                    let skip_keymap = should_skip_non_global_keymap(
+                        &self.model,
+                        self.option_gesture.double_tapped,
+                        alt,
                     );
-                    let terminal_focused = self.model.ui.focused_dock()
-                        == Some(token::panel::DockPosition::Bottom)
-                        && self.model.dock_layout.bottom.is_open
-                        && self.model.dock_layout.bottom.active_panel()
-                            == Some(token::panel::PanelId::TERMINAL);
-                    let skip_keymap = self.model.ui.has_modal()
-                        || (self.option_gesture.double_tapped && alt)
-                        || sidebar_focused
-                        || terminal_focused
-                        || self.model.is_csv_editing();
 
                     if !skip_keymap {
                         if let Some(keystroke) = keystroke {
@@ -1590,7 +1616,9 @@ impl App {
             Cmd::LspRestartServer { server_id } => {
                 // Manual restart resets backoff: a user/automation-driven
                 // restart is a deliberate retry, not another crash.
-                self.lsp.restart_attempts.insert(server_id.clone(), 0);
+                self.lsp
+                    .restart_attempts
+                    .retain(|(id, _), _| *id != server_id);
                 self.restart_lsp_server(&server_id);
             }
 
@@ -1636,6 +1664,18 @@ impl App {
                 }) => Some((server_id.clone(), *generation)),
                 _ => None,
             };
+            // A root that reaches `Ready` has proven it isn't crash-looping;
+            // clear its restart-attempt count so a later, unrelated crash
+            // doesn't inherit a stale streak (see `restart_attempts`' doc
+            // comment).
+            let lsp_ready = match &msg {
+                Msg::Lsp(LspMsg::ServerStateChanged {
+                    server_id,
+                    root,
+                    state: ServerState::Ready,
+                }) => Some((server_id.clone(), root.clone())),
+                _ => None,
+            };
             // Log syntax-related messages for debugging
             if let Msg::Syntax(ref syntax_msg) = msg {
                 tracing::debug!("Received async syntax message: {:?}", syntax_msg);
@@ -1651,6 +1691,9 @@ impl App {
             }
             if let Some((server_id, generation)) = lsp_exited {
                 self.handle_lsp_server_exited(&server_id, generation);
+            }
+            if let Some((server_id, root)) = lsp_ready {
+                self.lsp.restart_attempts.remove(&(server_id, root));
             }
             if let Some((document_id, revision, timing, apply_started)) = syntax_completion {
                 let applied = self
@@ -1743,7 +1786,16 @@ impl App {
         let Some(resolved) = lsp::resolve_server(def, &self.model.config.lsp) else {
             return;
         };
-        for root in self.lsp.roots_for(server_id) {
+        // `roots_for` only sees roots with a live handle — a `Failed`
+        // server has none (`handle_lsp_server_exited` removes it before
+        // reporting `Failed`), so fall back to the roots remembered at
+        // the point it gave up. Without this, `RestartLanguageServer`
+        // silently does nothing for exactly the state it exists to fix.
+        let mut roots = self.lsp.roots_for(server_id);
+        if roots.is_empty() {
+            roots = self.lsp.failed_roots.remove(server_id).unwrap_or_default();
+        }
+        for root in roots {
             if let Some(mut handle) = self.lsp.servers.remove(&(server_id.clone(), root.clone())) {
                 handle.kill();
             }
@@ -1752,10 +1804,7 @@ impl App {
     }
 
     fn spawn_lsp_server_at(&mut self, resolved: &lsp::ResolvedServer, root: &Path) {
-        self.model
-            .lsp
-            .servers
-            .insert(resolved.id.clone(), ServerState::Starting);
+        self.set_lsp_server_state(resolved.id.clone(), root, ServerState::Starting);
         match lsp::client::spawn_server(
             &resolved.command,
             &resolved.args,
@@ -1771,12 +1820,22 @@ impl App {
             }
             Err(e) => {
                 tracing::warn!("Failed to spawn LSP server {}: {}", resolved.id, e);
-                self.model
-                    .lsp
-                    .servers
-                    .insert(resolved.id.clone(), ServerState::Missing);
+                self.set_lsp_server_state(resolved.id.clone(), root, ServerState::Missing);
             }
         }
+    }
+
+    /// Routes a server-state change through `Msg::Lsp(ServerStateChanged)`
+    /// — the same path the worker threads use — instead of poking
+    /// `model.lsp.servers` directly, so the mirror stays "driven only by
+    /// messages" (design doc's Process Model) and redraw damage is never
+    /// skipped.
+    fn set_lsp_server_state(&mut self, server_id: LspServerId, root: &Path, state: ServerState) {
+        self.process_automation_msg(Msg::Lsp(LspMsg::ServerStateChanged {
+            server_id,
+            root: root.to_path_buf(),
+            state,
+        }));
     }
 
     /// A server's worker thread hit EOF/error on stdout — the child
@@ -1807,24 +1866,6 @@ impl App {
             self.lsp.servers.remove(&(server_id.clone(), root.clone()));
         }
 
-        let attempts = self
-            .lsp
-            .restart_attempts
-            .entry(server_id.clone())
-            .or_insert(0);
-        *attempts += 1;
-        if *attempts > MAX_RESTART_ATTEMPTS {
-            self.model
-                .lsp
-                .servers
-                .insert(server_id.clone(), ServerState::Failed);
-            return;
-        }
-        self.model.lsp.servers.insert(
-            server_id.clone(),
-            ServerState::Restarting { attempt: *attempts },
-        );
-
         let Some(def) = lsp::server_def_by_id(&server_id.0) else {
             return;
         };
@@ -1832,6 +1873,24 @@ impl App {
             return;
         };
         for root in roots {
+            let key = (server_id.clone(), root.clone());
+            let entry = self.lsp.restart_attempts.entry(key).or_insert(0);
+            *entry += 1;
+            let attempts = *entry;
+            if attempts > MAX_RESTART_ATTEMPTS {
+                self.lsp
+                    .failed_roots
+                    .entry(server_id.clone())
+                    .or_default()
+                    .push(root.clone());
+                self.set_lsp_server_state(server_id.clone(), &root, ServerState::Failed);
+                continue;
+            }
+            self.set_lsp_server_state(
+                server_id.clone(),
+                &root,
+                ServerState::Restarting { attempt: attempts },
+            );
             self.spawn_lsp_server_at(&resolved, &root);
         }
     }
@@ -2368,6 +2427,7 @@ impl App {
 mod tests {
     use super::*;
     use token::cli::{StartupConfig, StartupMode};
+    use token::outline::{OutlineData, OutlineKind, OutlineNode, OutlineRange};
 
     fn empty_startup_config() -> StartupConfig {
         StartupConfig {
@@ -2375,6 +2435,81 @@ mod tests {
             initial_position: None,
             wait_mode: false,
         }
+    }
+
+    fn focus_outline_with_symbols(app: &mut App) {
+        app.model
+            .dock_layout
+            .right
+            .activate(token::panel::PanelId::OUTLINE);
+        app.model.ui.focus_dock(token::panel::DockPosition::Right);
+        let revision = app.model.document().revision;
+        app.model.document_mut().outline = Some(OutlineData {
+            revision,
+            roots: [1, 2]
+                .into_iter()
+                .map(|line| OutlineNode {
+                    kind: OutlineKind::Function,
+                    name: format!("symbol_{line}"),
+                    range: OutlineRange {
+                        start_line: line,
+                        start_col: 0,
+                        end_line: line,
+                        end_col: 1,
+                    },
+                    children: Vec::new(),
+                })
+                .collect(),
+        });
+    }
+
+    fn dispatch_legacy_key(app: &mut App, key: Key) -> Option<Cmd> {
+        handle_key(
+            &mut app.model,
+            key,
+            PhysicalKey::Unidentified(winit::keyboard::NativeKeyCode::Unidentified),
+            KeyModifiers::default(),
+            false,
+        )
+    }
+
+    #[test]
+    fn focused_outline_bypasses_editor_keymap_and_captures_navigation() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model
+            .document_mut()
+            .buffer
+            .insert(0, "zero\none\ntwo\n");
+        focus_outline_with_symbols(&mut app);
+        let editor_cursor = app.model.editor().primary_cursor();
+        let editor_position = (editor_cursor.line, editor_cursor.column);
+        let document_text = app.model.document().buffer.to_string();
+
+        assert!(should_skip_non_global_keymap(&app.model, false, false));
+
+        dispatch_legacy_key(&mut app, Key::Named(NamedKey::ArrowDown));
+        assert_eq!(app.model.outline_panel.selected_index, Some(0));
+        dispatch_legacy_key(&mut app, Key::Named(NamedKey::ArrowDown));
+        assert_eq!(app.model.outline_panel.selected_index, Some(1));
+        let editor_cursor = app.model.editor().primary_cursor();
+        assert_eq!((editor_cursor.line, editor_cursor.column), editor_position);
+
+        dispatch_legacy_key(&mut app, Key::Character("x".into()));
+        assert_eq!(app.model.document().buffer.to_string(), document_text);
+
+        dispatch_legacy_key(&mut app, Key::Named(NamedKey::Enter));
+        assert_eq!(app.model.editor().primary_cursor().line, 2);
+        assert!(matches!(
+            app.model.ui.focus,
+            token::model::FocusTarget::Editor
+        ));
+
+        app.model.ui.focus_dock(token::panel::DockPosition::Right);
+        dispatch_legacy_key(&mut app, Key::Named(NamedKey::Escape));
+        assert!(matches!(
+            app.model.ui.focus,
+            token::model::FocusTarget::Editor
+        ));
     }
 
     #[test]

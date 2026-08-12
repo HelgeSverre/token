@@ -874,9 +874,14 @@ pub enum Msg {
 /// added by later phases once there is data to route.
 #[derive(Debug, Clone)]
 pub enum LspMsg {
-    /// Worker -> update: drives the `LspUiState` model mirror.
+    /// Worker -> update: drives the `LspUiState` model mirror. `root`
+    /// identifies which `(server_id, root)` instance changed state — the
+    /// model mirror (keyed by `server_id` only) ignores it, but the
+    /// runtime uses it to scope restart-attempt bookkeeping per root
+    /// (see `LspManager::restart_attempts`).
     ServerStateChanged {
         server_id: LspServerId,
+        root: std::path::PathBuf,
         state: ServerState,
     },
     /// Worker -> update: the child process exited (crash or clean

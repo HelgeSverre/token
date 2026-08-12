@@ -10,7 +10,9 @@ use crate::model::AppModel;
 
 pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
     match msg {
-        LspMsg::ServerStateChanged { server_id, state } => {
+        LspMsg::ServerStateChanged {
+            server_id, state, ..
+        } => {
             model.lsp.servers.insert(server_id, state);
             Some(Cmd::redraw_status_bar())
         }
@@ -25,6 +27,7 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
 mod tests {
     use super::*;
     use crate::lsp::{LspServerId, ServerState};
+    use std::path::PathBuf;
 
     fn model() -> AppModel {
         AppModel::new(800, 600, 1.0, vec![])
@@ -38,6 +41,7 @@ mod tests {
             &mut model,
             LspMsg::ServerStateChanged {
                 server_id: id.clone(),
+                root: PathBuf::from("/ws"),
                 state: ServerState::Starting,
             },
         );
@@ -47,6 +51,7 @@ mod tests {
             &mut model,
             LspMsg::ServerStateChanged {
                 server_id: id.clone(),
+                root: PathBuf::from("/ws"),
                 state: ServerState::Ready,
             },
         );
