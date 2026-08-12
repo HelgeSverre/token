@@ -1776,7 +1776,15 @@ impl Renderer {
         // Left and right segments
         for seg in layout.left.iter().chain(&layout.right) {
             let x_px = (seg.x as f32 * cell_width).round() as usize;
-            painter.draw_sized(frame, x_px, text_y, &seg.text, text_size, 0.0, status_bar_fg);
+            painter.draw_sized(
+                frame,
+                x_px,
+                text_y,
+                &seg.text,
+                text_size,
+                0.0,
+                status_bar_fg,
+            );
         }
 
         // Separators (foreground at ~10%, blended, kept below the top border)

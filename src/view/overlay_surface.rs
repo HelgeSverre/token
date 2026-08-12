@@ -232,6 +232,9 @@ pub struct Header<'a> {
     /// Char index of the caret; `None` means a display-only header (no
     /// input, e.g. a future title-only context).
     pub caret: Option<usize>,
+    /// Selected char range `(start, end)` in the full text's char space,
+    /// ordered, end-exclusive; drawn as a wash behind the text.
+    pub selection: Option<(usize, usize)>,
     /// Right-aligned dim text, e.g. `"workspace: token"`.
     pub scope: Option<&'a str>,
 }
@@ -1552,6 +1555,20 @@ fn render_header(
     } else {
         let (visible, kept_from) =
             visible_header_text(painter, size, header.text, content_w as f32);
+        // Selection wash first, so the text paints over it. Columns are in
+        // the full text's char space — re-express against the visible
+        // string the same way the caret is.
+        if let Some((sel_start, sel_end)) = header.selection {
+            if sel_end > sel_start {
+                let to_visible =
+                    |col: usize| col.saturating_sub(kept_from) + usize::from(kept_from > 0);
+                let x0 = caret_x_for_column(painter, x, &visible, to_visible(sel_start), size);
+                let x1 = caret_x_for_column(painter, x, &visible, to_visible(sel_end), size);
+                if x1 > x0 {
+                    frame.fill_rect_px(x0, text_y, x1 - x0, text_h, colors.selection_wash);
+                }
+            }
+        }
         painter.draw_sized(frame, x, text_y, &visible, size, 0.0, colors.text_primary);
         (visible, kept_from)
     };
@@ -2189,6 +2206,7 @@ mod tests {
                     text: "",
                     placeholder: "",
                     caret: Some(0),
+                    selection: None,
                     scope: None,
                 }),
                 body: Body::List {
@@ -2464,6 +2482,7 @@ mod tests {
                 text: "",
                 placeholder: "",
                 caret: Some(0),
+                selection: None,
                 scope: None,
             }),
             body: Body::List {
@@ -2503,6 +2522,7 @@ mod tests {
                 text: "",
                 placeholder: "",
                 caret: Some(0),
+                selection: None,
                 scope: None,
             }),
             body: Body::List {
@@ -2551,6 +2571,7 @@ mod tests {
                 text: "",
                 placeholder: "",
                 caret: Some(0),
+                selection: None,
                 scope: None,
             }),
             body: Body::List {
@@ -2752,6 +2773,7 @@ mod tests {
                     text: query,
                     placeholder: "",
                     caret: Some(query.chars().count()),
+                    selection: None,
                     scope: None,
                 }),
                 body: Body::List {
@@ -2852,6 +2874,7 @@ mod tests {
                 text: "",
                 placeholder: "",
                 caret: Some(0),
+                selection: None,
                 scope: None,
             }),
             body: Body::List {

@@ -1296,8 +1296,22 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
                     );
                 }
             }
-            // All is a non-scrolling summary — no paging.
-            SearchTab::All | SearchTab::Symbols => {}
+            // All is non-scrolling, but paging still jumps the selection
+            // (it's the default landing tab — dead PageUp/Down reads as
+            // broken keys). Clamped, not wrapped, like the other tabs.
+            SearchTab::All => {
+                let total = all_tab_total(state);
+                if total > 0 {
+                    state.all_selected = if forward {
+                        (state.all_selected + COMMAND_PALETTE_MAX_VISIBLE).min(total - 1)
+                    } else {
+                        state
+                            .all_selected
+                            .saturating_sub(COMMAND_PALETTE_MAX_VISIBLE)
+                    };
+                }
+            }
+            SearchTab::Symbols => {}
         },
         ModalState::ThemePicker(state) => {
             let shapes = theme_picker_shapes(state);
@@ -2108,6 +2122,30 @@ mod tests {
             Some(ModalState::CommandPalette(state)) => assert_eq!(state.active_tab, expected),
             other => panic!("expected command palette modal, got {other:?}"),
         }
+    }
+
+    fn palette_state(model: &AppModel) -> &CommandPaletteState {
+        match &model.ui.active_modal {
+            Some(ModalState::CommandPalette(state)) => state,
+            other => panic!("expected command palette modal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn page_down_moves_selection_on_the_all_tab() {
+        // Regression: PageUp/Down were a no-op on the All tab — the default
+        // landing tab — which read as broken keys.
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+        assert_tab(&model, SearchTab::All);
+
+        let before = palette_state(&model).all_selected;
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::PageDown));
+        let after = palette_state(&model).all_selected;
+        assert!(after > before, "PageDown must move the All-tab selection");
+
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::PageUp));
+        assert_eq!(palette_state(&model).all_selected, before);
     }
 
     #[test]

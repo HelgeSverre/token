@@ -63,6 +63,19 @@ const PALETTE_WIDTH: (f32, f32, f32) = (0.5, 480.0, 640.0);
 const PICKER_WIDTH: (f32, f32, f32) = (0.7, 520.0, 900.0);
 const SMALL_MODAL_WIDTH: (f32, f32, f32) = (0.5, 300.0, 500.0);
 
+/// Primary selection of a single-line editable as an ordered, end-exclusive
+/// char-column range, for `Header.selection`. `None` when collapsed.
+fn editable_selection(
+    editable: &crate::editable::EditableState<crate::editable::StringBuffer>,
+) -> Option<(usize, usize)> {
+    if !editable.has_selection() {
+        return None;
+    }
+    let sel = editable.selection();
+    let (start, end) = (sel.start().column, sel.end().column);
+    (end > start).then_some((start, end))
+}
+
 fn width_rule((pct, min, max): (f32, f32, f32)) -> WidthRule {
     WidthRule { pct, min, max }
 }
@@ -328,6 +341,7 @@ fn render_command_palette_modal(
                     .map(|c| c.column)
                     .unwrap_or(0),
             ),
+            selection: editable_selection(&state.editable),
             scope: None,
         }),
         body: Body::List {
@@ -433,6 +447,7 @@ fn render_file_finder_modal(
                     .map(|c| c.column)
                     .unwrap_or(0),
             ),
+            selection: editable_selection(&state.editable),
             scope: None,
         }),
         body: Body::List {
@@ -588,6 +603,7 @@ fn render_recent_files_modal(
                     .map(|c| c.column)
                     .unwrap_or(0),
             ),
+            selection: editable_selection(&state.editable),
             scope: None,
         }),
         body: Body::List {
@@ -724,6 +740,7 @@ fn render_theme_picker_modal(
             text: "",
             placeholder: "Switch Theme",
             caret: None,
+            selection: None,
             scope: None,
         }),
         body: Body::List {
@@ -979,6 +996,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
                     text: "",
                     placeholder: "",
                     caret: Some(state.input().chars().count()),
+                    selection: None,
                     scope: None,
                 }),
                 body: Body::List {
@@ -1068,6 +1086,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
                     text: "",
                     placeholder: "",
                     caret: None,
+                    selection: None,
                     scope: None,
                 }),
                 body: Body::List {
@@ -1180,6 +1199,7 @@ fn list_shape_spec<'a>(
             text: "",
             placeholder: "",
             caret: input_len,
+            selection: None,
             scope: None,
         }),
         body: Body::List {

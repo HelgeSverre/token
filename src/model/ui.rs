@@ -981,7 +981,11 @@ impl UiState {
     /// Clear the status message if its lifetime has elapsed. Returns true if
     /// something was cleared (the status bar needs a redraw).
     pub fn expire_status_message(&mut self) -> bool {
-        if self.transient_message.as_ref().is_some_and(|t| t.is_expired()) {
+        if self
+            .transient_message
+            .as_ref()
+            .is_some_and(|t| t.is_expired())
+        {
             self.transient_message = None;
             self.status_bar
                 .update_segment(SegmentId::StatusMessage, SegmentContent::Empty);
@@ -1176,7 +1180,10 @@ mod tests {
     fn set_status_creates_an_expiring_transient() {
         let mut ui = UiState::new();
         ui.set_status("Configuration reloaded");
-        let transient = ui.transient_message.as_ref().expect("set_status must arm expiry");
+        let transient = ui
+            .transient_message
+            .as_ref()
+            .expect("set_status must arm expiry");
         assert!(!transient.is_expired());
         assert_eq!(transient.text, "Configuration reloaded");
     }

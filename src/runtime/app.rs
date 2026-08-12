@@ -373,8 +373,8 @@ impl App {
 
         // Derive tab bar height from glyph metrics instead of hardcoded value
         self.model.recompute_tab_bar_height_from_line_height();
-        let status_text_lh = renderer
-            .status_text_line_height(self.model.config.status_bar_font_size_clamped());
+        let status_text_lh =
+            renderer.status_text_line_height(self.model.config.status_bar_font_size_clamped());
         self.model.recompute_status_bar_height(status_text_lh);
 
         // Recompute viewport geometry with new metrics
@@ -400,8 +400,8 @@ impl App {
 
         // Recompute tab bar height from new font metrics
         self.model.recompute_tab_bar_height_from_line_height();
-        let status_text_lh = renderer
-            .status_text_line_height(self.model.config.status_bar_font_size_clamped());
+        let status_text_lh =
+            renderer.status_text_line_height(self.model.config.status_bar_font_size_clamped());
         self.model.recompute_status_bar_height(status_text_lh);
 
         // Recompute viewport geometry for new char_width/line_height
@@ -1183,9 +1183,8 @@ impl App {
             Cmd::RedrawAreas(_) => {} // Partial redraw - handled by damage tracking in render()
             Cmd::SyncStatusBarMetrics => {
                 if let Some(renderer) = &self.renderer {
-                    let status_text_lh = renderer.status_text_line_height(
-                        self.model.config.status_bar_font_size_clamped(),
-                    );
+                    let status_text_lh = renderer
+                        .status_text_line_height(self.model.config.status_bar_font_size_clamped());
                     self.model.recompute_status_bar_height(status_text_lh);
                     let (w, h) = self.model.window_size;
                     self.model.resize(w, h);
