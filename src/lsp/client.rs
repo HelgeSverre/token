@@ -961,11 +961,48 @@ fn reader_loop(
                 if let Some(wake) = wake.as_deref() {
                     wake();
                 }
+            } else if entry.method == "textDocument/definition" {
+                // `entry.abandoned` (set by a superseding request via
+                // `PendingRequests::abandon`) tells the runtime to
+                // consume and discard this reply rather than act on it
+                // (design doc's cancellation semantics: advisory, the
+                // server still replies).
+                let locations = parse_definition_result(message.get("result"));
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::DefinitionResponseFromServer {
+                    server_id: server_id.clone(),
+                    root: root.clone(),
+                    request_id: id,
+                    locations,
+                    abandoned: entry.abandoned,
+                }));
+                if let Some(wake) = wake.as_deref() {
+                    wake();
+                }
             }
-            // Other request kinds (definition/hover/completion) are
-            // routed by future phases.
+            // Other request kinds (hover/completion) are routed by
+            // future phases.
         }
     }
+}
+
+/// Parses a `textDocument/definition` response's `result` into
+/// `Location`s. We advertise `linkSupport: false`, so a `LocationLink[]`
+/// response is a non-conforming server and its extra fields are ignored
+/// by `Location`'s deserializer (permissive, not strict). `null` (no
+/// definition) and a malformed result both become an empty vec — the
+/// caller can't tell "no result" from "unparseable result" here, which is
+/// fine: both status transient to "no definition found".
+fn parse_definition_result(result: Option<&Value>) -> Vec<lsp_types::Location> {
+    let Some(result) = result else {
+        return Vec::new();
+    };
+    if result.is_null() {
+        return Vec::new();
+    }
+    if let Ok(location) = serde_json::from_value::<lsp_types::Location>(result.clone()) {
+        return vec![location];
+    }
+    serde_json::from_value::<Vec<lsp_types::Location>>(result.clone()).unwrap_or_default()
 }
 
 fn handle_progress(
@@ -1526,5 +1563,45 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
     #[test]
     fn rejects_malformed_publish_diagnostics_params() {
         assert!(parse_publish_diagnostics(&json!({ "not": "valid" })).is_none());
+    }
+
+    // ---- textDocument/definition response parsing ----
+
+    fn location_json(path: &str) -> Value {
+        json!({
+            "uri": format!("file://{path}"),
+            "range": {
+                "start": { "line": 4, "character": 2 },
+                "end": { "line": 4, "character": 8 },
+            },
+        })
+    }
+
+    #[test]
+    fn definition_result_null_is_no_locations() {
+        assert!(parse_definition_result(Some(&Value::Null)).is_empty());
+        assert!(parse_definition_result(None).is_empty());
+    }
+
+    #[test]
+    fn definition_result_accepts_a_single_location() {
+        let result = location_json("/tmp/foo.rs");
+        let locations = parse_definition_result(Some(&result));
+        assert_eq!(locations.len(), 1);
+        assert_eq!(locations[0].uri.as_str(), "file:///tmp/foo.rs");
+    }
+
+    #[test]
+    fn definition_result_accepts_a_location_array_multiple_locations_first_wins_at_the_caller() {
+        let result = json!([location_json("/tmp/a.rs"), location_json("/tmp/b.rs")]);
+        let locations = parse_definition_result(Some(&result));
+        assert_eq!(locations.len(), 2);
+        assert_eq!(locations[0].uri.as_str(), "file:///tmp/a.rs");
+    }
+
+    #[test]
+    fn definition_result_malformed_is_no_locations_not_a_panic() {
+        let result = json!({ "not": "a location" });
+        assert!(parse_definition_result(Some(&result)).is_empty());
     }
 }

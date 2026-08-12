@@ -5,7 +5,7 @@
 
 use crate::messages::{
     AppMsg, CompletionMsg, CsvMsg, Direction, DockMsg, DocumentMsg, EditorMsg, ImageMsg, LayoutMsg,
-    Msg, PreviewMsg, UiMsg, WorkspaceMsg,
+    LspMsg, Msg, PreviewMsg, UiMsg, WorkspaceMsg,
 };
 use crate::model::editor_area::SplitDirection;
 use crate::model::ModalId;
@@ -274,6 +274,14 @@ pub enum Command {
     /// Restart the language server for the active document's language
     RestartLanguageServer,
 
+    // ========================================================================
+    // Go to Definition + Jump History (lsp-integration.md Phase 3)
+    // ========================================================================
+    /// F12: `textDocument/definition` for the symbol under the cursor.
+    GotoDefinition,
+    /// Pop the focused group's most recent jump-history entry.
+    NavigateBack,
+
     // Image viewer
     /// Zoom in (image mode)
     ImageZoomIn,
@@ -481,6 +489,8 @@ impl Command {
             // Completion
             TriggerCompletionMenu => vec![Msg::Completion(CompletionMsg::TriggerMenu)],
             RestartLanguageServer => vec![Msg::App(AppMsg::RestartLanguageServer)],
+            GotoDefinition => vec![Msg::Lsp(LspMsg::GotoDefinition)],
+            NavigateBack => vec![Msg::Lsp(LspMsg::NavigateBack)],
 
             // Image viewer
             ImageZoomIn => vec![Msg::Image(ImageMsg::Zoom {
@@ -651,6 +661,8 @@ impl Command {
 
             TriggerCompletionMenu => "Trigger Completion",
             RestartLanguageServer => "Restart Language Server",
+            GotoDefinition => "Go to Definition",
+            NavigateBack => "Navigate Back",
 
             ImageZoomIn => "Image: Zoom In",
             ImageZoomOut => "Image: Zoom Out",

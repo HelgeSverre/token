@@ -4,19 +4,9 @@ use crate::commands::Cmd;
 use crate::messages::OutlineMsg;
 use crate::model::AppModel;
 use crate::outline::OutlineNode;
+use crate::update::navigation::{clamp_to_document, push_history};
 use crate::util::{visible_tree_count, visible_tree_row_at_index};
 use crate::view::geometry::{DockHeaderLayout, OutlinePanelLayout, WindowLayout};
-
-/// Clamp a (line, col) position to valid document bounds.
-///
-/// A stale outline (built before the document was edited) could otherwise
-/// carry an out-of-range position through to the cursor.
-fn clamp_to_document(model: &AppModel, line: usize, col: usize) -> (usize, usize) {
-    let last_line = model.document().line_count().saturating_sub(1);
-    let clamped_line = line.min(last_line);
-    let clamped_col = col.min(model.document().line_length(clamped_line));
-    (clamped_line, clamped_col)
-}
 
 fn count_visible_items(nodes: &[OutlineNode], panel: &crate::model::OutlinePanelState) -> usize {
     visible_tree_count(nodes, |node: &OutlineNode| {
@@ -109,6 +99,7 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
             // Move cursor to the symbol and focus the editor. Clamp
             // defensively: a stale outline (built before the document was
             // edited) could otherwise carry an out-of-range position.
+            push_history(model);
             let (clamped_line, clamped_col) = clamp_to_document(model, line, col);
             let editor = model.editor_mut();
             editor.cursors[0].line = clamped_line;
@@ -315,6 +306,7 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                     } else if click_count >= 2 {
                         let line = node.range.start_line;
                         let col = node.range.start_col;
+                        push_history(model);
                         let (clamped_line, clamped_col) = clamp_to_document(model, line, col);
                         let editor = model.editor_mut();
                         editor.cursors[0].line = clamped_line;

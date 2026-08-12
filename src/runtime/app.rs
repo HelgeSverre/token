@@ -28,10 +28,11 @@ use token::keymap::{
 };
 use token::lsp::{self, client::ServerHandle, LspServerId, ServerState};
 use token::messages::{
-    AppMsg, EditorMsg, ImageMsg, LayoutMsg, LspMsg, ModalMsg, Msg, SyntaxMsg, UiMsg, WorkspaceMsg,
+    AppMsg, DefinitionOutcome, EditorMsg, ImageMsg, LayoutMsg, LspMsg, ModalMsg, Msg, SyntaxMsg,
+    UiMsg, WorkspaceMsg,
 };
 use token::model::editor::Position;
-use token::model::AppModel;
+use token::model::{AppModel, JumpEntry};
 use token::panel::DockPosition;
 use token::syntax::{LanguageId, ParserState};
 use token::update::update;
@@ -276,6 +277,13 @@ const MAX_RESTART_ATTEMPTS: u8 = 3;
 const RESTART_BACKOFF_BASE_MS: u64 = 200;
 const RESTART_BACKOFF_MAX_MS: u64 = 5_000;
 
+/// UI-level abandonment timeout for `textDocument/definition` (design
+/// doc's "~30 s for definition/hover (cold rust-analyzer legitimately
+/// exceeds 10 s)"). Not a server-side cancellation guarantee — the
+/// request is still marked abandoned and `$/cancelRequest` sent, but a
+/// late reply is simply consumed and discarded (same as supersession).
+const DEFINITION_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Owns every running language server's process handle. Authoritative —
 /// `AppModel.lsp` (`LspUiState`) is a render-only mirror driven by
 /// `Msg::Lsp(ServerStateChanged)`; this stays out of the model per the
@@ -329,6 +337,40 @@ struct LspManager {
     /// `Document.revision` equality guard (see the design doc's
     /// diagnostics exception).
     diagnostics_versions: HashMap<lsp_types::Uri, i64>,
+    /// In-flight `textDocument/definition` requests, keyed by the triple
+    /// the worker's response echoes back — enough to build
+    /// `LspMsg::DefinitionResolved` once it arrives (or discard it
+    /// silently if superseded; see `PendingDefinition` and
+    /// `process_async_messages`'s interception pass). An entry survives
+    /// being superseded (matching `PendingRequests`' abandoned-entry
+    /// semantics) until its response actually arrives.
+    definition_requests: HashMap<(LspServerId, PathBuf, i64), PendingDefinition>,
+    /// Which `(server_id, root, request_id)` is the *current*
+    /// (non-superseded) definition request for a document — looked up to
+    /// send `$/cancelRequest` when a newer `GotoDefinition` supersedes it
+    /// (design doc's "one outstanding request per feature per document").
+    definition_request_by_doc: HashMap<token::model::editor_area::DocumentId, (LspServerId, PathBuf, i64)>,
+    /// `~30s` UI-level abandonment deadlines for in-flight definition
+    /// requests (design doc's "folded into the runtime's existing
+    /// `next_wake` computation in `about_to_wait`"), keyed the same as
+    /// `definition_requests`. Fired by `check_lsp_definition_deadlines`.
+    definition_deadlines: HashMap<(LspServerId, PathBuf, i64), Instant>,
+}
+
+/// What `LspManager` needs to turn a `textDocument/definition` response
+/// into `LspMsg::DefinitionResolved` — captured at request time since the
+/// worker thread that receives the response has no access to model state.
+struct PendingDefinition {
+    document_id: token::model::editor_area::DocumentId,
+    revision: u64,
+    origin: JumpEntry,
+    /// The server that this request was sent to — carried through to
+    /// `DefinitionResolved` so a location outside every root can be
+    /// routed back to the *resolving* server instead of the generic
+    /// open path re-deriving (and possibly spawning) its own root; see
+    /// `LspUiState::route_hint`.
+    server_id: LspServerId,
+    root: PathBuf,
 }
 
 /// What `LspManager` remembers about a `didOpen`'d document — enough to
@@ -356,6 +398,9 @@ impl LspManager {
             resync_pending: std::collections::HashSet::new(),
             diagnostics: HashMap::new(),
             diagnostics_versions: HashMap::new(),
+            definition_requests: HashMap::new(),
+            definition_request_by_doc: HashMap::new(),
+            definition_deadlines: HashMap::new(),
         }
     }
 
@@ -1752,6 +1797,32 @@ impl App {
                     self.lsp.diagnostics_versions.remove(&uri);
                 }
             }
+            Cmd::LspRequestDefinition {
+                document_id,
+                position,
+                revision,
+                origin,
+            } => {
+                self.request_lsp_definition(document_id, position, revision, origin);
+            }
+            Cmd::LspDidOpenOnServer {
+                document_id,
+                file_path,
+                server_id,
+                root,
+            } => {
+                let language = self
+                    .model
+                    .editor_area
+                    .documents
+                    .get(&document_id)
+                    .map(|doc| doc.language);
+                if let Some(language_id) =
+                    language.and_then(lsp::sync::language_id_str)
+                {
+                    self.lsp_open_document_on(document_id, file_path, server_id, root, language_id);
+                }
+            }
 
             // =====================================================================
             // Application Commands
@@ -1782,6 +1853,52 @@ impl App {
         while let Ok(msg) = self.msg_rx.try_recv() {
             messages.push(msg);
         }
+        // Translate raw `textDocument/definition` worker replies into
+        // `LspMsg::DefinitionResolved` before anything else sees them:
+        // only `LspManager::definition_requests` (runtime-only state) has
+        // the `(document_id, revision, origin)` context the response
+        // needs, so this can't wait for `update()`. A superseded
+        // request's late reply (`abandoned`) or an unknown id is dropped
+        // here — "consumed and discarded" per the design doc.
+        messages = messages
+            .into_iter()
+            .filter_map(|msg| {
+                let Msg::Lsp(LspMsg::DefinitionResponseFromServer {
+                    server_id,
+                    root,
+                    request_id,
+                    locations,
+                    abandoned,
+                }) = msg
+                else {
+                    return Some(msg);
+                };
+                let key = (server_id, root, request_id);
+                let pending = self.lsp.definition_requests.remove(&key)?;
+                self.lsp.definition_deadlines.remove(&key);
+                if self.lsp.definition_request_by_doc.get(&pending.document_id) == Some(&key) {
+                    self.lsp.definition_request_by_doc.remove(&pending.document_id);
+                }
+                if abandoned {
+                    return None;
+                }
+                let outcome = if locations.is_empty() {
+                    DefinitionOutcome::NoResult
+                } else {
+                    DefinitionOutcome::Locations {
+                        locations,
+                        resolving_server: pending.server_id,
+                        resolving_root: pending.root,
+                    }
+                };
+                Some(Msg::Lsp(LspMsg::DefinitionResolved {
+                    document_id: pending.document_id,
+                    revision: pending.revision,
+                    origin: pending.origin,
+                    outcome,
+                }))
+            })
+            .collect();
         // Coalesce successive `publishDiagnostics` for the same URI within
         // this drain, newest wins — each publish is a full replacement, so
         // dropping the superseded ones here converges on the same end
@@ -2079,7 +2196,23 @@ impl App {
         let Some(language_id) = lsp::sync::language_id_str(language) else {
             return;
         };
-        let Some(handle) = self.lsp.servers.get(&(resolved.id.clone(), root.clone())) else {
+        self.lsp_open_document_on(document_id, file_path, resolved.id, root, language_id);
+    }
+
+    /// The actual `didOpen` send + `open_documents` bookkeeping, against
+    /// an already-known `(server_id, root)` — shared by `lsp_open_document`
+    /// (which resolves the pair from `language`/`file_path`) and
+    /// `Cmd::LspDidOpenOnServer` (which is handed the pair directly, for a
+    /// definition-jump target outside every root).
+    fn lsp_open_document_on(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        file_path: PathBuf,
+        server_id: LspServerId,
+        root: PathBuf,
+        language_id: &'static str,
+    ) {
+        let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
             return;
         };
         let Some(doc) = self.model.editor_area.documents.get(&document_id) else {
@@ -2118,7 +2251,7 @@ impl App {
         self.lsp.open_documents.insert(
             document_id,
             OpenDocState {
-                server_id: resolved.id,
+                server_id,
                 root,
                 uri,
                 synced_revision: revision,
@@ -2310,6 +2443,110 @@ impl App {
         }
     }
 
+    /// `textDocument/definition` (lsp-integration.md Phase 3). Gates on
+    /// the same information `didOpen` already established
+    /// (`open_documents`) rather than re-resolving the server/root, so
+    /// this and `lsp_open_document` never disagree about which server a
+    /// document belongs to. Supersedes any request already in flight for
+    /// `document_id` via `$/cancelRequest` first.
+    fn request_lsp_definition(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        position: lsp_types::Position,
+        revision: u64,
+        origin: JumpEntry,
+    ) {
+        let Some(state) = self.lsp.open_documents.get(&document_id) else {
+            // No server registered/synced for this document at all —
+            // untitled buffer, or a language with no registered server.
+            self.emit_definition_outcome(document_id, revision, origin, DefinitionOutcome::NotSupported);
+            return;
+        };
+        let server_id = state.server_id.clone();
+        let root = state.root.clone();
+        let uri = state.uri.clone();
+
+        if let Some((old_server_id, old_root, old_request_id)) =
+            self.lsp.definition_request_by_doc.remove(&document_id)
+        {
+            if let Some(old_handle) = self.lsp.servers.get(&(old_server_id, old_root)) {
+                old_handle.pending.lock().unwrap().abandon(old_request_id);
+                let _ = old_handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
+                    method: "$/cancelRequest".to_owned(),
+                    params: serde_json::json!({ "id": old_request_id }),
+                });
+            }
+        }
+
+        let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
+            self.emit_definition_outcome(document_id, revision, origin, DefinitionOutcome::StillIndexing);
+            return;
+        };
+        let Some(caps) = handle.capabilities_snapshot() else {
+            // Handshake hasn't completed yet — indistinguishable from
+            // "still indexing" from the user's point of view.
+            self.emit_definition_outcome(document_id, revision, origin, DefinitionOutcome::StillIndexing);
+            return;
+        };
+        if !lsp::client::supports_definition(&caps) {
+            self.emit_definition_outcome(document_id, revision, origin, DefinitionOutcome::NotSupported);
+            return;
+        }
+
+        // Flush-before-request invariant: a request issued inside the
+        // debounce window must not be answered against stale text.
+        self.flush_lsp_did_change(document_id);
+
+        let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
+            self.emit_definition_outcome(document_id, revision, origin, DefinitionOutcome::StillIndexing);
+            return;
+        };
+        let params = serde_json::json!({
+            "textDocument": { "uri": uri.as_str() },
+            "position": { "line": position.line, "character": position.character },
+        });
+        let request_id = handle.begin_request("textDocument/definition", params);
+        let key = (server_id.clone(), root.clone(), request_id);
+        self.lsp.definition_requests.insert(
+            key.clone(),
+            PendingDefinition {
+                document_id,
+                revision,
+                origin,
+                server_id,
+                root,
+            },
+        );
+        self.lsp.definition_request_by_doc.insert(document_id, key.clone());
+        self.lsp
+            .definition_deadlines
+            .insert(key, Instant::now() + DEFINITION_TIMEOUT);
+    }
+
+    /// Synchronously routes a definition outcome that never reached the
+    /// server (no server, still indexing, not supported) through
+    /// `Msg::Lsp(DefinitionResolved)` — mirrors `set_lsp_server_state`'s
+    /// pattern for the same reason: called from inside `process_cmd`,
+    /// where nothing downstream will otherwise notice the status-bar
+    /// damage.
+    fn emit_definition_outcome(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        revision: u64,
+        origin: JumpEntry,
+        outcome: DefinitionOutcome,
+    ) {
+        self.process_automation_msg(Msg::Lsp(LspMsg::DefinitionResolved {
+            document_id,
+            revision,
+            origin,
+            outcome,
+        }));
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
     /// Routes a server-state change through `Msg::Lsp(ServerStateChanged)`
     /// — the same path the worker threads use — instead of poking
     /// `model.lsp.servers` directly, so the mirror stays "driven only by
@@ -2360,6 +2597,19 @@ impl App {
             self.lsp.servers.remove(&(server_id.clone(), root.clone()));
         }
         self.clear_diagnostics_for_roots(server_id, &roots);
+        // A dead worker thread will never send these requests' responses
+        // — drop the bookkeeping rather than leaking it across
+        // crash-restart cycles. No status transient: `GotoDefinition`
+        // never showed a "waiting" indicator in the first place.
+        self.lsp
+            .definition_requests
+            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
+        self.lsp
+            .definition_request_by_doc
+            .retain(|_, (id, root, _)| !(id == server_id && roots.contains(root)));
+        self.lsp
+            .definition_deadlines
+            .retain(|(id, root, _), _| !(id == server_id && roots.contains(root)));
 
         for root in roots {
             let key = (server_id.clone(), root.clone());
@@ -2417,6 +2667,58 @@ impl App {
                 .resync_pending
                 .insert((server_id.clone(), root.clone()));
             self.spawn_lsp_server_at(&resolved, &root);
+        }
+    }
+
+    /// Fires `DEFINITION_TIMEOUT` UI-level abandonment for definition
+    /// requests a server never answered (design doc's "hung server
+    /// degrades to abandoned requests with honest status messages").
+    /// A deadline for a request that's since been superseded (no longer
+    /// the doc's *current* request in `definition_request_by_doc`) is
+    /// dropped silently — the newer request owns whatever outcome the
+    /// user eventually sees.
+    fn check_lsp_definition_deadlines(&mut self) {
+        if self.lsp.definition_deadlines.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        let due: Vec<(LspServerId, PathBuf, i64)> = self
+            .lsp
+            .definition_deadlines
+            .iter()
+            .filter(|(_, deadline)| now >= **deadline)
+            .map(|(key, _)| key.clone())
+            .collect();
+        for key in due {
+            self.lsp.definition_deadlines.remove(&key);
+            let is_current = self
+                .lsp
+                .definition_requests
+                .get(&key)
+                .is_some_and(|pending| {
+                    self.lsp.definition_request_by_doc.get(&pending.document_id) == Some(&key)
+                });
+            if !is_current {
+                continue;
+            }
+            let Some(pending) = self.lsp.definition_requests.remove(&key) else {
+                continue;
+            };
+            self.lsp.definition_request_by_doc.remove(&pending.document_id);
+            let (server_id, root, request_id) = key;
+            if let Some(handle) = self.lsp.servers.get(&(server_id, root)) {
+                handle.pending.lock().unwrap().abandon(request_id);
+                let _ = handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
+                    method: "$/cancelRequest".to_owned(),
+                    params: serde_json::json!({ "id": request_id }),
+                });
+            }
+            self.emit_definition_outcome(
+                pending.document_id,
+                pending.revision,
+                pending.origin,
+                DefinitionOutcome::NoResult,
+            );
         }
     }
 
@@ -2627,6 +2929,7 @@ impl ApplicationHandler for App {
         }
         self.check_lsp_did_change_deadlines(&syntax_snapshots);
         self.check_lsp_restart_deadlines();
+        self.check_lsp_definition_deadlines();
 
         // Expire status flash messages
         if self.model.ui.expire_status_message() {
@@ -2669,6 +2972,9 @@ impl ApplicationHandler for App {
             next_wake = next_wake.min(earliest_deadline);
         }
         if let Some(earliest_deadline) = self.lsp.restart_deadlines.values().min() {
+            next_wake = next_wake.min(*earliest_deadline);
+        }
+        if let Some(earliest_deadline) = self.lsp.definition_deadlines.values().min() {
             next_wake = next_wake.min(*earliest_deadline);
         }
         if let Some(transient) = &self.model.ui.transient_message {
@@ -3454,6 +3760,326 @@ mod tests {
         }
     }
 
+    // ---- Phase 3: go-to-definition request plumbing ----
+
+    fn install_open_document(
+        app: &mut App,
+        document_id: token::model::editor_area::DocumentId,
+        server_id: &LspServerId,
+        root: &Path,
+        uri: lsp_types::Uri,
+    ) {
+        app.lsp.open_documents.insert(
+            document_id,
+            OpenDocState {
+                server_id: server_id.clone(),
+                root: root.to_path_buf(),
+                uri,
+                synced_revision: 0,
+            },
+        );
+    }
+
+    fn test_origin(app: &App) -> JumpEntry {
+        JumpEntry {
+            group_id: app.model.editor_area.focused_group_id,
+            document_id: app.model.document().id.unwrap(),
+            path: PathBuf::from("/tmp/origin.rs"),
+            line: 0,
+            col: 0,
+        }
+    }
+
+    #[test]
+    fn definition_request_with_no_synced_document_reports_not_supported() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let origin = test_origin(&app);
+
+        app.request_lsp_definition(
+            doc_id,
+            lsp_types::Position { line: 0, character: 0 },
+            revision,
+            origin,
+        );
+
+        assert!(app
+            .model
+            .ui
+            .transient_message
+            .as_ref()
+            .is_some_and(|t| t.text.contains("not supported")));
+    }
+
+    #[test]
+    fn definition_request_before_handshake_completes_reports_still_indexing() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let origin = test_origin(&app);
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-def-indexing");
+        let uri = lsp::path_to_uri(&PathBuf::from("/tmp/proj-def-indexing/main.rs"));
+        install_open_document(&mut app, doc_id, &server_id, &root, uri);
+        // Deliberately no handle in `app.lsp.servers` — the handshake
+        // hasn't produced one yet, indistinguishable from "still
+        // indexing" from the user's point of view.
+
+        app.request_lsp_definition(
+            doc_id,
+            lsp_types::Position { line: 0, character: 0 },
+            revision,
+            origin,
+        );
+
+        assert!(app
+            .model
+            .ui
+            .transient_message
+            .as_ref()
+            .is_some_and(|t| t.text.contains("indexing")));
+    }
+
+    #[test]
+    fn definition_request_reports_not_supported_when_capabilities_lack_definition_provider() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let origin = test_origin(&app);
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-def-nosupport");
+        let uri = lsp::path_to_uri(&PathBuf::from("/tmp/proj-def-nosupport/main.rs"));
+        install_open_document(&mut app, doc_id, &server_id, &root, uri);
+
+        let handle = spawn_fake_handle(&server_id);
+        *handle.capabilities.lock().unwrap() = Some(lsp_types::ServerCapabilities::default());
+        app.lsp
+            .servers
+            .insert((server_id.clone(), root.clone()), handle);
+
+        app.request_lsp_definition(
+            doc_id,
+            lsp_types::Position { line: 0, character: 0 },
+            revision,
+            origin,
+        );
+
+        assert!(app
+            .model
+            .ui
+            .transient_message
+            .as_ref()
+            .is_some_and(|t| t.text.contains("not supported")));
+
+        let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+        handle.kill();
+    }
+
+    #[test]
+    fn a_newer_definition_request_supersedes_and_cancels_the_previous_one() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-def-supersede");
+        let uri = lsp::path_to_uri(&PathBuf::from("/tmp/proj-def-supersede/main.rs"));
+        install_open_document(&mut app, doc_id, &server_id, &root, uri);
+
+        let handle = spawn_fake_handle(&server_id);
+        *handle.capabilities.lock().unwrap() = Some(lsp_types::ServerCapabilities {
+            definition_provider: Some(lsp_types::OneOf::Left(true)),
+            ..Default::default()
+        });
+        app.lsp
+            .servers
+            .insert((server_id.clone(), root.clone()), handle);
+
+        app.request_lsp_definition(
+            doc_id,
+            lsp_types::Position { line: 0, character: 0 },
+            revision,
+            test_origin(&app),
+        );
+        let (first_server, first_root, first_id) =
+            app.lsp.definition_request_by_doc.get(&doc_id).cloned().unwrap();
+
+        app.request_lsp_definition(
+            doc_id,
+            lsp_types::Position { line: 1, character: 0 },
+            revision,
+            test_origin(&app),
+        );
+        let (_, _, second_id) = app.lsp.definition_request_by_doc.get(&doc_id).cloned().unwrap();
+
+        assert_ne!(first_id, second_id, "a new request id must be allocated");
+        // The superseded entry stays pending (abandoned, not dropped —
+        // the server still owns the id and will reply) until its
+        // response actually arrives.
+        assert_eq!(app.lsp.definition_requests.len(), 2);
+        let handle = app.lsp.servers.get(&(first_server, first_root)).unwrap();
+        assert!(
+            handle.pending.lock().unwrap().resolve(first_id).unwrap().abandoned,
+            "the superseded request must be marked abandoned"
+        );
+
+        let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+        handle.kill();
+    }
+
+    #[test]
+    fn an_abandoned_definition_response_is_consumed_and_discarded() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-def-abandoned");
+        let origin = test_origin(&app);
+        app.lsp.definition_requests.insert(
+            (server_id.clone(), root.clone(), 7),
+            PendingDefinition {
+                document_id: doc_id,
+                revision,
+                origin,
+                server_id: server_id.clone(),
+                root: root.clone(),
+            },
+        );
+        app.lsp
+            .definition_request_by_doc
+            .insert(doc_id, (server_id.clone(), root.clone(), 7));
+
+        app.msg_tx
+            .send(Msg::Lsp(LspMsg::DefinitionResponseFromServer {
+                server_id,
+                root,
+                request_id: 7,
+                locations: vec![],
+                abandoned: true,
+            }))
+            .unwrap();
+        app.process_async_messages();
+
+        assert!(app.lsp.definition_requests.is_empty());
+        assert!(app.lsp.definition_request_by_doc.is_empty());
+        assert!(
+            app.model.jump_history.is_empty(),
+            "a discarded (cancelled) response must never push jump history or navigate"
+        );
+    }
+
+    #[test]
+    fn a_definition_request_past_its_deadline_is_abandoned_and_reports_no_result() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-def-timeout");
+        let origin = test_origin(&app);
+        let handle = spawn_fake_handle(&server_id);
+        // Register a real pending id on the handle (`begin_request`) so
+        // `check_lsp_definition_deadlines`' `abandon` call has something
+        // to mark — mirrors how `request_lsp_definition` allocates it.
+        let request_id = handle.begin_request("textDocument/definition", serde_json::json!({}));
+        app.lsp
+            .servers
+            .insert((server_id.clone(), root.clone()), handle);
+
+        let key = (server_id.clone(), root.clone(), request_id);
+        app.lsp.definition_requests.insert(
+            key.clone(),
+            PendingDefinition {
+                document_id: doc_id,
+                revision,
+                origin,
+                server_id: server_id.clone(),
+                root: root.clone(),
+            },
+        );
+        app.lsp.definition_request_by_doc.insert(doc_id, key.clone());
+        // Already past due, rather than sleeping 30s in a test.
+        app.lsp
+            .definition_deadlines
+            .insert(key.clone(), Instant::now() - Duration::from_secs(1));
+
+        app.check_lsp_definition_deadlines();
+
+        assert!(app.lsp.definition_requests.is_empty());
+        assert!(app.lsp.definition_request_by_doc.is_empty());
+        assert!(app.lsp.definition_deadlines.is_empty());
+        assert!(app
+            .model
+            .ui
+            .transient_message
+            .as_ref()
+            .is_some_and(|t| t.text.contains("No definition found")));
+        // The abandoned id must still be tracked as such on the handle
+        // (advisory `$/cancelRequest`) so a late reply is discarded.
+        let handle = app.lsp.servers.get(&(server_id.clone(), root.clone())).unwrap();
+        assert!(
+            handle
+                .pending
+                .lock()
+                .unwrap()
+                .resolve(request_id)
+                .unwrap()
+                .abandoned
+        );
+
+        let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+        handle.kill();
+    }
+
+    #[test]
+    fn a_deadline_for_an_already_superseded_request_is_dropped_silently() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let server_id = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-def-timeout-superseded");
+        let origin = test_origin(&app);
+
+        let stale_key = (server_id.clone(), root.clone(), 1);
+        app.lsp.definition_requests.insert(
+            stale_key.clone(),
+            PendingDefinition {
+                document_id: doc_id,
+                revision,
+                origin: origin.clone(),
+                server_id: server_id.clone(),
+                root: root.clone(),
+            },
+        );
+        // A newer request now owns `definition_request_by_doc` for this
+        // document — `stale_key` is superseded but its deadline is still
+        // ticking.
+        let current_key = (server_id.clone(), root.clone(), 2);
+        app.lsp
+            .definition_request_by_doc
+            .insert(doc_id, current_key.clone());
+        app.lsp
+            .definition_deadlines
+            .insert(stale_key.clone(), Instant::now() - Duration::from_secs(1));
+        let status_before = app.model.ui.transient_message.clone();
+
+        app.check_lsp_definition_deadlines();
+
+        assert!(
+            app.lsp.definition_requests.contains_key(&stale_key),
+            "a superseded request's own bookkeeping is untouched by its stale deadline"
+        );
+        assert_eq!(
+            app.lsp.definition_request_by_doc.get(&doc_id),
+            Some(&current_key),
+            "the newer request must still own the doc's outcome"
+        );
+        assert_eq!(
+            app.model.ui.transient_message.map(|t| t.text),
+            status_before.map(|t| t.text),
+            "an already-superseded request's timeout must not flash a status"
+        );
+    }
+
     // ---- Phase 1 gate: fake-lsp-server integration ----
     //
     // Drives the real spawn/handshake/didOpen/didChange/shutdown code
@@ -3639,6 +4265,101 @@ mod tests {
         // exit, all within the 2s budget, no hang.
         app.process_cmd(Cmd::Quit);
         assert!(app.lsp.servers.is_empty());
+    }
+
+    /// End-to-end "go to definition into an unopened file" (design doc's
+    /// Testing Strategy fake-server scenario): the fake server responds
+    /// to `textDocument/definition` with a location in a file that was
+    /// never opened; `GotoDefinition` must open it in a new tab, reusing
+    /// none, and place the cursor at the resolved position.
+    #[test]
+    fn goto_definition_into_an_unopened_file_opens_it_and_places_the_cursor() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write fixture file");
+        let target_path = dir.path().join("target.rs");
+        std::fs::write(&target_path, "one\ntwo\nthree\n").expect("write target fixture file");
+        let target_uri = token::lsp::path_to_uri(&target_path);
+
+        let scenario_path = dir.path().join("scenario.json");
+        std::fs::write(
+            &scenario_path,
+            serde_json::json!([
+                { "op": "expect_request", "method": "initialize", "respond": {
+                    "capabilities": { "definitionProvider": true }
+                }},
+                { "op": "expect_request", "method": "textDocument/definition", "respond": [{
+                    "uri": target_uri.as_str(),
+                    "range": {
+                        "start": { "line": 1, "character": 0 },
+                        "end": { "line": 1, "character": 3 },
+                    },
+                }]},
+                { "op": "sleep_ms", "ms": 60000 },
+            ])
+            .to_string(),
+        )
+        .expect("write scenario file");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
+                enabled: None,
+            },
+        );
+
+        // Open main.rs the way a real session does — synchronous open,
+        // synchronous `LspEnsureServer`/`LspDidOpen` dispatch.
+        app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+        assert_eq!(app.model.document().file_path.as_deref(), Some(file_path.as_path()));
+
+        let server_id = LspServerId::from("rust-analyzer");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            app.process_async_messages();
+            if app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready) {
+                break;
+            }
+            assert!(Instant::now() < deadline, "server never reached Ready");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        app.process_automation_msg(Msg::Lsp(LspMsg::GotoDefinition));
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            app.process_async_messages();
+            if app.model.editor_area.find_open_file(&target_path).is_some() {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "definition response never opened the target file"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        // Compare canonicalized: macOS's /tmp -> /private/tmp symlink
+        // means the URI round trip resolves to a different (but
+        // equivalent) path string than the raw `tempdir()` path.
+        assert_eq!(
+            app.model
+                .document()
+                .file_path
+                .as_deref()
+                .map(|p| std::fs::canonicalize(p).unwrap()),
+            Some(std::fs::canonicalize(&target_path).unwrap())
+        );
+        assert_eq!(app.model.editor().cursors[0].line, 1);
+        assert_eq!(app.model.editor().cursors[0].column, 0);
+        // The jump away from main.rs must be recorded for `NavigateBack`.
+        assert_eq!(app.model.jump_history.len(), 1);
+        assert_eq!(app.model.jump_history[0].path, file_path);
+
+        app.process_cmd(Cmd::Quit);
     }
 
     /// A `publishDiagnostics` for a file with no open document is

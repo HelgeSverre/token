@@ -11,6 +11,7 @@ mod editor;
 mod image;
 pub mod layout;
 mod lsp;
+pub mod navigation;
 mod outline;
 mod preview;
 mod syntax;

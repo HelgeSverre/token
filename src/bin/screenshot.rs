@@ -299,6 +299,7 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         #[cfg(debug_assertions)]
         debug_overlay: None,
         lsp: token::model::LspUiState::default(),
+        jump_history: Vec::new(),
     };
 
     // Add additional files as splits

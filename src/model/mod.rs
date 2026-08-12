@@ -436,6 +436,31 @@ pub fn gutter_border_x_scaled(
 #[derive(Debug, Clone, Default)]
 pub struct LspUiState {
     pub servers: HashMap<LspServerId, ServerState>,
+    /// One-shot routing hint consumed by `update::open_lsp_document`
+    /// immediately after a cross-file go-to-definition jump opens a new
+    /// tab: `(path, server_id, root)` for a location the design doc calls
+    /// "outside every root" (stdlib, `~/.cargo/registry`, ...). Routes
+    /// that document's `didOpen` to the server that *resolved* the
+    /// location instead of letting the generic open path compute (and
+    /// possibly spawn a server for) a fresh root — see the design doc's
+    /// "never spawn a new server rooted in a toolchain directory".
+    pub route_hint: Option<(std::path::PathBuf, LspServerId, std::path::PathBuf)>,
+}
+
+/// One entry in the general, group-tagged jump-history back stack
+/// (lsp-integration.md Phase 3: "a general editor feature that LSP
+/// merely pushes to" — outline jumps, goto-line, and file-finder
+/// navigation push here too, not just `GotoDefinition`). `document_id` is
+/// the primary way back (`update/navigation.rs` follows it to the
+/// document's *current* path, which may have moved under a Save As);
+/// `path` is the fallback once that document is closed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JumpEntry {
+    pub group_id: GroupId,
+    pub document_id: DocumentId,
+    pub path: std::path::PathBuf,
+    pub line: usize,
+    pub col: usize,
 }
 
 /// The complete application model
@@ -480,6 +505,10 @@ pub struct AppModel {
     pub debug_overlay: Option<DebugOverlay>,
     /// Language server lifecycle state mirror (see `LspUiState`)
     pub lsp: LspUiState,
+    /// General jump-history back stack (see `JumpEntry`), most-recent
+    /// last. `Command::NavigateBack` pops the focused group's most recent
+    /// entry — see `update/navigation.rs`.
+    pub jump_history: Vec<JumpEntry>,
 }
 
 impl AppModel {
@@ -544,6 +573,7 @@ impl AppModel {
             #[cfg(debug_assertions)]
             debug_overlay: Some(DebugOverlay::new()),
             lsp: LspUiState::default(),
+            jump_history: Vec::new(),
         }
     }
 

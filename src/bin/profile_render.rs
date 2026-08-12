@@ -269,6 +269,7 @@ fn create_model(args: &Args) -> Result<token::model::AppModel> {
         #[cfg(debug_assertions)]
         debug_overlay: None,
         lsp: token::model::LspUiState::default(),
+        jump_history: Vec::new(),
     };
 
     // Add more splits using the layout system

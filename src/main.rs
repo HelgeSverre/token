@@ -172,6 +172,7 @@ mod tests {
             #[cfg(debug_assertions)]
             debug_overlay: None,
             lsp: token::model::LspUiState::default(),
+            jump_history: Vec::new(),
         }
     }
 
@@ -776,6 +777,7 @@ mod tests {
             #[cfg(debug_assertions)]
             debug_overlay: None,
             lsp: token::model::LspUiState::default(),
+            jump_history: Vec::new(),
         };
 
         // Open command palette

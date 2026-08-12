@@ -336,12 +336,12 @@ Binary not found on `PATH` (after `PATHEXT` resolution on Windows) → `ServerSt
 
 **Effort:** M
 
-- [ ] Request/supersede/abandon plumbing with `$/cancelRequest`.
-- [ ] Same-file jump (document-parameterized clamp + `JumpToSymbol` body); cross-file via `LayoutMsg::OpenFileInNewTab` in the same update; image/binary-tab guard.
-- [ ] Out-of-root files route to the resolving server.
-- [ ] General jump history (group-tagged global stack, `document_id` + path fallback) + `NavigateBack`; outline/goto-line/file-finder push to it too.
-- [ ] Palette entries, F12 default, indexing-aware status transients.
-- [ ] Automation: invoke by name, assert resulting file/cursor.
+- [x] Request/supersede/abandon plumbing with `$/cancelRequest`; one outstanding request per document; 30s UI-level abandonment folded into `about_to_wait`'s `next_wake`.
+- [x] Same-file jump (document-parameterized clamp + `JumpToSymbol` body); cross-file via `LayoutMsg::OpenFileInNewTab` in the same update; image/binary-tab guard.
+- [x] Out-of-root files route to the resolving server.
+- [x] General jump history (group-tagged global stack, `document_id` + path fallback) + `NavigateBack`; outline/goto-line/file-finder push to it too.
+- [x] Palette entries, F12 default, indexing-aware status transients.
+- [x] Automation: invoke by name, assert resulting file/cursor.
 
 ### Phase 4: Hover
 

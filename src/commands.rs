@@ -33,6 +33,8 @@ pub enum CommandId {
 
     // Navigation
     GotoLine,
+    GotoDefinition,
+    NavigateBack,
 
     // View operations
     SplitHorizontal,
@@ -214,6 +216,18 @@ pub static COMMANDS: &[CommandDef] = &[
         category: CommandCategory::Nav,
         label: "Go to Line...",
         keybinding: Some("⌘L"),
+    },
+    CommandDef {
+        id: CommandId::GotoDefinition,
+        category: CommandCategory::Nav,
+        label: "Go to Definition",
+        keybinding: Some("F12"),
+    },
+    CommandDef {
+        id: CommandId::NavigateBack,
+        category: CommandCategory::Nav,
+        label: "Navigate Back",
+        keybinding: Some("⌘["),
     },
     CommandDef {
         id: CommandId::SplitHorizontal,
@@ -430,6 +444,8 @@ impl CommandId {
             CommandId::Paste => Some(KeymapCommand::Paste),
             CommandId::SelectAll => Some(KeymapCommand::SelectAll),
             CommandId::GotoLine => Some(KeymapCommand::ToggleGotoLine),
+            CommandId::GotoDefinition => Some(KeymapCommand::GotoDefinition),
+            CommandId::NavigateBack => Some(KeymapCommand::NavigateBack),
             CommandId::SplitHorizontal => Some(KeymapCommand::SplitHorizontal),
             CommandId::SplitVertical => Some(KeymapCommand::SplitVertical),
             CommandId::CloseGroup => None, // No direct mapping yet
@@ -783,6 +799,33 @@ pub enum Cmd {
     /// must not survive: the language association changed, so a
     /// subsequent `didOpen` must not resurrect them.
     LspClearDiagnostics { document_id: DocumentId },
+    /// `textDocument/definition` for `document_id` at `position`
+    /// (already UTF-16-converted), tagged with the document's `revision`
+    /// at request time and the `origin` to record in jump history on
+    /// success (design doc's "capture (document_id, revision, position)"
+    /// in `update_lsp`, and "push jump-history entry" once resolved).
+    /// Supersedes any still-pending definition request for the same
+    /// document via `$/cancelRequest` (advisory — the runtime still
+    /// consumes and discards the superseded request's late reply).
+    LspRequestDefinition {
+        document_id: DocumentId,
+        position: lsp_types::Position,
+        revision: u64,
+        origin: crate::model::JumpEntry,
+    },
+    /// `textDocument/didOpen` against a specific, already-known
+    /// `(server_id, root)` — bypasses `LspEnsureServer`'s root
+    /// resolution/spawn entirely. Only emitted for a definition-jump
+    /// target outside every root (`LspUiState::route_hint`); the design
+    /// doc's "route to the resolving server, never spawn a new server
+    /// rooted in a toolchain directory". A no-op if that server isn't
+    /// running (shouldn't happen — it just answered the request).
+    LspDidOpenOnServer {
+        document_id: DocumentId,
+        file_path: PathBuf,
+        server_id: crate::lsp::LspServerId,
+        root: PathBuf,
+    },
 
     // === Debug Commands ===
     /// Toggle performance overlay (debug builds only)
@@ -872,6 +915,8 @@ impl Cmd {
             Cmd::LspDidSave { .. } => Damage::Areas(vec![]),
             Cmd::LspDidClose { .. } => Damage::Areas(vec![]),
             Cmd::LspClearDiagnostics { .. } => Damage::Areas(vec![]),
+            Cmd::LspRequestDefinition { .. } => Damage::Areas(vec![]),
+            Cmd::LspDidOpenOnServer { .. } => Damage::Areas(vec![]),
             // Debug overlay toggle triggers full redraw
             #[cfg(debug_assertions)]
             Cmd::TogglePerfOverlay => Damage::Full,

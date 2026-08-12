@@ -392,6 +392,12 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             crate::update::update_editor(model, crate::messages::EditorMsg::SelectAll)
         }
         CommandId::GotoLine => update_ui(model, UiMsg::ToggleModal(ModalId::GotoLine)),
+        CommandId::GotoDefinition => {
+            crate::update::update_lsp(model, crate::messages::LspMsg::GotoDefinition)
+        }
+        CommandId::NavigateBack => {
+            crate::update::update_lsp(model, crate::messages::LspMsg::NavigateBack)
+        }
         CommandId::SplitHorizontal => {
             update_layout(model, LayoutMsg::SplitFocused(SplitDirection::Horizontal))
         }

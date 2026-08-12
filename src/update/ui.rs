@@ -14,6 +14,7 @@ use crate::model::{
 use crate::theme::load_theme;
 use crate::update::layout::update_layout;
 use crate::update::lsp::schedule_lsp_did_change;
+use crate::update::navigation::push_history;
 use crate::update::syntax::schedule_syntax_parse;
 use crate::view::modal::{recent_files_groups, theme_picker_groups};
 use crate::view::overlay_surface::{resolve_scroll_for_selection, SectionShape};
@@ -923,6 +924,7 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
                 let clamped_col = target_col.min(line_len);
 
                 // Move cursor to the line:col
+                push_history(model);
                 let editor = model.editor_mut();
                 editor.cursors[0].line = clamped_line;
                 editor.cursors[0].column = clamped_col;
@@ -960,6 +962,7 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
                 // Open selected file
                 if let Some(file_match) = state.results.get(state.selected_index) {
                     let path = file_match.path.clone();
+                    push_history(model);
                     model.ui.close_modal();
                     return update_layout(model, LayoutMsg::OpenFileInNewTab(path));
                 }
@@ -969,6 +972,7 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
             ModalState::RecentFiles(state) => {
                 if let Some(entry) = state.selected_entry() {
                     let path = entry.path.clone();
+                    push_history(model);
                     model.ui.close_modal();
                     return update_layout(model, LayoutMsg::OpenFileInNewTab(path));
                 }
@@ -1080,7 +1084,10 @@ fn confirm_search_everywhere(model: &mut AppModel, state: CommandPaletteState) -
                 .map(|m| m.path.clone());
             model.ui.close_modal();
             match path {
-                Some(path) => update_layout(model, LayoutMsg::OpenFileInNewTab(path)),
+                Some(path) => {
+                    push_history(model);
+                    update_layout(model, LayoutMsg::OpenFileInNewTab(path))
+                }
                 None => Some(Cmd::Redraw),
             }
         }
@@ -1106,7 +1113,10 @@ fn confirm_search_everywhere(model: &mut AppModel, state: CommandPaletteState) -
                 .map(|m| m.path.clone());
             model.ui.close_modal();
             match path {
-                Some(path) => update_layout(model, LayoutMsg::OpenFileInNewTab(path)),
+                Some(path) => {
+                    push_history(model);
+                    update_layout(model, LayoutMsg::OpenFileInNewTab(path))
+                }
                 None => Some(Cmd::Redraw),
             }
         }

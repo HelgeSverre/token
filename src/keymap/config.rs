@@ -386,6 +386,10 @@ impl FromStr for Command {
             // Completion
             "TriggerCompletionMenu" => Ok(Command::TriggerCompletionMenu),
 
+            // Go to Definition + Jump History (lsp-integration.md Phase 3)
+            "GotoDefinition" => Ok(Command::GotoDefinition),
+            "NavigateBack" => Ok(Command::NavigateBack),
+
             // Image viewer
             "ImageZoomIn" => Ok(Command::ImageZoomIn),
             "ImageZoomOut" => Ok(Command::ImageZoomOut),

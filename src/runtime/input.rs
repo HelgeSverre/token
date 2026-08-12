@@ -817,7 +817,7 @@ fn handle_sidebar_key(model: &mut AppModel, key: &Key, ctrl: bool) -> Option<Cmd
 }
 
 /// Check if the outline panel (right dock) has keyboard focus
-fn is_outline_dock_focused(model: &AppModel) -> bool {
+pub(crate) fn is_outline_dock_focused(model: &AppModel) -> bool {
     if model.ui.focused_dock() != Some(DockPosition::Right) {
         return false;
     }

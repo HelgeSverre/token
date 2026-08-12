@@ -921,6 +921,66 @@ pub enum LspMsg {
         version: Option<i64>,
         diagnostics: Vec<lsp_types::Diagnostic>,
     },
+
+    // ==== Go to Definition + Jump History (lsp-integration.md Phase 3) ====
+    /// User intent (F12 / palette). `update_lsp` reads the focused
+    /// document + cursor synchronously and captures
+    /// `(document_id, revision, position)` into `Cmd::LspRequestDefinition`
+    /// — see the design doc's Message Flow example.
+    GotoDefinition,
+    /// User intent (palette / default keybinding): pop the focused
+    /// group's most recent jump-history entry (`update/navigation.rs`).
+    NavigateBack,
+    /// Runtime -> update: the outcome of a `textDocument/definition`
+    /// request issued from `(document_id, revision, origin)`.
+    /// Revision-guarded: dropped if `document_id`'s revision has since
+    /// advanced (stale-response guard, diagnostics excepted per the
+    /// design doc — this is a feature response, not diagnostics).
+    DefinitionResolved {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        origin: crate::model::JumpEntry,
+        outcome: DefinitionOutcome,
+    },
+    /// Worker -> runtime only: the raw response (or discard-worthy
+    /// supersession) to a `textDocument/definition` request, keyed by
+    /// `(server_id, root, request_id)` — the runtime's `LspManager`
+    /// looks up the request's `(document_id, revision, origin)` context
+    /// (only it has that mapping) and translates this into
+    /// `DefinitionResolved` before `update()` ever sees it; see
+    /// `process_async_messages`'s interception pass. Never reaches
+    /// `update_lsp` in practice, but the match must stay exhaustive.
+    DefinitionResponseFromServer {
+        server_id: LspServerId,
+        root: std::path::PathBuf,
+        request_id: i64,
+        locations: Vec<lsp_types::Location>,
+        /// Echoes `PendingEntry::abandoned` — a superseded request's late
+        /// reply is consumed and discarded, never forwarded as
+        /// `DefinitionResolved`.
+        abandoned: bool,
+    },
+}
+
+/// The result of a `textDocument/definition` request, distinguishing the
+/// three status transients the design doc calls for ("still indexing…"
+/// / "no definition found" / "not supported by this server") from an
+/// actual result.
+#[derive(Debug, Clone)]
+pub enum DefinitionOutcome {
+    Locations {
+        locations: Vec<lsp_types::Location>,
+        /// The server that resolved these locations — routed back into
+        /// `LspUiState::route_hint` when the (first) location lands
+        /// outside every root, so the generic file-open path doesn't
+        /// re-derive (and possibly spawn a server for) its own root; see
+        /// the design doc's "route to the resolving server".
+        resolving_server: LspServerId,
+        resolving_root: std::path::PathBuf,
+    },
+    StillIndexing,
+    NotSupported,
+    NoResult,
 }
 
 /// Menu completion messages (autocomplete.md Phase 1: "words + snippets,
