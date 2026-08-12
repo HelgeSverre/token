@@ -107,6 +107,33 @@ mod tests {
     }
 
     #[test]
+    fn cursor_overlay_wheel_scroll_clamps_to_row_count() {
+        // The debug Completion demo has exactly `MAX_VISIBLE_COMPLETION`
+        // rows, so its whole list is always visible and `max_scroll` is 0 —
+        // any number of downward notches must leave `scroll` at 0 rather
+        // than accumulating unboundedly (regression: previously required
+        // as many upward notches to "unwind" before the (already-fully-
+        // visible) window would move again).
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.ui.hover = HoverRegion::CursorOverlay;
+        model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::DebugCompletion,
+        ));
+        assert_eq!(
+            token::view::modal::debug_completion_row_count(),
+            token::view::overlay_surface::MAX_VISIBLE_COMPLETION
+        );
+
+        for _ in 0..20 {
+            handle_mouse_wheel(&mut model, None, 0, 3);
+        }
+        assert_eq!(model.ui.cursor_overlay.unwrap().scroll, 0);
+
+        handle_mouse_wheel(&mut model, None, 0, -3);
+        assert_eq!(model.ui.cursor_overlay.unwrap().scroll, 0);
+    }
+
+    #[test]
     fn tab_bar_horizontal_scroll_matches_content_direction() {
         // Regression: horizontal tab scrolling was inverted once trackpad
         // horizontal deltas stopped truncating to zero. Positive `h_delta`
@@ -1230,11 +1257,21 @@ pub fn handle_mouse_wheel(
             let Some(state) = &mut model.ui.cursor_overlay else {
                 return None;
             };
+            let max_scroll = match state.kind {
+                token::model::CursorOverlayKind::DebugCompletion => {
+                    token::view::modal::debug_completion_row_count()
+                        .saturating_sub(token::view::overlay_surface::MAX_VISIBLE_COMPLETION)
+                }
+                token::model::CursorOverlayKind::DebugHover => 0,
+            };
             let delta = v_delta.signum() * 3;
             state.scroll = if delta < 0 {
                 state.scroll.saturating_sub(delta.unsigned_abs() as usize)
             } else {
-                state.scroll.saturating_add(delta as usize)
+                state
+                    .scroll
+                    .saturating_add(delta as usize)
+                    .min(max_scroll)
             };
             Some(Cmd::Redraw)
         }

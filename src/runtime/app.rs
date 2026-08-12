@@ -521,6 +521,14 @@ impl App {
                         return Some(Cmd::Redraw);
                     }
 
+                    #[cfg(debug_assertions)]
+                    if event.logical_key == Key::Named(NamedKey::F9) {
+                        return token::update::execute_command(
+                            &mut self.model,
+                            token::commands::CommandId::CycleCursorOverlayDemo,
+                        );
+                    }
+
                     let ctrl = self.modifiers.control_key();
                     let shift = self.modifiers.shift_key();
                     let alt = self.modifiers.alt_key();
@@ -578,6 +586,7 @@ impl App {
                         && self.model.dock_layout.bottom.active_panel()
                             == Some(token::panel::PanelId::TERMINAL);
                     let skip_keymap = self.model.ui.has_modal()
+                        || self.model.ui.cursor_overlay.is_some()
                         || (self.option_gesture.double_tapped && alt)
                         || sidebar_focused
                         || terminal_focused

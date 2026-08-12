@@ -699,7 +699,9 @@ fn resolve_panel_width(
     if matches!(anchor, Anchor::Cursor { .. }) {
         panel_w = panel_w.max(scaled(dims::CURSOR_WIDTH_FLOOR, scale_factor));
     }
-    panel_w
+    // Never exceed the window itself, even when the 200px cursor floor is
+    // wider than `window_width - margin` (narrow-window degradation).
+    panel_w.min(window_width)
 }
 
 /// Position the panel's top-left corner given its final width/height.
@@ -2871,6 +2873,48 @@ mod tests {
         };
         let l = layout(&spec, 1000, 800, 1.0);
         assert_eq!(l.panel.y, 0, "clamps to the top when it can't fit anywhere");
+    }
+
+    #[test]
+    fn cursor_anchor_width_floor_never_exceeds_a_narrow_window() {
+        // The 200px cursor-width floor is wider than a 150px-wide window;
+        // the panel must still be clamped to fit inside it rather than
+        // overflowing the right edge.
+        let rows = [one_row()];
+        let sections = [Section {
+            title: None,
+            rows: &rows,
+        }];
+        let spec = OverlaySpec {
+            tabs: None,
+            anchor: Anchor::Cursor {
+                x: 10,
+                y: 100,
+                prefer_below: true,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 0.0,
+                    max: 300.0,
+                },
+            },
+            header: None,
+            body: Body::List {
+                sections: &sections,
+                selected: FlatIndex(0),
+                scroll: 0,
+                max_visible: 8,
+            },
+            footer: None,
+            hover_row: None,
+        };
+        let l = layout(&spec, 150, 800, 1.0);
+        assert!(l.panel.w <= 150, "panel width {} exceeds window", l.panel.w);
+        assert!(
+            l.panel.x + l.panel.w <= 150,
+            "panel overflows the right edge: x={} w={}",
+            l.panel.x,
+            l.panel.w
+        );
     }
 
     #[test]
