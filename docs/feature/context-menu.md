@@ -1,12 +1,12 @@
 # Context Menu (Right-Click Menu)
 
-A context-sensitive popup menu system triggered by right-click, providing quick access to relevant actions based on the clicked region.
+A context-sensitive popup menu triggered by right-click, rendered as an `OverlaySurface` context anchored at the click position — the same component that renders the command palette, pickers, and the completion/hover popups.
 
 > **Status:** 📋 Planned
 > **Priority:** P2 (Important)
 > **Effort:** L (1-2 weeks)
 > **Created:** 2026-01-07
-> **Updated:** 2026-01-07
+> **Updated:** 2026-08-13 (revised against the shipped `OverlaySurface`/cursor-overlay system — bespoke rendering plan deleted, V1 scope and key/mouse routing finalized)
 > **Milestone:** 3 - Workspace Features
 
 ---
@@ -16,11 +16,15 @@ A context-sensitive popup menu system triggered by right-click, providing quick 
 1. [Overview](#overview)
 2. [Architecture](#architecture)
 3. [Data Structures](#data-structures)
-4. [Keybindings](#keybindings)
-5. [Shortcut Hint Integration](#shortcut-hint-integration)
-6. [Implementation Plan](#implementation-plan)
-7. [Testing Strategy](#testing-strategy)
-8. [References](#references)
+4. [Overlay Context: rendering via OverlaySurface](#overlay-context-rendering-via-overlaysurface)
+5. [Key & Mouse Routing](#key--mouse-routing)
+6. [Shortcut Hint Integration](#shortcut-hint-integration)
+7. [V1 Scope: Regions & Menus](#v1-scope-regions--menus)
+8. [Keyboard Trigger](#keyboard-trigger)
+9. [Cross-References](#cross-references)
+10. [Implementation Plan](#implementation-plan)
+11. [Testing Strategy](#testing-strategy)
+12. [References](#references)
 
 ---
 
@@ -28,22 +32,25 @@ A context-sensitive popup menu system triggered by right-click, providing quick 
 
 ### Current State
 
-No existing context menu implementation. Right-click events are currently unhandled.
+Right-click is wired to a stub: `runtime/mouse.rs::handle_right_click` receives the resolved `HitTarget` and event, and unconditionally returns `EventResult::Bubble` with a `// Future: show context menus based on target` comment — the dispatch point exists, hit-testing already resolves a rich `HitTarget` (`GroupTab`, `SidebarItem`, editor content, etc.), but nothing consumes it.
+
+Separately, [overlay-surface.md](overlay-surface.md) shipped a general-purpose popup component (`OverlaySurface`, `Anchor::{Centered, Cursor}`, `Body::{List, Fields, Zones}`) that already renders the command palette, pickers, and (behind debug demos) cursor-anchored completion/hover shells via `ui.cursor_overlay: Option<CursorOverlayState>`. That doc explicitly lists the context menu as a **Future** consumer of `Anchor::Cursor` and does not implement it. This plan is that implementation.
 
 ### Goals
 
-- **Goal 1:** Provide context-sensitive actions via right-click in any UI region (editor, sidebar, tab bar, status bar, etc.)
-- **Goal 2:** Display keyboard shortcut hints for menu items that have bound commands
-- **Goal 3:** Support full keyboard navigation within the menu (arrows, Enter, Escape)
-- **Goal 4:** Create an extensible architecture that allows adding new regions and menu items easily
-- **Goal 5:** Click-away-to-close behavior for intuitive UX
+- **Goal 1:** Provide context-sensitive actions via right-click in the editor text area, tab bar, and file tree (V1 — see [Scope](#v1-scope-regions--menus)).
+- **Goal 2:** Display keyboard shortcut hints (keycap chips) for menu items that have bound commands, reusing `overlay_surface::binding_chips`.
+- **Goal 3:** Support full keyboard navigation within the menu (arrows, Enter, Escape) via the existing cursor-overlay key-routing branch.
+- **Goal 4:** Reuse `OverlaySurface`/`Body::List` entirely for rendering — no new painter code, no new theme keys.
+- **Goal 5:** Extensible per-region builder-function pattern so new regions (status bar, panels, outline, terminal) are cheap to add later.
 
 ### Non-Goals
 
-- **Nested submenus:** V1 uses flat menus only. Submenus may be added in a future iteration.
-- **Searchable/filterable menus:** No type-to-filter within context menus (command palette serves this purpose).
-- **Platform-native menus:** We render custom menus via softbuffer, not NSMenu/Win32 menus.
-- **Hover-to-expand:** No submenu expansion on hover (since no submenus in V1).
+- **Nested submenus:** V1 uses flat menus only, matching `Body::List`'s flat `FlatIndex` model (no submenu concept exists in `OverlaySurface`).
+- **Searchable/filterable menus:** No type-to-filter (command palette / Search Everywhere serves this purpose).
+- **Bespoke rendering:** No new `view/context_menu.rs` rendering module, no new painter primitives, no new `overlay.*` theme keys. Everything comes from the existing `OverlaySurface` chrome, row anatomy, and theme keys.
+- **Hover-to-expand:** No submenu expansion (since no submenus in V1).
+- **Code actions:** The LSP quick-fix menu ([lsp-integration.md](lsp-integration.md) Future) is a sibling `Anchor::Cursor` `Body::List` context, not this one — see [Cross-References](#cross-references).
 
 ---
 
@@ -52,98 +59,72 @@ No existing context menu implementation. Right-click events are currently unhand
 ### Integration Points
 
 ```
-┌─────────────────┐     ┌─────────────────┐
-│  Right-Click    │────►│    app.rs       │
-│  (MouseButton)  │     │  hit-test region│
-└─────────────────┘     └────────┬────────┘
-                                 │
-                                 ▼
-┌─────────────────┐     ┌─────────────────┐
-│ ContextMenuMsg  │◄────│ Build menu from │
-│ ::Open(request) │     │ target context  │
-└────────┬────────┘     └─────────────────┘
+┌──────────────────┐     ┌───────────────────────┐
+│  Right-Click     │────►│ runtime/mouse.rs       │
+│  (MouseButton)   │     │ handle_right_click()   │
+└──────────────────┘     └──────────┬─────────────┘
+                                     │  HitTarget already resolved
+                                     ▼
+┌──────────────────┐     ┌───────────────────────┐
+│ ContextMenuMsg   │◄────│ Build ContextMenuTarget│
+│ ::Open(request)  │     │ from HitTarget, then   │
+└────────┬─────────┘     │ per-region builder     │
+         │                └───────────────────────┘
+         ▼
+┌──────────────────┐     ┌───────────────────────┐
+│   update()       │────►│ ui.cursor_overlay =    │
+│                  │     │ Some(ContextMenu(..))  │
+└────────┬─────────┘     └───────────────────────┘
          │
          ▼
-┌─────────────────┐     ┌─────────────────┐
-│   update()      │────►│ ContextMenuState│
-│                 │     │ stored in UiState│
-└────────┬────────┘     └─────────────────┘
-         │
-         ▼
-┌─────────────────┐     ┌─────────────────┐
-│   Renderer      │────►│  Draw menu at   │
-│                 │     │  anchor position│
-└─────────────────┘     └─────────────────┘
+┌──────────────────┐     ┌───────────────────────┐
+│ OverlaySurface    │────►│ Anchor::Cursor at the │
+│ render (existing) │     │ click pixel; Body::List│
+└──────────────────┘     └───────────────────────┘
 ```
+
+The menu is **not** a new rendering system — it is a new *spec builder* (`view/modal.rs`-style function) that produces an `OverlaySpec` with `Body::List`, consumed by the overlay-surface render/layout/hit-test functions that already exist. The only genuinely new code is: (1) the `HitTarget → ContextMenuTarget` mapping and per-region item builders, (2) the state to hold the built items, and (3) wiring `handle_right_click` to open it and the key/mouse routing rules below.
 
 ### Module Structure
 
 ```
 src/
-├── context_menu/              # New module (create)
-│   ├── mod.rs                 # Public exports
-│   ├── types.rs               # ContextMenuState, MenuItem, MenuAction, etc.
-│   ├── builders.rs            # Per-region menu builders
-│   └── shortcut_hints.rs      # Keymap → shortcut string lookup
+├── context_menu/               # New module (create)
+│   ├── mod.rs                  # Public exports
+│   ├── types.rs                # ContextMenuTarget, ContextMenuRegion, MenuItem, MenuAction
+│   └── builders.rs              # Per-region menu builders → Vec<MenuItem>
 ├── model/
-│   └── ui.rs                  # Add context_menu: Option<ContextMenuState>
-├── messages.rs                # Add ContextMenuMsg enum
+│   └── ui.rs                   # CursorOverlayKind::ContextMenu variant (see below);
+│                                #   ui.context_menu_items: Option<Vec<MenuItem>> alongside it
+├── messages.rs                 # ContextMenuMsg (ActivateItem only — nav reuses cursor-overlay keys)
 ├── update/
-│   └── context_menu.rs        # New update handler (create)
+│   └── context_menu.rs         # execute_menu_action(); dispatch from ModalMsg-style handler
 ├── runtime/
-│   └── app.rs                 # Right-click handling, keyboard interception
+│   ├── mouse.rs                 # handle_right_click(): hit-test target → open the menu
+│   └── input.rs                 # handle_cursor_overlay_key(): add a ContextMenu arm
 └── view/
-    ├── mod.rs                 # Overlay-phase menu rendering
-    └── geometry.rs            # PopupMenuLayout + tab/menu hit-testing
+    └── modal.rs                 # render_context_menu(): OverlaySpec builder (Anchor::Cursor,
+                                  #   Body::List), following render_palette's pattern
 ```
 
-In the current renderer plan, this feature should align with three shared seams:
-
-- `PopupMenuLayout` for menu bounds and item rects
-- `TabBarLayout` for tab-specific context targets
-- the shared overlay policy for z-order, click-away consume rules, and keyboard capture
-
-### Message Flow
-
-**Opening a menu:**
-1. User right-clicks anywhere in the window
-2. `app.rs` receives `WindowEvent::MouseInput { button: MouseButton::Right, state: Pressed }`
-3. `app.rs` hit-tests the click position to determine `ContextMenuTarget`
-4. Dispatches `Msg::Ui(UiMsg::ContextMenu(ContextMenuMsg::Open(request)))`
-5. `update()` builds menu items based on target, stores `ContextMenuState` in `UiState`
-6. Renderer draws menu at anchor position
-
-**Navigating the menu:**
-1. Arrow keys / Enter / Escape intercepted in `app.rs` when `ui.context_menu.is_some()`
-2. Dispatch `ContextMenuMsg::{MoveUp, MoveDown, Confirm, Cancel}`
-3. `update()` modifies `active_index` or executes action and closes menu
-
-**Activating an item:**
-1. User clicks menu item or presses Enter
-2. Dispatch `ContextMenuMsg::ActivateItem { index }`
-3. `update()` executes the item's `MenuAction` (which produces `Msg`s)
-4. Menu closes
-
-**Closing the menu:**
-1. User clicks outside menu, presses Escape, or activates an item
-2. `model.ui.context_menu = None`
+No `view/geometry.rs` additions are needed: `HitTarget::GroupTab { group_id, tab_index, tab_id }` and `HitTarget::SidebarItem { path, is_dir, .. }` already carry everything a menu builder needs — the old doc's `hit_test_tab`/`TabHitResult` gap is already closed by the shared `hit_test_ui` path all mouse handling goes through.
 
 ---
 
 ## Data Structures
 
+These are unchanged in shape from the original spec — the model was always sound, only the render/routing plan around it was obsolete.
+
 ### ContextMenuRegion
 
 ```rust
-/// Which UI region spawned the menu (for debugging and potential special handling)
+/// Which UI region spawned the menu — V1 covers three; the rest are Future.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContextMenuRegion {
     Editor,
-    Sidebar,
     EditorTabBar,
-    StatusBar,
-    Modal,
-    Splitter,
+    FileTree,
+    // Future: StatusBar, OutlinePanel, Terminal, Dock
 }
 ```
 
@@ -151,972 +132,312 @@ pub enum ContextMenuRegion {
 
 ```rust
 use std::path::PathBuf;
-use crate::model::{GroupId, TabId};
-use crate::model::editor::Position;
+use crate::model::editor_area::{GroupId, TabId};
 
-/// Detailed context about what was right-clicked
+/// Detailed context about what was right-clicked, built from the `HitTarget`
+/// hit-testing already resolved for the click.
 #[derive(Debug, Clone)]
 pub enum ContextMenuTarget {
-    /// Right-click in editor text area
+    /// Right-click in editor text area.
     Editor {
         group_id: GroupId,
-        cursor_position: Position,
         has_selection: bool,
-        file_path: Option<PathBuf>,
+        clipboard_has_content: bool,
     },
-    /// Right-click on a file/folder in sidebar
-    SidebarItem {
-        path: PathBuf,
-        is_dir: bool,
-    },
-    /// Right-click on empty space in sidebar
-    SidebarEmpty,
-    /// Right-click on a tab
+    /// Right-click on a tab.
     Tab {
         group_id: GroupId,
         tab_id: TabId,
-        is_dirty: bool,
+        file_path: Option<PathBuf>,
     },
-    /// Right-click on status bar
-    StatusBar,
-    /// Right-click on modal (future use)
-    Modal,
-    /// Right-click on splitter (future use)
-    Splitter,
+    /// Right-click on a file/folder in the file tree.
+    FileTreeItem { path: PathBuf, is_dir: bool },
 }
 ```
 
-### ContextMenuRequest
+### MenuAction / MenuItem
+
+Unchanged from the original spec:
 
 ```rust
-/// Request to open a context menu
-#[derive(Debug, Clone)]
-pub struct ContextMenuRequest {
-    /// Screen position where menu should appear (logical pixels)
-    pub screen_pos: (f32, f32),
-    /// What was clicked
-    pub target: ContextMenuTarget,
-}
-```
-
-### MenuAction
-
-```rust
-/// What happens when a menu item is activated
 #[derive(Debug, Clone)]
 pub enum MenuAction {
-    /// Execute one or more messages
     Messages(Vec<crate::messages::Msg>),
-    /// No action (used for disabled items)
-    None,
+    None, // disabled items / separators
 }
 
-impl MenuAction {
-    /// Create action from a Command (most common case)
-    pub fn from_command(cmd: crate::keymap::Command) -> Self {
-        MenuAction::Messages(cmd.to_msgs())
-    }
-}
-```
-
-### MenuItem
-
-```rust
-/// A single item in a context menu
 #[derive(Debug, Clone)]
 pub struct MenuItem {
-    /// Display label
     pub label: String,
-    /// Whether the item can be activated
     pub enabled: bool,
-    /// Optional keyboard shortcut hint (e.g., "⌘C" or "Ctrl+C")
-    pub shortcut_hint: Option<String>,
-    /// What happens when activated
+    pub shortcut_hint: Option<String>, // populated by ShortcutHintProvider
     pub action: MenuAction,
-    /// If true, renders as a visual separator line instead of a clickable item
     pub is_separator: bool,
 }
-
-impl MenuItem {
-    /// Create a regular menu item from a Command
-    pub fn from_command(label: impl Into<String>, cmd: Command, enabled: bool) -> Self {
-        Self {
-            label: label.into(),
-            enabled,
-            shortcut_hint: None, // Populated by shortcut hint system
-            action: MenuAction::from_command(cmd),
-            is_separator: false,
-        }
-    }
-
-    /// Create a separator
-    pub fn separator() -> Self {
-        Self {
-            label: String::new(),
-            enabled: false,
-            shortcut_hint: None,
-            action: MenuAction::None,
-            is_separator: true,
-        }
-    }
-
-    /// Create an item with custom messages (not tied to a Command)
-    pub fn custom(label: impl Into<String>, msgs: Vec<Msg>, enabled: bool) -> Self {
-        Self {
-            label: label.into(),
-            enabled,
-            shortcut_hint: None,
-            action: MenuAction::Messages(msgs),
-            is_separator: false,
-        }
-    }
-}
 ```
 
-### ContextMenuState
+`MenuItem::from_command`, `::separator`, `::custom` constructors carry over as-is (see the pre-revision doc's snippets in git history if the exact bodies are needed — nothing about them changed).
+
+### From MenuItem to OverlaySurface Rows
+
+The one genuinely new piece of plumbing: a `Vec<MenuItem>` (update-layer, region-agnostic) maps to `overlay_surface::Section`/`Row` (view-layer, `OverlaySurface`-shaped) at spec-build time — the same "ordering authority produces plain data, view maps it to the spec" split every other `OverlaySurface` context uses (overlay-surface.md "Ordering authority").
 
 ```rust
-/// State for an open context menu
-#[derive(Debug, Clone)]
-pub struct ContextMenuState {
-    /// Which region spawned this menu
-    pub region: ContextMenuRegion,
-    /// Screen-space anchor position (top-left of menu, logical pixels)
-    pub anchor: (f32, f32),
-    /// Menu items
-    pub items: Vec<MenuItem>,
-    /// Currently selected item index (for keyboard navigation)
-    /// None = no selection yet (mouse-only interaction)
-    pub active_index: Option<usize>,
+// view/modal.rs, alongside render_palette / render_recent_files etc.
+fn context_menu_sections<'a>(items: &'a [MenuItem]) -> Vec<Section<'a>> {
+    // Separators become section boundaries (see "Separators" below): each
+    // run of non-separator items between separators is its own `Section`
+    // with `title: None`. `FlatIndex` then addresses only real rows,
+    // exactly like every other list context — disabled items stay in the
+    // list (so keyboard nav order matches the visual order) but are
+    // unselectable, per the existing `enabled` skip rule.
 }
 
-impl ContextMenuState {
-    /// Get the currently selected item, if any
-    pub fn active_item(&self) -> Option<&MenuItem> {
-        self.active_index.and_then(|i| self.items.get(i))
+fn row_for_item(item: &MenuItem) -> Row<'_> {
+    Row {
+        icon: RowIcon::None, // or RowIcon::Glyph for the handful of items that want one
+        label: &item.label,
+        match_indices: &[], // context menus have no fuzzy query
+        detail: None,
+        accessory: match &item.shortcut_hint {
+            Some(_binding_str) => Accessory::Keycaps(/* binding_chips() output, cached */),
+            None => Accessory::None, // no DimText filler — an unbound action just has no accessory
+        },
     }
-
-    /// Move selection up, skipping separators and disabled items
-    pub fn move_up(&mut self) {
-        let len = self.items.len();
-        if len == 0 { return; }
-
-        let start = self.active_index.unwrap_or(0);
-        let mut idx = start;
-
-        loop {
-            idx = if idx == 0 { len - 1 } else { idx - 1 };
-            if self.items[idx].enabled && !self.items[idx].is_separator {
-                self.active_index = Some(idx);
-                return;
-            }
-            if idx == start { return; } // No valid items
-        }
-    }
-
-    /// Move selection down, skipping separators and disabled items
-    pub fn move_down(&mut self) {
-        let len = self.items.len();
-        if len == 0 { return; }
-
-        let start = self.active_index.unwrap_or(len - 1);
-        let mut idx = start;
-
-        loop {
-            idx = (idx + 1) % len;
-            if self.items[idx].enabled && !self.items[idx].is_separator {
-                self.active_index = Some(idx);
-                return;
-            }
-            if idx == start { return; } // No valid items
-        }
-    }
-
-    /// Select first valid item (for initial keyboard activation)
-    pub fn select_first(&mut self) {
-        for (i, item) in self.items.iter().enumerate() {
-            if item.enabled && !item.is_separator {
-                self.active_index = Some(i);
-                return;
-            }
-        }
-    }
-}
-```
-
-### ContextMenuMsg
-
-```rust
-/// Messages for context menu interactions
-/// 
-/// Note: There is no `Open` variant. Menu building happens directly in `App`
-/// (which owns the `Keymap` needed for shortcut hints) and stores the result
-/// in `model.ui.context_menu`.
-#[derive(Debug, Clone)]
-pub enum ContextMenuMsg {
-    /// Close the context menu without action
-    Close,
-
-    // Keyboard navigation
-    /// Move selection up
-    MoveUp,
-    /// Move selection down
-    MoveDown,
-    /// Activate selected item (Enter)
-    Confirm,
-    /// Close menu (Escape)
-    Cancel,
-
-    // Mouse interaction
-    /// Mouse hovering over item at index
-    HoverItem { index: usize },
-    /// Mouse clicked item at index
-    ActivateItem { index: usize },
-}
-```
-
-### UiMsg Extension
-
-```rust
-// In messages.rs, extend UiMsg:
-#[derive(Debug, Clone)]
-pub enum UiMsg {
-    // ... existing variants ...
-
-    /// Context menu messages
-    ContextMenu(ContextMenuMsg),
-}
-```
-
-### UiState Extension
-
-```rust
-// In model/ui.rs, add to UiState:
-pub struct UiState {
-    // ... existing fields ...
-
-    /// Currently open context menu (if any)
-    pub context_menu: Option<ContextMenuState>,
-}
-
-impl UiState {
-    pub fn has_context_menu(&self) -> bool {
-        self.context_menu.is_some()
-    }
-
-    pub fn close_context_menu(&mut self) {
-        self.context_menu = None;
-    }
-}
-```
-
-### KeyContext Extension
-
-```rust
-// In keymap/context.rs, add:
-pub struct KeyContext {
-    // ... existing fields ...
-
-    /// Whether a context menu is open
-    pub context_menu_active: bool,
-}
-
-// Add condition:
-pub enum Condition {
-    // ... existing variants ...
-
-    /// Binding only active when context menu is open
-    ContextMenuActive,
-    /// Binding only active when no context menu is open
-    ContextMenuInactive,
 }
 ```
 
 ---
 
-## Keybindings
+## Overlay Context: rendering via OverlaySurface
 
-### Menu Navigation Keys
+### Where it plugs into `CursorOverlayKind`
 
-When a context menu is open, these keys are intercepted before the normal keymap:
+`ui.cursor_overlay: Option<CursorOverlayState>` (`src/model/ui.rs`) already exists for exactly this purpose — a non-modal, cursor-anchored popup with its own key-routing branch. `CursorOverlayState { kind: CursorOverlayKind, selected: usize, scroll: usize }` is region-agnostic; it needs nothing new to host a menu **except** somewhere to hold the built `Vec<MenuItem>`, because unlike `Completion`/`Hover` (which read live model state — `completion_menu`, `hover_card`), a context menu's item list is a one-shot snapshot built at open time from the click's `HitTarget`.
 
-| Key | Action | Notes |
-|-----|--------|-------|
-| `↑` | Move selection up | Wraps around, skips separators |
-| `↓` | Move selection down | Wraps around, skips separators |
-| `Enter` | Activate selected item | Closes menu after action |
-| `Space` | Activate selected item | Alternative to Enter |
-| `Escape` | Close menu | No action taken |
+**Decision:** add `CursorOverlayKind::ContextMenu` and a sibling `ui.context_menu_items: Option<Vec<MenuItem>>`, populated alongside `ui.cursor_overlay = Some(CursorOverlayState::new(ContextMenu))` when the menu opens and cleared when it closes — mirroring the `Completion`/`completion_menu` and `Hover`/`hover_card` pairing exactly. This was evaluated against reusing `completion_menu`'s shape (rejected: that struct is `CompletionItem`-typed and LSP-flavored, wrong domain) and against a bespoke non-`cursor_overlay` state (rejected: it would need its own copy of the flip/clamp/dismiss/hit-test machinery `cursor_overlay` already has). `selected`/`scroll` on `CursorOverlayState` are reused as-is for keyboard navigation and the (V1-unlikely, but not excluded) case of a menu taller than the visible cap.
 
-### Keyboard Interception in app.rs
+### Anchor
+
+`Anchor::Cursor { x, y, h, prefer_below, width }` takes a **pixel rect**, not a text-grid position, despite the field names reading like caret geometry — it's `(x, y)` top-left + line-height `h`, in physical px, used today by `view::caret::active_text_input_rect` for the text caret and by the debug completion/hover demos for an arbitrary point. A right-click needs the exact same shape: `x, y` = the click point, `h` = 0 (there's no "line" to flip around — the menu always flips relative to the click point itself, using the existing below-space check with a zero-height anchor line, which degenerates correctly since `y + h == y`). No new `Anchor` variant, no signature change — this is a **usage note**, not a code change:
 
 ```rust
-// In handle_event, before normal key handling:
-if self.model.ui.has_context_menu() {
-    if let WindowEvent::KeyboardInput { event, .. } = &event {
-        if event.state == ElementState::Pressed {
-            use winit::keyboard::KeyCode;
-            if let PhysicalKey::Code(code) = event.physical_key {
-                let cm_msg = match code {
-                    KeyCode::ArrowUp => Some(ContextMenuMsg::MoveUp),
-                    KeyCode::ArrowDown => Some(ContextMenuMsg::MoveDown),
-                    KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Space => {
-                        Some(ContextMenuMsg::Confirm)
-                    }
-                    KeyCode::Escape => Some(ContextMenuMsg::Cancel),
-                    _ => None,
-                };
-
-                if let Some(msg) = cm_msg {
-                    return update(&mut self.model, Msg::Ui(UiMsg::ContextMenu(msg)));
-                }
-            }
-        }
-    }
+Anchor::Cursor {
+    x: click_x_px,
+    y: click_y_px,
+    h: 0,
+    prefer_below: true, // matches VS Code / JetBrains: menu drops down-right from the click
+    width: WidthRule { pct: 100.0, min: 160.0, max: 320.0 }, // content-sized in practice; these bound it
 }
 ```
+
+Flip-above-when-no-room and edge-clamping are identical to every other `Anchor::Cursor` consumer — nothing region-specific.
+
+### Body::List and row anatomy
+
+`Body::List { sections, selected, scroll, max_visible }` with the "Completion" row-height class from overlay-surface.md's row table (24px, 4px inset, 5px radius) — a context menu is closer to completion in density than to the 30px centered-list rows. `max_visible`: uncapped in practice (V1 menus top out at ~8 items including separators), but the existing `SelectableListViewport` scroll machinery applies unmodified if a future region needs more.
+
+- **Icon:** `RowIcon::None` for most items; `RowIcon::Glyph` is available but not required — V1 menus lean on label text alone (matches the "text-first" feel of the reference platforms' native menus more than completion's badge-heavy rows).
+- **Accessory:** `Accessory::Keycaps(binding_chips(hint))` for any item with a bound command; `Accessory::None` (not `DimText`) when unbound — a blank trailing column reads better than a manufactured dim placeholder for a plain context menu.
+- **Separators:** **Section boundary**, not a dedicated thin-rule row. `Section` already exists as a rendering unit (title + hairline `rule` + rows) and separators in a flat action menu are structurally "no more items in this group" — reusing `Section { title: None, rows }` boundaries means zero new paint code and `FlatIndex` naturally treats a separator as non-addressable (no `MenuItem::separator()` sentinel row to special-case in `move_up`/`move_down`, which the original doc had to hand-write). The tradeoff: `Section`'s rule line always renders under a titled section; an untitled section renders no rule, so V1 separators are **whitespace-only breaks** (the section boundary's vertical gap, no visible hairline) rather than a drawn line. This is visually close enough to a thin rule at 24px row height that it is not worth a dedicated row variant; revisit if a designer flags it.
+
+### Theming
+
+Entirely `overlay.*` — no new keys. Panel/hairline/shadow from the `Anchor::Cursor` chrome row in the Visual Language table (8px radius, `panel_background`/`panel_secondary`, ring shadow); selection wash `overlay.selection_wash` + `text_bright` lift; keycaps `overlay.keycap_{bg,border,fg}` via the shared `draw_keycap` primitive.
+
+---
+
+## Key & Mouse Routing
+
+### Keyboard: consume-five, dismiss-and-passthrough on anything else
+
+The context menu's key handling **differs from Completion's** and matches the doc's own **Hover** precedent more than its Completion precedent, with one adjustment. Compare against the three existing `handle_cursor_overlay_key` branches (`runtime/input.rs`):
+
+| Kind | Up/Down/Enter/Esc/Tab | Any other key |
+| --- | --- | --- |
+| `Completion` | navigate / accept / dismiss | **passes through** to the document (typing narrows the filter — the whole point of a completion popup) |
+| `Hover` | (irrelevant — dismissed before matching) | **dismisses**, then the key still reaches the editor |
+| **`ContextMenu` (new)** | navigate (Up/Down) / activate (Enter) / dismiss (Esc) | **dismisses the menu**, and the key is then **consumed**, not passed through |
+
+The menu needs its own branch, not a reuse of either existing one: unlike Completion, a context menu has no query to narrow (typing "c" for Copy isn't a filter), so passthrough would just leak keystrokes into the document while the menu silently sits open over it — confusing. Unlike Hover, a context menu is not dismiss-only: it has real Up/Down/Enter navigation to preserve. Tab is **not** claimed by the menu (unlike Completion, where it doubles as Enter) — Tab has no natural meaning for a flat action menu and is better left unclaimed so it dismisses like any other key rather than silently doing nothing.
+
+```rust
+// runtime/input.rs::handle_cursor_overlay_key, new arm alongside
+// DebugCompletion/DebugHover/Completion:
+if kind == CursorOverlayKind::ContextMenu {
+    return match key {
+        Key::Named(NamedKey::ArrowUp) => { /* move selection, skip disabled/section gaps */ }
+        Key::Named(NamedKey::ArrowDown) => { /* ditto */ }
+        Key::Named(NamedKey::Enter) => {
+            // activate selected item, dismiss, execute its MenuAction
+        }
+        Key::Named(NamedKey::Escape) => {
+            model.ui.cursor_overlay = None;
+            model.ui.context_menu_items = None;
+            Some(Some(Cmd::Redraw))
+        }
+        _ => {
+            // ANY other key: dismiss and consume (do not fall through).
+            model.ui.cursor_overlay = None;
+            model.ui.context_menu_items = None;
+            Some(Some(Cmd::Redraw))
+        }
+    };
+}
+```
+
+The `_ => { dismiss; Some(...) }` arm (returning `Some`, not `None`) is the mechanism that makes "any other key" *consumed* rather than *passed through* — returning `None` is what Completion does to signal "not mine, let it fall through"; a context menu never does that.
+
+### Mouse: click-away consumes (JetBrains behavior), not click-through (VS Code)
+
+**Decision:** consumed. A click outside the menu (anywhere — editor, sidebar, another tab) dismisses the menu and does **not** additionally act on whatever it landed on. This matches the existing `HitTarget::CursorOverlay`/`HitTarget::Modal` precedent already in the codebase (`hit_test.rs` doc comment: "outside dismisses"; modal outside-clicks are consumed today, not click-through) — introducing click-through for context menus specifically would be the one inconsistent surface in the app. It's also the safer default: a mis-click that both dismisses a menu *and* fires a destructive editor/file-tree action (e.g. accidentally selecting a different file in the tree while dismissing) is worse than one extra click.
+
+**Alternative noted, not chosen:** VS Code's single-click-through (the dismissing click also lands where it fell) is the more "modern" feel and is a plausible future toggle if this feels heavy in practice — not worth the small validation surface for a V1.
+
+Implementation follows the existing `HitTarget::CursorOverlay { flat_index }` pattern exactly (`hit_test_ui` already gives cursor overlays highest priority ahead of the modal check, claims only points inside the popup panel, and `handle_mouse_press`'s preamble dismisses on any press outside): a row click at `flat_index` activates that item (mirrors `ModalRow`); a click inside the panel but not on a row (e.g. the whitespace-only separator gap) is a no-op, not a dismiss; nothing new is needed in `hit_test.rs` beyond confirming `CursorOverlayKind::ContextMenu` routes through the same arm as `Completion`/`Hover` today.
+
+Scroll wheel: no scroll behavior needed for V1 (menus fit without scrolling); the existing `HoverRegion::CursorOverlay` wheel routing is inert here since `max_scroll` is 0, same as the current Hover card.
 
 ---
 
 ## Shortcut Hint Integration
 
-### Problem
+Unchanged in shape from the original spec: a `ShortcutHintProvider<'a> { keymap: &'a Keymap }` with `hint_for(command: Command) -> Option<String>`, built in the same place menus are built (see [Menu Building Location](#menu-building-location-unchanged) below), feeding `MenuItem.shortcut_hint`. The only change from the original doc: the hint string is no longer painted as raw text — it's converted to keycap chips via `overlay_surface::binding_chips(&hint)` at spec-build time (the same function the command palette already uses for its own keycap accessories), and the existing **>4-chip → `DimText` fallback** rule (Visual Language > Keycaps) applies unmodified. `format_keystroke`/`key_to_string` (or equivalent) is whatever the palette's existing hint-formatting path already uses — this doc does not re-specify it, only points at reuse.
 
-Menu items should display their keyboard shortcuts (e.g., "Copy  ⌘C"). These shortcuts are defined in the keymap system, so menu builders need access to lookup shortcut strings for `Command`s.
+### Menu Building Location (unchanged)
 
-### Solution: ShortcutHintProvider
-
-Create a lookup system that queries the active `Keymap` for the primary binding of a `Command`:
-
-```rust
-// In context_menu/shortcut_hints.rs
-
-use crate::keymap::{Command, Keymap, Keystroke};
-
-/// Provides shortcut hint strings for Commands
-pub struct ShortcutHintProvider<'a> {
-    keymap: &'a Keymap,
-}
-
-impl<'a> ShortcutHintProvider<'a> {
-    pub fn new(keymap: &'a Keymap) -> Self {
-        Self { keymap }
-    }
-
-    /// Get the shortcut hint string for a command, if bound
-    ///
-    /// Returns platform-appropriate string like "⌘C" (macOS) or "Ctrl+C" (other)
-    pub fn hint_for(&self, command: Command) -> Option<String> {
-        // Find first binding for this command (ignoring context conditions)
-        self.keymap
-            .bindings()
-            .iter()
-            .find(|b| b.command == command)
-            .map(|b| keystroke_to_hint(&b.keystrokes[0]))
-    }
-}
-
-/// Convert a Keystroke to a display string
-fn keystroke_to_hint(ks: &Keystroke) -> String {
-    let mut parts = Vec::new();
-
-    #[cfg(target_os = "macos")]
-    {
-        if ks.modifiers.ctrl() { parts.push("⌃"); }
-        if ks.modifiers.alt() { parts.push("⌥"); }
-        if ks.modifiers.shift() { parts.push("⇧"); }
-        if ks.modifiers.cmd() { parts.push("⌘"); }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        if ks.modifiers.ctrl() { parts.push("Ctrl+"); }
-        if ks.modifiers.alt() { parts.push("Alt+"); }
-        if ks.modifiers.shift() { parts.push("Shift+"); }
-        if ks.modifiers.cmd() { parts.push("Ctrl+"); } // Cmd maps to Ctrl on non-Mac
-    }
-
-    parts.push(&key_to_string(ks.key));
-    parts.join("")
-}
-
-fn key_to_string(key: KeyCode) -> String {
-    match key {
-        KeyCode::Char(c) => c.to_uppercase().to_string(),
-        KeyCode::Enter => "↵".to_string(),
-        KeyCode::Tab => "⇥".to_string(),
-        KeyCode::Backspace => "⌫".to_string(),
-        KeyCode::Delete => "⌦".to_string(),
-        KeyCode::Escape => "Esc".to_string(),
-        KeyCode::Up => "↑".to_string(),
-        KeyCode::Down => "↓".to_string(),
-        KeyCode::Left => "←".to_string(),
-        KeyCode::Right => "→".to_string(),
-        // ... other keys ...
-        _ => format!("{:?}", key),
-    }
-}
-```
-
-### Menu Builder Integration
-
-Menu builders receive the `ShortcutHintProvider` and use it to populate hints:
-
-```rust
-// In context_menu/builders.rs
-
-pub fn build_editor_menu(
-    model: &AppModel,
-    target: &EditorTarget,
-    hints: &ShortcutHintProvider,
-) -> Vec<MenuItem> {
-    use Command::*;
-
-    let has_selection = target.has_selection;
-
-    vec![
-        item("Undo", Undo, true, hints),
-        item("Redo", Redo, true, hints),
-        MenuItem::separator(),
-        item("Cut", Cut, has_selection, hints),
-        item("Copy", Copy, has_selection, hints),
-        item("Paste", Paste, true, hints),
-        MenuItem::separator(),
-        item("Select All", SelectAll, true, hints),
-    ]
-}
-
-fn item(label: &str, cmd: Command, enabled: bool, hints: &ShortcutHintProvider) -> MenuItem {
-    MenuItem {
-        label: label.to_string(),
-        enabled,
-        shortcut_hint: hints.hint_for(cmd),
-        action: MenuAction::from_command(cmd),
-        is_separator: false,
-    }
-}
-```
-
-### Keymap Access
-
-The `App` struct already holds the `Keymap`. When building a menu:
-
-```rust
-// In update handler or App method:
-fn build_context_menu(&self, request: &ContextMenuRequest) -> ContextMenuState {
-    let hints = ShortcutHintProvider::new(&self.keymap);
-    let items = match &request.target {
-        ContextMenuTarget::Editor { .. } => build_editor_menu(&self.model, target, &hints),
-        // ... other regions ...
-    };
-    // ...
-}
-```
-
-**Note:** If `update()` doesn't have access to `Keymap`, the hint provider can be passed via the message or the menu building can happen in `App::process_cmd()` instead.
+Menus are still built in `App` (or wherever `handle_right_click` runs — `runtime/mouse.rs`'s `handle_mouse_press` dispatch, which already receives `&mut AppModel` and would need read access to the keymap the way `handle_modal_key`'s callers do today), for the same reason as the original doc: `Keymap` isn't threaded into `update()`.
 
 ---
 
-## Focus & Input Routing
+## V1 Scope: Regions & Menus
 
-### Modal Interaction
+Per-region builder functions (`context_menu/builders.rs`), each `fn(&AppModel, &ContextMenuTarget, &ShortcutHintProvider) -> Vec<MenuItem>` — the pattern from the original doc, carried over unchanged.
 
-**Critical rule:** Context menus should NOT open while a modal is active.
+### Editor text area
 
-```rust
-// In app.rs right-click handler:
-if self.model.ui.has_modal() {
-    return None; // Ignore right-clicks when modal is open
-}
-```
+| Item | Command | Enabled when |
+| --- | --- | --- |
+| Cut | `Command::Cut` | has selection |
+| Copy | `Command::Copy` | has selection |
+| Paste | `Command::Paste` | clipboard has content |
+| *(separator)* | | |
+| Go to Definition | `Command::GotoDefinition` (⌘B) | LSP available at cursor |
+| Show Usages | *new* `Command::ShowUsages` (⌥⌘F7) — landing alongside this feature; see note below | LSP available at cursor |
+| Show Hover | `Command::ShowHover` (⇧⌘D) | always |
+| *(separator)* | | |
+| Reveal in File Explorer | dispatches the file-tree reveal (reuses the sidebar's existing "reveal active file" behavior) | file has a path (not an unsaved buffer) |
 
-Modals are full-screen overlay captures. Opening a context menu on top would create confusing UX and z-order issues.
+`Show Usages` (⌥⌘F7) is being implemented concurrently with this feature (find-references, LSP Future territory) — the menu item is speced against its `CommandId`/keybinding now so the builder doesn't need a follow-up edit once the command lands; if it hasn't landed when this phase ships, the row is simply omitted rather than shown disabled (an item for a command that doesn't exist yet has no `Command` variant to point `MenuAction::from_command` at).
 
-### Click-Away Behavior
+### Tab (editor tab bar)
 
-When a context menu is open, left-clicks are handled specially:
+`ContextMenuTarget::Tab` needs `group_id` + `tab_id` threaded through so actions apply to the *clicked* tab, not the focused one — `HitTarget::GroupTab { group_id, tab_index, tab_id }` already carries exactly this from hit-testing.
 
-```rust
-// In app.rs MouseButton::Left handler, at the TOP before other hit-testing:
-if self.model.ui.has_context_menu() {
-    let menu_rect = compute_menu_rect(&self.model.ui.context_menu.as_ref().unwrap(), &self.model.metrics);
-    
-    if is_point_in_rect(x, y, &menu_rect) {
-        // Click inside menu → hit-test which item
-        if let Some(index) = hit_test_menu_item(&self.model, x, y) {
-            self.update(Msg::Ui(UiMsg::ContextMenu(ContextMenuMsg::ActivateItem { index })));
-        }
-    } else {
-        // Click outside menu → close menu, CONSUME the click (don't pass through)
-        self.model.ui.close_context_menu();
-    }
-    return Some(Cmd::Redraw);
-}
-// ... normal left-click handling continues only if no context menu was open
-```
+| Item | Action | Notes |
+| --- | --- | --- |
+| Close | `LayoutMsg::CloseTab(tab_id)` | already exists |
+| Close Others | *new* `LayoutMsg::CloseOtherTabs { group_id, keep: tab_id }` | new variant |
+| Close All | *new* `LayoutMsg::CloseAllTabs { group_id }` | new variant |
+| *(separator)* | | |
+| Reveal in File Explorer | | file has a path |
+| Reveal in Finder | OS file manager reveal (existing `RevealInFinder`-style command, generalized off "current file" to the clicked tab's `file_path`) | file has a path |
+| Copy Absolute Path | `CommandId::CopyAbsolutePath` pattern, targeted at the clicked tab | file has a path |
+| Copy Relative Path | `CommandId::CopyRelativePath` pattern, targeted at the clicked tab | file has a path, workspace open |
 
-**Decision:** Click-away **consumes** the click. It does not also trigger actions in the underlying UI (sidebar selection, editor click, etc.). This matches modal behavior and standard platform conventions.
+`CloseOtherTabs`/`CloseAllTabs` don't exist on `LayoutMsg` today (only `CloseTab(TabId)` and `CloseFocusedTab`) — new variants, scoped to a `group_id` so multi-split layouts only close tabs in the clicked group's bar, matching every editor's tab-context-menu convention.
 
-### Keyboard Interception Order
+### File tree
 
-When context menu is open, keyboard events are captured **before** keymap lookup:
+| Item | Action | Notes |
+| --- | --- | --- |
+| Open | opens the file (dirs: expand/collapse, matching left-click) | |
+| *(separator)* | | |
+| Reveal in Finder | | |
+| Copy Absolute Path | | |
+| Copy Relative Path | | workspace open |
+| *(separator)* | | |
+| Refresh Tree | `WorkspaceMsg::Refresh` (existing — `CommandId::FileTreeRefresh`) | |
 
-```
-Keyboard Event Flow (with context menu):
+File-tree Rename/Delete/New File/New Folder stay **deferred**, matching the original doc's Phase 5 deferral list — no new information changes that call.
 
-1. WindowEvent::KeyboardInput received
-2. IF context_menu.is_some():
-   a. Arrow/Enter/Escape → dispatch ContextMenuMsg → return
-   b. Other keys → close menu, DO NOT process further (consume)
-3. ELSE: normal keymap lookup and fallback handling
-```
+### Future (not V1)
 
-**Decision:** While context menu is open, **only** navigation keys (↑↓↵⎋) are processed. All other keys close the menu and are consumed (not passed to editor/sidebar).
-
-```rust
-// In app.rs key handling, before keymap lookup:
-if self.model.ui.has_context_menu() {
-    if let WindowEvent::KeyboardInput { event, .. } = &event {
-        if event.state == ElementState::Pressed {
-            let cm_msg = match event.physical_key {
-                PhysicalKey::Code(KeyCode::ArrowUp) => Some(ContextMenuMsg::MoveUp),
-                PhysicalKey::Code(KeyCode::ArrowDown) => Some(ContextMenuMsg::MoveDown),
-                PhysicalKey::Code(KeyCode::Enter | KeyCode::Space) => Some(ContextMenuMsg::Confirm),
-                PhysicalKey::Code(KeyCode::Escape) => Some(ContextMenuMsg::Cancel),
-                _ => {
-                    // Any other key: close menu and consume
-                    self.model.ui.close_context_menu();
-                    return Some(Cmd::Redraw);
-                }
-            };
-            if let Some(msg) = cm_msg {
-                return self.update(Msg::Ui(UiMsg::ContextMenu(msg)));
-            }
-        }
-    }
-    return None; // Consume all other events while menu open
-}
-```
-
-### Focus Model
-
-Context menus do **not** change `FocusTarget`. The underlying region (Editor/Sidebar/Dock) retains focus:
-
-- `FocusTarget` stays as-is (no `FocusTarget::ContextMenu` variant)
-- `KeyContext::context_menu_active` is used to suppress normal keybindings
-- Keyboard capture happens imperatively in `App`, not via keymap conditions
-
-This keeps the architecture simple and avoids focus restoration complexity.
+Status bar, docked panels (Outline, Terminal, other dock panels) — same `ContextMenuRegion`/builder pattern extends to them later; listed for completeness, not scoped here.
 
 ---
 
-## Coordinate System & Damage
+## Keyboard Trigger
 
-### Coordinate System
+**Shift+F10** opens the editor's context menu at the **text caret** position (not the mouse position — there is no mouse position to anchor to on a keyboard trigger). This is VS Code's binding; JetBrains has no universal equivalent (context-dependent per tool window), so there's nothing to reconcile against. Only the editor region gets a keyboard trigger in V1 — tab and file-tree menus are click-only, matching how those regions have no other keyboard-invoked popups today either.
 
-**All coordinates use physical pixels** (scaled for DPI), consistent with the rest of the codebase.
-
-Update `ContextMenuRequest` and `ContextMenuState`:
-
-```rust
-pub struct ContextMenuRequest {
-    /// Screen position where menu should appear (physical pixels)
-    pub screen_pos: (f32, f32),
-    /// What was clicked
-    pub target: ContextMenuTarget,
-}
-
-pub struct ContextMenuState {
-    /// Which region spawned this menu
-    pub region: ContextMenuRegion,
-    /// Screen-space anchor position (top-left of menu, physical pixels)
-    pub anchor: (f32, f32),
-    // ...
-}
-```
-
-Mouse coordinates from winit are already in physical pixels. Sidebar width, row heights, etc. are also in physical pixels (scaled by `metrics.scale_factor`).
-
-### Damage Handling
-
-For V1, context menus force full redraws, same as modals:
-
-```rust
-// During RenderPlan / effective-damage evaluation
-fn compute_effective_damage(&self, model: &AppModel, requested: Damage) -> Damage {
-    // Force full redraw for overlays
-    if model.ui.has_modal() 
-        || model.ui.has_context_menu()  // ← Add this
-        || model.file_drop.is_some() 
-    {
-        return Damage::Full;
-    }
-    // ... rest of damage logic
-}
-```
-
-This is simple and correct. Partial redraw optimization for menus can be added later if needed, but the policy should live in the shared overlay/render-plan path rather than a context-menu-only special case.
-
-### Z-Order
-
-Rendering order (back to front):
-
-1. Editor area (sidebar, editor groups, tabs, splitters)
-2. Status bar
-3. Context menu (if open)
-4. Modal (if open) — modals render on top of everything
-5. Debug overlays (dev builds)
-
-Since modals block context menus from opening, they won't overlap in practice.
+Implementation: `Shift+F10` resolves to `Command::ShowContextMenu` (new), which builds the editor menu (`ContextMenuTarget::Editor` from the current cursor position/selection rather than a click) and opens it anchored at the caret rect from `view::caret::active_text_input_rect` — the exact same rect the text caret and completion popup already use, so no new geometry code, only a new `Anchor::Cursor` call site with `prefer_below: true` and `h` = the real line height instead of 0.
 
 ---
 
-## Menu Building Location
+## Cross-References
 
-### Decision: Build Menus in App, Not Update
-
-The `Keymap` is owned by `App`, not passed to `update()`. Building menus requires keymap access for shortcut hints.
-
-**Approach:** Build `ContextMenuState` directly in `App` when handling right-click, then store it in `model.ui`:
-
-```rust
-// In app.rs right-click handler:
-fn handle_right_click(&mut self, x: f32, y: f32) -> Option<Cmd> {
-    // 1. Don't open if modal is active
-    if self.model.ui.has_modal() {
-        return None;
-    }
-
-    // 2. Close existing menu if any
-    self.model.ui.close_context_menu();
-
-    // 3. Hit-test to determine target
-    let target = self.hit_test_context_menu_target(x, y)?;
-
-    // 4. Build menu with shortcut hints (requires self.keymap)
-    let hints = ShortcutHintProvider::new(&self.keymap);
-    let items = match &target {
-        ContextMenuTarget::Editor { has_selection, .. } => {
-            build_editor_menu(&self.model, *has_selection, &hints)
-        }
-        ContextMenuTarget::SidebarItem { path, is_dir } => {
-            build_sidebar_item_menu(path, *is_dir, &hints)
-        }
-        ContextMenuTarget::Tab { is_dirty, .. } => {
-            build_tab_menu(*is_dirty, &hints)
-        }
-        // ... other targets
-        _ => return None,
-    };
-
-    if items.is_empty() {
-        return None;
-    }
-
-    // 5. Create and store menu state
-    let region = target.to_region();
-    self.model.ui.context_menu = Some(ContextMenuState {
-        region,
-        anchor: (x, y),
-        items,
-        active_index: None,
-    });
-
-    Some(Cmd::Redraw)
-}
-```
-
-### Message Flow Simplification
-
-With this approach, `ContextMenuMsg::Open` is no longer needed. Messages are only for user interactions:
-
-```rust
-pub enum ContextMenuMsg {
-    /// Close the context menu without action
-    Close,
-    
-    // Keyboard navigation
-    MoveUp,
-    MoveDown,
-    Confirm,
-    Cancel,
-    
-    // Mouse interaction
-    HoverItem { index: usize },
-    ActivateItem { index: usize },
-}
-```
-
-The `Open` variant can be removed since menu building happens directly in `App`.
-
----
-
-## Menu Action Execution
-
-### Multi-Message Aggregation
-
-When executing `MenuAction::Messages(Vec<Msg>)`, properly aggregate commands:
-
-```rust
-// In update/context_menu.rs or App
-fn execute_menu_action(model: &mut AppModel, action: MenuAction) -> Option<Cmd> {
-    match action {
-        MenuAction::Messages(msgs) => {
-            let mut cmds: Vec<Cmd> = Vec::new();
-            for msg in msgs {
-                if let Some(cmd) = update(model, msg) {
-                    cmds.push(cmd);
-                }
-            }
-            // Close menu after action
-            model.ui.close_context_menu();
-            
-            // Aggregate commands
-            match cmds.len() {
-                0 => Some(Cmd::Redraw),
-                1 => Some(cmds.pop().unwrap()),
-                _ => Some(Cmd::Batch(cmds)),
-            }
-        }
-        MenuAction::None => {
-            // Disabled item or separator - do nothing
-            None
-        }
-    }
-}
-```
-
-### Confirm Handler
-
-```rust
-// In update_context_menu
-ContextMenuMsg::Confirm => {
-    if let Some(menu) = &model.ui.context_menu {
-        if let Some(item) = menu.active_item() {
-            if item.enabled && !item.is_separator {
-                let action = item.action.clone();
-                return execute_menu_action(model, action);
-            }
-        }
-    }
-    None
-}
-```
-
----
-
-## Tab Hit-Testing
-
-### Gap: Need to Know Which Tab Was Clicked
-
-Current code has `is_in_group_tab_bar(x, y, group)` which returns `bool`, but for context menus we need to know **which specific tab** was right-clicked.
-
-### Solution: Extract Tab Hit-Test Helper
-
-```rust
-// In view/geometry.rs
-
-/// Result of tab bar hit-testing
-pub struct TabHitResult {
-    pub group_id: GroupId,
-    pub tab_id: TabId,
-    pub tab_index: usize,
-}
-
-/// Hit-test which tab (if any) is at the given position
-pub fn hit_test_tab(
-    x: f32,
-    y: f32,
-    model: &AppModel,
-) -> Option<TabHitResult> {
-    for group in model.editor_area.all_groups() {
-        let layout = GroupLayout::new(group, model, model.metrics.char_width);
-        
-        // Check if in tab bar area
-        if y < layout.rect_y() as f32 || y >= layout.rect_y() as f32 + layout.tab_bar_height as f32 {
-            continue;
-        }
-        if x < layout.rect_x() as f32 || x >= layout.rect_x() as f32 + layout.rect_w() as f32 {
-            continue;
-        }
-        
-        // Find which tab
-        let tab_x = x - layout.rect_x() as f32;
-        let mut current_x = 0.0;
-        
-        for (idx, tab) in group.tabs.iter().enumerate() {
-            let tab_width = compute_tab_width(tab, &model.metrics);
-            if tab_x >= current_x && tab_x < current_x + tab_width {
-                return Some(TabHitResult {
-                    group_id: group.id,
-                    tab_id: tab.id,
-                    tab_index: idx,
-                });
-            }
-            current_x += tab_width;
-        }
-    }
-    None
-}
-```
-
-This helper is used by both left-click (existing tab switching) and right-click (context menu).
-
----
-
-## Keymap API Extension
-
-### Need: Bindings-for-Command Lookup
-
-The `Keymap` needs a method to find bindings for a given command:
-
-```rust
-// In keymap/mod.rs
-impl Keymap {
-    /// Find all bindings for a command
-    pub fn bindings_for_command(&self, cmd: Command) -> impl Iterator<Item = &Keybinding> {
-        self.bindings.iter().filter(move |b| b.command == cmd)
-    }
-}
-```
-
-### Keystroke Formatting
-
-Centralize keystroke-to-string formatting (currently only exists as hardcoded strings in `commands::COMMANDS`):
-
-```rust
-// In keymap/format.rs (new file)
-
-/// Format a keystroke for display
-pub fn format_keystroke(ks: &Keystroke) -> String {
-    let mut parts = Vec::new();
-
-    #[cfg(target_os = "macos")]
-    {
-        // Mac uses symbols, no separators
-        if ks.modifiers.ctrl() { parts.push("⌃".to_string()); }
-        if ks.modifiers.alt() { parts.push("⌥".to_string()); }
-        if ks.modifiers.shift() { parts.push("⇧".to_string()); }
-        if ks.modifiers.cmd() { parts.push("⌘".to_string()); }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        // Windows/Linux uses "Ctrl+Alt+..." style
-        if ks.modifiers.ctrl() || ks.modifiers.cmd() { parts.push("Ctrl".to_string()); }
-        if ks.modifiers.alt() { parts.push("Alt".to_string()); }
-        if ks.modifiers.shift() { parts.push("Shift".to_string()); }
-    }
-
-    parts.push(format_key(&ks.key));
-
-    #[cfg(target_os = "macos")]
-    { parts.join("") }
-
-    #[cfg(not(target_os = "macos"))]
-    { parts.join("+") }
-}
-
-fn format_key(key: &Key) -> String {
-    match key {
-        Key::Character(c) => c.to_uppercase(),
-        Key::Named(NamedKey::Enter) => "↵".to_string(),
-        Key::Named(NamedKey::Tab) => "⇥".to_string(),
-        Key::Named(NamedKey::Backspace) => "⌫".to_string(),
-        Key::Named(NamedKey::Delete) => "⌦".to_string(),
-        Key::Named(NamedKey::Escape) => "Esc".to_string(),
-        Key::Named(NamedKey::ArrowUp) => "↑".to_string(),
-        Key::Named(NamedKey::ArrowDown) => "↓".to_string(),
-        Key::Named(NamedKey::ArrowLeft) => "←".to_string(),
-        Key::Named(NamedKey::ArrowRight) => "→".to_string(),
-        Key::Named(NamedKey::Space) => "Space".to_string(),
-        Key::Named(named) => format!("{:?}", named),
-        _ => "?".to_string(),
-    }
-}
-```
-
-### Limitations (Documented)
-
-For V1:
-- **First binding only**: If multiple bindings exist for a command, only the first is shown
-- **No chords**: Multi-keystroke sequences are not displayed (show first keystroke only)
-- **Context-agnostic**: Bindings with conditions are shown regardless of current context
+- **[overlay-surface.md](overlay-surface.md)** owns `OverlaySurface`, `Anchor::Cursor`, `Body::List`, row/keycap/theme primitives, and the `cursor_overlay` key-routing branch this doc extends with a `ContextMenu` arm. That doc's Future list ("Context menu as a cursor-anchored context") is resolved by this doc.
+- **[lsp-integration.md](lsp-integration.md)** (LSP Future: code actions) will consume the same `Anchor::Cursor` + `Body::List` shell for its quick-fix menu — an `ActionMenu`-style sibling context, not a variant of `ContextMenu` (different trigger: a gutter/diagnostic-driven lightbulb, not right-click; different dismiss rule likely). The row-anatomy and key-routing precedent set here (consume-and-dismiss-on-other-key, rather than Completion's passthrough) is the one code actions should default to as well, since it's also a flat action list with no query.
+- **`Command::GotoDefinition`, `Command::ShowHover`** (lsp-integration.md Phase 3/4) and the concurrently-landing **Show Usages** command are consumed, not defined, by this doc.
 
 ---
 
 ## Implementation Plan
 
-### Phase 1: Core Infrastructure
+Phases reordered against the real seams: rendering/theming is a solved problem (reuse), so the work is hit-test wiring, state, builders, and routing.
 
-**Effort:** M (3-5 days)
-
-- [ ] Create `src/context_menu/mod.rs` module structure
-- [ ] Define core types: `ContextMenuState`, `MenuItem`, `MenuAction`, `ContextMenuTarget`, `ContextMenuRequest`
-- [ ] Add `ContextMenuMsg` to `messages.rs`
-- [ ] Extend `UiMsg` with `ContextMenu(ContextMenuMsg)` variant
-- [ ] Add `context_menu: Option<ContextMenuState>` to `UiState`
-- [ ] Add `context_menu_active` to `KeyContext` and `Condition::ContextMenuActive/Inactive`
-- [ ] Implement `update_context_menu()` handler in `update/context_menu.rs`
-- [ ] Add right-click handling in `app.rs` with region hit-testing
-- [ ] Implement keyboard interception for menu navigation
-
-### Phase 2: Rendering & Hit Testing
-
-**Effort:** M (3-5 days)
-
-- [ ] Implement menu rendering in the overlay phase of `view/mod.rs`:
-  - Draw background panel with border/shadow
-  - Render menu items with labels
-  - Highlight active/hovered item
-  - Render shortcut hints right-aligned
-  - Render separators as horizontal lines
-- [ ] Implement menu geometry helpers in `view/geometry.rs`:
-  - `PopupMenuLayout` for anchor/menu/item rects
-  - `hit_test_menu_item(menu_state, x, y, metrics) -> Option<usize>`
-  - Clamp menu position to window bounds
-- [ ] Wire up mouse hover → `ContextMenuMsg::HoverItem`
-- [ ] Wire up mouse click → `ContextMenuMsg::ActivateItem` or `Close`
-
-### Phase 3: Menu Builders & Shortcut Hints
-
-**Effort:** M (3-5 days)
-
-- [ ] Implement `ShortcutHintProvider` in `context_menu/shortcut_hints.rs`
-- [ ] Create `context_menu/builders.rs` with per-region builders:
-  - [ ] `build_editor_menu()` - Undo, Redo, Cut, Copy, Paste, Select All
-  - [ ] `build_sidebar_item_menu()` - Open, Reveal in Finder (placeholder for file ops)
-  - [ ] `build_sidebar_empty_menu()` - New File, New Folder (placeholder)
-  - [ ] `build_tab_menu()` - Close, Close Others, Close All (placeholder)
-  - [ ] `build_status_bar_menu()` - minimal or empty
-- [ ] Pass keymap reference to menu building for shortcut lookup
-- [ ] Unit tests for menu builders
-
-### Phase 4: Polish & Edge Cases
+### Phase 1: State & Message Plumbing
 
 **Effort:** S (1-2 days)
 
-- [ ] Handle menu near window edges (reposition to stay visible)
-- [ ] Close menu on window focus loss
-- [ ] Close menu when modal opens
-- [ ] Add Damage tracking for efficient redraws
-- [ ] Integration tests
-- [ ] Update CHANGELOG.md
+- [ ] `CursorOverlayKind::ContextMenu` variant; `ui.context_menu_items: Option<Vec<MenuItem>>` alongside `ui.cursor_overlay`, cleared together everywhere `cursor_overlay` is cleared (grep the existing `cursor_overlay = None` sites — `Escape`, dismiss-on-other-key, focus loss — and add the paired clear, the same way `hover_card`/`completion_menu` are paired today).
+- [ ] `context_menu/types.rs`: `ContextMenuRegion`, `ContextMenuTarget`, `MenuAction`, `MenuItem` (constructors carried over from the pre-revision spec).
+- [ ] `ContextMenuMsg::ActivateItem { index }` (or fold activation into the existing cursor-overlay Enter-key arm directly — no separate message type needed if `handle_cursor_overlay_key`'s `ContextMenu` arm executes the action inline, matching how `Completion`'s arm calls `update()` directly rather than round-tripping through a dedicated message).
 
-### Phase 5: Future - File Operations (Deferred)
+### Phase 2: Hit-Test Wiring & Open/Close
 
-Items explicitly deferred to future iterations:
+**Effort:** M (2-3 days)
 
-- [ ] Sidebar: New File in folder
-- [ ] Sidebar: New Folder
-- [ ] Sidebar: Rename file/folder
-- [ ] Sidebar: Delete file/folder
-- [ ] Sidebar: Copy path / Copy relative path
-- [ ] Tab: Close Others to the Right
-- [ ] Tab: Close Saved
-- [ ] Tab: Move to new group/split
-- [ ] Editor: Format Selection
-- [ ] Editor: Toggle Comment
+- [ ] `runtime/mouse.rs::handle_right_click`: map `HitTarget` → `ContextMenuTarget` for the three V1 regions (editor content, `GroupTab`, `SidebarItem`); dispatch to the matching builder; open `ui.cursor_overlay` + `ui.context_menu_items` at the click's pixel position (`Anchor::Cursor` with `h: 0`, per [Overlay Context](#overlay-context-rendering-via-overlaysurface)). Regions with no V1 menu (status bar, dock, etc.) keep bubbling.
+- [ ] Guard: don't open while a modal is active (`ui.has_modal()`) or another cursor overlay is already open (close the old one first, matching `Completion`'s re-open behavior).
+- [ ] `handle_cursor_overlay_key`: new `ContextMenu` arm — Up/Down/Enter/Esc claimed, dismiss-and-consume on everything else (see [Key & Mouse Routing](#key--mouse-routing)).
+- [ ] `hit_test_ui` / `handle_mouse_press`: confirm `HitTarget::CursorOverlay` already covers row-click activation and outside-click dismissal for `ContextMenu` the same as `Completion`/`Hover` (it should — the branch is kind-agnostic); add a unit test asserting it.
+- [ ] `Shift+F10` → `Command::ShowContextMenu`, anchored at the caret rect (editor region only).
+
+### Phase 3: Rendering (spec builder only — no new paint code)
+
+**Effort:** S (1-2 days)
+
+- [ ] `view/modal.rs::render_context_menu`: `MenuItem` list → `OverlaySpec { anchor: Anchor::Cursor { .. }, body: Body::List { .. }, header: None, footer: None, tabs: None }`, following `render_palette`'s existing pattern for how a builder scope constructs and immediately consumes a spec.
+- [ ] `context_menu_sections`: separator → `Section` boundary mapping (see [Data Structures](#data-structures)).
+- [ ] Wire into whatever dispatches `OverlaySurface::render` for cursor overlays today (alongside the `Completion`/`Hover`/debug-demo arms).
+
+### Phase 4: Per-Region Builders
+
+**Effort:** M (2-3 days)
+
+- [ ] `ShortcutHintProvider` (or confirm the palette's existing equivalent is reusable as-is — likely, since it only needs `&Keymap`).
+- [ ] `build_editor_menu`, `build_tab_menu`, `build_file_tree_menu` per the [V1 Scope](#v1-scope-regions--menus) tables.
+- [ ] New `LayoutMsg::CloseOtherTabs`/`CloseAllTabs` variants + their `update` arms.
+- [ ] Unit tests per builder: enablement rules (Paste needs clipboard, tab items need the right `tab_id` threaded through, LSP items need a server attached).
+
+### Phase 5: Polish & Automation
+
+**Effort:** S (1-2 days)
+
+- [ ] Automation snapshot arm: `overlay: { context: "context_menu", region, rows: [...], selected }` — reuses the existing `overlay` snapshot shape from overlay-surface.md Behaviour (`SetOverlayInput` doesn't apply here — no query input — but open/navigate/confirm via command-by-name does).
+- [ ] Manual checklist (below) at 1x/1.25x/2x, a couple of bundled themes.
+- [ ] Update CHANGELOG.md.
+
+### Future (deferred, unchanged from the original doc's judgment)
+
+- [ ] File-tree: New File/Folder, Rename, Delete, Copy/Cut/Paste.
+- [ ] Tab: Close Saved, Close to the Right, Move to new split.
+- [ ] Editor: Format Selection, Toggle Comment.
+- [ ] Status bar / Outline / Terminal / Dock regions.
+- [ ] Code actions (LSP Future) as a sibling `Anchor::Cursor` context.
+- [ ] Click-through (VS Code-style) as a togglable alternative to click-away-consumes, if requested.
 
 ---
 
@@ -1124,101 +445,32 @@ Items explicitly deferred to future iterations:
 
 ### Unit Tests
 
-```rust
-// tests/context_menu.rs
+- `ContextMenuTarget` construction from each V1 `HitTarget` variant.
+- Builder enablement rules (Cut/Copy require selection, Paste requires clipboard content, path items require a saved file, tab items resolve against the *clicked* `tab_id` not the focused one).
+- `handle_cursor_overlay_key` for `ContextMenu`: Up/Down wrap and skip section gaps; Enter activates and dismisses; Escape dismisses; any other key dismisses **and returns `Some`** (consumed, not passed through) — the one behavioral divergence from `Completion` worth a dedicated regression test given how easy it'd be to copy-paste the wrong arm.
+- `context_menu_sections`: separator-to-section-boundary mapping, including the "disabled items stay addressable-but-unselectable" rule.
+- `binding_chips` >4-chip fallback still applies (already covered by existing `overlay_surface` tests — assert a context-menu row hits the same path, not a fresh regression).
 
-#[test]
-fn test_menu_move_down_skips_separators() {
-    let mut state = ContextMenuState {
-        region: ContextMenuRegion::Editor,
-        anchor: (100.0, 100.0),
-        items: vec![
-            MenuItem::from_command("Cut", Command::Cut, true),
-            MenuItem::separator(),
-            MenuItem::from_command("Copy", Command::Copy, true),
-        ],
-        active_index: Some(0),
-    };
+### Integration / Automation Tests
 
-    state.move_down();
-    assert_eq!(state.active_index, Some(2)); // Skipped separator
-}
-
-#[test]
-fn test_menu_move_up_wraps() {
-    let mut state = ContextMenuState {
-        region: ContextMenuRegion::Editor,
-        anchor: (100.0, 100.0),
-        items: vec![
-            MenuItem::from_command("Cut", Command::Cut, true),
-            MenuItem::from_command("Copy", Command::Copy, true),
-        ],
-        active_index: Some(0),
-    };
-
-    state.move_up();
-    assert_eq!(state.active_index, Some(1)); // Wrapped to end
-}
-
-#[test]
-fn test_menu_move_skips_disabled() {
-    let mut state = ContextMenuState {
-        region: ContextMenuRegion::Editor,
-        anchor: (100.0, 100.0),
-        items: vec![
-            MenuItem::from_command("Cut", Command::Cut, false), // disabled
-            MenuItem::from_command("Copy", Command::Copy, true),
-        ],
-        active_index: None,
-    };
-
-    state.select_first();
-    assert_eq!(state.active_index, Some(1)); // Skipped disabled
-}
-
-#[test]
-fn test_shortcut_hint_provider() {
-    let keymap = Keymap::with_bindings(vec![
-        Keybinding::new(
-            Keystroke::new(KeyCode::Char('c'), Modifiers::cmd()),
-            Command::Copy,
-        ),
-    ]);
-    let hints = ShortcutHintProvider::new(&keymap);
-
-    #[cfg(target_os = "macos")]
-    assert_eq!(hints.hint_for(Command::Copy), Some("⌘C".to_string()));
-
-    assert_eq!(hints.hint_for(Command::Paste), None); // Not bound
-}
-```
-
-### Integration Tests
-
-1. **Right-click in editor opens menu:** Simulate right-click at editor coordinates, verify `ContextMenuState` is populated with editor menu items.
-
-2. **Keyboard navigation:** Open menu → press Down → verify active_index changes → press Enter → verify action executed and menu closed.
-
-3. **Click outside closes menu:** Open menu → click outside menu bounds → verify menu closed, no action taken.
-
-4. **Shortcut hints displayed:** Open editor menu → verify Copy item has "⌘C" hint (on macOS).
+1. Right-click in editor → `overlay` snapshot shows the Editor menu with correct enablement.
+2. Right-click a tab → menu items resolve against that tab, not the focused one (drag focus elsewhere first, then right-click a non-focused tab).
+3. Keyboard nav: open → Down → Down → Enter → correct action executes, menu closes.
+4. Click outside menu → menu closes, no action fires on the click target (click-away-consumes).
+5. `Shift+F10` in editor → menu opens at the caret, not at a stale mouse position.
 
 ### Manual Testing Checklist
 
-- [ ] Right-click in editor shows Cut/Copy/Paste menu
-- [ ] Right-click on file in sidebar shows file menu
-- [ ] Right-click on folder in sidebar shows folder menu
-- [ ] Right-click on tab shows tab menu
-- [ ] Arrow keys navigate menu items
-- [ ] Enter activates selected item
-- [ ] Escape closes menu
-- [ ] Clicking outside menu closes it
-- [ ] Menu repositions when near window edge
-- [ ] Disabled items are visually distinct and not selectable
-- [ ] Separators render as lines, not selectable
-- [ ] Shortcut hints align correctly
-- [ ] Menu appears at cursor position
-- [ ] Menu closes when opening a modal (Cmd+A for command palette)
+- [ ] Right-click in editor, on a tab, on a file/folder in the tree — correct menu each time
+- [ ] Cut/Copy disabled with no selection; Paste disabled with empty clipboard
+- [ ] Arrow keys navigate, skipping the separator gaps; Enter activates; Escape closes
+- [ ] Any non-navigation key (e.g. typing a letter) closes the menu without inserting into the document
+- [ ] Clicking outside the menu closes it without triggering the click target
+- [ ] Menu flips/clamps correctly near window edges (right edge, bottom edge)
+- [ ] Keycap chips render correctly for bound items (⌘B, ⇧⌘D, etc.); unbound items show no accessory
+- [ ] Shift+F10 opens the editor menu at the caret
+- [ ] Menu closes when a modal opens or focus is lost
+- [ ] Legible under at least one light and one dark bundled theme (no new keys, but confirm nothing clips)
 
 ---
 
@@ -1226,107 +478,43 @@ fn test_shortcut_hint_provider() {
 
 ### Internal Docs
 
-- [Panel UI Abstraction](../archived/panel-ui-abstraction.md) - Historical reference only; the current renderer plan intentionally avoids that trait-based direction
+- [overlay-surface.md](overlay-surface.md) — the component this doc builds on: `OverlaySurface`, `Anchor::Cursor`, `Body::List`, `binding_chips`, `cursor_overlay` routing, hit-testing shared-layout rule, `overlay.*` theme keys.
+- [lsp-integration.md](lsp-integration.md) — `GotoDefinition`, `ShowHover`, future code-actions sibling context.
+- [Panel UI Abstraction](../archived/panel-ui-abstraction.md) — historical reference only.
 
 ### External Resources
 
-- [VS Code Context Menu](https://code.visualstudio.com/docs/getstarted/userinterface#_context-menus) - Inspiration for menu organization
-- [macOS HIG: Context Menus](https://developer.apple.com/design/human-interface-guidelines/context-menus) - Platform conventions
+- [VS Code Context Menu](https://code.visualstudio.com/docs/getstarted/userinterface#_context-menus) — menu organization, Shift+F10 trigger.
+- [macOS HIG: Context Menus](https://developer.apple.com/design/human-interface-guidelines/context-menus) — platform conventions.
 
 ---
 
-## Appendix
-
-### Design Decisions
+## Design Decisions
 
 | Decision | Options Considered | Chosen | Rationale |
-|----------|-------------------|--------|-----------|
-| Menu state location | Separate struct vs ModalState variant | Separate `ContextMenuState` in `UiState` | Menus behave differently from modals (no input field, position-anchored) |
-| Submenu support | V1 with submenus vs flat only | Flat only | Reduces complexity, covers 90% of use cases |
-| Action representation | Store `Command` vs `Vec<Msg>` | `MenuAction::Messages(Vec<Msg>)` | Allows both Command-based and custom message actions |
-| Shortcut hints | Hardcoded vs keymap lookup | Keymap lookup | Respects user keybinding customizations |
-| Menu navigation | Arrow keys vs Tab | Arrow keys | Standard platform convention for menus |
+| --- | --- | --- | --- |
+| Rendering | new bespoke `view/context_menu.rs` vs. `OverlaySurface` context | `OverlaySurface`, `CursorOverlayKind::ContextMenu` | The component already exists and does exactly this shape of work; a second rendering system would duplicate chrome/shadow/theming for no benefit |
+| Menu state | reuse `completion_menu` shape vs. new `context_menu_items` | new, paired with `cursor_overlay` like `hover_card` | `completion_menu` is `CompletionItem`-typed (wrong domain); the pairing pattern is already proven twice |
+| Anchor | new `Anchor` variant for a raw point vs. reuse `Anchor::Cursor` with `h: 0` | reuse, `h: 0` | `Anchor::Cursor` already degenerates correctly to a point; a new variant would duplicate flip/clamp logic for no behavioral gain |
+| Separators | dedicated thin-rule row vs. `Section` boundary | `Section` boundary (whitespace-only break) | Zero new paint code; `FlatIndex` already treats section boundaries as non-addressable, avoiding a hand-written separator-skip in nav |
+| Key routing on non-nav keys | passthrough (Completion-style) vs. dismiss-and-consume | dismiss-and-consume | A context menu has no query to narrow; passthrough would leak keystrokes into the document under an still-open, now-stale menu |
+| Click-away | consume (JetBrains) vs. click-through (VS Code) | consume | Matches every existing overlay's outside-click behavior in this codebase; avoids compounding a dismiss with an accidental destructive click |
+| Keyboard trigger | none vs. Shift+F10 | Shift+F10 (editor only) | VS Code precedent; JetBrains has no universal equivalent to reconcile against; tab/file-tree stay click-only like their other interactions |
 
-### Open Questions
+## Open Questions
 
-Resolved during spec:
-
-1. ~~How to handle shortcut hints for user-customized keybindings?~~ → Use `ShortcutHintProvider` that queries active `Keymap`
-2. ~~Should menus support search/filter?~~ → No, command palette serves this purpose
-3. ~~How to add `context_menu_active` to `KeyContext`?~~ → Add field and corresponding `Condition` variants
-4. ~~Where to build menus (App vs update)?~~ → In `App`, since it owns the `Keymap`
-5. ~~Click-away pass-through vs consume?~~ → Consume (close menu only, don't trigger underlying actions)
+1. ~~Bespoke rendering or OverlaySurface?~~ → OverlaySurface; this revision.
+2. ~~Where does the item list live in the model?~~ → `ui.context_menu_items`, paired with `ui.cursor_overlay`.
+3. ~~Separator rendering?~~ → `Section` boundary, whitespace-only (no drawn rule for an untitled section).
+4. Click-through vs. consume may be worth revisiting after real usage — flagged, not blocking V1.
+5. Whether code actions (LSP Future) should share `ContextMenuRegion`/builder machinery or stay fully separate — leaning separate (different trigger, likely different dismiss rule), final call deferred to that doc.
 
 ---
 
-## Implementation Checklist
-
-### New Files to Create
-
-- [ ] `src/context_menu/mod.rs` - Module exports
-- [ ] `src/context_menu/types.rs` - `ContextMenuState`, `MenuItem`, `MenuAction`, etc.
-- [ ] `src/context_menu/builders.rs` - Per-region menu builders
-- [ ] `src/context_menu/shortcut_hints.rs` - `ShortcutHintProvider`
-- [ ] `src/update/context_menu.rs` - `update_context_menu()` handler
-- [ ] `src/keymap/format.rs` - `format_keystroke()` helper
-
-### Model Layer
-
-- [ ] `src/model/ui.rs`:
-  - [ ] Add `context_menu: Option<ContextMenuState>` to `UiState`
-  - [ ] Add `has_context_menu()` method
-  - [ ] Add `close_context_menu()` method
-
-### Messages
-
-- [ ] `src/messages.rs`:
-  - [ ] Add `ContextMenuMsg` enum
-  - [ ] Add `UiMsg::ContextMenu(ContextMenuMsg)` variant
-
-### Keymap Layer
-
-- [ ] `src/keymap/mod.rs`:
-  - [ ] Add `bindings_for_command(&self, cmd: Command)` method to `Keymap`
-
-- [ ] `src/keymap/context.rs`:
-  - [ ] Add `context_menu_active: bool` to `KeyContext`
-  - [ ] Add `Condition::ContextMenuActive` and `Condition::ContextMenuInactive`
-
-### Runtime Layer
-
-- [ ] `src/runtime/app.rs`:
-  - [ ] Add right-click handler: `WindowEvent::MouseInput { button: MouseButton::Right, .. }`
-  - [ ] Add context menu keyboard interception (before keymap lookup)
-  - [ ] Add click-away handling in left-click handler
-  - [ ] Add `handle_right_click()` method
-  - [ ] Add `hit_test_context_menu_target()` method
-  - [ ] Update `get_key_context()` to include `context_menu_active`
-
-### View Layer
-
-- [ ] `src/view/mod.rs`:
-  - [ ] Add `render_context_menu()` in the overlay phase
-  - [ ] Call it after editor/status bar, before modals
-
-- [ ] `src/view/geometry.rs`:
-  - [ ] Add `PopupMenuLayout` / `compute_menu_rect()` function
-  - [ ] Add `hit_test_menu_item()` function
-  - [ ] Add `TabHitResult` struct
-  - [ ] Add `hit_test_tab()` function (reusable for left-click too)
-
-### Renderer/Damage
-
-- [ ] `src/view/mod.rs` (or wherever `compute_effective_damage` lives):
-  - [ ] Add `model.ui.has_context_menu()` check to force `Damage::Full`
-
-### Update Layer
-
-- [ ] `src/update/mod.rs`:
-  - [ ] Add `Msg::Ui(UiMsg::ContextMenu(..))` routing to `update_context_menu()`
-
-### Changelog
+## Changelog
 
 | Date | Change |
-|------|--------|
+| --- | --- |
 | 2026-01-07 | Initial draft |
 | 2026-01-07 | Added integration gaps: focus/input routing, coordinates, menu building location, tab hit-testing, keymap API |
+| 2026-08-13 | Revised against the shipped `OverlaySurface`/cursor-overlay system: deleted the bespoke rendering plan, retargeted at `CursorOverlayKind::ContextMenu` + `Anchor::Cursor`, finalized V1 scope (editor/tab/file-tree), key routing (dismiss-and-consume on non-nav keys), mouse routing (click-away consumes), and Shift+F10 keyboard trigger |
