@@ -36,13 +36,8 @@ mod dims {
     pub const SCROLLBAR_WIDTH: f32 = 3.0;
     pub const SCROLLBAR_INSET: f32 = 2.0;
     pub const SCROLLBAR_MIN_LEN: f32 = 20.0;
-    pub const Y: f32 = 64.0;
-    /// Gap between the anchor line and a cursor-anchored popup (Visual
-    /// Language > Chrome: "below the anchor line + 2").
-    pub const CURSOR_GAP: f32 = 2.0;
-    /// `Anchor::Cursor` minimum panel width (Visual Language > Chrome:
-    /// "content-sized, clamped to window edges, 200px floor").
-    pub const CURSOR_WIDTH_FLOOR: f32 = 200.0;
+    // The centered-Y, cursor-gap, and cursor-width-floor constants moved to
+    // `layout::anchor::dims` with the placement functions.
     /// Completion kind badge (Visual Language > Rows: "kind badge (16×16, r4)").
     pub const KIND_BADGE_SIZE: f32 = 16.0;
     pub const KIND_BADGE_RADIUS: f32 = 4.0;
@@ -172,11 +167,9 @@ pub fn header_pad_x(scale_factor: f64) -> usize {
 
 /// A modal width rule: percent of window width, clamped to a logical-px
 /// min/max, then clamped again to leave a margin against the window edges.
-pub struct WidthRule {
-    pub pct: f32,
-    pub min: f32,
-    pub max: f32,
-}
+/// (Moved to `layout::anchor` so the layout engine and this surface share
+/// one implementation; re-exported here for existing consumers.)
+pub use crate::layout::anchor::WidthRule;
 
 pub enum Anchor {
     /// Centered X; Y follows the Chrome table's `min(h/4, Y)` class. Dims
@@ -745,18 +738,12 @@ fn resolve_panel_width(
     window_width: usize,
     scale_factor: f64,
 ) -> usize {
-    let margin = scaled(32.0, scale_factor);
-    let min_w = size_px(width.min, scale_factor) as usize;
-    let max_w = size_px(width.max, scale_factor) as usize;
-    let mut panel_w = ((window_width as f32 * width.pct) as usize)
-        .clamp(min_w, max_w)
-        .min(window_width.saturating_sub(margin));
-    if matches!(anchor, Anchor::Cursor { .. }) {
-        panel_w = panel_w.max(scaled(dims::CURSOR_WIDTH_FLOOR, scale_factor));
-    }
-    // Never exceed the window itself, even when the 200px cursor floor is
-    // wider than `window_width - margin` (narrow-window degradation).
-    panel_w.min(window_width)
+    crate::layout::anchor::resolve_width(
+        width,
+        matches!(anchor, Anchor::Cursor { .. }),
+        window_width,
+        scale_factor,
+    )
 }
 
 /// Position the panel's top-left corner given its final width/height.
@@ -772,35 +759,29 @@ fn position_panel(
     scale_factor: f64,
 ) -> (usize, usize) {
     match anchor {
-        Anchor::Centered { .. } => {
-            let x = window_width.saturating_sub(panel_w) / 2;
-            let y = scaled(dims::Y, scale_factor).min(window_height / 4);
-            (x, y)
-        }
+        Anchor::Centered { .. } => crate::layout::anchor::position_centered(
+            window_width,
+            window_height,
+            panel_w,
+            scale_factor,
+        ),
         Anchor::Cursor {
             x,
             y,
             h,
             prefer_below,
             ..
-        } => {
-            let gap = scaled(dims::CURSOR_GAP, scale_factor);
-            let px = (*x).min(window_width.saturating_sub(panel_w));
-            let below_y = y.saturating_add(*h).saturating_add(gap);
-            let fits_below = below_y.saturating_add(panel_h) <= window_height;
-            let fits_above = *y >= panel_h.saturating_add(gap);
-            let py = if *prefer_below && fits_below {
-                below_y
-            } else if fits_above {
-                y - gap - panel_h
-            } else if fits_below {
-                below_y
-            } else {
-                // Neither direction has room: clamp to the window.
-                window_height.saturating_sub(panel_h)
-            };
-            (px, py)
-        }
+        } => crate::layout::anchor::position_at_caret(
+            *x,
+            *y,
+            *h,
+            *prefer_below,
+            window_width,
+            window_height,
+            panel_w,
+            panel_h,
+            scale_factor,
+        ),
     }
 }
 

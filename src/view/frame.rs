@@ -94,7 +94,7 @@ pub struct Frame<'a> {
     buffer: &'a mut [u32],
     width: usize,
     height: usize,
-    clip: Option<ClipRect>,
+    clip_stack: Vec<ClipRect>,
 }
 
 impl<'a> Frame<'a> {
@@ -118,7 +118,7 @@ impl<'a> Frame<'a> {
             buffer,
             width,
             height,
-            clip: None,
+            clip_stack: Vec::new(),
         }
     }
 
@@ -143,9 +143,8 @@ impl<'a> Frame<'a> {
         self.buffer
     }
 
-    /// Set a clipping rectangle. All subsequent drawing operations will be
-    /// constrained to this region. Coordinates are in pixels (Rect uses f32).
-    pub fn set_clip(&mut self, rect: Rect) {
+    /// Convert a `Rect` into a frame-bounded `ClipRect`.
+    fn clip_rect_from(&self, rect: Rect) -> ClipRect {
         // Clamp width/height to non-negative in f32 space before casting and
         // adding to x/y: a negative width previously could make `x1 < x0`
         // (an inverted clip rect) once both were independently clamped and
@@ -156,36 +155,71 @@ impl<'a> Frame<'a> {
         let y0 = (rect.y.max(0.0) as usize).min(self.height);
         let x1 = ((rect.x.max(0.0) + w) as usize).min(self.width);
         let y1 = ((rect.y.max(0.0) + h) as usize).min(self.height);
-        self.clip = Some(ClipRect { x0, y0, x1, y1 });
+        ClipRect { x0, y0, x1, y1 }
     }
 
-    /// Remove the clipping rectangle, restoring full-frame drawing.
+    /// Set a clipping rectangle. All subsequent drawing operations will be
+    /// constrained to this region. Coordinates are in pixels (Rect uses f32).
+    ///
+    /// Resets any nested clips: the stack is cleared and `rect` becomes the
+    /// sole (absolute) clip. Prefer `push_clip`/`pop_clip` for nesting.
+    pub fn set_clip(&mut self, rect: Rect) {
+        self.clip_stack.clear();
+        let clip = self.clip_rect_from(rect);
+        self.clip_stack.push(clip);
+    }
+
+    /// Push a clipping rectangle, intersecting it with the current clip.
+    /// Drawing is constrained to the intersection until the matching
+    /// `pop_clip`. Push/pop pairs must be balanced within a frame.
+    pub fn push_clip(&mut self, rect: Rect) {
+        let mut clip = self.clip_rect_from(rect);
+        if let Some(top) = self.clip_stack.last() {
+            clip.x0 = clip.x0.max(top.x0);
+            clip.y0 = clip.y0.max(top.y0);
+            clip.x1 = clip.x1.min(top.x1).max(clip.x0);
+            clip.y1 = clip.y1.min(top.y1).max(clip.y0);
+        }
+        self.clip_stack.push(clip);
+    }
+
+    /// Pop the most recently pushed clipping rectangle, restoring the
+    /// enclosing clip (or full-frame drawing if the stack empties).
+    pub fn pop_clip(&mut self) {
+        debug_assert!(
+            !self.clip_stack.is_empty(),
+            "pop_clip called with no active clip"
+        );
+        self.clip_stack.pop();
+    }
+
+    /// Remove all clipping rectangles, restoring full-frame drawing.
     pub fn clear_clip(&mut self) {
-        self.clip = None;
+        self.clip_stack.clear();
     }
 
     /// Effective max x (exclusive), considering clip rect.
     #[inline]
     fn max_x(&self) -> usize {
-        self.clip.map_or(self.width, |c| c.x1)
+        self.clip_stack.last().map_or(self.width, |c| c.x1)
     }
 
     /// Effective max y (exclusive), considering clip rect.
     #[inline]
     fn max_y(&self) -> usize {
-        self.clip.map_or(self.height, |c| c.y1)
+        self.clip_stack.last().map_or(self.height, |c| c.y1)
     }
 
     /// Effective min x (inclusive), considering clip rect.
     #[inline]
     fn min_x(&self) -> usize {
-        self.clip.map_or(0, |c| c.x0)
+        self.clip_stack.last().map_or(0, |c| c.x0)
     }
 
     /// Effective min y (inclusive), considering clip rect.
     #[inline]
     fn min_y(&self) -> usize {
-        self.clip.map_or(0, |c| c.y0)
+        self.clip_stack.last().map_or(0, |c| c.y0)
     }
 
     /// Clear the entire buffer with a solid color
@@ -1249,6 +1283,64 @@ mod tests {
         // A subtle lightening of the dark background, still opaque.
         assert_eq!(px >> 24, 0xFF);
         assert!((px & 0xFF) > 0x26 && (px & 0xFF) < 0x60);
+    }
+
+    #[test]
+    fn push_clip_intersects_with_current_clip() {
+        let mut buffer = vec![0u32; 100 * 100];
+        let mut frame = Frame::new(&mut buffer, 100, 100);
+
+        frame.push_clip(Rect::new(10.0, 10.0, 40.0, 40.0));
+        frame.push_clip(Rect::new(30.0, 0.0, 40.0, 100.0));
+        // Effective clip: x 30..50, y 10..50.
+        frame.fill_rect(Rect::new(0.0, 0.0, 100.0, 100.0), 0xFFFF0000);
+
+        assert_eq!(frame.get_pixel(35, 20), 0xFFFF0000);
+        assert_eq!(frame.get_pixel(20, 20), 0); // inside outer, outside inner
+        assert_eq!(frame.get_pixel(60, 20), 0); // inside inner arg, outside outer
+    }
+
+    #[test]
+    fn pop_clip_restores_enclosing_clip() {
+        let mut buffer = vec![0u32; 100 * 100];
+        let mut frame = Frame::new(&mut buffer, 100, 100);
+
+        frame.push_clip(Rect::new(10.0, 10.0, 40.0, 40.0));
+        frame.push_clip(Rect::new(30.0, 30.0, 10.0, 10.0));
+        frame.pop_clip();
+        // Back to the outer clip.
+        frame.fill_rect(Rect::new(0.0, 0.0, 100.0, 100.0), 0xFF00FF00);
+        assert_eq!(frame.get_pixel(15, 15), 0xFF00FF00);
+
+        frame.pop_clip();
+        // Stack empty: full-frame drawing again.
+        frame.fill_rect(Rect::new(0.0, 0.0, 100.0, 100.0), 0xFF0000FF);
+        assert_eq!(frame.get_pixel(5, 5), 0xFF0000FF);
+    }
+
+    #[test]
+    fn set_clip_resets_the_stack() {
+        let mut buffer = vec![0u32; 100 * 100];
+        let mut frame = Frame::new(&mut buffer, 100, 100);
+
+        frame.push_clip(Rect::new(10.0, 10.0, 20.0, 20.0));
+        frame.push_clip(Rect::new(15.0, 15.0, 5.0, 5.0));
+        // set_clip is absolute: it discards the nested stack.
+        frame.set_clip(Rect::new(60.0, 60.0, 20.0, 20.0));
+        frame.fill_rect(Rect::new(0.0, 0.0, 100.0, 100.0), 0xFFFF00FF);
+        assert_eq!(frame.get_pixel(65, 65), 0xFFFF00FF);
+        assert_eq!(frame.get_pixel(15, 15), 0);
+    }
+
+    #[test]
+    fn push_clip_with_empty_intersection_draws_nothing() {
+        let mut buffer = vec![0u32; 100 * 100];
+        let mut frame = Frame::new(&mut buffer, 100, 100);
+
+        frame.push_clip(Rect::new(0.0, 0.0, 20.0, 20.0));
+        frame.push_clip(Rect::new(50.0, 50.0, 20.0, 20.0)); // disjoint
+        frame.fill_rect(Rect::new(0.0, 0.0, 100.0, 100.0), 0xFFFFFFFF);
+        assert!(buffer.iter().all(|&px| px == 0));
     }
 
     #[test]

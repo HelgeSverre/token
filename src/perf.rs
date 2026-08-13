@@ -27,6 +27,7 @@ pub const PERF_HISTORY_SIZE: usize = 60;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PerfStage {
     BuildPlan = 0,
+    Layout,
     Clear,
     CursorFastPath,
     TabBar,
@@ -84,6 +85,7 @@ impl PerfStage {
     pub const fn tracing_label(&self) -> &'static str {
         match self {
             Self::BuildPlan => "build_plan",
+            Self::Layout => "layout",
             Self::Clear => "clear",
             Self::CursorFastPath => "cursor_fast_path",
             Self::TabBar => "tab_bar",
@@ -116,8 +118,9 @@ impl PerfStage {
 }
 
 impl PerfStage {
-    pub const ALL: [Self; 28] = [
+    pub const ALL: [Self; 29] = [
         Self::BuildPlan,
+        Self::Layout,
         Self::Clear,
         Self::CursorFastPath,
         Self::TabBar,
@@ -162,6 +165,11 @@ impl PerfStage {
                 label: "Build Plan",
                 short_label: "Plan",
                 color: 0xFF73DACA,
+            },
+            Self::Layout => PerfStageSpec {
+                label: "Layout",
+                short_label: "Layout",
+                color: 0xFFB4F9F8,
             },
             Self::Clear => PerfStageSpec {
                 label: "Clear",

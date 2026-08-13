@@ -12,6 +12,13 @@ All notable changes to rust-editor are documented in this file.
   file tree, plus Shift+F10 to open the editor menu at the caret. Reuses the
   command palette's popup chrome and keycap hints; Up/Down/Enter/Escape
   navigate, any other key or an outside click dismisses it.
+- New `src/layout/` module: a pure-Rust adaptation of the Clay layout engine
+  (declarative element tree, fit/grow/percent/fixed sizing, floating anchored
+  elements, clip chains, measure-callback text wrapping, virtualized row
+  lists) producing a queryable geometry snapshot shared by rendering,
+  hit-testing, and update-layer queries.
+- `Frame` clipping is now a nesting stack (`push_clip`/`pop_clip`);
+  `set_clip`/`clear_clip` keep their absolute semantics.
 
 ### Fixed
 
