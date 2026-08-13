@@ -216,13 +216,21 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             Some(Cmd::redraw_editor())
         }
 
-        EditorMsg::Scroll(delta) => model
-            .scroll_focused_editor_vertical_by(delta as isize)
-            .then_some(Cmd::redraw_editor()),
+        EditorMsg::Scroll(delta) => {
+            let scrolled = model.scroll_focused_editor_vertical_by(delta as isize);
+            if scrolled {
+                dismiss_hover_on_scroll(model);
+            }
+            scrolled.then_some(Cmd::redraw_editor())
+        }
 
-        EditorMsg::ScrollHorizontal(delta) => model
-            .scroll_focused_editor_horizontal_by(delta as isize)
-            .then_some(Cmd::redraw_editor()),
+        EditorMsg::ScrollHorizontal(delta) => {
+            let scrolled = model.scroll_focused_editor_horizontal_by(delta as isize);
+            if scrolled {
+                dismiss_hover_on_scroll(model);
+            }
+            scrolled.then_some(Cmd::redraw_editor())
+        }
 
         // === Selection Movement (Shift+key) ===
         EditorMsg::MoveCursorWithSelection(direction) => {
@@ -1044,6 +1052,28 @@ fn shrink_selection(model: &mut AppModel) {
     }
 }
 
+/// A hover card re-anchors every frame from the doc line/col it was opened
+/// against (`editor_text_rect_at`) — once a scroll carries that line out
+/// of the viewport, the card would otherwise snap to the viewport edge
+/// and sit there describing an off-screen token (lsp-integration.md's
+/// hover card has no other invalidation hook for scrolling: unlike a
+/// keypress/edit, a wheel/trackpad scroll moves no pointer and reaches
+/// none of those paths). Also clears `mouse_hover_target` so a
+/// mouse-dwell request already in flight can't reopen the card for a
+/// token that has since scrolled away from the pointer — `HoverResolved`'s
+/// dwell-match guard reads this field.
+fn dismiss_hover_on_scroll(model: &mut AppModel) {
+    use crate::model::CursorOverlayKind;
+    if matches!(
+        model.ui.cursor_overlay.map(|s| s.kind),
+        Some(CursorOverlayKind::Hover | CursorOverlayKind::DebugHover)
+    ) {
+        model.ui.cursor_overlay = None;
+        model.ui.hover_card = None;
+    }
+    model.ui.mouse_hover_target = None;
+}
+
 fn strictly_contains(outer: &Selection, inner: &Selection) -> bool {
     outer.start() <= inner.start()
         && outer.end() >= inner.end()
@@ -1458,4 +1488,81 @@ fn find_matching_backward(
         }
     }
     None
+}
+
+#[cfg(test)]
+mod scroll_tests {
+    use super::*;
+    use crate::model::{CursorOverlayKind, CursorOverlayState, HoverCardState};
+
+    /// A document with enough lines that a small viewport can actually
+    /// scroll.
+    fn model_with_many_lines() -> AppModel {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("many.txt");
+        let text: String = (0..200).map(|i| format!("line {i}\n")).collect();
+        std::fs::write(&path, text).unwrap();
+        // Leak the tempdir so the file outlives this function — the model
+        // never rereads it.
+        std::mem::forget(dir);
+        AppModel::new(800, 600, 1.0, vec![path])
+    }
+
+    /// lsp-integration.md: a hover card re-anchors from the doc line it
+    /// was opened against every frame — once a scroll carries that line
+    /// out of the viewport it must be dismissed, not left snapped to the
+    /// viewport edge describing an off-screen token.
+    #[test]
+    fn scrolling_dismisses_an_open_hover_card() {
+        let mut model = model_with_many_lines();
+        model.ui.hover_card = Some(HoverCardState {
+            content: Some("fn main()".to_owned()),
+            anchor: Some((0, 0)),
+        });
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Hover));
+
+        let cmd = update_editor(&mut model, EditorMsg::Scroll(20));
+
+        assert!(cmd.is_some(), "the scroll itself must still happen");
+        assert!(model.ui.hover_card.is_none());
+        assert!(model.ui.cursor_overlay.is_none());
+    }
+
+    /// The async race: a mouse-dwell hover request is in flight
+    /// (`mouse_hover_target` set) when a scroll happens before the reply
+    /// lands — the scroll must clear the target too, or `HoverResolved`'s
+    /// dwell-match guard (`update/lsp.rs`) still opens a card for a token
+    /// that has since scrolled away from the pointer.
+    #[test]
+    fn scrolling_clears_a_pending_mouse_dwell_target() {
+        let mut model = model_with_many_lines();
+        model.ui.mouse_hover_target = Some(crate::model::editor::Position::new(0, 0));
+
+        update_editor(&mut model, EditorMsg::Scroll(20));
+
+        assert!(model.ui.mouse_hover_target.is_none());
+    }
+
+    #[test]
+    fn scrolling_with_no_open_overlay_is_a_no_op_on_overlay_state() {
+        let mut model = model_with_many_lines();
+        update_editor(&mut model, EditorMsg::Scroll(20));
+        assert!(model.ui.hover_card.is_none());
+        assert!(model.ui.cursor_overlay.is_none());
+    }
+
+    /// Non-hover overlays (e.g. Completion) aren't scroll-anchored the same
+    /// way and keep their own dismissal rules — scroll must not clear them.
+    #[test]
+    fn scrolling_does_not_dismiss_a_non_hover_overlay() {
+        let mut model = model_with_many_lines();
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Completion));
+
+        update_editor(&mut model, EditorMsg::Scroll(20));
+
+        assert_eq!(
+            model.ui.cursor_overlay.map(|s| s.kind),
+            Some(CursorOverlayKind::Completion)
+        );
+    }
 }
