@@ -188,8 +188,8 @@ fn references_snapshot(model: &AppModel) -> Option<ReferencesSnapshot> {
                 .iter()
                 .map(|item| ReferenceRowSnapshot {
                     path: item.path.display().to_string(),
-                    line: item.line,
-                    col: item.col,
+                    line: item.position.line as usize,
+                    col: item.position.character as usize,
                 })
                 .collect()
         })

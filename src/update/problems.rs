@@ -137,16 +137,7 @@ fn reveal_problems_selection(model: &mut AppModel) {
 fn open_diagnostic(model: &mut AppModel, path: &std::path::Path, index: usize) -> Option<Cmd> {
     let diagnostic = model.lsp.diagnostics.get(path)?.get(index)?.clone();
     let start = diagnostic.range.start;
-    let (line, col) = model
-        .editor_area
-        .find_open_file(path)
-        .and_then(|(doc_id, _, _)| model.editor_area.documents.get(&doc_id))
-        .map(|doc| {
-            let position = crate::lsp::lsp_to_position(doc, start);
-            (position.line, position.column)
-        })
-        .unwrap_or((start.line as usize, start.character as usize));
-    navigation::jump_to_location(model, None, path, line, col)
+    navigation::jump_to_location(model, None, path, start)
 }
 
 pub fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<Cmd> {

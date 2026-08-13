@@ -1534,15 +1534,19 @@ mod tests {
         model.ui.reference_list = Some(vec![
             token::update::navigation::LocationItem {
                 path: path_a.clone(),
-                line: 0,
-                col: 0,
+                position: lsp_types::Position {
+                    line: 0,
+                    character: 0,
+                },
                 preview: "a".to_owned(),
                 route_hint: None,
             },
             token::update::navigation::LocationItem {
                 path: path_a,
-                line: 5,
-                col: 0,
+                position: lsp_types::Position {
+                    line: 5,
+                    character: 0,
+                },
                 preview: "b".to_owned(),
                 route_hint: None,
             },

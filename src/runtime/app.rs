@@ -3235,27 +3235,14 @@ impl App {
         server_id: &LspServerId,
         root: &std::path::Path,
     ) -> Vec<token::update::navigation::LocationItem> {
-        let mut resolved: Vec<(std::path::PathBuf, usize, usize)> = locations
+        let mut resolved: Vec<(std::path::PathBuf, lsp_types::Position)> = locations
             .iter()
             .filter_map(|location| {
                 let path = lsp::uri_to_path(&location.uri)?;
-                let (line, col) = self
-                    .model
-                    .editor_area
-                    .find_open_file(&path)
-                    .and_then(|(doc_id, _, _)| self.model.editor_area.documents.get(&doc_id))
-                    .map(|doc| {
-                        let position = lsp::lsp_to_position(doc, location.range.start);
-                        (position.line, position.column)
-                    })
-                    .unwrap_or((
-                        location.range.start.line as usize,
-                        location.range.start.character as usize,
-                    ));
-                Some((path, line, col))
+                Some((path, location.range.start))
             })
             .collect();
-        resolved.sort_by(|a, b| (&a.0, a.1).cmp(&(&b.0, b.1)));
+        resolved.sort_by(|a, b| (&a.0, a.1.line).cmp(&(&b.0, b.1.line)));
         resolved.truncate(MAX_REFERENCE_LOCATIONS);
 
         // ponytail: one `read_to_string` per distinct unopened file,
@@ -3266,7 +3253,8 @@ impl App {
         let mut file_cache: HashMap<std::path::PathBuf, Vec<String>> = HashMap::new();
         resolved
             .into_iter()
-            .map(|(path, line, col)| {
+            .map(|(path, position)| {
+                let line = position.line as usize;
                 let preview = self
                     .model
                     .editor_area
@@ -3296,8 +3284,7 @@ impl App {
                     outside_every_root.then(|| (server_id.clone(), root.to_path_buf()));
                 token::update::navigation::LocationItem {
                     path,
-                    line,
-                    col,
+                    position,
                     preview,
                     route_hint,
                 }
@@ -6155,8 +6142,8 @@ mod tests {
             .as_ref()
             .expect("popup rows stored");
         assert_eq!(items.len(), 2);
-        assert_eq!(items[0].line, 1);
-        assert_eq!(items[1].line, 2);
+        assert_eq!(items[0].position.line, 1);
+        assert_eq!(items[1].position.line, 2);
         // Previews are read from the (now-open) document's own buffer.
         assert_eq!(items[0].preview, "foo();");
 

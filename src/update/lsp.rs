@@ -273,31 +273,6 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                         model.ui.set_status("No definition found");
                         return Some(Cmd::redraw_status_bar());
                     }
-                    // `LocationItem`'s contract: char coords when a
-                    // document is already available to convert LSP
-                    // UTF-16 through, raw LSP values otherwise —
-                    // `place_cursor_char` clamps either way.
-                    let resolve =
-                        |model: &AppModel,
-                         location: &lsp_types::Location|
-                         -> Option<(std::path::PathBuf, usize, usize)> {
-                            let path = crate::lsp::uri_to_path(&location.uri)?;
-                            let (line, col) = model
-                                .editor_area
-                                .find_open_file(&path)
-                                .and_then(|(doc_id, _, _)| model.editor_area.documents.get(&doc_id))
-                                .map(|doc| {
-                                    let position =
-                                        crate::lsp::lsp_to_position(doc, location.range.start);
-                                    (position.line, position.column)
-                                })
-                                .unwrap_or((
-                                    location.range.start.line as usize,
-                                    location.range.start.character as usize,
-                                ));
-                            Some((path, line, col))
-                        };
-
                     // Outside every root (stdlib, `~/.cargo/registry`,
                     // ...): route the imminent `didOpen` to the server
                     // that resolved this location rather than letting the
@@ -312,7 +287,7 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                     };
 
                     if let [location] = locations.as_slice() {
-                        let Some((path, line, col)) = resolve(model, location) else {
+                        let Some(path) = crate::lsp::uri_to_path(&location.uri) else {
                             model.ui.set_status("No definition found");
                             return Some(Cmd::redraw_status_bar());
                         };
@@ -320,7 +295,12 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                             model.lsp.route_hint =
                                 Some((path.clone(), resolving_server, resolving_root));
                         }
-                        return navigation::jump_to_location(model, Some(origin), &path, line, col);
+                        return navigation::jump_to_location(
+                            model,
+                            Some(origin),
+                            &path,
+                            location.range.start,
+                        );
                     }
 
                     // More than one location: upgrade to the same
@@ -331,20 +311,21 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                     let items: Vec<navigation::LocationItem> = locations
                         .iter()
                         .filter_map(|location| {
-                            let (path, line, col) = resolve(model, location)?;
+                            let path = crate::lsp::uri_to_path(&location.uri)?;
                             let preview = model
                                 .editor_area
                                 .find_open_file(&path)
                                 .and_then(|(doc_id, _, _)| model.editor_area.documents.get(&doc_id))
-                                .and_then(|doc| doc.get_line_cow(line))
+                                .and_then(|doc| {
+                                    doc.get_line_cow(location.range.start.line as usize)
+                                })
                                 .map(|line| line.trim().to_owned())
                                 .unwrap_or_default();
                             let route_hint = outside_every_root(&path)
                                 .then(|| (resolving_server.clone(), resolving_root.clone()));
                             Some(navigation::LocationItem {
                                 path,
-                                line,
-                                col,
+                                position: location.range.start,
                                 preview,
                                 route_hint,
                             })
@@ -548,7 +529,7 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                 return Some(Cmd::Redraw);
             };
             apply_route_hint(model, &item);
-            navigation::jump_to_location(model, None, &item.path, item.line, item.col)
+            navigation::jump_to_location(model, None, &item.path, item.position)
         }
     }
 }
@@ -582,11 +563,11 @@ fn open_location_list_popup(
     // Ordering authority: sorted once here, at construction — the view's
     // spec builder and Enter/click activation both index this same stored
     // `Vec`, never re-deriving it.
-    items.sort_by(|a, b| (&a.path, a.line).cmp(&(&b.path, b.line)));
+    items.sort_by(|a, b| (&a.path, a.position.line).cmp(&(&b.path, b.position.line)));
     if let [only] = items.as_slice() {
         apply_route_hint(model, only);
-        let (path, line, col) = (only.path.clone(), only.line, only.col);
-        return navigation::jump_to_location(model, None, &path, line, col);
+        let (path, position) = (only.path.clone(), only.position);
+        return navigation::jump_to_location(model, None, &path, position);
     }
     model.ui.reference_list = Some(items);
     model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::References));
@@ -1166,11 +1147,13 @@ mod tests {
         assert_eq!(model.ui.hover_card.as_ref().and_then(|c| c.anchor), None);
     }
 
-    fn loc(path: &Path, line: usize, col: usize, preview: &str) -> navigation::LocationItem {
+    fn loc(path: &Path, line: u32, col: u32, preview: &str) -> navigation::LocationItem {
         navigation::LocationItem {
             path: path.to_path_buf(),
-            line,
-            col,
+            position: lsp_types::Position {
+                line,
+                character: col,
+            },
             preview: preview.to_owned(),
             route_hint: None,
         }
@@ -1257,8 +1240,8 @@ mod tests {
         );
         let items = model.ui.reference_list.as_ref().expect("popup rows stored");
         assert_eq!(items.len(), 2);
-        assert_eq!(items[0].line, 0, "sorted by (path, line)");
-        assert_eq!(items[1].line, 5);
+        assert_eq!(items[0].position.line, 0, "sorted by (path, line)");
+        assert_eq!(items[1].position.line, 5);
     }
 
     #[test]

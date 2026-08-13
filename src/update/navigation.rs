@@ -164,8 +164,12 @@ pub(crate) fn place_cursor_char(model: &mut AppModel, line: usize, col: usize) -
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocationItem {
     pub path: PathBuf,
-    pub line: usize,
-    pub col: usize,
+    /// Raw LSP position (UTF-16 column) — converted to editor char
+    /// coordinates only at jump time, once the target document is open
+    /// (`jump_to_location`). Storing one coordinate space ends the
+    /// open-at-build-time ambiguity that misplaced cursors in unopened
+    /// multi-byte files.
+    pub position: lsp_types::Position,
     pub preview: String,
     /// The server/root that resolved this location, set only when `path`
     /// is outside every workspace root — the same route hint
@@ -184,19 +188,23 @@ pub struct LocationItem {
 /// "no stale result ever moves a cursor" guard, verbatim from
 /// `DefinitionResolved`). `origin`: pre-captured entry for async flows
 /// (definition/references resolve), or capture-now for sync ones.
+/// `target` is a raw LSP position (UTF-16 column), converted against the
+/// target document *after* it opens — the only moment conversion is
+/// always possible (the pre-refactor code converted correctly only for
+/// already-open files and passed raw UTF-16 columns through otherwise).
 pub(crate) fn jump_to_location(
     model: &mut AppModel,
     origin: Option<JumpEntry>,
     path: &Path,
-    line: usize,
-    col: usize,
+    target: lsp_types::Position,
 ) -> Option<Cmd> {
     if let Some(entry) = origin.or_else(|| current_jump_entry(model)) {
         push_history_entry(model, entry);
     }
     let open_cmd = open_or_focus(model, path.to_path_buf());
     let cursor_cmd = if focused_tab_is_text(model) && focused_tab_shows(model, path) {
-        place_cursor_char(model, line, col)
+        let position = crate::lsp::lsp_to_position(model.document(), target);
+        place_cursor_char(model, position.line, position.column)
     } else {
         None
     };
@@ -309,7 +317,15 @@ mod tests {
         let b_path = model.document().file_path.clone().unwrap();
 
         let a_path = dir.path().join("a.txt");
-        jump_to_location(&mut model, None, &a_path, 0, 1);
+        jump_to_location(
+            &mut model,
+            None,
+            &a_path,
+            lsp_types::Position {
+                line: 0,
+                character: 1,
+            },
+        );
 
         assert_eq!(
             model.document().file_path.as_deref(),
@@ -374,6 +390,44 @@ mod tests {
         });
         assert!(navigate_back(&mut model).is_none());
         assert_eq!(model.jump_history.len(), 1); // untouched
+    }
+
+    #[test]
+    fn lsp_jump_into_an_unopened_multibyte_file_converts_utf16_columns() {
+        // Regression: LocationItem carried raw UTF-16 columns for files
+        // not open at build time, and jump_to_location placed them
+        // blindly — landing the cursor between/after the wrong chars
+        // whenever multi-byte text preceded the target. Conversion now
+        // happens after the open, when the document is always available.
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("uni.rs");
+        // "a🎉bc": char cols a=0 🎉=1 b=2; UTF-16 units a=0 🎉=1..2 b=3.
+        std::fs::write(&target, "a\u{1F389}bc\n").unwrap();
+        let mut model = model_with_two_files(dir.path());
+        assert!(
+            model.editor_area.find_open_file(&target).is_none(),
+            "target must not be open before the jump"
+        );
+
+        jump_to_location(
+            &mut model,
+            None,
+            &target,
+            lsp_types::Position {
+                line: 0,
+                character: 3, // 'b' in UTF-16 units
+            },
+        );
+
+        assert_eq!(
+            model.document().file_path.as_deref(),
+            Some(target.as_path())
+        );
+        assert_eq!(
+            model.editor().cursors[0].column,
+            2,
+            "UTF-16 col 3 is char col 2 ('b') — raw passthrough would give 3"
+        );
     }
 
     #[test]
