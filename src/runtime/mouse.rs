@@ -403,6 +403,100 @@ mod tests {
         );
     }
 
+    // ========================================================================
+    // Mouse-press preamble policy (context-menu.md §Mouse): click-away
+    // consumes, and the right-click-reopen exception (075f957).
+    // ========================================================================
+
+    #[test]
+    fn click_away_from_a_context_menu_dismisses_and_swallows_the_click() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::ContextMenu,
+        ));
+        model.ui.context_menu = Some(token::model::ContextMenuState {
+            items: vec![],
+            anchor: (0, 0, 0),
+            region: token::context_menu::ContextMenuRegion::Editor,
+        });
+
+        let dismissal = dismiss_overlay_for_press(&mut model, &HitTarget::StatusBar, MouseButton::Left);
+
+        assert!(dismissal.dismissed);
+        assert!(
+            dismissal.swallow,
+            "a left-click that dismisses a context menu must not also act on what it landed on"
+        );
+        assert!(model.ui.cursor_overlay.is_none());
+        assert!(model.ui.context_menu.is_none());
+    }
+
+    #[test]
+    fn a_right_click_dismisses_a_context_menu_without_swallowing_so_it_can_reopen() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::ContextMenu,
+        ));
+        model.ui.context_menu = Some(token::model::ContextMenuState {
+            items: vec![],
+            anchor: (0, 0, 0),
+            region: token::context_menu::ContextMenuRegion::Editor,
+        });
+
+        let dismissal =
+            dismiss_overlay_for_press(&mut model, &HitTarget::StatusBar, MouseButton::Right);
+
+        assert!(dismissal.dismissed);
+        assert!(
+            !dismissal.swallow,
+            "a right-click on a second target must still reach handle_right_click to reopen"
+        );
+    }
+
+    #[test]
+    fn click_away_from_a_non_context_menu_overlay_dismisses_without_swallowing() {
+        // Completion/hover/references are non-blocking (overlay-surface.md
+        // Phase 5): click-away dismisses but falls through to whatever's
+        // under it — only the context menu swallows.
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::Completion,
+        ));
+
+        let dismissal =
+            dismiss_overlay_for_press(&mut model, &HitTarget::StatusBar, MouseButton::Left);
+
+        assert!(dismissal.dismissed);
+        assert!(!dismissal.swallow);
+    }
+
+    #[test]
+    fn click_on_the_cursor_overlay_itself_never_dismisses() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::ContextMenu,
+        ));
+
+        let dismissal = dismiss_overlay_for_press(
+            &mut model,
+            &HitTarget::CursorOverlay { flat_index: Some(0) },
+            MouseButton::Left,
+        );
+
+        assert!(!dismissal.dismissed);
+        assert!(!dismissal.swallow);
+        assert!(model.ui.cursor_overlay.is_some());
+    }
+
+    #[test]
+    fn no_open_overlay_is_a_no_op() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let dismissal =
+            dismiss_overlay_for_press(&mut model, &HitTarget::StatusBar, MouseButton::Left);
+        assert!(!dismissal.dismissed);
+        assert!(!dismissal.swallow);
+    }
+
     #[test]
     fn tab_file_path_resolves_the_tabs_document_not_the_focused_one() {
         let model = AppModel::new(800, 600, 1.0, vec![]);
@@ -650,6 +744,49 @@ pub struct MousePressResult {
     pub start_drag_tracking: bool,
 }
 
+/// Outcome of `dismiss_overlay_for_press`: whether an open cursor-anchored
+/// popup was dismissed by this press, and whether the press must be
+/// swallowed outright (consumed, not click-through) rather than falling
+/// through to whatever's under it.
+struct OverlayDismissal {
+    dismissed: bool,
+    swallow: bool,
+}
+
+/// The mouse-press preamble's overlay policy (context-menu.md §Mouse,
+/// 075f957) — factored out of `handle_mouse_press` so it's unit-testable
+/// without a `Renderer`/real `Window`.
+///
+/// Cursor-anchored popups are non-blocking (overlay-surface.md Phase 5): a
+/// click that lands outside the popup dismisses it but still falls through
+/// to whatever's actually under the cursor. The context menu is the one
+/// exception (context-menu.md "Mouse: click-away consumes, not
+/// click-through" — JetBrains behavior, not VS Code's) — except a
+/// right-click while a context menu is open must still reach
+/// `dispatch_mouse_press`/`handle_right_click` so a new menu can open at
+/// the new target (context-menu.md Phase 2: "another cursor overlay
+/// already open -> close the old one first and re-open").
+fn dismiss_overlay_for_press(
+    model: &mut AppModel,
+    target: &HitTarget,
+    button: MouseButton,
+) -> OverlayDismissal {
+    let dismissed_kind = model.ui.cursor_overlay.map(|s| s.kind);
+    let dismissed =
+        model.ui.cursor_overlay.is_some() && !matches!(target, HitTarget::CursorOverlay { .. });
+    if dismissed {
+        model.ui.cursor_overlay = None;
+        model.ui.completion_menu = None;
+        model.ui.hover_card = None;
+        model.ui.reference_list = None;
+        model.ui.context_menu = None;
+    }
+    let swallow = dismissed
+        && dismissed_kind == Some(token::model::CursorOverlayKind::ContextMenu)
+        && button != MouseButton::Right;
+    OverlayDismissal { dismissed, swallow }
+}
+
 /// Handle a mouse press event using the unified hit-test system
 ///
 /// This is the main entry point for mouse click handling. It:
@@ -674,35 +811,9 @@ pub fn handle_mouse_press(
         };
     };
 
-    // Cursor-anchored popups are non-blocking (overlay-surface.md Phase 5):
-    // a click that lands outside the popup dismisses it but still falls
-    // through to whatever's actually under the cursor. The context menu is
-    // the one exception (context-menu.md "Mouse: click-away consumes, not
-    // click-through" — JetBrains behavior, not VS Code's): capture the
-    // kind before clearing so that case can also swallow the click below.
-    let dismissed_kind = model.ui.cursor_overlay.map(|s| s.kind);
-    let dismissed_cursor_overlay = if model.ui.cursor_overlay.is_some()
-        && !matches!(target, HitTarget::CursorOverlay { .. })
-    {
-        model.ui.cursor_overlay = None;
-        model.ui.completion_menu = None;
-        model.ui.hover_card = None;
-        model.ui.reference_list = None;
-        model.ui.context_menu = None;
-        true
-    } else {
-        false
-    };
-
-    // A right-click while a context menu is already open must still reach
-    // `dispatch_mouse_press`/`handle_right_click` below so a new menu can
-    // open at the new target (context-menu.md Phase 2: "another cursor
-    // overlay already open -> close the old one first and re-open") —
-    // only non-right clicks swallow the click here.
-    if dismissed_cursor_overlay
-        && dismissed_kind == Some(token::model::CursorOverlayKind::ContextMenu)
-        && event.button != MouseButton::Right
-    {
+    let dismissal = dismiss_overlay_for_press(model, &target, event.button);
+    let dismissed_cursor_overlay = dismissal.dismissed;
+    if dismissal.swallow {
         // Consumed, not click-through: the dismissing click must not also
         // act on whatever it landed on.
         return MousePressResult {
@@ -1575,6 +1686,45 @@ fn handle_right_click(model: &mut AppModel, target: &HitTarget, event: &MouseEve
             editor_id,
             ..
         } => {
+            // The menu is built (enablement) and later activated against
+            // the clicked split, not whatever happened to be focused
+            // before the click — focus it first, same as a left click
+            // (`handle_editor_content_click`). Per JetBrains/VS Code
+            // convention, also move the caret to the click point, unless
+            // the click landed inside the existing selection (which must
+            // survive so Cut/Copy still act on it).
+            if *group_id != model.editor_area.focused_group_id {
+                update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
+            }
+            let caret_target = model
+                .editor_area
+                .groups
+                .get(group_id)
+                .zip(model.editor_area.editors.get(editor_id))
+                .and_then(|(group, editor)| {
+                    let document = editor
+                        .document_id
+                        .and_then(|id| model.editor_area.documents.get(&id))?;
+                    let (line, column) = token::view::geometry::pixel_to_cursor_in_group(
+                        event.pos.x,
+                        event.pos.y,
+                        model.char_width,
+                        model.line_height as f64,
+                        &group.rect,
+                        model,
+                        editor,
+                        document,
+                    );
+                    let pos = token::model::editor::Position::new(line, column);
+                    (!editor.active_selection().contains(pos)).then_some((line, column))
+                });
+            if let Some((line, column)) = caret_target {
+                update(
+                    model,
+                    Msg::Editor(EditorMsg::SetCursorPosition { line, column }),
+                );
+            }
+
             let has_selection = model
                 .editor_area
                 .editors
