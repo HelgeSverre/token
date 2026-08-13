@@ -1064,12 +1064,18 @@ fn shrink_selection(model: &mut AppModel) {
 /// dwell-match guard reads this field.
 fn dismiss_hover_on_scroll(model: &mut AppModel) {
     use crate::model::CursorOverlayKind;
-    if matches!(
-        model.ui.cursor_overlay.map(|s| s.kind),
-        Some(CursorOverlayKind::Hover | CursorOverlayKind::DebugHover)
-    ) {
-        model.ui.cursor_overlay = None;
-        model.ui.hover_card = None;
+    match model.ui.cursor_overlay.map(|s| s.kind) {
+        Some(CursorOverlayKind::Hover | CursorOverlayKind::DebugHover) => {
+            model.ui.cursor_overlay = None;
+            model.ui.hover_card = None;
+        }
+        // A pixel-anchored context menu would float over the scrolled
+        // content otherwise.
+        Some(CursorOverlayKind::ContextMenu) => {
+            model.ui.cursor_overlay = None;
+            model.ui.context_menu = None;
+        }
+        _ => {}
     }
     model.ui.mouse_hover_target = None;
 }
@@ -1494,6 +1500,22 @@ fn find_matching_backward(
 mod scroll_tests {
     use super::*;
     use crate::model::{CursorOverlayKind, CursorOverlayState, HoverCardState};
+
+    #[test]
+    fn scroll_dismisses_an_open_context_menu() {
+        let mut model = model_with_many_lines();
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::ContextMenu));
+        model.ui.context_menu = Some(crate::model::ui::ContextMenuState {
+            items: Vec::new(),
+            anchor: (0, 0, 0),
+            region: crate::context_menu::ContextMenuRegion::Editor,
+        });
+
+        update_editor_inner(&mut model, EditorMsg::Scroll(3));
+
+        assert!(model.ui.cursor_overlay.is_none());
+        assert!(model.ui.context_menu.is_none());
+    }
 
     /// A document with enough lines that a small viewport can actually
     /// scroll.

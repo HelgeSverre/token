@@ -420,7 +420,8 @@ mod tests {
             region: token::context_menu::ContextMenuRegion::Editor,
         });
 
-        let dismissal = dismiss_overlay_for_press(&mut model, &HitTarget::StatusBar, MouseButton::Left);
+        let dismissal =
+            dismiss_overlay_for_press(&mut model, &HitTarget::StatusBar, MouseButton::Left);
 
         assert!(dismissal.dismissed);
         assert!(
@@ -479,7 +480,9 @@ mod tests {
 
         let dismissal = dismiss_overlay_for_press(
             &mut model,
-            &HitTarget::CursorOverlay { flat_index: Some(0) },
+            &HitTarget::CursorOverlay {
+                flat_index: Some(0),
+            },
             MouseButton::Left,
         );
 
