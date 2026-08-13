@@ -398,6 +398,7 @@ pub fn render_outline_panel(
         outline_panel: &model.outline_panel,
     };
 
+    frame.set_clip(ctx.layout.content_rect);
     render_tree(
         &outline.roots,
         TreeRenderLayout::new(
@@ -455,20 +456,21 @@ pub fn render_outline_panel(
             };
             painter.draw(frame, text_x, text_y, label, label_color);
 
-            let name_x = text_x + (label.len() + 1) * painter.char_width() as usize;
+            let char_w = painter.char_width().ceil() as usize;
+            let name_x = text_x + (label.len() + 1) * char_w;
             let container_width =
                 ctx.layout.content_rect.x as usize + ctx.layout.content_rect.width as usize;
             let available = ctx
                 .layout
                 .tree
                 .available_text_width(container_width, name_x);
-            let char_w = painter.char_width() as usize;
             let max_chars = available.checked_div(char_w).unwrap_or(80);
 
             let display = truncate_with_ellipsis(&node.name, max_chars);
             painter.draw(frame, name_x, text_y, &display, fg);
         },
     );
+    frame.clear_clip();
 }
 
 /// Render the Problems panel: collapsible per-file groups over
@@ -498,7 +500,7 @@ pub fn render_problems_panel(
     let rows = problems_rows(model);
 
     if rows.is_empty() {
-        let msg = "No problems";
+        let msg = "No problems in this file";
         let char_width = painter.char_width();
         let text_width = msg.len() as f32 * char_width;
         let text_x = rect.x + (rect.width - text_width) / 2.0;
@@ -512,8 +514,11 @@ pub fn render_problems_panel(
     let scroll_offset = model.problems_panel.scroll_offset;
     let base_x = layout.content_rect.x as usize;
     let container_width = base_x + layout.content_rect.width as usize;
-    let char_w = painter.char_width() as usize;
+    // ceil, not floor: draw() advances by the true fractional advance, so
+    // flooring undermeasures every width and overflows budgets rightward.
+    let char_w = painter.char_width().ceil() as usize;
 
+    frame.set_clip(layout.content_rect);
     let visible = rows
         .iter()
         .enumerate()
@@ -622,9 +627,14 @@ pub fn render_problems_panel(
                     diagnostic.range.start.line + 1,
                     diagnostic.range.start.character + 1
                 );
-                let accessory_width = (accessory.len() * char_w) as f32;
-                let accessory_x =
-                    (layout.content_rect.x + layout.content_rect.width - accessory_width) as usize;
+                // Fractional measure + right inset (symmetric with
+                // available_text_width's implicit left_padding right inset).
+                let accessory_width = accessory.chars().count() as f32 * painter.char_width();
+                let right_inset = layout.tree.left_padding as f32;
+                let accessory_x = (layout.content_rect.x + layout.content_rect.width
+                    - right_inset
+                    - accessory_width)
+                    .max(layout.content_rect.x) as usize;
                 let accessory_color = if is_selected {
                     selection_fg
                 } else {
@@ -634,11 +644,15 @@ pub fn render_problems_panel(
 
                 let available = accessory_x.saturating_sub(text_x + layout.tree.left_padding);
                 let max_chars = available.checked_div(char_w).unwrap_or(80);
-                let display = truncate_with_ellipsis(&diagnostic.message, max_chars);
+                // Multi-line LSP messages would smear their later lines
+                // into the same row ('\n' renders as an empty glyph).
+                let message = diagnostic.message.lines().next().unwrap_or("");
+                let display = truncate_with_ellipsis(message, max_chars);
                 painter.draw(frame, text_x, pos.text_y, &display, fg);
             }
         }
     }
+    frame.clear_clip();
 }
 
 #[cfg(test)]
