@@ -3884,6 +3884,19 @@ impl App {
                 }
                 AutomationRequest::ExecuteAction { name } => {
                     let response = match Command::from_str(&name) {
+                        // `ShowContextMenu` has no `to_msgs()` (it needs a
+                        // live clipboard read, runtime-only) — route it
+                        // through the same `dispatch_command` special case
+                        // the real keyboard/palette paths use, per
+                        // context-menu.md Phase 5 automation.
+                        Ok(Command::ShowContextMenu) => {
+                            if let Some(cmd) = self.dispatch_command(Command::ShowContextMenu) {
+                                self.pending_damage.merge(cmd.damage());
+                                self.process_cmd(cmd);
+                            }
+                            redraw = true;
+                            self.automation_response("action executed")
+                        }
                         Ok(command) if command.is_simple() && command != Command::Unbound => {
                             for msg in command.to_msgs() {
                                 self.process_automation_msg(msg);
@@ -4399,6 +4412,33 @@ mod tests {
             .completion
             .expect("completion popup should be open after the trigger action");
         assert!(completion.items.contains(&"value_one".to_string()));
+    }
+
+    #[test]
+    fn automation_execute_action_show_context_menu_actually_opens_it() {
+        // Regression: `Command::ShowContextMenu::to_msgs()` returns `vec![]`
+        // (it needs a live clipboard read, resolved in `dispatch_command`,
+        // not `update()`), so routing it through the generic `to_msgs()`
+        // loop reported "action executed" while doing nothing — the
+        // automation flow context-menu.md's Phase 5 asks for was
+        // unreachable by command name.
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+
+        let response = send_automation_request(
+            &mut app,
+            AutomationRequest::ExecuteAction {
+                name: "ShowContextMenu".to_string(),
+            },
+        );
+        assert!(response.ok, "{}", response.message);
+
+        let response = send_automation_request(&mut app, AutomationRequest::State);
+        let context_menu = response
+            .state
+            .expect("state should be present")
+            .context_menu
+            .expect("the editor context menu should be open after ShowContextMenu");
+        assert_eq!(context_menu.region, "editor");
     }
 
     // ---- LspManager lifecycle bookkeeping ----
