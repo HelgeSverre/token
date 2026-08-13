@@ -39,6 +39,15 @@ fn open_menu(
     let region = target.region();
     let items = context_menu::build_menu(model, &target);
     let selected = context_menu::first_enabled_index(&items);
+    // Another cursor overlay already open -> close it first (Phase 2's
+    // guard, matching the mouse click-away path at
+    // `runtime/mouse.rs::handle_mouse_press`): a sibling left populated
+    // but unrendered would otherwise be mistaken for still-open by
+    // whatever reads it next (e.g. completion re-triggering on the next
+    // edit via `sync_after_document_edit`'s `menu_open` check).
+    model.ui.completion_menu = None;
+    model.ui.hover_card = None;
+    model.ui.reference_list = None;
     let mut overlay = CursorOverlayState::new(CursorOverlayKind::ContextMenu);
     overlay.selected = selected;
     model.ui.cursor_overlay = Some(overlay);
@@ -201,6 +210,41 @@ mod tests {
         let mut model = model_with_menu(items);
         activate_item(&mut model, 1);
         assert!(model.ui.context_menu.is_none());
+    }
+
+    #[test]
+    fn open_menu_closes_a_sibling_completion_popup_left_open() {
+        // Phase 2's guard: opening the context menu while another cursor
+        // overlay (e.g. completion, reachable via Shift+F10 passthrough)
+        // is already open must close the sibling's state too, not just
+        // overwrite `cursor_overlay` — otherwise `completion_menu` stays
+        // populated but unrendered and `sync_after_document_edit` treats
+        // completion as still open on the next edit.
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let document_id = model.document().id.unwrap();
+        model.ui.completion_menu = Some(crate::completion::menu::CompletionMenuState {
+            document_id,
+            revision: 0,
+            query_start: crate::model::Cursor::at(0, 0),
+            items: vec![],
+            filtered: vec![],
+        });
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Completion));
+
+        let target = ContextMenuTarget::FileTreeItem {
+            path: "/tmp/x".into(),
+            is_dir: false,
+        };
+        open_menu(&mut model, target, (0, 0, 0));
+
+        assert!(
+            model.ui.completion_menu.is_none(),
+            "the sibling completion popup's state must be cleared, not just overwritten"
+        );
+        assert_eq!(
+            model.ui.cursor_overlay.map(|s| s.kind),
+            Some(CursorOverlayKind::ContextMenu)
+        );
     }
 
     #[test]
