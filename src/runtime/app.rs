@@ -38,7 +38,8 @@ use token::syntax::{LanguageId, ParserState};
 use token::update::update;
 
 use super::input::{
-    handle_cursor_overlay_key, handle_key, is_outline_dock_focused, KeyModifiers, OptionKeyGesture,
+    handle_cursor_overlay_key, handle_key, is_outline_dock_focused, is_problems_dock_focused,
+    KeyModifiers, OptionKeyGesture,
 };
 use super::lsp_slot::{FeatureSlot, PendingRequest, RequestKey};
 use super::mouse::{
@@ -90,6 +91,7 @@ fn should_skip_non_global_keymap(
         || (option_double_tapped && alt_pressed)
         || sidebar_focused
         || is_outline_dock_focused(model)
+        || is_problems_dock_focused(model)
         || terminal_focused
         || model.is_csv_editing()
 }
@@ -1209,6 +1211,26 @@ impl App {
                 None
             }
             WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Right,
+                ..
+            } => {
+                self.hover_dwell = None;
+                if let Some((x, y)) = self.mouse_position {
+                    if let Some(renderer) = &mut self.renderer {
+                        let event = make_mouse_event(x, y, MouseButton::Right, self.modifiers);
+                        let result = handle_mouse_press(
+                            &mut self.model,
+                            renderer,
+                            event,
+                            &mut self.click_tracker,
+                        );
+                        return result.cmd;
+                    }
+                }
+                None
+            }
+            WindowEvent::MouseInput {
                 state: ElementState::Released,
                 button: MouseButton::Left,
                 ..
@@ -2032,8 +2054,30 @@ impl App {
                     let uri = lsp::path_to_uri(&file_path);
                     self.lsp.diagnostics.remove(&uri);
                     self.lsp.diagnostics_versions.remove(&uri);
-                    self.model.lsp.diagnostics.remove(&file_path);
+                    // The mirror is keyed by `uri_to_path(published_uri)`
+                    // (`DiagnosticsPublished`'s insertion point), which can
+                    // differ from `file_path` once a server canonicalizes
+                    // (e.g. /tmp -> /private/tmp) — round-trip through the
+                    // same URI this removal already built, not `file_path`
+                    // directly, or the mirror row survives.
+                    if let Some(mirror_path) = lsp::uri_to_path(&uri) {
+                        self.model.lsp.diagnostics.remove(&mirror_path);
+                    }
                     token::update::problems::clamp_problems_selection(&mut self.model);
+                    // Same reasoning as `clear_diagnostics_for_roots`: the
+                    // Problems panel has no dedicated damage area, so a
+                    // clear while it's open needs a full repaint or the
+                    // stale row stays painted until an unrelated event
+                    // damages the window.
+                    let problems_panel_open = self.model.dock_layout.bottom.is_open
+                        && self.model.dock_layout.bottom.active_panel()
+                            == Some(token::panel::PanelId::PROBLEMS);
+                    if problems_panel_open {
+                        self.pending_damage.merge(Damage::Full);
+                        if let Some(window) = &self.window {
+                            window.request_redraw();
+                        }
+                    }
                 }
             }
             Cmd::LspRequestDefinition {
@@ -2228,7 +2272,7 @@ impl App {
                 if abandoned {
                     return None;
                 }
-                let items = self.build_reference_items(locations);
+                let items = self.build_reference_items(locations, &key.0, &key.1);
                 let outcome = if !items.is_empty() {
                     ReferencesOutcome::Found
                 } else if self.is_lsp_indexing(&key.0) {
@@ -3188,6 +3232,8 @@ impl App {
     fn build_reference_items(
         &self,
         locations: Vec<lsp_types::Location>,
+        server_id: &LspServerId,
+        root: &std::path::Path,
     ) -> Vec<token::update::navigation::LocationItem> {
         let mut resolved: Vec<(std::path::PathBuf, usize, usize)> = locations
             .iter()
@@ -3237,11 +3283,23 @@ impl App {
                     })
                     .map(|s| s.trim().to_owned())
                     .unwrap_or_default();
+                // Same route-hint rule as `DefinitionResolved`'s
+                // out-of-workspace branch: only set when this location
+                // isn't under any workspace root, so an in-workspace jump
+                // still lets the generic open path derive its root.
+                let outside_every_root = self
+                    .model
+                    .workspace
+                    .as_ref()
+                    .is_none_or(|ws| !path.starts_with(&ws.root));
+                let route_hint =
+                    outside_every_root.then(|| (server_id.clone(), root.to_path_buf()));
                 token::update::navigation::LocationItem {
                     path,
                     line,
                     col,
                     preview,
+                    route_hint,
                 }
             })
             .collect()
@@ -4755,6 +4813,78 @@ mod tests {
         assert!(
             !app.model.lsp.diagnostics.contains_key(&unopened_path),
             "the mirror must drop unopened-file entries too, not just open documents"
+        );
+    }
+
+    /// `Cmd::LspClearDiagnostics` (the language-change clearing path) must
+    /// sweep `model.lsp.diagnostics` under the same key `DiagnosticsPublished`
+    /// inserted it with — `uri_to_path(published_uri)`, not the document's
+    /// raw `file_path` — or a canonicalized publish (e.g. macOS's
+    /// `/tmp` -> `/private/tmp`) leaves the stale row behind.
+    #[test]
+    fn lsp_clear_diagnostics_sweeps_the_mirror_via_the_published_uri() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}").unwrap();
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        app.model.document_mut().file_path = Some(file_path.clone());
+
+        // Mirror the exact population path: insert under the canonicalized
+        // path a real publish would decode to, which may differ from the
+        // raw `file_path` used to open the document.
+        let published_uri = lsp::path_to_uri(&file_path);
+        let mirror_path = lsp::uri_to_path(&published_uri).unwrap();
+        app.model.lsp.diagnostics.insert(
+            mirror_path.clone(),
+            vec![lsp_types::Diagnostic {
+                range: lsp_types::Range::default(),
+                severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+                message: "boom".to_owned(),
+                ..Default::default()
+            }],
+        );
+        app.lsp
+            .diagnostics
+            .insert(published_uri, vec![lsp_types::Diagnostic::default()]);
+
+        app.process_cmd(Cmd::LspClearDiagnostics {
+            document_id: doc_id,
+        });
+
+        assert!(
+            !app.model.lsp.diagnostics.contains_key(&mirror_path),
+            "the mirror row must be removed even when the published path canonicalizes \
+             differently from the document's raw file_path"
+        );
+    }
+
+    /// Same clearing path, but with the Problems panel open: the panel has
+    /// no dedicated damage area, so a clear must merge `Damage::Full` or
+    /// the stale row stays painted (mirrors
+    /// `clearing_diagnostics_for_a_root_damages_the_editor_area`).
+    #[test]
+    fn lsp_clear_diagnostics_damages_the_problems_panel_when_open() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let doc_id = app.model.document().id.unwrap();
+        let file_path = PathBuf::from("/tmp/proj-clear-lang/main.rs");
+        app.model.document_mut().file_path = Some(file_path.clone());
+        app.model
+            .dock_layout
+            .bottom
+            .activate(token::panel::PanelId::PROBLEMS);
+        app.model.dock_layout.bottom.is_open = true;
+        app.pending_damage = Damage::None;
+
+        app.process_cmd(Cmd::LspClearDiagnostics {
+            document_id: doc_id,
+        });
+
+        assert!(
+            matches!(app.pending_damage, Damage::Full),
+            "clearing diagnostics with the Problems panel open must request a full repaint, got {:?}",
+            app.pending_damage
         );
     }
 
