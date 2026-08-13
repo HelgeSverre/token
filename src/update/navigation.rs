@@ -167,6 +167,16 @@ pub struct LocationItem {
     pub line: usize,
     pub col: usize,
     pub preview: String,
+    /// The server/root that resolved this location, set only when `path`
+    /// is outside every workspace root — the same route hint
+    /// `DefinitionResolved`'s single-location branch sets before jumping
+    /// (lsp-integration.md "never spawn a new server rooted in a
+    /// toolchain directory"). `None` inside the workspace, where the
+    /// generic open path already derives the right root. Popup/list
+    /// activation (`ActivateReference`, the single-item collapse in
+    /// `open_location_list_popup`) must set `model.lsp.route_hint` from
+    /// this before calling `jump_to_location`.
+    pub route_hint: Option<(crate::lsp::LspServerId, PathBuf)>,
 }
 
 /// The shared activate handler: push jump history, open-or-focus the

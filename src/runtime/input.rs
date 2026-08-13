@@ -1537,12 +1537,14 @@ mod tests {
                 line: 0,
                 col: 0,
                 preview: "a".to_owned(),
+                route_hint: None,
             },
             token::update::navigation::LocationItem {
                 path: path_a,
                 line: 5,
                 col: 0,
                 preview: "b".to_owned(),
+                route_hint: None,
             },
         ]);
         model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(

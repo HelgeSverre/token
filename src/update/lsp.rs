@@ -298,25 +298,25 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                             Some((path, line, col))
                         };
 
+                    // Outside every root (stdlib, `~/.cargo/registry`,
+                    // ...): route the imminent `didOpen` to the server
+                    // that resolved this location rather than letting the
+                    // generic open path derive (and possibly spawn a
+                    // server for) its own root — design doc's "never
+                    // spawn a new server rooted in a toolchain directory".
+                    let outside_every_root = |path: &std::path::Path| {
+                        model
+                            .workspace
+                            .as_ref()
+                            .is_none_or(|ws| !path.starts_with(&ws.root))
+                    };
+
                     if let [location] = locations.as_slice() {
                         let Some((path, line, col)) = resolve(model, location) else {
                             model.ui.set_status("No definition found");
                             return Some(Cmd::redraw_status_bar());
                         };
-                        // Outside every root (stdlib, `~/.cargo/registry`,
-                        // ...): route the imminent `didOpen` to the server
-                        // that resolved this location rather than letting
-                        // the generic open path derive (and possibly
-                        // spawn a server for) its own root — design doc's
-                        // "never spawn a new server rooted in a toolchain
-                        // directory". Only meaningful for the direct-jump
-                        // (single-location) case; a popup entry resolves
-                        // its own open path when activated.
-                        let outside_every_root = model
-                            .workspace
-                            .as_ref()
-                            .is_none_or(|ws| !path.starts_with(&ws.root));
-                        if outside_every_root {
+                        if outside_every_root(&path) {
                             model.lsp.route_hint =
                                 Some((path.clone(), resolving_server, resolving_root));
                         }
@@ -339,11 +339,14 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                                 .and_then(|doc| doc.get_line_cow(line))
                                 .map(|line| line.trim().to_owned())
                                 .unwrap_or_default();
+                            let route_hint = outside_every_root(&path)
+                                .then(|| (resolving_server.clone(), resolving_root.clone()));
                             Some(navigation::LocationItem {
                                 path,
                                 line,
                                 col,
                                 preview,
+                                route_hint,
                             })
                         })
                         .collect();
@@ -544,8 +547,22 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             let Some(item) = item else {
                 return Some(Cmd::Redraw);
             };
+            apply_route_hint(model, &item);
             navigation::jump_to_location(model, None, &item.path, item.line, item.col)
         }
+    }
+}
+
+/// A stored `LocationItem` resolves its own open path when activated — set
+/// `model.lsp.route_hint` from the item's own resolving server/root
+/// (`None` inside the workspace) before jumping, so an out-of-workspace
+/// target still reuses the server that resolved it instead of letting
+/// `open_lsp_document`'s generic path derive (and possibly spawn) its own
+/// root (lsp-integration.md "never spawn a new server rooted in a
+/// toolchain directory").
+fn apply_route_hint(model: &mut AppModel, item: &navigation::LocationItem) {
+    if let Some((server_id, root)) = &item.route_hint {
+        model.lsp.route_hint = Some((item.path.clone(), server_id.clone(), root.clone()));
     }
 }
 
@@ -567,6 +584,7 @@ fn open_location_list_popup(
     // `Vec`, never re-deriving it.
     items.sort_by(|a, b| (&a.path, a.line).cmp(&(&b.path, b.line)));
     if let [only] = items.as_slice() {
+        apply_route_hint(model, only);
         let (path, line, col) = (only.path.clone(), only.line, only.col);
         return navigation::jump_to_location(model, None, &path, line, col);
     }
@@ -1154,6 +1172,7 @@ mod tests {
             line,
             col,
             preview: preview.to_owned(),
+            route_hint: None,
         }
     }
 
