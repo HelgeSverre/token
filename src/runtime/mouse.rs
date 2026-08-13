@@ -211,6 +211,49 @@ mod tests {
     }
 
     #[test]
+    fn cursor_overlay_row_click_runs_the_activated_items_cmd() {
+        // Regression: `handle_cursor_overlay_click` used to discard
+        // `update()`'s returned Cmd and return `consumed_redraw()`
+        // (cmd: None) unconditionally, so a mouse click on e.g. "Copy
+        // Absolute Path" closed the menu but never ran the
+        // `CopyToClipboard` command the keyboard Enter path produces.
+        use token::context_menu::MenuItem;
+        use token::messages::ContextMenuMsg;
+        use token::model::{ContextMenuState, CursorOverlayKind, CursorOverlayState};
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let path = std::path::PathBuf::from("/tmp/x.rs");
+        let items = vec![MenuItem::custom(
+            "Copy Absolute Path",
+            true,
+            vec![Msg::ContextMenu(ContextMenuMsg::CopyPath {
+                path,
+                relative: false,
+            })],
+        )];
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::ContextMenu));
+        model.ui.context_menu = Some(ContextMenuState {
+            items,
+            anchor: (0, 0, 0),
+            region: token::context_menu::ContextMenuRegion::Editor,
+        });
+
+        let result = handle_cursor_overlay_click(&mut model, Some(0));
+
+        match result {
+            EventResult::Consumed { cmd: Some(cmd), .. } => {
+                assert!(
+                    matches!(&cmd, Cmd::Batch(cmds) if cmds.iter().any(|c| matches!(c, Cmd::CopyToClipboard(_)))),
+                    "expected the CopyToClipboard cmd to reach the caller, got {cmd:?}"
+                );
+            }
+            other => {
+                panic!("expected a Consumed result carrying the activation's Cmd, got {other:?}")
+            }
+        }
+    }
+
+    #[test]
     fn mouse_wheel_up_over_terminal_dock_scrolls_scrollback() {
         let mut model = terminal_model_with_history();
 
@@ -651,8 +694,14 @@ pub fn handle_mouse_press(
         false
     };
 
+    // A right-click while a context menu is already open must still reach
+    // `dispatch_mouse_press`/`handle_right_click` below so a new menu can
+    // open at the new target (context-menu.md Phase 2: "another cursor
+    // overlay already open -> close the old one first and re-open") —
+    // only non-right clicks swallow the click here.
     if dismissed_cursor_overlay
         && dismissed_kind == Some(token::model::CursorOverlayKind::ContextMenu)
+        && event.button != MouseButton::Right
     {
         // Consumed, not click-through: the dismissing click must not also
         // act on whatever it landed on.
@@ -757,27 +806,34 @@ fn handle_cursor_overlay_click(model: &mut AppModel, flat_index: Option<usize>) 
     if let Some(state) = &mut model.ui.cursor_overlay {
         state.selected = idx;
     }
-    match kind {
+    // The activation message may return a Cmd (e.g. CopyToClipboard) that
+    // must actually run — same as the keyboard Enter path in
+    // `handle_cursor_overlay_key`, which returns `update()`'s result
+    // directly instead of discarding it.
+    let cmd = match kind {
         Some(token::model::CursorOverlayKind::Completion) => {
-            update(model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+            update(model, Msg::Completion(CompletionMsg::AcceptMenuItem))
         }
         // A row click sets selection and activates in one step
         // (overlay-surface.md Pointer) — same as Enter.
-        Some(token::model::CursorOverlayKind::References) => {
-            update(
-                model,
-                Msg::Lsp(token::messages::LspMsg::ActivateReference { index: idx }),
-            );
-        }
-        Some(token::model::CursorOverlayKind::ContextMenu) => {
-            update(
-                model,
-                Msg::ContextMenu(token::messages::ContextMenuMsg::ActivateItem { index: idx }),
-            );
-        }
-        _ => {}
+        Some(token::model::CursorOverlayKind::References) => update(
+            model,
+            Msg::Lsp(token::messages::LspMsg::ActivateReference { index: idx }),
+        ),
+        Some(token::model::CursorOverlayKind::ContextMenu) => update(
+            model,
+            Msg::ContextMenu(token::messages::ContextMenuMsg::ActivateItem { index: idx }),
+        ),
+        _ => None,
+    };
+    match cmd {
+        Some(cmd) => EventResult::Consumed {
+            redraw: true,
+            focus: None,
+            cmd: Some(cmd),
+        },
+        None => EventResult::consumed_redraw(),
     }
-    EventResult::consumed_redraw()
 }
 
 /// Handle left mouse button clicks
