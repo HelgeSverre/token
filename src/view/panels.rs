@@ -63,7 +63,7 @@ impl DockPaneScene {
 
     fn render(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
         self.render_chrome(frame);
-        self.render_header(frame, painter, model);
+        self.render_header(frame, painter);
 
         match &self.content {
             DockContentKind::Outline => {
@@ -136,7 +136,7 @@ impl DockPaneScene {
         }
     }
 
-    fn render_header(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
+    fn render_header(&self, frame: &mut Frame, painter: &mut TextPainter) {
         for tab in &self.layout.tabs {
             if tab.is_active {
                 // The active-tab highlight is a translucent color (e.g. white
@@ -152,39 +152,6 @@ impl DockPaneScene {
                 self.text_color
             };
             painter.draw(frame, tab.text_x, tab.text_y, tab.title, fg);
-
-            // "PROBLEMS ✗3 ⚠2" — counts drawn right after the tab title,
-            // reusing the gutter/status-bar severity colors (no new theme
-            // keys per the design doc's non-goals).
-            if tab.panel_id == crate::panel::PanelId::Problems {
-                let (errors, warnings) = crate::update::problems::severity_counts(model);
-                if errors > 0 || warnings > 0 {
-                    let char_w = painter.char_width();
-                    let mut x = tab.text_x + (tab.title.len() as f32 * char_w) as usize + 6;
-                    let overlay = &model.theme.overlay;
-                    if errors > 0 {
-                        let text = format!("\u{2717}{errors}");
-                        painter.draw(
-                            frame,
-                            x,
-                            tab.text_y,
-                            &text,
-                            overlay.severity_error.to_argb_u32(),
-                        );
-                        x += (text.len() as f32 * char_w) as usize + 6;
-                    }
-                    if warnings > 0 {
-                        let text = format!("\u{26A0}{warnings}");
-                        painter.draw(
-                            frame,
-                            x,
-                            tab.text_y,
-                            &text,
-                            overlay.severity_warning.to_argb_u32(),
-                        );
-                    }
-                }
-            }
         }
     }
 
