@@ -2059,7 +2059,10 @@ fn reference_row_text(
         .collect();
     let accessories = items
         .iter()
-        .map(|item| format!("{}:{}", item.position.line + 1, item.position.character + 1))
+        .map(|item| {
+            let (line, col) = item.display_position(model);
+            format!("{}:{}", line + 1, col + 1)
+        })
         .collect();
     (details, accessories)
 }

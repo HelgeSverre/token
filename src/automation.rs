@@ -186,10 +186,13 @@ fn references_snapshot(model: &AppModel) -> Option<ReferencesSnapshot> {
         .map(|items| {
             items
                 .iter()
-                .map(|item| ReferenceRowSnapshot {
-                    path: item.path.display().to_string(),
-                    line: item.position.line as usize,
-                    col: item.position.character as usize,
+                .map(|item| {
+                    let (line, col) = item.display_position(model);
+                    ReferenceRowSnapshot {
+                        path: item.path.display().to_string(),
+                        line,
+                        col,
+                    }
                 })
                 .collect()
         })

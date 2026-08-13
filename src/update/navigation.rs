@@ -183,6 +183,27 @@ pub struct LocationItem {
     pub route_hint: Option<(crate::lsp::LspServerId, PathBuf)>,
 }
 
+impl LocationItem {
+    /// Best-effort display coordinates (0-based char line/col): converted
+    /// through the document when it's open, raw UTF-16 otherwise — the
+    /// same best-effort contract as `preview`. Display-only; jumps always
+    /// convert post-open via `jump_to_location`.
+    pub fn display_position(&self, model: &AppModel) -> (usize, usize) {
+        model
+            .editor_area
+            .find_open_file(&self.path)
+            .and_then(|(doc_id, _, _)| model.editor_area.documents.get(&doc_id))
+            .map(|doc| {
+                let p = crate::lsp::lsp_to_position(doc, self.position);
+                (p.line, p.column)
+            })
+            .unwrap_or((
+                self.position.line as usize,
+                self.position.character as usize,
+            ))
+    }
+}
+
 /// The shared activate handler: push jump history, open-or-focus the
 /// tab, place the cursor iff the focused tab really shows `path` (the
 /// "no stale result ever moves a cursor" guard, verbatim from
