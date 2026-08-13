@@ -31,10 +31,15 @@ pub enum ProblemsRow {
 /// keyboard nav, click hit-mapping, and activation all consume this —
 /// never re-derive independently (same rule outline's
 /// `visible_tree_row_at_index` follows).
+///
+/// File-context specific (JetBrains "Current File"): only the focused
+/// document's diagnostics are listed; an untitled focused doc lists
+/// nothing. `severity_counts` stays workspace-wide for the status bar.
 pub fn problems_rows(model: &AppModel) -> Vec<ProblemsRow> {
+    let focused_path = model.document().file_path.as_deref();
     let mut rows = Vec::new();
     for (path, diagnostics) in &model.lsp.diagnostics {
-        if diagnostics.is_empty() {
+        if diagnostics.is_empty() || !is_same_file(path, focused_path) {
             continue;
         }
         let collapsed = model.problems_panel.collapsed.contains(path);
@@ -51,6 +56,26 @@ pub fn problems_rows(model: &AppModel) -> Vec<ProblemsRow> {
         }
     }
     rows
+}
+
+/// Mirror keys are canonicalized (they decode from server URIs) while a
+/// focused document's path may not be byte-identical (macOS `/tmp` vs
+/// `/private/tmp`) — byte-compare first, then a file-name-gated
+/// `canonicalize` fallback, the same pattern `find_document_by_uri`
+/// documents (the gate keeps syscalls to the normally-0-or-1 plausible
+/// matches).
+fn is_same_file(path: &std::path::Path, focused: Option<&std::path::Path>) -> bool {
+    let Some(focused) = focused else { return false };
+    if path == focused {
+        return true;
+    }
+    if path.file_name() != focused.file_name() {
+        return false;
+    }
+    match (std::fs::canonicalize(path), std::fs::canonicalize(focused)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
 }
 
 /// `(errors, warnings)` across every file in the mirror — feeds the panel
@@ -267,6 +292,8 @@ mod tests {
         }
     }
 
+    /// Two files in the mirror, focused document = a.rs — so the
+    /// current-file filter shows a.rs's group (3 rows) and hides b.rs.
     fn populate_two_files(model: &mut AppModel) {
         model.lsp.diagnostics.insert(
             PathBuf::from("/proj/a.rs"),
@@ -279,10 +306,11 @@ mod tests {
             PathBuf::from("/proj/b.rs"),
             vec![diagnostic(0, lsp_types::DiagnosticSeverity::ERROR, "b-err")],
         );
+        model.document_mut().file_path = Some(PathBuf::from("/proj/a.rs"));
     }
 
     #[test]
-    fn rows_are_path_sorted_with_diagnostics_nested_under_their_file() {
+    fn rows_show_only_the_focused_files_group() {
         let mut model = model_with_open_problems_panel();
         populate_two_files(&mut model);
 
@@ -303,17 +331,25 @@ mod tests {
                     path: PathBuf::from("/proj/a.rs"),
                     index: 1,
                 },
-                ProblemsRow::File {
-                    path: PathBuf::from("/proj/b.rs"),
-                    count: 1,
-                    collapsed: false,
-                },
-                ProblemsRow::Diagnostic {
-                    path: PathBuf::from("/proj/b.rs"),
-                    index: 0,
-                },
             ]
         );
+
+        // Switching focus to b.rs swaps the panel to b.rs's group.
+        model.document_mut().file_path = Some(PathBuf::from("/proj/b.rs"));
+        let rows = problems_rows(&model);
+        assert_eq!(rows.len(), 2);
+        assert!(matches!(
+            &rows[0],
+            ProblemsRow::File { path, count: 1, .. } if path == &PathBuf::from("/proj/b.rs")
+        ));
+    }
+
+    #[test]
+    fn an_untitled_focused_document_lists_no_problems() {
+        let mut model = model_with_open_problems_panel();
+        populate_two_files(&mut model);
+        model.document_mut().file_path = None;
+        assert!(problems_rows(&model).is_empty());
     }
 
     #[test]
@@ -326,7 +362,7 @@ mod tests {
             .insert(PathBuf::from("/proj/a.rs"));
 
         let rows = problems_rows(&model);
-        assert_eq!(rows.len(), 3); // a.rs File row + b.rs File row + b.rs diagnostic
+        assert_eq!(rows.len(), 1); // just a.rs's collapsed File row
         assert!(matches!(
             &rows[0],
             ProblemsRow::File {
@@ -361,14 +397,14 @@ mod tests {
             .problems_panel
             .collapsed
             .contains(&PathBuf::from("/proj/a.rs")));
-        assert_eq!(problems_rows(&model).len(), 3);
+        assert_eq!(problems_rows(&model).len(), 1);
 
         update_problems(&mut model, ProblemsMsg::ToggleGroup);
         assert!(!model
             .problems_panel
             .collapsed
             .contains(&PathBuf::from("/proj/a.rs")));
-        assert_eq!(problems_rows(&model).len(), 5);
+        assert_eq!(problems_rows(&model).len(), 3);
     }
 
     #[test]
@@ -383,12 +419,18 @@ mod tests {
     }
 
     #[test]
-    fn open_selected_on_an_unopened_file_uses_raw_lsp_coords_and_opens_it() {
+    fn open_selected_on_a_diagnostic_row_jumps_to_its_line() {
         let mut model = model_with_open_problems_panel();
         let dir = std::env::temp_dir().join("problems-panel-open-test");
         std::fs::create_dir_all(&dir).unwrap();
         let file_path = dir.join("target.rs");
         std::fs::write(&file_path, "line0\nline1\nline2\n").unwrap();
+        // Current-file filter: the file must be the focused document for
+        // its diagnostics to be listed at all.
+        crate::update::layout::update_layout(
+            &mut model,
+            crate::messages::LayoutMsg::OpenFileInNewTab(file_path.clone()),
+        );
         model.lsp.diagnostics.insert(
             file_path.clone(),
             vec![diagnostic(1, lsp_types::DiagnosticSeverity::ERROR, "boom")],
@@ -412,7 +454,7 @@ mod tests {
         for _ in 0..10 {
             update_problems(&mut model, ProblemsMsg::SelectNext);
         }
-        assert_eq!(model.problems_panel.selected_index, Some(4));
+        assert_eq!(model.problems_panel.selected_index, Some(2));
 
         for _ in 0..10 {
             update_problems(&mut model, ProblemsMsg::SelectPrevious);

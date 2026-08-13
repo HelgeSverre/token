@@ -1127,12 +1127,18 @@ mod tests {
         use token::update::update;
 
         let mut model = AppModel::new(800, 600, 1.0, vec![]);
-        model.dock_layout.bottom.activate(PanelId::PROBLEMS);
-        model.ui.focus_dock(DockPosition::Bottom);
         let dir = std::env::temp_dir().join("problems-input-jump-test");
         std::fs::create_dir_all(&dir).unwrap();
         let target = dir.join("target.rs");
         std::fs::write(&target, "a\nb\nc\n").unwrap();
+        // The panel is current-file scoped: open the diagnosed file first,
+        // then focus the dock (opening focuses the editor).
+        update(
+            &mut model,
+            Msg::Layout(token::messages::LayoutMsg::OpenFileInNewTab(target.clone())),
+        );
+        model.dock_layout.bottom.activate(PanelId::PROBLEMS);
+        model.ui.focus_dock(DockPosition::Bottom);
         model.lsp.diagnostics.insert(
             target.clone(),
             vec![lsp_types::Diagnostic {

@@ -969,6 +969,8 @@ mod tests {
             }],
         );
         model.problems_panel.selected_index = Some(1);
+        // Current-file filter: the diagnostics' file must be focused.
+        model.document_mut().file_path = Some(std::path::PathBuf::from("/proj/a.rs"));
 
         let snapshot = EditorSnapshot::from_model(&model)
             .problems

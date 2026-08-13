@@ -6463,6 +6463,13 @@ mod tests {
             !app.model.lsp.diagnostics.is_empty()
         }));
 
+        // The panel is current-file scoped: focus the diagnosed file
+        // (canonicalized, so the tab and the mirror key agree byte-wise).
+        let canon_path = std::fs::canonicalize(&file_path).unwrap();
+        app.process_automation_msg(Msg::Layout(token::messages::LayoutMsg::OpenFileInNewTab(
+            canon_path,
+        )));
+
         // "Invoke by command name": the same `execute_command` path the
         // command palette's confirm handler runs.
         let cmd = token::update::execute_command(
@@ -6566,6 +6573,10 @@ mod tests {
             !app.model.lsp.diagnostics.is_empty()
         }));
 
+        // The panel is current-file scoped: focus the diagnosed file.
+        app.process_automation_msg(Msg::Layout(token::messages::LayoutMsg::OpenFileInNewTab(
+            file_path.clone(),
+        )));
         app.model
             .dock_layout
             .bottom
