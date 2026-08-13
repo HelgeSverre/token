@@ -617,8 +617,7 @@ pub fn render_problems_panel(
                 painter.draw(frame, name_x, pos.text_y, &name_display, fg);
 
                 let suffix_x = name_x + name_display.chars().count() * char_w;
-                let suffix_available =
-                    layout.tree.available_text_width(container_width, suffix_x);
+                let suffix_available = layout.tree.available_text_width(container_width, suffix_x);
                 let suffix_max_chars = suffix_available.checked_div(char_w).unwrap_or(0);
                 let suffix_display = truncate_with_ellipsis(&suffix, suffix_max_chars);
                 let dim = if is_selected { selection_fg } else { dim_color };

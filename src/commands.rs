@@ -37,6 +37,8 @@ pub enum CommandId {
     NavigateBack,
     NavigateForward,
     ShowHover,
+    FindUsages,
+    ShowUsages,
 
     // View operations
     SplitHorizontal,
@@ -246,6 +248,18 @@ pub static COMMANDS: &[CommandDef] = &[
         category: CommandCategory::Nav,
         label: "Show Hover",
         keybinding: Some("⇧⌘D"),
+    },
+    CommandDef {
+        id: CommandId::FindUsages,
+        category: CommandCategory::Nav,
+        label: "Find Usages",
+        keybinding: Some("⌥F7"),
+    },
+    CommandDef {
+        id: CommandId::ShowUsages,
+        category: CommandCategory::Nav,
+        label: "Show Usages",
+        keybinding: Some("⌥⌘F7"),
     },
     CommandDef {
         id: CommandId::SplitHorizontal,
@@ -490,6 +504,8 @@ impl CommandId {
             CommandId::NavigateBack => Some(KeymapCommand::NavigateBack),
             CommandId::NavigateForward => Some(KeymapCommand::NavigateForward),
             CommandId::ShowHover => Some(KeymapCommand::ShowHover),
+            CommandId::FindUsages => Some(KeymapCommand::FindUsages),
+            CommandId::ShowUsages => Some(KeymapCommand::ShowUsages),
             CommandId::SplitHorizontal => Some(KeymapCommand::SplitHorizontal),
             CommandId::SplitVertical => Some(KeymapCommand::SplitVertical),
             CommandId::CloseGroup => None, // No direct mapping yet
@@ -898,6 +914,16 @@ pub enum Cmd {
         cursor: crate::model::editor::Position,
         revision: u64,
     },
+    /// `textDocument/references` (Show Usages / Find Usages), tagged with
+    /// the document's `revision` and (char-column) `cursor` at request
+    /// time — mirrors `LspRequestHover`. `context.includeDeclaration` is
+    /// always sent `true`.
+    LspRequestReferences {
+        document_id: DocumentId,
+        position: lsp_types::Position,
+        cursor: crate::model::editor::Position,
+        revision: u64,
+    },
     /// The master `lsp.enabled` switch flipped (`CommandId::ToggleLsp`).
     /// Disabling tears down every running server — a non-quit variant of
     /// `Cmd::Quit`'s graceful teardown, with the same bounded grace — and
@@ -1004,6 +1030,7 @@ impl Cmd {
             Cmd::LspRequestDefinition { .. } => Damage::Areas(vec![]),
             Cmd::LspDidOpenOnServer { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestHover { .. } => Damage::Areas(vec![]),
+            Cmd::LspRequestReferences { .. } => Damage::Areas(vec![]),
             // No immediate visual effect; a `ServerStateChanged` (or the
             // batched `Cmd::Redraw`/`redraw_status_bar` these are always
             // paired with at the call site) requests its own redraw.

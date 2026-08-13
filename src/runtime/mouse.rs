@@ -509,6 +509,7 @@ pub fn handle_mouse_press(
         model.ui.cursor_overlay = None;
         model.ui.completion_menu = None;
         model.ui.hover_card = None;
+        model.ui.reference_list = None;
         true
     } else {
         false
@@ -605,18 +606,23 @@ fn handle_cursor_overlay_click(model: &mut AppModel, flat_index: Option<usize>) 
     let Some(idx) = flat_index else {
         return EventResult::consumed_redraw();
     };
-    let is_completion = matches!(
-        model.ui.cursor_overlay,
-        Some(token::model::CursorOverlayState {
-            kind: token::model::CursorOverlayKind::Completion,
-            ..
-        })
-    );
+    let kind = model.ui.cursor_overlay.map(|state| state.kind);
     if let Some(state) = &mut model.ui.cursor_overlay {
         state.selected = idx;
     }
-    if is_completion {
-        update(model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+    match kind {
+        Some(token::model::CursorOverlayKind::Completion) => {
+            update(model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+        }
+        // A row click sets selection and activates in one step
+        // (overlay-surface.md Pointer) — same as Enter.
+        Some(token::model::CursorOverlayKind::References) => {
+            update(
+                model,
+                Msg::Lsp(token::messages::LspMsg::ActivateReference { index: idx }),
+            );
+        }
+        _ => {}
     }
     EventResult::consumed_redraw()
 }
@@ -1090,8 +1096,9 @@ fn handle_left_click(
                     let rows = problems_rows(model);
                     if let Some(row) = rows.get(clicked_index) {
                         // Only File rows (depth 0) have a chevron.
-                        let on_chevron = matches!(row, token::update::problems::ProblemsRow::File { .. })
-                            && problems_layout.is_on_chevron(0, event.pos.x as f32);
+                        let on_chevron =
+                            matches!(row, token::update::problems::ProblemsRow::File { .. })
+                                && problems_layout.is_on_chevron(0, event.pos.x as f32);
 
                         let click_count =
                             click_tracker.track_click(ClickRegion::Problems { row: clicked_index });
@@ -1451,6 +1458,7 @@ pub fn handle_mouse_wheel(
                 .as_ref()
                 .map(|m| m.filtered.len())
                 .unwrap_or(0);
+            let reference_rows = model.ui.reference_list.as_ref().map_or(0, Vec::len);
             let Some(state) = &mut model.ui.cursor_overlay else {
                 return None;
             };
@@ -1462,6 +1470,8 @@ pub fn handle_mouse_wheel(
                 token::model::CursorOverlayKind::DebugHover
                 | token::model::CursorOverlayKind::Hover => 0,
                 token::model::CursorOverlayKind::Completion => completion_rows
+                    .saturating_sub(token::view::overlay_surface::MAX_VISIBLE_COMPLETION),
+                token::model::CursorOverlayKind::References => reference_rows
                     .saturating_sub(token::view::overlay_surface::MAX_VISIBLE_COMPLETION),
             };
             let delta = v_delta.signum() * 3;

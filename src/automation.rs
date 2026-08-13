@@ -93,6 +93,56 @@ pub(crate) struct EditorSnapshot {
     /// The Problems panel, if open — `None` when the bottom dock isn't
     /// showing it.
     pub problems: Option<ProblemsSnapshot>,
+    /// The Show Usages / multi-def popup, if open — `None` when
+    /// `ui.cursor_overlay`'s kind isn't `References`.
+    pub references: Option<ReferencesSnapshot>,
+}
+
+/// A read-only view of the Show Usages / multi-def popup, for automation
+/// to drive navigate→confirm flows without a rendering backend. `rows`
+/// walks the stored `reference_list` — the popup's own ordering authority
+/// — so this can never drift from what the view renders or Enter/click
+/// activates.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ReferencesSnapshot {
+    pub rows: Vec<ReferenceRowSnapshot>,
+    pub selected: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ReferenceRowSnapshot {
+    pub path: String,
+    pub line: usize,
+    pub col: usize,
+}
+
+fn references_snapshot(model: &AppModel) -> Option<ReferencesSnapshot> {
+    if !matches!(
+        model.ui.cursor_overlay,
+        Some(token::model::CursorOverlayState {
+            kind: token::model::CursorOverlayKind::References,
+            ..
+        })
+    ) {
+        return None;
+    }
+    let selected = model.ui.cursor_overlay.map(|o| o.selected).unwrap_or(0);
+    let rows = model
+        .ui
+        .reference_list
+        .as_ref()
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| ReferenceRowSnapshot {
+                    path: item.path.display().to_string(),
+                    line: item.line,
+                    col: item.col,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(ReferencesSnapshot { rows, selected })
 }
 
 /// A read-only view of the Problems panel, for automation to drive
@@ -489,6 +539,7 @@ impl EditorSnapshot {
             diagnostics: diagnostics_snapshot(document),
             hover: hover_snapshot(model),
             problems: problems_snapshot(model),
+            references: references_snapshot(model),
         }
     }
 }

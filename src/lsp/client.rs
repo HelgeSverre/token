@@ -21,8 +21,9 @@ use std::sync::{Arc, Mutex};
 use lsp_types::{
     ClientCapabilities, CompletionClientCapabilities, CompletionItemCapability,
     CompletionItemCapabilityResolveSupport, DidChangeWatchedFilesClientCapabilities,
-    GeneralClientCapabilities, GotoCapability, HoverClientCapabilities, MarkupKind,
-    PositionEncodingKind, PublishDiagnosticsClientCapabilities, ServerCapabilities, TagSupport,
+    DynamicRegistrationClientCapabilities, GeneralClientCapabilities, GotoCapability,
+    HoverClientCapabilities, MarkupKind, PositionEncodingKind,
+    PublishDiagnosticsClientCapabilities, ServerCapabilities, TagSupport,
     TextDocumentClientCapabilities, TextDocumentSyncCapability, TextDocumentSyncClientCapabilities,
     TextDocumentSyncKind, TextDocumentSyncSaveOptions, WindowClientCapabilities,
     WorkspaceClientCapabilities,
@@ -67,6 +68,9 @@ pub fn client_capabilities() -> ClientCapabilities {
             hover: Some(HoverClientCapabilities {
                 dynamic_registration: Some(false),
                 content_format: Some(vec![MarkupKind::PlainText, MarkupKind::Markdown]),
+            }),
+            references: Some(DynamicRegistrationClientCapabilities {
+                dynamic_registration: Some(false),
             }),
             completion: Some(CompletionClientCapabilities {
                 dynamic_registration: Some(false),
@@ -175,6 +179,10 @@ pub fn supports_definition(caps: &ServerCapabilities) -> bool {
 
 pub fn supports_hover(caps: &ServerCapabilities) -> bool {
     caps.hover_provider.is_some()
+}
+
+pub fn supports_references(caps: &ServerCapabilities) -> bool {
+    caps.references_provider.is_some()
 }
 
 pub fn supports_completion(caps: &ServerCapabilities) -> bool {
@@ -1015,6 +1023,18 @@ fn reader_loop(
                 if let Some(wake) = wake.as_deref() {
                     wake();
                 }
+            } else if entry.method == "textDocument/references" {
+                let locations = parse_references_result(message.get("result"));
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::ReferencesResponseFromServer {
+                    server_id: server_id.clone(),
+                    root: root.clone(),
+                    request_id: id,
+                    locations,
+                    abandoned: entry.abandoned,
+                }));
+                if let Some(wake) = wake.as_deref() {
+                    wake();
+                }
             }
             // Other request kinds (completion) are routed by future
             // phases.
@@ -1055,6 +1075,17 @@ fn parse_definition_result(result: Option<&Value>) -> Vec<lsp_types::Location> {
             .collect();
     }
     Vec::new()
+}
+
+/// Parses a `textDocument/references` response's `result` into
+/// `Location`s. Unlike `textDocument/definition`, the spec never allows
+/// `LocationLink[]` here, so this is just the `null`-or-`Vec` half of
+/// `parse_definition_result`.
+fn parse_references_result(result: Option<&Value>) -> Vec<lsp_types::Location> {
+    let Some(result) = result else {
+        return Vec::new();
+    };
+    serde_json::from_value::<Vec<lsp_types::Location>>(result.clone()).unwrap_or_default()
 }
 
 /// Parses a `textDocument/hover` response's `result` into plaintext
@@ -1422,6 +1453,13 @@ mod tests {
         assert!(supports_definition(&caps));
         assert!(!supports_hover(&caps));
         assert!(!supports_completion(&caps));
+        assert!(!supports_references(&caps));
+
+        let refs_caps = ServerCapabilities {
+            references_provider: Some(lsp_types::OneOf::Left(true)),
+            ..Default::default()
+        };
+        assert!(supports_references(&refs_caps));
     }
 
     // ---- server -> client reply table ----
@@ -1831,6 +1869,28 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
     fn definition_result_malformed_is_no_locations_not_a_panic() {
         let result = json!({ "not": "a location" });
         assert!(parse_definition_result(Some(&result)).is_empty());
+    }
+
+    // ---- textDocument/references response parsing ----
+
+    #[test]
+    fn references_result_null_is_no_locations() {
+        assert!(parse_references_result(Some(&Value::Null)).is_empty());
+        assert!(parse_references_result(None).is_empty());
+    }
+
+    #[test]
+    fn references_result_accepts_a_location_array() {
+        let result = json!([location_json("/tmp/a.rs"), location_json("/tmp/b.rs")]);
+        let locations = parse_references_result(Some(&result));
+        assert_eq!(locations.len(), 2);
+        assert_eq!(locations[1].uri.as_str(), "file:///tmp/b.rs");
+    }
+
+    #[test]
+    fn references_result_malformed_is_no_locations_not_a_panic() {
+        let result = json!({ "not": "a location" });
+        assert!(parse_references_result(Some(&result)).is_empty());
     }
 
     #[test]

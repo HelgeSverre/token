@@ -395,6 +395,10 @@ impl FromStr for Command {
             // Hover (lsp-integration.md Phase 4)
             "ShowHover" => Ok(Command::ShowHover),
 
+            // Show Usages / Find Usages (lsp-integration.md, references)
+            "FindUsages" => Ok(Command::FindUsages),
+            "ShowUsages" => Ok(Command::ShowUsages),
+
             // Image viewer
             "ImageZoomIn" => Ok(Command::ImageZoomIn),
             "ImageZoomOut" => Ok(Command::ImageZoomOut),

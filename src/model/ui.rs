@@ -629,6 +629,14 @@ pub enum CursorOverlayKind {
     /// backed by `UiState::hover_card`. Dismissed on any keypress/edit/
     /// cursor move, same as `DebugHover`.
     Hover,
+    /// The Show Usages / Find Usages popup (a `textDocument/references`
+    /// reply with more than one location), backed by `UiState::
+    /// reference_list`; also reused for a `textDocument/definition` reply
+    /// with more than one location (multi-def upgrade). Up/Down navigate,
+    /// Enter jumps to the selected row, any other key dismisses-and-
+    /// consumes (a flat list with no query, per context-menu.md's
+    /// routing policy).
+    References,
 }
 
 /// State for a cursor-anchored popup (`ui.cursor_overlay`), distinct from
@@ -670,6 +678,14 @@ pub struct HoverCardState {
     /// `view::modal::with_cursor_overlay_layout`'s `Hover` branch.
     pub anchor: Option<(usize, usize)>,
 }
+
+/// Content for the currently open references/multi-def popup (`ui.
+/// cursor_overlay` == `Some(CursorOverlayState { kind: CursorOverlayKind::
+/// References, .. })`) — set alongside `cursor_overlay`, cleared together.
+/// This is the ordering authority for the popup: built once at resolve
+/// time (sorted by `(path, line)`), stored here; both the view's spec
+/// builder and Enter/click activation index this same `Vec`.
+pub type ReferenceList = Vec<crate::update::navigation::LocationItem>;
 
 // ============================================================================
 // Drop State (file drag-and-drop feedback)
@@ -929,6 +945,11 @@ pub struct UiState {
     /// `cursor_overlay` being `Some(CursorOverlayKind::Hover)`. `None`
     /// whenever the hover card is closed.
     pub hover_card: Option<HoverCardState>,
+    /// The Show Usages / multi-def popup's rows (lsp-integration.md's
+    /// references feature), set alongside `cursor_overlay` being
+    /// `Some(CursorOverlayKind::References)`. `None` whenever the popup is
+    /// closed.
+    pub reference_list: Option<ReferenceList>,
     /// The position captured by the most recently fired mouse-dwell hover
     /// request (`LspMsg::ShowHoverAt`) — the `Mouse`-origin analogue of
     /// comparing a keyboard `ShowHover` reply against the *live* caret
@@ -965,6 +986,7 @@ impl UiState {
             cursor_overlay: None,
             completion_menu: None,
             hover_card: None,
+            reference_list: None,
             mouse_hover_target: None,
         }
     }

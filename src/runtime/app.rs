@@ -29,7 +29,7 @@ use token::keymap::{
 use token::lsp::{self, client::ServerHandle, LspServerId, ServerState};
 use token::messages::{
     AppMsg, DefinitionOutcome, EditorMsg, HoverOutcome, ImageMsg, LayoutMsg, LspMsg, ModalMsg, Msg,
-    SyntaxMsg, UiMsg, WorkspaceMsg,
+    ReferencesOutcome, SyntaxMsg, UiMsg, WorkspaceMsg,
 };
 use token::model::editor::Position;
 use token::model::{AppModel, JumpEntry};
@@ -295,6 +295,14 @@ const DEFINITION_TIMEOUT: Duration = Duration::from_secs(30);
 /// `DEFINITION_TIMEOUT` per the design doc.
 const HOVER_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// UI-level abandonment timeout for `textDocument/references` — same
+/// class as `DEFINITION_TIMEOUT`/`HOVER_TIMEOUT`.
+const REFERENCES_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Show Usages caps the popup at this many locations — a status transient
+/// reports the overflow count rather than rendering an unbounded list.
+const MAX_REFERENCE_LOCATIONS: usize = 200;
+
 /// Pointer movement (px) past which mouse-dwell hover tracking (`hover_dwell`)
 /// resets — small jitter within this radius doesn't restart the delay.
 const HOVER_DWELL_MOVE_THRESHOLD_PX: f64 = 3.0;
@@ -360,6 +368,10 @@ struct LspManager {
     /// In-flight `textDocument/hover` requests, mirroring `definition`;
     /// swept for abandonment by `check_lsp_hover_deadlines`.
     hover: FeatureSlot<PendingHover>,
+    /// In-flight `textDocument/references` (Show Usages / Find Usages)
+    /// requests, mirroring `hover`; swept for abandonment by
+    /// `check_lsp_references_deadlines`.
+    references: FeatureSlot<PendingReferences>,
     /// `(server_id, root)` pairs whose spawn attempt already reported
     /// `ServerState::Missing` — `ensure_lsp_server` skips these outright
     /// (design doc's "one-time transient, no error spam"). Without this,
@@ -407,6 +419,20 @@ impl PendingRequest for PendingHover {
     }
 }
 
+/// What `LspManager` needs to turn a `textDocument/references` response
+/// into `LspMsg::ReferencesResolved` — same shape as `PendingHover`.
+struct PendingReferences {
+    document_id: token::model::editor_area::DocumentId,
+    revision: u64,
+    cursor: token::model::editor::Position,
+}
+
+impl PendingRequest for PendingReferences {
+    fn document_id(&self) -> token::model::editor_area::DocumentId {
+        self.document_id
+    }
+}
+
 /// Why `send_lsp_feature_request` couldn't put a request on the wire — the
 /// caller maps this to its own outcome enum. `NoServer` and `Unsupported`
 /// happen to map to the same outcome (`NotSupported`) for both definition
@@ -445,6 +471,7 @@ impl LspManager {
             diagnostics_versions: HashMap::new(),
             definition: FeatureSlot::new(DEFINITION_TIMEOUT),
             hover: FeatureSlot::new(HOVER_TIMEOUT),
+            references: FeatureSlot::new(REFERENCES_TIMEOUT),
             missing_servers: std::collections::HashSet::new(),
         }
     }
@@ -2011,6 +2038,14 @@ impl App {
             } => {
                 self.request_lsp_hover(document_id, position, cursor, revision);
             }
+            Cmd::LspRequestReferences {
+                document_id,
+                position,
+                cursor,
+                revision,
+            } => {
+                self.request_lsp_references(document_id, position, cursor, revision);
+            }
             Cmd::LspDidOpenOnServer {
                 document_id,
                 file_path,
@@ -2152,6 +2187,46 @@ impl App {
                     document_id: pending.document_id,
                     revision: pending.revision,
                     cursor: pending.cursor,
+                    outcome,
+                }))
+            })
+            .collect();
+        // Same interception for `textDocument/references` replies. Unlike
+        // definition/hover, this one does real work: previews may require
+        // reading unopened files off disk (`build_reference_items`), which
+        // `update()` must never do — so it happens here, before the
+        // message reaches it.
+        messages = messages
+            .into_iter()
+            .filter_map(|msg| {
+                let Msg::Lsp(LspMsg::ReferencesResponseFromServer {
+                    server_id,
+                    root,
+                    request_id,
+                    locations,
+                    abandoned,
+                }) = msg
+                else {
+                    return Some(msg);
+                };
+                let key = (server_id, root, request_id);
+                let pending = self.lsp.references.take_response(&key)?;
+                if abandoned {
+                    return None;
+                }
+                let items = self.build_reference_items(locations);
+                let outcome = if !items.is_empty() {
+                    ReferencesOutcome::Found
+                } else if self.is_lsp_indexing(&key.0) {
+                    ReferencesOutcome::StillIndexing
+                } else {
+                    ReferencesOutcome::NoResult
+                };
+                Some(Msg::Lsp(LspMsg::ReferencesResolved {
+                    document_id: pending.document_id,
+                    revision: pending.revision,
+                    cursor: pending.cursor,
+                    items,
                     outcome,
                 }))
             })
@@ -2473,6 +2548,7 @@ impl App {
     fn clear_pending_requests_for_roots(&mut self, server_id: &LspServerId, roots: &[PathBuf]) {
         self.lsp.definition.clear_for_roots(server_id, roots);
         self.lsp.hover.clear_for_roots(server_id, roots);
+        self.lsp.references.clear_for_roots(server_id, roots);
     }
 
     /// Advisory `$/cancelRequest` + local abandonment for a superseded or
@@ -3089,6 +3165,152 @@ impl App {
         }
     }
 
+    /// Builds `LocationItem` previews for a `textDocument/references`
+    /// reply — called from the interception pass (not `update()`) because
+    /// a location in a file that isn't currently open needs a disk read
+    /// to preview. Sorted by `(path, line)` and capped at
+    /// `MAX_REFERENCE_LOCATIONS` before the (possibly expensive) preview
+    /// reads, so the cap bounds I/O too, not just the popup's row count.
+    fn build_reference_items(
+        &self,
+        locations: Vec<lsp_types::Location>,
+    ) -> Vec<token::update::navigation::LocationItem> {
+        let mut resolved: Vec<(std::path::PathBuf, usize, usize)> = locations
+            .iter()
+            .filter_map(|location| {
+                let path = lsp::uri_to_path(&location.uri)?;
+                let (line, col) = self
+                    .model
+                    .editor_area
+                    .find_open_file(&path)
+                    .and_then(|(doc_id, _, _)| self.model.editor_area.documents.get(&doc_id))
+                    .map(|doc| {
+                        let position = lsp::lsp_to_position(doc, location.range.start);
+                        (position.line, position.column)
+                    })
+                    .unwrap_or((
+                        location.range.start.line as usize,
+                        location.range.start.character as usize,
+                    ));
+                Some((path, line, col))
+            })
+            .collect();
+        resolved.sort_by(|a, b| (&a.0, a.1).cmp(&(&b.0, b.1)));
+        resolved.truncate(MAX_REFERENCE_LOCATIONS);
+
+        // ponytail: one `read_to_string` per distinct unopened file,
+        // cached only for this batch (bounded by `MAX_REFERENCE_LOCATIONS`
+        // distinct files at worst) — fine for a single references reply;
+        // revisit with a real cache if a future caller does this more
+        // than once per user action.
+        let mut file_cache: HashMap<std::path::PathBuf, Vec<String>> = HashMap::new();
+        resolved
+            .into_iter()
+            .map(|(path, line, col)| {
+                let preview = self
+                    .model
+                    .editor_area
+                    .find_open_file(&path)
+                    .and_then(|(doc_id, _, _)| self.model.editor_area.documents.get(&doc_id))
+                    .and_then(|doc| doc.get_line_cow(line).map(|c| c.into_owned()))
+                    .or_else(|| {
+                        let lines = file_cache.entry(path.clone()).or_insert_with(|| {
+                            std::fs::read_to_string(&path)
+                                .map(|s| s.lines().map(str::to_owned).collect())
+                                .unwrap_or_default()
+                        });
+                        lines.get(line).cloned()
+                    })
+                    .map(|s| s.trim().to_owned())
+                    .unwrap_or_default();
+                token::update::navigation::LocationItem {
+                    path,
+                    line,
+                    col,
+                    preview,
+                }
+            })
+            .collect()
+    }
+
+    /// `textDocument/references` (Show Usages / Find Usages). Mirrors
+    /// `request_lsp_hover` exactly — same gating, flush-before-request,
+    /// supersede/cancel handling — with `context.includeDeclaration: true`
+    /// sent via `send_lsp_feature_request`'s `extra_params` hook.
+    fn request_lsp_references(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        position: lsp_types::Position,
+        cursor: token::model::editor::Position,
+        revision: u64,
+    ) {
+        if let Some(old_key) = self.lsp.references.supersede(document_id) {
+            self.cancel_lsp_request(&old_key);
+        }
+        let key = match self.send_lsp_feature_request(
+            document_id,
+            "textDocument/references",
+            position,
+            lsp::client::supports_references,
+            Some(serde_json::json!({ "context": { "includeDeclaration": true } })),
+        ) {
+            Ok(key) => key,
+            Err(FeatureGateError::NoServer | FeatureGateError::Unsupported) => {
+                self.emit_references_outcome(
+                    document_id,
+                    revision,
+                    cursor,
+                    Vec::new(),
+                    ReferencesOutcome::NotSupported,
+                );
+                return;
+            }
+            Err(FeatureGateError::NotReady) => {
+                self.emit_references_outcome(
+                    document_id,
+                    revision,
+                    cursor,
+                    Vec::new(),
+                    ReferencesOutcome::StillIndexing,
+                );
+                return;
+            }
+        };
+        self.lsp.references.insert(
+            key.clone(),
+            document_id,
+            PendingReferences {
+                document_id,
+                revision,
+                cursor,
+            },
+        );
+        self.lsp.references.arm_deadline(key);
+    }
+
+    /// Synchronously routes a references outcome that never reached the
+    /// server through `Msg::Lsp(ReferencesResolved)` — mirrors
+    /// `emit_hover_outcome`.
+    fn emit_references_outcome(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        revision: u64,
+        cursor: token::model::editor::Position,
+        items: Vec<token::update::navigation::LocationItem>,
+        outcome: ReferencesOutcome,
+    ) {
+        self.process_automation_msg(Msg::Lsp(LspMsg::ReferencesResolved {
+            document_id,
+            revision,
+            cursor,
+            items,
+            outcome,
+        }));
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
     /// Routes a server-state change through `Msg::Lsp(ServerStateChanged)`
     /// — the same path the worker threads use — instead of poking
     /// `model.lsp.servers` directly, so the mirror stays "driven only by
@@ -3260,6 +3482,25 @@ impl App {
                 pending.revision,
                 pending.cursor,
                 HoverOutcome::Content(None),
+            );
+        }
+    }
+
+    /// Fires `REFERENCES_TIMEOUT` UI-level abandonment for references
+    /// requests a server never answered — mirrors
+    /// `check_lsp_definition_deadlines`.
+    fn check_lsp_references_deadlines(&mut self) {
+        if self.lsp.references.is_empty_deadlines() {
+            return;
+        }
+        for (key, pending) in self.lsp.references.take_due(Instant::now()) {
+            self.cancel_lsp_request(&key);
+            self.emit_references_outcome(
+                pending.document_id,
+                pending.revision,
+                pending.cursor,
+                Vec::new(),
+                ReferencesOutcome::NoResult,
             );
         }
     }
@@ -3473,6 +3714,7 @@ impl ApplicationHandler for App {
         self.check_lsp_restart_deadlines();
         self.check_lsp_definition_deadlines();
         self.check_lsp_hover_deadlines();
+        self.check_lsp_references_deadlines();
         if self.check_hover_dwell() {
             needs_redraw = true;
         }
@@ -3524,6 +3766,9 @@ impl ApplicationHandler for App {
             next_wake = next_wake.min(earliest_deadline);
         }
         if let Some(earliest_deadline) = self.lsp.hover.earliest_deadline() {
+            next_wake = next_wake.min(earliest_deadline);
+        }
+        if let Some(earliest_deadline) = self.lsp.references.earliest_deadline() {
             next_wake = next_wake.min(earliest_deadline);
         }
         if let Some(transient) = &self.model.ui.transient_message {
@@ -5652,6 +5897,249 @@ mod tests {
         app.process_cmd(Cmd::Quit);
     }
 
+    /// End-to-end "references resolved and rendered" (Show Usages fake-
+    /// server scenario): a `textDocument/references` reply with more than
+    /// one location opens the popup (`CursorOverlayKind::References`)
+    /// with rows built from the real response, not a hand-set model.
+    #[test]
+    fn references_resolved_opens_the_popup_with_two_locations() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {\n    foo();\n    foo();\n}\n")
+            .expect("write fixture file");
+        let file_uri = lsp::path_to_uri(&file_path);
+
+        let scenario_path = dir.path().join("scenario.json");
+        std::fs::write(
+            &scenario_path,
+            serde_json::json!([
+                { "op": "expect_request", "method": "initialize", "respond": {
+                    "capabilities": { "referencesProvider": true }
+                }},
+                { "op": "expect_request", "method": "textDocument/references", "respond": [
+                    {
+                        "uri": file_uri.as_str(),
+                        "range": {
+                            "start": { "line": 1, "character": 4 },
+                            "end": { "line": 1, "character": 7 },
+                        },
+                    },
+                    {
+                        "uri": file_uri.as_str(),
+                        "range": {
+                            "start": { "line": 2, "character": 4 },
+                            "end": { "line": 2, "character": 7 },
+                        },
+                    },
+                ]},
+                { "op": "sleep_ms", "ms": 60000 },
+            ])
+            .to_string(),
+        )
+        .expect("write scenario file");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
+                enabled: None,
+            },
+        );
+
+        app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+        let server_id = LspServerId::from("rust-analyzer");
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready)
+        }));
+
+        app.process_automation_msg(Msg::Lsp(LspMsg::FindReferences));
+
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            app.model.ui.cursor_overlay.is_some()
+        }));
+
+        assert_eq!(
+            app.model.ui.cursor_overlay.map(|o| o.kind),
+            Some(token::model::CursorOverlayKind::References)
+        );
+        let items = app
+            .model
+            .ui
+            .reference_list
+            .as_ref()
+            .expect("popup rows stored");
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].line, 1);
+        assert_eq!(items[1].line, 2);
+        // Previews are read from the (now-open) document's own buffer.
+        assert_eq!(items[0].preview, "foo();");
+
+        app.process_cmd(Cmd::Quit);
+    }
+
+    /// A references response for a revision the document has since moved
+    /// past must never open the popup — the revision guard, exercised
+    /// end-to-end (mirrors `a_stale_hover_response_after_a_revision_bump_is_dropped`).
+    #[test]
+    fn stale_references_response_after_a_revision_bump_is_dropped() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write fixture file");
+        let file_uri = lsp::path_to_uri(&file_path);
+
+        let scenario_path = dir.path().join("scenario.json");
+        std::fs::write(
+            &scenario_path,
+            serde_json::json!([
+                { "op": "expect_request", "method": "initialize", "respond": {
+                    "capabilities": { "referencesProvider": true }
+                }},
+                { "op": "expect_request", "method": "textDocument/references", "respond": [
+                    {
+                        "uri": file_uri.as_str(),
+                        "range": {
+                            "start": { "line": 0, "character": 0 },
+                            "end": { "line": 0, "character": 3 },
+                        },
+                    },
+                    {
+                        "uri": file_uri.as_str(),
+                        "range": {
+                            "start": { "line": 0, "character": 5 },
+                            "end": { "line": 0, "character": 8 },
+                        },
+                    },
+                ]},
+                { "op": "sleep_ms", "ms": 60000 },
+            ])
+            .to_string(),
+        )
+        .expect("write scenario file");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
+                enabled: None,
+            },
+        );
+
+        app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+        let server_id = LspServerId::from("rust-analyzer");
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready)
+        }));
+
+        let doc_id = app.model.document().id.unwrap();
+        let revision = app.model.document().revision;
+        let cursor = test_cursor(&app);
+        app.request_lsp_references(
+            doc_id,
+            lsp_types::Position {
+                line: 0,
+                character: 0,
+            },
+            cursor,
+            revision,
+        );
+        app.model.document_mut().buffer.insert(0, "x");
+        app.model.document_mut().revision += 1;
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline && !app.lsp.references.requests.is_empty() {
+            app.process_async_messages();
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        assert!(
+            app.model.ui.cursor_overlay.is_none(),
+            "a stale (revision-bumped) references response must be dropped, not rendered"
+        );
+
+        app.process_cmd(Cmd::Quit);
+    }
+
+    /// End-to-end "multi-def popup" (go-to-definition upgrade): a
+    /// `textDocument/definition` reply with more than one location opens
+    /// the same `CursorOverlayKind::References` popup Show Usages uses,
+    /// instead of jumping to the first location.
+    #[test]
+    fn goto_definition_with_multiple_locations_opens_the_popup() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write fixture file");
+        let a_uri = lsp::path_to_uri(&dir.path().join("a.rs"));
+        let b_uri = lsp::path_to_uri(&dir.path().join("b.rs"));
+
+        let scenario_path = dir.path().join("scenario.json");
+        std::fs::write(
+            &scenario_path,
+            serde_json::json!([
+                { "op": "expect_request", "method": "initialize", "respond": {
+                    "capabilities": { "definitionProvider": true }
+                }},
+                { "op": "expect_request", "method": "textDocument/definition", "respond": [
+                    {
+                        "uri": a_uri.as_str(),
+                        "range": {
+                            "start": { "line": 0, "character": 0 },
+                            "end": { "line": 0, "character": 3 },
+                        },
+                    },
+                    {
+                        "uri": b_uri.as_str(),
+                        "range": {
+                            "start": { "line": 1, "character": 0 },
+                            "end": { "line": 1, "character": 3 },
+                        },
+                    },
+                ]},
+                { "op": "sleep_ms", "ms": 60000 },
+            ])
+            .to_string(),
+        )
+        .expect("write scenario file");
+
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.lsp.servers.insert(
+            "rust-analyzer".to_owned(),
+            token::config::LspServerOverride {
+                command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+                args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
+                enabled: None,
+            },
+        );
+
+        app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+        let server_id = LspServerId::from("rust-analyzer");
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready)
+        }));
+
+        app.process_automation_msg(Msg::Lsp(LspMsg::GotoDefinition));
+
+        assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+            app.model.ui.cursor_overlay.is_some()
+        }));
+
+        assert_eq!(
+            app.model.ui.cursor_overlay.map(|o| o.kind),
+            Some(token::model::CursorOverlayKind::References)
+        );
+        assert_eq!(app.model.ui.reference_list.as_ref().map(Vec::len), Some(2));
+        // No jump happened — the origin document must still be focused.
+        assert_eq!(
+            app.model.document().file_path.as_deref(),
+            Some(file_path.as_path())
+        );
+
+        app.process_cmd(Cmd::Quit);
+    }
+
     /// Hover on a line with a diagnostic whose `relatedInformation` points
     /// elsewhere ("first borrow occurs here") surfaces that related message
     /// alongside the primary diagnostic — driven end-to-end through a fake
@@ -5815,9 +6303,15 @@ mod tests {
         }
 
         let snapshot = crate::automation::EditorSnapshot::from_model(&app.model);
-        let problems = snapshot.problems.expect("panel must be open after the toggle");
+        let problems = snapshot
+            .problems
+            .expect("panel must be open after the toggle");
         assert_eq!(problems.errors, 1);
-        assert_eq!(problems.rows.len(), 2, "a File row plus its one Diagnostic row");
+        assert_eq!(
+            problems.rows.len(),
+            2,
+            "a File row plus its one Diagnostic row"
+        );
         assert_eq!(problems.rows[0].kind, "file");
         assert_eq!(problems.rows[1].kind, "diagnostic");
 
@@ -5901,7 +6395,10 @@ mod tests {
             !app.model.lsp.diagnostics.is_empty()
         }));
 
-        app.model.dock_layout.bottom.activate(token::panel::PanelId::PROBLEMS);
+        app.model
+            .dock_layout
+            .bottom
+            .activate(token::panel::PanelId::PROBLEMS);
         app.model.problems_panel.selected_index = Some(1);
         assert!(
             crate::automation::EditorSnapshot::from_model(&app.model)

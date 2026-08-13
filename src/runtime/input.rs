@@ -305,16 +305,57 @@ pub(crate) fn handle_cursor_overlay_key(
         model.ui.hover_card = None;
         return None;
     }
-    // The five claimed keys are unmodified only — Shift+Up/Down (selection
-    // extension), Ctrl/Cmd+Tab (group focus), Shift+Enter (find-previous in
-    // modals reusing this path), etc. must fall through to the keymap
-    // instead of being swallowed as menu navigation.
     let KeyModifiers {
         ctrl,
         shift,
         alt,
         logo,
     } = modifiers;
+    if kind == token::model::CursorOverlayKind::References {
+        // Checked ahead of the modifier gate below: unlike Completion/the
+        // demo shells, References dismisses-and-consumes on *any* key that
+        // isn't Up/Down/Enter/Escape, including a modified one (Shift+
+        // letter for uppercase typing must not reach the document either)
+        // — context-menu.md's "flat list with no query" routing policy.
+        if !(ctrl || shift || alt || logo) {
+            match key {
+                Key::Named(NamedKey::ArrowUp) => {
+                    let len = model.ui.reference_list.as_ref().map_or(0, Vec::len);
+                    if let (Some(state), true) = (model.ui.cursor_overlay.as_mut(), len > 0) {
+                        state.selected = (state.selected + len - 1) % len;
+                    }
+                    return Some(Some(Cmd::Redraw));
+                }
+                Key::Named(NamedKey::ArrowDown) => {
+                    let len = model.ui.reference_list.as_ref().map_or(0, Vec::len);
+                    if let (Some(state), true) = (model.ui.cursor_overlay.as_mut(), len > 0) {
+                        state.selected = (state.selected + 1) % len;
+                    }
+                    return Some(Some(Cmd::Redraw));
+                }
+                Key::Named(NamedKey::Enter) => {
+                    let index = model.ui.cursor_overlay?.selected;
+                    return Some(update(
+                        model,
+                        Msg::Lsp(token::messages::LspMsg::ActivateReference { index }),
+                    ));
+                }
+                Key::Named(NamedKey::Escape) => {
+                    model.ui.cursor_overlay = None;
+                    model.ui.reference_list = None;
+                    return Some(Some(Cmd::Redraw));
+                }
+                _ => {}
+            }
+        }
+        model.ui.cursor_overlay = None;
+        model.ui.reference_list = None;
+        return Some(Some(Cmd::Redraw));
+    }
+    // The five claimed keys are unmodified only — Shift+Up/Down (selection
+    // extension), Ctrl/Cmd+Tab (group focus), Shift+Enter (find-previous in
+    // modals reusing this path), etc. must fall through to the keymap
+    // instead of being swallowed as menu navigation.
     if ctrl || shift || alt || logo {
         return None;
     }
@@ -376,6 +417,10 @@ fn row_count_for(kind: token::model::CursorOverlayKind) -> usize {
         // Handled earlier in `handle_cursor_overlay_key` (routes through
         // `update()` instead of this raw index math).
         CursorOverlayKind::Completion => 0,
+        // Handled earlier in `handle_cursor_overlay_key` (needs
+        // `model.ui.reference_list`'s length, which this kind-only helper
+        // doesn't have access to).
+        CursorOverlayKind::References => 0,
     }
 }
 
@@ -1375,6 +1420,78 @@ mod tests {
             "any key should dismiss a hover card"
         );
         assert_eq!(model.document().buffer.to_string(), "x");
+    }
+
+    /// References is a flat list with no query (context-menu.md's routing
+    /// policy) — any key that isn't Up/Down/Enter/Escape dismisses the
+    /// popup *and* consumes the keystroke: unlike Hover/DebugHover, a
+    /// typed character must never reach the document.
+    #[test]
+    fn references_overlay_dismisses_and_consumes_a_typed_character() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.ui.reference_list = Some(vec![]);
+        model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::References,
+        ));
+        model.document_mut().buffer = ropey::Rope::from("");
+
+        let cmd = handle_key(
+            &mut model,
+            Key::Character("x".into()),
+            PhysicalKey::Code(KeyCode::KeyX),
+            KeyModifiers::default(),
+            false,
+        );
+
+        assert!(cmd.is_some(), "the popup still claims the key (consumed)");
+        assert!(
+            model.ui.cursor_overlay.is_none(),
+            "an unclaimed key dismisses the popup"
+        );
+        assert_eq!(
+            model.document().buffer.to_string(),
+            "",
+            "the typed character must not reach the document"
+        );
+    }
+
+    #[test]
+    fn references_overlay_up_down_wrap_the_selection_and_stay_open() {
+        let path_a = std::path::PathBuf::from("/tmp/a.rs");
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.ui.reference_list = Some(vec![
+            token::update::navigation::LocationItem {
+                path: path_a.clone(),
+                line: 0,
+                col: 0,
+                preview: "a".to_owned(),
+            },
+            token::update::navigation::LocationItem {
+                path: path_a,
+                line: 5,
+                col: 0,
+                preview: "b".to_owned(),
+            },
+        ]);
+        model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::References,
+        ));
+
+        let cmd = handle_key(
+            &mut model,
+            Key::Named(NamedKey::ArrowUp),
+            PhysicalKey::Code(KeyCode::ArrowUp),
+            KeyModifiers::default(),
+            false,
+        );
+
+        assert!(cmd.is_some());
+        assert!(model.ui.cursor_overlay.is_some(), "popup stays open");
+        assert_eq!(
+            model.ui.cursor_overlay.unwrap().selected,
+            1,
+            "Up wraps from 0 to the last row"
+        );
     }
 
     #[test]

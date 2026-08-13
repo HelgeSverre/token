@@ -7,7 +7,7 @@
 
 use crate::commands::Cmd;
 use crate::lsp::ServerState;
-use crate::messages::{DefinitionOutcome, HoverOutcome, LspMsg};
+use crate::messages::{DefinitionOutcome, HoverOutcome, LspMsg, ReferencesOutcome};
 use crate::model::editor_area::DocumentId;
 use crate::model::{AppModel, CursorOverlayKind, CursorOverlayState, HoverCardState};
 use crate::update::navigation;
@@ -269,45 +269,85 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                     resolving_server,
                     resolving_root,
                 } => {
-                    let Some(location) = locations.into_iter().next() else {
+                    if locations.is_empty() {
                         model.ui.set_status("No definition found");
                         return Some(Cmd::redraw_status_bar());
-                    };
-                    let Some(path) = crate::lsp::uri_to_path(&location.uri) else {
-                        model.ui.set_status("No definition found");
-                        return Some(Cmd::redraw_status_bar());
-                    };
-                    // Outside every root (stdlib, `~/.cargo/registry`, ...):
-                    // route the imminent `didOpen` to the server that
-                    // resolved this location rather than letting the
-                    // generic open path derive (and possibly spawn a
-                    // server for) its own root — design doc's "never
-                    // spawn a new server rooted in a toolchain directory".
-                    let outside_every_root = model
-                        .workspace
-                        .as_ref()
-                        .is_none_or(|ws| !path.starts_with(&ws.root));
-                    if outside_every_root {
-                        model.lsp.route_hint =
-                            Some((path.clone(), resolving_server, resolving_root));
                     }
                     // `LocationItem`'s contract: char coords when a
                     // document is already available to convert LSP
                     // UTF-16 through, raw LSP values otherwise —
                     // `place_cursor_char` clamps either way.
-                    let (line, col) = model
-                        .editor_area
-                        .find_open_file(&path)
-                        .and_then(|(doc_id, _, _)| model.editor_area.documents.get(&doc_id))
-                        .map(|doc| {
-                            let position = crate::lsp::lsp_to_position(doc, location.range.start);
-                            (position.line, position.column)
+                    let resolve =
+                        |model: &AppModel,
+                         location: &lsp_types::Location|
+                         -> Option<(std::path::PathBuf, usize, usize)> {
+                            let path = crate::lsp::uri_to_path(&location.uri)?;
+                            let (line, col) = model
+                                .editor_area
+                                .find_open_file(&path)
+                                .and_then(|(doc_id, _, _)| model.editor_area.documents.get(&doc_id))
+                                .map(|doc| {
+                                    let position =
+                                        crate::lsp::lsp_to_position(doc, location.range.start);
+                                    (position.line, position.column)
+                                })
+                                .unwrap_or((
+                                    location.range.start.line as usize,
+                                    location.range.start.character as usize,
+                                ));
+                            Some((path, line, col))
+                        };
+
+                    if let [location] = locations.as_slice() {
+                        let Some((path, line, col)) = resolve(model, location) else {
+                            model.ui.set_status("No definition found");
+                            return Some(Cmd::redraw_status_bar());
+                        };
+                        // Outside every root (stdlib, `~/.cargo/registry`,
+                        // ...): route the imminent `didOpen` to the server
+                        // that resolved this location rather than letting
+                        // the generic open path derive (and possibly
+                        // spawn a server for) its own root — design doc's
+                        // "never spawn a new server rooted in a toolchain
+                        // directory". Only meaningful for the direct-jump
+                        // (single-location) case; a popup entry resolves
+                        // its own open path when activated.
+                        let outside_every_root = model
+                            .workspace
+                            .as_ref()
+                            .is_none_or(|ws| !path.starts_with(&ws.root));
+                        if outside_every_root {
+                            model.lsp.route_hint =
+                                Some((path.clone(), resolving_server, resolving_root));
+                        }
+                        return navigation::jump_to_location(model, Some(origin), &path, line, col);
+                    }
+
+                    // More than one location: upgrade to the same
+                    // cursor-anchored popup Show Usages uses (reusing
+                    // `LocationItem`/`reference_list`) instead of the old
+                    // first-location-only behavior. Preview is best-effort
+                    // (open documents only) — `update()` must not do I/O.
+                    let items: Vec<navigation::LocationItem> = locations
+                        .iter()
+                        .filter_map(|location| {
+                            let (path, line, col) = resolve(model, location)?;
+                            let preview = model
+                                .editor_area
+                                .find_open_file(&path)
+                                .and_then(|(doc_id, _, _)| model.editor_area.documents.get(&doc_id))
+                                .and_then(|doc| doc.get_line_cow(line))
+                                .map(|line| line.trim().to_owned())
+                                .unwrap_or_default();
+                            Some(navigation::LocationItem {
+                                path,
+                                line,
+                                col,
+                                preview,
+                            })
                         })
-                        .unwrap_or((
-                            location.range.start.line as usize,
-                            location.range.start.character as usize,
-                        ));
-                    navigation::jump_to_location(model, Some(origin), &path, line, col)
+                        .collect();
+                    open_location_list_popup(model, items)
                 }
                 DefinitionOutcome::StillIndexing => {
                     model.ui.set_status("Language server still indexing…");
@@ -431,7 +471,108 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
         // Consumed by `process_async_messages`'s interception pass before
         // reaching here — mirrors `DefinitionResponseFromServer`.
         LspMsg::HoverResponseFromServer { .. } => None,
+
+        LspMsg::FindReferences => {
+            let doc = model.try_document()?;
+            let document_id = doc.id?;
+            let revision = doc.revision;
+            // Untitled documents are never LSP-synced — nothing to
+            // request against (same rule as `ShowHover`/`GotoDefinition`).
+            doc.file_path.as_ref()?;
+            let cursor = model.editor().active_cursor().to_position();
+            let position = crate::lsp::position_to_lsp(doc, cursor);
+            Some(Cmd::LspRequestReferences {
+                document_id,
+                position,
+                cursor,
+                revision,
+            })
+        }
+
+        LspMsg::ReferencesResolved {
+            document_id,
+            revision,
+            cursor,
+            items,
+            outcome,
+        } => {
+            // Revision + focused-document + cursor guards, verbatim from
+            // `HoverResolved` (minus the mouse-dwell branch — references
+            // has no mouse trigger).
+            let doc = model.editor_area.documents.get(&document_id)?;
+            if doc.revision != revision {
+                return None;
+            }
+            if model.try_document().and_then(|d| d.id) != Some(document_id) {
+                return None;
+            }
+            if model.editor().active_cursor().to_position() != cursor {
+                return None;
+            }
+            match outcome {
+                ReferencesOutcome::StillIndexing => {
+                    model.ui.set_status("Language server still indexing…");
+                    Some(Cmd::redraw_status_bar())
+                }
+                ReferencesOutcome::NotSupported => {
+                    model
+                        .ui
+                        .set_status("Find usages not supported by this server");
+                    Some(Cmd::redraw_status_bar())
+                }
+                ReferencesOutcome::NoResult => {
+                    model.ui.set_status("No usages found");
+                    Some(Cmd::redraw_status_bar())
+                }
+                ReferencesOutcome::Found => open_location_list_popup(model, items),
+            }
+        }
+
+        // Consumed by `process_async_messages`'s interception pass before
+        // reaching here — mirrors `HoverResponseFromServer`.
+        LspMsg::ReferencesResponseFromServer { .. } => None,
+
+        LspMsg::ActivateReference { index } => {
+            let item = model
+                .ui
+                .reference_list
+                .as_ref()
+                .and_then(|items| items.get(index))
+                .cloned();
+            model.ui.cursor_overlay = None;
+            model.ui.reference_list = None;
+            let Some(item) = item else {
+                return Some(Cmd::Redraw);
+            };
+            navigation::jump_to_location(model, None, &item.path, item.line, item.col)
+        }
     }
+}
+
+/// Shared activation for a resolved `LocationItem` list with more than one
+/// entry — the Show Usages popup, and the multi-def upgrade to
+/// `DefinitionResolved`. Exactly one entry jumps directly (`jump_to_location`,
+/// origin captured now — callers with an async-captured origin handle that
+/// themselves); zero or one is never passed here by either caller.
+fn open_location_list_popup(
+    model: &mut AppModel,
+    mut items: Vec<navigation::LocationItem>,
+) -> Option<Cmd> {
+    if items.is_empty() {
+        model.ui.set_status("No usages found");
+        return Some(Cmd::redraw_status_bar());
+    }
+    // Ordering authority: sorted once here, at construction — the view's
+    // spec builder and Enter/click activation both index this same stored
+    // `Vec`, never re-deriving it.
+    items.sort_by(|a, b| (&a.path, a.line).cmp(&(&b.path, b.line)));
+    if let [only] = items.as_slice() {
+        let (path, line, col) = (only.path.clone(), only.line, only.col);
+        return navigation::jump_to_location(model, None, &path, line, col);
+    }
+    model.ui.reference_list = Some(items);
+    model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::References));
+    Some(Cmd::Redraw)
 }
 
 /// Finds the open document whose file path canonicalizes to `uri`, per
@@ -486,7 +627,7 @@ fn find_document_by_uri(model: &AppModel, uri: &lsp_types::Uri) -> Option<Docume
 mod tests {
     use super::*;
     use crate::lsp::{LspServerId, ServerState};
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     fn model() -> AppModel {
         AppModel::new(800, 600, 1.0, vec![])
@@ -1005,6 +1146,171 @@ mod tests {
         );
 
         assert_eq!(model.ui.hover_card.as_ref().and_then(|c| c.anchor), None);
+    }
+
+    fn loc(path: &Path, line: usize, col: usize, preview: &str) -> navigation::LocationItem {
+        navigation::LocationItem {
+            path: path.to_path_buf(),
+            line,
+            col,
+            preview: preview.to_owned(),
+        }
+    }
+
+    #[test]
+    fn references_resolved_for_a_stale_revision_is_dropped() {
+        let (_dir, mut model) = model_with_file();
+        let doc_id = model.document().id.unwrap();
+        let cursor = model.editor().active_cursor().to_position();
+        let path = model.document().file_path.clone().unwrap();
+        // One past the document's actual revision — a stale reply.
+        let stale_revision = model.document().revision + 1;
+
+        let cmd = update_lsp(
+            &mut model,
+            LspMsg::ReferencesResolved {
+                document_id: doc_id,
+                revision: stale_revision,
+                cursor,
+                items: vec![loc(&path, 0, 0, "fn main() {}")],
+                outcome: ReferencesOutcome::Found,
+            },
+        );
+
+        assert!(cmd.is_none());
+        assert!(
+            model.ui.cursor_overlay.is_none(),
+            "a stale-revision reply must never open the popup"
+        );
+    }
+
+    #[test]
+    fn references_resolved_with_one_item_jumps_without_opening_the_popup() {
+        let (_dir, mut model) = model_with_file();
+        let doc_id = model.document().id.unwrap();
+        let revision = model.document().revision;
+        let cursor = model.editor().active_cursor().to_position();
+        let path = model.document().file_path.clone().unwrap();
+
+        update_lsp(
+            &mut model,
+            LspMsg::ReferencesResolved {
+                document_id: doc_id,
+                revision,
+                cursor,
+                items: vec![loc(&path, 0, 3, "fn main() {}")],
+                outcome: ReferencesOutcome::Found,
+            },
+        );
+
+        assert!(
+            model.ui.cursor_overlay.is_none(),
+            "exactly one usage jumps directly, no popup"
+        );
+        assert_eq!(model.editor().cursors[0].line, 0);
+        assert_eq!(model.editor().cursors[0].column, 3);
+    }
+
+    #[test]
+    fn references_resolved_with_multiple_items_opens_the_popup_sorted() {
+        let (_dir, mut model) = model_with_file();
+        let doc_id = model.document().id.unwrap();
+        let revision = model.document().revision;
+        let cursor = model.editor().active_cursor().to_position();
+        let path = model.document().file_path.clone().unwrap();
+
+        update_lsp(
+            &mut model,
+            LspMsg::ReferencesResolved {
+                document_id: doc_id,
+                revision,
+                cursor,
+                // Deliberately out of (path, line) order, to assert the
+                // popup sorts rather than trusting server reply order.
+                items: vec![loc(&path, 5, 0, "second"), loc(&path, 0, 0, "first")],
+                outcome: ReferencesOutcome::Found,
+            },
+        );
+
+        assert_eq!(
+            model.ui.cursor_overlay.map(|o| o.kind),
+            Some(CursorOverlayKind::References)
+        );
+        let items = model.ui.reference_list.as_ref().expect("popup rows stored");
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].line, 0, "sorted by (path, line)");
+        assert_eq!(items[1].line, 5);
+    }
+
+    #[test]
+    fn activate_reference_jumps_to_reference_list_at_the_given_index_ordering_authority() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("main.rs");
+        std::fs::write(&path, "one\ntwo\nthree\nfour\nfive\nsix\n").unwrap();
+        let mut model = AppModel::new(800, 600, 1.0, vec![path.clone()]);
+        model.ui.reference_list = Some(vec![loc(&path, 0, 0, "a"), loc(&path, 5, 0, "b")]);
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::References));
+
+        // Enter on row 1 must jump to `reference_list[1]`, not row 0 — the
+        // same stored `Vec` the view rendered from (view order == confirm
+        // order).
+        let cmd = update_lsp(&mut model, LspMsg::ActivateReference { index: 1 });
+
+        assert!(cmd.is_some());
+        assert!(
+            model.ui.cursor_overlay.is_none(),
+            "popup dismisses on activate"
+        );
+        assert!(model.ui.reference_list.is_none());
+        assert_eq!(model.editor().cursors[0].line, 5);
+    }
+
+    #[test]
+    fn definition_resolved_with_multiple_locations_opens_the_same_popup() {
+        let dir = tempfile::tempdir().unwrap();
+        let origin_path = dir.path().join("origin.rs");
+        std::fs::write(&origin_path, "one\ntwo\n").unwrap();
+        let mut model = AppModel::new(800, 600, 1.0, vec![origin_path.clone()]);
+        let origin = navigation::current_jump_entry(&model).unwrap();
+        let doc_id = model.document().id.unwrap();
+        let revision = model.document().revision;
+
+        let a_uri = crate::lsp::path_to_uri(&dir.path().join("a.rs"));
+        let b_uri = crate::lsp::path_to_uri(&dir.path().join("b.rs"));
+        let location = |uri: lsp_types::Uri, line: u32| lsp_types::Location {
+            uri,
+            range: lsp_types::Range {
+                start: lsp_types::Position { line, character: 0 },
+                end: lsp_types::Position { line, character: 0 },
+            },
+        };
+
+        let cmd = update_lsp(
+            &mut model,
+            LspMsg::DefinitionResolved {
+                document_id: doc_id,
+                revision,
+                origin,
+                outcome: DefinitionOutcome::Locations {
+                    locations: vec![location(a_uri, 0), location(b_uri, 1)],
+                    resolving_server: LspServerId::from("rust-analyzer"),
+                    resolving_root: PathBuf::from("/tmp"),
+                },
+            },
+        );
+
+        assert!(cmd.is_some());
+        assert_eq!(
+            model.ui.cursor_overlay.map(|o| o.kind),
+            Some(CursorOverlayKind::References),
+            "a multi-location definition reply upgrades to the same popup Show Usages uses"
+        );
+        assert_eq!(model.ui.reference_list.as_ref().map(Vec::len), Some(2));
+        // No jump happened — the origin document must still be focused.
+        assert_eq!(
+            model.document().file_path.as_deref(),
+            Some(origin_path.as_path())
+        );
     }
 
     #[test]

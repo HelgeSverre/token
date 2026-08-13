@@ -449,6 +449,12 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::ShowHover => {
             crate::update::update_lsp(model, crate::messages::LspMsg::ShowHover)
         }
+        // Both commands open the same cursor-anchored popup for now — a
+        // docked usages panel is a later feature (see LocationItem's doc
+        // comment).
+        CommandId::FindUsages | CommandId::ShowUsages => {
+            crate::update::update_lsp(model, crate::messages::LspMsg::FindReferences)
+        }
         CommandId::SplitHorizontal => {
             update_layout(model, LayoutMsg::SplitFocused(SplitDirection::Horizontal))
         }

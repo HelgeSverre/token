@@ -1848,7 +1848,93 @@ pub fn with_cursor_overlay_layout<R>(
             let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
             Some(f(&spec, &l))
         }
+        crate::model::CursorOverlayKind::References => {
+            let items = model.ui.reference_list.as_deref().unwrap_or(&[]);
+            let (details, accessories) = reference_row_text(model, items);
+            let rows: Vec<Row> = items
+                .iter()
+                .zip(details.iter())
+                .zip(accessories.iter())
+                .map(|((item, detail), accessory)| Row {
+                    icon: RowIcon::None,
+                    label: if item.preview.is_empty() {
+                        detail.as_str()
+                    } else {
+                        item.preview.as_str()
+                    },
+                    match_indices: &[],
+                    detail: Some(detail.as_str()),
+                    accessory: Accessory::DimText(accessory.as_str()),
+                })
+                .collect();
+            let sections = [Section {
+                title: None,
+                rows: &rows,
+            }];
+            let spec = OverlaySpec {
+                tabs: None,
+                anchor: Anchor::Cursor {
+                    x,
+                    y,
+                    h,
+                    prefer_below: true,
+                    width: WidthRule {
+                        pct: 0.0,
+                        min: 320.0,
+                        max: 520.0,
+                    },
+                },
+                header: None,
+                body: Body::List {
+                    sections: &sections,
+                    selected: FlatIndex(state.selected.min(rows.len().saturating_sub(1))),
+                    scroll: state.scroll,
+                    max_visible: overlay_surface::MAX_VISIBLE_COMPLETION,
+                },
+                footer: None,
+                hover_row: None,
+            };
+            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            Some(f(&spec, &l))
+        }
     }
+}
+
+/// Per-row `detail`/`accessory` text for the References/multi-def popup —
+/// `file name  workspace-relative-dir` and `line:col` (1-based, matching
+/// the status bar's display convention), storage owned by the caller so
+/// `Row`'s borrowed fields outlive this call.
+fn reference_row_text(
+    model: &AppModel,
+    items: &[crate::update::navigation::LocationItem],
+) -> (Vec<String>, Vec<String>) {
+    let workspace_root = model.workspace_root();
+    let details = items
+        .iter()
+        .map(|item| {
+            let name = item
+                .path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| item.path.display().to_string());
+            let dir = item.path.parent().map(|p| {
+                workspace_root
+                    .and_then(|root| p.strip_prefix(root).ok())
+                    .unwrap_or(p)
+                    .display()
+                    .to_string()
+            });
+            match dir.filter(|d| !d.is_empty()) {
+                Some(dir) => format!("{name}  {dir}"),
+                None => name,
+            }
+        })
+        .collect();
+    let accessories = items
+        .iter()
+        .map(|item| format!("{}:{}", item.line + 1, item.col + 1))
+        .collect();
+    (details, accessories)
 }
 
 /// Render the active cursor-anchored popup (completion/hover shells;

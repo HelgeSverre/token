@@ -1049,6 +1049,59 @@ pub enum LspMsg {
         content: Option<String>,
         abandoned: bool,
     },
+
+    // ==== Show Usages / Find Usages (lsp-integration.md, references) ====
+    /// User intent (Alt+F7 / Alt+Cmd+F7 / palette). `update_lsp` reads the
+    /// focused document + cursor synchronously and captures
+    /// `(document_id, revision, position)` into `Cmd::LspRequestReferences`,
+    /// mirroring `ShowHover`'s message flow.
+    FindReferences,
+    /// Enter on a popup row / a row click — jumps to
+    /// `ui.reference_list[index]` and dismisses the popup. Routed through
+    /// `update()` (rather than called directly) because the popup's
+    /// activation is driven from `runtime::input`/`runtime::mouse`, which
+    /// only see this crate's `pub` surface — mirrors
+    /// `CompletionMsg::AcceptMenuItem`.
+    ActivateReference {
+        index: usize,
+    },
+    /// Runtime -> update: the outcome of a `textDocument/references`
+    /// request issued from `(document_id, revision, cursor)`. Revision-
+    /// and cursor-guarded exactly like `HoverResolved`. `items` is built
+    /// runtime-side (it may read unopened files off disk for previews —
+    /// `update()` must not do I/O) and is empty unless `outcome` is
+    /// `Found`.
+    ReferencesResolved {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        cursor: crate::model::editor::Position,
+        items: Vec<crate::update::navigation::LocationItem>,
+        outcome: ReferencesOutcome,
+    },
+    /// Worker -> runtime only: the raw response (or discard-worthy
+    /// supersession) to a `textDocument/references` request, keyed by
+    /// `(server_id, root, request_id)` — mirrors `HoverResponseFromServer`.
+    /// Never reaches `update_lsp` in practice, but the match must stay
+    /// exhaustive.
+    ReferencesResponseFromServer {
+        server_id: LspServerId,
+        root: std::path::PathBuf,
+        request_id: i64,
+        locations: Vec<lsp_types::Location>,
+        abandoned: bool,
+    },
+}
+
+/// The result of a `textDocument/references` request, mirroring
+/// `DefinitionOutcome` (minus the resolving-server route hint — references
+/// never crosses into the "outside every root" case go-to-definition
+/// does).
+#[derive(Debug, Clone)]
+pub enum ReferencesOutcome {
+    Found,
+    StillIndexing,
+    NotSupported,
+    NoResult,
 }
 
 /// The result of a `textDocument/hover` request, distinguishing the two

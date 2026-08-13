@@ -291,6 +291,17 @@ pub enum Command {
     /// `textDocument/hover` for the symbol under the cursor.
     ShowHover,
 
+    // ========================================================================
+    // Show Usages / Find Usages (lsp-integration.md, references)
+    // ========================================================================
+    /// Alt+F7: `textDocument/references` for the symbol under the cursor,
+    /// opened in the cursor-anchored popup.
+    FindUsages,
+    /// Alt+Cmd+F7: same request/popup as `FindUsages` — a second binding
+    /// so IDE muscle memory for either shortcut works; the docked usages
+    /// panel variant is a later feature.
+    ShowUsages,
+
     // Image viewer
     /// Zoom in (image mode)
     ImageZoomIn,
@@ -503,6 +514,7 @@ impl Command {
             NavigateBack => vec![Msg::Lsp(LspMsg::NavigateBack)],
             NavigateForward => vec![Msg::Lsp(LspMsg::NavigateForward)],
             ShowHover => vec![Msg::Lsp(LspMsg::ShowHover)],
+            FindUsages | ShowUsages => vec![Msg::Lsp(LspMsg::FindReferences)],
 
             // Image viewer
             ImageZoomIn => vec![Msg::Image(ImageMsg::Zoom {
@@ -679,6 +691,8 @@ impl Command {
             NavigateBack => "Navigate Back",
             NavigateForward => "Navigate Forward",
             ShowHover => "Show Hover",
+            FindUsages => "Find Usages",
+            ShowUsages => "Show Usages",
 
             ImageZoomIn => "Image: Zoom In",
             ImageZoomOut => "Image: Zoom Out",
