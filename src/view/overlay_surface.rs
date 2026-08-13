@@ -1405,7 +1405,16 @@ pub fn render(
             &layout,
             scale_factor,
         ),
-        Body::Zones(zones) => render_zones(frame, painter, &colors, zones, &layout, scale_factor),
+        Body::Zones(zones) => render_zones(
+            frame,
+            painter,
+            &colors,
+            zones,
+            &layout,
+            scale_factor,
+            radius,
+            mask_cache,
+        ),
     }
     if let (Some(footer_spec), Some(footer_rect)) = (&spec.footer, layout.footer) {
         render_footer(
@@ -2132,6 +2141,7 @@ fn render_fields(
 /// Render a `Body::Zones` context: the drop overlay's single centered
 /// message (`text` only, no `banner`/`code`) and the hover card (banner +
 /// code + text) share this one paint path.
+#[allow(clippy::too_many_arguments)]
 fn render_zones(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -2139,6 +2149,8 @@ fn render_zones(
     zones: &Zones,
     layout: &OverlayLayout,
     scale_factor: f64,
+    radius: usize,
+    mask_cache: &mut RoundedRectMaskCache,
 ) {
     let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
     let gap = scaled(dims::ZONE_GAP, scale_factor);
@@ -2157,7 +2169,18 @@ fn render_zones(
     if let (Some((severity, _, source)), Some(bp), Some(r)) =
         (zones.banner, plan.banner.as_ref(), layout.zones_banner)
     {
-        frame.fill_rect_px(r.x, r.y, r.w, r.h, colors.severity_wash(severity));
+        let wash = colors.severity_wash(severity);
+        if r.y == layout.panel.y {
+            // The banner is always the first zone (Zones has no header,
+            // `layout()`'s Zones arm hardcodes `header: None`), so it
+            // sits flush against the panel's rounded top edge — a plain
+            // `fill_rect_px` would square off the antialiased corners
+            // `fill_rounded_rect` deliberately left alone (matches
+            // `render_tab_bar`'s identical top-corner note).
+            frame.fill_rect_top_rounded(r.x, r.y, r.w, r.h, radius, wash, mask_cache);
+        } else {
+            frame.fill_rect_px(r.x, r.y, r.w, r.h, wash);
+        }
         let size = size_px(SIZE_ROW, scale_factor);
         let text_color = colors.severity_text(severity);
         let top = r.y
@@ -2282,17 +2305,21 @@ pub(crate) fn plan_zones(zones: &Zones, panel_w: usize, scale_factor: f64) -> Zo
 
     let banner = zones.banner.map(|(_, message, source)| {
         // Budget: glyph column (2 cells) always; the right-aligned source
-        // tag shares the first line, so reserve its columns too (measured
-        // with the row cell — an overestimate for the smaller meta size,
-        // which errs toward earlier wrapping, never collision).
+        // tag is only ever drawn beside line 0 (`render_zones` paints it
+        // once at `top`), so its columns are reserved for that line alone
+        // (measured with the row cell — an overestimate for the smaller
+        // meta size, which errs toward earlier wrapping, never collision)
+        // — reserving it on every wrapped line wastes columns on lines
+        // 2+, which have nothing next to them.
         let glyph_cols = 2;
         let source_cols = if source.is_empty() {
             0
         } else {
             source.chars().count() + 2
         };
-        let msg_cols = cols.saturating_sub(glyph_cols + source_cols).max(8);
-        let mut lines = wrap_zone_text(message, msg_cols);
+        let msg_cols = cols.saturating_sub(glyph_cols).max(8);
+        let first_line_cols = msg_cols.saturating_sub(source_cols).max(8);
+        let mut lines = wrap_zone_text_budgeted(message, msg_cols, first_line_cols);
         let truncated = lines.len() > MAX_ZONE_BANNER_LINES;
         lines.truncate(MAX_ZONE_BANNER_LINES);
         let text_rows = lines.len() + usize::from(truncated);
@@ -2331,16 +2358,26 @@ fn zone_wrap_cols(max_w: usize, scale_factor: f64) -> usize {
 /// Word-wrap `text` to `cols` monospace columns, hard-breaking tokens
 /// longer than a line.
 fn wrap_zone_text(text: &str, cols: usize) -> Vec<String> {
+    wrap_zone_text_budgeted(text, cols, cols)
+}
+
+/// Same greedy word-wrap as `wrap_zone_text`, but the very first output
+/// line is capped at `first_line_cols` instead of `cols` — the banner's
+/// only consumer: its line 0 shares its row with the right-aligned source
+/// tag, but nothing else does (`plan_zones`).
+fn wrap_zone_text_budgeted(text: &str, cols: usize, first_line_cols: usize) -> Vec<String> {
     let mut out = Vec::new();
     for line in text.lines() {
         let chars: Vec<char> = line.chars().collect();
-        if chars.len() <= cols {
+        let budget = if out.is_empty() { first_line_cols } else { cols };
+        if chars.len() <= budget {
             out.push(line.to_string());
             continue;
         }
         let mut start = 0;
         while start < chars.len() {
-            let hard_end = (start + cols).min(chars.len());
+            let budget = if out.is_empty() { first_line_cols } else { cols };
+            let hard_end = (start + budget).min(chars.len());
             let end = if hard_end < chars.len() {
                 // Prefer the last space inside the window; hard-break when
                 // a single token exceeds the line.
@@ -2494,6 +2531,80 @@ mod tests {
         assert_eq!(
             with_chrome, without_chrome,
             "tab bar/footer must not paint over the panel's rounded corners"
+        );
+    }
+
+    /// A `Zones` banner has no header above it (`layout()`'s Zones arm
+    /// never sets one) — it sits flush against the panel's rounded top
+    /// edge exactly like the tab bar does, and must not square those
+    /// corners either. Regression for the diagnostic hover card (banner +
+    /// text), reproduced at the finding's exact geometry: 280px min-width
+    /// Cursor anchor, `(Error, "unused variable", "rustc")`.
+    #[test]
+    fn a_zones_banner_does_not_square_the_panel_corners() {
+        let font = Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .expect("test font should load");
+        let mut glyph_cache = super::super::GlyphCache::default();
+        let theme = OverlayTheme::default_dark();
+
+        let mut render_corners = |banner: bool| -> [u32; 2] {
+            let (w, h) = (1200usize, 800usize);
+            let mut buffer = vec![0u32; w * h];
+            let mut frame = Frame::new(&mut buffer, w, h);
+            let mut painter = test_painter(&font, &mut glyph_cache);
+            let mut mask_cache = RoundedRectMaskCache::new();
+
+            let spec = OverlaySpec {
+                anchor: Anchor::Cursor {
+                    x: 400,
+                    y: 300,
+                    h: 18,
+                    prefer_below: false,
+                    width: WidthRule {
+                        pct: 0.0,
+                        min: 280.0,
+                        max: 420.0,
+                    },
+                },
+                tabs: None,
+                header: None,
+                body: Body::Zones(Zones {
+                    banner: banner.then_some((Severity::Error, "unused variable", "rustc")),
+                    code: None,
+                    text: Some("some explanatory hover text"),
+                }),
+                footer: None,
+                hover_row: None,
+            };
+
+            render(
+                &mut frame,
+                &mut painter,
+                &mut mask_cache,
+                &theme,
+                &spec,
+                w,
+                h,
+                1.0,
+                true,
+            );
+
+            let l = layout(&spec, w, h, 1.0);
+            [
+                frame.get_pixel(l.panel.x, l.panel.y),
+                frame.get_pixel(l.panel.x + l.panel.w - 1, l.panel.y),
+            ]
+        };
+
+        let without_banner = render_corners(false);
+        let with_banner = render_corners(true);
+
+        assert_eq!(
+            with_banner, without_banner,
+            "the banner wash must not paint over the panel's rounded top corners"
         );
     }
 
@@ -2724,10 +2835,20 @@ mod tests {
         let banner = plan.banner.expect("banner plan");
         assert!(banner.lines.len() > 1, "long message must wrap");
         let cols = zone_wrap_cols(320 - 2 * scaled(dims::HEADER_PAD_X, 1.0), 1.0);
-        let budget = cols - 2 - ("phpantom".len() + 2);
+        let wide_budget = cols - 2;
+        let first_line_budget = wide_budget - ("phpantom".len() + 2);
+        // Only line 0 shares its row with the source tag (`render_zones`
+        // paints it once at `top`) — it alone must respect the narrower
+        // budget; lines 1+ get the full glyph-only budget instead of
+        // wasting columns reserving space nothing sits next to.
         assert!(
-            banner.lines.iter().all(|l| l.chars().count() <= budget),
-            "lines must respect the glyph+source budget: {:?}",
+            banner.lines[0].chars().count() <= first_line_budget,
+            "line 0 must respect the glyph+source budget: {:?}",
+            banner.lines
+        );
+        assert!(
+            banner.lines[1..].iter().all(|l| l.chars().count() <= wide_budget),
+            "lines after the first need only the glyph budget: {:?}",
             banner.lines
         );
         assert!(
@@ -2748,6 +2869,42 @@ mod tests {
         let banner = plan.banner.unwrap();
         assert_eq!(banner.lines.len(), MAX_ZONE_BANNER_LINES);
         assert!(banner.truncated);
+    }
+
+    /// Reproduces the reported shredding: a real, longer source tag (a
+    /// language-server name, not a two-letter stub) must not shrink lines
+    /// 2+ the way it shrinks line 0 — that wasted budget was losing whole
+    /// words of the message.
+    #[test]
+    fn banner_plan_only_narrows_the_first_line_for_the_source_tag() {
+        let zones = Zones {
+            banner: Some((
+                Severity::Error,
+                "cannot find value `foo` in this scope and more explanation of the error",
+                "typescript-eslint",
+            )),
+            code: None,
+            text: None,
+        };
+        let plan = plan_zones(&zones, 280, 1.0);
+        let banner = plan.banner.expect("banner plan");
+        assert!(banner.lines.len() > 1, "message must wrap");
+
+        let cols = zone_wrap_cols(280 - 2 * scaled(dims::HEADER_PAD_X, 1.0), 1.0);
+        let wide_budget = cols - 2;
+        let first_line_budget = wide_budget - ("typescript-eslint".len() + 2);
+
+        assert!(banner.lines[0].chars().count() <= first_line_budget);
+        // At least one later line must use more columns than the narrow
+        // first-line budget allowed — otherwise the reservation is still
+        // silently applied to every line.
+        assert!(
+            banner.lines[1..]
+                .iter()
+                .any(|l| l.chars().count() > first_line_budget),
+            "lines after the first must be free to use the wider, glyph-only budget: {:?}",
+            banner.lines
+        );
     }
 
     #[test]
