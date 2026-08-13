@@ -2802,6 +2802,37 @@ mod tests {
     }
 
     #[test]
+    fn untitled_non_first_sections_flatten_to_separator_rows() {
+        let row = |label| Row {
+            icon: RowIcon::None,
+            label,
+            match_indices: &[],
+            detail: None,
+            accessory: Accessory::None,
+        };
+        let rows_a = [row("a")];
+        let rows_b = [row("b")];
+        let sections = [
+            Section {
+                title: None,
+                rows: &rows_a,
+            },
+            Section {
+                title: None,
+                rows: &rows_b,
+            },
+        ];
+        let display = flatten_rows(&sections);
+        // First untitled section emits no boundary; the second emits a
+        // Separator slot — context-menu separators must occupy a display
+        // row or they render no gap at all.
+        assert_eq!(display.len(), 3);
+        assert!(matches!(display[0], DisplayRow::Row(_, FlatIndex(0))));
+        assert!(matches!(display[1], DisplayRow::Separator));
+        assert!(matches!(display[2], DisplayRow::Row(_, FlatIndex(1))));
+    }
+
+    #[test]
     fn coalesce_merges_consecutive_indices_into_runs() {
         assert_eq!(
             coalesce_match_indices(&[0, 1, 2, 5, 6, 9]),
