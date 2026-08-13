@@ -127,11 +127,18 @@ fn build_tab_menu(
         ),
         MenuItem::separator(),
     ];
+    items.push(MenuItem::custom(
+        "Reveal in File Explorer",
+        has_path,
+        vec![Msg::Workspace(WorkspaceMsg::RevealPath(
+            file_path.map(Path::to_path_buf).unwrap_or_default(),
+        ))],
+    ));
     items.extend(path_action_items(file_path, has_path, has_workspace));
     items
 }
 
-fn build_file_tree_menu(_model: &AppModel, path: &Path, is_dir: bool) -> Vec<MenuItem> {
+fn build_file_tree_menu(model: &AppModel, path: &Path, is_dir: bool) -> Vec<MenuItem> {
     let open_action = if is_dir {
         Msg::Workspace(WorkspaceMsg::ToggleFolder(path.to_path_buf()))
     } else {
@@ -140,7 +147,14 @@ fn build_file_tree_menu(_model: &AppModel, path: &Path, is_dir: bool) -> Vec<Men
             preview: false,
         })
     };
-    let has_workspace = true; // the file tree only right-clicks inside an open workspace
+    // context-menu.md's File Tree table lists only Reveal in Finder / Copy
+    // Absolute Path / Copy Relative Path — no "Reveal in File Explorer"
+    // row (that's the Tab menu's item, which reveals a *different* file
+    // than the one already showing in the tree). `has_workspace` reflects
+    // the real workspace state rather than being hardcoded true, so "Copy
+    // Relative Path" is correctly disabled if `copy_path` would otherwise
+    // silently fall back to the absolute path.
+    let has_workspace = model.workspace_root().is_some();
 
     let mut items = vec![
         MenuItem::custom("Open", true, vec![open_action]),
@@ -166,11 +180,6 @@ fn path_action_items(
 ) -> Vec<MenuItem> {
     let path: PathBuf = file_path.map(Path::to_path_buf).unwrap_or_default();
     vec![
-        MenuItem::custom(
-            "Reveal in File Explorer",
-            has_path,
-            vec![Msg::Workspace(WorkspaceMsg::RevealPath(path.clone()))],
-        ),
         MenuItem::custom(
             "Reveal in Finder",
             has_path,
@@ -335,5 +344,48 @@ mod tests {
         for label in ["Reveal in Finder", "Copy Absolute Path", "Refresh Tree"] {
             assert!(items.iter().find(|i| i.label == label).unwrap().enabled);
         }
+    }
+
+    #[test]
+    fn file_tree_menu_has_no_reveal_in_file_explorer_row() {
+        // context-menu.md's File Tree table doesn't list this row (it's
+        // the Tab menu's item) — a right-click in the tree that is already
+        // showing this file shouldn't offer to reveal it again.
+        let model = AppModel::new(800, 600, 1.0, vec![]);
+        let path = PathBuf::from("/tmp/some/file.rs");
+        let items = build_file_tree_menu(&model, &path, false);
+        assert!(!items.iter().any(|i| i.label == "Reveal in File Explorer"));
+    }
+
+    #[test]
+    fn file_tree_menu_copy_relative_path_needs_a_real_workspace() {
+        let path = PathBuf::from("/tmp/some/file.rs");
+
+        let no_workspace = AppModel::new(800, 600, 1.0, vec![]);
+        let items = build_file_tree_menu(&no_workspace, &path, false);
+        assert!(
+            !items
+                .iter()
+                .find(|i| i.label == "Copy Relative Path")
+                .unwrap()
+                .enabled,
+            "no workspace open -> Copy Relative Path disabled, not hardcoded enabled"
+        );
+
+        let ws_dir = tempfile::tempdir().unwrap();
+        let mut with_workspace = AppModel::new(800, 600, 1.0, vec![]);
+        with_workspace.workspace = crate::model::workspace::Workspace::new(
+            ws_dir.path().to_path_buf(),
+            &with_workspace.metrics,
+        )
+        .ok();
+        let items = build_file_tree_menu(&with_workspace, &path, false);
+        assert!(
+            items
+                .iter()
+                .find(|i| i.label == "Copy Relative Path")
+                .unwrap()
+                .enabled
+        );
     }
 }
