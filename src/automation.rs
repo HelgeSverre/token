@@ -96,6 +96,58 @@ pub(crate) struct EditorSnapshot {
     /// The Show Usages / multi-def popup, if open — `None` when
     /// `ui.cursor_overlay`'s kind isn't `References`.
     pub references: Option<ReferencesSnapshot>,
+    /// The context menu (context-menu.md), if open — `None` when
+    /// `ui.cursor_overlay`'s kind isn't `ContextMenu`.
+    pub context_menu: Option<ContextMenuSnapshot>,
+}
+
+/// A read-only view of the open context menu, for automation to drive
+/// open→navigate→confirm flows without a rendering backend. `rows` walks
+/// `context_menu::selectable_items(&state.items)` — the menu's own
+/// addressing space (separators excluded, same order `FlatIndex`/
+/// `ContextMenuMsg::ActivateItem` use) — so this can never drift from what
+/// the view renders or Enter/click activates.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ContextMenuSnapshot {
+    pub region: String,
+    pub rows: Vec<ContextMenuRowSnapshot>,
+    pub selected: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ContextMenuRowSnapshot {
+    pub label: String,
+    pub enabled: bool,
+}
+
+fn context_menu_snapshot(model: &AppModel) -> Option<ContextMenuSnapshot> {
+    if !matches!(
+        model.ui.cursor_overlay,
+        Some(token::model::CursorOverlayState {
+            kind: token::model::CursorOverlayKind::ContextMenu,
+            ..
+        })
+    ) {
+        return None;
+    }
+    let selected = model.ui.cursor_overlay.map(|o| o.selected).unwrap_or(0);
+    let state = model.ui.context_menu.as_ref()?;
+    let rows = token::context_menu::selectable_items(&state.items)
+        .map(|item| ContextMenuRowSnapshot {
+            label: item.label.clone(),
+            enabled: item.enabled,
+        })
+        .collect();
+    let region = match state.region {
+        token::context_menu::ContextMenuRegion::Editor => "editor",
+        token::context_menu::ContextMenuRegion::EditorTabBar => "editor_tab_bar",
+        token::context_menu::ContextMenuRegion::FileTree => "file_tree",
+    };
+    Some(ContextMenuSnapshot {
+        region: region.to_owned(),
+        rows,
+        selected,
+    })
 }
 
 /// A read-only view of the Show Usages / multi-def popup, for automation
@@ -540,6 +592,7 @@ impl EditorSnapshot {
             hover: hover_snapshot(model),
             problems: problems_snapshot(model),
             references: references_snapshot(model),
+            context_menu: context_menu_snapshot(model),
         }
     }
 }

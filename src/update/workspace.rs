@@ -121,6 +121,11 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
             Some(Cmd::redraw_editor())
         }
 
+        WorkspaceMsg::RevealPath(path) => {
+            reveal_path(model, &path);
+            Some(Cmd::redraw_editor())
+        }
+
         WorkspaceMsg::StartSidebarResize { initial_x } => {
             if let Some(workspace) = &model.workspace {
                 model.ui.sidebar_resize = Some(crate::model::SidebarResizeState {
@@ -386,7 +391,6 @@ fn select_adjacent_item(model: &mut AppModel, delta: i32) {
 
 /// Reveal the currently active file in the tree
 fn reveal_active_file(model: &mut AppModel) {
-    // Get active file path
     let active_path = model
         .editor_area
         .focused_document()
@@ -397,6 +401,13 @@ fn reveal_active_file(model: &mut AppModel) {
         return;
     };
 
+    reveal_path(model, &path);
+}
+
+/// Expand/select/scroll the sidebar tree to `path` — the shared body of
+/// `RevealActiveFile` (path = the focused document's) and `RevealPath`
+/// (path = whatever the caller resolved, e.g. a right-clicked tab).
+fn reveal_path(model: &mut AppModel, path: &std::path::Path) {
     let Some(workspace) = &mut model.workspace else {
         model.ui.set_status("No workspace open");
         return;
@@ -417,7 +428,7 @@ fn reveal_active_file(model: &mut AppModel) {
         crate::messages::DockMsg::ActivatePanel(crate::panel::PanelId::FILE_EXPLORER),
     );
     if let Some(workspace) = &mut model.workspace {
-        workspace.reveal_file(&path);
+        workspace.reveal_file(path);
     }
     ensure_selection_visible(model);
 }

@@ -637,6 +637,11 @@ pub enum CursorOverlayKind {
     /// consumes (a flat list with no query, per context-menu.md's
     /// routing policy).
     References,
+    /// The right-click / Shift+F10 context menu (context-menu.md), backed
+    /// by `UiState::context_menu`. Up/Down navigate (skipping disabled
+    /// rows), Enter activates, Escape dismisses; any other key — even a
+    /// modified one — dismisses and consumes (never reaches the editor).
+    ContextMenu,
 }
 
 /// State for a cursor-anchored popup (`ui.cursor_overlay`), distinct from
@@ -686,6 +691,28 @@ pub struct HoverCardState {
 /// time (sorted by `(path, line)`), stored here; both the view's spec
 /// builder and Enter/click activation index this same `Vec`.
 pub type ReferenceList = Vec<crate::update::navigation::LocationItem>;
+
+/// Content for the currently open context menu (`ui.cursor_overlay` ==
+/// `Some(CursorOverlayState { kind: CursorOverlayKind::ContextMenu, .. })`)
+/// — set alongside `cursor_overlay`, cleared together. `items` is the
+/// ordering authority (built once at open time by the region builder in
+/// `context_menu::builders`; view and Enter/click activation both index
+/// this same `Vec`, addressing it by the "non-separator items in order"
+/// scheme `context_menu::selectable_items` defines). `anchor` is the
+/// `Anchor::Cursor` pixel rect the doc's Overlay Context section
+/// describes — `(x, y, h)`, `h: 0` for a raw click point, the real caret
+/// line height for the Shift+F10 trigger — captured at open time since,
+/// unlike every other cursor-overlay kind, a context menu's anchor isn't
+/// re-derivable from live model state (no live "current click position").
+#[derive(Debug, Clone)]
+pub struct ContextMenuState {
+    pub items: Vec<crate::context_menu::MenuItem>,
+    pub anchor: (usize, usize, usize),
+    /// Which region built this menu — automation-facing (`context_menu`
+    /// snapshot) and testing convenience; the view/routing layer doesn't
+    /// need it (both index `items` directly).
+    pub region: crate::context_menu::ContextMenuRegion,
+}
 
 // ============================================================================
 // Drop State (file drag-and-drop feedback)
@@ -950,6 +977,11 @@ pub struct UiState {
     /// `Some(CursorOverlayKind::References)`. `None` whenever the popup is
     /// closed.
     pub reference_list: Option<ReferenceList>,
+    /// The context menu's built items + open-time anchor
+    /// (context-menu.md), set alongside `cursor_overlay` being
+    /// `Some(CursorOverlayKind::ContextMenu)`. `None` whenever the menu is
+    /// closed.
+    pub context_menu: Option<ContextMenuState>,
     /// The position captured by the most recently fired mouse-dwell hover
     /// request (`LspMsg::ShowHoverAt`) — the `Mouse`-origin analogue of
     /// comparing a keyboard `ShowHover` reply against the *live* caret
@@ -987,6 +1019,7 @@ impl UiState {
             completion_menu: None,
             hover_card: None,
             reference_list: None,
+            context_menu: None,
             mouse_hover_target: None,
         }
     }

@@ -4,6 +4,7 @@
 
 mod app;
 mod completion;
+pub mod context_menu;
 mod csv;
 mod dock;
 mod document;
@@ -34,6 +35,7 @@ use tracing::{debug, span, Level};
 
 pub use app::{create_default_keymap_file, execute_command, update_app};
 pub use completion::update_completion;
+pub use context_menu::update_context_menu;
 pub use csv::update_csv;
 pub use dock::update_dock;
 pub use document::update_document;
@@ -161,6 +163,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::Terminal(m) => terminal::update_terminal(model, m),
         Msg::Completion(m) => completion::update_completion(model, m),
         Msg::Lsp(m) => lsp::update_lsp(model, m),
+        Msg::ContextMenu(m) => context_menu::update_context_menu(model, m),
     };
 
     // Any focus change away from the editor (modal open, dock/sidebar
@@ -318,5 +321,6 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Terminal(m) => format!("Terminal::{:?}", m),
         Msg::Completion(m) => format!("Completion::{:?}", m),
         Msg::Lsp(m) => format!("Lsp::{:?}", m),
+        Msg::ContextMenu(m) => format!("ContextMenu::{:?}", m),
     }
 }

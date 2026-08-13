@@ -132,6 +132,24 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
             ))
         }
 
+        LayoutMsg::CloseOtherTabs { group_id, keep } => {
+            let released_documents = close_other_tabs(model, group_id, Some(keep));
+            ensure_focused_tab_visible(model);
+            Some(with_released_documents(
+                Cmd::redraw_editor(),
+                released_documents,
+            ))
+        }
+
+        LayoutMsg::CloseAllTabs { group_id } => {
+            let released_documents = close_other_tabs(model, group_id, None);
+            ensure_focused_tab_visible(model);
+            Some(with_released_documents(
+                Cmd::redraw_editor(),
+                released_documents,
+            ))
+        }
+
         LayoutMsg::CloseFocusedTab => {
             if let Some(tab) = model
                 .editor_area
@@ -952,6 +970,46 @@ fn close_tab(model: &mut AppModel, tab_id: TabId) -> Vec<crate::model::editor_ar
     }
 
     released_documents
+}
+
+/// Close every tab in `group_id` except `keep` (context-menu.md's "Close
+/// Others" / "Close All" — `keep: None` closes every tab). Repeatedly
+/// drives the single-tab `close_tab` (its "don't close the last tab in the
+/// last group" invariant then applies here too: if `group_id` is the only
+/// group, one tab always survives, matching every other close-tab path in
+/// the app rather than introducing a no-tabs-open state this doc doesn't
+/// ask for).
+fn close_other_tabs(
+    model: &mut AppModel,
+    group_id: GroupId,
+    keep: Option<TabId>,
+) -> Vec<crate::model::editor_area::DocumentId> {
+    let mut released = Vec::new();
+    while let Some(next) = model
+        .editor_area
+        .groups
+        .get(&group_id)
+        .and_then(|group| group.tabs.iter().map(|t| t.id).find(|id| Some(*id) != keep))
+    {
+        let before = model
+            .editor_area
+            .groups
+            .get(&group_id)
+            .map(|g| g.tabs.len());
+        released.extend(close_tab(model, next));
+        // `close_tab` refuses to remove the last tab in the last group —
+        // stop once it stops making progress, or every candidate is gone.
+        if model
+            .editor_area
+            .groups
+            .get(&group_id)
+            .map(|g| g.tabs.len())
+            == before
+        {
+            break;
+        }
+    }
+    released
 }
 
 // ============================================================================

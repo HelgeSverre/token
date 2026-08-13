@@ -1715,6 +1715,48 @@ pub fn with_cursor_overlay_layout<R>(
         return Some(f(&spec, &l));
     }
 
+    // The context menu carries its own open-time anchor (`ui.context_menu.
+    // anchor` — the click point, or the caret rect for Shift+F10), never
+    // derived from the live caret/hover state the block below reads —
+    // early-return like Completion, before that block's `focused_editor`/
+    // `focused_document` requirements (a right-click on a file-tree item
+    // has neither).
+    if state.kind == crate::model::CursorOverlayKind::ContextMenu {
+        let menu = model.ui.context_menu.as_ref()?;
+        let chip_steps = context_menu_chip_steps(&menu.items);
+        let rows = context_menu_rows(&menu.items, &chip_steps);
+        let sections = context_menu_sections(&menu.items, &rows);
+        let (x, y, h) = menu.anchor;
+        let spec = OverlaySpec {
+            tabs: None,
+            anchor: Anchor::Cursor {
+                x,
+                y,
+                h,
+                prefer_below: true,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 160.0,
+                    max: 320.0,
+                },
+            },
+            header: None,
+            body: Body::List {
+                sections: &sections,
+                selected: FlatIndex(state.selected.min(rows.len().saturating_sub(1))),
+                scroll: state.scroll,
+                // V1 menus top out at ~8 items including separators — no
+                // scroll behavior needed (context-menu.md "Body::List and
+                // row anatomy").
+                max_visible: usize::MAX,
+            },
+            footer: None,
+            hover_row: None,
+        };
+        let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+        return Some(f(&spec, &l));
+    }
+
     // A mouse-dwell hover anchors to the hovered text cell instead of the
     // caret (`HoverCardState::anchor`, set only for `ShowHoverAt` replies);
     // every other kind — including a keyboard-invoked hover — keeps
@@ -1738,6 +1780,7 @@ pub fn with_cursor_overlay_layout<R>(
 
     match state.kind {
         crate::model::CursorOverlayKind::Completion => unreachable!("handled above"),
+        crate::model::CursorOverlayKind::ContextMenu => unreachable!("handled above"),
         crate::model::CursorOverlayKind::DebugCompletion => {
             let rows = debug_completion_rows();
             let sections = [Section {
@@ -1898,6 +1941,90 @@ pub fn with_cursor_overlay_layout<R>(
             Some(f(&spec, &l))
         }
     }
+}
+
+/// Per-row keycap chips for `context_menu_rows` — `None` for an unbound
+/// item, `Some(steps)` otherwise; owned by the caller so `Row::accessory`'s
+/// `Keycaps(&'a [Vec<Chip>])` borrow outlives the render call, the same
+/// "owned buffer computed first, rows borrow into it" split
+/// `reference_row_text` uses.
+fn context_menu_chip_steps(
+    items: &[crate::context_menu::MenuItem],
+) -> Vec<Option<Vec<Vec<overlay_surface::Chip>>>> {
+    crate::context_menu::selectable_items(items)
+        .map(|item| {
+            item.shortcut_hint
+                .as_deref()
+                .map(overlay_surface::binding_chips)
+        })
+        .collect()
+}
+
+/// One `Row` per non-separator `MenuItem`, in `context_menu::
+/// selectable_items` order — the same "flat rows, addressed by position"
+/// space `FlatIndex`, keyboard nav, and `ContextMenuMsg::ActivateItem`'s
+/// `index` all share (context-menu.md "Separators"). Keycap chips reuse
+/// the palette's own >4-chip -> `DimText` fallback (`chip_count`); an
+/// unbound item gets `Accessory::None` (no dim filler — "Overlay Context"
+/// > Accessory).
+fn context_menu_rows<'a>(
+    items: &'a [crate::context_menu::MenuItem],
+    chip_steps: &'a [Option<Vec<Vec<overlay_surface::Chip>>>],
+) -> Vec<Row<'a>> {
+    crate::context_menu::selectable_items(items)
+        .zip(chip_steps)
+        .map(|(item, steps)| {
+            let accessory = match steps {
+                None => Accessory::None,
+                Some(steps) if overlay_surface::chip_count(steps) > 4 => {
+                    Accessory::DimText(item.shortcut_hint.as_deref().unwrap_or(""))
+                }
+                Some(steps) => Accessory::Keycaps(steps),
+            };
+            Row {
+                icon: RowIcon::None,
+                label: &item.label,
+                match_indices: &[],
+                detail: None,
+                accessory,
+            }
+        })
+        .collect()
+}
+
+/// Maps a flat `MenuItem` list (including separators) onto `OverlaySurface`
+/// `Section` boundaries: each run of non-separator items between
+/// separators becomes its own untitled `Section` (context-menu.md
+/// "Separators" — a whitespace-only break, no drawn rule). `rows` must be
+/// `context_menu_rows(items)` — the non-separator subset, one-to-one with
+/// `context_menu::selectable_items(items)` in the same order.
+fn context_menu_sections<'a>(
+    items: &[crate::context_menu::MenuItem],
+    rows: &'a [Row<'a>],
+) -> Vec<Section<'a>> {
+    let mut sections = Vec::new();
+    let mut run_start = 0;
+    let mut row_index = 0;
+    for item in items {
+        if item.is_separator {
+            if row_index > run_start {
+                sections.push(Section {
+                    title: None,
+                    rows: &rows[run_start..row_index],
+                });
+            }
+            run_start = row_index;
+        } else {
+            row_index += 1;
+        }
+    }
+    if row_index > run_start {
+        sections.push(Section {
+            title: None,
+            rows: &rows[run_start..row_index],
+        });
+    }
+    sections
 }
 
 /// Per-row `detail`/`accessory` text for the References/multi-def popup —
@@ -2229,5 +2356,68 @@ mod tests {
             lsp_server_accessory(false),
             Accessory::DimText("disabled")
         ));
+    }
+
+    // ========================================================================
+    // Context menu (context-menu.md)
+    // ========================================================================
+
+    #[test]
+    fn context_menu_sections_maps_separators_to_section_boundaries() {
+        use crate::context_menu::MenuItem;
+
+        let items = vec![
+            MenuItem::custom("Cut", true, vec![]),
+            MenuItem::custom("Copy", false, vec![]),
+            MenuItem::separator(),
+            MenuItem::custom("Go to Definition", true, vec![]),
+            MenuItem::separator(),
+            MenuItem::separator(), // adjacent separators: no empty section
+            MenuItem::custom("Reveal in File Explorer", true, vec![]),
+        ];
+        let chip_steps = context_menu_chip_steps(&items);
+        let rows = context_menu_rows(&items, &chip_steps);
+        assert_eq!(rows.len(), 4, "4 non-separator items");
+
+        let sections = context_menu_sections(&items, &rows);
+        let lens: Vec<usize> = sections.iter().map(|s| s.rows.len()).collect();
+        assert_eq!(
+            lens,
+            vec![2, 1, 1],
+            "3 runs: {{Cut,Copy}}, {{GotoDef}}, {{Reveal}}"
+        );
+        assert!(sections.iter().all(|s| s.title.is_none()));
+        assert_eq!(sections[0].rows[0].label, "Cut");
+        assert_eq!(sections[0].rows[1].label, "Copy");
+        assert_eq!(sections[1].rows[0].label, "Go to Definition");
+        assert_eq!(sections[2].rows[0].label, "Reveal in File Explorer");
+    }
+
+    #[test]
+    fn context_menu_sections_drops_leading_and_trailing_separators() {
+        use crate::context_menu::MenuItem;
+
+        let items = vec![
+            MenuItem::separator(),
+            MenuItem::custom("Only Item", true, vec![]),
+            MenuItem::separator(),
+        ];
+        let chip_steps = context_menu_chip_steps(&items);
+        let rows = context_menu_rows(&items, &chip_steps);
+        let sections = context_menu_sections(&items, &rows);
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].rows.len(), 1);
+    }
+
+    #[test]
+    fn context_menu_rows_falls_back_to_dim_text_for_a_5_chip_binding() {
+        use crate::context_menu::MenuItem;
+
+        let mut item = MenuItem::custom("Everything", true, vec![]);
+        item.shortcut_hint = Some("⌃⌥⇧⌘X".to_owned()); // 5 chips
+        let items = vec![item];
+        let chip_steps = context_menu_chip_steps(&items);
+        let rows = context_menu_rows(&items, &chip_steps);
+        assert!(matches!(rows[0].accessory, Accessory::DimText(_)));
     }
 }

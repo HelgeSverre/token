@@ -302,6 +302,16 @@ pub enum Command {
     /// panel variant is a later feature.
     ShowUsages,
 
+    // ========================================================================
+    // Context menu (context-menu.md)
+    // ========================================================================
+    /// Shift+F10: open the editor's context menu at the text caret (no
+    /// mouse position to anchor to on a keyboard trigger). Handled
+    /// specially in `App::dispatch_command` rather than via `to_msgs` — it
+    /// needs the caret's pixel rect and a live clipboard read, both
+    /// runtime-only (`update()` must not do I/O).
+    ShowContextMenu,
+
     // Image viewer
     /// Zoom in (image mode)
     ImageZoomIn,
@@ -516,6 +526,12 @@ impl Command {
             ShowHover => vec![Msg::Lsp(LspMsg::ShowHover)],
             FindUsages | ShowUsages => vec![Msg::Lsp(LspMsg::FindReferences)],
 
+            // Handled specially in `App::dispatch_command` (needs the
+            // caret's pixel rect + a clipboard read, both runtime-only —
+            // see the variant's doc comment). Never reaches here in
+            // practice; empty, matching the `Unbound` precedent.
+            ShowContextMenu => vec![],
+
             // Image viewer
             ImageZoomIn => vec![Msg::Image(ImageMsg::Zoom {
                 delta: 1.0,
@@ -693,6 +709,7 @@ impl Command {
             ShowHover => "Show Hover",
             FindUsages => "Find Usages",
             ShowUsages => "Show Usages",
+            ShowContextMenu => "Show Context Menu",
 
             ImageZoomIn => "Image: Zoom In",
             ImageZoomOut => "Image: Zoom Out",

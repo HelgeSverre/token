@@ -172,6 +172,45 @@ mod tests {
     }
 
     #[test]
+    fn cursor_overlay_row_click_activates_a_context_menu_item() {
+        use token::context_menu::MenuItem;
+        use token::messages::LayoutMsg;
+        use token::model::{ContextMenuState, CursorOverlayKind, CursorOverlayState};
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        // A second tab so "Close" (targeting tab 0) has something to close
+        // without hitting the "can't close the last tab" guard.
+        update(&mut model, Msg::Layout(LayoutMsg::NewTab));
+        let group_id = model.editor_area.focused_group_id;
+        let first_tab = model.editor_area.groups[&group_id].tabs[0].id;
+
+        let items = vec![MenuItem::custom(
+            "Close",
+            true,
+            vec![Msg::Layout(LayoutMsg::CloseTab(first_tab))],
+        )];
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::ContextMenu));
+        model.ui.context_menu = Some(ContextMenuState {
+            items,
+            anchor: (0, 0, 0),
+            region: token::context_menu::ContextMenuRegion::EditorTabBar,
+        });
+
+        let result = handle_cursor_overlay_click(&mut model, Some(0));
+
+        assert!(matches!(result, EventResult::Consumed { redraw: true, .. }));
+        assert!(
+            model.ui.context_menu.is_none(),
+            "activation closes the menu"
+        );
+        assert_eq!(model.editor_area.groups[&group_id].tabs.len(), 1);
+        assert!(!model.editor_area.groups[&group_id]
+            .tabs
+            .iter()
+            .any(|t| t.id == first_tab));
+    }
+
+    #[test]
     fn mouse_wheel_up_over_terminal_dock_scrolls_scrollback() {
         let mut model = terminal_model_with_history();
 
@@ -243,6 +282,98 @@ mod tests {
     #[test]
     fn tab_bar_no_scroll_when_both_axes_are_zero() {
         assert_eq!(tab_bar_scroll_delta_px(0, 0, 10), None);
+    }
+
+    // ========================================================================
+    // Context menu (context-menu.md)
+    // ========================================================================
+
+    fn right_click_event() -> MouseEvent {
+        MouseEvent::new(50.0, 60.0, MouseButton::Right, ModifiersState::empty())
+    }
+
+    #[test]
+    fn right_click_on_editor_content_opens_the_editor_menu() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let group_id = model.editor_area.focused_group_id;
+        let editor_id = model.editor_area.focused_editor_id().unwrap();
+        let document_id = model.editor_area.focused_document_id().unwrap();
+        let target = HitTarget::EditorContent {
+            group_id,
+            editor_id,
+            document_id,
+        };
+
+        let result = handle_right_click(&mut model, &target, &right_click_event());
+
+        assert!(matches!(result, EventResult::Consumed { .. }));
+        assert!(model.ui.context_menu.is_some(), "the editor menu opened");
+        assert_eq!(
+            model.ui.context_menu.unwrap().region,
+            token::context_menu::ContextMenuRegion::Editor
+        );
+    }
+
+    #[test]
+    fn right_click_on_a_sidebar_item_opens_the_file_tree_menu() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let target = HitTarget::SidebarItem {
+            path: std::path::PathBuf::from("/tmp/foo.rs"),
+            row: 0,
+            is_dir: false,
+            clicked_on_chevron: false,
+        };
+
+        handle_right_click(&mut model, &target, &right_click_event());
+
+        assert_eq!(
+            model.ui.context_menu.unwrap().region,
+            token::context_menu::ContextMenuRegion::FileTree
+        );
+    }
+
+    #[test]
+    fn right_click_on_a_region_with_no_v1_menu_bubbles() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let result = handle_right_click(&mut model, &HitTarget::StatusBar, &right_click_event());
+        assert!(matches!(result, EventResult::Bubble));
+        assert!(model.ui.context_menu.is_none());
+    }
+
+    #[test]
+    fn right_click_is_a_no_op_while_a_modal_is_open() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.ui.active_modal = Some(token::model::ModalState::GotoLine(Default::default()));
+        let target = HitTarget::SidebarItem {
+            path: std::path::PathBuf::from("/tmp/foo.rs"),
+            row: 0,
+            is_dir: false,
+            clicked_on_chevron: false,
+        };
+
+        let result = handle_right_click(&mut model, &target, &right_click_event());
+
+        assert!(model.ui.context_menu.is_none());
+        assert!(
+            matches!(result, EventResult::Consumed { .. }),
+            "still consumed — no menu opened, but the click shouldn't fall through either"
+        );
+    }
+
+    #[test]
+    fn tab_file_path_resolves_the_tabs_document_not_the_focused_one() {
+        let model = AppModel::new(800, 600, 1.0, vec![]);
+        let group_id = model.editor_area.focused_group_id;
+        let tab_id = model
+            .editor_area
+            .groups
+            .get(&group_id)
+            .unwrap()
+            .active_tab()
+            .unwrap()
+            .id;
+        // An untitled buffer has no path.
+        assert_eq!(tab_file_path(&model, group_id, tab_id), None);
     }
 }
 
@@ -502,7 +633,11 @@ pub fn handle_mouse_press(
 
     // Cursor-anchored popups are non-blocking (overlay-surface.md Phase 5):
     // a click that lands outside the popup dismisses it but still falls
-    // through to whatever's actually under the cursor.
+    // through to whatever's actually under the cursor. The context menu is
+    // the one exception (context-menu.md "Mouse: click-away consumes, not
+    // click-through" — JetBrains behavior, not VS Code's): capture the
+    // kind before clearing so that case can also swallow the click below.
+    let dismissed_kind = model.ui.cursor_overlay.map(|s| s.kind);
     let dismissed_cursor_overlay = if model.ui.cursor_overlay.is_some()
         && !matches!(target, HitTarget::CursorOverlay { .. })
     {
@@ -510,10 +645,22 @@ pub fn handle_mouse_press(
         model.ui.completion_menu = None;
         model.ui.hover_card = None;
         model.ui.reference_list = None;
+        model.ui.context_menu = None;
         true
     } else {
         false
     };
+
+    if dismissed_cursor_overlay
+        && dismissed_kind == Some(token::model::CursorOverlayKind::ContextMenu)
+    {
+        // Consumed, not click-through: the dismissing click must not also
+        // act on whatever it landed on.
+        return MousePressResult {
+            cmd: Some(Cmd::Redraw),
+            start_drag_tracking: false,
+        };
+    }
 
     // Track if we're clicking on editor content (for drag tracking).
     // Interactive gutter lanes (fold chevron, marks) consume the press
@@ -620,6 +767,12 @@ fn handle_cursor_overlay_click(model: &mut AppModel, flat_index: Option<usize>) 
             update(
                 model,
                 Msg::Lsp(token::messages::LspMsg::ActivateReference { index: idx }),
+            );
+        }
+        Some(token::model::CursorOverlayKind::ContextMenu) => {
+            update(
+                model,
+                Msg::ContextMenu(token::messages::ContextMenuMsg::ActivateItem { index: idx }),
             );
         }
         _ => {}
@@ -1337,13 +1490,98 @@ fn handle_middle_click(
 }
 
 /// Handle right mouse button clicks (context menus - future)
-fn handle_right_click(
-    _model: &mut AppModel,
-    _target: &HitTarget,
-    _event: &MouseEvent,
-) -> EventResult {
-    // Future: show context menus based on target
-    EventResult::Bubble
+/// Synchronous clipboard-content check for the context menu's Paste-
+/// enablement gate (context-menu.md's `ContextMenuTarget::Editor::
+/// clipboard_has_content`). Unlike `Cmd::RequestClipboardPaste` (which
+/// round-trips through a worker thread — see `App`'s `Cmd` executor), this
+/// reads inline on the UI thread: a menu builder needs the answer before
+/// it can render a single frame, and a local clipboard read is a fast
+/// syscall, not a blocking one.
+/// ponytail: main-thread clipboard read; move off-thread if a slow/huge
+/// clipboard payload is ever observed to jank right-click.
+fn clipboard_has_content() -> bool {
+    arboard::Clipboard::new()
+        .and_then(|mut c| c.get_text())
+        .is_ok_and(|text| !text.is_empty())
+}
+
+/// Resolve `target`/`event` into a `ContextMenuTarget` for the three V1
+/// regions (editor content, tab, file-tree item) and open the menu.
+/// Regions with no V1 menu (status bar, dock, ...) keep bubbling
+/// (context-menu.md "Phase 2: Hit-Test Wiring & Open/Close").
+fn handle_right_click(model: &mut AppModel, target: &HitTarget, event: &MouseEvent) -> EventResult {
+    use token::context_menu::ContextMenuTarget;
+    use token::messages::ContextMenuMsg;
+
+    let menu_target = match target {
+        HitTarget::EditorContent {
+            group_id,
+            editor_id,
+            ..
+        } => {
+            let has_selection = model
+                .editor_area
+                .editors
+                .get(editor_id)
+                .is_some_and(|e| !e.active_selection().is_empty());
+            ContextMenuTarget::Editor {
+                group_id: *group_id,
+                has_selection,
+                clipboard_has_content: clipboard_has_content(),
+            }
+        }
+        HitTarget::GroupTab {
+            group_id, tab_id, ..
+        } => ContextMenuTarget::Tab {
+            group_id: *group_id,
+            tab_id: *tab_id,
+            file_path: tab_file_path(model, *group_id, *tab_id),
+        },
+        HitTarget::SidebarItem { path, is_dir, .. } => ContextMenuTarget::FileTreeItem {
+            path: path.clone(),
+            is_dir: *is_dir,
+        },
+        _ => return EventResult::Bubble,
+    };
+
+    let anchor = (event.pos.x as usize, event.pos.y as usize, 0);
+    let cmd = update(
+        model,
+        Msg::ContextMenu(ContextMenuMsg::Open {
+            target: menu_target,
+            anchor,
+        }),
+    );
+    match cmd {
+        Some(cmd) => EventResult::Consumed {
+            redraw: false,
+            focus: None,
+            cmd: Some(cmd),
+        },
+        // `has_modal()` guard tripped inside `update_context_menu` — still
+        // consume the click (no menu opened, nothing else should act on
+        // it either).
+        None => EventResult::consumed_no_redraw(),
+    }
+}
+
+/// The file path backing `tab_id` in `group_id`, if any — `None` covers
+/// both "untitled buffer" and "tab not found" (defensive; the tab that was
+/// just right-clicked should always resolve).
+fn tab_file_path(
+    model: &AppModel,
+    group_id: GroupId,
+    tab_id: token::model::TabId,
+) -> Option<std::path::PathBuf> {
+    let group = model.editor_area.groups.get(&group_id)?;
+    let tab = group.tabs.iter().find(|t| t.id == tab_id)?;
+    let editor = model.editor_area.editors.get(&tab.editor_id)?;
+    let document_id = editor.document_id?;
+    model
+        .editor_area
+        .documents
+        .get(&document_id)
+        .and_then(|d| d.file_path.clone())
 }
 
 /// Horizontal `delta_px` for scrolling the editor tab strip from a wheel event,
@@ -1473,6 +1711,10 @@ pub fn handle_mouse_wheel(
                     .saturating_sub(token::view::overlay_surface::MAX_VISIBLE_COMPLETION),
                 token::model::CursorOverlayKind::References => reference_rows
                     .saturating_sub(token::view::overlay_surface::MAX_VISIBLE_COMPLETION),
+                // No scroll behavior needed for V1 (menus fit without
+                // scrolling) — inert, same as Hover (context-menu.md
+                // "Mouse: click-away consumes").
+                token::model::CursorOverlayKind::ContextMenu => 0,
             };
             let delta = v_delta.signum() * 3;
             state.scroll = if delta < 0 {

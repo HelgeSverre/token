@@ -40,6 +40,9 @@ pub enum CommandId {
     FindUsages,
     ShowUsages,
 
+    // Context menu (context-menu.md)
+    ShowContextMenu,
+
     // View operations
     SplitHorizontal,
     SplitVertical,
@@ -260,6 +263,12 @@ pub static COMMANDS: &[CommandDef] = &[
         category: CommandCategory::Nav,
         label: "Show Usages",
         keybinding: Some("⌥⌘F7"),
+    },
+    CommandDef {
+        id: CommandId::ShowContextMenu,
+        category: CommandCategory::Nav,
+        label: "Show Context Menu",
+        keybinding: Some("⇧F10"),
     },
     CommandDef {
         id: CommandId::SplitHorizontal,
@@ -484,6 +493,14 @@ pub(crate) fn all_commands() -> Vec<&'static CommandDef> {
     cmds
 }
 
+/// Look up a command's registry entry (label, category, keybinding hint) by
+/// id — used by the context menu's `MenuItem::from_command` to reuse the
+/// palette's own keycap hint instead of threading `Keymap` into a second
+/// lookup path (context-menu.md "Adjustment 2").
+pub(crate) fn command_def(id: CommandId) -> Option<&'static CommandDef> {
+    all_commands().into_iter().find(|def| def.id == id)
+}
+
 /// Map CommandId to keymap::Command for keybinding lookup
 impl CommandId {
     pub fn to_keymap_command(self) -> Option<KeymapCommand> {
@@ -506,6 +523,7 @@ impl CommandId {
             CommandId::ShowHover => Some(KeymapCommand::ShowHover),
             CommandId::FindUsages => Some(KeymapCommand::FindUsages),
             CommandId::ShowUsages => Some(KeymapCommand::ShowUsages),
+            CommandId::ShowContextMenu => Some(KeymapCommand::ShowContextMenu),
             CommandId::SplitHorizontal => Some(KeymapCommand::SplitHorizontal),
             CommandId::SplitVertical => Some(KeymapCommand::SplitVertical),
             CommandId::CloseGroup => None, // No direct mapping yet

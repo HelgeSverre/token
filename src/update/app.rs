@@ -455,6 +455,13 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::FindUsages | CommandId::ShowUsages => {
             crate::update::update_lsp(model, crate::messages::LspMsg::FindReferences)
         }
+        // Palette-invocation path — no live clipboard read available here
+        // (`update()` must not do I/O); see the function's doc comment.
+        // The keyboard shortcut (Shift+F10) goes through `App::
+        // dispatch_command`'s special case instead, with a real read.
+        CommandId::ShowContextMenu => {
+            crate::update::context_menu::open_editor_menu_at_caret(model, false)
+        }
         CommandId::SplitHorizontal => {
             update_layout(model, LayoutMsg::SplitFocused(SplitDirection::Horizontal))
         }

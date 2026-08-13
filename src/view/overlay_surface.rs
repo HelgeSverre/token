@@ -3570,6 +3570,51 @@ mod tests {
     }
 
     #[test]
+    fn cursor_anchor_with_zero_height_flips_above_a_click_near_the_bottom_edge() {
+        // A right-click point (context-menu.md's `h: 0` usage — no caret
+        // line to flip around, just the click point itself) near the
+        // bottom of an 800px window: the popup must still flip above
+        // rather than clipping off the bottom edge. Confirms `h: 0`
+        // degenerates the flip check to the click point, as the doc
+        // claims (`Anchor` "usage note, not a code change").
+        let rows = [one_row(), one_row(), one_row()];
+        let sections = [Section {
+            title: None,
+            rows: &rows,
+        }];
+        let spec = OverlaySpec {
+            tabs: None,
+            anchor: Anchor::Cursor {
+                x: 100,
+                y: 790,
+                h: 0,
+                prefer_below: true,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 0.0,
+                    max: 300.0,
+                },
+            },
+            header: None,
+            body: Body::List {
+                sections: &sections,
+                selected: FlatIndex(0),
+                scroll: 0,
+                max_visible: 8,
+            },
+            footer: None,
+            hover_row: None,
+        };
+        let l = layout(&spec, 1000, 800, 1.0);
+        assert!(
+            l.panel.y + l.panel.h <= 790,
+            "panel should flip above the click point: panel.y={} h={}",
+            l.panel.y,
+            l.panel.h
+        );
+    }
+
+    #[test]
     fn cursor_anchor_clamps_to_window_edges_when_neither_direction_fits() {
         // Anchor line close enough to both the top and bottom that a
         // small popup fits neither strictly above nor strictly below;

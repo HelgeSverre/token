@@ -6,6 +6,13 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Added a right-click context menu for the editor text area, tab bar, and
+  file tree, plus Shift+F10 to open the editor menu at the caret. Reuses the
+  command palette's popup chrome and keycap hints; Up/Down/Enter/Escape
+  navigate, any other key or an outside click dismisses it.
+
 ### Fixed
 
 - Allowed manual outline scrolling to move beyond the selected symbol without

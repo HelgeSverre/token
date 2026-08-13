@@ -376,6 +376,14 @@ pub enum LayoutMsg {
     /// Close a specific tab
     CloseTab(TabId),
 
+    /// Close every tab in `group_id` except `keep` (tab context menu's
+    /// "Close Others" — context-menu.md).
+    CloseOtherTabs { group_id: GroupId, keep: TabId },
+
+    /// Close every tab in `group_id` (tab context menu's "Close All" —
+    /// context-menu.md).
+    CloseAllTabs { group_id: GroupId },
+
     /// Close the active tab in the focused group
     CloseFocusedTab,
 
@@ -690,6 +698,36 @@ pub enum ProblemsMsg {
     },
 }
 
+/// Context menu messages (context-menu.md). Navigation (Up/Down/Escape)
+/// reuses the `cursor_overlay`-key routing every other popup uses
+/// (`runtime/input.rs::handle_cursor_overlay_key`) — no dedicated message
+/// for it, matching `LspMsg::ActivateReference`'s pattern for the one
+/// case (Enter/click) that does need to run through `update()`.
+#[derive(Debug, Clone)]
+pub enum ContextMenuMsg {
+    /// Open a menu built from `target`, anchored at `anchor` — physical
+    /// `(x, y, h)`, the `Anchor::Cursor` rect context-menu.md's Overlay
+    /// Context section describes (`h: 0` for a raw click point, the real
+    /// caret line height for Shift+F10). Dispatched by
+    /// `runtime/mouse.rs::handle_right_click` and
+    /// `App::open_context_menu_at_caret`, both of which resolve anything
+    /// requiring I/O (clipboard content) before building `target`.
+    Open {
+        target: crate::context_menu::ContextMenuTarget,
+        anchor: (usize, usize, usize),
+    },
+    /// Run the item at `index`'s action and dismiss. Shared by the
+    /// Enter-key arm and row-click activation.
+    ActivateItem { index: usize },
+    /// Tab/file-tree "Reveal in Finder", targeted at a specific path
+    /// rather than the focused document (`CommandId::RevealInFinder`'s
+    /// scope).
+    RevealPathInFinder(PathBuf),
+    /// Tab/file-tree "Copy Absolute/Relative Path", targeted at a specific
+    /// path.
+    CopyPath { path: PathBuf, relative: bool },
+}
+
 /// Terminal panel messages.
 ///
 /// Toggle/focus/panel switching is handled by the existing `DockMsg` --
@@ -831,6 +869,12 @@ pub enum WorkspaceMsg {
     /// Reveal the active file in the tree (Cmd+Shift+R)
     RevealActiveFile,
 
+    /// Reveal an arbitrary path in the tree — the generalized form of
+    /// `RevealActiveFile`, used by the context menu's tab/file-tree
+    /// "Reveal in File Explorer" (context-menu.md), which targets the
+    /// clicked item rather than the focused document.
+    RevealPath(std::path::PathBuf),
+
     /// Start resizing sidebar
     StartSidebarResize { initial_x: f64 },
 
@@ -911,6 +955,8 @@ pub enum Msg {
     Completion(CompletionMsg),
     /// Language server messages (lsp-integration.md)
     Lsp(LspMsg),
+    /// Context menu messages (context-menu.md)
+    ContextMenu(ContextMenuMsg),
 }
 
 /// Language server lifecycle messages (lsp-integration.md Phase 1).

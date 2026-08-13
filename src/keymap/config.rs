@@ -399,6 +399,9 @@ impl FromStr for Command {
             "FindUsages" => Ok(Command::FindUsages),
             "ShowUsages" => Ok(Command::ShowUsages),
 
+            // Context menu (context-menu.md)
+            "ShowContextMenu" => Ok(Command::ShowContextMenu),
+
             // Image viewer
             "ImageZoomIn" => Ok(Command::ImageZoomIn),
             "ImageZoomOut" => Ok(Command::ImageZoomOut),

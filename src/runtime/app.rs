@@ -630,6 +630,20 @@ impl App {
 
     /// Dispatch a command through the update loop
     fn dispatch_command(&mut self, command: Command) -> Option<Cmd> {
+        // `update()` must not do I/O, but this command's menu-enablement
+        // (Paste) needs a live clipboard read — resolved here, the one
+        // runtime-layer special case `Command::ShowContextMenu`'s doc
+        // comment describes, then handed off to the same pure builder
+        // `CommandId::ShowContextMenu` (the palette path) uses.
+        if command == Command::ShowContextMenu {
+            let clipboard_has_content = arboard::Clipboard::new()
+                .and_then(|mut c| c.get_text())
+                .is_ok_and(|text| !text.is_empty());
+            return token::update::context_menu::open_editor_menu_at_caret(
+                &mut self.model,
+                clipboard_has_content,
+            );
+        }
         let mut result = None;
         for msg in command.to_msgs() {
             result = update(&mut self.model, msg).or(result);
@@ -7383,6 +7397,150 @@ mod tests {
         );
 
         app.process_cmd(Cmd::Quit);
+    }
+
+    // ========================================================================
+    // Context menu (context-menu.md)
+    // ========================================================================
+
+    /// Shift+F10 → `Command::ShowContextMenu`'s special case in
+    /// `dispatch_command`: opens the editor menu at the caret (no fake LSP
+    /// server needed — no LSP items are enabled with none configured),
+    /// visible in the automation snapshot, then Down/Enter navigates and
+    /// activates a targeted `Messages` action end to end.
+    #[test]
+    fn show_context_menu_opens_navigates_and_activates_via_the_real_dispatch_path() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.document_mut().buffer = ropey::Rope::from("hello world\n");
+        app.model.editor_mut().clear_selection();
+
+        let cmd = app.dispatch_command(Command::ShowContextMenu);
+        assert!(cmd.is_some(), "opening the menu produces a redraw");
+        assert!(app.model.ui.cursor_overlay.is_some());
+
+        let snapshot = crate::automation::EditorSnapshot::from_model(&app.model);
+        let menu = snapshot
+            .context_menu
+            .expect("context menu should be in the automation snapshot");
+        assert_eq!(menu.region, "editor");
+        let cut = menu
+            .rows
+            .iter()
+            .find(|r| r.label == "Cut")
+            .expect("Cut row present");
+        assert!(!cut.enabled, "no selection: Cut is disabled");
+
+        // Selection opened on the first enabled row, not "Cut" (disabled).
+        let first_enabled_label = menu.rows.iter().find(|r| r.enabled).unwrap().label.clone();
+        assert_ne!(first_enabled_label, "Cut");
+
+        // Navigate to "Show Hover" (always enabled) and activate it.
+        let show_hover_index = menu
+            .rows
+            .iter()
+            .position(|r| r.label == "Show Hover")
+            .expect("Show Hover row present");
+        for _ in 0..show_hover_index {
+            let modifiers = KeyModifiers::default();
+            let result = handle_cursor_overlay_key(
+                &mut app.model,
+                &Key::Named(NamedKey::ArrowDown),
+                modifiers,
+            );
+            assert!(result.is_some());
+        }
+        assert_eq!(
+            app.model.ui.cursor_overlay.unwrap().selected,
+            show_hover_index
+        );
+
+        let result = handle_cursor_overlay_key(
+            &mut app.model,
+            &Key::Named(NamedKey::Enter),
+            KeyModifiers::default(),
+        );
+        assert!(result.is_some(), "Enter activates and is consumed");
+        assert!(
+            app.model.ui.cursor_overlay.is_none(),
+            "activation dismisses the menu"
+        );
+        assert!(app.model.ui.context_menu.is_none());
+    }
+
+    #[test]
+    fn right_click_on_a_tab_targets_the_clicked_tab_not_the_focused_one() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        let group_id = app.model.editor_area.focused_group_id;
+        // Open a second tab so there's a non-focused one to right-click.
+        update(&mut app.model, Msg::Layout(LayoutMsg::NewTab));
+        let tabs: Vec<token::model::TabId> = app
+            .model
+            .editor_area
+            .groups
+            .get(&group_id)
+            .unwrap()
+            .tabs
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(tabs.len(), 2);
+        let clicked_tab = tabs[0];
+        let focused_tab = app
+            .model
+            .editor_area
+            .groups
+            .get(&group_id)
+            .unwrap()
+            .active_tab()
+            .unwrap()
+            .id;
+        assert_ne!(
+            clicked_tab, focused_tab,
+            "tab 0 isn't the newly-focused tab"
+        );
+
+        update(
+            &mut app.model,
+            Msg::ContextMenu(token::messages::ContextMenuMsg::Open {
+                target: token::context_menu::ContextMenuTarget::Tab {
+                    group_id,
+                    tab_id: clicked_tab,
+                    file_path: None,
+                },
+                anchor: (0, 0, 0),
+            }),
+        );
+
+        let close_row_index = app
+            .model
+            .ui
+            .context_menu
+            .as_ref()
+            .unwrap()
+            .items
+            .iter()
+            .position(|i| i.label == "Close")
+            .unwrap();
+        update(
+            &mut app.model,
+            Msg::ContextMenu(token::messages::ContextMenuMsg::ActivateItem {
+                index: close_row_index,
+            }),
+        );
+
+        // The clicked tab closed; the tab that was focused when the menu
+        // opened is still present.
+        let remaining: Vec<token::model::TabId> = app
+            .model
+            .editor_area
+            .groups
+            .get(&group_id)
+            .unwrap()
+            .tabs
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(remaining, vec![focused_tab]);
     }
 }
 

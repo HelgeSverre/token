@@ -9,6 +9,7 @@ pub mod commands;
 pub mod completion;
 pub mod config;
 pub mod config_paths;
+pub mod context_menu;
 pub mod csv;
 #[cfg(debug_assertions)]
 pub mod debug_overlay;
