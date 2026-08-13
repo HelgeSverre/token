@@ -494,15 +494,23 @@ pub struct OverlaySpec<'a> {
 /// (not selectable) or a row paired with its `FlatIndex`.
 enum DisplayRow<'a> {
     SectionHeader(&'a str),
+    /// An untitled section boundary (context-menu separators): occupies a
+    /// display slot, rendered as a centered hairline, never selectable.
+    Separator,
     Row(&'a Row<'a>, FlatIndex),
 }
 
 fn flatten_rows<'a>(sections: &'a [Section<'a>]) -> Vec<DisplayRow<'a>> {
     let mut out = Vec::new();
     let mut flat_i = 0;
-    for section in sections {
-        if let Some(title) = section.title {
-            out.push(DisplayRow::SectionHeader(title));
+    for (i, section) in sections.iter().enumerate() {
+        match section.title {
+            Some(title) => out.push(DisplayRow::SectionHeader(title)),
+            // Untitled non-first sections are visual separators — without
+            // a slot they rendered no break at all (context-menu spec:
+            // groups get a visible boundary).
+            None if i > 0 => out.push(DisplayRow::Separator),
+            None => {}
         }
         for row in section.rows {
             out.push(DisplayRow::Row(row, FlatIndex(flat_i)));
@@ -1703,6 +1711,17 @@ fn render_list(
                     colors.text_dim,
                 );
             }
+            DisplayRow::Separator => {
+                let text_pad = scaled(dims::ROW_TEXT_PAD_X, scale_factor);
+                let y = rect.y + rect.h / 2;
+                frame.fill_rect_px(
+                    rect.x + text_pad,
+                    y,
+                    rect.w.saturating_sub(2 * text_pad),
+                    1,
+                    colors.hairline,
+                );
+            }
             DisplayRow::Row(row, flat_index) => {
                 let is_selected = *flat_index == *selected;
                 if is_selected {
@@ -2369,14 +2388,22 @@ fn wrap_zone_text_budgeted(text: &str, cols: usize, first_line_cols: usize) -> V
     let mut out = Vec::new();
     for line in text.lines() {
         let chars: Vec<char> = line.chars().collect();
-        let budget = if out.is_empty() { first_line_cols } else { cols };
+        let budget = if out.is_empty() {
+            first_line_cols
+        } else {
+            cols
+        };
         if chars.len() <= budget {
             out.push(line.to_string());
             continue;
         }
         let mut start = 0;
         while start < chars.len() {
-            let budget = if out.is_empty() { first_line_cols } else { cols };
+            let budget = if out.is_empty() {
+                first_line_cols
+            } else {
+                cols
+            };
             let hard_end = (start + budget).min(chars.len());
             let end = if hard_end < chars.len() {
                 // Prefer the last space inside the window; hard-break when
@@ -2847,7 +2874,9 @@ mod tests {
             banner.lines
         );
         assert!(
-            banner.lines[1..].iter().all(|l| l.chars().count() <= wide_budget),
+            banner.lines[1..]
+                .iter()
+                .all(|l| l.chars().count() <= wide_budget),
             "lines after the first need only the glyph budget: {:?}",
             banner.lines
         );
