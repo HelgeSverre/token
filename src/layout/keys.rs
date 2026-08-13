@@ -19,8 +19,6 @@ pub enum UiKey {
     DockHeader(DockPosition),
     /// One panel tab inside a dock header.
     DockTab(DockPosition, PanelId),
-    /// The Problems severity badge (`✗n ⚠m`) in a dock header.
-    DockBadge(DockPosition),
     /// The content area below a dock header, for the active panel.
     PanelContent(PanelId),
     /// The virtualized row list inside a panel's content area.

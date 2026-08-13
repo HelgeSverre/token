@@ -19,8 +19,23 @@ All notable changes to rust-editor are documented in this file.
   hit-testing, and update-layer queries.
 - `Frame` clipping is now a nesting stack (`push_clip`/`pop_clip`);
   `set_clip`/`clear_clip` keep their absolute semantics.
+### Changed
+
+- Dock chrome (headers, tabs, panel content) and the Problems/Outline panels
+  now lay out through the new layout engine: one solved geometry snapshot is
+  shared by rendering, hit-testing, and scroll/capacity logic, replacing six
+  independently rebuilt layout chains. Panel content is clipped to its rect,
+  and a partial bottom row is now painted (it was already clickable).
 
 ### Fixed
+
+- Dock tabs now advance by their clamped widths, so a width-clamped tab no
+  longer leaves a phantom gap before the next tab.
+- Outline expand/collapse now clamps scrolling with the same
+  count-minus-capacity formula as every other path, so collapsing near the
+  end of a long outline can no longer scroll the panel past its own content.
+- Problems/Outline scroll, capacity, and row hit-testing now follow the
+  panel to whichever dock hosts it instead of assuming bottom/right.
 
 - Allowed manual outline scrolling to move beyond the selected symbol without
   the viewport snapping back to keep that symbol visible.

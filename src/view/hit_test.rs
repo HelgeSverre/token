@@ -20,8 +20,7 @@ use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, 
 use crate::model::{AppModel, FocusTarget, TextViewportMap};
 
 use super::geometry::{
-    is_in_status_bar, DockHeaderLayout, PreviewPaneLayout, TabBarLayout, TreeListLayout,
-    WindowLayout,
+    is_in_status_bar, PreviewPaneLayout, TabBarLayout, TreeListLayout, WindowLayout,
 };
 
 // ============================================================================
@@ -744,98 +743,71 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
 /// `DockResize` if the point is over the resizable border between a dock and
 /// the editor area.
 pub fn hit_test_docks(model: &AppModel, pt: Point) -> Option<HitTarget> {
-    let window_layout = WindowLayout::compute(model);
+    use crate::layout::UiKey;
+
+    let chrome = crate::layout::chrome::chrome(model);
     let hit_zone = model.metrics.resize_handle_zone as f64;
 
-    if let Some(right_rect) = window_layout.right_dock_rect {
-        if model.dock_layout.right.is_open {
-            let resize_zone_start = right_rect.x as f64 - hit_zone;
-            let resize_zone_end = right_rect.x as f64 + hit_zone;
-            if pt.x >= resize_zone_start
-                && pt.x <= resize_zone_end
-                && pt.y >= right_rect.y as f64
-                && pt.y < (right_rect.y + right_rect.height) as f64
-            {
-                return Some(HitTarget::DockResize {
-                    position: crate::panel::DockPosition::Right,
-                });
-            }
-
-            if right_rect.contains(pt.x as f32, pt.y as f32) {
-                let dock = &model.dock_layout.right;
-                let layout =
-                    DockHeaderLayout::new(dock, right_rect, &model.metrics, model.char_width);
-                if layout.is_in_header(pt.x, pt.y) {
-                    if let Some(tab) = layout.tab_at(pt.x, pt.y) {
-                        return Some(HitTarget::DockTab {
-                            position: crate::panel::DockPosition::Right,
-                            panel_id: tab.panel_id,
-                        });
-                    }
-                    return Some(HitTarget::DockTabBarEmpty {
-                        position: crate::panel::DockPosition::Right,
-                    });
-                }
-                if layout.is_in_content(pt.x, pt.y) {
-                    if let Some(panel_id) = dock.active_panel() {
-                        return Some(HitTarget::DockContent {
-                            position: crate::panel::DockPosition::Right,
-                            active_panel_id: panel_id,
-                        });
-                    }
-                    return Some(HitTarget::DockTabBarEmpty {
-                        position: crate::panel::DockPosition::Right,
-                    });
-                }
-            }
+    // Resize handles first: a hit-slop band around the dock's inner edge,
+    // procedural on top of the solved dock rects (the engine has no
+    // hit-slop concept).
+    if let Some(right_rect) = chrome.rect(UiKey::Dock(crate::panel::DockPosition::Right)) {
+        let resize_zone_start = right_rect.x as f64 - hit_zone;
+        let resize_zone_end = right_rect.x as f64 + hit_zone;
+        if pt.x >= resize_zone_start
+            && pt.x <= resize_zone_end
+            && pt.y >= right_rect.y as f64
+            && pt.y < (right_rect.y + right_rect.height) as f64
+        {
+            return Some(HitTarget::DockResize {
+                position: crate::panel::DockPosition::Right,
+            });
+        }
+    }
+    if let Some(bottom_rect) = chrome.rect(UiKey::Dock(crate::panel::DockPosition::Bottom)) {
+        let resize_zone_start = bottom_rect.y as f64 - hit_zone;
+        let resize_zone_end = bottom_rect.y as f64 + hit_zone;
+        if pt.y >= resize_zone_start
+            && pt.y <= resize_zone_end
+            && pt.x >= bottom_rect.x as f64
+            && pt.x < (bottom_rect.x + bottom_rect.width) as f64
+        {
+            return Some(HitTarget::DockResize {
+                position: crate::panel::DockPosition::Bottom,
+            });
         }
     }
 
-    if let Some(bottom_rect) = window_layout.bottom_dock_rect {
-        if model.dock_layout.bottom.is_open {
-            let resize_zone_start = bottom_rect.y as f64 - hit_zone;
-            let resize_zone_end = bottom_rect.y as f64 + hit_zone;
-            if pt.y >= resize_zone_start
-                && pt.y <= resize_zone_end
-                && pt.x >= bottom_rect.x as f64
-                && pt.x < (bottom_rect.x + bottom_rect.width) as f64
-            {
-                return Some(HitTarget::DockResize {
-                    position: crate::panel::DockPosition::Bottom,
-                });
-            }
-
-            if bottom_rect.contains(pt.x as f32, pt.y as f32) {
-                let dock = &model.dock_layout.bottom;
-                let layout =
-                    DockHeaderLayout::new(dock, bottom_rect, &model.metrics, model.char_width);
-                if layout.is_in_header(pt.x, pt.y) {
-                    if let Some(tab) = layout.tab_at(pt.x, pt.y) {
-                        return Some(HitTarget::DockTab {
-                            position: crate::panel::DockPosition::Bottom,
-                            panel_id: tab.panel_id,
-                        });
-                    }
-                    return Some(HitTarget::DockTabBarEmpty {
-                        position: crate::panel::DockPosition::Bottom,
-                    });
-                }
-                if layout.is_in_content(pt.x, pt.y) {
-                    if let Some(panel_id) = dock.active_panel() {
-                        return Some(HitTarget::DockContent {
-                            position: crate::panel::DockPosition::Bottom,
-                            active_panel_id: panel_id,
-                        });
-                    }
-                    return Some(HitTarget::DockTabBarEmpty {
-                        position: crate::panel::DockPosition::Bottom,
-                    });
-                }
+    // Everything else: the topmost solved element at the point, mapped
+    // exhaustively onto hit targets — the same geometry the renderer paints.
+    match chrome.hit(pt.x as f32, pt.y as f32)? {
+        UiKey::DockTab(position, panel_id) => Some(HitTarget::DockTab { position, panel_id }),
+        UiKey::DockHeader(position) => Some(HitTarget::DockTabBarEmpty { position }),
+        UiKey::PanelContent(_) | UiKey::PanelRows(_) => {
+            let position = [
+                crate::panel::DockPosition::Right,
+                crate::panel::DockPosition::Bottom,
+            ]
+            .into_iter()
+            .find(|&pos| {
+                chrome
+                    .rect(UiKey::Dock(pos))
+                    .is_some_and(|r| r.contains(pt.x as f32, pt.y as f32))
+            })?;
+            let dock = model.dock_layout.dock(position);
+            match dock.active_panel() {
+                Some(panel_id) => Some(HitTarget::DockContent {
+                    position,
+                    active_panel_id: panel_id,
+                }),
+                None => Some(HitTarget::DockTabBarEmpty { position }),
             }
         }
+        // The dock body outside header/content (shouldn't occur — the two
+        // children tile it) falls through as content-less dock space.
+        UiKey::Dock(position) => Some(HitTarget::DockTabBarEmpty { position }),
+        _ => None,
     }
-
-    None
 }
 
 /// Main hit-testing function that checks all UI regions in priority order.

@@ -93,6 +93,9 @@ struct RenderPlan {
     window_width: usize,
     window_height: usize,
     window_layout: geometry::WindowLayout,
+    /// Solved dock chrome for this frame — render phases and the dock
+    /// painters query it instead of rebuilding per-region layout structs.
+    chrome: crate::layout::LayoutSnapshot,
     splitters: Vec<SplitterBar>,
     effective_damage: Damage,
     render_editor: bool,
@@ -180,30 +183,22 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
     }
 
     fn render_right_dock_phase(&mut self) {
-        let Some(dock_rect) = self.plan.window_layout.right_dock_rect else {
-            return;
-        };
-
         Renderer::render_dock(
             &mut self.frame,
             &mut self.painter,
             self.model,
             crate::panel::DockPosition::Right,
-            dock_rect,
+            &self.plan.chrome,
         );
     }
 
     fn render_bottom_dock_phase(&mut self) {
-        let Some(dock_rect) = self.plan.window_layout.bottom_dock_rect else {
-            return;
-        };
-
         Renderer::render_dock(
             &mut self.frame,
             &mut self.painter,
             self.model,
             crate::panel::DockPosition::Bottom,
-            dock_rect,
+            &self.plan.chrome,
         );
     }
 
@@ -1010,6 +1005,8 @@ impl Renderer {
             window_width,
             window_height,
             window_layout,
+            // Filled by the caller under `PerfStage::Layout`.
+            chrome: crate::layout::LayoutSnapshot::default(),
             splitters,
             effective_damage,
             render_editor,
@@ -1539,9 +1536,9 @@ impl Renderer {
         painter: &mut TextPainter,
         model: &AppModel,
         position: crate::panel::DockPosition,
-        rect: crate::model::editor_area::Rect,
+        chrome: &crate::layout::LayoutSnapshot,
     ) {
-        panels::render_dock(frame, painter, model, position, rect);
+        panels::render_dock(frame, painter, model, position, chrome);
     }
 
     /// Render CSV grid view
@@ -2038,7 +2035,7 @@ impl Renderer {
         let status_bar_height = model.status_bar_height;
 
         let show_perf_overlay = perf.should_show_overlay();
-        let plan = perf.measure_stage(crate::perf::PerfStage::BuildPlan, || {
+        let mut plan = perf.measure_stage(crate::perf::PerfStage::BuildPlan, || {
             self.build_render_plan(
                 model,
                 damage,
@@ -2049,6 +2046,10 @@ impl Renderer {
                 show_perf_overlay,
             )
         });
+        plan.chrome = perf.measure_stage(crate::perf::PerfStage::Layout, || {
+            crate::layout::chrome::chrome(model)
+        });
+        let plan = plan;
 
         // All rendering happens to back_buffer (persistent between frames).
         // At the end, we copy to the surface buffer and present.

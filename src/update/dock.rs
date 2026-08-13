@@ -7,7 +7,6 @@ use crate::messages::{DockMsg, TerminalMsg};
 use crate::model::{AppModel, FocusTarget};
 use crate::panel::{DockPosition, PanelId};
 use crate::panels::terminal::{grid_size_for_rect, TerminalGridSize};
-use crate::view::geometry::{DockHeaderLayout, WindowLayout};
 
 /// Sync workspace sidebar visibility with dock layout (left dock)
 fn sync_workspace_with_dock(model: &mut AppModel) {
@@ -34,17 +33,11 @@ fn is_terminal_panel_open(model: &AppModel) -> bool {
 }
 
 fn terminal_grid_size_for_model(model: &AppModel) -> Option<TerminalGridSize> {
-    let window_layout = WindowLayout::compute(model);
-    let dock_rect = window_layout.bottom_dock_rect?;
-    let layout = DockHeaderLayout::new(
-        &model.dock_layout.bottom,
-        dock_rect,
-        &model.metrics,
-        model.char_width,
-    );
+    let content_rect = crate::layout::chrome::chrome(model)
+        .rect(crate::layout::UiKey::PanelContent(PanelId::Terminal))?;
 
     Some(grid_size_for_rect(
-        layout.content_rect,
+        content_rect,
         model.char_width,
         model.line_height,
     ))
@@ -351,7 +344,6 @@ mod tests {
     use crate::model::AppModel;
     use crate::panel::{DockPosition, PanelId};
     use crate::panels::terminal::grid_size_for_rect;
-    use crate::view::geometry::{DockHeaderLayout, WindowLayout};
 
     fn test_model() -> AppModel {
         AppModel::new(800, 600, 1.0, vec![])
@@ -362,17 +354,11 @@ mod tests {
     }
 
     fn expected_terminal_grid_size(model: &AppModel) -> crate::panels::terminal::TerminalGridSize {
-        let window_layout = WindowLayout::compute(model);
-        let dock_rect = window_layout
-            .bottom_dock_rect
+        let content_rect = crate::layout::chrome::chrome(model)
+            .rect(crate::layout::UiKey::PanelContent(
+                crate::panel::PanelId::Terminal,
+            ))
             .expect("terminal dock should be open");
-        let content_rect = DockHeaderLayout::new(
-            &model.dock_layout.bottom,
-            dock_rect,
-            &model.metrics,
-            model.char_width,
-        )
-        .content_rect;
 
         grid_size_for_rect(content_rect, model.char_width, model.line_height)
     }

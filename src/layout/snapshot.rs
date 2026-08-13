@@ -71,6 +71,7 @@ pub fn snap(rect: Rect) -> (usize, usize, usize, usize) {
 
 /// The solved geometry of one tree: query rects by key, hit-test the
 /// topmost element at a point, walk nodes in draw order.
+#[derive(Default)]
 pub struct LayoutSnapshot {
     pub(crate) nodes: Vec<SolvedNode>,
     pub(crate) by_key: HashMap<UiKey, u32>,

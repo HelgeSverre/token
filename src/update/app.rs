@@ -622,7 +622,6 @@ mod tests {
     use crate::model::AppModel;
     use crate::panels::terminal::grid_size_for_rect;
     use crate::terminal::{PtyHandle, TerminalSession};
-    use crate::view::geometry::{DockHeaderLayout, WindowLayout};
     use std::sync::mpsc;
 
     fn test_model() -> AppModel {
@@ -645,17 +644,11 @@ mod tests {
     }
 
     fn expected_terminal_grid_size(model: &AppModel) -> crate::panels::terminal::TerminalGridSize {
-        let window_layout = WindowLayout::compute(model);
-        let dock_rect = window_layout
-            .bottom_dock_rect
+        let content_rect = crate::layout::chrome::chrome(model)
+            .rect(crate::layout::UiKey::PanelContent(
+                crate::panel::PanelId::Terminal,
+            ))
             .expect("terminal dock should be open");
-        let content_rect = DockHeaderLayout::new(
-            &model.dock_layout.bottom,
-            dock_rect,
-            &model.metrics,
-            model.char_width,
-        )
-        .content_rect;
 
         grid_size_for_rect(content_rect, model.char_width, model.line_height)
     }

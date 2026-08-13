@@ -8,7 +8,7 @@
 //! tested independently of the rendering infrastructure.
 
 use crate::model::editor_area::{EditorGroup, Rect, TabId};
-use crate::model::{AppModel, Document, EditorState, ScaledMetrics, TextViewportMap};
+use crate::model::{AppModel, Document, EditorState, TextViewportMap};
 
 // ============================================================================
 // Layout Constants
@@ -301,116 +301,6 @@ impl TabBarLayout {
 
     pub fn tab_at(&self, x: f64, y: f64) -> Option<&TabBarTab> {
         if !self.contains(x, y) {
-            return None;
-        }
-
-        self.tabs.iter().find(|tab| {
-            x >= tab.x as f64
-                && x < (tab.x + tab.width) as f64
-                && y >= tab.y as f64
-                && y < (tab.y + tab.height) as f64
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct DockHeaderTab {
-    pub panel_id: crate::panel::PanelId,
-    pub title: &'static str,
-    pub x: usize,
-    pub y: usize,
-    pub width: usize,
-    pub height: usize,
-    pub text_x: usize,
-    pub text_y: usize,
-    pub is_active: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct DockHeaderLayout {
-    pub rect_x: usize,
-    pub rect_y: usize,
-    pub rect_w: usize,
-    pub rect_h: usize,
-    pub border_y: usize,
-    pub content_rect: Rect,
-    pub tabs: Vec<DockHeaderTab>,
-}
-
-impl DockHeaderLayout {
-    pub fn new(
-        dock: &crate::panel::Dock,
-        rect: Rect,
-        metrics: &ScaledMetrics,
-        char_width: f32,
-    ) -> Self {
-        let rect_x = rect.x.round() as usize;
-        let rect_y = rect.y.round() as usize;
-        let rect_w = rect.width.round() as usize;
-        let rect_h = metrics.tab_bar_height;
-        let border_y = (rect_y + rect_h).saturating_sub(metrics.border_width);
-        let right_edge = rect_x + rect_w;
-        let tab_y = rect_y + metrics.padding_small;
-        let tab_height = rect_h.saturating_sub(metrics.padding_medium);
-
-        let mut tabs = Vec::with_capacity(dock.panel_ids.len());
-        let mut tab_x = rect_x + metrics.padding_medium;
-
-        for (index, panel_id) in dock.panel_ids.iter().copied().enumerate() {
-            if tab_x >= right_edge {
-                break;
-            }
-
-            let title = panel_id.display_name();
-            let title_chars = title.chars().count();
-            let ideal_width =
-                (title_chars as f32 * char_width).round() as usize + metrics.padding_large * 2;
-            let width = ideal_width.min(right_edge.saturating_sub(tab_x));
-
-            tabs.push(DockHeaderTab {
-                panel_id,
-                title,
-                x: tab_x,
-                y: tab_y,
-                width,
-                height: tab_height,
-                text_x: tab_x + metrics.padding_large,
-                text_y: tab_y + metrics.padding_medium,
-                is_active: dock.active_index == Some(index),
-            });
-
-            tab_x += ideal_width + metrics.padding_small;
-        }
-
-        let content_y = rect.y + rect_h as f32;
-        let content_height = (rect.height - rect_h as f32).max(0.0);
-
-        Self {
-            rect_x,
-            rect_y,
-            rect_w,
-            rect_h,
-            border_y,
-            content_rect: Rect::new(rect.x, content_y, rect.width, content_height),
-            tabs,
-        }
-    }
-
-    #[inline]
-    pub fn is_in_header(&self, x: f64, y: f64) -> bool {
-        x >= self.rect_x as f64
-            && x < (self.rect_x + self.rect_w) as f64
-            && y >= self.rect_y as f64
-            && y < (self.rect_y + self.rect_h) as f64
-    }
-
-    #[inline]
-    pub fn is_in_content(&self, x: f64, y: f64) -> bool {
-        self.content_rect.contains(x as f32, y as f32)
-    }
-
-    pub fn tab_at(&self, x: f64, y: f64) -> Option<&DockHeaderTab> {
-        if !self.is_in_header(x, y) {
             return None;
         }
 
@@ -1602,49 +1492,6 @@ mod tests {
     }
 
     #[test]
-    fn test_dock_header_layout_splits_header_and_content() {
-        let metrics = ScaledMetrics::new(1.0);
-        let dock = crate::panel::Dock::new(crate::panel::DockPosition::Right);
-        let layout =
-            DockHeaderLayout::new(&dock, Rect::new(700.0, 0.0, 300.0, 540.0), &metrics, 8.0);
-
-        assert_eq!(layout.rect_h, metrics.tab_bar_height);
-        assert_eq!(layout.content_rect.y, metrics.tab_bar_height as f32);
-        assert_eq!(
-            layout.content_rect.height,
-            540.0 - metrics.tab_bar_height as f32
-        );
-    }
-
-    #[test]
-    fn test_dock_header_layout_hits_tabs_and_content() {
-        let metrics = ScaledMetrics::new(1.0);
-        let mut dock = crate::panel::Dock::new(crate::panel::DockPosition::Bottom);
-        dock.register_panel(crate::panel::PanelId::TERMINAL);
-        dock.register_panel(crate::panel::PanelId::TASK_RUNNER);
-        dock.active_index = Some(1);
-        let layout =
-            DockHeaderLayout::new(&dock, Rect::new(0.0, 400.0, 500.0, 200.0), &metrics, 8.0);
-
-        assert_eq!(layout.tabs.len(), 2);
-        assert_eq!(
-            layout
-                .tab_at(layout.tabs[0].x as f64 + 1.0, layout.tabs[0].y as f64 + 1.0)
-                .unwrap()
-                .panel_id,
-            crate::panel::PanelId::TERMINAL
-        );
-        assert!(
-            layout
-                .tab_at(layout.tabs[1].x as f64 + 1.0, layout.tabs[1].y as f64 + 1.0)
-                .unwrap()
-                .is_active
-        );
-        assert!(layout.is_in_content(10.0, layout.content_rect.y as f64 + 10.0));
-        assert!(!layout.is_in_content(10.0, layout.rect_y as f64 + 2.0));
-    }
-
-    #[test]
     fn test_window_layout_editor_area_accounts_for_docks() {
         use crate::panel::DockPosition;
 
@@ -1815,8 +1662,7 @@ mod tests {
 
     #[test]
     fn test_tree_list_layout_positions() {
-        use crate::model::ScaledMetrics;
-        let metrics = ScaledMetrics::new(1.0);
+        let metrics = crate::model::ScaledMetrics::new(1.0);
         let tl = TreeListLayout::from_metrics(&metrics);
 
         // Depth 0: just left_padding
@@ -1831,37 +1677,8 @@ mod tests {
     }
 
     #[test]
-    fn test_outline_panel_layout_content_geometry() {
-        let metrics = ScaledMetrics::new(1.0);
-        let layout = OutlinePanelLayout::new(Rect::new(700.0, 24.0, 300.0, 516.0), &metrics);
-
-        assert_eq!(layout.content_rect.y, 24.0);
-        assert_eq!(layout.content_rect.height, 516.0);
-        assert_eq!(
-            layout.visible_capacity(),
-            (layout.content_rect.height / metrics.file_tree_row_height as f32) as usize
-        );
-    }
-
-    #[test]
-    fn test_outline_panel_layout_row_and_chevron_hit_testing() {
-        let metrics = ScaledMetrics::new(1.0);
-        let layout = OutlinePanelLayout::new(Rect::new(700.0, 24.0, 300.0, 516.0), &metrics);
-        let row_start = layout.content_rect.y;
-        let next_row = row_start + metrics.file_tree_row_height as f32;
-
-        assert_eq!(layout.row_index_at_y(row_start - 0.1, 3), None);
-        assert_eq!(layout.row_index_at_y(row_start, 3), Some(3));
-        assert_eq!(layout.row_index_at_y(next_row - 0.1, 3), Some(3));
-        assert_eq!(layout.row_index_at_y(next_row, 3), Some(4));
-
-        assert!(layout.is_on_chevron(0, 708.0));
-        assert!(!layout.is_on_chevron(0, 725.0));
-    }
-
-    #[test]
     fn test_preview_pane_layout_splits_header_and_hosted_content() {
-        let metrics = ScaledMetrics::new(1.0);
+        let metrics = crate::model::ScaledMetrics::new(1.0);
         let layout = PreviewPaneLayout::new(Rect::new(100.0, 40.0, 320.0, 240.0), &metrics);
         let hosted = layout.hosted_content_rect();
 
@@ -1873,7 +1690,7 @@ mod tests {
 
     #[test]
     fn test_preview_pane_layout_hit_testing() {
-        let metrics = ScaledMetrics::new(1.0);
+        let metrics = crate::model::ScaledMetrics::new(1.0);
         let layout = PreviewPaneLayout::new(Rect::new(100.0, 40.0, 320.0, 240.0), &metrics);
         let header_y = 40.0 + (metrics.tab_bar_height as f64 / 2.0);
         let content_y = 40.0 + metrics.tab_bar_height as f64 + 10.0;
@@ -1904,66 +1721,6 @@ pub struct TreeListLayout {
     pub text_top_padding: usize,
     /// Horizontal indent per nesting level
     pub indent: f32,
-}
-
-/// Shared layout for the outline panel content area.
-///
-/// The dock itself owns any header chrome. This layout only describes the
-/// scrollable outline content region so render, scroll logic, and mouse
-/// handling all use the same measurements.
-#[derive(Debug, Clone, Copy)]
-pub struct OutlinePanelLayout {
-    /// Scrollable outline content area.
-    pub content_rect: Rect,
-    /// Tree row height in pixels.
-    pub row_height: usize,
-    /// Tree indentation/padding rules for the outline panel.
-    pub tree: TreeListLayout,
-}
-
-impl OutlinePanelLayout {
-    /// Build outline panel geometry from the content rectangle and scaled metrics.
-    pub fn new(content_rect: Rect, metrics: &ScaledMetrics) -> Self {
-        let row_height = metrics.file_tree_row_height;
-
-        Self {
-            content_rect,
-            row_height,
-            tree: TreeListLayout::outline_from_metrics(metrics),
-        }
-    }
-
-    /// Number of whole outline rows that fit in the content area.
-    #[inline]
-    pub fn visible_capacity(&self) -> usize {
-        if self.row_height == 0 {
-            0
-        } else {
-            (self.content_rect.height / self.row_height as f32).max(0.0) as usize
-        }
-    }
-
-    /// Resolve a mouse y-coordinate to a flattened visible row index.
-    #[inline]
-    pub fn row_index_at_y(&self, y: f32, scroll_offset: usize) -> Option<usize> {
-        if self.row_height == 0
-            || y < self.content_rect.y
-            || y >= self.content_rect.y + self.content_rect.height
-        {
-            return None;
-        }
-
-        let visual_row = ((y - self.content_rect.y) / self.row_height as f32) as usize;
-        Some(scroll_offset.saturating_add(visual_row))
-    }
-
-    /// Whether the x-coordinate lands on the collapse/expand indicator for a row depth.
-    #[inline]
-    pub fn is_on_chevron(&self, depth: usize, x: f32) -> bool {
-        let start = self.content_rect.x + self.tree.x_offset(depth) as f32;
-        let end = start + self.tree.indicator_width as f32;
-        x >= start && x < end
-    }
 }
 
 /// Computed positions for a single tree node at a given depth and y.
@@ -2019,5 +1776,14 @@ impl TreeListLayout {
     #[inline]
     pub fn available_text_width(&self, container_width: usize, text_x: usize) -> usize {
         container_width.saturating_sub(text_x + self.left_padding)
+    }
+
+    /// Whether an x-coordinate lands on the collapse/expand indicator for a
+    /// row at `depth`, in a container whose content starts at `base_x`.
+    #[inline]
+    pub fn is_on_chevron(&self, base_x: f32, depth: usize, x: f32) -> bool {
+        let start = base_x + self.x_offset(depth) as f32;
+        let end = start + self.indicator_width as f32;
+        x >= start && x < end
     }
 }

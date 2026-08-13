@@ -13,7 +13,7 @@ mod image;
 pub mod layout;
 mod lsp;
 pub mod navigation;
-mod outline;
+pub mod outline;
 mod preview;
 pub mod problems;
 mod syntax;

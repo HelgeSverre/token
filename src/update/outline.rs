@@ -6,7 +6,6 @@ use crate::model::AppModel;
 use crate::outline::OutlineNode;
 use crate::update::navigation::{clamp_to_document, push_history};
 use crate::util::{visible_tree_count, visible_tree_row_at_index, VisibleTreeRow};
-use crate::view::geometry::{DockHeaderLayout, OutlinePanelLayout, WindowLayout};
 
 fn count_visible_items(nodes: &[OutlineNode], panel: &crate::model::OutlinePanelState) -> usize {
     visible_tree_count(nodes, |node: &OutlineNode| {
@@ -24,18 +23,28 @@ fn visible_row_at_index<'a>(
     })
 }
 
+/// Visible-row count of the focused document's outline tree under the
+/// current collapse state — feeds the chrome layout's `RowList` declaration.
+pub fn outline_row_count(model: &AppModel) -> usize {
+    model
+        .editor_area
+        .focused_document()
+        .and_then(|doc| doc.outline.as_ref())
+        .map(|outline| count_visible_items(&outline.roots, &model.outline_panel))
+        .unwrap_or(0)
+}
+
+/// Row geometry for the Outline panel from the solved chrome — `None`
+/// when the panel isn't the active panel of any open dock.
+fn outline_rows(model: &AppModel) -> Option<crate::layout::RowListView> {
+    crate::layout::chrome::chrome(model).row_list(crate::layout::UiKey::PanelRows(
+        crate::panel::PanelId::Outline,
+    ))
+}
+
 fn outline_visible_capacity(model: &AppModel) -> usize {
-    WindowLayout::compute(model)
-        .right_dock_rect
-        .map(|rect| {
-            let dock_layout = DockHeaderLayout::new(
-                &model.dock_layout.right,
-                rect,
-                &model.metrics,
-                model.char_width,
-            );
-            OutlinePanelLayout::new(dock_layout.content_rect, &model.metrics).visible_capacity()
-        })
+    outline_rows(model)
+        .map(|rows| rows.visible_capacity())
         .unwrap_or(0)
 }
 
@@ -208,16 +217,15 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                         }
                     }
 
-                    let total = model
-                        .editor_area
-                        .focused_document()
-                        .and_then(|doc| doc.outline.as_ref())
-                        .map(|outline| count_visible_items(&outline.roots, &model.outline_panel))
-                        .unwrap_or(0);
-                    model.outline_panel.scroll_offset = model
-                        .outline_panel
-                        .scroll_offset
-                        .min(total.saturating_sub(1));
+                    // Collapsing/expanding changed the row count: re-clamp
+                    // with the one formula (count - visible capacity, via
+                    // the solved chrome), not `count - 1` — the old
+                    // per-site clamp let the panel scroll past its own
+                    // viewport by up to a screenful.
+                    if let Some(rows) = outline_rows(model) {
+                        model.outline_panel.scroll_offset =
+                            rows.clamp_scroll(model.outline_panel.scroll_offset);
+                    }
                 }
             }
             reveal_outline_selection(model);
@@ -249,16 +257,15 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                         model.outline_panel.selected_index = Some(parent_index);
                     }
 
-                    let total = model
-                        .editor_area
-                        .focused_document()
-                        .and_then(|doc| doc.outline.as_ref())
-                        .map(|outline| count_visible_items(&outline.roots, &model.outline_panel))
-                        .unwrap_or(0);
-                    model.outline_panel.scroll_offset = model
-                        .outline_panel
-                        .scroll_offset
-                        .min(total.saturating_sub(1));
+                    // Collapsing/expanding changed the row count: re-clamp
+                    // with the one formula (count - visible capacity, via
+                    // the solved chrome), not `count - 1` — the old
+                    // per-site clamp let the panel scroll past its own
+                    // viewport by up to a screenful.
+                    if let Some(rows) = outline_rows(model) {
+                        model.outline_panel.scroll_offset =
+                            rows.clamp_scroll(model.outline_panel.scroll_offset);
+                    }
                 }
             }
             reveal_outline_selection(model);
@@ -301,26 +308,10 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                 model.outline_panel.scroll_offset = offset.saturating_add(lines as usize);
             }
 
-            let outline = model
-                .editor_area
-                .focused_document()
-                .and_then(|doc| doc.outline.as_ref());
-
-            if let Some(outline) = outline {
-                let total = count_visible_items(&outline.roots, &model.outline_panel);
-                let visible_capacity = outline_visible_capacity(model);
-
-                model.outline_panel.scroll_offset = if visible_capacity == 0 {
-                    0
-                } else {
-                    model
-                        .outline_panel
-                        .scroll_offset
-                        .min(total.saturating_sub(visible_capacity))
-                };
-            } else {
-                model.outline_panel.scroll_offset = 0;
-            }
+            model.outline_panel.scroll_offset = match outline_rows(model) {
+                Some(rows) => rows.clamp_scroll(model.outline_panel.scroll_offset),
+                None => 0,
+            };
 
             Some(Cmd::Redraw)
         }
