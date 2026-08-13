@@ -27,6 +27,11 @@ All notable changes to rust-editor are documented in this file.
   independently rebuilt layout chains. Panel content is clipped to its rect,
   and a partial bottom row is now painted (it was already clickable).
 
+- The hover card and drop overlay now wrap their text with real glyph
+  advances measured through the font (via the layout engine's measure
+  callback) instead of a fixed 8px-cell approximation; the measured plan is
+  computed once per layout and shared with painting.
+
 ### Fixed
 
 - Dock tabs now advance by their clamped widths, so a width-clamped tab no

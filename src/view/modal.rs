@@ -1670,6 +1670,7 @@ pub fn with_cursor_overlay_layout<R>(
     window_width: usize,
     window_height: usize,
     scale_factor: f64,
+    measure: &mut dyn crate::layout::TextMeasure,
     f: impl FnOnce(&OverlaySpec, &OverlayLayout) -> R,
 ) -> Option<R> {
     let state = model.ui.cursor_overlay?;
@@ -1711,7 +1712,13 @@ pub fn with_cursor_overlay_layout<R>(
             footer: None,
             hover_row: None,
         };
-        let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+        let l = overlay_surface::layout_measured(
+            &spec,
+            window_width,
+            window_height,
+            scale_factor,
+            measure,
+        );
         return Some(f(&spec, &l));
     }
 
@@ -1753,7 +1760,13 @@ pub fn with_cursor_overlay_layout<R>(
             footer: None,
             hover_row: None,
         };
-        let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+        let l = overlay_surface::layout_measured(
+            &spec,
+            window_width,
+            window_height,
+            scale_factor,
+            measure,
+        );
         return Some(f(&spec, &l));
     }
 
@@ -1810,7 +1823,13 @@ pub fn with_cursor_overlay_layout<R>(
                 footer: None,
                 hover_row: None,
             };
-            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            let l = overlay_surface::layout_measured(
+                &spec,
+                window_width,
+                window_height,
+                scale_factor,
+                measure,
+            );
             Some(f(&spec, &l))
         }
         crate::model::CursorOverlayKind::DebugHover => {
@@ -1834,7 +1853,13 @@ pub fn with_cursor_overlay_layout<R>(
                 footer: None,
                 hover_row: None,
             };
-            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            let l = overlay_surface::layout_measured(
+                &spec,
+                window_width,
+                window_height,
+                scale_factor,
+                measure,
+            );
             Some(f(&spec, &l))
         }
         crate::model::CursorOverlayKind::Hover => {
@@ -1888,7 +1913,13 @@ pub fn with_cursor_overlay_layout<R>(
                 footer: None,
                 hover_row: None,
             };
-            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            let l = overlay_surface::layout_measured(
+                &spec,
+                window_width,
+                window_height,
+                scale_factor,
+                measure,
+            );
             Some(f(&spec, &l))
         }
         crate::model::CursorOverlayKind::References => {
@@ -1995,7 +2026,7 @@ fn context_menu_rows<'a>(
 /// Maps a flat `MenuItem` list (including separators) onto `OverlaySurface`
 /// `Section` boundaries: each run of non-separator items between
 /// separators becomes its own untitled `Section` (context-menu.md
-/// "Separators" — a whitespace-only break, no drawn rule). `rows` must be
+/// "Separators" — a centered hairline row). `rows` must be
 /// `context_menu_rows(items)` — the non-separator subset, one-to-one with
 /// `context_menu::selectable_items(items)` in the same order.
 fn context_menu_sections<'a>(
@@ -2083,6 +2114,9 @@ pub fn render_cursor_overlay(
         window_width,
         window_height,
         scale_factor,
+        // The closure's layout is unused here; `overlay_surface::render`
+        // recomputes it with a `PainterMeasure` over the same glyph cache.
+        &mut overlay_surface::cell_measure(scale_factor),
         |spec, _l| {
             overlay_surface::render(
                 frame,
@@ -2314,8 +2348,15 @@ mod tests {
         model.ui.cursor_overlay = Some(crate::model::CursorOverlayState::new(
             CursorOverlayKind::DebugCompletion,
         ));
-        let l = with_cursor_overlay_layout(&model, 400, 800, 1.0, |_, l| l.panel)
-            .expect("cursor overlay open");
+        let l = with_cursor_overlay_layout(
+            &model,
+            400,
+            800,
+            1.0,
+            &mut overlay_surface::cell_measure(1.0),
+            |_, l| l.panel,
+        )
+        .expect("cursor overlay open");
         assert!(
             l.y + l.h <= caret.y,
             "flipped popup (y={} h={}) overlaps the caret's own line (top={})",
@@ -2410,6 +2451,45 @@ mod tests {
         let sections = context_menu_sections(&items, &rows);
         assert_eq!(sections.len(), 1);
         assert_eq!(sections[0].rows.len(), 1);
+    }
+
+    #[test]
+    fn context_menu_layout_clamps_to_window_and_keeps_separators_unselectable() {
+        use crate::context_menu::{ContextMenuRegion, MenuItem};
+        use crate::model::{ContextMenuState, CursorOverlayKind, CursorOverlayState};
+
+        let mut model = AppModel::new(400, 300, 1.0, vec![]);
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::ContextMenu));
+        model.ui.context_menu = Some(ContextMenuState {
+            items: vec![
+                MenuItem::custom("First", true, vec![]),
+                MenuItem::separator(),
+                MenuItem::custom("Second", true, vec![]),
+            ],
+            anchor: (399, 299, 0),
+            region: ContextMenuRegion::Editor,
+        });
+
+        let mut measure = overlay_surface::cell_measure(1.0);
+        with_cursor_overlay_layout(&model, 400, 300, 1.0, &mut measure, |spec, layout| {
+            assert!(layout.panel.x + layout.panel.w <= 400);
+            assert!(layout.panel.y + layout.panel.h <= 300);
+            assert_eq!(layout.rows.len(), 3, "separator occupies one display row");
+
+            let hit_at = |rect: WidgetRect| {
+                overlay_surface::hit_test(spec, layout, rect.x + rect.w / 2, rect.y + rect.h / 2)
+            };
+            assert_eq!(
+                hit_at(layout.rows[0]),
+                overlay_surface::OverlayHit::Row(FlatIndex(0))
+            );
+            assert_eq!(hit_at(layout.rows[1]), overlay_surface::OverlayHit::Inside);
+            assert_eq!(
+                hit_at(layout.rows[2]),
+                overlay_surface::OverlayHit::Row(FlatIndex(1))
+            );
+        })
+        .expect("context menu should produce a layout");
     }
 
     #[test]

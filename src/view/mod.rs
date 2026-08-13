@@ -896,6 +896,20 @@ impl Renderer {
         self.line_metrics.new_line_size.ceil() as usize
     }
 
+    /// A `TextPainter` over this renderer's font and glyph cache — for
+    /// callers outside the render loop (hit-testing) that need real text
+    /// measurement agreeing with what rendering painted.
+    pub fn text_painter(&mut self) -> TextPainter<'_> {
+        TextPainter::new(
+            &self.font,
+            &mut self.glyph_cache,
+            self.font_size,
+            self.line_metrics.ascent,
+            self.char_width,
+            self.line_metrics.new_line_size.ceil() as usize,
+        )
+    }
+
     /// Line height of status-bar text at the configured logical size.
     pub fn status_text_line_height(&self, logical_size: f32) -> usize {
         let size = (logical_size * self.scale_factor as f32).round();

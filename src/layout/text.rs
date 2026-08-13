@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
+use crate::layout::snapshot::TextLine;
 use crate::view::TextPainter;
 
 /// Style inputs that affect measurement: font size and letter tracking, both
@@ -104,4 +105,113 @@ impl TextMeasure for PainterMeasure<'_, '_> {
     fn line_height(&mut self, style: TextStyle) -> f32 {
         self.painter.line_height_for_size(style.size) as f32
     }
+}
+
+/// Single-line measurement of source lines (no wrapping); `\n` still
+/// breaks and a trailing newline yields its empty final line.
+pub fn measure_lines(text: &str, style: TextStyle, measure: &mut dyn TextMeasure) -> Vec<TextLine> {
+    let mut out = Vec::new();
+    let mut offset = 0;
+    for line in text.split_inclusive('\n') {
+        let body = line.trim_end_matches(['\n', '\r']);
+        out.push(TextLine {
+            range: offset..offset + body.len(),
+            width: measure.width(body, style),
+        });
+        offset += line.len();
+    }
+    if text.is_empty() {
+        out.push(TextLine {
+            range: 0..0,
+            width: 0.0,
+        });
+    } else if text.ends_with('\n') {
+        out.push(TextLine {
+            range: text.len()..text.len(),
+            width: 0.0,
+        });
+    }
+    out
+}
+
+/// Word-wrap to a pixel width: per source line, take the widest window
+/// that fits, preferring the last whitespace strictly inside the window as
+/// the break point and hard-breaking tokens wider than a full line
+/// (the hover card's historical `wrap_zone_text` semantics, width-based
+/// instead of column-based).
+pub fn wrap_to_width(
+    text: &str,
+    style: TextStyle,
+    max_w: f32,
+    measure: &mut dyn TextMeasure,
+) -> Vec<TextLine> {
+    let mut out = Vec::new();
+    let mut line_offset = 0;
+    for raw in text.split_inclusive('\n') {
+        let line = raw.trim_end_matches(['\n', '\r']);
+        // Per-char byte offsets and cumulative widths: cum[k] = width of
+        // chars[0..k]. Additivity of the measure (see `TextMeasure` docs)
+        // makes this exact.
+        let chars: Vec<(usize, char)> = line.char_indices().collect();
+        let mut cum: Vec<f32> = Vec::with_capacity(chars.len() + 1);
+        cum.push(0.0);
+        {
+            let mut buf = [0u8; 4];
+            for &(_, ch) in &chars {
+                let ch_w = measure.width(ch.encode_utf8(&mut buf), style);
+                cum.push(cum.last().unwrap() + ch_w);
+            }
+        }
+        let total = *cum.last().unwrap();
+        if total <= max_w || chars.is_empty() {
+            out.push(TextLine {
+                range: line_offset..line_offset + line.len(),
+                width: total,
+            });
+            line_offset += raw.len();
+            continue;
+        }
+
+        let byte_at = |k: usize| chars.get(k).map(|&(b, _)| b).unwrap_or(line.len());
+        let mut start = 0usize; // char index
+        while start < chars.len() {
+            // Widest window: the furthest k with cum[k] - cum[start] <= max_w,
+            // always at least one char for progress.
+            let mut hard_end = start + 1;
+            while hard_end < chars.len() && cum[hard_end + 1] - cum[start] <= max_w {
+                hard_end += 1;
+            }
+            let end = if hard_end < chars.len() {
+                chars[start..hard_end]
+                    .iter()
+                    .rposition(|&(_, c)| c.is_whitespace())
+                    .map(|p| start + p)
+                    .filter(|&p| p > start)
+                    .unwrap_or(hard_end)
+            } else {
+                hard_end
+            };
+            out.push(TextLine {
+                range: line_offset + byte_at(start)..line_offset + byte_at(end),
+                width: cum[end] - cum[start],
+            });
+            start = end;
+            while start < chars.len() && chars[start].1.is_whitespace() {
+                start += 1;
+            }
+        }
+        line_offset += raw.len();
+    }
+    if text.is_empty() {
+        out.push(TextLine {
+            range: 0..0,
+            width: 0.0,
+        });
+    } else if text.ends_with('\n') {
+        out.push(TextLine {
+            range: text.len()..text.len(),
+            width: 0.0,
+        });
+    }
+    out
 }

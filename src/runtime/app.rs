@@ -737,7 +737,7 @@ impl App {
         use token::view::hit_test::{hit_test_ui, Point};
 
         let Some(window) = &self.window else { return };
-        let Some(renderer) = &self.renderer else {
+        let Some(renderer) = &mut self.renderer else {
             return;
         };
 
@@ -760,7 +760,13 @@ impl App {
         }
 
         let pt = Point::new(x, y);
-        if let Some(target) = hit_test_ui(&self.model, pt, renderer.char_width()) {
+        let char_width = renderer.char_width();
+        let target = {
+            let mut painter = renderer.text_painter();
+            let mut measure = token::layout::PainterMeasure::new(&mut painter);
+            hit_test_ui(&self.model, pt, char_width, &mut measure)
+        };
+        if let Some(target) = target {
             window.set_cursor(target.cursor_icon());
             self.model.ui.hover = target.hover_region();
             self.model.ui.modal_hover_row =
@@ -6387,17 +6393,21 @@ mod tests {
             app.model.ui.cursor_overlay.is_some()
         }));
 
-        let (banner, text) =
-            token::view::modal::with_cursor_overlay_layout(&app.model, 800, 600, 1.0, |spec, _| {
-                match &spec.body {
-                    token::view::overlay_surface::Body::Zones(zones) => (
-                        zones.banner.map(|(_, message, _)| message.to_owned()),
-                        zones.text.map(str::to_owned),
-                    ),
-                    _ => panic!("hover card must render a Zones body"),
-                }
-            })
-            .expect("hover overlay must be open");
+        let (banner, text) = token::view::modal::with_cursor_overlay_layout(
+            &app.model,
+            800,
+            600,
+            1.0,
+            &mut token::view::overlay_surface::cell_measure(1.0),
+            |spec, _| match &spec.body {
+                token::view::overlay_surface::Body::Zones(zones) => (
+                    zones.banner.map(|(_, message, _)| message.to_owned()),
+                    zones.text.map(str::to_owned),
+                ),
+                _ => panic!("hover card must render a Zones body"),
+            },
+        )
+        .expect("hover overlay must be open");
 
         assert_eq!(banner.as_deref(), Some("cannot find value `y`"));
         assert!(

@@ -416,7 +416,11 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
 /// isn't claimed here (overlay-surface.md Phase 5: popups are non-blocking,
 /// so an outside click still falls through to whatever's under it; the
 /// caller is responsible for dismissing the popup separately).
-pub fn hit_test_cursor_overlay(model: &AppModel, pt: Point) -> Option<HitTarget> {
+pub fn hit_test_cursor_overlay(
+    model: &AppModel,
+    pt: Point,
+    measure: &mut dyn crate::layout::TextMeasure,
+) -> Option<HitTarget> {
     model.ui.cursor_overlay?;
 
     let ww = model.window_size.0 as usize;
@@ -424,7 +428,7 @@ pub fn hit_test_cursor_overlay(model: &AppModel, pt: Point) -> Option<HitTarget>
     let sf = model.metrics.scale_factor;
     let (x, y) = (pt.x as usize, pt.y as usize);
 
-    super::modal::with_cursor_overlay_layout(model, ww, wh, sf, |spec, layout| {
+    super::modal::with_cursor_overlay_layout(model, ww, wh, sf, measure, |spec, layout| {
         match super::overlay_surface::hit_test(spec, layout, x, y) {
             super::overlay_surface::OverlayHit::Outside => None,
             super::overlay_surface::OverlayHit::Row(flat_index) => Some(HitTarget::CursorOverlay {
@@ -824,11 +828,16 @@ pub fn hit_test_docks(model: &AppModel, pt: Point) -> Option<HitTarget> {
 /// 6. Splitter bars
 /// 7. Preview panes (header and content)
 /// 8. Editor groups (tab bar, gutter, content)
-pub fn hit_test_ui(model: &AppModel, pt: Point, char_width: f32) -> Option<HitTarget> {
+pub fn hit_test_ui(
+    model: &AppModel,
+    pt: Point,
+    char_width: f32,
+    measure: &mut dyn crate::layout::TextMeasure,
+) -> Option<HitTarget> {
     // 0. Cursor-anchored popup (non-blocking: only claims points inside its
     // own panel, so an outside click still reaches whatever's under it —
     // see `hit_test_cursor_overlay`).
-    if let Some(target) = hit_test_cursor_overlay(model, pt) {
+    if let Some(target) = hit_test_cursor_overlay(model, pt, measure) {
         return Some(target);
     }
 

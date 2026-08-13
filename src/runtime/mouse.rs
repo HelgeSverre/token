@@ -806,8 +806,14 @@ pub fn handle_mouse_press(
     let char_width = renderer.char_width();
     let pt = event.pos;
 
-    // Perform hit-testing
-    let Some(target) = hit_test_ui(model, pt, char_width) else {
+    // Perform hit-testing, measuring text through the renderer's glyph
+    // cache so overlay geometry matches what was painted.
+    let target = {
+        let mut painter = renderer.text_painter();
+        let mut measure = token::layout::PainterMeasure::new(&mut painter);
+        hit_test_ui(model, pt, char_width, &mut measure)
+    };
+    let Some(target) = target else {
         return MousePressResult {
             cmd: None,
             start_drag_tracking: false,

@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use crate::layout::anchor::{self, AttachPoint, FloatAnchor};
 use crate::layout::sizing::{AlignX, AlignY, Dir, Sizing};
 use crate::layout::snapshot::{LayoutSnapshot, RowListSolved, SolvedContent, SolvedNode, TextLine};
-use crate::layout::text::{TextMeasure, TextStyle};
+use crate::layout::text::TextMeasure;
 use crate::layout::tree::{Content, Node, Wrap};
 use crate::model::editor_area::Rect;
 
@@ -107,8 +107,8 @@ pub(crate) fn solve(
         if let Content::Text(ref t) = nodes[i].decl.content {
             let avail = (w[i] - nodes[i].decl.padding.x()).max(0.0);
             let lines = match t.wrap {
-                Wrap::None => unwrapped_lines(&t.text, t.style, measure),
-                Wrap::Words => wrap_words(&t.text, t.style, avail, measure),
+                Wrap::None => crate::layout::text::measure_lines(&t.text, t.style, measure),
+                Wrap::Words => crate::layout::text::wrap_to_width(&t.text, t.style, avail, measure),
             };
             text_lines[i] = Some(lines);
         }
@@ -638,100 +638,4 @@ fn intersect(a: Rect, b: Rect) -> Rect {
 /// line and `\r\n` is tolerated.
 fn split_source_lines(text: &str) -> impl Iterator<Item = &str> {
     text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l))
-}
-
-fn unwrapped_lines(text: &str, style: TextStyle, measure: &mut dyn TextMeasure) -> Vec<TextLine> {
-    let mut out = Vec::new();
-    let mut offset = 0;
-    for line in text.split_inclusive('\n') {
-        let body = line.trim_end_matches(['\n', '\r']);
-        out.push(TextLine {
-            range: offset..offset + body.len(),
-            width: measure.width(body, style),
-        });
-        offset += line.len();
-    }
-    if text.is_empty() {
-        out.push(TextLine {
-            range: 0..0,
-            width: 0.0,
-        });
-    }
-    out
-}
-
-/// Word-wrap to a pixel width: per source line, take the widest window
-/// that fits, preferring the last whitespace strictly inside the window as
-/// the break point and hard-breaking tokens wider than a full line
-/// (`wrap_zone_text`'s semantics, width-based instead of column-based).
-fn wrap_words(
-    text: &str,
-    style: TextStyle,
-    max_w: f32,
-    measure: &mut dyn TextMeasure,
-) -> Vec<TextLine> {
-    let mut out = Vec::new();
-    let mut line_offset = 0;
-    for raw in text.split_inclusive('\n') {
-        let line = raw.trim_end_matches(['\n', '\r']);
-        // Per-char byte offsets and cumulative widths: cum[k] = width of
-        // chars[0..k]. Additivity of the measure (see `TextMeasure` docs)
-        // makes this exact.
-        let chars: Vec<(usize, char)> = line.char_indices().collect();
-        let mut cum: Vec<f32> = Vec::with_capacity(chars.len() + 1);
-        cum.push(0.0);
-        {
-            let mut buf = [0u8; 4];
-            for &(_, ch) in &chars {
-                let ch_w = measure.width(ch.encode_utf8(&mut buf), style);
-                cum.push(cum.last().unwrap() + ch_w);
-            }
-        }
-        let total = *cum.last().unwrap();
-        if total <= max_w || chars.is_empty() {
-            out.push(TextLine {
-                range: line_offset..line_offset + line.len(),
-                width: total,
-            });
-            line_offset += raw.len();
-            continue;
-        }
-
-        let byte_at = |k: usize| chars.get(k).map(|&(b, _)| b).unwrap_or(line.len());
-        let mut start = 0usize; // char index
-        while start < chars.len() {
-            // Widest window: the furthest k with cum[k] - cum[start] <= max_w,
-            // always at least one char for progress.
-            let mut hard_end = start + 1;
-            while hard_end < chars.len() && cum[hard_end + 1] - cum[start] <= max_w {
-                hard_end += 1;
-            }
-            let end = if hard_end < chars.len() {
-                chars[start..hard_end]
-                    .iter()
-                    .rposition(|&(_, c)| c.is_whitespace())
-                    .map(|p| start + p)
-                    .filter(|&p| p > start)
-                    .unwrap_or(hard_end)
-            } else {
-                hard_end
-            };
-            out.push(TextLine {
-                range: line_offset + byte_at(start)..line_offset + byte_at(end),
-                width: cum[end] - cum[start],
-            });
-            start = end;
-            while start < chars.len() && chars[start].1.is_whitespace() {
-                start += 1;
-            }
-        }
-        line_offset += raw.len();
-    }
-    if text.is_empty() {
-        out.push(TextLine {
-            range: 0..0,
-            width: 0.0,
-        });
-    }
-    out
 }

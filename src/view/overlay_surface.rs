@@ -46,11 +46,12 @@ mod dims {
     pub const ZONE_GAP: f32 = 8.0;
     /// Gap between chips within one chord step's keycap accessory.
     pub const CHIP_GAP: f32 = 4.0;
-    /// Zone text metrics (hover card / drop overlay): stacking line height
-    /// and the monospace cell width at SIZE_ROW. Constants (not painter
-    /// metrics) because `layout()` is painter-free and paint must stack
-    /// identically — 0.6·13 = 7.8 rounds to 8 at every scale factor, and
-    /// 17px clears the 13px glyphs.
+    /// Zone text metrics (hover card / drop overlay): the stacking line
+    /// height (17px clears the 13px glyphs) and the monospace cell width
+    /// backing `cell_measure` — the painter-free fallback used by tests
+    /// and painterless contexts. The real render/hit-test paths measure
+    /// through the glyph cache (`layout::PainterMeasure`) instead; at 1x
+    /// the two agree (0.6·13 = 7.8 rounds to 8).
     pub const ZONE_LINE_H: f32 = 17.0;
     pub const ZONE_CELL_W: f32 = 8.0;
     /// Theme-swatch dots (theme picker): diameter, intra-strip gap, and the
@@ -726,6 +727,11 @@ pub struct OverlayLayout {
     pub zones_text: Option<WidgetRect>,
     pub footer: Option<WidgetRect>,
     pub scrollbar: Option<WidgetRect>,
+    /// The measured zone plan (wrapped lines + heights) for a `Body::Zones`
+    /// body, computed once in `layout_measured` and consumed by
+    /// `render_zones` — the plan is never re-derived. `None` for other
+    /// bodies.
+    pub(crate) zone_plan: Option<ZonePlan>,
 }
 
 /// Clamp a `WidthRule` against the window width (percent-of-window, clamped
@@ -785,14 +791,44 @@ fn position_panel(
     }
 }
 
-/// Layout an `OverlaySpec` against the (physical-px) window size. This is
-/// the one layout function the doc calls for — paint and hit-testing both
-/// consume it.
+/// The painter-free fallback measure: monospace cells at the historical
+/// zone constants (8px cell, 17px line at 1x). Used by tests and any
+/// context without a painter; the real render and hit-test paths measure
+/// through the glyph cache (`layout::PainterMeasure`) instead.
+pub fn cell_measure(scale_factor: f64) -> crate::layout::CellMeasure {
+    crate::layout::CellMeasure {
+        char_width: scaled(dims::ZONE_CELL_W, scale_factor) as f32,
+        line_height: scaled(dims::ZONE_LINE_H, scale_factor) as f32,
+    }
+}
+
+/// `layout_measured` with the monospace-cell fallback measure. Prefer
+/// `layout_measured` with a `PainterMeasure` wherever a painter is in
+/// reach — real advances wrap zone text where it actually fits.
 pub fn layout(
     spec: &OverlaySpec,
     window_width: usize,
     window_height: usize,
     scale_factor: f64,
+) -> OverlayLayout {
+    layout_measured(
+        spec,
+        window_width,
+        window_height,
+        scale_factor,
+        &mut cell_measure(scale_factor),
+    )
+}
+
+/// Layout an `OverlaySpec` against the (physical-px) window size. This is
+/// the one layout function the doc calls for — paint and hit-testing both
+/// consume it. `measure` drives zone text wrapping (`Body::Zones`).
+pub fn layout_measured(
+    spec: &OverlaySpec,
+    window_width: usize,
+    window_height: usize,
+    scale_factor: f64,
+    measure: &mut dyn crate::layout::TextMeasure,
 ) -> OverlayLayout {
     let panel_w = resolve_panel_width(
         &spec.anchor,
@@ -935,6 +971,7 @@ pub fn layout(
                 zones_text: None,
                 footer,
                 scrollbar,
+                zone_plan: None,
             }
         }
         Body::Fields { fields, .. } => {
@@ -1008,15 +1045,16 @@ pub fn layout(
                 zones_text: None,
                 footer,
                 scrollbar: None,
+                zone_plan: None,
             }
         }
         Body::Zones(zones) => {
             let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
             let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
             let gap = scaled(dims::ZONE_GAP, scale_factor);
-            // One measured plan drives every height; render re-derives the
-            // identical plan from the same inputs (see `ZonePlan`).
-            let plan = plan_zones(zones, panel_w, scale_factor);
+            // One measured plan drives every height; the plan is stored on
+            // the layout so render consumes it instead of re-deriving.
+            let plan = plan_zones(zones, panel_w, scale_factor, measure);
             let banner_h = plan.banner.as_ref().map(|b| b.h).unwrap_or(0);
             let code_h = plan.code.as_ref().map(|(_, h)| *h);
             let text_h = plan.text.as_ref().map(|(_, _, h)| *h);
@@ -1107,6 +1145,7 @@ pub fn layout(
                 zones_text,
                 footer: None,
                 scrollbar: None,
+                zone_plan: Some(plan),
             }
         }
     }
@@ -1310,7 +1349,18 @@ pub fn render(
     scale_factor: f64,
     cursor_visible: bool,
 ) {
-    let layout = layout(spec, window_width, window_height, scale_factor);
+    // Measure through the glyph cache so zone wrapping uses real advances;
+    // the borrow ends before painting begins.
+    let layout = {
+        let mut measure = crate::layout::PainterMeasure::new(painter);
+        layout_measured(
+            spec,
+            window_width,
+            window_height,
+            scale_factor,
+            &mut measure,
+        )
+    };
     let colors = Palette::from_theme(theme);
     let radius = match &spec.anchor {
         Anchor::Centered { .. } => scaled(dims::RADIUS, scale_factor),
@@ -2155,8 +2205,11 @@ fn render_zones(
     let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
     let gap = scaled(dims::ZONE_GAP, scale_factor);
     let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
-    // Identical inputs to the layout pass -> identical plan (see ZonePlan).
-    let plan = plan_zones(zones, layout.panel.w, scale_factor);
+    // The one measured plan, computed in `layout_measured` and carried on
+    // the layout — never re-derived here.
+    let Some(plan) = layout.zone_plan.as_ref() else {
+        return;
+    };
 
     // Hard backstop: nothing in any zone may paint outside the panel.
     frame.set_clip(crate::model::editor_area::Rect {
@@ -2296,30 +2349,69 @@ pub(crate) struct BannerPlan {
     pub h: usize,
 }
 
-pub(crate) fn plan_zones(zones: &Zones, panel_w: usize, scale_factor: f64) -> ZonePlan {
+pub(crate) fn plan_zones(
+    zones: &Zones,
+    panel_w: usize,
+    scale_factor: f64,
+    measure: &mut dyn crate::layout::TextMeasure,
+) -> ZonePlan {
     let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
     let gap = scaled(dims::ZONE_GAP, scale_factor);
     let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
-    let content_w = panel_w.saturating_sub(2 * pad_x);
-    let cols = zone_wrap_cols(content_w, scale_factor);
+    let content_w = panel_w.saturating_sub(2 * pad_x) as f32;
+    let row_style = crate::layout::TextStyle::sized(size_px(SIZE_ROW, scale_factor));
+    // Minimum useful wrap width — the historical 8-cell floor.
+    let min_wrap_w = size_px(8.0 * dims::ZONE_CELL_W, scale_factor);
 
-    let banner = zones.banner.map(|(_, message, source)| {
-        // Budget: glyph column (2 cells) always; the right-aligned source
-        // tag is only ever drawn beside line 0 (`render_zones` paints it
-        // once at `top`), so its columns are reserved for that line alone
-        // (measured with the row cell — an overestimate for the smaller
-        // meta size, which errs toward earlier wrapping, never collision)
-        // — reserving it on every wrapped line wastes columns on lines
-        // 2+, which have nothing next to them.
-        let glyph_cols = 2;
-        let source_cols = if source.is_empty() {
-            0
-        } else {
-            source.chars().count() + 2
+    fn wrap_lines(
+        text: &str,
+        style: crate::layout::TextStyle,
+        max_w: f32,
+        min_w: f32,
+        measure: &mut dyn crate::layout::TextMeasure,
+    ) -> Vec<String> {
+        crate::layout::text::wrap_to_width(text, style, max_w.max(min_w), measure)
+            .into_iter()
+            .map(|line| text[line.range].to_string())
+            .collect()
+    }
+
+    fn wrap_lines_with_first_width(
+        text: &str,
+        style: crate::layout::TextStyle,
+        first_w: f32,
+        later_w: f32,
+        min_w: f32,
+        measure: &mut dyn crate::layout::TextMeasure,
+    ) -> Vec<String> {
+        let first = crate::layout::text::wrap_to_width(text, style, first_w.max(min_w), measure);
+        let Some(first_line) = first.first() else {
+            return Vec::new();
         };
-        let msg_cols = cols.saturating_sub(glyph_cols).max(8);
-        let first_line_cols = msg_cols.saturating_sub(source_cols).max(8);
-        let mut lines = wrap_zone_text_budgeted(message, msg_cols, first_line_cols);
+        let mut lines = vec![text[first_line.range.clone()].to_string()];
+        let remainder = text[first_line.range.end..].trim_start_matches(char::is_whitespace);
+        if !remainder.is_empty() {
+            lines.extend(wrap_lines(remainder, style, later_w, min_w, measure));
+        }
+        lines
+    }
+
+    let banner = zones.banner.map(|(severity, message, source)| {
+        // Budget: the severity glyph plus its half-pad gap always; the
+        // right-aligned source tag shares only the first line, so reserve its
+        // width there without needlessly narrowing later lines.
+        let mut buf = [0u8; 4];
+        let glyph_w =
+            measure.width(severity.glyph().encode_utf8(&mut buf), row_style) + (pad_x / 2) as f32;
+        let source_w = if source.is_empty() {
+            0.0
+        } else {
+            measure.width(source, row_style) + 2.0 * measure.width(" ", row_style)
+        };
+        let later_w = content_w - glyph_w;
+        let first_w = later_w - source_w;
+        let mut lines =
+            wrap_lines_with_first_width(message, row_style, first_w, later_w, min_wrap_w, measure);
         let truncated = lines.len() > MAX_ZONE_BANNER_LINES;
         lines.truncate(MAX_ZONE_BANNER_LINES);
         let text_rows = lines.len() + usize::from(truncated);
@@ -2333,13 +2425,13 @@ pub(crate) fn plan_zones(zones: &Zones, panel_w: usize, scale_factor: f64) -> Zo
     });
 
     let code = zones.code.map(|s| {
-        let lines = wrap_zone_text(s, cols);
+        let lines = wrap_lines(s, row_style, content_w, min_wrap_w, measure);
         let h = lines.len().max(1) * line_h + 2 * (gap / 2);
         (lines, h)
     });
 
     let text = zones.text.map(|s| {
-        let mut lines = wrap_zone_text(s, cols);
+        let mut lines = wrap_lines(s, row_style, content_w, min_wrap_w, measure);
         let truncated = lines.len() > MAX_ZONE_TEXT_LINES;
         lines.truncate(MAX_ZONE_TEXT_LINES);
         let h = (lines.len() + usize::from(truncated)).max(1) * line_h;
@@ -2347,65 +2439,6 @@ pub(crate) fn plan_zones(zones: &Zones, panel_w: usize, scale_factor: f64) -> Zo
     });
 
     ZonePlan { banner, code, text }
-}
-
-/// Columns available for zone text in `max_w` pixels (const cell width —
-/// see `dims::ZONE_CELL_W`).
-fn zone_wrap_cols(max_w: usize, scale_factor: f64) -> usize {
-    (max_w / scaled(dims::ZONE_CELL_W, scale_factor).max(1)).max(8)
-}
-
-/// Word-wrap `text` to `cols` monospace columns, hard-breaking tokens
-/// longer than a line.
-fn wrap_zone_text(text: &str, cols: usize) -> Vec<String> {
-    wrap_zone_text_budgeted(text, cols, cols)
-}
-
-/// Same greedy word-wrap as `wrap_zone_text`, but the very first output
-/// line is capped at `first_line_cols` instead of `cols` — the banner's
-/// only consumer: its line 0 shares its row with the right-aligned source
-/// tag, but nothing else does (`plan_zones`).
-fn wrap_zone_text_budgeted(text: &str, cols: usize, first_line_cols: usize) -> Vec<String> {
-    let mut out = Vec::new();
-    for line in text.lines() {
-        let chars: Vec<char> = line.chars().collect();
-        let budget = if out.is_empty() {
-            first_line_cols
-        } else {
-            cols
-        };
-        if chars.len() <= budget {
-            out.push(line.to_string());
-            continue;
-        }
-        let mut start = 0;
-        while start < chars.len() {
-            let budget = if out.is_empty() {
-                first_line_cols
-            } else {
-                cols
-            };
-            let hard_end = (start + budget).min(chars.len());
-            let end = if hard_end < chars.len() {
-                // Prefer the last space inside the window; hard-break when
-                // a single token exceeds the line.
-                chars[start..hard_end]
-                    .iter()
-                    .rposition(|c| c.is_whitespace())
-                    .map(|p| start + p)
-                    .filter(|&p| p > start)
-                    .unwrap_or(hard_end)
-            } else {
-                hard_end
-            };
-            out.push(chars[start..end].iter().collect::<String>());
-            start = end;
-            while start < chars.len() && chars[start].is_whitespace() {
-                start += 1;
-            }
-        }
-    }
-    out
 }
 
 /// Draw pre-wrapped `lines` stacked in `rect`, clipped to it; a zone
@@ -2870,25 +2903,25 @@ mod tests {
             code: None,
             text: None,
         };
-        let plan = plan_zones(&zones, 320, 1.0);
+        let mut measure = cell_measure(1.0);
+        let plan = plan_zones(&zones, 320, 1.0, &mut measure);
         let banner = plan.banner.expect("banner plan");
         assert!(banner.lines.len() > 1, "long message must wrap");
-        let cols = zone_wrap_cols(320 - 2 * scaled(dims::HEADER_PAD_X, 1.0), 1.0);
-        let wide_budget = cols - 2;
-        let first_line_budget = wide_budget - ("phpantom".len() + 2);
+        let content_w = (320 - 2 * scaled(dims::HEADER_PAD_X, 1.0)) as f32;
+        let later_budget = content_w - 16.0;
+        let first_budget = later_budget - ("phpantom".len() + 2) as f32 * 8.0;
         // Only line 0 shares its row with the source tag (`render_zones`
         // paints it once at `top`) — it alone must respect the narrower
-        // budget; lines 1+ get the full glyph-only budget instead of
-        // wasting columns reserving space nothing sits next to.
+        // pixel budget; lines 1+ get the full glyph-only budget.
         assert!(
-            banner.lines[0].chars().count() <= first_line_budget,
+            banner.lines[0].chars().count() as f32 * 8.0 <= first_budget,
             "line 0 must respect the glyph+source budget: {:?}",
             banner.lines
         );
         assert!(
             banner.lines[1..]
                 .iter()
-                .all(|l| l.chars().count() <= wide_budget),
+                .all(|l| l.chars().count() as f32 * 8.0 <= later_budget),
             "lines after the first need only the glyph budget: {:?}",
             banner.lines
         );
@@ -2906,7 +2939,8 @@ mod tests {
             code: None,
             text: None,
         };
-        let plan = plan_zones(&zones, 480, 1.0);
+        let mut measure = cell_measure(1.0);
+        let plan = plan_zones(&zones, 480, 1.0, &mut measure);
         let banner = plan.banner.unwrap();
         assert_eq!(banner.lines.len(), MAX_ZONE_BANNER_LINES);
         assert!(banner.truncated);
@@ -2927,24 +2961,55 @@ mod tests {
             code: None,
             text: None,
         };
-        let plan = plan_zones(&zones, 280, 1.0);
+        let mut measure = cell_measure(1.0);
+        let plan = plan_zones(&zones, 280, 1.0, &mut measure);
         let banner = plan.banner.expect("banner plan");
         assert!(banner.lines.len() > 1, "message must wrap");
 
-        let cols = zone_wrap_cols(280 - 2 * scaled(dims::HEADER_PAD_X, 1.0), 1.0);
-        let wide_budget = cols - 2;
-        let first_line_budget = wide_budget - ("typescript-eslint".len() + 2);
+        let content_w = (280 - 2 * scaled(dims::HEADER_PAD_X, 1.0)) as f32;
+        let later_budget = content_w - 16.0;
+        let first_budget = later_budget - ("typescript-eslint".len() + 2) as f32 * 8.0;
 
-        assert!(banner.lines[0].chars().count() <= first_line_budget);
+        assert!(banner.lines[0].chars().count() as f32 * 8.0 <= first_budget.max(64.0));
         // At least one later line must use more columns than the narrow
         // first-line budget allowed — otherwise the reservation is still
         // silently applied to every line.
         assert!(
             banner.lines[1..]
                 .iter()
-                .any(|l| l.chars().count() > first_line_budget),
+                .any(|l| l.chars().count() as f32 * 8.0 > first_budget.max(64.0)),
             "lines after the first must be free to use the wider, glyph-only budget: {:?}",
             banner.lines
+        );
+    }
+
+    #[test]
+    fn zone_wrapping_follows_the_measure_not_a_fixed_cell() {
+        // The point of the measured plan: a proportional measure (narrow
+        // 'i's) fits more text per line than the 8px-cell fallback did.
+        struct NarrowI;
+        impl crate::layout::TextMeasure for NarrowI {
+            fn width(&mut self, text: &str, _style: crate::layout::TextStyle) -> f32 {
+                text.chars().map(|c| if c == 'i' { 3.0 } else { 8.0 }).sum()
+            }
+            fn line_height(&mut self, _style: crate::layout::TextStyle) -> f32 {
+                17.0
+            }
+        }
+
+        let text = "iiiiiiii iiiiiiii iiiiiiii iiiiiiii";
+        let zones = Zones {
+            banner: None,
+            code: None,
+            text: Some(text),
+        };
+        let mut cells = cell_measure(1.0);
+        let cell_lines = plan_zones(&zones, 200, 1.0, &mut cells).text.unwrap().0;
+        let mut narrow = NarrowI;
+        let narrow_lines = plan_zones(&zones, 200, 1.0, &mut narrow).text.unwrap().0;
+        assert!(
+            narrow_lines.len() < cell_lines.len(),
+            "narrow glyphs must pack more per line: {narrow_lines:?} vs {cell_lines:?}"
         );
     }
 
@@ -2982,7 +3047,8 @@ mod tests {
             Body::Zones(z) => z,
             _ => unreachable!(),
         };
-        let plan = plan_zones(zones2, layout.panel.w, 1.0);
+        let mut measure = cell_measure(1.0);
+        let plan = plan_zones(zones2, layout.panel.w, 1.0, &mut measure);
         let line_h = scaled(dims::ZONE_LINE_H, 1.0);
 
         let br = layout.zones_banner.unwrap();
@@ -2997,28 +3063,6 @@ mod tests {
         for r in [br, cr, tr] {
             assert!(r.y >= layout.panel.y && r.y + r.h <= layout.panel.y + layout.panel.h);
         }
-    }
-
-    #[test]
-    fn zone_wrap_breaks_long_lines_at_word_boundaries() {
-        let lines = wrap_zone_text("implements notable traits for the blackbox function", 20);
-        assert!(lines.iter().all(|l| l.chars().count() <= 20), "{lines:?}");
-        assert_eq!(lines[0], "implements notable");
-        // No content lost.
-        let rejoined = lines.join(" ");
-        assert_eq!(
-            rejoined,
-            "implements notable traits for the blackbox function"
-        );
-    }
-
-    #[test]
-    fn zone_wrap_hard_breaks_oversized_tokens() {
-        let token = "a".repeat(50);
-        let lines = wrap_zone_text(&token, 20);
-        assert!(lines.len() >= 3);
-        assert!(lines.iter().all(|l| l.chars().count() <= 20));
-        assert_eq!(lines.concat(), token);
     }
 
     #[test]
@@ -3052,8 +3096,12 @@ mod tests {
         };
         let layout = layout(&spec, 800, 600, 1.0);
         let r = layout.zones_text.expect("text zone rect");
-        let cols = zone_wrap_cols(r.w, 1.0);
-        let wrapped = wrap_zone_text(&long, cols).len().min(MAX_ZONE_TEXT_LINES) + 1; // +ellipsis
+        let style = crate::layout::TextStyle::sized(size_px(SIZE_ROW, 1.0));
+        let mut measure = cell_measure(1.0);
+        let wrapped = crate::layout::text::wrap_to_width(&long, style, r.w as f32, &mut measure)
+            .len()
+            .min(MAX_ZONE_TEXT_LINES)
+            + 1; // +ellipsis
         let line_h = scaled(dims::ZONE_LINE_H, 1.0);
         assert!(
             r.h >= wrapped * line_h,
