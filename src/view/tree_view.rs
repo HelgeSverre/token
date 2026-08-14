@@ -1,36 +1,7 @@
 //! Shared tree traversal helpers for sidebar-style views.
 
+use crate::layout::{snapshot::snap, RowListView};
 use crate::util::tree::TreeNodeLike;
-
-/// Viewport configuration for rendering a flattened tree window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TreeRenderLayout {
-    pub start_y: usize,
-    pub viewport_height: usize,
-    pub row_height: usize,
-    pub scroll_offset: usize,
-}
-
-impl TreeRenderLayout {
-    pub fn new(
-        start_y: usize,
-        viewport_height: usize,
-        row_height: usize,
-        scroll_offset: usize,
-    ) -> Self {
-        Self {
-            start_y,
-            viewport_height,
-            row_height,
-            scroll_offset,
-        }
-    }
-
-    #[inline]
-    fn end_y(&self) -> usize {
-        self.start_y.saturating_add(self.viewport_height)
-    }
-}
 
 /// Metadata for a visible tree row.
 #[derive(Debug, Clone, Copy)]
@@ -41,103 +12,92 @@ pub struct TreeRow<'a, T> {
     pub row_y: usize,
 }
 
-/// Final traversal state after rendering a tree viewport.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TreeRenderState {
-    pub next_row_y: usize,
-    pub next_index: usize,
-}
-
 /// Walk a tree in display order, skipping rows before `scroll_offset` and
-/// stopping once the viewport is full.
+/// stopping after the solved Clay row list's drawn range.
 pub fn render_tree<T, FExpanded, FRow>(
     roots: &[T],
-    layout: TreeRenderLayout,
+    rows: RowListView,
     is_expanded: FExpanded,
     mut render_row: FRow,
-) -> TreeRenderState
-where
+) where
     T: TreeNodeLike,
     FExpanded: Fn(&T) -> bool,
     FRow: for<'a> FnMut(TreeRow<'a, T>),
 {
     fn render_node<'a, T, FExpanded, FRow>(
         node: &'a T,
-        layout: &TreeRenderLayout,
-        next_row_y: &mut usize,
+        rows: RowListView,
+        drawn: &std::ops::Range<usize>,
         next_index: &mut usize,
         depth: usize,
         is_expanded: &FExpanded,
         render_row: &mut FRow,
-    ) where
+    ) -> bool
+    where
         T: TreeNodeLike,
         FExpanded: Fn(&T) -> bool,
         FRow: FnMut(TreeRow<'a, T>),
     {
-        if *next_index >= layout.scroll_offset && *next_row_y >= layout.end_y() {
-            return;
+        if *next_index >= drawn.end {
+            return true;
         }
 
         let index = *next_index;
         *next_index += 1;
 
-        if index >= layout.scroll_offset {
-            if *next_row_y >= layout.end_y() {
-                return;
-            }
-
+        if drawn.contains(&index) {
+            let Some(row_rect) = rows.row_rect(index) else {
+                return true;
+            };
             render_row(TreeRow {
                 node,
                 depth,
                 index,
-                row_y: *next_row_y,
+                row_y: snap(row_rect).1,
             });
-            *next_row_y += layout.row_height;
         }
 
         if is_expanded(node) {
             for child in node.children() {
-                render_node(
+                if render_node(
                     child,
-                    layout,
-                    next_row_y,
+                    rows,
+                    drawn,
                     next_index,
                     depth + 1,
                     is_expanded,
                     render_row,
-                );
+                ) {
+                    return true;
+                }
             }
         }
+        *next_index >= drawn.end
     }
 
-    let mut next_row_y = layout.start_y;
+    let drawn = rows.drawn_range();
     let mut next_index = 0;
 
     for root in roots {
-        render_node(
+        if render_node(
             root,
-            &layout,
-            &mut next_row_y,
+            rows,
+            &drawn,
             &mut next_index,
             0,
             &is_expanded,
             &mut render_row,
-        );
-
-        if next_index >= layout.scroll_offset && next_row_y >= layout.end_y() {
+        ) {
             break;
         }
-    }
-
-    TreeRenderState {
-        next_row_y,
-        next_index,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{render_tree, TreeRenderLayout, TreeRenderState, TreeRow};
+    use super::{render_tree, TreeRow};
+    use crate::layout::{Content, ElementDecl, RowListDecl, SizingAxes, UiKey, UiTree};
+    use crate::model::editor_area::Rect;
     use crate::util::tree::TreeNodeLike;
 
     #[derive(Debug)]
@@ -185,26 +145,50 @@ mod tests {
         ]
     }
 
+    fn row_view(
+        start_y: usize,
+        viewport_height: usize,
+        row_height: usize,
+        count: usize,
+        scroll_offset: usize,
+    ) -> crate::layout::RowListView {
+        let mut tree = UiTree::new();
+        tree.leaf(ElementDecl {
+            key: Some(UiKey::Sidebar),
+            sizing: SizingAxes::grow(),
+            content: Content::RowList(RowListDecl {
+                row_height: row_height as f32,
+                count,
+                scroll_offset,
+            }),
+            ..Default::default()
+        });
+        let mut measure = crate::layout::CellMeasure {
+            char_width: 8.0,
+            line_height: 16.0,
+        };
+        tree.solve(
+            Rect::new(0.0, start_y as f32, 100.0, viewport_height as f32),
+            1.0,
+            &mut measure,
+        )
+        .row_list(UiKey::Sidebar)
+        .expect("test tree declares sidebar rows")
+    }
+
     #[test]
     fn renders_only_visible_window() {
         let roots = sample_tree();
         let mut rows = Vec::new();
 
-        let state = render_tree(
+        render_tree(
             &roots,
-            TreeRenderLayout::new(10, 20, 10, 1),
+            row_view(10, 20, 10, 5, 1),
             |node| node.expanded,
             |row: TreeRow<'_, TestNode>| rows.push((row.node.id, row.depth, row.index, row.row_y)),
         );
 
         assert_eq!(rows, vec![("child-a", 1, 1, 10), ("child-b", 1, 2, 20),]);
-        assert_eq!(
-            state,
-            TreeRenderState {
-                next_row_y: 30,
-                next_index: 3,
-            }
-        );
     }
 
     #[test]
@@ -212,20 +196,13 @@ mod tests {
         let roots = sample_tree();
         let mut rows = Vec::new();
 
-        let state = render_tree(
+        render_tree(
             &roots,
-            TreeRenderLayout::new(0, 10, 10, 3),
+            row_view(0, 10, 10, 5, 3),
             |node| node.expanded,
             |row: TreeRow<'_, TestNode>| rows.push((row.node.id, row.depth, row.index, row.row_y)),
         );
 
         assert_eq!(rows, vec![("grandchild", 2, 3, 0)]);
-        assert_eq!(
-            state,
-            TreeRenderState {
-                next_row_y: 10,
-                next_index: 4,
-            }
-        );
     }
 }

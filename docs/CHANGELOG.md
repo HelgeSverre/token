@@ -19,6 +19,7 @@ All notable changes to rust-editor are documented in this file.
   hit-testing, and update-layer queries.
 - `Frame` clipping is now a nesting stack (`push_clip`/`pop_clip`);
   `set_clip`/`clear_clip` keep their absolute semantics.
+
 ### Changed
 
 - The top-level window shell (sidebar, editor area, right/bottom docks, and
@@ -29,7 +30,12 @@ All notable changes to rust-editor are documented in this file.
   shared by rendering, hit-testing, and scroll/capacity logic, replacing six
   independently rebuilt layout chains. Panel content is clipped to its rect,
   and a partial bottom row is now painted (it was already clickable).
-
+- Centered and cursor-anchored overlays now declare their panel, tabs, header,
+  list rows, fields, content zones, and footer through Clay. Painting and
+  pointer routing consume the resulting snapshot instead of rebuilding boxes.
+- Sidebar file-tree painting, hit testing, traversal, and scroll clamping now
+  share one Clay `RowListView`; the duplicate legacy tree viewport was
+  removed.
 - The hover card and drop overlay now wrap their text with real glyph
   advances measured through the font (via the layout engine's measure
   callback) instead of a fixed 8px-cell approximation; the measured plan is

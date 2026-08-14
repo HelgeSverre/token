@@ -1371,7 +1371,7 @@ fn handle_left_click(
                                 node.is_collapsible() && !model.outline_panel.is_collapsed(node)
                             },
                         ) {
-                            let tree = token::view::geometry::TreeListLayout::outline_from_metrics(
+                            let tree = token::view::geometry::TreeRowLayout::outline_from_metrics(
                                 &model.metrics,
                             );
                             let on_chevron = row.node.is_collapsible()
@@ -1412,7 +1412,7 @@ fn handle_left_click(
                     let rows = problems_rows(model);
                     if let Some(row) = rows.get(clicked_index) {
                         // Only File rows (depth 0) have a chevron.
-                        let tree = token::view::geometry::TreeListLayout::outline_from_metrics(
+                        let tree = token::view::geometry::TreeRowLayout::outline_from_metrics(
                             &model.metrics,
                         );
                         let on_chevron =

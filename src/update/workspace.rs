@@ -231,25 +231,25 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
 
 /// Number of rows that fit in the sidebar viewport.
 ///
-/// Uses the same height the renderer draws into: the window minus the
-/// status bar (the `UiKey::Sidebar` shell rectangle), not the raw window
-/// height.
+/// Uses the same solved `RowListView` the renderer and hit tester consume.
 fn sidebar_visible_rows(model: &AppModel) -> usize {
-    let row_height = model.metrics.file_tree_row_height;
-    let sidebar_height = crate::layout::chrome::shell(model)
-        .rect(crate::layout::UiKey::Sidebar)
-        .map(|rect| rect.height.max(0.0) as usize)
-        .unwrap_or(0);
-    sidebar_height.checked_div(row_height).unwrap_or(20)
+    crate::layout::chrome::sidebar_rows(model)
+        .row_list(crate::layout::UiKey::Sidebar)
+        .map(|rows| rows.visible_capacity())
+        .unwrap_or(0)
 }
 
 /// Clamp the sidebar scroll offset after the visible item count may have
 /// shrunk (folder collapse, tree refresh), so the tree never scrolls past
 /// its own content and renders blank.
 fn clamp_sidebar_scroll(model: &mut AppModel) {
-    let visible_rows = sidebar_visible_rows(model);
+    let sidebar = crate::layout::chrome::sidebar_rows(model);
+    let rows = sidebar.row_list(crate::layout::UiKey::Sidebar);
+    let visible_rows = rows.map(|rows| rows.visible_capacity()).unwrap_or(0);
+    let max_scroll = rows.map(|rows| rows.max_scroll());
     if let Some(workspace) = &mut model.workspace {
-        let max_offset = workspace.visible_item_count().saturating_sub(visible_rows);
+        let max_offset = max_scroll
+            .unwrap_or_else(|| workspace.visible_item_count().saturating_sub(visible_rows));
         workspace.scroll_offset = workspace.scroll_offset.min(max_offset);
     }
 }

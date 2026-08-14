@@ -3,9 +3,8 @@
 //! Clay's floating elements attach to a parent or an element ID; Token's
 //! popups additionally need the editor's proven placement rules — width
 //! resolved by a [`WidthRule`], flip-above when there isn't room below the
-//! caret, edge clamping — which moved here from `view::overlay_surface`
-//! (`resolve_panel_width` / `position_panel`) so both the engine and the
-//! overlay surface share one implementation.
+//! caret, and edge clamping. Production overlay declarations consume these
+//! rules directly through [`crate::layout::tree::UiTree`].
 
 use crate::layout::keys::UiKey;
 

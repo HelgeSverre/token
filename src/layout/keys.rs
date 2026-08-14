@@ -24,9 +24,18 @@ pub enum UiKey {
     /// The virtualized row list inside a panel's content area.
     PanelRows(PanelId),
 
-    /// A cursor-anchored floating panel. Used by the layout benchmark and
-    /// available to production overlay declarations as that migration grows.
-    CursorOverlayPanel,
+    // --- Floating overlay surfaces ---
+    OverlayPanel,
+    OverlayTabBar,
+    OverlayTab(usize),
+    OverlayHeader,
+    OverlayRows,
+    OverlayFieldLabel(usize),
+    OverlayFieldInput(usize),
+    OverlayZoneBanner,
+    OverlayZoneCode,
+    OverlayZoneText,
+    OverlayFooter,
 
     // --- Window shell ---
     Sidebar,

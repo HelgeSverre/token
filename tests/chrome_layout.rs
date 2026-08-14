@@ -3,10 +3,11 @@
 //! geometry), dock-position independence, and the regressions the engine
 //! migration fixed (tab advance, sliver rows, one clamp formula).
 
-use token::layout::chrome::{chrome, shell};
+use token::layout::chrome::{chrome, shell, sidebar_rows};
 use token::layout::{snapshot::snap, UiKey};
 use token::model::{AppModel, Workspace};
 use token::panel::{DockPosition, PanelId};
+use token::view::hit_test::{hit_test_sidebar, HitTarget, Point};
 
 fn assert_rect(
     snapshot: &token::layout::LayoutSnapshot,
@@ -193,6 +194,51 @@ fn shell_only_solve_matches_full_chrome_outer_rects() {
     assert!(outer
         .rect(UiKey::DockHeader(DockPosition::Bottom))
         .is_none());
+    assert!(outer.row_list(UiKey::Sidebar).is_none());
+}
+
+#[test]
+fn sidebar_rows_share_one_viewport_for_render_hit_and_scroll() {
+    let dir = tempfile::tempdir().expect("temporary workspace should be created");
+    for index in 0..12 {
+        std::fs::write(dir.path().join(format!("file-{index}.rs")), "")
+            .expect("test file should be created");
+    }
+    let mut model = AppModel::new(800, 180, 1.0, vec![]);
+    model.workspace = Some(
+        Workspace::new(dir.path().to_path_buf(), &model.metrics).expect("workspace should load"),
+    );
+    model.workspace.as_mut().unwrap().scroll_offset = 3;
+    let expected_count = model.workspace.as_ref().unwrap().visible_item_count();
+
+    let full = chrome(&model);
+    let rows = full
+        .row_list(UiKey::Sidebar)
+        .expect("full chrome declares sidebar rows");
+    assert_eq!(rows.count(), expected_count);
+    assert_eq!(rows.scroll_offset(), 3);
+    assert_eq!(snap(rows.rect()), snap(full.rect(UiKey::Sidebar).unwrap()));
+    assert_eq!(rows.row_at_y(rows.rect().y + 1.0), Some(3));
+    assert_eq!(
+        rows.max_scroll(),
+        expected_count.saturating_sub(rows.visible_capacity())
+    );
+
+    let sidebar_only = sidebar_rows(&model);
+    assert_eq!(
+        snap(sidebar_only.rect(UiKey::Sidebar).unwrap()),
+        snap(rows.rect())
+    );
+    assert!(sidebar_only.row_list(UiKey::Sidebar).is_some());
+    assert!(sidebar_only
+        .rect(UiKey::PanelContent(PanelId::Terminal))
+        .is_none());
+
+    let hit = hit_test_sidebar(
+        &model,
+        Point::new(rows.rect().x as f64 + 100.0, rows.rect().y as f64 + 1.0),
+    );
+    assert!(matches!(hit, Some(HitTarget::SidebarItem { row: 3, .. })));
 }
 
 /// A panel that isn't the active panel of any dock resolves to no row

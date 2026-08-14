@@ -19,7 +19,7 @@ use winit::keyboard::ModifiersState;
 use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, TabId};
 use crate::model::{AppModel, FocusTarget, TextViewportMap};
 
-use super::geometry::{PreviewPaneLayout, TabBarLayout, TreeListLayout};
+use super::geometry::{PreviewPaneLayout, TabBarLayout, TreeRowLayout};
 
 // ============================================================================
 // Core Types
@@ -492,8 +492,8 @@ fn hit_test_sidebar_resize_in(
 /// Returns `SidebarItem` if clicking on a file/folder, or `SidebarEmpty`
 /// if clicking in the sidebar area but not on an item.
 pub fn hit_test_sidebar(model: &AppModel, pt: Point) -> Option<HitTarget> {
-    let shell = crate::layout::chrome::shell(model);
-    hit_test_sidebar_in(model, &shell, pt)
+    let sidebar = crate::layout::chrome::sidebar_rows(model);
+    hit_test_sidebar_in(model, &sidebar, pt)
 }
 
 fn hit_test_sidebar_in(
@@ -502,22 +502,21 @@ fn hit_test_sidebar_in(
     pt: Point,
 ) -> Option<HitTarget> {
     let workspace = model.workspace.as_ref()?;
-    let sidebar = chrome.rect(crate::layout::UiKey::Sidebar)?;
-    if !sidebar.contains(pt.x as f32, pt.y as f32) {
+    let rows = chrome.row_list(crate::layout::UiKey::Sidebar)?;
+    if !rows.rect().contains(pt.x as f32, pt.y as f32) {
         return None;
     }
-
-    let row_height = model.metrics.file_tree_row_height as f64;
-    let clicked_visual_row = ((pt.y - sidebar.y as f64) / row_height) as usize;
-    let clicked_row = workspace.scroll_offset.saturating_add(clicked_visual_row);
+    let Some(clicked_row) = rows.row_at_y(pt.y as f32) else {
+        return Some(HitTarget::SidebarEmpty);
+    };
 
     if let Some((node, depth)) = workspace
         .file_tree
         .get_visible_item_with_depth(clicked_row, &workspace.expanded_folders)
     {
-        // Share chevron geometry with the renderer (TreeListLayout in render_sidebar)
-        let tree = TreeListLayout::from_metrics(&model.metrics);
-        let chevron_start = tree.x_offset(depth) as f64;
+        // Share intra-row chevron geometry with the renderer.
+        let tree = TreeRowLayout::from_metrics(&model.metrics);
+        let chevron_start = rows.rect().x as f64 + tree.x_offset(depth) as f64;
         let chevron_end = chevron_start + tree.indicator_width as f64;
         let clicked_on_chevron = node.is_dir && pt.x >= chevron_start && pt.x < chevron_end;
 
@@ -902,8 +901,8 @@ pub fn hit_test_ui(
         return Some(target);
     }
 
-    // The cheap shell drives the common path. Full dock contents and row
-    // counts are solved lazily only when the pointer can hit a dock.
+    // The cheap shell drives the common path. Sidebar or dock rows are solved
+    // lazily only when the pointer can hit that region.
     let shell = crate::layout::chrome::shell(model);
 
     // 2. Status bar
@@ -917,8 +916,14 @@ pub fn hit_test_ui(
     }
 
     // 4. Sidebar file tree
-    if let Some(target) = hit_test_sidebar_in(model, &shell, pt) {
-        return Some(target);
+    if shell
+        .rect(crate::layout::UiKey::Sidebar)
+        .is_some_and(|rect| rect.contains(pt.x as f32, pt.y as f32))
+    {
+        let sidebar = crate::layout::chrome::sidebar_rows(model);
+        if let Some(target) = hit_test_sidebar_in(model, &sidebar, pt) {
+            return Some(target);
+        }
     }
 
     // 5. Dock panels (must be checked before editor groups, which may overlap)

@@ -454,7 +454,7 @@ mod engine {
             },
             |t| {
                 t.leaf(ElementDecl {
-                    key: Some(UiKey::CursorOverlayPanel),
+                    key: Some(UiKey::OverlayPanel),
                     sizing: SizingAxes::new(Sizing::GROW, Sizing::FIT),
                     content: Content::Text(TextDecl {
                         text,

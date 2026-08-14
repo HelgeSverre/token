@@ -731,14 +731,8 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
         );
 
         // 2. Sidebar (if workspace is open)
-        if let Some(sidebar_rect) = chrome.rect(token::layout::UiKey::Sidebar) {
-            Renderer::render_sidebar(
-                &mut frame,
-                &mut painter,
-                model,
-                sidebar_rect.width.round() as usize,
-                sidebar_rect.height.round() as usize,
-            );
+        if chrome.rect(token::layout::UiKey::Sidebar).is_some() {
+            Renderer::render_sidebar(&mut frame, &mut painter, model, &chrome);
         }
 
         // 3. Docks

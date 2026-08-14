@@ -11,6 +11,11 @@
 
 use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry::WidgetRect;
+use crate::layout::{
+    Content, Dir, ElementDecl, FloatAnchor, FloatDecl, LayoutSnapshot, Padding, RowListDecl,
+    Sizing, SizingAxes, UiKey, UiTree,
+};
+use crate::model::editor_area::Rect;
 use crate::theme::OverlayTheme;
 
 /// Logical-px chrome constants for `Anchor::Centered`, per the Visual
@@ -697,12 +702,11 @@ pub struct FieldLayout {
     pub input: WidgetRect,
 }
 
-/// Computed geometry for an `Anchor::Centered` surface — panel chrome,
-/// header, list rows (already scrolled to the visible window), fields,
-/// footer, and scrollbar thumb. The single source of truth shared by
-/// `render()` and by hit-testing (`hit_test::hit_test_modal`) — one layout,
-/// two consumers.
+/// Solved Clay geometry for a centered or cursor-anchored surface: panel
+/// chrome, header, list rows, fields, zones, footer, and scrollbar thumb.
+/// Rendering and hit-testing consume this same snapshot.
 pub struct OverlayLayout {
+    snapshot: LayoutSnapshot,
     pub panel: WidgetRect,
     /// `None` unless `spec.tabs` is `Some` (Search Everywhere only).
     pub tab_bar: Option<WidgetRect>,
@@ -733,61 +737,48 @@ pub struct OverlayLayout {
     pub(crate) zone_plan: Option<ZonePlan>,
 }
 
-/// Clamp a `WidthRule` against the window width (percent-of-window, clamped
-/// to a logical-px min/max, then margin-clamped to the window edges); for
-/// `Anchor::Cursor` an additional 200px floor applies (Visual Language >
-/// Chrome).
-fn resolve_panel_width(
-    anchor: &Anchor,
-    width: &WidthRule,
-    window_width: usize,
-    scale_factor: f64,
-) -> usize {
-    crate::layout::anchor::resolve_width(
-        width,
-        matches!(anchor, Anchor::Cursor { .. }),
-        window_width,
-        scale_factor,
-    )
-}
-
-/// Position the panel's top-left corner given its final width/height.
-/// Centered: centered X, `min(h/4, Y)` per the Chrome table. Cursor: below
-/// the anchor line + gap, flipping above when there isn't `panel_h` of
-/// space below, then edge-clamped to the window.
-fn position_panel(
-    anchor: &Anchor,
-    window_width: usize,
-    window_height: usize,
-    panel_w: usize,
-    panel_h: usize,
-    scale_factor: f64,
-) -> (usize, usize) {
-    match anchor {
-        Anchor::Centered { .. } => crate::layout::anchor::position_centered(
-            window_width,
-            window_height,
-            panel_w,
-            scale_factor,
-        ),
+fn float_decl(anchor: &Anchor) -> FloatDecl {
+    let width = *anchor.width();
+    let float_anchor = match anchor {
+        Anchor::Centered { .. } => FloatAnchor::WindowCentered,
         Anchor::Cursor {
             x,
             y,
             h,
             prefer_below,
             ..
-        } => crate::layout::anchor::position_at_caret(
-            *x,
-            *y,
-            *h,
-            *prefer_below,
-            window_width,
-            window_height,
-            panel_w,
-            panel_h,
-            scale_factor,
-        ),
+        } => FloatAnchor::Caret {
+            x: *x as f32,
+            y: *y as f32,
+            line_h: *h as f32,
+            prefer_below: *prefer_below,
+        },
+    };
+    FloatDecl {
+        anchor: float_anchor,
+        z: 10,
+        width: Some(width),
     }
+}
+
+fn widget_rect(rect: Rect) -> WidgetRect {
+    let (x, y, w, h) = crate::layout::snapshot::snap(rect);
+    WidgetRect { x, y, w, h }
+}
+
+fn solved_rect(snapshot: &LayoutSnapshot, key: UiKey) -> Option<WidgetRect> {
+    snapshot.rect(key).map(widget_rect)
+}
+
+fn solved_content_rect(snapshot: &LayoutSnapshot, key: UiKey) -> Option<WidgetRect> {
+    snapshot.content_rect(key).map(widget_rect)
+}
+
+fn spacer(t: &mut UiTree, height: usize) {
+    t.leaf(ElementDecl {
+        sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+        ..Default::default()
+    });
 }
 
 /// The painter-free fallback measure: monospace cells at the historical
@@ -829,13 +820,13 @@ pub fn layout_measured(
     scale_factor: f64,
     measure: &mut dyn crate::layout::TextMeasure,
 ) -> OverlayLayout {
-    let panel_w = resolve_panel_width(
-        &spec.anchor,
+    let panel_w = crate::layout::anchor::resolve_width(
         spec.anchor.width(),
+        matches!(&spec.anchor, Anchor::Cursor { .. }),
         window_width,
         scale_factor,
     );
-    let is_cursor = matches!(spec.anchor, Anchor::Cursor { .. });
+    let is_cursor = matches!(&spec.anchor, Anchor::Cursor { .. });
 
     let header_h = spec
         .header
@@ -857,8 +848,7 @@ pub fn layout_measured(
         .tabs
         .as_ref()
         .map(|_| scaled(dims::TAB_BAR_HEIGHT, scale_factor));
-
-    match &spec.body {
+    let list_info = match &spec.body {
         Body::List {
             sections,
             scroll,
@@ -867,286 +857,282 @@ pub fn layout_measured(
         } => {
             let display_rows = flatten_rows(sections);
             let (start, visible) = resolve_visible_window(&display_rows, *scroll, *max_visible);
-            // Reserve one row of body height even when there are zero rows,
-            // so an empty-state message ("No files match your query") has
-            // somewhere to paint instead of landing in the footer band.
+            // Empty lists still reserve one row for their empty-state text.
             let visible = visible.max(usize::from(display_rows.is_empty()));
-            let list_h = visible * row_h;
-            let header_h = header_h.unwrap_or(0);
-            let tab_bar_h_v = tab_bar_h.unwrap_or(0);
-
-            let panel_h = tab_bar_h_v + header_h + list_h + footer_h.unwrap_or(0);
-            let (panel_x, panel_y) = position_panel(
-                &spec.anchor,
-                window_width,
-                window_height,
-                panel_w,
-                panel_h,
-                scale_factor,
-            );
-            let panel = WidgetRect {
-                x: panel_x,
-                y: panel_y,
-                w: panel_w,
-                h: panel_h,
-            };
-            let tab_bar = tab_bar_h.map(|h| WidgetRect {
-                x: panel.x,
-                y: panel.y,
-                w: panel.w,
-                h,
-            });
-            let tab_rects: Vec<WidgetRect> = spec
-                .tabs
-                .as_ref()
-                .map(|tab_bar_spec| {
-                    let n = tab_bar_spec.tabs.len().max(1);
-                    let tab_w = panel.w / n;
-                    (0..tab_bar_spec.tabs.len())
-                        .map(|i| WidgetRect {
-                            x: panel.x + i * tab_w,
-                            y: panel.y,
-                            w: tab_w,
-                            h: tab_bar_h_v,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            let header = spec.header.as_ref().map(|_| WidgetRect {
-                x: panel.x,
-                y: panel.y + tab_bar_h_v,
-                w: panel.w,
-                h: header_h,
-            });
-
-            let list_top = panel.y + tab_bar_h_v + header_h;
-            let rows: Vec<WidgetRect> = (0..visible)
-                .map(|i| WidgetRect {
-                    x: panel.x,
-                    y: list_top + i * row_h,
-                    w: panel.w,
-                    h: row_h,
-                })
-                .collect();
-
-            let footer = footer_h.map(|h| WidgetRect {
-                x: panel.x,
-                y: list_top + list_h,
-                w: panel.w,
-                h,
-            });
-
-            let total = display_rows.len();
-            let scrollbar = if total > *max_visible {
-                let inset = scaled(dims::SCROLLBAR_INSET, scale_factor);
-                let sb_w = scaled(dims::SCROLLBAR_WIDTH, scale_factor);
-                let min_len = scaled(dims::SCROLLBAR_MIN_LEN, scale_factor);
-                let track_h = list_h;
-                let thumb_h = ((visible as f32 / total as f32) * track_h as f32).round() as usize;
-                let thumb_h = thumb_h.max(min_len).min(track_h);
-                let max_thumb_y = track_h.saturating_sub(thumb_h);
-                let scroll_range = total.saturating_sub(visible).max(1);
-                let thumb_y = (start * max_thumb_y) / scroll_range;
-                Some(WidgetRect {
-                    x: panel.x + panel.w.saturating_sub(sb_w + inset),
-                    y: list_top + thumb_y,
-                    w: sb_w,
-                    h: thumb_h,
-                })
-            } else {
-                None
-            };
-
-            OverlayLayout {
-                panel,
-                tab_bar,
-                tab_rects,
-                header,
-                row_height: row_h,
-                rows,
-                fields: Vec::new(),
-                zones_banner: None,
-                zones_code: None,
-                zones_text: None,
-                footer,
-                scrollbar,
-                zone_plan: None,
-            }
+            Some((start, visible, display_rows.len(), *max_visible))
         }
-        Body::Fields { fields, .. } => {
-            let label_h = scaled(dims::FIELD_LABEL_H, scale_factor);
-            let gap = scaled(dims::FIELD_LABEL_GAP, scale_factor);
-            let input_h = scaled(SIZE_INPUT, scale_factor) + 2 * scaled(dims::PAD_Y, scale_factor);
-            let spacing = scaled(dims::FIELD_SPACING, scale_factor);
-            let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
-            let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
-            let field_h = label_h + gap + input_h;
+        Body::Fields { .. } | Body::Zones(_) => None,
+    };
+    // Text wrapping is content measurement; the solved boxes below consume
+    // its heights instead of re-deriving their stack manually.
+    let zone_plan = match &spec.body {
+        Body::Zones(zones) => Some(plan_zones(zones, panel_w, scale_factor, measure)),
+        Body::List { .. } | Body::Fields { .. } => None,
+    };
 
-            let panel_h = pad_y * 2
-                + fields.len() * field_h
-                + fields.len().saturating_sub(1) * spacing
-                + footer_h.unwrap_or(0);
-            let (panel_x, panel_y) = position_panel(
-                &spec.anchor,
-                window_width,
-                window_height,
-                panel_w,
-                panel_h,
-                scale_factor,
-            );
-            let panel = WidgetRect {
-                x: panel_x,
-                y: panel_y,
-                w: panel_w,
-                h: panel_h,
-            };
-            let field_x = panel.x + pad_x;
-            let field_w = panel.w.saturating_sub(2 * pad_x);
+    let mut tree = UiTree::new();
+    tree.node(ElementDecl::default(), |t| {
+        t.node(
+            ElementDecl {
+                key: Some(UiKey::OverlayPanel),
+                dir: Dir::Column,
+                sizing: SizingAxes::new(Sizing::FIT, Sizing::FIT),
+                clip: true,
+                float: Some(float_decl(&spec.anchor)),
+                ..Default::default()
+            },
+            |t| match &spec.body {
+                Body::List { .. } => {
+                    if let (Some(tabs), Some(height)) = (&spec.tabs, tab_bar_h) {
+                        t.node(
+                            ElementDecl {
+                                key: Some(UiKey::OverlayTabBar),
+                                dir: Dir::Row,
+                                sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                                ..Default::default()
+                            },
+                            |t| {
+                                let tab_width = panel_w / tabs.tabs.len().max(1);
+                                for index in 0..tabs.tabs.len() {
+                                    t.leaf(ElementDecl {
+                                        key: Some(UiKey::OverlayTab(index)),
+                                        sizing: SizingAxes::new(
+                                            Sizing::Fixed(tab_width as f32),
+                                            Sizing::GROW,
+                                        ),
+                                        ..Default::default()
+                                    });
+                                }
+                            },
+                        );
+                    }
+                    if let Some(height) = header_h {
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayHeader),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                            ..Default::default()
+                        });
+                    }
+                    let visible = list_info.map(|(_, visible, _, _)| visible).unwrap_or(0);
+                    t.leaf(ElementDecl {
+                        key: Some(UiKey::OverlayRows),
+                        sizing: SizingAxes::new(
+                            Sizing::GROW,
+                            Sizing::Fixed((visible * row_h) as f32),
+                        ),
+                        content: Content::RowList(RowListDecl {
+                            row_height: row_h as f32,
+                            count: visible,
+                            scroll_offset: 0,
+                        }),
+                        ..Default::default()
+                    });
+                    if let Some(height) = footer_h {
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayFooter),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                            ..Default::default()
+                        });
+                    }
+                }
+                Body::Fields { fields, .. } => {
+                    let label_h = scaled(dims::FIELD_LABEL_H, scale_factor);
+                    let label_gap = scaled(dims::FIELD_LABEL_GAP, scale_factor);
+                    let input_h =
+                        scaled(SIZE_INPUT, scale_factor) + 2 * scaled(dims::PAD_Y, scale_factor);
+                    let field_spacing = scaled(dims::FIELD_SPACING, scale_factor);
+                    let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
+                    let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
 
-            let mut y = panel.y + pad_y;
-            let field_layouts: Vec<FieldLayout> = fields
-                .iter()
-                .map(|_| {
-                    let label = WidgetRect {
-                        x: field_x,
-                        y,
-                        w: field_w,
-                        h: label_h,
-                    };
-                    let input = WidgetRect {
-                        x: field_x,
-                        y: y + label_h + gap,
-                        w: field_w,
-                        h: input_h,
-                    };
-                    y += field_h + spacing;
-                    FieldLayout { label, input }
+                    spacer(t, pad_y);
+                    t.node(
+                        ElementDecl {
+                            dir: Dir::Column,
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::FIT),
+                            padding: Padding::xy(pad_x as f32, 0.0),
+                            gap: field_spacing as f32,
+                            ..Default::default()
+                        },
+                        |t| {
+                            for index in 0..fields.len() {
+                                t.node(
+                                    ElementDecl {
+                                        dir: Dir::Column,
+                                        sizing: SizingAxes::new(Sizing::GROW, Sizing::FIT),
+                                        gap: label_gap as f32,
+                                        ..Default::default()
+                                    },
+                                    |t| {
+                                        t.leaf(ElementDecl {
+                                            key: Some(UiKey::OverlayFieldLabel(index)),
+                                            sizing: SizingAxes::new(
+                                                Sizing::GROW,
+                                                Sizing::Fixed(label_h as f32),
+                                            ),
+                                            ..Default::default()
+                                        });
+                                        t.leaf(ElementDecl {
+                                            key: Some(UiKey::OverlayFieldInput(index)),
+                                            sizing: SizingAxes::new(
+                                                Sizing::GROW,
+                                                Sizing::Fixed(input_h as f32),
+                                            ),
+                                            ..Default::default()
+                                        });
+                                    },
+                                );
+                            }
+                        },
+                    );
+                    spacer(t, pad_y);
+                    if let Some(height) = footer_h {
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayFooter),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                            ..Default::default()
+                        });
+                    }
+                }
+                Body::Zones(zones) => {
+                    let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
+                    let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
+                    let gap = scaled(dims::ZONE_GAP, scale_factor);
+                    let plan = zone_plan
+                        .as_ref()
+                        .expect("zones always have a measured plan");
+                    let banner_h = plan.banner.as_ref().map(|banner| banner.h);
+                    let code_h = plan.code.as_ref().map(|(_, height)| *height);
+                    let text_h = plan.text.as_ref().map(|(_, _, height)| *height);
+
+                    if let Some(height) = banner_h {
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayZoneBanner),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                            ..Default::default()
+                        });
+                    } else {
+                        spacer(t, pad_y);
+                    }
+                    if let Some(height) = code_h {
+                        if banner_h.is_some() {
+                            spacer(t, gap);
+                        }
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayZoneCode),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                            padding: Padding::xy(pad_x as f32, 0.0),
+                            ..Default::default()
+                        });
+                    }
+                    if let Some(height) = text_h {
+                        if banner_h.is_some() || code_h.is_some() {
+                            spacer(t, gap);
+                        }
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayZoneText),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                            padding: Padding::xy(pad_x as f32, 0.0),
+                            ..Default::default()
+                        });
+                    }
+                    spacer(
+                        t,
+                        if zones.banner.is_some() {
+                            2 * pad_y
+                        } else {
+                            pad_y
+                        },
+                    );
+                }
+            },
+        );
+    });
+
+    let snapshot = tree.solve(
+        Rect::new(0.0, 0.0, window_width as f32, window_height as f32),
+        scale_factor,
+        measure,
+    );
+    let panel = solved_rect(&snapshot, UiKey::OverlayPanel)
+        .expect("overlay tree always declares its panel");
+    let tab_bar = solved_rect(&snapshot, UiKey::OverlayTabBar);
+    let tab_rects = spec
+        .tabs
+        .as_ref()
+        .map(|tabs| {
+            (0..tabs.tabs.len())
+                .map(|index| {
+                    solved_rect(&snapshot, UiKey::OverlayTab(index))
+                        .expect("overlay tree declares every requested tab")
                 })
-                .collect();
-
-            let footer = footer_h.map(|h| WidgetRect {
-                x: panel.x,
-                y: panel.y + panel_h - h,
-                w: panel.w,
-                h,
-            });
-
-            OverlayLayout {
-                panel,
-                tab_bar: None,
-                tab_rects: Vec::new(),
-                header: None,
-                row_height: row_h,
-                rows: Vec::new(),
-                fields: field_layouts,
-                zones_banner: None,
-                zones_code: None,
-                zones_text: None,
-                footer,
-                scrollbar: None,
-                zone_plan: None,
-            }
+                .collect()
+        })
+        .unwrap_or_default();
+    let header = solved_rect(&snapshot, UiKey::OverlayHeader);
+    let rows = snapshot
+        .row_list(UiKey::OverlayRows)
+        .map(|rows| {
+            rows.drawn_range()
+                .map(|index| {
+                    widget_rect(
+                        rows.row_rect(index)
+                            .expect("drawn overlay row always has a solved rectangle"),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let fields = match &spec.body {
+        Body::Fields { fields, .. } => (0..fields.len())
+            .map(|index| FieldLayout {
+                label: solved_rect(&snapshot, UiKey::OverlayFieldLabel(index))
+                    .expect("overlay tree declares every field label"),
+                input: solved_rect(&snapshot, UiKey::OverlayFieldInput(index))
+                    .expect("overlay tree declares every field input"),
+            })
+            .collect(),
+        Body::List { .. } | Body::Zones(_) => Vec::new(),
+    };
+    let zones_banner = solved_rect(&snapshot, UiKey::OverlayZoneBanner);
+    let zones_code = solved_content_rect(&snapshot, UiKey::OverlayZoneCode);
+    let zones_text = solved_content_rect(&snapshot, UiKey::OverlayZoneText);
+    let footer = solved_rect(&snapshot, UiKey::OverlayFooter);
+    let scrollbar = list_info.and_then(|(start, visible, total, max_visible)| {
+        if total <= max_visible {
+            return None;
         }
-        Body::Zones(zones) => {
-            let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
-            let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
-            let gap = scaled(dims::ZONE_GAP, scale_factor);
-            // One measured plan drives every height; the plan is stored on
-            // the layout so render consumes it instead of re-deriving.
-            let plan = plan_zones(zones, panel_w, scale_factor, measure);
-            let banner_h = plan.banner.as_ref().map(|b| b.h).unwrap_or(0);
-            let code_h = plan.code.as_ref().map(|(_, h)| *h);
-            let text_h = plan.text.as_ref().map(|(_, _, h)| *h);
+        let track = solved_rect(&snapshot, UiKey::OverlayRows)?;
+        let inset = scaled(dims::SCROLLBAR_INSET, scale_factor);
+        let width = scaled(dims::SCROLLBAR_WIDTH, scale_factor);
+        let min_len = scaled(dims::SCROLLBAR_MIN_LEN, scale_factor);
+        let thumb_h = ((visible as f32 / total as f32) * track.h as f32).round() as usize;
+        let thumb_h = thumb_h.max(min_len).min(track.h);
+        let max_thumb_y = track.h.saturating_sub(thumb_h);
+        let scroll_range = total.saturating_sub(visible).max(1);
+        let thumb_y = (start * max_thumb_y) / scroll_range;
+        Some(WidgetRect {
+            x: track.x + track.w.saturating_sub(width + inset),
+            y: track.y + thumb_y,
+            w: width,
+            h: thumb_h,
+        })
+    });
 
-            let mut panel_h = pad_y * 2;
-            let mut y_off = 0;
-            if zones.banner.is_some() {
-                panel_h += banner_h;
-                y_off += banner_h;
-            }
-            if let Some(h) = code_h {
-                if y_off > 0 {
-                    panel_h += gap;
-                }
-                panel_h += h;
-            }
-            if let Some(h) = text_h {
-                if y_off > 0 || code_h.is_some() {
-                    panel_h += gap;
-                }
-                panel_h += h;
-            }
-
-            let (panel_x, panel_y) = position_panel(
-                &spec.anchor,
-                window_width,
-                window_height,
-                panel_w,
-                panel_h,
-                scale_factor,
-            );
-            let panel = WidgetRect {
-                x: panel_x,
-                y: panel_y,
-                w: panel_w,
-                h: panel_h,
-            };
-
-            let mut cursor_y = panel.y;
-            let zones_banner = zones.banner.map(|_| {
-                let r = WidgetRect {
-                    x: panel.x,
-                    y: cursor_y,
-                    w: panel.w,
-                    h: banner_h,
-                };
-                cursor_y += banner_h;
-                r
-            });
-            if zones_banner.is_none() {
-                cursor_y += pad_y;
-            }
-            let zones_code = zones.code.zip(code_h).map(|(_, h)| {
-                if zones_banner.is_some() {
-                    cursor_y += gap;
-                }
-                let r = WidgetRect {
-                    x: panel.x + pad_x,
-                    y: cursor_y,
-                    w: panel.w.saturating_sub(2 * pad_x),
-                    h,
-                };
-                cursor_y += h;
-                r
-            });
-            let zones_text = zones.text.zip(text_h).map(|(_, h)| {
-                if zones_banner.is_some() || zones_code.is_some() {
-                    cursor_y += gap;
-                }
-                WidgetRect {
-                    x: panel.x + pad_x,
-                    y: cursor_y,
-                    w: panel.w.saturating_sub(2 * pad_x),
-                    h,
-                }
-            });
-
-            OverlayLayout {
-                panel,
-                tab_bar: None,
-                tab_rects: Vec::new(),
-                header: None,
-                row_height: row_h,
-                rows: Vec::new(),
-                fields: Vec::new(),
-                zones_banner,
-                zones_code,
-                zones_text,
-                footer: None,
-                scrollbar: None,
-                zone_plan: Some(plan),
-            }
-        }
+    OverlayLayout {
+        snapshot,
+        panel,
+        tab_bar,
+        tab_rects,
+        header,
+        row_height: row_h,
+        rows,
+        fields,
+        zones_banner,
+        zones_code,
+        zones_text,
+        footer,
+        scrollbar,
+        zone_plan,
     }
 }
 
@@ -1171,55 +1157,69 @@ pub enum OverlayHit {
 
 /// Hit-test a point (physical px) against a laid-out `OverlaySpec`.
 pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) -> OverlayHit {
-    let inside_panel = x >= layout.panel.x
-        && x < layout.panel.x + layout.panel.w
-        && y >= layout.panel.y
-        && y < layout.panel.y + layout.panel.h;
-    if !inside_panel {
-        return OverlayHit::Outside;
-    }
-
-    if let Some(tab_bar) = &spec.tabs {
-        for (i, rect) in layout.tab_rects.iter().enumerate() {
-            let hit = x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
-            if !hit {
-                continue;
-            }
-            let available = tab_bar
+    match layout.snapshot.hit(x as f32, y as f32) {
+        Some(UiKey::OverlayTab(index)) => {
+            let available = spec
                 .tabs
-                .get(i)
-                .map(|(_, c)| c.is_available())
+                .as_ref()
+                .and_then(|tabs| tabs.tabs.get(index))
+                .map(|(_, count)| count.is_available())
                 .unwrap_or(false);
-            return if available {
-                OverlayHit::Tab(i)
+            if available {
+                OverlayHit::Tab(index)
             } else {
                 OverlayHit::Inside
-            };
-        }
-    }
-
-    if let Body::List {
-        sections,
-        scroll,
-        max_visible,
-        ..
-    } = &spec.body
-    {
-        let display_rows = flatten_rows(sections);
-        let (start, _) = resolve_visible_window(&display_rows, *scroll, *max_visible);
-        for (slot, rect) in layout.rows.iter().enumerate() {
-            let hit = x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
-            if !hit {
-                continue;
             }
-            return match display_rows.get(start + slot) {
-                Some(DisplayRow::Row(_, flat_index)) => OverlayHit::Row(*flat_index),
-                _ => OverlayHit::Inside,
-            };
         }
+        Some(UiKey::OverlayRows) => {
+            let Body::List {
+                sections,
+                scroll,
+                max_visible,
+                ..
+            } = &spec.body
+            else {
+                return OverlayHit::Inside;
+            };
+            let display_rows = flatten_rows(sections);
+            let (start, _) = resolve_visible_window(&display_rows, *scroll, *max_visible);
+            let Some(slot) = layout
+                .snapshot
+                .row_list(UiKey::OverlayRows)
+                .and_then(|rows| rows.row_at_y(y as f32))
+            else {
+                return OverlayHit::Inside;
+            };
+            match display_rows.get(start + slot) {
+                Some(DisplayRow::Row(_, flat_index)) => OverlayHit::Row(*flat_index),
+                Some(DisplayRow::SectionHeader(_) | DisplayRow::Separator) | None => {
+                    OverlayHit::Inside
+                }
+            }
+        }
+        Some(
+            UiKey::OverlayPanel
+            | UiKey::OverlayTabBar
+            | UiKey::OverlayHeader
+            | UiKey::OverlayFieldLabel(_)
+            | UiKey::OverlayFieldInput(_)
+            | UiKey::OverlayZoneBanner
+            | UiKey::OverlayZoneCode
+            | UiKey::OverlayZoneText
+            | UiKey::OverlayFooter,
+        ) => OverlayHit::Inside,
+        Some(
+            UiKey::Dock(_)
+            | UiKey::DockHeader(_)
+            | UiKey::DockTab(_, _)
+            | UiKey::PanelContent(_)
+            | UiKey::PanelRows(_)
+            | UiKey::Sidebar
+            | UiKey::EditorArea
+            | UiKey::StatusBar,
+        )
+        | None => OverlayHit::Outside,
     }
-
-    OverlayHit::Inside
 }
 
 /// Resolved colors pulled once from `OverlayTheme` per render call.
@@ -3699,6 +3699,32 @@ mod tests {
         let x = header_row.x + 1;
         let y = header_row.y + 1;
         assert_eq!(hit_test(&spec, &l, x, y), OverlayHit::Inside);
+    }
+
+    #[test]
+    fn hit_test_tabs_uses_solved_keys_and_respects_availability() {
+        let sections: [Section; 0] = [];
+        let tabs = [
+            ("All", TabCount::Hidden),
+            ("Symbols", TabCount::Unavailable),
+        ];
+        let mut spec = list_spec(&sections);
+        spec.tabs = Some(TabBar {
+            tabs: &tabs,
+            active: 0,
+        });
+        let layout = layout(&spec, 1000, 800, 1.0);
+
+        let available = layout.tab_rects[0];
+        assert_eq!(
+            hit_test(&spec, &layout, available.x + 1, available.y + 1),
+            OverlayHit::Tab(0)
+        );
+        let unavailable = layout.tab_rects[1];
+        assert_eq!(
+            hit_test(&spec, &layout, unavailable.x + 1, unavailable.y + 1),
+            OverlayHit::Inside
+        );
     }
 
     #[test]

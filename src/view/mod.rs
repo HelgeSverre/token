@@ -174,16 +174,11 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
     }
 
     fn render_sidebar_phase(&mut self) {
-        let Some(sidebar_rect) = self.plan.chrome.rect(crate::layout::UiKey::Sidebar) else {
-            return;
-        };
-
         Renderer::render_sidebar(
             &mut self.frame,
             &mut self.painter,
             self.model,
-            sidebar_rect.width.round() as usize,
-            sidebar_rect.height.round() as usize,
+            &self.plan.chrome,
         );
     }
 
@@ -1550,10 +1545,9 @@ impl Renderer {
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
-        sidebar_width: usize,
-        sidebar_height: usize,
+        chrome: &crate::layout::LayoutSnapshot,
     ) {
-        panels::render_sidebar(frame, painter, model, sidebar_width, sidebar_height);
+        panels::render_sidebar(frame, painter, model, chrome);
     }
 
     fn render_dock(

@@ -5,8 +5,8 @@ use crate::model::editor_area::Rect;
 use crate::model::AppModel;
 
 use super::frame::{Frame, TextPainter};
-use super::geometry::TreeListLayout;
-use super::tree_view::{render_tree, TreeRenderLayout};
+use super::geometry::TreeRowLayout;
+use super::tree_view::render_tree;
 
 enum DockContentKind {
     Outline,
@@ -253,10 +253,11 @@ fn truncate_with_ellipsis(name: &str, max_chars: usize) -> std::borrow::Cow<'_, 
 
 /// Context for sidebar rendering, holding constant values throughout tree traversal.
 struct SidebarRenderContext {
+    sidebar_x: usize,
     sidebar_width: usize,
     row_height: usize,
     char_width: usize,
-    tree: TreeListLayout,
+    tree: TreeRowLayout,
     // Colors
     text_color: u32,
     selection_bg: u32,
@@ -268,7 +269,7 @@ struct SidebarRenderContext {
 struct OutlineRenderContext<'a> {
     content_rect: Rect,
     row_height: usize,
-    tree: TreeListLayout,
+    tree: TreeRowLayout,
     selected_index: Option<usize>,
     text_color: u32,
     selection_bg: u32,
@@ -282,45 +283,47 @@ pub fn render_sidebar(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
-    sidebar_width: usize,
-    sidebar_height: usize,
+    chrome: &LayoutSnapshot,
 ) {
     let Some(workspace) = &model.workspace else {
         return;
     };
+    let Some(rows) = chrome.row_list(UiKey::Sidebar) else {
+        return;
+    };
+    let sidebar_rect = rows.rect();
+    let (sidebar_x, sidebar_y, sidebar_width, sidebar_height) = snap(sidebar_rect);
 
     let theme = &model.theme.sidebar;
     let metrics = &model.metrics;
 
     // Draw sidebar background
     let bg_color = theme.background.to_argb_u32();
-    frame.fill_rect(
-        Rect::new(0.0, 0.0, sidebar_width as f32, sidebar_height as f32),
-        bg_color,
-    );
+    frame.fill_rect(sidebar_rect, bg_color);
 
     // Draw resize border on the right edge
     let border_color = theme.border.to_argb_u32();
-    let border_x = sidebar_width.saturating_sub(1);
+    let border_x = sidebar_x + sidebar_width.saturating_sub(1);
     frame.fill_rect(
-        Rect::new(border_x as f32, 0.0, 1.0, sidebar_height as f32),
+        Rect::new(
+            border_x as f32,
+            sidebar_y as f32,
+            1.0,
+            sidebar_height as f32,
+        ),
         border_color,
     );
 
     // Clip all subsequent drawing to the sidebar bounds
-    frame.set_clip(Rect::new(
-        0.0,
-        0.0,
-        sidebar_width as f32,
-        sidebar_height as f32,
-    ));
+    frame.set_clip(sidebar_rect);
 
     // Build render context with all constant values
     let ctx = SidebarRenderContext {
+        sidebar_x,
         sidebar_width,
-        row_height: metrics.file_tree_row_height,
+        row_height: rows.row_height().round() as usize,
         char_width: painter.char_width().ceil() as usize,
-        tree: TreeListLayout::from_metrics(metrics),
+        tree: TreeRowLayout::from_metrics(metrics),
         text_color: theme.foreground.to_argb_u32(),
         selection_bg: theme.selection_background.to_argb_u32(),
         selection_fg: theme.selection_foreground.to_argb_u32(),
@@ -329,7 +332,7 @@ pub fn render_sidebar(
 
     render_tree(
         &workspace.file_tree.roots,
-        TreeRenderLayout::new(0, sidebar_height, ctx.row_height, workspace.scroll_offset),
+        rows,
         |node| node.is_dir && workspace.is_expanded(&node.path),
         |row| {
             let node = row.node;
@@ -344,7 +347,7 @@ pub fn render_sidebar(
             if is_selected {
                 frame.fill_rect_blended(
                     Rect::new(
-                        0.0,
+                        ctx.sidebar_x as f32,
                         row.row_y as f32,
                         ctx.sidebar_width as f32,
                         ctx.row_height as f32,
@@ -353,8 +356,8 @@ pub fn render_sidebar(
                 );
             }
 
-            let icon_x = pos.icon_x;
-            let text_x = pos.text_x;
+            let icon_x = ctx.sidebar_x + pos.icon_x;
+            let text_x = ctx.sidebar_x + pos.text_x;
             let text_y = pos.text_y;
 
             if node.is_dir {
@@ -377,7 +380,8 @@ pub fn render_sidebar(
                 ctx.text_color
             };
 
-            let available_width = ctx.tree.available_text_width(ctx.sidebar_width, text_x);
+            let sidebar_right = ctx.sidebar_x + ctx.sidebar_width;
+            let available_width = ctx.tree.available_text_width(sidebar_right, text_x);
             let max_chars = available_width
                 .checked_div(ctx.char_width)
                 .unwrap_or(available_width / 8);
@@ -420,8 +424,7 @@ pub fn render_outline_panel(
     let folder_icon_color = theme.folder_icon.to_argb_u32();
 
     let line_height = painter.line_height();
-    let row_height = model.metrics.file_tree_row_height;
-    let tree = TreeListLayout::outline_from_metrics(&model.metrics);
+    let tree = TreeRowLayout::outline_from_metrics(&model.metrics);
 
     // Get outline from the focused document
     let outline = model
@@ -443,14 +446,14 @@ pub fn render_outline_panel(
         }
     };
 
+    let Some(rows) = rows else {
+        return;
+    };
     let selected_index = model.outline_panel.selected_index;
-    let scroll_offset = rows
-        .map(|r| r.scroll_offset())
-        .unwrap_or(model.outline_panel.scroll_offset);
 
     let ctx = OutlineRenderContext {
         content_rect,
-        row_height,
+        row_height: rows.row_height().round() as usize,
         tree,
         selected_index,
         text_color,
@@ -462,12 +465,7 @@ pub fn render_outline_panel(
 
     render_tree(
         &outline.roots,
-        TreeRenderLayout::new(
-            content_rect.y as usize,
-            content_rect.height.ceil() as usize,
-            row_height,
-            scroll_offset,
-        ),
+        rows,
         |node| node.is_collapsible() && !ctx.outline_panel.is_collapsed(node),
         |row| {
             let node = row.node;
@@ -554,7 +552,7 @@ pub fn render_problems_panel(
 
     let line_height = painter.line_height();
     let row_height = model.metrics.file_tree_row_height;
-    let tree = TreeListLayout::outline_from_metrics(&model.metrics);
+    let tree = TreeRowLayout::outline_from_metrics(&model.metrics);
     let rows = problems_rows(model);
 
     if rows.is_empty() {

@@ -1305,9 +1305,9 @@ mod tests {
     }
 
     #[test]
-    fn test_tree_list_layout_positions() {
+    fn test_tree_row_layout_positions() {
         let metrics = crate::model::ScaledMetrics::new(1.0);
-        let tl = TreeListLayout::from_metrics(&metrics);
+        let tl = TreeRowLayout::from_metrics(&metrics);
 
         // Depth 0: just left_padding
         let pos = tl.node_position(0, 100);
@@ -1347,16 +1347,15 @@ mod tests {
 }
 
 // ============================================================================
-// Tree List Layout
+// Tree Row Layout
 // ============================================================================
 
-/// Reusable layout parameters for scrollable tree-list widgets (sidebar, outline).
+/// Reusable geometry for one row within a Clay-owned tree-list viewport.
 ///
-/// Encapsulates the padding, indent, and spacing calculations that are shared
-/// between the sidebar file tree and the outline panel, providing a single
-/// source of truth for tree-node positioning.
+/// Clay/`RowListView` owns the viewport and vertical row boxes; this helper
+/// owns only the indentation and label/accessory positions inside a row.
 #[derive(Debug, Clone, Copy)]
-pub struct TreeListLayout {
+pub struct TreeRowLayout {
     /// Left padding from container edge to first-level icons
     pub left_padding: usize,
     /// Width reserved for the expand/collapse indicator
@@ -1378,7 +1377,7 @@ pub struct TreeNodePosition {
     pub text_y: usize,
 }
 
-impl TreeListLayout {
+impl TreeRowLayout {
     /// Create a tree list layout from scaled metrics.
     pub fn from_metrics(metrics: &crate::model::ScaledMetrics) -> Self {
         Self {

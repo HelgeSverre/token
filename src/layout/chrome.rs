@@ -31,7 +31,7 @@ use crate::panel::{DockPosition, PanelId};
 /// A key is absent when its dock is closed or its panel isn't the active
 /// one — callers treat `None` as "not visible".
 pub fn chrome(model: &AppModel) -> LayoutSnapshot {
-    solve_chrome(model, true)
+    solve_chrome(model, true, true)
 }
 
 /// Solve only the top-level window shell.
@@ -40,10 +40,21 @@ pub fn chrome(model: &AppModel) -> LayoutSnapshot {
 /// status-bar, and outer dock rectangles without inspecting active panel
 /// content or computing virtual row counts.
 pub fn shell(model: &AppModel) -> LayoutSnapshot {
-    solve_chrome(model, false)
+    solve_chrome(model, false, false)
 }
 
-fn solve_chrome(model: &AppModel, include_dock_contents: bool) -> LayoutSnapshot {
+/// Solve the shell with file-tree row geometry but without inspecting dock
+/// panel contents. Pointer and update paths use this only when they actually
+/// need sidebar rows, keeping the common editor-pointer path cheap.
+pub fn sidebar_rows(model: &AppModel) -> LayoutSnapshot {
+    solve_chrome(model, true, false)
+}
+
+fn solve_chrome(
+    model: &AppModel,
+    include_sidebar_rows: bool,
+    include_dock_contents: bool,
+) -> LayoutSnapshot {
     let mut tree = UiTree::new();
     let root = Rect::new(
         0.0,
@@ -79,6 +90,18 @@ fn solve_chrome(model: &AppModel, include_dock_contents: bool) -> LayoutSnapshot
                         t.leaf(ElementDecl {
                             key: Some(UiKey::Sidebar),
                             sizing: SizingAxes::new(Sizing::Fixed(width), Sizing::GROW),
+                            content: model
+                                .workspace
+                                .as_ref()
+                                .filter(|_| include_sidebar_rows)
+                                .map(|workspace| {
+                                    Content::RowList(RowListDecl {
+                                        row_height: model.metrics.file_tree_row_height as f32,
+                                        count: workspace.visible_item_count(),
+                                        scroll_offset: workspace.scroll_offset,
+                                    })
+                                })
+                                .unwrap_or_default(),
                             ..Default::default()
                         });
                     }
