@@ -34,6 +34,8 @@ All notable changes to rust-editor are documented in this file.
 
 ### Fixed
 
+- Fixed a debug-build crash when rendering an active terminal inside a dock
+  panel whose content already established an enclosing clip.
 - Dock tabs now advance by their clamped widths, so a width-clamped tab no
   longer leaves a phantom gap before the next tab.
 - Outline expand/collapse now clamps scrolling with the same

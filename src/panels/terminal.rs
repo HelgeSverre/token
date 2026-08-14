@@ -130,7 +130,7 @@ pub fn render_terminal_panel(
         return;
     };
 
-    frame.set_clip(rect);
+    frame.push_clip(rect);
 
     let term = session.term();
     let grid = term.grid();
@@ -170,7 +170,7 @@ pub fn render_terminal_panel(
     render_terminal_cursor(frame, painter, &ctx, rows, cols, grid, scroll_offset);
     render_scrollback_indicator(frame, painter, &ctx, scroll_offset, max_offset);
 
-    frame.clear_clip();
+    frame.pop_clip();
 }
 
 fn render_terminal_cell(
@@ -424,6 +424,9 @@ fn named_color_index(color: NamedColor) -> Option<usize> {
 mod tests {
     use super::*;
     use alacritty_terminal::vte::ansi::Rgb;
+    use std::sync::mpsc;
+
+    use crate::terminal::{PtyHandle, TerminalSession};
 
     fn test_palette() -> TerminalPalette {
         let mut ansi = [0; 16];
@@ -437,6 +440,43 @@ mod tests {
             cursor: 0xFFFF_FFFF,
             ansi,
         }
+    }
+
+    #[test]
+    fn rendering_preserves_the_callers_enclosing_clip() {
+        let mut model = AppModel::new(100, 100, 1.0, vec![]);
+        let (pty, _pty_rx) = PtyHandle::new_for_test();
+        let (msg_tx, _msg_rx) = mpsc::channel();
+        model
+            .terminal
+            .sessions
+            .push(TerminalSession::new(7, 4, 10, pty, msg_tx));
+
+        let font = fontdue::Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .expect("test font should load");
+        let mut glyph_cache = crate::view::GlyphCache::default();
+        let mut painter = TextPainter::new(&font, &mut glyph_cache, 14.0, 11.0, 8.0, 18);
+        let mut buffer = vec![0u32; 100 * 100];
+        let mut frame = Frame::new(&mut buffer, 100, 100);
+
+        frame.push_clip(Rect::new(10.0, 10.0, 80.0, 80.0));
+        render_terminal_panel(
+            &mut frame,
+            &mut painter,
+            &model,
+            Rect::new(20.0, 20.0, 60.0, 60.0),
+        );
+
+        // The terminal's clip must be gone while the dock's enclosing clip
+        // remains active. Popping it mirrors `DockPaneScene::render` and was
+        // the point that previously panicked.
+        frame.fill_rect(Rect::new(0.0, 0.0, 100.0, 100.0), 0xFF00_FF00);
+        assert_eq!(frame.get_pixel(15, 15), 0xFF00_FF00);
+        assert_eq!(frame.get_pixel(5, 5), 0);
+        frame.pop_clip();
     }
 
     #[test]
