@@ -3,11 +3,21 @@
 //! geometry), dock-position independence, and the regressions the engine
 //! migration fixed (tab advance, sliver rows, one clamp formula).
 
-use token::layout::chrome::chrome;
+use token::layout::chrome::{chrome, shell};
 use token::layout::{snapshot::snap, UiKey};
-use token::model::AppModel;
+use token::model::{AppModel, Workspace};
 use token::panel::{DockPosition, PanelId};
-use token::view::geometry::WindowLayout;
+
+fn assert_rect(
+    snapshot: &token::layout::LayoutSnapshot,
+    key: UiKey,
+    expected: (usize, usize, usize, usize),
+) {
+    let rect = snapshot
+        .rect(key)
+        .unwrap_or_else(|| panic!("{key:?} should be present"));
+    assert_eq!(snap(rect), expected, "unexpected rect for {key:?}");
+}
 
 fn model_with_problems(dock: DockPosition) -> AppModel {
     let mut model = AppModel::new(1000, 700, 1.0, vec![]);
@@ -69,13 +79,12 @@ fn chrome_is_deterministic_across_solves() {
     }
 }
 
-/// Transition guarantee from the old `DockHeaderLayout`: the content area
-/// is the dock rect minus a `tab_bar_height` header, full width.
+/// The content area tiles the dock below its `tab_bar_height` header.
 #[test]
-fn panel_content_matches_legacy_dock_content_rect() {
+fn panel_content_tiles_the_dock_below_its_header() {
     let model = model_with_problems(DockPosition::Bottom);
     let snap_ = chrome(&model);
-    let dock_rect = WindowLayout::compute(&model).bottom_dock_rect.unwrap();
+    let dock_rect = snap_.rect(UiKey::Dock(DockPosition::Bottom)).unwrap();
 
     let content = snap_.rect(UiKey::PanelContent(PanelId::Problems)).unwrap();
     let tab_bar_h = model.metrics.tab_bar_height as f32;
@@ -92,7 +101,7 @@ fn panel_content_matches_legacy_dock_content_rect() {
 fn problems_in_right_dock_gets_right_dock_geometry() {
     let model = model_with_problems(DockPosition::Right);
     let snap_ = chrome(&model);
-    let right_rect = WindowLayout::compute(&model).right_dock_rect.unwrap();
+    let right_rect = snap_.rect(UiKey::Dock(DockPosition::Right)).unwrap();
 
     let rows = snap_
         .row_list(UiKey::PanelRows(PanelId::Problems))
@@ -102,6 +111,88 @@ fn problems_in_right_dock_gets_right_dock_geometry() {
     // A y inside the right dock maps to a row.
     let y = rows.rect().y + 1.0;
     assert_eq!(rows.row_at_y(y), Some(0));
+}
+
+#[test]
+fn window_shell_accounts_for_status_bar_and_both_docks() {
+    let mut model = AppModel::new(1000, 700, 1.0, vec![]);
+    model.status_bar_height = 20;
+    model.dock_layout.right.is_open = true;
+    model.dock_layout.right.size_logical = 180.0;
+    model.dock_layout.bottom.is_open = true;
+    model.dock_layout.bottom.size_logical = 140.0;
+
+    let chrome = chrome(&model);
+
+    assert_rect(&chrome, UiKey::StatusBar, (0, 680, 1000, 20));
+    assert_rect(&chrome, UiKey::EditorArea, (0, 0, 820, 540));
+    assert_rect(
+        &chrome,
+        UiKey::Dock(DockPosition::Right),
+        (820, 0, 180, 540),
+    );
+    assert_rect(
+        &chrome,
+        UiKey::Dock(DockPosition::Bottom),
+        (0, 540, 1000, 140),
+    );
+}
+
+#[test]
+fn sidebar_spans_the_content_height_and_bottom_dock_starts_after_it() {
+    let dir = tempfile::tempdir().expect("temporary workspace should be created");
+    let mut model = AppModel::new(1000, 700, 1.0, vec![]);
+    model.status_bar_height = 20;
+    let mut workspace =
+        Workspace::new(dir.path().to_path_buf(), &model.metrics).expect("workspace should load");
+    workspace.sidebar_width_logical = 200.0;
+    model.workspace = Some(workspace);
+    model.dock_layout.right.is_open = true;
+    model.dock_layout.right.size_logical = 180.0;
+    model.dock_layout.bottom.is_open = true;
+    model.dock_layout.bottom.size_logical = 140.0;
+
+    let chrome = chrome(&model);
+
+    assert_rect(&chrome, UiKey::Sidebar, (0, 0, 200, 680));
+    assert_rect(&chrome, UiKey::EditorArea, (200, 0, 620, 540));
+    assert_rect(
+        &chrome,
+        UiKey::Dock(DockPosition::Bottom),
+        (200, 540, 800, 140),
+    );
+}
+
+#[test]
+fn shell_only_solve_matches_full_chrome_outer_rects() {
+    let dir = tempfile::tempdir().expect("temporary workspace should be created");
+    let mut model = AppModel::new(1000, 700, 1.0, vec![]);
+    model.workspace = Some(
+        Workspace::new(dir.path().to_path_buf(), &model.metrics).expect("workspace should load"),
+    );
+    model.dock_layout.right.activate(PanelId::Outline);
+    model.dock_layout.bottom.activate(PanelId::Terminal);
+
+    let full = chrome(&model);
+    let outer = shell(&model);
+
+    for key in [
+        UiKey::Sidebar,
+        UiKey::EditorArea,
+        UiKey::StatusBar,
+        UiKey::Dock(DockPosition::Right),
+        UiKey::Dock(DockPosition::Bottom),
+    ] {
+        assert_eq!(
+            snap(full.rect(key).unwrap()),
+            snap(outer.rect(key).unwrap()),
+            "shell-only geometry diverged for {key:?}"
+        );
+    }
+    assert!(outer.rect(UiKey::PanelContent(PanelId::Terminal)).is_none());
+    assert!(outer
+        .rect(UiKey::DockHeader(DockPosition::Bottom))
+        .is_none());
 }
 
 /// A panel that isn't the active panel of any dock resolves to no row

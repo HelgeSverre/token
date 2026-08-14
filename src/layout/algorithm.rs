@@ -161,7 +161,6 @@ pub(crate) fn solve(
             continue;
         };
         let (fx, fy) = match float.anchor {
-            FloatAnchor::At { x, y } => (x, y),
             FloatAnchor::WindowCentered => {
                 let (px, py) = anchor::position_centered(
                     root.width as usize,

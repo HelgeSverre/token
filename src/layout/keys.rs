@@ -28,7 +28,7 @@ pub enum UiKey {
     /// available to production overlay declarations as that migration grows.
     CursorOverlayPanel,
 
-    // --- Window root (P4, reserved) ---
+    // --- Window shell ---
     Sidebar,
     EditorArea,
     StatusBar,

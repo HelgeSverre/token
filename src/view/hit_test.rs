@@ -19,9 +19,7 @@ use winit::keyboard::ModifiersState;
 use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, TabId};
 use crate::model::{AppModel, FocusTarget, TextViewportMap};
 
-use super::geometry::{
-    is_in_status_bar, PreviewPaneLayout, TabBarLayout, TreeListLayout, WindowLayout,
-};
+use super::geometry::{PreviewPaneLayout, TabBarLayout, TreeListLayout};
 
 // ============================================================================
 // Core Types
@@ -445,11 +443,15 @@ pub fn hit_test_cursor_overlay(
 
 /// Hit-test the status bar at the bottom of the window.
 pub fn hit_test_status_bar(model: &AppModel, pt: Point) -> Option<HitTarget> {
-    if is_in_status_bar(pt.y, model.window_size.1, model.status_bar_height) {
-        Some(HitTarget::StatusBar)
-    } else {
-        None
-    }
+    let shell = crate::layout::chrome::shell(model);
+    hit_test_status_bar_in(&shell, pt)
+}
+
+fn hit_test_status_bar_in(chrome: &crate::layout::LayoutSnapshot, pt: Point) -> Option<HitTarget> {
+    chrome
+        .rect(crate::layout::UiKey::StatusBar)
+        .filter(|rect| rect.contains(pt.x as f32, pt.y as f32))
+        .map(|_| HitTarget::StatusBar)
 }
 
 /// Hit-test the sidebar resize handle.
@@ -457,18 +459,28 @@ pub fn hit_test_status_bar(model: &AppModel, pt: Point) -> Option<HitTarget> {
 /// Returns `SidebarResize` if the point is within the resize hit zone
 /// (a few pixels on either side of the sidebar border).
 pub fn hit_test_sidebar_resize(model: &AppModel, pt: Point) -> Option<HitTarget> {
+    let shell = crate::layout::chrome::shell(model);
+    hit_test_sidebar_resize_in(model, &shell, pt)
+}
+
+fn hit_test_sidebar_resize_in(
+    model: &AppModel,
+    chrome: &crate::layout::LayoutSnapshot,
+    pt: Point,
+) -> Option<HitTarget> {
     const SIDEBAR_RESIZE_HIT_ZONE: f64 = 4.0;
 
-    let workspace = model.workspace.as_ref()?;
-    if !workspace.sidebar_visible {
-        return None;
-    }
+    model.workspace.as_ref()?;
+    let sidebar = chrome.rect(crate::layout::UiKey::Sidebar)?;
+    let sidebar_right = (sidebar.x + sidebar.width) as f64;
+    let resize_zone_start = sidebar_right - SIDEBAR_RESIZE_HIT_ZONE;
+    let resize_zone_end = sidebar_right + SIDEBAR_RESIZE_HIT_ZONE;
 
-    let sidebar_width = workspace.sidebar_width(model.metrics.scale_factor) as f64;
-    let resize_zone_start = sidebar_width - SIDEBAR_RESIZE_HIT_ZONE;
-    let resize_zone_end = sidebar_width + SIDEBAR_RESIZE_HIT_ZONE;
-
-    if pt.x >= resize_zone_start && pt.x <= resize_zone_end {
+    if pt.x >= resize_zone_start
+        && pt.x <= resize_zone_end
+        && pt.y >= sidebar.y as f64
+        && pt.y < (sidebar.y + sidebar.height) as f64
+    {
         Some(HitTarget::SidebarResize)
     } else {
         None
@@ -480,18 +492,23 @@ pub fn hit_test_sidebar_resize(model: &AppModel, pt: Point) -> Option<HitTarget>
 /// Returns `SidebarItem` if clicking on a file/folder, or `SidebarEmpty`
 /// if clicking in the sidebar area but not on an item.
 pub fn hit_test_sidebar(model: &AppModel, pt: Point) -> Option<HitTarget> {
-    let workspace = model.workspace.as_ref()?;
-    if !workspace.sidebar_visible {
-        return None;
-    }
+    let shell = crate::layout::chrome::shell(model);
+    hit_test_sidebar_in(model, &shell, pt)
+}
 
-    let sidebar_width = workspace.sidebar_width(model.metrics.scale_factor) as f64;
-    if pt.x >= sidebar_width {
+fn hit_test_sidebar_in(
+    model: &AppModel,
+    chrome: &crate::layout::LayoutSnapshot,
+    pt: Point,
+) -> Option<HitTarget> {
+    let workspace = model.workspace.as_ref()?;
+    let sidebar = chrome.rect(crate::layout::UiKey::Sidebar)?;
+    if !sidebar.contains(pt.x as f32, pt.y as f32) {
         return None;
     }
 
     let row_height = model.metrics.file_tree_row_height as f64;
-    let clicked_visual_row = (pt.y / row_height) as usize;
+    let clicked_visual_row = ((pt.y - sidebar.y as f64) / row_height) as usize;
     let clicked_row = workspace.scroll_offset.saturating_add(clicked_visual_row);
 
     if let Some((node, depth)) = workspace
@@ -747,9 +764,48 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
 /// `DockResize` if the point is over the resizable border between a dock and
 /// the editor area.
 pub fn hit_test_docks(model: &AppModel, pt: Point) -> Option<HitTarget> {
+    let shell = crate::layout::chrome::shell(model);
+    if !point_may_hit_dock(model, &shell, pt) {
+        return None;
+    }
+    let chrome = crate::layout::chrome::chrome(model);
+    hit_test_docks_in(model, &chrome, pt)
+}
+
+/// Cheap outer-rect guard for the full dock solve. The full snapshot needs
+/// active panel contents and virtual row counts; most pointer events occur in
+/// the editor and need none of that work.
+fn point_may_hit_dock(model: &AppModel, shell: &crate::layout::LayoutSnapshot, pt: Point) -> bool {
+    use crate::layout::UiKey;
+    use crate::panel::DockPosition;
+
+    let hit_zone = model.metrics.resize_handle_zone as f64;
+    let over_right = shell
+        .rect(UiKey::Dock(DockPosition::Right))
+        .is_some_and(|rect| {
+            pt.x >= rect.x as f64 - hit_zone
+                && pt.x < (rect.x + rect.width) as f64
+                && pt.y >= rect.y as f64
+                && pt.y < (rect.y + rect.height) as f64
+        });
+    let over_bottom = shell
+        .rect(UiKey::Dock(DockPosition::Bottom))
+        .is_some_and(|rect| {
+            pt.x >= rect.x as f64
+                && pt.x < (rect.x + rect.width) as f64
+                && pt.y >= rect.y as f64 - hit_zone
+                && pt.y < (rect.y + rect.height) as f64
+        });
+    over_right || over_bottom
+}
+
+fn hit_test_docks_in(
+    model: &AppModel,
+    chrome: &crate::layout::LayoutSnapshot,
+    pt: Point,
+) -> Option<HitTarget> {
     use crate::layout::UiKey;
 
-    let chrome = crate::layout::chrome::chrome(model);
     let hit_zone = model.metrics.resize_handle_zone as f64;
 
     // Resize handles first: a hit-slop band around the dock's inner edge,
@@ -846,28 +902,37 @@ pub fn hit_test_ui(
         return Some(target);
     }
 
+    // The cheap shell drives the common path. Full dock contents and row
+    // counts are solved lazily only when the pointer can hit a dock.
+    let shell = crate::layout::chrome::shell(model);
+
     // 2. Status bar
-    if let Some(target) = hit_test_status_bar(model, pt) {
+    if let Some(target) = hit_test_status_bar_in(&shell, pt) {
         return Some(target);
     }
 
     // 3. Sidebar resize handle
-    if let Some(target) = hit_test_sidebar_resize(model, pt) {
+    if let Some(target) = hit_test_sidebar_resize_in(model, &shell, pt) {
         return Some(target);
     }
 
     // 4. Sidebar file tree
-    if let Some(target) = hit_test_sidebar(model, pt) {
+    if let Some(target) = hit_test_sidebar_in(model, &shell, pt) {
         return Some(target);
     }
 
     // 5. Dock panels (must be checked before editor groups, which may overlap)
-    if let Some(target) = hit_test_docks(model, pt) {
-        return Some(target);
+    if point_may_hit_dock(model, &shell, pt) {
+        let chrome = crate::layout::chrome::chrome(model);
+        if let Some(target) = hit_test_docks_in(model, &chrome, pt) {
+            return Some(target);
+        }
     }
 
-    // 6. Splitter bars (need to compute layout first)
-    let window_layout = WindowLayout::compute(model);
+    // 6. Splitter bars use the same solved editor-area rect.
+    let editor_area_rect = shell
+        .rect(crate::layout::UiKey::EditorArea)
+        .expect("window chrome always declares the editor area");
 
     // Group/preview rects are already kept current by the render pass's own
     // `compute_layout_scaled` call, so hit-testing only needs splitters and
@@ -875,7 +940,7 @@ pub fn hit_test_ui(
     // (every open document's undo/redo stacks included) on every mouse event.
     let splitters = model
         .editor_area
-        .compute_splitters(window_layout.editor_area_rect, model.metrics.splitter_width);
+        .compute_splitters(editor_area_rect, model.metrics.splitter_width);
 
     if let Some(target) = hit_test_splitters(model, pt, &splitters) {
         return Some(target);
@@ -906,6 +971,57 @@ mod tests {
         let event = MouseEvent::new(50.0, 50.0, MouseButton::Left, ModifiersState::empty());
         assert!(!event.shift());
         assert!(!event.alt());
+    }
+
+    #[test]
+    fn status_bar_hit_test_uses_the_solved_shell_rect() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.status_bar_height = 20;
+
+        assert!(matches!(
+            hit_test_status_bar(&model, Point::new(10.0, 590.0)),
+            Some(HitTarget::StatusBar)
+        ));
+        assert!(hit_test_status_bar(&model, Point::new(10.0, 579.0)).is_none());
+        assert!(hit_test_status_bar(&model, Point::new(801.0, 590.0)).is_none());
+    }
+
+    #[test]
+    fn dock_hit_guard_includes_contents_and_external_resize_slop() {
+        use crate::panel::{DockPosition, PanelId};
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.dock_layout.right.activate(PanelId::Outline);
+        model.dock_layout.bottom.activate(PanelId::Terminal);
+        let shell = crate::layout::chrome::shell(&model);
+        let right = shell
+            .rect(crate::layout::UiKey::Dock(DockPosition::Right))
+            .unwrap();
+        let bottom = shell
+            .rect(crate::layout::UiKey::Dock(DockPosition::Bottom))
+            .unwrap();
+
+        assert!(!point_may_hit_dock(
+            &model,
+            &shell,
+            Point::new(100.0, 100.0)
+        ));
+        assert!(point_may_hit_dock(
+            &model,
+            &shell,
+            Point::new(
+                right.x as f64 - model.metrics.resize_handle_zone as f64 + 1.0,
+                right.y as f64 + 10.0,
+            )
+        ));
+        assert!(point_may_hit_dock(
+            &model,
+            &shell,
+            Point::new(
+                bottom.x as f64 + 10.0,
+                bottom.y as f64 - model.metrics.resize_handle_zone as f64 + 1.0,
+            )
+        ));
     }
 
     /// Regression test: `hit_test_groups` must classify gutter vs. content

@@ -941,14 +941,16 @@ fn handle_sidebar_key(model: &mut AppModel, key: &Key, ctrl: bool) -> Option<Cmd
     }
 }
 
-/// Check if the outline panel (right dock) has keyboard focus
-pub(crate) fn is_outline_dock_focused(model: &AppModel) -> bool {
-    if model.ui.focused_dock() != Some(DockPosition::Right) {
-        return false;
-    }
+fn is_panel_dock_focused(model: &AppModel, panel_id: PanelId) -> bool {
+    model
+        .dock_layout
+        .active_panel_position(panel_id)
+        .is_some_and(|position| model.ui.focused_dock() == Some(position))
+}
 
-    let right_dock = model.dock_layout.dock(DockPosition::Right);
-    right_dock.is_open && right_dock.active_panel() == Some(PanelId::Outline)
+/// Check if the outline panel has keyboard focus.
+pub(crate) fn is_outline_dock_focused(model: &AppModel) -> bool {
+    is_panel_dock_focused(model, PanelId::Outline)
 }
 
 /// Handle keyboard input when outline panel is focused
@@ -969,14 +971,9 @@ fn handle_outline_dock_key(model: &mut AppModel, key: &Key) -> Option<Cmd> {
     }
 }
 
-/// Check if the problems panel (bottom dock) has keyboard focus
+/// Check if the problems panel has keyboard focus.
 pub(crate) fn is_problems_dock_focused(model: &AppModel) -> bool {
-    if model.ui.focused_dock() != Some(DockPosition::Bottom) {
-        return false;
-    }
-
-    let bottom_dock = model.dock_layout.dock(DockPosition::Bottom);
-    bottom_dock.is_open && bottom_dock.active_panel() == Some(PanelId::PROBLEMS)
+    is_panel_dock_focused(model, PanelId::PROBLEMS)
 }
 
 /// Handle keyboard input when the problems panel is focused. Left/Right/
@@ -1023,14 +1020,9 @@ fn handle_problems_dock_key(model: &mut AppModel, key: &Key) -> Option<Cmd> {
     }
 }
 
-/// Check if the terminal panel (bottom dock) has keyboard focus.
-fn is_terminal_dock_focused(model: &AppModel) -> bool {
-    if model.ui.focused_dock() != Some(DockPosition::Bottom) {
-        return false;
-    }
-
-    let bottom_dock = model.dock_layout.dock(DockPosition::Bottom);
-    bottom_dock.is_open && bottom_dock.active_panel() == Some(PanelId::TERMINAL)
+/// Check if the terminal panel has keyboard focus.
+pub(crate) fn is_terminal_dock_focused(model: &AppModel) -> bool {
+    is_panel_dock_focused(model, PanelId::TERMINAL)
 }
 
 /// Handle keyboard input when the terminal panel is focused.
@@ -1119,6 +1111,37 @@ mod tests {
             .push(TerminalSession::new(7, 24, 80, pty, msg_tx));
 
         (model, pty_rx)
+    }
+
+    fn move_panel(model: &mut AppModel, panel_id: PanelId, from: DockPosition, to: DockPosition) {
+        let source = model.dock_layout.dock_mut(from);
+        source.panel_ids.retain(|&panel| panel != panel_id);
+        source.active_index = (!source.panel_ids.is_empty()).then_some(0);
+        let target = model.dock_layout.dock_mut(to);
+        target.register_panel(panel_id);
+        target.activate(panel_id);
+        model.ui.focus_dock(to);
+    }
+
+    #[test]
+    fn focused_panel_detection_follows_panels_between_docks() {
+        let mut outline_model = AppModel::new(800, 600, 1.0, vec![]);
+        move_panel(
+            &mut outline_model,
+            PanelId::OUTLINE,
+            DockPosition::Right,
+            DockPosition::Bottom,
+        );
+        assert!(is_outline_dock_focused(&outline_model));
+
+        let mut problems_model = AppModel::new(800, 600, 1.0, vec![]);
+        move_panel(
+            &mut problems_model,
+            PanelId::PROBLEMS,
+            DockPosition::Bottom,
+            DockPosition::Right,
+        );
+        assert!(is_problems_dock_focused(&problems_model));
     }
 
     #[test]
@@ -1214,6 +1237,28 @@ mod tests {
 
         assert!(matches!(cmd, Some(Cmd::Redraw)));
         assert_eq!(pty_rx.try_recv().unwrap(), "å".as_bytes());
+    }
+
+    #[test]
+    fn terminal_key_input_follows_terminal_to_the_right_dock() {
+        let (mut model, pty_rx) = focused_terminal_model();
+        move_panel(
+            &mut model,
+            PanelId::TERMINAL,
+            DockPosition::Bottom,
+            DockPosition::Right,
+        );
+
+        let cmd = handle_key(
+            &mut model,
+            Key::Character("x".into()),
+            PhysicalKey::Code(KeyCode::KeyX),
+            KeyModifiers::default(),
+            false,
+        );
+
+        assert!(matches!(cmd, Some(Cmd::Redraw)));
+        assert_eq!(pty_rx.try_recv().unwrap(), b"x");
     }
 
     #[test]

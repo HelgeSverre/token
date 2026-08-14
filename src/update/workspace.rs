@@ -232,10 +232,14 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
 /// Number of rows that fit in the sidebar viewport.
 ///
 /// Uses the same height the renderer draws into: the window minus the
-/// status bar (see `WindowLayout::compute`), not the raw window height.
+/// status bar (the `UiKey::Sidebar` shell rectangle), not the raw window
+/// height.
 fn sidebar_visible_rows(model: &AppModel) -> usize {
     let row_height = model.metrics.file_tree_row_height;
-    let sidebar_height = (model.window_size.1 as usize).saturating_sub(model.status_bar_height);
+    let sidebar_height = crate::layout::chrome::shell(model)
+        .rect(crate::layout::UiKey::Sidebar)
+        .map(|rect| rect.height.max(0.0) as usize)
+        .unwrap_or(0);
     sidebar_height.checked_div(row_height).unwrap_or(20)
 }
 

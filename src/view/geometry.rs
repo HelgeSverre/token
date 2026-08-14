@@ -167,13 +167,6 @@ fn focused_group_editor_document(
     Some((group, editor, document))
 }
 
-/// Check if a y-coordinate is within the status bar region
-#[inline]
-pub fn is_in_status_bar(y: f64, window_height: u32, status_bar_height: usize) -> bool {
-    let status_bar_top = window_height as f64 - status_bar_height as f64;
-    y >= status_bar_top
-}
-
 use super::helpers::get_tab_display_name;
 
 #[derive(Debug, Clone)]
@@ -1051,12 +1044,6 @@ impl PreviewPaneLayout {
 pub struct ModalSpacing;
 
 impl ModalSpacing {
-    /// Outer padding inside the modal border
-    const BASE_PAD: f64 = 12.0;
-    /// Small gap (e.g., title to input, label to input)
-    const BASE_GAP_SM: f64 = 4.0;
-    /// Medium gap (e.g., between sections)
-    const BASE_GAP_MD: f64 = 8.0;
     /// Input field internal vertical padding (total top+bottom)
     const BASE_INPUT_PAD_Y: f64 = 8.0;
     /// Input field internal horizontal padding (each side)
@@ -1067,30 +1054,12 @@ impl ModalSpacing {
         (base * scale_factor).round() as usize
     }
 
-    pub fn pad(scale_factor: f64) -> usize {
-        Self::scaled(Self::BASE_PAD, scale_factor)
-    }
-
-    pub fn gap_sm(scale_factor: f64) -> usize {
-        Self::scaled(Self::BASE_GAP_SM, scale_factor)
-    }
-
-    pub fn gap_md(scale_factor: f64) -> usize {
-        Self::scaled(Self::BASE_GAP_MD, scale_factor)
-    }
-
     pub fn input_pad_y(scale_factor: f64) -> usize {
         Self::scaled(Self::BASE_INPUT_PAD_Y, scale_factor)
     }
 
     pub fn input_pad_x(scale_factor: f64) -> usize {
         Self::scaled(Self::BASE_INPUT_PAD_X, scale_factor)
-    }
-
-    /// Cap on `y = window_height / 4` for small/centered modals — logical
-    /// 100px, scaled like every other modal constant.
-    pub fn top_offset_cap(scale_factor: f64) -> usize {
-        Self::scaled(100.0, scale_factor)
     }
 }
 
@@ -1101,204 +1070,6 @@ pub struct WidgetRect {
     pub y: usize,
     pub w: usize,
     pub h: usize,
-}
-
-/// Vertical stack layout builder for modal dialogs.
-///
-/// Tracks a cursor position that advances as widgets are pushed.
-/// Height is derived automatically from the content that's actually laid out.
-pub struct VStack {
-    cursor_y: usize,
-    content_width: usize,
-    widgets: Vec<WidgetRect>,
-}
-
-impl VStack {
-    pub fn new(content_width: usize) -> Self {
-        Self {
-            cursor_y: 0,
-            content_width,
-            widgets: Vec::new(),
-        }
-    }
-
-    /// Add vertical spacing
-    pub fn gap(&mut self, h: usize) {
-        self.cursor_y += h;
-    }
-
-    /// Push a widget with the given height, spanning the full content width.
-    /// Returns the index into `widgets` for later retrieval.
-    pub fn push(&mut self, h: usize) -> usize {
-        let idx = self.widgets.len();
-        self.widgets.push(WidgetRect {
-            x: 0,
-            y: self.cursor_y,
-            w: self.content_width,
-            h,
-        });
-        self.cursor_y += h;
-        idx
-    }
-
-    /// Total height consumed by all widgets and gaps
-    pub fn height(&self) -> usize {
-        self.cursor_y
-    }
-}
-
-/// Computed layout for a modal dialog.
-///
-/// Single source of truth for modal positioning — used by both rendering
-/// and hit-testing. The outer rect defines the modal border/background,
-/// and widgets are positioned absolutely within the window.
-#[derive(Clone, Debug)]
-pub struct ModalLayout {
-    /// Modal outer bounds (background + border)
-    pub x: usize,
-    pub y: usize,
-    pub w: usize,
-    pub h: usize,
-    /// Absolutely-positioned widget rects (indices from VStack::push)
-    pub widgets: Vec<WidgetRect>,
-}
-
-impl ModalLayout {
-    /// Build a modal layout from a VStack and positioning parameters.
-    pub fn build(
-        vstack: VStack,
-        modal_width: usize,
-        window_width: usize,
-        window_height: usize,
-        scale_factor: f64,
-    ) -> Self {
-        let pad = ModalSpacing::pad(scale_factor);
-        let content_height = vstack.height();
-        let modal_height = content_height + pad * 2;
-        let modal_x = (window_width.saturating_sub(modal_width)) / 2;
-        let modal_y = (window_height / 4).min(ModalSpacing::top_offset_cap(scale_factor));
-        let content_x = modal_x + pad;
-        let content_y = modal_y + pad;
-
-        // Translate widget rects from local to absolute coordinates
-        let widgets = vstack
-            .widgets
-            .into_iter()
-            .map(|w| WidgetRect {
-                x: content_x + w.x,
-                y: content_y + w.y,
-                w: w.w,
-                h: w.h,
-            })
-            .collect();
-
-        Self {
-            x: modal_x,
-            y: modal_y,
-            w: modal_width,
-            h: modal_height,
-            widgets,
-        }
-    }
-
-    /// Check if a point is inside the modal bounds
-    pub fn contains(&self, px: usize, py: usize) -> bool {
-        px >= self.x && px < self.x + self.w && py >= self.y && py < self.y + self.h
-    }
-
-    /// Get a widget rect by index
-    pub fn widget(&self, idx: usize) -> &WidgetRect {
-        &self.widgets[idx]
-    }
-
-    /// Height of an input field (line_height + padding)
-    pub fn input_height(line_height: usize, scale_factor: f64) -> usize {
-        line_height + ModalSpacing::input_pad_y(scale_factor)
-    }
-}
-
-// ============================================================================
-// Dock Geometry
-// ============================================================================
-
-/// Shared top-level window layout used by rendering and hit-testing.
-#[derive(Debug, Clone, Copy)]
-pub struct WindowLayout {
-    /// Full content area above the status bar.
-    pub content_rect: Rect,
-    /// Status bar rectangle.
-    pub status_bar_rect: Rect,
-    /// Sidebar rectangle (if visible).
-    pub sidebar_rect: Option<Rect>,
-    /// Remaining editor area after sidebar/right/bottom panels are subtracted.
-    pub editor_area_rect: Rect,
-    /// Right dock rectangle (if open).
-    pub right_dock_rect: Option<Rect>,
-    /// Bottom dock rectangle (if open).
-    pub bottom_dock_rect: Option<Rect>,
-}
-
-impl WindowLayout {
-    /// Compute the current top-level window layout from the app model.
-    pub fn compute(model: &AppModel) -> Self {
-        let window_width = model.window_size.0 as f32;
-        let window_height = model.window_size.1 as f32;
-        let status_bar_h = model.status_bar_height as f32;
-        let content_height = (window_height - status_bar_h).max(0.0);
-
-        let sidebar_width = model
-            .workspace
-            .as_ref()
-            .filter(|ws| ws.sidebar_visible)
-            .map(|ws| ws.sidebar_width(model.metrics.scale_factor))
-            .unwrap_or(0.0);
-        let right_dock_width = model.dock_layout.right.size(model.metrics.scale_factor);
-        let bottom_dock_height = model.dock_layout.bottom.size(model.metrics.scale_factor);
-        let side_panel_height = (content_height - bottom_dock_height).max(0.0);
-
-        let content_rect = Rect::new(0.0, 0.0, window_width, content_height);
-        let status_bar_rect = Rect::new(0.0, content_height, window_width, status_bar_h);
-        let sidebar_rect = if sidebar_width > 0.0 {
-            Some(Rect::new(0.0, 0.0, sidebar_width, content_height))
-        } else {
-            None
-        };
-        let right_dock_rect = if right_dock_width > 0.0 {
-            Some(Rect::new(
-                window_width - right_dock_width,
-                0.0,
-                right_dock_width,
-                side_panel_height,
-            ))
-        } else {
-            None
-        };
-        let bottom_dock_rect = if bottom_dock_height > 0.0 {
-            Some(Rect::new(
-                sidebar_width,
-                side_panel_height,
-                (window_width - sidebar_width).max(0.0),
-                bottom_dock_height,
-            ))
-        } else {
-            None
-        };
-        let editor_area_rect = Rect::new(
-            sidebar_width,
-            0.0,
-            (window_width - sidebar_width - right_dock_width).max(0.0),
-            side_panel_height,
-        );
-
-        Self {
-            content_rect,
-            status_bar_rect,
-            sidebar_rect,
-            editor_area_rect,
-            right_dock_rect,
-            bottom_dock_rect,
-        }
-    }
 }
 
 // ============================================================================
@@ -1364,14 +1135,6 @@ pub fn binary_placeholder_layout(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_is_in_status_bar() {
-        // Window 600px tall, status bar height 20px -> status bar at y >= 580
-        assert!(!is_in_status_bar(579.0, 600, 20));
-        assert!(is_in_status_bar(580.0, 600, 20));
-        assert!(is_in_status_bar(590.0, 600, 20));
-    }
 
     #[test]
     fn test_expand_tabs() {
@@ -1492,31 +1255,6 @@ mod tests {
     }
 
     #[test]
-    fn test_window_layout_editor_area_accounts_for_docks() {
-        use crate::panel::DockPosition;
-
-        let mut model = crate::model::AppModel::new(1000, 700, 1.0, vec![]);
-        model.line_height = 20;
-        model.status_bar_height = 20;
-        model.dock_layout.dock_mut(DockPosition::Right).is_open = true;
-        model.dock_layout.dock_mut(DockPosition::Right).size_logical = 180.0;
-        model.dock_layout.dock_mut(DockPosition::Bottom).is_open = true;
-        model
-            .dock_layout
-            .dock_mut(DockPosition::Bottom)
-            .size_logical = 140.0;
-
-        let layout = WindowLayout::compute(&model);
-
-        assert_eq!(layout.content_rect.height, 680.0);
-        assert_eq!(layout.status_bar_rect.y, 680.0);
-        assert_eq!(layout.right_dock_rect.unwrap().width, 180.0);
-        assert_eq!(layout.bottom_dock_rect.unwrap().height, 140.0);
-        assert_eq!(layout.editor_area_rect.width, 820.0);
-        assert_eq!(layout.editor_area_rect.height, 540.0);
-    }
-
-    #[test]
     fn test_char_col_to_visual_col() {
         assert_eq!(char_col_to_visual_col("abc", 2), 2);
         // "a\tb": 'a' at char 0 (visual 0), '\t' at char 1 (visual 1-3), 'b' at char 2 (visual 4)
@@ -1564,100 +1302,6 @@ mod tests {
         assert_eq!(column_to_pixel_x(6, 4, 100, 8.0), 116);
         assert_eq!(column_to_pixel_x(2, 4, 100, 8.0), 100);
         assert_eq!(column_to_pixel_x(3, 1, 100, 7.5), 115);
-    }
-
-    // ====================================================================
-    // VStack / ModalLayout tests
-    // ====================================================================
-
-    #[test]
-    fn test_vstack_empty() {
-        let v = VStack::new(200);
-        assert_eq!(v.height(), 0);
-    }
-
-    #[test]
-    fn test_vstack_push_and_gap() {
-        let mut v = VStack::new(200);
-        let a = v.push(30);
-        v.gap(10);
-        let b = v.push(20);
-
-        assert_eq!(a, 0);
-        assert_eq!(b, 1);
-        assert_eq!(v.widgets[a].y, 0);
-        assert_eq!(v.widgets[a].h, 30);
-        assert_eq!(v.widgets[b].y, 40); // 30 + 10 gap
-        assert_eq!(v.widgets[b].h, 20);
-        assert_eq!(v.height(), 60); // 30 + 10 + 20
-    }
-
-    #[test]
-    fn test_modal_layout_build_translation() {
-        let mut v = VStack::new(200);
-        v.push(30); // widget 0
-        v.gap(8);
-        v.push(20); // widget 1
-
-        let layout = ModalLayout::build(v, 224, 1000, 800, 1.0);
-        let pad = ModalSpacing::pad(1.0);
-
-        // Modal is centered: (1000 - 224) / 2 = 388
-        assert_eq!(layout.x, 388);
-        // Modal y: min(800/4, 100) = 100
-        assert_eq!(layout.y, 100);
-        // Modal height: content(30+8+20) + 2*pad
-        assert_eq!(layout.h, 58 + pad * 2);
-
-        // Widget 0: translated to (388+pad, 100+pad)
-        let w0 = layout.widget(0);
-        assert_eq!(w0.x, 388 + pad);
-        assert_eq!(w0.y, 100 + pad);
-        assert_eq!(w0.h, 30);
-
-        // Widget 1: translated, y = 100+pad+30+8 = 100+pad+38
-        let w1 = layout.widget(1);
-        assert_eq!(w1.y, 100 + pad + 38);
-    }
-
-    #[test]
-    fn test_modal_layout_contains_boundary() {
-        let layout = ModalLayout {
-            x: 100,
-            y: 50,
-            w: 200,
-            h: 100,
-            widgets: vec![],
-        };
-
-        // Corners: inclusive at (x,y), exclusive at (x+w, y+h)
-        assert!(layout.contains(100, 50));
-        assert!(layout.contains(299, 149));
-        assert!(!layout.contains(300, 50));
-        assert!(!layout.contains(100, 150));
-        assert!(!layout.contains(99, 50));
-        assert!(!layout.contains(100, 49));
-    }
-
-    #[test]
-    fn test_input_height() {
-        assert_eq!(
-            ModalLayout::input_height(20, 1.0),
-            20 + ModalSpacing::input_pad_y(1.0)
-        );
-    }
-
-    // ====================================================================
-    // Per-modal layout tests
-    // ====================================================================
-
-    #[test]
-    fn test_command_palette_layout_y_position_scales_with_scale_factor() {
-        let lh = 40;
-        let mut v = VStack::new(400);
-        v.push(lh);
-        let layout = ModalLayout::build(v, 800, 2000, 4000, 2.0);
-        assert_eq!(layout.y, 200);
     }
 
     #[test]

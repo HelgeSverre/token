@@ -1024,20 +1024,13 @@ fn begin_splitter_drag(model: &mut AppModel, splitter_index: usize, position: (f
     // 3. The container's size in the relevant direction
 
     // First compute the layout to get splitter info
-    // Use last_layout_rect which includes sidebar offset from render pass
-    // Fallback includes sidebar offset for consistency
-    let sidebar_width = model
-        .workspace
-        .as_ref()
-        .filter(|ws| ws.sidebar_visible)
-        .map(|ws| ws.sidebar_width(model.metrics.scale_factor))
-        .unwrap_or(0.0);
-    let available = model.editor_area.last_layout_rect.unwrap_or(Rect::new(
-        sidebar_width,
-        0.0,
-        800.0 - sidebar_width,
-        600.0,
-    ));
+    // Prefer the last rendered rect; before the first render, use the same
+    // solved shell rectangle that will drive rendering and hit-testing.
+    let available = model.editor_area.last_layout_rect.unwrap_or_else(|| {
+        crate::layout::chrome::shell(model)
+            .rect(crate::layout::UiKey::EditorArea)
+            .expect("window shell always declares the editor area")
+    });
     let splitters = model
         .editor_area
         .compute_layout_scaled(available, model.metrics.splitter_width);

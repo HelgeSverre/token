@@ -6,9 +6,8 @@
 //! enough to render the command palette. Tabs, `ListWithPanel`, `Zones`,
 //! and `Fields` land with the phases that consume them.
 //!
-//! `layout()` is the single source of truth for geometry; it is designed
-//! to be shared with hit-testing once that lands (Phase 3), the same way
-//! `ModalLayout` is shared by `view::modal` and `view::hit_test` today.
+//! `layout()` is the single source of truth shared by rendering and
+//! hit-testing.
 
 use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry::WidgetRect;
@@ -2296,13 +2295,14 @@ fn render_zones(
         );
     }
 
-    if let (Some(text), Some((lines, truncated, _)), Some(r)) =
+    if let (Some(_), Some((lines, truncated, _)), Some(r)) =
         (zones.text, plan.text.as_ref(), layout.zones_text)
     {
-        if zones.banner.is_none() && zones.code.is_none() && text.lines().count() <= 1 {
-            // Single-line, zone-only body (drop overlay): centered, matching
-            // the pre-migration look.
+        let standalone = zones.banner.is_none() && zones.code.is_none();
+        if should_center_zone_text(zones, lines, *truncated) {
+            // Single-line, zone-only body (drop overlay): centered.
             let size = size_px(SIZE_INPUT, scale_factor);
+            let text = &lines[0];
             let text_w = painter.measure_sized(text, size, 0.0).ceil() as usize;
             let text_x = r.x + (r.w.saturating_sub(text_w)) / 2;
             let text_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(size))) / 2;
@@ -2314,7 +2314,7 @@ fn render_zones(
                 r,
                 lines,
                 *truncated,
-                SIZE_ROW,
+                if standalone { SIZE_INPUT } else { SIZE_ROW },
                 colors.text_primary,
                 scale_factor,
             );
@@ -2322,6 +2322,10 @@ fn render_zones(
     }
 
     frame.clear_clip();
+}
+
+fn should_center_zone_text(zones: &Zones<'_>, lines: &[String], truncated: bool) -> bool {
+    zones.banner.is_none() && zones.code.is_none() && lines.len() == 1 && !truncated
 }
 
 /// Cap on wrapped text-zone lines (hover docs can be pages long); a
@@ -2360,6 +2364,11 @@ pub(crate) fn plan_zones(
     let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
     let content_w = panel_w.saturating_sub(2 * pad_x) as f32;
     let row_style = crate::layout::TextStyle::sized(size_px(SIZE_ROW, scale_factor));
+    let text_style = if zones.banner.is_none() && zones.code.is_none() {
+        crate::layout::TextStyle::sized(size_px(SIZE_INPUT, scale_factor))
+    } else {
+        row_style
+    };
     // Minimum useful wrap width — the historical 8-cell floor.
     let min_wrap_w = size_px(8.0 * dims::ZONE_CELL_W, scale_factor);
 
@@ -2431,7 +2440,7 @@ pub(crate) fn plan_zones(
     });
 
     let text = zones.text.map(|s| {
-        let mut lines = wrap_lines(s, row_style, content_w, min_wrap_w, measure);
+        let mut lines = wrap_lines(s, text_style, content_w, min_wrap_w, measure);
         let truncated = lines.len() > MAX_ZONE_TEXT_LINES;
         lines.truncate(MAX_ZONE_TEXT_LINES);
         let h = (lines.len() + usize::from(truncated)).max(1) * line_h;
@@ -3011,6 +3020,33 @@ mod tests {
             narrow_lines.len() < cell_lines.len(),
             "narrow glyphs must pack more per line: {narrow_lines:?} vs {cell_lines:?}"
         );
+    }
+
+    #[test]
+    fn drop_overlay_centers_only_a_single_measured_line() {
+        let long = "Drop these files into a narrow target that requires wrapping";
+        let zones = Zones {
+            banner: None,
+            code: None,
+            text: Some(long),
+        };
+        let mut measure = cell_measure(1.0);
+        let (lines, truncated, _) = plan_zones(&zones, 160, 1.0, &mut measure)
+            .text
+            .expect("drop text should have a plan");
+
+        assert!(lines.len() > 1, "test message must wrap");
+        assert!(!should_center_zone_text(&zones, &lines, truncated));
+
+        let short = Zones {
+            text: Some("Drop files here"),
+            ..Zones::default()
+        };
+        let mut measure = cell_measure(1.0);
+        let (lines, truncated, _) = plan_zones(&short, 320, 1.0, &mut measure)
+            .text
+            .expect("drop text should have a plan");
+        assert!(should_center_zone_text(&short, &lines, truncated));
     }
 
     #[test]

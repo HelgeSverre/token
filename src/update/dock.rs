@@ -28,8 +28,10 @@ fn next_terminal_session_id(model: &AppModel) -> usize {
 }
 
 fn is_terminal_panel_open(model: &AppModel) -> bool {
-    let dock = &model.dock_layout.bottom;
-    dock.is_open && dock.active_panel() == Some(PanelId::TERMINAL)
+    model
+        .dock_layout
+        .active_panel_position(PanelId::TERMINAL)
+        .is_some()
 }
 
 fn terminal_grid_size_for_model(model: &AppModel) -> Option<TerminalGridSize> {
@@ -395,6 +397,34 @@ mod tests {
             } if *rows == expected.rows && *cols == expected.cols
         )));
         assert!(cmds.iter().any(|cmd| matches!(cmd, Cmd::Redraw)));
+    }
+
+    #[test]
+    fn opening_terminal_after_moving_it_uses_the_new_dock() {
+        let mut model = test_model();
+        model
+            .dock_layout
+            .bottom
+            .panel_ids
+            .retain(|&panel| panel != PanelId::TERMINAL);
+        model.dock_layout.bottom.active_index = Some(0);
+        model.dock_layout.right.register_panel(PanelId::TERMINAL);
+
+        let cmd = update_dock(&mut model, DockMsg::TogglePanel(PanelId::TERMINAL));
+        let expected = expected_terminal_grid_size(&model);
+
+        let Some(Cmd::Batch(cmds)) = cmd else {
+            panic!("expected moved terminal to batch spawn and redraw");
+        };
+        assert!(cmds.iter().any(|cmd| matches!(
+            cmd,
+            Cmd::SpawnTerminal { rows, cols, .. }
+                if *rows == expected.rows && *cols == expected.cols
+        )));
+        assert_eq!(
+            model.dock_layout.active_panel_position(PanelId::TERMINAL),
+            Some(DockPosition::Right)
+        );
     }
 
     #[test]

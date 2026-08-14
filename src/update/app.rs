@@ -8,7 +8,7 @@ use crate::config_paths;
 use crate::keymap::get_default_keymap_yaml;
 use crate::messages::{AppMsg, DockMsg, DocumentMsg, LayoutMsg, TerminalMsg, UiMsg};
 use crate::model::{AppModel, ModalId, SplitDirection};
-use crate::panel::{DockPosition, PanelId};
+use crate::panel::PanelId;
 use crate::syntax::LanguageId;
 use crate::theme::{load_theme, Theme};
 
@@ -21,18 +21,10 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             model.resize(width, height);
 
             // Update CSV viewport size if in CSV mode
+            let visible_rows = super::csv::visible_rows_for_model(model);
             if let Some(editor) = model.editor_area.focused_editor_mut() {
                 if let Some(csv) = editor.view_mode.as_csv_mut() {
-                    let line_height = model.line_height.max(1);
-                    let tab_bar_height = model.metrics.tab_bar_height;
-                    let status_bar_height = model.status_bar_height;
-                    let col_header_height = line_height;
-                    let content_height = (height as usize)
-                        .saturating_sub(tab_bar_height)
-                        .saturating_sub(status_bar_height)
-                        .saturating_sub(col_header_height);
-                    let visible_rows = content_height / line_height;
-                    csv.set_viewport_size(visible_rows.max(1), csv.viewport.visible_cols);
+                    csv.set_viewport_size(visible_rows, csv.viewport.visible_cols);
                 }
             }
 
@@ -411,12 +403,10 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
 }
 
 fn is_terminal_dock_focused(model: &AppModel) -> bool {
-    if model.ui.focused_dock() != Some(DockPosition::Bottom) {
-        return false;
-    }
-
-    let bottom_dock = model.dock_layout.dock(DockPosition::Bottom);
-    bottom_dock.is_open && bottom_dock.active_panel() == Some(PanelId::TERMINAL)
+    model
+        .dock_layout
+        .active_panel_position(PanelId::TERMINAL)
+        .is_some_and(|position| model.ui.focused_dock() == Some(position))
 }
 
 /// Execute a command from the command palette
@@ -620,6 +610,7 @@ pub fn create_default_keymap_file(path: &std::path::Path) -> Result<(), String> 
 mod tests {
     use super::*;
     use crate::model::AppModel;
+    use crate::panel::DockPosition;
     use crate::panels::terminal::grid_size_for_rect;
     use crate::terminal::{PtyHandle, TerminalSession};
     use std::sync::mpsc;
@@ -689,6 +680,28 @@ mod tests {
         assert!(cmd.is_none());
         assert_eq!(model.document().buffer.to_string(), document_before);
         assert_eq!(pty_rx.try_recv().unwrap(), b"terminal paste".to_vec());
+    }
+
+    #[test]
+    fn paste_routes_to_terminal_after_it_moves_to_the_right_dock() {
+        let (mut model, pty_rx) = focused_terminal_model();
+        model
+            .dock_layout
+            .bottom
+            .panel_ids
+            .retain(|&panel| panel != PanelId::TERMINAL);
+        model.dock_layout.bottom.active_index = Some(0);
+        model.dock_layout.right.register_panel(PanelId::TERMINAL);
+        model.dock_layout.right.activate(PanelId::TERMINAL);
+        model.ui.focus_dock(DockPosition::Right);
+
+        let cmd = update_app(
+            &mut model,
+            AppMsg::PasteFromClipboard("moved terminal".to_owned()),
+        );
+
+        assert!(cmd.is_none());
+        assert_eq!(pty_rx.try_recv().unwrap(), b"moved terminal".to_vec());
     }
 
     // lsp-integration.md's "every rope mutation bumps `Document.revision`"

@@ -204,9 +204,10 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             let document_id = match find_document_by_uri(model, &uri) {
                 Some(id) => id,
                 None => {
-                    let problems_panel_open = model.dock_layout.bottom.is_open
-                        && model.dock_layout.bottom.active_panel()
-                            == Some(crate::panel::PanelId::PROBLEMS);
+                    let problems_panel_open = model
+                        .dock_layout
+                        .active_panel_position(crate::panel::PanelId::PROBLEMS)
+                        .is_some();
                     return problems_panel_open.then_some(Cmd::Redraw);
                 }
             };
@@ -764,6 +765,37 @@ mod tests {
             .bottom
             .activate(crate::panel::PanelId::PROBLEMS);
         let uri = crate::lsp::path_to_uri(&PathBuf::from("/tmp/problems-mirror/other.rs"));
+
+        let cmd = update_lsp(
+            &mut model,
+            LspMsg::DiagnosticsPublished {
+                uri,
+                version: None,
+                diagnostics: vec![diagnostic_at(1)],
+            },
+        );
+
+        assert!(matches!(cmd, Some(Cmd::Redraw)));
+    }
+
+    #[test]
+    fn diagnostics_redraw_follows_problems_to_the_right_dock() {
+        let mut model = model();
+        model
+            .dock_layout
+            .bottom
+            .panel_ids
+            .retain(|&panel| panel != crate::panel::PanelId::PROBLEMS);
+        model.dock_layout.bottom.active_index = Some(0);
+        model
+            .dock_layout
+            .right
+            .register_panel(crate::panel::PanelId::PROBLEMS);
+        model
+            .dock_layout
+            .right
+            .activate(crate::panel::PanelId::PROBLEMS);
+        let uri = crate::lsp::path_to_uri(&PathBuf::from("/tmp/problems-mirror/moved.rs"));
 
         let cmd = update_lsp(
             &mut model,

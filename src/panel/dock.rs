@@ -271,6 +271,17 @@ impl DockLayout {
             .find(|&pos| self.dock(pos).panel_ids.contains(&panel_id))
     }
 
+    /// Find the open dock in which `panel_id` is currently active.
+    ///
+    /// Input routing and panel-specific side effects use this instead of
+    /// assuming a panel still occupies its default dock.
+    pub fn active_panel_position(&self, panel_id: PanelId) -> Option<DockPosition> {
+        DockPosition::ALL.into_iter().find(|&position| {
+            let dock = self.dock(position);
+            dock.is_open && dock.active_panel() == Some(panel_id)
+        })
+    }
+
     /// Focus-then-toggle logic for panel keybindings (Cmd+1, Cmd+7, etc.)
     ///
     /// Behavior:
@@ -323,16 +334,6 @@ impl DockLayout {
     /// Cycle to previous panel in the specified dock
     pub fn prev_panel_in_dock(&mut self, position: DockPosition) {
         self.dock_mut(position).prev_panel();
-    }
-
-    /// Get the total width consumed by side docks (for editor area calculation)
-    pub fn side_docks_width(&self, scale_factor: f64) -> f32 {
-        self.left.size(scale_factor) + self.right.size(scale_factor)
-    }
-
-    /// Get the height consumed by bottom dock
-    pub fn bottom_dock_height(&self, scale_factor: f64) -> f32 {
-        self.bottom.size(scale_factor)
     }
 }
 
@@ -438,6 +439,26 @@ mod tests {
             Some(DockPosition::Bottom)
         );
         assert_eq!(layout.find_panel(PanelId::AI_CHAT), None);
+    }
+
+    #[test]
+    fn active_panel_position_requires_the_panel_to_be_open_and_active() {
+        let mut layout = DockLayout::default();
+        assert_eq!(
+            layout.active_panel_position(PanelId::FILE_EXPLORER),
+            Some(DockPosition::Left)
+        );
+        assert_eq!(layout.active_panel_position(PanelId::OUTLINE), None);
+
+        layout.right.activate(PanelId::OUTLINE);
+        assert_eq!(
+            layout.active_panel_position(PanelId::OUTLINE),
+            Some(DockPosition::Right)
+        );
+
+        layout.right.register_panel(PanelId::AI_CHAT);
+        layout.right.activate(PanelId::AI_CHAT);
+        assert_eq!(layout.active_panel_position(PanelId::OUTLINE), None);
     }
 
     #[test]

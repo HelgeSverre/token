@@ -21,6 +21,9 @@ All notable changes to rust-editor are documented in this file.
   `set_clip`/`clear_clip` keep their absolute semantics.
 ### Changed
 
+- The top-level window shell (sidebar, editor area, right/bottom docks, and
+  status bar) now lays out through the Clay snapshot. Rendering, screenshots,
+  hit-testing, and editor split layout consume that shared shell geometry.
 - Dock chrome (headers, tabs, panel content) and the Problems/Outline panels
   now lay out through the new layout engine: one solved geometry snapshot is
   shared by rendering, hit-testing, and scroll/capacity logic, replacing six
@@ -34,6 +37,10 @@ All notable changes to rust-editor are documented in this file.
 
 ### Fixed
 
+- Outline, Problems, and Terminal keyboard routing—and Terminal spawn/resize
+  sizing—now follow panels when they move away from their default docks.
+- Long single-line drop-overlay messages now paint the measured wrapped-line
+  plan instead of overflowing as one centered line.
 - Fixed a debug-build crash when rendering an active terminal inside a dock
   panel whose content already established an enclosing clip.
 - Dock tabs now advance by their clamped widths, so a width-clamped tab no

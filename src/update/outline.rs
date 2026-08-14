@@ -78,10 +78,9 @@ fn reveal_outline_selection(model: &mut AppModel) {
 /// outline stays empty until the next edit (most visible with markdown,
 /// which is often read without ever being edited).
 pub(crate) fn refresh_outline_if_stale(model: &AppModel) -> Option<Cmd> {
-    let dock = &model.dock_layout.right;
-    if !(dock.is_open && dock.active_panel() == Some(crate::panel::PanelId::OUTLINE)) {
-        return None;
-    }
+    model
+        .dock_layout
+        .active_panel_position(crate::panel::PanelId::OUTLINE)?;
     let document = model.document();
     if !document.language.has_highlighting() {
         return None;
@@ -443,6 +442,24 @@ mod refresh_tests {
         let mut model = model_with_open_outline_panel();
         model.dock_layout.right.is_open = false;
         assert!(refresh_outline_if_stale(&model).is_none());
+    }
+
+    #[test]
+    fn stale_outline_refresh_follows_the_panel_to_the_bottom_dock() {
+        let mut model = model_with_open_outline_panel();
+        model
+            .dock_layout
+            .right
+            .panel_ids
+            .retain(|&panel| panel != PanelId::OUTLINE);
+        model.dock_layout.right.active_index = None;
+        model.dock_layout.bottom.register_panel(PanelId::OUTLINE);
+        model.dock_layout.bottom.activate(PanelId::OUTLINE);
+
+        assert!(matches!(
+            refresh_outline_if_stale(&model),
+            Some(Cmd::DebouncedSyntaxParse { delay_ms: 0, .. })
+        ));
     }
 
     #[test]

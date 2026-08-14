@@ -56,10 +56,6 @@ pub enum AttachPoint {
 /// How a floating element is positioned (solved after the normal flow).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum FloatAnchor {
-    /// Absolute window coordinates (physical px). Used to place regions
-    /// whose rects are computed outside the tree (e.g. docks positioned by
-    /// `WindowLayout` until the window root migrates onto the engine).
-    At { x: f32, y: f32 },
     /// Centered X in the window; Y = `min(64 logical, window_height / 4)`.
     WindowCentered,
     /// Token's caret anchor (physical px): `(x, y)` is the caret's top-left

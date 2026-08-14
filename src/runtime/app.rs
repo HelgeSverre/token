@@ -39,7 +39,7 @@ use token::update::update;
 
 use super::input::{
     handle_cursor_overlay_key, handle_key, is_outline_dock_focused, is_problems_dock_focused,
-    KeyModifiers, OptionKeyGesture,
+    is_terminal_dock_focused, KeyModifiers, OptionKeyGesture,
 };
 use super::lsp_slot::{FeatureSlot, PendingRequest, RequestKey};
 use super::mouse::{
@@ -83,16 +83,12 @@ fn should_skip_non_global_keymap(
         model.ui.focus,
         token::model::FocusTarget::Dock(token::panel::DockPosition::Left)
     );
-    let terminal_focused = model.ui.focused_dock() == Some(token::panel::DockPosition::Bottom)
-        && model.dock_layout.bottom.is_open
-        && model.dock_layout.bottom.active_panel() == Some(token::panel::PanelId::TERMINAL);
-
     model.ui.has_modal()
         || (option_double_tapped && alt_pressed)
         || sidebar_focused
         || is_outline_dock_focused(model)
         || is_problems_dock_focused(model)
-        || terminal_focused
+        || is_terminal_dock_focused(model)
         || model.is_csv_editing()
 }
 
@@ -2075,9 +2071,11 @@ impl App {
                     // clear while it's open needs a full repaint or the
                     // stale row stays painted until an unrelated event
                     // damages the window.
-                    let problems_panel_open = self.model.dock_layout.bottom.is_open
-                        && self.model.dock_layout.bottom.active_panel()
-                            == Some(token::panel::PanelId::PROBLEMS);
+                    let problems_panel_open = self
+                        .model
+                        .dock_layout
+                        .active_panel_position(token::panel::PanelId::PROBLEMS)
+                        .is_some();
                     if problems_panel_open {
                         self.pending_damage.merge(Damage::Full);
                         if let Some(window) = &self.window {
@@ -2860,9 +2858,11 @@ impl App {
         // The Problems panel has no dedicated damage area (it isn't a text
         // buffer), so a clear while it's open needs a full repaint to drop
         // the stale rows — same reasoning as the editor-marks merge below.
-        let problems_panel_open = self.model.dock_layout.bottom.is_open
-            && self.model.dock_layout.bottom.active_panel()
-                == Some(token::panel::PanelId::PROBLEMS);
+        let problems_panel_open = self
+            .model
+            .dock_layout
+            .active_panel_position(token::panel::PanelId::PROBLEMS)
+            .is_some();
         if any_had_marks || problems_panel_open {
             self.model.resync_viewports();
             self.pending_damage.merge(if problems_panel_open {
@@ -3638,8 +3638,11 @@ impl App {
 
     fn should_keep_terminal_spawn_result(&self, session_id: usize) -> bool {
         self.model.terminal.is_spawn_pending(session_id)
-            && self.model.dock_layout.bottom.is_open
-            && self.model.dock_layout.bottom.active_panel() == Some(token::panel::PanelId::TERMINAL)
+            && self
+                .model
+                .dock_layout
+                .active_panel_position(token::panel::PanelId::TERMINAL)
+                .is_some()
     }
 }
 
@@ -4368,6 +4371,28 @@ mod tests {
         assert!(!needs_redraw);
         assert!(app.model.terminal.sessions.is_empty());
         assert!(!app.model.terminal.is_spawn_pending(99));
+    }
+
+    #[test]
+    fn pending_terminal_spawn_is_kept_after_the_panel_moves_docks() {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model
+            .dock_layout
+            .bottom
+            .panel_ids
+            .retain(|&panel| panel != token::panel::PanelId::TERMINAL);
+        app.model.dock_layout.bottom.active_index = Some(0);
+        app.model
+            .dock_layout
+            .right
+            .register_panel(token::panel::PanelId::TERMINAL);
+        app.model
+            .dock_layout
+            .right
+            .activate(token::panel::PanelId::TERMINAL);
+        app.model.terminal.mark_spawn_pending(99);
+
+        assert!(app.should_keep_terminal_spawn_result(99));
     }
 
     #[test]
@@ -7831,8 +7856,10 @@ fn syntax_worker_loop(
 }
 
 fn is_outline_panel_open(model: &AppModel) -> bool {
-    let dock = &model.dock_layout.right;
-    dock.is_open && dock.active_panel() == Some(token::panel::PanelId::OUTLINE)
+    model
+        .dock_layout
+        .active_panel_position(token::panel::PanelId::OUTLINE)
+        .is_some()
 }
 
 fn handle_syntax_worker_request(
