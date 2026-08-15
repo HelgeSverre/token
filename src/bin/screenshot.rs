@@ -1000,7 +1000,7 @@ fn composite_html_previews(buffer: &mut [u32], model: &AppModel, scale: f64) {
     let preview_theme = PreviewTheme::from_editor_theme(&model.theme);
     let buf_width = model.window_size.0 as usize;
 
-    for preview in model.editor_area.previews.values() {
+    for (&preview_id, preview) in &model.editor_area.previews {
         let document = match model.editor_area.documents.get(&preview.document_id) {
             Some(d) => d,
             None => continue,
@@ -1017,12 +1017,11 @@ fn composite_html_previews(buffer: &mut [u32], model: &AppModel, scale: f64) {
             None => continue,
         };
 
-        // Calculate the content area rect (below the "Preview" header)
-        let header_height = model.metrics.tab_bar_height as f32;
-        let content_x = preview.rect.x.round() as usize;
-        let content_y = (preview.rect.y + header_height).round() as usize;
-        let content_w = preview.rect.width.round() as usize;
-        let content_h = (preview.rect.height - header_height).max(0.0).round() as usize;
+        // Use the same solved hosted-content box as the runtime webview.
+        let preview_layout =
+            token::layout::editor::PreviewPaneLayout::new(preview_id, preview.rect, &model.metrics);
+        let (content_x, content_y, content_w, content_h) =
+            token::layout::snapshot::snap(preview_layout.hosted_content_rect());
 
         if content_w == 0 || content_h == 0 {
             continue;

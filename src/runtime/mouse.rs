@@ -21,8 +21,8 @@ use token::panel::DockPosition;
 use token::update::update;
 use token::util::visible_tree_row_at_index;
 
+use token::layout::editor::EditorTabBarLayout;
 use token::model::editor_area::GroupId;
-use token::view::geometry::TabBarLayout;
 use token::view::hit_test::{hit_test_ui, EventResult, HitTarget, MouseEvent};
 use token::view::Renderer;
 
@@ -638,13 +638,13 @@ const TAB_DRAG_THRESHOLD_PIXELS: f64 = 4.0;
 /// under the cursor (or the last index when over the empty tail of the bar).
 fn tab_bar_target_at(model: &AppModel, x: f64, y: f64) -> Option<(GroupId, usize)> {
     model.editor_area.groups.values().find_map(|group| {
-        let layout = TabBarLayout::new(group, model, model.char_width);
+        let layout = EditorTabBarLayout::new(group, model, model.char_width);
         if !layout.contains(x, y) {
             return None;
         }
         let index = layout
             .tab_at(x, y)
-            .map(|tab| tab.index)
+            .and_then(|tab_id| group.tabs.iter().position(|tab| tab.id == tab_id))
             .unwrap_or_else(|| group.tabs.len().saturating_sub(1));
         Some((group.id, index))
     })
@@ -1869,7 +1869,7 @@ pub fn handle_mouse_wheel(
             let pt = token::view::hit_test::Point::new(x, y);
             let group_id = model.editor_area.groups.values().find_map(|group| {
                 let layout =
-                    token::view::geometry::TabBarLayout::new(group, model, model.char_width);
+                    token::layout::editor::EditorTabBarLayout::new(group, model, model.char_width);
                 layout.contains(pt.x, pt.y).then_some(group.id)
             })?;
             update(

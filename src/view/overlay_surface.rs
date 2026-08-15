@@ -1209,7 +1209,12 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
             | UiKey::OverlayFooter,
         ) => OverlayHit::Inside,
         Some(
-            UiKey::Dock(_)
+            UiKey::EditorTabBar(_)
+            | UiKey::EditorTab(_, _)
+            | UiKey::PreviewPane(_)
+            | UiKey::PreviewHeader(_)
+            | UiKey::PreviewContent(_)
+            | UiKey::Dock(_)
             | UiKey::DockHeader(_)
             | UiKey::DockTab(_, _)
             | UiKey::PanelContent(_)

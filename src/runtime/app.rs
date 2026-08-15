@@ -1448,10 +1448,10 @@ impl App {
     /// Creates, updates, or destroys webviews as needed.
     fn sync_webviews(&mut self) {
         use super::webview::PreviewContent;
+        use token::layout::editor::PreviewPaneLayout;
         use token::markdown::{content_to_preview_html, PreviewTheme};
         use token::model::editor_area::PreviewId;
         use token::syntax::LanguageId;
-        use token::view::geometry::PreviewPaneLayout;
 
         let Some(window) = &self.window else {
             return;
@@ -1503,7 +1503,7 @@ impl App {
                 let needs_content_update = preview.needs_refresh(document.revision);
 
                 let webview_rect =
-                    PreviewPaneLayout::new(preview.rect, metrics).hosted_content_rect();
+                    PreviewPaneLayout::new(preview_id, preview.rect, metrics).hosted_content_rect();
 
                 // Only generate HTML when creating or updating content
                 let content = if needs_create || needs_content_update {

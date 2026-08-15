@@ -29,6 +29,7 @@
 pub mod algorithm;
 pub mod anchor;
 pub mod chrome;
+pub mod editor;
 pub mod keys;
 pub mod sizing;
 pub mod snapshot;

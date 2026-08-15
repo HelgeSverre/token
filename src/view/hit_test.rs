@@ -16,10 +16,12 @@ use std::path::PathBuf;
 use winit::event::MouseButton;
 use winit::keyboard::ModifiersState;
 
-use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, TabId};
+use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, TabId};
 use crate::model::{AppModel, FocusTarget, TextViewportMap};
 
-use super::geometry::{PreviewPaneLayout, TabBarLayout, TreeRowLayout};
+use crate::layout::editor::{EditorTabBarLayout, PreviewPaneLayout};
+
+use super::geometry::TreeRowLayout;
 
 // ============================================================================
 // Core Types
@@ -557,7 +559,7 @@ pub fn hit_test_splitters(
 pub fn hit_test_previews(model: &AppModel, pt: Point) -> Option<HitTarget> {
     for (&preview_id, preview) in &model.editor_area.previews {
         if preview.rect.contains(pt.x as f32, pt.y as f32) {
-            let layout = PreviewPaneLayout::new(preview.rect, &model.metrics);
+            let layout = PreviewPaneLayout::new(preview_id, preview.rect, &model.metrics);
             if layout.is_in_header(pt.x, pt.y) {
                 return Some(HitTarget::PreviewHeader { preview_id });
             } else if layout.is_in_content(pt.x, pt.y) {
@@ -577,7 +579,7 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     // First check which group contains the point
     let group_id = model.editor_area.group_at_point(pt.x as f32, pt.y as f32)?;
     let group = model.editor_area.groups.get(&group_id)?;
-    let tab_bar = TabBarLayout::new(group, model, char_width);
+    let tab_bar = EditorTabBarLayout::new(group, model, char_width);
     // Single source of truth for group geometry, shared by the scrollbar
     // branch and the gutter/content branch below (mirrors the render path's
     // use of GroupLayout in `EditorRenderContext`).
@@ -585,11 +587,12 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
 
     // Check if in tab bar
     if tab_bar.contains(pt.x, pt.y) {
-        if let Some(tab) = tab_bar.tab_at(pt.x, pt.y) {
+        if let Some(tab_id) = tab_bar.tab_at(pt.x, pt.y) {
+            let tab_index = group.tabs.iter().position(|tab| tab.id == tab_id)?;
             return Some(HitTarget::GroupTab {
                 group_id,
-                tab_index: tab.index,
-                tab_id: tab.tab_id,
+                tab_index,
+                tab_id,
             });
         }
 
@@ -611,14 +614,8 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     // For BinaryPlaceholder tabs, check button hit area
     if let crate::model::TabContent::BinaryPlaceholder(_) = &editor.tab_content {
         let line_height = model.line_height;
-        let content_rect = Rect::new(
-            group.rect.x,
-            group.rect.y + model.metrics.tab_bar_height as f32,
-            group.rect.width,
-            group.rect.height - model.metrics.tab_bar_height as f32,
-        );
         let bp_layout = super::geometry::binary_placeholder_layout(
-            content_rect,
+            layout.content_rect,
             line_height,
             char_width,
             model.metrics.padding_large,
@@ -1038,7 +1035,7 @@ mod tests {
     #[test]
     fn test_hit_test_groups_gutter_content_boundary_matches_group_layout() {
         let mut model = AppModel::new(800, 600, 1.0, vec![]);
-        let available = Rect::new(0.0, 0.0, 800.0, 600.0);
+        let available = crate::model::editor_area::Rect::new(0.0, 0.0, 800.0, 600.0);
         model.editor_area.compute_layout(available);
 
         let group_id = model

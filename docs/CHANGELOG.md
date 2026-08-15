@@ -36,6 +36,11 @@ All notable changes to rust-editor are documented in this file.
 - Sidebar file-tree painting, hit testing, traversal, and scroll clamping now
   share one Clay `RowListView`; the duplicate legacy tree viewport was
   removed.
+- Editor tab strips and preview chrome now use narrow Clay layout trees. Tab
+  painting, hit testing, drag targets, wheel scrolling, and active-tab reveal
+  share solved tab geometry; preview painting, pointer routing, hosted webview
+  placement, and screenshot compositing share the solved header/content split.
+  The superseded `TabBarLayout` and generic `Pane` geometry were removed.
 - The hover card and drop overlay now wrap their text with real glyph
   advances measured through the font (via the layout engine's measure
   callback) instead of a fixed 8px-cell approximation; the measured plan is

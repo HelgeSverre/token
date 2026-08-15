@@ -234,7 +234,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
 // Tab Bar Scrolling
 // ============================================================================
 
-use crate::view::geometry::TabBarLayout;
+use crate::layout::editor::EditorTabBarLayout;
 
 /// Scroll the tab bar of `group_id` so the active tab is fully visible,
 /// and clamp the scroll offset to the current tab content width.
@@ -245,13 +245,17 @@ fn ensure_active_tab_visible(model: &mut AppModel, group_id: GroupId) {
         return;
     };
 
-    let spans = TabBarLayout::tab_spans(group, model, char_width);
-    let rect_w = group.rect.width.round() as usize;
-    let total_width = spans.last().map(|&(_, end)| end + padding).unwrap_or(0);
+    let layout = EditorTabBarLayout::new(group, model, char_width);
+    let rect_w = layout.bar_rect().width.round().max(0.0) as usize;
+    let total_width = layout.total_tabs_width();
     let max_scroll = total_width.saturating_sub(rect_w);
     let mut scroll = group.tab_scroll.min(max_scroll);
 
-    if let Some(&(start, end)) = spans.get(group.active_tab_index) {
+    if let Some((start, end)) = group
+        .tabs
+        .get(group.active_tab_index)
+        .and_then(|tab| layout.tab_span(tab.id))
+    {
         if start.saturating_sub(padding) < scroll {
             // Active tab (partially) off the left edge
             scroll = start.saturating_sub(padding);
@@ -278,8 +282,9 @@ fn scroll_tab_bar(model: &mut AppModel, group_id: GroupId, delta_px: i32) {
         return;
     };
 
-    let total_width = TabBarLayout::total_tabs_width(group, model, char_width);
-    let rect_w = group.rect.width.round() as usize;
+    let layout = EditorTabBarLayout::new(group, model, char_width);
+    let total_width = layout.total_tabs_width();
+    let rect_w = layout.bar_rect().width.round().max(0.0) as usize;
     let max_scroll = total_width.saturating_sub(rect_w) as i64;
     let new_scroll = (group.tab_scroll as i64 + delta_px as i64).clamp(0, max_scroll) as usize;
 
