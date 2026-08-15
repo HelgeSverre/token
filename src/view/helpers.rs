@@ -3,24 +3,6 @@
 //! This module contains utility functions used across multiple view components
 //! to avoid code duplication.
 
-use crate::model::editor_area::Tab;
-use crate::model::AppModel;
-
-/// Get the display title for a tab.
-///
-/// Centralizes the logic for determining what text to show in the tab bar.
-/// Returns "Untitled" if the editor or document cannot be found.
-pub fn get_tab_display_name(model: &AppModel, tab: &Tab) -> String {
-    model
-        .editor_area
-        .editors
-        .get(&tab.editor_id)
-        .and_then(|e| e.document_id)
-        .and_then(|doc_id| model.editor_area.documents.get(&doc_id))
-        .map(|d| d.display_name())
-        .unwrap_or_else(|| "Untitled".to_string())
-}
-
 /// Trim trailing line ending (`\r\n` or `\n`) from a line of text.
 ///
 /// Used for display purposes to avoid rendering the line-ending characters.

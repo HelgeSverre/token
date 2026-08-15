@@ -53,3 +53,6 @@ draft.README.md
 
 # Git worktrees
 .worktrees/
+
+# rustc internal-compiler-error dumps
+rustc-ice-*.txt

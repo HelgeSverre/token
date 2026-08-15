@@ -6,7 +6,6 @@ use crate::model::AppModel;
 use crate::outline::OutlineNode;
 use crate::update::navigation::{clamp_to_document, push_history};
 use crate::util::{visible_tree_count, visible_tree_row_at_index, VisibleTreeRow};
-use crate::view::geometry::{DockHeaderLayout, OutlinePanelLayout, WindowLayout};
 
 fn count_visible_items(nodes: &[OutlineNode], panel: &crate::model::OutlinePanelState) -> usize {
     visible_tree_count(nodes, |node: &OutlineNode| {
@@ -24,19 +23,41 @@ fn visible_row_at_index<'a>(
     })
 }
 
-fn outline_visible_capacity(model: &AppModel) -> usize {
-    WindowLayout::compute(model)
-        .right_dock_rect
-        .map(|rect| {
-            let dock_layout = DockHeaderLayout::new(
-                &model.dock_layout.right,
-                rect,
-                &model.metrics,
-                model.char_width,
-            );
-            OutlinePanelLayout::new(dock_layout.content_rect, &model.metrics).visible_capacity()
-        })
+/// Visible-row count of the focused document's outline tree under the
+/// current collapse state — feeds the chrome layout's `RowList` declaration.
+pub fn outline_row_count(model: &AppModel) -> usize {
+    model
+        .editor_area
+        .focused_document()
+        .and_then(|doc| doc.outline.as_ref())
+        .map(|outline| count_visible_items(&outline.roots, &model.outline_panel))
         .unwrap_or(0)
+}
+
+/// Row geometry for the Outline panel from the solved chrome — `None`
+/// when the panel isn't the active panel of any open dock.
+fn outline_rows(model: &AppModel) -> Option<crate::layout::RowListView> {
+    crate::layout::chrome::chrome(model).row_list(crate::layout::UiKey::PanelRows(
+        crate::panel::PanelId::Outline,
+    ))
+}
+
+fn outline_visible_capacity(model: &AppModel) -> usize {
+    outline_rows(model)
+        .map(|rows| rows.visible_capacity())
+        .unwrap_or(0)
+}
+
+/// Re-clamp the scroll offset after anything changed the row count or the
+/// panel's box — THE one clamp for this panel. An invisible panel (not the
+/// active one of any open dock) has no viewport to clamp against, so it
+/// resets: the offset would otherwise survive unclamped until the panel is
+/// next shown, which is exactly when it renders blank.
+fn clamp_outline_scroll(model: &mut AppModel) {
+    model.outline_panel.scroll_offset = match outline_rows(model) {
+        Some(rows) => rows.clamp_scroll(model.outline_panel.scroll_offset),
+        None => 0,
+    };
 }
 
 fn reveal_outline_selection(model: &mut AppModel) {
@@ -69,10 +90,9 @@ fn reveal_outline_selection(model: &mut AppModel) {
 /// outline stays empty until the next edit (most visible with markdown,
 /// which is often read without ever being edited).
 pub(crate) fn refresh_outline_if_stale(model: &AppModel) -> Option<Cmd> {
-    let dock = &model.dock_layout.right;
-    if !(dock.is_open && dock.active_panel() == Some(crate::panel::PanelId::OUTLINE)) {
-        return None;
-    }
+    model
+        .dock_layout
+        .active_panel_position(crate::panel::PanelId::OUTLINE)?;
     let document = model.document();
     if !document.language.has_highlighting() {
         return None;
@@ -208,16 +228,8 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                         }
                     }
 
-                    let total = model
-                        .editor_area
-                        .focused_document()
-                        .and_then(|doc| doc.outline.as_ref())
-                        .map(|outline| count_visible_items(&outline.roots, &model.outline_panel))
-                        .unwrap_or(0);
-                    model.outline_panel.scroll_offset = model
-                        .outline_panel
-                        .scroll_offset
-                        .min(total.saturating_sub(1));
+                    // Collapsing/expanding changed the row count.
+                    clamp_outline_scroll(model);
                 }
             }
             reveal_outline_selection(model);
@@ -249,16 +261,8 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                         model.outline_panel.selected_index = Some(parent_index);
                     }
 
-                    let total = model
-                        .editor_area
-                        .focused_document()
-                        .and_then(|doc| doc.outline.as_ref())
-                        .map(|outline| count_visible_items(&outline.roots, &model.outline_panel))
-                        .unwrap_or(0);
-                    model.outline_panel.scroll_offset = model
-                        .outline_panel
-                        .scroll_offset
-                        .min(total.saturating_sub(1));
+                    // Collapsing/expanding changed the row count.
+                    clamp_outline_scroll(model);
                 }
             }
             reveal_outline_selection(model);
@@ -301,26 +305,7 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                 model.outline_panel.scroll_offset = offset.saturating_add(lines as usize);
             }
 
-            let outline = model
-                .editor_area
-                .focused_document()
-                .and_then(|doc| doc.outline.as_ref());
-
-            if let Some(outline) = outline {
-                let total = count_visible_items(&outline.roots, &model.outline_panel);
-                let visible_capacity = outline_visible_capacity(model);
-
-                model.outline_panel.scroll_offset = if visible_capacity == 0 {
-                    0
-                } else {
-                    model
-                        .outline_panel
-                        .scroll_offset
-                        .min(total.saturating_sub(visible_capacity))
-                };
-            } else {
-                model.outline_panel.scroll_offset = 0;
-            }
+            clamp_outline_scroll(model);
 
             Some(Cmd::Redraw)
         }
@@ -398,6 +383,25 @@ mod refresh_tests {
         });
     }
 
+    #[test]
+    fn clamping_scroll_uses_the_viewport_when_visible_and_resets_when_not() {
+        let mut model = model_with_open_outline_panel();
+        populate_outline(&mut model, 200);
+        model.outline_panel.scroll_offset = 500;
+
+        clamp_outline_scroll(&mut model);
+        let visible = outline_visible_capacity(&model);
+        assert!(visible > 0, "an open outline panel has a viewport");
+        assert_eq!(model.outline_panel.scroll_offset, 200 - visible);
+
+        // Closed panel: no viewport to clamp against, so the offset resets
+        // rather than surviving unclamped until the panel is next shown.
+        model.dock_layout.right.is_open = false;
+        model.outline_panel.scroll_offset = 500;
+        clamp_outline_scroll(&mut model);
+        assert_eq!(model.outline_panel.scroll_offset, 0);
+    }
+
     fn outline_node(name: &str, line: usize, children: Vec<OutlineNode>) -> OutlineNode {
         OutlineNode {
             kind: OutlineKind::Function,
@@ -452,6 +456,24 @@ mod refresh_tests {
         let mut model = model_with_open_outline_panel();
         model.dock_layout.right.is_open = false;
         assert!(refresh_outline_if_stale(&model).is_none());
+    }
+
+    #[test]
+    fn stale_outline_refresh_follows_the_panel_to_the_bottom_dock() {
+        let mut model = model_with_open_outline_panel();
+        model
+            .dock_layout
+            .right
+            .panel_ids
+            .retain(|&panel| panel != PanelId::OUTLINE);
+        model.dock_layout.right.active_index = None;
+        model.dock_layout.bottom.register_panel(PanelId::OUTLINE);
+        model.dock_layout.bottom.activate(PanelId::OUTLINE);
+
+        assert!(matches!(
+            refresh_outline_if_stale(&model),
+            Some(Cmd::DebouncedSyntaxParse { delay_ms: 0, .. })
+        ));
     }
 
     #[test]

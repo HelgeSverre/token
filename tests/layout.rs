@@ -1936,9 +1936,10 @@ fn test_switch_to_tab_scrolls_focused_tab_into_view() {
 
     // Rendered layout includes the active tab after the scroll
     let group = &model.editor_area.groups[&group_id];
-    let layout = token::view::geometry::TabBarLayout::new(group, &model, model.char_width);
+    let layout = token::layout::editor::EditorTabBarLayout::new(group, &model, model.char_width);
+    let active_tab_id = group.tabs[group.active_tab_index].id;
     assert!(
-        layout.tabs.iter().any(|t| t.is_active),
+        layout.tab_rect(active_tab_id).is_some(),
         "active tab must be present in the visible tab layout"
     );
 }

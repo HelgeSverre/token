@@ -1,11 +1,12 @@
 //! Panel rendering: sidebar file tree, dock panels, and outline panel
 
+use crate::layout::{snapshot::snap, LayoutSnapshot, RowListView, UiKey};
 use crate::model::editor_area::Rect;
 use crate::model::AppModel;
 
 use super::frame::{Frame, TextPainter};
-use super::geometry::{DockHeaderLayout, OutlinePanelLayout, TreeListLayout};
-use super::tree_view::{render_tree, TreeRenderLayout};
+use super::geometry::TreeRowLayout;
+use super::tree_view::render_tree;
 
 enum DockContentKind {
     Outline,
@@ -14,9 +15,21 @@ enum DockContentKind {
     Placeholder { message: &'static str },
 }
 
+/// One dock tab resolved from the chrome snapshot: its box, its text
+/// origin (the tab's padded content box), and its title.
+struct DockTabScene {
+    title: &'static str,
+    rect: Rect,
+    text_pos: (usize, usize),
+    is_active: bool,
+}
+
 struct DockPaneScene {
     position: crate::panel::DockPosition,
-    layout: DockHeaderLayout,
+    dock_rect: Rect,
+    header_rect: Rect,
+    content_rect: Rect,
+    tabs: Vec<DockTabScene>,
     border_color: u32,
     text_color: u32,
     bg_color: u32,
@@ -26,17 +39,50 @@ struct DockPaneScene {
 }
 
 impl DockPaneScene {
-    fn resolve(model: &AppModel, position: crate::panel::DockPosition, rect: Rect) -> Option<Self> {
+    fn resolve(
+        model: &AppModel,
+        position: crate::panel::DockPosition,
+        chrome: &LayoutSnapshot,
+    ) -> Option<Self> {
         let dock = model.dock_layout.dock(position);
         if !dock.is_open || dock.panel_ids.is_empty() {
             return None;
         }
 
+        let dock_rect = chrome.rect(UiKey::Dock(position))?;
+        let header_rect = chrome.rect(UiKey::DockHeader(position))?;
+
         let theme = &model.theme.sidebar;
-        let layout = DockHeaderLayout::new(dock, rect, &model.metrics, model.char_width);
         let active_panel = dock
             .active_panel()
             .unwrap_or(crate::panel::PanelId::TERMINAL);
+        let content_rect = chrome
+            .rect(UiKey::PanelContent(active_panel))
+            .unwrap_or(Rect::new(
+                dock_rect.x,
+                dock_rect.y + header_rect.height,
+                dock_rect.width,
+                (dock_rect.height - header_rect.height).max(0.0),
+            ));
+
+        let active_index = dock.active_index;
+        let tabs = dock
+            .panel_ids
+            .iter()
+            .copied()
+            .enumerate()
+            .filter_map(|(index, panel_id)| {
+                let node = chrome.node(UiKey::DockTab(position, panel_id))?;
+                let (tx, ty, _, _) = snap(node.content_rect);
+                Some(DockTabScene {
+                    title: panel_id.display_name(),
+                    rect: node.rect,
+                    text_pos: (tx, ty),
+                    is_active: active_index == Some(index),
+                })
+            })
+            .collect();
+
         let content = match active_panel {
             crate::panel::PanelId::Outline => DockContentKind::Outline,
             crate::panel::PanelId::Terminal => DockContentKind::Terminal,
@@ -51,7 +97,10 @@ impl DockPaneScene {
 
         Some(Self {
             position,
-            layout,
+            dock_rect,
+            header_rect,
+            content_rect,
+            tabs,
             border_color: theme.border.to_argb_u32(),
             text_color: theme.foreground.to_argb_u32(),
             bg_color: theme.background.to_argb_u32(),
@@ -61,17 +110,26 @@ impl DockPaneScene {
         })
     }
 
-    fn render(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
+    fn render(
+        &self,
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        chrome: &LayoutSnapshot,
+    ) {
         self.render_chrome(frame);
         self.render_header(frame, painter);
 
+        frame.push_clip(self.content_rect);
         match &self.content {
             DockContentKind::Outline => {
+                let rows = chrome.row_list(UiKey::PanelRows(crate::panel::PanelId::Outline));
                 render_outline_panel(
                     frame,
                     painter,
                     model,
-                    self.layout.content_rect,
+                    self.content_rect,
+                    rows,
                     self.text_color,
                 );
             }
@@ -80,15 +138,17 @@ impl DockPaneScene {
                     frame,
                     painter,
                     model,
-                    self.layout.content_rect,
+                    self.content_rect,
                 );
             }
             DockContentKind::Problems => {
+                let rows = chrome.row_list(UiKey::PanelRows(crate::panel::PanelId::Problems));
                 render_problems_panel(
                     frame,
                     painter,
                     model,
-                    self.layout.content_rect,
+                    self.content_rect,
+                    rows,
                     self.text_color,
                 );
             }
@@ -96,23 +156,15 @@ impl DockPaneScene {
                 self.render_placeholder_content(frame, painter, message);
             }
         }
+        frame.pop_clip();
     }
 
     fn render_chrome(&self, frame: &mut Frame) {
-        let rect = Rect::new(
-            self.layout.rect_x as f32,
-            self.layout.rect_y as f32,
-            self.layout.rect_w as f32,
-            self.layout.rect_h as f32 + self.layout.content_rect.height,
-        );
+        let rect = self.dock_rect;
         frame.fill_rect(rect, self.bg_color);
-        frame.fill_rect_px(
-            self.layout.rect_x,
-            self.layout.border_y,
-            self.layout.rect_w,
-            1,
-            self.border_color,
-        );
+        // 1px border under the header row.
+        let (hx, hy, hw, hh) = snap(self.header_rect);
+        frame.fill_rect_px(hx, (hy + hh).saturating_sub(1), hw, 1, self.border_color);
 
         match self.position {
             crate::panel::DockPosition::Left => {
@@ -137,13 +189,15 @@ impl DockPaneScene {
     }
 
     fn render_header(&self, frame: &mut Frame, painter: &mut TextPainter) {
-        for tab in &self.layout.tabs {
+        frame.push_clip(self.header_rect);
+        for tab in &self.tabs {
             if tab.is_active {
                 // The active-tab highlight is a translucent color (e.g. white
                 // at ~10% alpha), so it must be alpha-blended over the panel
                 // background. A plain `fill_rect_px` ignores alpha and would
                 // paint a solid (white) block, hiding the tab title.
-                frame.blend_rect_px(tab.x, tab.y, tab.width, tab.height, self.active_tab_bg);
+                let (x, y, w, h) = snap(tab.rect);
+                frame.blend_rect_px(x, y, w, h, self.active_tab_bg);
             }
 
             let fg = if tab.is_active {
@@ -151,8 +205,9 @@ impl DockPaneScene {
             } else {
                 self.text_color
             };
-            painter.draw(frame, tab.text_x, tab.text_y, tab.title, fg);
+            painter.draw(frame, tab.text_pos.0, tab.text_pos.1, tab.title, fg);
         }
+        frame.pop_clip();
     }
 
     fn render_placeholder_content(
@@ -163,8 +218,8 @@ impl DockPaneScene {
     ) {
         let char_width = painter.char_width();
         let line_height = painter.line_height();
-        let text_width = message.len() as f32 * char_width;
-        let content = self.layout.content_rect;
+        let text_width = message.chars().count() as f32 * char_width;
+        let content = self.content_rect;
         let text_x = content.x + (content.width - text_width) / 2.0;
         let text_y = content.y + (content.height - line_height as f32) / 2.0;
         painter.draw(
@@ -198,10 +253,11 @@ fn truncate_with_ellipsis(name: &str, max_chars: usize) -> std::borrow::Cow<'_, 
 
 /// Context for sidebar rendering, holding constant values throughout tree traversal.
 struct SidebarRenderContext {
+    sidebar_x: usize,
     sidebar_width: usize,
     row_height: usize,
     char_width: usize,
-    tree: TreeListLayout,
+    tree: TreeRowLayout,
     // Colors
     text_color: u32,
     selection_bg: u32,
@@ -211,7 +267,9 @@ struct SidebarRenderContext {
 
 /// Context for outline panel rendering, holding constant values throughout tree traversal.
 struct OutlineRenderContext<'a> {
-    layout: OutlinePanelLayout,
+    content_rect: Rect,
+    row_height: usize,
+    tree: TreeRowLayout,
     selected_index: Option<usize>,
     text_color: u32,
     selection_bg: u32,
@@ -225,45 +283,47 @@ pub fn render_sidebar(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
-    sidebar_width: usize,
-    sidebar_height: usize,
+    chrome: &LayoutSnapshot,
 ) {
     let Some(workspace) = &model.workspace else {
         return;
     };
+    let Some(rows) = chrome.row_list(UiKey::Sidebar) else {
+        return;
+    };
+    let sidebar_rect = rows.rect();
+    let (sidebar_x, sidebar_y, sidebar_width, sidebar_height) = snap(sidebar_rect);
 
     let theme = &model.theme.sidebar;
     let metrics = &model.metrics;
 
     // Draw sidebar background
     let bg_color = theme.background.to_argb_u32();
-    frame.fill_rect(
-        Rect::new(0.0, 0.0, sidebar_width as f32, sidebar_height as f32),
-        bg_color,
-    );
+    frame.fill_rect(sidebar_rect, bg_color);
 
     // Draw resize border on the right edge
     let border_color = theme.border.to_argb_u32();
-    let border_x = sidebar_width.saturating_sub(1);
+    let border_x = sidebar_x + sidebar_width.saturating_sub(1);
     frame.fill_rect(
-        Rect::new(border_x as f32, 0.0, 1.0, sidebar_height as f32),
+        Rect::new(
+            border_x as f32,
+            sidebar_y as f32,
+            1.0,
+            sidebar_height as f32,
+        ),
         border_color,
     );
 
     // Clip all subsequent drawing to the sidebar bounds
-    frame.set_clip(Rect::new(
-        0.0,
-        0.0,
-        sidebar_width as f32,
-        sidebar_height as f32,
-    ));
+    frame.set_clip(sidebar_rect);
 
     // Build render context with all constant values
     let ctx = SidebarRenderContext {
+        sidebar_x,
         sidebar_width,
-        row_height: metrics.file_tree_row_height,
+        row_height: rows.row_height().round() as usize,
         char_width: painter.char_width().ceil() as usize,
-        tree: TreeListLayout::from_metrics(metrics),
+        tree: TreeRowLayout::from_metrics(metrics),
         text_color: theme.foreground.to_argb_u32(),
         selection_bg: theme.selection_background.to_argb_u32(),
         selection_fg: theme.selection_foreground.to_argb_u32(),
@@ -272,7 +332,7 @@ pub fn render_sidebar(
 
     render_tree(
         &workspace.file_tree.roots,
-        TreeRenderLayout::new(0, sidebar_height, ctx.row_height, workspace.scroll_offset),
+        rows,
         |node| node.is_dir && workspace.is_expanded(&node.path),
         |row| {
             let node = row.node;
@@ -287,7 +347,7 @@ pub fn render_sidebar(
             if is_selected {
                 frame.fill_rect_blended(
                     Rect::new(
-                        0.0,
+                        ctx.sidebar_x as f32,
                         row.row_y as f32,
                         ctx.sidebar_width as f32,
                         ctx.row_height as f32,
@@ -296,8 +356,8 @@ pub fn render_sidebar(
                 );
             }
 
-            let icon_x = pos.icon_x;
-            let text_x = pos.text_x;
+            let icon_x = ctx.sidebar_x + pos.icon_x;
+            let text_x = ctx.sidebar_x + pos.text_x;
             let text_y = pos.text_y;
 
             if node.is_dir {
@@ -320,7 +380,8 @@ pub fn render_sidebar(
                 ctx.text_color
             };
 
-            let available_width = ctx.tree.available_text_width(ctx.sidebar_width, text_x);
+            let sidebar_right = ctx.sidebar_x + ctx.sidebar_width;
+            let available_width = ctx.tree.available_text_width(sidebar_right, text_x);
             let max_chars = available_width
                 .checked_div(ctx.char_width)
                 .unwrap_or(available_width / 8);
@@ -339,13 +400,13 @@ pub fn render_dock(
     painter: &mut TextPainter,
     model: &AppModel,
     position: crate::panel::DockPosition,
-    rect: Rect,
+    chrome: &LayoutSnapshot,
 ) {
-    let Some(scene) = DockPaneScene::resolve(model, position, rect) else {
+    let Some(scene) = DockPaneScene::resolve(model, position, chrome) else {
         return;
     };
 
-    scene.render(frame, painter, model);
+    scene.render(frame, painter, model, chrome);
 }
 
 /// Render the outline panel showing document symbols as a tree
@@ -353,7 +414,8 @@ pub fn render_outline_panel(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
-    rect: Rect,
+    content_rect: Rect,
+    rows: Option<RowListView>,
     text_color: u32,
 ) {
     let theme = &model.theme.sidebar;
@@ -362,7 +424,7 @@ pub fn render_outline_panel(
     let folder_icon_color = theme.folder_icon.to_argb_u32();
 
     let line_height = painter.line_height();
-    let outline_layout = OutlinePanelLayout::new(rect, &model.metrics);
+    let tree = TreeRowLayout::outline_from_metrics(&model.metrics);
 
     // Get outline from the focused document
     let outline = model
@@ -376,20 +438,23 @@ pub fn render_outline_panel(
             // Show "No outline available" centered
             let msg = "No outline available";
             let char_width = painter.char_width();
-            let text_width = msg.len() as f32 * char_width;
-            let text_x = rect.x + (rect.width - text_width) / 2.0;
-            let text_y = outline_layout.content_rect.y
-                + (outline_layout.content_rect.height - line_height as f32) / 2.0;
+            let text_width = msg.chars().count() as f32 * char_width;
+            let text_x = content_rect.x + (content_rect.width - text_width) / 2.0;
+            let text_y = content_rect.y + (content_rect.height - line_height as f32) / 2.0;
             painter.draw(frame, text_x as usize, text_y as usize, msg, text_color);
             return;
         }
     };
 
+    let Some(rows) = rows else {
+        return;
+    };
     let selected_index = model.outline_panel.selected_index;
-    let scroll_offset = model.outline_panel.scroll_offset;
 
     let ctx = OutlineRenderContext {
-        layout: outline_layout,
+        content_rect,
+        row_height: rows.row_height().round() as usize,
+        tree,
         selected_index,
         text_color,
         selection_bg,
@@ -398,20 +463,14 @@ pub fn render_outline_panel(
         outline_panel: &model.outline_panel,
     };
 
-    frame.set_clip(ctx.layout.content_rect);
     render_tree(
         &outline.roots,
-        TreeRenderLayout::new(
-            ctx.layout.content_rect.y as usize,
-            ctx.layout.content_rect.height as usize,
-            ctx.layout.row_height,
-            scroll_offset,
-        ),
+        rows,
         |node| node.is_collapsible() && !ctx.outline_panel.is_collapsed(node),
         |row| {
             let node = row.node;
-            let pos = ctx.layout.tree.node_position(row.depth, row.row_y);
-            let base_x = ctx.layout.content_rect.x as usize;
+            let pos = ctx.tree.node_position(row.depth, row.row_y);
+            let base_x = ctx.content_rect.x as usize;
             let icon_x = pos.icon_x + base_x;
             let text_x = pos.text_x + base_x;
             let text_y = pos.text_y;
@@ -420,10 +479,10 @@ pub fn render_outline_panel(
             if is_selected {
                 frame.fill_rect_blended(
                     Rect::new(
-                        ctx.layout.content_rect.x,
+                        ctx.content_rect.x,
                         row.row_y as f32,
-                        ctx.layout.content_rect.width,
-                        ctx.layout.row_height as f32,
+                        ctx.content_rect.width,
+                        ctx.row_height as f32,
                     ),
                     ctx.selection_bg,
                 );
@@ -458,19 +517,14 @@ pub fn render_outline_panel(
 
             let char_w = painter.char_width().ceil() as usize;
             let name_x = text_x + (label.len() + 1) * char_w;
-            let container_width =
-                ctx.layout.content_rect.x as usize + ctx.layout.content_rect.width as usize;
-            let available = ctx
-                .layout
-                .tree
-                .available_text_width(container_width, name_x);
+            let container_width = ctx.content_rect.x as usize + ctx.content_rect.width as usize;
+            let available = ctx.tree.available_text_width(container_width, name_x);
             let max_chars = available.checked_div(char_w).unwrap_or(80);
 
             let display = truncate_with_ellipsis(&node.name, max_chars);
             painter.draw(frame, name_x, text_y, &display, fg);
         },
     );
-    frame.clear_clip();
 }
 
 /// Render the Problems panel: collapsible per-file groups over
@@ -480,7 +534,8 @@ pub fn render_problems_panel(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
-    rect: Rect,
+    content_rect: Rect,
+    row_view: Option<RowListView>,
     text_color: u32,
 ) {
     use crate::update::problems::{problems_rows, ProblemsRow};
@@ -496,46 +551,46 @@ pub fn render_problems_panel(
     let workspace_root = model.workspace_root();
 
     let line_height = painter.line_height();
-    let layout = OutlinePanelLayout::new(rect, &model.metrics);
+    let row_height = model.metrics.file_tree_row_height;
+    let tree = TreeRowLayout::outline_from_metrics(&model.metrics);
     let rows = problems_rows(model);
 
     if rows.is_empty() {
         let msg = "No problems in this file";
         let char_width = painter.char_width();
-        let text_width = msg.len() as f32 * char_width;
-        let text_x = rect.x + (rect.width - text_width) / 2.0;
-        let text_y =
-            layout.content_rect.y + (layout.content_rect.height - line_height as f32) / 2.0;
+        let text_width = msg.chars().count() as f32 * char_width;
+        let text_x = content_rect.x + (content_rect.width - text_width) / 2.0;
+        let text_y = content_rect.y + (content_rect.height - line_height as f32) / 2.0;
         painter.draw(frame, text_x as usize, text_y as usize, msg, text_color);
         return;
     }
 
     let selected_index = model.problems_panel.selected_index;
-    let scroll_offset = model.problems_panel.scroll_offset;
-    let base_x = layout.content_rect.x as usize;
-    let container_width = base_x + layout.content_rect.width as usize;
-    // ceil, not floor: draw() advances by the true fractional advance, so
+    let scroll_offset = row_view
+        .map(|r| r.scroll_offset())
+        .unwrap_or(model.problems_panel.scroll_offset);
+    let base_x = content_rect.x as usize;
+    let container_width = base_x + content_rect.width as usize;
+    // Ceil, not floor: draw() advances by the true fractional advance, so
     // flooring undermeasures every width and overflows budgets rightward.
     let char_w = painter.char_width().ceil() as usize;
 
-    frame.set_clip(layout.content_rect);
-    let visible = rows
-        .iter()
-        .enumerate()
-        .skip(scroll_offset)
-        .take(layout.visible_capacity());
+    // Paint the drawn range (ceil — the partial bottom row is painted and
+    // clipped by the panel scissor, so a clickable sliver is never blank).
+    let drawn = row_view.map(|r| r.drawn_range()).unwrap_or(0..rows.len());
+    let visible = rows.iter().enumerate().skip(drawn.start).take(drawn.len());
 
     for (index, row) in visible {
-        let row_y = layout.content_rect.y as usize + (index - scroll_offset) * layout.row_height;
+        let row_y = content_rect.y as usize + (index - scroll_offset) * row_height;
         let is_selected = selected_index == Some(index);
 
         if is_selected {
             frame.fill_rect_blended(
                 Rect::new(
-                    layout.content_rect.x,
+                    content_rect.x,
                     row_y as f32,
-                    layout.content_rect.width,
-                    layout.row_height as f32,
+                    content_rect.width,
+                    row_height as f32,
                 ),
                 selection_bg,
             );
@@ -553,7 +608,7 @@ pub fn render_problems_panel(
                 count,
                 collapsed,
             } => {
-                let pos = layout.tree.node_position(0, row_y);
+                let pos = tree.node_position(0, row_y);
                 let icon_x = pos.icon_x + base_x;
                 let text_x = pos.text_x + base_x;
                 let chevron = if *collapsed { "\u{25B8}" } else { "\u{25BE}" };
@@ -583,20 +638,20 @@ pub fn render_problems_panel(
                     Some(dir) => format!("  {dir} \u{b7} {count}"),
                     None => format!("  {count}"),
                 };
-                let name_available = layout.tree.available_text_width(container_width, name_x);
+                let name_available = tree.available_text_width(container_width, name_x);
                 let name_max_chars = name_available.checked_div(char_w).unwrap_or(80);
                 let name_display = truncate_with_ellipsis(&name, name_max_chars);
                 painter.draw(frame, name_x, pos.text_y, &name_display, fg);
 
                 let suffix_x = name_x + name_display.chars().count() * char_w;
-                let suffix_available = layout.tree.available_text_width(container_width, suffix_x);
+                let suffix_available = tree.available_text_width(container_width, suffix_x);
                 let suffix_max_chars = suffix_available.checked_div(char_w).unwrap_or(0);
                 let suffix_display = truncate_with_ellipsis(&suffix, suffix_max_chars);
                 let dim = if is_selected { selection_fg } else { dim_color };
                 painter.draw(frame, suffix_x, pos.text_y, &suffix_display, dim);
             }
             ProblemsRow::Diagnostic { path, index } => {
-                let pos = layout.tree.node_position(1, row_y);
+                let pos = tree.node_position(1, row_y);
                 let icon_x = pos.icon_x + base_x;
                 let text_x = pos.text_x + base_x;
 
@@ -630,11 +685,10 @@ pub fn render_problems_panel(
                 // Fractional measure + right inset (symmetric with
                 // available_text_width's implicit left_padding right inset).
                 let accessory_width = accessory.chars().count() as f32 * painter.char_width();
-                let right_inset = layout.tree.left_padding as f32;
-                let accessory_x = (layout.content_rect.x + layout.content_rect.width
-                    - right_inset
-                    - accessory_width)
-                    .max(layout.content_rect.x) as usize;
+                let right_inset = tree.left_padding as f32;
+                let accessory_x =
+                    (content_rect.x + content_rect.width - right_inset - accessory_width)
+                        .max(content_rect.x) as usize;
                 let accessory_color = if is_selected {
                     selection_fg
                 } else {
@@ -642,7 +696,7 @@ pub fn render_problems_panel(
                 };
                 painter.draw(frame, accessory_x, pos.text_y, &accessory, accessory_color);
 
-                let available = accessory_x.saturating_sub(text_x + layout.tree.left_padding);
+                let available = accessory_x.saturating_sub(text_x + tree.left_padding);
                 let max_chars = available.checked_div(char_w).unwrap_or(80);
                 // Multi-line LSP messages would smear their later lines
                 // into the same row ('\n' renders as an empty glyph).
@@ -652,7 +706,6 @@ pub fn render_problems_panel(
             }
         }
     }
-    frame.clear_clip();
 }
 
 #[cfg(test)]

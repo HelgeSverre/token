@@ -9,6 +9,18 @@ use crate::model::{AppModel, ViewMode};
 use crate::update::lsp::schedule_lsp_did_change;
 use crate::update::syntax::schedule_syntax_parse;
 
+pub fn visible_rows_for_model(model: &AppModel) -> usize {
+    let line_height = model.line_height.max(1);
+    let editor_height = crate::layout::chrome::shell(model)
+        .rect(crate::layout::UiKey::EditorArea)
+        .map(|rect| rect.height.max(0.0) as usize)
+        .unwrap_or(0);
+    let content_height = editor_height
+        .saturating_sub(model.metrics.tab_bar_height)
+        .saturating_sub(line_height); // CSV column header
+    (content_height / line_height).max(1)
+}
+
 /// Handle CSV mode messages
 pub fn update_csv(model: &mut AppModel, msg: CsvMsg) -> Option<Cmd> {
     match msg {
@@ -102,18 +114,9 @@ fn toggle_csv_mode(model: &mut AppModel) -> Option<Cmd> {
             }
             let mut csv_state = CsvState::new(data, delimiter);
 
-            // Calculate visible rows based on window dimensions
-            let line_height = model.line_height.max(1);
-            let tab_bar_height = model.metrics.tab_bar_height;
-            let status_bar_height = model.status_bar_height;
-            let col_header_height = line_height;
-            let content_height = (model.window_size.1 as usize)
-                .saturating_sub(tab_bar_height)
-                .saturating_sub(status_bar_height)
-                .saturating_sub(col_header_height);
-            let visible_rows = content_height / line_height;
+            let visible_rows = visible_rows_for_model(model);
             let visible_cols = 10; // Approximate, will be refined during render
-            csv_state.set_viewport_size(visible_rows.max(1), visible_cols);
+            csv_state.set_viewport_size(visible_rows, visible_cols);
 
             // Need to get mutable reference again after the doc borrow is done
             if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
@@ -909,6 +912,28 @@ mod tests {
     use super::*;
     use crate::csv::CellPosition;
     use crate::model::AppModel;
+    use crate::panel::PanelId;
+
+    #[test]
+    fn visible_rows_follow_the_solved_editor_height() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let without_bottom_dock = visible_rows_for_model(&model);
+
+        model.dock_layout.bottom.size_logical = 200.0;
+        model.dock_layout.bottom.activate(PanelId::Terminal);
+        let with_bottom_dock = visible_rows_for_model(&model);
+
+        assert!(with_bottom_dock < without_bottom_dock);
+        let editor_height = crate::layout::chrome::shell(&model)
+            .rect(crate::layout::UiKey::EditorArea)
+            .unwrap()
+            .height as usize;
+        let expected = editor_height
+            .saturating_sub(model.metrics.tab_bar_height)
+            .saturating_sub(model.line_height)
+            / model.line_height;
+        assert_eq!(with_bottom_dock, expected.max(1));
+    }
 
     /// `confirm_edit` mutates `doc.buffer`/`doc.revision` directly (like
     /// Replace All), so it must schedule syntax-parse and LSP didChange

@@ -6,12 +6,16 @@
 //! enough to render the command palette. Tabs, `ListWithPanel`, `Zones`,
 //! and `Fields` land with the phases that consume them.
 //!
-//! `layout()` is the single source of truth for geometry; it is designed
-//! to be shared with hit-testing once that lands (Phase 3), the same way
-//! `ModalLayout` is shared by `view::modal` and `view::hit_test` today.
+//! `layout()` is the single source of truth shared by rendering and
+//! hit-testing.
 
 use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry::WidgetRect;
+use crate::layout::{
+    Content, Dir, ElementDecl, FloatAnchor, FloatDecl, LayoutSnapshot, Padding, RowListDecl,
+    Sizing, SizingAxes, UiKey, UiTree,
+};
+use crate::model::editor_area::Rect;
 use crate::theme::OverlayTheme;
 
 /// Logical-px chrome constants for `Anchor::Centered`, per the Visual
@@ -36,13 +40,8 @@ mod dims {
     pub const SCROLLBAR_WIDTH: f32 = 3.0;
     pub const SCROLLBAR_INSET: f32 = 2.0;
     pub const SCROLLBAR_MIN_LEN: f32 = 20.0;
-    pub const Y: f32 = 64.0;
-    /// Gap between the anchor line and a cursor-anchored popup (Visual
-    /// Language > Chrome: "below the anchor line + 2").
-    pub const CURSOR_GAP: f32 = 2.0;
-    /// `Anchor::Cursor` minimum panel width (Visual Language > Chrome:
-    /// "content-sized, clamped to window edges, 200px floor").
-    pub const CURSOR_WIDTH_FLOOR: f32 = 200.0;
+    // The centered-Y, cursor-gap, and cursor-width-floor constants moved to
+    // `layout::anchor::dims` with the placement functions.
     /// Completion kind badge (Visual Language > Rows: "kind badge (16×16, r4)").
     pub const KIND_BADGE_SIZE: f32 = 16.0;
     pub const KIND_BADGE_RADIUS: f32 = 4.0;
@@ -51,11 +50,12 @@ mod dims {
     pub const ZONE_GAP: f32 = 8.0;
     /// Gap between chips within one chord step's keycap accessory.
     pub const CHIP_GAP: f32 = 4.0;
-    /// Zone text metrics (hover card / drop overlay): stacking line height
-    /// and the monospace cell width at SIZE_ROW. Constants (not painter
-    /// metrics) because `layout()` is painter-free and paint must stack
-    /// identically — 0.6·13 = 7.8 rounds to 8 at every scale factor, and
-    /// 17px clears the 13px glyphs.
+    /// Zone text metrics (hover card / drop overlay): the stacking line
+    /// height (17px clears the 13px glyphs) and the monospace cell width
+    /// backing `cell_measure` — the painter-free fallback used by tests
+    /// and painterless contexts. The real render/hit-test paths measure
+    /// through the glyph cache (`layout::PainterMeasure`) instead; at 1x
+    /// the two agree (0.6·13 = 7.8 rounds to 8).
     pub const ZONE_LINE_H: f32 = 17.0;
     pub const ZONE_CELL_W: f32 = 8.0;
     /// Theme-swatch dots (theme picker): diameter, intra-strip gap, and the
@@ -172,11 +172,9 @@ pub fn header_pad_x(scale_factor: f64) -> usize {
 
 /// A modal width rule: percent of window width, clamped to a logical-px
 /// min/max, then clamped again to leave a margin against the window edges.
-pub struct WidthRule {
-    pub pct: f32,
-    pub min: f32,
-    pub max: f32,
-}
+/// (Moved to `layout::anchor` so the layout engine and this surface share
+/// one implementation; re-exported here for existing consumers.)
+pub use crate::layout::anchor::WidthRule;
 
 pub enum Anchor {
     /// Centered X; Y follows the Chrome table's `min(h/4, Y)` class. Dims
@@ -704,12 +702,11 @@ pub struct FieldLayout {
     pub input: WidgetRect,
 }
 
-/// Computed geometry for an `Anchor::Centered` surface — panel chrome,
-/// header, list rows (already scrolled to the visible window), fields,
-/// footer, and scrollbar thumb. The single source of truth shared by
-/// `render()` and by hit-testing (`hit_test::hit_test_modal`) — one layout,
-/// two consumers.
+/// Solved Clay geometry for a centered or cursor-anchored surface: panel
+/// chrome, header, list rows, fields, zones, footer, and scrollbar thumb.
+/// Rendering and hit-testing consume this same snapshot.
 pub struct OverlayLayout {
+    snapshot: LayoutSnapshot,
     pub panel: WidgetRect,
     /// `None` unless `spec.tabs` is `Some` (Search Everywhere only).
     pub tab_bar: Option<WidgetRect>,
@@ -733,93 +730,103 @@ pub struct OverlayLayout {
     pub zones_text: Option<WidgetRect>,
     pub footer: Option<WidgetRect>,
     pub scrollbar: Option<WidgetRect>,
+    /// The measured zone plan (wrapped lines + heights) for a `Body::Zones`
+    /// body, computed once in `layout_measured` and consumed by
+    /// `render_zones` — the plan is never re-derived. `None` for other
+    /// bodies.
+    pub(crate) zone_plan: Option<ZonePlan>,
 }
 
-/// Clamp a `WidthRule` against the window width (percent-of-window, clamped
-/// to a logical-px min/max, then margin-clamped to the window edges); for
-/// `Anchor::Cursor` an additional 200px floor applies (Visual Language >
-/// Chrome).
-fn resolve_panel_width(
-    anchor: &Anchor,
-    width: &WidthRule,
-    window_width: usize,
-    scale_factor: f64,
-) -> usize {
-    let margin = scaled(32.0, scale_factor);
-    let min_w = size_px(width.min, scale_factor) as usize;
-    let max_w = size_px(width.max, scale_factor) as usize;
-    let mut panel_w = ((window_width as f32 * width.pct) as usize)
-        .clamp(min_w, max_w)
-        .min(window_width.saturating_sub(margin));
-    if matches!(anchor, Anchor::Cursor { .. }) {
-        panel_w = panel_w.max(scaled(dims::CURSOR_WIDTH_FLOOR, scale_factor));
-    }
-    // Never exceed the window itself, even when the 200px cursor floor is
-    // wider than `window_width - margin` (narrow-window degradation).
-    panel_w.min(window_width)
-}
-
-/// Position the panel's top-left corner given its final width/height.
-/// Centered: centered X, `min(h/4, Y)` per the Chrome table. Cursor: below
-/// the anchor line + gap, flipping above when there isn't `panel_h` of
-/// space below, then edge-clamped to the window.
-fn position_panel(
-    anchor: &Anchor,
-    window_width: usize,
-    window_height: usize,
-    panel_w: usize,
-    panel_h: usize,
-    scale_factor: f64,
-) -> (usize, usize) {
-    match anchor {
-        Anchor::Centered { .. } => {
-            let x = window_width.saturating_sub(panel_w) / 2;
-            let y = scaled(dims::Y, scale_factor).min(window_height / 4);
-            (x, y)
-        }
+fn float_decl(anchor: &Anchor) -> FloatDecl {
+    let width = *anchor.width();
+    let float_anchor = match anchor {
+        Anchor::Centered { .. } => FloatAnchor::WindowCentered,
         Anchor::Cursor {
             x,
             y,
             h,
             prefer_below,
             ..
-        } => {
-            let gap = scaled(dims::CURSOR_GAP, scale_factor);
-            let px = (*x).min(window_width.saturating_sub(panel_w));
-            let below_y = y.saturating_add(*h).saturating_add(gap);
-            let fits_below = below_y.saturating_add(panel_h) <= window_height;
-            let fits_above = *y >= panel_h.saturating_add(gap);
-            let py = if *prefer_below && fits_below {
-                below_y
-            } else if fits_above {
-                y - gap - panel_h
-            } else if fits_below {
-                below_y
-            } else {
-                // Neither direction has room: clamp to the window.
-                window_height.saturating_sub(panel_h)
-            };
-            (px, py)
-        }
+        } => FloatAnchor::Caret {
+            x: *x as f32,
+            y: *y as f32,
+            line_h: *h as f32,
+            prefer_below: *prefer_below,
+        },
+    };
+    FloatDecl {
+        anchor: float_anchor,
+        z: 10,
+        width: Some(width),
     }
 }
 
-/// Layout an `OverlaySpec` against the (physical-px) window size. This is
-/// the one layout function the doc calls for — paint and hit-testing both
-/// consume it.
+fn widget_rect(rect: Rect) -> WidgetRect {
+    let (x, y, w, h) = crate::layout::snapshot::snap(rect);
+    WidgetRect { x, y, w, h }
+}
+
+fn solved_rect(snapshot: &LayoutSnapshot, key: UiKey) -> Option<WidgetRect> {
+    snapshot.rect(key).map(widget_rect)
+}
+
+fn solved_content_rect(snapshot: &LayoutSnapshot, key: UiKey) -> Option<WidgetRect> {
+    snapshot.content_rect(key).map(widget_rect)
+}
+
+fn spacer(t: &mut UiTree, height: usize) {
+    t.leaf(ElementDecl {
+        sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+        ..Default::default()
+    });
+}
+
+/// The painter-free fallback measure: monospace cells at the historical
+/// zone constants (8px cell, 17px line at 1x). Used by tests and any
+/// context without a painter; the real render and hit-test paths measure
+/// through the glyph cache (`layout::PainterMeasure`) instead.
+pub fn cell_measure(scale_factor: f64) -> crate::layout::CellMeasure {
+    crate::layout::CellMeasure {
+        char_width: scaled(dims::ZONE_CELL_W, scale_factor) as f32,
+        line_height: scaled(dims::ZONE_LINE_H, scale_factor) as f32,
+    }
+}
+
+/// `layout_measured` with the monospace-cell fallback measure. Prefer
+/// `layout_measured` with a `PainterMeasure` wherever a painter is in
+/// reach — real advances wrap zone text where it actually fits.
 pub fn layout(
     spec: &OverlaySpec,
     window_width: usize,
     window_height: usize,
     scale_factor: f64,
 ) -> OverlayLayout {
-    let panel_w = resolve_panel_width(
-        &spec.anchor,
+    layout_measured(
+        spec,
+        window_width,
+        window_height,
+        scale_factor,
+        &mut cell_measure(scale_factor),
+    )
+}
+
+/// Layout an `OverlaySpec` against the (physical-px) window size. This is
+/// the one layout function the doc calls for — paint and hit-testing both
+/// consume it. `measure` drives zone text wrapping (`Body::Zones`).
+pub fn layout_measured(
+    spec: &OverlaySpec,
+    window_width: usize,
+    window_height: usize,
+    scale_factor: f64,
+    measure: &mut dyn crate::layout::TextMeasure,
+) -> OverlayLayout {
+    let panel_w = crate::layout::anchor::resolve_width(
         spec.anchor.width(),
+        matches!(&spec.anchor, Anchor::Cursor { .. }),
         window_width,
         scale_factor,
     );
-    let is_cursor = matches!(spec.anchor, Anchor::Cursor { .. });
+    let is_cursor = matches!(&spec.anchor, Anchor::Cursor { .. });
 
     let header_h = spec
         .header
@@ -841,8 +848,7 @@ pub fn layout(
         .tabs
         .as_ref()
         .map(|_| scaled(dims::TAB_BAR_HEIGHT, scale_factor));
-
-    match &spec.body {
+    let list_info = match &spec.body {
         Body::List {
             sections,
             scroll,
@@ -851,283 +857,282 @@ pub fn layout(
         } => {
             let display_rows = flatten_rows(sections);
             let (start, visible) = resolve_visible_window(&display_rows, *scroll, *max_visible);
-            // Reserve one row of body height even when there are zero rows,
-            // so an empty-state message ("No files match your query") has
-            // somewhere to paint instead of landing in the footer band.
+            // Empty lists still reserve one row for their empty-state text.
             let visible = visible.max(usize::from(display_rows.is_empty()));
-            let list_h = visible * row_h;
-            let header_h = header_h.unwrap_or(0);
-            let tab_bar_h_v = tab_bar_h.unwrap_or(0);
-
-            let panel_h = tab_bar_h_v + header_h + list_h + footer_h.unwrap_or(0);
-            let (panel_x, panel_y) = position_panel(
-                &spec.anchor,
-                window_width,
-                window_height,
-                panel_w,
-                panel_h,
-                scale_factor,
-            );
-            let panel = WidgetRect {
-                x: panel_x,
-                y: panel_y,
-                w: panel_w,
-                h: panel_h,
-            };
-            let tab_bar = tab_bar_h.map(|h| WidgetRect {
-                x: panel.x,
-                y: panel.y,
-                w: panel.w,
-                h,
-            });
-            let tab_rects: Vec<WidgetRect> = spec
-                .tabs
-                .as_ref()
-                .map(|tab_bar_spec| {
-                    let n = tab_bar_spec.tabs.len().max(1);
-                    let tab_w = panel.w / n;
-                    (0..tab_bar_spec.tabs.len())
-                        .map(|i| WidgetRect {
-                            x: panel.x + i * tab_w,
-                            y: panel.y,
-                            w: tab_w,
-                            h: tab_bar_h_v,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            let header = spec.header.as_ref().map(|_| WidgetRect {
-                x: panel.x,
-                y: panel.y + tab_bar_h_v,
-                w: panel.w,
-                h: header_h,
-            });
-
-            let list_top = panel.y + tab_bar_h_v + header_h;
-            let rows: Vec<WidgetRect> = (0..visible)
-                .map(|i| WidgetRect {
-                    x: panel.x,
-                    y: list_top + i * row_h,
-                    w: panel.w,
-                    h: row_h,
-                })
-                .collect();
-
-            let footer = footer_h.map(|h| WidgetRect {
-                x: panel.x,
-                y: list_top + list_h,
-                w: panel.w,
-                h,
-            });
-
-            let total = display_rows.len();
-            let scrollbar = if total > *max_visible {
-                let inset = scaled(dims::SCROLLBAR_INSET, scale_factor);
-                let sb_w = scaled(dims::SCROLLBAR_WIDTH, scale_factor);
-                let min_len = scaled(dims::SCROLLBAR_MIN_LEN, scale_factor);
-                let track_h = list_h;
-                let thumb_h = ((visible as f32 / total as f32) * track_h as f32).round() as usize;
-                let thumb_h = thumb_h.max(min_len).min(track_h);
-                let max_thumb_y = track_h.saturating_sub(thumb_h);
-                let scroll_range = total.saturating_sub(visible).max(1);
-                let thumb_y = (start * max_thumb_y) / scroll_range;
-                Some(WidgetRect {
-                    x: panel.x + panel.w.saturating_sub(sb_w + inset),
-                    y: list_top + thumb_y,
-                    w: sb_w,
-                    h: thumb_h,
-                })
-            } else {
-                None
-            };
-
-            OverlayLayout {
-                panel,
-                tab_bar,
-                tab_rects,
-                header,
-                row_height: row_h,
-                rows,
-                fields: Vec::new(),
-                zones_banner: None,
-                zones_code: None,
-                zones_text: None,
-                footer,
-                scrollbar,
-            }
+            Some((start, visible, display_rows.len(), *max_visible))
         }
-        Body::Fields { fields, .. } => {
-            let label_h = scaled(dims::FIELD_LABEL_H, scale_factor);
-            let gap = scaled(dims::FIELD_LABEL_GAP, scale_factor);
-            let input_h = scaled(SIZE_INPUT, scale_factor) + 2 * scaled(dims::PAD_Y, scale_factor);
-            let spacing = scaled(dims::FIELD_SPACING, scale_factor);
-            let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
-            let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
-            let field_h = label_h + gap + input_h;
+        Body::Fields { .. } | Body::Zones(_) => None,
+    };
+    // Text wrapping is content measurement; the solved boxes below consume
+    // its heights instead of re-deriving their stack manually.
+    let zone_plan = match &spec.body {
+        Body::Zones(zones) => Some(plan_zones(zones, panel_w, scale_factor, measure)),
+        Body::List { .. } | Body::Fields { .. } => None,
+    };
 
-            let panel_h = pad_y * 2
-                + fields.len() * field_h
-                + fields.len().saturating_sub(1) * spacing
-                + footer_h.unwrap_or(0);
-            let (panel_x, panel_y) = position_panel(
-                &spec.anchor,
-                window_width,
-                window_height,
-                panel_w,
-                panel_h,
-                scale_factor,
-            );
-            let panel = WidgetRect {
-                x: panel_x,
-                y: panel_y,
-                w: panel_w,
-                h: panel_h,
-            };
-            let field_x = panel.x + pad_x;
-            let field_w = panel.w.saturating_sub(2 * pad_x);
+    let mut tree = UiTree::new();
+    tree.node(ElementDecl::default(), |t| {
+        t.node(
+            ElementDecl {
+                key: Some(UiKey::OverlayPanel),
+                dir: Dir::Column,
+                sizing: SizingAxes::new(Sizing::FIT, Sizing::FIT),
+                clip: true,
+                float: Some(float_decl(&spec.anchor)),
+                ..Default::default()
+            },
+            |t| match &spec.body {
+                Body::List { .. } => {
+                    if let (Some(tabs), Some(height)) = (&spec.tabs, tab_bar_h) {
+                        t.node(
+                            ElementDecl {
+                                key: Some(UiKey::OverlayTabBar),
+                                dir: Dir::Row,
+                                sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                                ..Default::default()
+                            },
+                            |t| {
+                                let tab_width = panel_w / tabs.tabs.len().max(1);
+                                for index in 0..tabs.tabs.len() {
+                                    t.leaf(ElementDecl {
+                                        key: Some(UiKey::OverlayTab(index)),
+                                        sizing: SizingAxes::new(
+                                            Sizing::Fixed(tab_width as f32),
+                                            Sizing::GROW,
+                                        ),
+                                        ..Default::default()
+                                    });
+                                }
+                            },
+                        );
+                    }
+                    if let Some(height) = header_h {
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayHeader),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                            ..Default::default()
+                        });
+                    }
+                    let visible = list_info.map(|(_, visible, _, _)| visible).unwrap_or(0);
+                    t.leaf(ElementDecl {
+                        key: Some(UiKey::OverlayRows),
+                        sizing: SizingAxes::new(
+                            Sizing::GROW,
+                            Sizing::Fixed((visible * row_h) as f32),
+                        ),
+                        content: Content::RowList(RowListDecl {
+                            row_height: row_h as f32,
+                            count: visible,
+                            scroll_offset: 0,
+                        }),
+                        ..Default::default()
+                    });
+                    if let Some(height) = footer_h {
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayFooter),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                            ..Default::default()
+                        });
+                    }
+                }
+                Body::Fields { fields, .. } => {
+                    let label_h = scaled(dims::FIELD_LABEL_H, scale_factor);
+                    let label_gap = scaled(dims::FIELD_LABEL_GAP, scale_factor);
+                    let input_h =
+                        scaled(SIZE_INPUT, scale_factor) + 2 * scaled(dims::PAD_Y, scale_factor);
+                    let field_spacing = scaled(dims::FIELD_SPACING, scale_factor);
+                    let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
+                    let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
 
-            let mut y = panel.y + pad_y;
-            let field_layouts: Vec<FieldLayout> = fields
-                .iter()
-                .map(|_| {
-                    let label = WidgetRect {
-                        x: field_x,
-                        y,
-                        w: field_w,
-                        h: label_h,
-                    };
-                    let input = WidgetRect {
-                        x: field_x,
-                        y: y + label_h + gap,
-                        w: field_w,
-                        h: input_h,
-                    };
-                    y += field_h + spacing;
-                    FieldLayout { label, input }
+                    spacer(t, pad_y);
+                    t.node(
+                        ElementDecl {
+                            dir: Dir::Column,
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::FIT),
+                            padding: Padding::xy(pad_x as f32, 0.0),
+                            gap: field_spacing as f32,
+                            ..Default::default()
+                        },
+                        |t| {
+                            for index in 0..fields.len() {
+                                t.node(
+                                    ElementDecl {
+                                        dir: Dir::Column,
+                                        sizing: SizingAxes::new(Sizing::GROW, Sizing::FIT),
+                                        gap: label_gap as f32,
+                                        ..Default::default()
+                                    },
+                                    |t| {
+                                        t.leaf(ElementDecl {
+                                            key: Some(UiKey::OverlayFieldLabel(index)),
+                                            sizing: SizingAxes::new(
+                                                Sizing::GROW,
+                                                Sizing::Fixed(label_h as f32),
+                                            ),
+                                            ..Default::default()
+                                        });
+                                        t.leaf(ElementDecl {
+                                            key: Some(UiKey::OverlayFieldInput(index)),
+                                            sizing: SizingAxes::new(
+                                                Sizing::GROW,
+                                                Sizing::Fixed(input_h as f32),
+                                            ),
+                                            ..Default::default()
+                                        });
+                                    },
+                                );
+                            }
+                        },
+                    );
+                    spacer(t, pad_y);
+                    if let Some(height) = footer_h {
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayFooter),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                            ..Default::default()
+                        });
+                    }
+                }
+                Body::Zones(zones) => {
+                    let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
+                    let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
+                    let gap = scaled(dims::ZONE_GAP, scale_factor);
+                    let plan = zone_plan
+                        .as_ref()
+                        .expect("zones always have a measured plan");
+                    let banner_h = plan.banner.as_ref().map(|banner| banner.h);
+                    let code_h = plan.code.as_ref().map(|(_, height)| *height);
+                    let text_h = plan.text.as_ref().map(|(_, _, height)| *height);
+
+                    if let Some(height) = banner_h {
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayZoneBanner),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                            ..Default::default()
+                        });
+                    } else {
+                        spacer(t, pad_y);
+                    }
+                    if let Some(height) = code_h {
+                        if banner_h.is_some() {
+                            spacer(t, gap);
+                        }
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayZoneCode),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                            padding: Padding::xy(pad_x as f32, 0.0),
+                            ..Default::default()
+                        });
+                    }
+                    if let Some(height) = text_h {
+                        if banner_h.is_some() || code_h.is_some() {
+                            spacer(t, gap);
+                        }
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayZoneText),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                            padding: Padding::xy(pad_x as f32, 0.0),
+                            ..Default::default()
+                        });
+                    }
+                    spacer(
+                        t,
+                        if zones.banner.is_some() {
+                            2 * pad_y
+                        } else {
+                            pad_y
+                        },
+                    );
+                }
+            },
+        );
+    });
+
+    let snapshot = tree.solve(
+        Rect::new(0.0, 0.0, window_width as f32, window_height as f32),
+        scale_factor,
+        measure,
+    );
+    let panel = solved_rect(&snapshot, UiKey::OverlayPanel)
+        .expect("overlay tree always declares its panel");
+    let tab_bar = solved_rect(&snapshot, UiKey::OverlayTabBar);
+    let tab_rects = spec
+        .tabs
+        .as_ref()
+        .map(|tabs| {
+            (0..tabs.tabs.len())
+                .map(|index| {
+                    solved_rect(&snapshot, UiKey::OverlayTab(index))
+                        .expect("overlay tree declares every requested tab")
                 })
-                .collect();
-
-            let footer = footer_h.map(|h| WidgetRect {
-                x: panel.x,
-                y: panel.y + panel_h - h,
-                w: panel.w,
-                h,
-            });
-
-            OverlayLayout {
-                panel,
-                tab_bar: None,
-                tab_rects: Vec::new(),
-                header: None,
-                row_height: row_h,
-                rows: Vec::new(),
-                fields: field_layouts,
-                zones_banner: None,
-                zones_code: None,
-                zones_text: None,
-                footer,
-                scrollbar: None,
-            }
+                .collect()
+        })
+        .unwrap_or_default();
+    let header = solved_rect(&snapshot, UiKey::OverlayHeader);
+    let rows = snapshot
+        .row_list(UiKey::OverlayRows)
+        .map(|rows| {
+            rows.drawn_range()
+                .map(|index| {
+                    widget_rect(
+                        rows.row_rect(index)
+                            .expect("drawn overlay row always has a solved rectangle"),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let fields = match &spec.body {
+        Body::Fields { fields, .. } => (0..fields.len())
+            .map(|index| FieldLayout {
+                label: solved_rect(&snapshot, UiKey::OverlayFieldLabel(index))
+                    .expect("overlay tree declares every field label"),
+                input: solved_rect(&snapshot, UiKey::OverlayFieldInput(index))
+                    .expect("overlay tree declares every field input"),
+            })
+            .collect(),
+        Body::List { .. } | Body::Zones(_) => Vec::new(),
+    };
+    let zones_banner = solved_rect(&snapshot, UiKey::OverlayZoneBanner);
+    let zones_code = solved_content_rect(&snapshot, UiKey::OverlayZoneCode);
+    let zones_text = solved_content_rect(&snapshot, UiKey::OverlayZoneText);
+    let footer = solved_rect(&snapshot, UiKey::OverlayFooter);
+    let scrollbar = list_info.and_then(|(start, visible, total, max_visible)| {
+        if total <= max_visible {
+            return None;
         }
-        Body::Zones(zones) => {
-            let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
-            let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
-            let gap = scaled(dims::ZONE_GAP, scale_factor);
-            // One measured plan drives every height; render re-derives the
-            // identical plan from the same inputs (see `ZonePlan`).
-            let plan = plan_zones(zones, panel_w, scale_factor);
-            let banner_h = plan.banner.as_ref().map(|b| b.h).unwrap_or(0);
-            let code_h = plan.code.as_ref().map(|(_, h)| *h);
-            let text_h = plan.text.as_ref().map(|(_, _, h)| *h);
+        let track = solved_rect(&snapshot, UiKey::OverlayRows)?;
+        let inset = scaled(dims::SCROLLBAR_INSET, scale_factor);
+        let width = scaled(dims::SCROLLBAR_WIDTH, scale_factor);
+        let min_len = scaled(dims::SCROLLBAR_MIN_LEN, scale_factor);
+        let thumb_h = ((visible as f32 / total as f32) * track.h as f32).round() as usize;
+        let thumb_h = thumb_h.max(min_len).min(track.h);
+        let max_thumb_y = track.h.saturating_sub(thumb_h);
+        let scroll_range = total.saturating_sub(visible).max(1);
+        let thumb_y = (start * max_thumb_y) / scroll_range;
+        Some(WidgetRect {
+            x: track.x + track.w.saturating_sub(width + inset),
+            y: track.y + thumb_y,
+            w: width,
+            h: thumb_h,
+        })
+    });
 
-            let mut panel_h = pad_y * 2;
-            let mut y_off = 0;
-            if zones.banner.is_some() {
-                panel_h += banner_h;
-                y_off += banner_h;
-            }
-            if let Some(h) = code_h {
-                if y_off > 0 {
-                    panel_h += gap;
-                }
-                panel_h += h;
-            }
-            if let Some(h) = text_h {
-                if y_off > 0 || code_h.is_some() {
-                    panel_h += gap;
-                }
-                panel_h += h;
-            }
-
-            let (panel_x, panel_y) = position_panel(
-                &spec.anchor,
-                window_width,
-                window_height,
-                panel_w,
-                panel_h,
-                scale_factor,
-            );
-            let panel = WidgetRect {
-                x: panel_x,
-                y: panel_y,
-                w: panel_w,
-                h: panel_h,
-            };
-
-            let mut cursor_y = panel.y;
-            let zones_banner = zones.banner.map(|_| {
-                let r = WidgetRect {
-                    x: panel.x,
-                    y: cursor_y,
-                    w: panel.w,
-                    h: banner_h,
-                };
-                cursor_y += banner_h;
-                r
-            });
-            if zones_banner.is_none() {
-                cursor_y += pad_y;
-            }
-            let zones_code = zones.code.zip(code_h).map(|(_, h)| {
-                if zones_banner.is_some() {
-                    cursor_y += gap;
-                }
-                let r = WidgetRect {
-                    x: panel.x + pad_x,
-                    y: cursor_y,
-                    w: panel.w.saturating_sub(2 * pad_x),
-                    h,
-                };
-                cursor_y += h;
-                r
-            });
-            let zones_text = zones.text.zip(text_h).map(|(_, h)| {
-                if zones_banner.is_some() || zones_code.is_some() {
-                    cursor_y += gap;
-                }
-                WidgetRect {
-                    x: panel.x + pad_x,
-                    y: cursor_y,
-                    w: panel.w.saturating_sub(2 * pad_x),
-                    h,
-                }
-            });
-
-            OverlayLayout {
-                panel,
-                tab_bar: None,
-                tab_rects: Vec::new(),
-                header: None,
-                row_height: row_h,
-                rows: Vec::new(),
-                fields: Vec::new(),
-                zones_banner,
-                zones_code,
-                zones_text,
-                footer: None,
-                scrollbar: None,
-            }
-        }
+    OverlayLayout {
+        snapshot,
+        panel,
+        tab_bar,
+        tab_rects,
+        header,
+        row_height: row_h,
+        rows,
+        fields,
+        zones_banner,
+        zones_code,
+        zones_text,
+        footer,
+        scrollbar,
+        zone_plan,
     }
 }
 
@@ -1152,55 +1157,74 @@ pub enum OverlayHit {
 
 /// Hit-test a point (physical px) against a laid-out `OverlaySpec`.
 pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) -> OverlayHit {
-    let inside_panel = x >= layout.panel.x
-        && x < layout.panel.x + layout.panel.w
-        && y >= layout.panel.y
-        && y < layout.panel.y + layout.panel.h;
-    if !inside_panel {
-        return OverlayHit::Outside;
-    }
-
-    if let Some(tab_bar) = &spec.tabs {
-        for (i, rect) in layout.tab_rects.iter().enumerate() {
-            let hit = x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
-            if !hit {
-                continue;
-            }
-            let available = tab_bar
+    match layout.snapshot.hit(x as f32, y as f32) {
+        Some(UiKey::OverlayTab(index)) => {
+            let available = spec
                 .tabs
-                .get(i)
-                .map(|(_, c)| c.is_available())
+                .as_ref()
+                .and_then(|tabs| tabs.tabs.get(index))
+                .map(|(_, count)| count.is_available())
                 .unwrap_or(false);
-            return if available {
-                OverlayHit::Tab(i)
+            if available {
+                OverlayHit::Tab(index)
             } else {
                 OverlayHit::Inside
-            };
-        }
-    }
-
-    if let Body::List {
-        sections,
-        scroll,
-        max_visible,
-        ..
-    } = &spec.body
-    {
-        let display_rows = flatten_rows(sections);
-        let (start, _) = resolve_visible_window(&display_rows, *scroll, *max_visible);
-        for (slot, rect) in layout.rows.iter().enumerate() {
-            let hit = x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
-            if !hit {
-                continue;
             }
-            return match display_rows.get(start + slot) {
-                Some(DisplayRow::Row(_, flat_index)) => OverlayHit::Row(*flat_index),
-                _ => OverlayHit::Inside,
-            };
         }
+        Some(UiKey::OverlayRows) => {
+            let Body::List {
+                sections,
+                scroll,
+                max_visible,
+                ..
+            } = &spec.body
+            else {
+                return OverlayHit::Inside;
+            };
+            let display_rows = flatten_rows(sections);
+            let (start, _) = resolve_visible_window(&display_rows, *scroll, *max_visible);
+            let Some(slot) = layout
+                .snapshot
+                .row_list(UiKey::OverlayRows)
+                .and_then(|rows| rows.row_at_y(y as f32))
+            else {
+                return OverlayHit::Inside;
+            };
+            match display_rows.get(start + slot) {
+                Some(DisplayRow::Row(_, flat_index)) => OverlayHit::Row(*flat_index),
+                Some(DisplayRow::SectionHeader(_) | DisplayRow::Separator) | None => {
+                    OverlayHit::Inside
+                }
+            }
+        }
+        Some(
+            UiKey::OverlayPanel
+            | UiKey::OverlayTabBar
+            | UiKey::OverlayHeader
+            | UiKey::OverlayFieldLabel(_)
+            | UiKey::OverlayFieldInput(_)
+            | UiKey::OverlayZoneBanner
+            | UiKey::OverlayZoneCode
+            | UiKey::OverlayZoneText
+            | UiKey::OverlayFooter,
+        ) => OverlayHit::Inside,
+        Some(
+            UiKey::EditorTabBar(_)
+            | UiKey::EditorTab(_, _)
+            | UiKey::PreviewPane(_)
+            | UiKey::PreviewHeader(_)
+            | UiKey::PreviewContent(_)
+            | UiKey::Dock(_)
+            | UiKey::DockHeader(_)
+            | UiKey::DockTab(_, _)
+            | UiKey::PanelContent(_)
+            | UiKey::PanelRows(_)
+            | UiKey::Sidebar
+            | UiKey::EditorArea
+            | UiKey::StatusBar,
+        )
+        | None => OverlayHit::Outside,
     }
-
-    OverlayHit::Inside
 }
 
 /// Resolved colors pulled once from `OverlayTheme` per render call.
@@ -1329,7 +1353,18 @@ pub fn render(
     scale_factor: f64,
     cursor_visible: bool,
 ) {
-    let layout = layout(spec, window_width, window_height, scale_factor);
+    // Measure through the glyph cache so zone wrapping uses real advances;
+    // the borrow ends before painting begins.
+    let layout = {
+        let mut measure = crate::layout::PainterMeasure::new(painter);
+        layout_measured(
+            spec,
+            window_width,
+            window_height,
+            scale_factor,
+            &mut measure,
+        )
+    };
     let colors = Palette::from_theme(theme);
     let radius = match &spec.anchor {
         Anchor::Centered { .. } => scaled(dims::RADIUS, scale_factor),
@@ -2174,8 +2209,11 @@ fn render_zones(
     let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
     let gap = scaled(dims::ZONE_GAP, scale_factor);
     let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
-    // Identical inputs to the layout pass -> identical plan (see ZonePlan).
-    let plan = plan_zones(zones, layout.panel.w, scale_factor);
+    // The one measured plan, computed in `layout_measured` and carried on
+    // the layout — never re-derived here.
+    let Some(plan) = layout.zone_plan.as_ref() else {
+        return;
+    };
 
     // Hard backstop: nothing in any zone may paint outside the panel.
     frame.set_clip(crate::model::editor_area::Rect {
@@ -2262,13 +2300,14 @@ fn render_zones(
         );
     }
 
-    if let (Some(text), Some((lines, truncated, _)), Some(r)) =
+    if let (Some(_), Some((lines, truncated, _)), Some(r)) =
         (zones.text, plan.text.as_ref(), layout.zones_text)
     {
-        if zones.banner.is_none() && zones.code.is_none() && text.lines().count() <= 1 {
-            // Single-line, zone-only body (drop overlay): centered, matching
-            // the pre-migration look.
+        let standalone = zones.banner.is_none() && zones.code.is_none();
+        if should_center_zone_text(zones, lines, *truncated) {
+            // Single-line, zone-only body (drop overlay): centered.
             let size = size_px(SIZE_INPUT, scale_factor);
+            let text = &lines[0];
             let text_w = painter.measure_sized(text, size, 0.0).ceil() as usize;
             let text_x = r.x + (r.w.saturating_sub(text_w)) / 2;
             let text_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(size))) / 2;
@@ -2280,7 +2319,7 @@ fn render_zones(
                 r,
                 lines,
                 *truncated,
-                SIZE_ROW,
+                if standalone { SIZE_INPUT } else { SIZE_ROW },
                 colors.text_primary,
                 scale_factor,
             );
@@ -2288,6 +2327,10 @@ fn render_zones(
     }
 
     frame.clear_clip();
+}
+
+fn should_center_zone_text(zones: &Zones<'_>, lines: &[String], truncated: bool) -> bool {
+    zones.banner.is_none() && zones.code.is_none() && lines.len() == 1 && !truncated
 }
 
 /// Cap on wrapped text-zone lines (hover docs can be pages long); a
@@ -2315,30 +2358,74 @@ pub(crate) struct BannerPlan {
     pub h: usize,
 }
 
-pub(crate) fn plan_zones(zones: &Zones, panel_w: usize, scale_factor: f64) -> ZonePlan {
+pub(crate) fn plan_zones(
+    zones: &Zones,
+    panel_w: usize,
+    scale_factor: f64,
+    measure: &mut dyn crate::layout::TextMeasure,
+) -> ZonePlan {
     let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
     let gap = scaled(dims::ZONE_GAP, scale_factor);
     let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
-    let content_w = panel_w.saturating_sub(2 * pad_x);
-    let cols = zone_wrap_cols(content_w, scale_factor);
+    let content_w = panel_w.saturating_sub(2 * pad_x) as f32;
+    let row_style = crate::layout::TextStyle::sized(size_px(SIZE_ROW, scale_factor));
+    let text_style = if zones.banner.is_none() && zones.code.is_none() {
+        crate::layout::TextStyle::sized(size_px(SIZE_INPUT, scale_factor))
+    } else {
+        row_style
+    };
+    // Minimum useful wrap width — the historical 8-cell floor.
+    let min_wrap_w = size_px(8.0 * dims::ZONE_CELL_W, scale_factor);
 
-    let banner = zones.banner.map(|(_, message, source)| {
-        // Budget: glyph column (2 cells) always; the right-aligned source
-        // tag is only ever drawn beside line 0 (`render_zones` paints it
-        // once at `top`), so its columns are reserved for that line alone
-        // (measured with the row cell — an overestimate for the smaller
-        // meta size, which errs toward earlier wrapping, never collision)
-        // — reserving it on every wrapped line wastes columns on lines
-        // 2+, which have nothing next to them.
-        let glyph_cols = 2;
-        let source_cols = if source.is_empty() {
-            0
-        } else {
-            source.chars().count() + 2
+    fn wrap_lines(
+        text: &str,
+        style: crate::layout::TextStyle,
+        max_w: f32,
+        min_w: f32,
+        measure: &mut dyn crate::layout::TextMeasure,
+    ) -> Vec<String> {
+        crate::layout::text::wrap_to_width(text, style, max_w.max(min_w), measure)
+            .into_iter()
+            .map(|line| text[line.range].to_string())
+            .collect()
+    }
+
+    fn wrap_lines_with_first_width(
+        text: &str,
+        style: crate::layout::TextStyle,
+        first_w: f32,
+        later_w: f32,
+        min_w: f32,
+        measure: &mut dyn crate::layout::TextMeasure,
+    ) -> Vec<String> {
+        let first = crate::layout::text::wrap_to_width(text, style, first_w.max(min_w), measure);
+        let Some(first_line) = first.first() else {
+            return Vec::new();
         };
-        let msg_cols = cols.saturating_sub(glyph_cols).max(8);
-        let first_line_cols = msg_cols.saturating_sub(source_cols).max(8);
-        let mut lines = wrap_zone_text_budgeted(message, msg_cols, first_line_cols);
+        let mut lines = vec![text[first_line.range.clone()].to_string()];
+        let remainder = text[first_line.range.end..].trim_start_matches(char::is_whitespace);
+        if !remainder.is_empty() {
+            lines.extend(wrap_lines(remainder, style, later_w, min_w, measure));
+        }
+        lines
+    }
+
+    let banner = zones.banner.map(|(severity, message, source)| {
+        // Budget: the severity glyph plus its half-pad gap always; the
+        // right-aligned source tag shares only the first line, so reserve its
+        // width there without needlessly narrowing later lines.
+        let mut buf = [0u8; 4];
+        let glyph_w =
+            measure.width(severity.glyph().encode_utf8(&mut buf), row_style) + (pad_x / 2) as f32;
+        let source_w = if source.is_empty() {
+            0.0
+        } else {
+            measure.width(source, row_style) + 2.0 * measure.width(" ", row_style)
+        };
+        let later_w = content_w - glyph_w;
+        let first_w = later_w - source_w;
+        let mut lines =
+            wrap_lines_with_first_width(message, row_style, first_w, later_w, min_wrap_w, measure);
         let truncated = lines.len() > MAX_ZONE_BANNER_LINES;
         lines.truncate(MAX_ZONE_BANNER_LINES);
         let text_rows = lines.len() + usize::from(truncated);
@@ -2352,13 +2439,13 @@ pub(crate) fn plan_zones(zones: &Zones, panel_w: usize, scale_factor: f64) -> Zo
     });
 
     let code = zones.code.map(|s| {
-        let lines = wrap_zone_text(s, cols);
+        let lines = wrap_lines(s, row_style, content_w, min_wrap_w, measure);
         let h = lines.len().max(1) * line_h + 2 * (gap / 2);
         (lines, h)
     });
 
     let text = zones.text.map(|s| {
-        let mut lines = wrap_zone_text(s, cols);
+        let mut lines = wrap_lines(s, text_style, content_w, min_wrap_w, measure);
         let truncated = lines.len() > MAX_ZONE_TEXT_LINES;
         lines.truncate(MAX_ZONE_TEXT_LINES);
         let h = (lines.len() + usize::from(truncated)).max(1) * line_h;
@@ -2366,65 +2453,6 @@ pub(crate) fn plan_zones(zones: &Zones, panel_w: usize, scale_factor: f64) -> Zo
     });
 
     ZonePlan { banner, code, text }
-}
-
-/// Columns available for zone text in `max_w` pixels (const cell width —
-/// see `dims::ZONE_CELL_W`).
-fn zone_wrap_cols(max_w: usize, scale_factor: f64) -> usize {
-    (max_w / scaled(dims::ZONE_CELL_W, scale_factor).max(1)).max(8)
-}
-
-/// Word-wrap `text` to `cols` monospace columns, hard-breaking tokens
-/// longer than a line.
-fn wrap_zone_text(text: &str, cols: usize) -> Vec<String> {
-    wrap_zone_text_budgeted(text, cols, cols)
-}
-
-/// Same greedy word-wrap as `wrap_zone_text`, but the very first output
-/// line is capped at `first_line_cols` instead of `cols` — the banner's
-/// only consumer: its line 0 shares its row with the right-aligned source
-/// tag, but nothing else does (`plan_zones`).
-fn wrap_zone_text_budgeted(text: &str, cols: usize, first_line_cols: usize) -> Vec<String> {
-    let mut out = Vec::new();
-    for line in text.lines() {
-        let chars: Vec<char> = line.chars().collect();
-        let budget = if out.is_empty() {
-            first_line_cols
-        } else {
-            cols
-        };
-        if chars.len() <= budget {
-            out.push(line.to_string());
-            continue;
-        }
-        let mut start = 0;
-        while start < chars.len() {
-            let budget = if out.is_empty() {
-                first_line_cols
-            } else {
-                cols
-            };
-            let hard_end = (start + budget).min(chars.len());
-            let end = if hard_end < chars.len() {
-                // Prefer the last space inside the window; hard-break when
-                // a single token exceeds the line.
-                chars[start..hard_end]
-                    .iter()
-                    .rposition(|c| c.is_whitespace())
-                    .map(|p| start + p)
-                    .filter(|&p| p > start)
-                    .unwrap_or(hard_end)
-            } else {
-                hard_end
-            };
-            out.push(chars[start..end].iter().collect::<String>());
-            start = end;
-            while start < chars.len() && chars[start].is_whitespace() {
-                start += 1;
-            }
-        }
-    }
-    out
 }
 
 /// Draw pre-wrapped `lines` stacked in `rect`, clipped to it; a zone
@@ -2889,25 +2917,25 @@ mod tests {
             code: None,
             text: None,
         };
-        let plan = plan_zones(&zones, 320, 1.0);
+        let mut measure = cell_measure(1.0);
+        let plan = plan_zones(&zones, 320, 1.0, &mut measure);
         let banner = plan.banner.expect("banner plan");
         assert!(banner.lines.len() > 1, "long message must wrap");
-        let cols = zone_wrap_cols(320 - 2 * scaled(dims::HEADER_PAD_X, 1.0), 1.0);
-        let wide_budget = cols - 2;
-        let first_line_budget = wide_budget - ("phpantom".len() + 2);
+        let content_w = (320 - 2 * scaled(dims::HEADER_PAD_X, 1.0)) as f32;
+        let later_budget = content_w - 16.0;
+        let first_budget = later_budget - ("phpantom".len() + 2) as f32 * 8.0;
         // Only line 0 shares its row with the source tag (`render_zones`
         // paints it once at `top`) — it alone must respect the narrower
-        // budget; lines 1+ get the full glyph-only budget instead of
-        // wasting columns reserving space nothing sits next to.
+        // pixel budget; lines 1+ get the full glyph-only budget.
         assert!(
-            banner.lines[0].chars().count() <= first_line_budget,
+            banner.lines[0].chars().count() as f32 * 8.0 <= first_budget,
             "line 0 must respect the glyph+source budget: {:?}",
             banner.lines
         );
         assert!(
             banner.lines[1..]
                 .iter()
-                .all(|l| l.chars().count() <= wide_budget),
+                .all(|l| l.chars().count() as f32 * 8.0 <= later_budget),
             "lines after the first need only the glyph budget: {:?}",
             banner.lines
         );
@@ -2925,7 +2953,8 @@ mod tests {
             code: None,
             text: None,
         };
-        let plan = plan_zones(&zones, 480, 1.0);
+        let mut measure = cell_measure(1.0);
+        let plan = plan_zones(&zones, 480, 1.0, &mut measure);
         let banner = plan.banner.unwrap();
         assert_eq!(banner.lines.len(), MAX_ZONE_BANNER_LINES);
         assert!(banner.truncated);
@@ -2946,25 +2975,83 @@ mod tests {
             code: None,
             text: None,
         };
-        let plan = plan_zones(&zones, 280, 1.0);
+        let mut measure = cell_measure(1.0);
+        let plan = plan_zones(&zones, 280, 1.0, &mut measure);
         let banner = plan.banner.expect("banner plan");
         assert!(banner.lines.len() > 1, "message must wrap");
 
-        let cols = zone_wrap_cols(280 - 2 * scaled(dims::HEADER_PAD_X, 1.0), 1.0);
-        let wide_budget = cols - 2;
-        let first_line_budget = wide_budget - ("typescript-eslint".len() + 2);
+        let content_w = (280 - 2 * scaled(dims::HEADER_PAD_X, 1.0)) as f32;
+        let later_budget = content_w - 16.0;
+        let first_budget = later_budget - ("typescript-eslint".len() + 2) as f32 * 8.0;
 
-        assert!(banner.lines[0].chars().count() <= first_line_budget);
+        assert!(banner.lines[0].chars().count() as f32 * 8.0 <= first_budget.max(64.0));
         // At least one later line must use more columns than the narrow
         // first-line budget allowed — otherwise the reservation is still
         // silently applied to every line.
         assert!(
             banner.lines[1..]
                 .iter()
-                .any(|l| l.chars().count() > first_line_budget),
+                .any(|l| l.chars().count() as f32 * 8.0 > first_budget.max(64.0)),
             "lines after the first must be free to use the wider, glyph-only budget: {:?}",
             banner.lines
         );
+    }
+
+    #[test]
+    fn zone_wrapping_follows_the_measure_not_a_fixed_cell() {
+        // The point of the measured plan: a proportional measure (narrow
+        // 'i's) fits more text per line than the 8px-cell fallback did.
+        struct NarrowI;
+        impl crate::layout::TextMeasure for NarrowI {
+            fn width(&mut self, text: &str, _style: crate::layout::TextStyle) -> f32 {
+                text.chars().map(|c| if c == 'i' { 3.0 } else { 8.0 }).sum()
+            }
+            fn line_height(&mut self, _style: crate::layout::TextStyle) -> f32 {
+                17.0
+            }
+        }
+
+        let text = "iiiiiiii iiiiiiii iiiiiiii iiiiiiii";
+        let zones = Zones {
+            banner: None,
+            code: None,
+            text: Some(text),
+        };
+        let mut cells = cell_measure(1.0);
+        let cell_lines = plan_zones(&zones, 200, 1.0, &mut cells).text.unwrap().0;
+        let mut narrow = NarrowI;
+        let narrow_lines = plan_zones(&zones, 200, 1.0, &mut narrow).text.unwrap().0;
+        assert!(
+            narrow_lines.len() < cell_lines.len(),
+            "narrow glyphs must pack more per line: {narrow_lines:?} vs {cell_lines:?}"
+        );
+    }
+
+    #[test]
+    fn drop_overlay_centers_only_a_single_measured_line() {
+        let long = "Drop these files into a narrow target that requires wrapping";
+        let zones = Zones {
+            banner: None,
+            code: None,
+            text: Some(long),
+        };
+        let mut measure = cell_measure(1.0);
+        let (lines, truncated, _) = plan_zones(&zones, 160, 1.0, &mut measure)
+            .text
+            .expect("drop text should have a plan");
+
+        assert!(lines.len() > 1, "test message must wrap");
+        assert!(!should_center_zone_text(&zones, &lines, truncated));
+
+        let short = Zones {
+            text: Some("Drop files here"),
+            ..Zones::default()
+        };
+        let mut measure = cell_measure(1.0);
+        let (lines, truncated, _) = plan_zones(&short, 320, 1.0, &mut measure)
+            .text
+            .expect("drop text should have a plan");
+        assert!(should_center_zone_text(&short, &lines, truncated));
     }
 
     #[test]
@@ -3001,7 +3088,8 @@ mod tests {
             Body::Zones(z) => z,
             _ => unreachable!(),
         };
-        let plan = plan_zones(zones2, layout.panel.w, 1.0);
+        let mut measure = cell_measure(1.0);
+        let plan = plan_zones(zones2, layout.panel.w, 1.0, &mut measure);
         let line_h = scaled(dims::ZONE_LINE_H, 1.0);
 
         let br = layout.zones_banner.unwrap();
@@ -3016,28 +3104,6 @@ mod tests {
         for r in [br, cr, tr] {
             assert!(r.y >= layout.panel.y && r.y + r.h <= layout.panel.y + layout.panel.h);
         }
-    }
-
-    #[test]
-    fn zone_wrap_breaks_long_lines_at_word_boundaries() {
-        let lines = wrap_zone_text("implements notable traits for the blackbox function", 20);
-        assert!(lines.iter().all(|l| l.chars().count() <= 20), "{lines:?}");
-        assert_eq!(lines[0], "implements notable");
-        // No content lost.
-        let rejoined = lines.join(" ");
-        assert_eq!(
-            rejoined,
-            "implements notable traits for the blackbox function"
-        );
-    }
-
-    #[test]
-    fn zone_wrap_hard_breaks_oversized_tokens() {
-        let token = "a".repeat(50);
-        let lines = wrap_zone_text(&token, 20);
-        assert!(lines.len() >= 3);
-        assert!(lines.iter().all(|l| l.chars().count() <= 20));
-        assert_eq!(lines.concat(), token);
     }
 
     #[test]
@@ -3071,8 +3137,12 @@ mod tests {
         };
         let layout = layout(&spec, 800, 600, 1.0);
         let r = layout.zones_text.expect("text zone rect");
-        let cols = zone_wrap_cols(r.w, 1.0);
-        let wrapped = wrap_zone_text(&long, cols).len().min(MAX_ZONE_TEXT_LINES) + 1; // +ellipsis
+        let style = crate::layout::TextStyle::sized(size_px(SIZE_ROW, 1.0));
+        let mut measure = cell_measure(1.0);
+        let wrapped = crate::layout::text::wrap_to_width(&long, style, r.w as f32, &mut measure)
+            .len()
+            .min(MAX_ZONE_TEXT_LINES)
+            + 1; // +ellipsis
         let line_h = scaled(dims::ZONE_LINE_H, 1.0);
         assert!(
             r.h >= wrapped * line_h,
@@ -3634,6 +3704,32 @@ mod tests {
         let x = header_row.x + 1;
         let y = header_row.y + 1;
         assert_eq!(hit_test(&spec, &l, x, y), OverlayHit::Inside);
+    }
+
+    #[test]
+    fn hit_test_tabs_uses_solved_keys_and_respects_availability() {
+        let sections: [Section; 0] = [];
+        let tabs = [
+            ("All", TabCount::Hidden),
+            ("Symbols", TabCount::Unavailable),
+        ];
+        let mut spec = list_spec(&sections);
+        spec.tabs = Some(TabBar {
+            tabs: &tabs,
+            active: 0,
+        });
+        let layout = layout(&spec, 1000, 800, 1.0);
+
+        let available = layout.tab_rects[0];
+        assert_eq!(
+            hit_test(&spec, &layout, available.x + 1, available.y + 1),
+            OverlayHit::Tab(0)
+        );
+        let unavailable = layout.tab_rects[1];
+        assert_eq!(
+            hit_test(&spec, &layout, unavailable.x + 1, unavailable.y + 1),
+            OverlayHit::Inside
+        );
     }
 
     #[test]

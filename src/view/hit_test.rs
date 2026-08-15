@@ -16,13 +16,12 @@ use std::path::PathBuf;
 use winit::event::MouseButton;
 use winit::keyboard::ModifiersState;
 
-use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, Rect, TabId};
+use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, TabId};
 use crate::model::{AppModel, FocusTarget, TextViewportMap};
 
-use super::geometry::{
-    is_in_status_bar, DockHeaderLayout, PreviewPaneLayout, TabBarLayout, TreeListLayout,
-    WindowLayout,
-};
+use crate::layout::editor::{EditorTabBarLayout, PreviewPaneLayout};
+
+use super::geometry::TreeRowLayout;
 
 // ============================================================================
 // Core Types
@@ -417,7 +416,11 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
 /// isn't claimed here (overlay-surface.md Phase 5: popups are non-blocking,
 /// so an outside click still falls through to whatever's under it; the
 /// caller is responsible for dismissing the popup separately).
-pub fn hit_test_cursor_overlay(model: &AppModel, pt: Point) -> Option<HitTarget> {
+pub fn hit_test_cursor_overlay(
+    model: &AppModel,
+    pt: Point,
+    measure: &mut dyn crate::layout::TextMeasure,
+) -> Option<HitTarget> {
     model.ui.cursor_overlay?;
 
     let ww = model.window_size.0 as usize;
@@ -425,8 +428,12 @@ pub fn hit_test_cursor_overlay(model: &AppModel, pt: Point) -> Option<HitTarget>
     let sf = model.metrics.scale_factor;
     let (x, y) = (pt.x as usize, pt.y as usize);
 
-    super::modal::with_cursor_overlay_layout(model, ww, wh, sf, |spec, layout| {
-        match super::overlay_surface::hit_test(spec, layout, x, y) {
+    super::modal::with_cursor_overlay_spec(model, |spec| {
+        // Measured with the caller's measure — the render path lays the
+        // same spec out through the glyph cache, so the rects tested here
+        // are the rects that were painted.
+        let layout = super::overlay_surface::layout_measured(spec, ww, wh, sf, measure);
+        match super::overlay_surface::hit_test(spec, &layout, x, y) {
             super::overlay_surface::OverlayHit::Outside => None,
             super::overlay_surface::OverlayHit::Row(flat_index) => Some(HitTarget::CursorOverlay {
                 flat_index: Some(flat_index.0),
@@ -442,11 +449,15 @@ pub fn hit_test_cursor_overlay(model: &AppModel, pt: Point) -> Option<HitTarget>
 
 /// Hit-test the status bar at the bottom of the window.
 pub fn hit_test_status_bar(model: &AppModel, pt: Point) -> Option<HitTarget> {
-    if is_in_status_bar(pt.y, model.window_size.1, model.status_bar_height) {
-        Some(HitTarget::StatusBar)
-    } else {
-        None
-    }
+    let shell = crate::layout::chrome::shell(model);
+    hit_test_status_bar_in(&shell, pt)
+}
+
+fn hit_test_status_bar_in(chrome: &crate::layout::LayoutSnapshot, pt: Point) -> Option<HitTarget> {
+    chrome
+        .rect(crate::layout::UiKey::StatusBar)
+        .filter(|rect| rect.contains(pt.x as f32, pt.y as f32))
+        .map(|_| HitTarget::StatusBar)
 }
 
 /// Hit-test the sidebar resize handle.
@@ -454,18 +465,28 @@ pub fn hit_test_status_bar(model: &AppModel, pt: Point) -> Option<HitTarget> {
 /// Returns `SidebarResize` if the point is within the resize hit zone
 /// (a few pixels on either side of the sidebar border).
 pub fn hit_test_sidebar_resize(model: &AppModel, pt: Point) -> Option<HitTarget> {
+    let shell = crate::layout::chrome::shell(model);
+    hit_test_sidebar_resize_in(model, &shell, pt)
+}
+
+fn hit_test_sidebar_resize_in(
+    model: &AppModel,
+    chrome: &crate::layout::LayoutSnapshot,
+    pt: Point,
+) -> Option<HitTarget> {
     const SIDEBAR_RESIZE_HIT_ZONE: f64 = 4.0;
 
-    let workspace = model.workspace.as_ref()?;
-    if !workspace.sidebar_visible {
-        return None;
-    }
+    model.workspace.as_ref()?;
+    let sidebar = chrome.rect(crate::layout::UiKey::Sidebar)?;
+    let sidebar_right = (sidebar.x + sidebar.width) as f64;
+    let resize_zone_start = sidebar_right - SIDEBAR_RESIZE_HIT_ZONE;
+    let resize_zone_end = sidebar_right + SIDEBAR_RESIZE_HIT_ZONE;
 
-    let sidebar_width = workspace.sidebar_width(model.metrics.scale_factor) as f64;
-    let resize_zone_start = sidebar_width - SIDEBAR_RESIZE_HIT_ZONE;
-    let resize_zone_end = sidebar_width + SIDEBAR_RESIZE_HIT_ZONE;
-
-    if pt.x >= resize_zone_start && pt.x <= resize_zone_end {
+    if pt.x >= resize_zone_start
+        && pt.x <= resize_zone_end
+        && pt.y >= sidebar.y as f64
+        && pt.y < (sidebar.y + sidebar.height) as f64
+    {
         Some(HitTarget::SidebarResize)
     } else {
         None
@@ -477,27 +498,31 @@ pub fn hit_test_sidebar_resize(model: &AppModel, pt: Point) -> Option<HitTarget>
 /// Returns `SidebarItem` if clicking on a file/folder, or `SidebarEmpty`
 /// if clicking in the sidebar area but not on an item.
 pub fn hit_test_sidebar(model: &AppModel, pt: Point) -> Option<HitTarget> {
+    let sidebar = crate::layout::chrome::sidebar_rows(model);
+    hit_test_sidebar_in(model, &sidebar, pt)
+}
+
+fn hit_test_sidebar_in(
+    model: &AppModel,
+    chrome: &crate::layout::LayoutSnapshot,
+    pt: Point,
+) -> Option<HitTarget> {
     let workspace = model.workspace.as_ref()?;
-    if !workspace.sidebar_visible {
+    let rows = chrome.row_list(crate::layout::UiKey::Sidebar)?;
+    if !rows.rect().contains(pt.x as f32, pt.y as f32) {
         return None;
     }
-
-    let sidebar_width = workspace.sidebar_width(model.metrics.scale_factor) as f64;
-    if pt.x >= sidebar_width {
-        return None;
-    }
-
-    let row_height = model.metrics.file_tree_row_height as f64;
-    let clicked_visual_row = (pt.y / row_height) as usize;
-    let clicked_row = workspace.scroll_offset.saturating_add(clicked_visual_row);
+    let Some(clicked_row) = rows.row_at_y(pt.y as f32) else {
+        return Some(HitTarget::SidebarEmpty);
+    };
 
     if let Some((node, depth)) = workspace
         .file_tree
         .get_visible_item_with_depth(clicked_row, &workspace.expanded_folders)
     {
-        // Share chevron geometry with the renderer (TreeListLayout in render_sidebar)
-        let tree = TreeListLayout::from_metrics(&model.metrics);
-        let chevron_start = tree.x_offset(depth) as f64;
+        // Share intra-row chevron geometry with the renderer.
+        let tree = TreeRowLayout::from_metrics(&model.metrics);
+        let chevron_start = rows.rect().x as f64 + tree.x_offset(depth) as f64;
         let chevron_end = chevron_start + tree.indicator_width as f64;
         let clicked_on_chevron = node.is_dir && pt.x >= chevron_start && pt.x < chevron_end;
 
@@ -538,7 +563,7 @@ pub fn hit_test_splitters(
 pub fn hit_test_previews(model: &AppModel, pt: Point) -> Option<HitTarget> {
     for (&preview_id, preview) in &model.editor_area.previews {
         if preview.rect.contains(pt.x as f32, pt.y as f32) {
-            let layout = PreviewPaneLayout::new(preview.rect, &model.metrics);
+            let layout = PreviewPaneLayout::new(preview_id, preview.rect, &model.metrics);
             if layout.is_in_header(pt.x, pt.y) {
                 return Some(HitTarget::PreviewHeader { preview_id });
             } else if layout.is_in_content(pt.x, pt.y) {
@@ -558,7 +583,7 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     // First check which group contains the point
     let group_id = model.editor_area.group_at_point(pt.x as f32, pt.y as f32)?;
     let group = model.editor_area.groups.get(&group_id)?;
-    let tab_bar = TabBarLayout::new(group, model, char_width);
+    let tab_bar = EditorTabBarLayout::new(group, model, char_width);
     // Single source of truth for group geometry, shared by the scrollbar
     // branch and the gutter/content branch below (mirrors the render path's
     // use of GroupLayout in `EditorRenderContext`).
@@ -566,11 +591,12 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
 
     // Check if in tab bar
     if tab_bar.contains(pt.x, pt.y) {
-        if let Some(tab) = tab_bar.tab_at(pt.x, pt.y) {
+        if let Some(tab_id) = tab_bar.tab_at(pt.x, pt.y) {
+            let tab_index = group.tabs.iter().position(|tab| tab.id == tab_id)?;
             return Some(HitTarget::GroupTab {
                 group_id,
-                tab_index: tab.index,
-                tab_id: tab.tab_id,
+                tab_index,
+                tab_id,
             });
         }
 
@@ -592,14 +618,8 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     // For BinaryPlaceholder tabs, check button hit area
     if let crate::model::TabContent::BinaryPlaceholder(_) = &editor.tab_content {
         let line_height = model.line_height;
-        let content_rect = Rect::new(
-            group.rect.x,
-            group.rect.y + model.metrics.tab_bar_height as f32,
-            group.rect.width,
-            group.rect.height - model.metrics.tab_bar_height as f32,
-        );
         let bp_layout = super::geometry::binary_placeholder_layout(
-            content_rect,
+            layout.content_rect,
             line_height,
             char_width,
             model.metrics.padding_large,
@@ -744,98 +764,110 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
 /// `DockResize` if the point is over the resizable border between a dock and
 /// the editor area.
 pub fn hit_test_docks(model: &AppModel, pt: Point) -> Option<HitTarget> {
-    let window_layout = WindowLayout::compute(model);
+    let shell = crate::layout::chrome::shell(model);
+    if !point_may_hit_dock(model, &shell, pt) {
+        return None;
+    }
+    let chrome = crate::layout::chrome::chrome(model);
+    hit_test_docks_in(model, &chrome, pt)
+}
+
+/// Cheap outer-rect guard for the full dock solve. The full snapshot needs
+/// active panel contents and virtual row counts; most pointer events occur in
+/// the editor and need none of that work.
+fn point_may_hit_dock(model: &AppModel, shell: &crate::layout::LayoutSnapshot, pt: Point) -> bool {
+    use crate::layout::UiKey;
+    use crate::panel::DockPosition;
+
+    let hit_zone = model.metrics.resize_handle_zone as f64;
+    let over_right = shell
+        .rect(UiKey::Dock(DockPosition::Right))
+        .is_some_and(|rect| {
+            pt.x >= rect.x as f64 - hit_zone
+                && pt.x < (rect.x + rect.width) as f64
+                && pt.y >= rect.y as f64
+                && pt.y < (rect.y + rect.height) as f64
+        });
+    let over_bottom = shell
+        .rect(UiKey::Dock(DockPosition::Bottom))
+        .is_some_and(|rect| {
+            pt.x >= rect.x as f64
+                && pt.x < (rect.x + rect.width) as f64
+                && pt.y >= rect.y as f64 - hit_zone
+                && pt.y < (rect.y + rect.height) as f64
+        });
+    over_right || over_bottom
+}
+
+fn hit_test_docks_in(
+    model: &AppModel,
+    chrome: &crate::layout::LayoutSnapshot,
+    pt: Point,
+) -> Option<HitTarget> {
+    use crate::layout::UiKey;
+
     let hit_zone = model.metrics.resize_handle_zone as f64;
 
-    if let Some(right_rect) = window_layout.right_dock_rect {
-        if model.dock_layout.right.is_open {
-            let resize_zone_start = right_rect.x as f64 - hit_zone;
-            let resize_zone_end = right_rect.x as f64 + hit_zone;
-            if pt.x >= resize_zone_start
-                && pt.x <= resize_zone_end
-                && pt.y >= right_rect.y as f64
-                && pt.y < (right_rect.y + right_rect.height) as f64
-            {
-                return Some(HitTarget::DockResize {
-                    position: crate::panel::DockPosition::Right,
-                });
-            }
-
-            if right_rect.contains(pt.x as f32, pt.y as f32) {
-                let dock = &model.dock_layout.right;
-                let layout =
-                    DockHeaderLayout::new(dock, right_rect, &model.metrics, model.char_width);
-                if layout.is_in_header(pt.x, pt.y) {
-                    if let Some(tab) = layout.tab_at(pt.x, pt.y) {
-                        return Some(HitTarget::DockTab {
-                            position: crate::panel::DockPosition::Right,
-                            panel_id: tab.panel_id,
-                        });
-                    }
-                    return Some(HitTarget::DockTabBarEmpty {
-                        position: crate::panel::DockPosition::Right,
-                    });
-                }
-                if layout.is_in_content(pt.x, pt.y) {
-                    if let Some(panel_id) = dock.active_panel() {
-                        return Some(HitTarget::DockContent {
-                            position: crate::panel::DockPosition::Right,
-                            active_panel_id: panel_id,
-                        });
-                    }
-                    return Some(HitTarget::DockTabBarEmpty {
-                        position: crate::panel::DockPosition::Right,
-                    });
-                }
-            }
+    // Resize handles first: a hit-slop band around the dock's inner edge,
+    // procedural on top of the solved dock rects (the engine has no
+    // hit-slop concept).
+    if let Some(right_rect) = chrome.rect(UiKey::Dock(crate::panel::DockPosition::Right)) {
+        let resize_zone_start = right_rect.x as f64 - hit_zone;
+        let resize_zone_end = right_rect.x as f64 + hit_zone;
+        if pt.x >= resize_zone_start
+            && pt.x <= resize_zone_end
+            && pt.y >= right_rect.y as f64
+            && pt.y < (right_rect.y + right_rect.height) as f64
+        {
+            return Some(HitTarget::DockResize {
+                position: crate::panel::DockPosition::Right,
+            });
+        }
+    }
+    if let Some(bottom_rect) = chrome.rect(UiKey::Dock(crate::panel::DockPosition::Bottom)) {
+        let resize_zone_start = bottom_rect.y as f64 - hit_zone;
+        let resize_zone_end = bottom_rect.y as f64 + hit_zone;
+        if pt.y >= resize_zone_start
+            && pt.y <= resize_zone_end
+            && pt.x >= bottom_rect.x as f64
+            && pt.x < (bottom_rect.x + bottom_rect.width) as f64
+        {
+            return Some(HitTarget::DockResize {
+                position: crate::panel::DockPosition::Bottom,
+            });
         }
     }
 
-    if let Some(bottom_rect) = window_layout.bottom_dock_rect {
-        if model.dock_layout.bottom.is_open {
-            let resize_zone_start = bottom_rect.y as f64 - hit_zone;
-            let resize_zone_end = bottom_rect.y as f64 + hit_zone;
-            if pt.y >= resize_zone_start
-                && pt.y <= resize_zone_end
-                && pt.x >= bottom_rect.x as f64
-                && pt.x < (bottom_rect.x + bottom_rect.width) as f64
-            {
-                return Some(HitTarget::DockResize {
-                    position: crate::panel::DockPosition::Bottom,
-                });
-            }
-
-            if bottom_rect.contains(pt.x as f32, pt.y as f32) {
-                let dock = &model.dock_layout.bottom;
-                let layout =
-                    DockHeaderLayout::new(dock, bottom_rect, &model.metrics, model.char_width);
-                if layout.is_in_header(pt.x, pt.y) {
-                    if let Some(tab) = layout.tab_at(pt.x, pt.y) {
-                        return Some(HitTarget::DockTab {
-                            position: crate::panel::DockPosition::Bottom,
-                            panel_id: tab.panel_id,
-                        });
-                    }
-                    return Some(HitTarget::DockTabBarEmpty {
-                        position: crate::panel::DockPosition::Bottom,
-                    });
-                }
-                if layout.is_in_content(pt.x, pt.y) {
-                    if let Some(panel_id) = dock.active_panel() {
-                        return Some(HitTarget::DockContent {
-                            position: crate::panel::DockPosition::Bottom,
-                            active_panel_id: panel_id,
-                        });
-                    }
-                    return Some(HitTarget::DockTabBarEmpty {
-                        position: crate::panel::DockPosition::Bottom,
-                    });
-                }
+    // Everything else: the topmost solved element at the point, mapped
+    // exhaustively onto hit targets — the same geometry the renderer paints.
+    match chrome.hit(pt.x as f32, pt.y as f32)? {
+        UiKey::DockTab(position, panel_id) => Some(HitTarget::DockTab { position, panel_id }),
+        UiKey::DockHeader(position) => Some(HitTarget::DockTabBarEmpty { position }),
+        UiKey::PanelContent(_) | UiKey::PanelRows(_) => {
+            let position = [
+                crate::panel::DockPosition::Right,
+                crate::panel::DockPosition::Bottom,
+            ]
+            .into_iter()
+            .find(|&pos| {
+                chrome
+                    .rect(UiKey::Dock(pos))
+                    .is_some_and(|r| r.contains(pt.x as f32, pt.y as f32))
+            })?;
+            let dock = model.dock_layout.dock(position);
+            match dock.active_panel() {
+                Some(panel_id) => Some(HitTarget::DockContent {
+                    position,
+                    active_panel_id: panel_id,
+                }),
+                None => Some(HitTarget::DockTabBarEmpty { position }),
             }
         }
+        // The dock body outside header/content (shouldn't occur — the two
+        // children tile it) falls through as content-less dock space.
+        UiKey::Dock(position) => Some(HitTarget::DockTabBarEmpty { position }),
+        _ => None,
     }
-
-    None
 }
 
 /// Main hit-testing function that checks all UI regions in priority order.
@@ -852,11 +884,16 @@ pub fn hit_test_docks(model: &AppModel, pt: Point) -> Option<HitTarget> {
 /// 6. Splitter bars
 /// 7. Preview panes (header and content)
 /// 8. Editor groups (tab bar, gutter, content)
-pub fn hit_test_ui(model: &AppModel, pt: Point, char_width: f32) -> Option<HitTarget> {
+pub fn hit_test_ui(
+    model: &AppModel,
+    pt: Point,
+    char_width: f32,
+    measure: &mut dyn crate::layout::TextMeasure,
+) -> Option<HitTarget> {
     // 0. Cursor-anchored popup (non-blocking: only claims points inside its
     // own panel, so an outside click still reaches whatever's under it —
     // see `hit_test_cursor_overlay`).
-    if let Some(target) = hit_test_cursor_overlay(model, pt) {
+    if let Some(target) = hit_test_cursor_overlay(model, pt, measure) {
         return Some(target);
     }
 
@@ -865,28 +902,43 @@ pub fn hit_test_ui(model: &AppModel, pt: Point, char_width: f32) -> Option<HitTa
         return Some(target);
     }
 
+    // The cheap shell drives the common path. Sidebar or dock rows are solved
+    // lazily only when the pointer can hit that region.
+    let shell = crate::layout::chrome::shell(model);
+
     // 2. Status bar
-    if let Some(target) = hit_test_status_bar(model, pt) {
+    if let Some(target) = hit_test_status_bar_in(&shell, pt) {
         return Some(target);
     }
 
     // 3. Sidebar resize handle
-    if let Some(target) = hit_test_sidebar_resize(model, pt) {
+    if let Some(target) = hit_test_sidebar_resize_in(model, &shell, pt) {
         return Some(target);
     }
 
     // 4. Sidebar file tree
-    if let Some(target) = hit_test_sidebar(model, pt) {
-        return Some(target);
+    if shell
+        .rect(crate::layout::UiKey::Sidebar)
+        .is_some_and(|rect| rect.contains(pt.x as f32, pt.y as f32))
+    {
+        let sidebar = crate::layout::chrome::sidebar_rows(model);
+        if let Some(target) = hit_test_sidebar_in(model, &sidebar, pt) {
+            return Some(target);
+        }
     }
 
     // 5. Dock panels (must be checked before editor groups, which may overlap)
-    if let Some(target) = hit_test_docks(model, pt) {
-        return Some(target);
+    if point_may_hit_dock(model, &shell, pt) {
+        let chrome = crate::layout::chrome::chrome(model);
+        if let Some(target) = hit_test_docks_in(model, &chrome, pt) {
+            return Some(target);
+        }
     }
 
-    // 6. Splitter bars (need to compute layout first)
-    let window_layout = WindowLayout::compute(model);
+    // 6. Splitter bars use the same solved editor-area rect.
+    let editor_area_rect = shell
+        .rect(crate::layout::UiKey::EditorArea)
+        .expect("window chrome always declares the editor area");
 
     // Group/preview rects are already kept current by the render pass's own
     // `compute_layout_scaled` call, so hit-testing only needs splitters and
@@ -894,7 +946,7 @@ pub fn hit_test_ui(model: &AppModel, pt: Point, char_width: f32) -> Option<HitTa
     // (every open document's undo/redo stacks included) on every mouse event.
     let splitters = model
         .editor_area
-        .compute_splitters(window_layout.editor_area_rect, model.metrics.splitter_width);
+        .compute_splitters(editor_area_rect, model.metrics.splitter_width);
 
     if let Some(target) = hit_test_splitters(model, pt, &splitters) {
         return Some(target);
@@ -927,6 +979,57 @@ mod tests {
         assert!(!event.alt());
     }
 
+    #[test]
+    fn status_bar_hit_test_uses_the_solved_shell_rect() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.status_bar_height = 20;
+
+        assert!(matches!(
+            hit_test_status_bar(&model, Point::new(10.0, 590.0)),
+            Some(HitTarget::StatusBar)
+        ));
+        assert!(hit_test_status_bar(&model, Point::new(10.0, 579.0)).is_none());
+        assert!(hit_test_status_bar(&model, Point::new(801.0, 590.0)).is_none());
+    }
+
+    #[test]
+    fn dock_hit_guard_includes_contents_and_external_resize_slop() {
+        use crate::panel::{DockPosition, PanelId};
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.dock_layout.right.activate(PanelId::Outline);
+        model.dock_layout.bottom.activate(PanelId::Terminal);
+        let shell = crate::layout::chrome::shell(&model);
+        let right = shell
+            .rect(crate::layout::UiKey::Dock(DockPosition::Right))
+            .unwrap();
+        let bottom = shell
+            .rect(crate::layout::UiKey::Dock(DockPosition::Bottom))
+            .unwrap();
+
+        assert!(!point_may_hit_dock(
+            &model,
+            &shell,
+            Point::new(100.0, 100.0)
+        ));
+        assert!(point_may_hit_dock(
+            &model,
+            &shell,
+            Point::new(
+                right.x as f64 - model.metrics.resize_handle_zone as f64 + 1.0,
+                right.y as f64 + 10.0,
+            )
+        ));
+        assert!(point_may_hit_dock(
+            &model,
+            &shell,
+            Point::new(
+                bottom.x as f64 + 10.0,
+                bottom.y as f64 - model.metrics.resize_handle_zone as f64 + 1.0,
+            )
+        ));
+    }
+
     /// Regression test: `hit_test_groups` must classify gutter vs. content
     /// clicks using the exact same `GroupLayout` geometry that the render
     /// path (`EditorRenderContext`) uses, not a hand-rederived copy. Before
@@ -936,7 +1039,7 @@ mod tests {
     #[test]
     fn test_hit_test_groups_gutter_content_boundary_matches_group_layout() {
         let mut model = AppModel::new(800, 600, 1.0, vec![]);
-        let available = Rect::new(0.0, 0.0, 800.0, 600.0);
+        let available = crate::model::editor_area::Rect::new(0.0, 0.0, 800.0, 600.0);
         model.editor_area.compute_layout(available);
 
         let group_id = model

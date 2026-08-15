@@ -316,3 +316,157 @@ fn calculate_gutter_width(line_count: usize) {
 
     divan::black_box(gutter_width);
 }
+
+// ============================================================================
+// Layout engine (src/layout): chrome-shaped trees and RowList panels
+// ============================================================================
+
+mod engine {
+    use token::layout::{
+        CellMeasure, Content, Dir, ElementDecl, RowListDecl, Sizing, SizingAxes, TextDecl,
+        TextStyle, UiKey, UiTree, Wrap,
+    };
+    use token::model::editor_area::Rect;
+    use token::panel::{DockPosition, PanelId};
+
+    fn measure() -> CellMeasure {
+        CellMeasure {
+            char_width: 8.4,
+            line_height: 19.0,
+        }
+    }
+
+    /// A dock-chrome-shaped tree (~60 nodes): two docks, tab strips with
+    /// text tabs, spacers, content areas with row lists.
+    #[divan::bench]
+    fn solve_chrome_shaped_tree() {
+        let mut t = UiTree::new();
+        t.node(
+            ElementDecl {
+                dir: Dir::Column,
+                ..Default::default()
+            },
+            |t| {
+                for (pos, panel) in [
+                    (DockPosition::Bottom, PanelId::Problems),
+                    (DockPosition::Right, PanelId::Outline),
+                ] {
+                    t.node(
+                        ElementDecl {
+                            key: Some(UiKey::Dock(pos)),
+                            dir: Dir::Column,
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(240.0)),
+                            ..Default::default()
+                        },
+                        |t| {
+                            t.node(
+                                ElementDecl {
+                                    key: Some(UiKey::DockHeader(pos)),
+                                    dir: Dir::Row,
+                                    sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(28.0)),
+                                    gap: 4.0,
+                                    ..Default::default()
+                                },
+                                |t| {
+                                    for i in 0..12 {
+                                        t.text(None, format!("Panel {i}"), TextStyle::sized(13.0));
+                                    }
+                                    t.leaf(ElementDecl {
+                                        sizing: SizingAxes::new(Sizing::GROW, Sizing::GROW),
+                                        ..Default::default()
+                                    });
+                                    t.text(None, "\u{2717}3 \u{26A0}2", TextStyle::sized(11.0));
+                                },
+                            );
+                            t.node(
+                                ElementDecl {
+                                    key: Some(UiKey::PanelContent(panel)),
+                                    sizing: SizingAxes::grow(),
+                                    clip: true,
+                                    ..Default::default()
+                                },
+                                |t| {
+                                    t.leaf(ElementDecl {
+                                        key: Some(UiKey::PanelRows(panel)),
+                                        sizing: SizingAxes::grow(),
+                                        content: Content::RowList(RowListDecl {
+                                            row_height: 22.0,
+                                            count: 300,
+                                            scroll_offset: 40,
+                                        }),
+                                        ..Default::default()
+                                    });
+                                },
+                            );
+                        },
+                    );
+                }
+            },
+        );
+        let mut m = measure();
+        let snap = t.solve(Rect::new(0.0, 0.0, 1920.0, 1080.0), 1.0, &mut m);
+        divan::black_box(snap);
+    }
+
+    /// A virtualized panel with 5000 rows stays O(1) in row count.
+    #[divan::bench]
+    fn solve_row_list_5000_rows() {
+        let mut t = UiTree::new();
+        t.node(
+            ElementDecl {
+                dir: Dir::Column,
+                ..Default::default()
+            },
+            |t| {
+                t.leaf(ElementDecl {
+                    key: Some(UiKey::PanelRows(PanelId::Problems)),
+                    sizing: SizingAxes::grow(),
+                    content: Content::RowList(RowListDecl {
+                        row_height: 22.0,
+                        count: 5000,
+                        scroll_offset: 2500,
+                    }),
+                    ..Default::default()
+                });
+            },
+        );
+        let mut m = measure();
+        let snap = t.solve(Rect::new(0.0, 0.0, 800.0, 400.0), 1.0, &mut m);
+        let rows = snap.row_list(UiKey::PanelRows(PanelId::Problems)).unwrap();
+        divan::black_box((rows.visible_capacity(), rows.max_scroll()));
+    }
+
+    /// A hover-card-shaped tree with word wrapping under CellMeasure.
+    #[divan::bench]
+    fn solve_hover_tree_with_wrap() {
+        let text = "The quick brown fox jumps over the lazy dog. \
+                    Pack my box with five dozen liquor jugs. \
+                    Sphinx of black quartz, judge my vow."
+            .repeat(4);
+        let mut t = UiTree::new();
+        t.node(
+            ElementDecl {
+                dir: Dir::Column,
+                sizing: SizingAxes::new(Sizing::Fixed(420.0), Sizing::FIT),
+                padding: token::layout::Padding::all(12.0),
+                gap: 8.0,
+                ..Default::default()
+            },
+            |t| {
+                t.leaf(ElementDecl {
+                    key: Some(UiKey::OverlayPanel),
+                    sizing: SizingAxes::new(Sizing::GROW, Sizing::FIT),
+                    content: Content::Text(TextDecl {
+                        text,
+                        style: TextStyle::sized(13.0),
+                        wrap: Wrap::Words,
+                    }),
+                    ..Default::default()
+                });
+            },
+        );
+        let mut m = measure();
+        let snap = t.solve(Rect::new(0.0, 0.0, 1920.0, 1080.0), 1.0, &mut m);
+        divan::black_box(snap);
+    }
+}

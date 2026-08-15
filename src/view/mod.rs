@@ -20,7 +20,6 @@ pub mod tree_view;
 
 pub use button::{button_rect, render_button, ButtonState};
 pub use frame::{Frame, RoundedRectMaskCache, TextPainter};
-pub use helpers::get_tab_display_name;
 pub use text_field::{TextFieldContent, TextFieldOptions, TextFieldRenderer};
 
 use anyhow::Result;
@@ -92,7 +91,9 @@ pub enum PreviewRenderMode {
 struct RenderPlan {
     window_width: usize,
     window_height: usize,
-    window_layout: geometry::WindowLayout,
+    /// Solved window shell and dock chrome for this frame. Render phases,
+    /// dock painters, and editor layout all query this one snapshot.
+    chrome: crate::layout::LayoutSnapshot,
     splitters: Vec<SplitterBar>,
     effective_damage: Damage,
     render_editor: bool,
@@ -112,6 +113,12 @@ impl RenderPlan {
     #[inline]
     fn uses_cursor_lines_fast_path(&self) -> bool {
         self.cursor_lines_only.is_some()
+    }
+
+    fn required_rect(&self, key: crate::layout::UiKey) -> Rect {
+        self.chrome
+            .rect(key)
+            .unwrap_or_else(|| panic!("window chrome must declare {key:?}"))
     }
 }
 
@@ -166,44 +173,31 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
     }
 
     fn render_sidebar_phase(&mut self) {
-        let Some(sidebar_rect) = self.plan.window_layout.sidebar_rect else {
-            return;
-        };
-
         Renderer::render_sidebar(
             &mut self.frame,
             &mut self.painter,
             self.model,
-            sidebar_rect.width.round() as usize,
-            sidebar_rect.height.round() as usize,
+            &self.plan.chrome,
         );
     }
 
     fn render_right_dock_phase(&mut self) {
-        let Some(dock_rect) = self.plan.window_layout.right_dock_rect else {
-            return;
-        };
-
         Renderer::render_dock(
             &mut self.frame,
             &mut self.painter,
             self.model,
             crate::panel::DockPosition::Right,
-            dock_rect,
+            &self.plan.chrome,
         );
     }
 
     fn render_bottom_dock_phase(&mut self) {
-        let Some(dock_rect) = self.plan.window_layout.bottom_dock_rect else {
-            return;
-        };
-
         Renderer::render_dock(
             &mut self.frame,
             &mut self.painter,
             self.model,
             crate::panel::DockPosition::Bottom,
-            dock_rect,
+            &self.plan.chrome,
         );
     }
 
@@ -212,8 +206,7 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
             &mut self.frame,
             &mut self.painter,
             self.model,
-            self.plan.window_width,
-            self.plan.window_height,
+            self.plan.required_rect(crate::layout::UiKey::StatusBar),
         );
     }
 
@@ -526,6 +519,7 @@ struct EditorGroupScene<'a> {
     group_rect: Rect,
     editor: &'a crate::model::EditorState,
     layout: geometry::GroupLayout,
+    tab_bar: crate::layout::editor::EditorTabBarLayout,
     is_focused: bool,
     content: EditorContentKind<'a>,
 }
@@ -542,6 +536,7 @@ impl<'a> EditorGroupScene<'a> {
         let editor_id = group.active_editor_id()?;
         let editor = model.editor_area.editors.get(&editor_id)?;
         let layout = geometry::GroupLayout::new(group, model, char_width);
+        let tab_bar = crate::layout::editor::EditorTabBarLayout::new(group, model, char_width);
 
         let content = if let crate::model::editor::TabContent::BinaryPlaceholder(ref placeholder) =
             editor.tab_content
@@ -562,6 +557,7 @@ impl<'a> EditorGroupScene<'a> {
             group_rect,
             editor,
             layout,
+            tab_bar,
             is_focused,
             content,
         })
@@ -575,7 +571,7 @@ impl<'a> EditorGroupScene<'a> {
         perf: &mut crate::perf::PerfStats,
     ) {
         perf.measure_stage(crate::perf::PerfStage::TabBar, || {
-            Renderer::render_tab_bar(frame, painter, model, self.group, &self.layout);
+            Renderer::render_tab_bar(frame, painter, model, self.group, &self.tab_bar);
         });
         self.render_content(frame, painter, model, perf);
 
@@ -718,7 +714,7 @@ enum PreviewContentKind<'a> {
 }
 
 struct PreviewPaneScene<'a> {
-    layout: geometry::PreviewPaneLayout,
+    layout: crate::layout::editor::PreviewPaneLayout,
     line_height: usize,
     char_width: f32,
     content: PreviewContentKind<'a>,
@@ -735,7 +731,8 @@ impl<'a> PreviewPaneScene<'a> {
     ) -> Option<Self> {
         let preview = model.editor_area.previews.get(&preview_id)?;
         let document = model.editor_area.documents.get(&preview.document_id)?;
-        let layout = geometry::PreviewPaneLayout::new(rect, &model.metrics);
+        let layout =
+            crate::layout::editor::PreviewPaneLayout::new(preview_id, rect, &model.metrics);
 
         let content = if preview_mode == PreviewRenderMode::WebviewChromeOnly {
             PreviewContentKind::Hosted
@@ -754,33 +751,37 @@ impl<'a> PreviewPaneScene<'a> {
     }
 
     fn render(&self, frame: &mut Frame, painter: &mut TextPainter, model: &AppModel) {
-        Renderer::render_pane(frame, painter, model, &self.layout.pane, Some("Preview"));
+        Renderer::render_preview_chrome(frame, painter, model, &self.layout);
 
         match &self.content {
             PreviewContentKind::Hosted => {}
             PreviewContentKind::NativeHtml { document, preview } => {
+                frame.push_clip(self.layout.hosted_content_rect());
                 Renderer::render_native_html_preview(
                     frame,
                     painter,
                     model,
                     document,
                     preview,
-                    &self.layout.pane,
+                    &self.layout,
                     self.line_height,
                     self.char_width,
                 );
+                frame.pop_clip();
             }
             PreviewContentKind::NativeMarkdown { document, preview } => {
+                frame.push_clip(self.layout.hosted_content_rect());
                 Renderer::render_native_markdown_preview(
                     frame,
                     painter,
                     model,
                     document,
                     preview,
-                    &self.layout.pane,
+                    &self.layout,
                     self.line_height,
                     self.char_width,
                 );
+                frame.pop_clip();
             }
         }
     }
@@ -901,6 +902,20 @@ impl Renderer {
         self.line_metrics.new_line_size.ceil() as usize
     }
 
+    /// A `TextPainter` over this renderer's font and glyph cache — for
+    /// callers outside the render loop (hit-testing) that need real text
+    /// measurement agreeing with what rendering painted.
+    pub fn text_painter(&mut self) -> TextPainter<'_> {
+        TextPainter::new(
+            &self.font,
+            &mut self.glyph_cache,
+            self.font_size,
+            self.line_metrics.ascent,
+            self.char_width,
+            self.line_metrics.new_line_size.ceil() as usize,
+        )
+    }
+
     /// Line height of status-bar text at the configured logical size.
     pub fn status_text_line_height(&self, logical_size: f32) -> usize {
         let size = (logical_size * self.scale_factor as f32).round();
@@ -975,11 +990,14 @@ impl Renderer {
         line_height: usize,
         char_width: f32,
         show_perf_overlay: bool,
+        chrome: crate::layout::LayoutSnapshot,
     ) -> RenderPlan {
-        let window_layout = geometry::WindowLayout::compute(model);
+        let editor_area_rect = chrome
+            .rect(crate::layout::UiKey::EditorArea)
+            .expect("window chrome always declares the editor area");
         let splitters = model
             .editor_area
-            .compute_layout_scaled(window_layout.editor_area_rect, model.metrics.splitter_width);
+            .compute_layout_scaled(editor_area_rect, model.metrics.splitter_width);
         model
             .editor_area
             .sync_all_viewports(line_height, char_width, &model.metrics);
@@ -1009,7 +1027,7 @@ impl Renderer {
         RenderPlan {
             window_width,
             window_height,
-            window_layout,
+            chrome,
             splitters,
             effective_damage,
             render_editor,
@@ -1042,12 +1060,18 @@ impl Renderer {
         if plan.render_editor {
             // Only clear the editor area's own sub-rect, not the full
             // content_rect (which also spans the sidebar/dock areas).
-            frame.fill_rect(plan.window_layout.editor_area_rect, bg_color);
+            frame.fill_rect(
+                plan.required_rect(crate::layout::UiKey::EditorArea),
+                bg_color,
+            );
         }
 
         if plan.render_status_bar {
             let status_bg = model.theme.status_bar.background.to_argb_u32();
-            frame.fill_rect(plan.window_layout.status_bar_rect, status_bg);
+            frame.fill_rect(
+                plan.required_rect(crate::layout::UiKey::StatusBar),
+                status_bg,
+            );
         }
     }
 
@@ -1110,84 +1134,29 @@ impl Renderer {
         }
     }
 
-    /// Render a pane with optional header, background, and borders.
-    ///
-    /// This is a reusable widget for any UI element that needs a consistent
-    /// pane layout (preview panes, panels, dialogs, etc.).
-    fn render_pane(
+    /// Paint preview chrome from the Clay-solved pane/header/content split.
+    fn render_preview_chrome(
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
-        pane: &geometry::Pane,
-        title: Option<&str>,
+        layout: &crate::layout::editor::PreviewPaneLayout,
     ) {
         let bg_color = model.theme.editor.background.to_argb_u32();
         let header_bg = model.theme.tab_bar.background.to_argb_u32();
         let header_fg = model.theme.tab_bar.active_foreground.to_argb_u32();
         let border_color = model.theme.tab_bar.border.to_argb_u32();
+        let (pane_x, pane_y, pane_w, pane_h) = crate::layout::snapshot::snap(layout.pane_rect());
+        let (header_x, header_y, header_w, header_h) =
+            crate::layout::snapshot::snap(layout.header_rect());
 
-        // Pane background
-        frame.fill_rect_px(pane.x(), pane.y(), pane.width(), pane.height(), bg_color);
+        frame.fill_rect_px(pane_x, pane_y, pane_w, pane_h, bg_color);
+        frame.fill_rect_px(header_x, header_y, header_w, header_h, header_bg);
+        let (title_x, title_y) = layout.title_origin();
+        painter.draw(frame, title_x, title_y, "Preview", header_fg);
 
-        // Header (if present)
-        if pane.has_header() {
-            frame.fill_rect_px(
-                pane.x(),
-                pane.y(),
-                pane.width(),
-                pane.header_height,
-                header_bg,
-            );
-
-            if let Some(title) = title {
-                painter.draw(
-                    frame,
-                    pane.header_title_x(),
-                    pane.header_title_y(&model.metrics),
-                    title,
-                    header_fg,
-                );
-            }
-
-            // Header border
-            if pane.header_border {
-                frame.fill_rect_px(
-                    pane.x(),
-                    pane.header_border_y(),
-                    pane.width(),
-                    pane.border_width,
-                    border_color,
-                );
-            }
-        }
-
-        // Outer borders (if configured)
-        if pane.borders.top {
-            frame.fill_rect_px(
-                pane.x(),
-                pane.y(),
-                pane.width(),
-                pane.border_width,
-                border_color,
-            );
-        }
-        if pane.borders.bottom {
-            let y = pane.y() + pane.height().saturating_sub(pane.border_width);
-            frame.fill_rect_px(pane.x(), y, pane.width(), pane.border_width, border_color);
-        }
-        if pane.borders.left {
-            frame.fill_rect_px(
-                pane.x(),
-                pane.y(),
-                pane.border_width,
-                pane.height(),
-                border_color,
-            );
-        }
-        if pane.borders.right {
-            let x = pane.x() + pane.width().saturating_sub(pane.border_width);
-            frame.fill_rect_px(x, pane.y(), pane.border_width, pane.height(), border_color);
-        }
+        let border_width = model.metrics.border_width;
+        let border_y = header_y + header_h.saturating_sub(border_width);
+        frame.fill_rect_px(header_x, border_y, header_w, border_width, border_color);
     }
 
     /// Render a markdown preview pane.
@@ -1226,13 +1195,13 @@ impl Renderer {
         model: &AppModel,
         document: &crate::model::document::Document,
         preview: &crate::markdown::PreviewPane,
-        pane: &geometry::Pane,
+        layout: &crate::layout::editor::PreviewPaneLayout,
         line_height: usize,
         char_width: f32,
     ) {
-        let visible_lines = pane.visible_lines(line_height);
-        let text_x = pane.content_x();
-        let max_width = pane.max_text_width();
+        let (text_x, text_y, max_width, content_height) =
+            crate::layout::snapshot::snap(layout.native_content_rect());
+        let visible_lines = content_height.checked_div(line_height).unwrap_or(0);
         let max_chars = if char_width > 0.0 {
             (max_width as f32 / char_width) as usize
         } else {
@@ -1248,7 +1217,7 @@ impl Renderer {
         let source = document.buffer.to_string();
         let lines = extract_html_text_lines(&source);
 
-        let mut y = pane.content_y();
+        let mut y = text_y;
         for (i, line) in lines.iter().enumerate() {
             if i >= preview.scroll_offset + visible_lines {
                 break;
@@ -1277,13 +1246,13 @@ impl Renderer {
         model: &AppModel,
         document: &crate::model::document::Document,
         preview: &crate::markdown::PreviewPane,
-        pane: &geometry::Pane,
+        layout: &crate::layout::editor::PreviewPaneLayout,
         line_height: usize,
         char_width: f32,
     ) {
-        let visible_lines = pane.visible_lines(line_height);
-        let text_x = pane.content_x();
-        let max_width = pane.max_text_width();
+        let (text_x, text_y, max_width, content_height) =
+            crate::layout::snapshot::snap(layout.native_content_rect());
+        let visible_lines = content_height.checked_div(line_height).unwrap_or(0);
         let max_chars = if char_width > 0.0 {
             (max_width as f32 / char_width) as usize
         } else {
@@ -1295,7 +1264,7 @@ impl Renderer {
         let code_bg = model.theme.gutter.background.to_argb_u32();
         let link_color = model.theme.syntax.string.to_argb_u32();
 
-        let mut y = pane.content_y();
+        let mut y = text_y;
         let mut in_code_block = false;
 
         for line_num in 0..document.buffer.len_lines() {
@@ -1466,31 +1435,29 @@ impl Renderer {
         painter: &mut TextPainter,
         model: &AppModel,
         group: &EditorGroup,
-        _layout: &geometry::GroupLayout,
+        layout: &crate::layout::editor::EditorTabBarLayout,
     ) {
         let metrics = &model.metrics;
-        let tab_bar = geometry::TabBarLayout::new(group, model, painter.char_width());
+        let (bar_x, bar_y, bar_w, bar_h) = crate::layout::snapshot::snap(layout.bar_rect());
 
         let tab_bar_bg = model.theme.tab_bar.background.to_argb_u32();
-        frame.fill_rect_px(
-            tab_bar.rect_x,
-            tab_bar.rect_y,
-            tab_bar.rect_w,
-            tab_bar.rect_h,
-            tab_bar_bg,
-        );
+        frame.fill_rect_px(bar_x, bar_y, bar_w, bar_h, tab_bar_bg);
 
         let border_color = model.theme.tab_bar.border.to_argb_u32();
         frame.fill_rect_px(
-            tab_bar.rect_x,
-            tab_bar.border_y,
-            tab_bar.rect_w,
+            bar_x,
+            bar_y + bar_h.saturating_sub(metrics.border_width),
+            bar_w,
             metrics.border_width,
             border_color,
         );
 
-        for tab in &tab_bar.tabs {
-            let (bg_color, fg_color) = if tab.is_active {
+        for (index, tab) in group.tabs.iter().enumerate() {
+            let Some(tab_rect) = layout.tab_rect(tab.id) else {
+                continue;
+            };
+            let (tab_x, tab_y, tab_w, tab_h) = crate::layout::snapshot::snap(tab_rect);
+            let (bg_color, fg_color) = if index == group.active_tab_index {
                 (
                     model.theme.tab_bar.active_background.to_argb_u32(),
                     model.theme.tab_bar.active_foreground.to_argb_u32(),
@@ -1502,17 +1469,16 @@ impl Renderer {
                 )
             };
 
-            frame.fill_rect_px(tab.x, tab.y, tab.width, tab.height, bg_color);
+            frame.fill_rect_px(tab_x, tab_y, tab_w, tab_h, bg_color);
             // Clip the title to the tab rect: edge tabs are width-clamped to
             // the group, and unclipped text would bleed into the next pane.
-            frame.set_clip(Rect::new(
-                tab.x as f32,
-                tab.y as f32,
-                tab.width as f32,
-                tab.height as f32,
-            ));
-            painter.draw(frame, tab.text_x, tab.text_y, &tab.title, fg_color);
-            frame.clear_clip();
+            frame.push_clip(tab_rect);
+            let (text_x, text_y) = layout
+                .title_origin(tab.id)
+                .expect("every editor tab has a solved title origin");
+            let title = model.editor_area.tab_display_name(tab);
+            painter.draw(frame, text_x, text_y, &title, fg_color);
+            frame.pop_clip();
         }
     }
 
@@ -1528,10 +1494,9 @@ impl Renderer {
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
-        sidebar_width: usize,
-        sidebar_height: usize,
+        chrome: &crate::layout::LayoutSnapshot,
     ) {
-        panels::render_sidebar(frame, painter, model, sidebar_width, sidebar_height);
+        panels::render_sidebar(frame, painter, model, chrome);
     }
 
     fn render_dock(
@@ -1539,9 +1504,9 @@ impl Renderer {
         painter: &mut TextPainter,
         model: &AppModel,
         position: crate::panel::DockPosition,
-        rect: crate::model::editor_area::Rect,
+        chrome: &crate::layout::LayoutSnapshot,
     ) {
-        panels::render_dock(frame, painter, model, position, rect);
+        panels::render_dock(frame, painter, model, position, chrome);
     }
 
     /// Render CSV grid view
@@ -1832,13 +1797,11 @@ impl Renderer {
         frame: &mut Frame,
         painter: &mut TextPainter,
         model: &AppModel,
-        window_width: usize,
-        window_height: usize,
+        rect: Rect,
     ) {
         let status_bar_bg = model.theme.status_bar.background.to_argb_u32();
         let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
-        let status_bar_h = model.status_bar_height;
-        let status_y = window_height.saturating_sub(status_bar_h);
+        let (status_x, status_y, status_width, status_bar_h) = crate::layout::snapshot::snap(rect);
 
         // Status-bar text renders at its own (configurable) size; advances at
         // small sizes are not linear in size, so measure the cell width.
@@ -1849,23 +1812,29 @@ impl Renderer {
         let text_line_height = painter.line_height_for_size(text_size);
 
         // Background
-        frame.fill_rect_px(0, status_y, window_width, status_bar_h, status_bar_bg);
+        frame.fill_rect_px(
+            status_x,
+            status_y,
+            status_width,
+            status_bar_h,
+            status_bar_bg,
+        );
 
         // Top border separating the bar from the editor area above
         let border_width = model.metrics.border_width;
         let border_color = model.theme.status_bar.border.to_argb_u32();
-        frame.fill_rect_px(0, status_y, window_width, border_width, border_color);
+        frame.fill_rect_px(status_x, status_y, status_width, border_width, border_color);
 
         // Center the text vertically in the bar (symmetric padding).
         let text_y = status_y + status_bar_h.saturating_sub(text_line_height) / 2;
 
         // Layout calculation
-        let available_chars = (window_width as f32 / cell_width).floor() as usize;
+        let available_chars = (status_width as f32 / cell_width).floor() as usize;
         let layout = model.ui.status_bar.layout(available_chars);
 
         // Left and right segments
         for seg in layout.left.iter().chain(&layout.right) {
-            let x_px = (seg.x as f32 * cell_width).round() as usize;
+            let x_px = status_x + (seg.x as f32 * cell_width).round() as usize;
             painter.draw_sized(
                 frame,
                 x_px,
@@ -1885,7 +1854,7 @@ impl Renderer {
             .with_alpha(26)
             .to_argb_u32();
         for &sep_char_x in &layout.separator_positions {
-            let x_px = (sep_char_x as f32 * cell_width).round() as usize;
+            let x_px = status_x + (sep_char_x as f32 * cell_width).round() as usize;
             frame.blend_rect_px(
                 x_px,
                 status_y + border_width,
@@ -1949,9 +1918,8 @@ impl Renderer {
         };
 
         let metrics = &model.metrics;
-        let title = helpers::get_tab_display_name(model, tab);
-        let width = (title.chars().count() as f32 * painter.char_width()).round() as usize
-            + metrics.padding_large * 2;
+        let title = model.editor_area.tab_display_name(tab);
+        let width = crate::layout::editor::tab_width(model, tab, painter.char_width());
         let height = metrics
             .tab_bar_height
             .saturating_sub(metrics.padding_medium);
@@ -2034,10 +2002,10 @@ impl Renderer {
         let width_usize = self.width as usize;
         let height_usize = self.height as usize;
 
-        #[cfg(feature = "damage-debug")]
-        let status_bar_height = model.status_bar_height;
-
         let show_perf_overlay = perf.should_show_overlay();
+        let chrome = perf.measure_stage(crate::perf::PerfStage::Layout, || {
+            crate::layout::chrome::chrome(model)
+        });
         let plan = perf.measure_stage(crate::perf::PerfStage::BuildPlan, || {
             self.build_render_plan(
                 model,
@@ -2047,6 +2015,7 @@ impl Renderer {
                 line_height,
                 char_width,
                 show_perf_overlay,
+                chrome,
             )
         });
 
@@ -2106,17 +2075,29 @@ impl Renderer {
 
             if plan.render_editor {
                 session.render_editor_area_phase(perf);
-                if plan.window_layout.sidebar_rect.is_some() {
+                if plan.chrome.rect(crate::layout::UiKey::Sidebar).is_some() {
                     perf.measure_stage(crate::perf::PerfStage::Sidebar, || {
                         session.render_sidebar_phase();
                     });
                 }
-                if plan.window_layout.right_dock_rect.is_some() {
+                if plan
+                    .chrome
+                    .rect(crate::layout::UiKey::Dock(
+                        crate::panel::DockPosition::Right,
+                    ))
+                    .is_some()
+                {
                     perf.measure_stage(crate::perf::PerfStage::RightDock, || {
                         session.render_right_dock_phase();
                     });
                 }
-                if plan.window_layout.bottom_dock_rect.is_some() {
+                if plan
+                    .chrome
+                    .rect(crate::layout::UiKey::Dock(
+                        crate::panel::DockPosition::Bottom,
+                    ))
+                    .is_some()
+                {
                     perf.measure_stage(crate::perf::PerfStage::BottomDock, || {
                         session.render_bottom_dock_phase();
                     });
@@ -2174,7 +2155,7 @@ impl Renderer {
                 model,
                 plan.window_width,
                 plan.window_height,
-                status_bar_height,
+                plan.required_rect(crate::layout::UiKey::StatusBar),
                 line_height,
                 char_width,
             );
@@ -2209,7 +2190,7 @@ impl Renderer {
         model: &AppModel,
         width: usize,
         height: usize,
-        status_bar_height: usize,
+        status_bar_rect: Rect,
         line_height: usize,
         char_width: f32,
     ) {
@@ -2232,7 +2213,7 @@ impl Renderer {
                     match area {
                         DamageArea::EditorArea => {
                             // Red outline around editor area (everything except status bar)
-                            let editor_height = height.saturating_sub(status_bar_height);
+                            let editor_height = status_bar_rect.y.round().max(0.0) as usize;
                             Self::draw_rect_outline_blended(
                                 frame,
                                 0,
@@ -2245,13 +2226,14 @@ impl Renderer {
                         }
                         DamageArea::StatusBar => {
                             // Blue outline around status bar
-                            let status_y = height.saturating_sub(status_bar_height);
+                            let (status_x, status_y, status_width, status_height) =
+                                crate::layout::snapshot::snap(status_bar_rect);
                             Self::draw_rect_outline_blended(
                                 frame,
-                                0,
+                                status_x,
                                 status_y,
-                                width,
-                                status_bar_height,
+                                status_width,
+                                status_height,
                                 BLUE,
                                 3,
                             );
@@ -2344,13 +2326,6 @@ impl Renderer {
     ) -> (usize, usize) {
         let line_height = self.line_metrics.new_line_size.ceil() as f64;
         geometry::pixel_to_line_and_visual_column(x, y, self.char_width, line_height, model)
-    }
-
-    /// Check if a y-coordinate is within the status bar region.
-    /// Delegates to geometry module for the actual calculation.
-    pub fn is_in_status_bar(&self, y: f64) -> bool {
-        let line_height = self.line_metrics.new_line_size.ceil() as usize;
-        geometry::is_in_status_bar(y, self.height, line_height)
     }
 
     /// Hit-test a CSV cell given window coordinates.

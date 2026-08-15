@@ -20,7 +20,7 @@ use token::markdown::{content_to_preview_html, PreviewTheme};
 use token::messages::{LayoutMsg, Msg};
 use token::model::document::Document;
 use token::model::editor::{EditorState, Position, Selection, ViewMode};
-use token::model::editor_area::{EditorArea, Rect, SplitDirection};
+use token::model::editor_area::{EditorArea, SplitDirection};
 use token::model::ui::{
     CommandPaletteState, FindReplaceState, GotoLineState, ModalState, ThemePickerState, UiState,
 };
@@ -260,9 +260,6 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         .map(|m| m.new_line_size.ceil() as usize)
         .unwrap_or(line_height);
     let status_bar_height = status_text_lh + metrics.padding_small * 2;
-    let visible_lines = (scenario.height as usize).saturating_sub(status_bar_height) / line_height;
-    let visible_columns = ((scenario.width as f32 - 60.0) / char_width).floor() as usize;
-
     // Load first file
     let first = scenario
         .files
@@ -275,7 +272,9 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
     document.file_path = Some(first.path.clone());
     document.language = LanguageId::from_path(&first.path);
 
-    let mut editor = EditorState::with_viewport(visible_lines, visible_columns);
+    // The solved shell initializes the real viewport once the complete
+    // scenario (including workspace and docks) has been assembled below.
+    let mut editor = EditorState::with_viewport(1, 1);
     apply_cursor_and_scroll(&mut editor, first);
 
     let editor_area = EditorArea::single_document(document, editor);
@@ -355,21 +354,23 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
     // Apply syntax highlighting synchronously
     apply_syntax_highlighting(&mut model);
 
-    // Apply view modes (e.g., CSV)
-    apply_view_modes(&mut model, scenario);
-
-    // Open preview panes for files that request them
-    apply_previews(&mut model, scenario);
-
     // Set up workspace/sidebar if configured
     if let Some(ws_config) = &scenario.workspace {
         apply_workspace(&mut model, ws_config, scenario.scale);
     }
 
+    // Apply view modes (e.g., CSV) after shell-affecting state.
+    apply_view_modes(&mut model, scenario);
+
+    // Open preview panes for files that request them
+    apply_previews(&mut model, scenario);
+
     // Set up modal if configured
     if let Some(modal_config) = &scenario.modal {
         apply_modal(&mut model, modal_config);
     }
+
+    model.resize(scenario.width, scenario.height);
 
     Ok(model)
 }
@@ -426,17 +427,11 @@ fn apply_view_modes(model: &mut AppModel, scenario: &Scenario) {
             if let Some((text, delimiter)) = content {
                 if let Ok(data) = parse_csv(&text, delimiter) {
                     if !data.is_empty() && data.column_count() > 0 {
-                        let line_height = model.line_height.max(1);
-                        let tab_bar_height = model.metrics.tab_bar_height;
-                        let status_bar_height = model.status_bar_height;
-                        let col_header_height = line_height;
-                        let content_height = (model.window_size.1 as usize)
-                            .saturating_sub(tab_bar_height)
-                            .saturating_sub(status_bar_height)
-                            .saturating_sub(col_header_height);
-                        let visible_rows = content_height / line_height;
                         let mut csv_state = CsvState::new(data, delimiter);
-                        csv_state.set_viewport_size(visible_rows.max(1), 10);
+                        csv_state.set_viewport_size(
+                            token::update::csv_visible_rows_for_model(model),
+                            10,
+                        );
 
                         if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
                             editor.view_mode = ViewMode::Csv(Box::new(csv_state));
@@ -698,22 +693,10 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
 
     let mut glyph_cache: GlyphCache = HashMap::new();
 
-    let status_bar_height = model.status_bar_height;
-
-    // Calculate sidebar width (matches real renderer pipeline)
-    let sidebar_width = model
-        .workspace
-        .as_ref()
-        .filter(|ws| ws.sidebar_visible)
-        .map(|ws| ws.sidebar_width(model.metrics.scale_factor))
-        .unwrap_or(0.0);
-
-    let available_rect = Rect::new(
-        sidebar_width,
-        0.0,
-        (width as f32 - sidebar_width).max(0.0),
-        height.saturating_sub(status_bar_height) as f32,
-    );
+    let chrome = token::layout::chrome::chrome(model);
+    let available_rect = chrome
+        .rect(token::layout::UiKey::EditorArea)
+        .expect("window chrome always declares the editor area");
     let splitters = model
         .editor_area
         .compute_layout_scaled(available_rect, model.metrics.splitter_width);
@@ -748,20 +731,33 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
         );
 
         // 2. Sidebar (if workspace is open)
-        if sidebar_width > 0.0 {
-            Renderer::render_sidebar(
-                &mut frame,
-                &mut painter,
-                model,
-                sidebar_width as usize,
-                height.saturating_sub(status_bar_height),
-            );
+        if chrome.rect(token::layout::UiKey::Sidebar).is_some() {
+            Renderer::render_sidebar(&mut frame, &mut painter, model, &chrome);
         }
 
-        // 3. Status bar
-        Renderer::render_status_bar(&mut frame, &mut painter, model, width, height);
+        // 3. Docks
+        for position in [
+            token::panel::DockPosition::Right,
+            token::panel::DockPosition::Bottom,
+        ] {
+            if chrome.rect(token::layout::UiKey::Dock(position)).is_some() {
+                token::view::panels::render_dock(
+                    &mut frame,
+                    &mut painter,
+                    model,
+                    position,
+                    &chrome,
+                );
+            }
+        }
 
-        // 4. Modals (on top of everything)
+        // 4. Status bar
+        let status_bar_rect = chrome
+            .rect(token::layout::UiKey::StatusBar)
+            .expect("window chrome always declares the status bar");
+        Renderer::render_status_bar(&mut frame, &mut painter, model, status_bar_rect);
+
+        // 5. Modals (on top of everything)
         if model.ui.active_modal.is_some() {
             let mut mask_cache = token::view::RoundedRectMaskCache::new();
             Renderer::render_modals(
@@ -1004,7 +1000,7 @@ fn composite_html_previews(buffer: &mut [u32], model: &AppModel, scale: f64) {
     let preview_theme = PreviewTheme::from_editor_theme(&model.theme);
     let buf_width = model.window_size.0 as usize;
 
-    for preview in model.editor_area.previews.values() {
+    for (&preview_id, preview) in &model.editor_area.previews {
         let document = match model.editor_area.documents.get(&preview.document_id) {
             Some(d) => d,
             None => continue,
@@ -1021,12 +1017,11 @@ fn composite_html_previews(buffer: &mut [u32], model: &AppModel, scale: f64) {
             None => continue,
         };
 
-        // Calculate the content area rect (below the "Preview" header)
-        let header_height = model.metrics.tab_bar_height as f32;
-        let content_x = preview.rect.x.round() as usize;
-        let content_y = (preview.rect.y + header_height).round() as usize;
-        let content_w = preview.rect.width.round() as usize;
-        let content_h = (preview.rect.height - header_height).max(0.0).round() as usize;
+        // Use the same solved hosted-content box as the runtime webview.
+        let preview_layout =
+            token::layout::editor::PreviewPaneLayout::new(preview_id, preview.rect, &model.metrics);
+        let (content_x, content_y, content_w, content_h) =
+            token::layout::snapshot::snap(preview_layout.hosted_content_rect());
 
         if content_w == 0 || content_h == 0 {
             continue;

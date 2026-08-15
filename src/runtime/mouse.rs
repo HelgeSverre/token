@@ -21,8 +21,8 @@ use token::panel::DockPosition;
 use token::update::update;
 use token::util::visible_tree_row_at_index;
 
+use token::layout::editor::EditorTabBarLayout;
 use token::model::editor_area::GroupId;
-use token::view::geometry::{DockHeaderLayout, OutlinePanelLayout, TabBarLayout, WindowLayout};
 use token::view::hit_test::{hit_test_ui, EventResult, HitTarget, MouseEvent};
 use token::view::Renderer;
 
@@ -638,13 +638,13 @@ const TAB_DRAG_THRESHOLD_PIXELS: f64 = 4.0;
 /// under the cursor (or the last index when over the empty tail of the bar).
 fn tab_bar_target_at(model: &AppModel, x: f64, y: f64) -> Option<(GroupId, usize)> {
     model.editor_area.groups.values().find_map(|group| {
-        let layout = TabBarLayout::new(group, model, model.char_width);
+        let layout = EditorTabBarLayout::new(group, model, model.char_width);
         if !layout.contains(x, y) {
             return None;
         }
         let index = layout
             .tab_at(x, y)
-            .map(|tab| tab.index)
+            .and_then(|tab_id| group.tabs.iter().position(|tab| tab.id == tab_id))
             .unwrap_or_else(|| group.tabs.len().saturating_sub(1));
         Some((group.id, index))
     })
@@ -806,8 +806,14 @@ pub fn handle_mouse_press(
     let char_width = renderer.char_width();
     let pt = event.pos;
 
-    // Perform hit-testing
-    let Some(target) = hit_test_ui(model, pt, char_width) else {
+    // Perform hit-testing, measuring text through the renderer's glyph
+    // cache so overlay geometry matches what was painted.
+    let target = {
+        let mut painter = renderer.text_painter();
+        let mut measure = token::layout::PainterMeasure::new(&mut painter);
+        hit_test_ui(model, pt, char_width, &mut measure)
+    };
+    let Some(target) = target else {
         return MousePressResult {
             cmd: None,
             start_drag_tracking: false,
@@ -1338,28 +1344,20 @@ fn handle_left_click(
                 Msg::Dock(token::messages::DockMsg::FocusDock(*position)),
             );
 
-            // Handle outline panel clicks
+            // Handle outline panel clicks — row geometry from the same
+            // solved chrome the renderer painted, wherever the panel is
+            // docked.
             if *active_panel_id == token::panel::PanelId::Outline {
+                use token::layout::UiKey;
                 use token::messages::OutlineMsg;
 
-                let window_layout = WindowLayout::compute(model);
-                let dock_rect = match position {
-                    token::panel::DockPosition::Right => window_layout.right_dock_rect,
-                    token::panel::DockPosition::Bottom => window_layout.bottom_dock_rect,
-                    token::panel::DockPosition::Left => None,
-                };
-                let Some(dock_rect) = dock_rect else {
+                let chrome = token::layout::chrome::chrome(model);
+                let Some(rows) = chrome.row_list(UiKey::PanelRows(token::panel::PanelId::Outline))
+                else {
                     return EventResult::consumed_with_focus(FocusTarget::Dock(*position));
                 };
-                let dock = model.dock_layout.dock(*position);
-                let dock_layout =
-                    DockHeaderLayout::new(dock, dock_rect, &model.metrics, model.char_width);
-                let outline_layout =
-                    OutlinePanelLayout::new(dock_layout.content_rect, &model.metrics);
 
-                if let Some(clicked_index) = outline_layout
-                    .row_index_at_y(event.pos.y as f32, model.outline_panel.scroll_offset)
-                {
+                if let Some(clicked_index) = rows.row_at_y(event.pos.y as f32) {
                     let outline = model
                         .editor_area
                         .focused_document()
@@ -1373,8 +1371,11 @@ fn handle_left_click(
                                 node.is_collapsible() && !model.outline_panel.is_collapsed(node)
                             },
                         ) {
+                            let tree = token::view::geometry::TreeRowLayout::outline_from_metrics(
+                                &model.metrics,
+                            );
                             let on_chevron = row.node.is_collapsible()
-                                && outline_layout.is_on_chevron(row.depth, event.pos.x as f32);
+                                && tree.is_on_chevron(rows.rect().x, row.depth, event.pos.x as f32);
 
                             let click_count = click_tracker
                                 .track_click(ClickRegion::Outline { row: clicked_index });
@@ -1394,34 +1395,29 @@ fn handle_left_click(
                 return EventResult::consumed_with_focus(FocusTarget::Dock(*position));
             }
 
-            // Handle problems panel clicks
+            // Handle problems panel clicks — same solved-chrome geometry.
             if *active_panel_id == token::panel::PanelId::Problems {
+                use token::layout::UiKey;
                 use token::messages::ProblemsMsg;
                 use token::update::problems::problems_rows;
 
-                let window_layout = WindowLayout::compute(model);
-                let dock_rect = match position {
-                    token::panel::DockPosition::Bottom => window_layout.bottom_dock_rect,
-                    _ => None,
-                };
-                let Some(dock_rect) = dock_rect else {
+                let chrome = token::layout::chrome::chrome(model);
+                let Some(rows_view) =
+                    chrome.row_list(UiKey::PanelRows(token::panel::PanelId::Problems))
+                else {
                     return EventResult::consumed_with_focus(FocusTarget::Dock(*position));
                 };
-                let dock = model.dock_layout.dock(*position);
-                let dock_layout =
-                    DockHeaderLayout::new(dock, dock_rect, &model.metrics, model.char_width);
-                let problems_layout =
-                    OutlinePanelLayout::new(dock_layout.content_rect, &model.metrics);
 
-                if let Some(clicked_index) = problems_layout
-                    .row_index_at_y(event.pos.y as f32, model.problems_panel.scroll_offset)
-                {
+                if let Some(clicked_index) = rows_view.row_at_y(event.pos.y as f32) {
                     let rows = problems_rows(model);
                     if let Some(row) = rows.get(clicked_index) {
                         // Only File rows (depth 0) have a chevron.
+                        let tree = token::view::geometry::TreeRowLayout::outline_from_metrics(
+                            &model.metrics,
+                        );
                         let on_chevron =
                             matches!(row, token::update::problems::ProblemsRow::File { .. })
-                                && problems_layout.is_on_chevron(0, event.pos.x as f32);
+                                && tree.is_on_chevron(rows_view.rect().x, 0, event.pos.x as f32);
 
                         let click_count =
                             click_tracker.track_click(ClickRegion::Problems { row: clicked_index });
@@ -1873,7 +1869,7 @@ pub fn handle_mouse_wheel(
             let pt = token::view::hit_test::Point::new(x, y);
             let group_id = model.editor_area.groups.values().find_map(|group| {
                 let layout =
-                    token::view::geometry::TabBarLayout::new(group, model, model.char_width);
+                    token::layout::editor::EditorTabBarLayout::new(group, model, model.char_width);
                 layout.contains(pt.x, pt.y).then_some(group.id)
             })?;
             update(

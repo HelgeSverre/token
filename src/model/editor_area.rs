@@ -185,6 +185,20 @@ pub struct EditorArea {
 }
 
 impl EditorArea {
+    /// Resolve the title displayed for an editor tab.
+    ///
+    /// Keeping this lookup beside the tab/editor/document relationship lets
+    /// layout and painting share the same title without either layer knowing
+    /// how those IDs are joined.
+    pub fn tab_display_name(&self, tab: &Tab) -> String {
+        self.editors
+            .get(&tab.editor_id)
+            .and_then(|editor| editor.document_id)
+            .and_then(|document_id| self.documents.get(&document_id))
+            .map(Document::display_name)
+            .unwrap_or_else(|| "Untitled".to_owned())
+    }
+
     /// Create a new editor area with a single document and editor.
     /// This is the migration path from the old single-pane architecture.
     pub fn single_document(mut document: Document, mut editor: EditorState) -> Self {

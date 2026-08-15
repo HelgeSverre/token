@@ -17,6 +17,7 @@ pub mod editable;
 pub mod fs_watcher;
 pub mod image;
 pub mod keymap;
+pub mod layout;
 pub mod lsp;
 pub mod markdown;
 pub mod messages;

@@ -1659,18 +1659,19 @@ fn debug_hover_zones() -> overlay_surface::Zones<'static> {
     }
 }
 
-/// Build the cursor-overlay `OverlaySpec` for whichever demo kind is open,
-/// call `overlay_surface::layout()` on it, and hand both to `f` — mirrors
-/// `with_modal_overlay_layout`'s one-layout-two-consumers shape so render
-/// and hit-testing can't disagree on geometry. Content here is static (no
-/// per-frame temporaries), so unlike the modal version there's no need for a
-/// separate placeholder-content path.
-pub fn with_cursor_overlay_layout<R>(
+/// Build the cursor-overlay `OverlaySpec` for whichever kind is open and
+/// hand it to `f`. The spec borrows per-branch temporaries (row buffers,
+/// section arrays), which is why it is delivered through a closure rather
+/// than returned.
+///
+/// Laying the spec out is the caller's job: rendering does it inside
+/// `overlay_surface::render` (measuring through the glyph cache) and
+/// hit-testing does it with the same measure, so the two still cannot
+/// disagree — but a caller that only needs the spec no longer pays for a
+/// layout it throws away.
+pub fn with_cursor_overlay_spec<R>(
     model: &AppModel,
-    window_width: usize,
-    window_height: usize,
-    scale_factor: f64,
-    f: impl FnOnce(&OverlaySpec, &OverlayLayout) -> R,
+    f: impl FnOnce(&OverlaySpec) -> R,
 ) -> Option<R> {
     let state = model.ui.cursor_overlay?;
 
@@ -1711,8 +1712,7 @@ pub fn with_cursor_overlay_layout<R>(
             footer: None,
             hover_row: None,
         };
-        let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
-        return Some(f(&spec, &l));
+        return Some(f(&spec));
     }
 
     // The context menu carries its own open-time anchor (`ui.context_menu.
@@ -1753,8 +1753,7 @@ pub fn with_cursor_overlay_layout<R>(
             footer: None,
             hover_row: None,
         };
-        let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
-        return Some(f(&spec, &l));
+        return Some(f(&spec));
     }
 
     // A mouse-dwell hover anchors to the hovered text cell instead of the
@@ -1810,8 +1809,7 @@ pub fn with_cursor_overlay_layout<R>(
                 footer: None,
                 hover_row: None,
             };
-            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
-            Some(f(&spec, &l))
+            Some(f(&spec))
         }
         crate::model::CursorOverlayKind::DebugHover => {
             let spec = OverlaySpec {
@@ -1834,8 +1832,7 @@ pub fn with_cursor_overlay_layout<R>(
                 footer: None,
                 hover_row: None,
             };
-            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
-            Some(f(&spec, &l))
+            Some(f(&spec))
         }
         crate::model::CursorOverlayKind::Hover => {
             let doc = model.try_document()?;
@@ -1888,8 +1885,7 @@ pub fn with_cursor_overlay_layout<R>(
                 footer: None,
                 hover_row: None,
             };
-            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
-            Some(f(&spec, &l))
+            Some(f(&spec))
         }
         crate::model::CursorOverlayKind::References => {
             let items = model.ui.reference_list.as_deref().unwrap_or(&[]);
@@ -1937,8 +1933,7 @@ pub fn with_cursor_overlay_layout<R>(
                 footer: None,
                 hover_row: None,
             };
-            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
-            Some(f(&spec, &l))
+            Some(f(&spec))
         }
     }
 }
@@ -1995,7 +1990,7 @@ fn context_menu_rows<'a>(
 /// Maps a flat `MenuItem` list (including separators) onto `OverlaySurface`
 /// `Section` boundaries: each run of non-separator items between
 /// separators becomes its own untitled `Section` (context-menu.md
-/// "Separators" — a whitespace-only break, no drawn rule). `rows` must be
+/// "Separators" — a centered hairline row). `rows` must be
 /// `context_menu_rows(items)` — the non-separator subset, one-to-one with
 /// `context_menu::selectable_items(items)` in the same order.
 fn context_menu_sections<'a>(
@@ -2068,7 +2063,7 @@ fn reference_row_text(
 }
 
 /// Render the active cursor-anchored popup (completion/hover shells;
-/// currently debug-demo content only — see `with_cursor_overlay_layout`).
+/// currently debug-demo content only — see `with_cursor_overlay_spec`).
 pub fn render_cursor_overlay(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -2078,25 +2073,19 @@ pub fn render_cursor_overlay(
     mask_cache: &mut RoundedRectMaskCache,
 ) {
     let scale_factor = model.metrics.scale_factor;
-    with_cursor_overlay_layout(
-        model,
-        window_width,
-        window_height,
-        scale_factor,
-        |spec, _l| {
-            overlay_surface::render(
-                frame,
-                painter,
-                mask_cache,
-                &model.theme.overlay,
-                spec,
-                window_width,
-                window_height,
-                scale_factor,
-                model.ui.cursor_visible,
-            );
-        },
-    );
+    with_cursor_overlay_spec(model, |spec| {
+        overlay_surface::render(
+            frame,
+            painter,
+            mask_cache,
+            &model.theme.overlay,
+            spec,
+            window_width,
+            window_height,
+            scale_factor,
+            model.ui.cursor_visible,
+        );
+    });
 }
 
 #[cfg(test)]
@@ -2314,8 +2303,10 @@ mod tests {
         model.ui.cursor_overlay = Some(crate::model::CursorOverlayState::new(
             CursorOverlayKind::DebugCompletion,
         ));
-        let l = with_cursor_overlay_layout(&model, 400, 800, 1.0, |_, l| l.panel)
-            .expect("cursor overlay open");
+        let l = with_cursor_overlay_spec(&model, |spec| {
+            overlay_surface::layout(spec, 400, 800, 1.0).panel
+        })
+        .expect("cursor overlay open");
         assert!(
             l.y + l.h <= caret.y,
             "flipped popup (y={} h={}) overlaps the caret's own line (top={})",
@@ -2410,6 +2401,45 @@ mod tests {
         let sections = context_menu_sections(&items, &rows);
         assert_eq!(sections.len(), 1);
         assert_eq!(sections[0].rows.len(), 1);
+    }
+
+    #[test]
+    fn context_menu_layout_clamps_to_window_and_keeps_separators_unselectable() {
+        use crate::context_menu::{ContextMenuRegion, MenuItem};
+        use crate::model::{ContextMenuState, CursorOverlayKind, CursorOverlayState};
+
+        let mut model = AppModel::new(400, 300, 1.0, vec![]);
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::ContextMenu));
+        model.ui.context_menu = Some(ContextMenuState {
+            items: vec![
+                MenuItem::custom("First", true, vec![]),
+                MenuItem::separator(),
+                MenuItem::custom("Second", true, vec![]),
+            ],
+            anchor: (399, 299, 0),
+            region: ContextMenuRegion::Editor,
+        });
+
+        with_cursor_overlay_spec(&model, |spec| {
+            let layout = &overlay_surface::layout(spec, 400, 300, 1.0);
+            assert!(layout.panel.x + layout.panel.w <= 400);
+            assert!(layout.panel.y + layout.panel.h <= 300);
+            assert_eq!(layout.rows.len(), 3, "separator occupies one display row");
+
+            let hit_at = |rect: WidgetRect| {
+                overlay_surface::hit_test(spec, layout, rect.x + rect.w / 2, rect.y + rect.h / 2)
+            };
+            assert_eq!(
+                hit_at(layout.rows[0]),
+                overlay_surface::OverlayHit::Row(FlatIndex(0))
+            );
+            assert_eq!(hit_at(layout.rows[1]), overlay_surface::OverlayHit::Inside);
+            assert_eq!(
+                hit_at(layout.rows[2]),
+                overlay_surface::OverlayHit::Row(FlatIndex(1))
+            );
+        })
+        .expect("context menu should produce a layout");
     }
 
     #[test]

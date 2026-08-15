@@ -744,24 +744,16 @@ impl AppModel {
     pub fn resize(&mut self, width: u32, height: u32) {
         self.window_size = (width, height);
 
-        // Subtract sidebar and right dock from available width
-        let sidebar_width = self
-            .workspace
-            .as_ref()
-            .filter(|ws| ws.sidebar_visible)
-            .map(|ws| ws.sidebar_width(self.metrics.scale_factor))
-            .unwrap_or(0.0);
-        let right_dock_width = self.dock_layout.right.size(self.metrics.scale_factor);
-        let effective_width = (width as f32) - sidebar_width - right_dock_width;
+        let editor_area_rect = crate::layout::chrome::shell(self)
+            .rect(crate::layout::UiKey::EditorArea)
+            .expect("window shell always declares the editor area");
+        let effective_width = editor_area_rect.width;
 
-        // Subtract status bar, tab bar, and bottom dock from available height
-        let status_bar_height = self.status_bar_height;
+        // The shell already excludes the status bar and docks; only the
+        // editor group's own tab strip remains to be subtracted here.
         let tab_bar_height = self.metrics.tab_bar_height;
-        let bottom_dock_height = self.dock_layout.bottom.size(self.metrics.scale_factor) as usize;
-        let available_height = (height as usize)
-            .saturating_sub(status_bar_height)
-            .saturating_sub(tab_bar_height)
-            .saturating_sub(bottom_dock_height);
+        let available_height =
+            (editor_area_rect.height.max(0.0) as usize).saturating_sub(tab_bar_height);
         let visible_lines = available_height.checked_div(self.line_height).unwrap_or(0);
 
         // Update ALL editors, not just the focused one. Gutter width (and thus
@@ -1154,6 +1146,34 @@ mod tests {
         let large_columns = large.editor().viewport.visible_columns;
 
         assert!(large_columns < small_columns);
+    }
+
+    #[test]
+    fn resize_uses_the_solved_editor_area_after_docks_open() {
+        use crate::panel::PanelId;
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.set_char_width(10.0);
+        model.resize(800, 600);
+        let full_width_columns = model.editor().viewport.visible_columns;
+        let full_height_lines = model.editor().viewport.visible_lines;
+
+        model.dock_layout.right.size_logical = 200.0;
+        model.dock_layout.right.activate(PanelId::Outline);
+        model.dock_layout.bottom.size_logical = 160.0;
+        model.dock_layout.bottom.activate(PanelId::Terminal);
+        model.resize(800, 600);
+
+        assert!(model.editor().viewport.visible_columns < full_width_columns);
+        assert!(model.editor().viewport.visible_lines < full_height_lines);
+        let editor_rect = crate::layout::chrome::shell(&model)
+            .rect(crate::layout::UiKey::EditorArea)
+            .unwrap();
+        assert_eq!(
+            model.editor().viewport.visible_lines,
+            (editor_rect.height as usize).saturating_sub(model.metrics.tab_bar_height)
+                / model.line_height
+        );
     }
 
     #[test]

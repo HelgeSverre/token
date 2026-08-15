@@ -7,8 +7,8 @@
 //! All functions here are pure (no I/O, no side effects) and can be
 //! tested independently of the rendering infrastructure.
 
-use crate::model::editor_area::{EditorGroup, Rect, TabId};
-use crate::model::{AppModel, Document, EditorState, ScaledMetrics, TextViewportMap};
+use crate::model::editor_area::{EditorGroup, Rect};
+use crate::model::{AppModel, Document, EditorState, TextViewportMap};
 
 // ============================================================================
 // Layout Constants
@@ -165,262 +165,6 @@ fn focused_group_editor_document(
     let document = editor_area.documents.get(&doc_id)?;
 
     Some((group, editor, document))
-}
-
-/// Check if a y-coordinate is within the status bar region
-#[inline]
-pub fn is_in_status_bar(y: f64, window_height: u32, status_bar_height: usize) -> bool {
-    let status_bar_top = window_height as f64 - status_bar_height as f64;
-    y >= status_bar_top
-}
-
-use super::helpers::get_tab_display_name;
-
-#[derive(Debug, Clone)]
-pub struct TabBarTab {
-    pub index: usize,
-    pub tab_id: TabId,
-    pub title: String,
-    pub x: usize,
-    pub y: usize,
-    pub width: usize,
-    pub height: usize,
-    pub text_x: usize,
-    pub text_y: usize,
-    pub is_active: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct TabBarLayout {
-    pub rect_x: usize,
-    pub rect_y: usize,
-    pub rect_w: usize,
-    pub rect_h: usize,
-    pub border_y: usize,
-    pub tabs: Vec<TabBarTab>,
-}
-
-impl TabBarLayout {
-    /// Compute each tab's `(start, end)` x-extent in unscrolled tab-bar
-    /// coordinates (relative to the group's left edge).
-    ///
-    /// Single source of truth for tab positions, shared by `new` (render +
-    /// hit-test) and the tab-scroll logic in the update layer.
-    pub fn tab_spans(
-        group: &EditorGroup,
-        model: &AppModel,
-        char_width: f32,
-    ) -> Vec<(usize, usize)> {
-        let metrics = &model.metrics;
-        let mut spans = Vec::with_capacity(group.tabs.len());
-        let mut x = metrics.padding_medium;
-
-        for tab in &group.tabs {
-            let title_chars = get_tab_display_name(model, tab).chars().count();
-            let ideal_width =
-                (title_chars as f32 * char_width).round() as usize + metrics.padding_large * 2;
-            spans.push((x, x + ideal_width));
-            x += ideal_width + metrics.padding_small;
-        }
-
-        spans
-    }
-
-    /// Total width of all tabs including trailing padding, in pixels.
-    pub fn total_tabs_width(group: &EditorGroup, model: &AppModel, char_width: f32) -> usize {
-        Self::tab_spans(group, model, char_width)
-            .last()
-            .map(|&(_, end)| end + model.metrics.padding_medium)
-            .unwrap_or(0)
-    }
-
-    pub fn new(group: &EditorGroup, model: &AppModel, char_width: f32) -> Self {
-        let metrics = &model.metrics;
-        let rect_x = group.rect.x.round() as usize;
-        let rect_y = group.rect.y.round() as usize;
-        let rect_w = group.rect.width.round() as usize;
-        let rect_h = metrics.tab_bar_height;
-        let border_y = (rect_y + rect_h).saturating_sub(1);
-        let tab_y = rect_y + metrics.padding_small;
-        let tab_height = rect_h.saturating_sub(metrics.padding_medium);
-        let right_edge = (rect_x + rect_w) as isize;
-        let scroll = group.tab_scroll as isize;
-
-        let spans = Self::tab_spans(group, model, char_width);
-        let mut tabs = Vec::with_capacity(group.tabs.len());
-
-        for (index, (tab, &(start, end))) in group.tabs.iter().zip(&spans).enumerate() {
-            let tab_x = rect_x as isize + start as isize - scroll;
-            let tab_right = rect_x as isize + end as isize - scroll;
-
-            if tab_right <= rect_x as isize {
-                // Scrolled fully off the left edge
-                continue;
-            }
-            if tab_x >= right_edge {
-                break;
-            }
-
-            // Clip to the group's tab bar on both edges; partially visible
-            // tabs keep their logical text_x so glyphs stay put and the
-            // renderer's per-tab clip trims the overhang.
-            let visible_x = tab_x.max(rect_x as isize) as usize;
-            let visible_right = tab_right.min(right_edge) as usize;
-
-            tabs.push(TabBarTab {
-                index,
-                tab_id: tab.id,
-                title: get_tab_display_name(model, tab),
-                x: visible_x,
-                y: tab_y,
-                width: visible_right.saturating_sub(visible_x),
-                height: tab_height,
-                text_x: (tab_x + metrics.padding_large as isize).max(0) as usize,
-                text_y: tab_y + metrics.padding_medium,
-                is_active: index == group.active_tab_index,
-            });
-        }
-
-        Self {
-            rect_x,
-            rect_y,
-            rect_w,
-            rect_h,
-            border_y,
-            tabs,
-        }
-    }
-
-    #[inline]
-    pub fn contains(&self, x: f64, y: f64) -> bool {
-        x >= self.rect_x as f64
-            && x < (self.rect_x + self.rect_w) as f64
-            && y >= self.rect_y as f64
-            && y < (self.rect_y + self.rect_h) as f64
-    }
-
-    pub fn tab_at(&self, x: f64, y: f64) -> Option<&TabBarTab> {
-        if !self.contains(x, y) {
-            return None;
-        }
-
-        self.tabs.iter().find(|tab| {
-            x >= tab.x as f64
-                && x < (tab.x + tab.width) as f64
-                && y >= tab.y as f64
-                && y < (tab.y + tab.height) as f64
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct DockHeaderTab {
-    pub panel_id: crate::panel::PanelId,
-    pub title: &'static str,
-    pub x: usize,
-    pub y: usize,
-    pub width: usize,
-    pub height: usize,
-    pub text_x: usize,
-    pub text_y: usize,
-    pub is_active: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct DockHeaderLayout {
-    pub rect_x: usize,
-    pub rect_y: usize,
-    pub rect_w: usize,
-    pub rect_h: usize,
-    pub border_y: usize,
-    pub content_rect: Rect,
-    pub tabs: Vec<DockHeaderTab>,
-}
-
-impl DockHeaderLayout {
-    pub fn new(
-        dock: &crate::panel::Dock,
-        rect: Rect,
-        metrics: &ScaledMetrics,
-        char_width: f32,
-    ) -> Self {
-        let rect_x = rect.x.round() as usize;
-        let rect_y = rect.y.round() as usize;
-        let rect_w = rect.width.round() as usize;
-        let rect_h = metrics.tab_bar_height;
-        let border_y = (rect_y + rect_h).saturating_sub(metrics.border_width);
-        let right_edge = rect_x + rect_w;
-        let tab_y = rect_y + metrics.padding_small;
-        let tab_height = rect_h.saturating_sub(metrics.padding_medium);
-
-        let mut tabs = Vec::with_capacity(dock.panel_ids.len());
-        let mut tab_x = rect_x + metrics.padding_medium;
-
-        for (index, panel_id) in dock.panel_ids.iter().copied().enumerate() {
-            if tab_x >= right_edge {
-                break;
-            }
-
-            let title = panel_id.display_name();
-            let title_chars = title.chars().count();
-            let ideal_width =
-                (title_chars as f32 * char_width).round() as usize + metrics.padding_large * 2;
-            let width = ideal_width.min(right_edge.saturating_sub(tab_x));
-
-            tabs.push(DockHeaderTab {
-                panel_id,
-                title,
-                x: tab_x,
-                y: tab_y,
-                width,
-                height: tab_height,
-                text_x: tab_x + metrics.padding_large,
-                text_y: tab_y + metrics.padding_medium,
-                is_active: dock.active_index == Some(index),
-            });
-
-            tab_x += ideal_width + metrics.padding_small;
-        }
-
-        let content_y = rect.y + rect_h as f32;
-        let content_height = (rect.height - rect_h as f32).max(0.0);
-
-        Self {
-            rect_x,
-            rect_y,
-            rect_w,
-            rect_h,
-            border_y,
-            content_rect: Rect::new(rect.x, content_y, rect.width, content_height),
-            tabs,
-        }
-    }
-
-    #[inline]
-    pub fn is_in_header(&self, x: f64, y: f64) -> bool {
-        x >= self.rect_x as f64
-            && x < (self.rect_x + self.rect_w) as f64
-            && y >= self.rect_y as f64
-            && y < (self.rect_y + self.rect_h) as f64
-    }
-
-    #[inline]
-    pub fn is_in_content(&self, x: f64, y: f64) -> bool {
-        self.content_rect.contains(x as f32, y as f32)
-    }
-
-    pub fn tab_at(&self, x: f64, y: f64) -> Option<&DockHeaderTab> {
-        if !self.is_in_header(x, y) {
-            return None;
-        }
-
-        self.tabs.iter().find(|tab| {
-            x >= tab.x as f64
-                && x < (tab.x + tab.width) as f64
-                && y >= tab.y as f64
-                && y < (tab.y + tab.height) as f64
-        })
-    }
 }
 
 /// Convert pixel coordinates to document line and column for the focused editor.
@@ -878,277 +622,6 @@ impl GroupLayout {
 }
 
 // ============================================================================
-// Pane Layout System
-// ============================================================================
-
-/// Border configuration for a pane.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct PaneBorders {
-    /// Show border on top edge
-    pub top: bool,
-    /// Show border on bottom edge
-    pub bottom: bool,
-    /// Show border on left edge
-    pub left: bool,
-    /// Show border on right edge
-    pub right: bool,
-}
-
-impl PaneBorders {
-    /// No borders
-    pub const NONE: Self = Self {
-        top: false,
-        bottom: false,
-        left: false,
-        right: false,
-    };
-}
-
-/// Insets (padding) configuration for a pane.
-#[derive(Debug, Clone, Copy)]
-pub struct PaneInsets {
-    pub top: usize,
-    pub bottom: usize,
-    pub left: usize,
-    pub right: usize,
-}
-
-impl PaneInsets {
-    /// Create uniform insets
-    pub fn all(size: usize) -> Self {
-        Self {
-            top: size,
-            bottom: size,
-            left: size,
-            right: size,
-        }
-    }
-
-    /// No insets
-    pub const NONE: Self = Self {
-        top: 0,
-        bottom: 0,
-        left: 0,
-        right: 0,
-    };
-}
-
-impl Default for PaneInsets {
-    fn default() -> Self {
-        Self::NONE
-    }
-}
-
-/// A reusable pane layout with optional header, borders, and content insets.
-///
-/// Panes are the building blocks for UI panels, preview panes, dialogs, etc.
-/// They provide consistent sizing and positioning across the application.
-///
-/// # Layout Structure
-/// ```text
-/// ┌─────────────────────────────────┐ ← outer_rect.y
-/// │ Header (optional)               │
-/// │─────────────────────────────────│ ← header border
-/// │ ┌─────────────────────────────┐ │ ← content_rect.y (with insets)
-/// │ │                             │ │
-/// │ │     Content Area            │ │
-/// │ │                             │ │
-/// │ └─────────────────────────────┘ │
-/// └─────────────────────────────────┘
-/// ```
-#[derive(Debug, Clone, Copy)]
-pub struct Pane {
-    /// Full outer rect of the pane
-    pub outer_rect: Rect,
-    /// Header height (0 if no header)
-    pub header_height: usize,
-    /// Whether to show header border
-    pub header_border: bool,
-    /// Content area insets
-    pub insets: PaneInsets,
-    /// Border configuration
-    pub borders: PaneBorders,
-    /// Border width in pixels
-    pub border_width: usize,
-}
-
-impl Pane {
-    /// Create a pane with a header (uses tab_bar_height).
-    pub fn with_header(rect: Rect, metrics: &crate::model::ScaledMetrics) -> Self {
-        Self {
-            outer_rect: rect,
-            header_height: metrics.tab_bar_height,
-            header_border: true,
-            insets: PaneInsets::all(metrics.padding_large + metrics.padding_medium),
-            borders: PaneBorders::NONE,
-            border_width: metrics.border_width,
-        }
-    }
-
-    // =========================================================================
-    // Outer rect accessors
-    // =========================================================================
-
-    /// Outer rect X position
-    #[inline]
-    pub fn x(&self) -> usize {
-        self.outer_rect.x.round() as usize
-    }
-
-    /// Outer rect Y position
-    #[inline]
-    pub fn y(&self) -> usize {
-        self.outer_rect.y.round() as usize
-    }
-
-    /// Outer rect width
-    #[inline]
-    pub fn width(&self) -> usize {
-        self.outer_rect.width.round() as usize
-    }
-
-    /// Outer rect height
-    #[inline]
-    pub fn height(&self) -> usize {
-        self.outer_rect.height.round() as usize
-    }
-
-    // =========================================================================
-    // Header accessors
-    // =========================================================================
-
-    /// Whether this pane has a header
-    #[inline]
-    pub fn has_header(&self) -> bool {
-        self.header_height > 0
-    }
-
-    /// X position for header title text
-    #[inline]
-    pub fn header_title_x(&self) -> usize {
-        self.x() + self.insets.left
-    }
-
-    /// Y position for header title text (vertically centered)
-    #[inline]
-    pub fn header_title_y(&self, metrics: &crate::model::ScaledMetrics) -> usize {
-        self.y() + metrics.padding_medium
-    }
-
-    /// Y position of header border line
-    #[inline]
-    pub fn header_border_y(&self) -> usize {
-        self.y() + self.header_height.saturating_sub(self.border_width)
-    }
-
-    // =========================================================================
-    // Content rect accessors
-    // =========================================================================
-
-    /// Content area rect after the header, before applying insets.
-    pub fn content_rect(&self) -> Rect {
-        let y = self.outer_rect.y + self.header_height as f32;
-        let height = (self.outer_rect.height - self.header_height as f32).max(0.0);
-        Rect::new(self.outer_rect.x, y, self.outer_rect.width, height)
-    }
-
-    /// Content area X position (with left inset)
-    #[inline]
-    pub fn content_x(&self) -> usize {
-        self.x() + self.insets.left
-    }
-
-    /// Content area Y position (below header, with top inset)
-    #[inline]
-    pub fn content_y(&self) -> usize {
-        self.y() + self.header_height + self.insets.top
-    }
-
-    /// Content area width (with horizontal insets)
-    #[inline]
-    pub fn content_width(&self) -> usize {
-        self.width()
-            .saturating_sub(self.insets.left + self.insets.right)
-    }
-
-    /// Content area height (with vertical insets, after header)
-    #[inline]
-    pub fn content_height(&self) -> usize {
-        self.height()
-            .saturating_sub(self.header_height + self.insets.top + self.insets.bottom)
-    }
-
-    // =========================================================================
-    // Utility helpers
-    // =========================================================================
-
-    /// Calculate visible lines given line height
-    #[inline]
-    pub fn visible_lines(&self, line_height: usize) -> usize {
-        if line_height == 0 {
-            return 0;
-        }
-        self.content_height() / line_height
-    }
-
-    /// Calculate max text width (content width)
-    #[inline]
-    pub fn max_text_width(&self) -> usize {
-        self.content_width()
-    }
-
-    /// Check if a point is within the pane header area
-    #[inline]
-    pub fn is_in_header(&self, x: f64, y: f64) -> bool {
-        if !self.has_header() {
-            return false;
-        }
-        let px = x as f32;
-        let py = y as f32;
-        px >= self.outer_rect.x
-            && px < self.outer_rect.x + self.outer_rect.width
-            && py >= self.outer_rect.y
-            && py < self.outer_rect.y + self.header_height as f32
-    }
-}
-
-/// Shared geometry contract for preview panes.
-///
-/// Preview panes have two distinct consumers:
-/// - the renderer, which paints the preview chrome and native fallback content
-/// - hosted preview content, which needs the exact content rect below the header
-///
-/// This keeps header/content split and hit-testing aligned across render,
-/// hit-test, and hosted preview layout.
-#[derive(Debug, Clone, Copy)]
-pub struct PreviewPaneLayout {
-    pub pane: Pane,
-}
-
-impl PreviewPaneLayout {
-    pub fn new(rect: Rect, metrics: &crate::model::ScaledMetrics) -> Self {
-        Self {
-            pane: Pane::with_header(rect, metrics),
-        }
-    }
-
-    #[inline]
-    pub fn hosted_content_rect(&self) -> Rect {
-        self.pane.content_rect()
-    }
-
-    #[inline]
-    pub fn is_in_header(&self, x: f64, y: f64) -> bool {
-        self.pane.is_in_header(x, y)
-    }
-
-    #[inline]
-    pub fn is_in_content(&self, x: f64, y: f64) -> bool {
-        self.hosted_content_rect().contains(x as f32, y as f32)
-    }
-}
-
-// ============================================================================
 // Modal Geometry
 // ============================================================================
 
@@ -1161,12 +634,6 @@ impl PreviewPaneLayout {
 pub struct ModalSpacing;
 
 impl ModalSpacing {
-    /// Outer padding inside the modal border
-    const BASE_PAD: f64 = 12.0;
-    /// Small gap (e.g., title to input, label to input)
-    const BASE_GAP_SM: f64 = 4.0;
-    /// Medium gap (e.g., between sections)
-    const BASE_GAP_MD: f64 = 8.0;
     /// Input field internal vertical padding (total top+bottom)
     const BASE_INPUT_PAD_Y: f64 = 8.0;
     /// Input field internal horizontal padding (each side)
@@ -1177,30 +644,12 @@ impl ModalSpacing {
         (base * scale_factor).round() as usize
     }
 
-    pub fn pad(scale_factor: f64) -> usize {
-        Self::scaled(Self::BASE_PAD, scale_factor)
-    }
-
-    pub fn gap_sm(scale_factor: f64) -> usize {
-        Self::scaled(Self::BASE_GAP_SM, scale_factor)
-    }
-
-    pub fn gap_md(scale_factor: f64) -> usize {
-        Self::scaled(Self::BASE_GAP_MD, scale_factor)
-    }
-
     pub fn input_pad_y(scale_factor: f64) -> usize {
         Self::scaled(Self::BASE_INPUT_PAD_Y, scale_factor)
     }
 
     pub fn input_pad_x(scale_factor: f64) -> usize {
         Self::scaled(Self::BASE_INPUT_PAD_X, scale_factor)
-    }
-
-    /// Cap on `y = window_height / 4` for small/centered modals — logical
-    /// 100px, scaled like every other modal constant.
-    pub fn top_offset_cap(scale_factor: f64) -> usize {
-        Self::scaled(100.0, scale_factor)
     }
 }
 
@@ -1211,204 +660,6 @@ pub struct WidgetRect {
     pub y: usize,
     pub w: usize,
     pub h: usize,
-}
-
-/// Vertical stack layout builder for modal dialogs.
-///
-/// Tracks a cursor position that advances as widgets are pushed.
-/// Height is derived automatically from the content that's actually laid out.
-pub struct VStack {
-    cursor_y: usize,
-    content_width: usize,
-    widgets: Vec<WidgetRect>,
-}
-
-impl VStack {
-    pub fn new(content_width: usize) -> Self {
-        Self {
-            cursor_y: 0,
-            content_width,
-            widgets: Vec::new(),
-        }
-    }
-
-    /// Add vertical spacing
-    pub fn gap(&mut self, h: usize) {
-        self.cursor_y += h;
-    }
-
-    /// Push a widget with the given height, spanning the full content width.
-    /// Returns the index into `widgets` for later retrieval.
-    pub fn push(&mut self, h: usize) -> usize {
-        let idx = self.widgets.len();
-        self.widgets.push(WidgetRect {
-            x: 0,
-            y: self.cursor_y,
-            w: self.content_width,
-            h,
-        });
-        self.cursor_y += h;
-        idx
-    }
-
-    /// Total height consumed by all widgets and gaps
-    pub fn height(&self) -> usize {
-        self.cursor_y
-    }
-}
-
-/// Computed layout for a modal dialog.
-///
-/// Single source of truth for modal positioning — used by both rendering
-/// and hit-testing. The outer rect defines the modal border/background,
-/// and widgets are positioned absolutely within the window.
-#[derive(Clone, Debug)]
-pub struct ModalLayout {
-    /// Modal outer bounds (background + border)
-    pub x: usize,
-    pub y: usize,
-    pub w: usize,
-    pub h: usize,
-    /// Absolutely-positioned widget rects (indices from VStack::push)
-    pub widgets: Vec<WidgetRect>,
-}
-
-impl ModalLayout {
-    /// Build a modal layout from a VStack and positioning parameters.
-    pub fn build(
-        vstack: VStack,
-        modal_width: usize,
-        window_width: usize,
-        window_height: usize,
-        scale_factor: f64,
-    ) -> Self {
-        let pad = ModalSpacing::pad(scale_factor);
-        let content_height = vstack.height();
-        let modal_height = content_height + pad * 2;
-        let modal_x = (window_width.saturating_sub(modal_width)) / 2;
-        let modal_y = (window_height / 4).min(ModalSpacing::top_offset_cap(scale_factor));
-        let content_x = modal_x + pad;
-        let content_y = modal_y + pad;
-
-        // Translate widget rects from local to absolute coordinates
-        let widgets = vstack
-            .widgets
-            .into_iter()
-            .map(|w| WidgetRect {
-                x: content_x + w.x,
-                y: content_y + w.y,
-                w: w.w,
-                h: w.h,
-            })
-            .collect();
-
-        Self {
-            x: modal_x,
-            y: modal_y,
-            w: modal_width,
-            h: modal_height,
-            widgets,
-        }
-    }
-
-    /// Check if a point is inside the modal bounds
-    pub fn contains(&self, px: usize, py: usize) -> bool {
-        px >= self.x && px < self.x + self.w && py >= self.y && py < self.y + self.h
-    }
-
-    /// Get a widget rect by index
-    pub fn widget(&self, idx: usize) -> &WidgetRect {
-        &self.widgets[idx]
-    }
-
-    /// Height of an input field (line_height + padding)
-    pub fn input_height(line_height: usize, scale_factor: f64) -> usize {
-        line_height + ModalSpacing::input_pad_y(scale_factor)
-    }
-}
-
-// ============================================================================
-// Dock Geometry
-// ============================================================================
-
-/// Shared top-level window layout used by rendering and hit-testing.
-#[derive(Debug, Clone, Copy)]
-pub struct WindowLayout {
-    /// Full content area above the status bar.
-    pub content_rect: Rect,
-    /// Status bar rectangle.
-    pub status_bar_rect: Rect,
-    /// Sidebar rectangle (if visible).
-    pub sidebar_rect: Option<Rect>,
-    /// Remaining editor area after sidebar/right/bottom panels are subtracted.
-    pub editor_area_rect: Rect,
-    /// Right dock rectangle (if open).
-    pub right_dock_rect: Option<Rect>,
-    /// Bottom dock rectangle (if open).
-    pub bottom_dock_rect: Option<Rect>,
-}
-
-impl WindowLayout {
-    /// Compute the current top-level window layout from the app model.
-    pub fn compute(model: &AppModel) -> Self {
-        let window_width = model.window_size.0 as f32;
-        let window_height = model.window_size.1 as f32;
-        let status_bar_h = model.status_bar_height as f32;
-        let content_height = (window_height - status_bar_h).max(0.0);
-
-        let sidebar_width = model
-            .workspace
-            .as_ref()
-            .filter(|ws| ws.sidebar_visible)
-            .map(|ws| ws.sidebar_width(model.metrics.scale_factor))
-            .unwrap_or(0.0);
-        let right_dock_width = model.dock_layout.right.size(model.metrics.scale_factor);
-        let bottom_dock_height = model.dock_layout.bottom.size(model.metrics.scale_factor);
-        let side_panel_height = (content_height - bottom_dock_height).max(0.0);
-
-        let content_rect = Rect::new(0.0, 0.0, window_width, content_height);
-        let status_bar_rect = Rect::new(0.0, content_height, window_width, status_bar_h);
-        let sidebar_rect = if sidebar_width > 0.0 {
-            Some(Rect::new(0.0, 0.0, sidebar_width, content_height))
-        } else {
-            None
-        };
-        let right_dock_rect = if right_dock_width > 0.0 {
-            Some(Rect::new(
-                window_width - right_dock_width,
-                0.0,
-                right_dock_width,
-                side_panel_height,
-            ))
-        } else {
-            None
-        };
-        let bottom_dock_rect = if bottom_dock_height > 0.0 {
-            Some(Rect::new(
-                sidebar_width,
-                side_panel_height,
-                (window_width - sidebar_width).max(0.0),
-                bottom_dock_height,
-            ))
-        } else {
-            None
-        };
-        let editor_area_rect = Rect::new(
-            sidebar_width,
-            0.0,
-            (window_width - sidebar_width - right_dock_width).max(0.0),
-            side_panel_height,
-        );
-
-        Self {
-            content_rect,
-            status_bar_rect,
-            sidebar_rect,
-            editor_area_rect,
-            right_dock_rect,
-            bottom_dock_rect,
-        }
-    }
 }
 
 // ============================================================================
@@ -1476,14 +727,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_is_in_status_bar() {
-        // Window 600px tall, status bar height 20px -> status bar at y >= 580
-        assert!(!is_in_status_bar(579.0, 600, 20));
-        assert!(is_in_status_bar(580.0, 600, 20));
-        assert!(is_in_status_bar(590.0, 600, 20));
-    }
-
-    #[test]
     fn test_expand_tabs() {
         assert_eq!(expand_tabs_for_display("a\tb"), "a   b"); // tab at col 1 -> 3 spaces
         assert_eq!(expand_tabs_for_display("\t"), "    "); // tab at col 0 -> 4 spaces
@@ -1544,132 +787,6 @@ mod tests {
     }
 
     #[test]
-    fn test_tab_bar_layout_hits_tabs_and_empty_space() {
-        let mut model = crate::model::AppModel::new(400, 300, 1.0, vec![]);
-        let group_id = model.editor_area.focused_group_id;
-
-        {
-            let group = model.editor_area.groups.get_mut(&group_id).unwrap();
-            group.rect = Rect::new(10.0, 20.0, 260.0, 120.0);
-
-            let mut second_tab = group.tabs[0].clone();
-            second_tab.id = crate::model::editor_area::TabId(999);
-            group.tabs.push(second_tab);
-        }
-
-        let group = model.editor_area.groups.get(&group_id).unwrap();
-        let layout = TabBarLayout::new(group, &model, 8.0);
-
-        assert_eq!(layout.tabs.len(), 2);
-        assert!(layout.contains(11.0, 21.0));
-        assert!(layout
-            .tab_at((layout.rect_x + 1) as f64, (layout.rect_y + 1) as f64)
-            .is_none());
-
-        let first = layout
-            .tab_at((layout.tabs[0].x + 1) as f64, (layout.tabs[0].y + 1) as f64)
-            .unwrap();
-        assert_eq!(first.index, 0);
-        assert_eq!(first.tab_id, group.tabs[0].id);
-
-        let second = layout
-            .tab_at((layout.tabs[1].x + 1) as f64, (layout.tabs[1].y + 1) as f64)
-            .unwrap();
-        assert_eq!(second.index, 1);
-        assert_eq!(second.tab_id, group.tabs[1].id);
-    }
-
-    #[test]
-    fn test_tab_bar_layout_clips_tabs_at_group_edge() {
-        let mut model = crate::model::AppModel::new(400, 300, 1.0, vec![]);
-        let group_id = model.editor_area.focused_group_id;
-
-        {
-            let group = model.editor_area.groups.get_mut(&group_id).unwrap();
-            group.rect = Rect::new(10.0, 20.0, 70.0, 120.0);
-
-            let mut second_tab = group.tabs[0].clone();
-            second_tab.id = crate::model::editor_area::TabId(999);
-            group.tabs.push(second_tab);
-        }
-
-        let group = model.editor_area.groups.get(&group_id).unwrap();
-        let layout = TabBarLayout::new(group, &model, 8.0);
-        let right_edge = layout.rect_x + layout.rect_w;
-
-        assert_eq!(layout.tabs.len(), 1);
-        assert_eq!(layout.tabs[0].x + layout.tabs[0].width, right_edge);
-    }
-
-    #[test]
-    fn test_dock_header_layout_splits_header_and_content() {
-        let metrics = ScaledMetrics::new(1.0);
-        let dock = crate::panel::Dock::new(crate::panel::DockPosition::Right);
-        let layout =
-            DockHeaderLayout::new(&dock, Rect::new(700.0, 0.0, 300.0, 540.0), &metrics, 8.0);
-
-        assert_eq!(layout.rect_h, metrics.tab_bar_height);
-        assert_eq!(layout.content_rect.y, metrics.tab_bar_height as f32);
-        assert_eq!(
-            layout.content_rect.height,
-            540.0 - metrics.tab_bar_height as f32
-        );
-    }
-
-    #[test]
-    fn test_dock_header_layout_hits_tabs_and_content() {
-        let metrics = ScaledMetrics::new(1.0);
-        let mut dock = crate::panel::Dock::new(crate::panel::DockPosition::Bottom);
-        dock.register_panel(crate::panel::PanelId::TERMINAL);
-        dock.register_panel(crate::panel::PanelId::TASK_RUNNER);
-        dock.active_index = Some(1);
-        let layout =
-            DockHeaderLayout::new(&dock, Rect::new(0.0, 400.0, 500.0, 200.0), &metrics, 8.0);
-
-        assert_eq!(layout.tabs.len(), 2);
-        assert_eq!(
-            layout
-                .tab_at(layout.tabs[0].x as f64 + 1.0, layout.tabs[0].y as f64 + 1.0)
-                .unwrap()
-                .panel_id,
-            crate::panel::PanelId::TERMINAL
-        );
-        assert!(
-            layout
-                .tab_at(layout.tabs[1].x as f64 + 1.0, layout.tabs[1].y as f64 + 1.0)
-                .unwrap()
-                .is_active
-        );
-        assert!(layout.is_in_content(10.0, layout.content_rect.y as f64 + 10.0));
-        assert!(!layout.is_in_content(10.0, layout.rect_y as f64 + 2.0));
-    }
-
-    #[test]
-    fn test_window_layout_editor_area_accounts_for_docks() {
-        use crate::panel::DockPosition;
-
-        let mut model = crate::model::AppModel::new(1000, 700, 1.0, vec![]);
-        model.line_height = 20;
-        model.status_bar_height = 20;
-        model.dock_layout.dock_mut(DockPosition::Right).is_open = true;
-        model.dock_layout.dock_mut(DockPosition::Right).size_logical = 180.0;
-        model.dock_layout.dock_mut(DockPosition::Bottom).is_open = true;
-        model
-            .dock_layout
-            .dock_mut(DockPosition::Bottom)
-            .size_logical = 140.0;
-
-        let layout = WindowLayout::compute(&model);
-
-        assert_eq!(layout.content_rect.height, 680.0);
-        assert_eq!(layout.status_bar_rect.y, 680.0);
-        assert_eq!(layout.right_dock_rect.unwrap().width, 180.0);
-        assert_eq!(layout.bottom_dock_rect.unwrap().height, 140.0);
-        assert_eq!(layout.editor_area_rect.width, 820.0);
-        assert_eq!(layout.editor_area_rect.height, 540.0);
-    }
-
-    #[test]
     fn test_char_col_to_visual_col() {
         assert_eq!(char_col_to_visual_col("abc", 2), 2);
         // "a\tb": 'a' at char 0 (visual 0), '\t' at char 1 (visual 1-3), 'b' at char 2 (visual 4)
@@ -1719,105 +836,10 @@ mod tests {
         assert_eq!(column_to_pixel_x(3, 1, 100, 7.5), 115);
     }
 
-    // ====================================================================
-    // VStack / ModalLayout tests
-    // ====================================================================
-
     #[test]
-    fn test_vstack_empty() {
-        let v = VStack::new(200);
-        assert_eq!(v.height(), 0);
-    }
-
-    #[test]
-    fn test_vstack_push_and_gap() {
-        let mut v = VStack::new(200);
-        let a = v.push(30);
-        v.gap(10);
-        let b = v.push(20);
-
-        assert_eq!(a, 0);
-        assert_eq!(b, 1);
-        assert_eq!(v.widgets[a].y, 0);
-        assert_eq!(v.widgets[a].h, 30);
-        assert_eq!(v.widgets[b].y, 40); // 30 + 10 gap
-        assert_eq!(v.widgets[b].h, 20);
-        assert_eq!(v.height(), 60); // 30 + 10 + 20
-    }
-
-    #[test]
-    fn test_modal_layout_build_translation() {
-        let mut v = VStack::new(200);
-        v.push(30); // widget 0
-        v.gap(8);
-        v.push(20); // widget 1
-
-        let layout = ModalLayout::build(v, 224, 1000, 800, 1.0);
-        let pad = ModalSpacing::pad(1.0);
-
-        // Modal is centered: (1000 - 224) / 2 = 388
-        assert_eq!(layout.x, 388);
-        // Modal y: min(800/4, 100) = 100
-        assert_eq!(layout.y, 100);
-        // Modal height: content(30+8+20) + 2*pad
-        assert_eq!(layout.h, 58 + pad * 2);
-
-        // Widget 0: translated to (388+pad, 100+pad)
-        let w0 = layout.widget(0);
-        assert_eq!(w0.x, 388 + pad);
-        assert_eq!(w0.y, 100 + pad);
-        assert_eq!(w0.h, 30);
-
-        // Widget 1: translated, y = 100+pad+30+8 = 100+pad+38
-        let w1 = layout.widget(1);
-        assert_eq!(w1.y, 100 + pad + 38);
-    }
-
-    #[test]
-    fn test_modal_layout_contains_boundary() {
-        let layout = ModalLayout {
-            x: 100,
-            y: 50,
-            w: 200,
-            h: 100,
-            widgets: vec![],
-        };
-
-        // Corners: inclusive at (x,y), exclusive at (x+w, y+h)
-        assert!(layout.contains(100, 50));
-        assert!(layout.contains(299, 149));
-        assert!(!layout.contains(300, 50));
-        assert!(!layout.contains(100, 150));
-        assert!(!layout.contains(99, 50));
-        assert!(!layout.contains(100, 49));
-    }
-
-    #[test]
-    fn test_input_height() {
-        assert_eq!(
-            ModalLayout::input_height(20, 1.0),
-            20 + ModalSpacing::input_pad_y(1.0)
-        );
-    }
-
-    // ====================================================================
-    // Per-modal layout tests
-    // ====================================================================
-
-    #[test]
-    fn test_command_palette_layout_y_position_scales_with_scale_factor() {
-        let lh = 40;
-        let mut v = VStack::new(400);
-        v.push(lh);
-        let layout = ModalLayout::build(v, 800, 2000, 4000, 2.0);
-        assert_eq!(layout.y, 200);
-    }
-
-    #[test]
-    fn test_tree_list_layout_positions() {
-        use crate::model::ScaledMetrics;
-        let metrics = ScaledMetrics::new(1.0);
-        let tl = TreeListLayout::from_metrics(&metrics);
+    fn test_tree_row_layout_positions() {
+        let metrics = crate::model::ScaledMetrics::new(1.0);
+        let tl = TreeRowLayout::from_metrics(&metrics);
 
         // Depth 0: just left_padding
         let pos = tl.node_position(0, 100);
@@ -1829,73 +851,18 @@ mod tests {
         let pos1 = tl.node_position(1, 100);
         assert!(pos1.icon_x > pos.icon_x);
     }
-
-    #[test]
-    fn test_outline_panel_layout_content_geometry() {
-        let metrics = ScaledMetrics::new(1.0);
-        let layout = OutlinePanelLayout::new(Rect::new(700.0, 24.0, 300.0, 516.0), &metrics);
-
-        assert_eq!(layout.content_rect.y, 24.0);
-        assert_eq!(layout.content_rect.height, 516.0);
-        assert_eq!(
-            layout.visible_capacity(),
-            (layout.content_rect.height / metrics.file_tree_row_height as f32) as usize
-        );
-    }
-
-    #[test]
-    fn test_outline_panel_layout_row_and_chevron_hit_testing() {
-        let metrics = ScaledMetrics::new(1.0);
-        let layout = OutlinePanelLayout::new(Rect::new(700.0, 24.0, 300.0, 516.0), &metrics);
-        let row_start = layout.content_rect.y;
-        let next_row = row_start + metrics.file_tree_row_height as f32;
-
-        assert_eq!(layout.row_index_at_y(row_start - 0.1, 3), None);
-        assert_eq!(layout.row_index_at_y(row_start, 3), Some(3));
-        assert_eq!(layout.row_index_at_y(next_row - 0.1, 3), Some(3));
-        assert_eq!(layout.row_index_at_y(next_row, 3), Some(4));
-
-        assert!(layout.is_on_chevron(0, 708.0));
-        assert!(!layout.is_on_chevron(0, 725.0));
-    }
-
-    #[test]
-    fn test_preview_pane_layout_splits_header_and_hosted_content() {
-        let metrics = ScaledMetrics::new(1.0);
-        let layout = PreviewPaneLayout::new(Rect::new(100.0, 40.0, 320.0, 240.0), &metrics);
-        let hosted = layout.hosted_content_rect();
-
-        assert_eq!(hosted.x, 100.0);
-        assert_eq!(hosted.y, 40.0 + metrics.tab_bar_height as f32);
-        assert_eq!(hosted.width, 320.0);
-        assert_eq!(hosted.height, 240.0 - metrics.tab_bar_height as f32);
-    }
-
-    #[test]
-    fn test_preview_pane_layout_hit_testing() {
-        let metrics = ScaledMetrics::new(1.0);
-        let layout = PreviewPaneLayout::new(Rect::new(100.0, 40.0, 320.0, 240.0), &metrics);
-        let header_y = 40.0 + (metrics.tab_bar_height as f64 / 2.0);
-        let content_y = 40.0 + metrics.tab_bar_height as f64 + 10.0;
-
-        assert!(layout.is_in_header(120.0, header_y));
-        assert!(!layout.is_in_content(120.0, header_y));
-        assert!(!layout.is_in_header(120.0, content_y));
-        assert!(layout.is_in_content(120.0, content_y));
-    }
 }
 
 // ============================================================================
-// Tree List Layout
+// Tree Row Layout
 // ============================================================================
 
-/// Reusable layout parameters for scrollable tree-list widgets (sidebar, outline).
+/// Reusable geometry for one row within a Clay-owned tree-list viewport.
 ///
-/// Encapsulates the padding, indent, and spacing calculations that are shared
-/// between the sidebar file tree and the outline panel, providing a single
-/// source of truth for tree-node positioning.
+/// Clay/`RowListView` owns the viewport and vertical row boxes; this helper
+/// owns only the indentation and label/accessory positions inside a row.
 #[derive(Debug, Clone, Copy)]
-pub struct TreeListLayout {
+pub struct TreeRowLayout {
     /// Left padding from container edge to first-level icons
     pub left_padding: usize,
     /// Width reserved for the expand/collapse indicator
@@ -1904,66 +871,6 @@ pub struct TreeListLayout {
     pub text_top_padding: usize,
     /// Horizontal indent per nesting level
     pub indent: f32,
-}
-
-/// Shared layout for the outline panel content area.
-///
-/// The dock itself owns any header chrome. This layout only describes the
-/// scrollable outline content region so render, scroll logic, and mouse
-/// handling all use the same measurements.
-#[derive(Debug, Clone, Copy)]
-pub struct OutlinePanelLayout {
-    /// Scrollable outline content area.
-    pub content_rect: Rect,
-    /// Tree row height in pixels.
-    pub row_height: usize,
-    /// Tree indentation/padding rules for the outline panel.
-    pub tree: TreeListLayout,
-}
-
-impl OutlinePanelLayout {
-    /// Build outline panel geometry from the content rectangle and scaled metrics.
-    pub fn new(content_rect: Rect, metrics: &ScaledMetrics) -> Self {
-        let row_height = metrics.file_tree_row_height;
-
-        Self {
-            content_rect,
-            row_height,
-            tree: TreeListLayout::outline_from_metrics(metrics),
-        }
-    }
-
-    /// Number of whole outline rows that fit in the content area.
-    #[inline]
-    pub fn visible_capacity(&self) -> usize {
-        if self.row_height == 0 {
-            0
-        } else {
-            (self.content_rect.height / self.row_height as f32).max(0.0) as usize
-        }
-    }
-
-    /// Resolve a mouse y-coordinate to a flattened visible row index.
-    #[inline]
-    pub fn row_index_at_y(&self, y: f32, scroll_offset: usize) -> Option<usize> {
-        if self.row_height == 0
-            || y < self.content_rect.y
-            || y >= self.content_rect.y + self.content_rect.height
-        {
-            return None;
-        }
-
-        let visual_row = ((y - self.content_rect.y) / self.row_height as f32) as usize;
-        Some(scroll_offset.saturating_add(visual_row))
-    }
-
-    /// Whether the x-coordinate lands on the collapse/expand indicator for a row depth.
-    #[inline]
-    pub fn is_on_chevron(&self, depth: usize, x: f32) -> bool {
-        let start = self.content_rect.x + self.tree.x_offset(depth) as f32;
-        let end = start + self.tree.indicator_width as f32;
-        x >= start && x < end
-    }
 }
 
 /// Computed positions for a single tree node at a given depth and y.
@@ -1977,7 +884,7 @@ pub struct TreeNodePosition {
     pub text_y: usize,
 }
 
-impl TreeListLayout {
+impl TreeRowLayout {
     /// Create a tree list layout from scaled metrics.
     pub fn from_metrics(metrics: &crate::model::ScaledMetrics) -> Self {
         Self {
@@ -2019,5 +926,14 @@ impl TreeListLayout {
     #[inline]
     pub fn available_text_width(&self, container_width: usize, text_x: usize) -> usize {
         container_width.saturating_sub(text_x + self.left_padding)
+    }
+
+    /// Whether an x-coordinate lands on the collapse/expand indicator for a
+    /// row at `depth`, in a container whose content starts at `base_x`.
+    #[inline]
+    pub fn is_on_chevron(&self, base_x: f32, depth: usize, x: f32) -> bool {
+        let start = base_x + self.x_offset(depth) as f32;
+        let end = start + self.indicator_width as f32;
+        x >= start && x < end
     }
 }

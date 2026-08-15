@@ -107,15 +107,10 @@ fn main() -> Result<()> {
     );
     eprintln!();
 
-    // Compute layout once (as the real renderer does)
-    let sidebar_width = 0.0f32;
-    let status_bar_height = line_height;
-    let available_rect = token::model::editor_area::Rect::new(
-        sidebar_width,
-        0.0,
-        (width as f32) - sidebar_width,
-        (height - status_bar_height) as f32,
-    );
+    // Compute layout once from the same solved shell as the real renderer.
+    let available_rect = token::layout::chrome::shell(&model)
+        .rect(token::layout::UiKey::EditorArea)
+        .expect("window shell always declares the editor area");
     let splitters = model
         .editor_area
         .compute_layout_scaled(available_rect, model.metrics.splitter_width);
@@ -215,11 +210,6 @@ fn create_model(args: &Args) -> Result<token::model::AppModel> {
     let line_height = 20usize;
     let char_width = 10.0f32;
 
-    // Calculate viewport dimensions
-    let status_bar_height = line_height;
-    let visible_lines = (args.height as usize).saturating_sub(status_bar_height) / line_height;
-    let visible_columns = ((args.width as f32 - 60.0) / char_width).floor() as usize;
-
     // Generate content for all splits
     let mut doc_contents: Vec<String> = Vec::new();
 
@@ -245,7 +235,7 @@ fn create_model(args: &Args) -> Result<token::model::AppModel> {
     // Create initial model with first document
     let first_content = doc_contents.remove(0);
     let document = Document::with_text(&first_content);
-    let editor = EditorState::with_viewport(visible_lines, visible_columns);
+    let editor = EditorState::with_viewport(1, 1);
     let editor_area = EditorArea::single_document(document, editor);
 
     let mut model = AppModel {
@@ -289,6 +279,8 @@ fn create_model(args: &Args) -> Result<token::model::AppModel> {
             doc.buffer = ropey::Rope::from_str(&content);
         }
     }
+
+    model.resize(args.width, args.height);
 
     Ok(model)
 }

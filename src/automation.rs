@@ -219,10 +219,9 @@ pub(crate) struct ProblemsRowSnapshot {
 }
 
 fn problems_snapshot(model: &AppModel) -> Option<ProblemsSnapshot> {
-    let dock = model.dock_layout.dock(token::panel::DockPosition::Bottom);
-    if !(dock.is_open && dock.active_panel() == Some(token::panel::PanelId::PROBLEMS)) {
-        return None;
-    }
+    model
+        .dock_layout
+        .active_panel_position(token::panel::PanelId::PROBLEMS)?;
     let (errors, warnings) = token::update::problems::severity_counts(model);
     let rows = token::update::problems::problems_rows(model)
         .into_iter()
@@ -982,6 +981,27 @@ mod tests {
         assert_eq!(snapshot.rows[1].kind, "diagnostic");
         assert_eq!(snapshot.rows[1].label, "boom");
         assert_eq!(snapshot.selected, Some(1));
+    }
+
+    #[test]
+    fn problems_snapshot_follows_the_panel_to_the_right_dock() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model
+            .dock_layout
+            .bottom
+            .panel_ids
+            .retain(|&panel| panel != token::panel::PanelId::PROBLEMS);
+        model.dock_layout.bottom.active_index = Some(0);
+        model
+            .dock_layout
+            .right
+            .register_panel(token::panel::PanelId::PROBLEMS);
+        model
+            .dock_layout
+            .right
+            .activate(token::panel::PanelId::PROBLEMS);
+
+        assert!(EditorSnapshot::from_model(&model).problems.is_some());
     }
 
     #[test]

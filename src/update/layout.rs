@@ -234,7 +234,7 @@ pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
 // Tab Bar Scrolling
 // ============================================================================
 
-use crate::view::geometry::TabBarLayout;
+use crate::layout::editor::EditorTabBarLayout;
 
 /// Scroll the tab bar of `group_id` so the active tab is fully visible,
 /// and clamp the scroll offset to the current tab content width.
@@ -245,13 +245,17 @@ fn ensure_active_tab_visible(model: &mut AppModel, group_id: GroupId) {
         return;
     };
 
-    let spans = TabBarLayout::tab_spans(group, model, char_width);
-    let rect_w = group.rect.width.round() as usize;
-    let total_width = spans.last().map(|&(_, end)| end + padding).unwrap_or(0);
+    let layout = EditorTabBarLayout::new(group, model, char_width);
+    let rect_w = layout.bar_rect().width.round().max(0.0) as usize;
+    let total_width = layout.total_tabs_width();
     let max_scroll = total_width.saturating_sub(rect_w);
     let mut scroll = group.tab_scroll.min(max_scroll);
 
-    if let Some(&(start, end)) = spans.get(group.active_tab_index) {
+    if let Some((start, end)) = group
+        .tabs
+        .get(group.active_tab_index)
+        .and_then(|tab| layout.tab_span(tab.id))
+    {
         if start.saturating_sub(padding) < scroll {
             // Active tab (partially) off the left edge
             scroll = start.saturating_sub(padding);
@@ -278,8 +282,9 @@ fn scroll_tab_bar(model: &mut AppModel, group_id: GroupId, delta_px: i32) {
         return;
     };
 
-    let total_width = TabBarLayout::total_tabs_width(group, model, char_width);
-    let rect_w = group.rect.width.round() as usize;
+    let layout = EditorTabBarLayout::new(group, model, char_width);
+    let total_width = layout.total_tabs_width();
+    let rect_w = layout.bar_rect().width.round().max(0.0) as usize;
     let max_scroll = total_width.saturating_sub(rect_w) as i64;
     let new_scroll = (group.tab_scroll as i64 + delta_px as i64).clamp(0, max_scroll) as usize;
 
@@ -1024,20 +1029,13 @@ fn begin_splitter_drag(model: &mut AppModel, splitter_index: usize, position: (f
     // 3. The container's size in the relevant direction
 
     // First compute the layout to get splitter info
-    // Use last_layout_rect which includes sidebar offset from render pass
-    // Fallback includes sidebar offset for consistency
-    let sidebar_width = model
-        .workspace
-        .as_ref()
-        .filter(|ws| ws.sidebar_visible)
-        .map(|ws| ws.sidebar_width(model.metrics.scale_factor))
-        .unwrap_or(0.0);
-    let available = model.editor_area.last_layout_rect.unwrap_or(Rect::new(
-        sidebar_width,
-        0.0,
-        800.0 - sidebar_width,
-        600.0,
-    ));
+    // Prefer the last rendered rect; before the first render, use the same
+    // solved shell rectangle that will drive rendering and hit-testing.
+    let available = model.editor_area.last_layout_rect.unwrap_or_else(|| {
+        crate::layout::chrome::shell(model)
+            .rect(crate::layout::UiKey::EditorArea)
+            .expect("window shell always declares the editor area")
+    });
     let splitters = model
         .editor_area
         .compute_layout_scaled(available, model.metrics.splitter_width);

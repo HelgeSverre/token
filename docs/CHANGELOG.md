@@ -12,8 +12,55 @@ All notable changes to rust-editor are documented in this file.
   file tree, plus Shift+F10 to open the editor menu at the caret. Reuses the
   command palette's popup chrome and keycap hints; Up/Down/Enter/Escape
   navigate, any other key or an outside click dismisses it.
+- New `src/layout/` module: a pure-Rust adaptation of the Clay layout engine
+  (declarative element tree, fit/grow/percent/fixed sizing, floating anchored
+  elements, clip chains, measure-callback text wrapping, virtualized row
+  lists) producing a queryable geometry snapshot shared by rendering,
+  hit-testing, and update-layer queries.
+- `Frame` clipping is now a nesting stack (`push_clip`/`pop_clip`);
+  `set_clip`/`clear_clip` keep their absolute semantics.
+
+### Changed
+
+- The top-level window shell (sidebar, editor area, right/bottom docks, and
+  status bar) now lays out through the Clay snapshot. Rendering, screenshots,
+  hit-testing, and editor split layout consume that shared shell geometry.
+- Dock chrome (headers, tabs, panel content) and the Problems/Outline panels
+  now lay out through the new layout engine: one solved geometry snapshot is
+  shared by rendering, hit-testing, and scroll/capacity logic, replacing six
+  independently rebuilt layout chains. Panel content is clipped to its rect,
+  and a partial bottom row is now painted (it was already clickable).
+- Centered and cursor-anchored overlays now declare their panel, tabs, header,
+  list rows, fields, content zones, and footer through Clay. Painting and
+  pointer routing consume the resulting snapshot instead of rebuilding boxes.
+- Sidebar file-tree painting, hit testing, traversal, and scroll clamping now
+  share one Clay `RowListView`; the duplicate legacy tree viewport was
+  removed.
+- Editor tab strips and preview chrome now use narrow Clay layout trees. Tab
+  painting, hit testing, drag targets, wheel scrolling, and active-tab reveal
+  share solved tab geometry; preview painting, pointer routing, hosted webview
+  placement, and screenshot compositing share the solved header/content split.
+  The superseded `TabBarLayout` and generic `Pane` geometry were removed.
+- The hover card and drop overlay now wrap their text with real glyph
+  advances measured through the font (via the layout engine's measure
+  callback) instead of a fixed 8px-cell approximation; the measured plan is
+  computed once per layout and shared with painting.
 
 ### Fixed
+
+- Outline, Problems, and Terminal keyboard routing—and Terminal spawn/resize
+  sizing—now follow panels when they move away from their default docks.
+- Long single-line drop-overlay messages now paint the measured wrapped-line
+  plan instead of overflowing as one centered line.
+- Fixed a debug-build crash when rendering an active terminal inside a dock
+  panel whose content already established an enclosing clip.
+- Dock tabs now advance by their clamped widths, so a width-clamped tab no
+  longer leaves a phantom gap before the next tab.
+- Outline expand/collapse now clamps scrolling with the same
+  count-minus-capacity formula as every other path, so collapsing near the
+  end of a long outline can no longer scroll the panel past its own content.
+- Problems/Outline scroll, capacity, and row hit-testing now follow the
+  panel to whichever dock hosts it instead of assuming bottom/right.
 
 - Allowed manual outline scrolling to move beyond the selected symbol without
   the viewport snapping back to keep that symbol visible.

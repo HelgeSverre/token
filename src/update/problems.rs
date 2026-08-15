@@ -9,8 +9,7 @@ use crate::commands::Cmd;
 use crate::messages::ProblemsMsg;
 use crate::model::{diagnostic_mark, AppModel, Mark};
 use crate::update::navigation;
-use crate::view::geometry::{DockHeaderLayout, OutlinePanelLayout, WindowLayout};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// One addressable row of the Problems panel's flat list.
 #[derive(Debug, Clone, PartialEq)]
@@ -36,12 +35,8 @@ pub enum ProblemsRow {
 /// document's diagnostics are listed; an untitled focused doc lists
 /// nothing. `severity_counts` stays workspace-wide for the status bar.
 pub fn problems_rows(model: &AppModel) -> Vec<ProblemsRow> {
-    let focused_path = model.document().file_path.as_deref();
     let mut rows = Vec::new();
-    for (path, diagnostics) in &model.lsp.diagnostics {
-        if diagnostics.is_empty() || !is_same_file(path, focused_path) {
-            continue;
-        }
+    for (path, diagnostics) in problem_groups(model) {
         let collapsed = model.problems_panel.collapsed.contains(path);
         rows.push(ProblemsRow::File {
             path: path.clone(),
@@ -64,7 +59,7 @@ pub fn problems_rows(model: &AppModel) -> Vec<ProblemsRow> {
 /// `canonicalize` fallback, the same pattern `find_document_by_uri`
 /// documents (the gate keeps syscalls to the normally-0-or-1 plausible
 /// matches).
-fn is_same_file(path: &std::path::Path, focused: Option<&std::path::Path>) -> bool {
+fn is_same_file(path: &Path, focused: Option<&Path>) -> bool {
     let Some(focused) = focused else { return false };
     if path == focused {
         return true;
@@ -76,6 +71,35 @@ fn is_same_file(path: &std::path::Path, focused: Option<&std::path::Path>) -> bo
         (Ok(a), Ok(b)) => a == b,
         _ => false,
     }
+}
+
+/// The shared group traversal behind materialized rows and layout row
+/// counts. Keeping the current-file predicate here prevents rendering,
+/// hit-testing, and update-layer capacity from drifting apart.
+fn problem_groups(model: &AppModel) -> impl Iterator<Item = (&PathBuf, &[lsp_types::Diagnostic])> {
+    let focused_path = model.document().file_path.as_deref();
+    model
+        .lsp
+        .diagnostics
+        .iter()
+        .filter_map(move |(path, diagnostics)| {
+            (!diagnostics.is_empty() && is_same_file(path, focused_path))
+                .then_some((path, diagnostics.as_slice()))
+        })
+}
+
+/// Row count of `problems_rows` without materializing the rows (no
+/// `PathBuf` clones) — feeds the chrome layout's `RowList` declaration.
+pub fn problems_row_count(model: &AppModel) -> usize {
+    problem_groups(model)
+        .map(|(path, diagnostics)| {
+            if model.problems_panel.collapsed.contains(path) {
+                1
+            } else {
+                1 + diagnostics.len()
+            }
+        })
+        .sum()
 }
 
 /// `(errors, warnings)` across every file in the mirror — feeds the panel
@@ -96,19 +120,31 @@ pub fn severity_counts(model: &AppModel) -> (usize, usize) {
     (errors, warnings)
 }
 
+/// Row geometry for the Problems panel from the solved chrome — `None`
+/// when the panel isn't the active panel of any open dock, wherever that
+/// dock is (the old capacity helper hardcoded the bottom dock, so a
+/// Problems panel moved to another dock scrolled wrong).
+fn problems_rows_view(model: &AppModel) -> Option<crate::layout::RowListView> {
+    crate::layout::chrome::chrome(model).row_list(crate::layout::UiKey::PanelRows(
+        crate::panel::PanelId::Problems,
+    ))
+}
+
 fn problems_visible_capacity(model: &AppModel) -> usize {
-    WindowLayout::compute(model)
-        .bottom_dock_rect
-        .map(|rect| {
-            let dock_layout = DockHeaderLayout::new(
-                &model.dock_layout.bottom,
-                rect,
-                &model.metrics,
-                model.char_width,
-            );
-            OutlinePanelLayout::new(dock_layout.content_rect, &model.metrics).visible_capacity()
-        })
+    problems_rows_view(model)
+        .map(|rows| rows.visible_capacity())
         .unwrap_or(0)
+}
+
+/// Re-clamp the scroll offset after anything changed the row count or the
+/// panel's box — THE one clamp for this panel. An invisible panel (not the
+/// active one of any open dock) has no viewport to clamp against, so it
+/// resets.
+fn clamp_problems_scroll(model: &mut AppModel) {
+    model.problems_panel.scroll_offset = match problems_rows_view(model) {
+        Some(rows) => rows.clamp_scroll(model.problems_panel.scroll_offset),
+        None => 0,
+    };
 }
 
 /// Clamps `problems_panel.selected_index`/`scroll_offset` to the current
@@ -117,7 +153,7 @@ fn problems_visible_capacity(model: &AppModel) -> usize {
 /// stale index renders as no visible selection and `OpenSelected` silently
 /// no-ops (same defense `ToggleGroup`'s inline clamp gives its own resize).
 pub fn clamp_problems_selection(model: &mut AppModel) {
-    let total = problems_rows(model).len();
+    let total = problems_row_count(model);
     if total == 0 {
         model.problems_panel.selected_index = None;
         model.problems_panel.scroll_offset = 0;
@@ -126,15 +162,7 @@ pub fn clamp_problems_selection(model: &mut AppModel) {
     if let Some(idx) = model.problems_panel.selected_index {
         model.problems_panel.selected_index = Some(idx.min(total - 1));
     }
-    let visible_capacity = problems_visible_capacity(model);
-    model.problems_panel.scroll_offset = if visible_capacity == 0 {
-        0
-    } else {
-        model
-            .problems_panel
-            .scroll_offset
-            .min(total.saturating_sub(visible_capacity))
-    };
+    clamp_problems_scroll(model);
 }
 
 fn reveal_problems_selection(model: &mut AppModel) {
@@ -180,7 +208,7 @@ pub fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<Cmd> {
         }
 
         ProblemsMsg::SelectNext => {
-            let total = problems_rows(model).len();
+            let total = problems_row_count(model);
             if let Some(idx) = model.problems_panel.selected_index {
                 if idx + 1 < total {
                     model.problems_panel.selected_index = Some(idx + 1);
@@ -199,7 +227,7 @@ pub fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<Cmd> {
                     if !model.problems_panel.collapsed.remove(&path) {
                         model.problems_panel.collapsed.insert(path);
                     }
-                    let total = problems_rows(model).len();
+                    let total = problems_row_count(model);
                     model.problems_panel.selected_index = Some(idx.min(total.saturating_sub(1)));
                 }
             }
@@ -228,16 +256,7 @@ pub fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<Cmd> {
                 offset.saturating_add(lines as usize)
             };
 
-            let total = problems_rows(model).len();
-            let visible_capacity = problems_visible_capacity(model);
-            model.problems_panel.scroll_offset = if visible_capacity == 0 {
-                0
-            } else {
-                model
-                    .problems_panel
-                    .scroll_offset
-                    .min(total.saturating_sub(visible_capacity))
-            };
+            clamp_problems_scroll(model);
             Some(Cmd::Redraw)
         }
 
