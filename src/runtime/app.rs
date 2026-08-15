@@ -6346,7 +6346,7 @@ mod tests {
     /// elsewhere ("first borrow occurs here") surfaces that related message
     /// alongside the primary diagnostic — driven end-to-end through a fake
     /// server (`publishDiagnostics` + `ShowHover`) and asserted against the
-    /// real render path (`view::modal::with_cursor_overlay_layout`), not a
+    /// real render path (`view::modal::with_cursor_overlay_spec`), not a
     /// hand-set model plus a duplicated automation-only projection.
     #[test]
     fn hover_on_a_diagnostic_line_includes_related_information() {
@@ -6418,21 +6418,15 @@ mod tests {
             app.model.ui.cursor_overlay.is_some()
         }));
 
-        let (banner, text) = token::view::modal::with_cursor_overlay_layout(
-            &app.model,
-            800,
-            600,
-            1.0,
-            &mut token::view::overlay_surface::cell_measure(1.0),
-            |spec, _| match &spec.body {
+        let (banner, text) =
+            token::view::modal::with_cursor_overlay_spec(&app.model, |spec| match &spec.body {
                 token::view::overlay_surface::Body::Zones(zones) => (
                     zones.banner.map(|(_, message, _)| message.to_owned()),
                     zones.text.map(str::to_owned),
                 ),
                 _ => panic!("hover card must render a Zones body"),
-            },
-        )
-        .expect("hover overlay must be open");
+            })
+            .expect("hover overlay must be open");
 
         assert_eq!(banner.as_deref(), Some("cannot find value `y`"));
         assert!(

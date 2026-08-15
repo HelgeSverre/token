@@ -428,8 +428,12 @@ pub fn hit_test_cursor_overlay(
     let sf = model.metrics.scale_factor;
     let (x, y) = (pt.x as usize, pt.y as usize);
 
-    super::modal::with_cursor_overlay_layout(model, ww, wh, sf, measure, |spec, layout| {
-        match super::overlay_surface::hit_test(spec, layout, x, y) {
+    super::modal::with_cursor_overlay_spec(model, |spec| {
+        // Measured with the caller's measure — the render path lays the
+        // same spec out through the glyph cache, so the rects tested here
+        // are the rects that were painted.
+        let layout = super::overlay_surface::layout_measured(spec, ww, wh, sf, measure);
+        match super::overlay_surface::hit_test(spec, &layout, x, y) {
             super::overlay_surface::OverlayHit::Outside => None,
             super::overlay_surface::OverlayHit::Row(flat_index) => Some(HitTarget::CursorOverlay {
                 flat_index: Some(flat_index.0),

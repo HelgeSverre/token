@@ -680,7 +680,7 @@ pub struct HoverCardState {
     /// The hovered text cell this card is anchored to, for a mouse-dwell
     /// hover (`LspMsg::ShowHoverAt`). `None` for a keyboard-invoked hover
     /// (Shift+Cmd+D), which anchors to the caret rect instead — see
-    /// `view::modal::with_cursor_overlay_layout`'s `Hover` branch.
+    /// `view::modal::with_cursor_overlay_spec`'s `Hover` branch.
     pub anchor: Option<(usize, usize)>,
 }
 

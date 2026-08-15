@@ -95,7 +95,10 @@ pub fn resolve_width(
 ) -> usize {
     let margin = scaled(dims::EDGE_MARGIN, scale_factor);
     let min_w = size_px(rule.min, scale_factor) as usize;
-    let max_w = size_px(rule.max, scale_factor) as usize;
+    // `max_w.max(min_w)`: `usize::clamp` panics on an inverted range, and a
+    // rule is caller data — an inverted one should degrade to "min wins",
+    // not take the window down.
+    let max_w = (size_px(rule.max, scale_factor) as usize).max(min_w);
     let mut panel_w = ((window_width as f32 * rule.pct) as usize)
         .clamp(min_w, max_w)
         .min(window_width.saturating_sub(margin));
@@ -191,6 +194,16 @@ mod tests {
         // the window itself.
         assert_eq!(resolve_width(&rule(0.0, 0.0, 420.0), true, 210, SF), 200);
         assert_eq!(resolve_width(&rule(0.0, 0.0, 420.0), true, 150, SF), 150);
+    }
+
+    #[test]
+    fn resolve_width_survives_an_inverted_rule() {
+        // `usize::clamp` panics on min > max; an inverted rule degrades to
+        // "min wins" instead of taking the window down.
+        assert_eq!(
+            resolve_width(&rule(0.5, 600.0, 300.0), false, 1000, SF),
+            600
+        );
     }
 
     #[test]

@@ -136,6 +136,17 @@ fn problems_visible_capacity(model: &AppModel) -> usize {
         .unwrap_or(0)
 }
 
+/// Re-clamp the scroll offset after anything changed the row count or the
+/// panel's box — THE one clamp for this panel. An invisible panel (not the
+/// active one of any open dock) has no viewport to clamp against, so it
+/// resets.
+fn clamp_problems_scroll(model: &mut AppModel) {
+    model.problems_panel.scroll_offset = match problems_rows_view(model) {
+        Some(rows) => rows.clamp_scroll(model.problems_panel.scroll_offset),
+        None => 0,
+    };
+}
+
 /// Clamps `problems_panel.selected_index`/`scroll_offset` to the current
 /// row count. Must run after anything that can shrink `model.lsp.diagnostics`
 /// out from under a stored selection — a fresh publish or a clear — or a
@@ -151,10 +162,7 @@ pub fn clamp_problems_selection(model: &mut AppModel) {
     if let Some(idx) = model.problems_panel.selected_index {
         model.problems_panel.selected_index = Some(idx.min(total - 1));
     }
-    model.problems_panel.scroll_offset = match problems_rows_view(model) {
-        Some(rows) => rows.clamp_scroll(model.problems_panel.scroll_offset),
-        None => 0,
-    };
+    clamp_problems_scroll(model);
 }
 
 fn reveal_problems_selection(model: &mut AppModel) {
@@ -248,10 +256,7 @@ pub fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<Cmd> {
                 offset.saturating_add(lines as usize)
             };
 
-            model.problems_panel.scroll_offset = match problems_rows_view(model) {
-                Some(rows) => rows.clamp_scroll(model.problems_panel.scroll_offset),
-                None => 0,
-            };
+            clamp_problems_scroll(model);
             Some(Cmd::Redraw)
         }
 

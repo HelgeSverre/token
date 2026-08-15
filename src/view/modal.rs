@@ -1659,19 +1659,19 @@ fn debug_hover_zones() -> overlay_surface::Zones<'static> {
     }
 }
 
-/// Build the cursor-overlay `OverlaySpec` for whichever demo kind is open,
-/// call `overlay_surface::layout()` on it, and hand both to `f` — mirrors
-/// `with_modal_overlay_layout`'s one-layout-two-consumers shape so render
-/// and hit-testing can't disagree on geometry. Content here is static (no
-/// per-frame temporaries), so unlike the modal version there's no need for a
-/// separate placeholder-content path.
-pub fn with_cursor_overlay_layout<R>(
+/// Build the cursor-overlay `OverlaySpec` for whichever kind is open and
+/// hand it to `f`. The spec borrows per-branch temporaries (row buffers,
+/// section arrays), which is why it is delivered through a closure rather
+/// than returned.
+///
+/// Laying the spec out is the caller's job: rendering does it inside
+/// `overlay_surface::render` (measuring through the glyph cache) and
+/// hit-testing does it with the same measure, so the two still cannot
+/// disagree — but a caller that only needs the spec no longer pays for a
+/// layout it throws away.
+pub fn with_cursor_overlay_spec<R>(
     model: &AppModel,
-    window_width: usize,
-    window_height: usize,
-    scale_factor: f64,
-    measure: &mut dyn crate::layout::TextMeasure,
-    f: impl FnOnce(&OverlaySpec, &OverlayLayout) -> R,
+    f: impl FnOnce(&OverlaySpec) -> R,
 ) -> Option<R> {
     let state = model.ui.cursor_overlay?;
 
@@ -1712,14 +1712,7 @@ pub fn with_cursor_overlay_layout<R>(
             footer: None,
             hover_row: None,
         };
-        let l = overlay_surface::layout_measured(
-            &spec,
-            window_width,
-            window_height,
-            scale_factor,
-            measure,
-        );
-        return Some(f(&spec, &l));
+        return Some(f(&spec));
     }
 
     // The context menu carries its own open-time anchor (`ui.context_menu.
@@ -1760,14 +1753,7 @@ pub fn with_cursor_overlay_layout<R>(
             footer: None,
             hover_row: None,
         };
-        let l = overlay_surface::layout_measured(
-            &spec,
-            window_width,
-            window_height,
-            scale_factor,
-            measure,
-        );
-        return Some(f(&spec, &l));
+        return Some(f(&spec));
     }
 
     // A mouse-dwell hover anchors to the hovered text cell instead of the
@@ -1823,14 +1809,7 @@ pub fn with_cursor_overlay_layout<R>(
                 footer: None,
                 hover_row: None,
             };
-            let l = overlay_surface::layout_measured(
-                &spec,
-                window_width,
-                window_height,
-                scale_factor,
-                measure,
-            );
-            Some(f(&spec, &l))
+            Some(f(&spec))
         }
         crate::model::CursorOverlayKind::DebugHover => {
             let spec = OverlaySpec {
@@ -1853,14 +1832,7 @@ pub fn with_cursor_overlay_layout<R>(
                 footer: None,
                 hover_row: None,
             };
-            let l = overlay_surface::layout_measured(
-                &spec,
-                window_width,
-                window_height,
-                scale_factor,
-                measure,
-            );
-            Some(f(&spec, &l))
+            Some(f(&spec))
         }
         crate::model::CursorOverlayKind::Hover => {
             let doc = model.try_document()?;
@@ -1913,14 +1885,7 @@ pub fn with_cursor_overlay_layout<R>(
                 footer: None,
                 hover_row: None,
             };
-            let l = overlay_surface::layout_measured(
-                &spec,
-                window_width,
-                window_height,
-                scale_factor,
-                measure,
-            );
-            Some(f(&spec, &l))
+            Some(f(&spec))
         }
         crate::model::CursorOverlayKind::References => {
             let items = model.ui.reference_list.as_deref().unwrap_or(&[]);
@@ -1968,8 +1933,7 @@ pub fn with_cursor_overlay_layout<R>(
                 footer: None,
                 hover_row: None,
             };
-            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
-            Some(f(&spec, &l))
+            Some(f(&spec))
         }
     }
 }
@@ -2099,7 +2063,7 @@ fn reference_row_text(
 }
 
 /// Render the active cursor-anchored popup (completion/hover shells;
-/// currently debug-demo content only — see `with_cursor_overlay_layout`).
+/// currently debug-demo content only — see `with_cursor_overlay_spec`).
 pub fn render_cursor_overlay(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -2109,28 +2073,19 @@ pub fn render_cursor_overlay(
     mask_cache: &mut RoundedRectMaskCache,
 ) {
     let scale_factor = model.metrics.scale_factor;
-    with_cursor_overlay_layout(
-        model,
-        window_width,
-        window_height,
-        scale_factor,
-        // The closure's layout is unused here; `overlay_surface::render`
-        // recomputes it with a `PainterMeasure` over the same glyph cache.
-        &mut overlay_surface::cell_measure(scale_factor),
-        |spec, _l| {
-            overlay_surface::render(
-                frame,
-                painter,
-                mask_cache,
-                &model.theme.overlay,
-                spec,
-                window_width,
-                window_height,
-                scale_factor,
-                model.ui.cursor_visible,
-            );
-        },
-    );
+    with_cursor_overlay_spec(model, |spec| {
+        overlay_surface::render(
+            frame,
+            painter,
+            mask_cache,
+            &model.theme.overlay,
+            spec,
+            window_width,
+            window_height,
+            scale_factor,
+            model.ui.cursor_visible,
+        );
+    });
 }
 
 #[cfg(test)]
@@ -2348,14 +2303,9 @@ mod tests {
         model.ui.cursor_overlay = Some(crate::model::CursorOverlayState::new(
             CursorOverlayKind::DebugCompletion,
         ));
-        let l = with_cursor_overlay_layout(
-            &model,
-            400,
-            800,
-            1.0,
-            &mut overlay_surface::cell_measure(1.0),
-            |_, l| l.panel,
-        )
+        let l = with_cursor_overlay_spec(&model, |spec| {
+            overlay_surface::layout(spec, 400, 800, 1.0).panel
+        })
         .expect("cursor overlay open");
         assert!(
             l.y + l.h <= caret.y,
@@ -2470,8 +2420,8 @@ mod tests {
             region: ContextMenuRegion::Editor,
         });
 
-        let mut measure = overlay_surface::cell_measure(1.0);
-        with_cursor_overlay_layout(&model, 400, 300, 1.0, &mut measure, |spec, layout| {
+        with_cursor_overlay_spec(&model, |spec| {
+            let layout = &overlay_surface::layout(spec, 400, 300, 1.0);
             assert!(layout.panel.x + layout.panel.w <= 400);
             assert!(layout.panel.y + layout.panel.h <= 300);
             assert_eq!(layout.rows.len(), 3, "separator occupies one display row");

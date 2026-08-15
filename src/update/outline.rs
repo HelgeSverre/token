@@ -48,6 +48,18 @@ fn outline_visible_capacity(model: &AppModel) -> usize {
         .unwrap_or(0)
 }
 
+/// Re-clamp the scroll offset after anything changed the row count or the
+/// panel's box — THE one clamp for this panel. An invisible panel (not the
+/// active one of any open dock) has no viewport to clamp against, so it
+/// resets: the offset would otherwise survive unclamped until the panel is
+/// next shown, which is exactly when it renders blank.
+fn clamp_outline_scroll(model: &mut AppModel) {
+    model.outline_panel.scroll_offset = match outline_rows(model) {
+        Some(rows) => rows.clamp_scroll(model.outline_panel.scroll_offset),
+        None => 0,
+    };
+}
+
 fn reveal_outline_selection(model: &mut AppModel) {
     let Some(selected_index) = model.outline_panel.selected_index else {
         return;
@@ -216,15 +228,8 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                         }
                     }
 
-                    // Collapsing/expanding changed the row count: re-clamp
-                    // with the one formula (count - visible capacity, via
-                    // the solved chrome), not `count - 1` — the old
-                    // per-site clamp let the panel scroll past its own
-                    // viewport by up to a screenful.
-                    if let Some(rows) = outline_rows(model) {
-                        model.outline_panel.scroll_offset =
-                            rows.clamp_scroll(model.outline_panel.scroll_offset);
-                    }
+                    // Collapsing/expanding changed the row count.
+                    clamp_outline_scroll(model);
                 }
             }
             reveal_outline_selection(model);
@@ -256,15 +261,8 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                         model.outline_panel.selected_index = Some(parent_index);
                     }
 
-                    // Collapsing/expanding changed the row count: re-clamp
-                    // with the one formula (count - visible capacity, via
-                    // the solved chrome), not `count - 1` — the old
-                    // per-site clamp let the panel scroll past its own
-                    // viewport by up to a screenful.
-                    if let Some(rows) = outline_rows(model) {
-                        model.outline_panel.scroll_offset =
-                            rows.clamp_scroll(model.outline_panel.scroll_offset);
-                    }
+                    // Collapsing/expanding changed the row count.
+                    clamp_outline_scroll(model);
                 }
             }
             reveal_outline_selection(model);
@@ -307,10 +305,7 @@ pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
                 model.outline_panel.scroll_offset = offset.saturating_add(lines as usize);
             }
 
-            model.outline_panel.scroll_offset = match outline_rows(model) {
-                Some(rows) => rows.clamp_scroll(model.outline_panel.scroll_offset),
-                None => 0,
-            };
+            clamp_outline_scroll(model);
 
             Some(Cmd::Redraw)
         }
@@ -386,6 +381,25 @@ mod refresh_tests {
                 })
                 .collect(),
         });
+    }
+
+    #[test]
+    fn clamping_scroll_uses_the_viewport_when_visible_and_resets_when_not() {
+        let mut model = model_with_open_outline_panel();
+        populate_outline(&mut model, 200);
+        model.outline_panel.scroll_offset = 500;
+
+        clamp_outline_scroll(&mut model);
+        let visible = outline_visible_capacity(&model);
+        assert!(visible > 0, "an open outline panel has a viewport");
+        assert_eq!(model.outline_panel.scroll_offset, 200 - visible);
+
+        // Closed panel: no viewport to clamp against, so the offset resets
+        // rather than surviving unclamped until the panel is next shown.
+        model.dock_layout.right.is_open = false;
+        model.outline_panel.scroll_offset = 500;
+        clamp_outline_scroll(&mut model);
+        assert_eq!(model.outline_panel.scroll_offset, 0);
     }
 
     fn outline_node(name: &str, line: usize, children: Vec<OutlineNode>) -> OutlineNode {

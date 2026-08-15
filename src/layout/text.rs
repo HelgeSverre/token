@@ -12,7 +12,6 @@
 //!   overlays where sub-14px text is measured, not grid-multiplied.
 
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 
 use crate::layout::snapshot::TextLine;
 use crate::view::TextPainter;
@@ -69,7 +68,12 @@ impl TextMeasure for CellMeasure {
 /// strings (layout in render, then again in hit-test) cheap.
 pub struct PainterMeasure<'p, 'a> {
     painter: &'p mut TextPainter<'a>,
-    memo: HashMap<(u64, u32, u32), f32>,
+    /// `(size bits, tracking bits)` → text → width. Keyed on the text
+    /// itself rather than a hash of it: a 64-bit collision would silently
+    /// hand back another string's width, and wrong widths here become wrong
+    /// geometry everywhere downstream. The inner map still looks up by
+    /// `&str`, so a hit allocates nothing.
+    memo: HashMap<(u32, u32), HashMap<String, f32>>,
 }
 
 impl<'p, 'a> PainterMeasure<'p, 'a> {
@@ -81,24 +85,21 @@ impl<'p, 'a> PainterMeasure<'p, 'a> {
     }
 }
 
-fn text_hash(text: &str) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    text.hash(&mut hasher);
-    hasher.finish()
-}
-
 impl TextMeasure for PainterMeasure<'_, '_> {
     fn width(&mut self, text: &str, style: TextStyle) -> f32 {
-        let key = (
-            text_hash(text),
-            style.size.to_bits(),
-            style.tracking.to_bits(),
-        );
-        if let Some(&w) = self.memo.get(&key) {
+        let style_key = (style.size.to_bits(), style.tracking.to_bits());
+        if let Some(&w) = self
+            .memo
+            .get(&style_key)
+            .and_then(|by_text| by_text.get(text))
+        {
             return w;
         }
         let w = self.painter.measure_sized(text, style.size, style.tracking);
-        self.memo.insert(key, w);
+        self.memo
+            .entry(style_key)
+            .or_default()
+            .insert(text.to_owned(), w);
         w
     }
 

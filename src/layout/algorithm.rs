@@ -11,9 +11,9 @@
 //! 5. fit heights, bottom-up
 //! 6. final heights, top-down
 //! 7. positions + clip chains, top-down (scroll offsets subtracted)
-//! 8. floating elements (anchors resolved against solved rects, subtree
-//!    translated)
-//! 9. snapshot emission (key map + z-sorted draw order)
+//! 8. floating elements (anchors resolved through the key map against
+//!    solved rects, subtree translated)
+//! 9. snapshot emission (z-sorted draw order)
 //!
 //! Divergences from Clay, chosen for Token's chrome: only `Grow` children
 //! shrink when a row over-flows (fit/fixed content keeps its size and the
@@ -140,22 +140,20 @@ pub(crate) fn solve(
         position_children(&nodes, i, &w, &h, &mut x, &mut y, &mut clip);
     }
 
+    // --- Key map, built once and shared by float anchoring and the
+    // snapshot, so a duplicate key can never resolve to two different
+    // elements between them.
+    let mut by_key = HashMap::new();
+    for (i, node) in nodes.iter().enumerate() {
+        if let Some(key) = node.decl.key {
+            let prev = by_key.insert(key, i as u32);
+            debug_assert!(prev.is_none(), "duplicate UiKey in layout tree: {key:?}");
+        }
+    }
+
     // --- Pass 8: floating elements. Anchors may target solved flow rects
     // (or earlier floats, in declaration order); the whole subtree —
     // positions and subtree-derived clips — translates by the same delta.
-    fn solved_rect_of_key(
-        nodes: &[Node],
-        x: &[f32],
-        y: &[f32],
-        w: &[f32],
-        h: &[f32],
-        key: crate::layout::keys::UiKey,
-    ) -> Option<Rect> {
-        nodes
-            .iter()
-            .position(|node| node.decl.key == Some(key))
-            .map(|i| Rect::new(x[i], y[i], w[i], h[i]))
-    }
     for f in 0..n {
         let Some(float) = nodes[f].decl.float else {
             continue;
@@ -190,7 +188,10 @@ pub(crate) fn solve(
                 (root.x + px as f32, root.y + py as f32)
             }
             FloatAnchor::Element { target, attach } => {
-                let target_rect = solved_rect_of_key(&nodes, &x, &y, &w, &h, target)
+                let target_rect = by_key
+                    .get(&target)
+                    .map(|&t| t as usize)
+                    .map(|t| Rect::new(x[t], y[t], w[t], h[t]))
                     .unwrap_or(Rect::new(root.x, root.y, 0.0, 0.0));
                 let (ax, ay) = match attach {
                     AttachPoint::BelowLeft => (target_rect.x, target_rect.y + target_rect.height),
@@ -224,7 +225,6 @@ pub(crate) fn solve(
 
     // --- Pass 9: emit the snapshot.
     let mut solved = Vec::with_capacity(n);
-    let mut by_key = HashMap::new();
     for i in 0..n {
         let decl = &nodes[i].decl;
         let rect = Rect::new(x[i], y[i], w[i].max(0.0), h[i].max(0.0));
@@ -248,10 +248,6 @@ pub(crate) fn solve(
                 scroll_offset: list.scroll_offset,
             }),
         };
-        if let Some(key) = decl.key {
-            let prev = by_key.insert(key, i as u32);
-            debug_assert!(prev.is_none(), "duplicate UiKey in layout tree: {key:?}");
-        }
         solved.push(SolvedNode {
             key: decl.key,
             rect,
