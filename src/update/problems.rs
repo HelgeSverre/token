@@ -130,12 +130,6 @@ fn problems_rows_view(model: &AppModel) -> Option<crate::layout::RowListView> {
     ))
 }
 
-fn problems_visible_capacity(model: &AppModel) -> usize {
-    problems_rows_view(model)
-        .map(|rows| rows.visible_capacity())
-        .unwrap_or(0)
-}
-
 /// Re-clamp the scroll offset after anything changed the row count or the
 /// panel's box — THE one clamp for this panel. An invisible panel (not the
 /// active one of any open dock) has no viewport to clamp against, so it
@@ -169,19 +163,10 @@ fn reveal_problems_selection(model: &mut AppModel) {
     let Some(selected_index) = model.problems_panel.selected_index else {
         return;
     };
-    let visible_capacity = problems_visible_capacity(model);
-    if visible_capacity == 0 {
-        return;
+    if let Some(rows) = problems_rows_view(model) {
+        model.problems_panel.scroll_offset =
+            rows.scroll_to_reveal(model.problems_panel.scroll_offset, selected_index);
     }
-
-    let scroll_offset = model.problems_panel.scroll_offset;
-    model.problems_panel.scroll_offset = if selected_index < scroll_offset {
-        selected_index
-    } else if selected_index >= scroll_offset.saturating_add(visible_capacity) {
-        selected_index.saturating_add(1) - visible_capacity
-    } else {
-        scroll_offset
-    };
 }
 
 /// Jump to a diagnostic's location: char coords via `lsp_to_position` when

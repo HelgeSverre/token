@@ -230,4 +230,23 @@ impl RowListView {
     pub fn clamp_scroll(&self, offset: usize) -> usize {
         offset.min(self.max_scroll())
     }
+
+    /// Minimal-reveal scrolling: the offset that keeps `selected` inside
+    /// the visible window, moving `scroll_offset` only as far as needed
+    /// (up to the selection, or down so it becomes the last full row). A
+    /// zero-capacity box leaves the offset alone — THE one reveal formula,
+    /// so Outline/Problems and future row lists never re-derive it.
+    pub fn scroll_to_reveal(&self, scroll_offset: usize, selected: usize) -> usize {
+        let capacity = self.visible_capacity();
+        if capacity == 0 {
+            return scroll_offset;
+        }
+        if selected < scroll_offset {
+            selected
+        } else if selected >= scroll_offset.saturating_add(capacity) {
+            selected.saturating_add(1) - capacity
+        } else {
+            scroll_offset
+        }
+    }
 }

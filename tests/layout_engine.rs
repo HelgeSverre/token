@@ -562,6 +562,22 @@ fn row_list_row_at_y_maps_drawn_rows_only() {
 }
 
 #[test]
+fn row_list_scroll_to_reveal_moves_minimally() {
+    // 100px / 22px rows: capacity 4. Selection inside the window: no move.
+    let snap = row_list_tree(100.0, 50, 10);
+    let rows = snap.row_list(K_ROWS).unwrap();
+    assert_eq!(rows.scroll_to_reveal(10, 12), 10);
+    // Above the window: scroll up to it.
+    assert_eq!(rows.scroll_to_reveal(10, 3), 3);
+    // Below the window: it becomes the last full row.
+    assert_eq!(rows.scroll_to_reveal(10, 20), 17);
+    // Zero-capacity box leaves the offset alone.
+    let snap = row_list_tree(10.0, 50, 10);
+    let rows = snap.row_list(K_ROWS).unwrap();
+    assert_eq!(rows.scroll_to_reveal(10, 40), 10);
+}
+
+#[test]
 fn row_list_row_at_y_rejects_rows_past_count() {
     // 3 items in a 100px box: y below the last row maps to nothing.
     let snap = row_list_tree(100.0, 3, 0);

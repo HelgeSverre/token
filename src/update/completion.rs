@@ -30,7 +30,7 @@ use crate::model::{
     AppModel, Cursor, CursorOverlayKind, CursorOverlayState, EditOperation, Selection,
 };
 use crate::util::text::{char_type, CharType};
-use crate::view::overlay_surface::MAX_VISIBLE_COMPLETION;
+use crate::view::overlay_surface::{SelectableListViewport, MAX_VISIBLE_COMPLETION};
 
 use super::document::word_start_before;
 use super::editor::cursors_in_reverse_order;
@@ -418,11 +418,15 @@ fn move_selection(model: &mut AppModel, delta: i32) -> Option<Cmd> {
     } else {
         (state.selected + total - step) % total
     };
-    if state.selected < state.scroll {
-        state.scroll = state.selected;
-    } else if state.selected >= state.scroll + MAX_VISIBLE_COMPLETION {
-        state.scroll = state.selected + 1 - MAX_VISIBLE_COMPLETION;
-    }
+    // The popup sizes itself to `min(total, MAX_VISIBLE_COMPLETION)` rows,
+    // so the overlay's own minimal-reveal rule is the authority here.
+    state.scroll = SelectableListViewport::compute_from(
+        total,
+        state.selected,
+        MAX_VISIBLE_COMPLETION,
+        state.scroll,
+    )
+    .scroll_offset;
     Some(Cmd::Redraw)
 }
 

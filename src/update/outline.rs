@@ -42,6 +42,7 @@ fn outline_rows(model: &AppModel) -> Option<crate::layout::RowListView> {
     ))
 }
 
+#[cfg(test)]
 fn outline_visible_capacity(model: &AppModel) -> usize {
     outline_rows(model)
         .map(|rows| rows.visible_capacity())
@@ -64,19 +65,10 @@ fn reveal_outline_selection(model: &mut AppModel) {
     let Some(selected_index) = model.outline_panel.selected_index else {
         return;
     };
-    let visible_capacity = outline_visible_capacity(model);
-    if visible_capacity == 0 {
-        return;
+    if let Some(rows) = outline_rows(model) {
+        model.outline_panel.scroll_offset =
+            rows.scroll_to_reveal(model.outline_panel.scroll_offset, selected_index);
     }
-
-    let scroll_offset = model.outline_panel.scroll_offset;
-    model.outline_panel.scroll_offset = if selected_index < scroll_offset {
-        selected_index
-    } else if selected_index >= scroll_offset.saturating_add(visible_capacity) {
-        selected_index.saturating_add(1) - visible_capacity
-    } else {
-        scroll_offset
-    };
 }
 
 /// Handle outline panel messages
