@@ -1580,8 +1580,9 @@ impl Renderer {
             painter.draw(frame, text_x, layout.col_header_y, &letter, header_fg);
         }
 
-        // Calculate visible rows
-        let visible_rows = content_h.saturating_sub(layout.col_header_height) / line_height;
+        // The viewport is synced from this group's content rect every frame
+        // (`sync_all_viewports`), so it is the one row-count authority.
+        let visible_rows = csv.viewport.visible_rows;
         let end_row = (csv.viewport.top_row + visible_rows).min(csv.data.row_count());
 
         // Draw row headers (1, 2, 3, ...)

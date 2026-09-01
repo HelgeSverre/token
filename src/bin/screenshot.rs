@@ -428,10 +428,9 @@ fn apply_view_modes(model: &mut AppModel, scenario: &Scenario) {
                 if let Ok(data) = parse_csv(&text, delimiter) {
                     if !data.is_empty() && data.column_count() > 0 {
                         let mut csv_state = CsvState::new(data, delimiter);
-                        csv_state.set_viewport_size(
-                            token::update::csv_visible_rows_for_model(model),
-                            10,
-                        );
+                        // Rows are sized per group by `sync_all_viewports`
+                        // once the screenshot's layout pass runs.
+                        csv_state.set_viewport_size(1, 10);
 
                         if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
                             editor.view_mode = ViewMode::Csv(Box::new(csv_state));

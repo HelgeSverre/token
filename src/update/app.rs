@@ -20,14 +20,6 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
         AppMsg::Resize(width, height) => {
             model.resize(width, height);
 
-            // Update CSV viewport size if in CSV mode
-            let visible_rows = super::csv::visible_rows_for_model(model);
-            if let Some(editor) = model.editor_area.focused_editor_mut() {
-                if let Some(csv) = editor.view_mode.as_csv_mut() {
-                    csv.set_viewport_size(visible_rows, csv.viewport.visible_cols);
-                }
-            }
-
             Some(super::dock::with_terminal_sync(model, Cmd::Redraw))
         }
 

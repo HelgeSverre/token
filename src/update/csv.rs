@@ -9,18 +9,6 @@ use crate::model::{AppModel, ViewMode};
 use crate::update::lsp::schedule_lsp_did_change;
 use crate::update::syntax::schedule_syntax_parse;
 
-pub fn visible_rows_for_model(model: &AppModel) -> usize {
-    let line_height = model.line_height.max(1);
-    let editor_height = crate::layout::chrome::shell(model)
-        .rect(crate::layout::UiKey::EditorArea)
-        .map(|rect| rect.height.max(0.0) as usize)
-        .unwrap_or(0);
-    let content_height = editor_height
-        .saturating_sub(model.metrics.tab_bar_height)
-        .saturating_sub(line_height); // CSV column header
-    (content_height / line_height).max(1)
-}
-
 /// Handle CSV mode messages
 pub fn update_csv(model: &mut AppModel, msg: CsvMsg) -> Option<Cmd> {
     match msg {
@@ -113,15 +101,15 @@ fn toggle_csv_mode(model: &mut AppModel) -> Option<Cmd> {
                 return Some(Cmd::redraw_editor());
             }
             let mut csv_state = CsvState::new(data, delimiter);
-
-            let visible_rows = visible_rows_for_model(model);
-            let visible_cols = 10; // Approximate, will be refined during render
-            csv_state.set_viewport_size(visible_rows, visible_cols);
+            // Rows are sized per group by `sync_all_viewports` below;
+            // columns stay an approximation refined during render.
+            csv_state.set_viewport_size(1, 10);
 
             // Need to get mutable reference again after the doc borrow is done
             if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
                 editor.view_mode = ViewMode::Csv(Box::new(csv_state));
             }
+            model.resync_viewports();
         }
         Err(e) => {
             tracing::error!("Failed to parse CSV: {}", e);
@@ -912,27 +900,68 @@ mod tests {
     use super::*;
     use crate::csv::CellPosition;
     use crate::model::AppModel;
-    use crate::panel::PanelId;
 
     #[test]
-    fn visible_rows_follow_the_solved_editor_height() {
+    fn csv_visible_rows_follow_the_groups_own_content_height() {
+        use crate::messages::{LayoutMsg, Msg};
+        use crate::model::SplitDirection;
+
+        // Group rects are solved by the frame's layout pass; the test runs
+        // that pass by hand after every structural change.
+        fn relayout(model: &mut AppModel) {
+            let rect = crate::layout::chrome::shell(model)
+                .rect(crate::layout::UiKey::EditorArea)
+                .unwrap();
+            model
+                .editor_area
+                .compute_layout_scaled(rect, model.metrics.splitter_width);
+            model.resync_viewports();
+        }
+
         let mut model = AppModel::new(800, 600, 1.0, vec![]);
-        let without_bottom_dock = visible_rows_for_model(&model);
+        model.document_mut().buffer = ropey::Rope::from("a,b\n1,2\n3,4\n");
+        relayout(&mut model);
+        toggle_csv_mode(&mut model);
+        let full_height_rows = model
+            .editor()
+            .view_mode
+            .as_csv()
+            .expect("csv mode")
+            .viewport
+            .visible_rows;
 
-        model.dock_layout.bottom.size_logical = 200.0;
-        model.dock_layout.bottom.activate(PanelId::Terminal);
-        let with_bottom_dock = visible_rows_for_model(&model);
-
-        assert!(with_bottom_dock < without_bottom_dock);
-        let editor_height = crate::layout::chrome::shell(&model)
-            .rect(crate::layout::UiKey::EditorArea)
-            .unwrap()
-            .height as usize;
-        let expected = editor_height
-            .saturating_sub(model.metrics.tab_bar_height)
-            .saturating_sub(model.line_height)
-            / model.line_height;
-        assert_eq!(with_bottom_dock, expected.max(1));
+        // A top/bottom split halves the group's content height; the CSV
+        // viewport must follow the group, not the whole editor area.
+        crate::update::update(
+            &mut model,
+            Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Vertical)),
+        );
+        relayout(&mut model);
+        let csv_editor = model
+            .editor_area
+            .editors
+            .values()
+            .find_map(|e| e.view_mode.as_csv())
+            .expect("csv editor survives the split");
+        let group = model
+            .editor_area
+            .groups
+            .values()
+            .find(|g| {
+                g.tabs.iter().any(|t| {
+                    model
+                        .editor_area
+                        .editors
+                        .get(&t.editor_id)
+                        .is_some_and(|e| e.view_mode.is_csv())
+                })
+            })
+            .expect("group hosting the csv editor");
+        let content_height =
+            (group.rect.height as usize).saturating_sub(model.metrics.tab_bar_height);
+        let expected = crate::csv::rows_for_content_height(content_height, model.line_height);
+        assert_eq!(csv_editor.viewport.visible_rows, expected);
+        assert!(csv_editor.viewport.visible_rows < full_height_rows);
     }
 
     /// `confirm_edit` mutates `doc.buffer`/`doc.revision` directly (like

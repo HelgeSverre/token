@@ -28,4 +28,4 @@ mod viewport;
 
 pub use model::{CellEdit, CellEditState, CellPosition, CsvData, CsvState, Delimiter};
 pub use parser::{detect_delimiter, escape_csv_value, parse_csv, ParseError};
-pub use viewport::CsvViewport;
+pub use viewport::{rows_for_content_height, CsvViewport};

@@ -2,6 +2,15 @@
 //!
 //! Tracks which portion of the CSV grid is visible.
 
+/// Rows that fit in a group's content area: one `line_height` goes to the
+/// column-letter header, the rest to data rows. The single formula behind
+/// `CsvViewport::visible_rows` — the painter, page navigation, and the
+/// cell editor all read the viewport rather than re-deriving this.
+pub fn rows_for_content_height(content_height: usize, line_height: usize) -> usize {
+    let line_height = line_height.max(1);
+    (content_height.saturating_sub(line_height) / line_height).max(1)
+}
+
 /// Viewport state for CSV grid
 #[derive(Debug, Clone, Default)]
 pub struct CsvViewport {
