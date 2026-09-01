@@ -24,6 +24,10 @@ use super::text_field::{TextFieldContent, TextFieldRenderer};
 use crate::model::COMMAND_PALETTE_MAX_VISIBLE;
 
 /// Modal dim background alpha (102/255 ≈ 40% opacity)
+/// The prompt glyph before the palette query. Shared by the render spec
+/// and the layout-only spec so `modal_header_input_rect` sees the same
+/// glyph the painter draws.
+const PALETTE_HEADER_GLYPH: char = '\u{276F}';
 const MODAL_DIM_ALPHA: u8 = 0x66;
 
 #[derive(Clone, Copy)]
@@ -330,7 +334,7 @@ fn render_command_palette_modal(
             dim_alpha: MODAL_DIM_ALPHA,
         },
         header: Some(Header {
-            glyph: Some('\u{276F}'),
+            glyph: Some(PALETTE_HEADER_GLYPH),
             text: &input_text,
             placeholder: "Search commands, files\u{2026}",
             caret: Some(
@@ -1134,7 +1138,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
                     dim_alpha: MODAL_DIM_ALPHA,
                 },
                 header: Some(Header {
-                    glyph: None,
+                    glyph: Some(PALETTE_HEADER_GLYPH),
                     text: "",
                     placeholder: "",
                     caret: Some(state.input().chars().count()),
@@ -1383,22 +1387,37 @@ pub(crate) fn modal_header_input_rect(
     window_width: usize,
     window_height: usize,
     scale_factor: f64,
+    char_width: f32,
 ) -> Option<WidgetRect> {
-    with_modal_overlay_layout(model, window_width, window_height, scale_factor, |_, l| {
-        let header = l.header?;
-        let pad = overlay_surface::header_pad_x(scale_factor);
-        Some(WidgetRect {
-            x: header.x + pad,
-            y: header.y,
-            w: header.w.saturating_sub(pad * 2),
-            h: header.h,
-        })
-    })
+    with_modal_overlay_layout(
+        model,
+        window_width,
+        window_height,
+        scale_factor,
+        |spec, l| {
+            let header = l.header?;
+            let pad = overlay_surface::header_pad_x(scale_factor);
+            // Mirrors `render_header`'s text origin exactly: the header pad,
+            // then the glyph's advance plus half a pad when one is drawn. The
+            // returned rect *is* the text box — callers must not inset it
+            // again, or the IME caret lands off the painted one.
+            let glyph_w = spec
+                .header
+                .as_ref()
+                .and_then(|h| h.glyph)
+                .map_or(0, |_| char_width.ceil() as usize + pad / 2);
+            let x = header.x + pad + glyph_w;
+            Some(WidgetRect {
+                x,
+                y: header.y,
+                w: (header.x + header.w).saturating_sub(x + pad),
+                h: header.h,
+            })
+        },
+    )
     .flatten()
 }
 
-/// The input rect for field `field_index` of a `Body::Fields` modal (Go to
-/// Line, Find/Replace), used by `view::caret` to place the IME caret.
 pub(crate) fn modal_field_input_rect(
     model: &AppModel,
     window_width: usize,

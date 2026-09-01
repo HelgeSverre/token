@@ -107,49 +107,70 @@ fn modal_caret_rect(
     let height = model.window_size.1 as usize;
     let scale_factor = model.metrics.scale_factor;
 
-    let (content, input_rect): (&dyn super::TextFieldContent, WidgetRect) = match modal {
+    let header = |model: &AppModel| {
+        super::modal::modal_header_input_rect(model, width, height, scale_factor, char_width)
+    };
+    // Header inputs get the exact painted text box (no further inset);
+    // field inputs keep the modal field padding.
+    let (content, options): (&dyn super::TextFieldContent, TextFieldOptions) = match modal {
         ModalState::CommandPalette(state) => {
-            let input_rect =
-                super::modal::modal_header_input_rect(model, width, height, scale_factor)?;
-            (&state.editable, input_rect)
+            let rect = header(model)?;
+            (
+                &state.editable,
+                TextFieldOptions::for_text_box(&state.editable, &rect, line_height, char_width),
+            )
         }
         ModalState::FileFinder(state) => {
-            let input_rect =
-                super::modal::modal_header_input_rect(model, width, height, scale_factor)?;
-            (&state.editable, input_rect)
+            let rect = header(model)?;
+            (
+                &state.editable,
+                TextFieldOptions::for_text_box(&state.editable, &rect, line_height, char_width),
+            )
         }
         ModalState::RecentFiles(state) => {
-            let input_rect =
-                super::modal::modal_header_input_rect(model, width, height, scale_factor)?;
-            (&state.editable, input_rect)
+            let rect = header(model)?;
+            (
+                &state.editable,
+                TextFieldOptions::for_text_box(&state.editable, &rect, line_height, char_width),
+            )
         }
         ModalState::GotoLine(state) => {
-            let input_rect =
-                super::modal::modal_field_input_rect(model, width, height, scale_factor, 0)?;
-            (&state.editable, input_rect)
+            let rect = super::modal::modal_field_input_rect(model, width, height, scale_factor, 0)?;
+            (
+                &state.editable,
+                TextFieldOptions::for_modal(
+                    &state.editable,
+                    &rect,
+                    line_height,
+                    char_width,
+                    scale_factor,
+                ),
+            )
         }
         ModalState::FindReplace(state) => {
             let field_index = match state.focused_field {
                 FindReplaceField::Query => 0,
                 FindReplaceField::Replace => 1,
             };
-            let input_rect = super::modal::modal_field_input_rect(
+            let rect = super::modal::modal_field_input_rect(
                 model,
                 width,
                 height,
                 scale_factor,
                 field_index,
             )?;
-            match state.focused_field {
-                FindReplaceField::Query => (&state.query_editable, input_rect),
-                FindReplaceField::Replace => (&state.replace_editable, input_rect),
-            }
+            let content: &dyn super::TextFieldContent = match state.focused_field {
+                FindReplaceField::Query => &state.query_editable,
+                FindReplaceField::Replace => &state.replace_editable,
+            };
+            (
+                content,
+                TextFieldOptions::for_modal(content, &rect, line_height, char_width, scale_factor),
+            )
         }
         ModalState::ThemePicker(_) | ModalState::LspServers(_) => return None,
     };
 
-    let options =
-        TextFieldOptions::for_modal(content, &input_rect, line_height, char_width, scale_factor);
     TextFieldRenderer::caret_rect(content, &options)
 }
 
@@ -232,6 +253,29 @@ mod tests {
         assert!(rect.x < input.x + input.w);
         assert!(rect.y >= input.y);
         assert_ne!((rect.x, rect.y), (0, 0));
+    }
+
+    #[test]
+    fn header_caret_starts_where_the_painter_starts_the_query_text() {
+        // The command palette header draws a glyph before the query, so the
+        // painted caret sits at pad + glyph + pad/2 from the header edge.
+        // The IME rect must land there too — not pad + input_pad (the old
+        // double inset), and not before the glyph.
+        use crate::model::ui::CommandPaletteState;
+        use crate::view::overlay_surface::header_pad_x;
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model
+            .ui
+            .open_modal(ModalState::CommandPalette(CommandPaletteState::default()));
+        let char_width = 8.0;
+        let rect = active_text_input_rect(&model, char_width, 20).expect("modal caret");
+        let header =
+            super::super::modal::with_modal_overlay_layout(&model, 800, 600, 1.0, |_, l| l.header)
+                .flatten()
+                .expect("header rect");
+        let pad = header_pad_x(1.0);
+        assert_eq!(rect.x, header.x + pad + char_width as usize + pad / 2);
     }
 
     #[test]

@@ -55,8 +55,9 @@ impl Default for TextFieldOptions {
 }
 
 impl TextFieldOptions {
-    /// Build the geometry for a modal text input, including the horizontal
-    /// scroll needed to keep its active cursor visible.
+    /// Build the geometry for a modal field input, including the horizontal
+    /// scroll needed to keep its active cursor visible. The field box is
+    /// inset by `ModalSpacing::input_pad_x` on both sides.
     pub fn for_modal(
         content: &dyn TextFieldContent,
         rect: &WidgetRect,
@@ -65,8 +66,24 @@ impl TextFieldOptions {
         scale_factor: f64,
     ) -> Self {
         let padx = ModalSpacing::input_pad_x(scale_factor);
-        let width = rect.w.saturating_sub(padx * 2);
-        let visible_chars = (width as f32 / char_width).ceil() as usize + 1;
+        let inner = WidgetRect {
+            x: rect.x + padx,
+            y: rect.y,
+            w: rect.w.saturating_sub(padx * 2),
+            h: rect.h,
+        };
+        Self::for_text_box(content, &inner, line_height, char_width)
+    }
+
+    /// Geometry for text drawn directly in `rect` (no inset) — the overlay
+    /// header, whose text box `modal_header_input_rect` already resolves.
+    pub fn for_text_box(
+        content: &dyn TextFieldContent,
+        rect: &WidgetRect,
+        line_height: usize,
+        char_width: f32,
+    ) -> Self {
+        let visible_chars = (rect.w as f32 / char_width).ceil() as usize + 1;
         let cursor_col = content
             .cursors()
             .get(content.active_cursor_index())
@@ -74,9 +91,9 @@ impl TextFieldOptions {
             .unwrap_or(0);
 
         Self {
-            x: rect.x + padx,
+            x: rect.x,
             y: rect.y + (rect.h.saturating_sub(line_height)) / 2,
-            width,
+            width: rect.w,
             height: line_height,
             char_width,
             scroll_x: TextFieldRenderer::calculate_scroll(cursor_col, 0, visible_chars),
