@@ -226,8 +226,11 @@ mod tests {
             document_id,
             revision: 0,
             query_start: crate::model::Cursor::at(0, 0),
+            query: String::new(),
             items: vec![],
             filtered: vec![],
+            is_incomplete: false,
+            pending_resolve: None,
         });
         model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Completion));
 

@@ -942,6 +942,38 @@ pub enum Cmd {
         cursor: crate::model::editor::Position,
         revision: u64,
     },
+    /// Arm (or reset) the per-document completion-request debounce —
+    /// emitted by `update/completion.rs` whenever the menu opens or its
+    /// query changes. Unlike definition/hover (single user-initiated
+    /// requests), completion is typing-driven, so the request itself is
+    /// debounced runtime-side (`COMPLETION_DEBOUNCE`) and flush-before-
+    /// request applies when it fires. A no-op if the document isn't open
+    /// on a server that supports completion.
+    LspScheduleCompletion {
+        document_id: DocumentId,
+        position: lsp_types::Position,
+        revision: u64,
+        trigger_character: Option<String>,
+    },
+    /// The menu closed (or its document changed): drop any pending
+    /// completion debounce and supersede the in-flight request for this
+    /// document. Without this a request fired just after dismissal would
+    /// be answered into a closed menu and dropped anyway.
+    LspCancelCompletion { document_id: DocumentId },
+    /// `completionItem/resolve` for the raw item the selected menu row was
+    /// converted from — the deferred half of accept-when-resolve-support-
+    /// is-advertised (ts-ls returns minimal items whose auto-import
+    /// `additionalTextEdits` only exist after resolve; skipping resolve
+    /// silently drops imports). `selected` echoes the menu selection so a
+    /// resolution whose selection has since moved is dropped.
+    LspResolveCompletionItem {
+        document_id: DocumentId,
+        revision: u64,
+        server_id: crate::lsp::LspServerId,
+        root: PathBuf,
+        raw_item: serde_json::Value,
+        selected: usize,
+    },
     /// The master `lsp.enabled` switch flipped (`CommandId::ToggleLsp`).
     /// Disabling tears down every running server — a non-quit variant of
     /// `Cmd::Quit`'s graceful teardown, with the same bounded grace — and
@@ -1049,6 +1081,9 @@ impl Cmd {
             Cmd::LspDidOpenOnServer { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestHover { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestReferences { .. } => Damage::Areas(vec![]),
+            Cmd::LspScheduleCompletion { .. } => Damage::Areas(vec![]),
+            Cmd::LspCancelCompletion { .. } => Damage::Areas(vec![]),
+            Cmd::LspResolveCompletionItem { .. } => Damage::Areas(vec![]),
             // No immediate visual effect; a `ServerStateChanged` (or the
             // batched `Cmd::Redraw`/`redraw_status_bar` these are always
             // paired with at the call site) requests its own redraw.

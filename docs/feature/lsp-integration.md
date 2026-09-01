@@ -354,11 +354,11 @@ Binary not found on `PATH` (after `PATHEXT` resolution on Windows) → `ServerSt
 
 **Effort:** L — depends on overlay-surface.md Phase 5
 
-- [ ] Trigger rules, debounce, flush-before-request, revision-guarded responses, `isIncomplete` re-request.
-- [ ] Dropdown on the overlay-surface list; `sortText`-primary ordering, `filterText` matching.
-- [ ] Resolve-before-accept; `textEdit` + `additionalTextEdits` as one undo step; re-anchoring.
-- [ ] `handle_completion_key` input branch + `overlay_routes_keys` context flag.
-- [ ] Automation coverage for open→filter→accept including an auto-import case.
+- [x] Trigger rules, debounce, flush-before-request, revision-guarded responses, `isIncomplete` re-request. Trigger rules: explicit Ctrl+Space (any query length), auto-open at a two-character word prefix, and server trigger characters keeping the menu open with an empty query + a `TriggerCharacter`-tagged re-request. Debounce lives runtime-side (`COMPLETION_DEBOUNCE`, 120 ms, per-document, re-arm-replaces) in front of the shared `send_lsp_feature_request` flush-before-request path; responses are revision-guarded twice (interception supersession + menu-revision match on merge). Between round trips the previous LSP items ride along, refiltered locally per keystroke.
+- [x] Dropdown on the overlay-surface list; `sortText`-primary ordering, `filterText` matching. LSP is `MenuSourceId::Lsp`, tier 0 above Snippets/Words; within the tier the sort key is `sortText ?? label`. Items convert via `completion/lsp.rs` (`items_to_menu_items`, capped at 1000), which serializes each whole item *before* destructuring so `completionItem/resolve` gets the identical object back (including server `data`).
+- [x] Resolve-before-accept; `textEdit` + `additionalTextEdits` as one undo step; re-anchoring. Accepting an unresolved item from a resolve-capable server sets `pending_resolve` and issues `completionItem/resolve` (3 s timeout → empty extras, accept still applies). Application plans every mutation against the pristine buffer, applies in descending position order, shifts cursors by the additional edits before them, and lands one `EditOperation::Batch`; the primary `textEdit` start re-anchors to the live cursor (clamped when degenerate).
+- [x] Key routing: **deviation** — no separate `handle_completion_key`/new context flag needed; the popup claims Up/Down/Enter/Esc/Tab plus PageUp/PageDown through the existing pre-keymap `handle_cursor_overlay_key` dispatch (the same mechanism overlay-p5 built and Phase 1 used).
+- [x] Automation coverage for open→filter→accept: the Phase 1 gate test (`automation_flow_triggers_menu_and_reports_completion_snapshot`) covers open→filter→accept through the real automation socket path, and the snapshot's `completion.items` includes LSP rows like any other. **Partial:** an auto-import accept end-to-end needs a live resolve-capable server; covered at unit level instead (deferred-accept, stale-selection-drop, resolve-timeout-unblocks tests in `update/completion.rs` / `runtime::app::tests`).
 
 ### Phase 6+: Future
 

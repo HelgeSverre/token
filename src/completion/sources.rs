@@ -7,7 +7,7 @@ use crate::model::{Cursor, Document};
 use crate::syntax::LanguageId;
 use crate::util::text::{char_type, CharType};
 
-use super::menu::{MenuItem, MenuItemKind, MenuSourceId};
+use super::menu::{MenuInsert, MenuItem, MenuItemKind, MenuSourceId};
 
 /// Identifiers within this many lines of the cursor on either side
 /// (autocomplete.md: "Zed scans ±5000; we start smaller").
@@ -20,7 +20,9 @@ const MAX_WORDS: usize = 500;
 
 /// Collect candidate words from lines within `WINDOW_LINES` of `cursor`,
 /// deduplicated and excluding `query` itself (suggesting the word the user
-/// already finished typing, verbatim, is never useful).
+/// already finished typing, verbatim, is never useful). The exclusion is
+/// case-insensitive: typing `Value` must not suggest `value` — the query is
+/// what the user already committed to, whatever its casing.
 pub fn collect_words(document: &Document, cursor: Cursor, query: &str) -> Vec<MenuItem> {
     let line_count = document.line_count();
     let start_line = cursor.line.saturating_sub(WINDOW_LINES);
@@ -33,16 +35,17 @@ pub fn collect_words(document: &Document, cursor: Cursor, query: &str) -> Vec<Me
             continue;
         };
         for word in extract_words(&line) {
-            if word == query || !seen.insert(word.clone()) {
+            if word.eq_ignore_ascii_case(query) || !seen.insert(word.clone()) {
                 continue;
             }
             out.push(MenuItem {
                 label: word.clone(),
                 filter_text: word.clone(),
-                insert_text: word,
+                insert: MenuInsert::Text(word),
                 kind: MenuItemKind::Variable,
                 source: MenuSourceId::Words,
                 detail: None,
+                sort_text: None,
             });
             if out.len() >= MAX_WORDS {
                 return out;
@@ -153,10 +156,11 @@ pub fn collect_snippets(language: LanguageId) -> Vec<MenuItem> {
         .map(|&(prefix, body)| MenuItem {
             label: prefix.to_string(),
             filter_text: prefix.to_string(),
-            insert_text: body.to_string(),
+            insert: MenuInsert::Text(body.to_string()),
             kind: MenuItemKind::Keyword,
             source: MenuSourceId::Snippets,
             detail: Some("snippet".to_string()),
+            sort_text: None,
         })
         .collect()
 }
@@ -191,6 +195,21 @@ mod tests {
         let items = collect_words(&doc, Cursor::at(0, 0), "value");
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
         assert!(!labels.contains(&"value"));
+        assert!(labels.contains(&"valueOther"));
+    }
+
+    #[test]
+    fn excludes_the_query_case_insensitively() {
+        // Typing `Value` must not suggest the buffer's `value` — the
+        // exact-match exclusion is about "the user already finished this
+        // word", which doesn't depend on casing.
+        let doc = doc_with("let value = 1;\nlet valueOther = 2;\n");
+        let items = collect_words(&doc, Cursor::at(0, 0), "Value");
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert!(
+            !labels.contains(&"value"),
+            "case-variant of the query must be excluded"
+        );
         assert!(labels.contains(&"valueOther"));
     }
 

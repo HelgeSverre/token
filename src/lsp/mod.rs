@@ -174,6 +174,13 @@ pub struct ResolvedServer {
     pub id: LspServerId,
     pub command: String,
     pub args: Vec<String>,
+    /// `lsp.servers.<id>.initialization_options` — sent verbatim in the
+    /// `initialize` request. `Null` when unconfigured.
+    pub initialization_options: serde_json::Value,
+    /// `lsp.servers.<id>.settings` — answers `workspace/configuration`
+    /// section lookups. `Null` when unconfigured (every section then
+    /// replies `null`, the pre-settings behavior).
+    pub settings: serde_json::Value,
 }
 
 /// Applies `config.yaml`'s `lsp:` overrides to a registry def.
@@ -194,10 +201,18 @@ pub fn resolve_server(
     let args = over
         .and_then(|o| o.args.clone())
         .unwrap_or_else(|| def.args.iter().map(|s| s.to_string()).collect());
+    let initialization_options = over
+        .and_then(|o| o.initialization_options.clone())
+        .unwrap_or(serde_json::Value::Null);
+    let settings = over
+        .and_then(|o| o.settings.clone())
+        .unwrap_or(serde_json::Value::Null);
     Some(ResolvedServer {
         id: LspServerId::from(def.id),
         command,
         args,
+        initialization_options,
+        settings,
     })
 }
 
@@ -256,11 +271,15 @@ mod tests {
                 command: Some("laravel-lsp".to_owned()),
                 args: None,
                 enabled: None,
+                initialization_options: None,
+                settings: None,
             },
         );
         let resolved = resolve_server(&PHPANTOM, &config).unwrap();
         assert_eq!(resolved.command, "laravel-lsp");
         assert!(resolved.args.is_empty()); // def.args is empty and no override
+        assert_eq!(resolved.initialization_options, serde_json::Value::Null);
+        assert_eq!(resolved.settings, serde_json::Value::Null);
     }
 
     #[test]
@@ -275,10 +294,39 @@ mod tests {
                 command: None,
                 args: None,
                 enabled: Some(false),
+                initialization_options: None,
+                settings: None,
             },
         );
         assert!(resolve_server(&PYRIGHT, &config).is_none());
         assert!(resolve_server(&RUST_ANALYZER, &config).is_some());
+    }
+
+    #[test]
+    fn initialization_options_and_settings_thread_through_resolve() {
+        let mut config = crate::config::LspConfig {
+            enabled: true,
+            servers: Default::default(),
+        };
+        config.servers.insert(
+            "pyright".to_owned(),
+            crate::config::LspServerOverride {
+                command: None,
+                args: None,
+                enabled: None,
+                initialization_options: Some(serde_json::json!({ "python": { "pythonPath": "/usr/bin/python3" } })),
+                settings: Some(serde_json::json!({ "python": { "analysis": { "typeCheckingMode": "strict" } } })),
+            },
+        );
+        let resolved = resolve_server(&PYRIGHT, &config).unwrap();
+        assert_eq!(
+            resolved.initialization_options["python"]["pythonPath"],
+            serde_json::json!("/usr/bin/python3")
+        );
+        assert_eq!(
+            resolved.settings["python"]["analysis"]["typeCheckingMode"],
+            serde_json::json!("strict")
+        );
     }
 
     #[test]

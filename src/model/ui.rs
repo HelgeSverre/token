@@ -968,6 +968,11 @@ pub struct UiState {
     /// `cursor_overlay` being `Some(CursorOverlayKind::Completion)`. `None`
     /// whenever the completion popup is closed.
     pub completion_menu: Option<crate::completion::CompletionMenuState>,
+    /// `FlatIndex` of the completion row currently under the mouse, if any
+    /// — the popup's hover wash (overlay-surface.md Pointer), mirroring
+    /// `modal_hover_row` for the cursor-anchored surface. Cleared whenever
+    /// the mouse isn't over a row and when the menu closes.
+    pub completion_hover_row: Option<usize>,
     /// Hover-card content (lsp-integration.md Phase 4), set alongside
     /// `cursor_overlay` being `Some(CursorOverlayKind::Hover)`. `None`
     /// whenever the hover card is closed.
@@ -1017,6 +1022,7 @@ impl UiState {
             modal_hover_row: None,
             cursor_overlay: None,
             completion_menu: None,
+            completion_hover_row: None,
             hover_card: None,
             reference_list: None,
             context_menu: None,

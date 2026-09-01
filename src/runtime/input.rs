@@ -277,10 +277,11 @@ pub fn handle_key(
 }
 
 /// Handle a keystroke while a cursor-anchored popup is open. Returns
-/// `Some(cmd)` for the five keys the popup claims (Up/Down/Enter/Esc/Tab —
-/// overlay-surface.md Phase 5); `None` means "not one of ours", so the
-/// caller falls through to the normal editor key path (typing reaches the
-/// document while a completion/hover popup is open).
+/// `Some(cmd)` for the keys the popup claims (Up/Down/Enter/Esc/Tab plus
+/// PageUp/PageDown — overlay-surface.md Phase 5, extended by
+/// lsp-integration.md Phase 5's page navigation); `None` means "not one of
+/// ours", so the caller falls through to the normal editor key path
+/// (typing reaches the document while a completion/hover popup is open).
 ///
 /// Called from two places: `runtime::app`'s window-event handler runs it
 /// *before* the keymap so the five claimed keys never reach `is_simple()`
@@ -406,6 +407,12 @@ pub(crate) fn handle_cursor_overlay_key(
             }
             Key::Named(NamedKey::ArrowDown) => {
                 Some(update(model, Msg::Completion(CompletionMsg::MenuNext)))
+            }
+            Key::Named(NamedKey::PageUp) => {
+                Some(update(model, Msg::Completion(CompletionMsg::MenuPageUp)))
+            }
+            Key::Named(NamedKey::PageDown) => {
+                Some(update(model, Msg::Completion(CompletionMsg::MenuPageDown)))
             }
             Key::Named(NamedKey::Enter | NamedKey::Tab) => Some(update(
                 model,

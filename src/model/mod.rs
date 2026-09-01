@@ -453,6 +453,12 @@ pub struct LspUiState {
     /// clearing rules (server exit/restart, LSP toggle-off, language
     /// change) — see `App::clear_diagnostics_for_roots`.
     pub diagnostics: std::collections::BTreeMap<std::path::PathBuf, Vec<lsp_types::Diagnostic>>,
+    /// Per-server `completionProvider.triggerCharacters`, mirrored from
+    /// `LspMsg::ServerCompletionTriggers` (sent once per `initialize`).
+    /// `update/completion.rs` consults this to keep the menu open across a
+    /// trigger character (`.`) and tag the re-request with it. Keyed by
+    /// server id like `servers`; an empty vec clears the entry's value.
+    pub completion_trigger_characters: HashMap<LspServerId, Vec<String>>,
 }
 
 /// One entry in the general, group-tagged jump-history back stack

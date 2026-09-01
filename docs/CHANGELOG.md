@@ -8,6 +8,41 @@ All notable changes to rust-editor are documented in this file.
 
 ### Added
 
+- **LSP completion (Phase 5)**: `textDocument/completion` now feeds the
+  autocomplete menu in Rust, TypeScript/JavaScript, Python, and PHP files.
+  Requests are debounced while typing (120 ms) with flush-before-request,
+  revision-guarded responses, and server trigger characters (e.g. `.`)
+  keeping the menu open with a fresh member query. Server ordering
+  (`sortText`) ranks LSP items above buffer words and snippets; matching
+  uses `filterText ?? label`. Accepting an item whose server advertises
+  `resolveProvider` resolves first, so ts-ls auto-imports apply;
+  `textEdit` + `additionalTextEdits` land as one undo step with the
+  primary range re-anchored to the live cursor. Incomplete lists re-request
+  on every keystroke instead of trusting local filtering.
+- Per-server LSP settings: `lsp.servers.<id>.initialization_options` is
+  sent verbatim as `initialize`'s `initializationOptions`, and
+  `lsp.servers.<id>.settings` answers `workspace/configuration` section
+  lookups (dotted paths; missing sections reply `null`). Previously every
+  server got all-null configuration and no init options, making pyright and
+  rust-analyzer effectively unconfigurable.
+- PageUp/PageDown navigate the completion popup by a full visible page.
+
+### Changed
+
+- The completion menu auto-trigger now requires a two-character prefix
+  before it opens (Ctrl+Space is unaffected and still works on an empty
+  query). Buffer-word self-exclusion is case-insensitive: typing `Value`
+  no longer suggests `value`.
+- Scrolling the editor or losing window focus dismisses the completion
+  popup instead of leaving it visually detached from its word / claiming
+  keys while unfocused. Completion rows highlight under the mouse like
+  modal rows.
+- Explicitly triggering completion in a file type without support now
+  flashes "Completion unavailable for this file type" instead of doing
+  nothing silently.
+- A go-to-definition reply that lands after focus moved to another
+  tab/split is now dropped, matching hover and references, instead of
+  jumping the editor that is no longer focused.
 - Added a right-click context menu for the editor text area, tab bar, and
   file tree, plus Shift+F10 to open the editor menu at the caret. Reuses the
   command palette's popup chrome and keycap hints; Up/Down/Enter/Escape
@@ -52,6 +87,9 @@ All notable changes to rust-editor are documented in this file.
   sizing—now follow panels when they move away from their default docks.
 - Long single-line drop-overlay messages now paint the measured wrapped-line
   plan instead of overflowing as one centered line.
+- The dock header separator is drawn at the scaled chrome border width
+  again, restoring its 2px thickness on HiDPI displays after the clay
+  layout migration briefly hardcoded it to 1px.
 - Fixed a debug-build crash when rendering an active terminal inside a dock
   panel whose content already established an enclosing clip.
 - Dock tabs now advance by their clamped widths, so a width-clamped tab no

@@ -104,6 +104,18 @@ pub struct LspServerOverride {
     pub command: Option<String>,
     pub args: Option<Vec<String>>,
     pub enabled: Option<bool>,
+    /// Arbitrary server-specific options sent as `initializationOptions`
+    /// in the `initialize` request (e.g. pyright's `python` config).
+    /// Passed through verbatim — the editor doesn't interpret it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initialization_options: Option<serde_json::Value>,
+    /// Server-specific settings returned from `workspace/configuration`
+    /// requests (e.g. rust-analyzer's `cargo.features`). Each requested
+    /// configuration `section` is looked up as a dotted path into this
+    /// object; a missing section answers `null`, matching the previous
+    /// all-null reply for servers with no configured settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<serde_json::Value>,
 }
 
 fn default_theme() -> String {

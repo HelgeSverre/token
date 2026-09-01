@@ -151,6 +151,35 @@ pub fn toggle_lsp_server_enabled(model: &mut AppModel, server_id: &str) -> Optio
     ]))
 }
 
+/// The shared staleness gate every async LSP feature reply passes before
+/// it may act: the requesting document must still exist and be unedited
+/// (revision match), and must still be the *focused* editor's document.
+/// Returns `true` when the reply must be dropped.
+///
+/// The focus check compares against the document the request was issued
+/// for — if focus has since moved to a different tab/split, comparing
+/// against whatever editor is now focused would compare unrelated
+/// positions (both commonly at 0,0) and could open a popup over the
+/// wrong document.
+///
+/// Cursor guards are intentionally NOT part of this helper: hover's
+/// mouse-dwell replies stay live while the pointer rests on the captured
+/// target even after the caret moved, and references has no dwell case —
+/// each site expresses its own rule in one line below.
+fn stale_feature_response(
+    model: &AppModel,
+    document_id: crate::model::editor_area::DocumentId,
+    revision: u64,
+) -> bool {
+    let Some(doc) = model.editor_area.documents.get(&document_id) else {
+        return true;
+    };
+    if doc.revision != revision {
+        return true;
+    }
+    model.try_document().and_then(|d| d.id) != Some(document_id)
+}
+
 pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
     match msg {
         LspMsg::ServerStateChanged {
@@ -260,8 +289,7 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             // Revision guard: a response for text that has since changed
             // is discarded outright, never moving the cursor (design
             // doc's "no stale result ever moves a cursor").
-            let doc = model.editor_area.documents.get(&document_id)?;
-            if doc.revision != revision {
+            if stale_feature_response(model, document_id, revision) {
                 return None;
             }
             match outcome {
@@ -352,8 +380,14 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
         }
 
         // Consumed by `process_async_messages`'s interception pass before
-        // reaching here — see the message's doc comment.
+        // reaching here — mirrors `DefinitionResponseFromServer`.
         LspMsg::DefinitionResponseFromServer { .. } => None,
+
+        // Consumed by `process_async_messages`'s interception passes —
+        // mirrors the other raw worker replies.
+        LspMsg::CompletionResponseFromServer { .. } | LspMsg::ResolveResponseFromServer { .. } => {
+            None
+        }
 
         LspMsg::ShowHover => {
             let doc = model.try_document()?;
@@ -400,34 +434,24 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             cursor,
             outcome,
         } => {
-            // Revision guard, same as `DefinitionResolved`, plus a cursor
-            // guard: a document edit doesn't necessarily bump the cursor,
-            // but a bare cursor move (no edit) doesn't bump the revision
+            // Revision + focus guards (see `stale_feature_response`), then
+            // the cursor rule: a document edit doesn't necessarily bump
+            // the cursor, but a bare cursor move doesn't bump the revision
             // either — a stale reply for a position the user has since
             // moved away from must never open, per the design doc's "any
             // ... cursor move" dismissal rule extended to in-flight
-            // requests.
-            let doc = model.editor_area.documents.get(&document_id)?;
-            if doc.revision != revision {
+            // requests. A mouse-dwell reply (`ShowHoverAt`) stays live
+            // while the pointer still rests on the captured target (the
+            // runtime clears `mouse_hover_target` the moment it moves
+            // away), even though the caret may have moved.
+            if stale_feature_response(model, document_id, revision) {
                 return None;
             }
-            // The cursor guard only makes sense against the document the
-            // request was issued for — if the focus has since moved to a
-            // different tab/split, comparing against the *focused* editor's
-            // cursor would compare unrelated positions (both commonly at
-            // 0,0) and could open the card over the wrong document.
-            if model.try_document().and_then(|d| d.id) != Some(document_id) {
-                return None;
-            }
-            // A mouse-dwell reply (`ShowHoverAt`) is guarded against the
-            // captured dwell target instead of the caret — the runtime
-            // clears `mouse_hover_target` the moment the pointer moves away
-            // from it, so a match here means the dwell is still live. A
-            // caret-triggered reply falls back to the original caret check.
             let is_dwell_match = model.ui.mouse_hover_target == Some(cursor);
             if !is_dwell_match && model.editor().active_cursor().to_position() != cursor {
                 return None;
             }
+            let doc = model.editor_area.documents.get(&document_id)?;
             match outcome {
                 HoverOutcome::Content(content) => {
                     let has_diagnostics =
@@ -481,14 +505,10 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             items,
             outcome,
         } => {
-            // Revision + focused-document + cursor guards, verbatim from
-            // `HoverResolved` (minus the mouse-dwell branch — references
-            // has no mouse trigger).
-            let doc = model.editor_area.documents.get(&document_id)?;
-            if doc.revision != revision {
-                return None;
-            }
-            if model.try_document().and_then(|d| d.id) != Some(document_id) {
+            // Revision + focus guards (see `stale_feature_response`),
+            // plus the caret guard verbatim from `HoverResolved` (minus
+            // the mouse-dwell branch — references has no mouse trigger).
+            if stale_feature_response(model, document_id, revision) {
                 return None;
             }
             if model.editor().active_cursor().to_position() != cursor {
@@ -532,6 +552,48 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             apply_route_hint(model, &item);
             navigation::jump_to_location(model, None, &item.path, item.position)
         }
+
+        // ==== Completion (lsp-integration.md Phase 5) ====
+        LspMsg::ServerCompletionTriggers {
+            server_id,
+            characters,
+        } => {
+            if characters.is_empty() {
+                model.lsp.completion_trigger_characters.remove(&server_id);
+            } else {
+                model
+                    .lsp
+                    .completion_trigger_characters
+                    .insert(server_id, characters);
+            }
+            None
+        }
+        LspMsg::CompletionResolved {
+            document_id,
+            revision,
+            items,
+            is_incomplete,
+        } => super::completion::merge_lsp_completion(
+            model,
+            document_id,
+            revision,
+            items,
+            is_incomplete,
+        ),
+        LspMsg::CompletionItemResolved {
+            document_id,
+            revision,
+            selected,
+            detail,
+            additional_text_edits,
+        } => super::completion::finish_deferred_accept(
+            model,
+            document_id,
+            revision,
+            selected,
+            detail,
+            additional_text_edits,
+        ),
     }
 }
 

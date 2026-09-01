@@ -189,6 +189,26 @@ pub fn supports_completion(caps: &ServerCapabilities) -> bool {
     caps.completion_provider.is_some()
 }
 
+/// Whether the server advertised `completionProvider.resolveProvider` —
+/// gates resolve-before-accept (ts-ls's auto-import `additionalTextEdits`
+/// only exist after a resolve round trip).
+pub fn supports_completion_resolve(caps: &ServerCapabilities) -> bool {
+    caps.completion_provider
+        .as_ref()
+        .and_then(|p| p.resolve_provider)
+        .unwrap_or(false)
+}
+
+/// The trigger characters a server advertised (e.g. `.` for member
+/// access). Empty when none — typing them keeps the menu open and tags
+/// the re-request, per lsp-integration.md Phase 5.
+pub fn completion_trigger_characters(caps: &ServerCapabilities) -> Vec<String> {
+    caps.completion_provider
+        .as_ref()
+        .and_then(|p| p.trigger_characters.clone())
+        .unwrap_or_default()
+}
+
 // ============================================================================
 // Server -> client requests and notifications
 // ============================================================================
@@ -199,15 +219,32 @@ pub fn supports_completion(caps: &ServerCapabilities) -> bool {
 /// here gets `MethodNotFound`.
 ///
 /// `params` is only inspected for `workspace/configuration`, where the
-/// reply must have one array entry per requested item.
-pub fn reply_for_server_request(method: &str, params: &Value) -> Result<Value, JsonRpcError> {
+/// reply must have one array entry per requested item: each item's dotted
+/// `section` is looked up in this server's configured `settings`
+/// (`lsp.servers.<id>.settings`), missing paths answering `null` — the
+/// same reply an unconfigured server always got.
+pub fn reply_for_server_request(
+    method: &str,
+    params: &Value,
+    settings: &Value,
+) -> Result<Value, JsonRpcError> {
     match method {
         "workspace/configuration" => {
-            let item_count = params
-                .get("items")
-                .and_then(Value::as_array)
-                .map_or(0, Vec::len);
-            Ok(Value::Array(vec![Value::Null; item_count]))
+            let items = params.get("items").and_then(Value::as_array);
+            let results = items
+                .map(|items| {
+                    items
+                        .iter()
+                        .map(|item| {
+                            configuration_section_value(
+                                settings,
+                                item.get("section").and_then(Value::as_str),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(Value::Array(results))
         }
         "client/registerCapability" | "client/unregisterCapability" => Ok(Value::Null),
         "window/workDoneProgress/create" => Ok(Value::Null),
@@ -215,6 +252,29 @@ pub fn reply_for_server_request(method: &str, params: &Value) -> Result<Value, J
         "window/showMessageRequest" => Ok(Value::Null),
         _ => Err(JsonRpcError::method_not_found()),
     }
+}
+
+/// Looks up a dotted `section` path (`"rust-analyzer.cargo.allTargets"`)
+/// in the configured settings object. A missing path, a section that
+/// walks through a non-object, or no configured settings at all answers
+/// `Null` — the spec's "null if the client doesn't have the setting", and
+/// the reply every server got before per-server settings existed. No
+/// section means "everything you have": the whole object (or null).
+fn configuration_section_value(settings: &Value, section: Option<&str>) -> Value {
+    let Some(section) = section else {
+        return settings.clone();
+    };
+    let mut current = settings;
+    for part in section.split('.') {
+        match current {
+            Value::Object(map) => match map.get(part) {
+                Some(value) => current = value,
+                None => return Value::Null,
+            },
+            _ => return Value::Null,
+        }
+    }
+    current.clone()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -701,6 +761,7 @@ static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 /// in `ServerExited`) lets the runtime tell "the process I just killed
 /// exited" apart from "the process I just started already died" without
 /// that race corrupting either handle.
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_server(
     command: &str,
     args: &[String],
@@ -708,6 +769,8 @@ pub fn spawn_server(
     server_id: LspServerId,
     msg_tx: Sender<Msg>,
     wake: Option<Arc<dyn Fn() + Send + Sync>>,
+    initialization_options: Value,
+    settings: Value,
 ) -> std::io::Result<ServerHandle> {
     let root_for_state = root.to_path_buf();
     let resolved_command = resolve_command(command);
@@ -749,7 +812,14 @@ pub fn spawn_server(
         std::thread::Builder::new()
             .name(format!("lsp-writer-{}", server_id.0))
             .spawn(move || {
-                writer_loop(stdin, outbound_rx, init_id, root_uri, std::process::id())
+                writer_loop(
+                    stdin,
+                    outbound_rx,
+                    init_id,
+                    root_uri,
+                    std::process::id(),
+                    initialization_options,
+                )
             })?;
     }
 
@@ -773,6 +843,7 @@ pub fn spawn_server(
                     capabilities,
                     pending,
                     outbound_tx_for_reader,
+                    settings,
                 )
             })?;
     }
@@ -803,16 +874,20 @@ fn writer_loop(
     init_id: i64,
     root_uri: lsp_types::Uri,
     process_id: u32,
+    initialization_options: Value,
 ) {
     let mut gate = HandshakeGate::new();
 
-    let init_params = json!({
+    let mut init_params = json!({
         "processId": process_id,
         "rootUri": root_uri.as_str(),
         "rootPath": uri_to_root_path(&root_uri),
         "workspaceFolders": [{ "uri": root_uri.as_str(), "name": root_uri.as_str() }],
         "capabilities": client_capabilities(),
     });
+    if !initialization_options.is_null() {
+        init_params["initializationOptions"] = initialization_options;
+    }
     let init_frame = Frame::Request {
         id: init_id,
         method: "initialize".to_owned(),
@@ -884,6 +959,7 @@ fn reader_loop(
     capabilities: Arc<Mutex<Option<lsp_types::ServerCapabilities>>>,
     pending: Arc<Mutex<PendingRequests>>,
     outbound_tx: Sender<WorkerCmd>,
+    settings: Value,
 ) {
     let mut reader = BufReader::new(stdout);
     loop {
@@ -907,7 +983,7 @@ fn reader_loop(
             if let Some(id) = message.get("id").cloned() {
                 // Server -> client request: always needs a reply.
                 let params = message.get("params").cloned().unwrap_or(Value::Null);
-                let result = reply_for_server_request(method, &params);
+                let result = reply_for_server_request(method, &params, &settings);
                 let _ = outbound_tx.send(WorkerCmd::ReplyToServer { id, result });
             } else {
                 // Notification.
@@ -974,6 +1050,13 @@ fn reader_loop(
                 let parsed: Option<lsp_types::ServerCapabilities> = result
                     .and_then(|r| r.get("capabilities").cloned())
                     .and_then(|c| serde_json::from_value(c).ok());
+                // Completion trigger characters ride the same parse — sent
+                // even when empty so a restart that loses them (server
+                // swapped underneath the same id) clears the mirror.
+                let characters = parsed
+                    .as_ref()
+                    .map(completion_trigger_characters)
+                    .unwrap_or_default();
                 *capabilities.lock().unwrap() = parsed;
                 let _ = outbound_tx.send(WorkerCmd::HandshakeReady);
                 send_state(
@@ -983,6 +1066,13 @@ fn reader_loop(
                     &msg_tx,
                     wake.as_deref(),
                 );
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::ServerCompletionTriggers {
+                    server_id: server_id.clone(),
+                    characters,
+                }));
+                if let Some(wake) = wake.as_deref() {
+                    wake();
+                }
             } else if entry.method == "shutdown" {
                 // Quit teardown (`ServerHandle::graceful_shutdown`) polls
                 // `msg_rx` directly for this rather than going through
@@ -1035,9 +1125,42 @@ fn reader_loop(
                 if let Some(wake) = wake.as_deref() {
                     wake();
                 }
+            } else if entry.method == "textDocument/completion" {
+                let (items, is_incomplete) = parse_completion_result(message.get("result"));
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::CompletionResponseFromServer {
+                    server_id: server_id.clone(),
+                    root: root.clone(),
+                    request_id: id,
+                    items,
+                    is_incomplete,
+                    abandoned: entry.abandoned,
+                }));
+                if let Some(wake) = wake.as_deref() {
+                    wake();
+                }
+            } else if entry.method == "completionItem/resolve" {
+                // A null/unparseable resolve result is `None` — the
+                // deferred accept proceeds with what the original item
+                // carried rather than being dropped.
+                let item = message.get("result").and_then(|r| {
+                    serde_json::from_value::<lsp_types::CompletionItem>(r.clone())
+                        .ok()
+                        .map(Box::new)
+                });
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::ResolveResponseFromServer {
+                    server_id: server_id.clone(),
+                    root: root.clone(),
+                    request_id: id,
+                    item,
+                    abandoned: entry.abandoned,
+                }));
+                if let Some(wake) = wake.as_deref() {
+                    wake();
+                }
             }
-            // Other request kinds (completion) are routed by future
-            // phases.
+            // Other request kinds are routed above; anything unrecognized
+            // is resolved-and-dropped by `PendingRequests::resolve` at the
+            // top of this block.
         }
     }
 }
@@ -1086,6 +1209,26 @@ fn parse_references_result(result: Option<&Value>) -> Vec<lsp_types::Location> {
         return Vec::new();
     };
     serde_json::from_value::<Vec<lsp_types::Location>>(result.clone()).unwrap_or_default()
+}
+
+/// Parses a `textDocument/completion` response's `result` into its items
+/// plus `isIncomplete`. The three legal shapes: `CompletionItem[]`
+/// (always complete), `CompletionList { items, isIncomplete }`, and
+/// `null` (no completions). A malformed result collapses to empty-and-
+/// complete — the menu keeps its offline items, exactly as if the server
+/// had nothing to add.
+fn parse_completion_result(result: Option<&Value>) -> (Vec<lsp_types::CompletionItem>, bool) {
+    let Some(result) = result else {
+        return (Vec::new(), false);
+    };
+    if result.is_null() {
+        return (Vec::new(), false);
+    }
+    match serde_json::from_value::<lsp_types::CompletionResponse>(result.clone()) {
+        Ok(lsp_types::CompletionResponse::List(list)) => (list.items, list.is_incomplete),
+        Ok(lsp_types::CompletionResponse::Array(items)) => (items, false),
+        Err(_) => (Vec::new(), false),
+    }
 }
 
 /// Parses a `textDocument/hover` response's `result` into plaintext
@@ -1467,32 +1610,102 @@ mod tests {
     #[test]
     fn workspace_configuration_replies_with_one_null_per_item() {
         let params = json!({ "items": [{}, {}, {}] });
-        let reply = reply_for_server_request("workspace/configuration", &params).unwrap();
+        let reply =
+            reply_for_server_request("workspace/configuration", &params, &Value::Null).unwrap();
         assert_eq!(reply, json!([null, null, null]));
     }
 
     #[test]
     fn register_capability_replies_null() {
         assert_eq!(
-            reply_for_server_request("client/registerCapability", &Value::Null).unwrap(),
+            reply_for_server_request("client/registerCapability", &Value::Null, &Value::Null)
+                .unwrap(),
             Value::Null
         );
         assert_eq!(
-            reply_for_server_request("client/unregisterCapability", &Value::Null).unwrap(),
+            reply_for_server_request("client/unregisterCapability", &Value::Null, &Value::Null)
+                .unwrap(),
             Value::Null
         );
     }
 
     #[test]
     fn apply_edit_replies_not_applied() {
-        let reply = reply_for_server_request("workspace/applyEdit", &Value::Null).unwrap();
+        let reply =
+            reply_for_server_request("workspace/applyEdit", &Value::Null, &Value::Null).unwrap();
         assert_eq!(reply, json!({ "applied": false }));
     }
 
     #[test]
     fn unknown_request_is_method_not_found() {
-        let err = reply_for_server_request("textDocument/foldingRange", &Value::Null).unwrap_err();
+        let err = reply_for_server_request("textDocument/foldingRange", &Value::Null, &Value::Null)
+            .unwrap_err();
         assert_eq!(err.code, -32601);
+    }
+
+    #[test]
+    fn workspace_configuration_answers_configured_sections() {
+        let settings = json!({
+            "python": { "analysis": { "typeCheckingMode": "strict" } },
+            "bare": "top-level-value",
+        });
+        let params = json!({ "items": [
+            { "section": "python.analysis.typeCheckingMode" },
+            { "section": "python" },
+            { "section": "missing.path" },
+            {},
+        ] });
+        let reply =
+            reply_for_server_request("workspace/configuration", &params, &settings).unwrap();
+        assert_eq!(
+            reply,
+            json!([
+                "strict",
+                { "analysis": { "typeCheckingMode": "strict" } },
+                null,
+                // No section = "everything you have".
+                settings,
+            ])
+        );
+    }
+
+    #[test]
+    fn completion_response_parses_all_three_shapes() {
+        use super::parse_completion_result;
+        // Bare array: always complete.
+        let (items, incomplete) = parse_completion_result(Some(&json!([{ "label": "foo" }])));
+        assert_eq!(items.len(), 1);
+        assert!(!incomplete);
+        // CompletionList carries isIncomplete.
+        let (items, incomplete) = parse_completion_result(Some(&json!({
+            "isIncomplete": true,
+            "items": [{ "label": "a" }, { "label": "b" }],
+        })));
+        assert_eq!(items.len(), 2);
+        assert!(incomplete);
+        // Null and malformed collapse to empty-and-complete.
+        assert_eq!(parse_completion_result(None), (Vec::new(), false));
+        assert_eq!(
+            parse_completion_result(Some(&Value::Null)),
+            (Vec::new(), false)
+        );
+        assert_eq!(
+            parse_completion_result(Some(&json!({ "nonsense": true }))),
+            (Vec::new(), false)
+        );
+    }
+
+    #[test]
+    fn trigger_characters_extract_from_capabilities() {
+        use super::completion_trigger_characters;
+        // A default server block advertises no completionProvider.
+        let caps: lsp_types::ServerCapabilities = Default::default();
+        assert!(completion_trigger_characters(&caps).is_empty());
+        let caps: lsp_types::ServerCapabilities = serde_json::from_value(json!({
+            "completionProvider": { "triggerCharacters": [".", ":"] }
+        }))
+        .unwrap();
+        assert_eq!(completion_trigger_characters(&caps), vec![".", ":"]);
     }
 
     // ---- handshake gate ----
@@ -1707,6 +1920,8 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
             LspServerId::from("fake-server"),
             msg_tx,
             None,
+            Value::Null,
+            Value::Null,
         )
         .expect("failed to spawn fake server");
 
@@ -1749,6 +1964,8 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
             LspServerId::from("fake-server"),
             msg_tx,
             None,
+            Value::Null,
+            Value::Null,
         )
         .expect("failed to spawn fake server");
 

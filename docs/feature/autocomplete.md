@@ -247,21 +247,27 @@ Deliberate simplifications, each with its upgrade path:
 
 ### Data flow
 
-**Menu (synchronous sources — words, snippets):**
+**Menu (synchronous sources — words, snippets; LSP items arrive async and merge into the same state):**
 
 ```text
 typed char / Ctrl+Space
   → update/editor.rs inserts char (normal path, unchanged)
   → update/completion.rs: should_trigger? (word char, or explicit)
+      auto-open additionally requires a two-character query prefix
+      (MIN_AUTO_TRIGGER_PREFIX — one char flashing the popup read as noise;
+      Ctrl+Space is unaffected and still works on an empty query)
       collect: word_start_before(cursor) → query
       sources run inline in update (they're rope scans + static tables, <1 ms):
-        WordsSource: words_in_range around cursor (±N lines), dedup vs query + other items
+        WordsSource: words_in_range around cursor (±N lines), dedup vs query
+          (case-insensitive: typing `Value` must not suggest `value`) + other items
         SnippetsSource: static per-language table prefix match
       fuzzy-filter with nucleo-matcher, sort (tier: exact > prefix > score; then source; then label)
   → CompletionMenuState set on UiState, Cmd::redraw_editor()
 subsequent typing
   → query grows → local refilter only (no re-collect unless word boundary crossed)
   → query empty or non-word char → dismiss
+    (exception: a server trigger character keeps the menu open with an empty
+     query and a tagged re-request — lsp-integration.md Phase 5)
 Enter/Tab
   → AcceptMenuItem → MenuInsert::Replace applied at every cursor via EditOperation::Batch
   → dismiss, Cmd::redraw + schedule_syntax_parse (normal edit path)
@@ -500,7 +506,7 @@ Automation/MCP: all commands (`TriggerMenu`, `AcceptInline`, …) are `is_simple
 
 - [x] `CompletionMenuState` on `UiState`; `Msg::Completion` + `update/completion.rs`. **Deviation:** `selected`/`viewport_offset` aren't duplicated on `CompletionMenuState` — they live on `ui.cursor_overlay` (`CursorOverlayState`, added by the overlay-p5 unit after this doc was written), the same shared home every other cursor-anchored popup uses. `CompletionMenuState` owns `document_id`/`revision`/`query_start`/`items`/`filtered` only.
 - [x] WordsSource (rope scan, dedup, cap) + SnippetsSource (a handful of snippets for Rust/JavaScript+TypeScript/Python to prove the path). **Deviation:** snippets are a plain `match` in `completion/sources.rs`, not a new `&'static [(prefix, body)]` field on `LanguageDefinition` — the registry's `language!` macro has ~40 call sites, and threading a new field through all of them is a large mechanical diff for "a handful of snippets to prove the path." Add the `LanguageDefinition` field (following `selection`/`outline`'s pattern) if/when the per-language snippet count outgrows a match arm.
-- [x] nucleo filtering + tiered sort; refilter-on-type; dismiss rules (non-word char, cursor line change, Escape). **Partial:** no "focus loss" dismiss hook (e.g. window losing OS focus) — not wired to anything in this unit; low-risk gap since the popup is also killed by the next keystroke/click almost always.
+- [x] nucleo filtering + tiered sort; refilter-on-type; dismiss rules (non-word char, cursor line change, Escape). The focus-loss dismiss gap is closed (runtime `WindowEvent::Focused(false)` → `CompletionMsg::Dismiss`), and editor scroll now dismisses too — the cursor-anchored popup would otherwise visually detach from its word. lsp-integration.md Phase 5 adds the LSP source tier and server trigger characters as a keep-open exception to the non-word-char rule.
 - [x] Popup rendering: build the `OverlaySpec` for the overlay-surface Completion context; `EditorArea` damage while visible (for free — `view::mod::compute_effective_damage` already forces `Damage::Full` whenever `ui.cursor_overlay.is_some()`, generically for every cursor-anchored popup kind since overlay-p5). Rows carry real `match_indices` from `Matcher::fuzzy_indices` (`filter_and_sort`'s `filtered` now stores `(score, index, indices)`), so the typed substring is bolded, matching this section's spec. (A verifier fix-up: the version that first shipped this checkbox passed `match_indices: &[]`, ticked here without recording the gap.)
 - [x] Key routing: Ctrl+Space (`Command::TriggerCompletionMenu`, keymap-bindable) opens explicitly; arrows/Enter/Tab/Escape are claimed by the existing pre-keymap `handle_cursor_overlay_key` dispatch (overlay-p5's `overlay_routes_keys` mechanism) when `cursor_overlay.kind == Completion`, exactly as this doc's Key Handling section specified ("this document does not introduce a separate `completion_menu_visible` field ... `menu_visible` compiles to `overlay_routes_keys` + the active overlay context being Completion") — no new `Condition` variant needed. Tab falls through to `InsertTab` when the menu isn't open, resolving the standing keymap TODO for this one case.
 - [x] Accept via `EditOperation::Batch` at all cursors; single undo step; multi-byte-safe (tested with an emoji elsewhere on the line and rope char-offsets throughout, never byte offsets).

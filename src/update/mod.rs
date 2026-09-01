@@ -135,7 +135,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
                 }
                 return None;
             }
-            // Only these two facts of `m` matter to the completion sync
+            // Only these facts of `m` matter to the completion sync
             // below; read them before `m` moves into `update_document`
             // rather than cloning the whole message (cheap for most
             // variants, but `InsertText(String)` carries a full paste/IME
@@ -143,9 +143,18 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
             let is_copy = matches!(m, DocumentMsg::Copy);
             let opens_on_word_char =
                 matches!(&m, DocumentMsg::InsertChar(ch) if char_type(*ch) == CharType::WordChar);
+            let typed_char = if let DocumentMsg::InsertChar(ch) = &m {
+                Some(*ch)
+            } else {
+                None
+            };
             let result = document::update_document(model, m);
-            let completion_cmd =
-                completion::sync_after_document_edit(model, is_copy, opens_on_word_char);
+            let completion_cmd = completion::sync_after_document_edit(
+                model,
+                is_copy,
+                opens_on_word_char,
+                typed_char,
+            );
             merge_cmds(result, completion_cmd)
         }
         Msg::Ui(m) => ui::update_ui(model, m),

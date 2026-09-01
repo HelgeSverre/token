@@ -1136,6 +1136,67 @@ pub enum LspMsg {
         locations: Vec<lsp_types::Location>,
         abandoned: bool,
     },
+
+    // ==== Completion (lsp-integration.md Phase 5) ====
+    /// Worker -> update: the trigger characters a server advertised in its
+    /// `completionProvider` capabilities, sent once right after the
+    /// `initialize` response is parsed (empty clears any previous entry).
+    /// The model mirror keeps them keyed by server id so
+    /// `update/completion.rs` can keep the menu open across a trigger
+    /// character (`.`) and tag the re-request with it — information only
+    /// the protocol layer has at parse time.
+    ServerCompletionTriggers {
+        server_id: LspServerId,
+        characters: Vec<String>,
+    },
+    /// Worker -> runtime only: the raw response to a
+    /// `textDocument/completion` request, keyed by `(server_id, root,
+    /// request_id)` — mirrors `HoverResponseFromServer`. `is_incomplete`
+    /// is `CompletionList.isIncomplete` (false for a bare item array per
+    /// spec: an array response is always complete).
+    CompletionResponseFromServer {
+        server_id: LspServerId,
+        root: std::path::PathBuf,
+        request_id: i64,
+        items: Vec<lsp_types::CompletionItem>,
+        is_incomplete: bool,
+        abandoned: bool,
+    },
+    /// Runtime -> update: a completion response survived supersession and
+    /// staleness guards and was converted into menu items. Revision-guarded
+    /// again in `update/completion.rs` against the *menu's* revision — a
+    /// keystroke between request and response bumps both.
+    CompletionResolved {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        items: Vec<crate::completion::menu::MenuItem>,
+        is_incomplete: bool,
+    },
+    /// Worker -> runtime only: the raw response to a
+    /// `completionItem/resolve` request — mirrors
+    /// `CompletionResponseFromServer`. `None` for a null/unparseable
+    /// result (the deferred accept then proceeds with what was known).
+    /// Boxed: `CompletionItem` is a very large struct (dozens of optional
+    /// fields) and would otherwise balloon every `LspMsg`.
+    ResolveResponseFromServer {
+        server_id: LspServerId,
+        root: std::path::PathBuf,
+        request_id: i64,
+        item: Option<Box<lsp_types::CompletionItem>>,
+        abandoned: bool,
+    },
+    /// Runtime -> update: a deferred accept's resolve round trip finished
+    /// (or timed out / failed — the extra fields are then empty and accept
+    /// proceeds with what the original item carried). `selected` echoes
+    /// the menu selection the resolve was issued for; `update/completion.rs`
+    /// drops the whole thing if the user has since selected something else.
+    CompletionItemResolved {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        selected: usize,
+        detail: Option<String>,
+        additional_text_edits: Vec<(lsp_types::Range, String)>,
+    },
 }
 
 /// The result of a `textDocument/references` request, mirroring
@@ -1184,14 +1245,19 @@ pub enum DefinitionOutcome {
 }
 
 /// Menu completion messages (autocomplete.md Phase 1: "words + snippets,
-/// fully offline"). Inline-suggestion messages (`TriggerInline`,
-/// `AcceptInline`, ...) aren't here yet — that's Phase 2.
+/// fully offline"; lsp-integration.md Phase 5 adds the LSP source).
+/// Inline-suggestion messages (`TriggerInline`, `AcceptInline`, ...) aren't
+/// here yet — that's Phase 2.
 #[derive(Debug, Clone)]
 pub enum CompletionMsg {
     /// Ctrl+Space or any other explicit-trigger binding.
     TriggerMenu,
     MenuNext,
     MenuPrev,
+    /// PageUp/PageDown while the menu is visible — jumps by a full visible
+    /// window (8 rows), wrapping like MenuNext/MenuPrev.
+    MenuPageUp,
+    MenuPageDown,
     /// Enter/Tab while the menu is visible.
     AcceptMenuItem,
     /// Escape, or any dismiss-causing edit/cursor-move.

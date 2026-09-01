@@ -99,6 +99,8 @@ fn full_lifecycle_including_workspace_configuration_mid_init() {
         LspServerId::from("fake"),
         msg_tx,
         None,
+        serde_json::Value::Null,
+        serde_json::Value::Null,
     )
     .expect("spawn fake-lsp-server");
 
@@ -132,6 +134,8 @@ fn never_responding_server_does_not_wedge_the_reader() {
         LspServerId::from("fake"),
         msg_tx,
         None,
+        serde_json::Value::Null,
+        serde_json::Value::Null,
     )
     .expect("spawn fake-lsp-server");
 
@@ -169,6 +173,8 @@ fn exit_mid_request_reports_server_exited() {
         LspServerId::from("fake"),
         msg_tx,
         None,
+        serde_json::Value::Null,
+        serde_json::Value::Null,
     )
     .expect("spawn fake-lsp-server");
 
@@ -205,6 +211,8 @@ fn malformed_frame_is_treated_as_exit_not_a_panic() {
         LspServerId::from("fake"),
         msg_tx,
         None,
+        serde_json::Value::Null,
+        serde_json::Value::Null,
     )
     .expect("spawn fake-lsp-server");
 
@@ -245,6 +253,8 @@ fn duplicate_and_unknown_response_ids_are_dropped_not_fatal() {
         LspServerId::from("fake"),
         msg_tx,
         None,
+        serde_json::Value::Null,
+        serde_json::Value::Null,
     )
     .expect("spawn fake-lsp-server");
 
@@ -289,6 +299,8 @@ fn stderr_flood_does_not_wedge_the_handshake() {
         LspServerId::from("fake"),
         msg_tx,
         None,
+        serde_json::Value::Null,
+        serde_json::Value::Null,
     )
     .expect("spawn fake-lsp-server");
 
@@ -324,6 +336,8 @@ fn initialize_error_reports_failed_not_ready() {
         LspServerId::from("fake"),
         msg_tx,
         None,
+        serde_json::Value::Null,
+        serde_json::Value::Null,
     )
     .expect("spawn fake-lsp-server");
 
@@ -352,6 +366,8 @@ fn real_rust_analyzer_completes_the_handshake() {
         LspServerId::from("rust-analyzer"),
         msg_tx,
         None,
+        serde_json::Value::Null,
+        serde_json::Value::Null,
     )
     .expect("spawn rust-analyzer (must be on PATH for this ignored test)");
 

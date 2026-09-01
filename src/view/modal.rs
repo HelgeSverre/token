@@ -1710,7 +1710,7 @@ pub fn with_cursor_overlay_spec<R>(
                 max_visible: overlay_surface::MAX_VISIBLE_COMPLETION,
             },
             footer: None,
-            hover_row: None,
+            hover_row: model.ui.completion_hover_row.map(FlatIndex),
         };
         return Some(f(&spec));
     }

@@ -1940,6 +1940,23 @@ pub fn handle_mouse_wheel(
 
         // Editor text area: scroll the editor or delegate to specialized modes.
         HoverRegion::EditorText => {
+            // Scrolling the editor moves the text out from under the
+            // completion popup's anchor; the popup would visually detach
+            // from its word. Dismiss it instead (the anchor clamps to the
+            // content edge, so keeping it open reads as a stale artifact).
+            // The dismissal's own Cmd is merged into whichever scroll
+            // command this arm returns, so a dismissal with no scroll
+            // still repaints.
+            let completion_dismiss = if model.ui.completion_menu.is_some() {
+                update(model, Msg::Completion(CompletionMsg::Dismiss))
+            } else {
+                None
+            };
+            let merge = |a: Option<Cmd>, b: Option<Cmd>| match (a, b) {
+                (Some(a), Some(b)) => Some(Cmd::Batch(vec![a, b])),
+                (a, b) => a.or(b),
+            };
+
             let in_image_mode = model
                 .editor_area
                 .focused_editor()
@@ -1949,16 +1966,19 @@ pub fn handle_mouse_wheel(
             if in_image_mode {
                 if v_delta != 0 {
                     let (mouse_x, mouse_y) = mouse_position.unwrap_or((0.0, 0.0));
-                    return update(
-                        model,
-                        Msg::Image(ImageMsg::Zoom {
-                            delta: v_delta as f64,
-                            mouse_x,
-                            mouse_y,
-                        }),
+                    return merge(
+                        completion_dismiss,
+                        update(
+                            model,
+                            Msg::Image(ImageMsg::Zoom {
+                                delta: v_delta as f64,
+                                mouse_x,
+                                mouse_y,
+                            }),
+                        ),
                     );
                 }
-                return None;
+                return completion_dismiss;
             }
 
             let in_csv_mode = model
@@ -1978,7 +1998,7 @@ pub fn handle_mouse_wheel(
                 } else {
                     None
                 };
-                return v_cmd.or(h_cmd);
+                return merge(completion_dismiss, v_cmd.or(h_cmd));
             }
 
             let v_cmd = if v_delta != 0 {
@@ -1991,7 +2011,7 @@ pub fn handle_mouse_wheel(
             } else {
                 None
             };
-            v_cmd.or(h_cmd)
+            merge(completion_dismiss, v_cmd.or(h_cmd))
         }
     }
 }

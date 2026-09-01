@@ -252,6 +252,18 @@ pub fn default_bindings() -> Vec<Keybinding> {
         // Escape (smart clear)
         // ====================================================================
         bind(KeyCode::Escape, none, Command::EscapeSmartClear),
+        // ====================================================================
+        // Completion + LSP navigation
+        //
+        // The fallback mirrors only the *essentials* of the embedded
+        // keymap.yaml (which stays the source of truth); these are here so
+        // a YAML parse failure degrades to an editor that can still reach
+        // autocomplete and jump history, not just raw text editing.
+        // ====================================================================
+        bind(KeyCode::Space, ctrl, Command::TriggerCompletionMenu),
+        bind(KeyCode::Char('b'), cmd, Command::GotoDefinition),
+        bind(KeyCode::Char('['), cmd, Command::NavigateBack),
+        bind(KeyCode::Char(']'), cmd, Command::NavigateForward),
     ];
 
     // Platform-specific additions
