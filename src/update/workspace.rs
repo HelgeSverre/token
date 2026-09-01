@@ -30,6 +30,9 @@ pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> 
                     model.ui.focus
                 );
             }
+            // Revealing the sidebar re-clamps against the fresh viewport, so
+            // an offset parked unclamped while hidden can never render.
+            clamp_sidebar_scroll(model);
             Some(Cmd::redraw_editor())
         }
 
@@ -242,15 +245,19 @@ fn sidebar_visible_rows(model: &AppModel) -> usize {
 /// Clamp the sidebar scroll offset after the visible item count may have
 /// shrunk (folder collapse, tree refresh), so the tree never scrolls past
 /// its own content and renders blank.
+///
+/// A hidden sidebar has no viewport to clamp against; unlike the dock
+/// panels (which reset to 0 when invisible), the offset is left untouched —
+/// hiding the sidebar must not lose the user's place in the tree. Any path
+/// that reveals the sidebar clamps immediately (`ToggleSidebar`), so a
+/// stale offset can never reach a visible frame.
 fn clamp_sidebar_scroll(model: &mut AppModel) {
-    let sidebar = crate::layout::chrome::sidebar_rows(model);
-    let rows = sidebar.row_list(crate::layout::UiKey::Sidebar);
-    let visible_rows = rows.map(|rows| rows.visible_capacity()).unwrap_or(0);
-    let max_scroll = rows.map(|rows| rows.max_scroll());
+    let rows = crate::layout::chrome::sidebar_rows(model).row_list(crate::layout::UiKey::Sidebar);
+    let Some(rows) = rows else {
+        return;
+    };
     if let Some(workspace) = &mut model.workspace {
-        let max_offset = max_scroll
-            .unwrap_or_else(|| workspace.visible_item_count().saturating_sub(visible_rows));
-        workspace.scroll_offset = workspace.scroll_offset.min(max_offset);
+        workspace.scroll_offset = workspace.scroll_offset.min(rows.max_scroll());
     }
 }
 
@@ -512,6 +519,51 @@ mod tests {
         assert!(!model.workspace.as_ref().unwrap().sidebar_visible);
         update_workspace(&mut model, WorkspaceMsg::ToggleSidebar);
         assert!(model.workspace.as_ref().unwrap().sidebar_visible);
+    }
+
+    #[test]
+    fn revealing_the_sidebar_reclamps_a_stale_scroll_offset() {
+        // While hidden, the sidebar has no viewport and its offset is left
+        // untouched (it may even be parked unclamped by keyboard nav).
+        // Toggling it back on must clamp against the fresh viewport so a
+        // stale offset can never reach a visible frame.
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut ws = test_workspace();
+        for i in 0..40 {
+            ws.file_tree
+                .roots
+                .push(crate::model::FileNode::new_file(PathBuf::from(format!(
+                    "/test/file{i}.rs"
+                ))));
+        }
+        model.workspace = Some(ws);
+
+        update_workspace(&mut model, WorkspaceMsg::ToggleSidebar); // hide
+        model.workspace.as_mut().unwrap().scroll_offset = 10_000;
+
+        update_workspace(&mut model, WorkspaceMsg::ToggleSidebar); // reveal
+
+        let ws = model.workspace.as_ref().unwrap();
+        let max_scroll = crate::layout::chrome::sidebar_rows(&model)
+            .row_list(crate::layout::UiKey::Sidebar)
+            .map(|rows| rows.max_scroll())
+            .expect("a revealed sidebar must expose its row list");
+        assert!(
+            max_scroll > 0,
+            "test setup: 40 rows must overflow the viewport for this assertion to bite"
+        );
+        assert_eq!(ws.scroll_offset, max_scroll);
+    }
+
+    #[test]
+    fn hiding_the_sidebar_preserves_the_scroll_offset() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.workspace = Some(test_workspace());
+        model.workspace.as_mut().unwrap().scroll_offset = 3;
+
+        update_workspace(&mut model, WorkspaceMsg::ToggleSidebar); // hide
+
+        assert_eq!(model.workspace.as_ref().unwrap().scroll_offset, 3);
     }
 
     #[test]
