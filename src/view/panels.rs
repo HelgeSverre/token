@@ -31,6 +31,9 @@ struct DockPaneScene {
     content_rect: Rect,
     tabs: Vec<DockTabScene>,
     border_color: u32,
+    /// Physical-px chrome border thickness (`metrics.border_width`), so the
+    /// header separator matches every other scaled border at HiDPI.
+    border_width: usize,
     text_color: u32,
     bg_color: u32,
     active_tab_bg: u32,
@@ -102,6 +105,7 @@ impl DockPaneScene {
             content_rect,
             tabs,
             border_color: theme.border.to_argb_u32(),
+            border_width: model.metrics.border_width,
             text_color: theme.foreground.to_argb_u32(),
             bg_color: theme.background.to_argb_u32(),
             active_tab_bg: theme.selection_background.to_argb_u32(),
@@ -162,9 +166,15 @@ impl DockPaneScene {
     fn render_chrome(&self, frame: &mut Frame) {
         let rect = self.dock_rect;
         frame.fill_rect(rect, self.bg_color);
-        // 1px border under the header row.
+        // Border under the header row, matching the scaled chrome border.
         let (hx, hy, hw, hh) = snap(self.header_rect);
-        frame.fill_rect_px(hx, (hy + hh).saturating_sub(1), hw, 1, self.border_color);
+        frame.fill_rect_px(
+            hx,
+            (hy + hh).saturating_sub(self.border_width),
+            hw,
+            self.border_width,
+            self.border_color,
+        );
 
         match self.position {
             crate::panel::DockPosition::Left => {
