@@ -352,3 +352,7 @@ inherits = "release"
 debug = true
 lto = false
 strip = false
+
+[[bench]]
+name = "completion"
+harness = false
