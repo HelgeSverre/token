@@ -113,10 +113,16 @@ impl StyledText {
     pub fn split_leading_code(&self) -> (Option<StyledText>, StyledText) {
         let mut end = 0usize; // byte end of the leading code block
         for (start, line) in line_ranges(&self.text) {
+            if line == start {
+                // A blank line inside a fence: part of the block if more
+                // code follows (`end` only advances on code lines, so a
+                // blank line before prose is left to the prose side).
+                continue;
+            }
             let covered = self.spans.iter().any(|s| {
                 s.style == SpanStyle::Code && s.range.start <= start && s.range.end >= line
             });
-            if line > start && covered {
+            if covered {
                 end = line;
             } else {
                 break;
@@ -252,6 +258,16 @@ mod tests {
         assert_eq!(code.spans.len(), 2);
         assert_eq!(rest.text, "Returns nothing");
         assert_eq!(&rest.text[rest.spans[0].range.clone()], "nothing");
+        // A blank line inside the fence does not end the block; the
+        // blank line before the prose is not part of it.
+        let mut t = StyledText::default();
+        t.push_styled("fn a()", SpanStyle::Code);
+        t.push_str("\n\n");
+        t.push_styled("fn b()", SpanStyle::Code);
+        t.push_str("\n\nprose");
+        let (code, rest) = t.split_leading_code();
+        assert_eq!(code.unwrap().text, "fn a()\n\nfn b()");
+        assert_eq!(rest.text, "prose");
         // Prose-first text has no leading code.
         let (none, same) = StyledText::plain("hi").split_leading_code();
         assert!(none.is_none());

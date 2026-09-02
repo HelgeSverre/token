@@ -290,6 +290,15 @@ mod tests {
     }
 
     #[test]
+    fn a_hash_without_a_space_is_not_a_heading() {
+        // CommonMark: `#[derive(Debug)]` and `#include` are text, `# Title`
+        // is a heading. The old flattener stripped every leading `#`.
+        let t = markdown_to_styled("#[derive(Debug)]\n# Title");
+        assert_eq!(t.text, "#[derive(Debug)]\nTitle");
+        assert_eq!(spans(&t), vec![("Title", SpanStyle::Strong)]);
+    }
+
+    #[test]
     fn a_bullet_star_never_opens_emphasis() {
         let t = markdown_to_styled("* first item with *em*\n* second");
         assert_eq!(t.text, "* first item with em\n* second");

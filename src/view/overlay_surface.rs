@@ -2878,13 +2878,18 @@ fn draw_styled_run(
                     );
                     painter.draw_sized(frame, sx, y, text, size, 0.0, colors.text_bright);
                 }
+                // Synthetic bold: a second strike one pixel right, and one
+                // extra pixel of advance so the widened glyphs never touch
+                // the next run.
                 Some(SpanStyle::Strong) => {
                     painter.draw_sized(frame, sx, y, text, size, 0.0, colors.text_bright);
                     painter.draw_sized(frame, sx + 1, y, text, size, 0.0, colors.text_bright);
+                    cx += 1.0;
                 }
                 Some(SpanStyle::Accent) => {
                     painter.draw_sized(frame, sx, y, text, size, 0.0, colors.accent_bright);
                     painter.draw_sized(frame, sx + 1, y, text, size, 0.0, colors.accent_bright);
+                    cx += 1.0;
                 }
                 Some(SpanStyle::Dim) => {
                     painter.draw_sized(frame, sx, y, text, size, 0.0, colors.text_dim);
