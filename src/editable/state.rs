@@ -245,6 +245,21 @@ impl<B: TextBuffer> EditableState<B> {
         }
     }
 
+    /// Place the active cursor at `column` on its current line (clamped to
+    /// the line length) — the mouse-click primitive. Extending keeps the
+    /// selection anchor and moves the head; otherwise the selection collapses.
+    pub fn set_cursor_column(&mut self, column: usize, extend_selection: bool) {
+        let idx = self.active_cursor;
+        let line_len = self.buffer.line_length(self.cursors[idx].line);
+        self.cursors[idx].column = column.min(line_len);
+        self.cursors[idx].clear_desired_column();
+        if extend_selection {
+            self.sync_selection_head();
+        } else {
+            self.collapse_selection();
+        }
+    }
+
     /// Move cursor to start of line
     pub fn move_line_start(&mut self, extend_selection: bool) {
         let idx = self.active_cursor;
@@ -1061,6 +1076,24 @@ mod tests {
             StringBuffer::from_text(text),
             EditConstraints::single_line(),
         )
+    }
+
+    #[test]
+    fn set_cursor_column_clamps_and_extends_or_collapses() {
+        let mut state = create_test_state("hello");
+        state.set_cursor_column(3, false);
+        assert_eq!(state.cursor().column, 3);
+        assert!(!state.has_selection());
+
+        // Extending keeps the anchor at 3 and moves the head.
+        state.set_cursor_column(1, true);
+        assert_eq!(state.cursor().column, 1);
+        assert_eq!(state.selected_text(), "el");
+
+        // A plain placement collapses the selection; past-end clamps.
+        state.set_cursor_column(99, false);
+        assert_eq!(state.cursor().column, 5);
+        assert!(!state.has_selection());
     }
 
     #[test]

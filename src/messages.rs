@@ -574,6 +574,18 @@ pub enum CsvMsg {
         row: usize,
         col: usize,
     },
+    /// Mouse press on a data cell (`runtime/mouse.rs`), the grid's one
+    /// mouse entry point. `x_in_cell` is the press offset from the cell's
+    /// left edge in px; `click_count` is the `ClickTracker` count (1..=3).
+    /// `update/csv.rs::click_cell` owns the select / place-caret /
+    /// commit-then-select / double-click-to-edit branching.
+    ClickCell {
+        row: usize,
+        col: usize,
+        x_in_cell: f64,
+        click_count: u8,
+        extend_selection: bool,
+    },
     /// Scroll viewport vertically (from mouse wheel)
     ScrollVertical(i32),
     /// Scroll viewport horizontally (from mouse wheel)

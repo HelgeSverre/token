@@ -1770,18 +1770,18 @@ impl Renderer {
             edit_bg,
         );
 
-        // Use TextFieldRenderer with scroll support
+        // Geometry shared with the IME caret rect (`csv_caret_rect`).
         let opts = TextFieldOptions {
-            x: cell_x + 4,
-            y: cell_y + 1,
-            width: col_width_px.saturating_sub(8), // 4px padding each side
-            height: line_height.saturating_sub(2),
-            char_width,
             text_color: model.theme.overlay.foreground.to_argb_u32(),
             cursor_color: model.theme.editor.cursor_color.to_argb_u32(),
             selection_color: model.theme.editor.selection_background.to_argb_u32(),
             cursor_visible: model.ui.cursor_visible,
-            scroll_x: edit_state.scroll_x, // Use scroll offset from state
+            ..crate::csv::render::cell_text_field_options(
+                &cell_rect,
+                line_height,
+                char_width,
+                edit_state.scroll_x,
+            )
         };
 
         TextFieldRenderer::render(frame, painter, &edit_state.editable, &opts);
@@ -2336,7 +2336,7 @@ impl Renderer {
         x: f64,
         y: f64,
         model: &AppModel,
-    ) -> Option<crate::csv::CellPosition> {
+    ) -> Option<crate::csv::render::CellHit> {
         let group = model.editor_area.focused_group()?;
         let editor = model.editor_area.focused_editor()?;
         let csv = editor.view_mode.as_csv()?;

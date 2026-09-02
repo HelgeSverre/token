@@ -3,7 +3,9 @@
 //! Handles CsvMsg messages for CSV view mode operations.
 
 use crate::commands::Cmd;
-use crate::csv::{detect_delimiter, escape_csv_value, parse_csv, CellEdit, CsvState, Delimiter};
+use crate::csv::{
+    detect_delimiter, escape_csv_value, parse_csv, CellEdit, CellPosition, CsvState, Delimiter,
+};
 use crate::messages::CsvMsg;
 use crate::model::{AppModel, ViewMode};
 use crate::update::lsp::schedule_lsp_did_change;
@@ -27,6 +29,13 @@ pub fn update_csv(model: &mut AppModel, msg: CsvMsg) -> Option<Cmd> {
         CsvMsg::PageUp => page_up(model),
         CsvMsg::PageDown => page_down(model),
         CsvMsg::SelectCell { row, col } => select_cell(model, row, col),
+        CsvMsg::ClickCell {
+            row,
+            col,
+            x_in_cell,
+            click_count,
+            extend_selection,
+        } => click_cell(model, row, col, x_in_cell, click_count, extend_selection),
         CsvMsg::ScrollVertical(delta) => scroll_vertical(model, delta),
         CsvMsg::ScrollHorizontal(delta) => scroll_horizontal(model, delta),
 
@@ -242,6 +251,92 @@ fn select_cell(model: &mut AppModel, row: usize, col: usize) -> Option<Cmd> {
     } else {
         None
     }
+}
+
+/// Mouse press on a data cell. Mirrors the text editor's click-count
+/// handling (`runtime/mouse.rs::handle_editor_content_click`) and
+/// spreadsheet conventions:
+///
+/// - inside the cell being edited: place the caret at the pressed column
+///   (Shift extends the selection); double-click selects the word, triple
+///   selects all;
+/// - on another cell while editing: commit the edit in place (clicking away
+///   never discards), then treat the press as a fresh click on that cell;
+/// - not editing: select; a double-click opens the editor with the caret at
+///   the pressed column instead of the end.
+fn click_cell(
+    model: &mut AppModel,
+    row: usize,
+    col: usize,
+    x_in_cell: f64,
+    click_count: u8,
+    extend_selection: bool,
+) -> Option<Cmd> {
+    use crate::csv::render::column_at_cell_x;
+
+    let char_width = model.char_width;
+    let clicked = CellPosition::new(row, col);
+
+    let editing_clicked_cell = model
+        .editor_area
+        .focused_editor()?
+        .view_mode
+        .as_csv()?
+        .editing
+        .as_ref()
+        .is_some_and(|edit| edit.position == clicked);
+    if editing_clicked_cell {
+        let csv = model
+            .editor_area
+            .focused_editor_mut()?
+            .view_mode
+            .as_csv_mut()?;
+        let edit = csv.editing.as_mut()?;
+        let column = column_at_cell_x(x_in_cell, edit.scroll_x, char_width)
+            .min(edit.buffer().chars().count());
+        match click_count {
+            2 => {
+                edit.set_cursor_column(column, false);
+                edit.select_word();
+            }
+            3 => edit.select_all(),
+            _ => edit.set_cursor_column(column, extend_selection),
+        }
+        update_edit_scroll(char_width, csv);
+        return Some(Cmd::redraw_editor());
+    }
+
+    // Editing a different cell: commit it first (row_delta 0 = stay put),
+    // keeping its document-sync commands.
+    let mut cmds = Vec::new();
+    let is_editing = model
+        .editor_area
+        .focused_editor()?
+        .view_mode
+        .as_csv()?
+        .is_editing();
+    if is_editing {
+        match confirm_edit(model, 0) {
+            Some(Cmd::Batch(sync)) => cmds.extend(sync),
+            Some(cmd) => cmds.push(cmd),
+            None => {}
+        }
+    }
+
+    let csv = model
+        .editor_area
+        .focused_editor_mut()?
+        .view_mode
+        .as_csv_mut()?;
+    csv.select_cell(row, col);
+    if click_count >= 2 {
+        let column =
+            column_at_cell_x(x_in_cell, 0, char_width).min(csv.data.get(row, col).chars().count());
+        csv.start_editing_at(column);
+        update_edit_scroll(char_width, csv);
+    }
+    cmds.push(Cmd::redraw_editor());
+    Some(Cmd::Batch(cmds))
 }
 
 /// Scroll viewport vertically (from mouse wheel)
@@ -898,7 +993,6 @@ fn find_field_byte_range(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::csv::CellPosition;
     use crate::model::AppModel;
 
     #[test]
@@ -990,6 +1084,120 @@ mod tests {
             cmds.iter()
                 .any(|c| matches!(c, Cmd::LspScheduleDidChange { .. })),
             "expected LspScheduleDidChange in {cmds:?}"
+        );
+    }
+
+    fn csv_model() -> AppModel {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.char_width = 8.0;
+        model.document_mut().buffer = ropey::Rope::from_str("hello world,b\nfoo,bar\n");
+        update_csv(&mut model, CsvMsg::Toggle).expect("csv toggle");
+        model
+    }
+
+    fn csv(model: &AppModel) -> &CsvState {
+        model.editor().view_mode.as_csv().expect("csv mode")
+    }
+
+    /// Press `column` chars into cell (row, col) at scroll 0.
+    fn click(model: &mut AppModel, row: usize, col: usize, column: usize, count: u8, shift: bool) {
+        use crate::csv::render::CELL_TEXT_PAD_X;
+        let x_in_cell = CELL_TEXT_PAD_X as f64 + column as f64 * model.char_width as f64;
+        update_csv(
+            model,
+            CsvMsg::ClickCell {
+                row,
+                col,
+                x_in_cell,
+                click_count: count,
+                extend_selection: shift,
+            },
+        );
+    }
+
+    #[test]
+    fn single_click_places_the_caret_in_the_edited_cell_without_committing() {
+        let mut model = csv_model();
+        update_csv(&mut model, CsvMsg::StartEditing); // cell (0,0) "hello world", caret at end
+        update_csv(&mut model, CsvMsg::EditInsertChar('!'));
+
+        click(&mut model, 0, 0, 3, 1, false);
+
+        let edit = csv(&model).editing.as_ref().expect("still editing");
+        assert_eq!(edit.cursor_char_position(), 3);
+        assert_eq!(edit.buffer(), "hello world!", "no commit, no reset");
+        assert!(!edit.editable.has_selection());
+    }
+
+    #[test]
+    fn shift_click_extends_the_selection_from_the_caret() {
+        let mut model = csv_model();
+        update_csv(&mut model, CsvMsg::StartEditing);
+        click(&mut model, 0, 0, 2, 1, false);
+        click(&mut model, 0, 0, 7, 1, true);
+
+        let edit = csv(&model).editing.as_ref().unwrap();
+        assert_eq!(edit.editable.selected_text(), "llo w");
+    }
+
+    #[test]
+    fn clicking_another_cell_while_editing_commits_and_selects_it() {
+        let mut model = csv_model();
+        update_csv(&mut model, CsvMsg::StartEditing);
+        update_csv(&mut model, CsvMsg::EditInsertChar('!'));
+        let before_revision = model.document().revision;
+
+        click(&mut model, 1, 1, 0, 1, false);
+
+        let state = csv(&model);
+        assert!(state.editing.is_none(), "click-away commits");
+        assert_eq!(state.data.get(0, 0), "hello world!");
+        assert_eq!(state.selected_cell, CellPosition::new(1, 1));
+        assert!(
+            model.document().revision > before_revision,
+            "document synced"
+        );
+    }
+
+    #[test]
+    fn double_click_starts_editing_at_the_pressed_column() {
+        let mut model = csv_model();
+        click(&mut model, 0, 0, 1, 1, false);
+        assert!(csv(&model).editing.is_none());
+
+        click(&mut model, 0, 0, 4, 2, false);
+
+        let edit = csv(&model).editing.as_ref().expect("double-click edits");
+        assert_eq!(edit.position, CellPosition::new(0, 0));
+        assert_eq!(edit.cursor_char_position(), 4);
+        assert_eq!(edit.buffer(), "hello world");
+    }
+
+    #[test]
+    fn double_click_while_editing_selects_the_word_and_triple_selects_all() {
+        let mut model = csv_model();
+        update_csv(&mut model, CsvMsg::StartEditing);
+
+        click(&mut model, 0, 0, 7, 2, false);
+        assert_eq!(
+            csv(&model)
+                .editing
+                .as_ref()
+                .unwrap()
+                .editable
+                .selected_text(),
+            "world"
+        );
+
+        click(&mut model, 0, 0, 7, 3, false);
+        assert_eq!(
+            csv(&model)
+                .editing
+                .as_ref()
+                .unwrap()
+                .editable
+                .selected_text(),
+            "hello world"
         );
     }
 

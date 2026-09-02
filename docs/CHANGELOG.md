@@ -26,6 +26,10 @@ All notable changes to rust-editor are documented in this file.
   server got all-null configuration and no init options, making pyright and
   rust-analyzer effectively unconfigurable.
 - PageUp/PageDown navigate the completion popup by a full visible page.
+- CSV mode mouse editing: clicking inside the cell being edited places the
+  caret at the pressed character (Shift extends the selection), double-click
+  opens the cell editor with the caret at the pressed character, and
+  double/triple-click inside an open editor selects the word / everything.
 
 ### Changed
 
@@ -83,6 +87,13 @@ All notable changes to rust-editor are documented in this file.
 
 ### Fixed
 
+- Clicking another CSV cell while one was being edited left the editor
+  overlay and IME caret stranded on the old cell; the click now commits the
+  edit in place and selects the clicked cell.
+- CSV viewports are sized from their own group's content height, so a
+  top/bottom split no longer thinks more rows fit than are drawn.
+- The modal IME caret rect now lands on the painted caret (it was inset a
+  second time and ignored the palette prompt glyph).
 - Outline, Problems, and Terminal keyboard routing—and Terminal spawn/resize
   sizing—now follow panels when they move away from their default docks.
 - Long single-line drop-overlay messages now paint the measured wrapped-line

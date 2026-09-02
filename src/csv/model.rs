@@ -167,6 +167,17 @@ impl CellEditState {
         self.move_cursor(MoveTarget::LineEnd, false);
     }
 
+    /// Place the cursor at `column` (clamped), optionally extending the
+    /// selection — mouse click inside the cell editor.
+    pub fn set_cursor_column(&mut self, column: usize, extend_selection: bool) {
+        self.editable.set_cursor_column(column, extend_selection);
+    }
+
+    /// Select the word around the cursor — double-click inside the editor.
+    pub fn select_word(&mut self) {
+        self.editable.select_word();
+    }
+
     /// Check if content changed from original
     pub fn is_modified(&self) -> bool {
         self.editable.text() != self.original
@@ -469,6 +480,15 @@ impl CsvState {
             value.to_string(),
             col_width,
         ));
+    }
+
+    /// Start editing the selected cell with the cursor at `column` (clamped)
+    /// rather than at the end — double-click placement.
+    pub fn start_editing_at(&mut self, column: usize) {
+        self.start_editing();
+        if let Some(edit) = &mut self.editing {
+            edit.set_cursor_column(column, false);
+        }
     }
 
     /// Start editing with initial character (replaces cell content)

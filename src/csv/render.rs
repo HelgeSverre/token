@@ -145,6 +145,52 @@ impl CsvRenderLayout {
     }
 }
 
+/// Horizontal inset of the cell editor's text inside its cell, in px. The
+/// one constant behind the editor painter, the IME caret rect, and the
+/// click-to-column mapping (`column_at_cell_x`).
+pub const CELL_TEXT_PAD_X: usize = 4;
+
+/// The text-field geometry of the cell editor drawn in `cell_rect`: shared
+/// by the painter and `view::caret::csv_caret_rect` so the drawn caret and
+/// the platform IME rect can never disagree.
+pub fn cell_text_field_options(
+    cell_rect: &Rect,
+    line_height: usize,
+    char_width: f32,
+    scroll_x: usize,
+) -> crate::view::TextFieldOptions {
+    crate::view::TextFieldOptions {
+        x: cell_rect.x as usize + CELL_TEXT_PAD_X,
+        y: cell_rect.y as usize + 1,
+        width: (cell_rect.width as usize).saturating_sub(CELL_TEXT_PAD_X * 2),
+        height: line_height.saturating_sub(2),
+        char_width,
+        scroll_x,
+        ..crate::view::TextFieldOptions::default()
+    }
+}
+
+/// The character column under a press `x_in_cell` px from the cell's left
+/// edge — the inverse of `TextFieldRenderer::caret_rect`'s
+/// `x + (column - scroll_x) * char_width`. Rounds to the nearest gap, so a
+/// press on the right half of a glyph lands after it. Not clamped to the
+/// text length; the caller does that against the live edit buffer.
+pub fn column_at_cell_x(x_in_cell: f64, scroll_x: usize, char_width: f32) -> usize {
+    let text_x = x_in_cell - CELL_TEXT_PAD_X as f64;
+    if text_x <= 0.0 || char_width <= 0.0 {
+        return scroll_x;
+    }
+    scroll_x + (text_x / char_width as f64).round() as usize
+}
+
+/// A data-grid hit: the cell plus the press offset from its left edge (px),
+/// so a click inside an open cell editor can map to a character column.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CellHit {
+    pub position: CellPosition,
+    pub x_in_cell: f64,
+}
+
 /// Hit-test a CSV cell given window coordinates.
 ///
 /// Returns None if the click is outside the data grid (e.g., in headers or padding).
@@ -156,7 +202,7 @@ pub fn pixel_to_csv_cell(
     line_height: usize,
     char_width: f32,
     tab_bar_height: usize,
-) -> Option<CellPosition> {
+) -> Option<CellHit> {
     let local_x = x - group_rect.x as f64;
     let local_y = y - group_rect.y as f64;
 
@@ -194,7 +240,10 @@ pub fn pixel_to_csv_cell(
         let col_start = *col_x_offset as f64;
         let col_end = col_start + layout.column_widths_px[i] as f64;
         if cell_x_in_grid >= col_start && cell_x_in_grid < col_end {
-            return Some(CellPosition::new(row, *col_index));
+            return Some(CellHit {
+                position: CellPosition::new(row, *col_index),
+                x_in_cell: cell_x_in_grid - col_start,
+            });
         }
     }
 
@@ -204,6 +253,41 @@ pub fn pixel_to_csv_cell(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn column_at_cell_x_inverts_the_caret_rect() {
+        use crate::editable::{EditConstraints, EditableState, StringBuffer};
+        use crate::view::TextFieldRenderer;
+
+        let field = |column: usize| {
+            let mut state = EditableState::new(
+                StringBuffer::from_text(&"a".repeat(30)),
+                EditConstraints::csv_cell(),
+            );
+            state.set_cursor_column(column, false);
+            state
+        };
+
+        let cell = Rect::new(100.0, 40.0, 120.0, 20.0);
+        let char_width = 8.0;
+        for (column, scroll_x) in [(0, 0), (3, 0), (7, 0), (12, 5), (20, 15)] {
+            let opts = cell_text_field_options(&cell, 20, char_width, scroll_x);
+            let caret = TextFieldRenderer::caret_rect(&field(column), &opts).expect("caret");
+            let x_in_cell = caret.x as f64 - cell.x as f64;
+            assert_eq!(
+                column_at_cell_x(x_in_cell, scroll_x, char_width),
+                column,
+                "column {column} scroll {scroll_x}"
+            );
+            // Pressing on the right half of the glyph lands after it.
+            assert_eq!(
+                column_at_cell_x(x_in_cell + 5.0, scroll_x, char_width),
+                column + 1
+            );
+        }
+        // Left of the text pad: first visible column.
+        assert_eq!(column_at_cell_x(1.0, 4, char_width), 4);
+    }
 
     #[test]
     fn test_column_to_letters() {

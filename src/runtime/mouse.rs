@@ -47,6 +47,13 @@ pub enum ClickRegion {
     BinaryPlaceholder {
         group: token::model::editor_area::GroupId,
     },
+    /// A CSV data cell — repeat presses on the same cell count up for
+    /// double-click-to-edit / word select.
+    CsvCell {
+        group: token::model::editor_area::GroupId,
+        row: usize,
+        col: usize,
+    },
 }
 
 /// Click tracking state for double/triple click detection
@@ -1156,13 +1163,23 @@ fn handle_left_click(
                 update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
             }
 
-            // Use renderer to find the actual cell at this position
-            if let Some(cell) = renderer.pixel_to_csv_cell(event.pos.x, event.pos.y, model) {
+            // Use renderer to find the actual cell at this position; all
+            // select / caret / commit / edit branching lives in
+            // `update::csv::click_cell`.
+            if let Some(hit) = renderer.pixel_to_csv_cell(event.pos.x, event.pos.y, model) {
+                let click_count = click_tracker.track_click(ClickRegion::CsvCell {
+                    group: *group_id,
+                    row: hit.position.row,
+                    col: hit.position.col,
+                });
                 update(
                     model,
-                    Msg::Csv(CsvMsg::SelectCell {
-                        row: cell.row,
-                        col: cell.col,
+                    Msg::Csv(CsvMsg::ClickCell {
+                        row: hit.position.row,
+                        col: hit.position.col,
+                        x_in_cell: hit.x_in_cell,
+                        click_count,
+                        extend_selection: event.shift(),
                     }),
                 );
             }

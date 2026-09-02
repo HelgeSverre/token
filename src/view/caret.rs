@@ -190,16 +190,8 @@ fn csv_caret_rect(
         char_width,
     );
     let cell = layout.cell_editor_rect(csv, edit.position, line_height)?;
-    let options = TextFieldOptions {
-        x: cell.x as usize + 4,
-        y: cell.y as usize + 1,
-        width: (cell.width as usize).saturating_sub(8),
-        height: line_height.saturating_sub(2),
-        char_width,
-        scroll_x: edit.scroll_x,
-        ..TextFieldOptions::default()
-    };
-
+    let options =
+        crate::csv::render::cell_text_field_options(&cell, line_height, char_width, edit.scroll_x);
     TextFieldRenderer::caret_rect(&edit.editable, &options)
 }
 
