@@ -26,6 +26,26 @@ All notable changes to rust-editor are documented in this file.
   server got all-null configuration and no init options, making pyright and
   rust-analyzer effectively unconfigurable.
 - PageUp/PageDown navigate the completion popup by a full visible page.
+- **Toggle Autocomplete** command (palette): turns the whole completion
+  menu off, Ctrl+Space included; persisted as `completion.enabled` in
+  `config.yaml`. New `completion.words` mode: `fallback` (default) hides
+  buffer words once the language server answers, `enabled` always lists
+  them, `disabled` never does.
+- **Set Language...** command (palette): a picker over every registered
+  language that overrides the inferred language of the focused file for the
+  session. The override is pinned to that document and survives external
+  reload and Save As. Save As on an unpinned file now re-detects the
+  language from the new extension (it never did before).
+- **Next / Previous Diagnostic** (F2 / ⇧F2): walks the focused file's
+  diagnostics in order, wrapping, and flashes the message in the status bar.
+- **Problems panel scope**: a palette command switches between the focused
+  file (default) and every file with diagnostics; the tab reads
+  "Problems · N files" when workspace-wide.
+- A persistent status-bar segment shows the focused file's language server
+  state (`rust-analyzer: ready` / `indexing` / `not found` / `LSP off`).
+- LSP completion items sent in snippet format now insert readable text:
+  placeholders are flattened (`${1:arg}` → `arg`), tab stops removed, and the
+  caret lands at `$0`.
 - CSV mode mouse editing: clicking inside the cell being edited places the
   caret at the pressed character (Shift extends the selection), double-click
   opens the cell editor with the caret at the pressed character, and
