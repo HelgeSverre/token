@@ -40,6 +40,8 @@ pub enum CommandId {
     ShowSignatureHelp,
     RenameSymbol,
     ShowCodeActions,
+    FormatDocument,
+    FormatSelection,
     FindUsages,
     NextDiagnostic,
     PrevDiagnostic,
@@ -278,6 +280,18 @@ pub static COMMANDS: &[CommandDef] = &[
         category: CommandCategory::Edit,
         label: "Show Code Actions",
         keybinding: Some("⌥↩"),
+    },
+    CommandDef {
+        id: CommandId::FormatDocument,
+        category: CommandCategory::Edit,
+        label: "Format Document",
+        keybinding: Some("⌥⌘L"),
+    },
+    CommandDef {
+        id: CommandId::FormatSelection,
+        category: CommandCategory::Edit,
+        label: "Format Selection",
+        keybinding: None,
     },
     CommandDef {
         id: CommandId::FindUsages,
@@ -581,6 +595,8 @@ impl CommandId {
             CommandId::ShowSignatureHelp => Some(KeymapCommand::ShowSignatureHelp),
             CommandId::RenameSymbol => Some(KeymapCommand::RenameSymbol),
             CommandId::ShowCodeActions => Some(KeymapCommand::ShowCodeActions),
+            CommandId::FormatDocument => Some(KeymapCommand::FormatDocument),
+            CommandId::FormatSelection => Some(KeymapCommand::FormatSelection),
             CommandId::FindUsages => Some(KeymapCommand::FindUsages),
             CommandId::NextDiagnostic => Some(KeymapCommand::NextDiagnostic),
             CommandId::PrevDiagnostic => Some(KeymapCommand::PrevDiagnostic),
@@ -1057,6 +1073,16 @@ pub enum Cmd {
         command: String,
         arguments: Option<Vec<serde_json::Value>>,
     },
+    /// `textDocument/formatting` (`range: None`) or `rangeFormatting`.
+    /// `then_save` marks a `format_on_save` request: the resolution (or
+    /// its gate/timeout fallback) performs the save the user asked for.
+    LspRequestFormatting {
+        document_id: DocumentId,
+        revision: u64,
+        range: Option<lsp_types::Range>,
+        options: lsp_types::FormattingOptions,
+        then_save: bool,
+    },
     /// `textDocument/references` (Show Usages / Find Usages), tagged with
     /// the document's `revision` and (char-column) `cursor` at request
     /// time — mirrors `LspRequestHover`. `context.includeDeclaration` is
@@ -1232,6 +1258,7 @@ impl Cmd {
             Cmd::LspRequestSignatureHelp { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestPrepareRename { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestRename { .. } => Damage::Areas(vec![]),
+            Cmd::LspRequestFormatting { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestReferences { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestCodeActions { .. } => Damage::Areas(vec![]),
             Cmd::LspExecuteCommand { .. } => Damage::Areas(vec![]),

@@ -67,6 +67,11 @@ pub struct EditorConfig {
     /// Autocomplete settings (see `CompletionConfig`).
     #[serde(default)]
     pub completion: CompletionConfig,
+
+    /// Run `textDocument/formatting` before every save (default: false).
+    /// Saves unformatted when the server can't format within ~2 s.
+    #[serde(default)]
+    pub format_on_save: bool,
 }
 
 /// Autocomplete settings, stored under `completion:` in `config.yaml`:
@@ -193,6 +198,7 @@ impl Default for EditorConfig {
             hover_delay_ms: default_hover_delay_ms(),
             lsp: LspConfig::default(),
             completion: CompletionConfig::default(),
+            format_on_save: false,
         }
     }
 }
@@ -303,6 +309,14 @@ mod tests {
         let config = EditorConfig::default();
         assert!(config.hover_on_mouse);
         assert_eq!(config.hover_delay_ms, 300);
+    }
+
+    #[test]
+    fn format_on_save_parses_and_defaults_off() {
+        let parsed: EditorConfig = serde_yaml::from_str("format_on_save: true\n").unwrap();
+        assert!(parsed.format_on_save);
+        let defaulted: EditorConfig = serde_yaml::from_str("theme: default-dark\n").unwrap();
+        assert!(!defaulted.format_on_save);
     }
 
     #[test]

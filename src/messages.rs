@@ -1217,6 +1217,34 @@ pub enum LspMsg {
         abandoned: bool,
     },
 
+    // ==== Formatting ====
+    /// User intent (keybinding / palette): `textDocument/formatting`, or
+    /// `textDocument/rangeFormatting` over the active selection when
+    /// `selection_only`.
+    FormatDocument {
+        selection_only: bool,
+    },
+    /// Runtime -> update: a formatting reply (or its gate/timeout
+    /// fallback, `edits: None`). Revision-guarded; `then_save` chains the
+    /// pending `format_on_save` save after applying.
+    FormattingResolved {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        /// `None` when the formatter never answered (no server, no
+        /// capability, timeout); `Some(vec![])` when it had nothing to do.
+        edits: Option<Vec<(lsp_types::Range, String)>>,
+        then_save: bool,
+    },
+    /// Worker -> runtime only: the raw `textDocument/formatting` /
+    /// `rangeFormatting` response, keyed like `HoverResponseFromServer`.
+    FormattingResponseFromServer {
+        server_id: LspServerId,
+        root: std::path::PathBuf,
+        request_id: i64,
+        edits: Vec<(lsp_types::Range, String)>,
+        abandoned: bool,
+    },
+
     // ==== Show Usages / Find Usages (lsp-integration.md, references) ====
     /// User intent (Alt+F7 / Alt+Cmd+F7 / palette). `update_lsp` reads the
     /// focused document + cursor synchronously and captures

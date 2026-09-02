@@ -299,6 +299,10 @@ pub enum Command {
     RenameSymbol,
     /// `textDocument/codeAction` for the selection / caret.
     ShowCodeActions,
+    /// `textDocument/formatting` for the whole document.
+    FormatDocument,
+    /// `textDocument/rangeFormatting` over the active selection.
+    FormatSelection,
 
     // ========================================================================
     // Show Usages / Find Usages (lsp-integration.md, references)
@@ -538,6 +542,12 @@ impl Command {
             ShowSignatureHelp => vec![Msg::Lsp(LspMsg::ShowSignatureHelp)],
             RenameSymbol => vec![Msg::Lsp(LspMsg::RenameSymbol)],
             ShowCodeActions => vec![Msg::Lsp(LspMsg::ShowCodeActions)],
+            FormatDocument => vec![Msg::Lsp(LspMsg::FormatDocument {
+                selection_only: false,
+            })],
+            FormatSelection => vec![Msg::Lsp(LspMsg::FormatDocument {
+                selection_only: true,
+            })],
             FindUsages | ShowUsages => vec![Msg::Lsp(LspMsg::FindReferences)],
 
             // Handled specially in `App::dispatch_command` (needs the
@@ -726,6 +736,8 @@ impl Command {
             ShowSignatureHelp => "Show Signature Help",
             RenameSymbol => "Rename Symbol",
             ShowCodeActions => "Show Code Actions",
+            FormatDocument => "Format Document",
+            FormatSelection => "Format Selection",
             FindUsages => "Find Usages",
             ShowUsages => "Show Usages",
             ShowContextMenu => "Show Context Menu",

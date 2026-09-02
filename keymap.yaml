@@ -381,6 +381,8 @@ bindings:
     command: RenameSymbol
   - key: "alt+enter"
     command: ShowCodeActions
+  - key: "cmd+alt+l"
+    command: FormatDocument
 
   # ===========================================================================
   # Show Usages / Find Usages (lsp-integration.md, references)

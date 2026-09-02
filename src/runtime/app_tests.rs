@@ -4248,3 +4248,70 @@ fn execute_command_sends_workspace_execute_command_to_the_documents_server() {
     );
     handle.kill();
 }
+
+/// A `format_on_save` formatting request arms the short deadline; the
+/// sweep resolves it with no edits so the save still happens.
+#[test]
+fn a_then_save_formatting_request_past_its_deadline_still_saves() {
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("main.rs");
+    std::fs::write(&path, "fn main() {}\n").unwrap();
+    app.model.document_mut().file_path = Some(path.clone());
+    let doc_id = app.model.document().id.unwrap();
+    let revision = app.model.document().revision;
+    let server_id = LspServerId::from("rust-analyzer");
+    let root = dir.path().to_path_buf();
+    install_open_document(&mut app, doc_id, &server_id, &root, lsp::path_to_uri(&path));
+    let handle = spawn_fake_handle(&server_id);
+    *handle.capabilities.lock().unwrap() = Some(lsp_types::ServerCapabilities {
+        document_formatting_provider: Some(lsp_types::OneOf::Left(true)),
+        ..Default::default()
+    });
+    app.lsp
+        .servers
+        .insert((server_id.clone(), root.clone()), handle);
+
+    app.request_lsp_formatting(
+        doc_id,
+        revision,
+        None,
+        lsp_types::FormattingOptions::default(),
+        true,
+    );
+    let key = app.lsp.formatting.by_doc.get(&doc_id).cloned().unwrap();
+    assert!(
+        app.lsp.formatting.deadlines[&key] <= Instant::now() + FORMAT_ON_SAVE_TIMEOUT,
+        "then_save arms the short deadline"
+    );
+    assert!(!app.model.ui.is_saving, "the save waits for the formatter");
+
+    app.lsp
+        .formatting
+        .deadlines
+        .insert(key.clone(), Instant::now() - Duration::from_secs(1));
+    app.check_lsp_formatting_deadlines();
+
+    assert!(app.lsp.formatting.requests.is_empty());
+    assert!(
+        app.model.ui.is_saving,
+        "timeout falls back to an unformatted save"
+    );
+    assert!(app
+        .model
+        .ui
+        .transient_message
+        .as_ref()
+        .is_some_and(|t| t.text.contains("saved unformatted")));
+    let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+    assert!(
+        handle
+            .pending
+            .lock()
+            .unwrap()
+            .resolve(key.2)
+            .unwrap()
+            .abandoned
+    );
+    handle.kill();
+}

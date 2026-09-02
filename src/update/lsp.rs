@@ -12,6 +12,7 @@ use crate::model::editor::Position;
 use crate::model::editor_area::DocumentId;
 use crate::model::{AppModel, CursorOverlayKind, CursorOverlayState, HoverCardState};
 use crate::update::navigation;
+use crate::update::text_edits::{apply_planned_edits, plan_text_edits};
 
 /// A short status-bar transient for a server-state change, or `None` for
 /// states not worth flashing (`Indexing` fires often via `$/progress`
@@ -284,8 +285,90 @@ fn open_rename_prompt(
     Some(Cmd::Redraw)
 }
 
+/// `Cmd::LspRequestFormatting` for the focused, file-backed document —
+/// whole document, or the active selection (`selection_only`; `None`
+/// with a status when there is no selection). `then_save` is the
+/// `format_on_save` chain (see `AppMsg::SaveFile`).
+pub(crate) fn request_formatting(
+    model: &mut AppModel,
+    selection_only: bool,
+    then_save: bool,
+) -> Option<Cmd> {
+    let doc = model.try_document()?;
+    let document_id = doc.id?;
+    doc.file_path.as_ref()?;
+    let range = if selection_only {
+        let sel = *model.editor().active_selection();
+        if sel.is_empty() {
+            model.ui.set_status("No selection to format");
+            return Some(Cmd::redraw_status_bar());
+        }
+        Some(lsp_types::Range::new(
+            crate::lsp::position_to_lsp(doc, sel.start()),
+            crate::lsp::position_to_lsp(doc, sel.end()),
+        ))
+    } else {
+        None
+    };
+    Some(Cmd::LspRequestFormatting {
+        document_id,
+        revision: doc.revision,
+        range,
+        // ponytail: no indent settings in EditorConfig yet — 4 spaces is
+        // what the renderer assumes (`TABULATOR_WIDTH`); wire a config
+        // knob here when one exists.
+        options: lsp_types::FormattingOptions {
+            tab_size: crate::util::text::TABULATOR_WIDTH as u32,
+            insert_spaces: true,
+            ..Default::default()
+        },
+        then_save,
+    })
+}
+
 pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
     match msg {
+        LspMsg::FormatDocument { selection_only } => {
+            request_formatting(model, selection_only, false)
+        }
+        LspMsg::FormattingResolved {
+            document_id,
+            revision,
+            edits,
+            then_save,
+        } => {
+            // Revision + focus guard, but no caret guard: formatting
+            // reflows around wherever the caret is. A stale `then_save`
+            // still saves — the user asked for a save, and skipping the
+            // edits is the only safe part to drop.
+            let stale = stale_feature_response(model, document_id, revision);
+            let mut cmd = None;
+            if !stale {
+                match edits.as_deref() {
+                    Some([]) if !then_save => model.ui.set_status("Already formatted"),
+                    Some(edits) => {
+                        let planned =
+                            plan_text_edits(model.editor_area.documents.get(&document_id)?, edits);
+                        cmd = apply_planned_edits(model, document_id, &planned);
+                    }
+                    None if then_save => {}
+                    None => model
+                        .ui
+                        .set_status("Formatting not supported by this server"),
+                }
+            }
+            if then_save && model.try_document().and_then(|d| d.id) == Some(document_id) {
+                cmd = navigation::combine(cmd, super::app::save_document(model));
+                if edits.is_none() {
+                    // After `save_document`'s own "Saving..." so it shows.
+                    model
+                        .ui
+                        .set_status("Formatter unavailable, saved unformatted");
+                }
+            }
+            navigation::combine(cmd, Some(Cmd::redraw_status_bar()))
+        }
+        LspMsg::FormattingResponseFromServer { .. } => None,
         LspMsg::ShowSignatureHelp => request_signature_help(model, None, false),
         LspMsg::RenameSymbol => {
             let doc = model.try_document()?;
@@ -1841,6 +1924,176 @@ mod tests {
             },
         );
         assert!(matches!(cmd, Some(Cmd::LspRestartServer { server_id }) if server_id == id));
+    }
+
+    // ---- formatting ----
+
+    fn range(line: u32, start: u32, end: u32) -> lsp_types::Range {
+        lsp_types::Range::new(
+            lsp_types::Position::new(line, start),
+            lsp_types::Position::new(line, end),
+        )
+    }
+
+    fn resolve_formatting(
+        model: &mut AppModel,
+        revision: u64,
+        edits: Option<Vec<(lsp_types::Range, String)>>,
+        then_save: bool,
+    ) -> Option<Cmd> {
+        let document_id = model.document().id.unwrap();
+        update_lsp(
+            model,
+            LspMsg::FormattingResolved {
+                document_id,
+                revision,
+                edits,
+                then_save,
+            },
+        )
+    }
+
+    fn has_cmd(cmd: &Option<Cmd>, pred: &dyn Fn(&Cmd) -> bool) -> bool {
+        fn walk(cmd: &Cmd, pred: &dyn Fn(&Cmd) -> bool) -> bool {
+            match cmd {
+                Cmd::Batch(cmds) => cmds.iter().any(|c| walk(c, pred)),
+                other => pred(other),
+            }
+        }
+        cmd.as_ref().is_some_and(|c| walk(c, pred))
+    }
+
+    #[test]
+    fn format_document_emits_the_request_with_options() {
+        let (_dir, mut model) = model_with_file();
+        let cmd = update_lsp(
+            &mut model,
+            LspMsg::FormatDocument {
+                selection_only: false,
+            },
+        );
+        let Some(Cmd::LspRequestFormatting {
+            range,
+            options,
+            then_save,
+            ..
+        }) = cmd
+        else {
+            panic!("expected Cmd::LspRequestFormatting, got {cmd:?}");
+        };
+        assert!(range.is_none());
+        assert!(!then_save);
+        assert_eq!(options.tab_size, 4);
+        assert!(options.insert_spaces);
+    }
+
+    #[test]
+    fn format_selection_without_a_selection_sets_the_status() {
+        let (_dir, mut model) = model_with_file();
+        let cmd = update_lsp(
+            &mut model,
+            LspMsg::FormatDocument {
+                selection_only: true,
+            },
+        );
+        assert!(!matches!(cmd, Some(Cmd::LspRequestFormatting { .. })));
+        assert!(model
+            .ui
+            .transient_message
+            .as_ref()
+            .is_some_and(|t| t.text == "No selection to format"));
+    }
+
+    #[test]
+    fn format_selection_sends_the_selected_range() {
+        let (_dir, mut model) = model_with_file();
+        *model.editor_mut().active_selection_mut() =
+            crate::model::editor::Selection::from_anchor_head(
+                crate::model::editor::Position::new(0, 3),
+                crate::model::editor::Position::new(0, 7),
+            );
+        let cmd = update_lsp(
+            &mut model,
+            LspMsg::FormatDocument {
+                selection_only: true,
+            },
+        );
+        let Some(Cmd::LspRequestFormatting { range: sent, .. }) = cmd else {
+            panic!("expected Cmd::LspRequestFormatting, got {cmd:?}");
+        };
+        assert_eq!(sent, Some(range(0, 3, 7)));
+    }
+
+    #[test]
+    fn formatting_resolved_applies_edits_as_one_undo_step() {
+        let (_dir, mut model) = model_with_file(); // "fn main() {}\n"
+        model.editor_mut().cursors[0] = crate::model::Cursor::at(0, 12);
+        let revision = model.document().revision;
+        let edits = vec![
+            (range(0, 2, 3), "  ".to_owned()),
+            (range(0, 10, 12), "{\n}".to_owned()),
+        ];
+        resolve_formatting(&mut model, revision, Some(edits), false);
+        assert_eq!(model.document().buffer.to_string(), "fn  main() {\n}\n");
+        assert_eq!(model.document().undo_stack.len(), 1);
+        let cursor = model.editor().cursors[0];
+        assert_eq!((cursor.line, cursor.column), (1, 1));
+    }
+
+    #[test]
+    fn formatting_resolved_for_a_stale_revision_is_dropped() {
+        let (_dir, mut model) = model_with_file();
+        let revision = model.document().revision;
+        resolve_formatting(
+            &mut model,
+            revision + 1,
+            Some(vec![(range(0, 0, 2), "XX".to_owned())]),
+            false,
+        );
+        assert_eq!(model.document().buffer.to_string(), "fn main() {}\n");
+        assert!(model.document().undo_stack.is_empty());
+    }
+
+    #[test]
+    fn formatting_resolved_with_no_edits_reports_already_formatted() {
+        let (_dir, mut model) = model_with_file();
+        let revision = model.document().revision;
+        resolve_formatting(&mut model, revision, Some(vec![]), false);
+        assert!(model
+            .ui
+            .transient_message
+            .as_ref()
+            .is_some_and(|t| t.text == "Already formatted"));
+    }
+
+    #[test]
+    fn formatting_resolved_with_then_save_applies_then_saves() {
+        let (_dir, mut model) = model_with_file();
+        let revision = model.document().revision;
+        let cmd = resolve_formatting(
+            &mut model,
+            revision,
+            Some(vec![(range(0, 0, 2), "FN".to_owned())]),
+            true,
+        );
+        assert!(has_cmd(&cmd, &|c| matches!(
+            c,
+            Cmd::SaveFile { content, .. } if content == "FN main() {}\n"
+        )));
+        assert!(model.ui.is_saving);
+    }
+
+    #[test]
+    fn formatting_unavailable_with_then_save_still_saves() {
+        let (_dir, mut model) = model_with_file();
+        let revision = model.document().revision;
+        let cmd = resolve_formatting(&mut model, revision, None, true);
+        assert!(has_cmd(&cmd, &|c| matches!(c, Cmd::SaveFile { .. })));
+        assert!(model
+            .ui
+            .transient_message
+            .as_ref()
+            .is_some_and(|t| t.text.contains("saved unformatted")));
     }
 
     // ---- signature help ----

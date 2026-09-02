@@ -253,6 +253,14 @@ pub fn supports_code_action(caps: &ServerCapabilities) -> bool {
     caps.code_action_provider.is_some()
 }
 
+pub fn supports_formatting(caps: &ServerCapabilities) -> bool {
+    caps.document_formatting_provider.is_some()
+}
+
+pub fn supports_range_formatting(caps: &ServerCapabilities) -> bool {
+    caps.document_range_formatting_provider.is_some()
+}
+
 /// `(triggerCharacters, retriggerCharacters)` of the server's
 /// `signatureHelpProvider` — both empty when absent.
 pub fn signature_help_triggers(caps: &ServerCapabilities) -> (Vec<String>, Vec<String>) {
@@ -1282,6 +1290,29 @@ fn reader_loop(
                     root: root.clone(),
                     request_id: id,
                     actions,
+                    abandoned: entry.abandoned,
+                }));
+                if let Some(wake) = wake.as_deref() {
+                    wake();
+                }
+            } else if entry.method == "textDocument/formatting"
+                || entry.method == "textDocument/rangeFormatting"
+            {
+                // `null` / malformed -> no edits, same posture as hover.
+                let edits = message
+                    .get("result")
+                    .and_then(|r| {
+                        serde_json::from_value::<Vec<lsp_types::TextEdit>>(r.clone()).ok()
+                    })
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|e| (e.range, e.new_text))
+                    .collect();
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::FormattingResponseFromServer {
+                    server_id: server_id.clone(),
+                    root: root.clone(),
+                    request_id: id,
+                    edits,
                     abandoned: entry.abandoned,
                 }));
                 if let Some(wake) = wake.as_deref() {

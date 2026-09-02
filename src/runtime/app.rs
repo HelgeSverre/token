@@ -313,6 +313,11 @@ const RENAME_TIMEOUT: Duration = Duration::from_secs(30);
 /// definition-class wait, but the "server did not answer" status makes a
 /// shorter window acceptable.
 const CODE_ACTIONS_TIMEOUT: Duration = Duration::from_secs(10);
+/// Explicit Format Document/Selection waits this long for the server.
+const FORMATTING_TIMEOUT: Duration = Duration::from_secs(10);
+/// A `format_on_save` request must not hold the save hostage — past this
+/// the file is written unformatted.
+const FORMAT_ON_SAVE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// UI-level abandonment timeout for a deferred accept's
 /// `completionItem/resolve` round trip. On expiry the accept applies with
@@ -419,6 +424,8 @@ struct LspManager {
     prepare_rename: FeatureSlot<PendingPrepareRename>,
     /// In-flight `textDocument/rename` requests.
     rename: FeatureSlot<PendingRename>,
+    /// In-flight `textDocument/formatting` / `rangeFormatting` requests.
+    formatting: FeatureSlot<PendingFormatting>,
     /// In-flight `completionItem/resolve` requests; swept by
     /// `check_lsp_resolve_deadlines`, which emits an empty
     /// `CompletionItemResolved` for `Accept`-purpose ones so the blocked
@@ -508,6 +515,21 @@ impl PendingRequest for PendingPrepareRename {
     }
 }
 
+/// What `LspManager` needs to turn a formatting response into
+/// `LspMsg::FormattingResolved`. `then_save` rides along so the gate /
+/// timeout fallbacks still perform the `format_on_save` save.
+struct PendingFormatting {
+    document_id: token::model::editor_area::DocumentId,
+    revision: u64,
+    then_save: bool,
+}
+
+impl PendingRequest for PendingFormatting {
+    fn document_id(&self) -> token::model::editor_area::DocumentId {
+        self.document_id
+    }
+}
+
 /// What `LspManager` needs to turn a `textDocument/rename` response into
 /// `LspMsg::RenameResolved`.
 struct PendingRename {
@@ -527,6 +549,17 @@ fn rename_status_msg(text: &str) -> Msg {
         text: text.to_owned(),
         duration_ms: 3000,
     })
+}
+
+impl PendingFormatting {
+    fn unavailable(self) -> Option<Msg> {
+        Some(Msg::Lsp(LspMsg::FormattingResolved {
+            document_id: self.document_id,
+            revision: self.revision,
+            edits: None,
+            then_save: self.then_save,
+        }))
+    }
 }
 
 /// What `LspManager` needs to turn a `textDocument/references` response
@@ -776,6 +809,27 @@ impl LspOutcomePolicy for PendingRename {
     }
 }
 
+// The whole-document method; `request_lsp_formatting` swaps in
+// `rangeFormatting` (+ its own capability gate) for a selection.
+lsp_feature!(
+    PendingFormatting,
+    "textDocument/formatting",
+    formatting,
+    lsp::client::supports_formatting
+);
+
+impl LspOutcomePolicy for PendingFormatting {
+    /// Every failure resolves with `edits: None` — update-side that is a
+    /// status transient, and for `then_save` the unformatted save.
+    fn on_gate_error(self, _err: FeatureGateError) -> Option<Msg> {
+        self.unavailable()
+    }
+
+    fn on_timeout(self) -> Option<Msg> {
+        self.unavailable()
+    }
+}
+
 impl LspOutcomePolicy for PendingSignatureHelp {
     /// Silent like completion: a float that simply doesn't appear is the
     /// right failure mode for a typing-driven request.
@@ -916,6 +970,7 @@ impl LspManager {
             signature_help: FeatureSlot::new(SIGNATURE_HELP_TIMEOUT),
             prepare_rename: FeatureSlot::new(RENAME_TIMEOUT),
             rename: FeatureSlot::new(RENAME_TIMEOUT),
+            formatting: FeatureSlot::new(FORMATTING_TIMEOUT),
             resolve: FeatureSlot::new(RESOLVE_TIMEOUT),
             completion_debounces: HashMap::new(),
             resolve_debounces: HashMap::new(),
@@ -2614,13 +2669,22 @@ impl App {
             } => {
                 self.gated_lsp_request::<PendingRename>(
                     document_id,
-                    position,
+                    Some(position),
                     Some(serde_json::json!({ "newName": new_name })),
                     |_| PendingRename {
                         document_id,
                         revision,
                     },
                 );
+            }
+            Cmd::LspRequestFormatting {
+                document_id,
+                revision,
+                range,
+                options,
+                then_save,
+            } => {
+                self.request_lsp_formatting(document_id, revision, range, options, then_save);
             }
             Cmd::LspRequestReferences {
                 document_id,
@@ -2640,7 +2704,7 @@ impl App {
             } => {
                 self.gated_lsp_request::<PendingCodeActions>(
                     document_id,
-                    position,
+                    Some(position),
                     Some(serde_json::json!({
                         "range": range,
                         "context": { "diagnostics": diagnostics, "triggerKind": 1 },
@@ -2805,6 +2869,7 @@ impl App {
         messages = self.intercept_hover_replies(messages);
         messages = self.intercept_signature_help_replies(messages);
         messages = self.intercept_rename_replies(messages);
+        messages = self.intercept_formatting_replies(messages);
         messages = self.intercept_references_replies(messages);
         messages = self.intercept_code_action_replies(messages);
         messages = self.intercept_completion_replies(messages);
@@ -3213,6 +3278,38 @@ impl App {
             .collect()
     }
 
+    // Same interception for formatting replies.
+    fn intercept_formatting_replies(&mut self, messages: Vec<Msg>) -> Vec<Msg> {
+        messages
+            .into_iter()
+            .filter_map(|msg| {
+                let Msg::Lsp(LspMsg::FormattingResponseFromServer {
+                    server_id,
+                    root,
+                    request_id,
+                    edits,
+                    abandoned,
+                }) = msg
+                else {
+                    return Some(msg);
+                };
+                let pending = self
+                    .lsp
+                    .formatting
+                    .take_response(&(server_id, root, request_id))?;
+                if abandoned {
+                    return None;
+                }
+                Some(Msg::Lsp(LspMsg::FormattingResolved {
+                    document_id: pending.document_id,
+                    revision: pending.revision,
+                    edits: Some(edits),
+                    then_save: pending.then_save,
+                }))
+            })
+            .collect()
+    }
+
     // Same interception for `textDocument/references` replies. Unlike
     // definition/hover, this one does real work: previews may require
     // reading unopened files off disk (`build_reference_items`), which
@@ -3502,6 +3599,7 @@ impl App {
         self.lsp.signature_help.clear_for_roots(server_id, roots);
         self.lsp.prepare_rename.clear_for_roots(server_id, roots);
         self.lsp.rename.clear_for_roots(server_id, roots);
+        self.lsp.formatting.clear_for_roots(server_id, roots);
         self.lsp.resolve.clear_for_roots(server_id, roots);
     }
 
@@ -3938,7 +4036,7 @@ impl App {
         &mut self,
         document_id: token::model::editor_area::DocumentId,
         method: &'static str,
-        position: lsp_types::Position,
+        position: Option<lsp_types::Position>,
         supports: fn(&lsp_types::ServerCapabilities) -> bool,
         extra_params: Option<serde_json::Value>,
     ) -> Result<RequestKey, FeatureGateError> {
@@ -3972,8 +4070,11 @@ impl App {
         };
         let mut params = serde_json::json!({
             "textDocument": { "uri": uri.as_str() },
-            "position": { "line": position.line, "character": position.character },
         });
+        if let Some(position) = position {
+            params["position"] =
+                serde_json::json!({ "line": position.line, "character": position.character });
+        }
         if let Some(extra) = extra_params {
             if let (Some(dst), Some(src)) = (params.as_object_mut(), extra.as_object()) {
                 dst.extend(src.clone());
@@ -3994,7 +4095,29 @@ impl App {
     fn gated_lsp_request<F: LspFeature + LspOutcomePolicy>(
         &mut self,
         document_id: token::model::editor_area::DocumentId,
-        position: lsp_types::Position,
+        position: Option<lsp_types::Position>,
+        extra_params: Option<serde_json::Value>,
+        build: impl FnOnce(RequestKey) -> F,
+    ) {
+        self.gated_lsp_request_as::<F>(
+            document_id,
+            F::METHOD,
+            F::supports,
+            position,
+            extra_params,
+            build,
+        )
+    }
+
+    /// `gated_lsp_request` with the method/capability gate supplied by the
+    /// caller — for a feature whose slot serves two wire methods
+    /// (formatting vs. rangeFormatting).
+    fn gated_lsp_request_as<F: LspFeature + LspOutcomePolicy>(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        method: &'static str,
+        supports: fn(&lsp_types::ServerCapabilities) -> bool,
+        position: Option<lsp_types::Position>,
         extra_params: Option<serde_json::Value>,
         build: impl FnOnce(RequestKey) -> F,
     ) {
@@ -4003,9 +4126,9 @@ impl App {
         }
         let key = match self.send_lsp_feature_request(
             document_id,
-            F::METHOD,
+            method,
             position,
-            F::supports,
+            supports,
             extra_params,
         ) {
             Ok(key) => key,
@@ -4073,7 +4196,7 @@ impl App {
     ) {
         self.gated_lsp_request::<PendingDefinition>(
             document_id,
-            position,
+            Some(position),
             None,
             |(server_id, root, _)| PendingDefinition {
                 document_id,
@@ -4097,10 +4220,12 @@ impl App {
         cursor: token::model::editor::Position,
         revision: u64,
     ) {
-        self.gated_lsp_request::<PendingHover>(document_id, position, None, |_| PendingHover {
-            document_id,
-            revision,
-            cursor,
+        self.gated_lsp_request::<PendingHover>(document_id, Some(position), None, |_| {
+            PendingHover {
+                document_id,
+                revision,
+                cursor,
+            }
         });
     }
 
@@ -4125,7 +4250,7 @@ impl App {
         }
         self.gated_lsp_request::<PendingSignatureHelp>(
             document_id,
-            position,
+            Some(position),
             Some(serde_json::json!({ "context": context })),
             |_| PendingSignatureHelp {
                 document_id,
@@ -4165,7 +4290,7 @@ impl App {
             }));
             return;
         }
-        self.gated_lsp_request::<PendingPrepareRename>(document_id, position, None, |_| {
+        self.gated_lsp_request::<PendingPrepareRename>(document_id, Some(position), None, |_| {
             PendingPrepareRename {
                 document_id,
                 revision,
@@ -4173,6 +4298,50 @@ impl App {
                 fallback,
             }
         });
+    }
+
+    /// `textDocument/formatting` (`range: None`) or `rangeFormatting`,
+    /// each behind its own capability gate. A `then_save` request gets
+    /// the short `FORMAT_ON_SAVE_TIMEOUT` instead of the slot default.
+    fn request_lsp_formatting(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        revision: u64,
+        range: Option<lsp_types::Range>,
+        options: lsp_types::FormattingOptions,
+        then_save: bool,
+    ) {
+        let mut params = serde_json::json!({ "options": options });
+        let (method, supports): (&'static str, fn(&lsp_types::ServerCapabilities) -> bool) =
+            match range {
+                Some(range) => {
+                    params["range"] = serde_json::json!(range);
+                    (
+                        "textDocument/rangeFormatting",
+                        lsp::client::supports_range_formatting,
+                    )
+                }
+                None => ("textDocument/formatting", lsp::client::supports_formatting),
+            };
+        self.gated_lsp_request_as::<PendingFormatting>(
+            document_id,
+            method,
+            supports,
+            None,
+            Some(params),
+            |_| PendingFormatting {
+                document_id,
+                revision,
+                then_save,
+            },
+        );
+        if then_save {
+            let slot = &mut self.lsp.formatting;
+            if let Some(key) = slot.by_doc.get(&document_id).cloned() {
+                slot.deadlines
+                    .insert(key, Instant::now() + FORMAT_ON_SAVE_TIMEOUT);
+            }
+        }
     }
 
     /// Builds `LocationItem` previews for a `textDocument/references`
@@ -4257,7 +4426,7 @@ impl App {
     ) {
         self.gated_lsp_request::<PendingReferences>(
             document_id,
-            position,
+            Some(position),
             Some(serde_json::json!({ "context": { "includeDeclaration": true } })),
             |_| PendingReferences {
                 document_id,
@@ -4316,7 +4485,7 @@ impl App {
         };
         self.gated_lsp_request::<PendingCompletion>(
             document_id,
-            position,
+            Some(position),
             Some(serde_json::json!({ "context": context })),
             |_| PendingCompletion {
                 document_id,
@@ -4553,6 +4722,12 @@ impl App {
     fn check_lsp_rename_deadlines(&mut self) {
         self.sweep_lsp_feature_deadlines::<PendingPrepareRename>();
         self.sweep_lsp_feature_deadlines::<PendingRename>();
+    }
+
+    /// Formatting abandonment sweep — resolves with `edits: None` so a
+    /// `then_save` request still saves.
+    fn check_lsp_formatting_deadlines(&mut self) {
+        self.sweep_lsp_feature_deadlines::<PendingFormatting>();
     }
 
     /// Fires `REFERENCES_TIMEOUT` UI-level abandonment for references
@@ -4871,6 +5046,7 @@ impl ApplicationHandler for App {
         self.check_lsp_hover_deadlines();
         self.check_lsp_signature_help_deadlines();
         self.check_lsp_rename_deadlines();
+        self.check_lsp_formatting_deadlines();
         self.check_lsp_references_deadlines();
         self.check_lsp_code_action_deadlines();
         self.check_lsp_completion_debounces();
@@ -4941,6 +5117,9 @@ impl ApplicationHandler for App {
         .flatten()
         {
             next_wake = next_wake.min(deadline);
+        }
+        if let Some(earliest_deadline) = self.lsp.formatting.earliest_deadline() {
+            next_wake = next_wake.min(earliest_deadline);
         }
         if let Some(earliest_deadline) = self.lsp.references.earliest_deadline() {
             next_wake = next_wake.min(earliest_deadline);

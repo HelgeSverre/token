@@ -33,19 +33,14 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
         }
 
         AppMsg::SaveFile => {
-            let file_path = model.document().file_path.clone();
-            match file_path {
-                Some(path) => {
-                    let content = model.document().buffer.to_string();
-                    model.ui.is_saving = true;
-                    model.ui.set_status("Saving...");
-                    Some(Cmd::SaveFile { path, content })
-                }
-                None => {
-                    model.ui.set_status("No file path - cannot save");
-                    Some(Cmd::redraw_status_bar())
+            // `format_on_save`: the formatting resolution (or its
+            // gate/timeout fallback in the runtime) performs the save.
+            if model.config.format_on_save && model.config.lsp.enabled {
+                if let Some(cmd) = super::lsp::request_formatting(model, false, true) {
+                    return Some(cmd);
                 }
             }
+            save_document(model)
         }
 
         AppMsg::LoadFile(path) => {
@@ -418,6 +413,25 @@ fn is_terminal_dock_focused(model: &AppModel) -> bool {
 }
 
 /// Execute a command from the command palette
+/// Writes the focused document to its path (`Cmd::SaveFile`, completed by
+/// `AppMsg::SaveCompleted`). Shared by `AppMsg::SaveFile` and the
+/// `format_on_save` chain in `update/lsp.rs`, which must not re-enter the
+/// formatting gate.
+pub(super) fn save_document(model: &mut AppModel) -> Option<Cmd> {
+    match model.document().file_path.clone() {
+        Some(path) => {
+            let content = model.document().buffer.to_string();
+            model.ui.is_saving = true;
+            model.ui.set_status("Saving...");
+            Some(Cmd::SaveFile { path, content })
+        }
+        None => {
+            model.ui.set_status("No file path - cannot save");
+            Some(Cmd::redraw_status_bar())
+        }
+    }
+}
+
 pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
     match cmd_id {
         CommandId::NewFile => update_layout(model, LayoutMsg::NewTab),
@@ -464,6 +478,12 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::ShowCodeActions => {
             crate::update::update_lsp(model, crate::messages::LspMsg::ShowCodeActions)
         }
+        CommandId::FormatDocument | CommandId::FormatSelection => crate::update::update_lsp(
+            model,
+            crate::messages::LspMsg::FormatDocument {
+                selection_only: cmd_id == CommandId::FormatSelection,
+            },
+        ),
         // Both commands open the same cursor-anchored popup for now — a
         // docked usages panel is a later feature (see LocationItem's doc
         // comment).
@@ -647,6 +667,39 @@ mod tests {
 
     fn test_model() -> AppModel {
         AppModel::new(800, 600, 1.0, vec![])
+    }
+
+    fn file_backed_model() -> (tempfile::TempDir, AppModel) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("main.rs");
+        std::fs::write(&path, "fn main() {}\n").unwrap();
+        (dir, AppModel::new(800, 600, 1.0, vec![path]))
+    }
+
+    #[test]
+    fn save_file_with_format_on_save_requests_formatting_instead_of_saving() {
+        let (_dir, mut model) = file_backed_model();
+        model.config.format_on_save = true;
+        let cmd = update_app(&mut model, AppMsg::SaveFile);
+        assert!(
+            matches!(
+                cmd,
+                Some(Cmd::LspRequestFormatting {
+                    then_save: true,
+                    ..
+                })
+            ),
+            "got {cmd:?}"
+        );
+        assert!(!model.ui.is_saving);
+    }
+
+    #[test]
+    fn save_file_without_format_on_save_saves_directly() {
+        let (_dir, mut model) = file_backed_model();
+        let cmd = update_app(&mut model, AppMsg::SaveFile);
+        assert!(matches!(cmd, Some(Cmd::SaveFile { .. })), "got {cmd:?}");
+        assert!(model.ui.is_saving);
     }
 
     fn focused_terminal_model() -> (AppModel, mpsc::Receiver<Vec<u8>>) {

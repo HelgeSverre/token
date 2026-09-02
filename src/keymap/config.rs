@@ -399,6 +399,8 @@ impl FromStr for Command {
             "ShowSignatureHelp" => Ok(Command::ShowSignatureHelp),
             "RenameSymbol" => Ok(Command::RenameSymbol),
             "ShowCodeActions" => Ok(Command::ShowCodeActions),
+            "FormatDocument" => Ok(Command::FormatDocument),
+            "FormatSelection" => Ok(Command::FormatSelection),
 
             // Show Usages / Find Usages (lsp-integration.md, references)
             "FindUsages" => Ok(Command::FindUsages),
