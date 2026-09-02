@@ -48,6 +48,7 @@ fn open_menu(
     model.ui.completion_menu = None;
     model.ui.hover_card = None;
     model.ui.reference_list = None;
+    model.ui.code_action_list = None;
     let mut overlay = CursorOverlayState::new(CursorOverlayKind::ContextMenu);
     overlay.selected = selected;
     model.ui.cursor_overlay = Some(overlay);

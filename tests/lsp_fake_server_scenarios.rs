@@ -547,3 +547,72 @@ fn rename_requests_round_trip_through_the_fake_server() {
 
     handle.kill();
 }
+
+/// A server that advertises `codeActionProvider` and answers
+/// `textDocument/codeAction` with a mixed `(Command | CodeAction)[]`: the
+/// reader flattens it into `CodeActionsResponseFromServer` rows.
+#[test]
+fn code_action_request_round_trips_through_the_fake_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let scenario = write_scenario(
+        dir.path(),
+        json!([
+            { "op": "expect_request", "method": "initialize", "respond": { "capabilities": {
+                "codeActionProvider": true
+            } } },
+            { "op": "expect_request", "method": "textDocument/codeAction", "respond": [
+                { "title": "Fix it", "kind": "quickfix", "isPreferred": true,
+                  "edit": { "changes": {} } },
+                { "title": "Run", "command": "server.doIt" }
+            ] },
+        ]),
+    );
+
+    let (msg_tx, msg_rx) = mpsc::channel();
+    let mut handle = spawn_server(
+        fake_lsp_server_path().to_str().unwrap(),
+        &[scenario.to_string_lossy().into_owned()],
+        dir.path(),
+        LspServerId::from("fake"),
+        msg_tx,
+        None,
+        serde_json::Value::Null,
+        serde_json::Value::Null,
+    )
+    .expect("spawn fake-lsp-server");
+
+    assert!(recv_until(&msg_rx, Duration::from_secs(5), is_ready).is_some());
+    let request_id = handle.begin_request(
+        "textDocument/codeAction",
+        json!({
+            "textDocument": { "uri": "file:///tmp/main.rs" },
+            "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } },
+            "context": { "diagnostics": [], "triggerKind": 1 }
+        }),
+    );
+    let reply = recv_until(&msg_rx, Duration::from_secs(5), |m| {
+        matches!(m, Msg::Lsp(LspMsg::CodeActionsResponseFromServer { .. }))
+    });
+    let Some(Msg::Lsp(LspMsg::CodeActionsResponseFromServer {
+        request_id: id,
+        actions,
+        abandoned,
+        ..
+    })) = reply
+    else {
+        panic!("expected CodeActionsResponseFromServer");
+    };
+    assert_eq!(id, request_id);
+    assert!(!abandoned);
+    assert_eq!(actions.len(), 2);
+    assert_eq!(actions[0].title, "Fix it");
+    assert!(actions[0].is_preferred);
+    assert!(actions[0].edit.is_some());
+    assert_eq!(actions[0].kind.as_deref(), Some("quickfix"));
+    assert_eq!(
+        actions[1].command.as_ref().map(|c| c.command.as_str()),
+        Some("server.doIt")
+    );
+
+    handle.kill();
+}

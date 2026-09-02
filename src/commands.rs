@@ -39,6 +39,7 @@ pub enum CommandId {
     ShowHover,
     ShowSignatureHelp,
     RenameSymbol,
+    ShowCodeActions,
     FindUsages,
     NextDiagnostic,
     PrevDiagnostic,
@@ -271,6 +272,12 @@ pub static COMMANDS: &[CommandDef] = &[
         category: CommandCategory::Nav,
         label: "Rename Symbol",
         keybinding: Some("⇧F6"),
+    },
+    CommandDef {
+        id: CommandId::ShowCodeActions,
+        category: CommandCategory::Edit,
+        label: "Show Code Actions",
+        keybinding: Some("⌥↩"),
     },
     CommandDef {
         id: CommandId::FindUsages,
@@ -573,6 +580,7 @@ impl CommandId {
             CommandId::ShowHover => Some(KeymapCommand::ShowHover),
             CommandId::ShowSignatureHelp => Some(KeymapCommand::ShowSignatureHelp),
             CommandId::RenameSymbol => Some(KeymapCommand::RenameSymbol),
+            CommandId::ShowCodeActions => Some(KeymapCommand::ShowCodeActions),
             CommandId::FindUsages => Some(KeymapCommand::FindUsages),
             CommandId::NextDiagnostic => Some(KeymapCommand::NextDiagnostic),
             CommandId::PrevDiagnostic => Some(KeymapCommand::PrevDiagnostic),
@@ -1030,6 +1038,25 @@ pub enum Cmd {
         revision: u64,
         new_name: String,
     },
+    /// `textDocument/codeAction` for `range` (selection or caret), with
+    /// the overlapping `diagnostics` as `context.diagnostics`. Tagged with
+    /// `revision` and `cursor` like `LspRequestHover`.
+    LspRequestCodeActions {
+        document_id: DocumentId,
+        position: lsp_types::Position,
+        range: lsp_types::Range,
+        cursor: crate::model::editor::Position,
+        revision: u64,
+        diagnostics: Vec<lsp_types::Diagnostic>,
+    },
+    /// `workspace/executeCommand` on the server that owns `document_id`
+    /// (a code action's `command`). The reply is dropped; any resulting
+    /// edits arrive as a server-initiated `workspace/applyEdit`.
+    LspExecuteCommand {
+        document_id: DocumentId,
+        command: String,
+        arguments: Option<Vec<serde_json::Value>>,
+    },
     /// `textDocument/references` (Show Usages / Find Usages), tagged with
     /// the document's `revision` and (char-column) `cursor` at request
     /// time — mirrors `LspRequestHover`. `context.includeDeclaration` is
@@ -1206,6 +1233,8 @@ impl Cmd {
             Cmd::LspRequestPrepareRename { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestRename { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestReferences { .. } => Damage::Areas(vec![]),
+            Cmd::LspRequestCodeActions { .. } => Damage::Areas(vec![]),
+            Cmd::LspExecuteCommand { .. } => Damage::Areas(vec![]),
             Cmd::LspScheduleCompletion { .. } => Damage::Areas(vec![]),
             Cmd::LspCancelCompletion { .. } => Damage::Areas(vec![]),
             Cmd::LspResolveCompletionItem { .. } => Damage::Areas(vec![]),

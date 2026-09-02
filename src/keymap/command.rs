@@ -297,6 +297,8 @@ pub enum Command {
     ShowSignatureHelp,
     /// `textDocument/rename` for the symbol under the caret.
     RenameSymbol,
+    /// `textDocument/codeAction` for the selection / caret.
+    ShowCodeActions,
 
     // ========================================================================
     // Show Usages / Find Usages (lsp-integration.md, references)
@@ -535,6 +537,7 @@ impl Command {
             ShowHover => vec![Msg::Lsp(LspMsg::ShowHover)],
             ShowSignatureHelp => vec![Msg::Lsp(LspMsg::ShowSignatureHelp)],
             RenameSymbol => vec![Msg::Lsp(LspMsg::RenameSymbol)],
+            ShowCodeActions => vec![Msg::Lsp(LspMsg::ShowCodeActions)],
             FindUsages | ShowUsages => vec![Msg::Lsp(LspMsg::FindReferences)],
 
             // Handled specially in `App::dispatch_command` (needs the
@@ -722,6 +725,7 @@ impl Command {
             ShowHover => "Show Hover",
             ShowSignatureHelp => "Show Signature Help",
             RenameSymbol => "Rename Symbol",
+            ShowCodeActions => "Show Code Actions",
             FindUsages => "Find Usages",
             ShowUsages => "Show Usages",
             ShowContextMenu => "Show Context Menu",

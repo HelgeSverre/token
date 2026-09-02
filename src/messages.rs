@@ -1185,6 +1185,38 @@ pub enum LspMsg {
         abandoned: bool,
     },
 
+    // ==== Code actions ====
+    /// User intent (Alt+Enter / palette): `textDocument/codeAction` for
+    /// the active selection (or the caret) of the focused document.
+    ShowCodeActions,
+    /// Enter on a popup row / a row click — applies or executes
+    /// `ui.code_action_list[index]` and dismisses the popup. Routed
+    /// through `update()` like `ActivateReference`.
+    ActivateCodeAction {
+        index: usize,
+    },
+    /// Runtime -> update: the outcome of a `textDocument/codeAction`
+    /// request, revision- and cursor-guarded like `ReferencesResolved`
+    /// (and reusing `ReferencesOutcome` for the gate/timeout statuses).
+    /// `actions` is empty unless `outcome` is `Found`.
+    CodeActionsResolved {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        cursor: crate::model::editor::Position,
+        actions: Vec<crate::model::CodeActionItem>,
+        outcome: ReferencesOutcome,
+    },
+    /// Worker -> runtime only: the raw `textDocument/codeAction` response,
+    /// already flattened to `CodeActionItem`s, keyed like
+    /// `HoverResponseFromServer`.
+    CodeActionsResponseFromServer {
+        server_id: LspServerId,
+        root: std::path::PathBuf,
+        request_id: i64,
+        actions: Vec<crate::model::CodeActionItem>,
+        abandoned: bool,
+    },
+
     // ==== Show Usages / Find Usages (lsp-integration.md, references) ====
     /// User intent (Alt+F7 / Alt+Cmd+F7 / palette). `update_lsp` reads the
     /// focused document + cursor synchronously and captures

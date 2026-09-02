@@ -2043,6 +2043,51 @@ pub fn with_cursor_overlay_spec<R>(
             };
             Some(f(&spec))
         }
+        crate::model::CursorOverlayKind::CodeActions => {
+            let items = model.ui.code_action_list.as_deref().unwrap_or(&[]);
+            let rows: Vec<Row> = items
+                .iter()
+                .map(|item| Row {
+                    icon: RowIcon::None,
+                    label: item.title.as_str(),
+                    match_indices: &[],
+                    detail: None,
+                    accessory: item
+                        .kind
+                        .as_deref()
+                        .map_or(Accessory::None, Accessory::DimText),
+                })
+                .collect();
+            let sections = [Section {
+                title: None,
+                rows: &rows,
+            }];
+            let spec = OverlaySpec {
+                tabs: None,
+                anchor: Anchor::Cursor {
+                    x,
+                    y,
+                    h,
+                    prefer_below: true,
+                    width: WidthRule {
+                        pct: 0.0,
+                        min: 320.0,
+                        max: 520.0,
+                    },
+                },
+                header: None,
+                body: Body::List {
+                    sections: &sections,
+                    selected: FlatIndex(state.selected.min(rows.len().saturating_sub(1))),
+                    scroll: state.scroll,
+                    max_visible: overlay_surface::MAX_VISIBLE_COMPLETION,
+                },
+                footer: None,
+                hover_row: None,
+                docs: None,
+            };
+            Some(f(&spec))
+        }
         crate::model::CursorOverlayKind::References => {
             let items = model.ui.reference_list.as_deref().unwrap_or(&[]);
             let (details, accessories) = reference_row_text(model, items);

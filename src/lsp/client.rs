@@ -19,7 +19,8 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 use lsp_types::{
-    ClientCapabilities, CompletionClientCapabilities, CompletionItemCapability,
+    ClientCapabilities, CodeActionClientCapabilities, CodeActionKind, CodeActionKindLiteralSupport,
+    CodeActionLiteralSupport, CompletionClientCapabilities, CompletionItemCapability,
     CompletionItemCapabilityResolveSupport, DidChangeWatchedFilesClientCapabilities,
     DynamicRegistrationClientCapabilities, GeneralClientCapabilities, GotoCapability,
     HoverClientCapabilities, MarkupKind, ParameterInformationSettings, PositionEncodingKind,
@@ -78,6 +79,30 @@ pub fn client_capabilities() -> ClientCapabilities {
                 prepare_support: Some(true),
                 prepare_support_default_behavior: None,
                 honors_change_annotations: None,
+            }),
+            code_action: Some(CodeActionClientCapabilities {
+                dynamic_registration: Some(false),
+                code_action_literal_support: Some(CodeActionLiteralSupport {
+                    code_action_kind: CodeActionKindLiteralSupport {
+                        value_set: [
+                            CodeActionKind::EMPTY,
+                            CodeActionKind::QUICKFIX,
+                            CodeActionKind::REFACTOR,
+                            CodeActionKind::REFACTOR_EXTRACT,
+                            CodeActionKind::REFACTOR_INLINE,
+                            CodeActionKind::REFACTOR_REWRITE,
+                            CodeActionKind::SOURCE,
+                            CodeActionKind::SOURCE_ORGANIZE_IMPORTS,
+                            CodeActionKind::SOURCE_FIX_ALL,
+                        ]
+                        .iter()
+                        .map(|k| k.as_str().to_owned())
+                        .collect(),
+                    },
+                }),
+                is_preferred_support: Some(true),
+                data_support: Some(false),
+                ..Default::default()
             }),
             signature_help: Some(SignatureHelpClientCapabilities {
                 dynamic_registration: Some(false),
@@ -222,6 +247,10 @@ pub fn supports_prepare_rename(caps: &ServerCapabilities) -> bool {
         caps.rename_provider.as_ref(),
         Some(lsp_types::OneOf::Right(opts)) if opts.prepare_provider == Some(true)
     )
+}
+
+pub fn supports_code_action(caps: &ServerCapabilities) -> bool {
+    caps.code_action_provider.is_some()
 }
 
 /// `(triggerCharacters, retriggerCharacters)` of the server's
@@ -1246,6 +1275,18 @@ fn reader_loop(
                 if let Some(wake) = wake.as_deref() {
                     wake();
                 }
+            } else if entry.method == "textDocument/codeAction" {
+                let actions = parse_code_action_result(message.get("result"));
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::CodeActionsResponseFromServer {
+                    server_id: server_id.clone(),
+                    root: root.clone(),
+                    request_id: id,
+                    actions,
+                    abandoned: entry.abandoned,
+                }));
+                if let Some(wake) = wake.as_deref() {
+                    wake();
+                }
             } else if entry.method == "textDocument/references" {
                 let locations = parse_references_result(message.get("result"));
                 let _ = msg_tx.send(Msg::Lsp(LspMsg::ReferencesResponseFromServer {
@@ -1396,6 +1437,40 @@ pub(crate) fn hover_contents_to_plain_text(contents: &lsp_types::HoverContents) 
             MarkupKind::Markdown => markdown_to_plain_text(&markup.value),
         },
     }
+}
+
+/// Flattens a `textDocument/codeAction` reply (`(Command | CodeAction)[]
+/// | null`) into popup rows; a bare `Command` keeps only `command`.
+/// Disabled actions are dropped. `null` / malformed -> empty.
+fn parse_code_action_result(result: Option<&Value>) -> Vec<crate::model::CodeActionItem> {
+    use lsp_types::CodeActionOrCommand;
+    let Some(parsed) =
+        result.and_then(|r| serde_json::from_value::<Vec<CodeActionOrCommand>>(r.clone()).ok())
+    else {
+        return Vec::new();
+    };
+    parsed
+        .into_iter()
+        .filter_map(|entry| match entry {
+            CodeActionOrCommand::Command(command) => Some(crate::model::CodeActionItem {
+                title: command.title.clone(),
+                kind: None,
+                is_preferred: false,
+                edit: None,
+                command: Some(command),
+            }),
+            CodeActionOrCommand::CodeAction(action) if action.disabled.is_none() => {
+                Some(crate::model::CodeActionItem {
+                    title: action.title,
+                    kind: action.kind.map(|k| k.as_str().to_owned()),
+                    is_preferred: action.is_preferred.unwrap_or(false),
+                    edit: action.edit.map(Box::new),
+                    command: action.command,
+                })
+            }
+            CodeActionOrCommand::CodeAction(_) => None,
+        })
+        .collect()
 }
 
 /// Flattens a `textDocument/signatureHelp` reply into the model's

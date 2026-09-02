@@ -379,6 +379,8 @@ bindings:
     command: ShowSignatureHelp
   - key: "shift+f6"
     command: RenameSymbol
+  - key: "alt+enter"
+    command: ShowCodeActions
 
   # ===========================================================================
   # Show Usages / Find Usages (lsp-integration.md, references)

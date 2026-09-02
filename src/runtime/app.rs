@@ -309,6 +309,10 @@ const SIGNATURE_HELP_TIMEOUT: Duration = Duration::from_secs(10);
 /// Rename is explicit and may touch the whole workspace — as patient as
 /// references.
 const RENAME_TIMEOUT: Duration = Duration::from_secs(30);
+/// Code actions are user-invoked with a popup waiting on them — a
+/// definition-class wait, but the "server did not answer" status makes a
+/// shorter window acceptable.
+const CODE_ACTIONS_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// UI-level abandonment timeout for a deferred accept's
 /// `completionItem/resolve` round trip. On expiry the accept applies with
@@ -401,6 +405,8 @@ struct LspManager {
     /// requests, mirroring `hover`; swept for abandonment by
     /// `check_lsp_references_deadlines`.
     references: FeatureSlot<PendingReferences>,
+    /// In-flight `textDocument/codeAction` requests, mirroring `references`.
+    code_actions: FeatureSlot<PendingCodeActions>,
     /// In-flight `textDocument/completion` requests, mirroring
     /// `references`; swept for abandonment by
     /// `check_lsp_completion_deadlines` (silently — completion never
@@ -534,6 +540,36 @@ struct PendingReferences {
 impl PendingRequest for PendingReferences {
     fn document_id(&self) -> token::model::editor_area::DocumentId {
         self.document_id
+    }
+}
+
+/// What `LspManager` needs to turn a `textDocument/codeAction` response
+/// into `LspMsg::CodeActionsResolved` — same shape as `PendingReferences`.
+struct PendingCodeActions {
+    document_id: token::model::editor_area::DocumentId,
+    revision: u64,
+    cursor: token::model::editor::Position,
+}
+
+impl PendingRequest for PendingCodeActions {
+    fn document_id(&self) -> token::model::editor_area::DocumentId {
+        self.document_id
+    }
+}
+
+impl PendingCodeActions {
+    fn resolved(
+        self,
+        actions: Vec<token::model::CodeActionItem>,
+        outcome: ReferencesOutcome,
+    ) -> Msg {
+        Msg::Lsp(LspMsg::CodeActionsResolved {
+            document_id: self.document_id,
+            revision: self.revision,
+            cursor: self.cursor,
+            actions,
+            outcome,
+        })
     }
 }
 
@@ -677,6 +713,29 @@ lsp_feature!(
     completion,
     lsp::client::supports_completion
 );
+lsp_feature!(
+    PendingCodeActions,
+    "textDocument/codeAction",
+    code_actions,
+    lsp::client::supports_code_action
+);
+
+impl LspOutcomePolicy for PendingCodeActions {
+    fn on_gate_error(self, err: FeatureGateError) -> Option<Msg> {
+        let outcome = match err {
+            FeatureGateError::NoServer | FeatureGateError::Unsupported => {
+                ReferencesOutcome::NotSupported
+            }
+            FeatureGateError::NotReady => ReferencesOutcome::StillIndexing,
+        };
+        Some(self.resolved(Vec::new(), outcome))
+    }
+
+    fn on_timeout(self) -> Option<Msg> {
+        Some(self.resolved(Vec::new(), ReferencesOutcome::NoResult))
+    }
+}
+
 lsp_feature!(
     PendingSignatureHelp,
     "textDocument/signatureHelp",
@@ -852,6 +911,7 @@ impl LspManager {
             definition: FeatureSlot::new(DEFINITION_TIMEOUT),
             hover: FeatureSlot::new(HOVER_TIMEOUT),
             references: FeatureSlot::new(REFERENCES_TIMEOUT),
+            code_actions: FeatureSlot::new(CODE_ACTIONS_TIMEOUT),
             completion: FeatureSlot::new(COMPLETION_TIMEOUT),
             signature_help: FeatureSlot::new(SIGNATURE_HELP_TIMEOUT),
             prepare_rename: FeatureSlot::new(RENAME_TIMEOUT),
@@ -2570,6 +2630,35 @@ impl App {
             } => {
                 self.request_lsp_references(document_id, position, cursor, revision);
             }
+            Cmd::LspRequestCodeActions {
+                document_id,
+                position,
+                range,
+                cursor,
+                revision,
+                diagnostics,
+            } => {
+                self.gated_lsp_request::<PendingCodeActions>(
+                    document_id,
+                    position,
+                    Some(serde_json::json!({
+                        "range": range,
+                        "context": { "diagnostics": diagnostics, "triggerKind": 1 },
+                    })),
+                    |_| PendingCodeActions {
+                        document_id,
+                        revision,
+                        cursor,
+                    },
+                );
+            }
+            Cmd::LspExecuteCommand {
+                document_id,
+                command,
+                arguments,
+            } => {
+                self.execute_lsp_command(document_id, command, arguments);
+            }
             Cmd::LspScheduleCompletion {
                 document_id,
                 position,
@@ -2717,6 +2806,7 @@ impl App {
         messages = self.intercept_signature_help_replies(messages);
         messages = self.intercept_rename_replies(messages);
         messages = self.intercept_references_replies(messages);
+        messages = self.intercept_code_action_replies(messages);
         messages = self.intercept_completion_replies(messages);
         messages = self.intercept_resolve_replies(messages);
         // Coalesce successive `publishDiagnostics` for the same URI within
@@ -3095,6 +3185,34 @@ impl App {
             .collect()
     }
 
+    // Same interception for `textDocument/codeAction` replies (already
+    // flattened by the reader).
+    fn intercept_code_action_replies(&mut self, messages: Vec<Msg>) -> Vec<Msg> {
+        messages
+            .into_iter()
+            .filter_map(|msg| {
+                let Msg::Lsp(LspMsg::CodeActionsResponseFromServer {
+                    server_id,
+                    root,
+                    request_id,
+                    actions,
+                    abandoned,
+                }) = msg
+                else {
+                    return Some(msg);
+                };
+                let pending = self
+                    .lsp
+                    .code_actions
+                    .take_response(&(server_id, root, request_id))?;
+                if abandoned {
+                    return None;
+                }
+                Some(pending.resolved(actions, ReferencesOutcome::Found))
+            })
+            .collect()
+    }
+
     // Same interception for `textDocument/references` replies. Unlike
     // definition/hover, this one does real work: previews may require
     // reading unopened files off disk (`build_reference_items`), which
@@ -3379,6 +3497,7 @@ impl App {
         self.lsp.definition.clear_for_roots(server_id, roots);
         self.lsp.hover.clear_for_roots(server_id, roots);
         self.lsp.references.clear_for_roots(server_id, roots);
+        self.lsp.code_actions.clear_for_roots(server_id, roots);
         self.lsp.completion.clear_for_roots(server_id, roots);
         self.lsp.signature_help.clear_for_roots(server_id, roots);
         self.lsp.prepare_rename.clear_for_roots(server_id, roots);
@@ -4148,6 +4267,28 @@ impl App {
         );
     }
 
+    /// `workspace/executeCommand` on the server that owns `document_id`
+    /// (looked up like `send_lsp_feature_request`). Fire-and-forget: the
+    /// reply is resolved-and-dropped by the reader; result edits arrive
+    /// as `workspace/applyEdit`.
+    fn execute_lsp_command(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        command: String,
+        arguments: Option<Vec<serde_json::Value>>,
+    ) {
+        let Some(state) = self.lsp.open_documents.get(&document_id) else {
+            return;
+        };
+        let key = (state.server_id.clone(), state.root.clone());
+        if let Some(handle) = self.lsp.servers.get(&key) {
+            handle.begin_request(
+                "workspace/executeCommand",
+                serde_json::json!({ "command": command, "arguments": arguments }),
+            );
+        }
+    }
+
     /// `textDocument/completion` (lsp-integration.md Phase 5) — fired by
     /// `check_lsp_completion_debounces` after `COMPLETION_DEBOUNCE` quiets.
     /// Mirrors `request_lsp_references`'s gating and flush-before-request,
@@ -4419,6 +4560,10 @@ impl App {
     /// `check_lsp_definition_deadlines`.
     fn check_lsp_references_deadlines(&mut self) {
         self.sweep_lsp_feature_deadlines::<PendingReferences>();
+    }
+
+    fn check_lsp_code_action_deadlines(&mut self) {
+        self.sweep_lsp_feature_deadlines::<PendingCodeActions>();
     }
 
     /// Fires due completion debounces into real requests. Silent on gate
@@ -4727,6 +4872,7 @@ impl ApplicationHandler for App {
         self.check_lsp_signature_help_deadlines();
         self.check_lsp_rename_deadlines();
         self.check_lsp_references_deadlines();
+        self.check_lsp_code_action_deadlines();
         self.check_lsp_completion_debounces();
         self.check_lsp_completion_deadlines();
         self.check_lsp_resolve_debounces();
@@ -4797,6 +4943,9 @@ impl ApplicationHandler for App {
             next_wake = next_wake.min(deadline);
         }
         if let Some(earliest_deadline) = self.lsp.references.earliest_deadline() {
+            next_wake = next_wake.min(earliest_deadline);
+        }
+        if let Some(earliest_deadline) = self.lsp.code_actions.earliest_deadline() {
             next_wake = next_wake.min(earliest_deadline);
         }
         if let Some(earliest_deadline) = self.lsp.completion.earliest_deadline() {

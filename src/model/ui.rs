@@ -706,6 +706,9 @@ pub enum CursorOverlayKind {
     /// consumes (a flat list with no query, per context-menu.md's
     /// routing policy).
     References,
+    /// The Code Actions popup (`textDocument/codeAction`), backed by
+    /// `UiState::code_action_list`. Same key routing as `References`.
+    CodeActions,
     /// The right-click / Shift+F10 context menu (context-menu.md), backed
     /// by `UiState::context_menu`. Up/Down navigate (skipping disabled
     /// rows), Enter activates, Escape dismisses; any other key — even a
@@ -780,6 +783,18 @@ pub struct SignatureView {
 /// time (sorted by `(path, line)`), stored here; both the view's spec
 /// builder and Enter/click activation index this same `Vec`.
 pub type ReferenceList = Vec<crate::update::navigation::LocationItem>;
+
+/// One row of the Code Actions popup (`ui.code_action_list`): a
+/// `CodeActionOrCommand` flattened so activation is a plain match on
+/// `edit` / `command`. A bare `Command` reply has only `command` set.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodeActionItem {
+    pub title: String,
+    pub kind: Option<String>,
+    pub is_preferred: bool,
+    pub edit: Option<Box<lsp_types::WorkspaceEdit>>,
+    pub command: Option<lsp_types::Command>,
+}
 
 /// Content for the currently open context menu (`ui.cursor_overlay` ==
 /// `Some(CursorOverlayState { kind: CursorOverlayKind::ContextMenu, .. })`)
@@ -1085,6 +1100,9 @@ pub struct UiState {
     /// `Some(CursorOverlayKind::References)`. `None` whenever the popup is
     /// closed.
     pub reference_list: Option<ReferenceList>,
+    /// The Code Actions popup's rows, set alongside `cursor_overlay` being
+    /// `Some(CursorOverlayKind::CodeActions)`; preferred actions first.
+    pub code_action_list: Option<Vec<CodeActionItem>>,
     /// The context menu's built items + open-time anchor
     /// (context-menu.md), set alongside `cursor_overlay` being
     /// `Some(CursorOverlayKind::ContextMenu)`. `None` whenever the menu is
@@ -1134,6 +1152,7 @@ impl UiState {
             completion_hover_row: None,
             hover_card: None,
             reference_list: None,
+            code_action_list: None,
             context_menu: None,
             mouse_hover_target: None,
             signature_help: None,

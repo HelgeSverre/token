@@ -789,6 +789,7 @@ fn dismiss_overlay_for_press(
         model.ui.completion_menu = None;
         model.ui.hover_card = None;
         model.ui.reference_list = None;
+        model.ui.code_action_list = None;
         model.ui.context_menu = None;
     }
     let swallow = dismissed
@@ -946,6 +947,10 @@ fn handle_cursor_overlay_click(model: &mut AppModel, flat_index: Option<usize>) 
         Some(token::model::CursorOverlayKind::References) => update(
             model,
             Msg::Lsp(token::messages::LspMsg::ActivateReference { index: idx }),
+        ),
+        Some(token::model::CursorOverlayKind::CodeActions) => update(
+            model,
+            Msg::Lsp(token::messages::LspMsg::ActivateCodeAction { index: idx }),
         ),
         Some(token::model::CursorOverlayKind::ContextMenu) => update(
             model,
@@ -1919,6 +1924,7 @@ pub fn handle_mouse_wheel(
                 .map(|m| m.filtered.len())
                 .unwrap_or(0);
             let reference_rows = model.ui.reference_list.as_ref().map_or(0, Vec::len);
+            let code_action_rows = model.ui.code_action_list.as_ref().map_or(0, Vec::len);
             let Some(state) = &mut model.ui.cursor_overlay else {
                 return None;
             };
@@ -1932,6 +1938,8 @@ pub fn handle_mouse_wheel(
                 token::model::CursorOverlayKind::Completion => completion_rows
                     .saturating_sub(token::view::overlay_surface::MAX_VISIBLE_COMPLETION),
                 token::model::CursorOverlayKind::References => reference_rows
+                    .saturating_sub(token::view::overlay_surface::MAX_VISIBLE_COMPLETION),
+                token::model::CursorOverlayKind::CodeActions => code_action_rows
                     .saturating_sub(token::view::overlay_surface::MAX_VISIBLE_COMPLETION),
                 // No scroll behavior needed for V1 (menus fit without
                 // scrolling) — inert, same as Hover (context-menu.md

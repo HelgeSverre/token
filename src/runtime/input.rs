@@ -317,23 +317,30 @@ pub(crate) fn handle_cursor_overlay_key(
         alt,
         logo,
     } = modifiers;
-    if kind == token::model::CursorOverlayKind::References {
+    if kind == token::model::CursorOverlayKind::References
+        || kind == token::model::CursorOverlayKind::CodeActions
+    {
         // Checked ahead of the modifier gate below: unlike Completion/the
-        // demo shells, References dismisses-and-consumes on *any* key that
-        // isn't Up/Down/Enter/Escape, including a modified one (Shift+
-        // letter for uppercase typing must not reach the document either)
-        // — context-menu.md's "flat list with no query" routing policy.
+        // demo shells, References (and the identically-routed Code
+        // Actions popup) dismisses-and-consumes on *any* key that isn't
+        // Up/Down/Enter/Escape, including a modified one (Shift+letter for
+        // uppercase typing must not reach the document either) —
+        // context-menu.md's "flat list with no query" routing policy.
+        let is_references = kind == token::model::CursorOverlayKind::References;
+        let len = if is_references {
+            model.ui.reference_list.as_ref().map_or(0, Vec::len)
+        } else {
+            model.ui.code_action_list.as_ref().map_or(0, Vec::len)
+        };
         if !(ctrl || shift || alt || logo) {
             match key {
                 Key::Named(NamedKey::ArrowUp) => {
-                    let len = model.ui.reference_list.as_ref().map_or(0, Vec::len);
                     if let (Some(state), true) = (model.ui.cursor_overlay.as_mut(), len > 0) {
                         state.selected = (state.selected + len - 1) % len;
                     }
                     return Some(Some(Cmd::Redraw));
                 }
                 Key::Named(NamedKey::ArrowDown) => {
-                    let len = model.ui.reference_list.as_ref().map_or(0, Vec::len);
                     if let (Some(state), true) = (model.ui.cursor_overlay.as_mut(), len > 0) {
                         state.selected = (state.selected + 1) % len;
                     }
@@ -341,21 +348,20 @@ pub(crate) fn handle_cursor_overlay_key(
                 }
                 Key::Named(NamedKey::Enter) => {
                     let index = model.ui.cursor_overlay?.selected;
-                    return Some(update(
-                        model,
-                        Msg::Lsp(token::messages::LspMsg::ActivateReference { index }),
-                    ));
-                }
-                Key::Named(NamedKey::Escape) => {
-                    model.ui.cursor_overlay = None;
-                    model.ui.reference_list = None;
-                    return Some(Some(Cmd::Redraw));
+                    let msg = if is_references {
+                        token::messages::LspMsg::ActivateReference { index }
+                    } else {
+                        token::messages::LspMsg::ActivateCodeAction { index }
+                    };
+                    return Some(update(model, Msg::Lsp(msg)));
                 }
                 _ => {}
             }
         }
+        // Escape and every unclaimed key: dismiss-and-consume.
         model.ui.cursor_overlay = None;
         model.ui.reference_list = None;
+        model.ui.code_action_list = None;
         return Some(Some(Cmd::Redraw));
     }
     if kind == token::model::CursorOverlayKind::ContextMenu {
@@ -467,7 +473,7 @@ fn row_count_for(kind: token::model::CursorOverlayKind) -> usize {
         // Handled earlier in `handle_cursor_overlay_key` (needs
         // `model.ui.reference_list`'s length, which this kind-only helper
         // doesn't have access to).
-        CursorOverlayKind::References => 0,
+        CursorOverlayKind::References | CursorOverlayKind::CodeActions => 0,
         // Handled earlier in `handle_cursor_overlay_key` (needs
         // `model.ui.context_menu`, plus per-item `enabled` skipping —
         // see `context_menu_move`).

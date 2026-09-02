@@ -684,6 +684,104 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
         // reaching here — mirrors `DefinitionResponseFromServer`.
         LspMsg::HoverResponseFromServer { .. } => None,
 
+        LspMsg::ShowCodeActions => {
+            let doc = model.try_document()?;
+            let document_id = doc.id?;
+            doc.file_path.as_ref()?;
+            let editor = model.editor();
+            let cursor = editor.active_cursor().to_position();
+            let selection = editor.active_selection();
+            let (start, end) = if selection.is_empty() {
+                (cursor, cursor)
+            } else {
+                (selection.start(), selection.end())
+            };
+            let range = lsp_types::Range {
+                start: crate::lsp::position_to_lsp(doc, start),
+                end: crate::lsp::position_to_lsp(doc, end),
+            };
+            let diagnostics = doc
+                .diagnostics
+                .iter()
+                .filter(|d| d.range.start <= range.end && range.start <= d.range.end)
+                .cloned()
+                .collect();
+            Some(Cmd::LspRequestCodeActions {
+                document_id,
+                position: range.start,
+                range,
+                cursor,
+                revision: doc.revision,
+                diagnostics,
+            })
+        }
+
+        LspMsg::CodeActionsResolved {
+            document_id,
+            revision,
+            cursor,
+            mut actions,
+            outcome,
+        } => {
+            if stale_feature_response(model, document_id, revision) {
+                return None;
+            }
+            if model.editor().active_cursor().to_position() != cursor {
+                return None;
+            }
+            let status = match outcome {
+                ReferencesOutcome::StillIndexing => "Language server still indexing…",
+                ReferencesOutcome::NotSupported => "Code actions not supported by this server",
+                ReferencesOutcome::NoResult => "Code actions: server did not answer",
+                ReferencesOutcome::Found if actions.is_empty() => "No code actions",
+                ReferencesOutcome::Found => {
+                    // Stable sort: preferred first, server order within.
+                    actions.sort_by_key(|a| !a.is_preferred);
+                    model.ui.code_action_list = Some(actions);
+                    model.ui.cursor_overlay =
+                        Some(CursorOverlayState::new(CursorOverlayKind::CodeActions));
+                    return Some(Cmd::Redraw);
+                }
+            };
+            model.ui.set_status(status);
+            Some(Cmd::redraw_status_bar())
+        }
+
+        LspMsg::CodeActionsResponseFromServer { .. } => None,
+
+        LspMsg::ActivateCodeAction { index } => {
+            let item = model
+                .ui
+                .code_action_list
+                .as_ref()
+                .and_then(|items| items.get(index))
+                .cloned();
+            model.ui.cursor_overlay = None;
+            model.ui.code_action_list = None;
+            let Some(item) = item else {
+                return Some(Cmd::Redraw);
+            };
+            let document_id = model.try_document().and_then(|d| d.id);
+            let mut cmds = vec![Cmd::Redraw];
+            if let Some(edit) = item.edit {
+                let (cmd, report) = super::text_edits::apply_workspace_edit(model, *edit);
+                let mut status = format!("Applied: {}", item.title);
+                if !report.skipped.is_empty() {
+                    status.push_str(&format!(" (skipped: {})", report.skipped.join("; ")));
+                }
+                model.ui.set_status(status);
+                cmds.extend(cmd);
+            }
+            if let (Some(command), Some(document_id)) = (item.command, document_id) {
+                cmds.push(Cmd::LspExecuteCommand {
+                    document_id,
+                    command: command.command,
+                    arguments: command.arguments,
+                });
+            }
+            Some(Cmd::Batch(cmds))
+        }
+
         LspMsg::FindReferences => {
             let doc = model.try_document()?;
             let document_id = doc.id?;
@@ -2011,5 +2109,181 @@ mod tests {
             model.document().buffer.to_string(),
             "fn main() {}\nfn other() { main() }\n"
         );
+    }
+
+    // ---- code actions ----
+
+    fn diagnostic_on_line(line: u32) -> lsp_types::Diagnostic {
+        lsp_types::Diagnostic {
+            range: lsp_types::Range {
+                start: lsp_types::Position { line, character: 0 },
+                end: lsp_types::Position { line, character: 2 },
+            },
+            message: format!("line {line}"),
+            ..Default::default()
+        }
+    }
+
+    fn action(title: &str, is_preferred: bool) -> crate::model::CodeActionItem {
+        crate::model::CodeActionItem {
+            title: title.to_owned(),
+            kind: Some("quickfix".to_owned()),
+            is_preferred,
+            edit: None,
+            command: None,
+        }
+    }
+
+    fn resolve_code_actions(
+        model: &mut AppModel,
+        revision: u64,
+        actions: Vec<crate::model::CodeActionItem>,
+    ) -> Option<Cmd> {
+        let document_id = model.document().id.unwrap();
+        let cursor = model.editor().active_cursor().to_position();
+        update_lsp(
+            model,
+            LspMsg::CodeActionsResolved {
+                document_id,
+                revision,
+                cursor,
+                actions,
+                outcome: ReferencesOutcome::Found,
+            },
+        )
+    }
+
+    #[test]
+    fn show_code_actions_sends_only_the_diagnostics_overlapping_the_caret() {
+        let (_dir, mut model) = model_with_file();
+        model.document_mut().diagnostics = vec![diagnostic_on_line(0), diagnostic_on_line(1)];
+
+        let cmd = update_lsp(&mut model, LspMsg::ShowCodeActions);
+
+        let Some(Cmd::LspRequestCodeActions {
+            range, diagnostics, ..
+        }) = cmd
+        else {
+            panic!("expected LspRequestCodeActions");
+        };
+        assert_eq!(range.start, range.end, "caret only: an empty range");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].message, "line 0");
+    }
+
+    #[test]
+    fn code_actions_resolved_opens_the_popup_with_preferred_actions_first() {
+        let (_dir, mut model) = model_with_file();
+        let revision = model.document().revision;
+
+        let cmd = resolve_code_actions(
+            &mut model,
+            revision,
+            vec![action("Extract", false), action("Fix it", true)],
+        );
+
+        assert!(cmd.is_some());
+        assert_eq!(
+            model.ui.cursor_overlay.map(|o| o.kind),
+            Some(CursorOverlayKind::CodeActions)
+        );
+        let titles: Vec<&str> = model
+            .ui
+            .code_action_list
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|a| a.title.as_str())
+            .collect();
+        assert_eq!(titles, ["Fix it", "Extract"]);
+    }
+
+    #[test]
+    fn code_actions_resolved_with_no_actions_sets_the_status() {
+        let (_dir, mut model) = model_with_file();
+        let revision = model.document().revision;
+        resolve_code_actions(&mut model, revision, vec![]);
+        assert!(model.ui.cursor_overlay.is_none());
+        assert_eq!(
+            model.ui.transient_message.as_ref().map(|t| t.text.as_str()),
+            Some("No code actions")
+        );
+    }
+
+    #[test]
+    fn code_actions_resolved_for_a_stale_revision_is_dropped() {
+        let (_dir, mut model) = model_with_file();
+        let revision = model.document().revision;
+        let cmd = resolve_code_actions(&mut model, revision + 1, vec![action("Fix", true)]);
+        assert!(cmd.is_none());
+        assert!(model.ui.cursor_overlay.is_none());
+    }
+
+    #[test]
+    fn activating_a_code_action_with_an_edit_applies_it_and_closes_the_popup() {
+        let (_dir, mut model) = model_with_file();
+        let uri = crate::lsp::path_to_uri(model.document().file_path.as_deref().unwrap());
+        let edit = lsp_types::WorkspaceEdit {
+            changes: Some(std::collections::HashMap::from([(
+                uri,
+                vec![lsp_types::TextEdit {
+                    range: lsp_types::Range {
+                        start: lsp_types::Position {
+                            line: 0,
+                            character: 0,
+                        },
+                        end: lsp_types::Position {
+                            line: 0,
+                            character: 2,
+                        },
+                    },
+                    new_text: "FN".to_owned(),
+                }],
+            )])),
+            document_changes: None,
+            change_annotations: None,
+        };
+        let mut item = action("Shout", true);
+        item.edit = Some(Box::new(edit));
+        model.ui.code_action_list = Some(vec![item]);
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::CodeActions));
+
+        update_lsp(&mut model, LspMsg::ActivateCodeAction { index: 0 });
+
+        assert_eq!(model.document().buffer.to_string(), "FN main() {}\n");
+        assert!(model.ui.cursor_overlay.is_none());
+        assert!(model.ui.code_action_list.is_none());
+        assert_eq!(
+            model.ui.transient_message.as_ref().map(|t| t.text.as_str()),
+            Some("Applied: Shout")
+        );
+    }
+
+    #[test]
+    fn activating_a_code_action_with_a_command_emits_execute_command() {
+        let (_dir, mut model) = model_with_file();
+        let document_id = model.document().id.unwrap();
+        let mut item = action("Run", false);
+        item.command = Some(lsp_types::Command::new(
+            "Run".to_owned(),
+            "server.doIt".to_owned(),
+            Some(vec![serde_json::json!(1)]),
+        ));
+        model.ui.code_action_list = Some(vec![item]);
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::CodeActions));
+
+        let cmd = update_lsp(&mut model, LspMsg::ActivateCodeAction { index: 0 });
+
+        let Some(Cmd::Batch(cmds)) = cmd else {
+            panic!("expected a batch");
+        };
+        assert!(cmds.iter().any(|c| matches!(
+            c,
+            Cmd::LspExecuteCommand { document_id: id, command, arguments }
+                if *id == document_id
+                    && command == "server.doIt"
+                    && *arguments == Some(vec![serde_json::json!(1)])
+        )));
+        assert!(model.ui.cursor_overlay.is_none());
     }
 }

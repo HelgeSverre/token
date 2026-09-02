@@ -461,6 +461,9 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::RenameSymbol => {
             crate::update::update_lsp(model, crate::messages::LspMsg::RenameSymbol)
         }
+        CommandId::ShowCodeActions => {
+            crate::update::update_lsp(model, crate::messages::LspMsg::ShowCodeActions)
+        }
         // Both commands open the same cursor-anchored popup for now — a
         // docked usages panel is a later feature (see LocationItem's doc
         // comment).

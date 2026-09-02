@@ -4221,3 +4221,30 @@ fn a_range_prepare_rename_reply_reads_the_placeholder_from_the_buffer() {
     let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
     handle.kill();
 }
+
+/// `Cmd::LspExecuteCommand` sends `workspace/executeCommand` to the server
+/// that owns the document, tracked in its pending map like any request.
+#[test]
+fn execute_command_sends_workspace_execute_command_to_the_documents_server() {
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    let doc_id = app.model.document().id.unwrap();
+    let server_id = LspServerId::from("rust-analyzer");
+    let root = PathBuf::from("/tmp/proj-exec");
+    let uri = lsp::path_to_uri(&PathBuf::from("/tmp/proj-exec/main.rs"));
+    install_open_document(&mut app, doc_id, &server_id, &root, uri);
+    let handle = spawn_fake_handle(&server_id);
+    let probe_id = handle.pending.lock().unwrap().begin("probe");
+    app.lsp
+        .servers
+        .insert((server_id.clone(), root.clone()), handle);
+
+    app.execute_lsp_command(doc_id, "server.doIt".to_owned(), None);
+
+    let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+    let entry = handle.pending.lock().unwrap().resolve(probe_id + 1);
+    assert_eq!(
+        entry.map(|e| e.method).as_deref(),
+        Some("workspace/executeCommand")
+    );
+    handle.kill();
+}
