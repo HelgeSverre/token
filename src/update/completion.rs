@@ -37,6 +37,7 @@ use super::document::word_start_before;
 use super::editor::cursors_in_reverse_order;
 use super::lsp::schedule_lsp_did_change;
 use super::schedule_syntax_parse;
+use super::text_edits::{plan_text_edits, shift_at, PlannedEdit};
 
 /// Word chars a user must have typed before the menu auto-opens. A single
 /// char opening the popup read as noise (every prose word flashed it);
@@ -641,14 +642,6 @@ fn finish_accept(
     Some(Cmd::Batch(cmds))
 }
 
-/// One buffer mutation planned against the pristine buffer. Applied in
-/// descending `start` order so earlier offsets stay valid throughout.
-struct PlannedEdit {
-    start: usize,
-    deleted: String,
-    inserted: String,
-}
-
 /// LSP accept with protocol edits. `textEdit`/`additionalTextEdits` carry
 /// absolute document ranges, so unlike [`apply_text_accept`] this plans
 /// every mutation against the pristine buffer up front:
@@ -697,53 +690,22 @@ fn apply_lsp_accept(model: &mut AppModel, data: &LspInsert) -> Option<Cmd> {
         .chars()
         .collect();
 
-    let mut additional: Vec<(usize, usize, String, String)> = data
-        .additional_text_edits
-        .iter()
-        .filter_map(|(range, new_text)| {
-            if crate::lsp::position::range_vanished(doc, *range) {
-                return None;
-            }
-            let start_pos = crate::lsp::lsp_to_position(doc, range.start);
-            let end_pos = crate::lsp::lsp_to_position(doc, range.end);
-            let start = doc.cursor_to_offset(start_pos.line, start_pos.column);
-            let end = doc.cursor_to_offset(end_pos.line, end_pos.column);
-            // Drop anything touching the primary range, pure-insert points
-            // included (`start == end`): the spec forbids servers sending
-            // overlaps, but a violation here must degrade to "import lost",
-            // not swallowed characters and a misaligned undo. Boundary
-            // contact is fine — an insert exactly at either edge shifts
-            // with the primary op via `shift_at`.
-            if start < cursor_offset && end > primary_start {
-                return None;
-            }
-            let deleted: String = doc.buffer.slice(start..end).chars().collect();
-            Some((start, end, deleted, new_text.clone()))
-        })
-        .collect();
-    // Descending application order; stable so equal starts keep spec order.
-    additional.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
-
-    let planned: Vec<PlannedEdit> = additional
+    // Drop anything touching the primary range, pure-insert points
+    // included (`start == end`): the spec forbids servers sending
+    // overlaps, but a violation here must degrade to "import lost", not
+    // swallowed characters and a misaligned undo. Boundary contact is
+    // fine — an insert exactly at either edge shifts with the primary op
+    // via `shift_at`.
+    let planned: Vec<PlannedEdit> = plan_text_edits(doc, &data.additional_text_edits)
         .into_iter()
-        .map(|(start, _end, deleted, inserted)| PlannedEdit {
-            start,
-            deleted,
-            inserted,
-        })
+        .filter(|edit| !(edit.start < cursor_offset && edit.end() > primary_start))
         .collect();
 
     // Net shift each position experiences from additional edits entirely
     // before it — used to move the primary range and every cursor into the
     // post-additional coordinate space.
-    let shift_at = |offset: usize| -> i64 {
-        planned
-            .iter()
-            .filter(|edit| edit.start + edit.deleted.chars().count() <= offset)
-            .map(|edit| edit.inserted.chars().count() as i64 - edit.deleted.chars().count() as i64)
-            .sum()
-    };
-    let shifted = |offset: usize| -> usize { (offset as i64 + shift_at(offset)).max(0) as usize };
+    let shifted =
+        |offset: usize| -> usize { (offset as i64 + shift_at(&planned, offset)).max(0) as usize };
 
     let pristine_offsets: Vec<usize> = cursors_before
         .iter()
@@ -754,10 +716,7 @@ fn apply_lsp_accept(model: &mut AppModel, data: &LspInsert) -> Option<Cmd> {
     // ---- Application phase (descending positions) ----
     let mut operations = Vec::with_capacity(planned.len() + 1);
     for edit in &planned {
-        model
-            .document_mut()
-            .buffer
-            .remove(edit.start..edit.start + edit.deleted.chars().count());
+        model.document_mut().buffer.remove(edit.start..edit.end());
         model
             .document_mut()
             .buffer

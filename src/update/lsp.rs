@@ -688,7 +688,7 @@ fn open_location_list_popup(
 /// docs) syscalls per publish. `uri_to_path` is a pure string decode (no
 /// syscall); filtering on file name first shrinks the canonicalize calls
 /// to the (normally 0-or-1) documents that could plausibly match.
-fn find_document_by_uri(model: &AppModel, uri: &lsp_types::Uri) -> Option<DocumentId> {
+pub(crate) fn find_document_by_uri(model: &AppModel, uri: &lsp_types::Uri) -> Option<DocumentId> {
     let target_name = crate::lsp::uri_to_path(uri)?.file_name()?.to_owned();
     let fast_path = model
         .editor_area

@@ -19,6 +19,7 @@ pub mod problems;
 mod syntax;
 mod terminal;
 mod text_edit;
+pub(crate) mod text_edits;
 mod ui;
 mod workspace;
 
