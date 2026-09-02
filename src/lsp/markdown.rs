@@ -119,8 +119,11 @@ fn push_inline(out: &mut StyledText, line: &str) {
         }
         if c == '*' || c == '_' {
             let run = chars[i..].iter().take_while(|&&x| x == c).count().min(2);
+            // An opener is left-flanking: not followed by whitespace (so a
+            // `* bullet` never opens emphasis) and, for `_`, not intraword.
+            let followed_by_space = chars.get(i + run).is_none_or(|c| c.is_whitespace());
             let word_bound_open = c == '*' || i == 0 || !chars[i - 1].is_alphanumeric();
-            if word_bound_open {
+            if word_bound_open && !followed_by_space {
                 if let Some(close) = find_emphasis_close(&chars, i + run, c, run) {
                     if close > i + run {
                         flush(out, &mut literal);
@@ -284,6 +287,13 @@ mod tests {
                 (" b", SpanStyle::Strong),
             ]
         );
+    }
+
+    #[test]
+    fn a_bullet_star_never_opens_emphasis() {
+        let t = markdown_to_styled("* first item with *em*\n* second");
+        assert_eq!(t.text, "* first item with em\n* second");
+        assert_eq!(spans(&t), vec![("em", SpanStyle::Strong)]);
     }
 
     #[test]
