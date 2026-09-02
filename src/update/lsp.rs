@@ -626,6 +626,7 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             revision,
             selected,
             detail,
+            documentation,
             additional_text_edits,
         } => super::completion::finish_deferred_accept(
             model,
@@ -633,6 +634,7 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             revision,
             selected,
             detail,
+            documentation,
             additional_text_edits,
         ),
         LspMsg::ApplyEditRequested {

@@ -1294,6 +1294,7 @@ fn a_resolve_past_its_deadline_unblocks_the_accept_with_no_extras() {
             document_id: doc_id,
             revision: 1,
             selected: 0,
+            purpose: ResolvePurpose::Accept,
         },
     );
     app.lsp.resolve.arm_deadline((server_id, root, 4));
@@ -1306,6 +1307,100 @@ fn a_resolve_past_its_deadline_unblocks_the_accept_with_no_extras() {
 
     assert!(app.lsp.resolve.requests.is_empty());
     assert!(app.lsp.resolve.by_doc.is_empty());
+}
+
+/// A docs-purpose resolve that times out is dropped silently: no
+/// `CompletionItemResolved` reaches the menu (the item stays unresolved
+/// so the next selection change may retry), and the slot is cleaned up.
+#[test]
+fn a_docs_resolve_past_its_deadline_is_dropped_silently() {
+    use token::completion::menu::{
+        CompletionMenuState, LspInsert, MenuInsert, MenuItem, MenuItemKind, MenuSourceId,
+    };
+
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    let doc_id = app.model.document().id.unwrap();
+    let revision = app.model.document().revision;
+    let server_id = LspServerId::from("rust-analyzer");
+    let root = PathBuf::from("/tmp/proj-docs-timeout");
+    app.model.ui.completion_menu = Some(CompletionMenuState {
+        document_id: doc_id,
+        revision,
+        query_start: token::model::Cursor::at(0, 0),
+        query: String::new(),
+        items: vec![MenuItem {
+            label: "foo".to_owned(),
+            filter_text: "foo".to_owned(),
+            insert: MenuInsert::Lsp(Box::new(LspInsert {
+                text: "foo".to_owned(),
+                server_id: server_id.clone(),
+                root: root.clone(),
+                raw: std::sync::Arc::new(serde_json::json!({ "label": "foo" })),
+                can_resolve: true,
+                resolved: false,
+                text_edit: None,
+                additional_text_edits: Vec::new(),
+                documentation: None,
+                caret_offset: None,
+            })),
+            kind: MenuItemKind::Function,
+            source: MenuSourceId::Lsp,
+            detail: None,
+            sort_text: None,
+        }],
+        filtered: vec![(0, 0, Vec::new())],
+        is_incomplete: false,
+        pending_resolve: None,
+    });
+    app.model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+        token::model::CursorOverlayKind::Completion,
+    ));
+    app.lsp.resolve.insert(
+        (server_id.clone(), root.clone(), 4),
+        doc_id,
+        PendingResolve {
+            document_id: doc_id,
+            revision,
+            selected: 0,
+            purpose: ResolvePurpose::Docs,
+        },
+    );
+    app.lsp.resolve.arm_deadline((server_id, root, 4));
+    for deadline in app.lsp.resolve.deadlines.values_mut() {
+        *deadline = std::time::Instant::now() - Duration::from_secs(1);
+    }
+
+    app.check_lsp_resolve_deadlines();
+
+    assert!(app.lsp.resolve.requests.is_empty());
+    let menu = app.model.ui.completion_menu.as_ref().unwrap();
+    let MenuInsert::Lsp(data) = &menu.items[0].insert else {
+        panic!("expected LSP item");
+    };
+    assert!(
+        !data.resolved,
+        "a silent docs timeout must not mark the item resolved"
+    );
+}
+
+#[test]
+fn cancel_completion_drops_the_resolve_debounce() {
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    let doc_id = app.model.document().id.unwrap();
+    app.process_cmd(Cmd::LspScheduleResolve {
+        document_id: doc_id,
+        revision: 1,
+        server_id: LspServerId::from("rust-analyzer"),
+        root: PathBuf::from("/tmp/proj-cancel-docs"),
+        raw_item: serde_json::json!({ "label": "foo" }),
+        selected: 0,
+    });
+    assert_eq!(app.lsp.resolve_debounces.len(), 1);
+
+    app.process_cmd(Cmd::LspCancelCompletion {
+        document_id: doc_id,
+    });
+    assert!(app.lsp.resolve_debounces.is_empty());
 }
 
 /// An empty `textDocument/definition` reply while the server is still

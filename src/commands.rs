@@ -777,6 +777,16 @@ impl Damage {
 // Side-Effect Commands (returned from update)
 // ============================================================================
 
+/// Why a `completionItem/resolve` was issued — see
+/// `Cmd::LspResolveCompletionItem`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolvePurpose {
+    /// Documentation for the selected row; a timeout is silent.
+    Docs,
+    /// A deferred accept is blocked on it; a timeout unblocks the accept.
+    Accept,
+}
+
 /// Commands returned by update functions
 #[derive(Debug, Clone, Default)]
 pub enum Cmd {
@@ -1002,12 +1012,28 @@ pub enum Cmd {
     /// be answered into a closed menu and dropped anyway.
     LspCancelCompletion { document_id: DocumentId },
     /// `completionItem/resolve` for the raw item the selected menu row was
-    /// converted from — the deferred half of accept-when-resolve-support-
-    /// is-advertised (ts-ls returns minimal items whose auto-import
-    /// `additionalTextEdits` only exist after resolve; skipping resolve
-    /// silently drops imports). `selected` echoes the menu selection so a
-    /// resolution whose selection has since moved is dropped.
+    /// converted from. `Accept` purpose is the deferred half of
+    /// accept-when-resolve-support-is-advertised (ts-ls returns minimal
+    /// items whose auto-import `additionalTextEdits` only exist after
+    /// resolve; skipping resolve silently drops imports) and arms the
+    /// unblock timeout; `Docs` purpose fetches documentation for the
+    /// selected row and times out silently. `selected` echoes the menu
+    /// selection so a resolution whose selection has since moved is
+    /// dropped.
     LspResolveCompletionItem {
+        document_id: DocumentId,
+        revision: u64,
+        server_id: crate::lsp::LspServerId,
+        root: PathBuf,
+        raw_item: serde_json::Value,
+        selected: usize,
+        purpose: ResolvePurpose,
+    },
+    /// Arm (or reset) the per-document debounce for a `Docs`-purpose
+    /// `LspResolveCompletionItem` — emitted on every selection change so
+    /// arrowing through the list coalesces into one resolve. Dropped by
+    /// `LspCancelCompletion` and superseded by any direct resolve.
+    LspScheduleResolve {
         document_id: DocumentId,
         revision: u64,
         server_id: crate::lsp::LspServerId,
@@ -1133,6 +1159,7 @@ impl Cmd {
             Cmd::LspScheduleCompletion { .. } => Damage::Areas(vec![]),
             Cmd::LspCancelCompletion { .. } => Damage::Areas(vec![]),
             Cmd::LspResolveCompletionItem { .. } => Damage::Areas(vec![]),
+            Cmd::LspScheduleResolve { .. } => Damage::Areas(vec![]),
             // No immediate visual effect; a `ServerStateChanged` (or the
             // batched `Cmd::Redraw`/`redraw_status_bar` these are always
             // paired with at the call site) requests its own redraw.

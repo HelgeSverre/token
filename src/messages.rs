@@ -1204,16 +1204,18 @@ pub enum LspMsg {
         item: Option<Box<lsp_types::CompletionItem>>,
         abandoned: bool,
     },
-    /// Runtime -> update: a deferred accept's resolve round trip finished
-    /// (or timed out / failed — the extra fields are then empty and accept
-    /// proceeds with what the original item carried). `selected` echoes
-    /// the menu selection the resolve was issued for; `update/completion.rs`
-    /// drops the whole thing if the user has since selected something else.
+    /// Runtime -> update: a `completionItem/resolve` round trip finished
+    /// (or, for a deferred accept, timed out / failed — the extra fields
+    /// are then empty and accept proceeds with what the original item
+    /// carried). `selected` echoes the menu selection the resolve was
+    /// issued for; `update/completion.rs` merges the fields into that item
+    /// and applies the accept only if one is still pending on it.
     CompletionItemResolved {
         document_id: crate::model::editor_area::DocumentId,
         revision: u64,
         selected: usize,
         detail: Option<String>,
+        documentation: Option<String>,
         additional_text_edits: Vec<(lsp_types::Range, String)>,
     },
     /// Worker -> update: the server asked us to apply a `WorkspaceEdit`

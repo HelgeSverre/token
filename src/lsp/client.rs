@@ -1279,7 +1279,7 @@ fn parse_hover_result(result: Option<&Value>) -> Option<String> {
 /// string. `MarkupContent` respects its own `kind` (only markdown needs
 /// stripping); the deprecated `MarkedString` shapes are always markdown per
 /// the pre-3.0 spec.
-fn hover_contents_to_plain_text(contents: &lsp_types::HoverContents) -> String {
+pub(crate) fn hover_contents_to_plain_text(contents: &lsp_types::HoverContents) -> String {
     match contents {
         lsp_types::HoverContents::Scalar(marked) => marked_string_to_plain_text(marked),
         lsp_types::HoverContents::Array(items) => items
@@ -1308,7 +1308,7 @@ fn marked_string_to_plain_text(marked: &lsp_types::MarkedString) -> String {
 /// heading `#`s. Not a full markdown parser — good enough for the
 /// monospace hover card overlay-surface.md renders (v1 has no rich-text
 /// zones; see its `Zones` doc comment).
-fn markdown_to_plain_text(markdown: &str) -> String {
+pub(crate) fn markdown_to_plain_text(markdown: &str) -> String {
     let mut in_fence = false;
     markdown
         .lines()

@@ -21,7 +21,7 @@ use winit::window::Icon;
 use winit::window::{CursorIcon, Window};
 
 use token::cli::{StartupConfig, StartupMode};
-use token::commands::{Cmd, Damage, DamageArea};
+use token::commands::{Cmd, Damage, DamageArea, ResolvePurpose};
 use token::fs_watcher::{FileSystemEvent, FileSystemWatcher};
 use token::keymap::{
     keystroke_from_winit, load_default_keymap, Command, KeyAction, KeyContext, Keymap,
@@ -310,6 +310,11 @@ const COMPLETION_TIMEOUT: Duration = Duration::from_secs(10);
 /// Enter still works).
 const RESOLVE_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// Per-document debounce between "the menu selection changed" and the
+/// docs-purpose `completionItem/resolve` going out — arrowing through a
+/// list coalesces into one request for the row the user lands on.
+const RESOLVE_DEBOUNCE: Duration = Duration::from_millis(150);
+
 /// Per-document debounce between "the completion query changed" and the
 /// `textDocument/completion` request actually going out — typing-driven,
 /// unlike definition/hover's single-shot requests. Coalesces a burst of
@@ -395,13 +400,17 @@ struct LspManager {
     /// `check_lsp_completion_deadlines` (silently — completion never
     /// flashes a status transient).
     completion: FeatureSlot<PendingCompletion>,
-    /// In-flight `completionItem/resolve` requests (deferred accepts);
-    /// swept by `check_lsp_resolve_deadlines`, which emits an empty
-    /// `CompletionItemResolved` so the blocked accept applies anyway.
+    /// In-flight `completionItem/resolve` requests; swept by
+    /// `check_lsp_resolve_deadlines`, which emits an empty
+    /// `CompletionItemResolved` for `Accept`-purpose ones so the blocked
+    /// accept applies anyway (`Docs`-purpose ones just drop).
     resolve: FeatureSlot<PendingResolve>,
     /// Completion requests waiting out `COMPLETION_DEBOUNCE`, keyed by
     /// document. Fired by `check_lsp_completion_debounces`.
     completion_debounces: HashMap<token::model::editor_area::DocumentId, ScheduledCompletion>,
+    /// Docs-purpose resolves waiting out `RESOLVE_DEBOUNCE`, keyed by
+    /// document. Fired by `check_lsp_resolve_debounces`.
+    resolve_debounces: HashMap<token::model::editor_area::DocumentId, ScheduledResolve>,
     /// `(server_id, root)` pairs whose spawn attempt already reported
     /// `ServerState::Missing` — `ensure_lsp_server` skips these outright
     /// (design doc's "one-time transient, no error spam"). Without this,
@@ -485,6 +494,7 @@ struct PendingResolve {
     document_id: token::model::editor_area::DocumentId,
     revision: u64,
     selected: usize,
+    purpose: ResolvePurpose,
 }
 
 impl PendingRequest for PendingResolve {
@@ -501,6 +511,17 @@ struct ScheduledCompletion {
     position: lsp_types::Position,
     revision: u64,
     trigger_character: Option<String>,
+    deadline: Instant,
+}
+
+/// A docs-purpose resolve waiting out `RESOLVE_DEBOUNCE`, armed by
+/// `Cmd::LspScheduleResolve` — same lifecycle as `ScheduledCompletion`.
+struct ScheduledResolve {
+    revision: u64,
+    server_id: LspServerId,
+    root: PathBuf,
+    raw_item: serde_json::Value,
+    selected: usize,
     deadline: Instant,
 }
 
@@ -718,6 +739,7 @@ impl LspManager {
             completion: FeatureSlot::new(COMPLETION_TIMEOUT),
             resolve: FeatureSlot::new(RESOLVE_TIMEOUT),
             completion_debounces: HashMap::new(),
+            resolve_debounces: HashMap::new(),
             missing_servers: std::collections::HashSet::new(),
         }
     }
@@ -2410,6 +2432,7 @@ impl App {
                 // request (its late reply is consumed and discarded by the
                 // interception pass; the menu it was for is gone).
                 self.lsp.completion_debounces.remove(&document_id);
+                self.lsp.resolve_debounces.remove(&document_id);
                 if let Some(old_key) = self.lsp.completion.supersede(document_id) {
                     self.cancel_lsp_request(&old_key);
                 }
@@ -2421,6 +2444,7 @@ impl App {
                 root,
                 raw_item,
                 selected,
+                purpose,
             } => {
                 self.request_lsp_resolve(
                     document_id,
@@ -2429,6 +2453,27 @@ impl App {
                     root,
                     raw_item,
                     selected,
+                    purpose,
+                );
+            }
+            Cmd::LspScheduleResolve {
+                document_id,
+                revision,
+                server_id,
+                root,
+                raw_item,
+                selected,
+            } => {
+                self.lsp.resolve_debounces.insert(
+                    document_id,
+                    ScheduledResolve {
+                        revision,
+                        server_id,
+                        root,
+                        raw_item,
+                        selected,
+                        deadline: Instant::now() + RESOLVE_DEBOUNCE,
+                    },
                 );
             }
             Cmd::LspDidOpenOnServer {
@@ -2901,12 +2946,19 @@ impl App {
                             .collect()
                     })
                     .unwrap_or_default();
+                let documentation = item.as_ref().and_then(|resolved| {
+                    resolved
+                        .documentation
+                        .as_ref()
+                        .and_then(token::completion::lsp::documentation_to_plain_text)
+                });
                 let detail = item.and_then(|resolved| resolved.detail);
                 Some(Msg::Lsp(LspMsg::CompletionItemResolved {
                     document_id: pending.document_id,
                     revision: pending.revision,
                     selected: pending.selected,
                     detail,
+                    documentation,
                     additional_text_edits,
                 }))
             })
@@ -3417,6 +3469,7 @@ impl App {
         // A closed document's menu is gone; a pending completion debounce
         // or in-flight request for it would be answered into nothing.
         self.lsp.completion_debounces.remove(&document_id);
+        self.lsp.resolve_debounces.remove(&document_id);
         let _ = self.lsp.completion.supersede(document_id);
         let _ = self.lsp.resolve.supersede(document_id);
         let Some(state) = self.lsp.open_documents.remove(&document_id) else {
@@ -3785,12 +3838,15 @@ impl App {
         );
     }
 
-    /// `completionItem/resolve` for a deferred accept. Unlike the other
-    /// feature requests this isn't position-based, so it gates manually
-    /// (server still running + resolve advertised) instead of through
-    /// `send_lsp_feature_request`. Every failure emits an empty
+    /// `completionItem/resolve`. Unlike the other feature requests this
+    /// isn't position-based, so it gates manually (server still running +
+    /// resolve advertised) instead of through `send_lsp_feature_request`.
+    /// For an `Accept` purpose every failure emits an empty
     /// `CompletionItemResolved` so the blocked accept applies immediately
-    /// rather than hanging until `RESOLVE_TIMEOUT`.
+    /// rather than hanging until `RESOLVE_TIMEOUT`; a `Docs` purpose fails
+    /// silently. Any pending docs debounce for the document is dropped —
+    /// this request supersedes it.
+    #[allow(clippy::too_many_arguments)]
     fn request_lsp_resolve(
         &mut self,
         document_id: token::model::editor_area::DocumentId,
@@ -3799,7 +3855,9 @@ impl App {
         root: PathBuf,
         raw_item: serde_json::Value,
         selected: usize,
+        purpose: ResolvePurpose,
     ) {
+        self.lsp.resolve_debounces.remove(&document_id);
         if let Some(old_key) = self.lsp.resolve.supersede(document_id) {
             self.cancel_lsp_request(&old_key);
         }
@@ -3809,27 +3867,25 @@ impl App {
             .get(&(server_id.clone(), root.clone()))
             .and_then(|handle| handle.capabilities_snapshot())
             .is_some_and(|caps| lsp::client::supports_completion_resolve(&caps));
-        if !can_resolve {
-            self.emit_lsp_msg(Msg::Lsp(LspMsg::CompletionItemResolved {
-                document_id,
-                revision,
-                selected,
-                detail: None,
-                additional_text_edits: Vec::new(),
-            }));
-            return;
-        }
         // Flush-before-request doesn't apply (resolve sees no text), but
         // the handle re-lookup pattern does — the flush-free path can't
         // drop the handle, so one lookup suffices.
-        let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
-            self.emit_lsp_msg(Msg::Lsp(LspMsg::CompletionItemResolved {
-                document_id,
-                revision,
-                selected,
-                detail: None,
-                additional_text_edits: Vec::new(),
-            }));
+        let handle = self
+            .lsp
+            .servers
+            .get(&(server_id.clone(), root.clone()))
+            .filter(|_| can_resolve);
+        let Some(handle) = handle else {
+            if purpose == ResolvePurpose::Accept {
+                self.emit_lsp_msg(Msg::Lsp(LspMsg::CompletionItemResolved {
+                    document_id,
+                    revision,
+                    selected,
+                    detail: None,
+                    documentation: None,
+                    additional_text_edits: Vec::new(),
+                }));
+            }
             return;
         };
         let request_id = handle.begin_request("completionItem/resolve", raw_item);
@@ -3841,6 +3897,7 @@ impl App {
                 document_id,
                 revision,
                 selected,
+                purpose,
             },
         );
         self.lsp.resolve.arm_deadline(key);
@@ -4042,21 +4099,56 @@ impl App {
         self.sweep_lsp_feature_deadlines::<PendingCompletion>();
     }
 
-    /// Resolve's abandonment sweep. Unlike completion, this one MUST emit:
-    /// an accept is blocked on the round trip, and letting the deadline
-    /// pass silently would leave Enter dead until Escape. The empty
-    /// outcome unblocks the accept with what the item already carried.
+    /// Fires due docs-purpose resolves — `check_lsp_completion_debounces`'s
+    /// twin.
+    fn check_lsp_resolve_debounces(&mut self) {
+        if self.lsp.resolve_debounces.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        let due: Vec<token::model::editor_area::DocumentId> = self
+            .lsp
+            .resolve_debounces
+            .iter()
+            .filter(|(_, scheduled)| now >= scheduled.deadline)
+            .map(|(doc, _)| *doc)
+            .collect();
+        for document_id in due {
+            let Some(scheduled) = self.lsp.resolve_debounces.remove(&document_id) else {
+                continue;
+            };
+            self.request_lsp_resolve(
+                document_id,
+                scheduled.revision,
+                scheduled.server_id,
+                scheduled.root,
+                scheduled.raw_item,
+                scheduled.selected,
+                ResolvePurpose::Docs,
+            );
+        }
+    }
+
+    /// Resolve's abandonment sweep. Unlike completion, an `Accept`-purpose
+    /// expiry MUST emit: an accept is blocked on the round trip, and
+    /// letting the deadline pass silently would leave Enter dead until
+    /// Escape. The empty outcome unblocks the accept with what the item
+    /// already carried. A `Docs`-purpose expiry just drops.
     fn check_lsp_resolve_deadlines(&mut self) {
         if self.lsp.resolve.is_empty_deadlines() {
             return;
         }
         for (key, pending) in self.lsp.resolve.take_due(Instant::now()) {
             self.cancel_lsp_request(&key);
+            if pending.purpose != ResolvePurpose::Accept {
+                continue;
+            }
             self.emit_lsp_msg(Msg::Lsp(LspMsg::CompletionItemResolved {
                 document_id: pending.document_id,
                 revision: pending.revision,
                 selected: pending.selected,
                 detail: None,
+                documentation: None,
                 additional_text_edits: Vec::new(),
             }));
         }
@@ -4277,6 +4369,7 @@ impl ApplicationHandler for App {
         self.check_lsp_references_deadlines();
         self.check_lsp_completion_debounces();
         self.check_lsp_completion_deadlines();
+        self.check_lsp_resolve_debounces();
         self.check_lsp_resolve_deadlines();
         if self.check_hover_dwell() {
             needs_redraw = true;
@@ -4343,6 +4436,15 @@ impl ApplicationHandler for App {
         if let Some(earliest_deadline) = self
             .lsp
             .completion_debounces
+            .values()
+            .map(|scheduled| scheduled.deadline)
+            .min()
+        {
+            next_wake = next_wake.min(earliest_deadline);
+        }
+        if let Some(earliest_deadline) = self
+            .lsp
+            .resolve_debounces
             .values()
             .map(|scheduled| scheduled.deadline)
             .min()

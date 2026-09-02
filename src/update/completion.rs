@@ -8,8 +8,9 @@
 //!   `DocumentMsg` to open/refresh/dismiss the menu as the user types.
 //! - [`merge_lsp_completion`] folds an async `textDocument/completion`
 //!   response into the open menu (items already converted runtime-side).
-//! - [`finish_deferred_accept`] applies an accept that was blocked on its
-//!   `completionItem/resolve` round trip.
+//! - [`finish_deferred_accept`] merges a `completionItem/resolve` reply into
+//!   its item (documentation for the docs card, auto-import edits) and
+//!   applies the accept that was blocked on it, if any.
 //!
 //! Words/snippets stay synchronous sub-millisecond rope scans collected
 //! inline (autocomplete.md: "no worker and no debounce for v1 menu
@@ -19,7 +20,7 @@
 //! locally on every keystroke, replaced wholesale when a fresh response
 //! lands.
 
-use crate::commands::Cmd;
+use crate::commands::{Cmd, ResolvePurpose};
 use crate::completion::menu::{
     filter_and_sort, CompletionMenuState, LspInsert, MenuInsert, MenuSourceId,
 };
@@ -364,11 +365,39 @@ fn open_or_refresh(
     if !lsp_capable(model) {
         return None;
     }
-    Some(Cmd::LspScheduleCompletion {
+    let mut cmds = vec![Cmd::LspScheduleCompletion {
         document_id,
         position,
         revision,
         trigger_character: trigger_character.map(String::from),
+    }];
+    cmds.extend(schedule_docs_resolve(model));
+    Some(batch_redraw(cmds))
+}
+
+/// `Cmd::LspScheduleResolve` for the selected row when it is an LSP item
+/// that still needs its resolve round trip (documentation typically only
+/// arrives on resolve). `None` while an accept's resolve is in flight —
+/// a docs request must never supersede it.
+fn schedule_docs_resolve(model: &AppModel) -> Option<Cmd> {
+    let state = model.ui.completion_menu.as_ref()?;
+    if state.pending_resolve.is_some() {
+        return None;
+    }
+    let selected = model.ui.cursor_overlay?.selected;
+    let MenuInsert::Lsp(data) = &state.selected_item(selected)?.insert else {
+        return None;
+    };
+    if !data.can_resolve || data.resolved {
+        return None;
+    }
+    Some(Cmd::LspScheduleResolve {
+        document_id: state.document_id,
+        revision: state.revision,
+        server_id: data.server_id.clone(),
+        root: data.root.clone(),
+        raw_item: (*data.raw).clone(),
+        selected,
     })
 }
 
@@ -436,7 +465,9 @@ pub(crate) fn merge_lsp_completion(
         overlay.selected = overlay.selected.min(total - 1);
         overlay.scroll = overlay.scroll.min(overlay.selected);
     }
-    Some(Cmd::Redraw)
+    let mut cmds = vec![Cmd::Redraw];
+    cmds.extend(schedule_docs_resolve(model));
+    Some(batch_redraw(cmds))
 }
 
 fn move_selection(model: &mut AppModel, delta: i32) -> Option<Cmd> {
@@ -467,7 +498,9 @@ fn move_selection(model: &mut AppModel, delta: i32) -> Option<Cmd> {
         state.scroll,
     )
     .scroll_offset;
-    Some(Cmd::Redraw)
+    let mut cmds = vec![Cmd::Redraw];
+    cmds.extend(schedule_docs_resolve(model));
+    Some(batch_redraw(cmds))
 }
 
 /// Accept the selected item at every cursor. Guarded by the revision
@@ -525,6 +558,7 @@ fn accept_selected(model: &mut AppModel) -> Option<Cmd> {
                     root,
                     raw_item,
                     selected,
+                    purpose: ResolvePurpose::Accept,
                 },
                 Cmd::Redraw,
             ]));
@@ -767,51 +801,83 @@ fn apply_lsp_accept(model: &mut AppModel, data: &LspInsert) -> Option<Cmd> {
     finish_accept(model, operations, cursors_before)
 }
 
-/// Runtime -> update: a deferred accept's `completionItem/resolve` round
-/// trip finished (or timed out / failed — extras then empty). Folds the
-/// resolved fields into the item and immediately applies the blocked
-/// accept. Dropped unless the menu is still open, at the same revision,
-/// with the same selection still pending.
+/// Runtime -> update: a `completionItem/resolve` round trip finished (or,
+/// for a deferred accept, timed out / failed — extras then empty). Folds
+/// the resolved fields into the item, then applies the accept blocked on
+/// it, if any (a docs-purpose resolve just updates the card; the item is
+/// marked resolved either way, so a later Enter needs no second trip).
 pub(crate) fn finish_deferred_accept(
     model: &mut AppModel,
     document_id: crate::model::editor_area::DocumentId,
     revision: u64,
     selected: usize,
     detail: Option<String>,
+    documentation: Option<String>,
     additional_text_edits: Vec<(lsp_types::Range, String)>,
 ) -> Option<Cmd> {
+    if !merge_resolved_item(
+        model,
+        document_id,
+        revision,
+        selected,
+        detail,
+        documentation,
+        additional_text_edits,
+    ) {
+        return None;
+    }
     let insert = {
         let state = model.ui.completion_menu.as_mut()?;
-        if state.document_id != document_id
-            || state.revision != revision
-            || state.pending_resolve != Some(selected)
-        {
-            return None;
+        if state.pending_resolve != Some(selected) {
+            return Some(Cmd::Redraw);
         }
         state.pending_resolve = None;
-        let Some((_, idx, _)) = state.filtered.get(selected) else {
-            return Some(Cmd::Redraw);
-        };
-        let item = &mut state.items[*idx];
-        if let Some(detail) = detail {
-            item.detail = Some(detail);
-        }
-        if let MenuInsert::Lsp(data) = &mut item.insert {
-            data.resolved = true;
-            // The resolved item is the whole item: servers that sent edits
-            // up front send them again, so replace rather than append. An
-            // empty reply (timeout/failure) keeps what was known.
-            if !additional_text_edits.is_empty() {
-                data.additional_text_edits = additional_text_edits;
-            }
-        }
-        item.insert.clone()
+        state.selected_item(selected)?.insert.clone()
     };
-
     match &insert {
         MenuInsert::Text(text) => apply_text_accept(model, text),
         MenuInsert::Lsp(data) => apply_lsp_accept(model, data),
     }
+}
+
+/// Merges a resolve reply into `items[filtered[selected]]` and marks it
+/// resolved. `false` when the menu is gone, on another document/revision,
+/// or `selected` no longer indexes a row.
+fn merge_resolved_item(
+    model: &mut AppModel,
+    document_id: crate::model::editor_area::DocumentId,
+    revision: u64,
+    selected: usize,
+    detail: Option<String>,
+    documentation: Option<String>,
+    additional_text_edits: Vec<(lsp_types::Range, String)>,
+) -> bool {
+    let Some(state) = model.ui.completion_menu.as_mut() else {
+        return false;
+    };
+    if state.document_id != document_id || state.revision != revision {
+        return false;
+    }
+    let Some((_, idx, _)) = state.filtered.get(selected) else {
+        return false;
+    };
+    let item = &mut state.items[*idx];
+    if let Some(detail) = detail {
+        item.detail = Some(detail);
+    }
+    if let MenuInsert::Lsp(data) = &mut item.insert {
+        data.resolved = true;
+        if let Some(documentation) = documentation {
+            data.documentation = Some(documentation);
+        }
+        // The resolved item is the whole item: servers that sent edits
+        // up front send them again, so replace rather than append. An
+        // empty reply (timeout/failure) keeps what was known.
+        if !additional_text_edits.is_empty() {
+            data.additional_text_edits = additional_text_edits;
+        }
+    }
+    true
 }
 
 #[cfg(test)]
@@ -1159,6 +1225,7 @@ mod tests {
                 text_edit: None,
                 additional_text_edits: Vec::new(),
                 caret_offset: None,
+                documentation: None,
             })),
             kind: MenuItemKind::Function,
             source: MenuSourceId::Lsp,
@@ -1412,6 +1479,7 @@ mod tests {
                 revision: state.revision,
                 selected: 0,
                 detail: Some("fn valid_fn()".to_owned()),
+                documentation: None,
                 additional_text_edits: vec![],
             }),
         );
@@ -1462,6 +1530,7 @@ mod tests {
                 revision: state.revision,
                 selected: 0,
                 detail: None,
+                documentation: None,
                 additional_text_edits: vec![],
             }),
         );
@@ -1511,6 +1580,7 @@ mod tests {
                 revision,
                 selected: 0,
                 detail: None,
+                documentation: None,
                 additional_text_edits: vec![import],
             }),
         );
@@ -1594,6 +1664,7 @@ mod tests {
                 revision: state.revision,
                 selected: 7,
                 detail: None,
+                documentation: None,
                 additional_text_edits: vec![],
             }),
         );
@@ -1912,5 +1983,136 @@ mod tests {
             .items
             .iter()
             .any(|i| i.label == "other_doc"));
+    }
+
+    // ==== Docs resolve (documentation card) ====
+
+    fn open_menu_with_resolvable_item(model: &mut AppModel, label: &str) {
+        open_menu_with_lsp_response(model, &[label]);
+        let state = model.ui.completion_menu.as_mut().unwrap();
+        for item in &mut state.items {
+            if let MenuInsert::Lsp(data) = &mut item.insert {
+                data.can_resolve = true;
+            }
+        }
+    }
+
+    fn selected_lsp_data(model: &AppModel) -> LspInsert {
+        let state = model.ui.completion_menu.as_ref().unwrap();
+        let selected = model.ui.cursor_overlay.unwrap().selected;
+        match &state.selected_item(selected).unwrap().insert {
+            MenuInsert::Lsp(data) => (**data).clone(),
+            MenuInsert::Text(_) => panic!("expected an LSP item"),
+        }
+    }
+
+    fn cmd_contains(cmd: &Option<Cmd>, pred: impl Fn(&Cmd) -> bool) -> bool {
+        match cmd {
+            Some(Cmd::Batch(cmds)) => cmds.iter().any(pred),
+            Some(cmd) => pred(cmd),
+            None => false,
+        }
+    }
+
+    #[test]
+    fn a_docs_resolution_without_a_pending_accept_merges_docs_and_marks_resolved() {
+        let mut model = model_with_text("vector_value\n\n");
+        open_menu_with_resolvable_item(&mut model, "valid_fn");
+        select_item(&mut model, "valid_fn");
+        let state = model.ui.completion_menu.clone().unwrap();
+        assert_eq!(state.pending_resolve, None);
+        let selected = model.ui.cursor_overlay.unwrap().selected;
+
+        update(
+            &mut model,
+            Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
+                document_id: state.document_id,
+                revision: state.revision,
+                selected,
+                detail: Some("fn valid_fn()".to_owned()),
+                documentation: Some("Does the valid thing.".to_owned()),
+                additional_text_edits: vec![],
+            }),
+        );
+
+        assert!(model.ui.completion_menu.is_some(), "menu stays open");
+        assert_eq!(
+            model.document().buffer.to_string(),
+            "vector_value\nva\n",
+            "a docs resolve must not touch the buffer"
+        );
+        let data = selected_lsp_data(&model);
+        assert!(data.resolved);
+        assert_eq!(data.documentation.as_deref(), Some("Does the valid thing."));
+    }
+
+    #[test]
+    fn accept_after_a_docs_resolution_takes_the_fast_path() {
+        let mut model = model_with_text("vector_value\n\n");
+        open_menu_with_resolvable_item(&mut model, "valid_fn");
+        select_item(&mut model, "valid_fn");
+        let state = model.ui.completion_menu.clone().unwrap();
+        let selected = model.ui.cursor_overlay.unwrap().selected;
+        update(
+            &mut model,
+            Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
+                document_id: state.document_id,
+                revision: state.revision,
+                selected,
+                detail: None,
+                documentation: Some("docs".to_owned()),
+                additional_text_edits: vec![],
+            }),
+        );
+
+        let cmd = update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+        assert!(
+            !cmd_contains(&cmd, |c| matches!(c, Cmd::LspResolveCompletionItem { .. })),
+            "an already-resolved item must not resolve again: {cmd:?}"
+        );
+        assert!(model.ui.completion_menu.is_none(), "accept applied");
+        let line = model.document().get_line_cow(1).unwrap();
+        assert_eq!(line.trim_end_matches('\n'), "valid_fn");
+    }
+
+    #[test]
+    fn moving_onto_an_unresolved_resolvable_item_schedules_a_docs_resolve() {
+        let mut model = model_with_text("vector_value\n\n");
+        open_menu_with_lsp_response(&mut model, &["valid_a", "valid_b"]);
+        {
+            let state = model.ui.completion_menu.as_mut().unwrap();
+            for item in &mut state.items {
+                if let MenuInsert::Lsp(data) = &mut item.insert {
+                    data.can_resolve = true;
+                    // `valid_b` already resolved; `valid_a` not yet.
+                    data.resolved = item.label == "valid_b";
+                }
+            }
+        }
+        // Land on "valid_b" first so the next step moves onto "valid_a".
+        select_item(&mut model, "valid_b");
+        let onto_b = update(&mut model, Msg::Completion(CompletionMsg::MenuPrev));
+        assert!(
+            !selected_lsp_data(&model).resolved,
+            "test setup: MenuPrev must land on the unresolved item"
+        );
+        assert!(
+            cmd_contains(&onto_b, |c| matches!(
+                c,
+                Cmd::LspScheduleResolve { selected, .. }
+                    if *selected == model.ui.cursor_overlay.unwrap().selected
+            )),
+            "unresolved item must schedule a docs resolve: {onto_b:?}"
+        );
+
+        let onto_resolved = update(&mut model, Msg::Completion(CompletionMsg::MenuNext));
+        assert!(selected_lsp_data(&model).resolved);
+        assert!(
+            !cmd_contains(&onto_resolved, |c| matches!(
+                c,
+                Cmd::LspScheduleResolve { .. }
+            )),
+            "resolved item must not schedule: {onto_resolved:?}"
+        );
     }
 }

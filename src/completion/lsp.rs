@@ -64,6 +64,7 @@ fn completion_item_to_menu_item(
         kind,
         detail,
         sort_text,
+        documentation,
         ..
     } = item;
 
@@ -105,6 +106,7 @@ fn completion_item_to_menu_item(
             text_edit,
             additional_text_edits: Vec::new(),
             caret_offset,
+            documentation: documentation.as_ref().and_then(documentation_to_plain_text),
         })),
         kind: map_kind(kind),
         source: MenuSourceId::Lsp,
@@ -216,6 +218,22 @@ fn braced_end(chars: &[char], start: usize) -> Option<usize> {
     None
 }
 
+/// Flattens `completionItem.documentation` to plaintext the way the hover
+/// card does (`MarkupContent` per its `kind`; a bare string is plaintext
+/// per the spec). `None` when empty after trimming.
+pub fn documentation_to_plain_text(doc: &lsp_types::Documentation) -> Option<String> {
+    let text = match doc {
+        lsp_types::Documentation::String(s) => s.clone(),
+        lsp_types::Documentation::MarkupContent(markup) => match markup.kind {
+            lsp_types::MarkupKind::PlainText => markup.value.clone(),
+            lsp_types::MarkupKind::Markdown => {
+                crate::lsp::client::markdown_to_plain_text(&markup.value)
+            }
+        },
+    };
+    (!text.trim().is_empty()).then_some(text)
+}
+
 /// Maps the (open-ended) `CompletionItemKind` enum onto the menu's coarse
 /// badge kinds. Unlisted kinds fall into `Other` (`?` badge).
 fn map_kind(kind: Option<CompletionItemKind>) -> MenuItemKind {
@@ -321,6 +339,28 @@ mod tests {
         };
         assert_eq!(insert.raw["data"]["autoImport"], serde_json::json!(true));
         assert_eq!(insert.raw["label"], serde_json::json!("imported_fn"));
+    }
+
+    #[test]
+    fn documentation_is_flattened_to_plaintext() {
+        let mut item = base_item("f");
+        item.documentation = Some(lsp_types::Documentation::MarkupContent(
+            lsp_types::MarkupContent {
+                kind: lsp_types::MarkupKind::Markdown,
+                value: "**Bold** doc\n```rust\nfn f()\n```".to_owned(),
+            },
+        ));
+        let MenuInsert::Lsp(insert) = convert(item).unwrap().insert else {
+            panic!("expected LSP insert");
+        };
+        assert_eq!(insert.documentation.as_deref(), Some("Bold doc\nfn f()"));
+
+        let mut empty = base_item("g");
+        empty.documentation = Some(lsp_types::Documentation::String("  ".to_owned()));
+        let MenuInsert::Lsp(insert) = convert(empty).unwrap().insert else {
+            panic!("expected LSP insert");
+        };
+        assert!(insert.documentation.is_none());
     }
 
     #[test]

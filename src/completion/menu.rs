@@ -97,6 +97,10 @@ pub struct LspInsert {
     /// Char offset within the primary inserted text where the caret lands
     /// after accept — the snippet's `$0`. `None`: after the text.
     pub caret_offset: Option<usize>,
+    /// Plaintext `documentation` (markdown lightly stripped, same as the
+    /// hover card), from the item itself or its resolve round trip.
+    /// Shown in the docs card beside the menu.
+    pub documentation: Option<String>,
 }
 
 #[derive(Debug, Clone)]
