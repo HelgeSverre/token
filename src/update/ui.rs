@@ -7,15 +7,16 @@ use crate::editable::{EditableState, StringBuffer};
 use crate::messages::LayoutMsg;
 use crate::messages::{ModalMsg, UiMsg};
 use crate::model::{
-    AppModel, CommandPaletteState, FileFinderState, GotoLineState, LspServersState, ModalId,
-    ModalState, RecentFilesState, SearchTab, SegmentContent, SegmentId, ThemePickerState,
-    TransientMessage, COMMAND_PALETTE_MAX_VISIBLE,
+    AppModel, CommandPaletteState, FileFinderState, GotoLineState, LanguagePickerState,
+    LspServersState, ModalId, ModalState, RecentFilesState, SearchTab, SegmentContent, SegmentId,
+    ThemePickerState, TransientMessage, COMMAND_PALETTE_MAX_VISIBLE,
 };
+use crate::syntax::LanguageId;
 use crate::theme::load_theme;
 use crate::update::layout::update_layout;
 use crate::update::lsp::{schedule_lsp_did_change, toggle_lsp_server_enabled};
 use crate::update::navigation::push_history;
-use crate::update::syntax::schedule_syntax_parse;
+use crate::update::syntax::{schedule_syntax_parse, update_syntax};
 use crate::view::modal::{recent_files_groups, theme_picker_groups};
 use crate::view::overlay_surface::{resolve_scroll_for_selection, SectionShape};
 
@@ -136,6 +137,13 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                     ))
                 }
                 ModalId::LspServers => ModalState::LspServers(LspServersState::default()),
+                ModalId::LanguagePicker => {
+                    let current = model
+                        .editor_area
+                        .focused_document()
+                        .map_or(LanguageId::PlainText, |doc| doc.language);
+                    ModalState::LanguagePicker(LanguagePickerState::new(current))
+                }
             };
             model.ui.open_modal(state);
             Some(Cmd::Redraw)
@@ -266,7 +274,7 @@ fn modal_editable_mut(modal: &mut ModalState) -> Option<&mut EditableState<Strin
         ModalState::ThemePicker(_) => None,
         ModalState::FileFinder(state) => Some(&mut state.editable),
         ModalState::RecentFiles(state) => Some(&mut state.editable),
-        ModalState::LspServers(_) => None,
+        ModalState::LspServers(_) | ModalState::LanguagePicker(_) => None,
     }
 }
 
@@ -293,7 +301,8 @@ fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
         ModalState::GotoLine(_)
         | ModalState::FindReplace(_)
         | ModalState::ThemePicker(_)
-        | ModalState::LspServers(_) => {}
+        | ModalState::LspServers(_)
+        | ModalState::LanguagePicker(_) => {}
     }
 }
 
@@ -345,6 +354,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     ModalState::FileFinder(state) => state.set_input(&text),
                     ModalState::RecentFiles(state) => state.editable.set_content(&text),
                     ModalState::LspServers(_) => {} // No text input for the servers picker
+                    ModalState::LanguagePicker(_) => {} // No text input for the language picker
                 }
                 on_modal_input_changed(modal, &model.command_history);
                 Some(Cmd::Redraw)
@@ -890,6 +900,9 @@ fn set_modal_selected_index(modal: &mut ModalState, row: usize) {
         ModalState::LspServers(state) => {
             state.selected_index = row.min(crate::lsp::all_server_defs().len())
         }
+        ModalState::LanguagePicker(state) => {
+            state.selected_index = row.min(LanguageId::all().count())
+        }
         ModalState::GotoLine(_) | ModalState::FindReplace(_) => {}
     }
 }
@@ -1000,6 +1013,30 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
                     Some(cmd) => Some(cmd),
                     None => Some(Cmd::Redraw),
                 }
+            }
+            // Pick-apply-close like the Theme Picker; picking the current
+            // language is a plain close (no pin, no reparse).
+            ModalState::LanguagePicker(state) => {
+                model.ui.close_modal();
+                let picked = LanguageId::all().nth(state.selected_index);
+                let doc = model.editor_area.focused_document_mut();
+                let (Some(language), Some(doc)) = (picked, doc) else {
+                    return Some(Cmd::Redraw);
+                };
+                if language == doc.language {
+                    return Some(Cmd::Redraw);
+                }
+                doc.language_pinned = true;
+                let document_id = doc.id?;
+                let mut cmds = vec![Cmd::Redraw];
+                cmds.extend(update_syntax(
+                    model,
+                    crate::messages::SyntaxMsg::LanguageChanged {
+                        document_id,
+                        language,
+                    },
+                ));
+                Some(Cmd::Batch(cmds))
             }
         }
     } else {
@@ -1189,6 +1226,12 @@ fn lsp_servers_shapes() -> [SectionShape; 1] {
     flat_shapes(crate::lsp::all_server_defs().len())
 }
 
+/// Section shapes for the "Set Language..." picker: one flat section over
+/// the static language registry.
+fn language_picker_shapes() -> [SectionShape; 1] {
+    flat_shapes(LanguageId::all().count())
+}
+
 /// Move `*selected` by `delta`, wrapping at both ends, keeping `*scroll`
 /// following it (minimal-reveal scrolling, header-aware) — shared by
 /// every list-body modal context (overlay-surface.md Behaviour: "Up/Down
@@ -1315,6 +1358,16 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
             );
             None
         }
+        ModalState::LanguagePicker(state) => {
+            let shapes = language_picker_shapes();
+            move_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                &shapes,
+                delta,
+            );
+            None
+        }
         ModalState::GotoLine(_) | ModalState::FindReplace(_) => None,
     };
     if let Some(theme_id) = preview_theme_id {
@@ -1404,6 +1457,15 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
                 forward,
             );
         }
+        ModalState::LanguagePicker(state) => {
+            let shapes = language_picker_shapes();
+            page_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                &shapes,
+                forward,
+            );
+        }
         ModalState::GotoLine(_) | ModalState::FindReplace(_) => {}
     }
     Some(Cmd::Redraw)
@@ -1440,6 +1502,9 @@ fn modal_scroll(model: &mut AppModel, delta: isize) -> Option<Cmd> {
             (&mut state.scroll_offset, shapes)
         }
         ModalState::LspServers(state) => (&mut state.scroll_offset, lsp_servers_shapes().to_vec()),
+        ModalState::LanguagePicker(state) => {
+            (&mut state.scroll_offset, language_picker_shapes().to_vec())
+        }
         ModalState::GotoLine(_) | ModalState::FindReplace(_) => return None,
     };
     let total: usize = shapes.iter().map(|s| s.len).sum();
@@ -2694,5 +2759,70 @@ mod tests {
         let content = std::fs::read_to_string(saved).unwrap();
         let reloaded: crate::config::EditorConfig = serde_yaml::from_str(&content).unwrap();
         assert_eq!(reloaded.lsp.servers[first_id].enabled, Some(false));
+    }
+
+    #[test]
+    fn opening_the_language_picker_preselects_the_current_language() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        model.document_mut().language = crate::syntax::LanguageId::Rust;
+
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::LanguagePicker));
+
+        let Some(ModalState::LanguagePicker(state)) = model.ui.active_modal else {
+            panic!("expected the language picker to open");
+        };
+        assert_eq!(
+            crate::syntax::LanguageId::all().nth(state.selected_index),
+            Some(crate::syntax::LanguageId::Rust)
+        );
+    }
+
+    #[test]
+    fn confirming_a_different_language_pins_and_switches_the_document() {
+        use crate::syntax::LanguageId;
+
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        model.document_mut().outline = Some(crate::outline::OutlineData::empty(0));
+        let rust_row = LanguageId::all()
+            .position(|l| l == LanguageId::Rust)
+            .unwrap();
+        model.ui.open_modal(ModalState::LanguagePicker(
+            crate::model::LanguagePickerState {
+                selected_index: rust_row,
+                scroll_offset: 0,
+            },
+        ));
+
+        let cmd = update_ui(&mut model, UiMsg::Modal(ModalMsg::Confirm));
+
+        assert!(model.ui.active_modal.is_none());
+        let doc = model.document();
+        assert_eq!(doc.language, LanguageId::Rust);
+        assert!(doc.language_pinned);
+        assert!(doc.syntax_highlights.is_none());
+        assert!(doc.outline.is_none(), "a stale outline must not survive");
+        let Some(Cmd::Batch(cmds)) = cmd else {
+            panic!("expected a Batch, got {cmd:?}");
+        };
+        assert!(cmds.iter().any(|c| match c {
+            Cmd::Batch(inner) => inner
+                .iter()
+                .any(|c| matches!(c, Cmd::DebouncedSyntaxParse { delay_ms: 0, .. })),
+            _ => false,
+        }));
+    }
+
+    #[test]
+    fn confirming_the_current_language_just_closes_the_picker() {
+        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        model
+            .ui
+            .open_modal(ModalState::LanguagePicker(Default::default()));
+
+        let cmd = update_ui(&mut model, UiMsg::Modal(ModalMsg::Confirm));
+
+        assert!(model.ui.active_modal.is_none());
+        assert!(!model.document().language_pinned);
+        assert!(matches!(cmd, Some(Cmd::Redraw)), "got {cmd:?}");
     }
 }

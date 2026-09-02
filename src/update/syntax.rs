@@ -177,15 +177,13 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
             document_id,
             language,
         } => {
+            let mut cmds = apply_language(model, document_id, language)?;
             let doc = model.editor_area.documents.get_mut(&document_id)?;
 
-            // Update language and clear old highlights. Diagnostics are
-            // language-server-specific (lsp-integration.md's "cleared on
-            // ... language change") — stale errors for the old language
-            // must not linger under the new one.
-            doc.language = language;
-            doc.syntax_highlights = None;
-            doc.syntax_tree = None;
+            // Diagnostics are language-server-specific
+            // (lsp-integration.md's "cleared on ... language change") —
+            // stale errors for the old language must not linger under
+            // the new one.
             let had_marks = !doc.diagnostics.is_empty();
             doc.diagnostics.clear();
             let file_path = doc.file_path.clone();
@@ -209,19 +207,12 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
                 );
             }
 
-            let mut cmds = vec![
-                Cmd::DebouncedSyntaxParse {
-                    document_id,
-                    revision,
-                    delay_ms: 0, // Immediate parse on language change
-                },
-                // Drop any retained diagnostics for this URI so a later
-                // didOpen (below, or a future close/reopen) can't pull
-                // stale-language diagnostics back in
-                // (`LspManager::lsp_open_document`'s retained-publish
-                // pull otherwise would).
-                Cmd::LspClearDiagnostics { document_id },
-            ];
+            // Drop any retained diagnostics for this URI so a later
+            // didOpen (below, or a future close/reopen) can't pull
+            // stale-language diagnostics back in
+            // (`LspManager::lsp_open_document`'s retained-publish
+            // pull otherwise would).
+            cmds.push(Cmd::LspClearDiagnostics { document_id });
             // Re-sync with the language server under the new language:
             // close against whatever server was tracking it (a no-op if
             // none was), then reopen — may route to a different
@@ -241,6 +232,34 @@ pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
             Some(Cmd::Batch(cmds))
         }
     }
+}
+
+/// Switch a document's language: drop every artefact of the old one
+/// (highlights, tree, outline — `refresh_outline_if_stale` would otherwise
+/// keep a same-revision stale outline) and the worker's cached parser
+/// state, then parse immediately if the new language highlights. LSP
+/// re-sync is the caller's business (`SyntaxMsg::LanguageChanged` does it;
+/// Save As already swaps the LSP identity itself).
+pub(crate) fn apply_language(
+    model: &mut AppModel,
+    document_id: crate::model::editor_area::DocumentId,
+    language: crate::syntax::LanguageId,
+) -> Option<Vec<Cmd>> {
+    let doc = model.editor_area.documents.get_mut(&document_id)?;
+    doc.language = language;
+    doc.syntax_highlights = None;
+    doc.syntax_tree = None;
+    doc.outline = None;
+    let revision = doc.revision;
+    let mut cmds = vec![Cmd::ClearSyntaxState { document_id }];
+    if language.has_highlighting() {
+        cmds.push(Cmd::DebouncedSyntaxParse {
+            document_id,
+            revision,
+            delay_ms: 0, // Immediate parse on language change
+        });
+    }
+    Some(cmds)
 }
 
 /// Schedule a syntax parse for a document (call after document edits)
@@ -646,6 +665,37 @@ mod tests {
         assert!(
             final_highlights.lines.contains_key(&1),
             "Final highlights should have tokens on line 1"
+        );
+    }
+
+    #[test]
+    fn language_changed_clears_the_outline_and_skips_the_parse_for_plain_text() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let doc_id = model.document().id.unwrap();
+        let doc = model.editor_area.documents.get_mut(&doc_id).unwrap();
+        doc.language = LanguageId::Rust;
+        doc.outline = Some(crate::outline::OutlineData::empty(0));
+
+        let cmd = update_syntax(
+            &mut model,
+            SyntaxMsg::LanguageChanged {
+                document_id: doc_id,
+                language: LanguageId::PlainText,
+            },
+        );
+
+        assert!(model.document().outline.is_none());
+        let Some(Cmd::Batch(cmds)) = cmd else {
+            panic!("expected a Batch, got {cmd:?}");
+        };
+        assert!(cmds
+            .iter()
+            .any(|c| matches!(c, Cmd::ClearSyntaxState { document_id } if *document_id == doc_id)));
+        assert!(
+            !cmds
+                .iter()
+                .any(|c| matches!(c, Cmd::DebouncedSyntaxParse { .. })),
+            "plain text has nothing to parse: {cmds:?}"
         );
     }
 }

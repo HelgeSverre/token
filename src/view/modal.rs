@@ -9,7 +9,9 @@
 //! `overlay_surface::layout()`, so geometry can't drift between paint and
 //! hit-test (overlay-surface.md "Hit-testing": one layout, two consumers).
 
-use crate::model::ui::{FindReplaceField, LspServersState, RecentFilesState, ThemePickerState};
+use crate::model::ui::{
+    FindReplaceField, LanguagePickerState, LspServersState, RecentFilesState, ThemePickerState,
+};
 use crate::model::AppModel;
 use crate::theme::ThemeInfo;
 
@@ -822,6 +824,78 @@ fn lsp_server_accessory(enabled: bool) -> Accessory<'static> {
     }
 }
 
+/// "Set Language..." picker: one row per registered language, the
+/// focused document's current one marked with a check.
+fn render_language_picker_modal(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    state: &LanguagePickerState,
+    ctx: &ModalRenderCtx,
+    mask_cache: &mut RoundedRectMaskCache,
+) {
+    let current = model.editor_area.focused_document().map(|doc| doc.language);
+    let rows: Vec<Row> = crate::syntax::LanguageId::all()
+        .map(|language| Row {
+            icon: RowIcon::None,
+            label: language.display_name(),
+            match_indices: &[],
+            detail: None,
+            accessory: if Some(language) == current {
+                Accessory::Check
+            } else {
+                Accessory::None
+            },
+        })
+        .collect();
+    let sections = [Section {
+        title: None,
+        rows: &rows,
+    }];
+
+    let selected_index = state.selected_index.min(rows.len().saturating_sub(1));
+
+    let spec = OverlaySpec {
+        tabs: None,
+        anchor: Anchor::Centered {
+            width: WidthRule {
+                pct: 0.0,
+                min: 420.0,
+                max: 420.0,
+            },
+            dim_alpha: MODAL_DIM_ALPHA,
+        },
+        header: Some(Header {
+            glyph: None,
+            text: "",
+            placeholder: "Set Language",
+            caret: None,
+            selection: None,
+            scope: None,
+        }),
+        body: Body::List {
+            sections: &sections,
+            selected: FlatIndex(selected_index),
+            scroll: state.scroll_offset,
+            max_visible: COMMAND_PALETTE_MAX_VISIBLE,
+        },
+        footer: None,
+        hover_row: model.ui.modal_hover_row.map(FlatIndex),
+    };
+
+    overlay_surface::render(
+        frame,
+        painter,
+        mask_cache,
+        &model.theme.overlay,
+        &spec,
+        ctx.window_width,
+        ctx.window_height,
+        ctx.scale_factor,
+        model.ui.cursor_visible,
+    );
+}
+
 /// Detail text for one server row: affected languages, then its live
 /// state — e.g. `"TypeScript, JavaScript · Ready"`.
 fn lsp_server_detail(model: &AppModel, server_id: &str) -> String {
@@ -1268,6 +1342,23 @@ pub(crate) fn with_modal_overlay_layout<R>(
             let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
             Some(f(&spec, &l))
         }
+        ModalState::LanguagePicker(state) => {
+            let rows = placeholder_rows(crate::syntax::LanguageId::all().count());
+            let sections = [Section {
+                title: None,
+                rows: &rows,
+            }];
+            let spec = list_shape_spec(
+                (0.0, 420.0, 420.0),
+                None,
+                &sections,
+                state.selected_index.min(rows.len().saturating_sub(1)),
+                state.scroll_offset,
+                false,
+            );
+            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
+            Some(f(&spec, &l))
+        }
         ModalState::GotoLine(_) => {
             let fields = [Field { label: "" }];
             let spec = OverlaySpec {
@@ -1480,6 +1571,9 @@ pub fn render_modals(
         }
         ModalState::LspServers(state) => {
             render_lsp_servers_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
+        }
+        ModalState::LanguagePicker(state) => {
+            render_language_picker_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
         }
     }
 }

@@ -101,6 +101,8 @@ pub enum CommandId {
     ToggleLsp,
     ToggleAutocomplete,
     ManageLanguageServers,
+    /// "Set Language..." picker (session-pinned language override).
+    SetLanguage,
 
     // Application
     Quit,
@@ -458,6 +460,12 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: None,
     },
     CommandDef {
+        id: CommandId::SetLanguage,
+        category: CommandCategory::System,
+        label: "Set Language...",
+        keybinding: None,
+    },
+    CommandDef {
         id: CommandId::Quit,
         category: CommandCategory::System,
         label: "Quit",
@@ -562,6 +570,7 @@ impl CommandId {
             CommandId::ToggleLsp => None,
             CommandId::ToggleAutocomplete => None,
             CommandId::ManageLanguageServers => None,
+            CommandId::SetLanguage => None,
             CommandId::Quit => Some(KeymapCommand::Quit),
             #[cfg(debug_assertions)]
             CommandId::TogglePerfOverlay => None,

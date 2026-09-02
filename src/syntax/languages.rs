@@ -29,6 +29,14 @@ impl LanguageId {
             .unwrap_or(LanguageId::PlainText)
     }
 
+    /// Every registered language, PlainText first, in registry order —
+    /// the row order of the "Set Language..." picker.
+    pub fn all() -> impl Iterator<Item = Self> {
+        super::registry::ALL_LANGUAGES
+            .iter()
+            .map(|definition| definition.id)
+    }
+
     /// Get display name for the language
     pub fn display_name(&self) -> &'static str {
         super::registry::language(*self).display_name

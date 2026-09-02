@@ -520,6 +520,18 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                 .collect(),
             selected: state.selected_index,
         }),
+        token::model::ModalState::LanguagePicker(state) => Some(OverlaySnapshot {
+            context: "language_picker".to_owned(),
+            query: String::new(),
+            active_tab: None,
+            rows: token::syntax::LanguageId::all()
+                .map(|language| OverlayRowSnapshot {
+                    label: language.display_name().to_owned(),
+                    section: None,
+                })
+                .collect(),
+            selected: state.selected_index,
+        }),
     }
 }
 

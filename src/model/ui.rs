@@ -88,6 +88,9 @@ pub enum ModalId {
     /// Language Servers picker — one row per registered server def, toggles
     /// `lsp.servers.<id>.enabled` (see `CommandId::ManageLanguageServers`).
     LspServers,
+    /// "Set Language..." picker — one row per `syntax::registry::ALL_LANGUAGES`
+    /// entry, pins the chosen language on the focused document.
+    LanguagePicker,
 }
 
 /// Palette/pickers cap at 10 visible rows (overlay-surface.md Visual
@@ -406,6 +409,29 @@ pub struct LspServersState {
     pub scroll_offset: usize,
 }
 
+/// State for the "Set Language..." picker (rows come from the static
+/// `syntax::registry::ALL_LANGUAGES`, so only the cursor lives here).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LanguagePickerState {
+    /// Index of the selected language in `ALL_LANGUAGES`
+    pub selected_index: usize,
+    /// Scroll offset (in rows), see `LspServersState::scroll_offset`.
+    pub scroll_offset: usize,
+}
+
+impl LanguagePickerState {
+    /// Open with the document's current language preselected.
+    pub fn new(current: crate::syntax::LanguageId) -> Self {
+        let selected_index = crate::syntax::LanguageId::all()
+            .position(|language| language == current)
+            .unwrap_or(0);
+        Self {
+            selected_index,
+            scroll_offset: 0,
+        }
+    }
+}
+
 /// A file match result from fuzzy search
 #[derive(Debug, Clone)]
 pub struct FileMatch {
@@ -591,6 +617,7 @@ pub enum ModalState {
     FileFinder(FileFinderState),
     RecentFiles(RecentFilesState),
     LspServers(LspServersState),
+    LanguagePicker(LanguagePickerState),
 }
 
 impl ModalState {
@@ -604,6 +631,7 @@ impl ModalState {
             ModalState::FileFinder(_) => ModalId::FileFinder,
             ModalState::RecentFiles(_) => ModalId::RecentFiles,
             ModalState::LspServers(_) => ModalId::LspServers,
+            ModalState::LanguagePicker(_) => ModalId::LanguagePicker,
         }
     }
 }

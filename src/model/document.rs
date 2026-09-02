@@ -68,6 +68,10 @@ pub struct Document {
     // === Syntax Highlighting ===
     /// Detected language for syntax highlighting
     pub language: LanguageId,
+    /// Session-only "Set Language..." override: when set, `language` is
+    /// kept across external reload and Save As instead of re-detected
+    /// from the path. Never persisted.
+    pub language_pinned: bool,
     /// Current syntax highlights (updated asynchronously)
     pub syntax_highlights: Option<SyntaxHighlights>,
     /// Parsed base-language tree for syntax-aware editor operations.
@@ -102,6 +106,7 @@ impl Document {
             redo_stack: Vec::new(),
             saved_revision: Some(0),
             language: LanguageId::PlainText,
+            language_pinned: false,
             syntax_highlights: None,
             syntax_tree: None,
             outline: None,

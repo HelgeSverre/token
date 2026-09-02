@@ -99,8 +99,6 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             model.ui.is_loading = false;
             match result {
                 Ok(content) => {
-                    // Detect language from file extension
-                    let language = LanguageId::from_path(&path);
                     let old_path = model.document().file_path.clone();
 
                     let doc = model.document_mut();
@@ -110,7 +108,10 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                     doc.undo_stack.clear();
                     doc.redo_stack.clear();
                     doc.saved_revision = Some(0);
-                    doc.language = language;
+                    // A "Set Language..." pin outlives external reloads.
+                    if !doc.language_pinned {
+                        doc.language = LanguageId::from_path(&path);
+                    }
                     doc.syntax_highlights = None;
                     doc.syntax_tree = None;
                     doc.revision = doc.revision.wrapping_add(1);
@@ -147,7 +148,7 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                     model.record_file_opened(path.clone());
 
                     // Trigger syntax parsing if language has highlighting
-                    if language.has_highlighting() {
+                    if model.document().language.has_highlighting() {
                         if let Some(doc_id) = model.document().id {
                             let revision = model.document().revision;
                             let mut cmds = vec![
@@ -282,8 +283,15 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             match result {
                 Ok(_) => {
                     let mut had_marks = false;
+                    let mut relanguage = None;
                     if let Some(doc) = model.editor_area.documents.get_mut(&document_id) {
                         doc.file_path = Some(new_path.clone());
+                        // Unpinned documents follow the new extension
+                        // (`.txt` -> `.rs` starts highlighting as Rust).
+                        let detected = LanguageId::from_path(&new_path);
+                        if !doc.language_pinned && detected != doc.language {
+                            relanguage = Some(detected);
+                        }
                         doc.is_modified = false;
                         doc.saved_revision = Some(doc.undo_stack.len());
                         // The old path's diagnostics no longer describe
@@ -301,6 +309,14 @@ pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                         .ui
                         .set_status(format!("Saved: {}", new_path.display()));
                     let mut cmds = vec![Cmd::redraw_editor()];
+                    // Language fields only — the didClose/didOpen pair
+                    // below already carries the LSP side of the switch.
+                    if let Some(language) = relanguage {
+                        cmds.extend(
+                            super::syntax::apply_language(model, document_id, language)
+                                .unwrap_or_default(),
+                        );
+                    }
                     if old_path.is_some() {
                         cmds.push(super::close_lsp_document(document_id));
                     }
@@ -565,6 +581,7 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::ManageLanguageServers => {
             update_ui(model, UiMsg::ToggleModal(ModalId::LspServers))
         }
+        CommandId::SetLanguage => update_ui(model, UiMsg::ToggleModal(ModalId::LanguagePicker)),
         CommandId::Quit => update_app(model, AppMsg::Quit),
         #[cfg(debug_assertions)]
         CommandId::TogglePerfOverlay => Some(Cmd::TogglePerfOverlay),
@@ -856,5 +873,64 @@ mod tests {
             Some(PathBuf::from("/tmp/old.rs")),
             "a failed write must not swap the document onto the unwritten path"
         );
+    }
+
+    #[test]
+    fn file_loaded_keeps_a_pinned_language_but_redetects_an_unpinned_one() {
+        for (pinned, expected) in [(true, LanguageId::Rust), (false, LanguageId::PlainText)] {
+            let mut model = test_model();
+            model.document_mut().file_path = Some(PathBuf::from("/tmp/notes.txt"));
+            model.document_mut().language = LanguageId::Rust;
+            model.document_mut().language_pinned = pinned;
+
+            update_app(
+                &mut model,
+                AppMsg::FileLoaded {
+                    path: PathBuf::from("/tmp/notes.txt"),
+                    result: Ok("fn main() {}".to_owned()),
+                },
+            );
+
+            assert_eq!(model.document().language, expected, "pinned={pinned}");
+        }
+    }
+
+    #[test]
+    fn save_as_completed_follows_the_new_extension_unless_pinned() {
+        for (pinned, expected) in [(false, LanguageId::Rust), (true, LanguageId::PlainText)] {
+            let mut model = test_model();
+            model.document_mut().file_path = Some(PathBuf::from("/tmp/old.txt"));
+            model.document_mut().language_pinned = pinned;
+            let doc_id = model.document().id.unwrap();
+
+            let cmd = update_app(
+                &mut model,
+                AppMsg::SaveAsCompleted {
+                    document_id: doc_id,
+                    old_path: Some(PathBuf::from("/tmp/old.txt")),
+                    new_path: PathBuf::from("/tmp/new.rs"),
+                    result: Ok(()),
+                },
+            )
+            .expect("SaveAsCompleted should produce a command");
+
+            assert_eq!(model.document().language, expected, "pinned={pinned}");
+            let Cmd::Batch(cmds) = cmd else {
+                panic!("expected a Batch");
+            };
+            assert_eq!(
+                cmds.iter()
+                    .any(|c| matches!(c, Cmd::ClearSyntaxState { .. })),
+                !pinned,
+                "the worker cache is cleared exactly when the language switches"
+            );
+            assert_eq!(
+                cmds.iter()
+                    .filter(|c| matches!(c, Cmd::LspDidClose { .. }))
+                    .count(),
+                1,
+                "the language switch must not double the Save As didClose"
+            );
+        }
     }
 }
