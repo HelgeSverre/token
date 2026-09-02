@@ -325,6 +325,22 @@ mod tests {
     }
 
     #[test]
+    fn a_single_char_insert_text_counts_as_typing() {
+        let mut model = model_with_inline("abc\n");
+        place(&mut model, 0, 3);
+        let cmd = update(
+            &mut model,
+            Msg::Document(DocumentMsg::InsertText("d".into())),
+        );
+        assert!(find_schedule(&cmd).is_some());
+        let cmd = update(
+            &mut model,
+            Msg::Document(DocumentMsg::InsertText("paste".into())),
+        );
+        assert_eq!(find_schedule(&cmd), None, "a paste is not typing");
+    }
+
+    #[test]
     fn auto_trigger_respects_the_gates() {
         // Disabled config: nothing.
         let mut model = model_with_inline("abc\n");

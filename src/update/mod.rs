@@ -154,10 +154,12 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
             let is_copy = matches!(m, DocumentMsg::Copy);
             let opens_on_word_char =
                 matches!(&m, DocumentMsg::InsertChar(ch) if char_type(*ch) == CharType::WordChar);
-            let typed_char = if let DocumentMsg::InsertChar(ch) = &m {
-                Some(*ch)
-            } else {
-                None
+            // A one-char `InsertText` (IME commit, automation `text`) is
+            // typing too, for the trigger-character and ghost-text paths.
+            let typed_char = match &m {
+                DocumentMsg::InsertChar(ch) => Some(*ch),
+                DocumentMsg::InsertText(text) if text.chars().count() == 1 => text.chars().next(),
+                _ => None,
             };
             let backspaced = matches!(m, DocumentMsg::DeleteBackward);
             let result = document::update_document(model, m);

@@ -129,10 +129,10 @@ pub fn postprocess(raw: &str, suffix: &str) -> Option<String> {
     let text = trim_to_block(text);
     // 3. Drop what merely restates the text already after the cursor.
     let text = strip_suffix_overlap(&text, suffix);
-    // 4. Drop degenerate results.
-    if text.trim().is_empty()
-        || text.chars().filter(char::is_ascii_alphanumeric).count() < 2
-        || is_repetitive(&text)
+    // 4. Drop degenerate results: nothing but whitespace or punctuation
+    //    (a lone `)` or `;`), or the same line three times in a row.
+    //    Short but real completions like ` + b` must survive.
+    if text.trim().is_empty() || !text.chars().any(|c| c.is_alphanumeric()) || is_repetitive(&text)
     {
         return None;
     }
@@ -357,7 +357,8 @@ mod tests {
     #[test]
     fn postprocess_drops_degenerate_results() {
         assert_eq!(postprocess("   \n", "\n"), None);
-        assert_eq!(postprocess("a", "\n"), None);
+        assert_eq!(postprocess(");", "\n"), None);
+        assert_eq!(postprocess(" + b", "\n").as_deref(), Some(" + b"));
         assert_eq!(postprocess("x = 1\nx = 1\nx = 1\n", "\n"), None);
         assert_eq!(
             postprocess("x = 1\nx = 1\ny = 2\n", "\n").as_deref(),
