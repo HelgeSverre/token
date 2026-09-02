@@ -46,6 +46,17 @@ All notable changes to rust-editor are documented in this file.
 - LSP completion items sent in snippet format now insert readable text:
   placeholders are flattened (`${1:arg}` → `arg`), tab stops removed, and the
   caret lands at `$0`.
+- **Completion documentation card**: selecting an item resolves its
+  `documentation` lazily (150 ms debounce) and shows it in a card beside the
+  menu, flipping to the left when there is no room. Accepting an already
+  resolved item no longer waits for a second round trip.
+- **Signature help** (`textDocument/signatureHelp`): opens above the caret
+  on the server's trigger characters (`(`, `,`) and on ⌘P, retriggers while
+  typing inside the call, marks the active parameter, and closes when the
+  caret leaves the line or on Escape.
+- Server-initiated `workspace/applyEdit` requests are now applied (one undo
+  step per file, closed files opened in place) and acknowledged, instead of
+  being refused.
 - CSV mode mouse editing: clicking inside the cell being edited places the
   caret at the pressed character (Shift extends the selection), double-click
   opens the cell editor with the caret at the pressed character, and
