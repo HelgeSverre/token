@@ -8,6 +8,27 @@ All notable changes to rust-editor are documented in this file.
 
 ### Added
 
+- **CLI handoff and `--wait`**: `token file` now returns to the shell
+  immediately and opens the file in the running editor (over the automation
+  socket), starting a detached editor when none is running. `-w/--wait`
+  blocks until every opened tab is closed or the editor exits, Zed-style, so
+  `git config core.editor "token -w"` works. Directories and `--new-window`
+  always start a separate editor process (`-w` then waits for that window).
+  `path:line:col` suffixes position the cursor; `token -` reads stdin into a
+  new tab; `--foreground` runs the editor in the calling process.
+- `token automate open <paths…>` and an `open_paths` MCP tool open files in
+  the running editor.
+- macOS: `Token.app` declares document types and handles
+  `application:openURLs:`, so Finder "Open With", the Dock, and
+  `open -a Token file` deliver files to the running editor.
+
+### Fixed
+
+- `Cmd::Quit` triggered from automation only took effect on the next window
+  event; the event loop now exits from `about_to_wait` as well.
+- The Windows automation server handled connections serially, so one slow
+  client stalled every other; it now uses a thread per connection like Unix.
+
 - **LSP completion (Phase 5)**: `textDocument/completion` now feeds the
   autocomplete menu in Rust, TypeScript/JavaScript, Python, and PHP files.
   Requests are debounced while typing (120 ms) with flush-before-request,

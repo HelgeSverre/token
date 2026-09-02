@@ -4,6 +4,7 @@
 //! through `use super::\*`.
 
 use super::*;
+use crate::automation::OpenPath;
 use token::cli::{StartupConfig, StartupMode};
 use token::outline::{OutlineData, OutlineKind, OutlineNode, OutlineRange};
 
@@ -256,6 +257,247 @@ fn send_automation_request(app: &mut App, request: AutomationRequest) -> Automat
     response_rx
         .try_recv()
         .expect("a response should have been sent for the request")
+}
+
+/// Like `send_automation_request`, but for requests that may defer their
+/// answer (`OpenPaths { wait: true }`): returns the receiver instead.
+fn send_deferred_automation_request(
+    app: &mut App,
+    request: AutomationRequest,
+) -> mpsc::Receiver<AutomationResponse> {
+    let (response_tx, response_rx) = mpsc::sync_channel(1);
+    app.automation_tx
+        .send(AutomationEnvelope {
+            request,
+            response_tx,
+        })
+        .expect("automation channel should still be open");
+    app.process_automation_requests();
+    response_rx
+}
+
+fn open_path(path: &std::path::Path, line: Option<usize>, column: Option<usize>) -> OpenPath {
+    OpenPath {
+        path: path.to_path_buf(),
+        line,
+        column,
+    }
+}
+
+fn focused_tab_id(app: &App) -> token::model::TabId {
+    app.model
+        .editor_area
+        .focused_group()
+        .and_then(|group| group.active_tab())
+        .map(|tab| tab.id)
+        .expect("a focused tab")
+}
+
+fn open_paths_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let a = dir.path().join("a.rs");
+    let b = dir.path().join("b.rs");
+    std::fs::write(&a, "line one\nline two\nline three\n").unwrap();
+    std::fs::write(&b, "other\n").unwrap();
+    (dir, a, b)
+}
+
+#[test]
+fn open_paths_opens_tab_and_responds_immediately() {
+    let (_dir, a, _) = open_paths_fixture();
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    let tabs_before = app.model.editor_area.focused_group().unwrap().tabs.len();
+
+    let response = send_automation_request(
+        &mut app,
+        AutomationRequest::OpenPaths {
+            paths: vec![open_path(&a, None, None)],
+            wait: false,
+        },
+    );
+
+    assert!(response.ok, "{}", response.message);
+    assert_eq!(
+        app.model.editor_area.focused_group().unwrap().tabs.len(),
+        tabs_before + 1
+    );
+    assert!(app.model.editor_area.find_open_file(&a).is_some());
+}
+
+#[test]
+fn open_paths_places_cursor_at_one_indexed_position() {
+    let (_dir, a, _) = open_paths_fixture();
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+
+    send_automation_request(
+        &mut app,
+        AutomationRequest::OpenPaths {
+            paths: vec![open_path(&a, Some(3), Some(2))],
+            wait: false,
+        },
+    );
+
+    let cursor = &app.model.editor().cursors[0];
+    assert_eq!((cursor.line, cursor.column), (2, 1));
+}
+
+#[test]
+fn open_paths_wait_defers_until_the_tab_closes() {
+    let (_dir, a, _) = open_paths_fixture();
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+
+    let response_rx = send_deferred_automation_request(
+        &mut app,
+        AutomationRequest::OpenPaths {
+            paths: vec![open_path(&a, None, None)],
+            wait: true,
+        },
+    );
+    app.poll_document_waiters();
+    assert!(
+        response_rx.try_recv().is_err(),
+        "must not answer while the tab is open"
+    );
+
+    let tab_id = focused_tab_id(&app);
+    app.process_automation_msg(Msg::Layout(LayoutMsg::CloseTab(tab_id)));
+    app.poll_document_waiters();
+
+    let response = response_rx
+        .try_recv()
+        .expect("closing the tab answers the wait");
+    assert!(response.ok);
+    assert!(app.document_waiters.is_empty());
+}
+
+#[test]
+fn open_paths_wait_on_two_files_answers_after_both_close() {
+    let (_dir, a, b) = open_paths_fixture();
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+
+    let response_rx = send_deferred_automation_request(
+        &mut app,
+        AutomationRequest::OpenPaths {
+            paths: vec![open_path(&a, None, None), open_path(&b, None, None)],
+            wait: true,
+        },
+    );
+
+    let (b_id, _, _) = app.model.editor_area.find_open_file(&b).unwrap();
+    let b_tab = app
+        .model
+        .editor_area
+        .focused_group()
+        .unwrap()
+        .tabs
+        .iter()
+        .find(|tab| {
+            app.model
+                .editor_area
+                .editors
+                .get(&tab.editor_id)
+                .and_then(|e| e.document_id)
+                == Some(b_id)
+        })
+        .map(|tab| tab.id)
+        .unwrap();
+    app.process_automation_msg(Msg::Layout(LayoutMsg::CloseTab(b_tab)));
+    app.poll_document_waiters();
+    assert!(response_rx.try_recv().is_err(), "a is still open");
+
+    let (a_id, _, _) = app.model.editor_area.find_open_file(&a).unwrap();
+    let a_tab = app
+        .model
+        .editor_area
+        .focused_group()
+        .unwrap()
+        .tabs
+        .iter()
+        .find(|tab| {
+            app.model
+                .editor_area
+                .editors
+                .get(&tab.editor_id)
+                .and_then(|e| e.document_id)
+                == Some(a_id)
+        })
+        .map(|tab| tab.id)
+        .unwrap();
+    app.process_automation_msg(Msg::Layout(LayoutMsg::CloseTab(a_tab)));
+    app.poll_document_waiters();
+    assert!(
+        response_rx.try_recv().is_ok(),
+        "both closed answers the wait"
+    );
+}
+
+#[test]
+fn open_paths_wait_shared_across_groups_answers_on_last_editor() {
+    let (_dir, a, _) = open_paths_fixture();
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+
+    let response_rx = send_deferred_automation_request(
+        &mut app,
+        AutomationRequest::OpenPaths {
+            paths: vec![open_path(&a, None, None)],
+            wait: true,
+        },
+    );
+    // Split: the new group shows the same document through a second editor.
+    app.process_automation_msg(Msg::Layout(LayoutMsg::SplitFocused(
+        token::model::SplitDirection::Vertical,
+    )));
+    let (doc_id, _, _) = app.model.editor_area.find_open_file(&a).unwrap();
+    assert!(
+        app.model.editor_area.editors_for_document(doc_id).len() >= 2,
+        "split should share the document"
+    );
+
+    app.process_automation_msg(Msg::Layout(LayoutMsg::CloseFocusedGroup));
+    app.poll_document_waiters();
+    assert!(
+        response_rx.try_recv().is_err(),
+        "the other group still shows the file"
+    );
+
+    let tab_id = focused_tab_id(&app);
+    app.process_automation_msg(Msg::Layout(LayoutMsg::CloseTab(tab_id)));
+    app.poll_document_waiters();
+    assert!(response_rx.try_recv().is_ok());
+}
+
+#[test]
+fn open_paths_wait_without_files_answers_only_on_exit() {
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    let response_rx = send_deferred_automation_request(
+        &mut app,
+        AutomationRequest::OpenPaths {
+            paths: vec![],
+            wait: true,
+        },
+    );
+    app.poll_document_waiters();
+    assert!(response_rx.try_recv().is_err());
+
+    app.answer_exit_waiters();
+    let response = response_rx.try_recv().expect("exit answers every waiter");
+    assert!(response.ok);
+}
+
+#[test]
+fn open_paths_directory_is_not_awaited_on_documents() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    let response_rx = send_deferred_automation_request(
+        &mut app,
+        AutomationRequest::OpenPaths {
+            paths: vec![open_path(dir.path(), None, None)],
+            wait: true,
+        },
+    );
+    app.poll_document_waiters();
+    assert!(response_rx.try_recv().is_err());
+    assert!(app.document_waiters.iter().all(|waiter| waiter.exit_only));
 }
 
 #[test]

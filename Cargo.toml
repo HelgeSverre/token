@@ -225,7 +225,7 @@ winres = "0.1"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSApplication", "NSEvent", "NSMenu", "NSMenuItem"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSProcessInfo", "NSString"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSProcessInfo", "NSString", "NSURL"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

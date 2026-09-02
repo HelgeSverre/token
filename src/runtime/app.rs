@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
@@ -230,13 +230,14 @@ pub struct App {
     /// because `portable_pty` startup can block on shell initialization.
     terminal_spawn_rx: Option<(usize, TerminalSpawnReceiver)>,
     automation_rx: Receiver<AutomationEnvelope>,
-    /// A sender into `automation_rx`, kept around only so tests can push
-    /// requests through the exact same `process_automation_requests` path
-    /// the socket/MCP server feeds in production, without standing up a
-    /// real socket.
-    #[cfg(test)]
+    /// A sender into `automation_rx`: the macOS open-file hook feeds it,
+    /// and tests push requests through the exact same
+    /// `process_automation_requests` path the socket/MCP server feeds in
+    /// production, without standing up a real socket.
     automation_tx: Sender<AutomationEnvelope>,
     automation_profile: Option<AutomationProfile>,
+    /// `--wait` handoffs still waiting for their documents to close.
+    document_waiters: Vec<DocumentWaiter>,
     syntax_scheduled: HashMap<(token::model::editor_area::DocumentId, u64), Instant>,
     syntax_present_pending: Vec<SyntaxPresentationPending>,
     automation_syntax_profile: Option<AutomationSyntaxProfile>,
@@ -253,6 +254,15 @@ pub struct App {
 
 struct AutomationProfile {
     remaining_frames: usize,
+    response_tx: mpsc::SyncSender<AutomationResponse>,
+}
+
+/// One `OpenPaths { wait: true }` request: answered once every document
+/// in `remaining` has been released (closed in every group), or on exit.
+/// `exit_only` waiters (no files, or none resolvable) answer on exit only.
+struct DocumentWaiter {
+    remaining: HashSet<token::model::editor_area::DocumentId>,
+    exit_only: bool,
     response_tx: mpsc::SyncSender<AutomationResponse>,
 }
 
@@ -1004,10 +1014,8 @@ impl App {
     ) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
         let (automation_tx, automation_rx) = mpsc::channel();
-        #[cfg(test)]
-        let automation_tx_for_tests = automation_tx.clone();
         if let Some(proxy) = automation_proxy.clone() {
-            automation::start_server(automation_tx, proxy);
+            automation::start_server(automation_tx.clone(), proxy);
         }
         // LSP worker threads wake the event loop the same way the syntax
         // worker does; cloned before `automation_proxy` is moved below.
@@ -1063,9 +1071,9 @@ impl App {
             syntax_deadlines: HashMap::new(),
             terminal_spawn_rx: None,
             automation_rx,
-            #[cfg(test)]
-            automation_tx: automation_tx_for_tests,
+            automation_tx,
             automation_profile: None,
+            document_waiters: Vec::new(),
             syntax_scheduled: HashMap::new(),
             syntax_present_pending: Vec::new(),
             automation_syntax_profile: None,
@@ -5009,6 +5017,10 @@ impl ApplicationHandler for App {
         }
     }
 
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        self.answer_exit_waiters();
+    }
+
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let mut needs_redraw = false;
 
@@ -5019,6 +5031,15 @@ impl ApplicationHandler for App {
         if self.process_async_messages() {
             needs_redraw = true;
         }
+
+        // `Cmd::Quit` from a non-window source (automation, menu) only sets
+        // the flag; `window_event` is the only other place that acts on it.
+        if self.should_quit {
+            event_loop.exit();
+            return;
+        }
+
+        self.poll_document_waiters();
 
         if self
             .deferred_startup_at
@@ -5349,6 +5370,38 @@ impl App {
                         }
                     }
                 }
+                AutomationRequest::OpenPaths { paths, wait } => {
+                    let mut remaining = HashSet::new();
+                    for crate::automation::OpenPath { path, line, column } in paths {
+                        if path.is_dir() {
+                            self.start_editor_for_directory(path);
+                            continue;
+                        }
+                        self.open_path_at(&path, line, column);
+                        if wait {
+                            if let Some((document_id, _, _)) =
+                                self.model.editor_area.find_open_file(&path)
+                            {
+                                remaining.insert(document_id);
+                            }
+                        }
+                    }
+                    if let Some(window) = &self.window {
+                        window.focus_window();
+                    }
+                    if wait {
+                        self.document_waiters.push(DocumentWaiter {
+                            exit_only: remaining.is_empty(),
+                            remaining,
+                            response_tx: envelope.response_tx,
+                        });
+                    } else {
+                        let _ = envelope
+                            .response_tx
+                            .send(self.automation_response("opened"));
+                    }
+                    redraw = true;
+                }
                 AutomationRequest::ProfileFrames { frames } => {
                     if frames == 0 || frames > 10_000 {
                         let _ = envelope.response_tx.send(AutomationResponse::error(
@@ -5377,6 +5430,82 @@ impl App {
         if let Some(cmd) = update(&mut self.model, msg) {
             self.pending_damage.merge(cmd.damage());
             self.process_cmd(cmd);
+        }
+    }
+
+    /// The macOS open-file hook pushes `OpenPaths` requests through this.
+    pub fn automation_sender(&self) -> Sender<AutomationEnvelope> {
+        self.automation_tx.clone()
+    }
+
+    /// Open (or focus) `path` in the focused group and, when a 1-indexed
+    /// `line` is given, place the cursor there.
+    fn open_path_at(&mut self, path: &Path, line: Option<usize>, column: Option<usize>) {
+        use token::update::navigation::{focused_tab_shows, open_or_focus, place_cursor_char};
+        if let Some(cmd) = open_or_focus(&mut self.model, path.to_path_buf()) {
+            self.pending_damage.merge(cmd.damage());
+            self.process_cmd(cmd);
+        }
+        if let Some(line) = line {
+            if focused_tab_shows(&self.model, path) {
+                let column = column.unwrap_or(1).saturating_sub(1);
+                if let Some(cmd) =
+                    place_cursor_char(&mut self.model, line.saturating_sub(1), column)
+                {
+                    self.pending_damage.merge(cmd.damage());
+                    self.process_cmd(cmd);
+                }
+            }
+        }
+        self.model.record_file_opened(path.to_path_buf());
+    }
+
+    /// A window owns one workspace, so a directory delivered to a running
+    /// editor (Finder, MCP) gets its own process. Tests never spawn: the
+    /// test binary would re-run itself.
+    fn start_editor_for_directory(&self, path: PathBuf) {
+        #[cfg(test)]
+        let _ = path;
+        #[cfg(not(test))]
+        if let Err(error) = crate::launcher::spawn_detached(&[path.clone().into_os_string()]) {
+            tracing::warn!("could not start an editor for {}: {error}", path.display());
+        }
+    }
+
+    /// Answer every `--wait` client whose documents have all been released.
+    /// `documents.remove` in `close_tab` is the single release truth and
+    /// ids are never reused, so a missing id means "closed".
+    fn poll_document_waiters(&mut self) {
+        if self.document_waiters.is_empty() {
+            return;
+        }
+        let documents = &self.model.editor_area.documents;
+        let mut finished = Vec::new();
+        self.document_waiters.retain_mut(|waiter| {
+            if waiter.exit_only {
+                return true;
+            }
+            waiter
+                .remaining
+                .retain(|document_id| documents.contains_key(document_id));
+            if waiter.remaining.is_empty() {
+                finished.push(waiter.response_tx.clone());
+                false
+            } else {
+                true
+            }
+        });
+        for response_tx in finished {
+            let _ = response_tx.send(self.automation_response("closed"));
+        }
+    }
+
+    /// The editor is exiting: every pending `--wait` is over.
+    fn answer_exit_waiters(&mut self) {
+        for waiter in std::mem::take(&mut self.document_waiters) {
+            let _ = waiter
+                .response_tx
+                .send(self.automation_response("editor exited"));
         }
     }
 

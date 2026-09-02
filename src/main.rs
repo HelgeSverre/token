@@ -14,6 +14,9 @@ use token::view::RendererPreparation;
 mod automation;
 #[cfg(debug_assertions)]
 mod debug_dump;
+mod launcher;
+#[cfg(target_os = "macos")]
+mod macos_open;
 mod mcp;
 mod runtime;
 
@@ -60,6 +63,9 @@ fn main() -> Result<()> {
 
     // Parse command-line arguments
     let args = CliArgs::parse();
+    if let Some(code) = launcher::maybe_hand_off(&args) {
+        std::process::exit(code);
+    }
     let startup_config = args.into_config().map_err(|e| anyhow::anyhow!(e))?;
 
     let renderer_preparation = match RendererPreparation::start() {
@@ -90,6 +96,8 @@ fn main() -> Result<()> {
         renderer_preparation,
         app_preparation,
     );
+    #[cfg(target_os = "macos")]
+    macos_open::install(app.automation_sender(), event_loop.create_proxy());
     event_loop.run_app(&mut app)?;
 
     Ok(())

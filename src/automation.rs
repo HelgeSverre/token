@@ -53,6 +53,60 @@ pub(crate) enum AutomationRequest {
     SetOverlayInput {
         text: String,
     },
+    /// Open files in the running editor (the CLI handoff). Directories
+    /// start a separate editor process. With `wait`, the response is
+    /// held until every opened document has been closed or the editor
+    /// exits — the `--wait` contract git and similar tools rely on.
+    OpenPaths {
+        paths: Vec<OpenPath>,
+        #[serde(default)]
+        wait: bool,
+    },
+}
+
+/// One path in an `OpenPaths` request; `line`/`column` are 1-indexed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct OpenPath {
+    pub path: std::path::PathBuf,
+    #[serde(default)]
+    pub line: Option<usize>,
+    #[serde(default)]
+    pub column: Option<usize>,
+}
+
+impl OpenPath {
+    /// Parse a CLI argument (`file`, `file:12`, `file:12:3`) into an
+    /// absolute `OpenPath` so the request means the same thing in the
+    /// editor's process, whatever its working directory is.
+    pub(crate) fn from_arg(arg: &std::path::Path) -> Self {
+        let (path, position) = token::cli::split_position(arg);
+        let path = std::path::absolute(&path).unwrap_or(path);
+        Self {
+            path,
+            line: position.map(|(line, _)| line),
+            column: position.map(|(_, column)| column),
+        }
+    }
+}
+
+/// Why a client request did not produce a response.
+#[derive(Debug)]
+pub(crate) enum RequestError {
+    /// Nothing is listening on the automation endpoint.
+    NotRunning,
+    /// The editor closed the connection before answering (it exited).
+    Eof,
+    Other(String),
+}
+
+impl std::fmt::Display for RequestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotRunning => f.write_str("no running Token editor was found"),
+            Self::Eof => f.write_str("Token closed the connection before answering"),
+            Self::Other(message) => f.write_str(message),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -825,11 +879,19 @@ fn server_loop(app_tx: Sender<AutomationEnvelope>, proxy: EventLoopProxy<()>) ->
     use std::net::TcpListener;
     let listener = TcpListener::bind(endpoint())?;
     for stream in listener.incoming() {
-        let mut stream = stream?;
-        let response = handle_stream(&mut stream, app_tx.clone(), &proxy)
-            .unwrap_or_else(|error| AutomationResponse::error(error.to_string()));
-        serde_json::to_writer(&mut stream, &response).map_err(io::Error::other)?;
-        stream.write_all(b"\n")?;
+        match stream {
+            Ok(mut stream) => {
+                let app_tx = app_tx.clone();
+                let proxy = proxy.clone();
+                std::thread::spawn(move || {
+                    let response = handle_stream(&mut stream, app_tx, &proxy)
+                        .unwrap_or_else(|error| AutomationResponse::error(error.to_string()));
+                    let _ = serde_json::to_writer(&mut stream, &response);
+                    let _ = stream.write_all(b"\n");
+                });
+            }
+            Err(error) => tracing::warn!("automation connection failed: {error}"),
+        }
     }
     Ok(())
 }
@@ -841,7 +903,10 @@ fn handle_stream(
 ) -> io::Result<AutomationResponse> {
     let mut line = String::new();
     BufReader::new((&mut *stream).take(MAX_MESSAGE_SIZE.as_u64())).read_line(&mut line)?;
-    let request = serde_json::from_str(&line).map_err(io::Error::other)?;
+    let request: AutomationRequest = serde_json::from_str(&line).map_err(io::Error::other)?;
+    // A `--wait` handoff is answered when the documents close, which can
+    // be hours later; every other request keeps the 30 s bound.
+    let unbounded = matches!(request, AutomationRequest::OpenPaths { wait: true, .. });
     let (response_tx, response_rx) = mpsc::sync_channel(1);
     app_tx
         .send(AutomationEnvelope {
@@ -850,26 +915,51 @@ fn handle_stream(
         })
         .map_err(io::Error::other)?;
     proxy.send_event(()).map_err(io::Error::other)?;
-    response_rx
-        .recv_timeout(RESPONSE_TIMEOUT)
-        .map_err(io::Error::other)
+    if unbounded {
+        response_rx.recv().map_err(io::Error::other)
+    } else {
+        response_rx
+            .recv_timeout(RESPONSE_TIMEOUT)
+            .map_err(io::Error::other)
+    }
 }
 
 pub(crate) fn request(request: AutomationRequest) -> Result<AutomationResponse, String> {
+    request_with_timeout(request, Some(RESPONSE_TIMEOUT)).map_err(|error| error.to_string())
+}
+
+/// Send one request to the running editor; `None` waits indefinitely
+/// for the response (the `--wait` handoff).
+pub(crate) fn request_with_timeout(
+    request: AutomationRequest,
+    timeout: Option<Duration>,
+) -> Result<AutomationResponse, RequestError> {
+    let connect_error = |error: io::Error| match error.kind() {
+        io::ErrorKind::NotFound
+        | io::ErrorKind::ConnectionRefused
+        | io::ErrorKind::AddrNotAvailable => RequestError::NotRunning,
+        _ => RequestError::Other(format!("could not connect to Token: {error}")),
+    };
     #[cfg(unix)]
-    let stream = std::os::unix::net::UnixStream::connect(socket_path())
-        .map_err(|error| format!("could not connect to Token: {error}"))?;
+    let stream = std::os::unix::net::UnixStream::connect(socket_path()).map_err(connect_error)?;
     #[cfg(windows)]
-    let stream = std::net::TcpStream::connect(endpoint())
-        .map_err(|error| format!("could not connect to Token: {error}"))?;
-    stream
-        .set_read_timeout(Some(RESPONSE_TIMEOUT))
-        .map_err(|error| error.to_string())?;
-    let mut writer = stream.try_clone().map_err(|error| error.to_string())?;
-    serde_json::to_writer(&mut writer, &request).map_err(|error| error.to_string())?;
-    writer.write_all(b"\n").map_err(|error| error.to_string())?;
-    serde_json::from_reader(BufReader::new(stream).take(MAX_MESSAGE_SIZE.as_u64()))
-        .map_err(|error| format!("invalid response from Token: {error}"))
+    let stream = std::net::TcpStream::connect(endpoint()).map_err(connect_error)?;
+    let other = |error: io::Error| RequestError::Other(error.to_string());
+    stream.set_read_timeout(timeout).map_err(other)?;
+    let mut writer = stream.try_clone().map_err(other)?;
+    serde_json::to_writer(&mut writer, &request)
+        .map_err(|error| RequestError::Other(error.to_string()))?;
+    writer.write_all(b"\n").map_err(other)?;
+    let mut body = String::new();
+    BufReader::new(stream)
+        .take(MAX_MESSAGE_SIZE.as_u64())
+        .read_line(&mut body)
+        .map_err(other)?;
+    if body.is_empty() {
+        return Err(RequestError::Eof);
+    }
+    serde_json::from_str(&body)
+        .map_err(|error| RequestError::Other(format!("invalid response from Token: {error}")))
 }
 
 #[cfg(unix)]
@@ -922,9 +1012,15 @@ pub(crate) fn run_cli(mut args: impl Iterator<Item = String>) -> Result<(), Stri
         "overlay-input" => AutomationRequest::SetOverlayInput {
             text: args.collect::<Vec<_>>().join(" "),
         },
+        "open" => AutomationRequest::OpenPaths {
+            paths: args
+                .map(|arg| OpenPath::from_arg(std::path::Path::new(&arg)))
+                .collect(),
+            wait: false,
+        },
         _ => {
             return Err(format!(
-            "unknown automation command `{command}`; use state, document, actions, text, cursor, selection, action, scroll, profile, syntax-profile, or overlay-input"
+            "unknown automation command `{command}`; use state, document, actions, text, cursor, selection, action, scroll, profile, syntax-profile, overlay-input, or open"
         ))
         }
     };
@@ -946,7 +1042,8 @@ fn parse_arg<T: std::str::FromStr>(value: Option<String>, name: &str) -> Result<
 #[cfg(test)]
 mod tests {
     use super::{
-        document_size_error, overlay_snapshot, EditorSnapshot, MAX_DOCUMENT_SIZE, MAX_MESSAGE_SIZE,
+        document_size_error, overlay_snapshot, AutomationRequest, EditorSnapshot, OpenPath,
+        MAX_DOCUMENT_SIZE, MAX_MESSAGE_SIZE,
     };
     use token::lsp::{LspServerId, ServerState};
     use token::model::ui::{FindReplaceState, GotoLineState, RecentFilesState, ThemePickerState};
@@ -1149,5 +1246,33 @@ mod tests {
         assert_eq!(snapshot.rows.len(), token::lsp::all_server_defs().len());
         assert_eq!(snapshot.rows[0].label, token::lsp::all_server_defs()[0].id);
         assert_eq!(snapshot.selected, 1);
+    }
+
+    #[test]
+    fn open_paths_wait_defaults_to_false() {
+        let request: AutomationRequest = serde_json::from_str(
+            r#"{"type":"open_paths","paths":[{"path":"/tmp/a.rs","line":3}]}"#,
+        )
+        .unwrap();
+        let AutomationRequest::OpenPaths { paths, wait } = request else {
+            panic!("expected open_paths");
+        };
+        assert!(!wait);
+        assert_eq!(
+            paths,
+            vec![OpenPath {
+                path: "/tmp/a.rs".into(),
+                line: Some(3),
+                column: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn open_path_from_arg_is_absolute_with_position() {
+        let open = OpenPath::from_arg(std::path::Path::new("definitely/missing.rs:9:4"));
+        assert!(open.path.is_absolute());
+        assert!(open.path.ends_with("definitely/missing.rs"));
+        assert_eq!((open.line, open.column), (Some(9), Some(4)));
     }
 }

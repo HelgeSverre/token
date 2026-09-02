@@ -23,7 +23,16 @@ target/debug/token automate action DeleteBackward
 target/debug/token automate scroll 10
 target/debug/token automate profile 120
 target/debug/token automate syntax-profile " "
+target/debug/token automate open src/main.rs:42:7 README.md
 ```
+
+`open` is the request the `token` command itself uses: paths are made
+absolute in the client, `file:line[:column]` suffixes are 1-indexed, an
+already-open file is focused instead of duplicated, and a directory starts a
+separate editor process. The same request carries `"wait": true` for
+`token --wait`: the editor holds the response (with no timeout) until every
+document it opened has been closed in every group, or until it exits, and
+the client treats a closed connection during a wait as success.
 
 `profile` forces full frames through the real `Renderer` and softbuffer surface,
 then returns rolling frame and stage timings including buffer copy and present.
@@ -48,9 +57,9 @@ Run the stdio MCP bridge with:
 target/debug/token mcp
 ```
 
-It provides `get_state`, `get_document`, `list_actions`, `insert_text`,
-`set_cursor`, `set_selection`, `execute_action`, `scroll`, `profile_frames`, and
-`profile_syntax`. The bridge connects to an already-running Token window.
+It provides `get_state`, `get_document`, `list_actions`, `open_paths`,
+`insert_text`, `set_cursor`, `set_selection`, `execute_action`, `scroll`,
+`profile_frames`, and `profile_syntax`. The bridge connects to an already-running Token window.
 Document reads are bounded to 3 MiB; larger documents return a descriptive
 error instead of producing an oversized IPC/MCP response.
 

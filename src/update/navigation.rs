@@ -104,7 +104,7 @@ pub fn push_history(model: &mut AppModel) {
 
 /// Opens (or focuses an already-open tab for) `path` in the focused
 /// group.
-pub(crate) fn open_or_focus(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
+pub fn open_or_focus(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
     update_layout(model, LayoutMsg::OpenFileInNewTab(path))
 }
 
@@ -125,7 +125,7 @@ pub(crate) fn focused_tab_is_text(model: &AppModel) -> bool {
 /// catches). Paths are canonicalized before comparing — one may come
 /// from a decoded LSP URI, the other from `Document.file_path` — falling
 /// back to the raw path when canonicalization fails (nonexistent file).
-pub(crate) fn focused_tab_shows(model: &AppModel, path: &std::path::Path) -> bool {
+pub fn focused_tab_shows(model: &AppModel, path: &std::path::Path) -> bool {
     let Some(focused) = model.try_document().and_then(|d| d.file_path.as_deref()) else {
         return false;
     };
@@ -141,7 +141,7 @@ pub(crate) fn focused_tab_shows(model: &AppModel, path: &std::path::Path) -> boo
 /// generalized so LSP jumps and jump-history navigation can reuse it
 /// after opening/focusing the target tab. `None` (no-op) for a
 /// non-text tab (image/binary placeholder).
-pub(crate) fn place_cursor_char(model: &mut AppModel, line: usize, col: usize) -> Option<Cmd> {
+pub fn place_cursor_char(model: &mut AppModel, line: usize, col: usize) -> Option<Cmd> {
     if !focused_tab_is_text(model) {
         return None;
     }

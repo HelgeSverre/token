@@ -44,6 +44,13 @@ struct ActionParams {
     name: String,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+struct OpenPathsParams {
+    /// Paths to open; `file:line[:column]` suffixes position the cursor
+    /// (1-indexed). Directories start a separate editor window.
+    paths: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 struct TokenMcp;
 
@@ -64,6 +71,18 @@ impl TokenMcp {
     #[tool(description = "List named actions currently bound in the running Token editor")]
     async fn list_actions(&self) -> CallToolResult {
         response(AutomationRequest::Actions).await
+    }
+
+    #[tool(description = "Open files in the running Token editor, optionally at file:line:column")]
+    async fn open_paths(
+        &self,
+        Parameters(OpenPathsParams { paths }): Parameters<OpenPathsParams>,
+    ) -> CallToolResult {
+        let paths = paths
+            .iter()
+            .map(|path| automation::OpenPath::from_arg(std::path::Path::new(path)))
+            .collect();
+        response(AutomationRequest::OpenPaths { paths, wait: false }).await
     }
 
     #[tool(description = "Insert text through Token's real update loop")]

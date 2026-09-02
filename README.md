@@ -49,6 +49,24 @@ just watch    # Start bacon watch mode
 3. **Command palette**: Cmd+Shift+A for all available commands
 4. **Toggle sidebar**: Cmd+1 to show/hide the file tree
 
+### Command line
+
+`token` returns to the shell right away and opens files in the editor that
+is already running; a folder always gets its own window.
+
+| Invocation                   | Effect                                                      |
+| ---------------------------- | ----------------------------------------------------------- |
+| `token src/main.rs:42:7`     | Open at line 42, column 7 (`--line`/`--column` also work)   |
+| `token -w notes.md`          | Block until the tab is closed (or the editor exits)         |
+| `token -w`                   | Block until the editor exits                                |
+| `token .`                    | Open the folder in a new window; `-w` waits for that window |
+| `echo text \| token -`       | Open stdin in a new tab                                     |
+| `token --new-window file.rs` | Start a separate editor instead of reusing the running one  |
+| `token --foreground file.rs` | Run the editor in this process, logs on stderr              |
+
+Use it as a blocking editor with `git config --global core.editor "token -w"`
+or `export EDITOR="token -w"`.
+
 ---
 
 ## Keyboard Shortcuts
