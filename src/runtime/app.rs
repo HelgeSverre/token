@@ -238,6 +238,9 @@ pub struct App {
     automation_profile: Option<AutomationProfile>,
     /// `--wait` handoffs still waiting for their documents to close.
     document_waiters: Vec<DocumentWaiter>,
+    /// When this window last gained focus (process start until then);
+    /// automation clients pick the most recently focused instance.
+    focused_at: std::time::SystemTime,
     syntax_scheduled: HashMap<(token::model::editor_area::DocumentId, u64), Instant>,
     syntax_present_pending: Vec<SyntaxPresentationPending>,
     automation_syntax_profile: Option<AutomationSyntaxProfile>,
@@ -1074,6 +1077,7 @@ impl App {
             automation_tx,
             automation_profile: None,
             document_waiters: Vec::new(),
+            focused_at: std::time::SystemTime::now(),
             syntax_scheduled: HashMap::new(),
             syntax_present_pending: Vec::new(),
             automation_syntax_profile: None,
@@ -1412,6 +1416,9 @@ impl App {
                 Msg::App(AppMsg::ScaleFactorChanged(*scale_factor)),
             ),
             WindowEvent::Focused(focused) => {
+                if *focused {
+                    self.focused_at = std::time::SystemTime::now();
+                }
                 // Window focus loss dismisses the completion popup — the
                 // documented autocomplete.md gap. The popup claims
                 // Up/Down/Enter/Tab pre-keymap, so leaving it open while
@@ -5018,7 +5025,10 @@ impl ApplicationHandler for App {
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        // Waiters first: a `--wait` client must read its answer before
+        // the endpoint it connected through disappears.
         self.answer_exit_waiters();
+        automation::remove_own_endpoint();
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -5461,14 +5471,31 @@ impl App {
     }
 
     /// A window owns one workspace, so a directory delivered to a running
-    /// editor (Finder, MCP) gets its own process. Tests never spawn: the
+    /// editor (Finder, MCP) is focused here if it is ours, handed to the
+    /// editor already showing it, or given its own process. Discovery
+    /// runs off the main thread: this thread is what answers it, and a
+    /// wedged sibling must not freeze the UI. Tests never spawn: the
     /// test binary would re-run itself.
     fn start_editor_for_directory(&self, path: PathBuf) {
-        #[cfg(test)]
-        let _ = path;
+        let root = path.canonicalize().unwrap_or_else(|_| path.clone());
+        let is_ours = self.model.workspace_root().map(|r| r.as_path()) == Some(root.as_path());
+        if is_ours {
+            if let Some(window) = &self.window {
+                window.focus_window();
+            }
+        }
         #[cfg(not(test))]
-        if let Err(error) = crate::launcher::spawn_detached(&[path.clone().into_os_string()]) {
-            tracing::warn!("could not start an editor for {}: {error}", path.display());
+        if !is_ours {
+            std::thread::spawn(move || {
+                let child_args = [path.clone().into_os_string()];
+                crate::launcher::open_directory(
+                    &path,
+                    Vec::new(),
+                    &child_args,
+                    false,
+                    Some(std::process::id()),
+                );
+            });
         }
     }
 
@@ -5510,11 +5537,12 @@ impl App {
     }
 
     fn automation_response(&self, message: &str) -> AutomationResponse {
-        let mut response = AutomationResponse::success(
-            message,
-            crate::automation::EditorSnapshot::from_model(&self.model),
-            self.perf.snapshot(),
-        );
+        let mut state = crate::automation::EditorSnapshot::from_model(&self.model);
+        state.focused_at_ms = self
+            .focused_at
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_millis() as u64);
+        let mut response = AutomationResponse::success(message, state, self.perf.snapshot());
         response.syntax_performance = self.latest_syntax_performance.clone();
         response
     }

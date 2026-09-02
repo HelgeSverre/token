@@ -18,9 +18,24 @@ All notable changes to rust-editor are documented in this file.
   new tab; `--foreground` runs the editor in the calling process.
 - `token automate open <paths…>` and an `open_paths` MCP tool open files in
   the running editor.
+- **Multi-instance automation**: every editor process now listens on its own
+  endpoint (`$TMPDIR/token-<uid>/instances/<pid>.sock`, a loopback port file
+  on Windows) instead of one shared socket that only the first process could
+  own. `token automate instances` lists running editors, `--instance <pid>`
+  targets one, and the MCP bridge gains `list_instances` plus an optional
+  `instance` argument on every tool; the default target is the most recently
+  focused editor. `token file` opens in the editor whose workspace contains
+  the file, and `token dir` focuses the editor already showing that workspace
+  instead of starting a duplicate.
 - macOS: `Token.app` declares document types and handles
   `application:openURLs:`, so Finder "Open With", the Dock, and
   `open -a Token file` deliver files to the running editor.
+
+### Changed
+
+- The automation `state` snapshot reports `instance_id` instead of
+  `process_id` (same value: the editor's process id) and adds
+  `workspace_root` and `focused_at_ms`.
 
 ### Fixed
 

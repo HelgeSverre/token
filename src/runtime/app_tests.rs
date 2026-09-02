@@ -303,6 +303,36 @@ fn open_paths_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::Pa
 }
 
 #[test]
+fn focus_gain_bumps_focused_at_and_state_reports_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.open_workspace(dir.path().to_path_buf());
+    let before = app.focused_at;
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    app.handle_event(&winit::event::WindowEvent::Focused(true));
+    assert!(
+        app.focused_at > before,
+        "gaining focus records a newer time"
+    );
+    let after_gain = app.focused_at;
+    app.handle_event(&winit::event::WindowEvent::Focused(false));
+    assert_eq!(app.focused_at, after_gain, "losing focus keeps the time");
+
+    let response = send_automation_request(&mut app, AutomationRequest::State);
+    let state = response.state.expect("state");
+    assert_eq!(state.instance_id, std::process::id());
+    assert_eq!(
+        state.workspace_root.as_deref(),
+        app.model.workspace_root().map(|p| p.as_path())
+    );
+    let expected_ms = after_gain
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    assert_eq!(state.focused_at_ms, expected_ms);
+}
+
+#[test]
 fn open_paths_opens_tab_and_responds_immediately() {
     let (_dir, a, _) = open_paths_fixture();
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);

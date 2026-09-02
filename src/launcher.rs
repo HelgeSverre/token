@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use token::cli::CliArgs;
 
-use crate::automation::{self, AutomationRequest, OpenPath, RequestError};
+use crate::automation::{self, AutomationRequest, OpenPath, RequestError, Target};
 
 /// How long to wait for a freshly spawned editor to start listening.
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -32,9 +32,13 @@ enum LaunchPlan {
     Foreground,
     /// Start a separate editor process for these arguments; `wait`
     /// keeps it attached (`--wait` on a directory waits for its window).
+    /// `reuse_dir` is the one directory named, when an editor already
+    /// showing that workspace should be focused instead.
     NewProcess {
         child_args: Vec<OsString>,
+        files: Vec<OpenPath>,
         wait: bool,
+        reuse_dir: Option<PathBuf>,
     },
     /// Open `files` in the running editor, starting one if needed.
     HandOff {
@@ -51,7 +55,15 @@ pub(crate) fn maybe_hand_off(args: &CliArgs) -> Option<i32> {
     let plan = plan(args, stdin_file.as_deref());
     let code = match plan {
         LaunchPlan::Foreground => None,
-        LaunchPlan::NewProcess { child_args, wait } => Some(start_new_process(&child_args, wait)),
+        LaunchPlan::NewProcess {
+            child_args,
+            files,
+            wait,
+            reuse_dir: Some(dir),
+        } => Some(open_directory(&dir, files, &child_args, wait, None)),
+        LaunchPlan::NewProcess {
+            child_args, wait, ..
+        } => Some(start_new_process(&child_args, wait)),
         LaunchPlan::HandOff {
             files,
             child_args,
@@ -68,8 +80,9 @@ pub(crate) fn maybe_hand_off(args: &CliArgs) -> Option<i32> {
     code
 }
 
-/// Start `current_exe() --foreground <args>` detached from this terminal.
-pub(crate) fn spawn_detached(extra: &[OsString]) -> io::Result<()> {
+/// Start `current_exe() --foreground <args>` detached from this terminal;
+/// returns the child's pid, which is also its automation instance id.
+pub(crate) fn spawn_detached(extra: &[OsString]) -> io::Result<u32> {
     let mut command = child_command(extra)?;
     #[cfg(unix)]
     {
@@ -91,7 +104,35 @@ pub(crate) fn spawn_detached(extra: &[OsString]) -> io::Result<()> {
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
     }
-    command.spawn().map(drop)
+    command.spawn().map(|child| child.id())
+}
+
+/// Open `dir` (plus `files`) in the editor already showing that
+/// workspace, or start one. `exclude` is the calling editor's own id
+/// when this runs inside an editor, so discovery never waits on itself.
+pub(crate) fn open_directory(
+    dir: &Path,
+    files: Vec<OpenPath>,
+    child_args: &[OsString],
+    wait: bool,
+    exclude: Option<u32>,
+) -> i32 {
+    let root = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+    let existing = automation::discover_in(&automation::instances_dir(), exclude)
+        .into_iter()
+        .find(|instance| instance.info.workspace_root.as_deref() == Some(root.as_path()));
+    match existing {
+        Some(instance) => {
+            let request = AutomationRequest::OpenPaths { paths: files, wait };
+            let timeout = (!wait).then_some(Duration::from_secs(30));
+            let target = Target::Instance(instance.info.instance_id);
+            exit_code(
+                automation::request_with_timeout(&target, request, timeout),
+                wait,
+            )
+        }
+        None => start_new_process(child_args, wait),
+    }
 }
 
 fn plan(args: &CliArgs, stdin_file: Option<&Path>) -> LaunchPlan {
@@ -136,9 +177,15 @@ fn plan(args: &CliArgs, stdin_file: Option<&Path>) -> LaunchPlan {
         arg
     }));
     if args.new_window || !dirs.is_empty() {
+        let reuse_dir = match dirs.as_slice() {
+            [dir] if !args.new_window => Some(dir.clone()),
+            _ => None,
+        };
         LaunchPlan::NewProcess {
             child_args,
+            files,
             wait: args.wait,
+            reuse_dir,
         }
     } else {
         LaunchPlan::HandOff {
@@ -156,7 +203,7 @@ fn start_new_process(child_args: &[OsString], wait: bool) -> i32 {
         child_command(child_args)
             .and_then(|mut command| command.status().map(|status| status.code().unwrap_or(1)))
     } else {
-        spawn_detached(child_args).map(|()| 0)
+        spawn_detached(child_args).map(|_pid| 0)
     };
     result.unwrap_or_else(|error| {
         eprintln!("token: failed to start the editor: {error}");
@@ -165,9 +212,14 @@ fn start_new_process(child_args: &[OsString], wait: bool) -> i32 {
 }
 
 fn hand_off(files: Vec<OpenPath>, child_args: &[OsString], wait: bool) -> Option<i32> {
+    // The editor whose workspace holds the first file, else the most
+    // recently focused one.
+    let target = files
+        .first()
+        .map_or(Target::Default, |file| Target::ForPath(file.path.clone()));
     let request = AutomationRequest::OpenPaths { paths: files, wait };
     let timeout = (!wait).then_some(Duration::from_secs(30));
-    match automation::request_with_timeout(request.clone(), timeout) {
+    match automation::request_with_timeout(&target, request.clone(), timeout) {
         Err(RequestError::NotRunning) => {}
         outcome => return Some(exit_code(outcome, wait)),
     }
@@ -175,17 +227,22 @@ fn hand_off(files: Vec<OpenPath>, child_args: &[OsString], wait: bool) -> Option
         // Started by a desktop launcher: this process is the editor.
         return None;
     }
-    if let Err(error) = spawn_detached(child_args) {
-        eprintln!("token: failed to start the editor: {error}");
-        return Some(1);
-    }
+    let child = match spawn_detached(child_args) {
+        Ok(pid) => Target::Instance(pid),
+        Err(error) => {
+            eprintln!("token: failed to start the editor: {error}");
+            return Some(1);
+        }
+    };
     let deadline = Instant::now() + STARTUP_TIMEOUT;
     loop {
-        match automation::request_with_timeout(request.clone(), timeout) {
-            Err(RequestError::NotRunning) if Instant::now() < deadline => {
+        match automation::request_with_timeout(&child, request.clone(), timeout) {
+            Err(RequestError::NotRunning | RequestError::NoSuchInstance(_))
+                if Instant::now() < deadline =>
+            {
                 std::thread::sleep(STARTUP_POLL);
             }
-            Err(RequestError::NotRunning) => {
+            Err(RequestError::NotRunning | RequestError::NoSuchInstance(_)) => {
                 eprintln!("token: the editor started but did not answer; it may still be opening");
                 return Some(1);
             }
@@ -326,7 +383,11 @@ mod tests {
         );
         assert!(matches!(
             plan_dir,
-            LaunchPlan::NewProcess { wait: true, .. }
+            LaunchPlan::NewProcess {
+                wait: true,
+                reuse_dir: Some(_),
+                ..
+            }
         ));
         let plan_new = plan(
             &CliArgs {
@@ -337,8 +398,39 @@ mod tests {
         );
         assert!(matches!(
             plan_new,
-            LaunchPlan::NewProcess { wait: false, .. }
+            LaunchPlan::NewProcess {
+                wait: false,
+                reuse_dir: None,
+                ..
+            }
         ));
+    }
+
+    #[test]
+    fn two_directories_never_reuse_and_files_ride_along() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let two = plan(
+            &args(&[a.path().to_str().unwrap(), b.path().to_str().unwrap()]),
+            None,
+        );
+        assert!(matches!(
+            two,
+            LaunchPlan::NewProcess {
+                reuse_dir: None,
+                ..
+            }
+        ));
+        let with_file = plan(&args(&[a.path().to_str().unwrap(), "missing/x.rs:3"]), None);
+        let LaunchPlan::NewProcess {
+            files, reuse_dir, ..
+        } = with_file
+        else {
+            panic!("expected a new process");
+        };
+        assert!(reuse_dir.is_some());
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].line, Some(3));
     }
 
     #[test]

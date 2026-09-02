@@ -1,6 +1,7 @@
 //! Cursor-free local automation for the running Token editor.
 
 use std::io::{self, BufRead, BufReader, Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender, SyncSender};
 use std::time::Duration;
 
@@ -12,7 +13,9 @@ use token::util::ByteSize;
 use winit::event_loop::EventLoopProxy;
 
 const SOCKET_ENV: &str = "TOKEN_AUTOMATION_SOCKET";
-const RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long discovery waits for one instance to describe itself.
+const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_MESSAGE_SIZE: ByteSize = ByteSize::mebibytes(4);
 const MAX_DOCUMENT_SIZE: ByteSize = ByteSize::mebibytes(3);
 
@@ -96,6 +99,8 @@ pub(crate) enum RequestError {
     NotRunning,
     /// The editor closed the connection before answering (it exited).
     Eof,
+    /// `--instance` named an id no running editor advertises.
+    NoSuchInstance(u32),
     Other(String),
 }
 
@@ -104,6 +109,7 @@ impl std::fmt::Display for RequestError {
         match self {
             Self::NotRunning => f.write_str("no running Token editor was found"),
             Self::Eof => f.write_str("Token closed the connection before answering"),
+            Self::NoSuchInstance(id) => write!(f, "no running Token editor has instance id {id}"),
             Self::Other(message) => f.write_str(message),
         }
     }
@@ -111,7 +117,14 @@ impl std::fmt::Display for RequestError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct EditorSnapshot {
-    pub process_id: u32,
+    /// The editor process id; one window per process, so this is also
+    /// the instance id that `--instance` / `instance` target.
+    pub instance_id: u32,
+    pub workspace_root: Option<PathBuf>,
+    /// Unix milliseconds of the last time this window gained focus
+    /// (process start until then); `0` from `from_model`, the runtime
+    /// fills it in. Discovery picks the largest value as the default.
+    pub focused_at_ms: u64,
     pub window_width: u32,
     pub window_height: u32,
     pub document_name: String,
@@ -632,7 +645,9 @@ impl EditorSnapshot {
         let cursor = model.editor().active_cursor();
         let viewport = &model.editor().viewport;
         Self {
-            process_id: std::process::id(),
+            instance_id: std::process::id(),
+            workspace_root: model.workspace_root().cloned(),
+            focused_at_ms: 0,
             window_width: model.window_size.0,
             window_height: model.window_size.1,
             document_name: document.display_name(),
@@ -795,37 +810,133 @@ pub(crate) fn start_server(app_tx: Sender<AutomationEnvelope>, proxy: EventLoopP
     });
 }
 
+// ============================================================================
+// Endpoints — one per editor process, advertised under `instances/`
+// ============================================================================
+
+/// Where one editor process listens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Endpoint {
+    #[cfg(unix)]
+    Socket(PathBuf),
+    #[cfg(windows)]
+    Tcp(String),
+}
+
+/// The directory every running instance advertises itself in. Unix keys
+/// it by effective uid; Windows' temp dir is already per user.
+pub(crate) fn instances_dir() -> PathBuf {
+    #[cfg(unix)]
+    {
+        std::env::temp_dir()
+            .join(format!("token-{}", unsafe { libc::geteuid() }))
+            .join("instances")
+    }
+    #[cfg(windows)]
+    {
+        std::env::temp_dir().join("token").join("instances")
+    }
+}
+
+/// The file that advertises `pid` inside `dir`: the socket itself on
+/// Unix, a text file holding the loopback port on Windows.
+fn endpoint_file(dir: &Path, pid: u32) -> PathBuf {
+    #[cfg(unix)]
+    {
+        dir.join(format!("{pid}.sock"))
+    }
+    #[cfg(windows)]
+    {
+        dir.join(format!("{pid}.port"))
+    }
+}
+
+/// `TOKEN_AUTOMATION_SOCKET` pins both sides to one endpoint and turns
+/// discovery off — how tests isolate an editor from the user's own.
+fn fixed_endpoint() -> Option<Endpoint> {
+    #[cfg(unix)]
+    {
+        std::env::var_os(SOCKET_ENV).map(|value| Endpoint::Socket(PathBuf::from(value)))
+    }
+    #[cfg(windows)]
+    {
+        std::env::var(SOCKET_ENV).ok().map(Endpoint::Tcp)
+    }
+}
+
+fn endpoint_from_file(path: &Path) -> Option<Endpoint> {
+    #[cfg(unix)]
+    {
+        Some(Endpoint::Socket(path.to_path_buf()))
+    }
+    #[cfg(windows)]
+    {
+        let port: u16 = std::fs::read_to_string(path).ok()?.trim().parse().ok()?;
+        Some(Endpoint::Tcp(format!("127.0.0.1:{port}")))
+    }
+}
+
+/// The advertisement this process wrote, if any, so `exiting` can take
+/// it down instead of leaving it for the next client to reap.
+fn own_endpoint_file() -> Option<PathBuf> {
+    match fixed_endpoint() {
+        #[cfg(unix)]
+        Some(Endpoint::Socket(path)) => Some(path),
+        #[cfg(windows)]
+        Some(Endpoint::Tcp(_)) => None,
+        None => Some(endpoint_file(&instances_dir(), std::process::id())),
+    }
+}
+
+pub(crate) fn remove_own_endpoint() {
+    if let Some(path) = own_endpoint_file() {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+/// Create `dir` if needed and insist it is ours and private: the
+/// automation socket accepts unauthenticated commands.
+#[cfg(unix)]
+fn harden_dir(dir: &Path) -> io::Result<()> {
+    use std::fs;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    match fs::create_dir(dir) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error),
+    }
+    let metadata = fs::symlink_metadata(dir)?;
+    if !metadata.file_type().is_dir() || metadata.uid() != unsafe { libc::geteuid() } {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "automation directory {} is not a user-owned directory",
+                dir.display()
+            ),
+        ));
+    }
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
+}
+
 #[cfg(unix)]
 fn server_loop(app_tx: Sender<AutomationEnvelope>, proxy: EventLoopProxy<()>) -> io::Result<()> {
     use std::fs;
     use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
     use std::os::unix::net::UnixListener;
 
-    let path = socket_path();
-    if std::env::var_os(SOCKET_ENV).is_none() {
-        let parent = path.parent().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "socket has no parent directory",
-            )
-        })?;
-        match fs::create_dir(parent) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(error),
+    let path = match fixed_endpoint() {
+        Some(Endpoint::Socket(path)) => path,
+        None => {
+            let dir = instances_dir();
+            if let Some(parent) = dir.parent() {
+                harden_dir(parent)?;
+            }
+            harden_dir(&dir)?;
+            endpoint_file(&dir, std::process::id())
         }
-        let metadata = fs::symlink_metadata(parent)?;
-        if !metadata.file_type().is_dir() || metadata.uid() != unsafe { libc::geteuid() } {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                format!(
-                    "automation directory {} is not a user-owned directory",
-                    parent.display()
-                ),
-            ));
-        }
-        fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
-    }
+    };
+    // A leftover with our pid means the pid was recycled from a dead
+    // editor (or a test reused a fixed path); nobody can be listening.
     if path.exists() {
         let metadata = fs::symlink_metadata(&path)?;
         if !metadata.file_type().is_socket() {
@@ -843,42 +954,40 @@ fn server_loop(app_tx: Sender<AutomationEnvelope>, proxy: EventLoopProxy<()>) ->
                 ),
             ));
         }
-        if std::os::unix::net::UnixStream::connect(&path).is_ok() {
-            return Err(io::Error::new(
-                io::ErrorKind::AddrInUse,
-                format!(
-                    "another Token automation server is using {}",
-                    path.display()
-                ),
-            ));
-        }
         fs::remove_file(&path)?;
     }
     let listener = UnixListener::bind(&path)?;
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                let app_tx = app_tx.clone();
-                let proxy = proxy.clone();
-                std::thread::spawn(move || {
-                    let response = handle_stream(&mut stream, app_tx, &proxy)
-                        .unwrap_or_else(|error| AutomationResponse::error(error.to_string()));
-                    let _ = serde_json::to_writer(&mut stream, &response);
-                    let _ = stream.write_all(b"\n");
-                });
-            }
-            Err(error) => tracing::warn!("automation connection failed: {error}"),
-        }
-    }
+    accept_loop(listener.incoming(), app_tx, proxy);
     Ok(())
 }
 
 #[cfg(windows)]
 fn server_loop(app_tx: Sender<AutomationEnvelope>, proxy: EventLoopProxy<()>) -> io::Result<()> {
     use std::net::TcpListener;
-    let listener = TcpListener::bind(endpoint())?;
-    for stream in listener.incoming() {
+    let listener = match fixed_endpoint() {
+        Some(Endpoint::Tcp(address)) => TcpListener::bind(address)?,
+        None => {
+            let dir = instances_dir();
+            std::fs::create_dir_all(&dir)?;
+            let listener = TcpListener::bind("127.0.0.1:0")?;
+            let port = listener.local_addr()?.port();
+            std::fs::write(endpoint_file(&dir, std::process::id()), port.to_string())?;
+            listener
+        }
+    };
+    accept_loop(listener.incoming(), app_tx, proxy);
+    Ok(())
+}
+
+fn accept_loop<S>(
+    incoming: impl Iterator<Item = io::Result<S>>,
+    app_tx: Sender<AutomationEnvelope>,
+    proxy: EventLoopProxy<()>,
+) where
+    S: Read + Write + Send + 'static,
+{
+    for stream in incoming {
         match stream {
             Ok(mut stream) => {
                 let app_tx = app_tx.clone();
@@ -893,7 +1002,6 @@ fn server_loop(app_tx: Sender<AutomationEnvelope>, proxy: EventLoopProxy<()>) ->
             Err(error) => tracing::warn!("automation connection failed: {error}"),
         }
     }
-    Ok(())
 }
 
 fn handle_stream(
@@ -924,16 +1032,197 @@ fn handle_stream(
     }
 }
 
-pub(crate) fn request(request: AutomationRequest) -> Result<AutomationResponse, String> {
-    request_with_timeout(request, Some(RESPONSE_TIMEOUT)).map_err(|error| error.to_string())
+// ============================================================================
+// Discovery — which editors are running, and which one a client means
+// ============================================================================
+
+/// What one running editor says about itself; the subset of
+/// `EditorSnapshot` that routing needs, parsed leniently so an older or
+/// newer editor still shows up in the list.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct InstanceInfo {
+    pub instance_id: u32,
+    pub workspace_root: Option<PathBuf>,
+    pub document_name: String,
+    pub focused_at_ms: u64,
 }
 
-/// Send one request to the running editor; `None` waits indefinitely
-/// for the response (the `--wait` handoff).
+#[derive(Deserialize)]
+struct DiscoveryReply {
+    #[serde(default)]
+    state: Option<InstanceInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Instance {
+    pub info: InstanceInfo,
+    pub endpoint: Endpoint,
+}
+
+/// Which running editor a request is for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Target {
+    Instance(u32),
+    /// The editor whose workspace contains the path, else the default.
+    ForPath(PathBuf),
+    /// The most recently focused editor.
+    Default,
+}
+
+/// Every running editor, most recently focused first.
+pub(crate) fn discover() -> Vec<Instance> {
+    match fixed_endpoint() {
+        Some(endpoint) => probe(&endpoint)
+            .map(|info| vec![Instance { info, endpoint }])
+            .unwrap_or_default(),
+        None => discover_in(&instances_dir(), None),
+    }
+}
+
+/// List the editors advertised in `dir`, skipping `exclude` (a caller
+/// asking from inside an editor must not wait on itself). Dead
+/// advertisements are removed on the way.
+pub(crate) fn discover_in(dir: &Path, exclude: Option<u32>) -> Vec<Instance> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let candidates: Vec<(u32, PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let pid: u32 = path.file_stem()?.to_str()?.parse().ok()?;
+            (Some(pid) != exclude).then_some((pid, path))
+        })
+        .collect();
+    let mut found = Vec::new();
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = candidates
+            .iter()
+            .map(|(pid, path)| {
+                scope.spawn(move || {
+                    let Some(endpoint) = endpoint_from_file(path) else {
+                        let _ = std::fs::remove_file(path);
+                        return None;
+                    };
+                    match probe(&endpoint) {
+                        Ok(info) if info.instance_id == *pid => Some(Instance { info, endpoint }),
+                        Ok(_) => None,
+                        Err(RequestError::NotRunning) => {
+                            let _ = std::fs::remove_file(path);
+                            None
+                        }
+                        Err(_) => None,
+                    }
+                })
+            })
+            .collect();
+        found.extend(
+            handles
+                .into_iter()
+                .filter_map(|handle| handle.join().ok().flatten()),
+        );
+    });
+    found.sort_by_key(|instance| std::cmp::Reverse(instance.info.focused_at_ms));
+    found
+}
+
+fn probe(endpoint: &Endpoint) -> Result<InstanceInfo, RequestError> {
+    let body = exchange(endpoint, &AutomationRequest::State, Some(DISCOVERY_TIMEOUT))?;
+    serde_json::from_str::<DiscoveryReply>(&body)
+        .map_err(|error| RequestError::Other(format!("invalid response from Token: {error}")))?
+        .state
+        .ok_or_else(|| RequestError::Other("Token answered without a state".to_owned()))
+}
+
+/// Choose among `instances` for `target`; `ForPath` prefers the deepest
+/// workspace containing the path and otherwise behaves like `Default`.
+pub(crate) fn pick<'a>(instances: &'a [Instance], target: &Target) -> Option<&'a Instance> {
+    match target {
+        Target::Instance(id) => instances
+            .iter()
+            .find(|instance| instance.info.instance_id == *id),
+        Target::ForPath(path) => {
+            let path = canonical_or_parent(path);
+            instances
+                .iter()
+                .filter(|instance| {
+                    instance
+                        .info
+                        .workspace_root
+                        .as_deref()
+                        .is_some_and(|root| path.starts_with(root))
+                })
+                .max_by_key(|instance| {
+                    instance
+                        .info
+                        .workspace_root
+                        .as_ref()
+                        .map_or(0, |root| root.components().count())
+                })
+                .or_else(|| pick(instances, &Target::Default))
+        }
+        Target::Default => instances
+            .iter()
+            .max_by_key(|instance| instance.info.focused_at_ms),
+    }
+}
+
+/// Canonicalize for prefix matching; a file that does not exist yet
+/// borrows its parent's canonical form.
+fn canonical_or_parent(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| {
+        path.parent()
+            .and_then(|parent| parent.canonicalize().ok())
+            .map(|parent| match path.file_name() {
+                Some(name) => parent.join(name),
+                None => parent,
+            })
+            .unwrap_or_else(|| path.to_path_buf())
+    })
+}
+
+fn resolve(target: &Target) -> Result<Endpoint, RequestError> {
+    if let Some(endpoint) = fixed_endpoint() {
+        return Ok(endpoint);
+    }
+    if let Target::Instance(id) = target {
+        let file = endpoint_file(&instances_dir(), *id);
+        return file
+            .exists()
+            .then(|| endpoint_from_file(&file))
+            .flatten()
+            .ok_or(RequestError::NoSuchInstance(*id));
+    }
+    let instances = discover();
+    pick(&instances, target)
+        .map(|instance| instance.endpoint.clone())
+        .ok_or(RequestError::NotRunning)
+}
+
+// ============================================================================
+// Client
+// ============================================================================
+
+/// Send one request to a running editor; `None` waits indefinitely for
+/// the response (the `--wait` handoff).
 pub(crate) fn request_with_timeout(
+    target: &Target,
     request: AutomationRequest,
     timeout: Option<Duration>,
 ) -> Result<AutomationResponse, RequestError> {
+    let endpoint = resolve(target)?;
+    let body = exchange(&endpoint, &request, timeout)?;
+    serde_json::from_str(&body)
+        .map_err(|error| RequestError::Other(format!("invalid response from Token: {error}")))
+}
+
+/// One request/response line pair over a fresh connection.
+fn exchange(
+    endpoint: &Endpoint,
+    request: &AutomationRequest,
+    timeout: Option<Duration>,
+) -> Result<String, RequestError> {
     let connect_error = |error: io::Error| match error.kind() {
         io::ErrorKind::NotFound
         | io::ErrorKind::ConnectionRefused
@@ -941,13 +1230,17 @@ pub(crate) fn request_with_timeout(
         _ => RequestError::Other(format!("could not connect to Token: {error}")),
     };
     #[cfg(unix)]
-    let stream = std::os::unix::net::UnixStream::connect(socket_path()).map_err(connect_error)?;
+    let Endpoint::Socket(path) = endpoint;
+    #[cfg(unix)]
+    let stream = std::os::unix::net::UnixStream::connect(path).map_err(connect_error)?;
     #[cfg(windows)]
-    let stream = std::net::TcpStream::connect(endpoint()).map_err(connect_error)?;
+    let Endpoint::Tcp(address) = endpoint;
+    #[cfg(windows)]
+    let stream = std::net::TcpStream::connect(address).map_err(connect_error)?;
     let other = |error: io::Error| RequestError::Other(error.to_string());
     stream.set_read_timeout(timeout).map_err(other)?;
     let mut writer = stream.try_clone().map_err(other)?;
-    serde_json::to_writer(&mut writer, &request)
+    serde_json::to_writer(&mut writer, request)
         .map_err(|error| RequestError::Other(error.to_string()))?;
     writer.write_all(b"\n").map_err(other)?;
     let mut body = String::new();
@@ -958,29 +1251,54 @@ pub(crate) fn request_with_timeout(
     if body.is_empty() {
         return Err(RequestError::Eof);
     }
-    serde_json::from_str(&body)
-        .map_err(|error| RequestError::Other(format!("invalid response from Token: {error}")))
+    Ok(body)
 }
 
-#[cfg(unix)]
-fn socket_path() -> std::path::PathBuf {
-    std::env::var_os(SOCKET_ENV)
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| {
-            std::env::temp_dir().join(format!("token-{}/automation.sock", unsafe {
-                libc::geteuid()
-            }))
-        })
+// ============================================================================
+// `token automate` CLI
+// ============================================================================
+
+enum CliCommand {
+    Instances,
+    Request(AutomationRequest),
 }
 
-#[cfg(windows)]
-fn endpoint() -> String {
-    std::env::var(SOCKET_ENV).unwrap_or_else(|_| "127.0.0.1:49371".to_owned())
+pub(crate) fn run_cli(args: impl Iterator<Item = String>) -> Result<(), String> {
+    let (target, command) = parse_cli(args)?;
+    let request_value = match command {
+        CliCommand::Instances => {
+            let infos: Vec<InstanceInfo> = discover()
+                .into_iter()
+                .map(|instance| instance.info)
+                .collect();
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&infos).map_err(|error| error.to_string())?
+            );
+            return Ok(());
+        }
+        CliCommand::Request(request) => request,
+    };
+    let response = request_with_timeout(&target, request_value, Some(RESPONSE_TIMEOUT))
+        .map_err(|error| error.to_string())?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&response).map_err(|error| error.to_string())?
+    );
+    response.ok.then_some(()).ok_or(response.message)
 }
 
-pub(crate) fn run_cli(mut args: impl Iterator<Item = String>) -> Result<(), String> {
-    let command = args.next().unwrap_or_else(|| "state".to_owned());
-    let request_value = match command.as_str() {
+/// `[--instance <id>] <command> [args…]`; the command defaults to `state`.
+fn parse_cli(mut args: impl Iterator<Item = String>) -> Result<(Target, CliCommand), String> {
+    let mut target = Target::Default;
+    let mut command = args.next();
+    while matches!(command.as_deref(), Some("--instance" | "-i")) {
+        target = Target::Instance(parse_arg(args.next(), "instance id")?);
+        command = args.next();
+    }
+    let command = command.unwrap_or_else(|| "state".to_owned());
+    let request = match command.as_str() {
+        "instances" => return Ok((target, CliCommand::Instances)),
         "state" => AutomationRequest::State,
         "document" => AutomationRequest::Document,
         "actions" => AutomationRequest::Actions,
@@ -1020,16 +1338,11 @@ pub(crate) fn run_cli(mut args: impl Iterator<Item = String>) -> Result<(), Stri
         },
         _ => {
             return Err(format!(
-            "unknown automation command `{command}`; use state, document, actions, text, cursor, selection, action, scroll, profile, syntax-profile, overlay-input, or open"
+            "unknown automation command `{command}`; use instances, state, document, actions, text, cursor, selection, action, scroll, profile, syntax-profile, overlay-input, or open (prefix with --instance <id> to pick an editor)"
         ))
         }
     };
-    let response = request(request_value)?;
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&response).map_err(|error| error.to_string())?
-    );
-    response.ok.then_some(()).ok_or(response.message)
+    Ok((target, CliCommand::Request(request)))
 }
 
 fn parse_arg<T: std::str::FromStr>(value: Option<String>, name: &str) -> Result<T, String> {
@@ -1042,7 +1355,8 @@ fn parse_arg<T: std::str::FromStr>(value: Option<String>, name: &str) -> Result<
 #[cfg(test)]
 mod tests {
     use super::{
-        document_size_error, overlay_snapshot, AutomationRequest, EditorSnapshot, OpenPath,
+        document_size_error, overlay_snapshot, parse_cli, pick, resolve, AutomationRequest,
+        CliCommand, EditorSnapshot, Instance, InstanceInfo, OpenPath, RequestError, Target,
         MAX_DOCUMENT_SIZE, MAX_MESSAGE_SIZE,
     };
     use token::lsp::{LspServerId, ServerState};
@@ -1274,5 +1588,170 @@ mod tests {
         assert!(open.path.is_absolute());
         assert!(open.path.ends_with("definitely/missing.rs"));
         assert_eq!((open.line, open.column), (Some(9), Some(4)));
+    }
+
+    fn instance(id: u32, root: Option<&str>, focused_at_ms: u64) -> Instance {
+        Instance {
+            info: InstanceInfo {
+                instance_id: id,
+                workspace_root: root.map(std::path::PathBuf::from),
+                document_name: String::new(),
+                focused_at_ms,
+            },
+            #[cfg(unix)]
+            endpoint: super::Endpoint::Socket(std::path::PathBuf::from(format!("/{id}.sock"))),
+            #[cfg(windows)]
+            endpoint: super::Endpoint::Tcp(format!("127.0.0.1:{id}")),
+        }
+    }
+
+    #[test]
+    fn pick_prefers_the_deepest_workspace_containing_the_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let nested = root.join("nested");
+        std::fs::create_dir(&nested).unwrap();
+        let instances = [
+            instance(1, Some(root.to_str().unwrap()), 100),
+            instance(2, Some(nested.to_str().unwrap()), 1),
+            instance(3, None, 999),
+        ];
+        let target = Target::ForPath(nested.join("not-yet-created.rs"));
+        assert_eq!(pick(&instances, &target).unwrap().info.instance_id, 2);
+        let target = Target::ForPath(root.join("top.rs"));
+        assert_eq!(pick(&instances, &target).unwrap().info.instance_id, 1);
+    }
+
+    #[test]
+    fn pick_falls_back_to_the_most_recently_focused() {
+        let instances = [
+            instance(1, Some("/definitely/elsewhere"), 5),
+            instance(2, None, 50),
+            instance(3, None, 7),
+        ];
+        assert_eq!(
+            pick(&instances, &Target::Default).unwrap().info.instance_id,
+            2
+        );
+        let unrelated = Target::ForPath(std::path::PathBuf::from("/nowhere/file.rs"));
+        assert_eq!(pick(&instances, &unrelated).unwrap().info.instance_id, 2);
+        assert_eq!(
+            pick(&instances, &Target::Instance(3))
+                .unwrap()
+                .info
+                .instance_id,
+            3
+        );
+        assert!(pick(&instances, &Target::Instance(4)).is_none());
+        assert!(pick(&[], &Target::Default).is_none());
+    }
+
+    #[test]
+    fn resolve_reports_a_missing_instance() {
+        if std::env::var_os(super::SOCKET_ENV).is_some() {
+            return; // a fixed endpoint answers every target
+        }
+        assert!(matches!(
+            resolve(&Target::Instance(u32::MAX)),
+            Err(RequestError::NoSuchInstance(u32::MAX))
+        ));
+    }
+
+    #[test]
+    fn parse_cli_peels_the_instance_flag() {
+        let (target, command) = parse_cli(
+            ["--instance", "42", "cursor", "1", "2"]
+                .map(String::from)
+                .into_iter(),
+        )
+        .unwrap();
+        assert_eq!(target, Target::Instance(42));
+        assert!(matches!(
+            command,
+            CliCommand::Request(AutomationRequest::SetCursor { line: 1, column: 2 })
+        ));
+        let (target, command) = parse_cli(std::iter::empty()).unwrap();
+        assert_eq!(target, Target::Default);
+        assert!(matches!(
+            command,
+            CliCommand::Request(AutomationRequest::State)
+        ));
+        let (_, command) =
+            parse_cli(["-i", "7", "instances"].map(String::from).into_iter()).unwrap();
+        assert!(matches!(command, CliCommand::Instances));
+        assert!(parse_cli(["--instance", "x"].map(String::from).into_iter()).is_err());
+    }
+
+    #[test]
+    fn snapshot_exposes_instance_id_and_workspace_root() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let dir = tempfile::tempdir().unwrap();
+        model.open_workspace(dir.path().to_path_buf());
+        let value = serde_json::to_value(EditorSnapshot::from_model(&model)).unwrap();
+        assert_eq!(value["instance_id"], std::process::id());
+        assert!(value.get("process_id").is_none());
+        assert!(value["workspace_root"].is_string());
+        assert_eq!(value["focused_at_ms"], 0);
+        let info: InstanceInfo = serde_json::from_value(value).unwrap();
+        assert_eq!(info.instance_id, std::process::id());
+    }
+
+    /// A fake editor: answers every connection with one canned `state`.
+    #[cfg(unix)]
+    fn fake_instance(dir: &std::path::Path, id: u32, root: &str, focused_at_ms: u64) {
+        use std::io::Write;
+        let listener =
+            std::os::unix::net::UnixListener::bind(dir.join(format!("{id}.sock"))).unwrap();
+        let reply = format!(
+            "{{\"ok\":true,\"state\":{{\"instance_id\":{id},\"workspace_root\":\"{root}\",\"focused_at_ms\":{focused_at_ms}}}}}\n"
+        );
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let reply = reply.clone();
+                std::thread::spawn(move || {
+                    let mut stream = stream;
+                    let mut line = String::new();
+                    let _ = std::io::BufRead::read_line(
+                        &mut std::io::BufReader::new(&stream),
+                        &mut line,
+                    );
+                    let _ = stream.write_all(reply.as_bytes());
+                });
+            }
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discover_lists_live_instances_and_reaps_dead_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        fake_instance(dir.path(), 7, "/a", 5);
+        fake_instance(dir.path(), 9, "/b", 50);
+        // A socket whose listener is gone, and junk that is not an instance.
+        drop(std::os::unix::net::UnixListener::bind(dir.path().join("8.sock")).unwrap());
+        std::fs::write(dir.path().join("notes.txt"), "").unwrap();
+
+        let found = super::discover_in(dir.path(), None);
+        let ids: Vec<u32> = found.iter().map(|i| i.info.instance_id).collect();
+        assert_eq!(ids, vec![9, 7], "most recently focused first");
+        assert_eq!(
+            found[1].info.workspace_root.as_deref(),
+            Some(std::path::Path::new("/a"))
+        );
+        assert!(!dir.path().join("8.sock").exists(), "dead socket reaped");
+        assert!(dir.path().join("7.sock").exists());
+
+        let without_self = super::discover_in(dir.path(), Some(9));
+        assert_eq!(without_self.len(), 1);
+        assert_eq!(without_self[0].info.instance_id, 7);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discover_drops_an_instance_whose_id_does_not_match_its_file() {
+        let dir = tempfile::tempdir().unwrap();
+        fake_instance(dir.path(), 11, "/a", 5);
+        std::fs::rename(dir.path().join("11.sock"), dir.path().join("12.sock")).unwrap();
+        assert!(super::discover_in(dir.path(), None).is_empty());
     }
 }

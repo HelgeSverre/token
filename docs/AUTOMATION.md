@@ -57,14 +57,42 @@ Run the stdio MCP bridge with:
 target/debug/token mcp
 ```
 
-It provides `get_state`, `get_document`, `list_actions`, `open_paths`,
+It provides `list_instances`, `get_state`, `get_document`, `list_actions`, `open_paths`,
 `insert_text`, `set_cursor`, `set_selection`, `execute_action`, `scroll`,
 `profile_frames`, and `profile_syntax`. The bridge connects to an already-running Token window.
 Document reads are bounded to 3 MiB; larger documents return a descriptive
 error instead of producing an oversized IPC/MCP response.
 
-On Unix, the endpoint defaults to
-`$TMPDIR/token-<effective-user-id>/automation.sock`; its directory and socket
-are created with owner-only permissions. Override it in both processes with
-`TOKEN_AUTOMATION_SOCKET`. Windows uses loopback TCP and accepts the same
-environment variable as an `IP:port` value.
+## Instances
+
+Every editor window is its own process, and every process listens on its own
+endpoint, so any number of windows can be automated from one client. List them
+with:
+
+```bash
+target/debug/token automate instances
+```
+
+Each entry carries `instance_id` (the process id, also reported as
+`instance_id` in every `state` response), `workspace_root`, `document_name`,
+and `focused_at_ms`. Commands go to the most recently focused editor unless you
+name one:
+
+```bash
+target/debug/token automate --instance 12345 state
+```
+
+`open` without `--instance` picks the editor whose workspace contains the first
+path, and a directory argument focuses the editor already showing that
+workspace instead of starting another. The MCP bridge exposes the same thing as
+`list_instances`, and every other tool accepts an optional `instance` argument.
+
+On Unix each instance advertises itself as
+`$TMPDIR/token-<effective-user-id>/instances/<pid>.sock`; the directories and
+sockets are created with owner-only permissions, an editor removes its own
+socket on exit, and clients delete advertisements whose process is gone.
+Windows binds a loopback port per instance and records it in
+`%TEMP%\token\instances\<pid>.port`. Setting `TOKEN_AUTOMATION_SOCKET` (a
+socket path on Unix, `IP:port` on Windows) pins one editor and its clients to
+exactly that endpoint and turns discovery off, which is how tests keep an
+editor under test apart from the one you are working in.
