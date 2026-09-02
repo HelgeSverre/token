@@ -431,6 +431,14 @@ pub(crate) struct OverlaySnapshot {
     pub active_tab: Option<String>,
     pub rows: Vec<OverlayRowSnapshot>,
     pub selected: usize,
+    /// Find/Replace: the label next to the query ("3 of 42", "No
+    /// matches", "Invalid regex: …"); `None` while the query is empty.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Find/Replace: the options currently on (`case`, `word`, `regex`,
+    /// `selection`).
+    #[serde(default)]
+    pub options: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -513,6 +521,8 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                 active_tab: Some(format!("{:?}", state.active_tab)),
                 rows,
                 selected,
+                status: None,
+                options: Vec::new(),
             })
         }
         token::model::ModalState::GotoLine(state) => Some(OverlaySnapshot {
@@ -521,6 +531,8 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
             active_tab: None,
             rows: Vec::new(),
             selected: 0,
+            status: None,
+            options: Vec::new(),
         }),
         token::model::ModalState::RenameSymbol(state) => Some(OverlaySnapshot {
             context: "rename_symbol".to_owned(),
@@ -528,6 +540,8 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
             active_tab: None,
             rows: Vec::new(),
             selected: 0,
+            status: None,
+            options: Vec::new(),
         }),
         token::model::ModalState::FindReplace(state) => Some(OverlaySnapshot {
             context: "find_replace".to_owned(),
@@ -535,6 +549,17 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
             active_tab: None,
             rows: Vec::new(),
             selected: 0,
+            status: None,
+            options: [
+                ("case", state.case_sensitive),
+                ("word", state.whole_word),
+                ("regex", state.use_regex),
+                ("selection", state.selection_only),
+            ]
+            .into_iter()
+            .filter(|&(_, on)| on)
+            .map(|(name, _)| name.to_owned())
+            .collect(),
         }),
         token::model::ModalState::ThemePicker(state) => Some(OverlaySnapshot {
             context: "theme_picker".to_owned(),
@@ -549,6 +574,8 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                 })
                 .collect(),
             selected: state.selected_index,
+            status: None,
+            options: Vec::new(),
         }),
         token::model::ModalState::FileFinder(state) => Some(OverlaySnapshot {
             context: "file_finder".to_owned(),
@@ -563,6 +590,8 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                 })
                 .collect(),
             selected: state.selected_index,
+            status: None,
+            options: Vec::new(),
         }),
         token::model::ModalState::RecentFiles(state) => Some(OverlaySnapshot {
             context: "recent_files".to_owned(),
@@ -584,6 +613,8 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                 })
                 .collect(),
             selected: state.selected_index,
+            status: None,
+            options: Vec::new(),
         }),
         token::model::ModalState::LspServers(state) => Some(OverlaySnapshot {
             context: "lsp_servers".to_owned(),
@@ -597,6 +628,8 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                 })
                 .collect(),
             selected: state.selected_index,
+            status: None,
+            options: Vec::new(),
         }),
         token::model::ModalState::LanguagePicker(state) => Some(OverlaySnapshot {
             context: "language_picker".to_owned(),
@@ -609,6 +642,8 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                 })
                 .collect(),
             selected: state.selected_index,
+            status: None,
+            options: Vec::new(),
         }),
     }
 }
@@ -670,7 +705,15 @@ impl EditorSnapshot {
                 .collect(),
             viewport_top_line: viewport.top_line,
             viewport_left_column: viewport.left_column,
-            overlay: model.ui.active_modal.as_ref().and_then(overlay_snapshot),
+            overlay: model.ui.active_modal.as_ref().and_then(|modal| {
+                let mut overlay = overlay_snapshot(modal)?;
+                if let token::model::ModalState::FindReplace(state) = modal {
+                    overlay.status = state
+                        .status(model.document(), &model.editor().selections[0])
+                        .map(|status| status.label());
+                }
+                Some(overlay)
+            }),
             gutter_marks: gutter_marks_snapshot(document, viewport),
             completion: completion_snapshot(model),
             lsp_servers: model
@@ -1473,6 +1516,19 @@ mod tests {
         let snapshot = overlay_snapshot(&modal).expect("Find/Replace must report an overlay");
         assert_eq!(snapshot.context, "find_replace");
         assert_eq!(snapshot.query, "needle");
+        assert!(snapshot.options.is_empty());
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.document_mut().buffer = ropey::Rope::from_str("needle needle");
+        let mut state = FindReplaceState::default();
+        state.set_query("needle");
+        state.whole_word = true;
+        model.ui.open_modal(ModalState::FindReplace(state));
+        let overlay = EditorSnapshot::from_model(&model)
+            .overlay
+            .expect("open modal");
+        assert_eq!(overlay.status.as_deref(), Some("2 matches"));
+        assert_eq!(overlay.options, vec!["word".to_owned()]);
     }
 
     #[test]

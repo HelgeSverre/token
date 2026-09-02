@@ -412,6 +412,20 @@ pub struct Footer<'a> {
 /// `Field::text`/`caret` describe the label styling only (focused vs. dim).
 pub struct Field<'a> {
     pub label: &'a str,
+    /// Right-aligned text on the label row: a match count, a validation
+    /// error. Painted dim, or in the error colour when `trailing_is_error`.
+    pub trailing: Option<&'a str>,
+    pub trailing_is_error: bool,
+}
+
+impl<'a> Field<'a> {
+    pub const fn labeled(label: &'a str) -> Self {
+        Self {
+            label,
+            trailing: None,
+            trailing_is_error: false,
+        }
+    }
 }
 
 pub enum Body<'a> {
@@ -2354,6 +2368,18 @@ fn render_fields(
         let r = field_layout.label;
         let text_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(size))) / 2;
         painter.draw_sized(frame, r.x, text_y, field.label, size, 0.0, color);
+        if let Some(trailing) = field.trailing {
+            let meta = size_px(SIZE_META, scale_factor);
+            let meta_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(meta))) / 2;
+            let w = painter.measure_sized(trailing, meta, 0.0).ceil() as usize;
+            let color = if field.trailing_is_error {
+                colors.severity_error_text
+            } else {
+                colors.text_dim
+            };
+            let x = r.x + r.w.saturating_sub(w);
+            painter.draw_sized(frame, x, meta_y, trailing, meta, 0.0, color);
+        }
     }
 }
 
@@ -4446,7 +4472,7 @@ mod tests {
 
     #[test]
     fn layout_fields_stacks_label_then_input_per_field() {
-        let fields = [Field { label: "Find:" }, Field { label: "Replace:" }];
+        let fields = [Field::labeled("Find:"), Field::labeled("Replace:")];
         let spec = OverlaySpec {
             tabs: None,
             anchor: Anchor::Centered {

@@ -1013,7 +1013,7 @@ fn render_single_field_modal(
     ctx: &ModalRenderCtx,
     mask_cache: &mut RoundedRectMaskCache,
 ) {
-    let fields = [Field { label }];
+    let fields = [Field::labeled(label)];
     let spec = OverlaySpec {
         tabs: None,
         anchor: Anchor::Centered {
@@ -1061,6 +1061,25 @@ fn render_single_field_modal(
     }
 }
 
+/// The footer's toggle legend: each option with its Opt+Cmd key, a check
+/// mark after the ones that are on (find-enhancements.md Phase 5).
+pub(crate) fn find_options_legend(state: &crate::model::ui::FindReplaceState) -> String {
+    let item = |glyph: &str, key: &str, on: bool| {
+        if on {
+            format!("{glyph} {key} \u{2713}")
+        } else {
+            format!("{glyph} {key}")
+        }
+    };
+    [
+        item("Aa", "\u{2325}\u{2318}C", state.case_sensitive),
+        item("W", "\u{2325}\u{2318}W", state.whole_word),
+        item(".*", "\u{2325}\u{2318}R", state.use_regex),
+        item("=", "\u{2325}\u{2318}L", state.selection_only),
+    ]
+    .join("  \u{00b7}  ")
+}
+
 fn render_find_replace_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -1069,15 +1088,24 @@ fn render_find_replace_modal(
     ctx: &ModalRenderCtx,
     mask_cache: &mut RoundedRectMaskCache,
 ) {
+    // "3 of 42" / "No matches" / "Invalid regex: …" on the Find label row.
+    let status = state.status(model.document(), &model.editor().selections[0]);
+    let status_label = status.as_ref().map(|s| s.label());
+    let find_field = Field {
+        label: "Find:",
+        trailing: status_label.as_deref(),
+        trailing_is_error: status.as_ref().is_some_and(|s| s.is_error()),
+    };
     let fields = if state.replace_mode {
-        vec![Field { label: "Find:" }, Field { label: "Replace:" }]
+        vec![find_field, Field::labeled("Replace:")]
     } else {
-        vec![Field { label: "Find:" }]
+        vec![find_field]
     };
     let focused = match state.focused_field {
         FindReplaceField::Query => 0,
         FindReplaceField::Replace => 1,
     };
+    let legend = find_options_legend(state);
 
     let spec = OverlaySpec {
         tabs: None,
@@ -1090,14 +1118,14 @@ fn render_find_replace_modal(
             fields: &fields,
             focused,
         },
-        footer: if state.replace_mode {
-            Some(Footer {
-                leading: "\u{21b5} find \u{00b7} \u{2318}\u{21b5} replace all",
-                trailing: "esc dismiss",
-            })
-        } else {
-            None
-        },
+        footer: Some(Footer {
+            leading: &legend,
+            trailing: if state.replace_mode {
+                "\u{21b5} next \u{00b7} \u{2318}\u{21b5} replace all"
+            } else {
+                "\u{21b5} next \u{00b7} \u{21e7}\u{21b5} previous"
+            },
+        }),
         hover_row: None,
         docs: None,
     };
@@ -1379,7 +1407,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
             Some(f(&spec, &l))
         }
         ModalState::GotoLine(_) | ModalState::RenameSymbol(_) => {
-            let fields = [Field { label: "" }];
+            let fields = [Field::labeled("")];
             let spec = OverlaySpec {
                 tabs: None,
                 anchor: Anchor::Centered {
@@ -1400,9 +1428,9 @@ pub(crate) fn with_modal_overlay_layout<R>(
         }
         ModalState::FindReplace(state) => {
             let fields = if state.replace_mode {
-                vec![Field { label: "" }, Field { label: "" }]
+                vec![Field::labeled(""), Field::labeled("")]
             } else {
-                vec![Field { label: "" }]
+                vec![Field::labeled("")]
             };
             let focused = match state.focused_field {
                 FindReplaceField::Query => 0,
@@ -1419,14 +1447,10 @@ pub(crate) fn with_modal_overlay_layout<R>(
                     fields: &fields,
                     focused,
                 },
-                footer: if state.replace_mode {
-                    Some(Footer {
-                        leading: "",
-                        trailing: "",
-                    })
-                } else {
-                    None
-                },
+                footer: Some(Footer {
+                    leading: "",
+                    trailing: "",
+                }),
                 hover_row: None,
                 docs: None,
             };
@@ -2414,6 +2438,19 @@ mod tests {
     use super::*;
     use crate::messages::{ModalMsg, UiMsg};
     use crate::model::ModalId;
+
+    #[test]
+    fn legend_marks_only_the_active_options() {
+        let mut state = crate::model::ui::FindReplaceState::default();
+        let off = find_options_legend(&state);
+        assert!(!off.contains('\u{2713}'));
+        assert!(off.contains("Aa \u{2325}\u{2318}C") && off.contains("= \u{2325}\u{2318}L"));
+        state.use_regex = true;
+        state.selection_only = true;
+        let on = find_options_legend(&state);
+        assert_eq!(on.matches('\u{2713}').count(), 2);
+        assert!(on.contains(".* \u{2325}\u{2318}R \u{2713}"));
+    }
     use crate::update::update_ui;
     use crate::view::hit_test::{hit_test_modal, HitTarget, Point};
 
