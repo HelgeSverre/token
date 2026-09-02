@@ -2103,6 +2103,7 @@ mod tests {
             signatures: vec![crate::model::SignatureView {
                 label: "fn f(a: i32)".to_owned(),
                 active_parameter_range: Some((5, 11)),
+                doc: None,
                 parameter_doc: None,
             }],
             active: 0,

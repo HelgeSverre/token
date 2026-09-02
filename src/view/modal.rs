@@ -2023,10 +2023,13 @@ pub fn with_cursor_overlay_spec<R>(
                 .as_ref()
                 .and_then(|s| s.content.as_ref());
             let related = related_information_text(&diagnostics);
-            let mut text = crate::model::StyledText::default();
-            if let Some(h) = hover_text {
-                text.extend(h);
-            }
+            // A hover that opens with a code fence (rust-analyzer's
+            // signature block) puts that block in the code zone; the
+            // prose after it is the text zone.
+            let (code, prose) = hover_text
+                .map(|h| h.split_leading_code())
+                .unwrap_or((None, crate::model::StyledText::default()));
+            let mut text = prose;
             if let Some(r) = related.as_deref() {
                 if !text.is_empty() {
                     text.push_str("\n\n");
@@ -2051,8 +2054,8 @@ pub fn with_cursor_overlay_spec<R>(
                 body: Body::Zones(Zones {
                     banner,
                     banner_spans,
-                    code: None,
-                    code_spans: &[],
+                    code: code.as_ref().map(|c| c.text.as_str()),
+                    code_spans: code.as_ref().map_or(&[], |c| c.spans.as_slice()),
                     text: (!text.is_empty()).then_some(text.text.as_str()),
                     text_spans: &text.spans,
                 }),
@@ -2300,7 +2303,18 @@ pub fn with_signature_help_spec<R>(
     if let Some((start, end)) = sig.active_parameter_range {
         code.style_chars(start, end, crate::model::SpanStyle::Accent);
     }
-    let mut text = sig.parameter_doc.clone().unwrap_or_default();
+    // Parameter doc first (it's what the caret is on), then the
+    // signature's own doc, then the counter.
+    let mut text = crate::model::StyledText::default();
+    for part in [sig.parameter_doc.as_ref(), sig.doc.as_ref()]
+        .into_iter()
+        .flatten()
+    {
+        if !text.is_empty() {
+            text.push_str("\n\n");
+        }
+        text.extend(part);
+    }
     if help.signatures.len() > 1 {
         if !text.is_empty() {
             text.push_str("\n\n");
@@ -2761,6 +2775,7 @@ mod tests {
                 SignatureView {
                     label: label.to_owned(),
                     active_parameter_range: Some((13, 20)), // "b: &str"
+                    doc: Some(crate::lsp::markdown::markdown_to_styled("Does *f*.")),
                     parameter_doc: Some(crate::lsp::markdown::markdown_to_styled(
                         "the **second** one, see `foo`",
                     )),
@@ -2768,6 +2783,7 @@ mod tests {
                 SignatureView {
                     label: "fn f()".to_owned(),
                     active_parameter_range: None,
+                    doc: None,
                     parameter_doc: None,
                 },
             ],
@@ -2791,7 +2807,7 @@ mod tests {
         assert_eq!(&code[code_spans[0].range.clone()], "b: &str");
         assert_eq!(code_spans[0].style, SpanStyle::Accent);
 
-        assert_eq!(text, "the second one, see foo\n\n(1 of 2)");
+        assert_eq!(text, "the second one, see foo\n\nDoes f.\n\n(1 of 2)");
         let styled: Vec<(&str, SpanStyle)> = text_spans
             .iter()
             .map(|s| (&text[s.range.clone()], s.style))
@@ -2801,6 +2817,7 @@ mod tests {
             vec![
                 ("second", SpanStyle::Strong),
                 ("foo", SpanStyle::Code),
+                ("f", SpanStyle::Strong),
                 ("(1 of 2)", SpanStyle::Dim),
             ]
         );
@@ -2820,23 +2837,24 @@ mod tests {
         });
         model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Hover));
 
-        let (text, spans) = with_cursor_overlay_spec(&model, |spec| match &spec.body {
-            Body::Zones(z) => (z.text.unwrap().to_owned(), z.text_spans.to_vec()),
+        let (code, text, spans) = with_cursor_overlay_spec(&model, |spec| match &spec.body {
+            Body::Zones(z) => (
+                z.code.map(str::to_owned),
+                z.text.unwrap().to_owned(),
+                z.text_spans.to_vec(),
+            ),
             _ => panic!("hover renders a Zones body"),
         })
         .expect("hover open");
-        assert_eq!(text, "fn foo()\nReturns nothing.");
+        // The leading fence lands in the code zone; the prose keeps its
+        // emphasis span.
+        assert_eq!(code.as_deref(), Some("fn foo()"));
+        assert_eq!(text, "Returns nothing.");
         let styled: Vec<(&str, SpanStyle)> = spans
             .iter()
             .map(|s| (&text[s.range.clone()], s.style))
             .collect();
-        assert_eq!(
-            styled,
-            vec![
-                ("fn foo()", SpanStyle::Code),
-                ("nothing", SpanStyle::Strong)
-            ]
-        );
+        assert_eq!(styled, vec![("nothing", SpanStyle::Strong)]);
     }
 
     #[test]

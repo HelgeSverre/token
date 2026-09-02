@@ -106,12 +106,64 @@ impl StyledText {
         );
     }
 
+    /// Splits off the leading block of whole `Code` lines (a hover's
+    /// signature fence) from the prose that follows: `(code, rest)`. `code`
+    /// is `None` when the text doesn't start with a code line. The
+    /// separating blank line, if any, is dropped from `rest`.
+    pub fn split_leading_code(&self) -> (Option<StyledText>, StyledText) {
+        let mut end = 0usize; // byte end of the leading code block
+        for (start, line) in line_ranges(&self.text) {
+            let covered = self.spans.iter().any(|s| {
+                s.style == SpanStyle::Code && s.range.start <= start && s.range.end >= line
+            });
+            if line > start && covered {
+                end = line;
+            } else {
+                break;
+            }
+        }
+        if end == 0 {
+            return (None, self.clone());
+        }
+        let code = StyledText {
+            text: self.text[..end].to_owned(),
+            spans: self
+                .runs_in(0..end)
+                .into_iter()
+                .map(|(range, style)| Span { range, style })
+                .collect(),
+        };
+        let mut rest_start = end;
+        while self.text[rest_start..].starts_with('\n') {
+            rest_start += 1;
+        }
+        let rest = StyledText {
+            text: self.text[rest_start..].to_owned(),
+            spans: self
+                .runs_in(rest_start..self.text.len())
+                .into_iter()
+                .map(|(range, style)| Span { range, style })
+                .collect(),
+        };
+        (Some(code), rest)
+    }
+
     /// The styled runs covering `line` (a byte range into `text`, e.g. one
     /// wrapped line), as ranges relative to the line's own start. Spans
     /// crossing the line's edges are clipped; unstyled gaps are omitted.
     pub fn runs_in(&self, line: Range<usize>) -> Vec<(Range<usize>, SpanStyle)> {
         runs_in_spans(&self.spans, line)
     }
+}
+
+/// `(start, end)` byte ranges of each line of `text`, newline excluded.
+fn line_ranges(text: &str) -> impl Iterator<Item = (usize, usize)> + '_ {
+    let mut offset = 0;
+    text.split_inclusive('\n').map(move |raw| {
+        let start = offset;
+        offset += raw.len();
+        (start, start + raw.trim_end_matches('\n').len())
+    })
 }
 
 /// [`StyledText::runs_in`] over a bare span slice (the overlay's `Zones`
@@ -184,6 +236,26 @@ mod tests {
         t.style_chars(9, 3, SpanStyle::Code);
         t.style_chars(0, 99, SpanStyle::Code);
         assert_eq!(t.spans.len(), 2);
+    }
+
+    #[test]
+    fn split_leading_code_separates_the_signature_fence_from_the_prose() {
+        let mut t = StyledText::default();
+        t.push_styled("fn foo()", SpanStyle::Code);
+        t.push_str("\n");
+        t.push_styled("    -> u8", SpanStyle::Code);
+        t.push_str("\n\nReturns ");
+        t.push_styled("nothing", SpanStyle::Strong);
+        let (code, rest) = t.split_leading_code();
+        let code = code.unwrap();
+        assert_eq!(code.text, "fn foo()\n    -> u8");
+        assert_eq!(code.spans.len(), 2);
+        assert_eq!(rest.text, "Returns nothing");
+        assert_eq!(&rest.text[rest.spans[0].range.clone()], "nothing");
+        // Prose-first text has no leading code.
+        let (none, same) = StyledText::plain("hi").split_leading_code();
+        assert!(none.is_none());
+        assert_eq!(same.text, "hi");
     }
 
     #[test]

@@ -772,6 +772,8 @@ pub struct SignatureView {
     pub label: String,
     /// `[start, end)` char offsets into `label` of the active parameter.
     pub active_parameter_range: Option<(usize, usize)>,
+    /// Styled doc of the signature itself (the function's docs), if sent.
+    pub doc: Option<super::StyledText>,
     /// Styled doc of the active parameter, if the server sent one.
     pub parameter_doc: Option<super::StyledText>,
 }

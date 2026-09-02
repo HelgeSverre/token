@@ -1544,6 +1544,11 @@ pub fn signature_help_state(
                         utf16_to_char_offset(&sig.label, *end as usize),
                     )),
                 }),
+                doc: sig
+                    .documentation
+                    .as_ref()
+                    .map(documentation_to_styled)
+                    .filter(|d| !d.text.trim().is_empty()),
                 parameter_doc: param
                     .and_then(|p| p.documentation.as_ref())
                     .map(documentation_to_styled)
