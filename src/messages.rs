@@ -252,6 +252,8 @@ pub enum ModalMsg {
     ToggleFindReplaceWholeWord,
     /// Toggle regex interpretation for find/replace
     ToggleFindReplaceRegex,
+    /// Toggle searching within the selection captured when switched on
+    ToggleFindReplaceSelectionOnly,
     /// Find next occurrence (Enter in find field or F3)
     FindNext,
     /// Find previous occurrence (Shift+Enter or Shift+F3)

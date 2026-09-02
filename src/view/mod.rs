@@ -335,14 +335,9 @@ fn active_find_matches(
     let Some(crate::model::ModalState::FindReplace(state)) = &model.ui.active_modal else {
         return Vec::new();
     };
-    if state.query().is_empty() {
-        return Vec::new();
-    }
-    let query = state.build_query();
-    if query.has_error() {
-        return Vec::new();
-    }
-    document.search_matches(&query)
+    // `matches` is empty on a regex error too (`find_all` yields nothing
+    // when compilation failed), so no separate error check is needed.
+    state.matches(document)
 }
 
 /// `BackgroundTint` decorations for every find match except the one
@@ -2722,6 +2717,19 @@ mod find_match_decoration_tests {
         let matches = active_find_matches(&model, model.document());
 
         assert_eq!(matches, vec![crate::search::Match { start: 4, end: 7 }]);
+    }
+
+    #[test]
+    fn active_find_matches_respect_the_selection_scope() {
+        let mut model = model_with_text("foo\nfoo\nfoo\n");
+        open_find(&mut model, "foo", false, false);
+        if let Some(crate::model::ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+            state.selection_only = true;
+            state.scope = Some((4, 8));
+        }
+        let matches = active_find_matches(&model, model.document());
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].start, 4);
     }
 
     #[test]

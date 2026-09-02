@@ -6,7 +6,9 @@ mod common;
 
 use common::test_model;
 
+use common::test_model_with_selection;
 use token::messages::{ModalMsg, Msg, UiMsg};
+use token::model::ui::FindStatus;
 use token::model::{
     CommandPaletteState, FindReplaceState, GotoLineState, ModalId, ModalState, ThemePickerState,
 };
@@ -755,5 +757,206 @@ fn test_toggle_pin_moves_entry_into_pinned_section_and_persists() {
     assert!(
         model.recent_files.entries.iter().any(|e| e.pinned),
         "pin should be mirrored into the persistent recent-files store"
+    );
+}
+
+// ========================================================================
+// Find enhancements: selection scope (Phase 7) and status (Phase 5)
+// ========================================================================
+
+fn find_state(model: &token::model::AppModel) -> &FindReplaceState {
+    match &model.ui.active_modal {
+        Some(ModalState::FindReplace(state)) => state,
+        _ => panic!("expected the find/replace modal"),
+    }
+}
+
+fn selected_text(model: &token::model::AppModel) -> String {
+    let selection = model.editor().selections[0];
+    let doc = model.document();
+    let start = doc.cursor_to_offset(selection.start().line, selection.start().column);
+    let end = doc.cursor_to_offset(selection.end().line, selection.end().column);
+    doc.buffer
+        .to_string()
+        .chars()
+        .skip(start)
+        .take(end - start)
+        .collect()
+}
+
+#[test]
+fn toggle_selection_only_captures_the_selection_and_scopes_matches() {
+    // Lines 1-2 selected (anchor (1,0) → head (3,0)); "foo" appears on every line.
+    let mut model = test_model_with_selection("foo\nfoo\nfoo\nfoo\n", 1, 0, 3, 0);
+    model
+        .ui
+        .open_modal(ModalState::FindReplace(find_replace_with_query("foo")));
+    assert_eq!(find_state(&model).matches(model.document()).len(), 4);
+
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::Modal(ModalMsg::ToggleFindReplaceSelectionOnly)),
+    );
+    let state = find_state(&model);
+    assert!(state.selection_only);
+    assert_eq!(state.scope, Some((4, 12)));
+    assert_eq!(
+        state.matches(model.document()).len(),
+        2,
+        "only lines 1 and 2"
+    );
+
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::Modal(ModalMsg::ToggleFindReplaceSelectionOnly)),
+    );
+    let state = find_state(&model);
+    assert!(!state.selection_only && state.scope.is_none());
+    assert_eq!(state.matches(model.document()).len(), 4);
+}
+
+#[test]
+fn selection_only_with_an_empty_selection_stays_off() {
+    let mut model = test_model("foo foo\n", 0, 0);
+    model
+        .ui
+        .open_modal(ModalState::FindReplace(find_replace_with_query("foo")));
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::Modal(ModalMsg::ToggleFindReplaceSelectionOnly)),
+    );
+    assert!(!find_state(&model).selection_only);
+}
+
+#[test]
+fn find_next_and_replace_all_stay_inside_the_scope() {
+    let mut model = test_model_with_selection("foo\nfoo\nfoo\nfoo\n", 1, 0, 3, 0);
+    model
+        .ui
+        .open_modal(ModalState::FindReplace(find_replace_with_query("foo")));
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::Modal(ModalMsg::ToggleFindReplaceSelectionOnly)),
+    );
+
+    // The cursor sits at the scope end (3,0); "next" wraps to the first in-scope match.
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::FindNext)));
+    assert_eq!(model.editor().selections[0].start().line, 1);
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::FindNext)));
+    assert_eq!(model.editor().selections[0].start().line, 2);
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::FindNext)));
+    assert_eq!(
+        model.editor().selections[0].start().line,
+        1,
+        "wraps within the scope"
+    );
+    assert_eq!(selected_text(&model), "foo");
+
+    if let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+        state.set_replacement("bar");
+    }
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::ReplaceAll)));
+    assert_eq!(model.document().buffer.to_string(), "foo\nbar\nbar\nfoo\n");
+}
+
+#[test]
+fn reopening_recaptures_the_scope_from_the_live_selection() {
+    let mut model = test_model_with_selection("foo\nfoo\nfoo\nfoo\n", 1, 0, 3, 0);
+    model
+        .ui
+        .open_modal(ModalState::FindReplace(find_replace_with_query("foo")));
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::Modal(ModalMsg::ToggleFindReplaceSelectionOnly)),
+    );
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::FindNext)));
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::Close)));
+
+    // Reopen with a different selection: the scope follows it.
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::OpenFindReplace)));
+    let state = find_state(&model);
+    assert!(state.selection_only);
+    assert_eq!(state.scope, Some((4, 7)), "the match selected by find-next");
+
+    // Reopen with no selection: scope switches off instead of going stale.
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::Close)));
+    model.editor_mut().clear_selection();
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::OpenFindReplace)));
+    assert!(!find_state(&model).selection_only);
+}
+
+#[test]
+fn find_status_reports_count_ordinal_and_regex_errors() {
+    let mut model = test_model("foo foo foo\n", 0, 0);
+    model
+        .ui
+        .open_modal(ModalState::FindReplace(find_replace_with_query("foo")));
+    let selection = model.editor().selections[0];
+    assert_eq!(
+        find_state(&model).status(model.document(), &selection),
+        Some(FindStatus::Count {
+            total: 3,
+            current: None
+        })
+    );
+    assert_eq!(
+        find_state(&model)
+            .status(model.document(), &selection)
+            .unwrap()
+            .label(),
+        "3 matches"
+    );
+
+    // From column 0 the first Find Next skips the match starting there.
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::FindNext)));
+    let selection = model.editor().selections[0];
+    assert_eq!(
+        find_state(&model)
+            .status(model.document(), &selection)
+            .unwrap()
+            .label(),
+        "2 of 3"
+    );
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::FindNext)));
+    let selection = model.editor().selections[0];
+    assert_eq!(
+        find_state(&model)
+            .status(model.document(), &selection)
+            .unwrap()
+            .label(),
+        "3 of 3"
+    );
+
+    if let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+        state.set_query("nothing");
+    }
+    assert_eq!(
+        find_state(&model)
+            .status(model.document(), &selection)
+            .unwrap()
+            .label(),
+        "No matches"
+    );
+
+    if let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+        state.set_query("(");
+        state.use_regex = true;
+    }
+    let status = find_state(&model)
+        .status(model.document(), &selection)
+        .unwrap();
+    assert!(status.is_error());
+    assert!(
+        status.label().starts_with("Invalid regex:"),
+        "{}",
+        status.label()
+    );
+
+    if let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+        state.set_query("");
+    }
+    assert_eq!(
+        find_state(&model).status(model.document(), &selection),
+        None
     );
 }

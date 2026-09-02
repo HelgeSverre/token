@@ -316,6 +316,42 @@ pub struct FindReplaceState {
     pub whole_word: bool,
     /// Interpret the query as a regular expression
     pub use_regex: bool,
+    /// Restrict matches to `scope` (find-enhancements.md Phase 7)
+    pub selection_only: bool,
+    /// Char-offset range captured from the primary selection when
+    /// `selection_only` was switched on; `None` searches the whole document.
+    pub scope: Option<(usize, usize)>,
+}
+
+/// What the find modal reports next to the query: the match count with
+/// the current match's ordinal when the selection sits on one, or why
+/// the query could not be compiled.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FindStatus {
+    Error(String),
+    Count {
+        total: usize,
+        current: Option<usize>,
+    },
+}
+
+impl FindStatus {
+    pub fn label(&self) -> String {
+        match self {
+            Self::Error(error) => format!("Invalid regex: {error}"),
+            Self::Count { total: 0, .. } => "No matches".to_owned(),
+            Self::Count {
+                total,
+                current: Some(current),
+            } => format!("{} of {total}", current + 1),
+            Self::Count { total: 1, .. } => "1 match".to_owned(),
+            Self::Count { total, .. } => format!("{total} matches"),
+        }
+    }
+
+    pub fn is_error(&self) -> bool {
+        matches!(self, Self::Error(_))
+    }
 }
 
 impl Default for FindReplaceState {
@@ -331,11 +367,78 @@ impl Default for FindReplaceState {
             case_sensitive: false,
             whole_word: false,
             use_regex: false,
+            selection_only: false,
+            scope: None,
         }
     }
 }
 
 impl FindReplaceState {
+    /// Every match the current query and scope produce — the one list
+    /// navigation, replace, highlighting, and the status label all share.
+    pub fn matches(&self, document: &crate::model::Document) -> Vec<crate::search::Match> {
+        if self.query().is_empty() {
+            return Vec::new();
+        }
+        let mut matches = document.search_matches(&self.build_query());
+        if let (true, Some((start, end))) = (self.selection_only, self.scope) {
+            matches.retain(|m| m.start >= start && m.end <= end);
+        }
+        matches
+    }
+
+    /// The status label input: `None` while the query is empty.
+    pub fn status(
+        &self,
+        document: &crate::model::Document,
+        selection: &crate::model::Selection,
+    ) -> Option<FindStatus> {
+        if self.query().is_empty() {
+            return None;
+        }
+        let query = self.build_query();
+        if let Some(error) = &query.error {
+            return Some(FindStatus::Error(error.clone()));
+        }
+        let matches = self.matches(document);
+        let current = (!selection.is_empty()).then(|| {
+            let (start, end) = (selection.start(), selection.end());
+            (
+                document.cursor_to_offset(start.line, start.column),
+                document.cursor_to_offset(end.line, end.column),
+            )
+        });
+        Some(FindStatus::Count {
+            total: matches.len(),
+            current: current.and_then(|(start, end)| {
+                matches
+                    .iter()
+                    .position(|m| (m.start, m.end) == (start, end))
+            }),
+        })
+    }
+
+    /// Switch selection scope on (capturing `selection` as the range) or
+    /// off. An empty selection cannot scope anything, so it switches off.
+    pub fn set_selection_only(
+        &mut self,
+        on: bool,
+        document: &crate::model::Document,
+        selection: &crate::model::Selection,
+    ) {
+        if on && !selection.is_empty() {
+            let (start, end) = (selection.start(), selection.end());
+            self.scope = Some((
+                document.cursor_to_offset(start.line, start.column),
+                document.cursor_to_offset(end.line, end.column),
+            ));
+            self.selection_only = true;
+        } else {
+            self.scope = None;
+            self.selection_only = false;
+        }
+    }
+
     /// Get the query text (convenience accessor)
     pub fn query(&self) -> String {
         self.query_editable.text()

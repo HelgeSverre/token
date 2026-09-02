@@ -6,6 +6,7 @@ use crate::commands::Cmd;
 use crate::editable::{EditableState, StringBuffer};
 use crate::messages::LayoutMsg;
 use crate::messages::{ModalMsg, UiMsg};
+use crate::model::ui::FindReplaceState;
 use crate::model::{
     AppModel, CommandPaletteState, FileFinderState, GotoLineState, LanguagePickerState,
     LspServersState, ModalId, ModalState, RecentFilesState, SearchTab, SegmentContent, SegmentId,
@@ -109,10 +110,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                 ModalId::RenameSymbol => {
                     return crate::update::update_lsp(model, crate::messages::LspMsg::RenameSymbol)
                 }
-                ModalId::FindReplace => {
-                    let state = model.ui.last_find_replace.clone().unwrap_or_default();
-                    ModalState::FindReplace(state)
-                }
+                ModalId::FindReplace => ModalState::FindReplace(reopened_find_replace(model)),
                 ModalId::ThemePicker => {
                     ModalState::ThemePicker(ThemePickerState::new(model.config.theme.clone()))
                 }
@@ -334,7 +332,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::OpenFindReplace => {
-            let state = model.ui.last_find_replace.clone().unwrap_or_default();
+            let state = reopened_find_replace(model);
             model.ui.open_modal(ModalState::FindReplace(state));
             Some(Cmd::Redraw)
         }
@@ -738,18 +736,23 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             }
         }
 
+        ModalMsg::ToggleFindReplaceSelectionOnly => {
+            let selection = model.editor().selections[0];
+            let Some(ModalState::FindReplace(mut state)) = model.ui.active_modal.take() else {
+                return None;
+            };
+            let on = !state.selection_only;
+            state.set_selection_only(on, model.document(), &selection);
+            model.ui.active_modal = Some(ModalState::FindReplace(state));
+            Some(Cmd::Redraw)
+        }
+
         ModalMsg::FindNext => {
             if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
-                let query = state.build_query();
                 if !state.query().is_empty() {
-                    model.ui.last_find_replace = model.ui.active_modal.clone().and_then(|m| {
-                        if let ModalState::FindReplace(s) = m {
-                            Some(s)
-                        } else {
-                            None
-                        }
-                    });
-                    return find_next_in_document(model, &query);
+                    let state = state.clone();
+                    model.ui.last_find_replace = Some(state.clone());
+                    return find_next_in_document(model, &state);
                 }
             }
             Some(Cmd::Redraw)
@@ -757,16 +760,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::FindPrevious => {
             if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
-                let query = state.build_query();
                 if !state.query().is_empty() {
-                    model.ui.last_find_replace = model.ui.active_modal.clone().and_then(|m| {
-                        if let ModalState::FindReplace(s) = m {
-                            Some(s)
-                        } else {
-                            None
-                        }
-                    });
-                    return find_prev_in_document(model, &query);
+                    let state = state.clone();
+                    model.ui.last_find_replace = Some(state.clone());
+                    return find_prev_in_document(model, &state);
                 }
             }
             Some(Cmd::Redraw)
@@ -774,17 +771,11 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::ReplaceAndFindNext => {
             if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
-                let query = state.build_query();
-                let replacement = state.replacement();
                 if !state.query().is_empty() {
-                    model.ui.last_find_replace = model.ui.active_modal.clone().and_then(|m| {
-                        if let ModalState::FindReplace(s) = m {
-                            Some(s)
-                        } else {
-                            None
-                        }
-                    });
-                    return replace_and_find_next(model, &query, &replacement);
+                    let state = state.clone();
+                    let replacement = state.replacement();
+                    model.ui.last_find_replace = Some(state.clone());
+                    return replace_and_find_next(model, &state, &replacement);
                 }
             }
             Some(Cmd::Redraw)
@@ -792,17 +783,11 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::ReplaceAll => {
             if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
-                let query = state.build_query();
-                let replacement = state.replacement();
                 if !state.query().is_empty() {
-                    model.ui.last_find_replace = model.ui.active_modal.clone().and_then(|m| {
-                        if let ModalState::FindReplace(s) = m {
-                            Some(s)
-                        } else {
-                            None
-                        }
-                    });
-                    return replace_all(model, &query, &replacement);
+                    let state = state.clone();
+                    let replacement = state.replacement();
+                    model.ui.last_find_replace = Some(state.clone());
+                    return replace_all(model, &state, &replacement);
                 }
             }
             Some(Cmd::Redraw)
@@ -982,9 +967,8 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
             ModalState::FindReplace(state) => {
                 // For Confirm, treat it as FindNext
                 if !state.query().is_empty() {
-                    let query = state.build_query();
-                    model.ui.last_find_replace = Some(state);
-                    return find_next_in_document(model, &query);
+                    model.ui.last_find_replace = Some(state.clone());
+                    return find_next_in_document(model, &state);
                 }
                 model.ui.close_modal();
                 Some(Cmd::Redraw)
@@ -1547,6 +1531,18 @@ fn modal_scroll(model: &mut AppModel, delta: isize) -> Option<Cmd> {
     Some(Cmd::Redraw)
 }
 
+/// The remembered find state, with its selection scope re-captured from
+/// the live selection: a scope from a previous session would point at
+/// stale offsets, and an empty selection cannot scope anything.
+fn reopened_find_replace(model: &AppModel) -> FindReplaceState {
+    let mut state = model.ui.last_find_replace.clone().unwrap_or_default();
+    if state.selection_only {
+        let selection = model.editor().selections[0];
+        state.set_selection_only(true, model.document(), &selection);
+    }
+    state
+}
+
 /// Show "No matches found", or the regex error if the query failed to
 /// compile — shared by find-next/find-previous/replace-all.
 fn report_no_matches(model: &mut AppModel, query: &crate::search::SearchQuery) {
@@ -1558,7 +1554,9 @@ fn report_no_matches(model: &mut AppModel, query: &crate::search::SearchQuery) {
 }
 
 /// Find next occurrence in the document and select it
-fn find_next_in_document(model: &mut AppModel, query: &crate::search::SearchQuery) -> Option<Cmd> {
+fn find_next_in_document(model: &mut AppModel, state: &FindReplaceState) -> Option<Cmd> {
+    let query = state.build_query();
+    let query = &query;
     let editor = model.editor();
     let doc = model.document();
 
@@ -1571,7 +1569,7 @@ fn find_next_in_document(model: &mut AppModel, query: &crate::search::SearchQuer
         doc.cursor_to_offset(editor.cursors[0].line, editor.cursors[0].column)
     };
 
-    let matches = doc.search_matches(query);
+    let matches = state.matches(doc);
     let found = matches
         .iter()
         .find(|m| m.start > start_offset)
@@ -1603,7 +1601,9 @@ fn find_next_in_document(model: &mut AppModel, query: &crate::search::SearchQuer
 }
 
 /// Find previous occurrence in the document and select it
-fn find_prev_in_document(model: &mut AppModel, query: &crate::search::SearchQuery) -> Option<Cmd> {
+fn find_prev_in_document(model: &mut AppModel, state: &FindReplaceState) -> Option<Cmd> {
+    let query = state.build_query();
+    let query = &query;
     let editor = model.editor();
     let doc = model.document();
 
@@ -1616,7 +1616,7 @@ fn find_prev_in_document(model: &mut AppModel, query: &crate::search::SearchQuer
         doc.cursor_to_offset(editor.cursors[0].line, editor.cursors[0].column)
     };
 
-    let matches = doc.search_matches(query);
+    let matches = state.matches(doc);
     let found = matches
         .iter()
         .rev()
@@ -1651,7 +1651,7 @@ fn find_prev_in_document(model: &mut AppModel, query: &crate::search::SearchQuer
 /// Replace current selection if it matches, then find next
 fn replace_and_find_next(
     model: &mut AppModel,
-    query: &crate::search::SearchQuery,
+    state: &FindReplaceState,
     replacement: &str,
 ) -> Option<Cmd> {
     // First, gather all the info we need without holding borrows
@@ -1668,8 +1668,8 @@ fn replace_and_find_next(
             let start_offset = doc.cursor_to_offset(start.line, start.column);
             let end_offset = doc.cursor_to_offset(end.line, end.column);
 
-            let is_match = doc
-                .search_matches(query)
+            let is_match = state
+                .matches(doc)
                 .iter()
                 .any(|m| m.start == start_offset && m.end == end_offset);
 
@@ -1702,7 +1702,7 @@ fn replace_and_find_next(
     }
 
     // Now find next
-    let next_cmd = find_next_in_document(model, query);
+    let next_cmd = find_next_in_document(model, state);
     if sync_cmds.is_empty() {
         next_cmd
     } else {
@@ -1712,16 +1712,12 @@ fn replace_and_find_next(
 }
 
 /// Replace all occurrences
-fn replace_all(
-    model: &mut AppModel,
-    query: &crate::search::SearchQuery,
-    replacement: &str,
-) -> Option<Cmd> {
+fn replace_all(model: &mut AppModel, state: &FindReplaceState, replacement: &str) -> Option<Cmd> {
     let doc = model.document();
-    let occurrences = doc.search_matches(query);
+    let occurrences = state.matches(doc);
 
     if occurrences.is_empty() {
-        report_no_matches(model, query);
+        report_no_matches(model, &state.build_query());
         return Some(Cmd::Redraw);
     }
 
@@ -2022,8 +2018,8 @@ mod tests {
     use crate::commands::{Cmd, CommandId, DamageArea};
     use crate::image::ImageState;
     use crate::messages::{ModalMsg, UiMsg};
+    use crate::model::ui::FindReplaceState;
     use crate::model::{AppModel, CommandPaletteState, ModalId, ModalState, SearchTab, ViewMode};
-    use crate::search::SearchQuery;
 
     #[test]
     fn current_cursor_lines_are_reported_for_plain_text_editors() {
@@ -2646,8 +2642,10 @@ mod tests {
         model.document_mut().buffer = ropey::Rope::from_str("foo foo foo");
         let before_revision = model.document().revision;
 
-        let query = SearchQuery::new("foo", true, false, false);
-        let cmd = replace_all(&mut model, &query, "bar");
+        let mut state = FindReplaceState::default();
+        state.set_query("foo");
+        state.case_sensitive = true;
+        let cmd = replace_all(&mut model, &state, "bar");
 
         assert_eq!(model.document().buffer.to_string(), "bar bar bar");
         assert!(model.document().revision > before_revision);
@@ -2671,8 +2669,10 @@ mod tests {
         model.editor_mut().selections[0].head.column = 3;
         let before_revision = model.document().revision;
 
-        let query = SearchQuery::new("foo", true, false, false);
-        let cmd = replace_and_find_next(&mut model, &query, "baz");
+        let mut state = FindReplaceState::default();
+        state.set_query("foo");
+        state.case_sensitive = true;
+        let cmd = replace_and_find_next(&mut model, &state, "baz");
 
         assert_eq!(model.document().buffer.to_string(), "baz bar");
         assert!(model.document().revision > before_revision);
