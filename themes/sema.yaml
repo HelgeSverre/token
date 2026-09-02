@@ -1,0 +1,99 @@
+version: 1
+name: "Sema"
+author: "Built-in"
+description: "Warm parchment on charcoal with gold, after sema-lang.com"
+
+ui:
+  editor:
+    background: "#131110"
+    foreground: "#E9E3D6"
+    current_line_background: "#181512"
+    cursor_color: "#C8A855"
+    selection_background: "#C8A85540"
+    secondary_cursor_color: "#C8A85580"
+
+  gutter:
+    background: "#131110"
+    foreground: "#3A342C"
+    foreground_active: "#968C79"
+    border_color: "#2B2620"
+
+  status_bar:
+    background: "#181512"
+    foreground: "#968C79"
+    border: "#2B2620"
+
+  sidebar:
+    background: "#181512"
+    foreground: "#C9C2B4"
+    selection_background: "#1C1916"
+    selection_foreground: "#C8A855"
+    hover_background: "#C8A85514"
+    folder_icon: "#C8A855"
+    file_icon: "#968C79"
+    border: "#2B2620"
+
+  splitter:
+    background: "#2B2620"
+
+  tab_bar:
+    background: "#181512"
+    active_background: "#131110"
+    active_foreground: "#E9E3D6"
+    inactive_background: "#181512"
+    inactive_foreground: "#968C79"
+    border: "#2B2620"
+    modified_indicator: "#C8A855"
+
+  overlay:
+    border: "#3A342C"
+    background: "#181512"
+    foreground: "#E9E3D6"
+    input_background: "#131110"
+    selection_background: "#C8A85540"
+    highlight: "#C8A855"
+    warning: "#D08A60"
+    error: "#C85555"
+    accent: "#C8A855"
+
+  csv:
+    header_background: "#1C1916"
+    header_foreground: "#E9E3D6"
+    grid_line: "#2B2620"
+    selected_cell_background: "#C8A85540"
+    selected_cell_border: "#C8A855"
+    number_foreground: "#D19A66"
+
+  image_preview:
+    checkerboard_light: "#1C1916"
+    checkerboard_dark: "#181512"
+    checkerboard_size: 8
+
+  scrollbar:
+    track: "#131110"
+    thumb: "#1C1916"
+    thumb_hover: "#3A342C"
+
+  syntax:
+    keyword: "#C8A855"
+    function: "#7AACB8"
+    function_builtin: "#7AACB8"
+    string: "#9BB87A"
+    number: "#D19A66"
+    comment: "#968C79"
+    type: "#B8A3D6"
+    variable: "#E9E3D6"
+    variable_builtin: "#C8A855"
+    property: "#C9C2B4"
+    operator: "#968C79"
+    punctuation: "#C9C2B4"
+    constant: "#D19A66"
+    tag: "#C8A855"
+    attribute: "#C9C2B4"
+    escape: "#C97B6A"
+    label: "#B8A3D6"
+    text: "#E9E3D6"
+    text_emphasis: "#E9E3D6"
+    text_strong: "#FFFFFF"
+    text_title: "#C8A855"
+    text_uri: "#C9C2B4"

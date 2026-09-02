@@ -1,0 +1,99 @@
+version: 1
+name: "FEdit"
+author: "Built-in"
+description: "Zinc terminal green, after fedit.dev"
+
+ui:
+  editor:
+    background: "#0B0B0D"
+    foreground: "#FAFAFA"
+    current_line_background: "#18181B"
+    cursor_color: "#00B86B"
+    selection_background: "#00B86B40"
+    secondary_cursor_color: "#00B86B80"
+
+  gutter:
+    background: "#0B0B0D"
+    foreground: "#3F3F46"
+    foreground_active: "#787880"
+    border_color: "#27272A"
+
+  status_bar:
+    background: "#18181B"
+    foreground: "#787880"
+    border: "#27272A"
+
+  sidebar:
+    background: "#18181B"
+    foreground: "#D3D3D8"
+    selection_background: "#27272A"
+    selection_foreground: "#00B86B"
+    hover_background: "#00B86B14"
+    folder_icon: "#00B86B"
+    file_icon: "#787880"
+    border: "#27272A"
+
+  splitter:
+    background: "#27272A"
+
+  tab_bar:
+    background: "#18181B"
+    active_background: "#0B0B0D"
+    active_foreground: "#FAFAFA"
+    inactive_background: "#18181B"
+    inactive_foreground: "#787880"
+    border: "#27272A"
+    modified_indicator: "#00B86B"
+
+  overlay:
+    border: "#3F3F46"
+    background: "#18181B"
+    foreground: "#FAFAFA"
+    input_background: "#0B0B0D"
+    selection_background: "#00B86B40"
+    highlight: "#00B86B"
+    warning: "#E7E7EA"
+    error: "#F14158"
+    accent: "#00B86B"
+
+  csv:
+    header_background: "#27272A"
+    header_foreground: "#FAFAFA"
+    grid_line: "#27272A"
+    selected_cell_background: "#00B86B40"
+    selected_cell_border: "#00B86B"
+    number_foreground: "#D3D3D8"
+
+  image_preview:
+    checkerboard_light: "#27272A"
+    checkerboard_dark: "#18181B"
+    checkerboard_size: 8
+
+  scrollbar:
+    track: "#0B0B0D"
+    thumb: "#27272A"
+    thumb_hover: "#3F3F46"
+
+  syntax:
+    keyword: "#6EE7B7"
+    function: "#00B86B"
+    function_builtin: "#00B86B"
+    string: "#A6A6AD"
+    number: "#D3D3D8"
+    comment: "#787880"
+    type: "#6EE7B7"
+    variable: "#FAFAFA"
+    variable_builtin: "#6EE7B7"
+    property: "#E7E7EA"
+    operator: "#A6A6AD"
+    punctuation: "#D3D3D8"
+    constant: "#D3D3D8"
+    tag: "#6EE7B7"
+    attribute: "#E7E7EA"
+    escape: "#00B86B"
+    label: "#6EE7B7"
+    text: "#FAFAFA"
+    text_emphasis: "#FAFAFA"
+    text_strong: "#FFFFFF"
+    text_title: "#00B86B"
+    text_uri: "#E7E7EA"

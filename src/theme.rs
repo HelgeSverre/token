@@ -22,6 +22,10 @@ pub const NORD_YAML: &str = include_str!("../themes/nord.yaml");
 pub const TOKYO_NIGHT_YAML: &str = include_str!("../themes/tokyo-night.yaml");
 pub const GRUVBOX_DARK_YAML: &str = include_str!("../themes/gruvbox-dark.yaml");
 pub const LISETH_YAML: &str = include_str!("../themes/liseth.yaml");
+pub const JAKE_YAML: &str = include_str!("../themes/jake.yaml");
+pub const SEMA_YAML: &str = include_str!("../themes/sema.yaml");
+pub const GLUE_YAML: &str = include_str!("../themes/glue.yaml");
+pub const FEDIT_YAML: &str = include_str!("../themes/fedit.yaml");
 
 /// A built-in theme entry
 pub struct BuiltinTheme {
@@ -72,6 +76,22 @@ pub const BUILTIN_THEMES: &[BuiltinTheme] = &[
     BuiltinTheme {
         id: "liseth",
         yaml: LISETH_YAML,
+    },
+    BuiltinTheme {
+        id: "jake",
+        yaml: JAKE_YAML,
+    },
+    BuiltinTheme {
+        id: "sema",
+        yaml: SEMA_YAML,
+    },
+    BuiltinTheme {
+        id: "glue",
+        yaml: GLUE_YAML,
+    },
+    BuiltinTheme {
+        id: "fedit",
+        yaml: FEDIT_YAML,
     },
 ];
 

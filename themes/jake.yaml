@@ -1,0 +1,99 @@
+version: 1
+name: "Jake"
+author: "Built-in"
+description: "Rose on near-black, after jakefile.dev"
+
+ui:
+  editor:
+    background: "#0A0A0A"
+    foreground: "#FAFAFA"
+    current_line_background: "#111111"
+    cursor_color: "#F43F5E"
+    selection_background: "#F43F5E40"
+    secondary_cursor_color: "#F43F5E80"
+
+  gutter:
+    background: "#0A0A0A"
+    foreground: "#3F3F46"
+    foreground_active: "#71717A"
+    border_color: "#27272A"
+
+  status_bar:
+    background: "#111111"
+    foreground: "#71717A"
+    border: "#27272A"
+
+  sidebar:
+    background: "#111111"
+    foreground: "#A1A1AA"
+    selection_background: "#1A1A1A"
+    selection_foreground: "#F43F5E"
+    hover_background: "#F43F5E14"
+    folder_icon: "#F43F5E"
+    file_icon: "#71717A"
+    border: "#27272A"
+
+  splitter:
+    background: "#27272A"
+
+  tab_bar:
+    background: "#111111"
+    active_background: "#0A0A0A"
+    active_foreground: "#FAFAFA"
+    inactive_background: "#111111"
+    inactive_foreground: "#71717A"
+    border: "#27272A"
+    modified_indicator: "#F43F5E"
+
+  overlay:
+    border: "#3F3F46"
+    background: "#111111"
+    foreground: "#FAFAFA"
+    input_background: "#0A0A0A"
+    selection_background: "#F43F5E40"
+    highlight: "#F43F5E"
+    warning: "#FBBF24"
+    error: "#F43F5E"
+    accent: "#F43F5E"
+
+  csv:
+    header_background: "#1A1A1A"
+    header_foreground: "#FAFAFA"
+    grid_line: "#27272A"
+    selected_cell_background: "#F43F5E40"
+    selected_cell_border: "#F43F5E"
+    number_foreground: "#FB923C"
+
+  image_preview:
+    checkerboard_light: "#1A1A1A"
+    checkerboard_dark: "#111111"
+    checkerboard_size: 8
+
+  scrollbar:
+    track: "#0A0A0A"
+    thumb: "#1A1A1A"
+    thumb_hover: "#3F3F46"
+
+  syntax:
+    keyword: "#F43F5E"
+    function: "#C084FC"
+    function_builtin: "#C084FC"
+    string: "#22C55E"
+    number: "#FB923C"
+    comment: "#71717A"
+    type: "#FBBF24"
+    variable: "#FAFAFA"
+    variable_builtin: "#F43F5E"
+    property: "#60A5FA"
+    operator: "#A1A1AA"
+    punctuation: "#A1A1AA"
+    constant: "#FB923C"
+    tag: "#F43F5E"
+    attribute: "#60A5FA"
+    escape: "#FB7185"
+    label: "#FBBF24"
+    text: "#FAFAFA"
+    text_emphasis: "#FAFAFA"
+    text_strong: "#FFFFFF"
+    text_title: "#F43F5E"
+    text_uri: "#60A5FA"

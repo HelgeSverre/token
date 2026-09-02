@@ -1,0 +1,99 @@
+version: 1
+name: "Glue"
+author: "Built-in"
+description: "Graphite with a yellow highlighter, after getglue.dev"
+
+ui:
+  editor:
+    background: "#0A0A0B"
+    foreground: "#F6F6F7"
+    current_line_background: "#111113"
+    cursor_color: "#FACC15"
+    selection_background: "#FACC1540"
+    secondary_cursor_color: "#FACC1580"
+
+  gutter:
+    background: "#0A0A0B"
+    foreground: "#3A3B3F"
+    foreground_active: "#8E8E93"
+    border_color: "#2A2B2E"
+
+  status_bar:
+    background: "#111113"
+    foreground: "#8E8E93"
+    border: "#2A2B2E"
+
+  sidebar:
+    background: "#111113"
+    foreground: "#E2E2E3"
+    selection_background: "#1E1E21"
+    selection_foreground: "#FACC15"
+    hover_background: "#FACC1514"
+    folder_icon: "#FACC15"
+    file_icon: "#8E8E93"
+    border: "#2A2B2E"
+
+  splitter:
+    background: "#2A2B2E"
+
+  tab_bar:
+    background: "#111113"
+    active_background: "#0A0A0B"
+    active_foreground: "#F6F6F7"
+    inactive_background: "#111113"
+    inactive_foreground: "#8E8E93"
+    border: "#2A2B2E"
+    modified_indicator: "#FACC15"
+
+  overlay:
+    border: "#3A3B3F"
+    background: "#111113"
+    foreground: "#F6F6F7"
+    input_background: "#0A0A0B"
+    selection_background: "#FACC1540"
+    highlight: "#FACC15"
+    warning: "#F9B44E"
+    error: "#F14158"
+    accent: "#FACC15"
+
+  csv:
+    header_background: "#1E1E21"
+    header_foreground: "#F6F6F7"
+    grid_line: "#2A2B2E"
+    selected_cell_background: "#FACC1540"
+    selected_cell_border: "#FACC15"
+    number_foreground: "#F9B44E"
+
+  image_preview:
+    checkerboard_light: "#1E1E21"
+    checkerboard_dark: "#111113"
+    checkerboard_size: 8
+
+  scrollbar:
+    track: "#0A0A0B"
+    thumb: "#1E1E21"
+    thumb_hover: "#3A3B3F"
+
+  syntax:
+    keyword: "#FACC15"
+    function: "#3B82F6"
+    function_builtin: "#3B82F6"
+    string: "#30A46C"
+    number: "#F9B44E"
+    comment: "#8E8E93"
+    type: "#8E5CD9"
+    variable: "#F6F6F7"
+    variable_builtin: "#FACC15"
+    property: "#E2E2E3"
+    operator: "#8E8E93"
+    punctuation: "#E2E2E3"
+    constant: "#F9B44E"
+    tag: "#FACC15"
+    attribute: "#E2E2E3"
+    escape: "#FDE047"
+    label: "#8E5CD9"
+    text: "#F6F6F7"
+    text_emphasis: "#F6F6F7"
+    text_strong: "#FFFFFF"
+    text_title: "#FACC15"
+    text_uri: "#E2E2E3"
