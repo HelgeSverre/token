@@ -2053,6 +2053,19 @@ fn check_hover_dwell_does_not_fire_before_the_delay_elapses() {
 }
 
 #[test]
+fn next_wake_ignores_an_expired_dwell_deadline() {
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.ui.hover = token::model::HoverRegion::Sidebar;
+    app.hover_dwell = Some((10.0, 10.0, Instant::now() - Duration::from_secs(1)));
+
+    let now = Instant::now();
+    assert!(
+        app.next_wake(now) > now,
+        "a past dwell deadline must not schedule an immediate (spinning) wake-up"
+    );
+}
+
+#[test]
 fn check_hover_dwell_does_not_fire_outside_editor_text() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.ui.hover = token::model::HoverRegion::Sidebar;

@@ -5089,7 +5089,18 @@ impl ApplicationHandler for App {
         // Use WaitUntil to wake up for the next cursor blink
         // This avoids spinning the event loop constantly (Poll mode)
         // while still handling async messages, fs changes, and cursor blinks
-        // Calculate next wake time: earliest of blink timer and syntax deadlines
+        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_wake(now)));
+    }
+}
+
+impl App {
+    /// Earliest instant `about_to_wait` must run again: the next cursor
+    /// blink or the earliest pending deadline. Deadlines already in the
+    /// past are excluded — their check ran this tick and either fired or
+    /// declined, and `WaitUntil` on a past instant spins the loop at 100%
+    /// CPU.
+    pub(super) fn next_wake(&self, now: Instant) -> Instant {
+        let blink_interval = Duration::from_millis(self.model.config.cursor_blink_ms);
         let mut next_wake = self.last_tick + blink_interval;
         if let Some(earliest_deadline) = self.syntax_deadlines.values().map(|(d, _)| *d).min() {
             next_wake = next_wake.min(earliest_deadline);
@@ -5159,9 +5170,14 @@ impl ApplicationHandler for App {
         }
         if let Some((_, _, started)) = self.hover_dwell {
             let delay = Duration::from_millis(self.model.config.hover_delay_ms);
-            next_wake = next_wake.min(started + delay);
+            let dwell_deadline = started + delay;
+            // An armed dwell whose deadline passed without firing (pointer
+            // parked over the sidebar, hover disabled, ...) needs no wake-up.
+            if dwell_deadline > now {
+                next_wake = next_wake.min(dwell_deadline);
+            }
         }
-        event_loop.set_control_flow(ControlFlow::WaitUntil(next_wake));
+        next_wake
     }
 }
 
