@@ -4,7 +4,7 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## Unreleased
+## v0.6.0 - 2026-09-02
 
 ### Added
 
