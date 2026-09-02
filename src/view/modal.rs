@@ -1118,12 +1118,14 @@ fn render_find_replace_modal(
             fields: &fields,
             focused,
         },
+        // The legend fills the small modal's footer; only replace mode
+        // has a hint worth the remaining room.
         footer: Some(Footer {
             leading: &legend,
             trailing: if state.replace_mode {
-                "\u{21b5} next \u{00b7} \u{2318}\u{21b5} replace all"
+                "\u{2318}\u{21b5} replace all"
             } else {
-                "\u{21b5} next \u{00b7} \u{21e7}\u{21b5} previous"
+                ""
             },
         }),
         hover_row: None,

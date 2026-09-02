@@ -182,6 +182,10 @@ struct ModalConfig {
     replace_mode: bool,
     #[serde(default)]
     case_sensitive: bool,
+    #[serde(default)]
+    whole_word: bool,
+    #[serde(default)]
+    use_regex: bool,
 }
 
 fn default_true() -> bool {
@@ -542,6 +546,8 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
             }
             state.replace_mode = config.replace_mode;
             state.case_sensitive = config.case_sensitive;
+            state.whole_word = config.whole_word;
+            state.use_regex = config.use_regex;
             ModalState::FindReplace(state)
         }
         ModalId::ThemePicker => {

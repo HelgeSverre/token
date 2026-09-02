@@ -2,7 +2,7 @@
 
 Regex support, whole word matching, match count display, and visual highlighting.
 
-> **Status:** Partially implemented — search engine (regex/whole-word/case), decoration-pipeline match highlighting + scrollbar overview marks, and Find Previous/Tab keybindings shipped; UI rendering (Phase 5: toggle buttons, match count, regex error display) and selection scope (Phase 7) remain
+> **Status:** ✅ Shipped — engine, decorations, navigation (2026-08), then Phase 5 UI (status label, option legend, ⌥⌘ toggles) and Phase 7 selection scope (2026-09-03). Not done: mouse-clickable toggles and the `SearchResults` cache, both deliberately; archived 2026-09-03
 > **Priority:** P1
 > **Effort:** M
 > **Created:** 2025-12-19
@@ -627,7 +627,7 @@ impl Default for SearchHighlightTheme {
 
 **Files:** `src/view/modal.rs`
 
-**Out of scope for this unit** (per assignment brief: "this unit is about search behavior + decorations, not modal chrome"). None of this phase's checkboxes were attempted; the find/replace modal's visual chrome is unchanged from the OverlaySurface Fields-body migration. `whole_word`/`use_regex` toggles and regex-error/match-count display all need this phase's button/label rendering to become reachable by a human user.
+**Shipped 2026-09-03.** The status label ("3 of 42" / "No matches" / "Invalid regex: …", the latter in the error colour) sits on the Find label row via a new `Field::trailing` slot; the footer legend lists the four options with their ⌥⌘ keys and a check when on (`find_options_legend`). Toggles are keyboard-only (`handle_modal_key`, matched on the physical key); clickable chips would need an `OverlayHit` variant and were not needed.
 
 ### Phase 6: Navigation
 
@@ -646,7 +646,7 @@ impl Default for SearchHighlightTheme {
 
 **Files:** `src/update/ui.rs`
 
-**Not implemented.** `selection_only` scoping depends on a UI affordance to turn it on (Phase 5, out of scope) exactly like `whole_word`/`use_regex`, and unlike those two, filtering an already-computed match list to a stored selection range is cheap to add later with zero risk to the shipped behavior — deferred rather than adding an unreachable field with no consumer.
+**Shipped 2026-09-03.** `FindReplaceState::{selection_only, scope}` capture the primary selection as char offsets when ⌥⌘L switches scope on (an empty selection leaves it off); `FindReplaceState::matches()` is the single filtered list that find-next/previous, replace, replace-all, and the highlight/overview decorations all read. Reopening the modal re-captures the scope from the live selection so a stale range never applies.
 
 ---
 

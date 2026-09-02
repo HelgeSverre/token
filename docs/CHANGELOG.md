@@ -4,6 +4,20 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
+## Unreleased
+
+### Added
+
+- **Find options, match count, and selection scope** (find-enhancements
+  Phases 5 and 7): the Find label row shows "3 of 42", "No matches", or the
+  regex error; the footer lists the case, whole-word, regex, and selection
+  options with their keys and a check when on. ⌥⌘C, ⌥⌘W, ⌥⌘R, and ⌥⌘L toggle
+  them inside the modal. Selection scope captures the primary selection when
+  switched on and restricts navigation, highlights, replace, and replace-all
+  to it; reopening the modal re-captures the scope from the live selection.
+  The automation overlay snapshot reports `status` and `options`, and
+  screenshot scenarios accept `whole_word` and `use_regex`.
+
 ## v0.6.0 - 2026-09-02
 
 ### Added

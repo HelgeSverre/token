@@ -3,7 +3,7 @@
 A shared contract for per-line gutter marks, in-text range decorations, and scrollbar overview marks — built once, consumed by find enhancements, diff gutter, code folding, and LSP diagnostics instead of each reinventing gutter pixels.
 
 > **Status:** ✅ Shipped — Phases 1–3 (dynamic gutter, marks + decoration passes, interaction + overview marks); archived 2026-09-02
-> **Priority:** P2 (Important) — prerequisite for [find-enhancements](../feature/find-enhancements.md), [diff-gutter](../feature/diff-gutter.md), [folding-basic](../feature/folding-basic.md), and [LSP diagnostics](lsp-integration.md)
+> **Priority:** P2 (Important) — prerequisite for [find-enhancements](../../archived/find-enhancements.md), [diff-gutter](../feature/diff-gutter.md), [folding-basic](../feature/folding-basic.md), and [LSP diagnostics](lsp-integration.md)
 > **Effort:** L (Phase 1 alone is most of an M; see plan)
 > **Created:** 2026-08-11
 > **Updated:** 2026-08-11 (revised after 3-reviewer pass: damage model reality, `Copy` geometry, `TextViewportMap`, consumer ordering)
@@ -17,7 +17,7 @@ A shared contract for per-line gutter marks, in-text range decorations, and scro
 
 Four planned features independently need to draw in or around the gutter and text:
 
-- [find-enhancements.md](../feature/find-enhancements.md) (Milestone 2) wants match highlights "through the text decoration pipeline" — which doesn't exist yet.
+- [find-enhancements.md](../../archived/find-enhancements.md) (Milestone 2) wants match highlights "through the text decoration pipeline" — which doesn't exist yet.
 - [diff-gutter.md](../feature/diff-gutter.md) wants a 3–4 px changed/added/deleted bar and speaks of "`GutterLayout` for marker lanes and hit targets".
 - [folding-basic.md](../feature/folding-basic.md) wants ▶/▼ chevrons and "shared gutter hit targets".
 - [lsp-integration.md](lsp-integration.md) Phase 2 wants severity marks per line plus underlines in the text area.
@@ -172,7 +172,7 @@ Damage: decoration changes emit `DamageArea::EditorArea`, full stop (see Non-Goa
 
 | Feature | Uses | Status |
 | --- | --- | --- |
-| Find enhancements ([find-enhancements.md](../feature/find-enhancements.md), Milestone 2) | `BackgroundTint` + overview marks (no lanes needed) | **Likely first consumer** — needs only Phases 2–3 |
+| Find enhancements ([find-enhancements.md](../../archived/find-enhancements.md), Milestone 2) | `BackgroundTint` + overview marks (no lanes needed) | **Likely first consumer** — needs only Phases 2–3 |
 | LSP diagnostics ([lsp-integration.md](lsp-integration.md) Phase 2, Milestone 4) | Marks lane, `Wavy`/`Faded`/`Strikethrough`, overview marks, mark-click → hover | Consumer; drives lanes |
 | Diff gutter ([diff-gutter.md](../feature/diff-gutter.md)) | Diff lane, overview marks | Planned; replaces its private `GutterLayout` sketch |
 | Code folding ([folding-basic.md](../feature/folding-basic.md)) | Fold lane + suppressed-default click routing + collapsed-mark hoisting | Planned |
@@ -250,7 +250,7 @@ Ships ahead of all consumers as its own change: it fixes the live >99,999-line r
 
 ## References
 
-- Consumers: [find-enhancements.md](../feature/find-enhancements.md) · [lsp-integration.md](lsp-integration.md) · [diff-gutter.md](../feature/diff-gutter.md) · [folding-basic.md](../feature/folding-basic.md)
+- Consumers: [find-enhancements.md](../../archived/find-enhancements.md) · [lsp-integration.md](lsp-integration.md) · [diff-gutter.md](../feature/diff-gutter.md) · [folding-basic.md](../feature/folding-basic.md)
 - Conventions owner: [overlay-surface.md](overlay-surface.md) (`draw_wavy_underline`, severity glyphs/colors)
 - Viewport seam: [soft-wrap.md](../feature/soft-wrap.md) (`TextViewportMap`)
 - Code seams: `src/view/geometry.rs` (`GroupLayout`) · `src/view/editor_text.rs` (passes, private pixel helpers) · `src/view/hit_test.rs` + `src/runtime/mouse.rs` (gutter press/drag) · `src/view/frame.rs` · `src/view/editor_scrollbars.rs` · `src/model/mod.rs` (`LINE_NUMBER_GUTTER_CHARS` and its model-side consumers, to be replaced)

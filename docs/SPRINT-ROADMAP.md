@@ -1,6 +1,6 @@
 # Sprint Roadmap
 
-Implementation sequence across the current design docs: [overlay-surface](archived/overlay-surface.md), [editor-decorations](archived/editor-decorations.md), [find-enhancements](feature/find-enhancements.md), [autocomplete](feature/autocomplete.md), [lsp-integration](archived/lsp-integration.md), [soft-wrap](feature/soft-wrap.md), [context-menu](archived/context-menu.md), [settings-page](feature/settings-page.md).
+Implementation sequence across the current design docs: [overlay-surface](archived/overlay-surface.md), [editor-decorations](archived/editor-decorations.md), [find-enhancements](archived/find-enhancements.md), [autocomplete](feature/autocomplete.md), [lsp-integration](archived/lsp-integration.md), [soft-wrap](feature/soft-wrap.md), [context-menu](archived/context-menu.md), [settings-page](feature/settings-page.md).
 
 > **Created:** 2026-08-11 · **Updated:** 2026-09-02
 > **Status:** steps 1–11 and the whole August queue shipped in v0.6.0; current queue below.

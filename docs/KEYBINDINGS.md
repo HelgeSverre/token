@@ -72,6 +72,8 @@ The `cmd` modifier is the recommended cross-platform modifier. It maps to Comman
 | Command Palette     | Cmd+Shift+A   | `ToggleCommandPalette` |
 | Go to Line          | Cmd+L         | `ToggleGotoLine`       |
 | Find/Replace        | Cmd+F         | `ToggleFindReplace`    |
+| Find: next / previous | Enter / Shift+Enter (in the modal) | — |
+| Find: toggle case / whole word / regex / selection scope | Opt+Cmd+C / W / R / L (in the modal) | — |
 
 ### Panels/Docks
 

@@ -42,4 +42,4 @@ pub struct FindReplaceState {
 
 ## Related Docs
 
-- **Advanced features:** `docs/feature/find-enhancements.md` - Regex, whole word, match count
+- **Advanced features:** `docs/../archived/find-enhancements.md` - Regex, whole word, match count

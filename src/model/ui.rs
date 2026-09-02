@@ -338,7 +338,18 @@ pub enum FindStatus {
 impl FindStatus {
     pub fn label(&self) -> String {
         match self {
-            Self::Error(error) => format!("Invalid regex: {error}"),
+            // `regex::Error` renders as a multi-line diagnostic whose last
+            // line is the reason ("error: unclosed group"); that is the
+            // part that fits on a label row.
+            Self::Error(error) => {
+                let reason = error
+                    .lines()
+                    .last()
+                    .unwrap_or_default()
+                    .trim()
+                    .trim_start_matches("error: ");
+                format!("Invalid regex: {reason}")
+            }
             Self::Count { total: 0, .. } => "No matches".to_owned(),
             Self::Count {
                 total,

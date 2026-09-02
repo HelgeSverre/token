@@ -71,6 +71,7 @@ Detailed specifications for major features, located in `docs/feature/`:
 | Context Menu | ✅ | [context-menu.md](archived/context-menu.md) |
 | Embedded Terminal | ✅ MVP | [embedded-terminal.md](archived/embedded-terminal.md) |
 | File Dialogs | ✅ via `rfd` | [file-dialogs.md](archived/file-dialogs.md) |
+| Find Enhancements | ✅ | [find-enhancements.md](archived/find-enhancements.md) |
 
 ### Planned Features
 
@@ -79,7 +80,6 @@ Detailed specifications for major features, located in `docs/feature/`:
 | Command Palette Enhancements | 1 - Navigation | [command-palette-enhancements.md](future/command-palette-enhancements.md) |
 | Quick Open | 1 - Navigation | planned |
 | Go to Line Enhancements | 1 - Navigation | [goto-line-enhancements.md](future/goto-line-enhancements.md) |
-| Find Enhancements | 2 - Search & Editing | [find-enhancements.md](feature/find-enhancements.md) |
 | Replace Enhancements | 2 - Search & Editing | [replace-enhancements.md](feature/replace-enhancements.md) |
 | Select Next Occurrence | 2 - Search & Editing | [select-next-occurrence.md](archived/select-next-occurrence.md) |
 | Line Operations | 2 - Search & Editing | [line-operations.md](archived/line-operations.md) |

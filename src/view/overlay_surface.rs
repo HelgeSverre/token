@@ -2342,6 +2342,21 @@ fn render_footer(
     );
 }
 
+/// `text`, or its longest prefix plus "…" that measures within `room`.
+fn fit_with_ellipsis(painter: &mut TextPainter, text: &str, size: f32, room: usize) -> String {
+    if painter.measure_sized(text, size, 0.0).ceil() as usize <= room {
+        return text.to_owned();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    for keep in (1..chars.len()).rev() {
+        let candidate: String = chars[..keep].iter().collect::<String>() + "\u{2026}";
+        if painter.measure_sized(&candidate, size, 0.0).ceil() as usize <= room {
+            return candidate;
+        }
+    }
+    "\u{2026}".to_owned()
+}
+
 /// Draw the field labels for a `Body::Fields` context (Go to Line,
 /// Find/Replace). Field content (text, selection, caret) is painted by the
 /// caller via `TextFieldRenderer` into `layout.fields[i].input` — this only
@@ -2371,14 +2386,20 @@ fn render_fields(
         if let Some(trailing) = field.trailing {
             let meta = size_px(SIZE_META, scale_factor);
             let meta_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(meta))) / 2;
-            let w = painter.measure_sized(trailing, meta, 0.0).ceil() as usize;
+            // Never run into the label: shorten with an ellipsis to the
+            // room left of it.
+            let label_w = painter.measure_sized(field.label, size, 0.0).ceil() as usize;
+            let room =
+                r.w.saturating_sub(label_w + scaled(dims::HEADER_PAD_X, scale_factor));
+            let text = fit_with_ellipsis(painter, trailing, meta, room);
+            let w = painter.measure_sized(&text, meta, 0.0).ceil() as usize;
             let color = if field.trailing_is_error {
                 colors.severity_error_text
             } else {
                 colors.text_dim
             };
             let x = r.x + r.w.saturating_sub(w);
-            painter.draw_sized(frame, x, meta_y, trailing, meta, 0.0, color);
+            painter.draw_sized(frame, x, meta_y, &text, meta, 0.0, color);
         }
     }
 }
