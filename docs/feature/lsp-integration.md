@@ -365,9 +365,12 @@ Binary not found on `PATH` (after `PATHEXT` resolution on Windows) → `ServerSt
 - [ ] Incremental `didChange` from `EditOperation` deltas (prerequisite for large files).
 - [ ] `workspace/didChangeWatchedFiles` from fs_watcher (then advertise its dynamicRegistration).
 - [ ] Pull diagnostics (`textDocument/diagnostic`) replacing push.
-- [ ] Find references + multi-location picker; rename; code actions; formatting; `willSaveWaitUntil` (format-on-save).
-- [ ] Problems panel (new `PanelId`; reads the manager's authoritative store, which already retains unopened-file diagnostics).
-- [ ] Semantic tokens over tree-sitter highlights; `documentSymbol` outline augmentation; forward jump stack; mouse-dwell hover; Cmd+Click; workspace symbols in the fuzzy finder; snippet completion (with snippets feature).
+- [x] Find references + multi-location picker (`FindUsages` / `ShowUsages`, cursor-anchored list capped at 200).
+- [x] Problems panel (`PanelId::Problems`; reads the manager's authoritative store, which already retains unopened-file diagnostics).
+- [x] Forward jump stack; mouse-dwell hover (`hover_on_mouse`, `hover_delay_ms`); scrollbar overview marks for diagnostics.
+- [ ] Rename; code actions; formatting; `willSaveWaitUntil` (format-on-save).
+- [ ] Signature help; completion documentation card.
+- [ ] Semantic tokens over tree-sitter highlights; `documentSymbol` outline augmentation; Cmd+Click; workspace symbols in the fuzzy finder; snippet completion (with snippets feature).
 
 ---
 

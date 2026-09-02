@@ -541,10 +541,10 @@ Automation/MCP: all commands (`TriggerMenu`, `AcceptInline`, …) are `is_simple
 
 **Effort:** M — the menu machinery already exists; this is item conversion + async plumbing
 
-- [ ] LSP source: request on trigger chars + debounce, `MenuItem` conversion (UTF-16 positions, kind map, sortText), `isIncomplete` re-request, lazy resolve for docs.
+- [x] LSP source: request on trigger chars + debounce, `MenuItem` conversion (UTF-16 positions, kind map, sortText), `isIncomplete` re-request. Built in lsp-integration.md Phase 5 (`completion/lsp.rs`, `update/completion.rs`).
+- [x] `additionalTextEdits` → `MenuInsert::Lsp` (auto-import), resolve-before-accept, one undo step.
 - [ ] Words demoted to `fallback` tier when LSP items present; dedup rule.
-- [ ] `additionalTextEdits` → second `MenuInsert` variant (auto-import).
-- [ ] Documentation side-card (shared with LSP hover overlay work).
+- [ ] Lazy resolve for docs + documentation side-card (shared with LSP hover overlay work).
 
 ### Phase 5+: Future
 
