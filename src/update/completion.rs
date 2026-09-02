@@ -24,6 +24,7 @@ use crate::completion::menu::{
     filter_and_sort, CompletionMenuState, LspInsert, MenuInsert, MenuSourceId,
 };
 use crate::completion::sources::{collect_snippets, collect_words};
+use crate::config::WordsMode;
 use crate::lsp::lsp_server_def;
 use crate::messages::CompletionMsg;
 use crate::model::{
@@ -160,10 +161,38 @@ fn word_query_offsets(model: &AppModel, cursor: Cursor) -> Option<(usize, usize)
     Some((word_start_before(&doc.buffer, offset), offset))
 }
 
+fn menu_enabled(model: &AppModel) -> bool {
+    model.config.completion.enabled
+}
+
+/// `CommandId::ToggleAutocomplete`: flips `completion.enabled`, persists
+/// it, and closes any open menu.
+pub fn toggle_enabled(model: &mut AppModel) -> Option<Cmd> {
+    let enabled = !model.config.completion.enabled;
+    model.config.completion.enabled = enabled;
+    if let Err(e) = model.config.save() {
+        tracing::warn!("Failed to save autocomplete toggle: {}", e);
+    }
+    model.ui.set_status(if enabled {
+        "Autocomplete enabled"
+    } else {
+        "Autocomplete disabled"
+    });
+    let mut cmds = vec![Cmd::redraw_status_bar()];
+    if let Some(cancel) = dismiss_with_cleanup(model) {
+        cmds.push(cancel);
+    }
+    Some(Cmd::Batch(cmds))
+}
+
 /// Ctrl+Space (or any other explicit-trigger binding): open with whatever
 /// query is at the cursor, including an empty one (word chars aren't
 /// required — autocomplete.md: "Ctrl+Space always works").
 fn trigger_explicit(model: &mut AppModel) -> Option<Cmd> {
+    if !menu_enabled(model) {
+        model.ui.set_status("Autocomplete disabled");
+        return Some(Cmd::redraw_status_bar());
+    }
     if !model.editor().is_plain_text_mode() {
         // Previously a silent no-op — an explicit keypress that visibly
         // did nothing read as a broken binding.
@@ -203,6 +232,9 @@ pub(crate) fn sync_after_document_edit(
 ) -> Option<Cmd> {
     if is_copy {
         return None;
+    }
+    if !menu_enabled(model) {
+        return dismiss_with_cleanup(model);
     }
     if !model.editor().is_plain_text_mode() {
         dismiss(model);
@@ -294,7 +326,11 @@ fn open_or_refresh(
         .unwrap_or((Vec::new(), false));
 
     let doc = model.document();
-    let mut items = collect_words(doc, cursor, &query);
+    let mut items = match model.config.completion.words {
+        WordsMode::Enabled => collect_words(doc, cursor, &query),
+        WordsMode::Fallback if carried_items.is_empty() => collect_words(doc, cursor, &query),
+        WordsMode::Fallback | WordsMode::Disabled => Vec::new(),
+    };
     items.extend(collect_snippets(doc.language));
     items.extend(carried_items);
     let filtered = filter_and_sort(&items, &query);
@@ -368,7 +404,10 @@ pub(crate) fn merge_lsp_completion(
     };
 
     let state = model.ui.completion_menu.as_mut()?;
-    state.items.retain(|item| item.source != MenuSourceId::Lsp);
+    let drop_words = model.config.completion.words == WordsMode::Fallback && !items.is_empty();
+    state.items.retain(|item| {
+        item.source != MenuSourceId::Lsp && !(drop_words && item.source == MenuSourceId::Words)
+    });
     state.items.extend(items);
     state.is_incomplete = is_incomplete;
     state.filtered = filter_and_sort(&state.items, &state.query);
@@ -1183,6 +1222,7 @@ mod tests {
     #[test]
     fn merging_lsp_items_replaces_only_the_lsp_block() {
         let mut model = model_with_text("vector_value\n\n");
+        model.config.completion.words = WordsMode::Enabled;
         // Labels prefix-match the typed "va" so they occupy the
         // word-start tier above the buffer words (which don't).
         open_menu_with_lsp_response(&mut model, &["vacuum", "valid"]);
@@ -1196,6 +1236,62 @@ mod tests {
         );
         // Prefix-matching LSP items sort above the non-prefix buffer words.
         assert_eq!(state.items[state.filtered[0].1].source, MenuSourceId::Lsp);
+    }
+
+    // ==== completion.enabled / completion.words ====
+
+    #[test]
+    fn disabled_autocomplete_does_not_open_on_typing() {
+        let mut model = model_with_text("value_one\n\n");
+        model.config.completion.enabled = false;
+        place_cursor(&mut model, 1, 0);
+        type_str(&mut model, "va");
+        assert!(model.ui.completion_menu.is_none());
+    }
+
+    #[test]
+    fn disabled_autocomplete_ignores_explicit_trigger_and_sets_status() {
+        let mut model = model_with_text("value_one\n\n");
+        model.config.completion.enabled = false;
+        place_cursor(&mut model, 1, 0);
+        update_completion(&mut model, CompletionMsg::TriggerMenu);
+        assert!(model.ui.completion_menu.is_none());
+        assert_eq!(
+            model.ui.transient_message.map(|t| t.text).as_deref(),
+            Some("Autocomplete disabled")
+        );
+    }
+
+    #[test]
+    fn fallback_words_mode_drops_words_once_lsp_answers() {
+        let mut model = model_with_text("vector_value\n\n");
+        model.config.completion.words = WordsMode::Fallback;
+        open_menu_with_lsp_response(&mut model, &["vacuum"]);
+        let state = model.ui.completion_menu.as_ref().expect("still open");
+        assert!(state.items.iter().all(|i| i.source != MenuSourceId::Words));
+        assert!(state.items.iter().any(|i| i.source == MenuSourceId::Lsp));
+    }
+
+    #[test]
+    fn enabled_words_mode_keeps_words_after_lsp_answers() {
+        let mut model = model_with_text("vector_value\n\n");
+        model.config.completion.words = WordsMode::Enabled;
+        open_menu_with_lsp_response(&mut model, &["vacuum"]);
+        let state = model.ui.completion_menu.as_ref().expect("still open");
+        assert!(state.items.iter().any(|i| i.source == MenuSourceId::Words));
+    }
+
+    #[test]
+    fn disabled_words_mode_never_lists_words() {
+        let mut model = model_with_text("value_one\n\n");
+        model.config.completion.words = WordsMode::Disabled;
+        place_cursor(&mut model, 1, 0);
+        type_str(&mut model, "va");
+        assert!(model
+            .ui
+            .completion_menu
+            .as_ref()
+            .is_none_or(|s| s.items.iter().all(|i| i.source != MenuSourceId::Words)));
     }
 
     #[test]
@@ -1800,6 +1896,7 @@ mod tests {
     #[test]
     fn document_ids_stay_distinct_in_merge_guards() {
         let mut model = model_with_text("vector_value\n\n");
+        model.config.completion.words = WordsMode::Enabled;
         open_menu_with_lsp_response(&mut model, &["vec_new"]);
         let state = model.ui.completion_menu.clone().unwrap();
         let wrong_doc = DocumentId(state.document_id.0 + 99);

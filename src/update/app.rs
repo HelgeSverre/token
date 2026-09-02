@@ -561,6 +561,7 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         }
         CommandId::RestartLanguageServer => update_app(model, AppMsg::RestartLanguageServer),
         CommandId::ToggleLsp => crate::update::lsp::toggle_lsp_enabled(model),
+        CommandId::ToggleAutocomplete => crate::update::completion::toggle_enabled(model),
         CommandId::ManageLanguageServers => {
             update_ui(model, UiMsg::ToggleModal(ModalId::LspServers))
         }

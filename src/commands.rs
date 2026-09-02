@@ -99,6 +99,7 @@ pub enum CommandId {
     // Language servers (lsp-integration.md Phase 1)
     RestartLanguageServer,
     ToggleLsp,
+    ToggleAutocomplete,
     ManageLanguageServers,
 
     // Application
@@ -445,6 +446,12 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: None,
     },
     CommandDef {
+        id: CommandId::ToggleAutocomplete,
+        category: CommandCategory::System,
+        label: "Toggle Autocomplete",
+        keybinding: None,
+    },
+    CommandDef {
         id: CommandId::ManageLanguageServers,
         category: CommandCategory::System,
         label: "Language Servers...",
@@ -553,6 +560,7 @@ impl CommandId {
             CommandId::TriggerCompletionMenu => Some(KeymapCommand::TriggerCompletionMenu),
             CommandId::RestartLanguageServer => Some(KeymapCommand::RestartLanguageServer),
             CommandId::ToggleLsp => None,
+            CommandId::ToggleAutocomplete => None,
             CommandId::ManageLanguageServers => None,
             CommandId::Quit => Some(KeymapCommand::Quit),
             #[cfg(debug_assertions)]

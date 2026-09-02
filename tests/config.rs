@@ -109,6 +109,7 @@ fn test_config_serialize_deserialize() {
         hover_on_mouse: true,
         hover_delay_ms: 300,
         lsp: token::config::LspConfig::default(),
+        completion: token::config::CompletionConfig::default(),
     };
     let yaml = serde_yaml::to_string(&config).unwrap();
     let parsed: EditorConfig = serde_yaml::from_str(&yaml).unwrap();

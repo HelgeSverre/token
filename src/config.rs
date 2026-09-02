@@ -63,6 +63,48 @@ pub struct EditorConfig {
     /// Language server settings (see `LspConfig`).
     #[serde(default)]
     pub lsp: LspConfig,
+
+    /// Autocomplete settings (see `CompletionConfig`).
+    #[serde(default)]
+    pub completion: CompletionConfig,
+}
+
+/// Autocomplete settings, stored under `completion:` in `config.yaml`:
+///
+/// ```yaml
+/// completion:
+///   enabled: true
+///   words: fallback
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionConfig {
+    /// Master switch; `false` never opens the menu (typing or Ctrl+Space).
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// When buffer words are offered as completion items.
+    #[serde(default)]
+    pub words: WordsMode,
+}
+
+impl Default for CompletionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            words: WordsMode::default(),
+        }
+    }
+}
+
+/// `completion.words`: `enabled` always lists buffer words, `fallback`
+/// (default) lists them only until the language server answers, `disabled`
+/// never lists them. Snippets are unaffected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WordsMode {
+    Enabled,
+    #[default]
+    Fallback,
+    Disabled,
 }
 
 /// Language server settings, stored under `lsp:` in `config.yaml`:
@@ -150,6 +192,7 @@ impl Default for EditorConfig {
             hover_on_mouse: true,
             hover_delay_ms: default_hover_delay_ms(),
             lsp: LspConfig::default(),
+            completion: CompletionConfig::default(),
         }
     }
 }
@@ -260,6 +303,18 @@ mod tests {
         let config = EditorConfig::default();
         assert!(config.hover_on_mouse);
         assert_eq!(config.hover_delay_ms, 300);
+    }
+
+    #[test]
+    fn completion_block_parses_and_defaults() {
+        let parsed: EditorConfig =
+            serde_yaml::from_str("completion:\n  enabled: false\n  words: disabled\n").unwrap();
+        assert!(!parsed.completion.enabled);
+        assert_eq!(parsed.completion.words, WordsMode::Disabled);
+
+        let defaulted: EditorConfig = serde_yaml::from_str("theme: default-dark\n").unwrap();
+        assert!(defaulted.completion.enabled);
+        assert_eq!(defaulted.completion.words, WordsMode::Fallback);
     }
 
     #[test]
