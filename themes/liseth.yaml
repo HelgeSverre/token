@@ -1,0 +1,103 @@
+version: 1
+name: "Liseth Solutions"
+author: "Built-in"
+description: "Liseth Solutions brandbook: navy ground, cyan hero, blue and purple accents"
+
+# Brandbook v1.0 (Softriver):
+#   primary   #05101A navy, #23C1DA cyan
+#   secondary #3483FA blue, #8958FE purple, #EAECEF paper
+# Surfaces step through the brand-pattern tile tones (#0A1620 -> #131E29).
+ui:
+  editor:
+    background: "#05101A"
+    foreground: "#EAECEF"
+    current_line_background: "#0A1620"
+    cursor_color: "#23C1DA"
+    selection_background: "#3483FA4D"
+    secondary_cursor_color: "#23C1DA80"
+
+  gutter:
+    background: "#05101A"
+    foreground: "#2E3E4E"
+    foreground_active: "#8C98A6"
+    border_color: "#0F1B27"
+
+  status_bar:
+    background: "#0A1620"
+    foreground: "#8C98A6"
+    border: "#131E29"
+
+  sidebar:
+    background: "#030A11"
+    foreground: "#C5CBD3"
+    selection_background: "#131E29"
+    selection_foreground: "#23C1DA"
+    hover_background: "#23C1DA14"
+    folder_icon: "#23C1DA"
+    file_icon: "#8C98A6"
+    border: "#0F1B27"
+
+  splitter:
+    background: "#0F1B27"
+
+  tab_bar:
+    background: "#030A11"
+    active_background: "#05101A"
+    active_foreground: "#EAECEF"
+    inactive_background: "#030A11"
+    inactive_foreground: "#5A6874"
+    border: "#0F1B27"
+    modified_indicator: "#23C1DA"
+
+  overlay:
+    border: "#23C1DA"
+    background: "#0A1620"
+    foreground: "#EAECEF"
+    input_background: "#030A11"
+    selection_background: "#3483FA4D"
+    highlight: "#23C1DA"
+    warning: "#F2B84B"
+    error: "#F0507A"
+    accent: "#23C1DA"
+
+  csv:
+    header_background: "#0A1620"
+    header_foreground: "#EAECEF"
+    grid_line: "#131E29"
+    selected_cell_background: "#3483FA4D"
+    selected_cell_border: "#23C1DA"
+    number_foreground: "#B08CFF"
+
+  image_preview:
+    checkerboard_light: "#131E29"
+    checkerboard_dark: "#0A1620"
+    checkerboard_size: 8
+
+  scrollbar:
+    track: "#05101A"
+    thumb: "#131E29"
+    thumb_hover: "#23C1DA80"
+
+  syntax:
+    keyword: "#A98BFF"
+    function: "#7FB0FF"
+    function_builtin: "#7FB0FF"
+    string: "#23C1DA"
+    number: "#B08CFF"
+    comment: "#4A5B6B"
+    type: "#7FD9EA"
+    variable: "#EAECEF"
+    variable_builtin: "#B08CFF"
+    property: "#A9C8FF"
+    operator: "#8C98A6"
+    punctuation: "#8C98A6"
+    constant: "#B08CFF"
+    tag: "#A98BFF"
+    attribute: "#23C1DA"
+    escape: "#7FD9EA"
+    label: "#7FD9EA"
+    text: "#EAECEF"
+    text_emphasis: "#EAECEF"
+    text_strong: "#FFFFFF"
+    text_title: "#23C1DA"
+    text_uri: "#7FB0FF"

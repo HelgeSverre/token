@@ -21,6 +21,7 @@ pub const MOCHA_YAML: &str = include_str!("../themes/mocha.yaml");
 pub const NORD_YAML: &str = include_str!("../themes/nord.yaml");
 pub const TOKYO_NIGHT_YAML: &str = include_str!("../themes/tokyo-night.yaml");
 pub const GRUVBOX_DARK_YAML: &str = include_str!("../themes/gruvbox-dark.yaml");
+pub const LISETH_YAML: &str = include_str!("../themes/liseth.yaml");
 
 /// A built-in theme entry
 pub struct BuiltinTheme {
@@ -67,6 +68,10 @@ pub const BUILTIN_THEMES: &[BuiltinTheme] = &[
     BuiltinTheme {
         id: "gruvbox-dark",
         yaml: GRUVBOX_DARK_YAML,
+    },
+    BuiltinTheme {
+        id: "liseth",
+        yaml: LISETH_YAML,
     },
 ];
 
