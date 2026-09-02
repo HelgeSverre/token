@@ -6,6 +6,7 @@
 use super::*;
 use crate::automation::OpenPath;
 use token::cli::{StartupConfig, StartupMode};
+use token::messages::DocumentMsg;
 use token::outline::{OutlineData, OutlineKind, OutlineNode, OutlineRange};
 
 fn empty_startup_config() -> StartupConfig {
@@ -330,6 +331,147 @@ fn focus_gain_bumps_focused_at_and_state_reports_it() {
         .unwrap()
         .as_millis() as u64;
     assert_eq!(state.focused_at_ms, expected_ms);
+}
+
+/// A fake llama-server answering every `/infill` with `content`.
+fn fake_infill_server(content: &'static str) -> String {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let mut stream = stream;
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut length = 0;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).is_err() || line.is_empty() {
+                    return;
+                }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = value.trim().parse().unwrap_or(0);
+                }
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            let mut body = vec![0; length];
+            let _ = reader.read_exact(&mut body);
+            let reply = serde_json::json!({ "content": content }).to_string();
+            let _ = stream.write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{reply}",
+                    reply.len()
+                )
+                .as_bytes(),
+            );
+        }
+    });
+    url
+}
+
+/// Phase 2 acceptance gate against a fake backend: typing schedules a
+/// request, the deadline fires it through the worker thread, the reply
+/// becomes ghost text, typing through it consumes it, Tab accepts the
+/// rest as one undo step, and the automation snapshot reports it all.
+#[test]
+fn inline_suggestion_round_trips_through_the_worker_and_accepts() {
+    let url = fake_infill_server("1 + 2;\n    let y = x;");
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.completion.inline = token::config::InlineConfig {
+        enabled: true,
+        provider: "local".into(),
+        debounce_ms: 0,
+        max_line_suffix: 8,
+    };
+    app.model.config.completion.providers.insert(
+        "local".into(),
+        token::config::ProviderConfig {
+            url,
+            timeout_ms: 2000,
+            ..token::config::ProviderConfig::default()
+        },
+    );
+    app.model.document_mut().buffer = ropey::Rope::from_str("fn main() {\n    let x = \n}\n");
+    assert!(app.model.document().id.is_some(), "documents carry ids");
+    app.process_automation_msg(Msg::Editor(EditorMsg::SetCursorPosition {
+        line: 1,
+        column: 12,
+    }));
+
+    // Typing arms the debounce; the (zero) deadline sends the request.
+    app.process_automation_msg(Msg::Document(DocumentMsg::InsertChar(' ')));
+    assert!(app.inline_deadlines.len() == 1, "debounce armed");
+    app.check_inline_deadlines();
+    assert!(app.inline_deadlines.is_empty());
+    assert!(app.model.ui.inline_in_flight);
+
+    assert!(
+        pump_until(&mut app, Duration::from_secs(5), |app| {
+            token::update::inline::visible(&app.model).is_some()
+        }),
+        "the worker's reply never became ghost text"
+    );
+    let response = send_automation_request(&mut app, AutomationRequest::State);
+    assert_eq!(
+        response.state.unwrap().inline_suggestion.as_deref(),
+        Some("1 + 2;\n    let y = x;")
+    );
+
+    // Type through the first char, then accept the rest.
+    app.process_automation_msg(Msg::Document(DocumentMsg::InsertChar('1')));
+    assert_eq!(
+        token::update::inline::visible(&app.model)
+            .unwrap()
+            .remaining(),
+        " + 2;\n    let y = x;"
+    );
+    app.process_automation_msg(Msg::Completion(CompletionMsg::AcceptInline));
+    assert_eq!(
+        app.model.document().buffer.to_string(),
+        "fn main() {\n    let x =  1 + 2;\n    let y = x;\n}\n"
+    );
+    assert!(token::update::inline::visible(&app.model).is_none());
+    app.process_automation_msg(Msg::Document(DocumentMsg::Undo));
+    assert_eq!(
+        app.model.document().buffer.to_string(),
+        "fn main() {\n    let x =  1\n}\n",
+        "accept is one undo step"
+    );
+}
+
+/// The gate's failure half: a dead backend is a status transient, never
+/// a modal, and the editor keeps working.
+#[test]
+fn inline_suggestion_backend_failure_is_a_transient() {
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", closed.local_addr().unwrap());
+    drop(closed);
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.completion.inline.enabled = true;
+    app.model.config.completion.providers.insert(
+        "local".into(),
+        token::config::ProviderConfig {
+            url,
+            timeout_ms: 300,
+            ..token::config::ProviderConfig::default()
+        },
+    );
+    app.process_automation_msg(Msg::Completion(CompletionMsg::TriggerInline {
+        explicit: true,
+    }));
+    app.check_inline_deadlines();
+    assert!(app.model.ui.inline_in_flight);
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+        !app.model.ui.inline_in_flight
+    }));
+    assert!(app
+        .model
+        .ui
+        .transient_message
+        .as_ref()
+        .is_some_and(|m| m.text.contains("Inline suggestion failed")));
+    assert!(!app.model.ui.has_modal());
 }
 
 #[test]

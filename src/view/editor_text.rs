@@ -62,6 +62,7 @@ struct EditorPalette {
     selection: u32,
     bracket_match: u32,
     text: u32,
+    ghost_text: u32,
     gutter_background: u32,
     gutter_border: u32,
     line_number: u32,
@@ -78,6 +79,7 @@ impl EditorPalette {
             selection: model.theme.editor.selection_background.to_argb_u32(),
             bracket_match: model.theme.editor.bracket_match_background.to_argb_u32(),
             text: model.theme.editor.foreground.to_argb_u32(),
+            ghost_text: model.theme.editor.ghost_text.to_argb_u32(),
             gutter_background: model.theme.gutter.background.to_argb_u32(),
             gutter_border: model.theme.gutter.border_color.to_argb_u32(),
             line_number: model.theme.gutter.foreground.to_argb_u32(),
@@ -816,6 +818,57 @@ impl<'a> TextEditorRenderer<'a> {
         self.collect_line_decorations(line);
         self.render_line_decoration_stage(frame, line);
         self.render_line_text_stage(frame, painter, line);
+        self.render_ghost_text_stage(frame, painter, line);
+    }
+
+    /// Inline suggestion (autocomplete.md Phase 2): the remaining ghost
+    /// text after the cursor on its line, dimmed, plus a `⏎ +N lines`
+    /// badge when the suggestion continues below. Paint only — it never
+    /// moves text, joins the viewport map, or answers hit-tests, and it
+    /// only shows on the focused pane's cursor line when the trigger
+    /// gate's "nothing meaningful right of the cursor" still holds.
+    fn render_ghost_text_stage(
+        &mut self,
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        line: &VisibleTextLine,
+    ) {
+        if !line.is_active_line {
+            return;
+        }
+        let Some(state) = crate::update::inline::visible(self.model) else {
+            return;
+        };
+        let cursor = self.editor.cursors[0];
+        if cursor.line != line.doc_line || self.editor.id != self.model.editor().id {
+            return;
+        }
+        let (first, more_lines) = state.first_line_and_rest();
+        if first.is_empty() && more_lines == 0 {
+            return;
+        }
+        let Some(line_text) = self.document.get_line_cow(line.doc_line) else {
+            return;
+        };
+        let viewport_left = self.viewport_left();
+        let visual_col = char_col_to_visual_col(&line_text, cursor.column);
+        if !self.ctx.contains_visual_col(visual_col, viewport_left) {
+            return;
+        }
+        let mut text = expand_tabs_for_display(first).into_owned();
+        if more_lines > 0 {
+            text.push_str(&format!(
+                " \u{23ce} +{more_lines} line{}",
+                if more_lines == 1 { "" } else { "s" }
+            ));
+        }
+        let room = self
+            .ctx
+            .visible_columns
+            .saturating_sub(visual_col.saturating_sub(viewport_left));
+        let text: String = text.chars().take(room).collect();
+        let x = self.ctx.pixel_x(visual_col, viewport_left);
+        painter.draw(frame, x, line.y, &text, self.palette.ghost_text);
     }
 
     fn render_dirty_line_cursor_stage(&self, frame: &mut Frame, line: &VisibleTextLine) {

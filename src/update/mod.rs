@@ -10,6 +10,7 @@ mod dock;
 mod document;
 mod editor;
 mod image;
+pub mod inline;
 pub mod layout;
 mod lsp;
 pub mod navigation;
@@ -158,6 +159,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
             } else {
                 None
             };
+            let backspaced = matches!(m, DocumentMsg::DeleteBackward);
             let result = document::update_document(model, m);
             let completion_cmd = completion::sync_after_document_edit(
                 model,
@@ -165,7 +167,12 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
                 opens_on_word_char,
                 typed_char,
             );
-            merge_cmds(result, completion_cmd)
+            let inline_cmd = if is_copy {
+                None
+            } else {
+                inline::after_document_edit(model, typed_char, backspaced)
+            };
+            merge_cmds(merge_cmds(result, completion_cmd), inline_cmd)
         }
         Msg::Ui(m) => ui::update_ui(model, m),
         Msg::Layout(m) => layout::update_layout(model, m),

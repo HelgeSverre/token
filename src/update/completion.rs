@@ -54,6 +54,20 @@ pub fn update_completion(model: &mut AppModel, msg: CompletionMsg) -> Option<Cmd
         CompletionMsg::MenuPageDown => move_selection(model, MAX_VISIBLE_COMPLETION as i32),
         CompletionMsg::AcceptMenuItem => accept_selected(model),
         CompletionMsg::Dismiss => dismiss_with_cleanup(model),
+        CompletionMsg::TriggerInline { explicit } => super::inline::trigger(model, explicit),
+        CompletionMsg::AcceptInline => super::inline::accept(model),
+        CompletionMsg::DismissInline => super::inline::dismiss(model),
+        CompletionMsg::InlineDeadlineFired {
+            document_id,
+            revision,
+            explicit,
+        } => super::inline::deadline_fired(model, document_id, revision, explicit),
+        CompletionMsg::InlineReady { snapshot, text } => {
+            super::inline::ready(model, snapshot, text)
+        }
+        CompletionMsg::InlineFailed { snapshot, error } => {
+            super::inline::failed(model, snapshot, error)
+        }
     }
 }
 

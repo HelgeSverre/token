@@ -238,6 +238,11 @@ pub struct App {
     automation_profile: Option<AutomationProfile>,
     /// `--wait` handoffs still waiting for their documents to close.
     document_waiters: Vec<DocumentWaiter>,
+    /// Inline-suggestion debounces: document → (deadline, revision,
+    /// explicit). Re-arming replaces the entry (autocomplete.md Phase 2).
+    inline_deadlines: HashMap<token::model::editor_area::DocumentId, (Instant, u64, bool)>,
+    /// Requests for the completion worker thread.
+    inline_tx: Sender<token::completion::inline::InlineRequest>,
     /// When this window last gained focus (process start until then);
     /// automation clients pick the most recently focused instance.
     focused_at: std::time::SystemTime,
@@ -1028,6 +1033,22 @@ impl App {
                     let _ = proxy.send_event(());
                 }) as std::sync::Arc<dyn Fn() + Send + Sync>
             });
+        // Spawn the inline-suggestion worker (autocomplete.md Phase 2).
+        let (inline_tx, inline_rx) = mpsc::channel();
+        {
+            let msg_tx_clone = msg_tx.clone();
+            let proxy = automation_proxy.clone();
+            std::thread::Builder::new()
+                .name("inline-suggestions".into())
+                .spawn(move || {
+                    crate::runtime::inline_worker::inline_worker_loop(
+                        inline_rx,
+                        msg_tx_clone,
+                        proxy,
+                    )
+                })
+                .expect("spawn inline worker");
+        }
         // Spawn syntax highlighting worker thread
         let (syntax_tx, syntax_rx) = mpsc::channel::<SyntaxWorkerRequest>();
         {
@@ -1077,6 +1098,8 @@ impl App {
             automation_tx,
             automation_profile: None,
             document_waiters: Vec::new(),
+            inline_deadlines: HashMap::new(),
+            inline_tx,
             focused_at: std::time::SystemTime::now(),
             syntax_scheduled: HashMap::new(),
             syntax_present_pending: Vec::new(),
@@ -1178,6 +1201,7 @@ impl App {
             editor_focused: matches!(focus, FocusTarget::Editor),
             sidebar_focused: matches!(focus, FocusTarget::Dock(DockPosition::Left)),
             overlay_routes_keys: self.model.ui.cursor_overlay.is_some(),
+            inline_suggestion_visible: token::update::inline::visible(&self.model).is_some(),
         }
     }
 
@@ -2755,6 +2779,27 @@ impl App {
                         deadline: Instant::now() + COMPLETION_DEBOUNCE,
                     },
                 );
+            }
+            Cmd::ScheduleInlineRequest {
+                document_id,
+                revision,
+                delay_ms,
+                explicit,
+            } => {
+                self.inline_deadlines.insert(
+                    document_id,
+                    (
+                        Instant::now() + Duration::from_millis(delay_ms),
+                        revision,
+                        explicit,
+                    ),
+                );
+            }
+            Cmd::RunInlineRequest(request) => {
+                if self.inline_tx.send(*request).is_err() {
+                    tracing::warn!("inline suggestion worker is gone");
+                    self.model.ui.inline_in_flight = false;
+                }
             }
             Cmd::LspCancelCompletion { document_id } => {
                 // Drop the pending debounce and supersede any in-flight
@@ -4760,6 +4805,29 @@ impl App {
     /// failure (`request_lsp_completion`'s own policy) — a debounce armed
     /// for a document that lost its server between schedule and fire just
     /// evaporates.
+    /// Replay elapsed inline-suggestion debounces into the update layer,
+    /// which re-checks the revision and snapshots the request.
+    fn check_inline_deadlines(&mut self) {
+        if self.inline_deadlines.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        let due: Vec<_> = self
+            .inline_deadlines
+            .iter()
+            .filter(|(_, (deadline, _, _))| now >= *deadline)
+            .map(|(document_id, (_, revision, explicit))| (*document_id, *revision, *explicit))
+            .collect();
+        for (document_id, revision, explicit) in due {
+            self.inline_deadlines.remove(&document_id);
+            self.process_automation_msg(Msg::Completion(CompletionMsg::InlineDeadlineFired {
+                document_id,
+                revision,
+                explicit,
+            }));
+        }
+    }
+
     fn check_lsp_completion_debounces(&mut self) {
         if self.lsp.completion_debounces.is_empty() {
             return;
@@ -5082,6 +5150,7 @@ impl ApplicationHandler for App {
         self.check_lsp_code_action_deadlines();
         self.check_lsp_completion_debounces();
         self.check_lsp_completion_deadlines();
+        self.check_inline_deadlines();
         self.check_lsp_resolve_debounces();
         self.check_lsp_resolve_deadlines();
         if self.check_hover_dwell() {
@@ -5137,6 +5206,9 @@ impl App {
             next_wake = next_wake.min(earliest_deadline);
         }
         if let Some(earliest_deadline) = self.lsp_change_deadlines.next_deadline() {
+            next_wake = next_wake.min(earliest_deadline);
+        }
+        if let Some(earliest_deadline) = self.inline_deadlines.values().map(|(d, _, _)| *d).min() {
             next_wake = next_wake.min(earliest_deadline);
         }
         if let Some(earliest_deadline) = self.lsp.restart_deadlines.values().min() {

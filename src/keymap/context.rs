@@ -22,6 +22,9 @@ pub struct KeyContext {
     /// routing keys per overlay-surface.md Phase 5 — distinct from
     /// `modal_active`, since popups don't hard-capture the keymap.
     pub overlay_routes_keys: bool,
+    /// Ghost text is showing at the cursor (autocomplete.md Phase 2);
+    /// Tab accepts it and Escape dismisses it.
+    pub inline_suggestion_visible: bool,
 }
 
 impl KeyContext {
@@ -34,6 +37,7 @@ impl KeyContext {
             editor_focused: true,
             sidebar_focused: false,
             overlay_routes_keys: false,
+            inline_suggestion_visible: false,
         }
     }
 
@@ -46,6 +50,7 @@ impl KeyContext {
             editor_focused: false,
             sidebar_focused: false,
             overlay_routes_keys: false,
+            inline_suggestion_visible: false,
         }
     }
 }
@@ -75,6 +80,7 @@ pub enum Condition {
     /// Binding only active while a cursor-anchored popup is open and
     /// routing keys (overlay-surface.md Phase 5)
     OverlayRoutesKeys,
+    InlineSuggestionVisible,
 }
 
 impl Condition {
@@ -90,6 +96,7 @@ impl Condition {
             Condition::EditorFocused => ctx.editor_focused,
             Condition::SidebarFocused => ctx.sidebar_focused,
             Condition::OverlayRoutesKeys => ctx.overlay_routes_keys,
+            Condition::InlineSuggestionVisible => ctx.inline_suggestion_visible,
         }
     }
 

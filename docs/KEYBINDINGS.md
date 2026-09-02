@@ -65,6 +65,15 @@ The `cmd` modifier is the recommended cross-platform modifier. It maps to Comman
 | Select Next Occurrence  | Cmd+J         | `SelectNextOccurrence`  |
 | Unselect Last Occurrence| Cmd+Shift+J   | `UnselectOccurrence`    |
 
+### Completion
+
+| Action | Shortcut | Command |
+| ------ | -------- | ------- |
+| Trigger completion menu | Ctrl+Space | `TriggerCompletionMenu` |
+| Trigger inline suggestion | Option+\\ | `TriggerInlineSuggestion` |
+| Accept inline suggestion | Tab (while ghost text shows) | `AcceptInlineSuggestion` |
+| Dismiss inline suggestion | Escape (while ghost text shows) | `DismissInlineSuggestion` |
+
 ### Modals/Dialogs
 
 | Action              | Shortcut      | Command                |

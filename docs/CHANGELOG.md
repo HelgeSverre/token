@@ -8,6 +8,21 @@ All notable changes to rust-editor are documented in this file.
 
 ### Added
 
+- **Inline suggestions (ghost text)** (autocomplete Phase 2): a
+  `completion.inline` config block plus a `completion.providers` entry point
+  Token at a local llama.cpp server's `/infill` endpoint. Typing at the end
+  of a line schedules a debounced request on a worker thread; the reply
+  appears as dimmed ghost text after the cursor (multi-line suggestions show
+  the first line and a `⏎ +N lines` badge). Typing through it consumes it,
+  Backspace un-consumes, Tab accepts the rest as one undo step and chains
+  the next request, Escape dismisses, and ⌥\\ asks explicitly. Replies are
+  guarded by document, revision, and cursor; a menu completion wins over
+  ghost text. Backend errors are status transients, and auto-trigger pauses
+  after three consecutive failures until triggered manually. New theme key
+  `editor.ghost_text` (derived from foreground/background when absent),
+  `inline_suggestion` in the automation `state` snapshot, and an
+  `inline_suggestion` field in screenshot scenarios.
+
 - **Find options, match count, and selection scope** (find-enhancements
   Phases 5 and 7): the Find label row shows "3 of 42", "No matches", or the
   regex error; the footer lists the case, whole-word, regex, and selection

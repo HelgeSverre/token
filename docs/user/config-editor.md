@@ -52,6 +52,32 @@ Highlight matching brackets when the cursor is adjacent to `(`, `)`, `[`, `]`, `
 
 ---
 
+### `completion.inline` and `completion.providers`
+
+Ghost-text suggestions from a local [llama.cpp](https://github.com/ggml-org/llama.cpp)
+server. Off until you point Token at one:
+
+```yaml
+completion:
+  inline:
+    enabled: true
+    provider: local        # key into providers
+    debounce_ms: 300       # quiet time after the last keystroke
+    max_line_suffix: 8     # auto-trigger only near the end of the line
+  providers:
+    local:
+      transport: llama_cpp
+      url: http://127.0.0.1:8012
+      max_tokens: 128
+      timeout_ms: 5000
+```
+
+Start the server with a fill-in-the-middle model, for example
+`llama-server -m Qwen2.5-Coder-1.5B-Instruct-Q8_0.gguf --port 8012`. Tab
+accepts the ghost text, Escape dismisses it, and Option+\\ asks for one
+without waiting for the debounce. After three failed requests Token pauses
+automatic suggestions until you trigger one manually.
+
 ## Example Configuration
 
 ```yaml

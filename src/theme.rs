@@ -605,6 +605,10 @@ pub struct EditorThemeData {
     pub secondary_cursor_color: Option<String>,
     #[serde(default)]
     pub bracket_match_background: Option<String>,
+    /// Inline suggestion (ghost text) colour; derived from the foreground
+    /// and background when absent.
+    #[serde(default)]
+    pub ghost_text: Option<String>,
 }
 
 /// Gutter (line numbers) colors
@@ -878,6 +882,7 @@ pub struct EditorTheme {
     pub secondary_cursor_color: Color,
     /// Background color for matching bracket highlight
     pub bracket_match_background: Color,
+    pub ghost_text: Color,
 }
 
 /// Gutter colors (resolved)
@@ -1402,6 +1407,14 @@ impl Theme {
                 .map(|s| Color::from_hex(s))
                 .transpose()?
                 .unwrap_or(Color::rgba(0x58, 0xA6, 0xFF, 0x40)),
+            ghost_text: match data.ui.editor.ghost_text.as_ref() {
+                Some(s) => Color::from_hex(s)?,
+                None => mix(
+                    Color::from_hex(&data.ui.editor.foreground)?,
+                    Color::from_hex(&data.ui.editor.background)?,
+                    0.55,
+                ),
+            },
         };
 
         let gutter = GutterTheme {
@@ -1868,6 +1881,7 @@ impl Theme {
                         selection_background: Color::rgb(0x26, 0x4F, 0x78),
                         secondary_cursor_color: Color::rgba(0xFF, 0xFF, 0xFF, 0x80),
                         bracket_match_background: Color::rgba(0x58, 0xA6, 0xFF, 0x40),
+                        ghost_text: Color::rgb(0x80, 0x80, 0x80),
                     },
                     gutter: GutterTheme {
                         background: Color::rgb(0x1E, 0x1E, 0x1E),

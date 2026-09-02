@@ -163,6 +163,7 @@ secondary_cursor_color: "#FFFFFF40"  # 25% opacity
 | `selection_background` | Selected text background |
 | `secondary_cursor_color` | Multi-cursor secondary cursors |
 | `bracket_match_background` | Matching bracket highlight (optional, default: `#58A6FF40`) |
+| `ghost_text` | Inline suggestion text (optional, default: foreground mixed 55% toward the background) |
 
 ### Gutter
 

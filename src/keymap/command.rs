@@ -269,6 +269,10 @@ pub enum Command {
     // ========================================================================
     /// Explicitly open the menu-completion popup (Ctrl+Space)
     TriggerCompletionMenu,
+    /// Inline ghost-text suggestions (autocomplete.md Phase 2)
+    TriggerInlineSuggestion,
+    AcceptInlineSuggestion,
+    DismissInlineSuggestion,
 
     // ========================================================================
     // Language servers (lsp-integration.md Phase 1)
@@ -532,6 +536,13 @@ impl Command {
 
             // Completion
             TriggerCompletionMenu => vec![Msg::Completion(CompletionMsg::TriggerMenu)],
+            TriggerInlineSuggestion => {
+                vec![Msg::Completion(CompletionMsg::TriggerInline {
+                    explicit: true,
+                })]
+            }
+            AcceptInlineSuggestion => vec![Msg::Completion(CompletionMsg::AcceptInline)],
+            DismissInlineSuggestion => vec![Msg::Completion(CompletionMsg::DismissInline)],
             RestartLanguageServer => vec![Msg::App(AppMsg::RestartLanguageServer)],
             GotoDefinition => vec![Msg::Lsp(LspMsg::GotoDefinition)],
             NextDiagnostic => vec![Msg::Lsp(LspMsg::JumpDiagnostic { forward: true })],
@@ -726,6 +737,9 @@ impl Command {
             CsvExit => "Exit CSV View",
 
             TriggerCompletionMenu => "Trigger Completion",
+            TriggerInlineSuggestion => "Trigger Inline Suggestion",
+            AcceptInlineSuggestion => "Accept Inline Suggestion",
+            DismissInlineSuggestion => "Dismiss Inline Suggestion",
             RestartLanguageServer => "Restart Language Server",
             GotoDefinition => "Go to Definition",
             NextDiagnostic => "Next Diagnostic",

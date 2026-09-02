@@ -103,6 +103,8 @@ pub enum CommandId {
 
     // Completion (autocomplete.md Phase 1)
     TriggerCompletionMenu,
+    /// Inline ghost-text suggestion (autocomplete.md Phase 2)
+    TriggerInlineSuggestion,
 
     // Language servers (lsp-integration.md Phase 1)
     RestartLanguageServer,
@@ -492,6 +494,12 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: Some("⌃Space"),
     },
     CommandDef {
+        id: CommandId::TriggerInlineSuggestion,
+        category: CommandCategory::Edit,
+        label: "Trigger Inline Suggestion",
+        keybinding: Some("⌥\\"),
+    },
+    CommandDef {
         id: CommandId::RestartLanguageServer,
         category: CommandCategory::System,
         label: "Restart Language Server",
@@ -630,6 +638,7 @@ impl CommandId {
             CommandId::CopyRelativePath => None,
             CommandId::OpenRecentFiles => Some(KeymapCommand::OpenRecentFiles),
             CommandId::TriggerCompletionMenu => Some(KeymapCommand::TriggerCompletionMenu),
+            CommandId::TriggerInlineSuggestion => Some(KeymapCommand::TriggerInlineSuggestion),
             CommandId::RestartLanguageServer => Some(KeymapCommand::RestartLanguageServer),
             CommandId::ToggleLsp => None,
             CommandId::ToggleAutocomplete => None,
@@ -1106,6 +1115,16 @@ pub enum Cmd {
         revision: u64,
         trigger_character: Option<String>,
     },
+    /// Arm (or re-arm) the inline-suggestion debounce for a document; the
+    /// runtime replays `CompletionMsg::InlineDeadlineFired` when it elapses.
+    ScheduleInlineRequest {
+        document_id: DocumentId,
+        revision: u64,
+        delay_ms: u64,
+        explicit: bool,
+    },
+    /// Hand a snapshotted request to the completion worker thread.
+    RunInlineRequest(Box<crate::completion::inline::InlineRequest>),
     /// The menu closed (or its document changed): drop any pending
     /// completion debounce and supersede the in-flight request for this
     /// document. Without this a request fired just after dismissal would
@@ -1263,6 +1282,7 @@ impl Cmd {
             Cmd::LspRequestCodeActions { .. } => Damage::Areas(vec![]),
             Cmd::LspExecuteCommand { .. } => Damage::Areas(vec![]),
             Cmd::LspScheduleCompletion { .. } => Damage::Areas(vec![]),
+            Cmd::ScheduleInlineRequest { .. } | Cmd::RunInlineRequest(_) => Damage::Areas(vec![]),
             Cmd::LspCancelCompletion { .. } => Damage::Areas(vec![]),
             Cmd::LspResolveCompletionItem { .. } => Damage::Areas(vec![]),
             Cmd::LspScheduleResolve { .. } => Damage::Areas(vec![]),

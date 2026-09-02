@@ -285,6 +285,11 @@ bindings:
     command: DeleteLine
 
   # Tab handling - context-aware
+  # Tab with ghost text showing → accept the inline suggestion
+  - key: "tab"
+    command: AcceptInlineSuggestion
+    when: ["inline_suggestion_visible"]
+
   # Tab with selection → indent
   - key: "tab"
     command: IndentLines
@@ -314,6 +319,10 @@ bindings:
   # 2. Else if selection → clear selection  
   # 3. Else → do nothing (EscapeSmartClear handles the no-op case)
   # ===========================================================================
+  - key: "escape"
+    command: DismissInlineSuggestion
+    when: ["inline_suggestion_visible"]
+
   - key: "escape"
     command: CollapseToSingleCursor
     when: ["has_multiple_cursors"]
@@ -355,6 +364,10 @@ bindings:
   # ===========================================================================
   - key: "ctrl+space"
     command: TriggerCompletionMenu
+
+  # Ask the configured inline-suggestion backend now (autocomplete.md Phase 2)
+  - key: 'alt+\'
+    command: TriggerInlineSuggestion
 
   # ===========================================================================
   # Go to Definition + Jump History (lsp-integration.md Phase 3)

@@ -615,6 +615,10 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::TriggerCompletionMenu => {
             crate::update::update_completion(model, crate::messages::CompletionMsg::TriggerMenu)
         }
+        CommandId::TriggerInlineSuggestion => crate::update::update_completion(
+            model,
+            crate::messages::CompletionMsg::TriggerInline { explicit: true },
+        ),
         CommandId::RestartLanguageServer => update_app(model, AppMsg::RestartLanguageServer),
         CommandId::ToggleLsp => crate::update::lsp::toggle_lsp_enabled(model),
         CommandId::ToggleAutocomplete => crate::update::completion::toggle_enabled(model),

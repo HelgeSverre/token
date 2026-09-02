@@ -2,11 +2,11 @@
 
 A pluggable completion system with two rendering surfaces — a popup menu at the cursor and ghost-text inline suggestions — fed by swappable providers: buffer words and snippets first, LSP when it lands, and LLM fill-in-the-middle backends (local or remote) behind one backend abstraction.
 
-> **Status:** 🚧 In Progress — Phase 1 (menu completion: words + snippets) shipped; Phases 2+ (inline suggestions, FIM backends, LSP source) not started.
+> **Status:** 🚧 In Progress — Phase 1 (menu: words + snippets), Phase 4 (LSP source), and Phase 2 (inline ghost text + llama.cpp `/infill`) shipped; Phase 3 (inline maturity: more transports, context ring, partial accept, cache) and Phase 5+ not started.
 > **Priority:** P2 (Important)
 > **Effort:** XL (phased — each phase ships independently)
 > **Created:** 2026-08-11
-> **Updated:** 2026-08-11
+> **Updated:** 2026-09-03
 > **Milestone:** 4 - Hard Problems
 
 ---
@@ -515,17 +515,17 @@ Automation/MCP: all commands (`TriggerMenu`, `AcceptInline`, …) are `is_simple
 
 ### Phase 2: Inline suggestions — infrastructure + first FIM backend
 
-**Effort:** L
+**Effort:** L — **shipped 2026-09-03.**
 
-- [ ] `InlineSuggestionState`; ghost-text paint stage (first line + `+N` badge, theme key, cursor-line damage); paint-only (no hit-test/layout impact).
-- [ ] Completion worker thread (syntax-worker pattern) + inline deadline map in `about_to_wait`; supersede-and-cancel policy.
-- [ ] `RequestSnapshot` guards on every arrival; trigger gates (EOL rule, menu-suppression, language check).
-- [ ] Prefix-consumption on typing; backspace un-consume; clear rules.
-- [ ] `InlineProvider` trait + FIM provider with **llama.cpp `/infill` transport only** (richest API, no prompt rendering needed); `ureq` or raw `std` HTTP — decide by dependency weight, no async runtime.
-- [ ] Post-processing chain filters 1–4 with golden-file tests.
-- [ ] `inline_suggestion_visible` KeyContext; Tab accept (Full), Escape dismiss; chained follow-up request on accept.
-- [ ] Config (`inline`, `providers`), in-flight status glyph, error transients (never modal, capped retry/backoff like the LSP crash policy).
-- [ ] **Gate:** against a local llama-server + Qwen2.5-Coder-1.5B: type in a Rust file, ghost text appears, type through it, Tab-accept, undo restores; kill the server mid-request → editor unaffected.
+- [x] `InlineSuggestionState` on `UiState` (`src/completion/inline.rs`); ghost-text paint stage `render_ghost_text_stage` inside `render_line_content_stages` so both the full and the cursor-lines-only paths draw it; first line + `⏎ +N lines` badge; theme key `editor.ghost_text` (derived when absent); paint-only.
+- [x] Completion worker thread (`src/runtime/inline_worker.rs`, syntax-worker pattern) + `inline_deadlines` map replayed from `about_to_wait` and folded into `next_wake`; newest request per document wins. **Deviation:** an in-flight std socket cannot be aborted, so supersession drops queued requests and the revision guard discards late replies — no cancel token until a slow remote transport needs one.
+- [x] `RequestSnapshot` guards (document, revision, cursor) on every arrival; trigger gates: end-of-line rule (`max_line_suffix`, closers ignored), menu suppression, plain-text mode, backend configured.
+- [x] Prefix consumption on typing; Backspace un-consumes; any other edit clears; cursor moves hide it (the state lingers until the next edit or Escape — paint and accept check `applies_to`).
+- [x] `InlineProvider` boundary is the `InlineRequest` value + `fim::infill` (llama.cpp `/infill` only) over a ~100-line `std::net` HTTP/1.1 client — no dependency added. **Deviation:** no trait yet; one implementation does not earn one (add it with the second transport).
+- [x] Post-processing filters 1–4 (`postprocess`) with unit tests; filters 5–6 and the LRU cache are Phase 3.
+- [x] `inline_suggestion_visible` `KeyContext` condition; Tab → `AcceptInlineSuggestion`, Escape → `DismissInlineSuggestion`, ⌥\\ → `TriggerInlineSuggestion` in `keymap.yaml`; accept chains a follow-up request.
+- [x] Config (`completion.inline`, `completion.providers`), error transients, pause after `MAX_CONSECUTIVE_FAILURES` until an explicit trigger. **Not done:** the in-flight status-bar glyph (`ui.inline_in_flight` exists; no segment draws it yet).
+- [x] **Gate (fake backend):** `runtime::app::tests::inline_suggestion_round_trips_through_the_worker_and_accepts` runs the real worker thread against an in-process `/infill` server: type → debounce → request → ghost text → type-through → Tab accept → one undo step; `..._backend_failure_is_a_transient` covers a dead server. **Gate (live llama-server):** not run in CI; see the manual checklist below.
 
 ### Phase 3: Inline maturity
 

@@ -84,6 +84,9 @@ struct Scenario {
     workspace: Option<WorkspaceConfig>,
     #[serde(default)]
     modal: Option<ModalConfig>,
+    /// Ghost text shown at the first file's cursor (autocomplete.md Phase 2).
+    #[serde(default)]
+    inline_suggestion: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -372,6 +375,26 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
     // Set up modal if configured
     if let Some(modal_config) = &scenario.modal {
         apply_modal(&mut model, modal_config);
+    }
+
+    if let Some(text) = &scenario.inline_suggestion {
+        let cursor = model.editor().cursors[0];
+        let document = model.document();
+        if let Some(document_id) = document.id {
+            let revision = document.revision;
+            model.ui.inline_suggestion = Some(token::completion::inline::InlineSuggestionState {
+                snapshot: token::completion::inline::RequestSnapshot {
+                    document_id,
+                    revision,
+                    line: cursor.line,
+                    column: cursor.column,
+                    request_id: 1,
+                },
+                text: text.clone(),
+                consumed: 0,
+                valid_revision: revision,
+            });
+        }
     }
 
     model.resize(scenario.width, scenario.height);

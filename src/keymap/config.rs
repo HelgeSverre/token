@@ -211,6 +211,9 @@ fn parse_condition(cond: &str) -> Result<Condition, KeymapError> {
         "modal_inactive" | "modalinactive" | "no_modal" | "nomodal" => Ok(Condition::ModalInactive),
         "editor_focused" | "editorfocused" | "editor" => Ok(Condition::EditorFocused),
         "overlay_routes_keys" | "overlayrouteskeys" | "overlay" => Ok(Condition::OverlayRoutesKeys),
+        "inline_suggestion_visible" | "inlinesuggestionvisible" | "inline_suggestion" => {
+            Ok(Condition::InlineSuggestionVisible)
+        }
         _ => Err(KeymapError::InvalidCondition(cond.to_string())),
     }
 }
@@ -386,6 +389,9 @@ impl FromStr for Command {
 
             // Completion
             "TriggerCompletionMenu" => Ok(Command::TriggerCompletionMenu),
+            "TriggerInlineSuggestion" => Ok(Command::TriggerInlineSuggestion),
+            "AcceptInlineSuggestion" => Ok(Command::AcceptInlineSuggestion),
+            "DismissInlineSuggestion" => Ok(Command::DismissInlineSuggestion),
 
             // Go to Definition + Jump History (lsp-integration.md Phase 3)
             "GotoDefinition" => Ok(Command::GotoDefinition),

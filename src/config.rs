@@ -89,6 +89,12 @@ pub struct CompletionConfig {
     /// When buffer words are offered as completion items.
     #[serde(default)]
     pub words: WordsMode,
+    /// Inline (ghost-text) suggestions — off until a provider is configured.
+    #[serde(default)]
+    pub inline: InlineConfig,
+    /// Named backends `inline.provider` picks from.
+    #[serde(default)]
+    pub providers: std::collections::HashMap<String, ProviderConfig>,
 }
 
 impl Default for CompletionConfig {
@@ -96,8 +102,106 @@ impl Default for CompletionConfig {
         Self {
             enabled: true,
             words: WordsMode::default(),
+            inline: InlineConfig::default(),
+            providers: std::collections::HashMap::new(),
         }
     }
+}
+
+/// `completion.inline`: ghost-text suggestions (autocomplete.md Phase 2).
+///
+/// ```yaml
+/// completion:
+///   inline:
+///     enabled: true
+///     provider: local
+///     debounce_ms: 300
+///     max_line_suffix: 8
+///   providers:
+///     local:
+///       transport: llama_cpp
+///       url: http://127.0.0.1:8012
+///       max_tokens: 128
+///       timeout_ms: 5000
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InlineConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Key into `completion.providers`.
+    #[serde(default = "default_inline_provider")]
+    pub provider: String,
+    /// Quiet time after the last keystroke before a request goes out;
+    /// an explicit trigger skips it.
+    #[serde(default = "default_inline_debounce_ms")]
+    pub debounce_ms: u64,
+    /// Auto-trigger only with at most this many non-closer chars right of
+    /// the cursor.
+    #[serde(default = "default_max_line_suffix")]
+    pub max_line_suffix: usize,
+}
+
+impl Default for InlineConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: default_inline_provider(),
+            debounce_ms: default_inline_debounce_ms(),
+            max_line_suffix: default_max_line_suffix(),
+        }
+    }
+}
+
+fn default_inline_provider() -> String {
+    "local".to_owned()
+}
+fn default_inline_debounce_ms() -> u64 {
+    300
+}
+fn default_max_line_suffix() -> usize {
+    8
+}
+
+/// One inline-suggestion backend. Only llama.cpp's `/infill` exists so
+/// far; other transports are autocomplete.md Phase 3.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderConfig {
+    #[serde(default)]
+    pub transport: TransportKind,
+    #[serde(default = "default_provider_url")]
+    pub url: String,
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32,
+    #[serde(default = "default_provider_timeout_ms")]
+    pub timeout_ms: u64,
+}
+
+impl Default for ProviderConfig {
+    fn default() -> Self {
+        Self {
+            transport: TransportKind::default(),
+            url: default_provider_url(),
+            max_tokens: default_max_tokens(),
+            timeout_ms: default_provider_timeout_ms(),
+        }
+    }
+}
+
+fn default_provider_url() -> String {
+    "http://127.0.0.1:8012".to_owned()
+}
+fn default_max_tokens() -> u32 {
+    128
+}
+fn default_provider_timeout_ms() -> u64 {
+    5000
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransportKind {
+    #[default]
+    LlamaCpp,
 }
 
 /// `completion.words`: `enabled` always lists buffer words, `fallback`

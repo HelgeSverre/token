@@ -7,6 +7,7 @@
 //! - `webview` - Webview management for markdown preview
 
 pub mod app;
+pub mod inline_worker;
 pub mod input;
 mod lsp_slot;
 #[cfg(target_os = "macos")]

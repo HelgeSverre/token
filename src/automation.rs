@@ -146,6 +146,8 @@ pub(crate) struct EditorSnapshot {
     /// The menu-completion popup (autocomplete.md Phase 1), if open —
     /// `None` when no completion popup is showing.
     pub completion: Option<CompletionSnapshot>,
+    /// Ghost text currently showing at the cursor (autocomplete.md Phase 2).
+    pub inline_suggestion: Option<String>,
     /// LSP server states (lsp-integration.md), keyed by server id (e.g.
     /// `"rust-analyzer"`) — the render-only mirror `LspMsg::ServerStateChanged`
     /// drives, not the runtime's authoritative `LspManager`.
@@ -716,6 +718,8 @@ impl EditorSnapshot {
             }),
             gutter_marks: gutter_marks_snapshot(document, viewport),
             completion: completion_snapshot(model),
+            inline_suggestion: token::update::inline::visible(model)
+                .map(|state| state.remaining().to_owned()),
             lsp_servers: model
                 .lsp
                 .servers

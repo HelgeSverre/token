@@ -1408,11 +1408,35 @@ pub enum DefinitionOutcome {
 }
 
 /// Menu completion messages (autocomplete.md Phase 1: "words + snippets,
-/// fully offline"; lsp-integration.md Phase 5 adds the LSP source).
-/// Inline-suggestion messages (`TriggerInline`, `AcceptInline`, ...) aren't
-/// here yet — that's Phase 2.
+/// fully offline"; lsp-integration.md Phase 5 adds the LSP source) and the
+/// inline-suggestion messages of Phase 2.
 #[derive(Debug, Clone)]
 pub enum CompletionMsg {
+    /// Ask for a ghost-text suggestion now (`explicit`) or after the
+    /// debounce.
+    TriggerInline {
+        explicit: bool,
+    },
+    /// Tab while ghost text is visible: insert the remainder.
+    AcceptInline,
+    /// Escape while ghost text is visible.
+    DismissInline,
+    /// The runtime's debounce elapsed for this document/revision.
+    InlineDeadlineFired {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        explicit: bool,
+    },
+    /// The completion worker produced a suggestion (already post-processed).
+    InlineReady {
+        snapshot: crate::completion::inline::RequestSnapshot,
+        text: String,
+    },
+    /// The completion worker failed; never modal.
+    InlineFailed {
+        snapshot: crate::completion::inline::RequestSnapshot,
+        error: String,
+    },
     /// Ctrl+Space or any other explicit-trigger binding.
     TriggerMenu,
     MenuNext,

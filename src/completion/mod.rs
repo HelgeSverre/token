@@ -5,6 +5,8 @@
 //! Inline suggestions (ghost text, FIM backends) are a later phase and have
 //! no code here yet.
 
+pub mod fim;
+pub mod inline;
 pub mod lsp;
 pub mod menu;
 pub mod sources;

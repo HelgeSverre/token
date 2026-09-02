@@ -1202,6 +1202,14 @@ pub struct UiState {
     /// `cursor_overlay` being `Some(CursorOverlayKind::Completion)`. `None`
     /// whenever the completion popup is closed.
     pub completion_menu: Option<crate::completion::CompletionMenuState>,
+    /// Ghost text at the cursor (autocomplete.md Phase 2); paint and
+    /// accept check `applies_to` before trusting it.
+    pub inline_suggestion: Option<crate::completion::inline::InlineSuggestionState>,
+    /// A worker request is out for the focused document.
+    pub inline_in_flight: bool,
+    /// Consecutive backend failures; auto-trigger pauses at the cap.
+    pub inline_failures: u32,
+    pub inline_next_request_id: u64,
     /// `FlatIndex` of the completion row currently under the mouse, if any
     /// — the popup's hover wash (overlay-surface.md Pointer), mirroring
     /// `modal_hover_row` for the cursor-anchored surface. Cleared whenever
@@ -1265,6 +1273,10 @@ impl UiState {
             modal_hover_row: None,
             cursor_overlay: None,
             completion_menu: None,
+            inline_suggestion: None,
+            inline_in_flight: false,
+            inline_failures: 0,
+            inline_next_request_id: 0,
             completion_hover_row: None,
             hover_card: None,
             reference_list: None,
