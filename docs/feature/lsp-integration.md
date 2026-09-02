@@ -368,8 +368,8 @@ Binary not found on `PATH` (after `PATHEXT` resolution on Windows) → `ServerSt
 - [x] Find references + multi-location picker (`FindUsages` / `ShowUsages`, cursor-anchored list capped at 200).
 - [x] Problems panel (`PanelId::Problems`; reads the manager's authoritative store, which already retains unopened-file diagnostics).
 - [x] Forward jump stack; mouse-dwell hover (`hover_on_mouse`, `hover_delay_ms`); scrollbar overview marks for diagnostics.
-- [ ] Rename; code actions; formatting; `willSaveWaitUntil` (format-on-save).
-- [ ] Signature help; completion documentation card.
+- [x] Rename (⇧F6, `prepareRename` when advertised); code actions (⌥↩); formatting (⌥⌘L, range formatting) with `format_on_save` (request-then-save with a 2 s fallback rather than `willSaveWaitUntil`); server-initiated `workspace/applyEdit` applied through one shared `WorkspaceEdit` applier.
+- [x] Signature help (trigger/retrigger characters, ⌘P); completion documentation card (lazy `completionItem/resolve` on selection).
 - [ ] Semantic tokens over tree-sitter highlights; `documentSymbol` outline augmentation; Cmd+Click; workspace symbols in the fuzzy finder; snippet completion (with snippets feature).
 
 ---

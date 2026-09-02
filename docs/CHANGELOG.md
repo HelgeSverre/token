@@ -64,6 +64,10 @@ All notable changes to rust-editor are documented in this file.
 - **Show Code Actions** (⌥↩): lists the server's quick fixes and refactors
   for the selection or caret, preferred actions first; Enter applies the
   edit or runs the server command.
+- **Format Document** (⌥⌘L) and **Format Selection** (palette) via the
+  language server, applied as one undo step. New `format_on_save` config
+  (default off) formats before writing and falls back to saving unformatted
+  if the server does not answer within two seconds.
 - CSV mode mouse editing: clicking inside the cell being edited places the
   caret at the pressed character (Shift extends the selection), double-click
   opens the cell editor with the caret at the pressed character, and

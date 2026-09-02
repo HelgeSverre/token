@@ -543,8 +543,8 @@ Automation/MCP: all commands (`TriggerMenu`, `AcceptInline`, …) are `is_simple
 
 - [x] LSP source: request on trigger chars + debounce, `MenuItem` conversion (UTF-16 positions, kind map, sortText), `isIncomplete` re-request. Built in lsp-integration.md Phase 5 (`completion/lsp.rs`, `update/completion.rs`).
 - [x] `additionalTextEdits` → `MenuInsert::Lsp` (auto-import), resolve-before-accept, one undo step.
-- [ ] Words demoted to `fallback` tier when LSP items present; dedup rule.
-- [ ] Lazy resolve for docs + documentation side-card (shared with LSP hover overlay work).
+- [x] Words demoted to `fallback` mode when LSP items present (`completion.words: fallback|enabled|disabled`); no dedup rule yet.
+- [x] Lazy resolve for docs + documentation side-card (anchored to the menu panel's right edge, flips left).
 
 ### Phase 5+: Future
 
