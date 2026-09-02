@@ -454,3 +454,96 @@ fn signature_help_request_round_trips_through_the_fake_server() {
 
     handle.kill();
 }
+
+/// A server that advertises `renameProvider` and answers
+/// `textDocument/prepareRename` + `textDocument/rename`: the reader parses
+/// both replies into their `*ResponseFromServer` messages.
+#[test]
+fn rename_requests_round_trip_through_the_fake_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let scenario = write_scenario(
+        dir.path(),
+        json!([
+            { "op": "expect_request", "method": "initialize", "respond": { "capabilities": {
+                "renameProvider": { "prepareProvider": true }
+            } } },
+            { "op": "expect_request", "method": "textDocument/prepareRename", "respond": {
+                "range": { "start": { "line": 0, "character": 3 }, "end": { "line": 0, "character": 7 } },
+                "placeholder": "main"
+            } },
+            { "op": "expect_request", "method": "textDocument/rename", "respond": {
+                "changes": { "file:///tmp/main.rs": [
+                    { "range": { "start": { "line": 0, "character": 3 }, "end": { "line": 0, "character": 7 } },
+                      "newText": "start" }
+                ] }
+            } },
+        ]),
+    );
+
+    let (msg_tx, msg_rx) = mpsc::channel();
+    let mut handle = spawn_server(
+        fake_lsp_server_path().to_str().unwrap(),
+        &[scenario.to_string_lossy().into_owned()],
+        dir.path(),
+        LspServerId::from("fake"),
+        msg_tx,
+        None,
+        serde_json::Value::Null,
+        serde_json::Value::Null,
+    )
+    .expect("spawn fake-lsp-server");
+    assert!(recv_until(&msg_rx, Duration::from_secs(5), is_ready).is_some());
+
+    let prepare_id = handle.begin_request(
+        "textDocument/prepareRename",
+        json!({
+            "textDocument": { "uri": "file:///tmp/main.rs" },
+            "position": { "line": 0, "character": 5 }
+        }),
+    );
+    let reply = recv_until(&msg_rx, Duration::from_secs(5), |m| {
+        matches!(m, Msg::Lsp(LspMsg::PrepareRenameResponseFromServer { .. }))
+    });
+    let Some(Msg::Lsp(LspMsg::PrepareRenameResponseFromServer {
+        request_id,
+        response,
+        abandoned,
+        ..
+    })) = reply
+    else {
+        panic!("expected PrepareRenameResponseFromServer");
+    };
+    assert_eq!(request_id, prepare_id);
+    assert!(!abandoned);
+    assert!(matches!(
+        response,
+        Some(lsp_types::PrepareRenameResponse::RangeWithPlaceholder { placeholder, .. })
+            if placeholder == "main"
+    ));
+
+    let rename_id = handle.begin_request(
+        "textDocument/rename",
+        json!({
+            "textDocument": { "uri": "file:///tmp/main.rs" },
+            "position": { "line": 0, "character": 5 },
+            "newName": "start"
+        }),
+    );
+    let reply = recv_until(&msg_rx, Duration::from_secs(5), |m| {
+        matches!(m, Msg::Lsp(LspMsg::RenameResponseFromServer { .. }))
+    });
+    let Some(Msg::Lsp(LspMsg::RenameResponseFromServer {
+        request_id, edit, ..
+    })) = reply
+    else {
+        panic!("expected RenameResponseFromServer");
+    };
+    assert_eq!(request_id, rename_id);
+    let edit = edit.expect("parsed WorkspaceEdit");
+    assert_eq!(
+        edit.changes.unwrap().values().next().unwrap()[0].new_text,
+        "start"
+    );
+
+    handle.kill();
+}

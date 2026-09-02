@@ -377,6 +377,8 @@ bindings:
     command: ShowHover
   - key: "cmd+p"
     command: ShowSignatureHelp
+  - key: "shift+f6"
+    command: RenameSymbol
 
   # ===========================================================================
   # Show Usages / Find Usages (lsp-integration.md, references)

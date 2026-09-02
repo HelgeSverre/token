@@ -8,6 +8,7 @@
 use crate::commands::Cmd;
 use crate::lsp::ServerState;
 use crate::messages::{DefinitionOutcome, HoverOutcome, LspMsg, ReferencesOutcome};
+use crate::model::editor::Position;
 use crate::model::editor_area::DocumentId;
 use crate::model::{AppModel, CursorOverlayKind, CursorOverlayState, HoverCardState};
 use crate::update::navigation;
@@ -242,9 +243,113 @@ pub(crate) fn request_signature_help(
     })
 }
 
+/// The identifier the caret touches (either side), as
+/// `(start_offset, end_offset)`; empty when the caret is not on a word.
+fn word_at_caret(doc: &crate::model::Document, cursor: Position) -> (usize, usize) {
+    use crate::update::document::{word_end_after, word_start_before};
+    use crate::util::text::{char_type, CharType};
+    let buffer = &doc.buffer;
+    let offset = doc.cursor_to_offset(cursor.line, cursor.column);
+    let is_word =
+        |i: usize| i < buffer.len_chars() && char_type(buffer.char(i)) == CharType::WordChar;
+    let start = if offset > 0 && is_word(offset - 1) {
+        word_start_before(buffer, offset)
+    } else {
+        offset
+    };
+    let end = if is_word(offset) {
+        word_end_after(buffer, offset)
+    } else {
+        offset
+    };
+    (start, end)
+}
+
+/// Opens the Rename Symbol prompt prefilled with `placeholder`, or flashes
+/// "Cannot rename here" when there is nothing to rename.
+fn open_rename_prompt(
+    model: &mut AppModel,
+    document_id: DocumentId,
+    revision: u64,
+    position: Position,
+    placeholder: String,
+) -> Option<Cmd> {
+    if placeholder.is_empty() {
+        model.ui.set_status("Cannot rename here");
+        return Some(Cmd::redraw_status_bar());
+    }
+    model.ui.open_modal(crate::model::ModalState::RenameSymbol(
+        crate::model::RenameSymbolState::new(placeholder, document_id, revision, position),
+    ));
+    Some(Cmd::Redraw)
+}
+
 pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
     match msg {
         LspMsg::ShowSignatureHelp => request_signature_help(model, None, false),
+        LspMsg::RenameSymbol => {
+            let doc = model.try_document()?;
+            let document_id = doc.id?;
+            doc.file_path.as_ref()?;
+            let cursor = model.editor().active_cursor().to_position();
+            let (start, end) = word_at_caret(doc, cursor);
+            // The runtime decides between `prepareRename` and prompting
+            // straight away with `fallback` (server capabilities live
+            // there) — see `App::request_lsp_prepare_rename`.
+            Some(Cmd::LspRequestPrepareRename {
+                document_id,
+                position: crate::lsp::position_to_lsp(doc, cursor),
+                cursor,
+                revision: doc.revision,
+                fallback: doc.buffer.slice(start..end).to_string(),
+            })
+        }
+        LspMsg::PrepareRenameResolved {
+            document_id,
+            revision,
+            cursor,
+            placeholder,
+        } => {
+            if stale_feature_response(model, document_id, revision) {
+                return None;
+            }
+            open_rename_prompt(
+                model,
+                document_id,
+                revision,
+                cursor,
+                placeholder.unwrap_or_default(),
+            )
+        }
+        LspMsg::PrepareRenameResponseFromServer { .. } => None,
+        LspMsg::RenameResolved {
+            document_id,
+            revision,
+            edit,
+        } => {
+            if stale_feature_response(model, document_id, revision) {
+                return None;
+            }
+            let Some(edit) = edit else {
+                model.ui.set_status("Nothing to rename");
+                return Some(Cmd::redraw_status_bar());
+            };
+            let (cmd, report) = crate::update::text_edits::apply_workspace_edit(model, *edit);
+            if report.files == 0 && report.skipped.is_empty() {
+                model.ui.set_status("Nothing to rename");
+                return Some(Cmd::redraw_status_bar());
+            }
+            let mut status = format!(
+                "Renamed in {} file(s), {} edit(s)",
+                report.files, report.edits
+            );
+            if !report.skipped.is_empty() {
+                status.push_str(&format!(" (skipped: {})", report.skipped.join("; ")));
+            }
+            model.ui.set_status(status);
+            navigation::combine(cmd, Some(Cmd::redraw_status_bar()))
+        }
+        LspMsg::RenameResponseFromServer { .. } => None,
         LspMsg::ServerSignatureTriggers {
             server_id,
             trigger,
@@ -1709,5 +1814,202 @@ mod tests {
         );
         crate::update::update(&mut model, Msg::move_cursor(Direction::Down));
         assert!(model.ui.signature_help.is_none());
+    }
+
+    // ---- rename symbol ----
+
+    /// A file whose caret sits inside `main` (line 0, col 5) and that names
+    /// `main` twice, so a rename edit has two locations in one document.
+    fn model_for_rename() -> (tempfile::TempDir, AppModel) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("main.rs");
+        std::fs::write(&path, "fn main() {}\nfn other() { main() }\n").unwrap();
+        let mut model = AppModel::new(800, 600, 1.0, vec![path]);
+        model.editor_mut().cursors[0] = crate::model::Cursor::at(0, 5);
+        model.editor_mut().collapse_selections_to_cursors();
+        (dir, model)
+    }
+
+    fn open_rename_modal(model: &mut AppModel, placeholder: &str) {
+        let document_id = model.document().id.unwrap();
+        let revision = model.document().revision;
+        update_lsp(
+            model,
+            LspMsg::PrepareRenameResolved {
+                document_id,
+                revision,
+                cursor: crate::model::editor::Position::new(0, 5),
+                placeholder: Some(placeholder.to_owned()),
+            },
+        );
+    }
+
+    #[test]
+    fn rename_symbol_requests_prepare_rename_with_the_caret_word_as_fallback() {
+        let (_dir, mut model) = model_for_rename();
+        let cmd = update_lsp(&mut model, LspMsg::RenameSymbol);
+        let Some(Cmd::LspRequestPrepareRename {
+            fallback, cursor, ..
+        }) = cmd
+        else {
+            panic!("expected LspRequestPrepareRename, got {cmd:?}");
+        };
+        assert_eq!(fallback, "main");
+        assert_eq!(cursor, crate::model::editor::Position::new(0, 5));
+    }
+
+    #[test]
+    fn prepare_rename_resolved_opens_the_prompt_prefilled_and_selected() {
+        let (_dir, mut model) = model_for_rename();
+        open_rename_modal(&mut model, "main");
+        let Some(crate::model::ModalState::RenameSymbol(state)) = &model.ui.active_modal else {
+            panic!("expected the rename modal, got {:?}", model.ui.active_modal);
+        };
+        assert_eq!(state.input(), "main");
+        assert!(state.editable.has_selection(), "placeholder is select-all");
+    }
+
+    #[test]
+    fn prepare_rename_resolved_without_a_placeholder_flashes_cannot_rename() {
+        let (_dir, mut model) = model_for_rename();
+        let document_id = model.document().id.unwrap();
+        let revision = model.document().revision;
+        update_lsp(
+            &mut model,
+            LspMsg::PrepareRenameResolved {
+                document_id,
+                revision,
+                cursor: crate::model::editor::Position::new(0, 5),
+                placeholder: None,
+            },
+        );
+        assert!(model.ui.active_modal.is_none());
+        assert_eq!(
+            model.ui.transient_message.as_ref().unwrap().text,
+            "Cannot rename here"
+        );
+    }
+
+    #[test]
+    fn confirming_the_prompt_with_a_new_name_requests_the_rename() {
+        use crate::messages::{ModalMsg, Msg, UiMsg};
+        let (_dir, mut model) = model_for_rename();
+        let revision = model.document().revision;
+        open_rename_modal(&mut model, "main");
+        crate::update::update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("start".to_owned()))),
+        );
+
+        let cmd = crate::update::update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::Confirm)));
+
+        assert!(model.ui.active_modal.is_none());
+        let Some(Cmd::Batch(cmds)) = cmd else {
+            panic!("expected a batch, got {cmd:?}");
+        };
+        assert!(cmds.iter().any(|c| matches!(
+            c,
+            Cmd::LspRequestRename { new_name, revision: r, position, .. }
+                if new_name == "start" && *r == revision && position.character == 5
+        )));
+    }
+
+    #[test]
+    fn confirming_the_prompt_with_the_placeholder_just_closes() {
+        use crate::messages::{ModalMsg, Msg, UiMsg};
+        let (_dir, mut model) = model_for_rename();
+        open_rename_modal(&mut model, "main");
+        let cmd = crate::update::update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::Confirm)));
+        assert!(model.ui.active_modal.is_none());
+        assert!(!matches!(cmd, Some(Cmd::Batch(_))));
+    }
+
+    fn two_location_edit(model: &AppModel) -> lsp_types::WorkspaceEdit {
+        let uri = crate::lsp::path_to_uri(model.document().file_path.as_ref().unwrap());
+        let edit = |line, start, end| lsp_types::TextEdit {
+            range: lsp_types::Range::new(
+                lsp_types::Position::new(line, start),
+                lsp_types::Position::new(line, end),
+            ),
+            new_text: "start".to_owned(),
+        };
+        lsp_types::WorkspaceEdit::new(std::collections::HashMap::from([(
+            uri,
+            vec![edit(0, 3, 7), edit(1, 13, 17)],
+        )]))
+    }
+
+    #[test]
+    fn rename_resolved_applies_the_edit_in_one_undo_step_and_reports() {
+        use crate::messages::{DocumentMsg, Msg};
+        let (_dir, mut model) = model_for_rename();
+        let document_id = model.document().id.unwrap();
+        let revision = model.document().revision;
+        let edit = two_location_edit(&model);
+
+        let cmd = update_lsp(
+            &mut model,
+            LspMsg::RenameResolved {
+                document_id,
+                revision,
+                edit: Some(Box::new(edit)),
+            },
+        );
+
+        assert!(cmd.is_some());
+        assert_eq!(
+            model.document().buffer.to_string(),
+            "fn start() {}\nfn other() { start() }\n"
+        );
+        assert_eq!(
+            model.ui.transient_message.as_ref().unwrap().text,
+            "Renamed in 1 file(s), 2 edit(s)"
+        );
+        assert_eq!(model.document().undo_stack.len(), 1);
+        crate::update::update(&mut model, Msg::Document(DocumentMsg::Undo));
+        assert_eq!(
+            model.document().buffer.to_string(),
+            "fn main() {}\nfn other() { main() }\n"
+        );
+    }
+
+    #[test]
+    fn rename_resolved_with_no_edit_flashes_nothing_to_rename() {
+        let (_dir, mut model) = model_for_rename();
+        let document_id = model.document().id.unwrap();
+        let revision = model.document().revision;
+        update_lsp(
+            &mut model,
+            LspMsg::RenameResolved {
+                document_id,
+                revision,
+                edit: None,
+            },
+        );
+        assert_eq!(
+            model.ui.transient_message.as_ref().unwrap().text,
+            "Nothing to rename"
+        );
+    }
+
+    #[test]
+    fn rename_resolved_for_a_stale_revision_is_dropped() {
+        let (_dir, mut model) = model_for_rename();
+        let document_id = model.document().id.unwrap();
+        let revision = model.document().revision;
+        let edit = two_location_edit(&model);
+        let cmd = update_lsp(
+            &mut model,
+            LspMsg::RenameResolved {
+                document_id,
+                revision: revision + 1,
+                edit: Some(Box::new(edit)),
+            },
+        );
+        assert!(cmd.is_none());
+        assert_eq!(
+            model.document().buffer.to_string(),
+            "fn main() {}\nfn other() { main() }\n"
+        );
     }
 }

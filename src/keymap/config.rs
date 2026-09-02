@@ -397,6 +397,7 @@ impl FromStr for Command {
             // Hover (lsp-integration.md Phase 4)
             "ShowHover" => Ok(Command::ShowHover),
             "ShowSignatureHelp" => Ok(Command::ShowSignatureHelp),
+            "RenameSymbol" => Ok(Command::RenameSymbol),
 
             // Show Usages / Find Usages (lsp-integration.md, references)
             "FindUsages" => Ok(Command::FindUsages),

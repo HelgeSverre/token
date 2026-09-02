@@ -38,6 +38,7 @@ pub enum CommandId {
     NavigateForward,
     ShowHover,
     ShowSignatureHelp,
+    RenameSymbol,
     FindUsages,
     NextDiagnostic,
     PrevDiagnostic,
@@ -264,6 +265,12 @@ pub static COMMANDS: &[CommandDef] = &[
         category: CommandCategory::Nav,
         label: "Show Signature Help",
         keybinding: Some("⌘P"),
+    },
+    CommandDef {
+        id: CommandId::RenameSymbol,
+        category: CommandCategory::Nav,
+        label: "Rename Symbol",
+        keybinding: Some("⇧F6"),
     },
     CommandDef {
         id: CommandId::FindUsages,
@@ -565,6 +572,7 @@ impl CommandId {
             CommandId::NavigateForward => Some(KeymapCommand::NavigateForward),
             CommandId::ShowHover => Some(KeymapCommand::ShowHover),
             CommandId::ShowSignatureHelp => Some(KeymapCommand::ShowSignatureHelp),
+            CommandId::RenameSymbol => Some(KeymapCommand::RenameSymbol),
             CommandId::FindUsages => Some(KeymapCommand::FindUsages),
             CommandId::NextDiagnostic => Some(KeymapCommand::NextDiagnostic),
             CommandId::PrevDiagnostic => Some(KeymapCommand::PrevDiagnostic),
@@ -1003,6 +1011,25 @@ pub enum Cmd {
         trigger: Option<String>,
         is_retrigger: bool,
     },
+    /// Rename Symbol entry point: `textDocument/prepareRename` at
+    /// `position` when the server supports it, otherwise the prompt opens
+    /// straight away with `fallback` (the word under the caret). Either
+    /// way the prompt is opened by `LspMsg::PrepareRenameResolved`.
+    LspRequestPrepareRename {
+        document_id: DocumentId,
+        position: lsp_types::Position,
+        cursor: crate::model::editor::Position,
+        revision: u64,
+        fallback: String,
+    },
+    /// `textDocument/rename` at `position` with `newName`; the reply is a
+    /// `WorkspaceEdit` applied via `apply_workspace_edit`.
+    LspRequestRename {
+        document_id: DocumentId,
+        position: lsp_types::Position,
+        revision: u64,
+        new_name: String,
+    },
     /// `textDocument/references` (Show Usages / Find Usages), tagged with
     /// the document's `revision` and (char-column) `cursor` at request
     /// time — mirrors `LspRequestHover`. `context.includeDeclaration` is
@@ -1176,6 +1203,8 @@ impl Cmd {
             Cmd::LspDidOpenOnServer { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestHover { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestSignatureHelp { .. } => Damage::Areas(vec![]),
+            Cmd::LspRequestPrepareRename { .. } => Damage::Areas(vec![]),
+            Cmd::LspRequestRename { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestReferences { .. } => Damage::Areas(vec![]),
             Cmd::LspScheduleCompletion { .. } => Damage::Areas(vec![]),
             Cmd::LspCancelCompletion { .. } => Damage::Areas(vec![]),

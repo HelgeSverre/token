@@ -29,9 +29,9 @@ pub use ui::{
     CommandMatch, CommandPaletteState, ContextMenuState, CursorOverlayKind, CursorOverlayState,
     DropState, FileFinderState, FileMatch, FindReplaceField, FindReplaceState, FocusTarget,
     GotoLineState, HoverCardState, HoverRegion, LanguagePickerState, LspServersState, ModalId,
-    ModalState, OutlinePanelState, ProblemsPanelState, RecentFilesState, ScrollbarDragAxis,
-    ScrollbarDragState, SearchTab, SidebarResizeState, SignatureHelpState, SignatureView,
-    ThemePickerState, UiState, COMMAND_PALETTE_MAX_VISIBLE,
+    ModalState, OutlinePanelState, ProblemsPanelState, RecentFilesState, RenameSymbolState,
+    ScrollbarDragAxis, ScrollbarDragState, SearchTab, SidebarResizeState, SignatureHelpState,
+    SignatureView, ThemePickerState, UiState, COMMAND_PALETTE_MAX_VISIBLE,
 };
 pub use workspace::{FileExtension, FileNode, FileTree, Workspace};
 

@@ -2,7 +2,7 @@
 
 use crate::csv::render::CsvRenderLayout;
 use crate::model::editor::TextViewportMap;
-use crate::model::ui::{FindReplaceField, ModalState};
+use crate::model::ui::{FindReplaceField, GotoLineState, ModalState, RenameSymbolState};
 use crate::model::{AppModel, FocusTarget};
 
 use super::geometry::{char_col_to_visual_col, column_to_pixel_x, GroupLayout, WidgetRect};
@@ -134,17 +134,12 @@ fn modal_caret_rect(
                 TextFieldOptions::for_text_box(&state.editable, &rect, line_height, char_width),
             )
         }
-        ModalState::GotoLine(state) => {
+        ModalState::GotoLine(GotoLineState { editable, .. })
+        | ModalState::RenameSymbol(RenameSymbolState { editable, .. }) => {
             let rect = super::modal::modal_field_input_rect(model, width, height, scale_factor, 0)?;
             (
-                &state.editable,
-                TextFieldOptions::for_modal(
-                    &state.editable,
-                    &rect,
-                    line_height,
-                    char_width,
-                    scale_factor,
-                ),
+                editable,
+                TextFieldOptions::for_modal(editable, &rect, line_height, char_width, scale_factor),
             )
         }
         ModalState::FindReplace(state) => {

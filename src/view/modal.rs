@@ -996,15 +996,17 @@ fn render_lsp_servers_modal(
 // Go to Line / Find & Replace (Body::Fields)
 // ============================================================================
 
-fn render_goto_line_modal(
+/// Single-field prompt shared by Go to Line and Rename Symbol.
+fn render_single_field_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
     model: &AppModel,
-    state: &crate::model::ui::GotoLineState,
+    label: &'static str,
+    editable: &crate::editable::EditableState<crate::editable::StringBuffer>,
     ctx: &ModalRenderCtx,
     mask_cache: &mut RoundedRectMaskCache,
 ) {
-    let fields = [Field { label: "Line:" }];
+    let fields = [Field { label }];
     let spec = OverlaySpec {
         tabs: None,
         anchor: Anchor::Centered {
@@ -1038,7 +1040,7 @@ fn render_goto_line_modal(
         TextFieldRenderer::render_modal_input(
             frame,
             painter,
-            &state.editable,
+            editable,
             &field.input,
             ctx.line_height,
             ctx.char_width,
@@ -1369,7 +1371,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
             let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
             Some(f(&spec, &l))
         }
-        ModalState::GotoLine(_) => {
+        ModalState::GotoLine(_) | ModalState::RenameSymbol(_) => {
             let fields = [Field { label: "" }];
             let spec = OverlaySpec {
                 tabs: None,
@@ -1570,9 +1572,24 @@ pub fn render_modals(
         ModalState::CommandPalette(state) => {
             render_command_palette_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
         }
-        ModalState::GotoLine(state) => {
-            render_goto_line_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
-        }
+        ModalState::GotoLine(state) => render_single_field_modal(
+            frame,
+            painter,
+            model,
+            "Line:",
+            &state.editable,
+            &ctx,
+            overlay_mask_cache,
+        ),
+        ModalState::RenameSymbol(state) => render_single_field_modal(
+            frame,
+            painter,
+            model,
+            "Rename to:",
+            &state.editable,
+            &ctx,
+            overlay_mask_cache,
+        ),
         ModalState::FindReplace(state) => {
             render_find_replace_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
         }

@@ -23,10 +23,11 @@ use lsp_types::{
     CompletionItemCapabilityResolveSupport, DidChangeWatchedFilesClientCapabilities,
     DynamicRegistrationClientCapabilities, GeneralClientCapabilities, GotoCapability,
     HoverClientCapabilities, MarkupKind, ParameterInformationSettings, PositionEncodingKind,
-    PublishDiagnosticsClientCapabilities, ServerCapabilities, SignatureHelpClientCapabilities,
-    SignatureInformationSettings, TagSupport, TextDocumentClientCapabilities,
-    TextDocumentSyncCapability, TextDocumentSyncClientCapabilities, TextDocumentSyncKind,
-    TextDocumentSyncSaveOptions, WindowClientCapabilities, WorkspaceClientCapabilities,
+    PublishDiagnosticsClientCapabilities, RenameClientCapabilities, ServerCapabilities,
+    SignatureHelpClientCapabilities, SignatureInformationSettings, TagSupport,
+    TextDocumentClientCapabilities, TextDocumentSyncCapability, TextDocumentSyncClientCapabilities,
+    TextDocumentSyncKind, TextDocumentSyncSaveOptions, WindowClientCapabilities,
+    WorkspaceClientCapabilities,
 };
 use serde_json::{json, Value};
 
@@ -71,6 +72,12 @@ pub fn client_capabilities() -> ClientCapabilities {
             }),
             references: Some(DynamicRegistrationClientCapabilities {
                 dynamic_registration: Some(false),
+            }),
+            rename: Some(RenameClientCapabilities {
+                dynamic_registration: Some(false),
+                prepare_support: Some(true),
+                prepare_support_default_behavior: None,
+                honors_change_annotations: None,
             }),
             signature_help: Some(SignatureHelpClientCapabilities {
                 dynamic_registration: Some(false),
@@ -202,6 +209,19 @@ pub fn supports_completion(caps: &ServerCapabilities) -> bool {
 
 pub fn supports_signature_help(caps: &ServerCapabilities) -> bool {
     caps.signature_help_provider.is_some()
+}
+
+pub fn supports_rename(caps: &ServerCapabilities) -> bool {
+    caps.rename_provider.is_some()
+}
+
+/// `renameProvider.prepareProvider == true` — the server can validate the
+/// symbol under the caret and suggest a placeholder before we prompt.
+pub fn supports_prepare_rename(caps: &ServerCapabilities) -> bool {
+    matches!(
+        caps.rename_provider.as_ref(),
+        Some(lsp_types::OneOf::Right(opts)) if opts.prepare_provider == Some(true)
+    )
 }
 
 /// `(triggerCharacters, retriggerCharacters)` of the server's
@@ -1190,6 +1210,37 @@ fn reader_loop(
                     root: root.clone(),
                     request_id: id,
                     help,
+                    abandoned: entry.abandoned,
+                }));
+                if let Some(wake) = wake.as_deref() {
+                    wake();
+                }
+            } else if entry.method == "textDocument/prepareRename" {
+                // `null` (cannot rename here) and malformed both -> `None`.
+                let response = message.get("result").and_then(|r| {
+                    serde_json::from_value::<lsp_types::PrepareRenameResponse>(r.clone()).ok()
+                });
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::PrepareRenameResponseFromServer {
+                    server_id: server_id.clone(),
+                    root: root.clone(),
+                    request_id: id,
+                    response,
+                    abandoned: entry.abandoned,
+                }));
+                if let Some(wake) = wake.as_deref() {
+                    wake();
+                }
+            } else if entry.method == "textDocument/rename" {
+                let edit = message.get("result").and_then(|r| {
+                    serde_json::from_value::<lsp_types::WorkspaceEdit>(r.clone())
+                        .ok()
+                        .map(Box::new)
+                });
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::RenameResponseFromServer {
+                    server_id: server_id.clone(),
+                    root: root.clone(),
+                    request_id: id,
+                    edit,
                     abandoned: entry.abandoned,
                 }));
                 if let Some(wake) = wake.as_deref() {

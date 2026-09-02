@@ -451,6 +451,13 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
             rows: Vec::new(),
             selected: 0,
         }),
+        token::model::ModalState::RenameSymbol(state) => Some(OverlaySnapshot {
+            context: "rename_symbol".to_owned(),
+            query: state.input(),
+            active_tab: None,
+            rows: Vec::new(),
+            selected: 0,
+        }),
         token::model::ModalState::FindReplace(state) => Some(OverlaySnapshot {
             context: "find_replace".to_owned(),
             query: state.query(),

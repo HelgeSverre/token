@@ -306,6 +306,9 @@ const COMPLETION_TIMEOUT: Duration = Duration::from_secs(10);
 /// Signature help is typing-driven like completion — same silent, short
 /// abandonment window.
 const SIGNATURE_HELP_TIMEOUT: Duration = Duration::from_secs(10);
+/// Rename is explicit and may touch the whole workspace — as patient as
+/// references.
+const RENAME_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// UI-level abandonment timeout for a deferred accept's
 /// `completionItem/resolve` round trip. On expiry the accept applies with
@@ -406,6 +409,10 @@ struct LspManager {
     /// In-flight `textDocument/signatureHelp` requests, mirroring
     /// `completion` (silent sweep).
     signature_help: FeatureSlot<PendingSignatureHelp>,
+    /// In-flight `textDocument/prepareRename` requests.
+    prepare_rename: FeatureSlot<PendingPrepareRename>,
+    /// In-flight `textDocument/rename` requests.
+    rename: FeatureSlot<PendingRename>,
     /// In-flight `completionItem/resolve` requests; swept by
     /// `check_lsp_resolve_deadlines`, which emits an empty
     /// `CompletionItemResolved` for `Accept`-purpose ones so the blocked
@@ -477,6 +484,43 @@ impl PendingRequest for PendingSignatureHelp {
     fn document_id(&self) -> token::model::editor_area::DocumentId {
         self.document_id
     }
+}
+
+/// What `LspManager` needs to turn a `textDocument/prepareRename`
+/// response into `LspMsg::PrepareRenameResolved`. `fallback` is the word
+/// under the caret, used for a `defaultBehavior` reply.
+struct PendingPrepareRename {
+    document_id: token::model::editor_area::DocumentId,
+    revision: u64,
+    cursor: token::model::editor::Position,
+    fallback: String,
+}
+
+impl PendingRequest for PendingPrepareRename {
+    fn document_id(&self) -> token::model::editor_area::DocumentId {
+        self.document_id
+    }
+}
+
+/// What `LspManager` needs to turn a `textDocument/rename` response into
+/// `LspMsg::RenameResolved`.
+struct PendingRename {
+    document_id: token::model::editor_area::DocumentId,
+    revision: u64,
+}
+
+impl PendingRequest for PendingRename {
+    fn document_id(&self) -> token::model::editor_area::DocumentId {
+        self.document_id
+    }
+}
+
+/// Status transient for a rename request that never produced an edit.
+fn rename_status_msg(text: &str) -> Msg {
+    Msg::Ui(token::messages::UiMsg::SetTransientMessage {
+        text: text.to_owned(),
+        duration_ms: 3000,
+    })
 }
 
 /// What `LspManager` needs to turn a `textDocument/references` response
@@ -640,6 +684,39 @@ lsp_feature!(
     lsp::client::supports_signature_help
 );
 
+lsp_feature!(
+    PendingPrepareRename,
+    "textDocument/prepareRename",
+    prepare_rename,
+    lsp::client::supports_prepare_rename
+);
+lsp_feature!(
+    PendingRename,
+    "textDocument/rename",
+    rename,
+    lsp::client::supports_rename
+);
+
+impl LspOutcomePolicy for PendingPrepareRename {
+    fn on_gate_error(self, _err: FeatureGateError) -> Option<Msg> {
+        Some(rename_status_msg("Rename not supported by this server"))
+    }
+
+    fn on_timeout(self) -> Option<Msg> {
+        Some(rename_status_msg("Rename: server did not answer"))
+    }
+}
+
+impl LspOutcomePolicy for PendingRename {
+    fn on_gate_error(self, _err: FeatureGateError) -> Option<Msg> {
+        Some(rename_status_msg("Rename not supported by this server"))
+    }
+
+    fn on_timeout(self) -> Option<Msg> {
+        Some(rename_status_msg("Rename: server did not answer"))
+    }
+}
+
 impl LspOutcomePolicy for PendingSignatureHelp {
     /// Silent like completion: a float that simply doesn't appear is the
     /// right failure mode for a typing-driven request.
@@ -777,6 +854,8 @@ impl LspManager {
             references: FeatureSlot::new(REFERENCES_TIMEOUT),
             completion: FeatureSlot::new(COMPLETION_TIMEOUT),
             signature_help: FeatureSlot::new(SIGNATURE_HELP_TIMEOUT),
+            prepare_rename: FeatureSlot::new(RENAME_TIMEOUT),
+            rename: FeatureSlot::new(RENAME_TIMEOUT),
             resolve: FeatureSlot::new(RESOLVE_TIMEOUT),
             completion_debounces: HashMap::new(),
             resolve_debounces: HashMap::new(),
@@ -2458,6 +2537,31 @@ impl App {
                     is_retrigger,
                 );
             }
+            Cmd::LspRequestPrepareRename {
+                document_id,
+                position,
+                cursor,
+                revision,
+                fallback,
+            } => {
+                self.request_lsp_prepare_rename(document_id, position, cursor, revision, fallback);
+            }
+            Cmd::LspRequestRename {
+                document_id,
+                position,
+                revision,
+                new_name,
+            } => {
+                self.gated_lsp_request::<PendingRename>(
+                    document_id,
+                    position,
+                    Some(serde_json::json!({ "newName": new_name })),
+                    |_| PendingRename {
+                        document_id,
+                        revision,
+                    },
+                );
+            }
             Cmd::LspRequestReferences {
                 document_id,
                 position,
@@ -2611,6 +2715,7 @@ impl App {
         messages = self.intercept_definition_replies(messages);
         messages = self.intercept_hover_replies(messages);
         messages = self.intercept_signature_help_replies(messages);
+        messages = self.intercept_rename_replies(messages);
         messages = self.intercept_references_replies(messages);
         messages = self.intercept_completion_replies(messages);
         messages = self.intercept_resolve_replies(messages);
@@ -2915,6 +3020,81 @@ impl App {
             .collect()
     }
 
+    // Same interception for `textDocument/prepareRename` and
+    // `textDocument/rename` replies; a `Range` placeholder is read from the
+    // document buffer here so `update()` stays cheap.
+    fn intercept_rename_replies(&mut self, messages: Vec<Msg>) -> Vec<Msg> {
+        messages
+            .into_iter()
+            .filter_map(|msg| match msg {
+                Msg::Lsp(LspMsg::PrepareRenameResponseFromServer {
+                    server_id,
+                    root,
+                    request_id,
+                    response,
+                    abandoned,
+                }) => {
+                    let pending = self
+                        .lsp
+                        .prepare_rename
+                        .take_response(&(server_id, root, request_id))?;
+                    if abandoned {
+                        return None;
+                    }
+                    let placeholder = response.and_then(|response| match response {
+                        lsp_types::PrepareRenameResponse::RangeWithPlaceholder {
+                            placeholder,
+                            ..
+                        } => Some(placeholder),
+                        lsp_types::PrepareRenameResponse::DefaultBehavior { .. } => {
+                            Some(pending.fallback.clone())
+                        }
+                        lsp_types::PrepareRenameResponse::Range(range) => {
+                            let doc = self.model.editor_area.documents.get(&pending.document_id)?;
+                            let start = lsp::lsp_to_position(doc, range.start);
+                            let end = lsp::lsp_to_position(doc, range.end);
+                            Some(
+                                doc.buffer
+                                    .slice(
+                                        doc.cursor_to_offset(start.line, start.column)
+                                            ..doc.cursor_to_offset(end.line, end.column),
+                                    )
+                                    .to_string(),
+                            )
+                        }
+                    });
+                    Some(Msg::Lsp(LspMsg::PrepareRenameResolved {
+                        document_id: pending.document_id,
+                        revision: pending.revision,
+                        cursor: pending.cursor,
+                        placeholder,
+                    }))
+                }
+                Msg::Lsp(LspMsg::RenameResponseFromServer {
+                    server_id,
+                    root,
+                    request_id,
+                    edit,
+                    abandoned,
+                }) => {
+                    let pending = self
+                        .lsp
+                        .rename
+                        .take_response(&(server_id, root, request_id))?;
+                    if abandoned {
+                        return None;
+                    }
+                    Some(Msg::Lsp(LspMsg::RenameResolved {
+                        document_id: pending.document_id,
+                        revision: pending.revision,
+                        edit,
+                    }))
+                }
+                other => Some(other),
+            })
+            .collect()
+    }
+
     // Same interception for `textDocument/references` replies. Unlike
     // definition/hover, this one does real work: previews may require
     // reading unopened files off disk (`build_reference_items`), which
@@ -3201,6 +3381,8 @@ impl App {
         self.lsp.references.clear_for_roots(server_id, roots);
         self.lsp.completion.clear_for_roots(server_id, roots);
         self.lsp.signature_help.clear_for_roots(server_id, roots);
+        self.lsp.prepare_rename.clear_for_roots(server_id, roots);
+        self.lsp.rename.clear_for_roots(server_id, roots);
         self.lsp.resolve.clear_for_roots(server_id, roots);
     }
 
@@ -3834,6 +4016,46 @@ impl App {
         );
     }
 
+    /// Rename Symbol entry point. A server with `renameProvider` but no
+    /// `prepareProvider` skips the round trip: the prompt opens right away
+    /// with `fallback`. Everything else (no server, not ready, no rename
+    /// support, prepare supported) goes through the gated
+    /// `textDocument/prepareRename` request.
+    fn request_lsp_prepare_rename(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        position: lsp_types::Position,
+        cursor: token::model::editor::Position,
+        revision: u64,
+        fallback: String,
+    ) {
+        let caps = self.lsp.open_documents.get(&document_id).and_then(|state| {
+            self.lsp
+                .servers
+                .get(&(state.server_id.clone(), state.root.clone()))?
+                .capabilities_snapshot()
+        });
+        if caps.is_some_and(|c| {
+            lsp::client::supports_rename(&c) && !lsp::client::supports_prepare_rename(&c)
+        }) {
+            self.emit_lsp_msg(Msg::Lsp(LspMsg::PrepareRenameResolved {
+                document_id,
+                revision,
+                cursor,
+                placeholder: Some(fallback),
+            }));
+            return;
+        }
+        self.gated_lsp_request::<PendingPrepareRename>(document_id, position, None, |_| {
+            PendingPrepareRename {
+                document_id,
+                revision,
+                cursor,
+                fallback,
+            }
+        });
+    }
+
     /// Builds `LocationItem` previews for a `textDocument/references`
     /// reply — called from the interception pass (not `update()`) because
     /// a location in a file that isn't currently open needs a disk read
@@ -4185,6 +4407,13 @@ impl App {
         self.sweep_lsp_feature_deadlines::<PendingSignatureHelp>();
     }
 
+    /// `RENAME_TIMEOUT` sweep for both rename slots — flashes "server did
+    /// not answer".
+    fn check_lsp_rename_deadlines(&mut self) {
+        self.sweep_lsp_feature_deadlines::<PendingPrepareRename>();
+        self.sweep_lsp_feature_deadlines::<PendingRename>();
+    }
+
     /// Fires `REFERENCES_TIMEOUT` UI-level abandonment for references
     /// requests a server never answered — mirrors
     /// `check_lsp_definition_deadlines`.
@@ -4496,6 +4725,7 @@ impl ApplicationHandler for App {
         self.check_lsp_definition_deadlines();
         self.check_lsp_hover_deadlines();
         self.check_lsp_signature_help_deadlines();
+        self.check_lsp_rename_deadlines();
         self.check_lsp_references_deadlines();
         self.check_lsp_completion_debounces();
         self.check_lsp_completion_deadlines();
@@ -4556,6 +4786,15 @@ impl ApplicationHandler for App {
         }
         if let Some(earliest_deadline) = self.lsp.signature_help.earliest_deadline() {
             next_wake = next_wake.min(earliest_deadline);
+        }
+        for deadline in [
+            self.lsp.prepare_rename.earliest_deadline(),
+            self.lsp.rename.earliest_deadline(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            next_wake = next_wake.min(deadline);
         }
         if let Some(earliest_deadline) = self.lsp.references.earliest_deadline() {
             next_wake = next_wake.min(earliest_deadline);

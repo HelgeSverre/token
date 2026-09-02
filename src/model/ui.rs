@@ -91,6 +91,9 @@ pub enum ModalId {
     /// "Set Language..." picker — one row per `syntax::registry::ALL_LANGUAGES`
     /// entry, pins the chosen language on the focused document.
     LanguagePicker,
+    /// Rename Symbol prompt (Shift+F6) — opened by `LspMsg::RenameSymbol`
+    /// only; it needs the caret context captured at request time.
+    RenameSymbol,
 }
 
 /// Palette/pickers cap at 10 visible rows (overlay-surface.md Visual
@@ -249,6 +252,42 @@ impl GotoLineState {
     /// Set the input text (replaces content)
     pub fn set_input(&mut self, text: &str) {
         self.editable.set_content(text);
+    }
+}
+
+/// State for the Rename Symbol prompt: a single-line input prefilled with
+/// the placeholder (selected, so typing replaces it) plus the document
+/// context the `textDocument/rename` request must carry.
+#[derive(Debug, Clone)]
+pub struct RenameSymbolState {
+    pub editable: EditableState<StringBuffer>,
+    pub placeholder: String,
+    pub document_id: crate::model::editor_area::DocumentId,
+    pub revision: u64,
+    pub position: crate::model::editor::Position,
+}
+
+impl RenameSymbolState {
+    pub fn new(
+        placeholder: String,
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        position: crate::model::editor::Position,
+    ) -> Self {
+        let mut editable = EditableState::new(StringBuffer::new(), EditConstraints::single_line());
+        editable.set_content(&placeholder);
+        editable.select_all();
+        Self {
+            editable,
+            placeholder,
+            document_id,
+            revision,
+            position,
+        }
+    }
+
+    pub fn input(&self) -> String {
+        self.editable.text()
     }
 }
 
@@ -618,6 +657,7 @@ pub enum ModalState {
     RecentFiles(RecentFilesState),
     LspServers(LspServersState),
     LanguagePicker(LanguagePickerState),
+    RenameSymbol(RenameSymbolState),
 }
 
 impl ModalState {
@@ -632,6 +672,7 @@ impl ModalState {
             ModalState::RecentFiles(_) => ModalId::RecentFiles,
             ModalState::LspServers(_) => ModalId::LspServers,
             ModalState::LanguagePicker(_) => ModalId::LanguagePicker,
+            ModalState::RenameSymbol(_) => ModalId::RenameSymbol,
         }
     }
 }

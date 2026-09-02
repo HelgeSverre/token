@@ -105,6 +105,10 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                     ModalState::CommandPalette(state)
                 }
                 ModalId::GotoLine => ModalState::GotoLine(GotoLineState::default()),
+                // Needs the caret context captured at request time.
+                ModalId::RenameSymbol => {
+                    return crate::update::update_lsp(model, crate::messages::LspMsg::RenameSymbol)
+                }
                 ModalId::FindReplace => {
                     let state = model.ui.last_find_replace.clone().unwrap_or_default();
                     ModalState::FindReplace(state)
@@ -270,6 +274,7 @@ fn modal_editable_mut(modal: &mut ModalState) -> Option<&mut EditableState<Strin
     match modal {
         ModalState::CommandPalette(state) => Some(&mut state.editable),
         ModalState::GotoLine(state) => Some(&mut state.editable),
+        ModalState::RenameSymbol(state) => Some(&mut state.editable),
         ModalState::FindReplace(state) => Some(state.focused_editable_mut()),
         ModalState::ThemePicker(_) => None,
         ModalState::FileFinder(state) => Some(&mut state.editable),
@@ -299,6 +304,7 @@ fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
         ModalState::FileFinder(state) => update_file_finder_results(state),
         ModalState::RecentFiles(state) => resolve_recent_rows(state),
         ModalState::GotoLine(_)
+        | ModalState::RenameSymbol(_)
         | ModalState::FindReplace(_)
         | ModalState::ThemePicker(_)
         | ModalState::LspServers(_)
@@ -349,6 +355,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                 match modal {
                     ModalState::CommandPalette(state) => state.set_input(&text),
                     ModalState::GotoLine(state) => state.set_input(&text),
+                    ModalState::RenameSymbol(state) => state.editable.set_content(&text),
                     ModalState::FindReplace(state) => state.set_query(&text),
                     ModalState::ThemePicker(_) => {} // No text input for theme picker
                     ModalState::FileFinder(state) => state.set_input(&text),
@@ -903,7 +910,7 @@ fn set_modal_selected_index(modal: &mut ModalState, row: usize) {
         ModalState::LanguagePicker(state) => {
             state.selected_index = row.min(LanguageId::all().count())
         }
-        ModalState::GotoLine(_) | ModalState::FindReplace(_) => {}
+        ModalState::GotoLine(_) | ModalState::RenameSymbol(_) | ModalState::FindReplace(_) => {}
     }
 }
 
@@ -917,6 +924,23 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
     if let Some(modal) = modal {
         match modal {
             ModalState::CommandPalette(state) => confirm_search_everywhere(model, state),
+            ModalState::RenameSymbol(state) => {
+                model.ui.close_modal();
+                let new_name = state.input();
+                if new_name.is_empty() || new_name == state.placeholder {
+                    return Some(Cmd::Redraw);
+                }
+                let doc = model.editor_area.documents.get(&state.document_id)?;
+                Some(Cmd::Batch(vec![
+                    Cmd::Redraw,
+                    Cmd::LspRequestRename {
+                        document_id: state.document_id,
+                        position: crate::lsp::position_to_lsp(doc, state.position),
+                        revision: state.revision,
+                        new_name,
+                    },
+                ]))
+            }
             ModalState::GotoLine(state) => {
                 // Parse line:col or just line format
                 let input_text = state.input();
@@ -1368,7 +1392,7 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
             );
             None
         }
-        ModalState::GotoLine(_) | ModalState::FindReplace(_) => None,
+        ModalState::GotoLine(_) | ModalState::RenameSymbol(_) | ModalState::FindReplace(_) => None,
     };
     if let Some(theme_id) = preview_theme_id {
         if let Ok(theme) = load_theme(&theme_id) {
@@ -1466,7 +1490,7 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
                 forward,
             );
         }
-        ModalState::GotoLine(_) | ModalState::FindReplace(_) => {}
+        ModalState::GotoLine(_) | ModalState::RenameSymbol(_) | ModalState::FindReplace(_) => {}
     }
     Some(Cmd::Redraw)
 }
@@ -1505,7 +1529,9 @@ fn modal_scroll(model: &mut AppModel, delta: isize) -> Option<Cmd> {
         ModalState::LanguagePicker(state) => {
             (&mut state.scroll_offset, language_picker_shapes().to_vec())
         }
-        ModalState::GotoLine(_) | ModalState::FindReplace(_) => return None,
+        ModalState::GotoLine(_) | ModalState::RenameSymbol(_) | ModalState::FindReplace(_) => {
+            return None
+        }
     };
     let total: usize = shapes.iter().map(|s| s.len).sum();
     if total == 0 {

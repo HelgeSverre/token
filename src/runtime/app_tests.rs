@@ -4061,3 +4061,163 @@ fn a_signature_help_request_arms_the_slot_and_its_sweep_clears_it_silently() {
     );
     handle.kill();
 }
+
+fn rename_capable_app(
+    prepare_provider: Option<bool>,
+    root: &str,
+) -> (
+    App,
+    token::model::editor_area::DocumentId,
+    LspServerId,
+    PathBuf,
+) {
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    let doc_id = app.model.document().id.unwrap();
+    let server_id = LspServerId::from("rust-analyzer");
+    let root = PathBuf::from(root);
+    let uri = lsp::path_to_uri(&root.join("main.rs"));
+    install_open_document(&mut app, doc_id, &server_id, &root, uri);
+    let handle = spawn_fake_handle(&server_id);
+    *handle.capabilities.lock().unwrap() = Some(lsp_types::ServerCapabilities {
+        rename_provider: Some(lsp_types::OneOf::Right(lsp_types::RenameOptions {
+            prepare_provider,
+            work_done_progress_options: Default::default(),
+        })),
+        ..Default::default()
+    });
+    app.lsp
+        .servers
+        .insert((server_id.clone(), root.clone()), handle);
+    (app, doc_id, server_id, root)
+}
+
+/// A prepareRename request arms its slot; past its deadline it is
+/// abandoned server-side and the status bar says so.
+#[test]
+fn a_prepare_rename_request_arms_the_slot_and_its_timeout_flashes_a_status() {
+    let (mut app, doc_id, server_id, root) =
+        rename_capable_app(Some(true), "/tmp/proj-rename-timeout");
+    let revision = app.model.document().revision;
+
+    app.request_lsp_prepare_rename(
+        doc_id,
+        lsp_types::Position {
+            line: 0,
+            character: 0,
+        },
+        test_cursor(&app),
+        revision,
+        "main".to_owned(),
+    );
+    let key = app.lsp.prepare_rename.by_doc.get(&doc_id).cloned().unwrap();
+    assert!(app.lsp.prepare_rename.deadlines.contains_key(&key));
+    assert!(app.model.ui.active_modal.is_none(), "waits for the reply");
+
+    app.lsp
+        .prepare_rename
+        .deadlines
+        .insert(key.clone(), Instant::now() - Duration::from_secs(1));
+    app.check_lsp_rename_deadlines();
+
+    assert!(app.lsp.prepare_rename.requests.is_empty());
+    assert_eq!(
+        app.model
+            .ui
+            .transient_message
+            .as_ref()
+            .map(|t| t.text.as_str()),
+        Some("Rename: server did not answer")
+    );
+    let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+    assert!(
+        handle
+            .pending
+            .lock()
+            .unwrap()
+            .resolve(key.2)
+            .unwrap()
+            .abandoned
+    );
+    handle.kill();
+}
+
+/// A server with `renameProvider` but no `prepareProvider` skips the
+/// round trip: the prompt opens right away with the caret word.
+#[test]
+fn a_server_without_prepare_rename_opens_the_prompt_directly() {
+    let (mut app, doc_id, server_id, root) = rename_capable_app(None, "/tmp/proj-rename-noprepare");
+    let revision = app.model.document().revision;
+
+    app.request_lsp_prepare_rename(
+        doc_id,
+        lsp_types::Position {
+            line: 0,
+            character: 0,
+        },
+        test_cursor(&app),
+        revision,
+        "main".to_owned(),
+    );
+
+    assert!(app.lsp.prepare_rename.requests.is_empty());
+    let Some(token::model::ModalState::RenameSymbol(state)) = &app.model.ui.active_modal else {
+        panic!(
+            "expected the rename prompt, got {:?}",
+            app.model.ui.active_modal
+        );
+    };
+    assert_eq!(state.input(), "main");
+    let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+    handle.kill();
+}
+
+/// A `Range` prepareRename reply has no placeholder text of its own — the
+/// interception pass reads it from the document buffer.
+#[test]
+fn a_range_prepare_rename_reply_reads_the_placeholder_from_the_buffer() {
+    let (mut app, doc_id, server_id, root) =
+        rename_capable_app(Some(true), "/tmp/proj-rename-range");
+    app.process_automation_msg(Msg::Document(token::messages::DocumentMsg::InsertText(
+        "fn main() {}".to_owned(),
+    )));
+    let revision = app.model.document().revision;
+    let cursor = test_cursor(&app);
+    let request_id = app
+        .lsp
+        .servers
+        .get(&(server_id.clone(), root.clone()))
+        .unwrap()
+        .begin_request("textDocument/prepareRename", serde_json::json!({}));
+    let key = (server_id.clone(), root.clone(), request_id);
+    app.lsp.prepare_rename.insert(
+        key.clone(),
+        doc_id,
+        PendingPrepareRename {
+            document_id: doc_id,
+            revision,
+            cursor,
+            fallback: String::new(),
+        },
+    );
+
+    let out =
+        app.intercept_rename_replies(vec![Msg::Lsp(LspMsg::PrepareRenameResponseFromServer {
+            server_id: server_id.clone(),
+            root: root.clone(),
+            request_id,
+            response: Some(lsp_types::PrepareRenameResponse::Range(
+                lsp_types::Range::new(
+                    lsp_types::Position::new(0, 3),
+                    lsp_types::Position::new(0, 7),
+                ),
+            )),
+            abandoned: false,
+        })]);
+
+    assert!(matches!(
+        &out[..],
+        [Msg::Lsp(LspMsg::PrepareRenameResolved { placeholder: Some(p), .. })] if p == "main"
+    ));
+    let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+    handle.kill();
+}

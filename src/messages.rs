@@ -1146,6 +1146,45 @@ pub enum LspMsg {
         abandoned: bool,
     },
 
+    // ==== Rename symbol ====
+    /// User intent (Shift+F6 / palette): rename the symbol under the caret.
+    /// Runs `textDocument/prepareRename` first when the server supports
+    /// it, otherwise prompts with the word under the caret.
+    RenameSymbol,
+    /// Runtime -> update: a `textDocument/prepareRename` reply reduced to
+    /// the placeholder text (`None` = cannot rename here). Opens the
+    /// prompt modal, revision-guarded.
+    PrepareRenameResolved {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        cursor: crate::model::editor::Position,
+        placeholder: Option<String>,
+    },
+    /// Worker -> runtime only: the raw `textDocument/prepareRename`
+    /// response, keyed like `HoverResponseFromServer`.
+    PrepareRenameResponseFromServer {
+        server_id: LspServerId,
+        root: std::path::PathBuf,
+        request_id: i64,
+        response: Option<lsp_types::PrepareRenameResponse>,
+        abandoned: bool,
+    },
+    /// Runtime -> update: a `textDocument/rename` reply. Revision-guarded;
+    /// the edit is applied through `apply_workspace_edit`.
+    RenameResolved {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        edit: Option<Box<lsp_types::WorkspaceEdit>>,
+    },
+    /// Worker -> runtime only: the raw `textDocument/rename` response.
+    RenameResponseFromServer {
+        server_id: LspServerId,
+        root: std::path::PathBuf,
+        request_id: i64,
+        edit: Option<Box<lsp_types::WorkspaceEdit>>,
+        abandoned: bool,
+    },
+
     // ==== Show Usages / Find Usages (lsp-integration.md, references) ====
     /// User intent (Alt+F7 / Alt+Cmd+F7 / palette). `update_lsp` reads the
     /// focused document + cursor synchronously and captures

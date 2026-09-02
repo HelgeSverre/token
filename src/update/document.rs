@@ -92,7 +92,7 @@ pub(crate) fn word_start_before(buffer: &ropey::Rope, offset: usize) -> usize {
 ///
 /// Uses direct character indexing instead of collecting to String/Vec to avoid
 /// allocating the entire document suffix (which could be megabytes for large files).
-fn word_end_after(buffer: &ropey::Rope, offset: usize) -> usize {
+pub(crate) fn word_end_after(buffer: &ropey::Rope, offset: usize) -> usize {
     let len = buffer.len_chars();
     if offset >= len {
         return len;
