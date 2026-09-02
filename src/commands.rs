@@ -82,6 +82,7 @@ pub enum CommandId {
     ToggleTerminal,
     ToggleOutline,
     ToggleProblems,
+    ToggleProblemsScope,
     CloseFocusedDock,
 
     // File path operations
@@ -394,6 +395,12 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: Some("⌘4"),
     },
     CommandDef {
+        id: CommandId::ToggleProblemsScope,
+        category: CommandCategory::Panel,
+        label: "Problems: Toggle Current File Only",
+        keybinding: None,
+    },
+    CommandDef {
         id: CommandId::CloseFocusedDock,
         category: CommandCategory::Panel,
         label: "View: Close Panel",
@@ -559,6 +566,7 @@ impl CommandId {
             CommandId::ToggleTerminal => Some(KeymapCommand::ToggleTerminal),
             CommandId::ToggleOutline => Some(KeymapCommand::ToggleOutline),
             CommandId::ToggleProblems => Some(KeymapCommand::ToggleProblems),
+            CommandId::ToggleProblemsScope => None,
             CommandId::CloseFocusedDock => Some(KeymapCommand::CloseFocusedDock),
             CommandId::RevealInFinder => None,
             CommandId::RevealInSidebar => Some(KeymapCommand::RevealInSidebar),

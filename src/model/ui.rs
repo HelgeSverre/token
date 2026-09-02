@@ -929,7 +929,7 @@ impl OutlinePanelState {
 }
 
 /// UI state for the Problems panel (mirrors `OutlinePanelState`).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ProblemsPanelState {
     /// Index into the flat `problems_rows()` list.
     pub selected_index: Option<usize>,
@@ -937,6 +937,20 @@ pub struct ProblemsPanelState {
     pub scroll_offset: usize,
     /// Collapsed file groups.
     pub collapsed: std::collections::HashSet<std::path::PathBuf>,
+    /// Scope: only the focused document's diagnostics (default) or every
+    /// file in `model.lsp.diagnostics`.
+    pub current_file_only: bool,
+}
+
+impl Default for ProblemsPanelState {
+    fn default() -> Self {
+        Self {
+            selected_index: None,
+            scroll_offset: 0,
+            collapsed: Default::default(),
+            current_file_only: true,
+        }
+    }
 }
 
 /// UI state - status messages and cursor animation

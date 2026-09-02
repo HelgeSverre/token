@@ -229,7 +229,11 @@ fn declare_dock(
                             ..Default::default()
                         },
                         |t| {
-                            t.text(None, panel_id.display_name(), row_style);
+                            t.text(
+                                None,
+                                crate::view::panels::dock_tab_title(model, panel_id),
+                                row_style,
+                            );
                         },
                     );
                 }

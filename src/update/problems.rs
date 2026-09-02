@@ -31,9 +31,11 @@ pub enum ProblemsRow {
 /// never re-derive independently (same rule outline's
 /// `visible_tree_row_at_index` follows).
 ///
-/// File-context specific (JetBrains "Current File"): only the focused
-/// document's diagnostics are listed; an untitled focused doc lists
-/// nothing. `severity_counts` stays workspace-wide for the status bar.
+/// With `current_file_only` (the default, JetBrains "Current File") only
+/// the focused document's diagnostics are listed; an untitled focused doc
+/// lists nothing. Workspace-wide, the focused file's group comes first,
+/// then the rest in path order. `severity_counts` stays workspace-wide
+/// for the status bar.
 pub fn problems_rows(model: &AppModel) -> Vec<ProblemsRow> {
     let mut rows = Vec::new();
     for (path, diagnostics) in problem_groups(model) {
@@ -74,24 +76,48 @@ fn is_same_file(path: &Path, focused: Option<&Path>) -> bool {
 }
 
 /// The shared group traversal behind materialized rows and layout row
-/// counts. Keeping the current-file predicate here prevents rendering,
+/// counts. Keeping the scope predicate here prevents rendering,
 /// hit-testing, and update-layer capacity from drifting apart.
-fn problem_groups(model: &AppModel) -> impl Iterator<Item = (&PathBuf, &[lsp_types::Diagnostic])> {
+fn problem_groups(model: &AppModel) -> Vec<(&PathBuf, &[lsp_types::Diagnostic])> {
     let focused_path = model.document().file_path.as_deref();
-    model
+    let (mut focused, rest): (Vec<_>, Vec<_>) = model
         .lsp
         .diagnostics
         .iter()
-        .filter_map(move |(path, diagnostics)| {
-            (!diagnostics.is_empty() && is_same_file(path, focused_path))
-                .then_some((path, diagnostics.as_slice()))
-        })
+        .filter(|(_, diagnostics)| !diagnostics.is_empty())
+        .map(|(path, diagnostics)| (path, diagnostics.as_slice()))
+        .partition(|(path, _)| is_same_file(path, focused_path));
+    if !model.problems_panel.current_file_only {
+        focused.extend(rest);
+    }
+    focused
+}
+
+/// Dock tab title: plain "Problems" in current-file scope, with the
+/// listed file count when workspace-wide so the scope is visible.
+pub fn problems_panel_title(model: &AppModel) -> String {
+    if model.problems_panel.current_file_only {
+        return "Problems".to_owned();
+    }
+    let files = problem_groups(model).len();
+    let noun = if files == 1 { "file" } else { "files" };
+    format!("Problems \u{b7} {files} {noun}")
+}
+
+/// Empty-state text, scoped like the rows.
+pub fn problems_empty_text(model: &AppModel) -> &'static str {
+    if model.problems_panel.current_file_only {
+        "No problems in this file"
+    } else {
+        "No problems"
+    }
 }
 
 /// Row count of `problems_rows` without materializing the rows (no
 /// `PathBuf` clones) — feeds the chrome layout's `RowList` declaration.
 pub fn problems_row_count(model: &AppModel) -> usize {
     problem_groups(model)
+        .into_iter()
         .map(|(path, diagnostics)| {
             if model.problems_panel.collapsed.contains(path) {
                 1
@@ -233,6 +259,12 @@ pub fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<Cmd> {
             }
         }
 
+        ProblemsMsg::ToggleScope => {
+            model.problems_panel.current_file_only = !model.problems_panel.current_file_only;
+            clamp_problems_selection(model);
+            Some(Cmd::Redraw)
+        }
+
         ProblemsMsg::Scroll { lines } => {
             let offset = model.problems_panel.scroll_offset;
             model.problems_panel.scroll_offset = if lines < 0 {
@@ -346,6 +378,71 @@ mod tests {
             &rows[0],
             ProblemsRow::File { path, count: 1, .. } if path == &PathBuf::from("/proj/b.rs")
         ));
+    }
+
+    /// Workspace-wide scope lists every file, focused group first, then
+    /// the rest in path order — b.rs is focused here so path order alone
+    /// would put a.rs first.
+    #[test]
+    fn toggle_scope_lists_every_file_with_the_focused_one_first() {
+        let mut model = model_with_open_problems_panel();
+        populate_two_files(&mut model);
+        model.document_mut().file_path = Some(PathBuf::from("/proj/b.rs"));
+        assert!(model.problems_panel.current_file_only);
+        assert_eq!(problems_rows(&model).len(), 2);
+        assert_eq!(problems_panel_title(&model), "Problems");
+
+        update_problems(&mut model, ProblemsMsg::ToggleScope);
+
+        assert!(!model.problems_panel.current_file_only);
+        let rows = problems_rows(&model);
+        assert_eq!(rows.len(), 5);
+        assert!(matches!(
+            &rows[0],
+            ProblemsRow::File { path, count: 1, .. } if path == &PathBuf::from("/proj/b.rs")
+        ));
+        assert!(matches!(
+            &rows[2],
+            ProblemsRow::File { path, count: 2, .. } if path == &PathBuf::from("/proj/a.rs")
+        ));
+        assert_eq!(problems_row_count(&model), 5);
+        assert_eq!(problems_panel_title(&model), "Problems \u{b7} 2 files");
+        assert_eq!(problems_empty_text(&model), "No problems");
+
+        // Toggling back re-clamps a selection that only existed workspace-wide.
+        model.problems_panel.selected_index = Some(4);
+        update_problems(&mut model, ProblemsMsg::ToggleScope);
+        assert!(model.problems_panel.current_file_only);
+        assert_eq!(model.problems_panel.selected_index, Some(1));
+    }
+
+    #[test]
+    fn open_selected_workspace_wide_jumps_to_the_other_file() {
+        let mut model = model_with_open_problems_panel();
+        let dir = std::env::temp_dir().join("problems-panel-scope-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let focused = dir.join("focused.rs");
+        let other = dir.join("other.rs");
+        std::fs::write(&focused, "x\n").unwrap();
+        std::fs::write(&other, "line0\nline1\nline2\n").unwrap();
+        crate::update::layout::update_layout(
+            &mut model,
+            crate::messages::LayoutMsg::OpenFileInNewTab(focused.clone()),
+        );
+        model.lsp.diagnostics.insert(
+            other.clone(),
+            vec![diagnostic(2, lsp_types::DiagnosticSeverity::ERROR, "boom")],
+        );
+        assert!(problems_rows(&model).is_empty());
+
+        update_problems(&mut model, ProblemsMsg::ToggleScope);
+        model.problems_panel.selected_index = Some(1); // other.rs's diagnostic row
+        update_problems(&mut model, ProblemsMsg::OpenSelected);
+
+        assert_eq!(model.document().file_path.as_deref(), Some(other.as_path()));
+        assert_eq!(model.editor().active_cursor().line, 2);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

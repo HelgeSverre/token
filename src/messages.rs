@@ -698,6 +698,8 @@ pub enum ProblemsMsg {
     ToggleGroup,
     /// Enter on a Diagnostic row: jump to its location.
     OpenSelected,
+    /// Flip `current_file_only` (focused file vs workspace-wide).
+    ToggleScope,
     /// Scroll the panel.
     Scroll { lines: i32 },
     /// Click on a row in the panel. `on_chevron` mirrors outline's

@@ -18,7 +18,7 @@ enum DockContentKind {
 /// One dock tab resolved from the chrome snapshot: its box, its text
 /// origin (the tab's padded content box), and its title.
 struct DockTabScene {
-    title: &'static str,
+    title: String,
     rect: Rect,
     text_pos: (usize, usize),
     is_active: bool,
@@ -78,7 +78,7 @@ impl DockPaneScene {
                 let node = chrome.node(UiKey::DockTab(position, panel_id))?;
                 let (tx, ty, _, _) = snap(node.content_rect);
                 Some(DockTabScene {
-                    title: panel_id.display_name(),
+                    title: dock_tab_title(model, panel_id),
                     rect: node.rect,
                     text_pos: (tx, ty),
                     is_active: active_index == Some(index),
@@ -215,7 +215,7 @@ impl DockPaneScene {
             } else {
                 self.text_color
             };
-            painter.draw(frame, tab.text_pos.0, tab.text_pos.1, tab.title, fg);
+            painter.draw(frame, tab.text_pos.0, tab.text_pos.1, &tab.title, fg);
         }
         frame.pop_clip();
     }
@@ -537,6 +537,16 @@ pub fn render_outline_panel(
     );
 }
 
+/// Dock tab title — `display_name` except Problems, whose title carries
+/// the workspace-wide scope. Shared with the chrome layout so measured
+/// and painted text agree.
+pub fn dock_tab_title(model: &AppModel, panel_id: crate::panel::PanelId) -> String {
+    match panel_id {
+        crate::panel::PanelId::Problems => crate::update::problems::problems_panel_title(model),
+        other => other.display_name().to_owned(),
+    }
+}
+
 /// Render the Problems panel: collapsible per-file groups over
 /// `model.lsp.diagnostics`, `problems_rows(model)` as the single ordering
 /// authority (view, keyboard nav, and click hit-mapping all consume it).
@@ -566,7 +576,7 @@ pub fn render_problems_panel(
     let rows = problems_rows(model);
 
     if rows.is_empty() {
-        let msg = "No problems in this file";
+        let msg = crate::update::problems::problems_empty_text(model);
         let char_width = painter.char_width();
         let text_width = msg.chars().count() as f32 * char_width;
         let text_x = content_rect.x + (content_rect.width - text_width) / 2.0;
