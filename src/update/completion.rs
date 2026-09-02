@@ -776,7 +776,11 @@ fn apply_lsp_accept(model: &mut AppModel, data: &LspInsert) -> Option<Cmd> {
     model.document_mut().buffer.remove(adj_start..adj_cursor);
     model.document_mut().buffer.insert(adj_start, &primary_text);
 
-    let new_offset = adj_start + primary_text.chars().count();
+    let inserted_len = primary_text.chars().count();
+    let new_offset = adj_start
+        + data
+            .caret_offset
+            .map_or(inserted_len, |off| off.min(inserted_len));
     let (new_line, new_col) = model.document().offset_to_cursor(new_offset);
     operations.push(EditOperation::Replace {
         position: adj_start,
@@ -1195,6 +1199,7 @@ mod tests {
                 resolved: false,
                 text_edit: None,
                 additional_text_edits: Vec::new(),
+                caret_offset: None,
             })),
             kind: MenuItemKind::Function,
             source: MenuSourceId::Lsp,
@@ -1680,6 +1685,39 @@ mod tests {
         let line = model.document().get_line_cow(1).unwrap();
         assert_eq!(line.trim_end_matches('\n'), "self.bar");
         assert_eq!(model.editor().cursors[0].column, "self.bar".len());
+    }
+
+    #[test]
+    fn accepting_a_snippet_item_places_the_caret_at_its_caret_offset() {
+        let mut model = model_with_text("vector_value\n\n");
+        place_cursor(&mut model, 1, 0);
+        type_str(&mut model, "va");
+        let state = model.ui.completion_menu.clone().expect("menu open");
+        let mut item = lsp_item("vacuum");
+        if let MenuInsert::Lsp(data) = &mut item.insert {
+            // `println!("$0")` as conversion leaves it.
+            data.text = "println!(\"\")".to_owned();
+            data.caret_offset = Some(10);
+        }
+        merge_lsp_completion(
+            &mut model,
+            state.document_id,
+            state.revision,
+            vec![item],
+            false,
+        )
+        .expect("merge redraws");
+        select_item(&mut model, "vacuum");
+
+        update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+
+        let line = model.document().get_line_cow(1).unwrap();
+        assert_eq!(line.trim_end_matches('\n'), "println!(\"\")");
+        assert_eq!(
+            model.editor().cursors[0].column,
+            10,
+            "caret between the quotes"
+        );
     }
 
     #[test]

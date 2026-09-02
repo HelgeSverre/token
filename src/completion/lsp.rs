@@ -46,7 +46,7 @@ fn completion_item_to_menu_item(
     // `CompletionItem` isn't `Clone`.
     let raw = std::sync::Arc::new(serde_json::to_value(&item).unwrap_or(serde_json::Value::Null));
 
-    let text_edit = match item.text_edit {
+    let mut text_edit = match item.text_edit {
         Some(lsp_types::CompletionTextEdit::Edit(edit)) => Some((edit.range, edit.new_text)),
         // InsertAndReplace (3.16) — we advertise no support for it; use
         // the insert half rather than dropping the item outright.
@@ -59,12 +59,26 @@ fn completion_item_to_menu_item(
     let lsp_types::CompletionItem {
         label,
         filter_text,
-        insert_text,
+        mut insert_text,
+        insert_text_format,
         kind,
         detail,
         sort_text,
         ..
     } = item;
+
+    // We advertise `snippetSupport: false`, but rust-analyzer still sends
+    // snippet bodies. Insert readable text; the caret lands at `$0`. The
+    // primary text (`textEdit` if present) decides the caret.
+    let mut caret_offset = None;
+    if insert_text_format == Some(lsp_types::InsertTextFormat::SNIPPET) {
+        if let Some(text) = insert_text.as_mut() {
+            (*text, caret_offset) = strip_snippet(text);
+        }
+        if let Some((_, text)) = text_edit.as_mut() {
+            (*text, caret_offset) = strip_snippet(text);
+        }
+    }
 
     let text = insert_text.or_else(|| text_edit.as_ref().map(|(_, new_text)| new_text.clone()));
     if label.is_empty() && text.is_none() {
@@ -90,12 +104,116 @@ fn completion_item_to_menu_item(
             resolved: false,
             text_edit,
             additional_text_edits: Vec::new(),
+            caret_offset,
         })),
         kind: map_kind(kind),
         source: MenuSourceId::Lsp,
         detail,
         sort_text,
     })
+}
+
+/// Flattens an LSP snippet body to plain text: `$n`/`${n}` vanish,
+/// `${n:text}` keeps `text` (nested placeholders stripped), `${n|a,b|}`
+/// keeps the first choice, `\$` `\}` `\\` unescape. Returns the char
+/// offset (in the output) of the first `$0`, if any. Malformed input is
+/// passed through verbatim — never panics, never drops text.
+pub(crate) fn strip_snippet(body: &str) -> (String, Option<usize>) {
+    let chars: Vec<char> = body.chars().collect();
+    let mut out = String::with_capacity(body.len());
+    let mut caret = None;
+    strip_into(&chars, &mut out, &mut caret);
+    (out, caret)
+}
+
+fn strip_into(chars: &[char], out: &mut String, caret: &mut Option<usize>) {
+    let mut i = 0;
+    while i < chars.len() {
+        let next = chars.get(i + 1).copied();
+        match (chars[i], next) {
+            ('\\', Some(c @ ('$' | '}' | '\\'))) => {
+                out.push(c);
+                i += 2;
+            }
+            ('$', Some(d)) if d.is_ascii_digit() => {
+                let end = digits_end(chars, i + 1);
+                if is_zero(&chars[i + 1..end]) {
+                    caret.get_or_insert_with(|| out.chars().count());
+                }
+                i = end;
+            }
+            ('$', Some('{')) => match braced_end(chars, i + 2) {
+                Some(close) if strip_placeholder(&chars[i + 2..close], out, caret) => {
+                    i = close + 1;
+                }
+                _ => {
+                    out.push('$');
+                    i += 1;
+                }
+            },
+            (c, _) => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+}
+
+/// Body between `${` and its `}`: `n`, `n:text`, or `n|a,b|`. Returns
+/// `false` when it isn't a numbered placeholder so the caller can pass the
+/// text through verbatim.
+fn strip_placeholder(inner: &[char], out: &mut String, caret: &mut Option<usize>) -> bool {
+    let end = digits_end(inner, 0);
+    if end == 0 {
+        return false;
+    }
+    match inner.get(end) {
+        None => {
+            if is_zero(&inner[..end]) {
+                caret.get_or_insert_with(|| out.chars().count());
+            }
+        }
+        Some(':') => strip_into(&inner[end + 1..], out, caret),
+        Some('|') => {
+            let first: String = inner[end + 1..]
+                .iter()
+                .take_while(|c| !matches!(c, ',' | '|'))
+                .collect();
+            out.push_str(&first);
+        }
+        Some(_) => return false,
+    }
+    true
+}
+
+fn digits_end(chars: &[char], start: usize) -> usize {
+    start
+        + chars[start..]
+            .iter()
+            .take_while(|c| c.is_ascii_digit())
+            .count()
+}
+
+fn is_zero(digits: &[char]) -> bool {
+    digits.iter().all(|c| *c == '0')
+}
+
+/// Index of the `}` closing a `${` whose body starts at `start`, honouring
+/// nesting and backslash escapes. `None` when unterminated.
+fn braced_end(chars: &[char], start: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut i = start;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => i += 1,
+            '{' => depth += 1,
+            '}' if depth == 0 => return Some(i),
+            '}' => depth -= 1,
+            _ => {}
+        }
+        i += 1;
+    }
+    None
 }
 
 /// Maps the (open-ended) `CompletionItemKind` enum onto the menu's coarse
@@ -220,6 +338,67 @@ mod tests {
     fn items_without_label_or_text_are_dropped() {
         let item = lsp_types::CompletionItem::default();
         assert!(convert(item).is_none());
+    }
+
+    #[test]
+    fn snippet_items_are_stripped_and_carry_the_caret() {
+        let mut item = base_item("vec!");
+        item.insert_text = Some("vec![$0]".to_owned());
+        item.insert_text_format = Some(lsp_types::InsertTextFormat::SNIPPET);
+        let MenuInsert::Lsp(insert) = convert(item).unwrap().insert else {
+            panic!("expected LSP insert");
+        };
+        assert_eq!(insert.text, "vec![]");
+        assert_eq!(insert.caret_offset, Some(5));
+
+        let mut plain = base_item("price");
+        plain.insert_text = Some("$price".to_owned());
+        plain.insert_text_format = Some(lsp_types::InsertTextFormat::PLAIN_TEXT);
+        let MenuInsert::Lsp(insert) = convert(plain).unwrap().insert else {
+            panic!("expected LSP insert");
+        };
+        assert_eq!(insert.text, "$price");
+        assert_eq!(insert.caret_offset, None);
+    }
+
+    #[test]
+    fn strip_snippet_leaves_plain_text_alone() {
+        assert_eq!(strip_snippet("foo(a)"), ("foo(a)".to_owned(), None));
+    }
+
+    #[test]
+    fn strip_snippet_flattens_placeholders_and_records_the_caret() {
+        assert_eq!(
+            strip_snippet("foo(${1:a}, ${2:b})$0"),
+            ("foo(a, b)".to_owned(), Some(9))
+        );
+        assert_eq!(strip_snippet("f($1, ${2})"), ("f(, )".to_owned(), None));
+        // First `$0` wins.
+        assert_eq!(strip_snippet("${0}x$0"), ("x".to_owned(), Some(0)));
+    }
+
+    #[test]
+    fn strip_snippet_takes_the_first_choice() {
+        assert_eq!(strip_snippet("${1|x,y|}"), ("x".to_owned(), None));
+    }
+
+    #[test]
+    fn strip_snippet_recurses_into_nested_placeholders() {
+        assert_eq!(strip_snippet("${1:${2:x}}"), ("x".to_owned(), None));
+        assert_eq!(strip_snippet("${1:a$0b}"), ("ab".to_owned(), Some(1)));
+    }
+
+    #[test]
+    fn strip_snippet_unescapes() {
+        assert_eq!(strip_snippet(r"\$1 \} \\"), (r"$1 } \".to_owned(), None));
+    }
+
+    #[test]
+    fn strip_snippet_passes_malformed_input_through() {
+        assert_eq!(strip_snippet("${1:"), ("${1:".to_owned(), None));
+        assert_eq!(strip_snippet("${foo}"), ("${foo}".to_owned(), None));
+        assert_eq!(strip_snippet("a}b{"), ("a}b{".to_owned(), None));
+        assert_eq!(strip_snippet("$"), ("$".to_owned(), None));
     }
 
     #[test]

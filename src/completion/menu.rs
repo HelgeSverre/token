@@ -94,6 +94,9 @@ pub struct LspInsert {
     /// trip added (ts-ls auto-imports live here). Absolute ranges, applied
     /// atomically with the primary edit as one undo step.
     pub additional_text_edits: Vec<(lsp_types::Range, String)>,
+    /// Char offset within the primary inserted text where the caret lands
+    /// after accept — the snippet's `$0`. `None`: after the text.
+    pub caret_offset: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
