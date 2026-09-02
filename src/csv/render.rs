@@ -94,7 +94,7 @@ impl CsvRenderLayout {
 
         for col in csv.viewport.left_col..csv.column_widths.len() {
             let col_width_chars = csv.column_widths.get(col).copied().unwrap_or(10);
-            let col_width_px = ((col_width_chars as f32 * char_width) + 12.0).ceil() as usize; // padding
+            let col_width_px = column_width_px(col_width_chars, char_width);
 
             if x + col_width_px > grid_w && !visible_columns.is_empty() {
                 break; // Stop when overflow
@@ -143,6 +143,13 @@ impl CsvRenderLayout {
             line_height as f32,
         ))
     }
+}
+
+/// Pixel width of a column `width_chars` wide: the glyph run plus cell
+/// padding. The one formula behind the grid layout and the cell editor's
+/// scroll math.
+pub fn column_width_px(width_chars: usize, char_width: f32) -> usize {
+    ((width_chars as f32 * char_width) + 12.0).ceil() as usize
 }
 
 /// Horizontal inset of the cell editor's text inside its cell, in px. The

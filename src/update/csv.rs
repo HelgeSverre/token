@@ -3,9 +3,12 @@
 //! Handles CsvMsg messages for CSV view mode operations.
 
 use crate::commands::Cmd;
+use crate::csv::render::column_width_px;
 use crate::csv::{
-    detect_delimiter, escape_csv_value, parse_csv, CellEdit, CellPosition, CsvState, Delimiter,
+    detect_delimiter, escape_csv_value, parse_csv, CellEdit, CellEditState, CellPosition, CsvState,
+    Delimiter,
 };
+use crate::editable::MoveTarget;
 use crate::messages::CsvMsg;
 use crate::model::{AppModel, ViewMode};
 use crate::update::lsp::schedule_lsp_did_change;
@@ -45,35 +48,57 @@ pub fn update_csv(model: &mut AppModel, msg: CsvMsg) -> Option<Cmd> {
         CsvMsg::ConfirmEdit => confirm_edit(model, 1), // Move down
         CsvMsg::ConfirmEditUp => confirm_edit(model, -1), // Move up
         CsvMsg::CancelEdit => cancel_edit(model),
-        CsvMsg::EditInsertChar(ch) => edit_insert_char(model, ch),
-        CsvMsg::EditDeleteBackward => edit_delete_backward(model),
-        CsvMsg::EditDeleteForward => edit_delete_forward(model),
-        CsvMsg::EditCursorLeft => edit_cursor_left(model),
-        CsvMsg::EditCursorRight => edit_cursor_right(model),
-        CsvMsg::EditCursorHome => edit_cursor_home(model),
-        CsvMsg::EditCursorEnd => edit_cursor_end(model),
-
-        // Enhanced editing (via unified editable system)
-        CsvMsg::EditCursorWordLeft => edit_cursor_word_left(model),
-        CsvMsg::EditCursorWordRight => edit_cursor_word_right(model),
-        CsvMsg::EditDeleteWordBackward => edit_delete_word_backward(model),
-        CsvMsg::EditDeleteWordForward => edit_delete_word_forward(model),
-        CsvMsg::EditSelectAll => edit_select_all(model),
-        CsvMsg::EditUndo => edit_undo(model),
-        CsvMsg::EditRedo => edit_redo(model),
-
-        // Selection movement
-        CsvMsg::EditCursorLeftWithSelection => edit_cursor_left_with_selection(model),
-        CsvMsg::EditCursorRightWithSelection => edit_cursor_right_with_selection(model),
-        CsvMsg::EditCursorHomeWithSelection => edit_cursor_home_with_selection(model),
-        CsvMsg::EditCursorEndWithSelection => edit_cursor_end_with_selection(model),
-        CsvMsg::EditCursorWordLeftWithSelection => edit_cursor_word_left_with_selection(model),
-        CsvMsg::EditCursorWordRightWithSelection => edit_cursor_word_right_with_selection(model),
-
-        // Clipboard
-        CsvMsg::EditCopy => edit_copy(model),
-        CsvMsg::EditCut => edit_cut(model),
-        CsvMsg::EditPaste => edit_paste(model),
+        // In-cell editing: every arm is one `edit` op; the shared skeleton
+        // re-fits the column width and caret scroll afterwards.
+        CsvMsg::EditInsertChar(ch) => edit(model, |e| e.insert_char(ch)),
+        CsvMsg::EditDeleteBackward => edit(model, |e| e.delete_backward()),
+        CsvMsg::EditDeleteForward => edit(model, |e| e.delete_forward()),
+        CsvMsg::EditDeleteWordBackward => edit(model, |e| e.delete_word_backward()),
+        CsvMsg::EditDeleteWordForward => edit(model, |e| e.delete_word_forward()),
+        CsvMsg::EditCursorLeft => edit(model, |e| e.move_cursor(MoveTarget::Left, false)),
+        CsvMsg::EditCursorRight => edit(model, |e| e.move_cursor(MoveTarget::Right, false)),
+        CsvMsg::EditCursorHome => edit(model, |e| e.move_cursor(MoveTarget::LineStart, false)),
+        CsvMsg::EditCursorEnd => edit(model, |e| e.move_cursor(MoveTarget::LineEnd, false)),
+        CsvMsg::EditCursorWordLeft => edit(model, |e| e.move_cursor(MoveTarget::WordLeft, false)),
+        CsvMsg::EditCursorWordRight => edit(model, |e| e.move_cursor(MoveTarget::WordRight, false)),
+        CsvMsg::EditCursorLeftWithSelection => {
+            edit(model, |e| e.move_cursor(MoveTarget::Left, true))
+        }
+        CsvMsg::EditCursorRightWithSelection => {
+            edit(model, |e| e.move_cursor(MoveTarget::Right, true))
+        }
+        CsvMsg::EditCursorHomeWithSelection => {
+            edit(model, |e| e.move_cursor(MoveTarget::LineStart, true))
+        }
+        CsvMsg::EditCursorEndWithSelection => {
+            edit(model, |e| e.move_cursor(MoveTarget::LineEnd, true))
+        }
+        CsvMsg::EditCursorWordLeftWithSelection => {
+            edit(model, |e| e.move_cursor(MoveTarget::WordLeft, true))
+        }
+        CsvMsg::EditCursorWordRightWithSelection => {
+            edit(model, |e| e.move_cursor(MoveTarget::WordRight, true))
+        }
+        CsvMsg::EditSelectAll => edit(model, |e| e.select_all()),
+        CsvMsg::EditUndo => edit(model, |e| {
+            e.undo();
+        }),
+        CsvMsg::EditRedo => edit(model, |e| {
+            e.redo();
+        }),
+        CsvMsg::EditCopy => edit_with_cmd(model, |e| {
+            let text = e.selected_text();
+            (!text.is_empty()).then_some(Cmd::CopyToClipboard(text))
+        }),
+        CsvMsg::EditCut => edit_with_cmd(model, |e| {
+            let text = e.selected_text();
+            if text.is_empty() {
+                return None;
+            }
+            e.delete_backward();
+            Some(Cmd::CopyToClipboard(text))
+        }),
+        CsvMsg::EditPaste => Some(Cmd::RequestClipboardPaste),
         CsvMsg::EditPasteText(text) => edit_paste_text(model, text),
     }
 }
@@ -379,17 +404,12 @@ fn start_editing(model: &mut AppModel) -> Option<Cmd> {
 
 /// Start editing with initial character (replaces cell content)
 fn start_editing_with_char(model: &mut AppModel, ch: char) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if csv.is_editing() {
-            csv.edit_insert_char(ch);
-        } else {
-            csv.start_editing_with_char(ch);
-        }
-        Some(Cmd::redraw_editor())
-    } else {
-        None
+    let csv = focused_csv(model)?;
+    if csv.is_editing() {
+        return edit(model, |e| e.insert_char(ch));
     }
+    csv.start_editing_with_char(ch);
+    Some(Cmd::redraw_editor())
 }
 
 /// Confirm edit and sync to document, then move in specified direction
@@ -484,8 +504,8 @@ fn update_edit_scroll(char_width: f32, csv: &mut CsvState) {
         // If column is at max width, use scrolling
         if col_width >= EDIT_MAX_WIDTH {
             // Calculate visible characters in the cell
-            let col_width_px = (col_width as f32 * char_width + 12.0) as usize;
-            let padding = 8; // 4px padding on each side
+            let col_width_px = column_width_px(col_width, char_width);
+            let padding = crate::csv::render::CELL_TEXT_PAD_X * 2;
             let visible_chars =
                 ((col_width_px.saturating_sub(padding)) as f32 / char_width) as usize;
 
@@ -508,384 +528,48 @@ fn update_edit_scroll(char_width: f32, csv: &mut CsvState) {
     }
 }
 
-/// Insert character into edit buffer
-fn edit_insert_char(model: &mut AppModel, ch: char) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        csv.edit_insert_char(ch);
+/// The focused editor's CSV state, if it is in CSV mode.
+fn focused_csv(model: &mut AppModel) -> Option<&mut CsvState> {
+    model
+        .editor_area
+        .focused_editor_mut()?
+        .view_mode
+        .as_csv_mut()
+}
 
-        // Update column width and scroll position
-        if let Some(edit) = &csv.editing {
-            let content_len = edit.buffer().chars().count();
-            update_column_width_for_edit(csv, content_len);
-        }
-        update_edit_scroll(model.char_width, csv);
-
-        Some(Cmd::redraw_editor())
-    } else {
-        None
+/// The shared skeleton of every in-cell edit message: apply `op` to the open
+/// cell editor (a no-op when none is open), then re-fit the column width to
+/// the content (grow-only) and the horizontal scroll to the caret. `op` may
+/// return an extra command (clipboard) batched after the redraw.
+fn edit_with_cmd(
+    model: &mut AppModel,
+    op: impl FnOnce(&mut CellEditState) -> Option<Cmd>,
+) -> Option<Cmd> {
+    let char_width = model.char_width;
+    let csv = focused_csv(model)?;
+    let extra = csv.editing.as_mut().and_then(op);
+    if let Some(content_len) = csv.editing.as_ref().map(|e| e.buffer().chars().count()) {
+        update_column_width_for_edit(csv, content_len);
     }
+    update_edit_scroll(char_width, csv);
+    Some(match extra {
+        Some(cmd) => Cmd::Batch(vec![Cmd::redraw_editor(), cmd]),
+        None => Cmd::redraw_editor(),
+    })
 }
 
-/// Delete backward in edit buffer
-fn edit_delete_backward(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        csv.edit_delete_backward();
-
-        // Update column width and scroll position
-        if let Some(edit) = &csv.editing {
-            let content_len = edit.buffer().chars().count();
-            update_column_width_for_edit(csv, content_len);
-        }
-        update_edit_scroll(model.char_width, csv);
-
-        Some(Cmd::redraw_editor())
-    } else {
+/// [`edit_with_cmd`] for ops that only mutate the editor.
+fn edit(model: &mut AppModel, op: impl FnOnce(&mut CellEditState)) -> Option<Cmd> {
+    edit_with_cmd(model, |e| {
+        op(e);
         None
-    }
+    })
 }
 
-/// Delete forward in edit buffer
-fn edit_delete_forward(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        csv.edit_delete_forward();
-
-        // Update column width and scroll position
-        if let Some(edit) = &csv.editing {
-            let content_len = edit.buffer().chars().count();
-            update_column_width_for_edit(csv, content_len);
-        }
-        update_edit_scroll(model.char_width, csv);
-
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Move cursor left in edit buffer
-fn edit_cursor_left(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        csv.edit_cursor_left();
-        update_edit_scroll(model.char_width, csv);
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Move cursor right in edit buffer
-fn edit_cursor_right(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        csv.edit_cursor_right();
-        update_edit_scroll(model.char_width, csv);
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Move cursor to start in edit buffer
-fn edit_cursor_home(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        csv.edit_cursor_home();
-        update_edit_scroll(model.char_width, csv);
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Move cursor to end in edit buffer
-fn edit_cursor_end(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        csv.edit_cursor_end();
-        update_edit_scroll(model.char_width, csv);
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Move cursor left by word in edit buffer
-fn edit_cursor_word_left(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if let Some(edit) = &mut csv.editing {
-            edit.cursor_word_left();
-        }
-        update_edit_scroll(model.char_width, csv);
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Move cursor right by word in edit buffer
-fn edit_cursor_word_right(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if let Some(edit) = &mut csv.editing {
-            edit.cursor_word_right();
-        }
-        update_edit_scroll(model.char_width, csv);
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Delete word backward in edit buffer
-fn edit_delete_word_backward(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if let Some(edit) = &mut csv.editing {
-            edit.delete_word_backward();
-        }
-
-        // Update column width and scroll position
-        if let Some(edit) = &csv.editing {
-            let content_len = edit.buffer().chars().count();
-            update_column_width_for_edit(csv, content_len);
-        }
-        update_edit_scroll(model.char_width, csv);
-
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Delete word forward in edit buffer
-fn edit_delete_word_forward(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if let Some(edit) = &mut csv.editing {
-            edit.delete_word_forward();
-        }
-
-        // Update column width and scroll position
-        if let Some(edit) = &csv.editing {
-            let content_len = edit.buffer().chars().count();
-            update_column_width_for_edit(csv, content_len);
-        }
-        update_edit_scroll(model.char_width, csv);
-
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Select all text in edit buffer
-fn edit_select_all(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if let Some(edit) = &mut csv.editing {
-            edit.select_all();
-        }
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Undo last edit operation
-fn edit_undo(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if let Some(edit) = &mut csv.editing {
-            edit.undo();
-        }
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Redo last undone operation
-fn edit_redo(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if let Some(edit) = &mut csv.editing {
-            edit.redo();
-        }
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-// === Selection Movement ===
-
-/// Move cursor left with selection
-fn edit_cursor_left_with_selection(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if let Some(edit) = &mut csv.editing {
-            edit.cursor_left_with_selection();
-        }
-        update_edit_scroll(model.char_width, csv);
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Move cursor right with selection
-fn edit_cursor_right_with_selection(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if let Some(edit) = &mut csv.editing {
-            edit.cursor_right_with_selection();
-        }
-        update_edit_scroll(model.char_width, csv);
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Move cursor to start with selection
-fn edit_cursor_home_with_selection(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if let Some(edit) = &mut csv.editing {
-            edit.cursor_home_with_selection();
-        }
-        update_edit_scroll(model.char_width, csv);
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Move cursor to end with selection
-fn edit_cursor_end_with_selection(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if let Some(edit) = &mut csv.editing {
-            edit.cursor_end_with_selection();
-        }
-        update_edit_scroll(model.char_width, csv);
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Move cursor word left with selection
-fn edit_cursor_word_left_with_selection(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if let Some(edit) = &mut csv.editing {
-            edit.cursor_word_left_with_selection();
-        }
-        update_edit_scroll(model.char_width, csv);
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-/// Move cursor word right with selection
-fn edit_cursor_word_right_with_selection(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if let Some(edit) = &mut csv.editing {
-            edit.cursor_word_right_with_selection();
-        }
-        update_edit_scroll(model.char_width, csv);
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
-}
-
-// === Clipboard ===
-
-/// Copy selection to clipboard
-fn edit_copy(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        let mut cmd = Cmd::redraw_editor();
-        if let Some(edit) = &mut csv.editing {
-            let text = edit.selected_text();
-            if !text.is_empty() {
-                cmd = Cmd::Batch(vec![cmd, Cmd::CopyToClipboard(text)]);
-            }
-        }
-        Some(cmd)
-    } else {
-        None
-    }
-}
-
-/// Cut selection to clipboard
-fn edit_cut(model: &mut AppModel) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        let mut extra_cmds = Vec::new();
-        if let Some(edit) = &mut csv.editing {
-            let text = edit.selected_text();
-            if !text.is_empty() {
-                extra_cmds.push(Cmd::CopyToClipboard(text));
-                edit.delete_backward();
-            }
-        }
-
-        // Update column width and scroll position
-        if let Some(edit) = &csv.editing {
-            let content_len = edit.buffer().chars().count();
-            update_column_width_for_edit(csv, content_len);
-        }
-        update_edit_scroll(model.char_width, csv);
-
-        let redraw = Cmd::redraw_editor();
-        if extra_cmds.is_empty() {
-            Some(redraw)
-        } else {
-            let mut batch = vec![redraw];
-            batch.extend(extra_cmds);
-            Some(Cmd::Batch(batch))
-        }
-    } else {
-        None
-    }
-}
-
-/// Paste from clipboard
-fn edit_paste(_model: &mut AppModel) -> Option<Cmd> {
-    Some(Cmd::RequestClipboardPaste)
-}
-
-/// Paste given text into the cell
+/// Paste given text into the cell (newlines stripped: single-line editor).
 pub(crate) fn edit_paste_text(model: &mut AppModel, text: String) -> Option<Cmd> {
-    let editor = model.editor_area.focused_editor_mut()?;
-    if let Some(csv) = editor.view_mode.as_csv_mut() {
-        if let Some(edit) = &mut csv.editing {
-            // Filter out newlines for single-line cell editing
-            let filtered: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
-            edit.insert_text(&filtered);
-        }
-
-        // Update column width and scroll position
-        if let Some(edit) = &csv.editing {
-            let content_len = edit.buffer().chars().count();
-            update_column_width_for_edit(csv, content_len);
-        }
-        update_edit_scroll(model.char_width, csv);
-
-        Some(Cmd::redraw_editor())
-    } else {
-        None
-    }
+    let filtered: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+    edit(model, |e| e.insert_text(&filtered))
 }
 
 // === Document Sync ===

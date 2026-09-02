@@ -542,48 +542,6 @@ impl CsvState {
             edit.insert_char(ch);
         }
     }
-
-    /// Delete backward in current edit
-    pub fn edit_delete_backward(&mut self) {
-        if let Some(edit) = &mut self.editing {
-            edit.delete_backward();
-        }
-    }
-
-    /// Delete forward in current edit
-    pub fn edit_delete_forward(&mut self) {
-        if let Some(edit) = &mut self.editing {
-            edit.delete_forward();
-        }
-    }
-
-    /// Move cursor left in current edit
-    pub fn edit_cursor_left(&mut self) {
-        if let Some(edit) = &mut self.editing {
-            edit.cursor_left();
-        }
-    }
-
-    /// Move cursor right in current edit
-    pub fn edit_cursor_right(&mut self) {
-        if let Some(edit) = &mut self.editing {
-            edit.cursor_right();
-        }
-    }
-
-    /// Move cursor to start in current edit
-    pub fn edit_cursor_home(&mut self) {
-        if let Some(edit) = &mut self.editing {
-            edit.cursor_home();
-        }
-    }
-
-    /// Move cursor to end in current edit
-    pub fn edit_cursor_end(&mut self) {
-        if let Some(edit) = &mut self.editing {
-            edit.cursor_end();
-        }
-    }
 }
 
 #[cfg(test)]
