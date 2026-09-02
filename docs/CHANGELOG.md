@@ -57,6 +57,13 @@ All notable changes to rust-editor are documented in this file.
 - Server-initiated `workspace/applyEdit` requests are now applied (one undo
   step per file, closed files opened in place) and acknowledged, instead of
   being refused.
+- **Rename Symbol** (⇧F6): prompts with the symbol under the caret (via
+  `prepareRename` when the server supports it), then applies the server's
+  `WorkspaceEdit` across open and closed files with one undo step per file
+  and reports "Renamed in N files, M edits".
+- **Show Code Actions** (⌥↩): lists the server's quick fixes and refactors
+  for the selection or caret, preferred actions first; Enter applies the
+  edit or runs the server command.
 - CSV mode mouse editing: clicking inside the cell being edited places the
   caret at the pressed character (Shift extends the selection), double-click
   opens the cell editor with the caret at the pressed character, and
