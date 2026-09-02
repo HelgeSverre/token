@@ -1,9 +1,9 @@
 # Sprint Roadmap
 
-Implementation sequence across the current design docs: [overlay-surface](feature/overlay-surface.md), [editor-decorations](feature/editor-decorations.md), [find-enhancements](feature/find-enhancements.md), [autocomplete](feature/autocomplete.md), [lsp-integration](feature/lsp-integration.md), [soft-wrap](feature/soft-wrap.md), [context-menu](feature/context-menu.md), [settings-page](feature/settings-page.md).
+Implementation sequence across the current design docs: [overlay-surface](archived/overlay-surface.md), [editor-decorations](archived/editor-decorations.md), [find-enhancements](feature/find-enhancements.md), [autocomplete](feature/autocomplete.md), [lsp-integration](archived/lsp-integration.md), [soft-wrap](feature/soft-wrap.md), [context-menu](archived/context-menu.md), [settings-page](feature/settings-page.md).
 
-> **Created:** 2026-08-11 · **Updated:** 2026-08-13
-> **Status:** steps 1–10 shipped; current queue below.
+> **Created:** 2026-08-11 · **Updated:** 2026-09-02
+> **Status:** steps 1–11 and the whole August queue shipped in v0.6.0; current queue below.
 
 ## Shipped
 
@@ -19,22 +19,21 @@ Implementation sequence across the current design docs: [overlay-surface](featur
 | 8 ✅ | Diagnostics (gutter, squiggles, status, overview) | lsp-integration P2 |
 | 9 ✅ | Go to definition + jump history (+ forward stack) | lsp-integration P3 |
 | 10 ✅ | Hover card (keyboard ⇧⌘D + mouse dwell) | lsp-integration P4 |
+| 11 ✅ | LSP completion source into the menu | autocomplete P4 = lsp-integration P5 |
+| — ✅ | Problems panel (⌘4, scope switch, next/previous diagnostic) | queue item 1 |
+| — ✅ | Show Usages popup + multi-location go-to-definition | queue item 2 |
+| — ✅ | Context menu (editor, tabs, file tree) | queue item 3 / [context-menu](archived/context-menu.md) |
+| — ✅ | Signature help, Rename Symbol, Show Code Actions, Format Document/Selection | lsp-integration "Phase 6+" |
+| — ✅ | CLI detach, single-instance handoff, `--wait`; per-instance automation and MCP instance targeting | v0.6.0 |
 
 Shipped alongside (not in the original sequence): status-bar overhaul (border, font size, centering, expiring flash messages); theme-picker swatches; JetBrains keybinds (⌘B/⇧⌘D/⌘[/⌘]) + ⌘-click + mouse back/forward; Toggle LSP + Language Servers picker modal; Reveal in File Explorer; ZonePlan hover layouting; decoration-preserving cursor fast path; live LSP stress-testing against rust-analyzer / sema / phpantom / laravel-lsp (upstream bugs filed/found: sema#151 cross-file definitions; phpantom 0.9.0 builtin stubs unresolved — repro ready, issue not yet filed).
 
 ## Current queue (in order)
 
-1. **Problems panel** — ⌘4, bottom-dock tab next to Terminal, per the C4 mockup; model-side diagnostics mirror; rows jump via navigation + jump history. (Investigated, seams verified, not started.)
-2. **Show Usages** — ⌥F7/⌥⌘F7 cursor popup (panel later), built on two new abstractions extracted with three consumers each: `LspFeatureSlot` (generic per-feature request plumbing) and `LocationList` (path/range/preview rows → jump). Also upgrades multi-location go-to-definition.
-3. **Context menu** — implement per the revised [context-menu.md](feature/context-menu.md) (OverlaySurface-based; editor + tabs + file tree in v1).
-4. Adversarial review pass over the zone/hover layout work (folded into the next wave's review stage).
-
-## Later (specs ready, unscheduled)
-
-- **Step 11** — LSP completion source into the menu (autocomplete P4 = lsp-integration P5).
-- **Step 12** — inline/FIM ghost text (autocomplete P2–P3; multi-line waits on soft-wrap).
-- **Settings page** ([settings-page.md](feature/settings-page.md)) — `keep_unknown` config merge is its shippable Phase 1.
-- Soft-wrap → multi-line ghost text; LSP workspace-symbols → Symbols tab; code actions (shell exists); usages panel.
+1. **Soft wrap** ([soft-wrap.md](feature/soft-wrap.md)) — the XL item; unblocks multi-line ghost text.
+2. **Step 12** — inline/FIM ghost text (autocomplete P2–P3).
+3. **Settings page** ([settings-page.md](feature/settings-page.md)) — `keep_unknown` config merge is its shippable Phase 1.
+4. LSP workspace-symbols → Search Everywhere Symbols tab; usages panel (popup shipped).
 
 ## Known debt
 

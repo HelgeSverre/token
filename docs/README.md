@@ -64,13 +64,18 @@ Detailed specifications for major features, located in `docs/feature/`:
 | CSV Viewer/Editor | ✅ P1-2 | [csv-editor.md](archived/csv-editor.md) |
 | Recent Files | ✅ MVP | [recent-files.md](archived/recent-files.md) |
 | Markdown Preview | ✅ | [markdown-preview.md](archived/markdown-preview.md) |
-| Syntax-Aware Expand Selection | ✅ Base phase | [syntax-aware-expand-selection.md](feature/syntax-aware-expand-selection.md) |
+| Syntax-Aware Expand Selection | ✅ Base phase | [syntax-aware-expand-selection.md](archived/syntax-aware-expand-selection.md) |
+| Overlay Surface & Search Everywhere | ✅ P1-5 | [overlay-surface.md](archived/overlay-surface.md) |
+| Editor Decorations & Gutter Lanes | ✅ P1-3 | [editor-decorations.md](archived/editor-decorations.md) |
+| LSP Integration | ✅ P1-5 | [lsp-integration.md](archived/lsp-integration.md) |
+| Context Menu | ✅ | [context-menu.md](archived/context-menu.md) |
+| Embedded Terminal | ✅ MVP | [embedded-terminal.md](archived/embedded-terminal.md) |
+| File Dialogs | ✅ via `rfd` | [file-dialogs.md](archived/file-dialogs.md) |
 
 ### Planned Features
 
 | Feature | Milestone | Design Doc |
 |---------|-----------|------------|
-| Overlay Surface & Search Everywhere | 1 - Navigation | [overlay-surface.md](feature/overlay-surface.md) |
 | Command Palette Enhancements | 1 - Navigation | [command-palette-enhancements.md](future/command-palette-enhancements.md) |
 | Quick Open | 1 - Navigation | planned |
 | Go to Line Enhancements | 1 - Navigation | [goto-line-enhancements.md](future/goto-line-enhancements.md) |
@@ -84,10 +89,11 @@ Detailed specifications for major features, located in `docs/feature/`:
 | Session Restore | 3 - File Lifecycle | [session-restore.md](feature/session-restore.md) |
 | Column Selection | 4 - Hard Problems | [column-selection.md](archived/column-selection.md) |
 | Soft Wrap | 4 - Hard Problems | [soft-wrap.md](feature/soft-wrap.md) |
-| Code Folding | 4 - Hard Problems | planned |
+| Code Folding | 4 - Hard Problems | [folding-basic.md](feature/folding-basic.md) |
 | Diff Gutter | 5 - Insight Tools | [diff-gutter.md](feature/diff-gutter.md) |
 | Snippets | 6 - Productivity | [snippets.md](feature/snippets.md) |
 | Settings Page | 6 - Productivity | [settings-page.md](feature/settings-page.md) |
+| Autocomplete (inline / FIM) | 6 - Productivity | [autocomplete.md](feature/autocomplete.md) |
 
 ---
 

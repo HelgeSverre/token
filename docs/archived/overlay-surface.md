@@ -1,8 +1,8 @@
 # Unified Overlay Surface & Search Everywhere
 
-One overlay component — chrome, header, sectioned list, footer — rendered in two anchor modes (screen-centered, cursor-anchored), driving every palette, picker, popup, and card in the editor. The command palette evolves into a tabbed **Search Everywhere** modal (commands + files + symbols), and the completion/hover/code-action popups consumed by [autocomplete.md](autocomplete.md) and [lsp-integration.md](lsp-integration.md) get their surface defined here.
+One overlay component — chrome, header, sectioned list, footer — rendered in two anchor modes (screen-centered, cursor-anchored), driving every palette, picker, popup, and card in the editor. The command palette evolves into a tabbed **Search Everywhere** modal (commands + files + symbols), and the completion/hover/code-action popups consumed by [autocomplete.md](../feature/autocomplete.md) and [lsp-integration.md](lsp-integration.md) get their surface defined here.
 
-> **Status:** 📋 Planned
+> **Status:** ✅ Shipped — Phases 1–5 (painter primitives, palette migration, Search Everywhere, cursor-anchored mode); archived 2026-09-02
 > **Priority:** P2 (Important)
 > **Effort:** L (phased — each phase ships independently)
 > **Created:** 2026-08-11
@@ -18,7 +18,7 @@ One overlay component — chrome, header, sectioned list, footer — rendered in
 
 Every overlay in Token today is a flat rectangle: square corners, 1px opaque border, no shadow, no icons, no match highlighting, a text title where an input could be. The modals work, but they don't communicate hierarchy (selected vs. not, section vs. row, primary vs. metadata), and the LSP/autocomplete plans need three *new* overlay surfaces (completion, hover, code actions) that would otherwise be built on the same primitives.
 
-This plan replaces the per-modal rendering with one **OverlaySurface** component and a small set of painter primitives, then uses that component to ship a visibly better palette and the cursor-anchored popups from one codepath. Three sibling documents consume what is defined here: [lsp-integration.md](lsp-integration.md) (hover card, severity conventions), [autocomplete.md](autocomplete.md) (completion popup), and [editor-decorations.md](editor-decorations.md) (`draw_wavy_underline`, severity glyphs/colors).
+This plan replaces the per-modal rendering with one **OverlaySurface** component and a small set of painter primitives, then uses that component to ship a visibly better palette and the cursor-anchored popups from one codepath. Three sibling documents consume what is defined here: [lsp-integration.md](lsp-integration.md) (hover card, severity conventions), [autocomplete.md](../feature/autocomplete.md) (completion popup), and [editor-decorations.md](editor-decorations.md) (`draw_wavy_underline`, severity glyphs/colors).
 
 ### Current State
 
@@ -56,7 +56,7 @@ This plan replaces the per-modal rendering with one **OverlaySurface** component
 - The problems panel (LSP Future) and docked panels generally — they reuse the *row anatomy conventions* (severity glyph, message, location accessory), not the component.
 - The right-click context menu ([context-menu.md](context-menu.md)) — a natural future context (cursor-anchored at the mouse position), listed under Future, not planned here.
 - Plugin-defined overlay contexts; contexts are a closed enum.
-- Snippet placeholders, rich markdown in hover — owned by [snippets.md](snippets.md) / [lsp-integration.md](lsp-integration.md).
+- Snippet placeholders, rich markdown in hover — owned by [snippets.md](../feature/snippets.md) / [lsp-integration.md](lsp-integration.md).
 
 ---
 
@@ -319,7 +319,7 @@ Reality-based, per Current State:
 
 - **Centered modals**: keys stay hardcoded — new behavior means new `ModalMsg` variants (`NextTab`, `PrevTab`, `PageUp`, `PageDown`, `TogglePin`) and new arms in `runtime/input.rs::handle_modal_key`. Tab is currently swallowed by the fallthrough, so ⇥-cycling introduces no conflict. **Home/End stay on the input caret** (existing `classify_text_editing_key` behavior wins); list ends are reachable via PgUp/PgDn and Up/Down wrap-around. The keymap gains only the open-command bindings.
 - **Prefix routing** (`>`, `@`) is not key routing at all — it's query parsing in `on_modal_input_changed`. Rules: a prefix is recognized only as char 0 of a previously-empty query, is consumed (not left in the buffer), and pins the corresponding tab; backspace on an empty query returns to the All tab. (A `:` goto-line prefix is dropped — Cmd+L exists, and a modal swap mid-keystroke is a different mental model; see Open Questions.)
-- **Cursor-anchored popups are not modals** — modals hard-capture all keys, which would stop typing from reaching the document. They live in a new `ui.cursor_overlay: Option<CursorOverlayState>` (distinct from `active_modal`) with a dedicated pre-editor branch in `handle_key` that consumes exactly Up/Down/Enter/Esc/Tab and passes everything else through — this is the `handle_completion_key` branch specified by [lsp-integration.md](lsp-integration.md) Phase 5 / [autocomplete.md](autocomplete.md), built here in Phase 5. The `overlay_routes_keys` `KeyContext` flag (named by the LSP doc; plumbed as usual: field + `Condition` variant + serde name + eval arm) exists additionally for user binding conditions.
+- **Cursor-anchored popups are not modals** — modals hard-capture all keys, which would stop typing from reaching the document. They live in a new `ui.cursor_overlay: Option<CursorOverlayState>` (distinct from `active_modal`) with a dedicated pre-editor branch in `handle_key` that consumes exactly Up/Down/Enter/Esc/Tab and passes everything else through — this is the `handle_completion_key` branch specified by [lsp-integration.md](lsp-integration.md) Phase 5 / [autocomplete.md](../feature/autocomplete.md), built here in Phase 5. The `overlay_routes_keys` `KeyContext` flag (named by the LSP doc; plumbed as usual: field + `Condition` variant + serde name + eval arm) exists additionally for user binding conditions.
 
 ### Hit-testing
 
@@ -336,7 +336,7 @@ Each context = model state + a spec builder + `handle_modal_key` arms (existing 
 | **Go to Line** | Centered 300–500 | — | Fields (1) | — | — | |
 | **Find / Replace** | Centered 300–500 | — | Fields (1–2) | — | ↵ find · ⌘↵ replace all | focused field label bright, other dim |
 | **Theme Picker** | Centered 400 | — | List | User Themes / Built-in Themes | — | `Check` accessory on active |
-| **Completion** | Cursor, below | — | List (→ ListWithPanel v2) | — | — | consumer: [autocomplete.md](autocomplete.md) Phase 1 (menu sources), later the LSP source; [C1](assets/palette-c1.png) |
+| **Completion** | Cursor, below | — | List (→ ListWithPanel v2) | — | — | consumer: [autocomplete.md](../feature/autocomplete.md) Phase 1 (menu sources), later the LSP source; [C1](assets/palette-c1.png) |
 | **Hover** | Cursor, above-preferred | — | Zones | — | optional action hints | consumer: LSP Phase 4; [C2](assets/palette-c2.png) |
 | **Code Actions** | Cursor, below | — | List | title "Quick Fix · E0308" | — | consumer: LSP Future; single-line rows, tail-ellipsized; [C5](assets/palette-c5.png) |
 | **Drop overlay** | Centered, dim 0x80 | — | Zones (text only) | — | — | trivial migration |
@@ -377,7 +377,7 @@ Mockups for the picker contexts: [B1 recent-grouped](assets/palette-b1.png), [B2
 | Feature | Relationship |
 | --- | --- |
 | **LSP** ([lsp-integration.md](lsp-integration.md)) | This doc owns the hover/code-action shells, `Anchor::Cursor`, severity conventions, and the cursor-overlay routing branch; LSP owns protocol, content, and timing. Its Phases 4–5 list this doc's Phase 5 as a prerequisite (Milestone 1 vs 4 — ordering works). Hover dismissal rule aligned: any keypress dismisses. |
-| **Autocomplete** ([autocomplete.md](autocomplete.md)) | Owns all completion state/logic; consumes the Completion context (`Anchor::Cursor`, `Body::List`, kind badges, `match_indices`, dismiss rules). Its Phase 1 popup depends on this doc's Phases 1 + 5. Ghost text is in-text-flow paint, not an overlay. |
+| **Autocomplete** ([autocomplete.md](../feature/autocomplete.md)) | Owns all completion state/logic; consumes the Completion context (`Anchor::Cursor`, `Body::List`, kind badges, `match_indices`, dismiss rules). Its Phase 1 popup depends on this doc's Phases 1 + 5. Ghost text is in-text-flow paint, not an overlay. |
 | **Editor decorations** ([editor-decorations.md](editor-decorations.md)) | Consumes `draw_wavy_underline` and the severity glyph/color conventions — one visual system across gutter, status bar, hover card, and future problems panel. |
 | **command-palette-enhancements.md** | `CommandHistory`/`CommandUsage` shapes adopted verbatim; its fuzzy-matching, rendering, and keybinding sections (incl. the `Cmd+P` pin binding) are superseded. Mark it accordingly when Phase 4 lands. |
 | **Theming** | New keys optional; luminance-relative + minimum-contrast derivation means zero breakage for bundled + user themes, light themes included. Bundled themes get explicit tuned values. |
@@ -439,7 +439,7 @@ Mockups for the picker contexts: [B1 recent-grouped](assets/palette-b1.png), [B2
 
 ### Phase 5: Cursor-anchored mode — *ships with its first consumer*
 
-**Effort:** M — sequenced with [autocomplete.md](autocomplete.md) Phase 1 (or LSP Phase 4, whichever lands first); the shells are not built to sit unused
+**Effort:** M — sequenced with [autocomplete.md](../feature/autocomplete.md) Phase 1 (or LSP Phase 4, whichever lands first); the shells are not built to sit unused
 
 - [x] `Anchor::Cursor`: pixel rect from geometry, flip + edge clamping + width floor.
 - [x] `ui.cursor_overlay: Option<CursorOverlayState>`; pre-editor key branch (consume Up/Down/Enter/Esc/Tab, pass the rest); `overlay_routes_keys` plumbing (field + `Condition` + serde + eval).
@@ -519,7 +519,7 @@ Mockups for the picker contexts: [B1 recent-grouped](assets/palette-b1.png), [B2
 ## References
 
 - Mockups: [assets/palette-mockups.html](assets/palette-mockups.html) — self-contained, open in a browser; per-mockup PNGs in `assets/palette-*.png`. **Indicative only; this spec is authoritative where they differ.**
-- Consumers: [autocomplete.md](autocomplete.md) (completion popup) · [lsp-integration.md](lsp-integration.md) (hover, severity conventions, routing spec) · [editor-decorations.md](editor-decorations.md) (`draw_wavy_underline`, severity glyphs)
+- Consumers: [autocomplete.md](../feature/autocomplete.md) (completion popup) · [lsp-integration.md](lsp-integration.md) (hover, severity conventions, routing spec) · [editor-decorations.md](editor-decorations.md) (`draw_wavy_underline`, severity glyphs)
 - Absorbed: [command-palette-enhancements.md](../future/command-palette-enhancements.md) (`CommandHistory`/`CommandUsage`, ranking concepts)
 - Code seams: `src/view/modal.rs` · `src/view/geometry.rs` (`ModalLayout::build`, `ModalSpacing`) · `src/view/hit_test.rs` · `src/view/selectable_list.rs` (to delete) · `src/view/frame.rs` · `src/runtime/input.rs` (`handle_modal_key`, `classify_text_editing_key`, `OptionGesture`) · `src/update/ui.rs` (`Confirm`, `on_modal_input_changed`) · `themes/*.yaml`
 - Prior art: JetBrains Search Everywhere, VS Code Quick Open prefixes, Zed command palette

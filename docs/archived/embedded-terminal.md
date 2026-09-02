@@ -2,7 +2,7 @@
 
 Integrated terminal panel at the bottom of the editor
 
-> **Status:** MVP Complete (post-MVP tabs pending)
+> **Status:** ✅ Shipped — MVP (Phases 1–4); terminal tabs remain a roadmap item; archived 2026-09-02
 > **Priority:** P2
 > **Effort:** L (8–14 days)
 > **Created:** 2025-12-20

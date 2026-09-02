@@ -2,7 +2,7 @@
 
 Use tree-sitter structure to expand selections through meaningful language scopes while preserving the existing plaintext fallback.
 
-> **Status:** ✅ Complete (base-language phase)  
+> **Status:** ✅ Shipped — base-language phase; archived 2026-09-02
 > **Priority:** P2 (Important)  
 > **Effort:** M (3–5 days)  
 > **Created:** 2026-08-11  

@@ -42,7 +42,7 @@ Adjacent features that are **not** this document: signature help / parameter hin
 Nothing completion-shaped exists. Relevant infrastructure (verified against the codebase):
 
 - **Elm loop + async worker pattern**: `src/runtime/app.rs::syntax_worker_loop` — `std::thread` + `mpsc`, results as `Msg` via `msg_tx` + `EventLoopProxy` wake, request coalescing per document, revision guards on both ends. The debounce mechanism (`syntax_deadlines: HashMap<DocumentId, (Instant, u64)>` checked in `about_to_wait`) is exactly what completion triggering needs — a second deadline map folded into the same `next_wake` min.
-- **Popup surface**: [`overlay-surface.md`](overlay-surface.md) (Milestone 1) plans the unified `OverlaySurface` component with an `Anchor::Cursor` mode and a **Completion context** (kind badge + label + dim signature rows, flip/clamp, dismiss rules) built exactly for this feature and LSP's popups. This document consumes that shell and owns none of the popup painting. If autocomplete Phase 1 somehow lands first, the interim fallback is today's `selectable_list.rs` + a cursor-anchored overlay bound — but overlay-surface deletes `selectable_list.rs`, so don't build on it deliberately. `src/view/caret.rs::active_text_input_rect` computes the caret pixel rect either way.
+- **Popup surface**: [`overlay-surface.md`](../archived/overlay-surface.md) (Milestone 1) plans the unified `OverlaySurface` component with an `Anchor::Cursor` mode and a **Completion context** (kind badge + label + dim signature rows, flip/clamp, dismiss rules) built exactly for this feature and LSP's popups. This document consumes that shell and owns none of the popup painting. If autocomplete Phase 1 somehow lands first, the interim fallback is today's `selectable_list.rs` + a cursor-anchored overlay bound — but overlay-surface deletes `selectable_list.rs`, so don't build on it deliberately. `src/view/caret.rs::active_text_input_rect` computes the caret pixel rect either way.
 - **Prefix extraction**: `src/update/document.rs::word_start_before` / `word_end_after` (char-class based) — the completion-query extractor, already written and tested.
 - **Fuzzy matching**: `nucleo-matcher` is already a dependency (file finder). Lapce uses the same crate for completion filtering.
 - **Multi-cursor atomic edits**: `EditOperation::Batch` in `src/model/document.rs` — accepting a completion at N cursors is one undo step, no new machinery.
@@ -309,7 +309,7 @@ Damage note: ghost text on the cursor row rides the existing `DamageArea::Cursor
 
 ### Rendering
 
-**Menu popup** — rendered through [`overlay-surface.md`](overlay-surface.md)'s **Completion context**, not bespoke drawing:
+**Menu popup** — rendered through [`overlay-surface.md`](../archived/overlay-surface.md)'s **Completion context**, not bespoke drawing:
 
 - The menu builds an `OverlaySpec` per frame: `Anchor::Cursor` at `query_start` (so the list aligns with what's being completed, from `active_text_input_rect` + `column_to_pixel_x`), `Body::List` with rows = `RowIcon::KindBadge(kind)` + label with `match_indices` (nucleo indices) + `Accessory::DimText(detail)`. Flip-above, edge clamping, no backdrop dim, and dismiss-on-edit rules are the surface's cursor-anchored behavior — defined there, consumed here.
 - `MenuItemKind` maps onto the surface's kind-badge palette (`overlay.kind_*` theme keys, derived from syntax colors).
@@ -326,7 +326,7 @@ Damage note: ghost text on the cursor row rides the existing `DamageArea::Cursor
 
 Key routing uses the `KeyContext`/`Condition` mechanism that exists today, with the flag ownership split along the surface boundary:
 
-- **Menu**: the menu is a cursor-anchored overlay context, so it is covered by [`overlay-surface.md`](overlay-surface.md)'s generalized `overlay_routes_keys` flag (its evolution of the LSP plan's `completion_visible`) — one flag for all cursor-anchored popups routing Up/Down/Enter/Escape while visible. This document does **not** introduce a separate `completion_menu_visible` field; bindings below that say `menu_visible` compile to `overlay_routes_keys` + the active overlay context being Completion.
+- **Menu**: the menu is a cursor-anchored overlay context, so it is covered by [`overlay-surface.md`](../archived/overlay-surface.md)'s generalized `overlay_routes_keys` flag (its evolution of the LSP plan's `completion_visible`) — one flag for all cursor-anchored popups routing Up/Down/Enter/Escape while visible. This document does **not** introduce a separate `completion_menu_visible` field; bindings below that say `menu_visible` compile to `overlay_routes_keys` + the active overlay context being Completion.
 - **Inline**: ghost text is not an overlay, so it gets its own `inline_suggestion_visible` field + `Condition` variant — the one genuinely new flag this document adds.
 
 Default bindings:
@@ -652,8 +652,8 @@ A stub HTTP server (few dozen lines, `std::net`) speaking canned `/infill` and `
 - [VS Code IntelliSense](https://code.visualstudio.com/docs/editor/intellisense) · [LSP 3.18 `textDocument/completion`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#textDocument_completion)
 
 ### Internal
-- [overlay-surface.md](overlay-surface.md) — owns the completion popup surface (`Anchor::Cursor`, Completion context, kind badges); prerequisite for the Phase 1 popup. Irrelevant to ghost text, which is in-text-flow paint, not an overlay
-- [lsp-integration.md](lsp-integration.md) — Phase 5 superseded by this document's Phase 4; also note config is YAML, not TOML
+- [overlay-surface.md](../archived/overlay-surface.md) — owns the completion popup surface (`Anchor::Cursor`, Completion context, kind badges); prerequisite for the Phase 1 popup. Irrelevant to ghost text, which is in-text-flow paint, not an overlay
+- [lsp-integration.md](../archived/lsp-integration.md) — Phase 5 superseded by this document's Phase 4; also note config is YAML, not TOML
 - [soft-wrap.md](soft-wrap.md) — prerequisite for multi-row ghost text
 - [snippets.md](snippets.md) — convergence point for snippet bodies and placeholder navigation
 - `docs/EDITOR_UI_REFERENCE.md` ch. 7 — earlier positioning prose, superseded here

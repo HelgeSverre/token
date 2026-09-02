@@ -322,7 +322,7 @@ Progressive selection expansion with history stack:
 
 The plaintext `cursor → word → line → all` baseline now uses current
 tree-sitter trees to add structural scopes and complete multi-cursor history
-snapshots. See [Syntax-Aware Expand Selection](feature/syntax-aware-expand-selection.md).
+snapshots. See [Syntax-Aware Expand Selection](archived/syntax-aware-expand-selection.md).
 
 ### Multi-Cursor Movement ✅
 
@@ -417,10 +417,10 @@ Group rapid consecutive edits into single undo entries:
 | Selection & Multi-Cursor    | ✅ Complete | [archived/SELECTION_MULTICURSOR.md](archived/SELECTION_MULTICURSOR.md)                   |
 | Multi-Cursor Movement       | ✅ Complete | [archived/MULTI_CURSOR_MOVEMENT.md](archived/MULTI_CURSOR_MOVEMENT.md)                   |
 | Expand/Shrink Selection     | ✅ Complete | [archived/TEXT-SHRINK-EXPAND-SELECTION.md](archived/TEXT-SHRINK-EXPAND-SELECTION.md)     |
-| Syntax-Aware Expand Selection | ✅ Base phase | [feature/syntax-aware-expand-selection.md](feature/syntax-aware-expand-selection.md)     |
+| Syntax-Aware Expand Selection | ✅ Base phase | [feature/syntax-aware-expand-selection.md](archived/syntax-aware-expand-selection.md)     |
 | Configurable Keymapping     | ✅ Complete | [archived/KEYMAPPING_IMPLEMENTATION_PLAN.md](archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) |
-| LSP Server Integration      | Planned     | [feature/lsp-integration.md](feature/lsp-integration.md)                                 |
-| Editor Decorations & Gutter Lanes | Planned | [feature/editor-decorations.md](feature/editor-decorations.md)                          |
+| LSP Server Integration      | ✅ P1-5     | [feature/lsp-integration.md](archived/lsp-integration.md)                                 |
+| Editor Decorations & Gutter Lanes | ✅ P1-3 | [feature/editor-decorations.md](archived/editor-decorations.md)                          |
 | Gesture Bindings            | Planned     | [feature/gesture-bindings.md](feature/gesture-bindings.md)                               |
 | Keymap Enhancements         | Future      | [future/keymap-enhancements.md](future/keymap-enhancements.md)                           |
 | Workspace Management        | ✅ P0-6     | [feature/workspace-management.md](archived/workspace-management.md)                       |

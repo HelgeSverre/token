@@ -2,7 +2,7 @@
 
 A context-sensitive popup menu triggered by right-click, rendered as an `OverlaySurface` context anchored at the click position — the same component that renders the command palette, pickers, and the completion/hover popups.
 
-> **Status:** 📋 Planned
+> **Status:** ✅ Shipped — editor, tab bar, and file tree menus on OverlaySurface; archived 2026-09-02
 > **Priority:** P2 (Important)
 > **Effort:** L (1-2 weeks)
 > **Created:** 2026-01-07

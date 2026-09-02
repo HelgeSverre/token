@@ -194,7 +194,7 @@ defers to the current-line fallback instead of selecting an enclosing block.
 History snapshots preserve all cursors, selections, and the active cursor for
 `ShrinkSelection`.
 
-See [Syntax-Aware Expand Selection](../feature/syntax-aware-expand-selection.md)
+See [Syntax-Aware Expand Selection](../archived/syntax-aware-expand-selection.md)
 for candidate ordering, freshness rules, and deferred injected-language support.
 
 ### ShrinkSelection (Option+Down)

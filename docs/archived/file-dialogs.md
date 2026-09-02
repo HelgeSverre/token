@@ -2,7 +2,7 @@
 
 Cross-platform native file and folder dialogs with unified API.
 
-> **Status:** Planned
+> **Status:** ✅ Superseded — native open/save dialogs shipped via the `rfd` crate instead of the per-platform plan here; archived 2026-09-02
 > **Priority:** P2
 > **Effort:** M
 > **Created:** 2025-01-07

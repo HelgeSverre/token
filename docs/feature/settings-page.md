@@ -251,6 +251,6 @@ pub enum SettingValue {
 
 - [Zed: Configuring Zed](https://zed.dev/docs/configuring-zed)
 - [Zed: Settings UI blog post](https://zed.dev/blog/settings-ui) — source of the registration-with-annotations rejection rationale
-- [overlay-surface.md](overlay-surface.md) — the component this context is built on; spec/ordering-authority/behaviour patterns reused verbatim
+- [overlay-surface.md](../archived/overlay-surface.md) — the component this context is built on; spec/ordering-authority/behaviour patterns reused verbatim
 - Theme picker (`docs/feature/overlay-surface.md` Contexts table; `src/view/modal.rs` theme picker rendering) — reference pattern for a config-mutating list modal
 - `~/code/sourcefour` (`settings.rs`, `settings_ui.rs`, `persist.rs`) — studied prior art for the `Choice<T>` descriptor pattern and the preset/file asymmetry

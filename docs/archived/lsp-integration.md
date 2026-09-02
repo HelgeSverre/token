@@ -2,7 +2,7 @@
 
 Spawn language servers per workspace, keep documents synchronized over JSON-RPC, and unlock diagnostics, go-to-definition, hover documentation, and completion — without breaking the single-threaded Elm loop or replacing any tree-sitter feature that already works.
 
-> **Status:** 📋 Planned
+> **Status:** ✅ Shipped — Phases 1–5 plus signature help, rename, code actions, formatting; "Phase 6+" items live in ROADMAP.md; archived 2026-09-02
 > **Priority:** P2 (Important)
 > **Effort:** XL (2+ weeks, phased — each phase ships independently)
 > **Created:** 2026-08-11
@@ -443,4 +443,4 @@ Phase 1 implementation: `src/bin/fake_lsp_server.rs` (a `[[bin]]` target, JSON s
 - [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)
 - [`lsp-types` crate](https://docs.rs/lsp-types)
 - rust-analyzer's [`lsp-server`](https://github.com/rust-lang/rust-analyzer/tree/master/lib/lsp-server) — reference minimal stdio transport
-- Internal: [overlay-surface.md](overlay-surface.md) (cursor-anchored surfaces, severity conventions — prerequisite for Phases 4–5), [editor-decorations.md](editor-decorations.md) (gutter/decoration contract for Phase 2), [syntax-aware-expand-selection.md](syntax-aware-expand-selection.md) (revision-guard + snapshot patterns), [snippets.md](snippets.md), [diff-gutter.md](diff-gutter.md), `docs/AUTOMATION.md`
+- Internal: [overlay-surface.md](overlay-surface.md) (cursor-anchored surfaces, severity conventions — prerequisite for Phases 4–5), [editor-decorations.md](editor-decorations.md) (gutter/decoration contract for Phase 2), [syntax-aware-expand-selection.md](syntax-aware-expand-selection.md) (revision-guard + snapshot patterns), [snippets.md](../feature/snippets.md), [diff-gutter.md](../feature/diff-gutter.md), `docs/AUTOMATION.md`
