@@ -293,6 +293,8 @@ pub enum Command {
     // ========================================================================
     /// `textDocument/hover` for the symbol under the cursor.
     ShowHover,
+    /// `textDocument/signatureHelp` at the caret.
+    ShowSignatureHelp,
 
     // ========================================================================
     // Show Usages / Find Usages (lsp-integration.md, references)
@@ -529,6 +531,7 @@ impl Command {
             NavigateBack => vec![Msg::Lsp(LspMsg::NavigateBack)],
             NavigateForward => vec![Msg::Lsp(LspMsg::NavigateForward)],
             ShowHover => vec![Msg::Lsp(LspMsg::ShowHover)],
+            ShowSignatureHelp => vec![Msg::Lsp(LspMsg::ShowSignatureHelp)],
             FindUsages | ShowUsages => vec![Msg::Lsp(LspMsg::FindReferences)],
 
             // Handled specially in `App::dispatch_command` (needs the
@@ -714,6 +717,7 @@ impl Command {
             NavigateBack => "Navigate Back",
             NavigateForward => "Navigate Forward",
             ShowHover => "Show Hover",
+            ShowSignatureHelp => "Show Signature Help",
             FindUsages => "Find Usages",
             ShowUsages => "Show Usages",
             ShowContextMenu => "Show Context Menu",

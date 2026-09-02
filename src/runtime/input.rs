@@ -107,6 +107,11 @@ pub fn handle_key(
         if let Some(cmd) = handle_cursor_overlay_key(model, &key, modifiers) {
             return cmd;
         }
+    } else if model.ui.signature_help.is_some() && key == Key::Named(NamedKey::Escape) {
+        // Signature help only claims Escape when no cursor overlay is
+        // open — the completion menu keeps priority (it closes first).
+        model.ui.signature_help = None;
+        return Some(Cmd::Redraw);
     }
 
     // Focus capture: route keys to CSV cell editor when editing

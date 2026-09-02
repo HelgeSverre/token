@@ -71,6 +71,15 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
 
 /// Inner update logic (no tracing)
 fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
+    // Signature help's dismissal anchor: it survives edits and moves
+    // along its line, but not the caret leaving that line, a tab switch,
+    // or focus leaving the editor — compared once at the bottom for every
+    // message instead of chasing each cursor/tab path.
+    let signature_anchor = model
+        .ui
+        .signature_help
+        .is_some()
+        .then(|| signature_help_anchor(model));
     let result = match msg {
         Msg::Editor(m) => {
             // Any cursor/selection movement invalidates the completion
@@ -189,9 +198,37 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         } else {
             result
         };
+    let result = match signature_anchor {
+        Some(before)
+            if model.ui.signature_help.is_some() && signature_help_anchor(model) != before =>
+        {
+            model.ui.signature_help = None;
+            merge_cmds(result, Some(Cmd::redraw_editor()))
+        }
+        _ => result,
+    };
 
     sync_status_bar(model);
     result
+}
+
+/// `(focus, focused document, caret line)` — signature help closes when
+/// any of these change.
+fn signature_help_anchor(
+    model: &AppModel,
+) -> (
+    crate::model::FocusTarget,
+    Option<crate::model::editor_area::DocumentId>,
+    Option<usize>,
+) {
+    (
+        model.ui.focus,
+        model.try_document().and_then(|d| d.id),
+        model
+            .editor_area
+            .focused_editor()
+            .map(|e| e.active_cursor().line),
+    )
 }
 
 /// Combine two independently-produced `Cmd`s into one, batching when both

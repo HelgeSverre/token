@@ -712,6 +712,26 @@ pub struct HoverCardState {
     pub anchor: Option<(usize, usize)>,
 }
 
+/// The current `textDocument/signatureHelp` result (`ui.signature_help`),
+/// already flattened to plaintext by `lsp::client::signature_help_state`.
+/// Independent of `cursor_overlay` so it coexists with the completion
+/// menu (menu below the caret, signature help above).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignatureHelpState {
+    pub signatures: Vec<SignatureView>,
+    /// Index into `signatures`, already clamped.
+    pub active: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignatureView {
+    pub label: String,
+    /// `[start, end)` char offsets into `label` of the active parameter.
+    pub active_parameter_range: Option<(usize, usize)>,
+    /// Plaintext doc of the active parameter, if the server sent one.
+    pub parameter_doc: Option<String>,
+}
+
 /// Content for the currently open references/multi-def popup (`ui.
 /// cursor_overlay` == `Some(CursorOverlayState { kind: CursorOverlayKind::
 /// References, .. })`) — set alongside `cursor_overlay`, cleared together.
@@ -1036,6 +1056,12 @@ pub struct UiState {
     /// whenever the dwell resets (pointer moved away before the reply
     /// landed), so a stale reply for an abandoned dwell never opens a card.
     pub mouse_hover_target: Option<crate::model::editor::Position>,
+    /// Signature help float (`textDocument/signatureHelp`), anchored above
+    /// the caret. Not a `cursor_overlay` kind: it never routes keys and
+    /// may show alongside the completion menu. Dismissed on Escape (when
+    /// no `cursor_overlay` claims it), caret leaving the line, focus or
+    /// document change.
+    pub signature_help: Option<SignatureHelpState>,
 }
 
 impl UiState {
@@ -1069,6 +1095,7 @@ impl UiState {
             reference_list: None,
             context_menu: None,
             mouse_hover_target: None,
+            signature_help: None,
         }
     }
 

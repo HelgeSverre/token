@@ -303,6 +303,9 @@ const REFERENCES_TIMEOUT: Duration = Duration::from_secs(30);
 /// silently to words/snippets either way (completion never flashes a
 /// status transient).
 const COMPLETION_TIMEOUT: Duration = Duration::from_secs(10);
+/// Signature help is typing-driven like completion — same silent, short
+/// abandonment window.
+const SIGNATURE_HELP_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// UI-level abandonment timeout for a deferred accept's
 /// `completionItem/resolve` round trip. On expiry the accept applies with
@@ -400,6 +403,9 @@ struct LspManager {
     /// `check_lsp_completion_deadlines` (silently — completion never
     /// flashes a status transient).
     completion: FeatureSlot<PendingCompletion>,
+    /// In-flight `textDocument/signatureHelp` requests, mirroring
+    /// `completion` (silent sweep).
+    signature_help: FeatureSlot<PendingSignatureHelp>,
     /// In-flight `completionItem/resolve` requests; swept by
     /// `check_lsp_resolve_deadlines`, which emits an empty
     /// `CompletionItemResolved` for `Accept`-purpose ones so the blocked
@@ -453,6 +459,21 @@ struct PendingHover {
 }
 
 impl PendingRequest for PendingHover {
+    fn document_id(&self) -> token::model::editor_area::DocumentId {
+        self.document_id
+    }
+}
+
+/// What `LspManager` needs to turn a `textDocument/signatureHelp`
+/// response into `LspMsg::SignatureHelpResolved` — same shape as
+/// `PendingHover`.
+struct PendingSignatureHelp {
+    document_id: token::model::editor_area::DocumentId,
+    revision: u64,
+    cursor: token::model::editor::Position,
+}
+
+impl PendingRequest for PendingSignatureHelp {
     fn document_id(&self) -> token::model::editor_area::DocumentId {
         self.document_id
     }
@@ -612,6 +633,24 @@ lsp_feature!(
     completion,
     lsp::client::supports_completion
 );
+lsp_feature!(
+    PendingSignatureHelp,
+    "textDocument/signatureHelp",
+    signature_help,
+    lsp::client::supports_signature_help
+);
+
+impl LspOutcomePolicy for PendingSignatureHelp {
+    /// Silent like completion: a float that simply doesn't appear is the
+    /// right failure mode for a typing-driven request.
+    fn on_gate_error(self, _err: FeatureGateError) -> Option<Msg> {
+        None
+    }
+
+    fn on_timeout(self) -> Option<Msg> {
+        None
+    }
+}
 
 impl LspOutcomePolicy for PendingDefinition {
     fn on_gate_error(self, err: FeatureGateError) -> Option<Msg> {
@@ -737,6 +776,7 @@ impl LspManager {
             hover: FeatureSlot::new(HOVER_TIMEOUT),
             references: FeatureSlot::new(REFERENCES_TIMEOUT),
             completion: FeatureSlot::new(COMPLETION_TIMEOUT),
+            signature_help: FeatureSlot::new(SIGNATURE_HELP_TIMEOUT),
             resolve: FeatureSlot::new(RESOLVE_TIMEOUT),
             completion_debounces: HashMap::new(),
             resolve_debounces: HashMap::new(),
@@ -2401,6 +2441,23 @@ impl App {
             } => {
                 self.request_lsp_hover(document_id, position, cursor, revision);
             }
+            Cmd::LspRequestSignatureHelp {
+                document_id,
+                position,
+                cursor,
+                revision,
+                trigger,
+                is_retrigger,
+            } => {
+                self.request_lsp_signature_help(
+                    document_id,
+                    position,
+                    cursor,
+                    revision,
+                    trigger,
+                    is_retrigger,
+                );
+            }
             Cmd::LspRequestReferences {
                 document_id,
                 position,
@@ -2553,6 +2610,7 @@ impl App {
         }
         messages = self.intercept_definition_replies(messages);
         messages = self.intercept_hover_replies(messages);
+        messages = self.intercept_signature_help_replies(messages);
         messages = self.intercept_references_replies(messages);
         messages = self.intercept_completion_replies(messages);
         messages = self.intercept_resolve_replies(messages);
@@ -2818,6 +2876,40 @@ impl App {
                     revision: pending.revision,
                     cursor: pending.cursor,
                     outcome,
+                }))
+            })
+            .collect()
+    }
+
+    // Same interception for `textDocument/signatureHelp` replies; the
+    // flattening to `SignatureHelpState` happens here so `update()` stays
+    // cheap.
+    fn intercept_signature_help_replies(&mut self, messages: Vec<Msg>) -> Vec<Msg> {
+        messages
+            .into_iter()
+            .filter_map(|msg| {
+                let Msg::Lsp(LspMsg::SignatureHelpResponseFromServer {
+                    server_id,
+                    root,
+                    request_id,
+                    help,
+                    abandoned,
+                }) = msg
+                else {
+                    return Some(msg);
+                };
+                let pending = self
+                    .lsp
+                    .signature_help
+                    .take_response(&(server_id, root, request_id))?;
+                if abandoned {
+                    return None;
+                }
+                Some(Msg::Lsp(LspMsg::SignatureHelpResolved {
+                    document_id: pending.document_id,
+                    revision: pending.revision,
+                    cursor: pending.cursor,
+                    help: help.and_then(|h| lsp::client::signature_help_state(&h)),
                 }))
             })
             .collect()
@@ -3108,6 +3200,7 @@ impl App {
         self.lsp.hover.clear_for_roots(server_id, roots);
         self.lsp.references.clear_for_roots(server_id, roots);
         self.lsp.completion.clear_for_roots(server_id, roots);
+        self.lsp.signature_help.clear_for_roots(server_id, roots);
         self.lsp.resolve.clear_for_roots(server_id, roots);
     }
 
@@ -3710,6 +3803,37 @@ impl App {
         });
     }
 
+    /// `textDocument/signatureHelp` — `request_lsp_hover` plus the
+    /// `SignatureHelpContext` params (`triggerKind` 2 for a typed
+    /// trigger/retrigger character, 1 for an explicit invoke).
+    fn request_lsp_signature_help(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        position: lsp_types::Position,
+        cursor: token::model::editor::Position,
+        revision: u64,
+        trigger: Option<String>,
+        is_retrigger: bool,
+    ) {
+        let mut context = serde_json::json!({
+            "triggerKind": if trigger.is_some() { 2 } else { 1 },
+            "isRetrigger": is_retrigger,
+        });
+        if let Some(ch) = trigger {
+            context["triggerCharacter"] = serde_json::Value::String(ch);
+        }
+        self.gated_lsp_request::<PendingSignatureHelp>(
+            document_id,
+            position,
+            Some(serde_json::json!({ "context": context })),
+            |_| PendingSignatureHelp {
+                document_id,
+                revision,
+                cursor,
+            },
+        );
+    }
+
     /// Builds `LocationItem` previews for a `textDocument/references`
     /// reply — called from the interception pass (not `update()`) because
     /// a location in a file that isn't currently open needs a disk read
@@ -4056,6 +4180,11 @@ impl App {
         self.sweep_lsp_feature_deadlines::<PendingHover>();
     }
 
+    /// Silent `SIGNATURE_HELP_TIMEOUT` abandonment sweep.
+    fn check_lsp_signature_help_deadlines(&mut self) {
+        self.sweep_lsp_feature_deadlines::<PendingSignatureHelp>();
+    }
+
     /// Fires `REFERENCES_TIMEOUT` UI-level abandonment for references
     /// requests a server never answered — mirrors
     /// `check_lsp_definition_deadlines`.
@@ -4366,6 +4495,7 @@ impl ApplicationHandler for App {
         self.check_lsp_restart_deadlines();
         self.check_lsp_definition_deadlines();
         self.check_lsp_hover_deadlines();
+        self.check_lsp_signature_help_deadlines();
         self.check_lsp_references_deadlines();
         self.check_lsp_completion_debounces();
         self.check_lsp_completion_deadlines();
@@ -4422,6 +4552,9 @@ impl ApplicationHandler for App {
             next_wake = next_wake.min(earliest_deadline);
         }
         if let Some(earliest_deadline) = self.lsp.hover.earliest_deadline() {
+            next_wake = next_wake.min(earliest_deadline);
+        }
+        if let Some(earliest_deadline) = self.lsp.signature_help.earliest_deadline() {
             next_wake = next_wake.min(earliest_deadline);
         }
         if let Some(earliest_deadline) = self.lsp.references.earliest_deadline() {

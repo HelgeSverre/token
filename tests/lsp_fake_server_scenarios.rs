@@ -379,3 +379,78 @@ fn real_rust_analyzer_completes_the_handshake() {
 
     handle.kill();
 }
+
+/// A server that advertises `signatureHelpProvider` and answers
+/// `textDocument/signatureHelp`: the reader mirrors the trigger characters
+/// and parses the reply into `SignatureHelpResponseFromServer`.
+#[test]
+fn signature_help_request_round_trips_through_the_fake_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let scenario = write_scenario(
+        dir.path(),
+        json!([
+            { "op": "expect_request", "method": "initialize", "respond": { "capabilities": {
+                "signatureHelpProvider": { "triggerCharacters": ["("], "retriggerCharacters": [")"] }
+            } } },
+            { "op": "expect_request", "method": "textDocument/signatureHelp", "respond": {
+                "signatures": [{ "label": "fn f(a: i32)", "parameters": [{ "label": [5, 11] }] }],
+                "activeSignature": 0,
+                "activeParameter": 0
+            } },
+        ]),
+    );
+
+    let (msg_tx, msg_rx) = mpsc::channel();
+    let mut handle = spawn_server(
+        fake_lsp_server_path().to_str().unwrap(),
+        &[scenario.to_string_lossy().into_owned()],
+        dir.path(),
+        LspServerId::from("fake"),
+        msg_tx,
+        None,
+        serde_json::Value::Null,
+        serde_json::Value::Null,
+    )
+    .expect("spawn fake-lsp-server");
+
+    assert!(recv_until(&msg_rx, Duration::from_secs(5), is_ready).is_some());
+    let triggers = recv_until(&msg_rx, Duration::from_secs(5), |m| {
+        matches!(m, Msg::Lsp(LspMsg::ServerSignatureTriggers { .. }))
+    });
+    let Some(Msg::Lsp(LspMsg::ServerSignatureTriggers {
+        trigger, retrigger, ..
+    })) = triggers
+    else {
+        panic!("expected ServerSignatureTriggers");
+    };
+    assert_eq!(trigger, vec!["(".to_owned()]);
+    assert_eq!(retrigger, vec![")".to_owned()]);
+
+    let request_id = handle.begin_request(
+        "textDocument/signatureHelp",
+        json!({
+            "textDocument": { "uri": "file:///tmp/main.rs" },
+            "position": { "line": 0, "character": 5 },
+            "context": { "triggerKind": 2, "triggerCharacter": "(", "isRetrigger": false }
+        }),
+    );
+    let reply = recv_until(&msg_rx, Duration::from_secs(5), |m| {
+        matches!(m, Msg::Lsp(LspMsg::SignatureHelpResponseFromServer { .. }))
+    });
+    let Some(Msg::Lsp(LspMsg::SignatureHelpResponseFromServer {
+        request_id: id,
+        help,
+        abandoned,
+        ..
+    })) = reply
+    else {
+        panic!("expected SignatureHelpResponseFromServer");
+    };
+    assert_eq!(id, request_id);
+    assert!(!abandoned);
+    let help = help.expect("parsed SignatureHelp");
+    assert_eq!(help.signatures[0].label, "fn f(a: i32)");
+    assert_eq!(help.active_parameter, Some(0));
+
+    handle.kill();
+}

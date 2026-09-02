@@ -30,8 +30,8 @@ pub use ui::{
     DropState, FileFinderState, FileMatch, FindReplaceField, FindReplaceState, FocusTarget,
     GotoLineState, HoverCardState, HoverRegion, LanguagePickerState, LspServersState, ModalId,
     ModalState, OutlinePanelState, ProblemsPanelState, RecentFilesState, ScrollbarDragAxis,
-    ScrollbarDragState, SearchTab, SidebarResizeState, ThemePickerState, UiState,
-    COMMAND_PALETTE_MAX_VISIBLE,
+    ScrollbarDragState, SearchTab, SidebarResizeState, SignatureHelpState, SignatureView,
+    ThemePickerState, UiState, COMMAND_PALETTE_MAX_VISIBLE,
 };
 pub use workspace::{FileExtension, FileNode, FileTree, Workspace};
 
@@ -460,6 +460,10 @@ pub struct LspUiState {
     /// trigger character (`.`) and tag the re-request with it. Keyed by
     /// server id like `servers`; an empty vec clears the entry's value.
     pub completion_trigger_characters: HashMap<LspServerId, Vec<String>>,
+    /// Per-server `signatureHelpProvider` `(triggerCharacters,
+    /// retriggerCharacters)`, mirrored from `LspMsg::ServerSignatureTriggers`
+    /// the same way as `completion_trigger_characters`.
+    pub signature_trigger_characters: HashMap<LspServerId, (Vec<String>, Vec<String>)>,
 }
 
 /// One entry in the general, group-tagged jump-history back stack

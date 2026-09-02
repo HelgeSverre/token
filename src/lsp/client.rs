@@ -22,11 +22,11 @@ use lsp_types::{
     ClientCapabilities, CompletionClientCapabilities, CompletionItemCapability,
     CompletionItemCapabilityResolveSupport, DidChangeWatchedFilesClientCapabilities,
     DynamicRegistrationClientCapabilities, GeneralClientCapabilities, GotoCapability,
-    HoverClientCapabilities, MarkupKind, PositionEncodingKind,
-    PublishDiagnosticsClientCapabilities, ServerCapabilities, TagSupport,
-    TextDocumentClientCapabilities, TextDocumentSyncCapability, TextDocumentSyncClientCapabilities,
-    TextDocumentSyncKind, TextDocumentSyncSaveOptions, WindowClientCapabilities,
-    WorkspaceClientCapabilities,
+    HoverClientCapabilities, MarkupKind, ParameterInformationSettings, PositionEncodingKind,
+    PublishDiagnosticsClientCapabilities, ServerCapabilities, SignatureHelpClientCapabilities,
+    SignatureInformationSettings, TagSupport, TextDocumentClientCapabilities,
+    TextDocumentSyncCapability, TextDocumentSyncClientCapabilities, TextDocumentSyncKind,
+    TextDocumentSyncSaveOptions, WindowClientCapabilities, WorkspaceClientCapabilities,
 };
 use serde_json::{json, Value};
 
@@ -71,6 +71,17 @@ pub fn client_capabilities() -> ClientCapabilities {
             }),
             references: Some(DynamicRegistrationClientCapabilities {
                 dynamic_registration: Some(false),
+            }),
+            signature_help: Some(SignatureHelpClientCapabilities {
+                dynamic_registration: Some(false),
+                signature_information: Some(SignatureInformationSettings {
+                    documentation_format: Some(vec![MarkupKind::PlainText, MarkupKind::Markdown]),
+                    parameter_information: Some(ParameterInformationSettings {
+                        label_offset_support: Some(true),
+                    }),
+                    active_parameter_support: Some(true),
+                }),
+                context_support: Some(true),
             }),
             completion: Some(CompletionClientCapabilities {
                 dynamic_registration: Some(false),
@@ -187,6 +198,22 @@ pub fn supports_references(caps: &ServerCapabilities) -> bool {
 
 pub fn supports_completion(caps: &ServerCapabilities) -> bool {
     caps.completion_provider.is_some()
+}
+
+pub fn supports_signature_help(caps: &ServerCapabilities) -> bool {
+    caps.signature_help_provider.is_some()
+}
+
+/// `(triggerCharacters, retriggerCharacters)` of the server's
+/// `signatureHelpProvider` — both empty when absent.
+pub fn signature_help_triggers(caps: &ServerCapabilities) -> (Vec<String>, Vec<String>) {
+    let Some(p) = caps.signature_help_provider.as_ref() else {
+        return (Vec::new(), Vec::new());
+    };
+    (
+        p.trigger_characters.clone().unwrap_or_default(),
+        p.retrigger_characters.clone().unwrap_or_default(),
+    )
 }
 
 /// Whether the server advertised `completionProvider.resolveProvider` —
@@ -1086,6 +1113,10 @@ fn reader_loop(
                     .as_ref()
                     .map(completion_trigger_characters)
                     .unwrap_or_default();
+                let (sig_trigger, sig_retrigger) = parsed
+                    .as_ref()
+                    .map(signature_help_triggers)
+                    .unwrap_or_default();
                 *capabilities.lock().unwrap() = parsed;
                 let _ = outbound_tx.send(WorkerCmd::HandshakeReady);
                 send_state(
@@ -1098,6 +1129,11 @@ fn reader_loop(
                 let _ = msg_tx.send(Msg::Lsp(LspMsg::ServerCompletionTriggers {
                     server_id: server_id.clone(),
                     characters,
+                }));
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::ServerSignatureTriggers {
+                    server_id: server_id.clone(),
+                    trigger: sig_trigger,
+                    retrigger: sig_retrigger,
                 }));
                 if let Some(wake) = wake.as_deref() {
                     wake();
@@ -1137,6 +1173,23 @@ fn reader_loop(
                     root: root.clone(),
                     request_id: id,
                     content,
+                    abandoned: entry.abandoned,
+                }));
+                if let Some(wake) = wake.as_deref() {
+                    wake();
+                }
+            } else if entry.method == "textDocument/signatureHelp" {
+                // `null` / malformed -> `None`, same posture as hover.
+                let help = message.get("result").and_then(|r| {
+                    serde_json::from_value::<lsp_types::SignatureHelp>(r.clone())
+                        .ok()
+                        .map(Box::new)
+                });
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::SignatureHelpResponseFromServer {
+                    server_id: server_id.clone(),
+                    root: root.clone(),
+                    request_id: id,
+                    help,
                     abandoned: entry.abandoned,
                 }));
                 if let Some(wake) = wake.as_deref() {
@@ -1288,6 +1341,73 @@ pub(crate) fn hover_contents_to_plain_text(contents: &lsp_types::HoverContents) 
             .collect::<Vec<_>>()
             .join("\n\n"),
         lsp_types::HoverContents::Markup(markup) => match markup.kind {
+            MarkupKind::PlainText => markup.value.clone(),
+            MarkupKind::Markdown => markdown_to_plain_text(&markup.value),
+        },
+    }
+}
+
+/// Flattens a `textDocument/signatureHelp` reply into the model's
+/// plaintext view: the active signature/parameter resolved per spec
+/// (`SignatureInformation.activeParameter` overrides the top-level one),
+/// parameter label offsets (UTF-16) converted to char offsets into the
+/// label, string labels located as a substring. `None` when there are no
+/// signatures.
+pub fn signature_help_state(
+    help: &lsp_types::SignatureHelp,
+) -> Option<crate::model::SignatureHelpState> {
+    if help.signatures.is_empty() {
+        return None;
+    }
+    let active = (help.active_signature.unwrap_or(0) as usize).min(help.signatures.len() - 1);
+    let signatures = help
+        .signatures
+        .iter()
+        .map(|sig| {
+            let param = sig
+                .active_parameter
+                .or(help.active_parameter)
+                .and_then(|i| sig.parameters.as_ref()?.get(i as usize));
+            crate::model::SignatureView {
+                label: sig.label.clone(),
+                active_parameter_range: param.and_then(|p| match &p.label {
+                    lsp_types::ParameterLabel::Simple(s) => {
+                        let byte = sig.label.find(s.as_str())?;
+                        let start = sig.label[..byte].chars().count();
+                        Some((start, start + s.chars().count()))
+                    }
+                    lsp_types::ParameterLabel::LabelOffsets([start, end]) => Some((
+                        utf16_to_char_offset(&sig.label, *start as usize),
+                        utf16_to_char_offset(&sig.label, *end as usize),
+                    )),
+                }),
+                parameter_doc: param
+                    .and_then(|p| p.documentation.as_ref())
+                    .map(documentation_to_plain_text)
+                    .filter(|d| !d.trim().is_empty()),
+            }
+        })
+        .collect();
+    Some(crate::model::SignatureHelpState { signatures, active })
+}
+
+/// The char index whose UTF-16 offset within `s` is `utf16` (clamped to
+/// the end).
+fn utf16_to_char_offset(s: &str, utf16: usize) -> usize {
+    let mut acc = 0;
+    for (i, ch) in s.chars().enumerate() {
+        if acc >= utf16 {
+            return i;
+        }
+        acc += ch.len_utf16();
+    }
+    s.chars().count()
+}
+
+fn documentation_to_plain_text(doc: &lsp_types::Documentation) -> String {
+    match doc {
+        lsp_types::Documentation::String(s) => s.clone(),
+        lsp_types::Documentation::MarkupContent(markup) => match markup.kind {
             MarkupKind::PlainText => markup.value.clone(),
             MarkupKind::Markdown => markdown_to_plain_text(&markup.value),
         },
@@ -2243,5 +2363,44 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
             markdown_to_plain_text(markdown),
             "pub fn read_to_string(path: &Path)\n__init__\n5 * 3"
         );
+    }
+
+    // ---- textDocument/signatureHelp flattening ----
+
+    /// Label offsets are UTF-16; the model wants char offsets. `😀` is one
+    /// char but two UTF-16 units, so offsets after it shift by one.
+    #[test]
+    fn signature_help_state_converts_utf16_label_offsets_to_char_offsets() {
+        let help: lsp_types::SignatureHelp = serde_json::from_value(json!({
+            "signatures": [{
+                "label": "f(😀: A, b: B)",
+                "parameters": [
+                    { "label": [2, 6] },
+                    { "label": [9, 13], "documentation": { "kind": "markdown", "value": "**second**" } }
+                ]
+            }],
+            "activeSignature": 0,
+            "activeParameter": 1
+        }))
+        .unwrap();
+        let state = signature_help_state(&help).unwrap();
+        let sig = &state.signatures[0];
+        assert_eq!(sig.active_parameter_range, Some((8, 12)));
+        assert_eq!(
+            &sig.label.chars().skip(8).take(4).collect::<String>(),
+            "b: B"
+        );
+        assert_eq!(sig.parameter_doc.as_deref(), Some("second"));
+    }
+
+    #[test]
+    fn signature_help_state_locates_a_string_parameter_label_in_the_signature() {
+        let help: lsp_types::SignatureHelp = serde_json::from_value(json!({
+            "signatures": [{ "label": "f(a: A, b: B)", "parameters": [{ "label": "b: B" }] }],
+            "activeParameter": 0
+        }))
+        .unwrap();
+        let state = signature_help_state(&help).unwrap();
+        assert_eq!(state.signatures[0].active_parameter_range, Some((8, 12)));
     }
 }

@@ -220,8 +220,65 @@ fn jump_diagnostic(model: &mut AppModel, forward: bool) -> Option<Cmd> {
     navigation::combine(cmd, Some(Cmd::redraw_status_bar()))
 }
 
+/// `Cmd::LspRequestSignatureHelp` at the caret of the focused, file-backed
+/// document — shared by `ShowSignatureHelp` (explicit invoke) and the
+/// typing-driven path in `update/completion.rs`.
+pub(crate) fn request_signature_help(
+    model: &AppModel,
+    trigger: Option<String>,
+    is_retrigger: bool,
+) -> Option<Cmd> {
+    let doc = model.try_document()?;
+    let document_id = doc.id?;
+    doc.file_path.as_ref()?;
+    let cursor = model.editor().active_cursor().to_position();
+    Some(Cmd::LspRequestSignatureHelp {
+        document_id,
+        position: crate::lsp::position_to_lsp(doc, cursor),
+        cursor,
+        revision: doc.revision,
+        trigger,
+        is_retrigger,
+    })
+}
+
 pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
     match msg {
+        LspMsg::ShowSignatureHelp => request_signature_help(model, None, false),
+        LspMsg::ServerSignatureTriggers {
+            server_id,
+            trigger,
+            retrigger,
+        } => {
+            if trigger.is_empty() && retrigger.is_empty() {
+                model.lsp.signature_trigger_characters.remove(&server_id);
+            } else {
+                model
+                    .lsp
+                    .signature_trigger_characters
+                    .insert(server_id, (trigger, retrigger));
+            }
+            None
+        }
+        LspMsg::SignatureHelpResolved {
+            document_id,
+            revision,
+            cursor,
+            help,
+        } => {
+            // Revision + focus guards, then a same-line caret guard: the
+            // float follows the caret along the line (typing arguments),
+            // but a reply for another line must never open it there.
+            if stale_feature_response(model, document_id, revision) {
+                return None;
+            }
+            if model.editor().active_cursor().line != cursor.line {
+                return None;
+            }
+            model.ui.signature_help = help.filter(|h| !h.signatures.is_empty());
+            Some(Cmd::Redraw)
+        }
+        LspMsg::SignatureHelpResponseFromServer { .. } => None,
         LspMsg::ServerStateChanged {
             server_id, state, ..
         } => {
@@ -1581,5 +1638,76 @@ mod tests {
             },
         );
         assert!(matches!(cmd, Some(Cmd::LspRestartServer { server_id }) if server_id == id));
+    }
+
+    // ---- signature help ----
+
+    fn one_signature() -> crate::model::SignatureHelpState {
+        crate::model::SignatureHelpState {
+            signatures: vec![crate::model::SignatureView {
+                label: "fn f(a: i32)".to_owned(),
+                active_parameter_range: Some((5, 11)),
+                parameter_doc: None,
+            }],
+            active: 0,
+        }
+    }
+
+    fn resolve_signature(
+        model: &mut AppModel,
+        revision: u64,
+        help: Option<crate::model::SignatureHelpState>,
+    ) {
+        let document_id = model.document().id.unwrap();
+        let cursor = model.editor().active_cursor().to_position();
+        update_lsp(
+            model,
+            LspMsg::SignatureHelpResolved {
+                document_id,
+                revision,
+                cursor,
+                help,
+            },
+        );
+    }
+
+    #[test]
+    fn signature_help_resolved_sets_the_state() {
+        let (_dir, mut model) = model_with_file();
+        let revision = model.document().revision;
+        resolve_signature(&mut model, revision, Some(one_signature()));
+        assert_eq!(model.ui.signature_help, Some(one_signature()));
+    }
+
+    #[test]
+    fn signature_help_resolved_for_a_stale_revision_is_dropped() {
+        let (_dir, mut model) = model_with_file();
+        let revision = model.document().revision;
+        resolve_signature(&mut model, revision + 1, Some(one_signature()));
+        assert!(model.ui.signature_help.is_none());
+    }
+
+    #[test]
+    fn signature_help_resolved_with_no_help_clears_the_state() {
+        let (_dir, mut model) = model_with_file();
+        let revision = model.document().revision;
+        model.ui.signature_help = Some(one_signature());
+        resolve_signature(&mut model, revision, None);
+        assert!(model.ui.signature_help.is_none());
+    }
+
+    #[test]
+    fn moving_the_caret_to_another_line_dismisses_signature_help() {
+        use crate::messages::{Direction, Msg};
+        let (_dir, mut model) = model_with_file();
+        model.ui.signature_help = Some(one_signature());
+
+        crate::update::update(&mut model, Msg::move_cursor(Direction::Right));
+        assert!(
+            model.ui.signature_help.is_some(),
+            "moving along the line keeps it"
+        );
+        crate::update::update(&mut model, Msg::move_cursor(Direction::Down));
+        assert!(model.ui.signature_help.is_none());
     }
 }

@@ -2202,8 +2202,72 @@ fn reference_row_text(
     (details, accessories)
 }
 
-/// Render the active cursor-anchored popup (completion/hover shells;
-/// currently debug-demo content only — see `with_cursor_overlay_spec`).
+/// Signature help's caret-anchored float, a sibling of
+/// `with_cursor_overlay_spec` rather than a `CursorOverlayKind`: it never
+/// routes keys and may show together with the completion menu (menu
+/// below the caret, this above). Inert to hit-testing.
+pub fn with_signature_help_spec<R>(
+    model: &AppModel,
+    f: impl FnOnce(&OverlaySpec) -> R,
+) -> Option<R> {
+    let help = model.ui.signature_help.as_ref()?;
+    let sig = help.signatures.get(help.active)?;
+    let (x, y, h) = cursor_overlay_anchor(model)?;
+    // ponytail: `Zones.code` is a plain &str (no styled spans), so the
+    // active parameter is bracketed ‹…›; swap for a bold/accent span once
+    // the zone renderer grows one.
+    let code = match sig.active_parameter_range {
+        Some((start, end)) if start <= end && end <= sig.label.chars().count() => {
+            let chars: Vec<char> = sig.label.chars().collect();
+            let mut s: String = chars[..start].iter().collect();
+            s.push('‹');
+            s.extend(&chars[start..end]);
+            s.push('›');
+            s.extend(&chars[end..]);
+            s
+        }
+        _ => sig.label.clone(),
+    };
+    let mut text = sig.parameter_doc.clone().unwrap_or_default();
+    if help.signatures.len() > 1 {
+        if !text.is_empty() {
+            text.push_str("\n\n");
+        }
+        text.push_str(&format!(
+            "({} of {})",
+            help.active + 1,
+            help.signatures.len()
+        ));
+    }
+    let spec = OverlaySpec {
+        tabs: None,
+        anchor: Anchor::Cursor {
+            x,
+            y,
+            h,
+            prefer_below: false,
+            width: WidthRule {
+                pct: 0.0,
+                min: 280.0,
+                max: 480.0,
+            },
+        },
+        header: None,
+        body: Body::Zones(Zones {
+            banner: None,
+            code: Some(code.as_str()),
+            text: (!text.is_empty()).then_some(text.as_str()),
+        }),
+        footer: None,
+        hover_row: None,
+        docs: None,
+    };
+    Some(f(&spec))
+}
+
+/// Render the active cursor-anchored popup(s): signature help first so
+/// a simultaneously open completion menu paints over it if they ever
+/// collide.
 pub fn render_cursor_overlay(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -2213,6 +2277,19 @@ pub fn render_cursor_overlay(
     mask_cache: &mut RoundedRectMaskCache,
 ) {
     let scale_factor = model.metrics.scale_factor;
+    with_signature_help_spec(model, |spec| {
+        overlay_surface::render(
+            frame,
+            painter,
+            mask_cache,
+            &model.theme.overlay,
+            spec,
+            window_width,
+            window_height,
+            scale_factor,
+            model.ui.cursor_visible,
+        );
+    });
     with_cursor_overlay_spec(model, |spec| {
         overlay_surface::render(
             frame,

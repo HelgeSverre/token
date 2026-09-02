@@ -956,7 +956,7 @@ impl Renderer {
         // Cursor-anchored popups force Full while visible, same as modals
         // (overlay-surface.md Phase 5); a normal (possibly partial) redraw
         // resumes once dismissed — no pixel-save mechanism.
-        if model.ui.cursor_overlay.is_some() {
+        if model.ui.cursor_overlay.is_some() || model.ui.signature_help.is_some() {
             return Damage::Full;
         }
 
@@ -1034,7 +1034,8 @@ impl Renderer {
             render_status_bar,
             cursor_lines_only,
             show_modal: model.ui.active_modal.is_some(),
-            show_cursor_overlay: model.ui.cursor_overlay.is_some(),
+            show_cursor_overlay: model.ui.cursor_overlay.is_some()
+                || model.ui.signature_help.is_some(),
             show_drop_overlay: model.ui.drop_state.is_hovering,
             show_tab_drag_ghost: model.ui.tab_drag.is_some_and(|d| d.active),
             #[cfg(debug_assertions)]

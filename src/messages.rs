@@ -1115,6 +1115,37 @@ pub enum LspMsg {
         abandoned: bool,
     },
 
+    // ==== Signature help ====
+    /// User intent (keybinding / palette): request `textDocument/
+    /// signatureHelp` at the caret with `triggerKind: Invoked`.
+    ShowSignatureHelp,
+    /// Worker -> update: the `signatureHelpProvider` trigger and retrigger
+    /// characters a server advertised, sent right after
+    /// `ServerCompletionTriggers` (both empty clears the mirror entry).
+    ServerSignatureTriggers {
+        server_id: LspServerId,
+        trigger: Vec<String>,
+        retrigger: Vec<String>,
+    },
+    /// Runtime -> update: a `textDocument/signatureHelp` reply, already
+    /// flattened to `SignatureHelpState` by the interception pass.
+    /// Revision-guarded; `help: None` (or no signatures) closes the float.
+    SignatureHelpResolved {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        cursor: crate::model::editor::Position,
+        help: Option<crate::model::SignatureHelpState>,
+    },
+    /// Worker -> runtime only: the raw `textDocument/signatureHelp`
+    /// response, keyed like `HoverResponseFromServer`.
+    SignatureHelpResponseFromServer {
+        server_id: LspServerId,
+        root: std::path::PathBuf,
+        request_id: i64,
+        help: Option<Box<lsp_types::SignatureHelp>>,
+        abandoned: bool,
+    },
+
     // ==== Show Usages / Find Usages (lsp-integration.md, references) ====
     /// User intent (Alt+F7 / Alt+Cmd+F7 / palette). `update_lsp` reads the
     /// focused document + cursor synchronously and captures

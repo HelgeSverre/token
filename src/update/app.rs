@@ -455,6 +455,9 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::ShowHover => {
             crate::update::update_lsp(model, crate::messages::LspMsg::ShowHover)
         }
+        CommandId::ShowSignatureHelp => {
+            crate::update::update_lsp(model, crate::messages::LspMsg::ShowSignatureHelp)
+        }
         // Both commands open the same cursor-anchored popup for now — a
         // docked usages panel is a later feature (see LocationItem's doc
         // comment).

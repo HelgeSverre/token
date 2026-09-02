@@ -375,6 +375,8 @@ bindings:
   # ===========================================================================
   - key: "cmd+shift+d"
     command: ShowHover
+  - key: "cmd+p"
+    command: ShowSignatureHelp
 
   # ===========================================================================
   # Show Usages / Find Usages (lsp-integration.md, references)

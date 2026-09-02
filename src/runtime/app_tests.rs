@@ -3988,3 +3988,76 @@ mod mouse_wheel_tests {
         assert_eq!(emitted, -1);
     }
 }
+
+/// A signature help request arms its slot like hover; the deadline sweep
+/// abandons it server-side and — unlike hover — says nothing (no status
+/// transient, no float).
+#[test]
+fn a_signature_help_request_arms_the_slot_and_its_sweep_clears_it_silently() {
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    let doc_id = app.model.document().id.unwrap();
+    let revision = app.model.document().revision;
+    let server_id = LspServerId::from("rust-analyzer");
+    let root = PathBuf::from("/tmp/proj-sig-timeout");
+    let uri = lsp::path_to_uri(&PathBuf::from("/tmp/proj-sig-timeout/main.rs"));
+    install_open_document(&mut app, doc_id, &server_id, &root, uri);
+    let handle = spawn_fake_handle(&server_id);
+    *handle.capabilities.lock().unwrap() = Some(lsp_types::ServerCapabilities {
+        signature_help_provider: Some(lsp_types::SignatureHelpOptions::default()),
+        ..Default::default()
+    });
+    app.lsp
+        .servers
+        .insert((server_id.clone(), root.clone()), handle);
+
+    app.request_lsp_signature_help(
+        doc_id,
+        lsp_types::Position {
+            line: 0,
+            character: 0,
+        },
+        test_cursor(&app),
+        revision,
+        Some("(".to_owned()),
+        false,
+    );
+    let key = app.lsp.signature_help.by_doc.get(&doc_id).cloned().unwrap();
+    assert!(app.lsp.signature_help.deadlines.contains_key(&key));
+
+    app.lsp
+        .signature_help
+        .deadlines
+        .insert(key.clone(), Instant::now() - Duration::from_secs(1));
+    let status_before = app
+        .model
+        .ui
+        .transient_message
+        .as_ref()
+        .map(|t| t.text.clone());
+    app.check_lsp_signature_help_deadlines();
+
+    assert!(app.lsp.signature_help.requests.is_empty());
+    assert!(app.lsp.signature_help.by_doc.is_empty());
+    assert!(app.lsp.signature_help.deadlines.is_empty());
+    assert_eq!(
+        app.model
+            .ui
+            .transient_message
+            .as_ref()
+            .map(|t| t.text.clone()),
+        status_before,
+        "silent sweep: no status transient"
+    );
+    assert!(app.model.ui.signature_help.is_none());
+    let mut handle = app.lsp.servers.remove(&(server_id, root)).unwrap();
+    assert!(
+        handle
+            .pending
+            .lock()
+            .unwrap()
+            .resolve(key.2)
+            .unwrap()
+            .abandoned
+    );
+    handle.kill();
+}

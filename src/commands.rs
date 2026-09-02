@@ -37,6 +37,7 @@ pub enum CommandId {
     NavigateBack,
     NavigateForward,
     ShowHover,
+    ShowSignatureHelp,
     FindUsages,
     NextDiagnostic,
     PrevDiagnostic,
@@ -257,6 +258,12 @@ pub static COMMANDS: &[CommandDef] = &[
         category: CommandCategory::Nav,
         label: "Show Hover",
         keybinding: Some("⇧⌘D"),
+    },
+    CommandDef {
+        id: CommandId::ShowSignatureHelp,
+        category: CommandCategory::Nav,
+        label: "Show Signature Help",
+        keybinding: Some("⌘P"),
     },
     CommandDef {
         id: CommandId::FindUsages,
@@ -557,6 +564,7 @@ impl CommandId {
             CommandId::NavigateBack => Some(KeymapCommand::NavigateBack),
             CommandId::NavigateForward => Some(KeymapCommand::NavigateForward),
             CommandId::ShowHover => Some(KeymapCommand::ShowHover),
+            CommandId::ShowSignatureHelp => Some(KeymapCommand::ShowSignatureHelp),
             CommandId::FindUsages => Some(KeymapCommand::FindUsages),
             CommandId::NextDiagnostic => Some(KeymapCommand::NextDiagnostic),
             CommandId::PrevDiagnostic => Some(KeymapCommand::PrevDiagnostic),
@@ -983,6 +991,18 @@ pub enum Cmd {
         cursor: crate::model::editor::Position,
         revision: u64,
     },
+    /// `textDocument/signatureHelp`, mirroring `LspRequestHover`. `trigger`
+    /// is the typed trigger/retrigger character (`triggerKind:
+    /// TriggerCharacter`), `None` for an explicit invoke; `is_retrigger`
+    /// is set while the float is already open.
+    LspRequestSignatureHelp {
+        document_id: DocumentId,
+        position: lsp_types::Position,
+        cursor: crate::model::editor::Position,
+        revision: u64,
+        trigger: Option<String>,
+        is_retrigger: bool,
+    },
     /// `textDocument/references` (Show Usages / Find Usages), tagged with
     /// the document's `revision` and (char-column) `cursor` at request
     /// time — mirrors `LspRequestHover`. `context.includeDeclaration` is
@@ -1155,6 +1175,7 @@ impl Cmd {
             Cmd::LspRequestDefinition { .. } => Damage::Areas(vec![]),
             Cmd::LspDidOpenOnServer { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestHover { .. } => Damage::Areas(vec![]),
+            Cmd::LspRequestSignatureHelp { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestReferences { .. } => Damage::Areas(vec![]),
             Cmd::LspScheduleCompletion { .. } => Damage::Areas(vec![]),
             Cmd::LspCancelCompletion { .. } => Damage::Areas(vec![]),

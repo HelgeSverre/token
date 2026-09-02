@@ -116,17 +116,23 @@ fn batch_redraw(mut cmds: Vec<Cmd>) -> Cmd {
 /// model mirror (`LspMsg::ServerCompletionTriggers`). Empty when the
 /// language has no registered server or the server advertised none.
 fn trigger_characters_for(model: &AppModel) -> Vec<String> {
-    let language = model.document().language;
-    lsp_server_def(language)
-        .map(|def| def.id)
-        .and_then(|id| {
-            model
-                .lsp
-                .completion_trigger_characters
-                .get(&crate::lsp::LspServerId::from(id))
-        })
+    focused_server_id(model)
+        .and_then(|id| model.lsp.completion_trigger_characters.get(&id))
         .cloned()
         .unwrap_or_default()
+}
+
+/// The focused document's server `(trigger, retrigger)` signature-help
+/// characters (`LspMsg::ServerSignatureTriggers` mirror).
+fn signature_triggers_for(model: &AppModel) -> (Vec<String>, Vec<String>) {
+    focused_server_id(model)
+        .and_then(|id| model.lsp.signature_trigger_characters.get(&id))
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn focused_server_id(model: &AppModel) -> Option<crate::lsp::LspServerId> {
+    lsp_server_def(model.document().language).map(|def| crate::lsp::LspServerId::from(def.id))
 }
 
 /// Whether the focused document could ever carry LSP completion traffic —
@@ -242,7 +248,40 @@ pub(crate) fn sync_after_document_edit(
         dismiss(model);
         return None;
     }
+    let signature = signature_help_after_edit(model, typed_char);
+    let completion = sync_completion_after_edit(model, opens_on_word_char, typed_char);
+    match (completion, signature) {
+        (Some(a), Some(b)) => Some(Cmd::Batch(vec![a, b])),
+        (a, b) => a.or(b),
+    }
+}
 
+/// Signature help's typing-driven request: a server trigger character
+/// opens it; while open, a retrigger character or any other edit
+/// re-requests (`isRetrigger`) so the active parameter tracks the caret.
+/// Revision-guarded on reply, so a burst of keystrokes only lands the
+/// last one.
+fn signature_help_after_edit(model: &AppModel, typed_char: Option<char>) -> Option<Cmd> {
+    if !lsp_capable(model) {
+        return None;
+    }
+    let (trigger, retrigger) = signature_triggers_for(model);
+    let is_open = model.ui.signature_help.is_some();
+    let typed = typed_char.map(|ch| ch.to_string());
+    let on_trigger = typed
+        .as_ref()
+        .is_some_and(|t| trigger.contains(t) || (is_open && retrigger.contains(t)));
+    if !on_trigger && !is_open {
+        return None;
+    }
+    super::lsp::request_signature_help(model, on_trigger.then_some(typed).flatten(), is_open)
+}
+
+fn sync_completion_after_edit(
+    model: &mut AppModel,
+    opens_on_word_char: bool,
+    typed_char: Option<char>,
+) -> Option<Cmd> {
     let cursor = *model.editor().active_cursor();
     let trigger_characters = trigger_characters_for(model);
     let on_trigger_char =
@@ -2114,5 +2153,80 @@ mod tests {
             )),
             "resolved item must not schedule: {onto_resolved:?}"
         );
+    }
+
+    // ---- signature help triggering ----
+
+    /// A Rust file with mirrored signature triggers: `(`/`,` trigger,
+    /// `)` retrigger.
+    fn signature_model() -> AppModel {
+        use crate::lsp::LspServerId;
+        use crate::syntax::LanguageId;
+
+        let mut model = model_with_text("\n");
+        model.document_mut().language = LanguageId::Rust;
+        model.document_mut().file_path = Some(std::path::PathBuf::from("/tmp/proj/lib.rs"));
+        model.lsp.signature_trigger_characters.insert(
+            LspServerId::from("rust-analyzer"),
+            (vec!["(".to_owned(), ",".to_owned()], vec![")".to_owned()]),
+        );
+        place_cursor(&mut model, 0, 0);
+        model
+    }
+
+    fn find_signature_request(cmd: &Cmd) -> Option<(Option<String>, bool)> {
+        match cmd {
+            Cmd::LspRequestSignatureHelp {
+                trigger,
+                is_retrigger,
+                ..
+            } => Some((trigger.clone(), *is_retrigger)),
+            Cmd::Batch(cmds) => cmds.iter().find_map(find_signature_request),
+            _ => None,
+        }
+    }
+
+    fn type_char_signature_request(
+        model: &mut AppModel,
+        ch: char,
+    ) -> Option<(Option<String>, bool)> {
+        update(model, Msg::Document(DocumentMsg::InsertChar(ch)))
+            .as_ref()
+            .and_then(find_signature_request)
+    }
+
+    #[test]
+    fn typing_a_signature_trigger_character_requests_signature_help() {
+        let mut model = signature_model();
+        assert_eq!(type_char_signature_request(&mut model, 'f'), None);
+        assert_eq!(
+            type_char_signature_request(&mut model, '('),
+            Some((Some("(".to_owned()), false))
+        );
+    }
+
+    #[test]
+    fn typing_while_signature_help_is_open_re_requests_as_a_retrigger() {
+        let mut model = signature_model();
+        model.ui.signature_help = Some(crate::model::SignatureHelpState {
+            signatures: vec![],
+            active: 0,
+        });
+        assert_eq!(
+            type_char_signature_request(&mut model, 'x'),
+            Some((None, true))
+        );
+        assert_eq!(
+            type_char_signature_request(&mut model, ')'),
+            Some((Some(")".to_owned()), true)),
+            "a retrigger character is tagged while open"
+        );
+    }
+
+    #[test]
+    fn typing_a_trigger_character_with_no_server_triggers_requests_nothing() {
+        let mut model = signature_model();
+        model.lsp.signature_trigger_characters.clear();
+        assert_eq!(type_char_signature_request(&mut model, '('), None);
     }
 }
