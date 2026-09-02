@@ -851,7 +851,7 @@ pub(crate) fn finish_deferred_accept(
     revision: u64,
     selected: usize,
     detail: Option<String>,
-    documentation: Option<String>,
+    documentation: Option<crate::model::StyledText>,
     additional_text_edits: Vec<(lsp_types::Range, String)>,
 ) -> Option<Cmd> {
     if !merge_resolved_item(
@@ -888,7 +888,7 @@ fn merge_resolved_item(
     revision: u64,
     selected: usize,
     detail: Option<String>,
-    documentation: Option<String>,
+    documentation: Option<crate::model::StyledText>,
     additional_text_edits: Vec<(lsp_types::Range, String)>,
 ) -> bool {
     let Some(state) = model.ui.completion_menu.as_mut() else {
@@ -2069,7 +2069,7 @@ mod tests {
                 revision: state.revision,
                 selected,
                 detail: Some("fn valid_fn()".to_owned()),
-                documentation: Some("Does the valid thing.".to_owned()),
+                documentation: Some("Does the valid thing.".into()),
                 additional_text_edits: vec![],
             }),
         );
@@ -2082,7 +2082,10 @@ mod tests {
         );
         let data = selected_lsp_data(&model);
         assert!(data.resolved);
-        assert_eq!(data.documentation.as_deref(), Some("Does the valid thing."));
+        assert_eq!(
+            data.documentation.as_ref().map(|t| t.text.as_str()),
+            Some("Does the valid thing.")
+        );
     }
 
     #[test]
@@ -2099,7 +2102,7 @@ mod tests {
                 revision: state.revision,
                 selected,
                 detail: None,
-                documentation: Some("docs".to_owned()),
+                documentation: Some("docs".into()),
                 additional_text_edits: vec![],
             }),
         );

@@ -46,6 +46,14 @@ All notable changes to rust-editor are documented in this file.
 - LSP completion items sent in snippet format now insert readable text:
   placeholders are flattened (`${1:arg}` → `arg`), tab stops removed, and the
   caret lands at `$0`.
+- **Styled text in overlay cards.** Hover cards, the completion docs card,
+  and signature help now keep structure from the server's markdown instead
+  of flattening it: inline and fenced code render as recessed chips,
+  emphasis and headings as bold, and diagnostic banners chip their
+  backticked identifiers. Signature help marks the active parameter as an
+  accent run (the previous `‹›` brackets are gone) and dims the "(n of m)"
+  counter. Intraword underscores such as `snake_case` are no longer eaten
+  as emphasis.
 - **Completion documentation card**: selecting an item resolves its
   `documentation` lazily (150 ms debounce) and shows it in a card beside the
   menu, flipping to the left when there is no room. Accepting an already

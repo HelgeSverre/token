@@ -1809,7 +1809,7 @@ fn an_abandoned_hover_response_is_consumed_and_discarded() {
             server_id,
             root,
             request_id: 7,
-            content: Some("should never be seen".to_owned()),
+            content: Some("should never be seen".into()),
             abandoned: true,
         }))
         .unwrap();
@@ -1993,7 +1993,7 @@ fn moving_outside_the_hover_card_panel_dismisses_it() {
         token::model::CursorOverlayKind::Hover,
     ));
     app.model.ui.hover_card = Some(token::model::HoverCardState {
-        content: Some("fn main()".to_owned()),
+        content: Some("fn main()".into()),
         ..Default::default()
     });
     // Simulates `update_cursor_icon` having hit-tested the new point
@@ -2013,7 +2013,7 @@ fn moving_within_the_hover_card_panel_does_not_dismiss_it() {
         token::model::CursorOverlayKind::Hover,
     ));
     app.model.ui.hover_card = Some(token::model::HoverCardState {
-        content: Some("fn main()".to_owned()),
+        content: Some("fn main()".into()),
         ..Default::default()
     });
     // Simulates `update_cursor_icon` having hit-tested the new point
@@ -2120,7 +2120,7 @@ fn hover_resolved_opens_the_card_with_plaintext_content() {
             .ui
             .hover_card
             .as_ref()
-            .and_then(|s| s.content.as_deref()),
+            .and_then(|s| s.content.as_ref().map(|t| t.text.as_str())),
         Some("fn main() -> ()"),
         "markdown emphasis must be stripped to plaintext"
     );
@@ -2533,17 +2533,27 @@ fn hover_on_a_diagnostic_line_includes_related_information() {
         app.model.ui.cursor_overlay.is_some()
     }));
 
-    let (banner, text) =
+    let (banner, banner_spans, text) =
         token::view::modal::with_cursor_overlay_spec(&app.model, |spec| match &spec.body {
             token::view::overlay_surface::Body::Zones(zones) => (
                 zones.banner.map(|(_, message, _)| message.to_owned()),
+                zones.banner_spans.to_vec(),
                 zones.text.map(str::to_owned),
             ),
             _ => panic!("hover card must render a Zones body"),
         })
         .expect("hover overlay must be open");
 
-    assert_eq!(banner.as_deref(), Some("cannot find value `y`"));
+    // The backticked identifier becomes a code chip: the banner text drops
+    // the backticks and carries a `Code` span over `y`.
+    assert_eq!(banner.as_deref(), Some("cannot find value y"));
+    assert_eq!(
+        banner_spans,
+        vec![token::model::Span {
+            range: 18..19,
+            style: token::model::SpanStyle::Code,
+        }]
+    );
     assert!(
         text.as_deref()
             .is_some_and(|t| t.contains("first borrow occurs here")),

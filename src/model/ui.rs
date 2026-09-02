@@ -745,10 +745,10 @@ impl CursorOverlayState {
 /// correct because the card is dismissed on any cursor move.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HoverCardState {
-    /// Plaintext-processed `textDocument/hover` content, or `None` when the
-    /// server returned no hover info at this position (the card can still
-    /// be showing diagnostics-only content).
-    pub content: Option<String>,
+    /// Styled `textDocument/hover` content (markdown reduced to text +
+    /// spans), or `None` when the server returned no hover info at this
+    /// position (the card can still be showing diagnostics-only content).
+    pub content: Option<super::StyledText>,
     /// The hovered text cell this card is anchored to, for a mouse-dwell
     /// hover (`LspMsg::ShowHoverAt`). `None` for a keyboard-invoked hover
     /// (Shift+Cmd+D), which anchors to the caret rect instead — see
@@ -772,8 +772,8 @@ pub struct SignatureView {
     pub label: String,
     /// `[start, end)` char offsets into `label` of the active parameter.
     pub active_parameter_range: Option<(usize, usize)>,
-    /// Plaintext doc of the active parameter, if the server sent one.
-    pub parameter_doc: Option<String>,
+    /// Styled doc of the active parameter, if the server sent one.
+    pub parameter_doc: Option<super::StyledText>,
 }
 
 /// Content for the currently open references/multi-def popup (`ui.

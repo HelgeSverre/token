@@ -1111,7 +1111,7 @@ pub enum LspMsg {
         /// `lsp::client::parse_hover_result` — `None` for a `null` or
         /// unparseable result, matching the definition parser's
         /// permissive-and-collapsed handling.
-        content: Option<String>,
+        content: Option<crate::model::StyledText>,
         abandoned: bool,
     },
 
@@ -1345,7 +1345,7 @@ pub enum LspMsg {
         revision: u64,
         selected: usize,
         detail: Option<String>,
-        documentation: Option<String>,
+        documentation: Option<crate::model::StyledText>,
         additional_text_edits: Vec<(lsp_types::Range, String)>,
     },
     /// Worker -> update: the server asked us to apply a `WorkspaceEdit`
@@ -1379,7 +1379,7 @@ pub enum ReferencesOutcome {
 /// can still open showing diagnostics-only content in that case.
 #[derive(Debug, Clone)]
 pub enum HoverOutcome {
-    Content(Option<String>),
+    Content(Option<crate::model::StyledText>),
     StillIndexing,
     NotSupported,
 }

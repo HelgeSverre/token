@@ -8,6 +8,7 @@
 //! `docs/feature/lsp-integration.md`.
 
 pub mod client;
+pub mod markdown;
 pub mod position;
 pub mod sync;
 pub mod transport;

@@ -16,6 +16,7 @@ use crate::layout::{
     RowListDecl, Sizing, SizingAxes, UiKey, UiTree,
 };
 use crate::model::editor_area::Rect;
+use crate::model::{runs_in_spans, Span, SpanStyle, StyledText};
 use crate::theme::OverlayTheme;
 
 /// Logical-px chrome constants for `Anchor::Centered`, per the Visual
@@ -458,9 +459,15 @@ impl Severity {
 pub struct Zones<'a> {
     /// Severity, message, source (e.g. `(Error, "unused import", "rustc")`).
     pub banner: Option<(Severity, &'a str, &'a str)>,
+    /// Style spans (byte ranges) into the banner message.
+    pub banner_spans: &'a [Span],
     /// Signature block, rendered on `panel_secondary`.
     pub code: Option<&'a str>,
+    /// Style spans into `code` (signature help's active parameter).
+    pub code_spans: &'a [Span],
     pub text: Option<&'a str>,
+    /// Style spans into `text` (inline code chips, emphasis).
+    pub text_spans: &'a [Span],
 }
 
 impl<'a> Body<'a> {
@@ -490,7 +497,7 @@ pub struct OverlaySpec<'a> {
     pub hover_row: Option<FlatIndex>,
     /// Plaintext documentation floated in a card beside the panel
     /// (completion menu: the selected item's docs). Display-only.
-    pub docs: Option<&'a str>,
+    pub docs: Option<&'a StyledText>,
 }
 
 /// One entry in the flattened, on-screen row list: either a section header
@@ -1569,6 +1576,7 @@ pub fn render(
         draw_text_lines(
             frame,
             painter,
+            &colors,
             text,
             lines,
             *truncated,
@@ -2364,7 +2372,17 @@ fn render_zones(
         );
         let msg_x = r.x + pad_x + glyph_w.ceil() as usize + pad_x / 2;
         for (i, line) in bp.lines.iter().enumerate() {
-            painter.draw_sized(frame, msg_x, top + i * line_h, line, size, 0.0, text_color);
+            draw_styled_line(
+                frame,
+                painter,
+                colors,
+                msg_x,
+                top + i * line_h,
+                line,
+                size,
+                text_color,
+                scale_factor,
+            );
         }
         if bp.truncated {
             painter.draw_sized(
@@ -2398,6 +2416,7 @@ fn render_zones(
         draw_text_lines(
             frame,
             painter,
+            colors,
             r,
             lines,
             false,
@@ -2415,14 +2434,25 @@ fn render_zones(
             // Single-line, zone-only body (drop overlay): centered.
             let size = size_px(SIZE_INPUT, scale_factor);
             let text = &lines[0];
-            let text_w = painter.measure_sized(text, size, 0.0).ceil() as usize;
+            let text_w = painter.measure_sized(&text.text, size, 0.0).ceil() as usize;
             let text_x = r.x + (r.w.saturating_sub(text_w)) / 2;
             let text_y = r.y + (r.h.saturating_sub(painter.line_height_for_size(size))) / 2;
-            painter.draw_sized(frame, text_x, text_y, text, size, 0.0, colors.text_primary);
+            draw_styled_line(
+                frame,
+                painter,
+                colors,
+                text_x,
+                text_y,
+                text,
+                size,
+                colors.text_primary,
+                scale_factor,
+            );
         } else {
             draw_text_lines(
                 frame,
                 painter,
+                colors,
                 r,
                 lines,
                 *truncated,
@@ -2436,7 +2466,7 @@ fn render_zones(
     frame.clear_clip();
 }
 
-fn should_center_zone_text(zones: &Zones<'_>, lines: &[String], truncated: bool) -> bool {
+fn should_center_zone_text(zones: &Zones<'_>, lines: &[StyledLine], truncated: bool) -> bool {
     zones.banner.is_none() && zones.code.is_none() && lines.len() == 1 && !truncated
 }
 
@@ -2451,7 +2481,7 @@ const MAX_ZONE_BANNER_LINES: usize = 4;
 const MAX_DOCS_LINES: usize = 12;
 
 /// `(lines, truncated, height)` for one wrapped text zone.
-pub(crate) type TextZonePlan = (Vec<String>, bool, usize);
+pub(crate) type TextZonePlan = (Vec<StyledLine>, bool, usize);
 
 /// The fully measured plan for a `Body::Zones` body: every wrapped line and
 /// zone height, computed ONCE from `(zones, panel_w, scale)` and consumed by
@@ -2461,14 +2491,38 @@ pub(crate) type TextZonePlan = (Vec<String>, bool, usize);
 /// unwrapped banner).
 pub(crate) struct ZonePlan {
     pub banner: Option<BannerPlan>,
-    pub code: Option<(Vec<String>, usize)>,
-    pub text: Option<(Vec<String>, bool, usize)>, // lines, truncated, height
+    pub code: Option<(Vec<StyledLine>, usize)>,
+    pub text: Option<(Vec<StyledLine>, bool, usize)>, // lines, truncated, height
 }
 
 pub(crate) struct BannerPlan {
-    pub lines: Vec<String>,
+    pub lines: Vec<StyledLine>,
     pub truncated: bool,
     pub h: usize,
+}
+
+/// One wrapped zone line: its text plus the styled runs that fall on it
+/// (byte ranges relative to `text`, sorted, non-overlapping).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StyledLine {
+    pub text: String,
+    pub runs: Vec<(std::ops::Range<usize>, SpanStyle)>,
+}
+
+/// Cuts `text` into `StyledLine`s along `ranges` (byte ranges into `text`),
+/// attaching the part of each span that lands on each line.
+fn styled_lines(
+    text: &str,
+    spans: &[Span],
+    ranges: impl IntoIterator<Item = std::ops::Range<usize>>,
+) -> Vec<StyledLine> {
+    ranges
+        .into_iter()
+        .map(|r| StyledLine {
+            text: text[r.clone()].to_owned(),
+            runs: runs_in_spans(spans, r),
+        })
+        .collect()
 }
 
 pub(crate) fn plan_zones(
@@ -2490,37 +2544,47 @@ pub(crate) fn plan_zones(
     // Minimum useful wrap width — the historical 8-cell floor.
     let min_wrap_w = size_px(8.0 * dims::ZONE_CELL_W, scale_factor);
 
-    fn wrap_lines(
+    /// Wrapped line byte ranges into `text`.
+    fn wrap_ranges(
         text: &str,
         style: crate::layout::TextStyle,
         max_w: f32,
         min_w: f32,
         measure: &mut dyn crate::layout::TextMeasure,
-    ) -> Vec<String> {
+    ) -> Vec<std::ops::Range<usize>> {
         crate::layout::text::wrap_to_width(text, style, max_w.max(min_w), measure)
             .into_iter()
-            .map(|line| text[line.range].to_string())
+            .map(|line| line.range)
             .collect()
     }
 
-    fn wrap_lines_with_first_width(
+    /// Like `wrap_ranges`, with a narrower budget for the first line (the
+    /// banner shares it with the right-aligned source tag).
+    fn wrap_ranges_with_first_width(
         text: &str,
         style: crate::layout::TextStyle,
         first_w: f32,
         later_w: f32,
         min_w: f32,
         measure: &mut dyn crate::layout::TextMeasure,
-    ) -> Vec<String> {
+    ) -> Vec<std::ops::Range<usize>> {
         let first = crate::layout::text::wrap_to_width(text, style, first_w.max(min_w), measure);
         let Some(first_line) = first.first() else {
             return Vec::new();
         };
-        let mut lines = vec![text[first_line.range.clone()].to_string()];
-        let remainder = text[first_line.range.end..].trim_start_matches(char::is_whitespace);
+        let mut ranges = vec![first_line.range.clone()];
+        let rest = &text[first_line.range.end..];
+        let skipped = rest.len() - rest.trim_start_matches(char::is_whitespace).len();
+        let offset = first_line.range.end + skipped;
+        let remainder = &text[offset..];
         if !remainder.is_empty() {
-            lines.extend(wrap_lines(remainder, style, later_w, min_w, measure));
+            ranges.extend(
+                wrap_ranges(remainder, style, later_w, min_w, measure)
+                    .into_iter()
+                    .map(|r| r.start + offset..r.end + offset),
+            );
         }
-        lines
+        ranges
     }
 
     let banner = zones.banner.map(|(severity, message, source)| {
@@ -2537,8 +2601,11 @@ pub(crate) fn plan_zones(
         };
         let later_w = content_w - glyph_w;
         let first_w = later_w - source_w;
-        let mut lines =
-            wrap_lines_with_first_width(message, row_style, first_w, later_w, min_wrap_w, measure);
+        let mut lines = styled_lines(
+            message,
+            zones.banner_spans,
+            wrap_ranges_with_first_width(message, row_style, first_w, later_w, min_wrap_w, measure),
+        );
         let truncated = lines.len() > MAX_ZONE_BANNER_LINES;
         lines.truncate(MAX_ZONE_BANNER_LINES);
         let text_rows = lines.len() + usize::from(truncated);
@@ -2552,7 +2619,11 @@ pub(crate) fn plan_zones(
     });
 
     let code = zones.code.map(|s| {
-        let lines = wrap_lines(s, row_style, content_w, min_wrap_w, measure);
+        let lines = styled_lines(
+            s,
+            zones.code_spans,
+            wrap_ranges(s, row_style, content_w, min_wrap_w, measure),
+        );
         let h = lines.len().max(1) * line_h + 2 * (gap / 2);
         (lines, h)
     });
@@ -2560,6 +2631,7 @@ pub(crate) fn plan_zones(
     let text = zones.text.map(|s| {
         plan_text_zone(
             s,
+            zones.text_spans,
             text_style,
             content_w,
             min_wrap_w,
@@ -2572,8 +2644,10 @@ pub(crate) fn plan_zones(
     ZonePlan { banner, code, text }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn plan_text_zone(
     text: &str,
+    spans: &[Span],
     style: crate::layout::TextStyle,
     content_w: f32,
     min_wrap_w: f32,
@@ -2581,11 +2655,13 @@ fn plan_text_zone(
     line_h: usize,
     measure: &mut dyn crate::layout::TextMeasure,
 ) -> TextZonePlan {
-    let mut lines: Vec<String> =
+    let mut lines = styled_lines(
+        text,
+        spans,
         crate::layout::text::wrap_to_width(text, style, content_w.max(min_wrap_w), measure)
             .into_iter()
-            .map(|line| text[line.range].to_string())
-            .collect();
+            .map(|line| line.range),
+    );
     let truncated = lines.len() > max_lines;
     lines.truncate(max_lines);
     let h = (lines.len() + usize::from(truncated)).max(1) * line_h;
@@ -2594,14 +2670,15 @@ fn plan_text_zone(
 
 /// The docs card's wrapped text at row size, capped at `MAX_DOCS_LINES`.
 fn plan_docs_text(
-    docs: &str,
+    docs: &StyledText,
     panel_w: usize,
     scale_factor: f64,
     measure: &mut dyn crate::layout::TextMeasure,
 ) -> TextZonePlan {
     let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
     plan_text_zone(
-        docs,
+        &docs.text,
+        &docs.spans,
         crate::layout::TextStyle::sized(size_px(SIZE_ROW, scale_factor)),
         panel_w.saturating_sub(2 * pad_x) as f32,
         size_px(8.0 * dims::ZONE_CELL_W, scale_factor),
@@ -2612,13 +2689,17 @@ fn plan_docs_text(
 }
 
 /// Draw pre-wrapped `lines` stacked in `rect`, clipped to it; a zone
-/// truncated by `MAX_ZONE_TEXT_LINES` ends with an ellipsis line.
+/// truncated by `MAX_ZONE_TEXT_LINES` ends with an ellipsis line. Each
+/// line's styled runs paint per [`SpanStyle`]: `Code` gets a recessed chip,
+/// `Strong`/`Accent` a synthetic bold (the overlay has one face), `Dim` the
+/// meta color.
 #[allow(clippy::too_many_arguments)]
 fn draw_text_lines(
     frame: &mut Frame,
     painter: &mut TextPainter,
+    colors: &Palette,
     rect: WidgetRect,
-    lines: &[String],
+    lines: &[StyledLine],
     truncated: bool,
     size: f32,
     color: u32,
@@ -2627,7 +2708,17 @@ fn draw_text_lines(
     let size = size_px(size, scale_factor);
     let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
     for (i, line) in lines.iter().enumerate() {
-        painter.draw_sized(frame, rect.x, rect.y + i * line_h, line, size, 0.0, color);
+        draw_styled_line(
+            frame,
+            painter,
+            colors,
+            rect.x,
+            rect.y + i * line_h,
+            line,
+            size,
+            color,
+            scale_factor,
+        );
     }
     if truncated {
         painter.draw_sized(
@@ -2640,6 +2731,69 @@ fn draw_text_lines(
             color,
         );
     }
+}
+
+/// One styled line at `(x, y)`: unstyled gaps in `color`, runs per their
+/// style. Advances by the painter's own measure so run boundaries land
+/// exactly where the glyphs do. Returns the drawn width.
+#[allow(clippy::too_many_arguments)]
+fn draw_styled_line(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    colors: &Palette,
+    x: usize,
+    y: usize,
+    line: &StyledLine,
+    size: f32,
+    color: u32,
+    scale_factor: f64,
+) -> f32 {
+    let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
+    let chip_pad = scaled(2.0, scale_factor);
+    let mut cursor = 0usize;
+    let mut cx = x as f32;
+    let mut segment =
+        |frame: &mut Frame, painter: &mut TextPainter, text: &str, style: Option<SpanStyle>| {
+            if text.is_empty() {
+                return;
+            }
+            let w = painter.measure_sized(text, size, 0.0);
+            let sx = cx.round() as usize;
+            match style {
+                Some(SpanStyle::Code) => {
+                    frame.blend_rect_px(
+                        sx.saturating_sub(chip_pad),
+                        y,
+                        w.ceil() as usize + 2 * chip_pad,
+                        line_h,
+                        colors.recessed_wash,
+                    );
+                    painter.draw_sized(frame, sx, y, text, size, 0.0, colors.text_bright);
+                }
+                Some(SpanStyle::Strong) => {
+                    painter.draw_sized(frame, sx, y, text, size, 0.0, colors.text_bright);
+                    painter.draw_sized(frame, sx + 1, y, text, size, 0.0, colors.text_bright);
+                }
+                Some(SpanStyle::Accent) => {
+                    painter.draw_sized(frame, sx, y, text, size, 0.0, colors.accent_bright);
+                    painter.draw_sized(frame, sx + 1, y, text, size, 0.0, colors.accent_bright);
+                }
+                Some(SpanStyle::Dim) => {
+                    painter.draw_sized(frame, sx, y, text, size, 0.0, colors.text_dim);
+                }
+                None => {
+                    painter.draw_sized(frame, sx, y, text, size, 0.0, color);
+                }
+            }
+            cx += w;
+        };
+    for (range, style) in &line.runs {
+        segment(frame, painter, &line.text[cursor..range.start], None);
+        segment(frame, painter, &line.text[range.clone()], Some(*style));
+        cursor = range.end;
+    }
+    segment(frame, painter, &line.text[cursor..], None);
+    cx - x as f32
 }
 
 #[cfg(test)]
@@ -2787,6 +2941,7 @@ mod tests {
                     banner: banner.then_some((Severity::Error, "unused variable", "rustc")),
                     code: None,
                     text: Some("some explanatory hover text"),
+                    ..Default::default()
                 }),
                 footer: None,
                 hover_row: None,
@@ -2819,6 +2974,129 @@ mod tests {
             with_banner, without_banner,
             "the banner wash must not paint over the panel's rounded top corners"
         );
+    }
+
+    /// Acceptance: a `Code` span paints a recessed chip behind its run and
+    /// nothing else moves — the same zone without spans differs only inside
+    /// the chip's band; a `Strong` run differs only where its glyphs are.
+    #[test]
+    fn styled_runs_paint_a_chip_behind_code_and_bold_for_strong() {
+        let font = Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .expect("test font should load");
+        let mut glyph_cache = super::super::GlyphCache::default();
+        let theme = OverlayTheme::default_dark();
+        let text = "call foo() now and more";
+        let (w, h) = (1200usize, 800usize);
+
+        let mut render_with = |spans: &[Span]| -> (Vec<u32>, WidgetRect, f32, f32) {
+            let mut buffer = vec![0u32; w * h];
+            let mut frame = Frame::new(&mut buffer, w, h);
+            let mut painter = test_painter(&font, &mut glyph_cache);
+            let mut mask_cache = RoundedRectMaskCache::new();
+            let spec = OverlaySpec {
+                anchor: Anchor::Cursor {
+                    x: 400,
+                    y: 300,
+                    h: 18,
+                    prefer_below: false,
+                    width: WidthRule {
+                        pct: 0.0,
+                        min: 280.0,
+                        max: 420.0,
+                    },
+                },
+                tabs: None,
+                header: None,
+                body: Body::Zones(Zones {
+                    banner: Some((Severity::Info, "banner", "")),
+                    code: None,
+                    text: Some(text),
+                    text_spans: spans,
+                    ..Default::default()
+                }),
+                footer: None,
+                hover_row: None,
+                docs: None,
+            };
+            render(
+                &mut frame,
+                &mut painter,
+                &mut mask_cache,
+                &theme,
+                &spec,
+                w,
+                h,
+                1.0,
+                true,
+            );
+            let l = layout(&spec, w, h, 1.0);
+            let size = size_px(SIZE_ROW, 1.0);
+            let before = painter.measure_sized("call ", size, 0.0);
+            let run = painter.measure_sized("foo()", size, 0.0);
+            (buffer, l.zones_text.unwrap(), before, run)
+        };
+
+        let (plain, rect, before, run) = render_with(&[]);
+        let (chipped, ..) = render_with(&[Span {
+            range: 5..10,
+            style: SpanStyle::Code,
+        }]);
+        let (bold, ..) = render_with(&[Span {
+            range: 5..10,
+            style: SpanStyle::Strong,
+        }]);
+        assert_ne!(plain, chipped, "a code span must change the paint");
+        assert_ne!(plain, bold, "a strong span must change the paint");
+
+        let mid_y = rect.y + rect.h.min(scaled(dims::ZONE_LINE_H, 1.0)) / 2;
+        let at = |buf: &Vec<u32>, x: usize| buf[mid_y * w + x];
+        // Chip: the pad pixel just left of the run's first glyph is washed
+        // in the chipped render, untouched in the plain one.
+        let chip_left = rect.x + before.round() as usize - 1;
+        assert_ne!(at(&chipped, chip_left), at(&plain, chip_left));
+        // Outside the run (well into "now and more") nothing changed.
+        let outside = rect.x + (before + run).ceil() as usize + 40;
+        assert_eq!(at(&chipped, outside), at(&plain, outside));
+        assert_eq!(at(&bold, outside), at(&plain, outside));
+        // The whole chip band [run start - pad, run end + pad) differs
+        // somewhere on the mid-line row; the rows above the zone do not.
+        let band: Vec<usize> = (rect.x + before.floor() as usize - 2
+            ..rect.x + (before + run).ceil() as usize + 2)
+            .collect();
+        assert!(band.iter().any(|&x| at(&chipped, x) != at(&plain, x)));
+        let above = (rect.y.saturating_sub(1)) * w;
+        assert_eq!(&chipped[above..above + w], &plain[above..above + w]);
+    }
+
+    /// The planner attaches spans to the wrapped lines they land on,
+    /// rebased to each line — a span crossing a wrap is split.
+    #[test]
+    fn plan_zones_splits_spans_across_wrapped_lines() {
+        let mut measure = crate::layout::CellMeasure {
+            char_width: 8.0,
+            line_height: 18.0,
+        };
+        let text = "alpha beta gamma delta";
+        let spans = [Span {
+            range: 6..16, // "beta gamma"
+            style: SpanStyle::Code,
+        }];
+        let zones = Zones {
+            text: Some(text),
+            text_spans: &spans,
+            ..Default::default()
+        };
+        // Narrow panel: ~12 cells of content -> wraps after "alpha beta".
+        let pad_x = scaled(dims::HEADER_PAD_X, 1.0);
+        let plan = plan_zones(&zones, 12 * 8 + 2 * pad_x, 1.0, &mut measure);
+        let (lines, _, _) = plan.text.unwrap();
+        assert_eq!(lines[0].text, "alpha beta");
+        assert_eq!(lines[0].runs, vec![(6..10, SpanStyle::Code)]);
+        assert_eq!(lines[1].text, "gamma delta");
+        assert_eq!(lines[1].runs, vec![(0..5, SpanStyle::Code)]);
     }
 
     #[test]
@@ -3074,6 +3352,7 @@ mod tests {
             )),
             code: None,
             text: None,
+            ..Default::default()
         };
         let mut measure = cell_measure(1.0);
         let plan = plan_zones(&zones, 320, 1.0, &mut measure);
@@ -3086,14 +3365,14 @@ mod tests {
         // paints it once at `top`) — it alone must respect the narrower
         // pixel budget; lines 1+ get the full glyph-only budget.
         assert!(
-            banner.lines[0].chars().count() as f32 * 8.0 <= first_budget,
+            banner.lines[0].text.chars().count() as f32 * 8.0 <= first_budget,
             "line 0 must respect the glyph+source budget: {:?}",
             banner.lines
         );
         assert!(
             banner.lines[1..]
                 .iter()
-                .all(|l| l.chars().count() as f32 * 8.0 <= later_budget),
+                .all(|l| l.text.chars().count() as f32 * 8.0 <= later_budget),
             "lines after the first need only the glyph budget: {:?}",
             banner.lines
         );
@@ -3110,6 +3389,7 @@ mod tests {
             banner: Some((Severity::Error, &long, "rust-analyzer")),
             code: None,
             text: None,
+            ..Default::default()
         };
         let mut measure = cell_measure(1.0);
         let plan = plan_zones(&zones, 480, 1.0, &mut measure);
@@ -3132,6 +3412,7 @@ mod tests {
             )),
             code: None,
             text: None,
+            ..Default::default()
         };
         let mut measure = cell_measure(1.0);
         let plan = plan_zones(&zones, 280, 1.0, &mut measure);
@@ -3142,14 +3423,14 @@ mod tests {
         let later_budget = content_w - 16.0;
         let first_budget = later_budget - ("typescript-eslint".len() + 2) as f32 * 8.0;
 
-        assert!(banner.lines[0].chars().count() as f32 * 8.0 <= first_budget.max(64.0));
+        assert!(banner.lines[0].text.chars().count() as f32 * 8.0 <= first_budget.max(64.0));
         // At least one later line must use more columns than the narrow
         // first-line budget allowed — otherwise the reservation is still
         // silently applied to every line.
         assert!(
             banner.lines[1..]
                 .iter()
-                .any(|l| l.chars().count() as f32 * 8.0 > first_budget.max(64.0)),
+                .any(|l| l.text.chars().count() as f32 * 8.0 > first_budget.max(64.0)),
             "lines after the first must be free to use the wider, glyph-only budget: {:?}",
             banner.lines
         );
@@ -3174,6 +3455,7 @@ mod tests {
             banner: None,
             code: None,
             text: Some(text),
+            ..Default::default()
         };
         let mut cells = cell_measure(1.0);
         let cell_lines = plan_zones(&zones, 200, 1.0, &mut cells).text.unwrap().0;
@@ -3192,6 +3474,7 @@ mod tests {
             banner: None,
             code: None,
             text: Some(long),
+            ..Default::default()
         };
         let mut measure = cell_measure(1.0);
         let (lines, truncated, _) = plan_zones(&zones, 160, 1.0, &mut measure)
@@ -3222,6 +3505,7 @@ mod tests {
             banner: Some((Severity::Warning, msg, "phpantom")),
             code: Some("pub const fn black_box<T>(dummy: T) -> T"),
             text: Some(&doc),
+            ..Default::default()
         };
         let spec = OverlaySpec {
             anchor: Anchor::Cursor {
@@ -3275,6 +3559,7 @@ mod tests {
             banner: None,
             code: None,
             text: Some(&long),
+            ..Default::default()
         };
         let spec = OverlaySpec {
             anchor: Anchor::Cursor {
@@ -3945,6 +4230,7 @@ mod tests {
                 banner: None,
                 code: None,
                 text: Some("Drop to open: file.rs"),
+                ..Default::default()
             }),
             footer: None,
             hover_row: None,
@@ -4370,6 +4656,7 @@ mod tests {
                 banner: Some((Severity::Warning, "unused import", "rustc")),
                 code: Some("fn foo(x: i32) -> i32"),
                 text: Some("This value is never read."),
+                ..Default::default()
             }),
             footer: None,
             hover_row: None,
@@ -4403,6 +4690,7 @@ mod tests {
             title: None,
             rows: &rows,
         }];
+        let docs = StyledText::plain("Some documentation for the selected row.");
         let spec = OverlaySpec {
             tabs: None,
             anchor: Anchor::Cursor {
@@ -4425,7 +4713,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
-            docs: Some("Some documentation for the selected row."),
+            docs: Some(&docs),
         };
         let l = layout(&spec, 1000, 800, 1.0);
         let docs = l.docs_panel.expect("docs card");

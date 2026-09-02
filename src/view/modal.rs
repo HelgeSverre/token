@@ -1632,6 +1632,7 @@ pub fn render_drop_overlay(
             banner: None,
             code: None,
             text: Some(&text),
+            ..Default::default()
         }),
         footer: None,
         hover_row: None,
@@ -1800,6 +1801,7 @@ fn debug_hover_zones() -> overlay_surface::Zones<'static> {
         )),
         code: Some("fn foo(x: i32) -> i32"),
         text: Some("This value is never read.\nConsider prefixing with an underscore: `_x`."),
+        ..Default::default()
     }
 }
 
@@ -1836,10 +1838,10 @@ pub fn with_cursor_overlay_spec<R>(
         let docs = menu
             .selected_item(state.selected)
             .and_then(|item| match &item.insert {
-                crate::completion::menu::MenuInsert::Lsp(data) => data.documentation.as_deref(),
+                crate::completion::menu::MenuInsert::Lsp(data) => data.documentation.as_ref(),
                 crate::completion::menu::MenuInsert::Text(_) => None,
             })
-            .filter(|docs| !docs.trim().is_empty());
+            .filter(|docs| !docs.text.trim().is_empty());
         let spec = OverlaySpec {
             tabs: None,
             anchor: Anchor::Cursor {
@@ -1998,25 +2000,39 @@ pub fn with_cursor_overlay_spec<R>(
                 .map(|(line, col)| crate::model::editor::Position::new(line, col))
                 .unwrap_or_else(|| model.editor().active_cursor().to_position());
             let diagnostics = crate::model::decorations::diagnostics_at_position(doc, cursor);
-            let banner = diagnostics.first().map(|d| {
-                (
-                    diagnostic_severity_to_overlay(d.severity),
-                    d.message.as_str(),
-                    d.source.as_deref().unwrap_or(""),
-                )
-            });
+            // Diagnostic messages quote identifiers in backticks: chip
+            // them, but treat nothing else as markdown.
+            let banner_text = diagnostics
+                .first()
+                .map(|d| crate::lsp::markdown::code_spans_only(&d.message));
+            let banner = diagnostics
+                .first()
+                .zip(banner_text.as_ref())
+                .map(|(d, msg)| {
+                    (
+                        diagnostic_severity_to_overlay(d.severity),
+                        msg.text.as_str(),
+                        d.source.as_deref().unwrap_or(""),
+                    )
+                });
+            let banner_spans: &[crate::model::Span] =
+                banner_text.as_ref().map_or(&[], |t| t.spans.as_slice());
             let hover_text = model
                 .ui
                 .hover_card
                 .as_ref()
-                .and_then(|s| s.content.as_deref());
+                .and_then(|s| s.content.as_ref());
             let related = related_information_text(&diagnostics);
-            let text = match (hover_text, related.as_deref()) {
-                (Some(h), Some(r)) => format!("{h}\n\n{r}"),
-                (Some(h), None) => h.to_owned(),
-                (None, Some(r)) => r.to_owned(),
-                (None, None) => String::new(),
-            };
+            let mut text = crate::model::StyledText::default();
+            if let Some(h) = hover_text {
+                text.extend(h);
+            }
+            if let Some(r) = related.as_deref() {
+                if !text.is_empty() {
+                    text.push_str("\n\n");
+                }
+                text.push_str(r);
+            }
             let spec = OverlaySpec {
                 tabs: None,
                 anchor: Anchor::Cursor {
@@ -2034,8 +2050,11 @@ pub fn with_cursor_overlay_spec<R>(
                 header: None,
                 body: Body::Zones(Zones {
                     banner,
+                    banner_spans,
                     code: None,
-                    text: (!text.is_empty()).then_some(text.as_str()),
+                    code_spans: &[],
+                    text: (!text.is_empty()).then_some(text.text.as_str()),
+                    text_spans: &text.spans,
                 }),
                 footer: None,
                 hover_row: None,
@@ -2275,31 +2294,21 @@ pub fn with_signature_help_spec<R>(
     let help = model.ui.signature_help.as_ref()?;
     let sig = help.signatures.get(help.active)?;
     let (x, y, h) = cursor_overlay_anchor(model)?;
-    // ponytail: `Zones.code` is a plain &str (no styled spans), so the
-    // active parameter is bracketed ‹…›; swap for a bold/accent span once
-    // the zone renderer grows one.
-    let code = match sig.active_parameter_range {
-        Some((start, end)) if start <= end && end <= sig.label.chars().count() => {
-            let chars: Vec<char> = sig.label.chars().collect();
-            let mut s: String = chars[..start].iter().collect();
-            s.push('‹');
-            s.extend(&chars[start..end]);
-            s.push('›');
-            s.extend(&chars[end..]);
-            s
-        }
-        _ => sig.label.clone(),
-    };
+    // The active parameter is an `Accent` run in the signature; the
+    // parameter doc keeps its markdown spans; the "(n of m)" counter is dim.
+    let mut code = crate::model::StyledText::plain(sig.label.clone());
+    if let Some((start, end)) = sig.active_parameter_range {
+        code.style_chars(start, end, crate::model::SpanStyle::Accent);
+    }
     let mut text = sig.parameter_doc.clone().unwrap_or_default();
     if help.signatures.len() > 1 {
         if !text.is_empty() {
             text.push_str("\n\n");
         }
-        text.push_str(&format!(
-            "({} of {})",
-            help.active + 1,
-            help.signatures.len()
-        ));
+        text.push_styled(
+            &format!("({} of {})", help.active + 1, help.signatures.len()),
+            crate::model::SpanStyle::Dim,
+        );
     }
     let spec = OverlaySpec {
         tabs: None,
@@ -2317,8 +2326,11 @@ pub fn with_signature_help_spec<R>(
         header: None,
         body: Body::Zones(Zones {
             banner: None,
-            code: Some(code.as_str()),
-            text: (!text.is_empty()).then_some(text.as_str()),
+            banner_spans: &[],
+            code: Some(code.text.as_str()),
+            code_spans: &code.spans,
+            text: (!text.is_empty()).then_some(text.text.as_str()),
+            text_spans: &text.spans,
         }),
         footer: None,
         hover_row: None,
@@ -2735,6 +2747,98 @@ mod tests {
 
     /// The docs card only exists when the selected completion item carries
     /// documentation, and then sits to the right of the menu panel.
+    /// Acceptance: the active parameter is an `Accent` span over the exact
+    /// label range (no `‹›` brackets in the text), the parameter doc keeps
+    /// its markdown spans, and the signature counter is dim.
+    #[test]
+    fn signature_help_spec_styles_the_active_parameter_doc_and_counter() {
+        use crate::model::{SignatureHelpState, SignatureView, SpanStyle};
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let label = "fn f(a: i32, b: &str)";
+        model.ui.signature_help = Some(SignatureHelpState {
+            signatures: vec![
+                SignatureView {
+                    label: label.to_owned(),
+                    active_parameter_range: Some((13, 20)), // "b: &str"
+                    parameter_doc: Some(crate::lsp::markdown::markdown_to_styled(
+                        "the **second** one, see `foo`",
+                    )),
+                },
+                SignatureView {
+                    label: "fn f()".to_owned(),
+                    active_parameter_range: None,
+                    parameter_doc: None,
+                },
+            ],
+            active: 0,
+        });
+
+        let (code, code_spans, text, text_spans) =
+            with_signature_help_spec(&model, |spec| match &spec.body {
+                Body::Zones(z) => (
+                    z.code.unwrap().to_owned(),
+                    z.code_spans.to_vec(),
+                    z.text.unwrap().to_owned(),
+                    z.text_spans.to_vec(),
+                ),
+                _ => panic!("signature help renders a Zones body"),
+            })
+            .expect("signature help open");
+
+        assert_eq!(code, label, "no bracket markers in the signature text");
+        assert_eq!(code_spans.len(), 1);
+        assert_eq!(&code[code_spans[0].range.clone()], "b: &str");
+        assert_eq!(code_spans[0].style, SpanStyle::Accent);
+
+        assert_eq!(text, "the second one, see foo\n\n(1 of 2)");
+        let styled: Vec<(&str, SpanStyle)> = text_spans
+            .iter()
+            .map(|s| (&text[s.range.clone()], s.style))
+            .collect();
+        assert_eq!(
+            styled,
+            vec![
+                ("second", SpanStyle::Strong),
+                ("foo", SpanStyle::Code),
+                ("(1 of 2)", SpanStyle::Dim),
+            ]
+        );
+    }
+
+    /// Hover content keeps its markdown spans all the way to the card.
+    #[test]
+    fn hover_card_spec_carries_markdown_spans() {
+        use crate::model::{CursorOverlayKind, CursorOverlayState, HoverCardState, SpanStyle};
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.ui.hover_card = Some(HoverCardState {
+            content: Some(crate::lsp::markdown::markdown_to_styled(
+                "```rust\nfn foo()\n```\nReturns **nothing**.",
+            )),
+            ..Default::default()
+        });
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Hover));
+
+        let (text, spans) = with_cursor_overlay_spec(&model, |spec| match &spec.body {
+            Body::Zones(z) => (z.text.unwrap().to_owned(), z.text_spans.to_vec()),
+            _ => panic!("hover renders a Zones body"),
+        })
+        .expect("hover open");
+        assert_eq!(text, "fn foo()\nReturns nothing.");
+        let styled: Vec<(&str, SpanStyle)> = spans
+            .iter()
+            .map(|s| (&text[s.range.clone()], s.style))
+            .collect();
+        assert_eq!(
+            styled,
+            vec![
+                ("fn foo()", SpanStyle::Code),
+                ("nothing", SpanStyle::Strong)
+            ]
+        );
+    }
+
     #[test]
     fn completion_docs_panel_follows_the_selected_items_documentation() {
         use crate::completion::menu::{
@@ -2758,7 +2862,7 @@ mod tests {
                 resolved: true,
                 text_edit: None,
                 additional_text_edits: Vec::new(),
-                documentation: docs.map(str::to_owned),
+                documentation: docs.map(crate::model::StyledText::from),
                 caret_offset: None,
             })),
             kind: MenuItemKind::Function,

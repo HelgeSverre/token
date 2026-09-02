@@ -1210,7 +1210,7 @@ mod tests {
                 document_id: requested_doc,
                 revision,
                 cursor: crate::model::editor::Position::new(0, 0),
-                outcome: HoverOutcome::Content(Some("stale hover".to_owned())),
+                outcome: HoverOutcome::Content(Some("stale hover".into())),
             },
         );
 
@@ -1676,7 +1676,7 @@ mod tests {
                 document_id: doc_id,
                 revision,
                 cursor: target,
-                outcome: HoverOutcome::Content(Some("stale dwell hover".to_owned())),
+                outcome: HoverOutcome::Content(Some("stale dwell hover".into())),
             },
         );
 
@@ -1704,7 +1704,7 @@ mod tests {
                 document_id: doc_id,
                 revision,
                 cursor: target,
-                outcome: HoverOutcome::Content(Some("fn main()".to_owned())),
+                outcome: HoverOutcome::Content(Some("fn main()".into())),
             },
         );
 
@@ -1738,7 +1738,7 @@ mod tests {
                 document_id: doc_id,
                 revision,
                 cursor,
-                outcome: HoverOutcome::Content(Some("fn main()".to_owned())),
+                outcome: HoverOutcome::Content(Some("fn main()".into())),
             },
         );
 

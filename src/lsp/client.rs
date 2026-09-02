@@ -35,6 +35,7 @@ use serde_json::{json, Value};
 use super::transport::{read_message, write_message};
 use super::{LspServerId, ServerState};
 use crate::messages::{LspMsg, Msg};
+use crate::model::{SpanStyle, StyledText};
 
 /// The exact client capabilities block from lsp-integration.md's
 /// "Client Capabilities" section. Rule stated there: never advertise a
@@ -1441,31 +1442,36 @@ fn parse_completion_result(result: Option<&Value>) -> (Vec<lsp_types::Completion
 /// `null` (no hover at this position) and a malformed result both become
 /// `None` — permissive-and-collapsed, same posture as
 /// `parse_definition_result`.
-fn parse_hover_result(result: Option<&Value>) -> Option<String> {
+fn parse_hover_result(result: Option<&Value>) -> Option<StyledText> {
     let result = result?;
     if result.is_null() {
         return None;
     }
     let hover: lsp_types::Hover = serde_json::from_value(result.clone()).ok()?;
-    let text = hover_contents_to_plain_text(&hover.contents);
-    (!text.trim().is_empty()).then_some(text)
+    let text = hover_contents_to_styled(&hover.contents);
+    (!text.text.trim().is_empty()).then_some(text)
 }
 
 /// Collapses the three legal shapes of `HoverContents` into one plaintext
 /// string. `MarkupContent` respects its own `kind` (only markdown needs
 /// stripping); the deprecated `MarkedString` shapes are always markdown per
 /// the pre-3.0 spec.
-pub(crate) fn hover_contents_to_plain_text(contents: &lsp_types::HoverContents) -> String {
+pub(crate) fn hover_contents_to_styled(contents: &lsp_types::HoverContents) -> StyledText {
     match contents {
-        lsp_types::HoverContents::Scalar(marked) => marked_string_to_plain_text(marked),
-        lsp_types::HoverContents::Array(items) => items
-            .iter()
-            .map(marked_string_to_plain_text)
-            .collect::<Vec<_>>()
-            .join("\n\n"),
+        lsp_types::HoverContents::Scalar(marked) => marked_string_to_styled(marked),
+        lsp_types::HoverContents::Array(items) => {
+            let mut out = StyledText::default();
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push_str("\n\n");
+                }
+                out.extend(&marked_string_to_styled(item));
+            }
+            out
+        }
         lsp_types::HoverContents::Markup(markup) => match markup.kind {
-            MarkupKind::PlainText => markup.value.clone(),
-            MarkupKind::Markdown => markdown_to_plain_text(&markup.value),
+            MarkupKind::PlainText => StyledText::plain(markup.value.clone()),
+            MarkupKind::Markdown => markdown_to_styled(&markup.value),
         },
     }
 }
@@ -1540,8 +1546,8 @@ pub fn signature_help_state(
                 }),
                 parameter_doc: param
                     .and_then(|p| p.documentation.as_ref())
-                    .map(documentation_to_plain_text)
-                    .filter(|d| !d.trim().is_empty()),
+                    .map(documentation_to_styled)
+                    .filter(|d| !d.text.trim().is_empty()),
             }
         })
         .collect();
@@ -1561,114 +1567,31 @@ fn utf16_to_char_offset(s: &str, utf16: usize) -> usize {
     s.chars().count()
 }
 
-fn documentation_to_plain_text(doc: &lsp_types::Documentation) -> String {
+fn documentation_to_styled(doc: &lsp_types::Documentation) -> StyledText {
     match doc {
-        lsp_types::Documentation::String(s) => s.clone(),
+        lsp_types::Documentation::String(s) => StyledText::plain(s.clone()),
         lsp_types::Documentation::MarkupContent(markup) => match markup.kind {
-            MarkupKind::PlainText => markup.value.clone(),
-            MarkupKind::Markdown => markdown_to_plain_text(&markup.value),
+            MarkupKind::PlainText => StyledText::plain(markup.value.clone()),
+            MarkupKind::Markdown => markdown_to_styled(&markup.value),
         },
     }
 }
 
-fn marked_string_to_plain_text(marked: &lsp_types::MarkedString) -> String {
+fn marked_string_to_styled(marked: &lsp_types::MarkedString) -> StyledText {
     match marked {
-        lsp_types::MarkedString::String(markdown) => markdown_to_plain_text(markdown),
-        // Already a bare code block by construction — no markdown syntax
-        // to strip.
-        lsp_types::MarkedString::LanguageString(ls) => ls.value.clone(),
-    }
-}
-
-/// Light markdown -> plaintext: strips code-fence delimiters (keeping the
-/// code itself), inline-code backticks, emphasis markers, and leading
-/// heading `#`s. Not a full markdown parser — good enough for the
-/// monospace hover card overlay-surface.md renders (v1 has no rich-text
-/// zones; see its `Zones` doc comment).
-pub(crate) fn markdown_to_plain_text(markdown: &str) -> String {
-    let mut in_fence = false;
-    markdown
-        .lines()
-        .filter_map(|line| {
-            let trimmed = line.trim_start();
-            // Code-fence delimiter (```rust, ```, ~~~) -> drop the whole
-            // line and toggle fence state; the code itself is plain text
-            // already and needs no stripping (and must not be stripped,
-            // since `*`/`_`/`` ` `` are legal identifier/operator
-            // characters in code).
-            if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-                in_fence = !in_fence;
-                return None;
-            }
-            if in_fence {
-                return Some(line.to_string());
-            }
-            // Thematic breaks (---, ***, ___) render as blank separators —
-            // the raw dashes read as noise in a plaintext card.
-            let is_break =
-                trimmed.len() >= 3 && trimmed.chars().all(|c| matches!(c, '-' | '*' | '_' | ' '));
-            if is_break && !trimmed.is_empty() {
-                return Some(String::new());
-            }
-            Some(strip_markdown_line(line))
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// Strips a single (non-code-fence) line's markdown syntax.
-fn strip_markdown_line(line: &str) -> String {
-    let trimmed = line.trim_start();
-    let without_heading = trimmed.trim_start_matches('#').trim_start();
-    let line = if without_heading.len() != trimmed.len() {
-        without_heading
-    } else {
-        line
-    };
-    // Inline links: `[text](url)` -> `text` (the url is dead weight in a
-    // non-interactive card; bare `[refs]` are left alone — rustdoc uses
-    // them as plain intra-doc names).
-    let line = strip_inline_links(line);
-    let mut out = String::with_capacity(line.len());
-    let mut chars = line.chars().peekable();
-    while let Some(ch) = chars.next() {
-        match ch {
-            // Bold/italic markers (`**x**`, `*x*`, `__x__`, `_x_`) and
-            // inline-code backticks: drop the marker, keep the content.
-            '*' | '_' | '`' => {
-                while chars.peek() == Some(&ch) {
-                    chars.next();
-                }
-            }
-            _ => out.push(ch),
+        lsp_types::MarkedString::String(markdown) => markdown_to_styled(markdown),
+        // A bare code block by construction: one `Code` run.
+        lsp_types::MarkedString::LanguageString(ls) => {
+            let mut out = StyledText::default();
+            out.push_styled(&ls.value, SpanStyle::Code);
+            out
         }
     }
-    out
 }
 
-/// `[text](url)` -> `text`, non-greedy, leaving unmatched brackets intact.
-fn strip_inline_links(line: &str) -> String {
-    let mut out = String::with_capacity(line.len());
-    let mut rest = line;
-    while let Some(open) = rest.find('[') {
-        let Some(close_rel) = rest[open..].find(']') else {
-            break;
-        };
-        let close = open + close_rel;
-        if rest[close + 1..].starts_with('(') {
-            if let Some(paren_rel) = rest[close + 1..].find(')') {
-                out.push_str(&rest[..open]);
-                out.push_str(&rest[open + 1..close]);
-                rest = &rest[close + 1 + paren_rel + 1..];
-                continue;
-            }
-        }
-        out.push_str(&rest[..close + 1]);
-        rest = &rest[close + 1..];
-    }
-    out.push_str(rest);
-    out
-}
+#[cfg(test)]
+use crate::lsp::markdown::markdown_to_plain_text;
+pub(crate) use crate::lsp::markdown::markdown_to_styled;
 
 fn handle_progress(
     server_id: &LspServerId,
@@ -2461,7 +2384,9 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
     fn hover_result_plaintext_markup_passes_through_unchanged() {
         let result = json!({ "contents": { "kind": "plaintext", "value": "fn foo() -> i32" } });
         assert_eq!(
-            parse_hover_result(Some(&result)).as_deref(),
+            parse_hover_result(Some(&result))
+                .as_ref()
+                .map(|t| t.text.as_str()),
             Some("fn foo() -> i32")
         );
     }
@@ -2473,20 +2398,27 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
             "value": "```rust\nfn foo() -> i32\n```\n**bold** and *italic* and `code`",
         }});
         let text = parse_hover_result(Some(&result)).unwrap();
-        assert_eq!(text, "fn foo() -> i32\nbold and italic and code");
+        assert_eq!(text.text, "fn foo() -> i32\nbold and italic and code");
     }
 
     #[test]
     fn hover_result_scalar_marked_string_is_treated_as_markdown() {
         let result = json!({ "contents": "**bold**" });
-        assert_eq!(parse_hover_result(Some(&result)).as_deref(), Some("bold"));
+        assert_eq!(
+            parse_hover_result(Some(&result))
+                .as_ref()
+                .map(|t| t.text.as_str()),
+            Some("bold")
+        );
     }
 
     #[test]
     fn hover_result_array_of_marked_strings_joins_with_blank_line() {
         let result = json!({ "contents": ["one", { "language": "rust", "value": "two()" }] });
         assert_eq!(
-            parse_hover_result(Some(&result)).as_deref(),
+            parse_hover_result(Some(&result))
+                .as_ref()
+                .map(|t| t.text.as_str()),
             Some("one\n\ntwo()")
         );
     }
@@ -2547,7 +2479,10 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
             &sig.label.chars().skip(8).take(4).collect::<String>(),
             "b: B"
         );
-        assert_eq!(sig.parameter_doc.as_deref(), Some("second"));
+        assert_eq!(
+            sig.parameter_doc.as_ref().map(|t| t.text.as_str()),
+            Some("second")
+        );
     }
 
     #[test]

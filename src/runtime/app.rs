@@ -3437,7 +3437,7 @@ impl App {
                     resolved
                         .documentation
                         .as_ref()
-                        .and_then(token::completion::lsp::documentation_to_plain_text)
+                        .and_then(token::completion::lsp::documentation_to_styled)
                 });
                 let detail = item.and_then(|resolved| resolved.detail);
                 Some(Msg::Lsp(LspMsg::CompletionItemResolved {

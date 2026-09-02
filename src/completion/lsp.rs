@@ -6,6 +6,7 @@ use lsp_types::CompletionItemKind;
 
 use super::menu::{LspInsert, MenuInsert, MenuItem, MenuItemKind, MenuSourceId};
 use crate::lsp::LspServerId;
+use crate::model::StyledText;
 
 /// Cap on items kept from one server response. ts-ls routinely returns
 /// hundreds; a pathological server returning tens of thousands would make
@@ -106,7 +107,7 @@ fn completion_item_to_menu_item(
             text_edit,
             additional_text_edits: Vec::new(),
             caret_offset,
-            documentation: documentation.as_ref().and_then(documentation_to_plain_text),
+            documentation: documentation.as_ref().and_then(documentation_to_styled),
         })),
         kind: map_kind(kind),
         source: MenuSourceId::Lsp,
@@ -218,20 +219,20 @@ fn braced_end(chars: &[char], start: usize) -> Option<usize> {
     None
 }
 
-/// Flattens `completionItem.documentation` to plaintext the way the hover
+/// Reduces `completionItem.documentation` to styled text the way the hover
 /// card does (`MarkupContent` per its `kind`; a bare string is plaintext
 /// per the spec). `None` when empty after trimming.
-pub fn documentation_to_plain_text(doc: &lsp_types::Documentation) -> Option<String> {
+pub fn documentation_to_styled(doc: &lsp_types::Documentation) -> Option<StyledText> {
     let text = match doc {
-        lsp_types::Documentation::String(s) => s.clone(),
+        lsp_types::Documentation::String(s) => StyledText::plain(s.clone()),
         lsp_types::Documentation::MarkupContent(markup) => match markup.kind {
-            lsp_types::MarkupKind::PlainText => markup.value.clone(),
+            lsp_types::MarkupKind::PlainText => StyledText::plain(markup.value.clone()),
             lsp_types::MarkupKind::Markdown => {
-                crate::lsp::client::markdown_to_plain_text(&markup.value)
+                crate::lsp::markdown::markdown_to_styled(&markup.value)
             }
         },
     };
-    (!text.trim().is_empty()).then_some(text)
+    (!text.text.trim().is_empty()).then_some(text)
 }
 
 /// Maps the (open-ended) `CompletionItemKind` enum onto the menu's coarse
@@ -353,7 +354,10 @@ mod tests {
         let MenuInsert::Lsp(insert) = convert(item).unwrap().insert else {
             panic!("expected LSP insert");
         };
-        assert_eq!(insert.documentation.as_deref(), Some("Bold doc\nfn f()"));
+        assert_eq!(
+            insert.documentation.as_ref().map(|t| t.text.as_str()),
+            Some("Bold doc\nfn f()")
+        );
 
         let mut empty = base_item("g");
         empty.documentation = Some(lsp_types::Documentation::String("  ".to_owned()));

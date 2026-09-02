@@ -338,7 +338,11 @@ fn hover_snapshot(model: &AppModel) -> Option<HoverSnapshot> {
     let cursor = model.editor().active_cursor().to_position();
     let diagnostics = token::model::decorations::diagnostics_at_position(doc, cursor);
     Some(HoverSnapshot {
-        content: model.ui.hover_card.as_ref().and_then(|s| s.content.clone()),
+        content: model
+            .ui
+            .hover_card
+            .as_ref()
+            .and_then(|s| s.content.as_ref().map(|c| c.text.clone())),
         banner_message: diagnostics.first().map(|d| d.message.clone()),
         related_information: token::view::modal::related_information_text(&diagnostics),
     })

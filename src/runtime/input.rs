@@ -1783,7 +1783,7 @@ mod tests {
             token::model::CursorOverlayKind::Hover,
         ));
         model.ui.hover_card = Some(token::model::HoverCardState {
-            content: Some("fn foo() -> i32".to_owned()),
+            content: Some("fn foo() -> i32".into()),
             ..Default::default()
         });
         model.document_mut().buffer = ropey::Rope::from("");

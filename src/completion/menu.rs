@@ -100,7 +100,7 @@ pub struct LspInsert {
     /// Plaintext `documentation` (markdown lightly stripped, same as the
     /// hover card), from the item itself or its resolve round trip.
     /// Shown in the docs card beside the menu.
-    pub documentation: Option<String>,
+    pub documentation: Option<crate::model::StyledText>,
 }
 
 #[derive(Debug, Clone)]

@@ -1538,7 +1538,7 @@ mod scroll_tests {
     fn scrolling_dismisses_an_open_hover_card() {
         let mut model = model_with_many_lines();
         model.ui.hover_card = Some(HoverCardState {
-            content: Some("fn main()".to_owned()),
+            content: Some("fn main()".into()),
             anchor: Some((0, 0)),
         });
         model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Hover));

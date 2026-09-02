@@ -7,6 +7,7 @@ pub mod document;
 pub mod editor;
 pub mod editor_area;
 pub mod status_bar;
+pub mod styled_text;
 pub mod ui;
 pub mod workspace;
 
@@ -25,6 +26,7 @@ pub use status_bar::{
     sync_status_bar, RenderedSegment, SegmentContent, SegmentId, SegmentPosition, StatusBar,
     StatusBarLayout, StatusSegment, TransientMessage,
 };
+pub use styled_text::{runs_in_spans, Span, SpanStyle, StyledText};
 pub use ui::{
     CodeActionItem, CommandMatch, CommandPaletteState, ContextMenuState, CursorOverlayKind,
     CursorOverlayState, DropState, FileFinderState, FileMatch, FindReplaceField, FindReplaceState,
