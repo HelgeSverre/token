@@ -145,6 +145,7 @@ fn command_rows<'a>(
             label: m.def.label,
             match_indices: &m.indices,
             detail: None,
+            detail_style: None,
             accessory: match accessory {
                 PaletteAccessory::None => Accessory::None,
                 PaletteAccessory::DimText(kb) => Accessory::DimText(kb),
@@ -165,6 +166,7 @@ fn file_rows(results: &[crate::model::FileMatch], icon_color: u32) -> Vec<Row<'_
             label: &m.filename,
             match_indices: &m.indices,
             detail: Some(&m.relative_path),
+            detail_style: None,
             accessory: Accessory::None,
         })
         .collect()
@@ -427,6 +429,7 @@ fn render_file_finder_modal(
             label: &m.filename,
             match_indices: &m.indices,
             detail: Some(&m.relative_path),
+            detail_style: None,
             accessory: Accessory::None,
         })
         .collect();
@@ -576,6 +579,7 @@ fn render_recent_files_modal(
                     label: &display_paths[gi][ri],
                     match_indices: &[],
                     detail: None,
+                    detail_style: None,
                     accessory: Accessory::DimText(&time_strings[gi][ri]),
                 })
                 .collect()
@@ -716,6 +720,7 @@ fn render_theme_picker_modal(
                         label: &theme_info.name,
                         match_indices: &[],
                         detail: None,
+                        detail_style: None,
                         accessory: Accessory::Swatches {
                             colors: &swatch.colors,
                             active: is_active,
@@ -845,6 +850,7 @@ fn render_language_picker_modal(
             label: language.display_name(),
             match_indices: &[],
             detail: None,
+            detail_style: None,
             accessory: if Some(language) == current {
                 Accessory::Check
             } else {
@@ -939,6 +945,7 @@ fn render_lsp_servers_modal(
                 label: def.id,
                 match_indices: &[],
                 detail: Some(detail.as_str()),
+                detail_style: None,
                 accessory: lsp_server_accessory(enabled),
             }
         })
@@ -1438,6 +1445,7 @@ fn placeholder_rows(count: usize) -> Vec<Row<'static>> {
             label: "",
             match_indices: &[],
             detail: None,
+            detail_style: None,
             accessory: Accessory::None,
         })
         .collect()
@@ -1701,6 +1709,10 @@ fn completion_rows(state: &crate::completion::CompletionMenuState) -> Vec<Row<'_
             label: &item.label,
             match_indices: indices,
             detail: item.detail.as_deref(),
+            // A server's `detail` is a type signature: chip it. Offline
+            // sources ("snippet") keep the dim meta text.
+            detail_style: (item.source == crate::completion::menu::MenuSourceId::Lsp)
+                .then_some(crate::model::SpanStyle::Code),
             accessory: Accessory::None,
         })
         .collect()
@@ -1739,6 +1751,7 @@ fn debug_completion_rows() -> Vec<Row<'static>> {
             label,
             match_indices: &[],
             detail: Some(detail),
+            detail_style: None,
             accessory: Accessory::None,
         })
         .collect()
@@ -2074,6 +2087,7 @@ pub fn with_cursor_overlay_spec<R>(
                     label: item.title.as_str(),
                     match_indices: &[],
                     detail: None,
+                    detail_style: None,
                     accessory: item
                         .kind
                         .as_deref()
@@ -2126,6 +2140,7 @@ pub fn with_cursor_overlay_spec<R>(
                     },
                     match_indices: &[],
                     detail: Some(detail.as_str()),
+                    detail_style: None,
                     accessory: Accessory::DimText(accessory.as_str()),
                 })
                 .collect();
@@ -2205,6 +2220,7 @@ fn context_menu_rows<'a>(
                 label: &item.label,
                 match_indices: &[],
                 detail: None,
+                detail_style: None,
                 accessory,
             }
         })

@@ -53,7 +53,9 @@ All notable changes to rust-editor are documented in this file.
   backticked identifiers. Signature help marks the active parameter as an
   accent run (the previous `‹›` brackets are gone) and dims the "(n of m)"
   counter. Intraword underscores such as `snake_case` are no longer eaten
-  as emphasis.
+  as emphasis. Completion rows chip the server's `detail` (the type
+  signature), and a docs card that opens with a code fence shows it as a
+  code block above the prose, like the hover card.
 - **Completion documentation card**: selecting an item resolves its
   `documentation` lazily (150 ms debounce) and shows it in a card beside the
   menu, flipping to the left when there is no room. Accepting an already

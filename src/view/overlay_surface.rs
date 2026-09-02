@@ -367,6 +367,9 @@ pub struct Row<'a> {
     pub match_indices: &'a [u32],
     /// Dim inline text (path, description); truncates before the label.
     pub detail: Option<&'a str>,
+    /// `Some(Code)` renders `detail` as a recessed chip (a completion's
+    /// type signature); `None` is the dim meta text.
+    pub detail_style: Option<SpanStyle>,
     pub accessory: Accessory<'a>,
 }
 
@@ -754,6 +757,11 @@ pub struct OverlayLayout {
     /// Wrapped docs-card lines (`lines, truncated, height`), measured once
     /// like `zone_plan`.
     pub(crate) docs_plan: Option<TextZonePlan>,
+    /// The docs card's leading code block (lines, height), when the docs
+    /// open with a code fence.
+    pub(crate) docs_code_plan: Option<(Vec<StyledLine>, usize)>,
+    /// Content rect of the docs card's code block.
+    pub docs_code: Option<WidgetRect>,
 }
 
 fn float_decl(anchor: &Anchor) -> FloatDecl {
@@ -889,9 +897,10 @@ pub fn layout_measured(
         Body::List { .. } | Body::Fields { .. } => None,
     };
     let docs_w = scaled(dims::DOCS_WIDTH, scale_factor).min(window_width);
-    let docs_plan = spec
+    let (docs_code_plan, docs_plan) = spec
         .docs
-        .map(|docs| plan_docs_text(docs, docs_w, scale_factor, measure));
+        .map(|docs| plan_docs(docs, docs_w, scale_factor, measure))
+        .unwrap_or((None, None));
 
     let mut tree = UiTree::new();
     tree.node(ElementDecl::default(), |t| {
@@ -1072,9 +1081,10 @@ pub fn layout_measured(
         // The docs card: a second float attached to the panel's top-right
         // (declared after it, so the solver sees the panel's solved rect),
         // flipping to its left when the window lacks room on the right.
-        if let Some((_, _, text_h)) = &docs_plan {
+        if docs_code_plan.is_some() || docs_plan.is_some() {
             let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
             let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
+            let gap = scaled(dims::ZONE_GAP, scale_factor);
             t.node(
                 ElementDecl {
                     key: Some(UiKey::OverlayDocsPanel),
@@ -1093,12 +1103,25 @@ pub fn layout_measured(
                 },
                 |t| {
                     spacer(t, pad_y);
-                    t.leaf(ElementDecl {
-                        key: Some(UiKey::OverlayDocsText),
-                        sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(*text_h as f32)),
-                        padding: Padding::xy(pad_x as f32, 0.0),
-                        ..Default::default()
-                    });
+                    if let Some((_, code_h)) = &docs_code_plan {
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayDocsCode),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(*code_h as f32)),
+                            padding: Padding::xy(pad_x as f32, 0.0),
+                            ..Default::default()
+                        });
+                        if docs_plan.is_some() {
+                            spacer(t, gap);
+                        }
+                    }
+                    if let Some((_, _, text_h)) = &docs_plan {
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayDocsText),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(*text_h as f32)),
+                            padding: Padding::xy(pad_x as f32, 0.0),
+                            ..Default::default()
+                        });
+                    }
                     spacer(t, pad_y);
                 },
             );
@@ -1155,6 +1178,7 @@ pub fn layout_measured(
     let zones_text = solved_content_rect(&snapshot, UiKey::OverlayZoneText);
     let docs_panel = solved_rect(&snapshot, UiKey::OverlayDocsPanel);
     let docs_text = solved_content_rect(&snapshot, UiKey::OverlayDocsText);
+    let docs_code = solved_content_rect(&snapshot, UiKey::OverlayDocsCode);
     let footer = solved_rect(&snapshot, UiKey::OverlayFooter);
     let scrollbar = list_info.and_then(|(start, visible, total, max_visible)| {
         if total <= max_visible {
@@ -1191,10 +1215,12 @@ pub fn layout_measured(
         zones_text,
         docs_panel,
         docs_text,
+        docs_code,
         footer,
         scrollbar,
         zone_plan,
         docs_plan,
+        docs_code_plan,
     }
 }
 
@@ -1270,6 +1296,7 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
             | UiKey::OverlayZoneText
             | UiKey::OverlayDocsPanel
             | UiKey::OverlayDocsText
+            | UiKey::OverlayDocsCode
             | UiKey::OverlayFooter,
         ) => OverlayHit::Inside,
         Some(
@@ -1535,11 +1562,7 @@ pub fn render(
             mask_cache,
         );
     }
-    if let (Some(panel), Some(text), Some((lines, truncated, _))) = (
-        layout.docs_panel,
-        layout.docs_text,
-        layout.docs_plan.as_ref(),
-    ) {
+    if let Some(panel) = layout.docs_panel {
         frame.draw_shadow_rings(
             panel.x,
             panel.y,
@@ -1573,17 +1596,36 @@ pub fn render(
             width: panel.w as f32,
             height: panel.h as f32,
         });
-        draw_text_lines(
-            frame,
-            painter,
-            &colors,
-            text,
-            lines,
-            *truncated,
-            SIZE_ROW,
-            colors.text_primary,
-            scale_factor,
-        );
+        if let (Some(code), Some((lines, _))) = (layout.docs_code, layout.docs_code_plan.as_ref()) {
+            // Same band treatment as the hover card's code zone.
+            frame.fill_rect_px(panel.x, code.y, panel.w, code.h, colors.panel_secondary);
+            draw_text_lines(
+                frame,
+                painter,
+                &colors,
+                code,
+                lines,
+                false,
+                SIZE_ROW,
+                colors.text_primary,
+                scale_factor,
+            );
+        }
+        if let (Some(text), Some((lines, truncated, _))) =
+            (layout.docs_text, layout.docs_plan.as_ref())
+        {
+            draw_text_lines(
+                frame,
+                painter,
+                &colors,
+                text,
+                lines,
+                *truncated,
+                SIZE_ROW,
+                colors.text_primary,
+                scale_factor,
+            );
+        }
         frame.clear_clip();
     }
 }
@@ -1993,14 +2035,24 @@ fn render_list(
                         if leftover > 0.0 {
                             let detail_x = x + full_label_w.round() as usize + text_pad;
                             let detail = truncate_head(painter, meta_size, detail, leftover);
-                            painter.draw_sized(
+                            let run = StyledLine {
+                                runs: row
+                                    .detail_style
+                                    .map(|style| vec![(0..detail.len(), style)])
+                                    .unwrap_or_default(),
+                                text: detail,
+                            };
+                            draw_styled_run(
                                 frame,
+                                painter,
+                                colors,
                                 detail_x,
                                 text_y,
-                                &detail,
+                                &run,
                                 meta_size,
-                                0.0,
                                 colors.text_dim,
+                                painter.line_height_for_size(meta_size),
+                                scale_factor,
                             );
                         }
                     }
@@ -2668,24 +2720,51 @@ fn plan_text_zone(
     (lines, truncated, h)
 }
 
-/// The docs card's wrapped text at row size, capped at `MAX_DOCS_LINES`.
-fn plan_docs_text(
+/// The docs card's plan: a leading code fence (rust-analyzer's signature
+/// block) as a code block, then the prose wrapped at row size and capped at
+/// `MAX_DOCS_LINES`. Either half may be absent.
+fn plan_docs(
     docs: &StyledText,
     panel_w: usize,
     scale_factor: f64,
     measure: &mut dyn crate::layout::TextMeasure,
-) -> TextZonePlan {
+) -> (Option<(Vec<StyledLine>, usize)>, Option<TextZonePlan>) {
     let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
-    plan_text_zone(
-        &docs.text,
-        &docs.spans,
-        crate::layout::TextStyle::sized(size_px(SIZE_ROW, scale_factor)),
-        panel_w.saturating_sub(2 * pad_x) as f32,
-        size_px(8.0 * dims::ZONE_CELL_W, scale_factor),
-        MAX_DOCS_LINES,
-        scaled(dims::ZONE_LINE_H, scale_factor),
-        measure,
-    )
+    let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
+    let style = crate::layout::TextStyle::sized(size_px(SIZE_ROW, scale_factor));
+    let content_w = panel_w.saturating_sub(2 * pad_x) as f32;
+    let min_wrap_w = size_px(8.0 * dims::ZONE_CELL_W, scale_factor);
+    let (code, prose) = docs.split_leading_code();
+    let code = code.map(|code| {
+        let lines = styled_lines(
+            &code.text,
+            &code.spans,
+            crate::layout::text::wrap_to_width(
+                &code.text,
+                style,
+                content_w.max(min_wrap_w),
+                measure,
+            )
+            .into_iter()
+            .map(|line| line.range),
+        );
+        let gap = scaled(dims::ZONE_GAP, scale_factor);
+        let h = lines.len().max(1) * line_h + 2 * (gap / 2);
+        (lines, h)
+    });
+    let text = (!prose.text.trim().is_empty()).then(|| {
+        plan_text_zone(
+            &prose.text,
+            &prose.spans,
+            style,
+            content_w,
+            min_wrap_w,
+            MAX_DOCS_LINES,
+            line_h,
+            measure,
+        )
+    });
+    (code, text)
 }
 
 /// Draw pre-wrapped `lines` stacked in `rect`, clipped to it; a zone
@@ -2749,6 +2828,35 @@ fn draw_styled_line(
     scale_factor: f64,
 ) -> f32 {
     let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
+    draw_styled_run(
+        frame,
+        painter,
+        colors,
+        x,
+        y,
+        line,
+        size,
+        color,
+        line_h,
+        scale_factor,
+    )
+}
+
+/// [`draw_styled_line`] with an explicit chip height (list rows are shorter
+/// than zone lines).
+#[allow(clippy::too_many_arguments)]
+fn draw_styled_run(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    colors: &Palette,
+    x: usize,
+    y: usize,
+    line: &StyledLine,
+    size: f32,
+    color: u32,
+    line_h: usize,
+    scale_factor: f64,
+) -> f32 {
     let chip_pad = scaled(2.0, scale_factor);
     let mut cursor = 0usize;
     let mut cx = x as f32;
@@ -3071,6 +3179,147 @@ mod tests {
         assert_eq!(&chipped[above..above + w], &plain[above..above + w]);
     }
 
+    /// Acceptance: docs that open with a code fence get a code block above
+    /// the prose in the docs card; prose-only docs get no code block.
+    #[test]
+    fn docs_card_puts_a_leading_fence_in_a_code_block_above_the_prose() {
+        let rows = [one_row()];
+        let sections = [Section {
+            title: None,
+            rows: &rows,
+        }];
+        let fenced = crate::lsp::markdown::markdown_to_styled(
+            "```rust\nfn foo() -> u8\n```\nReturns a *byte*.",
+        );
+        let prose_only = StyledText::plain("Just words.");
+        let layout_for = |docs: &StyledText| {
+            let spec = OverlaySpec {
+                tabs: None,
+                anchor: Anchor::Cursor {
+                    x: 100,
+                    y: 100,
+                    h: 18,
+                    prefer_below: true,
+                    width: WidthRule {
+                        pct: 0.0,
+                        min: 240.0,
+                        max: 320.0,
+                    },
+                },
+                header: None,
+                body: Body::List {
+                    sections: &sections,
+                    selected: FlatIndex(0),
+                    scroll: 0,
+                    max_visible: 8,
+                },
+                footer: None,
+                hover_row: None,
+                docs: Some(docs),
+            };
+            layout(&spec, 1200, 800, 1.0)
+        };
+
+        let l = layout_for(&fenced);
+        let code = l.docs_code.expect("fenced docs get a code block");
+        let text = l.docs_text.expect("and the prose below it");
+        assert!(text.y >= code.y + code.h, "prose sits below the code block");
+        let (code_lines, _) = l.docs_code_plan.as_ref().unwrap();
+        assert_eq!(code_lines[0].text, "fn foo() -> u8");
+        assert_eq!(code_lines[0].runs, vec![(0..14, SpanStyle::Code)]);
+        let (prose_lines, _, _) = l.docs_plan.as_ref().unwrap();
+        assert_eq!(prose_lines[0].text, "Returns a byte.");
+        assert_eq!(prose_lines[0].runs, vec![(10..14, SpanStyle::Strong)]);
+        assert!(l.docs_panel.unwrap().h >= code.h + text.h);
+
+        let l = layout_for(&prose_only);
+        assert!(l.docs_code.is_none());
+        assert!(l.docs_text.is_some());
+    }
+
+    /// Acceptance: a `Code`-styled row detail paints a chip; the rest of
+    /// the list is untouched.
+    #[test]
+    fn code_styled_row_detail_paints_a_chip() {
+        let font = Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .expect("test font should load");
+        let mut glyph_cache = super::super::GlyphCache::default();
+        let theme = OverlayTheme::default_dark();
+        let (w, h) = (1200usize, 800usize);
+        let mut render_with = |style: Option<SpanStyle>| -> (Vec<u32>, Vec<WidgetRect>) {
+            let rows = [
+                Row {
+                    icon: RowIcon::None,
+                    label: "len",
+                    match_indices: &[],
+                    detail: Some("fn(&self) -> usize"),
+                    detail_style: style,
+                    accessory: Accessory::None,
+                },
+                one_row(),
+            ];
+            let sections = [Section {
+                title: None,
+                rows: &rows,
+            }];
+            let spec = OverlaySpec {
+                tabs: None,
+                anchor: Anchor::Cursor {
+                    x: 100,
+                    y: 100,
+                    h: 18,
+                    prefer_below: true,
+                    width: WidthRule {
+                        pct: 0.0,
+                        min: 320.0,
+                        max: 400.0,
+                    },
+                },
+                header: None,
+                body: Body::List {
+                    sections: &sections,
+                    selected: FlatIndex(1),
+                    scroll: 0,
+                    max_visible: 8,
+                },
+                footer: None,
+                hover_row: None,
+                docs: None,
+            };
+            let mut buffer = vec![0u32; w * h];
+            let mut frame = Frame::new(&mut buffer, w, h);
+            let mut painter = test_painter(&font, &mut glyph_cache);
+            let mut mask_cache = RoundedRectMaskCache::new();
+            render(
+                &mut frame,
+                &mut painter,
+                &mut mask_cache,
+                &theme,
+                &spec,
+                w,
+                h,
+                1.0,
+                true,
+            );
+            let l = layout(&spec, w, h, 1.0);
+            (buffer, l.rows)
+        };
+        let (plain, rows) = render_with(None);
+        let (chipped, _) = render_with(Some(SpanStyle::Code));
+        assert_ne!(plain, chipped);
+        // Only the first row's band differs; the second row is identical.
+        let band = |buf: &Vec<u32>, r: &WidgetRect| -> Vec<u32> {
+            (r.y..r.y + r.h)
+                .flat_map(|y| buf[y * w + r.x..y * w + r.x + r.w].iter().copied())
+                .collect()
+        };
+        assert_ne!(band(&plain, &rows[0]), band(&chipped, &rows[0]));
+        assert_eq!(band(&plain, &rows[1]), band(&chipped, &rows[1]));
+    }
+
     /// The planner attaches spans to the wrapped lines they land on,
     /// rebased to each line — a span crossing a wrap is split.
     #[test]
@@ -3237,6 +3486,7 @@ mod tests {
             label: "a",
             match_indices: &[],
             detail: None,
+            detail_style: None,
             accessory: Accessory::None,
         }];
         let rows_b = [Row {
@@ -3244,6 +3494,7 @@ mod tests {
             label: "b",
             match_indices: &[],
             detail: None,
+            detail_style: None,
             accessory: Accessory::None,
         }];
         let sections = [
@@ -3272,6 +3523,7 @@ mod tests {
             label,
             match_indices: &[],
             detail: None,
+            detail_style: None,
             accessory: Accessory::None,
         };
         let rows_a = [row("a")];
@@ -3747,6 +3999,7 @@ mod tests {
                 label: "row",
                 match_indices: &[],
                 detail: None,
+                detail_style: None,
                 accessory: Accessory::None,
             })
             .collect();
@@ -3801,6 +4054,7 @@ mod tests {
                 label: "row",
                 match_indices: &[],
                 detail: None,
+                detail_style: None,
                 accessory: Accessory::None,
             })
             .collect();
@@ -4097,6 +4351,7 @@ mod tests {
                 label: "row",
                 match_indices: &[],
                 detail: None,
+                detail_style: None,
                 accessory: Accessory::None,
             })
             .collect();
@@ -4117,6 +4372,7 @@ mod tests {
                 label: "row",
                 match_indices: &[],
                 detail: None,
+                detail_style: None,
                 accessory: Accessory::None,
             })
             .collect();
@@ -4140,6 +4396,7 @@ mod tests {
                 label: "row",
                 match_indices: &[],
                 detail: None,
+                detail_style: None,
                 accessory: Accessory::None,
             })
             .collect();
@@ -4255,6 +4512,7 @@ mod tests {
             label: "foo",
             match_indices: &[],
             detail: None,
+            detail_style: None,
             accessory: Accessory::None,
         }
     }

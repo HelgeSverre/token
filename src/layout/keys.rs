@@ -53,6 +53,8 @@ pub enum UiKey {
     /// Documentation card floated beside the completion panel.
     OverlayDocsPanel,
     OverlayDocsText,
+    /// The docs card's leading code block (a signature fence), above its prose.
+    OverlayDocsCode,
 
     // --- Window shell ---
     Sidebar,
