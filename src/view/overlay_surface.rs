@@ -12,8 +12,8 @@
 use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry::WidgetRect;
 use crate::layout::{
-    Content, Dir, ElementDecl, FloatAnchor, FloatDecl, LayoutSnapshot, Padding, RowListDecl,
-    Sizing, SizingAxes, UiKey, UiTree,
+    AttachPoint, Content, Dir, ElementDecl, FloatAnchor, FloatDecl, LayoutSnapshot, Padding,
+    RowListDecl, Sizing, SizingAxes, UiKey, UiTree,
 };
 use crate::model::editor_area::Rect;
 use crate::theme::OverlayTheme;
@@ -69,6 +69,8 @@ mod dims {
     /// Top/bottom panel padding for `Fields`/`Zones` bodies, which have no
     /// header row to anchor against.
     pub const PANEL_PAD_Y: f32 = 12.0;
+    /// Completion docs card width.
+    pub const DOCS_WIDTH: f32 = 360.0;
     /// Tab bar region height (Search Everywhere only — overlay-surface.md
     /// Regions: "TabBar (optional, 32h)").
     pub const TAB_BAR_HEIGHT: f32 = 32.0;
@@ -486,6 +488,9 @@ pub struct OverlaySpec<'a> {
     /// text lift (Visual Language "Pointer"); distinct from `selected`,
     /// which is keyboard-authoritative. Ignored for other body kinds.
     pub hover_row: Option<FlatIndex>,
+    /// Plaintext documentation floated in a card beside the panel
+    /// (completion menu: the selected item's docs). Display-only.
+    pub docs: Option<&'a str>,
 }
 
 /// One entry in the flattened, on-screen row list: either a section header
@@ -728,6 +733,10 @@ pub struct OverlayLayout {
     pub zones_code: Option<WidgetRect>,
     /// The text zone of a `Body::Zones` body.
     pub zones_text: Option<WidgetRect>,
+    /// The docs card beside the panel and its text zone; `None` unless
+    /// `spec.docs` is `Some`.
+    pub docs_panel: Option<WidgetRect>,
+    pub docs_text: Option<WidgetRect>,
     pub footer: Option<WidgetRect>,
     pub scrollbar: Option<WidgetRect>,
     /// The measured zone plan (wrapped lines + heights) for a `Body::Zones`
@@ -735,6 +744,9 @@ pub struct OverlayLayout {
     /// `render_zones` — the plan is never re-derived. `None` for other
     /// bodies.
     pub(crate) zone_plan: Option<ZonePlan>,
+    /// Wrapped docs-card lines (`lines, truncated, height`), measured once
+    /// like `zone_plan`.
+    pub(crate) docs_plan: Option<TextZonePlan>,
 }
 
 fn float_decl(anchor: &Anchor) -> FloatDecl {
@@ -869,6 +881,10 @@ pub fn layout_measured(
         Body::Zones(zones) => Some(plan_zones(zones, panel_w, scale_factor, measure)),
         Body::List { .. } | Body::Fields { .. } => None,
     };
+    let docs_w = scaled(dims::DOCS_WIDTH, scale_factor).min(window_width);
+    let docs_plan = spec
+        .docs
+        .map(|docs| plan_docs_text(docs, docs_w, scale_factor, measure));
 
     let mut tree = UiTree::new();
     tree.node(ElementDecl::default(), |t| {
@@ -1046,6 +1062,40 @@ pub fn layout_measured(
                 }
             },
         );
+        // The docs card: a second float attached to the panel's top-right
+        // (declared after it, so the solver sees the panel's solved rect),
+        // flipping to its left when the window lacks room on the right.
+        if let Some((_, _, text_h)) = &docs_plan {
+            let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
+            let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
+            t.node(
+                ElementDecl {
+                    key: Some(UiKey::OverlayDocsPanel),
+                    dir: Dir::Column,
+                    sizing: SizingAxes::new(Sizing::Fixed(docs_w as f32), Sizing::FIT),
+                    clip: true,
+                    float: Some(FloatDecl {
+                        anchor: FloatAnchor::Element {
+                            target: UiKey::OverlayPanel,
+                            attach: AttachPoint::RightTop,
+                        },
+                        z: 10,
+                        width: None,
+                    }),
+                    ..Default::default()
+                },
+                |t| {
+                    spacer(t, pad_y);
+                    t.leaf(ElementDecl {
+                        key: Some(UiKey::OverlayDocsText),
+                        sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(*text_h as f32)),
+                        padding: Padding::xy(pad_x as f32, 0.0),
+                        ..Default::default()
+                    });
+                    spacer(t, pad_y);
+                },
+            );
+        }
     });
 
     let snapshot = tree.solve(
@@ -1096,6 +1146,8 @@ pub fn layout_measured(
     let zones_banner = solved_rect(&snapshot, UiKey::OverlayZoneBanner);
     let zones_code = solved_content_rect(&snapshot, UiKey::OverlayZoneCode);
     let zones_text = solved_content_rect(&snapshot, UiKey::OverlayZoneText);
+    let docs_panel = solved_rect(&snapshot, UiKey::OverlayDocsPanel);
+    let docs_text = solved_content_rect(&snapshot, UiKey::OverlayDocsText);
     let footer = solved_rect(&snapshot, UiKey::OverlayFooter);
     let scrollbar = list_info.and_then(|(start, visible, total, max_visible)| {
         if total <= max_visible {
@@ -1130,9 +1182,12 @@ pub fn layout_measured(
         zones_banner,
         zones_code,
         zones_text,
+        docs_panel,
+        docs_text,
         footer,
         scrollbar,
         zone_plan,
+        docs_plan,
     }
 }
 
@@ -1206,6 +1261,8 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
             | UiKey::OverlayZoneBanner
             | UiKey::OverlayZoneCode
             | UiKey::OverlayZoneText
+            | UiKey::OverlayDocsPanel
+            | UiKey::OverlayDocsText
             | UiKey::OverlayFooter,
         ) => OverlayHit::Inside,
         Some(
@@ -1470,6 +1527,56 @@ pub fn render(
             radius,
             mask_cache,
         );
+    }
+    if let (Some(panel), Some(text), Some((lines, truncated, _))) = (
+        layout.docs_panel,
+        layout.docs_text,
+        layout.docs_plan.as_ref(),
+    ) {
+        frame.draw_shadow_rings(
+            panel.x,
+            panel.y,
+            panel.w,
+            panel.h,
+            radius,
+            scale_factor,
+            mask_cache,
+        );
+        frame.fill_rounded_rect(
+            panel.x,
+            panel.y,
+            panel.w,
+            panel.h,
+            radius,
+            colors.panel_bg,
+            mask_cache,
+        );
+        frame.stroke_rounded_rect(
+            panel.x,
+            panel.y,
+            panel.w,
+            panel.h,
+            radius,
+            colors.hairline,
+            mask_cache,
+        );
+        frame.set_clip(crate::model::editor_area::Rect {
+            x: panel.x as f32,
+            y: panel.y as f32,
+            width: panel.w as f32,
+            height: panel.h as f32,
+        });
+        draw_text_lines(
+            frame,
+            painter,
+            text,
+            lines,
+            *truncated,
+            SIZE_ROW,
+            colors.text_primary,
+            scale_factor,
+        );
+        frame.clear_clip();
     }
 }
 
@@ -2340,6 +2447,12 @@ const MAX_ZONE_TEXT_LINES: usize = 14;
 /// Cap on wrapped banner-message lines.
 const MAX_ZONE_BANNER_LINES: usize = 4;
 
+/// Cap on wrapped docs-card lines (completion docs beside the menu).
+const MAX_DOCS_LINES: usize = 12;
+
+/// `(lines, truncated, height)` for one wrapped text zone.
+pub(crate) type TextZonePlan = (Vec<String>, bool, usize);
+
 /// The fully measured plan for a `Body::Zones` body: every wrapped line and
 /// zone height, computed ONCE from `(zones, panel_w, scale)` and consumed by
 /// both `layout()` and `render_zones` — the previous scheme derived heights
@@ -2445,14 +2558,57 @@ pub(crate) fn plan_zones(
     });
 
     let text = zones.text.map(|s| {
-        let mut lines = wrap_lines(s, text_style, content_w, min_wrap_w, measure);
-        let truncated = lines.len() > MAX_ZONE_TEXT_LINES;
-        lines.truncate(MAX_ZONE_TEXT_LINES);
-        let h = (lines.len() + usize::from(truncated)).max(1) * line_h;
-        (lines, truncated, h)
+        plan_text_zone(
+            s,
+            text_style,
+            content_w,
+            min_wrap_w,
+            MAX_ZONE_TEXT_LINES,
+            line_h,
+            measure,
+        )
     });
 
     ZonePlan { banner, code, text }
+}
+
+fn plan_text_zone(
+    text: &str,
+    style: crate::layout::TextStyle,
+    content_w: f32,
+    min_wrap_w: f32,
+    max_lines: usize,
+    line_h: usize,
+    measure: &mut dyn crate::layout::TextMeasure,
+) -> TextZonePlan {
+    let mut lines: Vec<String> =
+        crate::layout::text::wrap_to_width(text, style, content_w.max(min_wrap_w), measure)
+            .into_iter()
+            .map(|line| text[line.range].to_string())
+            .collect();
+    let truncated = lines.len() > max_lines;
+    lines.truncate(max_lines);
+    let h = (lines.len() + usize::from(truncated)).max(1) * line_h;
+    (lines, truncated, h)
+}
+
+/// The docs card's wrapped text at row size, capped at `MAX_DOCS_LINES`.
+fn plan_docs_text(
+    docs: &str,
+    panel_w: usize,
+    scale_factor: f64,
+    measure: &mut dyn crate::layout::TextMeasure,
+) -> TextZonePlan {
+    let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
+    plan_text_zone(
+        docs,
+        crate::layout::TextStyle::sized(size_px(SIZE_ROW, scale_factor)),
+        panel_w.saturating_sub(2 * pad_x) as f32,
+        size_px(8.0 * dims::ZONE_CELL_W, scale_factor),
+        MAX_DOCS_LINES,
+        scaled(dims::ZONE_LINE_H, scale_factor),
+        measure,
+    )
 }
 
 /// Draw pre-wrapped `lines` stacked in `rect`, clipped to it; a zone
@@ -2557,6 +2713,7 @@ mod tests {
                     trailing: "",
                 }),
                 hover_row: None,
+                docs: None,
             };
 
             render(
@@ -2633,6 +2790,7 @@ mod tests {
                 }),
                 footer: None,
                 hover_row: None,
+                docs: None,
             };
 
             render(
@@ -3082,6 +3240,7 @@ mod tests {
             body: Body::Zones(zones),
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let layout = layout(&spec, 1200, 900, 1.0);
         let zones2 = match &spec.body {
@@ -3134,6 +3293,7 @@ mod tests {
             body: Body::Zones(zones),
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let layout = layout(&spec, 800, 600, 1.0);
         let r = layout.zones_text.expect("text zone rect");
@@ -3244,6 +3404,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let l = layout(&spec, 500, 800, 1.0);
         assert_eq!(l.panel.w, 300, "must clamp up to the logical-px minimum");
@@ -3284,6 +3445,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let l = layout(&spec, 2000, 4000, 2.0);
         assert_eq!(
@@ -3333,6 +3495,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let l = layout(&spec, 1000, 800, 1.0);
         assert!(l.scrollbar.is_some());
@@ -3535,6 +3698,7 @@ mod tests {
                 },
                 footer: None,
                 hover_row: None,
+                docs: None,
             };
 
             render(
@@ -3636,6 +3800,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
+            docs: None,
         }
     }
 
@@ -3752,6 +3917,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let l = layout(&spec, 1000, 800, 1.0);
         assert!(l.header.is_none());
@@ -3782,6 +3948,7 @@ mod tests {
             }),
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let l = layout(&spec, 1000, 800, 1.0);
         assert!(l.zones_text.is_some());
@@ -3835,6 +4002,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let l = layout(&spec, 1000, 800, 1.0);
         assert!(l.panel.y > 200, "panel should sit below the anchor line");
@@ -3872,6 +4040,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let l = layout(&spec, 1000, 800, 1.0);
         assert!(
@@ -3917,6 +4086,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let l = layout(&spec, 1000, 800, 1.0);
         assert!(
@@ -3960,6 +4130,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let l = layout(&spec, 1000, 800, 1.0);
         // No room above (y=10 < panel_h), so it must fall through to
@@ -4001,6 +4172,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let l = layout(&spec, 1000, 800, 1.0);
         assert_eq!(l.panel.y, 0, "clamps to the top when it can't fit anywhere");
@@ -4038,6 +4210,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let l = layout(&spec, 150, 800, 1.0);
         assert!(l.panel.w <= 150, "panel width {} exceeds window", l.panel.w);
@@ -4078,6 +4251,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let l = layout(&spec, 1000, 800, 1.0);
         assert!(l.panel.x + l.panel.w <= 1000);
@@ -4113,6 +4287,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let l = layout(&spec, 1000, 800, 2.0);
         assert!(
@@ -4151,6 +4326,7 @@ mod tests {
             body: list_body(),
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let centered_spec = OverlaySpec {
             tabs: None,
@@ -4166,6 +4342,7 @@ mod tests {
             body: list_body(),
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let cursor_layout = layout(&cursor_spec, 1000, 800, 1.0);
         let centered_layout = layout(&centered_spec, 1000, 800, 1.0);
@@ -4196,6 +4373,7 @@ mod tests {
             }),
             footer: None,
             hover_row: None,
+            docs: None,
         };
         let l = layout(&spec, 1000, 800, 1.0);
         let banner = l.zones_banner.expect("banner zone");
@@ -4216,5 +4394,48 @@ mod tests {
         // FlatIndex math those handlers dispatch through.
         assert_eq!(FlatIndex(0).next(3), FlatIndex(1));
         assert_eq!(FlatIndex(2).next(3), FlatIndex(0));
+    }
+
+    #[test]
+    fn docs_card_flips_to_the_panels_left_when_the_right_lacks_room() {
+        let rows = [one_row()];
+        let sections = [Section {
+            title: None,
+            rows: &rows,
+        }];
+        let spec = OverlaySpec {
+            tabs: None,
+            anchor: Anchor::Cursor {
+                x: 900,
+                y: 100,
+                h: 20,
+                prefer_below: true,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 240.0,
+                    max: 320.0,
+                },
+            },
+            header: None,
+            body: Body::List {
+                sections: &sections,
+                selected: FlatIndex(0),
+                scroll: 0,
+                max_visible: 10,
+            },
+            footer: None,
+            hover_row: None,
+            docs: Some("Some documentation for the selected row."),
+        };
+        let l = layout(&spec, 1000, 800, 1.0);
+        let docs = l.docs_panel.expect("docs card");
+        assert_eq!(docs.w, 360);
+        assert_eq!(
+            docs.x + docs.w,
+            l.panel.x,
+            "no room on the right (panel clamped to the edge) -> card on the left"
+        );
+        assert_eq!(docs.y, l.panel.y);
+        assert!(l.docs_text.unwrap().h > 0);
     }
 }

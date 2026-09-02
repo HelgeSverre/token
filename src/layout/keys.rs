@@ -50,6 +50,9 @@ pub enum UiKey {
     OverlayZoneCode,
     OverlayZoneText,
     OverlayFooter,
+    /// Documentation card floated beside the completion panel.
+    OverlayDocsPanel,
+    OverlayDocsText,
 
     // --- Window shell ---
     Sidebar,

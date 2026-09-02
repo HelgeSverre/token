@@ -200,7 +200,20 @@ pub(crate) fn solve(
                         target_rect.y + target_rect.height,
                     ),
                     AttachPoint::AboveLeft => (target_rect.x, target_rect.y - h[f]),
-                    AttachPoint::RightTop => (target_rect.x + target_rect.width, target_rect.y),
+                    AttachPoint::RightTop => {
+                        // Flip to the target's left when the right side
+                        // lacks room and the left has it (a submenu /
+                        // docs card must not cover its target).
+                        let right = target_rect.x + target_rect.width;
+                        let x = if right + w[f] > root.x + root.width
+                            && target_rect.x - w[f] >= root.x
+                        {
+                            target_rect.x - w[f]
+                        } else {
+                            right
+                        };
+                        (x, target_rect.y)
+                    }
                 };
                 // Edge-clamp into the root box.
                 let cx = ax.clamp(root.x, (root.x + root.width - w[f]).max(root.x));

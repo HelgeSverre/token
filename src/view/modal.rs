@@ -361,6 +361,7 @@ fn render_command_palette_modal(
             trailing: "esc dismiss",
         }),
         hover_row: model.ui.modal_hover_row.map(FlatIndex),
+        docs: None,
     };
 
     overlay_surface::render(
@@ -467,6 +468,7 @@ fn render_file_finder_modal(
             trailing: "esc dismiss",
         }),
         hover_row: model.ui.modal_hover_row.map(FlatIndex),
+        docs: None,
     };
 
     overlay_surface::render(
@@ -623,6 +625,7 @@ fn render_recent_files_modal(
             trailing: "esc dismiss",
         }),
         hover_row: model.ui.modal_hover_row.map(FlatIndex),
+        docs: None,
     };
 
     overlay_surface::render(
@@ -761,6 +764,7 @@ fn render_theme_picker_modal(
         },
         footer: None,
         hover_row: model.ui.modal_hover_row.map(FlatIndex),
+        docs: None,
     };
 
     overlay_surface::render(
@@ -880,6 +884,7 @@ fn render_language_picker_modal(
             max_visible: COMMAND_PALETTE_MAX_VISIBLE,
         },
         footer: None,
+        docs: None,
         hover_row: model.ui.modal_hover_row.map(FlatIndex),
     };
 
@@ -971,6 +976,7 @@ fn render_lsp_servers_modal(
         },
         footer: None,
         hover_row: model.ui.modal_hover_row.map(FlatIndex),
+        docs: None,
     };
 
     overlay_surface::render(
@@ -1012,6 +1018,7 @@ fn render_goto_line_modal(
         },
         footer: None,
         hover_row: None,
+        docs: None,
     };
 
     overlay_surface::render(
@@ -1083,6 +1090,7 @@ fn render_find_replace_modal(
             None
         },
         hover_row: None,
+        docs: None,
     };
 
     overlay_surface::render(
@@ -1230,6 +1238,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
                     trailing: "",
                 }),
                 hover_row: None,
+                docs: None,
             };
             let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
             Some(f(&spec, &l))
@@ -1321,6 +1330,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
                 },
                 footer: None,
                 hover_row: None,
+                docs: None,
             };
             let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
             Some(f(&spec, &l))
@@ -1374,6 +1384,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
                 },
                 footer: None,
                 hover_row: None,
+                docs: None,
             };
             let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
             Some(f(&spec, &l))
@@ -1408,6 +1419,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
                     None
                 },
                 hover_row: None,
+                docs: None,
             };
             let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
             Some(f(&spec, &l))
@@ -1467,6 +1479,7 @@ fn list_shape_spec<'a>(
             trailing: "",
         }),
         hover_row: None,
+        docs: None,
     }
 }
 
@@ -1605,6 +1618,7 @@ pub fn render_drop_overlay(
         }),
         footer: None,
         hover_row: None,
+        docs: None,
     };
 
     overlay_surface::render(
@@ -1802,6 +1816,13 @@ pub fn with_cursor_overlay_spec<R>(
             title: None,
             rows: &rows,
         }];
+        let docs = menu
+            .selected_item(state.selected)
+            .and_then(|item| match &item.insert {
+                crate::completion::menu::MenuInsert::Lsp(data) => data.documentation.as_deref(),
+                crate::completion::menu::MenuInsert::Text(_) => None,
+            })
+            .filter(|docs| !docs.trim().is_empty());
         let spec = OverlaySpec {
             tabs: None,
             anchor: Anchor::Cursor {
@@ -1824,6 +1845,7 @@ pub fn with_cursor_overlay_spec<R>(
             },
             footer: None,
             hover_row: model.ui.completion_hover_row.map(FlatIndex),
+            docs,
         };
         return Some(f(&spec));
     }
@@ -1865,6 +1887,7 @@ pub fn with_cursor_overlay_spec<R>(
             },
             footer: None,
             hover_row: None,
+            docs: None,
         };
         return Some(f(&spec));
     }
@@ -1921,6 +1944,7 @@ pub fn with_cursor_overlay_spec<R>(
                 },
                 footer: None,
                 hover_row: None,
+                docs: None,
             };
             Some(f(&spec))
         }
@@ -1944,6 +1968,7 @@ pub fn with_cursor_overlay_spec<R>(
                 body: Body::Zones(debug_hover_zones()),
                 footer: None,
                 hover_row: None,
+                docs: None,
             };
             Some(f(&spec))
         }
@@ -1997,6 +2022,7 @@ pub fn with_cursor_overlay_spec<R>(
                 }),
                 footer: None,
                 hover_row: None,
+                docs: None,
             };
             Some(f(&spec))
         }
@@ -2045,6 +2071,7 @@ pub fn with_cursor_overlay_spec<R>(
                 },
                 footer: None,
                 hover_row: None,
+                docs: None,
             };
             Some(f(&spec))
         }
@@ -2565,5 +2592,73 @@ mod tests {
         let chip_steps = context_menu_chip_steps(&items);
         let rows = context_menu_rows(&items, &chip_steps);
         assert!(matches!(rows[0].accessory, Accessory::DimText(_)));
+    }
+
+    /// The docs card only exists when the selected completion item carries
+    /// documentation, and then sits to the right of the menu panel.
+    #[test]
+    fn completion_docs_panel_follows_the_selected_items_documentation() {
+        use crate::completion::menu::{
+            CompletionMenuState, LspInsert, MenuInsert, MenuItem, MenuItemKind, MenuSourceId,
+        };
+        use crate::model::{CursorOverlayKind, CursorOverlayState};
+
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.document_mut().buffer = ropey::Rope::from_str("va\n");
+        let doc = model.document();
+        let (document_id, revision) = (doc.id.unwrap(), doc.revision);
+        let item = |label: &str, docs: Option<&str>| MenuItem {
+            label: label.to_owned(),
+            filter_text: label.to_owned(),
+            insert: MenuInsert::Lsp(Box::new(LspInsert {
+                text: label.to_owned(),
+                server_id: crate::lsp::LspServerId::from("rust-analyzer"),
+                root: std::path::PathBuf::from("/tmp/proj"),
+                raw: std::sync::Arc::new(serde_json::json!({ "label": label })),
+                can_resolve: true,
+                resolved: true,
+                text_edit: None,
+                additional_text_edits: Vec::new(),
+                documentation: docs.map(str::to_owned),
+                caret_offset: None,
+            })),
+            kind: MenuItemKind::Function,
+            source: MenuSourceId::Lsp,
+            detail: None,
+            sort_text: None,
+        };
+        model.ui.completion_menu = Some(CompletionMenuState {
+            document_id,
+            revision,
+            query_start: crate::model::Cursor::at(0, 0),
+            query: "va".to_owned(),
+            items: vec![
+                item("value_plain", None),
+                item("value_documented", Some("Returns the value.")),
+            ],
+            filtered: vec![(0, 0, Vec::new()), (0, 1, Vec::new())],
+            is_incomplete: false,
+            pending_resolve: None,
+        });
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Completion));
+
+        let layout_for = |model: &AppModel| {
+            with_cursor_overlay_spec(model, |spec| overlay_surface::layout(spec, 800, 600, 1.0))
+                .expect("completion overlay open")
+        };
+
+        let without = layout_for(&model);
+        assert!(without.docs_panel.is_none(), "no docs -> no card");
+
+        model.ui.cursor_overlay.as_mut().unwrap().selected = 1;
+        let with = layout_for(&model);
+        let docs = with.docs_panel.expect("documented item -> card");
+        assert_eq!(
+            docs.x,
+            with.panel.x + with.panel.w,
+            "card sits right of the panel"
+        );
+        assert_eq!(docs.y, with.panel.y);
+        assert!(with.docs_text.is_some());
     }
 }
