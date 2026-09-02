@@ -24,6 +24,9 @@ pub enum SegmentId {
     /// LSP diagnostics count for the focused document (e.g., "✗ 2 ⚠ 5"),
     /// hidden when clean (lsp-integration.md Phase 2).
     Diagnostics,
+    /// Language server for the focused document's language (e.g.
+    /// "rust-analyzer: ready"), hidden when the language has no server.
+    LspServer,
 }
 
 /// Position of a segment in the status bar
@@ -96,7 +99,8 @@ impl StatusSegment {
             | SegmentId::CursorPosition
             | SegmentId::LineCount
             | SegmentId::CaretCount
-            | SegmentId::Diagnostics => SegmentPosition::Right,
+            | SegmentId::Diagnostics
+            | SegmentId::LspServer => SegmentPosition::Right,
         };
 
         Self {
@@ -149,6 +153,7 @@ impl StatusBar {
                     .with_priority(50),
                 // Right segments
                 StatusSegment::new(SegmentId::Diagnostics, SegmentContent::Empty).with_priority(70),
+                StatusSegment::new(SegmentId::LspServer, SegmentContent::Empty).with_priority(65),
                 StatusSegment::new(SegmentId::CaretCount, SegmentContent::Empty).with_priority(45),
                 StatusSegment::new(SegmentId::Selection, SegmentContent::Empty).with_priority(40),
                 StatusSegment::new(
@@ -401,6 +406,10 @@ pub fn sync_status_bar(model: &mut AppModel) {
             .ui
             .status_bar
             .update_segment(SegmentId::Diagnostics, SegmentContent::Empty);
+        model
+            .ui
+            .status_bar
+            .update_segment(SegmentId::LspServer, SegmentContent::Empty);
         return;
     }
 
@@ -476,6 +485,12 @@ pub fn sync_status_bar(model: &mut AppModel) {
         .status_bar
         .update_segment(SegmentId::Diagnostics, diagnostics_content);
 
+    let lsp_content = lsp_server_status(model);
+    model
+        .ui
+        .status_bar
+        .update_segment(SegmentId::LspServer, lsp_content);
+
     // Message of the highest-severity diagnostic under the cursor, in the
     // same segment a status flash uses — a flash (or any explicit
     // `UpdateSegment`) always wins over this fallback; it only refreshes
@@ -515,6 +530,35 @@ fn count_diagnostics(diagnostics: &[lsp_types::Diagnostic]) -> (usize, usize) {
             _ => (errors + 1, warnings),
         },
     )
+}
+
+/// `SegmentId::LspServer` text for the focused document: hidden when its
+/// language has no registered server, otherwise the server's mirrored
+/// lifecycle state (`model.lsp.servers`), with config switches on top.
+fn lsp_server_status(model: &AppModel) -> SegmentContent {
+    use crate::lsp::ServerState::*;
+    let Some(def) = crate::lsp::lsp_server_def(model.document().language) else {
+        return SegmentContent::Empty;
+    };
+    if !model.config.lsp.enabled {
+        return SegmentContent::Text("LSP off".into());
+    }
+    let disabled = model.config.lsp.servers.get(def.id).and_then(|o| o.enabled) == Some(false);
+    let state = match model
+        .lsp
+        .servers
+        .get(&crate::lsp::LspServerId::from(def.id))
+    {
+        _ if disabled => "off",
+        Some(Starting) => "starting",
+        Some(Indexing) => "indexing",
+        Some(Ready) => "ready",
+        Some(Restarting { .. }) => "restarting",
+        Some(Failed) => "failed",
+        Some(Missing) => "not found",
+        Some(ShuttingDown) | None => "off",
+    };
+    SegmentContent::Text(format!("{}: {state}", def.id))
 }
 
 /// The message of the highest-severity diagnostic whose range contains
@@ -597,6 +641,50 @@ mod diagnostics_tests {
             message: message.to_string(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn lsp_server_segment_reflects_server_state_config_and_language() {
+        use crate::lsp::{LspServerId, ServerState};
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let text = |model: &mut AppModel| {
+            sync_status_bar(model);
+            model
+                .ui
+                .status_bar
+                .get_segment(SegmentId::LspServer)
+                .unwrap()
+                .content
+                .clone()
+        };
+
+        assert_eq!(
+            text(&mut model),
+            SegmentContent::Empty,
+            "PlainText has no server"
+        );
+
+        model.document_mut().language = crate::syntax::LanguageId::Rust;
+        assert_eq!(
+            text(&mut model),
+            SegmentContent::Text("rust-analyzer: off".into())
+        );
+
+        let id = LspServerId::from("rust-analyzer");
+        model.lsp.servers.insert(id.clone(), ServerState::Ready);
+        assert_eq!(
+            text(&mut model),
+            SegmentContent::Text("rust-analyzer: ready".into())
+        );
+
+        model.lsp.servers.insert(id, ServerState::Missing);
+        assert_eq!(
+            text(&mut model),
+            SegmentContent::Text("rust-analyzer: not found".into())
+        );
+
+        model.config.lsp.enabled = false;
+        assert_eq!(text(&mut model), SegmentContent::Text("LSP off".into()));
     }
 
     #[test]

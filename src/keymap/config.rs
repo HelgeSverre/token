@@ -389,6 +389,8 @@ impl FromStr for Command {
 
             // Go to Definition + Jump History (lsp-integration.md Phase 3)
             "GotoDefinition" => Ok(Command::GotoDefinition),
+            "NextDiagnostic" => Ok(Command::NextDiagnostic),
+            "PrevDiagnostic" => Ok(Command::PrevDiagnostic),
             "NavigateBack" => Ok(Command::NavigateBack),
             "NavigateForward" => Ok(Command::NavigateForward),
 
