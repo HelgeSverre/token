@@ -2848,6 +2848,77 @@ fn edit_heavy_session_stays_in_sync_with_fake_lsp_server() {
     assert!(app.lsp.servers.is_empty());
 }
 
+/// A server-initiated `workspace/applyEdit` round trip through the real
+/// wire: the reader forwards it as `LspMsg::ApplyEditRequested`,
+/// `update()` applies the edit, and `Cmd::LspRespondToServer` answers
+/// `applied: true` back over stdin — asserted from the fake server's own
+/// transcript of what it received.
+#[test]
+fn server_initiated_apply_edit_is_applied_and_acknowledged() {
+    let dir = tempfile::tempdir().expect("temp dir should be created");
+    let file_path = dir.path().join("main.rs");
+    std::fs::write(&file_path, "fn main() {}\n").expect("write fixture file");
+    let transcript_path = dir.path().join("transcript.log");
+    let scenario_path = dir.path().join("scenario.json");
+    let uri = token::lsp::path_to_uri(&file_path);
+    std::fs::write(
+        &scenario_path,
+        serde_json::json!([
+            { "op": "expect_request", "method": "initialize", "respond": { "capabilities": {} } },
+            { "op": "request", "id": 77, "method": "workspace/applyEdit", "params": {
+                "edit": { "changes": { uri.as_str(): [
+                    { "range": { "start": { "line": 0, "character": 3 }, "end": { "line": 0, "character": 7 } },
+                      "newText": "start" }
+                ] } }
+            } },
+            { "op": "record_until_exit", "file": transcript_path.to_string_lossy() },
+        ])
+        .to_string(),
+    )
+    .expect("write scenario file");
+
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.lsp.servers.insert(
+        "rust-analyzer".to_owned(),
+        token::config::LspServerOverride {
+            command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
+            args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
+            enabled: None,
+            initialization_options: None,
+            settings: None,
+        },
+    );
+    let doc_id = app.model.document().id.expect("document id");
+    let mut doc = token::model::Document::from_file(file_path.clone()).unwrap();
+    doc.id = Some(doc_id);
+    app.model.editor_area.documents.insert(doc_id, doc);
+    app.process_cmd(Cmd::LspEnsureServer {
+        language: LanguageId::Rust,
+        file_path: file_path.clone(),
+    });
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let reply = loop {
+        app.process_async_messages();
+        let lines = read_transcript_lines(&transcript_path);
+        if let Some(line) = lines
+            .iter()
+            .find(|l| l.starts_with("response:Some(Number(77))"))
+        {
+            break line.clone();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "no applyEdit reply; transcript: {lines:?}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert!(reply.contains("\"applied\":true"), "got {reply}");
+    assert_eq!(app.model.document().buffer.to_string(), "fn start() {}\n");
+
+    app.process_cmd(Cmd::Quit);
+}
+
 /// The debounce/max-wait timer path itself — not the flush helper —
 /// actually reaches the wire: schedules through the real
 /// `Cmd::LspScheduleDidChange` -> `record_edit` wiring

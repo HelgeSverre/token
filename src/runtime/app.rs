@@ -2454,6 +2454,21 @@ impl App {
                     self.teardown_all_lsp_servers();
                 }
             }
+            Cmd::LspRespondToServer {
+                server_id,
+                root,
+                request_id,
+                result,
+            } => {
+                if let Some(handle) = self.lsp.servers.get(&(server_id, root)) {
+                    let _ = handle
+                        .outbound_tx
+                        .send(lsp::client::WorkerCmd::ReplyToServer {
+                            id: request_id,
+                            result: Ok(result),
+                        });
+                }
+            }
             Cmd::LspSetServerEnabled { server_id, enabled } => {
                 if enabled {
                     self.lsp.missing_servers.retain(|(id, _)| *id != server_id);

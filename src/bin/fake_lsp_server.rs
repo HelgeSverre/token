@@ -163,7 +163,11 @@ fn run_step(step: &Value, reader: &mut impl BufRead, writer: &mut impl Write) {
                 let line = match method {
                     Some(m) if id.is_some() => format!("request:{m}:{}", body_of(&message)),
                     Some(m) => format!("notify:{m}:{}", body_of(&message)),
-                    None => format!("response:{:?}", id),
+                    None => format!(
+                        "response:{:?}:{}",
+                        id,
+                        message.get("result").unwrap_or(&Value::Null)
+                    ),
                 };
                 let _ = writeln!(file, "{line}");
                 let _ = file.flush();

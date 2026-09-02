@@ -1216,6 +1216,16 @@ pub enum LspMsg {
         detail: Option<String>,
         additional_text_edits: Vec<(lsp_types::Range, String)>,
     },
+    /// Worker -> update: the server asked us to apply a `WorkspaceEdit`
+    /// (`workspace/applyEdit`, a server -> client *request*). `update_lsp`
+    /// applies it and answers through `Cmd::LspRespondToServer`.
+    ApplyEditRequested {
+        server_id: LspServerId,
+        root: std::path::PathBuf,
+        request_id: serde_json::Value,
+        edit: Box<lsp_types::WorkspaceEdit>,
+        label: Option<String>,
+    },
 }
 
 /// The result of a `textDocument/references` request, mirroring

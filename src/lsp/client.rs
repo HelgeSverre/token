@@ -983,6 +983,35 @@ fn reader_loop(
             if let Some(id) = message.get("id").cloned() {
                 // Server -> client request: always needs a reply.
                 let params = message.get("params").cloned().unwrap_or(Value::Null);
+                if method == "workspace/applyEdit" {
+                    // Needs the model: forwarded to `update()`, which
+                    // answers via `Cmd::LspRespondToServer`.
+                    let result =
+                        match serde_json::from_value::<lsp_types::ApplyWorkspaceEditParams>(params)
+                        {
+                            Ok(p) => {
+                                let sent = msg_tx.send(Msg::Lsp(LspMsg::ApplyEditRequested {
+                                    server_id: server_id.clone(),
+                                    root: root.clone(),
+                                    request_id: id,
+                                    edit: Box::new(p.edit),
+                                    label: p.label,
+                                }));
+                                if sent.is_ok() {
+                                    if let Some(wake) = wake.as_deref() {
+                                        wake();
+                                    }
+                                }
+                                continue;
+                            }
+                            Err(e) => Ok(json!({
+                                "applied": false,
+                                "failureReason": format!("invalid params: {e}"),
+                            })),
+                        };
+                    let _ = outbound_tx.send(WorkerCmd::ReplyToServer { id, result });
+                    continue;
+                }
                 let result = reply_for_server_request(method, &params, &settings);
                 let _ = outbound_tx.send(WorkerCmd::ReplyToServer { id, result });
             } else {

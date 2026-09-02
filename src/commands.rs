@@ -1029,6 +1029,14 @@ pub enum Cmd {
         server_id: crate::lsp::LspServerId,
         enabled: bool,
     },
+    /// Reply to a server -> client request the reader thread forwarded
+    /// to `update()` (`workspace/applyEdit`) instead of answering itself.
+    LspRespondToServer {
+        server_id: crate::lsp::LspServerId,
+        root: PathBuf,
+        request_id: serde_json::Value,
+        result: serde_json::Value,
+    },
 
     // === Debug Commands ===
     /// Toggle performance overlay (debug builds only)
@@ -1130,6 +1138,7 @@ impl Cmd {
             // paired with at the call site) requests its own redraw.
             Cmd::LspSetEnabled { .. } => Damage::Areas(vec![]),
             Cmd::LspSetServerEnabled { .. } => Damage::Areas(vec![]),
+            Cmd::LspRespondToServer { .. } => Damage::Areas(vec![]),
             // Debug overlay toggle triggers full redraw
             #[cfg(debug_assertions)]
             Cmd::TogglePerfOverlay => Damage::Full,

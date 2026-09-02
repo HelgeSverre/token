@@ -635,6 +635,35 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             detail,
             additional_text_edits,
         ),
+        LspMsg::ApplyEditRequested {
+            server_id,
+            root,
+            request_id,
+            edit,
+            label,
+        } => {
+            let (cmd, report) = super::text_edits::apply_workspace_edit(model, *edit);
+            model.ui.set_status(label.unwrap_or_else(|| {
+                format!("Applied {} edits in {} files", report.edits, report.files)
+            }));
+            let result = if report.skipped.is_empty() {
+                serde_json::json!({ "applied": true })
+            } else {
+                serde_json::json!({
+                    "applied": false,
+                    "failureReason": report.skipped.join("; "),
+                })
+            };
+            Some(Cmd::Batch(vec![
+                cmd.unwrap_or_else(Cmd::redraw_editor),
+                Cmd::LspRespondToServer {
+                    server_id,
+                    root,
+                    request_id,
+                    result,
+                },
+            ]))
+        }
     }
 }
 
@@ -1178,6 +1207,52 @@ mod tests {
     /// differently-named target (bazel/node_modules/dotfile layouts) must
     /// still match — the fast filename prefilter must not silently drop
     /// every diagnostic for it.
+    #[test]
+    fn apply_edit_requested_applies_and_replies_applied_true() {
+        let (dir, mut model) = model_with_file();
+        let path = dir.path().join("main.rs");
+        #[allow(clippy::mutable_key_type)]
+        let changes = std::collections::HashMap::from([(
+            crate::lsp::path_to_uri(&path),
+            vec![lsp_types::TextEdit::new(
+                lsp_types::Range::new(
+                    lsp_types::Position::new(0, 3),
+                    lsp_types::Position::new(0, 7),
+                ),
+                "start".to_owned(),
+            )],
+        )]);
+        let cmd = update_lsp(
+            &mut model,
+            LspMsg::ApplyEditRequested {
+                server_id: LspServerId::from("fake"),
+                root: dir.path().to_path_buf(),
+                request_id: serde_json::json!(7),
+                edit: Box::new(lsp_types::WorkspaceEdit::new(changes)),
+                label: None,
+            },
+        )
+        .expect("cmd");
+        assert_eq!(model.document().buffer.to_string(), "fn start() {}\n");
+        fn find_reply(cmd: &Cmd) -> Option<(&serde_json::Value, &serde_json::Value)> {
+            match cmd {
+                Cmd::Batch(cmds) => cmds.iter().find_map(find_reply),
+                Cmd::LspRespondToServer {
+                    request_id, result, ..
+                } => Some((request_id, result)),
+                _ => None,
+            }
+        }
+        let (id, result) = find_reply(&cmd).expect("LspRespondToServer");
+        assert_eq!(id, &serde_json::json!(7));
+        assert_eq!(result, &serde_json::json!({ "applied": true }));
+        assert!(model
+            .ui
+            .transient_message
+            .as_ref()
+            .is_some_and(|t| t.text == "Applied 1 edits in 1 files"));
+    }
+
     #[test]
     #[cfg(unix)]
     fn find_document_by_uri_matches_through_a_renaming_symlink() {
