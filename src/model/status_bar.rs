@@ -536,7 +536,7 @@ fn diagnostic_message_at_cursor(
 /// status bar.
 const MAX_STATUS_MESSAGE_CHARS: usize = 120;
 
-fn truncate_status_message(text: &str) -> String {
+pub(crate) fn truncate_status_message(text: &str) -> String {
     let flattened = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if flattened.chars().count() <= MAX_STATUS_MESSAGE_CHARS {
         return flattened;

@@ -38,6 +38,8 @@ pub enum CommandId {
     NavigateForward,
     ShowHover,
     FindUsages,
+    NextDiagnostic,
+    PrevDiagnostic,
     ShowUsages,
 
     // Context menu (context-menu.md)
@@ -267,6 +269,18 @@ pub static COMMANDS: &[CommandDef] = &[
         category: CommandCategory::Nav,
         label: "Show Usages",
         keybinding: Some("⌥⌘F7"),
+    },
+    CommandDef {
+        id: CommandId::NextDiagnostic,
+        category: CommandCategory::Nav,
+        label: "Next Diagnostic",
+        keybinding: Some("F2"),
+    },
+    CommandDef {
+        id: CommandId::PrevDiagnostic,
+        category: CommandCategory::Nav,
+        label: "Previous Diagnostic",
+        keybinding: Some("⇧F2"),
     },
     CommandDef {
         id: CommandId::ShowContextMenu,
@@ -544,6 +558,8 @@ impl CommandId {
             CommandId::NavigateForward => Some(KeymapCommand::NavigateForward),
             CommandId::ShowHover => Some(KeymapCommand::ShowHover),
             CommandId::FindUsages => Some(KeymapCommand::FindUsages),
+            CommandId::NextDiagnostic => Some(KeymapCommand::NextDiagnostic),
+            CommandId::PrevDiagnostic => Some(KeymapCommand::PrevDiagnostic),
             CommandId::ShowUsages => Some(KeymapCommand::ShowUsages),
             CommandId::ShowContextMenu => Some(KeymapCommand::ShowContextMenu),
             CommandId::SplitHorizontal => Some(KeymapCommand::SplitHorizontal),

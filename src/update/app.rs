@@ -441,6 +441,14 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::NavigateBack => {
             crate::update::update_lsp(model, crate::messages::LspMsg::NavigateBack)
         }
+        CommandId::NextDiagnostic => crate::update::update_lsp(
+            model,
+            crate::messages::LspMsg::JumpDiagnostic { forward: true },
+        ),
+        CommandId::PrevDiagnostic => crate::update::update_lsp(
+            model,
+            crate::messages::LspMsg::JumpDiagnostic { forward: false },
+        ),
         CommandId::NavigateForward => {
             crate::update::update_lsp(model, crate::messages::LspMsg::NavigateForward)
         }

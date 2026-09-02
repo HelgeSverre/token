@@ -365,6 +365,10 @@ bindings:
     command: NavigateBack
   - key: "cmd+]"
     command: NavigateForward
+  - key: "f2"
+    command: NextDiagnostic
+  - key: "shift+f2"
+    command: PrevDiagnostic
 
   # ===========================================================================
   # Hover (lsp-integration.md Phase 4)

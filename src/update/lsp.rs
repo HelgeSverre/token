@@ -180,6 +180,46 @@ fn stale_feature_response(
     model.try_document().and_then(|d| d.id) != Some(document_id)
 }
 
+/// `LspMsg::JumpDiagnostic`: caret to the next/previous diagnostic start
+/// (sorted by position, wrapping), skipping ranges the buffer has since
+/// outgrown. Flashes the diagnostic's first line in the status bar.
+fn jump_diagnostic(model: &mut AppModel, forward: bool) -> Option<Cmd> {
+    let doc = model.document();
+    let cursor = model.editor().active_cursor();
+    let caret = (cursor.line, cursor.column);
+    let mut targets: Vec<_> = doc
+        .diagnostics
+        .iter()
+        .filter(|d| !crate::lsp::position::range_vanished(doc, d.range))
+        .map(|d| {
+            let p = crate::lsp::lsp_to_position(doc, d.range.start);
+            ((p.line, p.column), d.range.start, d.message.clone())
+        })
+        .collect();
+    targets.sort_by_key(|t| t.0);
+    let pick = if forward {
+        targets.iter().find(|t| t.0 > caret).or(targets.first())
+    } else {
+        targets
+            .iter()
+            .rev()
+            .find(|t| t.0 < caret)
+            .or(targets.last())
+    };
+    let Some((_, start, message)) = pick.cloned() else {
+        model.ui.set_status("No diagnostics in this file");
+        return Some(Cmd::redraw_status_bar());
+    };
+    let path = doc.file_path.clone()?;
+    let cmd = navigation::jump_to_location(model, None, &path, start);
+    model
+        .ui
+        .set_status(crate::model::status_bar::truncate_status_message(
+            message.lines().next().unwrap_or_default(),
+        ));
+    navigation::combine(cmd, Some(Cmd::redraw_status_bar()))
+}
+
 pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
     match msg {
         LspMsg::ServerStateChanged {
@@ -253,6 +293,7 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             Some(Cmd::redraw_editor())
         }
 
+        LspMsg::JumpDiagnostic { forward } => jump_diagnostic(model, forward),
         LspMsg::GotoDefinition => {
             let doc = model.try_document()?;
             let document_id = doc.id?;
@@ -693,6 +734,49 @@ mod tests {
 
     fn model() -> AppModel {
         AppModel::new(800, 600, 1.0, vec![])
+    }
+
+    #[test]
+    fn jump_diagnostic_walks_sorted_starts_wraps_and_skips_vanished_ranges() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.rs");
+        std::fs::write(&path, "x\n".repeat(12)).unwrap();
+        let mut model = AppModel::new(800, 600, 1.0, vec![path]);
+        let diag = |line: u32, message: &str| lsp_types::Diagnostic {
+            range: lsp_types::Range::new(
+                lsp_types::Position::new(line, 0),
+                lsp_types::Position::new(line, 1),
+            ),
+            message: message.to_owned(),
+            ..Default::default()
+        };
+        // Deliberately unsorted, with one range past the end of the buffer.
+        model.document_mut().diagnostics = vec![
+            diag(9, "nine"),
+            diag(50, "vanished"),
+            diag(1, "one\nsecond line"),
+            diag(5, "five"),
+        ];
+        model.editor_mut().cursors[0].line = 5;
+
+        update_lsp(&mut model, LspMsg::JumpDiagnostic { forward: true });
+        assert_eq!(model.editor().cursors[0].line, 9);
+        update_lsp(&mut model, LspMsg::JumpDiagnostic { forward: true });
+        assert_eq!(
+            model.editor().cursors[0].line,
+            1,
+            "wraps past the vanished range"
+        );
+        assert_eq!(model.ui.transient_message.as_ref().unwrap().text, "one");
+        update_lsp(&mut model, LspMsg::JumpDiagnostic { forward: false });
+        assert_eq!(model.editor().cursors[0].line, 9);
+
+        model.document_mut().diagnostics.clear();
+        update_lsp(&mut model, LspMsg::JumpDiagnostic { forward: true });
+        assert_eq!(
+            model.ui.transient_message.as_ref().unwrap().text,
+            "No diagnostics in this file"
+        );
     }
 
     #[test]

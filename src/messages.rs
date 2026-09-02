@@ -1033,6 +1033,11 @@ pub enum LspMsg {
     /// group's most recent jump-history entry (`update/navigation.rs`).
     NavigateBack,
     NavigateForward,
+    /// F2 / Shift+F2: move the caret to the next / previous diagnostic in
+    /// the focused document, wrapping at either end.
+    JumpDiagnostic {
+        forward: bool,
+    },
     /// Runtime -> update: the outcome of a `textDocument/definition`
     /// request issued from `(document_id, revision, origin)`.
     /// Revision-guarded: dropped if `document_id`'s revision has since

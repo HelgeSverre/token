@@ -281,6 +281,9 @@ pub enum Command {
     // ========================================================================
     /// F12: `textDocument/definition` for the symbol under the cursor.
     GotoDefinition,
+    /// F2 / Shift+F2: move the caret to the next / previous diagnostic.
+    NextDiagnostic,
+    PrevDiagnostic,
     /// Pop the focused group's most recent jump-history entry.
     NavigateBack,
     NavigateForward,
@@ -521,6 +524,8 @@ impl Command {
             TriggerCompletionMenu => vec![Msg::Completion(CompletionMsg::TriggerMenu)],
             RestartLanguageServer => vec![Msg::App(AppMsg::RestartLanguageServer)],
             GotoDefinition => vec![Msg::Lsp(LspMsg::GotoDefinition)],
+            NextDiagnostic => vec![Msg::Lsp(LspMsg::JumpDiagnostic { forward: true })],
+            PrevDiagnostic => vec![Msg::Lsp(LspMsg::JumpDiagnostic { forward: false })],
             NavigateBack => vec![Msg::Lsp(LspMsg::NavigateBack)],
             NavigateForward => vec![Msg::Lsp(LspMsg::NavigateForward)],
             ShowHover => vec![Msg::Lsp(LspMsg::ShowHover)],
@@ -704,6 +709,8 @@ impl Command {
             TriggerCompletionMenu => "Trigger Completion",
             RestartLanguageServer => "Restart Language Server",
             GotoDefinition => "Go to Definition",
+            NextDiagnostic => "Next Diagnostic",
+            PrevDiagnostic => "Previous Diagnostic",
             NavigateBack => "Navigate Back",
             NavigateForward => "Navigate Forward",
             ShowHover => "Show Hover",
