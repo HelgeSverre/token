@@ -25,13 +25,15 @@ Implementation sequence across the current design docs: [overlay-surface](archiv
 | — ✅ | Context menu (editor, tabs, file tree) | queue item 3 / [context-menu](archived/context-menu.md) |
 | — ✅ | Signature help, Rename Symbol, Show Code Actions, Format Document/Selection | lsp-integration "Phase 6+" |
 | — ✅ | CLI detach, single-instance handoff, `--wait`; per-instance automation and MCP instance targeting | v0.6.0 |
+| — ✅ | Find options/status chrome + selection scope | find-enhancements P5+P7 |
+| — ✅ | Inline ghost text via llama.cpp `/infill` | autocomplete P2 |
 
 Shipped alongside (not in the original sequence): status-bar overhaul (border, font size, centering, expiring flash messages); theme-picker swatches; JetBrains keybinds (⌘B/⇧⌘D/⌘[/⌘]) + ⌘-click + mouse back/forward; Toggle LSP + Language Servers picker modal; Reveal in File Explorer; ZonePlan hover layouting; decoration-preserving cursor fast path; live LSP stress-testing against rust-analyzer / sema / phpantom / laravel-lsp (upstream bugs filed/found: sema#151 cross-file definitions; phpantom 0.9.0 builtin stubs unresolved — repro ready, issue not yet filed).
 
 ## Current queue (in order)
 
 1. **Soft wrap** ([soft-wrap.md](feature/soft-wrap.md)) — the XL item; unblocks multi-line ghost text.
-2. **Step 12** — inline/FIM ghost text (autocomplete P2–P3).
+2. **Inline completion maturity** — autocomplete P3 (more transports, recency-ring context, partial accept, LRU cache). P2 (ghost text + llama.cpp `/infill`) shipped 2026-09-03; see [HANDOFF.md](../HANDOFF.md) for the gaps it left.
 3. **Settings page** ([settings-page.md](feature/settings-page.md)) — `keep_unknown` config merge is its shippable Phase 1.
 4. LSP workspace-symbols → Search Everywhere Symbols tab; usages panel (popup shipped).
 
