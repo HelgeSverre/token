@@ -22,6 +22,9 @@
 # Use "cmd" for the platform command key (Cmd on macOS, Ctrl elsewhere)
 
 bindings:
+  - key: "cmd+,"
+    command: OpenSettings
+
   # ===========================================================================
   # File Operations
   # ===========================================================================

@@ -198,6 +198,7 @@ fn default_true() -> bool {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 enum ModalId {
+    Settings,
     CommandPalette,
     GotoLine,
     FindReplace,
@@ -538,6 +539,31 @@ fn apply_workspace(model: &mut AppModel, config: &WorkspaceConfig, scale: f64) {
 
 fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
     let modal_state = match config.id {
+        ModalId::Settings => {
+            let mut state = token::model::ui::SettingsState::default();
+            if let Some(input) = &config.input {
+                state.editable.set_content(input);
+                state.refilter();
+            }
+            if let Some(index) = config.selected_index {
+                state.selected_index = index.min(state.rows.len().saturating_sub(1));
+                let sections: Vec<_> = state
+                    .sections()
+                    .into_iter()
+                    .map(|(_, range)| token::view::overlay_surface::SectionShape {
+                        has_title: true,
+                        len: range.len(),
+                    })
+                    .collect();
+                state.scroll_offset = token::view::overlay_surface::resolve_scroll_for_selection(
+                    &sections,
+                    state.selected_index,
+                    token::model::COMMAND_PALETTE_MAX_VISIBLE,
+                    0,
+                );
+            }
+            ModalState::Settings(state)
+        }
         ModalId::CommandPalette => {
             let mut state = CommandPaletteState::default();
             if let Some(ref input) = config.input {

@@ -1306,7 +1306,9 @@ impl App {
             window.set_cursor(target.cursor_icon());
             self.model.ui.hover = target.hover_region();
             self.model.ui.modal_hover_row =
-                if let token::view::hit_test::HitTarget::ModalRow { flat_index } = target {
+                if let token::view::hit_test::HitTarget::ModalRow { flat_index }
+                | token::view::hit_test::HitTarget::ModalChoice { flat_index, .. } = target
+                {
                     Some(flat_index)
                 } else {
                     None
@@ -2322,6 +2324,13 @@ impl App {
                         tracing::warn!("Failed to send file load result to main thread: {}", e);
                     }
                 });
+            }
+            Cmd::SaveConfiguration { config } => {
+                if let Err(error) = config.save() {
+                    self.model
+                        .ui
+                        .set_status(format!("Could not save settings: {error}"));
+                }
             }
             Cmd::SaveRecentFiles { recent } => {
                 std::thread::spawn(move || {
@@ -5175,7 +5184,7 @@ impl ApplicationHandler for App {
         let time_since_tick = now.duration_since(self.last_tick);
         let blink_interval = Duration::from_millis(self.model.config.cursor_blink_ms);
 
-        if time_since_tick >= blink_interval {
+        if !blink_interval.is_zero() && time_since_tick >= blink_interval {
             self.last_tick = now;
             if let Some(cmd) = self.tick() {
                 // Accumulate damage from cursor blink
@@ -5200,8 +5209,12 @@ impl App {
     /// declined, and `WaitUntil` on a past instant spins the loop at 100%
     /// CPU.
     pub(super) fn next_wake(&self, now: Instant) -> Instant {
-        let blink_interval = Duration::from_millis(self.model.config.cursor_blink_ms);
-        let mut next_wake = self.last_tick + blink_interval;
+        let mut next_wake = if self.model.config.cursor_blink_ms == 0 {
+            // Retain a modest maintenance wake for transient-message expiry.
+            now + Duration::from_millis(600)
+        } else {
+            self.last_tick + Duration::from_millis(self.model.config.cursor_blink_ms)
+        };
         if let Some(earliest_deadline) = self.syntax_deadlines.values().map(|(d, _)| *d).min() {
             next_wake = next_wake.min(earliest_deadline);
         }

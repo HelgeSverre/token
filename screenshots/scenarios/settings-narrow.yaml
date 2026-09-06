@@ -1,0 +1,10 @@
+name: settings-narrow
+width: 400
+height: 750
+scale: 1.0
+theme: default-dark
+files:
+  - path: samples/sample_code.rs
+modal:
+  id: settings
+  input: blink

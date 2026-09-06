@@ -1001,6 +1001,17 @@ fn handle_left_click(
             );
             EventResult::consumed_redraw()
         }
+        HitTarget::ModalChoice { flat_index, choice } => EventResult::Consumed {
+            redraw: true,
+            focus: None,
+            cmd: update(
+                model,
+                Msg::Ui(UiMsg::Modal(ModalMsg::SelectSettingChoice {
+                    row: *flat_index,
+                    choice: *choice,
+                })),
+            ),
+        },
 
         // Tab click: switch the Search Everywhere tab (overlay-surface.md
         // Pointer: "Tab click switches tabs").
@@ -1644,9 +1655,10 @@ fn handle_middle_click(
         HitTarget::CsvCell { .. } => EventResult::consumed_no_redraw(),
 
         // Modal - consume, no action
-        HitTarget::Modal { .. } | HitTarget::ModalRow { .. } | HitTarget::ModalTab { .. } => {
-            EventResult::consumed_no_redraw()
-        }
+        HitTarget::Modal { .. }
+        | HitTarget::ModalRow { .. }
+        | HitTarget::ModalTab { .. }
+        | HitTarget::ModalChoice { .. } => EventResult::consumed_no_redraw(),
 
         // Sidebar targets - consume, no action for middle-click
         HitTarget::SidebarEmpty | HitTarget::SidebarItem { .. } => {

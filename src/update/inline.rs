@@ -160,6 +160,9 @@ pub(crate) fn deadline_fired(
 /// moved on; a menu opened meanwhile) are dropped silently.
 pub(crate) fn ready(model: &mut AppModel, snapshot: RequestSnapshot, text: String) -> Option<Cmd> {
     model.ui.inline_in_flight = false;
+    if !(model.config.completion.enabled && model.config.completion.inline.enabled) {
+        return None;
+    }
     model.ui.inline_failures = 0;
     let state = InlineSuggestionState {
         valid_revision: snapshot.revision,
@@ -365,6 +368,40 @@ mod tests {
         );
         assert_eq!(find_schedule(&cmd), Some((0, true)));
         assert_eq!(model.ui.inline_failures, 0);
+    }
+
+    #[test]
+    fn settings_disable_clears_ghost_text_and_discards_a_pending_reply() {
+        use crate::messages::{ModalMsg, UiMsg};
+        use crate::model::{ModalId, ModalState};
+        let mut model = model_with_inline("abc\n");
+        place(&mut model, 0, 3);
+        arrive(&mut model, "def");
+        assert!(visible(&model).is_some());
+        let pending = snapshot(&model);
+        update(&mut model, Msg::Ui(UiMsg::ToggleModal(ModalId::Settings)));
+        let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+            panic!()
+        };
+        let row = state
+            .rows
+            .iter()
+            .position(|row| {
+                matches!(row, crate::settings::SettingsRow::Preset(index)
+            if crate::settings::descriptors::DESCRIPTORS[*index].id == "completion.inline.enabled")
+            })
+            .unwrap();
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::SelectSettingChoice {
+                row,
+                choice: 0,
+            })),
+        );
+        assert!(!model.config.completion.inline.enabled);
+        assert!(visible(&model).is_none());
+        ready(&mut model, pending, "late reply".into());
+        assert!(visible(&model).is_none());
     }
 
     #[test]

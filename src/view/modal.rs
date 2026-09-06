@@ -1193,12 +1193,156 @@ fn render_find_replace_modal(
 // Shape-only layouts (hit-testing, caret placement)
 // ============================================================================
 
-/// Build the shape-only `OverlaySpec` (placeholder row content, real
-/// counts/titles/sections/scroll) for whichever modal is active, call
-/// `overlay_surface::layout()` on it, and hand both to `f`. Used by
-/// `hit_test::hit_test_modal` (row/tab/scrollbar hit-testing) and
-/// `view::caret` (IME caret placement) so both consume the exact geometry
-/// the renderer computes without re-deriving row content.
+/// Build settings from the shared row list and current configuration/status.
+/// Paint and hit testing use this same spec, including preset accessories.
+pub(crate) fn with_settings_spec<R>(
+    model: &AppModel,
+    state: &crate::model::ui::SettingsState,
+    f: impl FnOnce(&OverlaySpec) -> R,
+) -> R {
+    use crate::settings::{descriptors::DESCRIPTORS, SettingsRow};
+    let labels: Vec<_> = state.rows.iter().map(|row| row.label()).collect();
+    let descriptions: Vec<_> = state
+        .rows
+        .iter()
+        .map(|row| match row {
+            SettingsRow::ServerCommand(def) => model
+                .config
+                .lsp
+                .servers
+                .get(def.id)
+                .and_then(|server| server.command.clone())
+                .unwrap_or_else(|| format!("{} (default)", def.command)),
+            SettingsRow::Theme(_) => model.config.theme.clone(),
+            _ => row.description(),
+        })
+        .collect();
+    let choices: Vec<Vec<&str>> = state
+        .rows
+        .iter()
+        .map(|row| match row {
+            SettingsRow::Preset(index) => DESCRIPTORS[*index]
+                .choices
+                .iter()
+                .map(|(label, _)| *label)
+                .collect(),
+            SettingsRow::ServerEnabled(_) => vec!["Off", "On"],
+            _ => Vec::new(),
+        })
+        .collect();
+    let statuses: Vec<_> = state
+        .rows
+        .iter()
+        .map(|row| match row {
+            SettingsRow::ServerStatus(def) => match model
+                .lsp
+                .servers
+                .get(&crate::lsp::LspServerId::from(def.id))
+            {
+                Some(crate::lsp::ServerState::Starting) => "Starting".into(),
+                Some(crate::lsp::ServerState::Indexing) => "Indexing".into(),
+                Some(crate::lsp::ServerState::Ready) => "Ready".into(),
+                Some(crate::lsp::ServerState::Restarting { attempt }) => {
+                    format!("Restarting ({attempt})")
+                }
+                Some(crate::lsp::ServerState::Failed) => "Failed".into(),
+                Some(crate::lsp::ServerState::Missing) => "Missing".into(),
+                Some(crate::lsp::ServerState::ShuttingDown) => "Shutting Down".into(),
+                None => "Not Running".into(),
+            },
+            _ => String::new(),
+        })
+        .collect();
+    let rows: Vec<_> = state
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| Row {
+            icon: RowIcon::None,
+            label: &labels[index],
+            match_indices: &[],
+            detail: if matches!(row, SettingsRow::ServerStatus(_)) {
+                None
+            } else {
+                Some(&descriptions[index])
+            },
+            detail_style: None,
+            accessory: match row {
+                SettingsRow::Preset(descriptor) => Accessory::Choices {
+                    labels: &choices[index],
+                    active: DESCRIPTORS[*descriptor].active_choice(&model.config),
+                },
+                SettingsRow::ServerEnabled(def) => Accessory::Choices {
+                    labels: &choices[index],
+                    active: Some(usize::from(
+                        model
+                            .config
+                            .lsp
+                            .servers
+                            .get(def.id)
+                            .and_then(|server| server.enabled)
+                            .unwrap_or(true),
+                    )),
+                },
+                SettingsRow::ServerStatus(_) => Accessory::DimText(&statuses[index]),
+                SettingsRow::Theme(_) => Accessory::DimText("Open Picker"),
+                SettingsRow::ServerCommand(_) => Accessory::None,
+            },
+        })
+        .collect();
+    let groups = state.sections();
+    let sections: Vec<_> = groups
+        .iter()
+        .map(|(title, range)| Section {
+            title: Some(title),
+            rows: &rows[range.clone()],
+        })
+        .collect();
+    let input = state.editable.text();
+    let detail = state
+        .rows
+        .get(state.selected_index)
+        .map(|row| row.description())
+        .unwrap_or_else(|| "No matching settings".into());
+    let spec = OverlaySpec {
+        tabs: None,
+        anchor: Anchor::Centered {
+            width: width_rule(PICKER_WIDTH),
+            dim_alpha: MODAL_DIM_ALPHA,
+        },
+        header: Some(Header {
+            glyph: None,
+            text: &input,
+            placeholder: "Search Settings",
+            caret: Some(state.editable.cursor().column),
+            selection: editable_selection(&state.editable),
+            scope: None,
+        }),
+        body: Body::List {
+            sections: &sections,
+            selected: FlatIndex(state.selected_index),
+            scroll: state.scroll_offset,
+            max_visible: COMMAND_PALETTE_MAX_VISIBLE,
+        },
+        footer: Some(Footer {
+            leading: &detail,
+            trailing: if matches!(
+                state.rows.get(state.selected_index),
+                Some(SettingsRow::ServerCommand(_))
+            ) {
+                ""
+            } else {
+                "← → Change · Esc Close"
+            },
+        }),
+        hover_row: model.ui.modal_hover_row.map(FlatIndex),
+        docs: None,
+    };
+    f(&spec)
+}
+
+/// Build the active modal's layout for hit testing and caret placement.
+/// Settings uses real accessories because individual chips are hit targets.
 pub(crate) fn with_modal_overlay_layout<R>(
     model: &AppModel,
     window_width: usize,
@@ -1210,6 +1354,10 @@ pub(crate) fn with_modal_overlay_layout<R>(
 
     let modal = model.ui.active_modal.as_ref()?;
     match modal {
+        ModalState::Settings(state) => Some(with_settings_spec(model, state, |spec| {
+            let layout = overlay_surface::layout(spec, window_width, window_height, scale_factor);
+            f(spec, &layout)
+        })),
         ModalState::CommandPalette(state) => {
             use crate::model::SearchTab;
             use crate::update::search_everywhere_sections;
@@ -1600,6 +1748,19 @@ pub fn render_modals(
     };
 
     match modal {
+        ModalState::Settings(state) => with_settings_spec(model, state, |spec| {
+            overlay_surface::render(
+                frame,
+                painter,
+                overlay_mask_cache,
+                &model.theme.overlay,
+                spec,
+                window_width,
+                window_height,
+                ctx.scale_factor,
+                model.ui.cursor_visible,
+            );
+        }),
         ModalState::ThemePicker(state) => {
             render_theme_picker_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
         }

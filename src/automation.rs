@@ -618,6 +618,22 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
             status: None,
             options: Vec::new(),
         }),
+        token::model::ModalState::Settings(state) => Some(OverlaySnapshot {
+            context: "settings".to_owned(),
+            query: state.editable.text(),
+            active_tab: None,
+            rows: state
+                .rows
+                .iter()
+                .map(|row| OverlayRowSnapshot {
+                    label: row.label(),
+                    section: Some(row.section().to_owned()),
+                })
+                .collect(),
+            selected: state.selected_index,
+            status: None,
+            options: Vec::new(),
+        }),
         token::model::ModalState::LspServers(state) => Some(OverlaySnapshot {
             context: "lsp_servers".to_owned(),
             query: String::new(),

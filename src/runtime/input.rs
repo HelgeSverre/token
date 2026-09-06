@@ -730,7 +730,10 @@ fn handle_modal_key(
     modifiers: KeyModifiers,
 ) -> Option<Cmd> {
     let KeyModifiers {
-        shift, alt, logo, ..
+        shift,
+        alt,
+        logo,
+        ctrl,
     } = modifiers;
 
     // Find/Replace option toggles (find-enhancements.md Phase 5): ⌥⌘C
@@ -768,6 +771,25 @@ fn handle_modal_key(
             if shift && matches!(model.ui.active_modal, Some(ModalState::FindReplace(_))) =>
         {
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::FindPrevious)))
+        }
+
+        Key::Named(NamedKey::ArrowLeft)
+            if !shift
+                && !alt
+                && !ctrl
+                && !logo
+                && matches!(model.ui.active_modal, Some(ModalState::Settings(_))) =>
+        {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::CycleSetting(-1))))
+        }
+        Key::Named(NamedKey::ArrowRight)
+            if !shift
+                && !alt
+                && !ctrl
+                && !logo
+                && matches!(model.ui.active_modal, Some(ModalState::Settings(_))) =>
+        {
+            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::CycleSetting(1))))
         }
 
         // Enter: confirm modal action
@@ -1206,6 +1228,46 @@ mod tests {
             panic!("modal should stay open");
         };
         assert_eq!(state.query(), "x");
+    }
+
+    #[test]
+    fn settings_arrows_change_presets_and_modified_arrows_edit_search() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.config = token::config::EditorConfig::default();
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::ToggleModal(token::model::ModalId::Settings)),
+        );
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("blink".into()))),
+        );
+        let cmd = handle_modal_key(
+            &mut model,
+            Key::Named(NamedKey::ArrowRight),
+            PhysicalKey::Code(KeyCode::ArrowRight),
+            KeyModifiers::default(),
+        )
+        .unwrap();
+        assert_eq!(model.config.cursor_blink_ms, 300);
+        assert!(
+            matches!(cmd, Cmd::Batch(ref commands) if commands.iter().any(|cmd| matches!(cmd, Cmd::SaveConfiguration { .. })))
+        );
+        handle_modal_key(
+            &mut model,
+            Key::Named(NamedKey::ArrowLeft),
+            PhysicalKey::Code(KeyCode::ArrowLeft),
+            KeyModifiers {
+                alt: true,
+                ..KeyModifiers::default()
+            },
+        );
+        assert_eq!(model.config.cursor_blink_ms, 300);
+        let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+            panic!()
+        };
+        assert_eq!(state.editable.text(), "blink");
+        assert_eq!(state.editable.cursor().column, 0);
     }
 
     fn move_panel(model: &mut AppModel, panel_id: PanelId, from: DockPosition, to: DockPosition) {

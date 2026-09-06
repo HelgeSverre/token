@@ -512,6 +512,7 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             update_ui(model, UiMsg::ToggleModal(ModalId::CommandPalette))
         }
         CommandId::SwitchTheme => update_ui(model, UiMsg::ToggleModal(ModalId::ThemePicker)),
+        CommandId::OpenSettings => update_ui(model, UiMsg::ToggleModal(ModalId::Settings)),
         CommandId::OpenConfigDirectory => {
             if let Some(config_dir) = config_paths::config_dir() {
                 config_paths::ensure_all_config_dirs();

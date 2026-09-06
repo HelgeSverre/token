@@ -369,7 +369,9 @@ impl EditorConfig {
 
     /// Save config to disk
     ///
-    /// Creates the config directory if it doesn't exist.
+    /// Creates the config directory if it doesn't exist. Unknown YAML keys are
+    /// preserved; malformed existing files are left untouched. YAML comments
+    /// and formatting are not retained by the serializer.
     pub fn save(&self) -> Result<(), String> {
         let path = crate::config_paths::config_file()
             .ok_or_else(|| "No config directory available".to_string())?;
@@ -387,8 +389,42 @@ impl EditorConfig {
                 .map_err(|e| format!("Failed to create config directory: {}", e))?;
         }
 
-        let content = serde_yaml::to_string(self)
-            .map_err(|e| format!("Failed to serialize config: {}", e))?;
+        let mut value =
+            serde_yaml::to_value(self).map_err(|e| format!("Failed to serialize config: {}", e))?;
+        match std::fs::read_to_string(path) {
+            Ok(content) => {
+                let old: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
+                    format!(
+                        "Refusing to overwrite invalid config at {}: {e}",
+                        path.display()
+                    )
+                })?;
+                if !old.is_null() {
+                    // Serializing the old typed config tells us which keys are
+                    // known, including omitted optional fields and dynamic map
+                    // entries. Their removal must not be mistaken for an unknown
+                    // key that should be copied back.
+                    let known: Self = serde_yaml::from_value(old.clone()).map_err(|e| {
+                        format!(
+                            "Refusing to overwrite invalid config at {}: {e}",
+                            path.display()
+                        )
+                    })?;
+                    let known = serde_yaml::to_value(known)
+                        .map_err(|e| format!("Failed to serialize existing config: {e}"))?;
+                    keep_unknown(&mut value, old, &known);
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "Failed to read config at {}: {error}",
+                    path.display()
+                ))
+            }
+        }
+        let content = serde_yaml::to_string(&value)
+            .map_err(|e| format!("Failed to serialize config: {e}"))?;
 
         std::fs::write(path, content)
             .map_err(|e| format!("Failed to write config to {}: {}", path.display(), e))?;
@@ -404,9 +440,89 @@ impl EditorConfig {
     }
 }
 
+/// Copy unknown mapping keys recursively, but never resurrect removed known
+/// settings or merge arbitrary user-owned values such as LSP settings objects.
+fn keep_unknown(new: &mut serde_yaml::Value, old: serde_yaml::Value, known: &serde_yaml::Value) {
+    let (serde_yaml::Value::Mapping(new), serde_yaml::Value::Mapping(old)) = (new, old) else {
+        return;
+    };
+    for (key, value) in old {
+        let known_value = known.as_mapping().and_then(|map| map.get(&key));
+        if let Some(new_value) = new.get_mut(&key) {
+            keep_unknown(
+                new_value,
+                value,
+                known_value.unwrap_or(&serde_yaml::Value::Null),
+            );
+        } else if known_value.is_none() {
+            new.insert(key, value);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn save_preserves_unknown_keys_and_updates_known_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        let original = "theme: old\nfuture: {nested: [one, two]}\nlsp:\n  servers:\n    rust-analyzer:\n      enabled: true\n      future_option: {answer: 42}\ncompletion:\n  inline:\n    future_setting: enabled\n";
+        std::fs::write(&path, original).unwrap();
+        let mut config: EditorConfig = serde_yaml::from_str(original).unwrap();
+        config.theme = "new".into();
+        config.lsp.servers.get_mut("rust-analyzer").unwrap().enabled = Some(false);
+        config.save_to(&path).unwrap();
+        let saved: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let old: serde_yaml::Value = serde_yaml::from_str(original).unwrap();
+        assert_eq!(saved["theme"], "new");
+        assert_eq!(saved["future"], old["future"]);
+        assert_eq!(
+            saved["lsp"]["servers"]["rust-analyzer"]["future_option"],
+            old["lsp"]["servers"]["rust-analyzer"]["future_option"]
+        );
+        assert_eq!(saved["lsp"]["servers"]["rust-analyzer"]["enabled"], false);
+        assert_eq!(saved["completion"]["inline"]["future_setting"], "enabled");
+    }
+
+    #[test]
+    fn save_does_not_restore_removed_known_options_or_map_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        let original = "lsp:\n  servers:\n    rust-analyzer:\n      initialization_options: {old: true}\n      settings: {removed: true, retained: false}\n    pyright:\n      enabled: false\n";
+        std::fs::write(&path, original).unwrap();
+        let mut config: EditorConfig = serde_yaml::from_str(original).unwrap();
+        config.lsp.servers.remove("pyright");
+        let server = config.lsp.servers.get_mut("rust-analyzer").unwrap();
+        server.initialization_options = None;
+        server.settings = Some(serde_json::json!({"retained": true}));
+        config.save_to(&path).unwrap();
+        let saved: EditorConfig =
+            serde_yaml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(!saved.lsp.servers.contains_key("pyright"));
+        let server = &saved.lsp.servers["rust-analyzer"];
+        assert!(server.initialization_options.is_none());
+        assert_eq!(server.settings, Some(serde_json::json!({"retained": true})));
+    }
+
+    #[test]
+    fn save_leaves_invalid_and_unreadable_configs_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        for original in ["theme: [", "[not, a, mapping]", "cursor_blink_ms: invalid"] {
+            std::fs::write(&path, original).unwrap();
+            assert!(EditorConfig::default().save_to(&path).is_err());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        }
+        assert!(EditorConfig::default().save_to(dir.path()).is_err());
+        std::fs::write(&path, "# Empty config\n").unwrap();
+        EditorConfig::default().save_to(&path).unwrap();
+        assert!(
+            serde_yaml::from_str::<EditorConfig>(&std::fs::read_to_string(path).unwrap()).is_ok()
+        );
+    }
 
     #[test]
     fn hover_on_mouse_defaults_to_enabled_with_a_300ms_delay() {

@@ -92,6 +92,9 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             }
             // Open the requested modal
             let state = match modal_id {
+                ModalId::Settings => {
+                    ModalState::Settings(crate::model::ui::SettingsState::default())
+                }
                 ModalId::CommandPalette => {
                     // Cmd+Shift+A: Search Everywhere, pre-focused on All
                     // (overlay-surface.md Phase 4 "Bindings").
@@ -270,6 +273,7 @@ pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
 /// `ThemePicker` has no text input at all and returns `None`.
 fn modal_editable_mut(modal: &mut ModalState) -> Option<&mut EditableState<StringBuffer>> {
     match modal {
+        ModalState::Settings(state) => Some(&mut state.editable),
         ModalState::CommandPalette(state) => Some(&mut state.editable),
         ModalState::GotoLine(state) => Some(&mut state.editable),
         ModalState::RenameSymbol(state) => Some(&mut state.editable),
@@ -299,6 +303,7 @@ fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
                 update_file_finder_results(files);
             }
         }
+        ModalState::Settings(state) => state.refilter(),
         ModalState::FileFinder(state) => update_file_finder_results(state),
         ModalState::RecentFiles(state) => resolve_recent_rows(state),
         ModalState::GotoLine(_)
@@ -351,6 +356,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         ModalMsg::SetInput(text) => {
             if let Some(ref mut modal) = model.ui.active_modal {
                 match modal {
+                    ModalState::Settings(state) => state.editable.set_content(&text),
                     ModalState::CommandPalette(state) => state.set_input(&text),
                     ModalState::GotoLine(state) => state.set_input(&text),
                     ModalState::RenameSymbol(state) => state.editable.set_content(&text),
@@ -611,6 +617,16 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::SelectPrevious => modal_select(model, -1),
+        ModalMsg::CycleSetting(delta) => change_setting(model, None, delta),
+        ModalMsg::SelectSettingChoice { row, choice } => {
+            if let Some(ModalState::Settings(state)) = model.ui.active_modal.as_mut() {
+                if row >= state.rows.len() {
+                    return None;
+                }
+                state.selected_index = row;
+            }
+            change_setting(model, Some(choice), 0)
+        }
 
         ModalMsg::SelectNext => modal_select(model, 1),
 
@@ -876,6 +892,9 @@ fn activate_search_tab(model: &mut AppModel, index: usize) -> Option<Cmd> {
 /// A no-op for `Fields`/no-list contexts.
 fn set_modal_selected_index(modal: &mut ModalState, row: usize) {
     match modal {
+        ModalState::Settings(state) => {
+            state.selected_index = row.min(state.rows.len().saturating_sub(1))
+        }
         ModalState::CommandPalette(state) => match state.active_tab {
             SearchTab::Commands => state.selected_index = row.min(state.matches.len()),
             SearchTab::Files => {
@@ -908,6 +927,16 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
     let modal = model.ui.active_modal.clone();
     if let Some(modal) = modal {
         match modal {
+            ModalState::Settings(state) => {
+                if matches!(
+                    state.rows.get(state.selected_index),
+                    Some(crate::settings::SettingsRow::Theme(_))
+                ) {
+                    update_ui(model, UiMsg::ToggleModal(ModalId::ThemePicker))
+                } else {
+                    Some(Cmd::Redraw)
+                }
+            }
             ModalState::CommandPalette(state) => confirm_search_everywhere(model, state),
             ModalState::RenameSymbol(state) => {
                 model.ui.close_modal();
@@ -1316,12 +1345,99 @@ fn move_search_everywhere_selection(state: &mut CommandPaletteState, delta: isiz
     }
 }
 
-/// `ModalMsg::SelectPrevious`/`SelectNext`: move selection by `delta`
-/// (-1/+1) in whichever list-body modal is active. Theme Picker previews
-/// the newly-selected theme live.
+/// Section shapes from the settings ordering authority.
+fn settings_shapes(state: &crate::model::ui::SettingsState) -> Vec<SectionShape> {
+    state
+        .sections()
+        .into_iter()
+        .map(|(_, range)| SectionShape {
+            has_title: true,
+            len: range.len(),
+        })
+        .collect()
+}
+
+fn change_setting(model: &mut AppModel, choice: Option<usize>, delta: isize) -> Option<Cmd> {
+    use crate::settings::{descriptors::DESCRIPTORS, SettingsRow};
+    let Some(ModalState::Settings(state)) = model.ui.active_modal.as_ref() else {
+        return None;
+    };
+    let row = *state.rows.get(state.selected_index)?;
+    let pick = |active: Option<usize>, len: usize| {
+        choice.unwrap_or_else(|| match active {
+            Some(index) => (index as isize + delta).rem_euclid(len as isize) as usize,
+            None if delta < 0 => len - 1,
+            None => 0,
+        })
+    };
+    let changed = match row {
+        SettingsRow::Preset(index) => {
+            let descriptor = &DESCRIPTORS[index];
+            let index = pick(
+                descriptor.active_choice(&model.config),
+                descriptor.choices.len(),
+            );
+            descriptor.select(&mut model.config, index)
+        }
+        SettingsRow::ServerEnabled(def) => {
+            let enabled = model
+                .config
+                .lsp
+                .servers
+                .get(def.id)
+                .and_then(|s| s.enabled)
+                .unwrap_or(true);
+            let index = pick(Some(usize::from(enabled)), 2);
+            if index > 1 || (index == 1) == enabled {
+                false
+            } else {
+                model
+                    .config
+                    .lsp
+                    .servers
+                    .entry(def.id.to_owned())
+                    .or_default()
+                    .enabled = Some(index == 1);
+                true
+            }
+        }
+        SettingsRow::Theme(_) | SettingsRow::ServerCommand(_) | SettingsRow::ServerStatus(_) => {
+            false
+        }
+    };
+    if !changed {
+        return Some(Cmd::Redraw);
+    }
+    if !(model.config.completion.enabled && model.config.completion.inline.enabled) {
+        model.ui.inline_suggestion = None;
+        model.ui.inline_in_flight = false;
+    }
+    model.ui.reset_cursor_blink();
+    let (width, height) = model.window_size;
+    model.resize(width, height);
+    Some(Cmd::Batch(vec![
+        Cmd::SyncStatusBarMetrics,
+        Cmd::Redraw,
+        Cmd::SaveConfiguration {
+            config: Box::new(model.config.clone()),
+        },
+    ]))
+}
+
+/// Move list selection; the theme picker previews its new selection.
 fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
     let modal = model.ui.active_modal.as_mut()?;
     let preview_theme_id = match modal {
+        ModalState::Settings(state) => {
+            let shapes = settings_shapes(state);
+            move_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                &shapes,
+                delta,
+            );
+            None
+        }
         ModalState::CommandPalette(state) => {
             move_search_everywhere_selection(state, delta);
             None
@@ -1391,6 +1507,15 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
 fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
     let modal = model.ui.active_modal.as_mut()?;
     match modal {
+        ModalState::Settings(state) => {
+            let shapes = settings_shapes(state);
+            page_list_selection(
+                &mut state.selected_index,
+                &mut state.scroll_offset,
+                &shapes,
+                forward,
+            );
+        }
         ModalState::CommandPalette(state) => match state.active_tab {
             SearchTab::Commands => {
                 let shapes = commands_tab_shapes(state);
@@ -1484,6 +1609,10 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
 fn modal_scroll(model: &mut AppModel, delta: isize) -> Option<Cmd> {
     let modal = model.ui.active_modal.as_mut()?;
     let (scroll, shapes): (&mut usize, Vec<SectionShape>) = match modal {
+        ModalState::Settings(state) => {
+            let shapes = settings_shapes(state);
+            (&mut state.scroll_offset, shapes)
+        }
         ModalState::CommandPalette(state) => match state.active_tab {
             SearchTab::Commands => {
                 let shapes = commands_tab_shapes(state);

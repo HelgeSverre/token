@@ -8,6 +8,12 @@ All notable changes to rust-editor are documented in this file.
 
 ### Added
 
+- Searchable Settings modal (`Cmd+,` / `Ctrl+,` or “Open Settings” in the
+  command palette), with preset chips for appearance, editing, status bar,
+  completion, and language servers. Left/Right or a chip click applies and
+  saves a preset immediately; custom YAML values remain unchanged until selected.
+  Theme opens the existing picker. Server commands and live status are read-only.
+
 - **Inline suggestions (ghost text)** (autocomplete Phase 2): a
   `completion.inline` config block plus a `completion.providers` entry point
   Token at a local llama.cpp server's `/infill` endpoint. Typing at the end
@@ -32,6 +38,14 @@ All notable changes to rust-editor are documented in this file.
   to it; reopening the modal re-captures the scope from the live selection.
   The automation overlay snapshot reports `status` and `options`, and
   screenshot scenarios accept `whole_word` and `use_regex`.
+
+### Fixed
+
+- Configuration saves preserve unknown YAML keys without restoring removed known
+  settings. Invalid or unreadable existing files remain untouched; YAML comments
+  and formatting are not retained.
+- The cursor blink “Off” preset keeps the caret visible without spinning the
+  blink timer.
 
 ## v0.6.0 - 2026-09-02
 

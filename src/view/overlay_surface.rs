@@ -301,6 +301,11 @@ impl CompletionKind {
 }
 
 pub enum Accessory<'a> {
+    /// Adjacent selectable preset chips. Geometry is shared with hit testing.
+    Choices {
+        labels: &'a [&'a str],
+        active: Option<usize>,
+    },
     None,
     DimText(&'a str),
     Check,
@@ -560,10 +565,14 @@ fn resolve_visible_window(
     max_visible: usize,
 ) -> (usize, usize) {
     let visible = display_rows.len().min(max_visible);
-    let scroll_display = display_rows
-        .iter()
-        .position(|dr| matches!(dr, DisplayRow::Row(_, FlatIndex(i)) if *i == scroll))
-        .unwrap_or(scroll);
+    let scroll_display = if scroll == 0 {
+        0
+    } else {
+        display_rows
+            .iter()
+            .position(|dr| matches!(dr, DisplayRow::Row(_, FlatIndex(i)) if *i == scroll))
+            .unwrap_or(scroll)
+    };
     let start = scroll_display.min(display_rows.len().saturating_sub(visible));
     (start, visible)
 }
@@ -612,7 +621,14 @@ pub fn resolve_scroll_for_selection(
     let selected = selected.min(last_flat);
     let selected_display = flat_to_display[selected];
 
-    let prev_display = flat_to_display[previous_scroll.min(last_flat)];
+    if selected == 0 {
+        return 0;
+    }
+    let prev_display = if previous_scroll == 0 {
+        0
+    } else {
+        flat_to_display[previous_scroll.min(last_flat)]
+    };
     let start = prev_display.min(display_len.saturating_sub(visible));
 
     let target_display = if selected_display < start {
@@ -625,7 +641,8 @@ pub fn resolve_scroll_for_selection(
 
     flat_to_display
         .iter()
-        .position(|&d| d >= target_display)
+        .enumerate()
+        .position(|(index, &d)| (if index == 0 { 0 } else { d }) >= target_display)
         .unwrap_or(last_flat)
 }
 
@@ -735,6 +752,7 @@ pub struct FieldLayout {
 /// chrome, header, list rows, fields, zones, footer, and scrollbar thumb.
 /// Rendering and hit-testing consume this same snapshot.
 pub struct OverlayLayout {
+    scale_factor: f64,
     snapshot: LayoutSnapshot,
     pub panel: WidgetRect,
     /// `None` unless `spec.tabs` is `Some` (Search Everywhere only).
@@ -1216,6 +1234,7 @@ pub fn layout_measured(
     });
 
     OverlayLayout {
+        scale_factor,
         snapshot,
         panel,
         tab_bar,
@@ -1245,6 +1264,10 @@ pub fn layout_measured(
 /// actually painted).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayHit {
+    Choice {
+        row: FlatIndex,
+        choice: usize,
+    },
     /// Outside the panel entirely (dismiss on click).
     Outside,
     /// A selectable row (`Body::List` only).
@@ -1293,7 +1316,28 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
                 return OverlayHit::Inside;
             };
             match display_rows.get(start + slot) {
-                Some(DisplayRow::Row(_, flat_index)) => OverlayHit::Row(*flat_index),
+                Some(DisplayRow::Row(row, flat_index)) => {
+                    if let Accessory::Choices { labels, .. } = &row.accessory {
+                        if let Some(rect) = layout.rows.get(slot) {
+                            for (choice, chip) in choice_rects(rect, labels, layout.scale_factor)
+                                .iter()
+                                .enumerate()
+                            {
+                                if x >= chip.x
+                                    && x < chip.x + chip.w
+                                    && y >= chip.y
+                                    && y < chip.y + chip.h
+                                {
+                                    return OverlayHit::Choice {
+                                        row: *flat_index,
+                                        choice,
+                                    };
+                                }
+                            }
+                        }
+                    }
+                    OverlayHit::Row(*flat_index)
+                }
                 Some(DisplayRow::SectionHeader(_) | DisplayRow::Separator) | None => {
                     OverlayHit::Inside
                 }
@@ -2018,8 +2062,20 @@ fn render_list(
                 x += icon_w;
 
                 // Reserve the accessory's measured width so it never truncates.
-                let accessory_w = accessory_width(painter, &row.accessory, meta_size, scale_factor);
-                let label_right = rect.x + rect.w.saturating_sub(inset + text_pad + accessory_w);
+                let accessory_w = if let Accessory::Choices { labels, .. } = &row.accessory {
+                    choice_rects(rect, labels, scale_factor)
+                        .first()
+                        .map_or(0, |chip| {
+                            (rect.x + rect.w).saturating_sub(inset + text_pad + chip.x)
+                        })
+                } else {
+                    accessory_width(painter, &row.accessory, meta_size, scale_factor)
+                };
+                let accessory_gap = if accessory_w == 0 { 0 } else { text_pad };
+                let label_right = rect.x
+                    + rect
+                        .w
+                        .saturating_sub(inset + text_pad + accessory_w + accessory_gap);
                 let available = label_right.saturating_sub(x);
                 let text_y = rect.y
                     + (rect
@@ -2094,6 +2150,68 @@ fn render_list(
                             .saturating_sub(painter.line_height_for_size(meta_size)))
                             / 2;
                     match &row.accessory {
+                        Accessory::Choices { labels, active } => {
+                            for (index, (label, chip)) in labels
+                                .iter()
+                                .zip(choice_rects(rect, labels, scale_factor))
+                                .enumerate()
+                            {
+                                let selected = *active == Some(index);
+                                frame.fill_rounded_rect(
+                                    chip.x,
+                                    chip.y,
+                                    chip.w,
+                                    chip.h,
+                                    scaled(3.0, scale_factor),
+                                    if selected {
+                                        colors.selection_wash
+                                    } else {
+                                        colors.keycap_bg
+                                    },
+                                    mask_cache,
+                                );
+                                frame.stroke_rounded_rect(
+                                    chip.x,
+                                    chip.y,
+                                    chip.w,
+                                    chip.h,
+                                    scaled(3.0, scale_factor),
+                                    if selected {
+                                        colors.accent
+                                    } else {
+                                        colors.keycap_border
+                                    },
+                                    mask_cache,
+                                );
+                                let padding = scaled(4.0, scale_factor);
+                                let text = truncate_tail(
+                                    painter,
+                                    meta_size,
+                                    label,
+                                    chip.w.saturating_sub(padding * 2) as f32,
+                                );
+                                let width =
+                                    painter.measure_sized(&text, meta_size, 0.0).ceil() as usize;
+                                let y = chip.y
+                                    + chip
+                                        .h
+                                        .saturating_sub(painter.line_height_for_size(meta_size))
+                                        / 2;
+                                painter.draw_sized(
+                                    frame,
+                                    chip.x + chip.w.saturating_sub(width) / 2,
+                                    y,
+                                    &text,
+                                    meta_size,
+                                    0.0,
+                                    if selected {
+                                        colors.accent_bright
+                                    } else {
+                                        colors.keycap_fg
+                                    },
+                                );
+                            }
+                        }
                         Accessory::DimText(text) => {
                             painter.draw_sized(
                                 frame,
@@ -2209,6 +2327,42 @@ fn render_list(
     }
 }
 
+fn choice_width(label: &str, scale_factor: f64) -> usize {
+    scaled(label.chars().count() as f32 * 7.0 + 16.0, scale_factor)
+}
+
+/// Fixed preset slots keep paint and pointer geometry identical without a glyph
+/// cache in hit testing. Narrow windows shrink slots; labels truncate inside.
+fn choice_rects(row: &WidgetRect, labels: &[&str], scale_factor: f64) -> Vec<WidgetRect> {
+    if labels.is_empty() {
+        return Vec::new();
+    }
+    let gap = scaled(dims::CHIP_GAP, scale_factor);
+    let margin = scaled(dims::ROW_INSET + dims::ROW_TEXT_PAD_X, scale_factor);
+    let budget = row.w.saturating_sub(margin * 2).saturating_mul(2) / 3;
+    let max_width = budget.saturating_sub(gap * labels.len().saturating_sub(1)) / labels.len();
+    let widths: Vec<_> = labels
+        .iter()
+        .map(|label| choice_width(label, scale_factor).min(max_width))
+        .collect();
+    let total = widths.iter().sum::<usize>() + gap * labels.len().saturating_sub(1);
+    let mut x = row.x + row.w.saturating_sub(margin + total);
+    let h = scaled(22.0, scale_factor).min(row.h);
+    widths
+        .into_iter()
+        .map(|w| {
+            let rect = WidgetRect {
+                x,
+                y: row.y + row.h.saturating_sub(h) / 2,
+                w,
+                h,
+            };
+            x += w + gap;
+            rect
+        })
+        .collect()
+}
+
 fn accessory_width(
     painter: &mut TextPainter,
     accessory: &Accessory,
@@ -2216,6 +2370,13 @@ fn accessory_width(
     scale_factor: f64,
 ) -> usize {
     match accessory {
+        Accessory::Choices { labels, .. } => {
+            labels
+                .iter()
+                .map(|label| choice_width(label, scale_factor))
+                .sum::<usize>()
+                + labels.len().saturating_sub(1) * scaled(dims::CHIP_GAP, scale_factor)
+        }
         Accessory::None => 0,
         Accessory::DimText(text) => painter.measure_sized(text, meta_size, 0.0).ceil() as usize,
         Accessory::Check => painter.measure_sized("\u{2713}", meta_size, 0.0).ceil() as usize,
@@ -2319,23 +2480,32 @@ fn render_footer(
     let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
     let text_y = rect.y + (rect.h.saturating_sub(painter.line_height_for_size(size))) / 2;
 
+    let room = rect.w.saturating_sub(pad_x * 2);
+    let trailing = fit_with_ellipsis(painter, footer.trailing, size, room);
+    let trailing_w = painter.measure_sized(&trailing, size, 0.0).ceil() as usize;
+    let gap = if trailing.is_empty() { 0 } else { pad_x };
+    let leading = fit_with_ellipsis(
+        painter,
+        footer.leading,
+        size,
+        room.saturating_sub(trailing_w + gap),
+    );
     painter.draw_sized(
         frame,
         rect.x + pad_x,
         text_y,
-        footer.leading,
+        &leading,
         size,
         0.0,
         colors.text_dim,
     );
 
-    let trailing_w = painter.measure_sized(footer.trailing, size, 0.0).ceil() as usize;
     let trailing_x = rect.x + rect.w.saturating_sub(pad_x + trailing_w);
     painter.draw_sized(
         frame,
         trailing_x,
         text_y,
-        footer.trailing,
+        &trailing,
         size,
         0.0,
         colors.text_dim,
@@ -4117,6 +4287,11 @@ mod tests {
         let display_rows = flatten_rows(&sections);
         // display_rows = [header, row0, row1, row2, row3, row4] (6 slots).
         assert_eq!(display_rows.len(), 6);
+        let (start, _) = resolve_visible_window(&display_rows, 0, 2);
+        assert!(
+            matches!(display_rows[start], DisplayRow::SectionHeader("Group")),
+            "opening a sectioned list must show its first category"
+        );
 
         // scroll = 3 (FlatIndex space) must land on display slot 4 (row3),
         // not display slot 3 (row2), because of the header ahead of it.

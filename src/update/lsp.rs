@@ -474,7 +474,14 @@ pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                 model.ui.set_status(message);
             }
             model.lsp.servers.insert(server_id, state);
-            Some(Cmd::redraw_status_bar())
+            if matches!(
+                model.ui.active_modal,
+                Some(crate::model::ModalState::Settings(_))
+            ) {
+                Some(Cmd::Redraw)
+            } else {
+                Some(Cmd::redraw_status_bar())
+            }
         }
         // The runtime's `LspManager` owns backoff/restart bookkeeping;
         // the model mirror just reflects whatever state it reports next.

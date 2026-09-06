@@ -81,6 +81,8 @@ pub enum ModalId {
     FindReplace,
     /// Theme picker
     ThemePicker,
+    /// Searchable preset settings.
+    Settings,
     /// File finder (Shift+Cmd+O) - fuzzy search files in workspace
     FileFinder,
     /// Recent files list (Cmd+E)
@@ -760,9 +762,52 @@ impl RecentFilesState {
     }
 }
 
+/// Search input and navigation only; setting values live in EditorConfig.
+#[derive(Debug, Clone)]
+pub struct SettingsState {
+    pub editable: EditableState<StringBuffer>,
+    pub selected_index: usize,
+    pub scroll_offset: usize,
+    pub rows: Vec<crate::settings::SettingsRow>,
+}
+
+impl Default for SettingsState {
+    fn default() -> Self {
+        Self {
+            editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
+            selected_index: 0,
+            scroll_offset: 0,
+            rows: crate::settings::resolve_settings_rows(""),
+        }
+    }
+}
+
+impl SettingsState {
+    pub fn refilter(&mut self) {
+        self.rows = crate::settings::resolve_settings_rows(&self.editable.text());
+        self.selected_index = 0;
+        self.scroll_offset = 0;
+    }
+
+    pub fn sections(&self) -> Vec<(&'static str, std::ops::Range<usize>)> {
+        let mut sections: Vec<(&str, std::ops::Range<usize>)> = Vec::new();
+        for (index, row) in self.rows.iter().enumerate() {
+            if let Some((title, range)) = sections.last_mut() {
+                if *title == row.section() {
+                    range.end = index + 1;
+                    continue;
+                }
+            }
+            sections.push((row.section(), index..index + 1));
+        }
+        sections
+    }
+}
+
 /// Union of all modal states
 #[derive(Debug, Clone)]
 pub enum ModalState {
+    Settings(SettingsState),
     CommandPalette(CommandPaletteState),
     GotoLine(GotoLineState),
     FindReplace(FindReplaceState),
@@ -778,6 +823,7 @@ impl ModalState {
     /// Get the modal ID for this state
     pub fn id(&self) -> ModalId {
         match self {
+            ModalState::Settings(_) => ModalId::Settings,
             ModalState::CommandPalette(_) => ModalId::CommandPalette,
             ModalState::GotoLine(_) => ModalId::GotoLine,
             ModalState::FindReplace(_) => ModalId::FindReplace,

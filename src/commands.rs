@@ -68,6 +68,7 @@ pub enum CommandId {
     SwitchTheme,
 
     // Settings
+    OpenSettings,
     OpenConfigDirectory,
     OpenKeybindings,
     ReloadConfiguration,
@@ -380,6 +381,12 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: None,
     },
     CommandDef {
+        id: CommandId::OpenSettings,
+        category: CommandCategory::System,
+        label: "Open Settings",
+        keybinding: Some("⌘,"),
+    },
+    CommandDef {
         id: CommandId::OpenConfigDirectory,
         category: CommandCategory::System,
         label: "Open Config Directory",
@@ -619,6 +626,7 @@ impl CommandId {
             CommandId::Find => Some(KeymapCommand::ToggleFindReplace),
             CommandId::ShowCommandPalette => Some(KeymapCommand::ToggleCommandPalette),
             CommandId::SwitchTheme => None,
+            CommandId::OpenSettings => Some(KeymapCommand::OpenSettings),
             CommandId::OpenConfigDirectory => None,
             CommandId::OpenKeybindings => None,
             CommandId::ReloadConfiguration => None,
@@ -913,6 +921,10 @@ pub enum Cmd {
     ClearSyntaxState { document_id: DocumentId },
 
     // === Display Commands ===
+    /// Persist a settings snapshot on the runtime thread, preserving click order.
+    SaveConfiguration {
+        config: Box<crate::config::EditorConfig>,
+    },
     /// Reinitialize the renderer (e.g., after scale factor change)
     ReinitializeRenderer,
     /// Re-derive status bar height from the renderer's font metrics
@@ -1216,6 +1228,7 @@ impl Cmd {
         match self {
             Cmd::None => Damage::Areas(vec![]), // No damage
             Cmd::Redraw => Damage::Full,
+            Cmd::SaveConfiguration { .. } => Damage::Full,
             Cmd::RedrawAreas(areas) => {
                 if areas.is_empty() {
                     Damage::Areas(vec![])

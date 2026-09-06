@@ -72,6 +72,7 @@ Detailed specifications for major features, located in `docs/feature/`:
 | Embedded Terminal | ✅ MVP | [embedded-terminal.md](archived/embedded-terminal.md) |
 | File Dialogs | ✅ via `rfd` | [file-dialogs.md](archived/file-dialogs.md) |
 | Find Enhancements | ✅ | [find-enhancements.md](archived/find-enhancements.md) |
+| Settings Page | ✅ v1; keymap tab future | [settings-page.md](feature/settings-page.md) |
 
 ### Planned Features
 
@@ -92,7 +93,6 @@ Detailed specifications for major features, located in `docs/feature/`:
 | Code Folding | 4 - Hard Problems | [folding-basic.md](feature/folding-basic.md) |
 | Diff Gutter | 5 - Insight Tools | [diff-gutter.md](feature/diff-gutter.md) |
 | Snippets | 6 - Productivity | [snippets.md](feature/snippets.md) |
-| Settings Page | 6 - Productivity | [settings-page.md](feature/settings-page.md) |
 | Autocomplete (inline / FIM) | 6 - Productivity | [autocomplete.md](feature/autocomplete.md) |
 
 ---

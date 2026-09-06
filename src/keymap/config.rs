@@ -335,6 +335,7 @@ impl FromStr for Command {
 
             // Modals
             "ToggleCommandPalette" => Ok(Command::ToggleCommandPalette),
+            "OpenSettings" => Ok(Command::OpenSettings),
             "ToggleGotoLine" => Ok(Command::ToggleGotoLine),
             "ToggleFindReplace" => Ok(Command::ToggleFindReplace),
             "OpenRecentFiles" => Ok(Command::OpenRecentFiles),
