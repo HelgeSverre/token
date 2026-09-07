@@ -13,6 +13,7 @@ pub mod position;
 pub mod sync;
 pub mod transport;
 pub mod uri;
+pub mod workspace_symbols;
 
 pub use position::{lsp_to_position, position_to_lsp};
 pub use uri::{path_to_uri, uri_to_path};

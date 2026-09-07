@@ -73,6 +73,76 @@ fn is_exited(msg: &Msg) -> bool {
     matches!(msg, Msg::Lsp(LspMsg::ServerExited { .. }))
 }
 
+#[test]
+fn workspace_symbols_real_transport_preserves_query_ownership_and_complete_locations() {
+    let dir = tempfile::tempdir().unwrap();
+    let uri = token::lsp::path_to_uri(&dir.path().join("symbols.rs"));
+    let scenario = write_scenario(
+        dir.path(),
+        json!([
+            {"op": "expect_request", "method": "initialize", "respond": {"capabilities": {"workspaceSymbolProvider": true}}},
+            {"op": "expect_request", "method": "workspace/symbol", "respond": [
+                {"name": "méthode", "kind": 6, "location": {"uri": uri,
+                    "range": {"start": {"line": 1, "character": 3}, "end": {"line": 1, "character": 9}}}}
+            ]},
+            {"op": "expect_request", "method": "workspace/symbol", "respond_error": {"code": -32603, "message": "fixture error"}},
+            {"op": "expect_request", "method": "shutdown", "respond": null}
+        ]),
+    );
+    let (tx, rx) = mpsc::channel();
+    let mut handle = spawn_server(
+        fake_lsp_server_path().to_str().unwrap(),
+        &[scenario.to_string_lossy().into_owned()],
+        dir.path(),
+        "fake".into(),
+        tx,
+        None,
+        serde_json::Value::Null,
+        serde_json::Value::Null,
+    )
+    .unwrap();
+    let ready = recv_until(&rx, Duration::from_secs(5), is_ready);
+    let id = handle.begin_request("workspace/symbol", json!({"query": "méth"}));
+    let first = recv_until(&rx, Duration::from_secs(5), |msg| {
+        matches!(
+            msg,
+            Msg::Lsp(LspMsg::WorkspaceSymbolsResponseFromServer { .. })
+        )
+    });
+    let error_id = handle.begin_request("workspace/symbol", json!({"query": "error"}));
+    let second = recv_until(&rx, Duration::from_secs(5), |msg| {
+        matches!(
+            msg,
+            Msg::Lsp(LspMsg::WorkspaceSymbolsResponseFromServer { .. })
+        )
+    });
+    // Terminate before assertions, so a failing contract cannot orphan the fixture.
+    handle.kill();
+    assert!(ready.is_some());
+    let Some(Msg::Lsp(LspMsg::WorkspaceSymbolsResponseFromServer {
+        request_id,
+        generation,
+        root,
+        result: Ok(results),
+        abandoned,
+        ..
+    })) = first
+    else {
+        panic!("complete workspace-symbol response")
+    };
+    assert_eq!(request_id, id);
+    assert_eq!(generation, handle.generation);
+    assert_eq!(root, dir.path());
+    assert!(!abandoned);
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].name, "méthode");
+    assert_eq!(results.items[0].location.uri, uri);
+    assert_eq!(results.items[0].location.range.start.character, 3);
+    assert!(
+        matches!(second, Some(Msg::Lsp(LspMsg::WorkspaceSymbolsResponseFromServer {request_id, result: Err(_), ..})) if request_id == error_id)
+    );
+}
+
 /// Full lifecycle: `initialize` -> `initialized` -> ready. Also proves
 /// `workspace/configuration` mid-init gets a reply — real servers
 /// (rust-analyzer, pyright) block their init path on this, so a missing

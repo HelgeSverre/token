@@ -328,6 +328,7 @@ pub(crate) fn request_formatting(
 
 pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
     match msg {
+        LspMsg::WorkspaceSymbolsResponseFromServer { .. } => None,
         LspMsg::FormatDocument { selection_only } => {
             request_formatting(model, selection_only, false)
         }

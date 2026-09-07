@@ -981,6 +981,17 @@ pub enum Msg {
 /// added by later phases once there is data to route.
 #[derive(Debug, Clone)]
 pub enum LspMsg {
+    WorkspaceSymbolsResponseFromServer {
+        server_id: LspServerId,
+        root: std::path::PathBuf,
+        generation: u64,
+        request_id: i64,
+        result: Result<
+            crate::lsp::workspace_symbols::SymbolResults,
+            crate::lsp::workspace_symbols::SymbolResponseError,
+        >,
+        abandoned: bool,
+    },
     /// Worker -> update: drives the `LspUiState` model mirror. `root`
     /// identifies which `(server_id, root)` instance changed state — the
     /// model mirror (keyed by `server_id` only) ignores it, but the

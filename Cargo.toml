@@ -75,6 +75,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 clap = { version = "4", features = ["derive"] }
 rmcp = { version = "3.0.1", features = ["server", "transport-io"] }
 tokio = { version = "1", features = ["io-std", "rt", "sync"] }
+thiserror = "2"
 
 # LSP protocol types (serde-only; framing is hand-rolled, see src/lsp/transport.rs)
 lsp-types = "0.97"

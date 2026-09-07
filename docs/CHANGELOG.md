@@ -8,6 +8,11 @@ All notable changes to rust-editor are documented in this file.
 
 ### Changed
 
+- The LSP client decodes complete workspace-symbol responses, rejecting unusable
+  locations and bounding retained rows. Shared ranking removes duplicate symbols
+  independently of server response order. This protocol foundation does not yet
+  enable the Search Everywhere Symbols tab on its own.
+
 - Rust integration callers must send messages through `update(model, Msg)`;
   individual message handlers and internal LSP/syntax scheduling exports are no
   longer public. Runtime/view helpers with existing callers remain available.

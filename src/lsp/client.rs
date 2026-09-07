@@ -134,6 +134,10 @@ pub fn client_capabilities() -> ClientCapabilities {
             ..Default::default()
         }),
         workspace: Some(WorkspaceClientCapabilities {
+            symbol: Some(lsp_types::WorkspaceSymbolClientCapabilities {
+                dynamic_registration: Some(false),
+                ..Default::default()
+            }),
             did_change_watched_files: Some(DidChangeWatchedFilesClientCapabilities {
                 dynamic_registration: Some(false),
                 relative_pattern_support: None,
@@ -227,6 +231,13 @@ pub fn supports_hover(caps: &ServerCapabilities) -> bool {
 
 pub fn supports_references(caps: &ServerCapabilities) -> bool {
     caps.references_provider.is_some()
+}
+
+pub fn supports_workspace_symbols(caps: &ServerCapabilities) -> bool {
+    matches!(
+        caps.workspace_symbol_provider,
+        Some(lsp_types::OneOf::Left(true) | lsp_types::OneOf::Right(_))
+    )
 }
 
 pub fn supports_completion(caps: &ServerCapabilities) -> bool {
@@ -1314,6 +1325,24 @@ fn reader_loop(
                     root: root.clone(),
                     request_id: id,
                     edits,
+                    abandoned: entry.abandoned,
+                }));
+                if let Some(wake) = wake.as_deref() {
+                    wake();
+                }
+            } else if entry.method == "workspace/symbol" {
+                let provider = super::workspace_symbols::SymbolProvider {
+                    server_id: server_id.clone(),
+                    root: root.clone(),
+                    generation,
+                };
+                let result = super::workspace_symbols::parse_response(&message, provider);
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::WorkspaceSymbolsResponseFromServer {
+                    server_id: server_id.clone(),
+                    root: root.clone(),
+                    generation,
+                    request_id: id,
+                    result,
                     abandoned: entry.abandoned,
                 }));
                 if let Some(wake) = wake.as_deref() {
