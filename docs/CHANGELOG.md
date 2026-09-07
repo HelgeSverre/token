@@ -8,6 +8,10 @@ All notable changes to rust-editor are documented in this file.
 
 ### Changed
 
+- Editor documents and small text fields now share cursor, position and selection
+  types. Duplicate definitions were removed while preserving selection direction,
+  half-open ranges, Unicode text extraction and desired-column behavior.
+
 - Completion, hover and signature documentation use the preview's Markdown
   parser for nested formatting, matching code fences, escaped text, reference
   links, lists, quotes and tables. Code examples retain literal links and markup;

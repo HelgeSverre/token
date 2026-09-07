@@ -180,7 +180,7 @@ mod tests {
     use super::*;
 
     fn cursor_at(line: usize, col: usize) -> Cursor {
-        Cursor::new(line, col)
+        Cursor::at(line, col)
     }
 
     #[test]

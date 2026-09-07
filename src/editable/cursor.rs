@@ -29,7 +29,11 @@ pub struct Cursor {
 }
 
 impl Cursor {
-    pub const fn new(line: usize, column: usize) -> Self {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub const fn at(line: usize, column: usize) -> Self {
         Self {
             line,
             column,
@@ -37,8 +41,8 @@ impl Cursor {
         }
     }
 
-    pub fn at_position(pos: Position) -> Self {
-        Self::new(pos.line, pos.column)
+    pub fn from_position(pos: Position) -> Self {
+        Self::at(pos.line, pos.column)
     }
 
     pub const fn to_position(&self) -> Position {
@@ -51,7 +55,7 @@ impl Cursor {
     }
 
     /// Set desired column to current column (call before vertical movement)
-    pub fn set_desired_column(&mut self) {
+    pub fn remember_column(&mut self) {
         if self.desired_column.is_none() {
             self.desired_column = Some(self.column);
         }
@@ -65,7 +69,7 @@ impl Cursor {
 
 impl From<Position> for Cursor {
     fn from(pos: Position) -> Self {
-        Self::at_position(pos)
+        Self::from_position(pos)
     }
 }
 
@@ -92,10 +96,10 @@ mod tests {
 
     #[test]
     fn test_cursor_desired_column() {
-        let mut cursor = Cursor::new(5, 10);
+        let mut cursor = Cursor::at(5, 10);
         assert_eq!(cursor.effective_column(), 10);
 
-        cursor.set_desired_column();
+        cursor.remember_column();
         assert_eq!(cursor.desired_column, Some(10));
 
         cursor.column = 5; // Moved to shorter line

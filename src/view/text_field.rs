@@ -302,20 +302,20 @@ pub struct SimpleTextField {
 #[cfg(test)]
 impl SimpleTextField {
     pub fn new(text: &str) -> Self {
-        let cursor = Cursor::new(0, text.chars().count());
+        let cursor = Cursor::at(0, text.chars().count());
         Self {
             text: text.to_string(),
             cursor,
-            selection: Selection::collapsed(Position::new(0, cursor.column)),
+            selection: Selection::new(Position::new(0, cursor.column)),
         }
     }
 
     pub fn with_cursor(text: &str, cursor_col: usize) -> Self {
-        let cursor = Cursor::new(0, cursor_col);
+        let cursor = Cursor::at(0, cursor_col);
         Self {
             text: text.to_string(),
             cursor,
-            selection: Selection::collapsed(Position::new(0, cursor_col)),
+            selection: Selection::new(Position::new(0, cursor_col)),
         }
     }
 }

@@ -10,7 +10,7 @@ use super::selection::Selection;
 
 /// Main abstraction for editable text with cursors, selections, and history.
 ///
-/// Generic over the buffer type B (StringBuffer for single-line, RopeBuffer for multi-line).
+/// Generic over the buffer type B; small editing fields use StringBuffer.
 #[derive(Debug, Clone)]
 pub struct EditableState<B: TextBuffer> {
     /// The text buffer
@@ -30,8 +30,8 @@ pub struct EditableState<B: TextBuffer> {
 impl<B: TextBuffer> EditableState<B> {
     /// Create a new EditableState with the given buffer and constraints
     pub fn new(buffer: B, constraints: EditConstraints) -> Self {
-        let cursor = Cursor::new(0, 0);
-        let selection = Selection::collapsed(Position::zero());
+        let cursor = Cursor::at(0, 0);
+        let selection = Selection::new(Position::zero());
         Self {
             buffer,
             cursors: vec![cursor],
@@ -119,14 +119,14 @@ impl<B: TextBuffer> EditableState<B> {
     pub fn collapse_selection(&mut self) {
         let idx = self.active_cursor;
         let pos = self.cursors[idx].to_position();
-        self.selections[idx] = Selection::collapsed(pos);
+        self.selections[idx] = Selection::new(pos);
     }
 
     /// Collapse all selections to their cursors
     pub fn collapse_all_selections(&mut self) {
         for i in 0..self.cursors.len() {
             let pos = self.cursors[i].to_position();
-            self.selections[i] = Selection::collapsed(pos);
+            self.selections[i] = Selection::new(pos);
         }
     }
 }
@@ -209,7 +209,7 @@ impl<B: TextBuffer> EditableState<B> {
             return;
         }
 
-        self.cursors[idx].set_desired_column();
+        self.cursors[idx].remember_column();
         self.cursors[idx].line -= 1;
         let line_len = self.buffer.line_length(self.cursors[idx].line);
         self.cursors[idx].column = self.cursors[idx].effective_column().min(line_len);
@@ -233,7 +233,7 @@ impl<B: TextBuffer> EditableState<B> {
             return;
         }
 
-        self.cursors[idx].set_desired_column();
+        self.cursors[idx].remember_column();
         self.cursors[idx].line += 1;
         let line_len = self.buffer.line_length(self.cursors[idx].line);
         self.cursors[idx].column = self.cursors[idx].effective_column().min(line_len);
@@ -491,7 +491,8 @@ impl<B: TextBuffer> EditableState<B> {
         let last_col = self.buffer.line_length(last_line);
 
         // Set anchor at start, head at end
-        self.selections[idx] = Selection::new(Position::zero(), Position::new(last_line, last_col));
+        self.selections[idx] =
+            Selection::from_anchor_head(Position::zero(), Position::new(last_line, last_col));
         self.cursors[idx].line = last_line;
         self.cursors[idx].column = last_col;
         self.cursors[idx].clear_desired_column();
@@ -536,7 +537,8 @@ impl<B: TextBuffer> EditableState<B> {
         }
 
         // Set selection
-        self.selections[idx] = Selection::new(Position::new(line, start), Position::new(line, end));
+        self.selections[idx] =
+            Selection::from_anchor_head(Position::new(line, start), Position::new(line, end));
         self.cursors[idx].column = end;
         self.cursors[idx].clear_desired_column();
     }
@@ -989,7 +991,7 @@ impl<B: TextBuffer + TextBufferMut> EditableState<B> {
             self.selections = op
                 .cursors_before
                 .iter()
-                .map(|c| Selection::collapsed(c.to_position()))
+                .map(|c| Selection::new(c.to_position()))
                 .collect();
             self.active_cursor = 0;
         }
@@ -1023,7 +1025,7 @@ impl<B: TextBuffer + TextBufferMut> EditableState<B> {
             self.selections = op
                 .cursors_before
                 .iter()
-                .map(|c| Selection::collapsed(c.to_position()))
+                .map(|c| Selection::new(c.to_position()))
                 .collect();
             self.active_cursor = 0;
         }
@@ -1038,8 +1040,8 @@ impl<B: TextBuffer + TextBufferMut> EditableState<B> {
         let content = self.buffer.content();
 
         self.buffer.clear();
-        self.cursors = vec![Cursor::new(0, 0)];
-        self.selections = vec![Selection::collapsed(Position::zero())];
+        self.cursors = vec![Cursor::at(0, 0)];
+        self.selections = vec![Selection::new(Position::zero())];
         self.active_cursor = 0;
 
         if self.constraints.enable_undo && !content.is_empty() {
@@ -1059,8 +1061,8 @@ impl<B: TextBuffer + TextBufferMut> EditableState<B> {
         // Reset cursor to end
         let last_line = self.buffer.line_count().saturating_sub(1);
         let last_col = self.buffer.line_length(last_line);
-        self.cursors = vec![Cursor::new(last_line, last_col)];
-        self.selections = vec![Selection::collapsed(Position::new(last_line, last_col))];
+        self.cursors = vec![Cursor::at(last_line, last_col)];
+        self.selections = vec![Selection::new(Position::new(last_line, last_col))];
         self.active_cursor = 0;
         self.history.clear();
     }
@@ -1148,7 +1150,7 @@ mod tests {
     #[test]
     fn test_insert_replaces_selection() {
         let mut state = create_test_state("hello world");
-        state.selections[0] = Selection::new(Position::new(0, 0), Position::new(0, 5));
+        state.selections[0] = Selection::from_anchor_head(Position::new(0, 0), Position::new(0, 5));
         state.cursors[0].column = 5;
 
         state.insert_char('X');

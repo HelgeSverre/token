@@ -19,99 +19,9 @@ pub enum ScrollRevealMode {
     Centered,
 }
 
-/// A position in the document (line and column)
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Position {
-    /// Line number (0-indexed)
-    pub line: usize,
-    /// Column number (0-indexed)
-    pub column: usize,
-}
-
-impl Position {
-    /// Create a new position
-    pub const fn new(line: usize, column: usize) -> Self {
-        Self { line, column }
-    }
-}
-
-/// A text selection with anchor (start) and head (cursor end)
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Selection {
-    /// Where the selection started (fixed point)
-    pub anchor: Position,
-    /// Where the cursor is (moving point)
-    pub head: Position,
-}
+pub use crate::editable::{Cursor, Position, Selection};
 
 impl Selection {
-    /// Create a new empty selection at a position
-    pub fn new(pos: Position) -> Self {
-        Self {
-            anchor: pos,
-            head: pos,
-        }
-    }
-
-    /// Create a selection from anchor to head
-    pub fn from_anchor_head(anchor: Position, head: Position) -> Self {
-        Self { anchor, head }
-    }
-
-    /// Check if selection is empty (cursor without selection)
-    pub fn is_empty(&self) -> bool {
-        self.anchor == self.head
-    }
-
-    /// Get the start of the selection (smaller position)
-    pub fn start(&self) -> Position {
-        if self.anchor <= self.head {
-            self.anchor
-        } else {
-            self.head
-        }
-    }
-
-    /// Get the end of the selection (larger position)
-    pub fn end(&self) -> Position {
-        if self.anchor <= self.head {
-            self.head
-        } else {
-            self.anchor
-        }
-    }
-
-    /// Check if the selection is reversed (head before anchor)
-    pub fn is_reversed(&self) -> bool {
-        self.head < self.anchor
-    }
-
-    /// Extend selection to new head position
-    pub fn extend_to(&mut self, pos: Position) {
-        self.head = pos;
-    }
-
-    /// Collapse selection to its start (both anchor and head at start)
-    pub fn collapse_to_start(&mut self) {
-        let s = self.start();
-        self.anchor = s;
-        self.head = s;
-    }
-
-    /// Collapse selection to its end (both anchor and head at end)
-    pub fn collapse_to_end(&mut self) {
-        let e = self.end();
-        self.anchor = e;
-        self.head = e;
-    }
-
-    /// Check if a position is contained within the selection
-    pub fn contains(&self, pos: Position) -> bool {
-        let start = self.start();
-        let end = self.end();
-        pos >= start && pos < end
-    }
-
     /// Extract selected text from document
     pub fn get_text(&self, document: &Document) -> String {
         if self.is_empty() {
@@ -123,25 +33,6 @@ impl Selection {
         let end_offset = document.cursor_to_offset(end.line, end.column);
         document.buffer.slice(start_offset..end_offset).to_string()
     }
-
-    /// Create a selection spanning from start to end positions
-    pub fn from_positions(start: Position, end: Position) -> Self {
-        Self {
-            anchor: start,
-            head: end,
-        }
-    }
-}
-
-/// Cursor position in the document
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Cursor {
-    /// Line number (0-indexed)
-    pub line: usize,
-    /// Column number (0-indexed)
-    pub column: usize,
-    /// Desired column for vertical movement (preserves position when moving through short lines)
-    pub desired_column: Option<usize>,
 }
 
 /// Complete editor selection state saved by expand/shrink selection.
@@ -150,44 +41,6 @@ pub struct SelectionSnapshot {
     pub cursors: Vec<Cursor>,
     pub selections: Vec<Selection>,
     pub active_cursor_index: usize,
-}
-
-impl Cursor {
-    /// Create a new cursor at position (0, 0)
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Create a cursor at a specific position
-    pub fn at(line: usize, column: usize) -> Self {
-        Self {
-            line,
-            column,
-            desired_column: None,
-        }
-    }
-
-    /// Convert to Position (without desired_column)
-    pub fn to_position(&self) -> Position {
-        Position::new(self.line, self.column)
-    }
-
-    /// Create from Position
-    pub fn from_position(pos: Position) -> Self {
-        Self::at(pos.line, pos.column)
-    }
-
-    /// Reset the desired column (called after horizontal movement)
-    pub fn clear_desired_column(&mut self) {
-        self.desired_column = None;
-    }
-
-    /// Set the desired column (called before vertical movement if not set)
-    pub fn remember_column(&mut self) {
-        if self.desired_column.is_none() {
-            self.desired_column = Some(self.column);
-        }
-    }
 }
 
 /// Viewport state - what portion of the document is visible
