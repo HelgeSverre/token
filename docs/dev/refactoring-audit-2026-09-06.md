@@ -1,5 +1,50 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Unused editing API commit — 2026-09-07
+
+Commit `96c3399` removes `Msg::TextEdit`, `EditContext`, `TextEditMsg`, their
+dispatcher/bridge and the unused `RopeBuffer` wrapper. Searches against committed
+code found no message producers or wrapper consumers outside those definitions,
+their exports and their own tests. Document, modal and CSV input already use the
+remaining handlers and shared editing primitives; no replacement dispatcher was
+added. This intentionally narrows the Rust API exposed by the application crate.
+
+The ten-file group removes 1,055 lines and adds 23, including its changelog entry
+and corrected overview. Review caught a `StringBuffer::clear` test accidentally
+included in the broader RopeBuffer deletion: that retained-type test was restored.
+Historical rope-line microbenchmarks still compare the same synthetic algorithms;
+their comments now distinguish those fixtures from the actual editor path. No
+benchmark names, measurements or performance claims changed.
+
+The exact source patch was independently verified in a detached checkout at
+`7d7d9d2`: **2,109 tests passed**, 7 skipped, nextest run
+`a6ca2fb5-7401-4247-86b1-42aa40c23e41`. Its doctest target succeeded with six
+ignored examples. The count is 24 below the previous isolated baseline: six
+RopeBuffer, four EditContext, four TextEditMsg and ten bridge tests were removed
+with their obsolete subjects. Existing production-path tests remain. Strict
+all-target/all-feature lint, formatting and diff checks passed.
+
+Scoped review: **Approve**, no outstanding findings after preserving the retained
+buffer test. Staged and temporary patches matched exactly; working-file hashes
+confirmed partial staging did not overwrite the wider changes. The temporary
+checkout was removed only after its diff matched the source commit and it had no
+extra files. All source removals are recoverable through Git history. No unrelated
+worktree, native editor window, dependency or external service was changed.
+
+The current main working tree passed **2,473 tests**, 7 skipped, and **2 doctests**,
+6 ignored; strict lint and formatting passed. The first run
+`08770a77-7349-424e-9c46-d35653dc365a` reported one passing-but-leaky test in its
+aggregate summary. Its fail-only status output did not identify that test, and no
+test child remained when processes were inspected afterward. A fresh full run
+with `--status-level leak` passed without warnings:
+`0b8b09bc-808b-41de-b597-129006de3467`. This does not identify or fix the transient
+cleanup warning; future full runs should retain leak-level output so a recurrence
+can be attributed. Default ignored tests and platform gates remain unchanged.
+
+These working-tree results include uncommitted features, unlike the isolated
+2,109-test commit suite. Continue dependency-ordered source grouping and all open
+handoff requirements; no additional whole plan is ready to archive.
+
 ## TabbyML transport — 2026-09-07
 
 The missing TabbyML adapter now uses `transport: tabby` through the existing
