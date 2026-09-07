@@ -1,5 +1,63 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Bounded usages-preview prerequisite — 2026-09-07
+
+Commit `50f3a68` removes unopened-file preview reads from the event loop before
+extending usages into a persistent dock panel. The previous implementation read
+whole files and allocated every line on the event-loop thread, up to 200 files
+per response. Target resolution now uses a bounded ordered set, deduplicating
+identical path/line/UTF-16-column targets before the existing 200-location cap.
+Open-document lookup reuses the pure file-identity snapshot, without filesystem
+canonicalization; unsaved rope snapshots take precedence over disk text.
+
+The shared replaceable worker now supports typed replies as well as ordinary
+messages. It retains one active job and one replaceable pending job, signals
+cancellation on replacement/drop, and does not join blocked speculative work on
+the event-loop thread. References read at most 1 MiB per file and 4 MiB per
+response, retain one file's text at a time, traverse ordered lines once, and cap
+preview text at 240 Unicode scalar values. Control characters become spaces.
+Only regular opened handles are read; Unix opens use nonblocking mode so a FIFO
+does not stall the open. No new dependencies or language-server capability were
+introduced. Find/path workers remain in their later source groups but share this
+now-committed worker in the working tree.
+
+A 250 ms preview deadline is scheduled in the existing runtime wake calculation.
+When processed, it returns navigable locations without previews if the worker
+has not replied. Missing/unreadable files, exhausted read budgets, worker startup
+failure and worker panics likewise retain locations. A blocked filesystem call
+may outlive cancellation; the deadline does not promise an interruptible OS read
+or hard real-time rendering. Lines beyond the bounded prefix have no preview.
+Navigation coordinates and route hints remain unchanged.
+
+Allocation-identity tokens span both the LSP request and preview job, rejecting
+superseded network replies and already-queued worker replies even when the same
+document/revision/cursor is reused. Review caught an ordering gap: ready previews
+must be polled after queued user intents have been processed. That correction is
+covered by a runtime regression; existing document/revision/cursor guards still
+run when the resolved message reaches update.
+
+### Verification and review
+
+The exact independent patch passed **2,133 tests**, seven skipped, and **two
+doctests**, six ignored, plus strict lint and formatting. Final independent run:
+`0e816902-96ea-4571-b7a9-f0623f15bd7a`. Eight reference regressions cover Unicode,
+unsaved buffers, unreadable files, read budgets, cancellation, queued replies,
+deadline fallback, wake/origin metadata, row ordering/deduplication and routing.
+Three shared-worker tests cover replacement, panic recovery and nonblocking drop.
+Existing real-stdio reference-popup and stale-revision tests also pass.
+
+Final main integration: **2,513 tests passed**, seven skipped; **two doctests
+passed**, six ignored, with strict lint, formatting and diff checks clean. Run
+`20638065-87be-48e3-a4d7-81947496810f`. No exit warnings appeared in either final
+suite; earlier startup/process warning debt is not thereby resolved.
+
+Review verdict: **Approve**, with no unresolved critical/high findings in this
+group. Selective staging matched the isolated patch byte-for-byte and preserved
+working-file hashes. The usages dock panel itself remains unimplemented. No new
+native/platform, live-server quality or release-performance claim is made; these
+are functional bounds and scheduling tests, not a new benchmark report. No whole
+plan is newly complete, and nothing was pushed or published.
+
 ## Shared file identity prerequisite — 2026-09-07
 
 Commit `3c4ca44` gives loaded documents one immutable original/resolved-path
