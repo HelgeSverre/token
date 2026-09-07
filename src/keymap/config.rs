@@ -31,9 +31,26 @@ pub struct BindingConfig {
 
 /// Load keybindings from a YAML file
 pub fn load_keymap_file(path: &Path) -> Result<Vec<Keybinding>, KeymapError> {
-    let content = std::fs::read_to_string(path).map_err(|e| KeymapError::IoError(e.to_string()))?;
+    parse_keymap_yaml(&read_keymap_text(path)?)
+}
 
-    parse_keymap_yaml(&content)
+/// Startup allows user-managed symlinks, but never reads an unbounded payload.
+pub(super) fn read_keymap_text(path: &Path) -> Result<String, KeymapError> {
+    use std::io::Read;
+    let read = || -> std::io::Result<String> {
+        if !std::fs::metadata(path)?.is_file() {
+            return Err(std::io::Error::other("Keymap is not a regular file"));
+        }
+        let mut text = String::new();
+        std::fs::File::open(path)?
+            .take(super::preferences::MAX_KEYMAP_BYTES.as_u64() + 1)
+            .read_to_string(&mut text)?;
+        if text.len() as u64 > super::preferences::MAX_KEYMAP_BYTES.as_u64() {
+            return Err(std::io::Error::other("Keymap exceeds 1 MiB"));
+        }
+        Ok(text)
+    };
+    read().map_err(|error| KeymapError::IoError(error.to_string()))
 }
 
 /// Parse keybindings from YAML string
@@ -52,11 +69,11 @@ pub fn parse_keymap_yaml(yaml: &str) -> Result<Vec<Keybinding>, KeymapError> {
             }
         }
 
-        let keystroke = parse_key_string(&entry.key)?;
+        let keystrokes = parse_sequence(&entry.key)?;
         let command = parse_command(&entry.command)?;
         let conditions = parse_conditions(&entry.when)?;
 
-        let mut binding = Keybinding::new(keystroke, command);
+        let mut binding = Keybinding::chord(keystrokes, command);
         if let Some(conds) = conditions {
             binding = binding.when(conds);
         }
@@ -64,6 +81,18 @@ pub fn parse_keymap_yaml(yaml: &str) -> Result<Vec<Keybinding>, KeymapError> {
     }
 
     Ok(bindings)
+}
+
+/// Parse the canonical whitespace-separated chord format used by YAML and capture.
+pub fn parse_sequence(key: &str) -> Result<Vec<Keystroke>, KeymapError> {
+    let strokes: Vec<_> = key
+        .split_whitespace()
+        .map(parse_key_string)
+        .collect::<Result<_, _>>()?;
+    if strokes.is_empty() {
+        return Err(KeymapError::InvalidKey(key.into()));
+    }
+    Ok(strokes)
 }
 
 /// Parse a key string like "cmd+shift+s" into a Keystroke
@@ -78,7 +107,7 @@ pub fn parse_key_string(key_str: &str) -> Result<Keystroke, KeymapError> {
     let mut key_part = None;
 
     for part in parts {
-        let part_lower = part.to_lowercase();
+        let part_lower = part.to_ascii_lowercase();
         match part_lower.as_str() {
             "cmd" => {
                 // Platform command key
@@ -118,9 +147,14 @@ pub fn parse_key_string(key_str: &str) -> Result<Keystroke, KeymapError> {
 /// Parse a key code from string
 fn parse_key_code(key: &str) -> Result<KeyCode, KeymapError> {
     // Single character
-    if key.len() == 1 {
-        let c = key.chars().next().unwrap();
+    if let (Some(c), None) = (key.chars().next(), key.chars().nth(1)) {
         return Ok(KeyCode::Char(c.to_ascii_lowercase()));
+    }
+
+    if let Some(number) = key.strip_prefix('f').and_then(|n| n.parse::<u8>().ok()) {
+        if (1..=24).contains(&number) {
+            return Ok(KeyCode::F(number));
+        }
     }
 
     // Named keys
@@ -131,6 +165,8 @@ fn parse_key_code(key: &str) -> Result<KeyCode, KeymapError> {
         "backspace" | "back" => Ok(KeyCode::Backspace),
         "delete" | "del" => Ok(KeyCode::Delete),
         "space" => Ok(KeyCode::Space),
+        "plus" => Ok(KeyCode::Char('+')),
+        "literal_space" => Ok(KeyCode::Char(' ')),
 
         "up" | "arrowup" => Ok(KeyCode::Up),
         "down" | "arrowdown" => Ok(KeyCode::Down),
@@ -142,20 +178,6 @@ fn parse_key_code(key: &str) -> Result<KeyCode, KeymapError> {
         "pageup" | "pgup" => Ok(KeyCode::PageUp),
         "pagedown" | "pgdown" | "pgdn" => Ok(KeyCode::PageDown),
         "insert" | "ins" => Ok(KeyCode::Insert),
-
-        // Function keys
-        "f1" => Ok(KeyCode::F(1)),
-        "f2" => Ok(KeyCode::F(2)),
-        "f3" => Ok(KeyCode::F(3)),
-        "f4" => Ok(KeyCode::F(4)),
-        "f5" => Ok(KeyCode::F(5)),
-        "f6" => Ok(KeyCode::F(6)),
-        "f7" => Ok(KeyCode::F(7)),
-        "f8" => Ok(KeyCode::F(8)),
-        "f9" => Ok(KeyCode::F(9)),
-        "f10" => Ok(KeyCode::F(10)),
-        "f11" => Ok(KeyCode::F(11)),
-        "f12" => Ok(KeyCode::F(12)),
 
         // Numpad
         "numpad0" | "num0" => Ok(KeyCode::Numpad0),
@@ -220,7 +242,7 @@ fn parse_condition(cond: &str) -> Result<Condition, KeymapError> {
 }
 
 /// Get the current platform identifier
-fn get_current_platform() -> &'static str {
+pub fn get_current_platform() -> &'static str {
     if cfg!(target_os = "macos") {
         "macos"
     } else if cfg!(target_os = "windows") {
@@ -257,6 +279,24 @@ impl std::error::Error for KeymapError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shortcut_chord_yaml_validates_each_stroke_and_rejects_empty_sequences() {
+        let bindings = parse_keymap_yaml(
+            "bindings:\n  - key: 'ctrl+k ctrl+c'\n    command: Copy\n    when: [has_selection]\n",
+        )
+        .unwrap();
+        assert_eq!(bindings.len(), 1);
+        assert!(bindings[0].is_chord());
+        assert_eq!(bindings[0].keystrokes.len(), 2);
+        assert_eq!(bindings[0].when, Some(vec![Condition::HasSelection]));
+        for key in ["", "   ", "ctrl+k definitely-not-a-key"] {
+            assert!(parse_keymap_yaml(&format!(
+                "bindings:\n  - key: '{key}'\n    command: Copy\n"
+            ))
+            .is_err());
+        }
+    }
 
     #[test]
     fn test_parse_simple_key() {

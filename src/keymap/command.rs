@@ -17,6 +17,16 @@ macro_rules! define_commands {
         $(#[$meta])*
         pub enum Command { $($(#[$variant_meta])* $variant,)* }
 
+        impl Command {
+            /// Canonical bindable names, shared with YAML persistence.
+            pub fn name(self) -> &'static str {
+                match self { $(Self::$variant => stringify!($variant),)* }
+            }
+
+            /// All bindable actions, including those without a default shortcut.
+            pub fn all() -> &'static [Self] { &[$(Self::$variant,)*] }
+        }
+
         impl std::str::FromStr for Command {
             type Err = ();
             fn from_str(name: &str) -> Result<Self, Self::Err> {

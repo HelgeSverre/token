@@ -3,7 +3,7 @@
 //! Enables bindings that only activate under certain conditions,
 //! such as "Tab indents when there's a selection".
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Context extracted from the application model for keybinding evaluation
 #[derive(Debug, Clone, Default)]
@@ -58,7 +58,7 @@ impl KeyContext {
 /// Conditions that can be attached to keybindings
 ///
 /// Multiple conditions on a binding are ANDed together.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Condition {
     /// Binding only active when text is selected

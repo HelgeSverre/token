@@ -5,7 +5,6 @@
 
 use super::binding::Keybinding;
 use super::command::Command;
-use super::config::load_keymap_file;
 use super::types::{KeyCode, Keystroke, Modifiers};
 
 /// Default keymap YAML embedded at compile time
@@ -28,14 +27,16 @@ pub fn load_default_keymap() -> Vec<Keybinding> {
     // Try loading user config
     if let Some(user_path) = crate::config_paths::keymap_file() {
         if user_path.exists() {
-            match load_keymap_file(&user_path) {
-                Ok(user_bindings) => {
+            match super::config::read_keymap_text(&user_path)
+                .and_then(|text| super::preferences::KeymapSnapshot::parse(Some(text)))
+            {
+                Ok(snapshot) => {
                     tracing::info!(
                         "Merging user keymap from {} ({} bindings)",
                         user_path.display(),
-                        user_bindings.len()
+                        snapshot.bindings.len()
                     );
-                    bindings = merge_bindings(bindings, user_bindings);
+                    bindings = snapshot.bindings;
                 }
                 Err(e) => {
                     tracing::warn!(

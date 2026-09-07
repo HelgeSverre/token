@@ -61,6 +61,14 @@ All notable changes to rust-editor are documented in this file.
 
 ### Added
 
+- Keymap preferences share the existing YAML parser and merge engine for base
+  presets, typed conflict checks and override serialization. Optional
+  `base: conventional` changes `cmd+p`, `cmd+shift+p` and `cmd+d`; user entries
+  still win. Chord parsing now shares one sequence parser, supports Unicode
+  character keys, literal `plus`/`literal_space` aliases and F1–F24, with bounded
+  keymap-file reads. Bindable names and the unassigned-command list derive from
+  the command enum rather than another registry.
+
 - Find Usages opens persistent, file-grouped results in the Usages dock panel.
   Results stay available while navigating; Show Usages retains the transient
   popup. The panel supports mouse and keyboard navigation, collapse/expand,

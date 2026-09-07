@@ -34,6 +34,14 @@ available; this is not a second full set of defaults.
 
 ## File Format
 
+An optional `base: token` (default) or `base: conventional` chooses the base layer.
+The latter changes only `cmd+p` to File Finder, `cmd+shift+p` to Command Palette
+and `cmd+d` to Select Next Occurrence. Existing user entries are merged last and
+keep precedence. Keymap reads are bounded to 1 MiB; preference snapshots allow
+at most 2,048 merged bindings. Chord strokes share one parser, including Unicode
+characters, F1–F24, `plus` for a literal `+`, and `literal_space` for a character
+space (distinct from the named `space` key).
+
 ```yaml
 bindings:
   # Simple binding
