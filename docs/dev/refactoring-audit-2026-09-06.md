@@ -1,5 +1,37 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Shared editor primitives commit — 2026-09-07
+
+Commit `7552b7e` removes the document editor's duplicate cursor, position and
+selection definitions. Documents and small editable fields now use the same
+types, with the existing model API re-exported from `editable`. Document-specific
+text extraction stays with the model; generic selection and desired-column
+behavior have one implementation. Constructor consumers were migrated together.
+The seven-file group includes its changelog entry and a regression asserting type
+identity, reversed Unicode extraction, exclusive range ends and desired columns.
+
+The exact patch was tested in a detached checkout at `5d4a818`, independent of
+the remaining dirty editor/completion foundations. Full nextest run
+`4b42e9b1-87b8-4f99-9083-4844f21a9b67`: **2,133 passed**, 7 skipped. The doctest
+target succeeded with all six examples ignored. The new targeted regression also
+passed (`85d740ee-31fa-4bd0-b9ff-6297b1a436fd`). Strict all-target/all-feature lint,
+formatting and diff checks passed. No new performance or native-input claim.
+
+Scoped self-review: **Approve**, no outstanding findings. The shared methods
+preserve ordering, half-open selection ranges and first-remembered desired-column
+semantics. No dependency, I/O or rendering-loop changes were included. Staged and
+temporary patches matched exactly; working-file hashes remained unchanged. The
+temporary checkout was removed only after its patch matched the committed diff
+and it contained no extra files. All removed checkout content is recoverable from
+the commit. Other worktrees and running editor windows were left untouched.
+
+After committing, the current main working tree also passed its full suite:
+**2,464 tests passed**, 7 skipped; **2 doctests passed**, 6 ignored. Nextest run
+`88462a6b-49a3-4f09-8375-d9d4e8f33cb6`; strict lint, formatting and diff checks
+passed. These broader results include still-uncommitted features and must not be
+confused with the isolated commit's 2,133-test suite. Remaining source groups,
+whole-plan completion and native/platform verification are still open.
+
 ## Isolated hover commit and process checks — 2026-09-07
 
 Commit `e08ecb4` isolates popup hover from the broader dirty tree: popup-owned
