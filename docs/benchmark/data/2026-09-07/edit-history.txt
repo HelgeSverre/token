@@ -1,0 +1,68 @@
+cargo bench --bench editor_workloads -- edit-history
+   Compiling token v0.6.0 (/Users/helge/code/token-editor)
+warning: unused variable: `revision`
+   --> src/update/syntax.rs:196:17
+    |
+196 |             let revision = doc.revision;
+    |                 ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_revision`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `token` (lib) generated 1 warning (run `cargo fix --lib -p token` to apply 1 suggestion)
+warning: `token` (lib) generated 1 warning (1 duplicate)
+    Finished `bench` profile [optimized] target(s) in 6m 31s
+     Running benches/editor_workloads.rs (target/release/deps/editor_workloads-56df28a92251852e)
+delete edit cursors=1 panes=1: median=2.417us p95=2.542us n=100
+delete undo cursors=1 panes=1: median=1.667us p95=1.750us n=100
+delete redo cursors=1 panes=1: median=1.625us p95=1.750us n=100
+delete edit cursors=100 panes=1: median=326.958us p95=386.833us n=100
+delete undo cursors=100 panes=1: median=51.125us p95=61.334us n=100
+delete redo cursors=100 panes=1: median=39.375us p95=46.250us n=100
+delete edit cursors=1000 panes=1: median=957.542us p95=1131.500us n=100
+delete undo cursors=1000 panes=1: median=147.667us p95=168.458us n=100
+delete redo cursors=1000 panes=1: median=137.167us p95=165.458us n=100
+delete edit cursors=1 panes=2: median=3.416us p95=3.500us n=100
+delete undo cursors=1 panes=2: median=1.708us p95=1.833us n=100
+delete redo cursors=1 panes=2: median=1.625us p95=1.709us n=100
+delete edit cursors=100 panes=2: median=768.167us p95=863.292us n=100
+delete undo cursors=100 panes=2: median=52.708us p95=64.125us n=100
+delete redo cursors=100 panes=2: median=40.667us p95=53.083us n=100
+delete edit cursors=1000 panes=2: median=2172.167us p95=2422.958us n=100
+delete undo cursors=1000 panes=2: median=153.333us p95=193.875us n=100
+delete redo cursors=1000 panes=2: median=142.291us p95=172.625us n=100
+duplicate_selection edit cursors=1 panes=1: median=3.000us p95=3.625us n=100
+duplicate_selection undo cursors=1 panes=1: median=2.333us p95=2.791us n=100
+duplicate_selection redo cursors=1 panes=1: median=1.834us p95=2.208us n=100
+duplicate_selection edit cursors=100 panes=1: median=394.833us p95=459.250us n=100
+duplicate_selection undo cursors=100 panes=1: median=40.084us p95=53.459us n=100
+duplicate_selection redo cursors=100 panes=1: median=50.000us p95=61.083us n=100
+duplicate_selection edit cursors=1000 panes=1: median=1287.750us p95=1430.334us n=100
+duplicate_selection undo cursors=1000 panes=1: median=143.042us p95=173.500us n=100
+duplicate_selection redo cursors=1000 panes=1: median=150.584us p95=168.708us n=100
+duplicate_selection edit cursors=1 panes=2: median=4.375us p95=5.500us n=100
+duplicate_selection undo cursors=1 panes=2: median=2.375us p95=2.875us n=100
+duplicate_selection redo cursors=1 panes=2: median=1.875us p95=2.334us n=100
+duplicate_selection edit cursors=100 panes=2: median=746.000us p95=855.292us n=100
+duplicate_selection undo cursors=100 panes=2: median=41.000us p95=58.375us n=100
+duplicate_selection redo cursors=100 panes=2: median=50.958us p95=60.959us n=100
+duplicate_selection edit cursors=1000 panes=2: median=2625.792us p95=2824.000us n=100
+duplicate_selection undo cursors=1000 panes=2: median=144.666us p95=169.041us n=100
+duplicate_selection redo cursors=1000 panes=2: median=152.583us p95=195.459us n=100
+duplicate_lines edit cursors=1 panes=1: median=2.958us p95=3.625us n=100
+duplicate_lines undo cursors=1 panes=1: median=1.750us p95=2.083us n=100
+duplicate_lines redo cursors=1 panes=1: median=1.792us p95=2.000us n=100
+duplicate_lines edit cursors=100 panes=1: median=364.500us p95=435.750us n=100
+duplicate_lines undo cursors=100 panes=1: median=29.334us p95=43.542us n=100
+duplicate_lines redo cursors=100 panes=1: median=35.542us p95=41.458us n=100
+duplicate_lines edit cursors=1000 panes=1: median=1217.958us p95=1338.292us n=100
+duplicate_lines undo cursors=1000 panes=1: median=156.959us p95=188.833us n=100
+duplicate_lines redo cursors=1000 panes=1: median=161.125us p95=194.833us n=100
+duplicate_lines edit cursors=1 panes=2: median=4.542us p95=4.667us n=100
+duplicate_lines undo cursors=1 panes=2: median=1.833us p95=2.000us n=100
+duplicate_lines redo cursors=1 panes=2: median=1.916us p95=2.042us n=100
+duplicate_lines edit cursors=100 panes=2: median=726.417us p95=779.334us n=100
+duplicate_lines undo cursors=100 panes=2: median=30.125us p95=37.666us n=100
+duplicate_lines redo cursors=100 panes=2: median=36.250us p95=39.375us n=100
+duplicate_lines edit cursors=1000 panes=2: median=2672.500us p95=5692.833us n=100
+duplicate_lines undo cursors=1000 panes=2: median=169.042us p95=381.667us n=100
+duplicate_lines redo cursors=1000 panes=2: median=166.541us p95=391.208us n=100

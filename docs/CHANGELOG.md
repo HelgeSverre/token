@@ -6,6 +6,16 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- Performance documentation is consolidated under `docs/benchmark/`, with a
+  report index, the preserved August baseline and a fresh September working-tree
+  report covering edit/history, Find, CPU rendering and completion. Reports keep
+  raw benchmark output and distinguish CPU-stage timings from native latency;
+  the guide now uses repository recipes and documents comparison limits.
+  A separately labeled completion-keystroke refresh covers the later working
+  tree without overwriting the broader snapshot or claiming a controlled speedup.
+
 ### Added
 
 - **Durable Amp conversation archive**: the 171 conversations referenced by

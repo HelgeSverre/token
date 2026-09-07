@@ -1,0 +1,53 @@
+Command: CARGO_BUILD_JOBS=1 just bench-completion keystroke_with_menu_open --sample-count 100
+Output excerpt: final build summary and complete benchmark measurements; dependency compilation chatter omitted.
+
+    Finished `bench` profile [optimized] target(s) in 12m 54s
+     Running benches/completion.rs (target/release/deps/completion-98203b54b9f9b612)
+Timer precision: 41 nscompletion                   fastest       │ slowest       │ median        │ mean          │ samples │ iters
+╰─ keystroke_with_menu_open                │               │               │               │         │
+
+   ├─ 0                      5.218 µs      │ 28.96 µs      │ 5.635 µs      │ 5.919 µs      │ 100     │ 100
+   │                         max alloc:    │               │               │               │         │
+   │                           17          │ 17            │ 17            │ 17            │         │
+   │                           134.1 KB    │ 134.1 KB      │ 134.1 KB      │ 134.1 KB      │         │
+   │                         alloc:        │               │               │               │         │
+   │                           38          │ 38            │ 38            │ 38            │         │
+   │                           135.1 KB    │ 135.1 KB      │ 135.1 KB      │ 135.1 KB      │         │
+   │                         dealloc:      │               │               │               │         │
+   │                           30          │ 30            │ 30            │ 30            │         │
+   │                           135.5 KB    │ 135.5 KB      │ 135.5 KB      │ 135.5 KB      │         │
+   │                         grow:         │               │               │               │         │
+   │                           6           │ 6             │ 6             │ 6             │         │
+   │                           789 B       │ 789 B         │ 789 B         │ 789 B         │         │
+   ├─ 200                    24.08 µs      │ 48.91 µs      │ 24.62 µs      │ 25.86 µs      │ 100     │ 100
+   │                         max alloc:    │               │               │               │         │
+   │                           214         │ 214           │ 214           │ 214           │         │
+   │                           150.6 KB    │ 150.6 KB      │ 150.6 KB      │ 150.6 KB      │         │
+   │                         alloc:        │               │               │               │         │
+   │                           472         │ 472           │ 472           │ 472           │         │
+   │                           184.6 KB    │ 184.6 KB      │ 184.6 KB      │ 184.6 KB      │         │
+   │                         dealloc:      │               │               │               │         │
+   │                           464         │ 464           │ 464           │ 464           │         │
+   │                           201.1 KB    │ 201.1 KB      │ 201.1 KB      │ 201.1 KB      │         │
+   │                         grow:         │               │               │               │         │
+   │                           9           │ 9             │ 9             │ 9             │         │
+   │                           16.86 KB    │ 16.86 KB      │ 16.86 KB      │ 16.86 KB      │         │
+   │                         shrink:       │               │               │               │         │
+   │                           1           │ 1             │ 1             │ 1             │         │
+   │                           24 B        │ 24 B          │ 24 B          │ 24 B          │         │
+   ╰─ 1000                   89.84 µs      │ 125.4 µs      │ 95.07 µs      │ 96.26 µs      │ 100     │ 100
+                             max alloc:    │               │               │               │         │
+                               1014        │ 1014          │ 1014          │ 1014          │         │
+                               217 KB      │ 217 KB        │ 217 KB        │ 217 KB        │         │
+                             alloc:        │               │               │               │         │
+                               2072        │ 2072          │ 2072          │ 2072          │         │
+                               366.2 KB    │ 366.2 KB      │ 366.2 KB      │ 366.2 KB      │         │
+                             dealloc:      │               │               │               │         │
+                               2064        │ 2064          │ 2064          │ 2064          │         │
+                               431.9 KB    │ 431.9 KB      │ 431.9 KB      │ 431.9 KB      │         │
+                             grow:         │               │               │               │         │
+                               11          │ 11            │ 11            │ 11            │         │
+                               66.01 KB    │ 66.01 KB      │ 66.01 KB      │ 66.01 KB      │         │
+                             shrink:       │               │               │               │         │
+                               1           │ 1             │ 1             │ 1             │         │
+                               16 B        │ 16 B          │ 16 B          │ 16 B          │         │

@@ -1,0 +1,28 @@
+cargo bench --bench editor_workloads -- 
+warning: unused variable: `revision`
+   --> src/update/syntax.rs:196:17
+    |
+196 |             let revision = doc.revision;
+    |                 ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_revision`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `token` (lib) generated 1 warning (run `cargo fix --lib -p token` to apply 1 suggestion)
+warning: `token` (lib) generated 1 warning (1 duplicate)
+    Finished `bench` profile [optimized] target(s) in 0.68s
+     Running benches/editor_workloads.rs (target/release/deps/editor_workloads-56df28a92251852e)
+cursor_update history=0: median=1.375us p95=1.417us n=500
+document_clone history=0: median=0.083us p95=0.084us n=500
+cursor_update history=100: median=1.292us p95=1.458us n=500
+document_clone history=100: median=2.250us p95=2.333us n=500
+cursor_update history=1000: median=1.333us p95=1.375us n=500
+document_clone history=1000: median=26.000us p95=34.875us n=500
+cursor_update history=10000: median=1.250us p95=1.375us n=500
+document_clone history=10000: median=287.042us p95=327.709us n=500
+production_group_render short_lines_10000: median=301.125us p95=370.916us n=120
+production_group_render short_lines_100000: median=305.041us p95=409.416us n=120
+production_group_render long_1000: median=178.250us p95=198.292us n=120
+production_group_render long_10000: median=1583.250us p95=1814.250us n=120
+production_group_render long_100000: median=1775.333us p95=2087.833us n=120
+production_group_render long_1000000: median=1803.375us p95=2044.583us n=120
+production_group_render long_1000000_nowrap: median=205.125us p95=236.834us n=120

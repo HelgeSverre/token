@@ -1,0 +1,28 @@
+cargo bench --bench editor_workloads -- find
+   Compiling token v0.6.0 (/Users/helge/code/token-editor)
+warning: unused variable: `revision`
+   --> src/update/syntax.rs:196:17
+    |
+196 |             let revision = doc.revision;
+    |                 ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_revision`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `token` (lib) generated 1 warning (run `cargo fix --lib -p token` to apply 1 suggestion)
+warning: `token` (lib) generated 1 warning (1 duplicate)
+    Finished `bench` profile [optimized] target(s) in 6m 26s
+     Running benches/editor_workloads.rs (target/release/deps/editor_workloads-56df28a92251852e)
+find_matches lines=10000: median=0.083us p95=0.084us n=40
+find_status lines=10000: median=0.083us p95=0.125us n=40
+find_after_edit lines=10000: median=752.334us p95=835.958us n=40
+find_after_query_change lines=10000: median=707.875us p95=754.584us n=40
+production_group_render_find lines=10000: median=408.250us p95=457.291us n=40
+typing_and_render_find_pending lines=10000: median=364.208us p95=431.500us n=40
+typing_find_synthetic_roundtrip_render lines=10000: median=1729.583us p95=1911.666us n=40
+find_matches lines=100000: median=0.083us p95=0.125us n=40
+find_status lines=100000: median=0.084us p95=0.125us n=40
+find_after_edit lines=100000: median=7239.500us p95=7717.333us n=40
+find_after_query_change lines=100000: median=6800.250us p95=7410.709us n=40
+production_group_render_find lines=100000: median=417.875us p95=611.291us n=40
+typing_and_render_find_pending lines=100000: median=373.708us p95=502.500us n=40
+typing_find_synthetic_roundtrip_render lines=100000: median=12242.583us p95=13052.792us n=40

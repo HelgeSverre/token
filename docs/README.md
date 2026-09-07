@@ -33,6 +33,10 @@ Configuration and usage guides for end users.
 
 Architecture, contracts, and implementation guides.
 
+Recent analysis: [Refactoring and production-path profiling, 2026-09-05](dev/refactoring-profile-2026-09-05.md).
+Implementation and verification follow-ups, including completion profiling:
+[Refactoring audit, 2026-09-06](dev/refactoring-audit-2026-09-06.md).
+
 ### Behavior Contracts
 
 These documents define invariants that implementations must preserve:
@@ -177,4 +181,5 @@ For each feature:
 
 - [CHANGELOG.md](CHANGELOG.md) - Version history
 - [EDITOR_UI_REFERENCE.md](EDITOR_UI_REFERENCE.md) - UI component reference
-- [BENCHMARKING.md](BENCHMARKING.md) - Performance testing guide
+- [Benchmarking and reports](benchmark/README.md) - Performance testing guide,
+  historical baselines and current optimized measurements
