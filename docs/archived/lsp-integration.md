@@ -370,7 +370,8 @@ Binary not found on `PATH` (after `PATHEXT` resolution on Windows) → `ServerSt
 - [x] Forward jump stack; mouse-dwell hover (`hover_on_mouse`, `hover_delay_ms`); scrollbar overview marks for diagnostics.
 - [x] Rename (⇧F6, `prepareRename` when advertised); code actions (⌥↩); formatting (⌥⌘L, range formatting) with `format_on_save` (request-then-save with a 2 s fallback rather than `willSaveWaitUntil`); server-initiated `workspace/applyEdit` applied through one shared `WorkspaceEdit` applier.
 - [x] Signature help (trigger/retrigger characters, ⌘P); completion documentation card (lazy `completionItem/resolve` on selection).
-- [ ] Semantic tokens over tree-sitter highlights; `documentSymbol` outline augmentation; Cmd+Click; workspace symbols in the fuzzy finder; snippet completion (with snippets feature).
+- [x] Workspace symbols in Search Everywhere (2026-09-07 working tree): existing capable servers, debounced/cancelled queries, bounded/deduplicated rows and shared cross-file navigation. Protocol foundation committed separately as `ebf2add`; runtime/UI source awaits its prerequisite groups.
+- [ ] Semantic tokens over tree-sitter highlights; `documentSymbol` outline augmentation; Cmd+Click; snippet completion (with snippets feature).
 
 ---
 

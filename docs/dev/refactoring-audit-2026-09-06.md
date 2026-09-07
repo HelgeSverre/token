@@ -1,5 +1,73 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Workspace symbols: protocol foundation and Search Everywhere — 2026-09-07
+
+Workspace-symbol search is implemented in the working tree: existing capable
+language-server instances overlapping the workspace feed the Symbols tab and a
+five-row All-tab summary. An empty-query `@` switches to Symbols when available.
+One debounced query owns the multi-server fanout; it does not start servers.
+Pending document changes flush before `workspace/symbol`. Query identity,
+workspace/provider identity and server generations reject stale replies;
+cancellation also checks generation so reused IDs on replacement servers survive.
+
+The protocol decoder accepts legacy SymbolInformation and complete
+WorkspaceSymbol locations, preserves UTF-16 positions and rejects malformed or
+unusable locations. Retained rows are capped at 2,000, display strings are
+sanitized/bounded, and URI lengths are bounded. Ranking and deduplication are
+deterministic across server arrival order. Queries are limited to 256 characters,
+debounced for 150 ms and timed out after five seconds per server. Partial failure
+and result-limit states remain visible alongside usable results. Lazy symbol
+resolution is not advertised or implemented.
+
+The existing section-ordering helper drives rendering, keyboard/page/wheel
+navigation, hit testing and automation. Symbol activation uses the shared
+file-opening/navigation path, including UTF-16 conversion after asynchronous
+opening and Back/Forward history. No separate source scanner, navigation service,
+or document-keyed LSP request-map trio was introduced: this workspace query has
+one owner and multiple server replies, unlike document FeatureSlot requests.
+
+### Logical commit and review
+
+`ebf2add` commits only the independent protocol foundation, typed response,
+capability support, bounded rows/ranking, unit and real-stdio tests, and changelog.
+It adds a direct `thiserror = "2"` dependency using the already-locked 2.0.17
+package; unrelated dependency/lockfile changes remain unstaged. The runtime/UI
+layer remains outside that commit with its file-opening/runtime prerequisites.
+
+The exact protocol patch passed independently against `04d3140`: **2,115 tests
+passed**, seven skipped; **two doctests passed**, six ignored. Nextest run
+`33ca8bd9-e541-4a70-a399-a8cda65b3f6d`. Strict lint, formatting and diff checks
+passed, with no exit-warning output. Initial isolation exposed the missing direct
+error-type dependency; the final patch includes it. Working-file hashes matched
+before/after selective staging. The temporary checkout was removed only after
+matching its staged patch and confirming no extra files; the source is in Git.
+
+Review verdict: **Approve** for that independent commit. The working-tree review
+also fixed a generation-blind cancellation race and added a regression asserting
+that replacement-server requests are not abandoned. Tests cover wire formats,
+invalid/error/null responses, bounds, Unicode, ranking/deduplication, cancellation,
+timeout, fanout, query ABA, provider restarts, navigation, geometry and automation.
+
+### Working-tree verification and limits
+
+Final main verification: **2,498 tests passed**, seven skipped; **two doctests
+passed**, six ignored. Nextest run `8315d727-cebf-41da-b099-8dc856018130`.
+Strict lint, formatting and diff checks passed. Nineteen new regressions include
+per-server enablement/workspace scoping and explicit didChange-before-query
+ordering, in addition to the earlier 18-test targeted run
+`c790f22a-c58a-4f89-ac8e-afa8b4052d12`. Review verdict: **Approve** for the
+working-tree workspace-symbol implementation, with no unresolved critical/high
+findings. No exit warnings appeared in either final full run; the earlier
+load-sensitive startup/process warnings are not thereby resolved.
+
+There is no new native visual check, real-language-server quality evaluation,
+cross-platform execution, or performance measurement in this checkpoint. Existing
+benchmark reports retain their stated snapshot boundaries. A usages dock panel,
+the remaining autocomplete/snippet/retrieval/prediction/provider work, Settings
+keymap follow-up, Find/file-boundary and profiling/theme/platform debt remain.
+Continue dependency-ordered source commits; do not archive another whole plan or
+delete the temporary handoff yet. Nothing was pushed or published.
+
 ## Startup preparation and pure model construction — 2026-09-07
 
 Startup now uses the normal runtime file-preparation and message-based tab
