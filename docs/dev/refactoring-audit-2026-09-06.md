@@ -1,5 +1,43 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Update-handler API commit — 2026-09-07
+
+Commit `80e5538` keeps message handlers behind `update(model, Msg)`, narrowing
+17 handler functions to their parent module and three navigation helpers to the
+crate. Layout is private, outline is crate-visible, and internal LSP/syntax
+scheduling helpers are no longer re-exported publicly. Handler bodies are
+unchanged; three calls in modal test code now use the main dispatch entry point.
+
+The 21-file group includes its changelog entry and two compile-fail doctests
+protecting the external API boundary. Runtime effect helpers and read-only view
+projections with existing callers remain public. In particular,
+`create_default_keymap_file` remains available in this commit because the
+committed runtime still calls it; moving that I/O is a separate pending group.
+Private imports needed by existing internal callers are retained. An initial
+isolated compile caught an omitted `save_lsp_document` import; restoring that
+private import fixed the compile without changing behavior.
+
+The exact patch passed independently against `87779d5`: **2,109 tests passed**,
+7 skipped; **2 doctests passed**, 6 ignored. Nextest run
+`7fb86c7a-92cf-475a-903f-cc758bf85b47`; strict all-target/all-feature lint,
+formatting and diff checks passed. Scoped review: **Approve**, no outstanding
+findings. No dependencies, handler algorithms or external effects changed.
+Staged and isolated patches matched exactly, and staging preserved working-file
+hashes. The temporary checkout was removed after checking its diff matched the
+source commit and that it contained no extra files; committed source remains
+recoverable through Git. Other worktrees and native windows were untouched.
+
+The main working tree then passed **2,473 tests**, 7 skipped, and **2 doctests**,
+6 ignored, with no leak warning: nextest run
+`d14a8016-ad0e-4bc6-9916-1dc417ba97d1`. Strict lint, formatting and diff checks
+also passed. These broader results include uncommitted features and must not be
+confused with the isolated commit suite. No new performance or native/platform
+claim is made, and the earlier unidentified transient cleanup warning remains
+unattributed.
+
+Continue dependency-ordered source commits and the full remaining feature scope.
+No additional whole plan is ready to archive; the temporary handoff must remain.
+
 ## Unused editing API commit — 2026-09-07
 
 Commit `96c3399` removes `Msg::TextEdit`, `EditContext`, `TextEditMsg`, their
