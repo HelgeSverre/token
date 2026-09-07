@@ -8,6 +8,11 @@ All notable changes to rust-editor are documented in this file.
 
 ### Changed
 
+- Completion, hover and signature documentation use the preview's Markdown
+  parser for nested formatting, matching code fences, escaped text, reference
+  links, lists, quotes and tables. Code examples retain literal links and markup;
+  cards remain native text with no HTML execution or remote resource loading.
+
 - Performance documentation is consolidated under `docs/benchmark/`, with a
   report index, the preserved August baseline and a fresh September working-tree
   report covering edit/history, Find, CPU rendering and completion. Reports keep

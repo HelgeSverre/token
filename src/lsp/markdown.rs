@@ -1,55 +1,212 @@
-//! Light markdown -> [`StyledText`] for the overlay cards. Not a markdown
-//! parser: the monospace cards render a handful of constructs — fenced and
-//! inline code, emphasis, headings, links, thematic breaks — and everything
-//! else passes through as text. Markers only become spans when they pair
-//! up; a lone `*` or an intraword `_` (`snake_case`) stays literal, which
-//! the old strip-everything flattener got wrong.
+//! Markdown -> [`StyledText`] for completion, hover and signature cards.
+//! Uses the preview's CommonMark parser, but emits native text/spans only:
+//! HTML is literal text, links keep their labels and images keep their alt
+//! text. No resource loading or executable markup enters an overlay.
 
 use crate::model::{SpanStyle, StyledText};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
-/// Reduces `markdown` to text + spans. Code fences keep their contents
-/// verbatim as `Code` lines; headings become `Strong` lines; thematic
-/// breaks become blank separators.
+/// Reduces Markdown to the overlay's shared text and non-overlapping spans.
+/// Lists, quotes and tables retain readable text structure; code remains
+/// literal. Unsupported visual effects degrade to text (e.g. dim strikeout).
 pub fn markdown_to_styled(markdown: &str) -> StyledText {
-    let mut out = StyledText::default();
-    let mut in_fence = false;
-    let mut first = true;
-    for line in markdown.lines() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            in_fence = !in_fence;
-            continue;
+    let options = Options::ENABLE_TABLES
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_FOOTNOTES
+        | Options::ENABLE_STRIKETHROUGH;
+    let mut text = CardText::default();
+    for (event, range) in Parser::new_ext(markdown, options).into_offset_iter() {
+        // Keep paragraph separation without inventing extra rows between
+        // adjacent blocks. Indentation/list markers are owned by the parser.
+        if matches!(event, Event::Start(_)) {
+            let preceding = markdown[..range.start]
+                .chars()
+                .rev()
+                .take_while(|c| c.is_whitespace())
+                .filter(|&c| c == '\n')
+                .take(2)
+                .count();
+            if preceding == 2 {
+                text.boundary(2);
+            }
         }
-        if !first {
-            out.push_str("\n");
+        match event {
+            Event::Start(tag) => match tag {
+                Tag::Heading { .. } | Tag::TableHead => {
+                    text.boundary(1);
+                    text.strong += 1;
+                    text.column = 0;
+                }
+                Tag::Strong | Tag::Emphasis => text.strong += 1,
+                Tag::Strikethrough => text.dim += 1,
+                Tag::CodeBlock(_) => {
+                    text.boundary(1);
+                    text.code = true;
+                }
+                Tag::BlockQuote(_) => {
+                    text.boundary(1);
+                    text.quotes += 1;
+                }
+                Tag::List(start) => {
+                    text.boundary(1);
+                    text.lists.push(start);
+                }
+                Tag::Item => {
+                    text.boundary(1);
+                    let indent = "  ".repeat(text.lists.len().saturating_sub(1));
+                    text.push(&indent, None);
+                    let marker = match text.lists.last_mut() {
+                        Some(Some(number)) => {
+                            let marker = format!("{number}. ");
+                            *number = number.saturating_add(1);
+                            marker
+                        }
+                        _ => "• ".to_owned(),
+                    };
+                    text.push(&marker, None);
+                }
+                Tag::Table(_) | Tag::TableRow => {
+                    text.boundary(1);
+                    text.column = 0;
+                }
+                Tag::TableCell => {
+                    if text.column > 0 {
+                        text.push(" | ", None);
+                    }
+                    text.column += 1;
+                }
+                Tag::FootnoteDefinition(label) => {
+                    text.boundary(1);
+                    text.push(&format!("[{label}] "), None);
+                }
+                _ => {}
+            },
+            Event::End(tag) => match tag {
+                TagEnd::Heading(_) | TagEnd::TableHead => {
+                    text.strong -= 1;
+                    text.boundary(1);
+                }
+                TagEnd::Strong | TagEnd::Emphasis => text.strong -= 1,
+                TagEnd::Strikethrough => text.dim -= 1,
+                TagEnd::CodeBlock => {
+                    text.code = false;
+                    text.boundary(1);
+                }
+                TagEnd::BlockQuote(_) => {
+                    text.quotes -= 1;
+                    text.boundary(1);
+                }
+                TagEnd::List(_) => {
+                    text.lists.pop();
+                    text.boundary(1);
+                }
+                TagEnd::Paragraph
+                | TagEnd::Item
+                | TagEnd::TableRow
+                | TagEnd::Table
+                | TagEnd::FootnoteDefinition
+                | TagEnd::HtmlBlock => text.boundary(1),
+                _ => {}
+            },
+            Event::Text(value) | Event::Html(value) | Event::InlineHtml(value) => {
+                text.push(&value, text.style());
+            }
+            Event::Code(value) | Event::InlineMath(value) | Event::DisplayMath(value) => {
+                text.push(&value, Some(SpanStyle::Code));
+            }
+            Event::SoftBreak | Event::HardBreak => text.boundary(1),
+            Event::Rule => text.boundary(2),
+            Event::TaskListMarker(checked) => {
+                text.push(if checked { "[x] " } else { "[ ] " }, None)
+            }
+            Event::FootnoteReference(label) => text.push(&format!("[{label}]"), None),
         }
-        first = false;
-        if in_fence {
-            out.push_styled(line, SpanStyle::Code);
-            continue;
-        }
-        let is_break =
-            trimmed.len() >= 3 && trimmed.chars().all(|c| matches!(c, '-' | '*' | '_' | ' '));
-        if is_break && !trimmed.is_empty() {
-            continue;
-        }
-        let heading = trimmed.trim_start_matches('#');
-        if heading.len() != trimmed.len() && heading.starts_with(' ')
-            || heading.is_empty() && !trimmed.is_empty() && trimmed.starts_with('#')
-        {
-            let body = strip_inline_links(heading.trim_start());
-            let mut inner = StyledText::default();
-            push_inline(&mut inner, &body);
-            // A heading is Strong throughout: replace inner emphasis with
-            // one span (code chips inside a heading stay chips).
-            let start = out.text.len();
-            out.extend(&inner);
-            strong_around(&mut out, start);
-            continue;
-        }
-        push_inline(&mut out, &strip_inline_links(line));
     }
-    out
+    // A parser code/HTML event can include a final newline. Keep internal
+    // blank lines and indentation, but don't leave an empty trailing card row.
+    let end = text.out.text.trim_end_matches('\n').len();
+    text.out.text.truncate(end);
+    for span in &mut text.out.spans {
+        span.range.end = span.range.end.min(end);
+    }
+    text.out.spans.retain(|span| !span.range.is_empty());
+    text.out
+}
+
+#[derive(Default)]
+struct CardText {
+    out: StyledText,
+    breaks: usize,
+    strong: usize,
+    dim: usize,
+    code: bool,
+    quotes: usize,
+    lists: Vec<Option<u64>>,
+    column: usize,
+}
+
+impl CardText {
+    fn style(&self) -> Option<SpanStyle> {
+        if self.code {
+            Some(SpanStyle::Code)
+        } else if self.dim > 0 {
+            Some(SpanStyle::Dim)
+        } else if self.strong > 0 {
+            Some(SpanStyle::Strong)
+        } else {
+            None
+        }
+    }
+
+    fn boundary(&mut self, lines: usize) {
+        self.breaks = self.breaks.max(lines);
+    }
+
+    fn push(&mut self, value: &str, style: Option<SpanStyle>) {
+        if value.is_empty() {
+            return;
+        }
+        if !self.out.text.is_empty() {
+            let trailing = self
+                .out
+                .text
+                .chars()
+                .rev()
+                .take_while(|&c| c == '\n')
+                .take(self.breaks)
+                .count();
+            for _ in trailing..self.breaks {
+                self.out.push_str("\n");
+            }
+        }
+        self.breaks = 0;
+        for part in value.split_inclusive('\n') {
+            if part != "\n" && (self.out.text.is_empty() || self.out.text.ends_with('\n')) {
+                for _ in 0..self.quotes {
+                    self.out.push_str("│ ");
+                }
+            }
+            let start = self.out.text.len();
+            self.out.push_str(part);
+            if let Some(style) = style {
+                // Parser events may split at entities/escapes. Coalesce equal
+                // adjacent styles rather than allocating one span per event.
+                if let Some(last) = self
+                    .out
+                    .spans
+                    .last_mut()
+                    .filter(|last| last.style == style && last.range.end == start)
+                {
+                    last.range.end = self.out.text.len();
+                } else {
+                    self.out.spans.push(crate::model::Span {
+                        range: start..self.out.text.len(),
+                        style,
+                    });
+                }
+            }
+        }
+    }
 }
 
 /// Only backtick-quoted runs become `Code` spans; everything else is
@@ -89,91 +246,6 @@ pub fn markdown_to_plain_text(markdown: &str) -> String {
     markdown_to_styled(markdown).text
 }
 
-/// Inline constructs of one line: `` `code` `` (any backtick run length,
-/// no nesting), `**strong**` / `__strong__`, `*em*` / `_em_`. Emphasis
-/// contents are parsed recursively but rendered as one `Strong` run.
-fn push_inline(out: &mut StyledText, line: &str) {
-    let chars: Vec<char> = line.chars().collect();
-    let mut i = 0;
-    let mut literal = String::new();
-    let flush = |out: &mut StyledText, literal: &mut String| {
-        if !literal.is_empty() {
-            out.push_str(literal);
-            literal.clear();
-        }
-    };
-    while i < chars.len() {
-        let c = chars[i];
-        if c == '`' {
-            let run = chars[i..].iter().take_while(|&&c| c == '`').count();
-            if let Some(close) = find_run(&chars, i + run, '`', run) {
-                flush(out, &mut literal);
-                let code: String = chars[i + run..close].iter().collect();
-                out.push_styled(code.trim_matches(' '), SpanStyle::Code);
-                i = close + run;
-                continue;
-            }
-            literal.extend(&chars[i..i + run]);
-            i += run;
-            continue;
-        }
-        if c == '*' || c == '_' {
-            let run = chars[i..].iter().take_while(|&&x| x == c).count().min(2);
-            // An opener is left-flanking: not followed by whitespace (so a
-            // `* bullet` never opens emphasis) and, for `_`, not intraword.
-            let followed_by_space = chars.get(i + run).is_none_or(|c| c.is_whitespace());
-            let word_bound_open = c == '*' || i == 0 || !chars[i - 1].is_alphanumeric();
-            if word_bound_open && !followed_by_space {
-                if let Some(close) = find_emphasis_close(&chars, i + run, c, run) {
-                    if close > i + run {
-                        flush(out, &mut literal);
-                        let inner: String = chars[i + run..close].iter().collect();
-                        let mut styled = StyledText::default();
-                        push_inline(&mut styled, &inner);
-                        let start = out.text.len();
-                        out.extend(&styled);
-                        strong_around(out, start);
-                        i = close + run;
-                        continue;
-                    }
-                }
-            }
-            literal.extend(&chars[i..i + run]);
-            i += run;
-            continue;
-        }
-        literal.push(c);
-        i += 1;
-    }
-    flush(out, &mut literal);
-}
-
-/// Makes `out.text[start..]` `Strong`: nested emphasis spans are dropped
-/// (one weight only) and code chips are kept, with `Strong` filling the
-/// gaps between them so spans stay non-overlapping.
-fn strong_around(out: &mut StyledText, start: usize) {
-    let end = out.text.len();
-    out.spans
-        .retain(|s| s.range.start < start || s.style == SpanStyle::Code);
-    let keep: Vec<std::ops::Range<usize>> = out
-        .spans
-        .iter()
-        .filter(|s| s.range.start >= start)
-        .map(|s| s.range.clone())
-        .collect();
-    let mut at = start;
-    for code in keep.iter().chain(std::iter::once(&(end..end))) {
-        if at < code.start {
-            out.spans.push(crate::model::Span {
-                range: at..code.start,
-                style: SpanStyle::Strong,
-            });
-        }
-        at = code.end;
-    }
-    out.spans.sort_by_key(|s| s.range.start);
-}
-
 /// Index of the next run of exactly `len` `marker` chars at or after
 /// `from` (longer runs don't match, so ``` `` ` ``` pairs correctly).
 fn find_run(chars: &[char], from: usize, marker: char, len: usize) -> Option<usize> {
@@ -190,59 +262,6 @@ fn find_run(chars: &[char], from: usize, marker: char, len: usize) -> Option<usi
         }
     }
     None
-}
-
-/// Closing emphasis run: same marker and length, not followed by an
-/// alphanumeric for `_` (intraword underscores are literal), and not
-/// preceded by whitespace (`* ` is a bullet, not a closer).
-fn find_emphasis_close(chars: &[char], from: usize, marker: char, len: usize) -> Option<usize> {
-    let mut i = from;
-    while i < chars.len() {
-        if chars[i] == marker {
-            let run = chars[i..].iter().take_while(|&&c| c == marker).count();
-            let after_ok = marker == '*' || chars.get(i + run).is_none_or(|c| !c.is_alphanumeric());
-            let before_ok = i > 0 && !chars[i - 1].is_whitespace();
-            if run == len && after_ok && before_ok {
-                return Some(i);
-            }
-            i += run;
-        } else if chars[i] == '`' {
-            // Skip over inline code so a backtick-quoted `*` can't close.
-            let run = chars[i..].iter().take_while(|&&c| c == '`').count();
-            match find_run(chars, i + run, '`', run) {
-                Some(close) => i = close + run,
-                None => i += run,
-            }
-        } else {
-            i += 1;
-        }
-    }
-    None
-}
-
-/// `[text](url)` -> `text`, non-greedy, leaving unmatched brackets intact
-/// (rustdoc's bare `[refs]` are plain intra-doc names).
-fn strip_inline_links(line: &str) -> String {
-    let mut out = String::with_capacity(line.len());
-    let mut rest = line;
-    while let Some(open) = rest.find('[') {
-        let Some(close_rel) = rest[open..].find(']') else {
-            break;
-        };
-        let close = open + close_rel;
-        if rest[close + 1..].starts_with('(') {
-            if let Some(paren_rel) = rest[close + 1..].find(')') {
-                out.push_str(&rest[..open]);
-                out.push_str(&rest[open + 1..close]);
-                rest = &rest[close + 1 + paren_rel + 1..];
-                continue;
-            }
-        }
-        out.push_str(&rest[..close + 1]);
-        rest = &rest[close + 1..];
-    }
-    out.push_str(rest);
-    out
 }
 
 #[cfg(test)]
@@ -301,13 +320,13 @@ mod tests {
     #[test]
     fn a_bullet_star_never_opens_emphasis() {
         let t = markdown_to_styled("* first item with *em*\n* second");
-        assert_eq!(t.text, "* first item with em\n* second");
+        assert_eq!(t.text, "• first item with em\n• second");
         assert_eq!(spans(&t), vec![("em", SpanStyle::Strong)]);
     }
 
     #[test]
     fn fences_headings_breaks_and_links() {
-        let t = markdown_to_styled("## Signature\n```rust\nfn f(a: *const u8)\n```\nsee [docs](https://x) and [valid]\n---\nend");
+        let t = markdown_to_styled("## Signature\n```rust\nfn f(a: *const u8)\n```\nsee [docs](https://x) and [valid]\n\n---\nend");
         assert_eq!(
             t.text,
             "Signature\nfn f(a: *const u8)\nsee docs and [valid]\n\nend"
@@ -316,7 +335,7 @@ mod tests {
             spans(&t),
             vec![
                 ("Signature", SpanStyle::Strong),
-                ("fn f(a: *const u8)", SpanStyle::Code),
+                ("fn f(a: *const u8)\n", SpanStyle::Code),
             ]
         );
         // Old flattener behaviour retained for the plaintext view.
@@ -335,5 +354,117 @@ mod tests {
         let t = markdown_to_styled("use `` a`b `` here");
         assert_eq!(t.text, "use a`b here");
         assert_eq!(spans(&t), vec![("a`b", SpanStyle::Code)]);
+    }
+
+    #[test]
+    fn card_markdown_keeps_links_and_shorter_fences_literal_inside_code() {
+        let t =
+            markdown_to_styled("````md\n```rust\n[x](url) &amp; \\*\n~~~\n````\nAfter **code**.");
+        assert_eq!(t.text, "```rust\n[x](url) &amp; \\*\n~~~\nAfter code.");
+        let (code, prose) = t.split_leading_code();
+        assert_eq!(code.unwrap().text, "```rust\n[x](url) &amp; \\*\n~~~");
+        assert_eq!(prose.text, "After code.");
+        let t = markdown_to_styled("`[x](url)` and `&amp;` outside &amp;");
+        assert_eq!(t.text, "[x](url) and &amp; outside &");
+        assert_eq!(
+            spans(&t),
+            vec![("[x](url)", SpanStyle::Code), ("&amp;", SpanStyle::Code)]
+        );
+    }
+
+    #[test]
+    fn card_markdown_resolves_links_escapes_and_nested_styles_without_resources() {
+        let t = markdown_to_styled("[**hé `猫`**](https://example.invalid/a_(b)) \\*literal\\* &lt;x&gt; [ref][r] ![alt](image.png)\n\n[r]: https://example.invalid/ref");
+        assert_eq!(t.text, "hé 猫 *literal* <x> ref alt");
+        assert_eq!(
+            spans(&t),
+            vec![("hé ", SpanStyle::Strong), ("猫", SpanStyle::Code)]
+        );
+        let html = "<script>alert('text only')</script>";
+        assert_eq!(markdown_to_styled(html).text, html);
+    }
+
+    #[test]
+    fn card_markdown_preserves_nested_list_numbers_tasks_and_quotes() {
+        let t = markdown_to_styled(
+            "3. first\n   - [x] **nested**\n4. second\n\n> quoted *text*\n> next line",
+        );
+        assert_eq!(
+            t.text,
+            "3. first\n  • [x] nested\n4. second\n\n│ quoted text\n│ next line"
+        );
+        assert_eq!(
+            spans(&t),
+            vec![("nested", SpanStyle::Strong), ("text", SpanStyle::Strong)]
+        );
+    }
+
+    #[test]
+    fn card_markdown_tables_have_separate_cells_and_styled_headers() {
+        let t = markdown_to_styled(
+            "| Name | Value |\n| --- | --- |\n| `hé` | **yes** |\n| next | ~~old~~ |",
+        );
+        assert_eq!(t.text, "Name | Value\nhé | yes\nnext | old");
+        assert_eq!(
+            spans(&t),
+            vec![
+                ("Name", SpanStyle::Strong),
+                ("Value", SpanStyle::Strong),
+                ("hé", SpanStyle::Code),
+                ("yes", SpanStyle::Strong),
+                ("old", SpanStyle::Dim)
+            ]
+        );
+    }
+
+    #[test]
+    fn card_markdown_setext_headings_and_indented_code_are_not_discarded() {
+        let t = markdown_to_styled(
+            "Title\n=====\n\n    [literal](url)\n    *code*\n\nText[^n]\n\n[^n]: the note",
+        );
+        assert_eq!(
+            t.text,
+            "Title\n\n[literal](url)\n*code*\n\nText[n]\n\n[n] the note"
+        );
+        assert_eq!(t.spans[0].style, SpanStyle::Strong);
+        assert_eq!(&t.text[t.spans[0].range.clone()], "Title");
+        assert!(t
+            .spans
+            .iter()
+            .any(|s| s.style == SpanStyle::Code && t.text[s.range.clone()].contains("*code*")));
+    }
+
+    #[test]
+    fn card_markdown_spans_stay_ordered_and_utf8_aligned() {
+        for source in [
+            "***hé `猫` **inner** end***",
+            "## **Header** &amp; `x`",
+            "`unclosed **thing",
+            "~~~\nα\n\nβ\n~~~",
+            "",
+            "\n",
+            "***",
+        ] {
+            let t = markdown_to_styled(source);
+            let mut previous_end = 0;
+            for span in &t.spans {
+                assert!(previous_end <= span.range.start, "{source}: {t:?}");
+                assert!(span.range.start < span.range.end);
+                assert!(t.text.get(span.range.clone()).is_some());
+                previous_end = span.range.end;
+            }
+        }
+    }
+
+    #[test]
+    fn card_markdown_keeps_paragraph_spacing_and_multiline_code_indentation() {
+        let t = markdown_to_styled("First paragraph.\n\nSecond **paragraph**.\n\n```rust\nfn f() {\n    call();\n\n    again();\n}\n```\n\nLast.");
+        assert_eq!(t.text, "First paragraph.\n\nSecond paragraph.\n\nfn f() {\n    call();\n\n    again();\n}\n\nLast.");
+        assert_eq!(&t.text[t.spans[0].range.clone()], "paragraph");
+        assert!(t
+            .spans
+            .iter()
+            .any(|s| s.style == SpanStyle::Code
+                && t.text[s.range.clone()].contains("\n\n    again();")));
     }
 }

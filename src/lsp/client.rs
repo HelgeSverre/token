@@ -2437,8 +2437,10 @@ printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
     #[test]
     fn markdown_to_plain_text_strips_headings() {
         assert_eq!(markdown_to_plain_text("## Signature"), "Signature");
-        // Thematic breaks become blank separators, not literal dashes.
-        assert_eq!(markdown_to_plain_text("a\n---\nb"), "a\n\nb");
+        // Setext headings differ from thematic breaks, which need a blank
+        // line after a paragraph when written with dashes.
+        assert_eq!(markdown_to_plain_text("a\n---\nb"), "a\nb");
+        assert_eq!(markdown_to_plain_text("a\n\n---\nb"), "a\n\nb");
         assert_eq!(markdown_to_plain_text("a\n* * *\nb"), "a\n\nb");
         // Inline links keep the text, drop the url; bare refs survive.
         assert_eq!(

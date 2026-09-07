@@ -1,5 +1,50 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Shared documentation Markdown — 2026-09-07
+
+Completion, hover and signature cards now reduce Markdown through the existing
+`pulldown-cmark` 0.12.2 dependency used by preview. A private event consumer emits
+the existing `StyledText`; there is no new public API, renderer, dependency or
+transport. The diagnostic-only backtick formatter stays separate because its
+input is not Markdown. Four hand-written Markdown helpers were removed.
+
+Formatting now preserves nested emphasis/code, matching fence types and lengths,
+escaped punctuation and entities, reference-link labels, numbered/nested lists,
+task markers, quotes, footnotes and separated table cells with emphasized headers.
+Paragraph separation and code indentation are retained. Equal adjacent styles
+coalesce, and span ranges remain ordered, non-overlapping and UTF-8 aligned.
+This is native text reduction, not a full rich-document renderer: links are
+labels, images are alt text, HTML is literal text and strikeout is dimmed.
+There is no resource fetching or HTML execution. Plain-text protocol content and
+completion acceptance/resolve lifecycles are unchanged.
+
+| Severity | Finding addressed | Evidence |
+| --- | --- | --- |
+| Medium | Link stripping altered inline code examples before code parsing | Literal-link/entity code regression |
+| Medium | Any three-backtick/tilde prefix toggled fence state, corrupting nested examples | Four-backtick and mismatched-tilde fence regression |
+| Medium | Hand-written parsing lost reference links and nested block structure | Escapes/nested styles, lists/tasks/quotes, tables and footnote tests |
+
+Verification: **14 converter tests passed**, including seven new regressions.
+Full `CARGO_BUILD_JOBS=1 just test '--no-fail-fast --status-level fail --final-status-level fail'`:
+**2,444 passed**, 7 skipped; **2 doctests passed**, 6 ignored. Nextest run
+`8e1f074c-82d5-4749-80f3-c2ecd8b666d6`. Strict all-target/all-feature `just lint`
+passed. The suite includes existing completion conversion/resolution, hover,
+signature-help and styled-card layout/painting tests.
+
+Initial test iterations exposed intended representation changes: normalized
+list bullets; CommonMark setext headings distinguished from thematic dividers;
+and fenced-code spans including their parser-provided line feed. Expectations
+were updated explicitly, with separate heading/divider coverage. No production
+behavior was weakened to preserve the old parser's incorrect interpretation.
+Dependency API usage was checked against the locked crate source; the Context7
+guide was supplementary, not authority for a newer API shape.
+
+Scoped review: **Approve**. No critical/high findings remain for this converter.
+No native-window check or new performance measurement is claimed. Long-document
+scrolling/expansion and the rest of menu-panel richness remain unfinished, as do
+the remaining autocomplete and broader handoff requirements. No whole feature
+plan becomes ready for archival from this increment.
+
 ## Context-aware path completion — 2026-09-07
 
 The dropdown now includes a filesystem source for path-shaped quoted strings,
