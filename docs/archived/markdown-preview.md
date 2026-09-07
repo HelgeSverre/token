@@ -2,6 +2,11 @@
 
 > Archived 2026-03-10: implemented feature. Kept as historical design/reference.
 
+> 2026-09-07 follow-up: Mermaid fences now render through a pinned, on-demand
+> renderer with theme colors and readable source fallback. This requires CDN
+> access; see [the sample](../../samples/mermaid.md) and
+> [verification notes](../dev/refactoring-audit-2026-09-06.md#markdown-diagrams-and-popup-hover--2026-09-07).
+
 Live preview pane for Markdown files with synchronized scrolling
 
 > **Status:** ✅ Implemented (Native + Webview)
@@ -49,7 +54,7 @@ No rendered preview exists—users see only raw Markdown with syntax highlightin
 
 - Image upload/embedding
 - LaTeX/math rendering (future)
-- Mermaid diagram rendering (future)
+- Mermaid diagram rendering (implemented in the 2026-09-07 follow-up)
 - Export to PDF
 - WYSIWYG editing in preview
 

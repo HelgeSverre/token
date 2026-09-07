@@ -37,7 +37,7 @@ pub fn markdown_to_html(markdown: &str, theme: &PreviewTheme) -> String {
 </html>"#,
         generate_css(theme),
         html_output,
-        SCROLL_SYNC_JS
+        PREVIEW_JS
     )
 }
 
@@ -171,6 +171,22 @@ pre code {{
     line-height: 1.45;
 }}
 
+.mermaid-diagram {{
+    overflow-x: auto;
+    margin: 0 0 16px;
+    text-align: center;
+}}
+
+.mermaid-diagram svg {{
+    max-width: 100%;
+    height: auto;
+}}
+
+.mermaid-error {{
+    color: {muted};
+    font-size: 0.9em;
+}}
+
 blockquote {{
     border-left: 4px solid {accent};
     margin: 0 0 16px 0;
@@ -284,44 +300,8 @@ del {{
     )
 }
 
-/// JavaScript for scroll synchronization and syntax highlighting
-const SCROLL_SYNC_JS: &str = r#"
-// Initialize syntax highlighting
-if (typeof hljs !== 'undefined') {
-    hljs.highlightAll();
-}
-
-// Scroll to a specific source line
-window.scrollToLine = function(line) {
-    const el = document.querySelector(`[data-line="${line}"]`);
-    if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-};
-
-// Report scroll position back to editor
-let scrollTimeout = null;
-window.addEventListener('scroll', function() {
-    if (scrollTimeout) clearTimeout(scrollTimeout);
-    scrollTimeout = setTimeout(function() {
-        const elements = document.querySelectorAll('[data-line]');
-        let visibleLine = null;
-        const viewportTop = window.scrollY;
-        
-        for (const el of elements) {
-            const rect = el.getBoundingClientRect();
-            if (rect.top >= 0) {
-                visibleLine = parseInt(el.getAttribute('data-line'), 10);
-                break;
-            }
-        }
-        
-        if (visibleLine !== null && window.webkit && window.webkit.messageHandlers) {
-            window.webkit.messageHandlers.scrollSync.postMessage({ line: visibleLine });
-        }
-    }, 100);
-});
-"#;
+/// Shared preview behavior: highlighting, Mermaid and source scroll sync.
+const PREVIEW_JS: &str = include_str!("preview.js");
 
 /// Add data-line attributes to block-level elements for scroll sync
 fn add_line_markers<'a>(parser: Parser<'a>, markdown: &'a str) -> impl Iterator<Item = Event<'a>> {
@@ -394,6 +374,31 @@ mod tests {
         assert!(html.contains("<pre>"));
         assert!(html.contains("<code"));
         assert!(html.contains("fn main()"));
+    }
+
+    #[test]
+    fn mermaid_fences_preserve_escaped_source_and_scroll_markers() {
+        let md = "# Diagram\n\n```mermaid\nflowchart LR\n    A[\"A & B\"] --> B[\"<end>\"]\n```\n\nAfter diagram.";
+        let html = markdown_to_html(md, &PreviewTheme::default());
+
+        assert!(html.contains(
+            "<span data-line=\"3\"></span>\n<pre><code class=\"language-mermaid\">flowchart LR\n"
+        ));
+        assert!(html.contains("A[\"A &amp; B\"] --&gt; B[\"&lt;end&gt;\"]"));
+        assert!(html.contains("<span data-line=\"8\"></span>\n<p>After diagram.</p>"));
+        assert!(html.contains("securityLevel: 'strict'"));
+        assert!(html.contains("diagram.textContent = code.textContent"));
+    }
+
+    #[test]
+    fn mermaid_fences_do_not_change_ordinary_code_or_html_preview() {
+        let md = "```mermaid\nflowchart LR\nA --> B\n```\n\n```rust\nlet x = 1;\n```";
+        let html = markdown_to_html(md, &PreviewTheme::default());
+
+        assert!(html.contains("<code class=\"language-rust\">let x = 1;\n</code></pre>"));
+        assert!(html.contains("pre code:not(.language-mermaid)"));
+        let raw_html = "<!DOCTYPE html><html><body>Unmodified</body></html>";
+        assert_eq!(html_to_preview(raw_html), raw_html);
     }
 
     #[test]

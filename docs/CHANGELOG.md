@@ -23,6 +23,12 @@ All notable changes to rust-editor are documented in this file.
 
 ### Added
 
+- Markdown preview renders fenced `mermaid` diagrams, using the preview theme
+  and a pinned, on-demand Mermaid renderer. Loading requires a connection to
+  jsDelivr; offline/loading failures and invalid syntax keep the source visible
+  with an explanation. Other code fences retain syntax highlighting. See
+  `samples/mermaid.md`, including diagram-local spacing for self-loop labels.
+
 - **Durable Amp conversation archive**: the 171 conversations referenced by
   the AI-assisted development write-up now live in the repository, with an
   inventory, chronological index, and provenance notes. README and website
