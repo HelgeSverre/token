@@ -4,11 +4,22 @@ Join lines, duplicate lines/selections, and trim trailing whitespace.
 
 > **Status:** ⏳ Partial - Duplicate implemented
 > **Implemented:** Duplicate (Cmd+D)
-> **Remaining:** Join lines, trim trailing whitespace
+> **Remaining:** Join lines, trim trailing whitespace — tracked in [Line Operations Follow-ups](../future/line-operations.md)
 > **Created:** 2025-12-19
 > **Milestone:** 2 - Search & Editing
 
 ---
+
+## Archive scope — 2026-09-07
+
+This historical proposal is only partially implemented. Duplication uses the
+shared edit transaction in `src/update/document.rs`; line/selection duplication,
+multi-cursor source capture and Undo have coverage in `tests/text_editing.rs`
+and `tests/ordinary_edit_positions.rs`. The sketches below are not the current
+implementation. Join-line and trim-whitespace commands remain unimplemented;
+their [active follow-up](../future/line-operations.md) retains the original
+requirements and verification checklist. Being in the archive does not mark
+those commands complete.
 
 ## Table of Contents
 

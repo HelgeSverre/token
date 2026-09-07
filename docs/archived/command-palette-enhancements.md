@@ -2,13 +2,30 @@
 
 MRU ordering, favorites/pinned commands, and improved filtering for the command palette.
 
-> **Status:** Planned
+> **Status:** Implemented via OverlaySurface Phase 4; superseded plan archived 2026-09-06
 > **Priority:** P2
 > **Effort:** M
 > **Created:** 2025-12-19
 > **Milestone:** 1 - Navigation
 
 ---
+
+## Implementation record — 2026-09-06
+
+Persistent command usage and pins are implemented in `src/command_history.rs`.
+`src/update/ui.rs` owns cached palette ordering, nucleo matching, recent-command
+promotion, pin toggling and execution history; runtime handles persistence.
+History round-trip/error tests and palette ordering, confirmation and pin tests
+are included in the passing full suite (2,202 tests plus two doctests).
+
+[OverlaySurface Phase 4](overlay-surface.md) superseded this proposal's fuzzy
+matcher, rendering and keybindings; the code examples and unchecked original
+tasks below are historical, not an active implementation checklist. The shipped
+design uses Cmd+. for pinning on macOS, not the proposed Cmd+P binding.
+
+Unimplemented history migration/pruning and polish ideas are retained in
+[command-history follow-ups](../future/command-history-followups.md). Archiving
+this superseded design does not mark those ideas or its manual checks complete.
 
 ## Table of Contents
 

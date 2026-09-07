@@ -52,7 +52,9 @@ These documents define invariants that implementations must preserve:
 
 ## Feature Design Documents
 
-Detailed specifications for major features, located in `docs/feature/`:
+Active specifications live in `docs/feature/` and `docs/future/`. Implemented or
+superseded plans live in `docs/archived/`, with status notes distinguishing shipped
+scope from deferred ideas and manual verification. Archival is not a release.
 
 ### Completed Features
 
@@ -71,27 +73,30 @@ Detailed specifications for major features, located in `docs/feature/`:
 | Embedded Terminal | ✅ MVP | [embedded-terminal.md](archived/embedded-terminal.md) |
 | File Dialogs | ✅ via `rfd` | [file-dialogs.md](archived/file-dialogs.md) |
 | Find Enhancements | ✅ | [find-enhancements.md](archived/find-enhancements.md) |
-| Settings Page | ✅ v1; keymap tab future | [settings-page.md](feature/settings-page.md) |
+| Damage Tracking | ✅ Coarse regions + cursor lines | [DAMAGE-TRACKING.md](archived/DAMAGE-TRACKING.md) |
+| Command Palette History, Pins & Ranking | ✅ Via OverlaySurface P4 | [command-palette-enhancements.md](archived/command-palette-enhancements.md) |
+| Select Next Occurrence | ✅ | [select-next-occurrence.md](archived/select-next-occurrence.md) |
+| Column Selection | ✅ | [column-selection.md](archived/column-selection.md) |
+| Soft Wrap | ✅ Implemented, unreleased | [soft-wrap.md](archived/soft-wrap.md) |
+| Settings v1 (presets + LSP) | ✅ Implemented, unreleased | [settings-page.md](archived/settings-page.md) |
 
-### Planned Features
+### Active and Planned Features
 
 | Feature | Milestone | Design Doc |
 |---------|-----------|------------|
-| Command Palette Enhancements | 1 - Navigation | [command-palette-enhancements.md](future/command-palette-enhancements.md) |
-| Quick Open | 1 - Navigation | planned |
+| Command History Follow-ups | Deferred polish | [command-history-followups.md](future/command-history-followups.md) |
+| File Finder Enhancements (basic finder implemented) | 1 - Navigation | [enhanced-file-finder.md](future/enhanced-file-finder.md) |
 | Go to Line Enhancements | 1 - Navigation | [goto-line-enhancements.md](future/goto-line-enhancements.md) |
 | Replace Enhancements | 2 - Search & Editing | [replace-enhancements.md](feature/replace-enhancements.md) |
-| Select Next Occurrence | 2 - Search & Editing | [select-next-occurrence.md](archived/select-next-occurrence.md) |
-| Line Operations | 2 - Search & Editing | [line-operations.md](archived/line-operations.md) |
+| Line Operations Follow-ups (duplication implemented) | 2 - Search & Editing | [line-operations.md](future/line-operations.md) |
 | Whitespace Rendering | 2 - Search & Editing | [whitespace-rendering.md](future/whitespace-rendering.md) |
 | Auto-Save | 3 - File Lifecycle | [auto-save.md](feature/auto-save.md) |
 | File Change Detection | 3 - File Lifecycle | [file-change-detection.md](feature/file-change-detection.md) |
 | Session Restore | 3 - File Lifecycle | [session-restore.md](feature/session-restore.md) |
-| Column Selection | 4 - Hard Problems | [column-selection.md](archived/column-selection.md) |
-| Soft Wrap | 4 - Hard Problems | [soft-wrap.md](feature/soft-wrap.md) |
 | Code Folding | 4 - Hard Problems | [folding-basic.md](feature/folding-basic.md) |
 | Diff Gutter | 5 - Insight Tools | [diff-gutter.md](feature/diff-gutter.md) |
 | Snippets | 6 - Productivity | [snippets.md](feature/snippets.md) |
+| Settings Keymap Tab | 6 - Productivity | [settings-keymap.md](future/settings-keymap.md) |
 | Autocomplete (inline / FIM) | 6 - Productivity | [autocomplete.md](feature/autocomplete.md) |
 
 ---

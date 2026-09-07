@@ -1,11 +1,30 @@
 # Damage Tracking System
 
-**Status:** 📋 Planned  
+**Status:** Implemented; archived plan (checked 2026-09-06)
 **Priority:** P3 (optimization)  
 **Effort:** L–XL (1–3 days)  
 **Created:** 2025-12-15
 
 Partial redraw system to avoid full-frame rendering on every update.
+
+## Implementation record — 2026-09-06
+
+The coarse damage system described here is implemented in `src/commands.rs`,
+`src/runtime/app.rs` and `src/view/mod.rs`: command damage is merged, accumulated
+by the runtime and consumed by the renderer's shared frame plan. Editor/status
+regions and cursor-line redraws are supported, with conservative full redraws
+for overlays. The `damage-debug` feature visualizes damaged regions.
+
+Command damage/merge tests live in `src/commands.rs`; runtime diagnostic damage
+regressions live in `src/runtime/app_tests.rs`. The latest full suite passed
+(2,202 tests plus two doctests). See the
+[profiling audit](../dev/refactoring-audit-2026-09-06.md) for current measurements
+and limitations. This archival check did not repeat the native GUI checklist
+below or establish a new before/after speedup.
+
+The original proposal below is historical, not the current API specification.
+Its manual checklist remains verification guidance; its future enhancements
+(per-group damage and offscreen modal buffers) are not claimed complete.
 
 ---
 

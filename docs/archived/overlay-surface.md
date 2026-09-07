@@ -38,7 +38,7 @@ This plan replaces the per-modal rendering with one **OverlaySurface** component
 - **Theme** (`theme.rs`, `themes/dark.yaml`): `overlay.{background #2B2D30, foreground #E0E0E0, border #43454A, input_background #1E1E1E, selection_background #264F78, highlight #80FF80, warning, error}`. `OverlayTheme` already supports `#[serde(default)]` + a resolution step — the derivation-fallback pattern below is proven infrastructure. There is **no `accent` key** in the theme model.
 - **Text painting**: `TextPainter` is one font (JetBrains Mono Regular, the only TTF shipped), one size, one weight; `draw()` takes no size parameter. The glyph cache is already keyed on `(char, size)`, so per-call sizing is small work — but it is work (see Type Scale).
 - **Naming hazard**: `src/overlay.rs` already exists (debug/perf overlay panels, `OverlayAnchor`/`OverlayConfig`). The new module is `src/view/overlay_surface.rs`; the old module is untouched and unrelated — noted so nobody conflates them.
-- **Related design work**: [future/command-palette-enhancements.md](../future/command-palette-enhancements.md) specifies MRU ordering, pinned commands, and usage persistence — its ranking/persistence *shapes* are adopted here (Phase 4); its fuzzy-matching, rendering, and keybinding sections are superseded by this doc.
+- **Related design work**: [command-palette-enhancements.md](command-palette-enhancements.md) specifies MRU ordering, pinned commands, and usage persistence — its ranking/persistence *shapes* are adopted here (Phase 4); its fuzzy-matching, rendering, and keybinding sections are superseded by this doc.
 
 ### Goals
 
@@ -520,6 +520,6 @@ Mockups for the picker contexts: [B1 recent-grouped](assets/palette-b1.png), [B2
 
 - Mockups: [assets/palette-mockups.html](assets/palette-mockups.html) — self-contained, open in a browser; per-mockup PNGs in `assets/palette-*.png`. **Indicative only; this spec is authoritative where they differ.**
 - Consumers: [autocomplete.md](../feature/autocomplete.md) (completion popup) · [lsp-integration.md](lsp-integration.md) (hover, severity conventions, routing spec) · [editor-decorations.md](editor-decorations.md) (`draw_wavy_underline`, severity glyphs)
-- Absorbed: [command-palette-enhancements.md](../future/command-palette-enhancements.md) (`CommandHistory`/`CommandUsage`, ranking concepts)
+- Absorbed: [command-palette-enhancements.md](command-palette-enhancements.md) (`CommandHistory`/`CommandUsage`, ranking concepts)
 - Code seams: `src/view/modal.rs` · `src/view/geometry.rs` (`ModalLayout::build`, `ModalSpacing`) · `src/view/hit_test.rs` · `src/view/selectable_list.rs` (to delete) · `src/view/frame.rs` · `src/runtime/input.rs` (`handle_modal_key`, `classify_text_editing_key`, `OptionGesture`) · `src/update/ui.rs` (`Confirm`, `on_modal_input_changed`) · `themes/*.yaml`
 - Prior art: JetBrains Search Everywhere, VS Code Quick Open prefixes, Zed command palette

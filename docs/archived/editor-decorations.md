@@ -31,7 +31,7 @@ All four reference shared machinery that does not exist. This document is that c
 - Frame primitives cover every mark we need: `fill_rect_px`, `blend_rect_px`, `set_pixel`, `Frame::blend_pixel` (`src/view/frame.rs`; nb. a *different* free `blend_pixel(src, dst)` exists in `src/overlay.rs` — name collision to watch).
 - Hit-testing resolves gutter clicks to a line: `HitTarget::EditorGutter { group_id, editor_id, line }`. But the gutter is not inert today: press **focuses the group** (`src/runtime/mouse.rs:588`), and **drag maps into the text area and drives selection** (`src/runtime/mouse.rs:988-1000`). Lane routing must actively suppress these for interactive lanes.
 - `GroupLayout` (`src/view/geometry.rs:578`) is `#[derive(Clone, Copy)]` and constructed **ad hoc** at many sites (`view/mod.rs`, `hit_test.rs`, `caret.rs`, `editor_text.rs`) — including the per-mouse-move hit-test path. Anything added to it must stay `Copy` and allocation-free.
-- `TextViewportMap` (`src/model/editor.rs:231`) is the established visible-row ↔ document-line seam, already consumed by `editor_text.rs`, `caret.rs`, `hit_test.rs`, `geometry.rs`; [soft-wrap.md](../feature/soft-wrap.md) and [folding-basic.md](../feature/folding-basic.md) declare it mandatory. Decorations go through it too.
+- `TextViewportMap` (`src/model/editor.rs:231`) is the established visible-row ↔ document-line seam, already consumed by `editor_text.rs`, `caret.rs`, `hit_test.rs`, `geometry.rs`; [soft-wrap.md](soft-wrap.md) and [folding-basic.md](../feature/folding-basic.md) declare it mandatory. Decorations go through it too.
 - The damage system (`src/commands.rs:473`) has exactly three areas: `EditorArea`, `StatusBar`, `CursorLines` — the last being a focused-group, plain-text, cursors-only blink fast path. There is **no group-scoped or general line-range damage**; this contract does not pretend otherwise (see Damage).
 - The per-line pixel helpers a decoration pass needs (`EditorRenderContext::line_y`/`pixel_x`/…) are private to `editor_text.rs` — the passes live there, not in a new module, unless/until those helpers are worth exporting.
 
@@ -252,5 +252,5 @@ Ships ahead of all consumers as its own change: it fixes the live >99,999-line r
 
 - Consumers: [find-enhancements.md](find-enhancements.md) · [lsp-integration.md](lsp-integration.md) · [diff-gutter.md](../feature/diff-gutter.md) · [folding-basic.md](../feature/folding-basic.md)
 - Conventions owner: [overlay-surface.md](overlay-surface.md) (`draw_wavy_underline`, severity glyphs/colors)
-- Viewport seam: [soft-wrap.md](../feature/soft-wrap.md) (`TextViewportMap`)
+- Viewport seam: [soft-wrap.md](soft-wrap.md) (`TextViewportMap`)
 - Code seams: `src/view/geometry.rs` (`GroupLayout`) · `src/view/editor_text.rs` (passes, private pixel helpers) · `src/view/hit_test.rs` + `src/runtime/mouse.rs` (gutter press/drag) · `src/view/frame.rs` · `src/view/editor_scrollbars.rs` · `src/model/mod.rs` (`LINE_NUMBER_GUTTER_CHARS` and its model-side consumers, to be replaced)

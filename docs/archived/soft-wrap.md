@@ -2,12 +2,50 @@
 
 Word wrapping without modifying the document
 
-> **Status:** Planned
+> **Status:** Implemented 2026-09-05 (unreleased); archived implementation plan
 > **Priority:** P2
 > **Effort:** XL
 > **Created:** 2025-12-19
-> **Updated:** 2026-08-11 (aligned with `TextViewportMap` seam, keymap `Command` system)
+> **Updated:** 2026-09-05
 > **Milestone:** 4 - Hard Problems
+
+---
+
+## Implementation Notes (2026-09-05)
+
+All eight implementation phases are complete. The sketches below are historical
+design material; current code and tests are authoritative.
+
+- `src/wrap.rs` owns per-pane word-boundary segments and an indexed reverse
+  visual-row lookup. Empty lines occupy one row; long words force-break.
+- `TextViewportMap` is the shared mapping for rendering, mouse placement, IME
+  and completion anchors, selection, scrolling, and cursor reveal.
+- Alt+Z and the command palette toggle the focused plain-text pane. Up/Down
+  and Page Up/Down use visual rows; Home/End remain logical. Internal wrap
+  boundaries belong to the following row (there is no separate caret affinity).
+- Tab stops restart on each segment using the shared tab-width constant.
+  Non-tab Unicode uses the renderer's existing one-character/one-cell model;
+  wide-glyph typography and bidi are not implemented.
+- Cache refresh compares rope snapshots, including buffer identity for reloads,
+  to bound affected logical lines. Unaffected segment allocations are reused;
+  suffix row indexes are updated only when counts change. Width changes rebuild.
+  Refresh happens around deterministic updates, not inside the paint loop.
+- Automation exposes `soft_wrap` and `visual_row_count`. The screenshot scenario
+  `screenshots/scenarios/soft-wrap.yaml` demonstrates independently wrapped splits.
+
+Verification includes cache roundtrips and randomized incremental-vs-full layouts,
+tab/Unicode pixel roundtrips, visual navigation, selection/rectangle selection,
+split-pane edit/undo, automation, and pixel-identical full/dirty cursor redraws.
+The release screenshot was visually inspected for word breaks, tabs, selections,
+gutter numbers, continuation markers, and independent split settings.
+The historical interactive manual checklist below has not been run as a whole.
+
+Release benchmark (`just bench-wrap`, local machine, 2026-09-05): median full
+layout 7.966 ms for 10,000 long lines / 81.93 ms for 100,000; single-character
+middle edit 20.83 µs / 160.8 µs, respectively. These are synthetic cache benchmarks,
+not end-to-end frame-rate measurements. See `benches/wrap.rs` for input sizes.
+First layout remains linear; structural edits that change row counts renumber
+the suffix. Virtual suggestion rows and code folding remain separate follow-ups.
 
 ---
 
@@ -27,11 +65,9 @@ Word wrapping without modifying the document
 
 ### Current State
 
-The editor currently:
-- Uses horizontal scrolling for long lines
-- Renders one logical line = one visual line
-- Cursor positions are `(line, column)` in logical coordinates
-- Viewport tracks `top_line` and `left_column` for scrolling
+The editor keeps cursor positions in logical `(line, column)` coordinates.
+Unwrapped panes use horizontal scrolling; wrapped panes render logical lines as
+one or more visual rows. Viewport `top_line` is a visual row in wrapped mode.
 
 ### Goals
 
@@ -499,11 +535,11 @@ When soft wrap is enabled:
 
 **Estimated effort: 3-4 days**
 
-1. [ ] Create `src/wrap.rs` with `WrapCache` and `WrapSegment`
-2. [ ] Implement `compute_line_wraps()` with word boundary detection
-3. [ ] Implement `logical_to_visual()` and `visual_to_logical()` conversions
-4. [ ] Add comprehensive unit tests for wrap computation
-5. [ ] Handle edge cases (empty lines, very long words, tabs)
+1. [x] Create `src/wrap.rs` with `WrapCache` and `WrapSegment`
+2. [x] Implement `compute_line_wraps()` with word boundary detection
+3. [x] Implement `logical_to_visual()` and `visual_to_logical()` conversions
+4. [x] Add comprehensive unit tests for wrap computation
+5. [x] Handle edge cases (empty lines, very long words, tabs)
 
 **Test:** Wrap cache produces correct segments for various line lengths
 
@@ -511,11 +547,11 @@ When soft wrap is enabled:
 
 **Estimated effort: 2 days**
 
-1. [ ] Add `soft_wrap: bool` and `wrap_cache: WrapCache` to `EditorState`
-2. [ ] Add `toggle_soft_wrap()` method
-3. [ ] Add `ensure_wrap_cache()` method
-4. [ ] Invalidate cache on document edit (hook into `push_edit`)
-5. [ ] Add `ToggleSoftWrap` message handling
+1. [x] Add `soft_wrap: bool` and `wrap_cache: WrapCache` to `EditorState`
+2. [x] Add `toggle_soft_wrap()` method
+3. [x] Add `ensure_wrap_cache()` method
+4. [x] Refresh caches around updates using revision and rope identity (covers edits, undo, reload, and shared panes)
+5. [x] Add `ToggleSoftWrap` message handling
 
 **Test:** Toggle works, cache invalidates on edit
 
@@ -523,11 +559,11 @@ When soft wrap is enabled:
 
 **Estimated effort: 4-5 days**
 
-1. [ ] Make `TextEditorRenderer` iterate visible visual rows rather than raw document lines
-2. [ ] Drive scrolling, cursor reveal, and hit-testing from the same visual-line provider
-3. [ ] Use shared gutter geometry for logical line numbers and continuation markers
-4. [ ] Keep selections, cursors, and bracket highlights expressed in visual-row terms
-5. [ ] Update scrollbar sizing and viewport capacity calculations to visual rows
+1. [x] Make `TextEditorRenderer` iterate visible visual rows rather than raw document lines
+2. [x] Drive scrolling, cursor reveal, and hit-testing from the same visual-line provider
+3. [x] Use shared gutter geometry for logical line numbers and continuation markers
+4. [x] Keep selections, cursors, and bracket highlights expressed in visual-row terms
+5. [x] Update scrollbar sizing and viewport capacity calculations to visual rows
 
 **Implementation note:** This phase plugs into the existing `TextViewportMap` seam (`src/model/editor.rs`) rather than adding one-off render logic. Make the map wrap-aware and the existing consumers (`editor_text.rs`, `caret.rs`, `hit_test.rs`) follow.
 
@@ -537,12 +573,12 @@ When soft wrap is enabled:
 
 **Estimated effort: 3-4 days**
 
-1. [ ] Modify `MoveCursor(Up)` to move by visual line when wrapped
-2. [ ] Modify `MoveCursor(Down)` to move by visual line when wrapped
-3. [ ] Preserve `desired_column` across visual line movements
-4. [ ] `Home` goes to start of logical line (not visual segment)
-5. [ ] `End` goes to end of logical line (not visual segment)
-6. [ ] Handle cursor visibility in viewport (scroll by visual lines)
+1. [x] Modify `MoveCursor(Up)` to move by visual line when wrapped
+2. [x] Modify `MoveCursor(Down)` to move by visual line when wrapped
+3. [x] Preserve `desired_column` across visual line movements
+4. [x] `Home` goes to start of logical line (not visual segment)
+5. [x] `End` goes to end of logical line (not visual segment)
+6. [x] Handle cursor visibility in viewport (scroll by visual lines)
 
 ```rust
 // Moving cursor up with wrap
@@ -575,10 +611,10 @@ fn move_cursor_visual_up(editor: &mut EditorState, document: &Document) {
 
 **Estimated effort: 2-3 days**
 
-1. [ ] Calculate selection rectangles per visual line
-2. [ ] For selections spanning multiple visual lines, draw separate rects
-3. [ ] Handle selection start/end at visual line boundaries
-4. [ ] Ensure selection highlighting extends to wrap point
+1. [x] Calculate selection rectangles per visual line
+2. [x] For selections spanning multiple visual lines, draw separate rects
+3. [x] Handle selection start/end at visual line boundaries
+4. [x] Ensure selection highlighting extends to wrap point
 
 **Test:** Select across wrapped lines, verify visual correctness
 
@@ -586,11 +622,11 @@ fn move_cursor_visual_up(editor: &mut EditorState, document: &Document) {
 
 **Estimated effort: 2 days**
 
-1. [ ] Convert click Y position to visual line
-2. [ ] Convert click X position to visual column
-3. [ ] Use `visual_to_logical()` to get cursor position
-4. [ ] Handle double-click word selection across wraps
-5. [ ] Handle triple-click line selection (select logical line)
+1. [x] Convert click Y position to visual line
+2. [x] Convert click X position to visual column
+3. [x] Use `visual_to_logical()` to get cursor position
+4. [x] Handle double-click word selection across wraps
+5. [x] Handle triple-click line selection (select logical line)
 
 **Test:** Click on wrapped line positions cursor correctly
 
@@ -598,11 +634,11 @@ fn move_cursor_visual_up(editor: &mut EditorState, document: &Document) {
 
 **Estimated effort: 2 days**
 
-1. [ ] Change viewport tracking to use visual lines
-2. [ ] Calculate `visible_visual_lines` from viewport height
-3. [ ] Scroll by visual lines, not logical lines
-4. [ ] Ensure cursor reveal works with visual line count
-5. [ ] Handle Page Up/Down by visual lines
+1. [x] Change viewport tracking to use visual lines
+2. [x] Calculate `visible_visual_lines` from viewport height
+3. [x] Scroll by visual lines, not logical lines
+4. [x] Ensure cursor reveal works with visual line count
+5. [x] Handle Page Up/Down by visual lines
 
 **Test:** Scroll behavior works correctly with wrapped content
 
@@ -610,11 +646,11 @@ fn move_cursor_visual_up(editor: &mut EditorState, document: &Document) {
 
 **Estimated effort: 3-4 days**
 
-1. [ ] Track edit range (start line, end line)
-2. [ ] Only recompute wrap for affected lines
-3. [ ] Update visual line indices for lines after edit
-4. [ ] Handle insert/delete of entire lines efficiently
-5. [ ] Benchmark and optimize for large files
+1. [x] Determine affected logical lines from shared rope prefix/suffix chunks
+2. [x] Only recompute wrap for affected lines
+3. [x] Update visual line indices for lines after edit
+4. [x] Handle insert/delete of entire lines efficiently
+5. [x] Benchmark and optimize for large files
 
 **Test:** Performance acceptable with large wrapped files
 

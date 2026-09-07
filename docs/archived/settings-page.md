@@ -2,55 +2,13 @@
 
 A searchable, preset-driven settings modal on the existing `OverlaySurface` — no new rendering surface, no config file editor, no free-text inputs. One static descriptor table drives search, sectioning, and rendering; the YAML file stays the single source of truth and keeps accepting values the UI doesn't offer as presets.
 
-> **Status:** Implemented v1 (2026-09-06); keymap tab remains future
+> **Status:** Settings v1 (Phases 1–3) implemented and archived 2026-09-06. Full tests, strict lint, headless rendering and isolated macOS native keyboard/persistence checks passed. Future Phase 4 is tracked in [Settings Keymap Tab](../future/settings-keymap.md); archival does not mark it complete or imply a release.
 > **Priority:** P3
 > **Effort:** M
 > **Created:** 2026-08-13
 > **Milestone:** 6 - Productivity
 
 ---
-
-## Implementation Notes
-
-### Visual revision (2026-09-07)
-
-The initial compact palette presentation was replaced at user request with a
-Zed-inspired, window-sized preferences form: category navigation on the left,
-section headings and descriptions beneath setting labels, boolean switches,
-and right-aligned presets. On narrow windows categories wrap above the form
-and controls move below labels. Tab/Shift+Tab cycles categories; search filters
-the current category (All Settings searches everything). This remains an in-app
-modal, not a separate operating-system window.
-
-Short windows also reflow categories into a grid. When only one display row
-fits, navigation shows the setting rather than its section heading. Theme and
-server-command values are separate from optional descriptions and stay visible
-below their labels in compact rows; the selected value also appears in the footer.
-
-`src/view/settings_page.rs` owns the settings presentation within OverlaySurface.
-Its resolved rectangles are used by both painting and hit testing, and its
-viewport capacity is shared with keyboard, wheel, and screenshot navigation.
-The historical design below describes the original compact presentation;
-this revision supersedes its width, row layout, and navigation decisions.
-
-- `src/settings/descriptors.rs` declares the editor, appearance, status bar,
-  completion, and LSP master presets. Theme metadata lives in the same table and
-  opens the existing Theme Picker.
-- `resolve_settings_rows` produces the row identities cached by `SettingsState`.
-  Rendering, navigation, and chip commits use that same order. Per-server rows
-  come from the compile-time server registry.
-- Update handlers mutate `EditorConfig` and return `Cmd::SaveConfiguration`;
-  the runtime saves each snapshot immediately in click order. Existing invalid
-  files are left untouched. The merge compares the old typed configuration to
-  avoid restoring deliberately removed known options or map entries.
-- Control geometry is shared by rendering and hit testing. Narrow windows move
-  controls below labels before shrinking slots and truncating labels. The footer shows the selected row's description
-  or the command override's YAML key.
-- Server lifecycle rows read the live model and request a full modal redraw on
-  status changes. Settings does not add server restart/management actions.
-- Regression tests live in `src/settings/tests.rs`, `src/config.rs`, and the
-  runtime/overlay test modules. Screenshot scenarios cover the default modal,
-  LSP search, and narrow windows under `screenshots/scenarios/settings*.yaml`.
 
 ## Overview
 
@@ -60,10 +18,10 @@ this revision supersedes its width, row layout, and navigation decisions.
 
 A Settings context on `OverlaySurface` gives every discrete-choice setting a UI for the cost of one table row, reusing infrastructure (fuzzy search, sectioned lists, accessory chips) that already exists for the palette and pickers.
 
-### Baseline Before Implementation
+### Original Context (historical)
 
 - `EditorConfig` (`src/config.rs`) is the single struct persisted to `~/.config/token-editor/config.yaml`. Fields use `#[serde(default = "...")]` so missing keys fall back cleanly on load. `LspConfig` nests `enabled: bool` and `servers: HashMap<String, LspServerOverride>` (keyed by `LspServerDef::id`, overriding `command`/`enabled` per server).
-- `EditorConfig::save()` (`src/config.rs:190`) is `serde_yaml::to_string(self)` followed by a plain file write — it serializes *only* what the struct knows about. Any key a user hand-added, or that a newer build wrote and this build doesn't have a field for, is silently dropped on the next save. This is fine today because saves are rare (theme picker only); it becomes a data-loss bug the moment settings UI writes on every click.
+- `EditorConfig::save()` preserves unknown YAML keys (Phase 1 below). Known fields update, intentionally removed known options remain removed, and invalid existing files are rejected before writing. Comments and formatting are not preserved.
 - The theme picker is the only existing config-mutating list modal: a `Body::List` context on `OverlaySurface` with User Themes / Built-in Themes sections and a `Check` accessory on the active row (`docs/feature/overlay-surface.md`, Contexts table). It is the closest reference pattern for a Settings context, but it is single-purpose — one field, one section split, no search-across-settings behavior.
 - `OverlaySurface` (`src/view/overlay_surface.rs`) already provides everything a Settings context needs structurally: `Anchor::Centered`, `Header` with a live-filtering input, `Body::List { sections, selected, scroll, max_visible }`, row `Accessory` variants (`Keycaps`, `DimText`, `Check`, `Tag`), and the resolve-rows ordering-authority pattern (`update/ui.rs`) that keeps view order and Enter/confirm order from diverging. Keycap chips (`binding_chips`) render existing keybindings; segmented-chip choice rendering (multiple selectable options in one row) is new but is the same accessory-composition idea as `Keycaps`.
 - Keymap layering: the embedded `keymap.yaml` (`src/keymap/defaults.rs`, `include_str!`) is loaded first, then a user `~/.config/token-editor/keymap.yaml` is parsed and merged over it via `merge_bindings` (`defaults.rs:74`). This two-layer (compiled defaults → user file) shape is the layering model Settings should mirror for v1 — no project-level layer yet.
@@ -158,7 +116,7 @@ Project-level `.token/config.yaml` is noted as a **future** third layer (mirrori
 
 - Master `lsp.enabled` toggle — one chip row (On/Off), maps directly to `LspConfig.enabled`.
 - Per-server enabled chip, one row per entry in the compile-time server registry, reading/writing `LspConfig.servers.<id>.enabled` (default true when absent).
-- Command override — read-only status row per server, showing the resolved command path and the YAML key (`lsp.servers.<id>.command`) to edit it by hand; no text input.
+- Command override — read-only row per server, showing the configured command (or registry default) and the YAML key (`lsp.servers.<id>.command`) to edit it by hand; no text input or PATH resolution during rendering.
 - Live server status — read-only status rows sourced from `LspUiState.servers: HashMap<LspServerId, ServerState>` (`src/model/mod.rs:437`), rendering `ServerState`'s `Starting | Indexing | Ready | Restarting{attempt} | Failed | Missing | ShuttingDown` as a dim status accessory next to each server's rows. This section reads live state; it does not restart or manage servers (no "restart server" action in v1).
 
 A **Language Servers** picker modal, theme-picker-style, is being built separately as the interim surface for exactly this information (enable/disable, status). This LSP section is the eventual absorption point: once Settings ships, that standalone picker's rows fold into this section the same way the theme picker itself may eventually become a `theme` row's chip set plus an "open full picker" affordance. Not scoped to migrate in this doc's implementation plan — noted so the two aren't built as permanent parallel surfaces.
@@ -207,32 +165,61 @@ pub enum SettingValue {
 
 **Effort:** S
 
-- [x] `EditorConfig::save()`: serialize known settings and preserve unknown keys from the existing YAML. Comparing against the old typed configuration prevents restoring removed known options, server entries, and arbitrary LSP settings keys. Invalid/unreadable files fail before writing; comments and formatting are not retained.
-- [x] Tests cover unknown top-level/nested keys, known-value changes, removed known options/map entries, malformed/unreadable files, and missing/empty files.
-- [x] No UI changes in this phase; existing callers of `save()` (theme picker) are unaffected.
+- [x] `EditorConfig::save()`: serialize known settings, merge unknown keys from the existing YAML, and write the merged value. Comparing against the old typed configuration prevents restoring removed known optional fields, server entries, or arbitrary LSP settings keys. Invalid/unreadable existing files fail before writing; comments and formatting are not retained.
+- [x] Unit tests: unknown top-level and nested keys survive; known values update; removed known options/map entries stay removed; invalid files remain byte-for-byte unchanged; missing/empty files can be saved.
+- [x] No UI changes in this phase; existing callers of `save()` (theme picker) use the preserving save.
 
 ### Phase 2: Settings context on OverlaySurface
 
 **Effort:** M
 
-- [x] `SettingDescriptor` table covering the existing `EditorConfig` fields (theme, cursor_blink_ms, auto_surround, bracket_matching, show_scrollbar, status_bar_font_size) with 2-5 presets per editable row; theme opens the existing picker.
-- [x] Segmented-chip `Accessory` rendering + Left/Right cycle and click-to-select input handling (new `ModalMsg` arms alongside the existing chip/row patterns).
-- [x] `resolve_settings_rows` ordering authority; fuzzy search wired the same way as every other list context; sections hide when empty under a query.
-- [x] Off-preset value handling: no chip lit when the config's current value doesn't match any choice.
-- [x] Immediate-write-on-change wired to the now-safe `EditorConfig::save()`.
-- [x] `Cmd+,` keybinding + "Open Settings" palette command.
+- [x] One descriptor table in `src/settings.rs` covers theme, cursor blink, auto-surround, bracket matching, scrollbar visibility and status font size, plus mouse hover/delay and format-on-save. Theme opens the existing picker; the other rows offer presets.
+- [x] Shared `Accessory::Choices` geometry drives both painting and chip hit testing. Left/Right cycles, Enter confirms/cycles, and chip clicks set a value. Clicking a row label only selects it.
+- [x] `SettingsState::resolve_rows` is the nucleo-based ordering authority. Search covers section/name/description/YAML keys, preserves table order within sections and omits empty sections. Rendering, actions and automation consume the same filtered order.
+- [x] Off-preset values light no chip and are unchanged by opening/closing Settings. Selecting the already-active chip does not save.
+- [x] Changes return the existing ordered `SaveConfiguration` runtime effect; status font changes also refresh metrics. No I/O was added to update handlers. Existing save-failure status reporting remains in use.
+- [x] `Cmd+,` keybinding + "Open Settings" palette command. Screenshot scenarios and automation understand the new context.
+
+Choice chips shrink within the row's accessory budget on narrow windows and
+truncate their labels; their shared rectangles remain distinct click targets.
+Cursor blink Off restores a steady caret and uses a positive runtime maintenance
+interval, preventing zero-delay event-loop wakeups. The full suite passed 2,293
+tests plus two doctests, strict lint passed, and 1100 px / 360 px headless renders
+were inspected. See the [current audit](../dev/refactoring-audit-2026-09-06.md)
+for exact evidence and limitations. Phase 3 and subsequent native validation
+are recorded below.
 
 ### Phase 3: LSP section
 
 **Effort:** S
 
-- [x] `lsp.enabled` master toggle row and per-server enabled chip rows.
-- [x] Read-only command-override rows (value + YAML key name).
-- [x] Read-only live status rows sourced from `LspUiState.servers`.
+- [x] `lsp.enabled` master toggle row and per-server enabled chip rows, generated from the existing registry. Missing per-server overrides default to On independently of the master flag. Switches reuse existing save/lifecycle effects; unchanged choices do not save.
+- [x] Read-only command-override rows (value + YAML key name). Commands use the clipped detail slot, with a bounded “Read-only” accessory; long paths do not consume unbounded accessory space.
+- [x] Read-only live status rows sourced from `LspUiState.servers`. State changes redraw an open Settings or Language Servers modal without resetting query, selection or row order.
+
+The general descriptor table and registry-derived LSP metadata share one cached
+filtered order in `SettingsState`. Config values and process status are read from
+the current model rather than copied into that metadata. Status uses the existing
+per-server-ID mirror, not a new per-workspace-root aggregate. Disabling stops the
+affected servers; enabling permits lazy startup on the next matching open/edit.
+No separate restart action or lifecycle implementation was added.
+
+Final verification: **2,299 tests passed**, 7 skipped, plus **2 doctests**, 6 ignored;
+strict lint passed. An isolated macOS native window verified `Cmd+,`, keyboard
+switch changes, persistence, unchanged read-only rows, and live Indexing → Ready
+while the modal stayed open. Saves preserved an off-preset blink value and an
+unknown YAML key. The native window was closed cleanly. A final headless render
+verified the shared text/accessory gap correction. See the audit for artifacts.
+Physical mouse interaction and Windows/Linux GUI checks were not performed;
+this fake-server fixture is not the separate real rust-analyzer completion repro.
 
 ### Phase 4 (Future): Keymap tab
 
 **Effort:** M
+
+This historical checklist is preserved for context. The active owner is
+[Settings Keymap Tab](../future/settings-keymap.md); none of these items is
+included in the completed v1 scope.
 
 - [ ] A Keymap tab alongside Settings' categories: merged binding list (embedded + user keymap.yaml, via the existing `merge_bindings`), rendered with `binding_chips`, same fuzzy search as the rest of Settings.
 - [ ] Conflict detection between bindings.
@@ -256,12 +243,12 @@ pub enum SettingValue {
 
 ## Acceptance Criteria
 
-- [x] Opening Settings (`Cmd+,` or palette) shows all sections; typing filters across name/description/keywords with no dead sections shown.
-- [x] Changing a chip writes `EditorConfig::save()` immediately; no save button exists.
+- [x] Opening Settings (`Cmd+,` or palette) shows all sections; typing filters across metadata with no dead sections shown.
+- [x] Changing a chip queues the existing configuration save immediately; no save button exists.
 - [x] A config value written by hand that isn't one of a setting's presets shows no active chip and is never overwritten by opening Settings.
-- [x] Unknown YAML keys and their values survive settings-page saves. Comments and formatting are not retained.
+- [x] Unknown YAML keys survive settings-page saves; known fields update. Comments and formatting are not preserved, and invalid existing YAML fails before writing.
 - [x] LSP section shows `lsp.enabled`, per-server enabled state, command-override values (read-only), and live status per server.
-- [x] No setting-value text input, numeric input, or validation UI exists; the header input is only for search.
+- [x] No free-text/numeric setting-value editor or new validation UI is added. The fuzzy search input and existing save-failure status reporting remain.
 
 ---
 
@@ -283,9 +270,9 @@ pub enum SettingValue {
 
 ## Open Questions
 
-- Narrow-window layout is resolved for v1: chip slots shrink and labels truncate; chips remain individually clickable.
+- Resolved for v1: chips shrink within the shared accessory budget and truncate labels on narrow windows; their distinct rectangles drive both painting and hit testing.
 - Should "Open Settings" support a query-string entry point (`Cmd+,` then jump straight to a section, e.g. from a status-bar click on the LSP status segment) — deferred to whenever the LSP status segment itself needs a destination.
-- Theme is resolved for v1: display the current theme and open the existing Theme Picker from its row.
+- Resolved for v1: the Theme row opens the existing Theme Picker; no second theme discovery or preview surface.
 
 ---
 

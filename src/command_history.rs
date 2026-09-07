@@ -1,7 +1,7 @@
 //! Persistent command palette usage tracking: recency, frequency, and pins.
 //!
 //! Shapes adopted verbatim from
-//! [docs/future/command-palette-enhancements.md](../docs/future/command-palette-enhancements.md)
+//! [docs/archived/command-palette-enhancements.md](../docs/archived/command-palette-enhancements.md)
 //! (overlay-surface.md Phase 4), cloned off the `recent_files.rs`
 //! load/save/`config_paths` template.
 

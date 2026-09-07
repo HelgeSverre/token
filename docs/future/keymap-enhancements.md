@@ -111,9 +111,10 @@ Move selection-clearing logic from `input.rs` into editor movement handlers:
 - Load from `~/.config/token-editor/keymaps/vim.yaml`
 
 ### Keymap Editor UI
-- In-app keybinding editor
-- Search for commands, see current binding, rebind
-- Conflict detection
+
+Tracked in [Settings Keymap Tab](settings-keymap.md): merged binding search,
+chord capture/rebinding, conflict detection, override persistence and base-keymap
+selection. That plan remains active after Settings v1 archival.
 
 ### Platform-Specific User Configs
 - Support `keymap.macos.yaml`, `keymap.linux.yaml`, etc.

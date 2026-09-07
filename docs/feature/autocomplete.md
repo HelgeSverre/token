@@ -47,7 +47,7 @@ Nothing completion-shaped exists. Relevant infrastructure (verified against the 
 - **Fuzzy matching**: `nucleo-matcher` is already a dependency (file finder). Lapce uses the same crate for completion filtering.
 - **Multi-cursor atomic edits**: `EditOperation::Batch` in `src/model/document.rs` — accepting a completion at N cursors is one undo step, no new machinery.
 - **Key routing**: `KeyContext` / `Condition` in `src/keymap/context.rs`; Tab is currently bound unconditionally to `InsertTab` with a standing TODO to make it context-conditional — completion lands exactly in that mechanism.
-- **The hard rendering constraint**: layout is strictly **1 buffer line = 1 visual row** (`TextViewportMap` in `src/model/editor.rs` is pure arithmetic). There is no virtual-text mechanism. Consequence: *single-line* ghost text on the cursor row is cheap (draw after `render_line_text_stage` at `column_to_pixel_x`); *multi-row* ghost text (virtual lines below the cursor) requires the logical→visual mapping that `docs/feature/soft-wrap.md` introduces. This constraint drives the phasing.
+- **Rendering foundation (updated 2026-09-05):** soft wrap now supplies the shared logical→visual mapping in `TextViewportMap`. It does not yet insert virtual suggestion rows or shift suffix text. Ghost text still uses first-line paint plus the multi-line badge; Phase 5+ must extend this shared mapping rather than add a separate render-only row loop.
 - **Prior in-repo prose**: `docs/EDITOR_UI_REFERENCE.md` ch. 7 ("Autocomplete and Overlay Positioning") and `docs/feature/lsp-integration.md` Phase 5 both sketch a completion popup. This document supersedes and details both sketches; the LSP doc's Phase 5 becomes "plug the LSP menu source into this system" (see [LSP Integration](#integration-with-lsp)).
 
 ### Goals
@@ -654,6 +654,6 @@ A stub HTTP server (few dozen lines, `std::net`) speaking canned `/infill` and `
 ### Internal
 - [overlay-surface.md](../archived/overlay-surface.md) — owns the completion popup surface (`Anchor::Cursor`, Completion context, kind badges); prerequisite for the Phase 1 popup. Irrelevant to ghost text, which is in-text-flow paint, not an overlay
 - [lsp-integration.md](../archived/lsp-integration.md) — Phase 5 superseded by this document's Phase 4; also note config is YAML, not TOML
-- [soft-wrap.md](soft-wrap.md) — prerequisite for multi-row ghost text
+- [soft-wrap.md](../archived/soft-wrap.md) — prerequisite for multi-row ghost text
 - [snippets.md](snippets.md) — convergence point for snippet bodies and placeholder navigation
 - `docs/EDITOR_UI_REFERENCE.md` ch. 7 — earlier positioning prose, superseded here
