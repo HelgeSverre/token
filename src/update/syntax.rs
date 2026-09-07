@@ -14,7 +14,7 @@ use std::time::Instant;
 pub const SYNTAX_DEBOUNCE_MS: u64 = 30;
 
 /// Handle syntax-related messages
-pub fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
+pub(super) fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd> {
     match msg {
         SyntaxMsg::ParseReady {
             document_id,

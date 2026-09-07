@@ -15,7 +15,7 @@ use crate::update::lsp::schedule_lsp_did_change;
 use crate::update::syntax::schedule_syntax_parse;
 
 /// Handle CSV mode messages
-pub fn update_csv(model: &mut AppModel, msg: CsvMsg) -> Option<Cmd> {
+pub(super) fn update_csv(model: &mut AppModel, msg: CsvMsg) -> Option<Cmd> {
     match msg {
         CsvMsg::Toggle => toggle_csv_mode(model),
         CsvMsg::Exit => exit_or_cancel_edit(model),

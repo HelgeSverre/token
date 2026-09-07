@@ -11,7 +11,7 @@ use crate::model::{
 use crate::syntax::expansion_candidates;
 
 /// Handle editor messages (cursor movement, viewport scrolling)
-pub fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
+pub(super) fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
     let result = update_editor_inner(model, msg);
     compute_matched_brackets(model);
     result

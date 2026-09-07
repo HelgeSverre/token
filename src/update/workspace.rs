@@ -8,7 +8,7 @@ use crate::util::visible_tree_index_of;
 use super::layout::update_layout;
 
 /// Handle workspace messages (file tree, sidebar)
-pub fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> {
+pub(super) fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Option<Cmd> {
     match msg {
         WorkspaceMsg::ToggleSidebar => {
             if let Some(workspace) = &mut model.workspace {

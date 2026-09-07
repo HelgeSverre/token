@@ -24,7 +24,7 @@ use crate::view::overlay_surface::{resolve_scroll_for_selection, SectionShape};
 use super::app::execute_command;
 
 /// Handle UI messages (status bar, cursor blink, modals)
-pub fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
+pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
     match msg {
         UiMsg::BlinkCursor => {
             if model

@@ -96,7 +96,7 @@ fn push_forward_raw(model: &mut AppModel, entry: JumpEntry) {
 /// Pushes the focused document's current position (the outline/goto-line/
 /// file-finder path — captured at push time since there is no async gap
 /// for those).
-pub fn push_history(model: &mut AppModel) {
+pub(crate) fn push_history(model: &mut AppModel) {
     if let Some(entry) = current_jump_entry(model) {
         push_history_entry(model, entry);
     }
@@ -237,7 +237,7 @@ pub(crate) fn jump_to_location(
 /// `document_id` is tried first (it follows a Save-As-renamed document to
 /// its current path); `path` is the fallback once that document is
 /// closed.
-pub fn navigate_back(model: &mut AppModel) -> Option<Cmd> {
+pub(crate) fn navigate_back(model: &mut AppModel) -> Option<Cmd> {
     let focused_group = model.editor_area.focused_group_id;
     let idx = model
         .jump_history
@@ -254,7 +254,7 @@ pub fn navigate_back(model: &mut AppModel) -> Option<Cmd> {
 /// `Command::NavigateForward`: the mirror of `navigate_back` — pops the
 /// focused group's most recent forward entry, pushing the position being
 /// left back onto the back stack (without clearing forward).
-pub fn navigate_forward(model: &mut AppModel) -> Option<Cmd> {
+pub(crate) fn navigate_forward(model: &mut AppModel) -> Option<Cmd> {
     let focused_group = model.editor_area.focused_group_id;
     let idx = model
         .forward_history

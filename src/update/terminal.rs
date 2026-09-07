@@ -26,7 +26,7 @@ fn next_session_id(model: &AppModel) -> usize {
         .unwrap_or(0)
 }
 
-pub fn update_terminal(model: &mut AppModel, msg: TerminalMsg) -> Option<Cmd> {
+pub(super) fn update_terminal(model: &mut AppModel, msg: TerminalMsg) -> Option<Cmd> {
     match msg {
         TerminalMsg::NewSession => {
             if model.terminal.has_pending_spawn() {

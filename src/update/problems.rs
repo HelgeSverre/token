@@ -204,7 +204,7 @@ fn open_diagnostic(model: &mut AppModel, path: &std::path::Path, index: usize) -
     navigation::jump_to_location(model, None, path, start)
 }
 
-pub fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<Cmd> {
+pub(super) fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<Cmd> {
     match msg {
         ProblemsMsg::SelectPrevious => {
             if let Some(idx) = model.problems_panel.selected_index {

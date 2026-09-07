@@ -37,7 +37,7 @@ fn on_focused_document_changed(model: &mut AppModel) -> Option<Cmd> {
     }
 }
 
-pub fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
+pub(super) fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd> {
     match msg {
         LayoutMsg::NewTab => {
             new_tab_in_focused_group(model);

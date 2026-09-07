@@ -15,7 +15,7 @@ use crate::theme::{load_theme, Theme};
 use super::{update_document, update_layout, update_ui, SYNTAX_DEBOUNCE_MS};
 
 /// Handle app messages (file operations, window events)
-pub fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
+pub(super) fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
     match msg {
         AppMsg::Resize(width, height) => {
             model.resize(width, height);

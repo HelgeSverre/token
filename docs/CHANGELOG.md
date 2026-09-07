@@ -8,6 +8,10 @@ All notable changes to rust-editor are documented in this file.
 
 ### Changed
 
+- Rust integration callers must send messages through `update(model, Msg)`;
+  individual message handlers and internal LSP/syntax scheduling exports are no
+  longer public. Runtime/view helpers with existing callers remain available.
+
 - Removed the unused `TextEditMsg`/`EditContext` routing API and `RopeBuffer`
   wrapper. Document, modal and CSV input continue through their existing message
   handlers, sharing editing primitives without a second dispatch surface.

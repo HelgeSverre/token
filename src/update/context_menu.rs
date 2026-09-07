@@ -13,7 +13,7 @@ use crate::context_menu::{self, ContextMenuTarget, MenuAction};
 use crate::messages::ContextMenuMsg;
 use crate::model::{AppModel, ContextMenuState, CursorOverlayKind, CursorOverlayState};
 
-pub fn update_context_menu(model: &mut AppModel, msg: ContextMenuMsg) -> Option<Cmd> {
+pub(super) fn update_context_menu(model: &mut AppModel, msg: ContextMenuMsg) -> Option<Cmd> {
     match msg {
         ContextMenuMsg::Open { target, anchor } => open_menu(model, target, anchor),
         ContextMenuMsg::ActivateItem { index } => activate_item(model, index),

@@ -104,7 +104,7 @@ pub(crate) fn refresh_outline_if_stale(model: &AppModel) -> Option<Cmd> {
     })
 }
 
-pub fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
+pub(super) fn update_outline(model: &mut AppModel, msg: OutlineMsg) -> Option<Cmd> {
     match msg {
         OutlineMsg::JumpToSymbol { line, col } => {
             // Move cursor to the symbol and focus the editor. Clamp

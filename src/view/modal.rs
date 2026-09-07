@@ -2647,7 +2647,7 @@ mod tests {
         assert_eq!(on.matches('\u{2713}').count(), 2);
         assert!(on.contains(".* \u{2325}\u{2318}R \u{2713}"));
     }
-    use crate::update::update_ui;
+    use crate::update::update;
     use crate::view::hit_test::{hit_test_modal, HitTarget, Point};
 
     /// A Search Everywhere modal open on the Commands tab with a non-empty
@@ -2656,8 +2656,14 @@ mod tests {
     /// against overlay-surface.md's Hit-testing invariant.
     fn opened_palette_model() -> AppModel {
         let mut model = AppModel::new(1200, 800, 1.0, vec![]);
-        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
-        update_ui(&mut model, UiMsg::Modal(ModalMsg::InsertChar('o')));
+        update(
+            &mut model,
+            crate::messages::Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)),
+        );
+        update(
+            &mut model,
+            crate::messages::Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar('o'))),
+        );
         model
     }
 
@@ -2873,7 +2879,10 @@ mod tests {
     #[test]
     fn opening_the_lsp_servers_modal_lists_a_row_per_registered_server() {
         let mut model = AppModel::new(1200, 800, 1.0, vec![]);
-        update_ui(&mut model, UiMsg::ToggleModal(ModalId::LspServers));
+        update(
+            &mut model,
+            crate::messages::Msg::Ui(UiMsg::ToggleModal(ModalId::LspServers)),
+        );
 
         let row_count =
             with_modal_overlay_layout(&model, 1200, 800, 1.0, |_, layout| layout.rows.len())

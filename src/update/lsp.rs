@@ -326,7 +326,7 @@ pub(crate) fn request_formatting(
     })
 }
 
-pub fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
+pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
     match msg {
         LspMsg::FormatDocument { selection_only } => {
             request_formatting(model, selection_only, false)

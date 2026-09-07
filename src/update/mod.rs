@@ -1,6 +1,18 @@
 //! Update functions for the Elm-style architecture
 //!
 //! All state transformations flow through these functions.
+//!
+//! Message handlers are internal: use `update(model, Msg)` so special-tab
+//! routing and shared lifecycle/status synchronization run.
+//! Runtime effect helpers and read-only view projections remain available.
+//!
+//! ```compile_fail
+//! use token::update::update_document;
+//! ```
+//!
+//! ```compile_fail
+//! use token::update::layout::update_layout;
+//! ```
 
 mod app;
 mod completion;
@@ -11,10 +23,10 @@ mod document;
 mod editor;
 mod image;
 pub mod inline;
-pub mod layout;
+mod layout;
 mod lsp;
 pub mod navigation;
-pub mod outline;
+pub(crate) mod outline;
 mod preview;
 pub mod problems;
 mod syntax;
@@ -34,23 +46,17 @@ use crate::tracing::CursorSnapshot;
 #[cfg(debug_assertions)]
 use tracing::{debug, span, Level};
 
-pub use app::{create_default_keymap_file, execute_command, update_app};
-pub use completion::update_completion;
-pub use context_menu::update_context_menu;
-pub use csv::update_csv;
-pub use dock::update_dock;
-pub use document::update_document;
-pub use editor::update_editor;
-pub use layout::update_layout;
-pub use lsp::{
+pub use app::{create_default_keymap_file, execute_command};
+use completion::update_completion;
+use document::update_document;
+use editor::update_editor;
+use layout::update_layout;
+use lsp::{
     close_lsp_document, open_lsp_document, save_lsp_document, schedule_lsp_did_change, update_lsp,
 };
-pub use outline::update_outline;
-pub use preview::update_preview;
-pub use syntax::{schedule_syntax_parse, update_syntax, SYNTAX_DEBOUNCE_MS};
-pub use terminal::update_terminal;
-pub use ui::{resolve_palette_rows, search_everywhere_sections, update_ui, ALL_TAB_GROUP_CAP};
-pub use workspace::update_workspace;
+use syntax::{schedule_syntax_parse, SYNTAX_DEBOUNCE_MS};
+use ui::update_ui;
+pub use ui::{resolve_palette_rows, search_everywhere_sections, ALL_TAB_GROUP_CAP};
 
 /// Main update function - dispatches to sub-handlers
 ///

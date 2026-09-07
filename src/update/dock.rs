@@ -123,7 +123,7 @@ fn with_opened_panel_sync(model: &mut AppModel, panel_id: PanelId, cmd: Cmd) -> 
 }
 
 /// Update function for dock messages
-pub fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
+pub(super) fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
     match msg {
         DockMsg::FocusOrTogglePanel(panel_id) => {
             let is_dock_focused = |pos| model.ui.focus == FocusTarget::Dock(pos);

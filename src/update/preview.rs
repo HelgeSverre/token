@@ -4,7 +4,7 @@ use crate::commands::Cmd;
 use crate::messages::PreviewMsg;
 use crate::model::AppModel;
 
-pub fn update_preview(model: &mut AppModel, msg: PreviewMsg) -> Option<Cmd> {
+pub(super) fn update_preview(model: &mut AppModel, msg: PreviewMsg) -> Option<Cmd> {
     let group_id = model.editor_area.focused_group_id;
 
     match msg {

@@ -45,7 +45,7 @@ use super::text_edits::{plan_text_edits, shift_at, PlannedEdit};
 /// Ctrl+Space is unaffected and still works on an empty query.
 const MIN_AUTO_TRIGGER_PREFIX: usize = 2;
 
-pub fn update_completion(model: &mut AppModel, msg: CompletionMsg) -> Option<Cmd> {
+pub(super) fn update_completion(model: &mut AppModel, msg: CompletionMsg) -> Option<Cmd> {
     match msg {
         CompletionMsg::TriggerMenu => trigger_explicit(model),
         CompletionMsg::MenuNext => move_selection(model, 1),

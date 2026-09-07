@@ -13,7 +13,7 @@ const MAX_SCALE: f64 = 10.0;
 /// Zoom sensitivity per scroll tick
 const ZOOM_FACTOR: f64 = 0.1;
 
-pub fn update_image(model: &mut AppModel, msg: ImageMsg) -> Option<Cmd> {
+pub(super) fn update_image(model: &mut AppModel, msg: ImageMsg) -> Option<Cmd> {
     let editor_id = model.editor_area.focused_editor_id()?;
 
     match msg {

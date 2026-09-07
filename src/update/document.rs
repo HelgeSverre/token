@@ -116,7 +116,7 @@ pub(crate) fn word_end_after(buffer: &ropey::Rope, offset: usize) -> usize {
 }
 
 /// Handle document messages (text editing, undo/redo)
-pub fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
+pub(super) fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
     let result = update_document_inner(model, msg);
     if model.editor().is_plain_text_mode() {
         super::editor::compute_matched_brackets(model);
