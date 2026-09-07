@@ -98,6 +98,17 @@ struct PreparedApp {
     workspace_root: Option<PathBuf>,
 }
 
+/// Legacy/startup callers may not yet have a worker snapshot. Resolve once at
+/// this runtime boundary; normal loaded/saved documents already carry identity.
+fn document_uri(doc: &mut token::model::Document) -> Option<lsp_types::Uri> {
+    if doc.file_identity().is_none() {
+        doc.set_file_identity(Some(token::util::FileIdentity::resolve(
+            doc.file_path.clone()?,
+        )));
+    }
+    doc.file_identity().map(|identity| identity.uri().clone())
+}
+
 /// Application state prepared in parallel with the platform event loop.
 pub struct AppPreparation {
     handle: JoinHandle<PreparedApp>,
@@ -2605,14 +2616,13 @@ impl App {
                 self.lsp_close_document(document_id);
             }
             Cmd::LspClearDiagnostics { document_id } => {
-                if let Some(file_path) = self
+                if let Some(uri) = self
                     .model
                     .editor_area
                     .documents
-                    .get(&document_id)
-                    .and_then(|doc| doc.file_path.clone())
+                    .get_mut(&document_id)
+                    .and_then(document_uri)
                 {
-                    let uri = lsp::path_to_uri(&file_path);
                     self.lsp.diagnostics.remove(&uri);
                     self.lsp.diagnostics_versions.remove(&uri);
                     // The mirror is keyed by `uri_to_path(published_uri)`
@@ -3766,6 +3776,13 @@ impl App {
         root: PathBuf,
         language_id: &'static str,
     ) {
+        let Some(doc) = self.model.editor_area.documents.get_mut(&document_id) else {
+            return;
+        };
+        if doc.file_path.as_ref() != Some(&file_path) {
+            return;
+        }
+        let Some(uri) = document_uri(doc) else { return };
         let Some(handle) = self.lsp.servers.get(&(server_id.clone(), root.clone())) else {
             return;
         };
@@ -3788,7 +3805,6 @@ impl App {
         };
         let text = doc.buffer.to_string();
         let revision = doc.revision;
-        let uri = lsp::path_to_uri(&file_path);
 
         let params = serde_json::json!({
             "textDocument": {

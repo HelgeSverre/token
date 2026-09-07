@@ -51,6 +51,7 @@ pub struct Document {
     pub buffer: Rope,
     /// Path to the file on disk (None for new/unsaved files)
     pub file_path: Option<PathBuf>,
+    file_identity: Option<crate::util::FileIdentity>,
     /// Display name for untitled documents (e.g., "Untitled", "Untitled-2")
     pub untitled_name: Option<String>,
     /// Whether the buffer has unsaved changes
@@ -100,6 +101,7 @@ impl Document {
             id: None,
             buffer: Rope::from(""),
             file_path: None,
+            file_identity: None,
             untitled_name: None,
             is_modified: false,
             undo_stack: Vec::new(),
@@ -126,13 +128,40 @@ impl Document {
     /// Load a document from a file path
     pub fn from_file(path: PathBuf) -> Result<Self, std::io::Error> {
         let content = std::fs::read_to_string(&path)?;
-        let language = LanguageId::from_path(&path);
-        Ok(Self {
-            buffer: Rope::from(content),
-            file_path: Some(path),
-            language,
-            ..Self::new()
-        })
+        Ok(Self::from_loaded_text(
+            &content,
+            crate::util::FileIdentity::resolve(path),
+        ))
+    }
+
+    /// Install worker-read text with its resolved identity, without further I/O.
+    pub fn from_loaded_text(content: &str, identity: crate::util::FileIdentity) -> Self {
+        Self {
+            file_path: Some(identity.source().to_path_buf()),
+            language: LanguageId::from_path(identity.source()),
+            file_identity: Some(identity),
+            ..Self::with_text(content)
+        }
+    }
+
+    /// An identity is usable only while its original path still belongs to us.
+    /// Direct path changes cannot accidentally retain aliases of the old file.
+    pub fn file_identity(&self) -> Option<&crate::util::FileIdentity> {
+        self.file_identity
+            .as_ref()
+            .filter(|identity| self.file_path.as_deref() == Some(identity.source()))
+    }
+
+    pub fn set_file_identity(&mut self, identity: Option<crate::util::FileIdentity>) {
+        self.file_identity =
+            identity.filter(|identity| self.file_path.as_deref() == Some(identity.source()));
+    }
+
+    pub fn matches_file_path(&self, path: &std::path::Path) -> bool {
+        self.file_path.as_deref() == Some(path)
+            || self
+                .file_identity()
+                .is_some_and(|identity| identity.matches_path(path))
     }
 
     /// Create a new empty document with a target file path
@@ -507,6 +536,35 @@ fn find_ascii_case_insensitive(haystack: &str, needle: &str) -> Vec<(usize, usiz
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::FileIdentity;
+    use std::path::Path;
+
+    #[test]
+    fn file_identity_path_changes_invalidate_old_aliases_without_io() {
+        let old = Path::new("/fixture/old-link.rs");
+        let canonical = Path::new("/fixture/old-real.rs");
+        let mut doc = Document::from_loaded_text(
+            "unsaved",
+            FileIdentity::from_resolved(old.into(), canonical),
+        );
+        assert!(doc.matches_file_path(old));
+        assert!(doc.matches_file_path(canonical));
+        doc.file_path = Some("/fixture/new-link.rs".into());
+        assert!(doc.file_identity().is_none());
+        assert!(!doc.matches_file_path(old));
+        assert!(!doc.matches_file_path(canonical));
+        doc.set_file_identity(Some(FileIdentity::from_resolved(old.into(), canonical)));
+        assert!(
+            doc.file_identity().is_none(),
+            "a stale reply must not bind the old identity"
+        );
+        doc.set_file_identity(Some(FileIdentity::from_resolved(
+            "/fixture/new-link.rs".into(),
+            Path::new("/fixture/new-real.rs"),
+        )));
+        assert!(doc.matches_file_path(Path::new("/fixture/new-real.rs")));
+        assert_eq!(doc.buffer.to_string(), "unsaved");
+    }
 
     // ========================================================================
     // Document creation tests

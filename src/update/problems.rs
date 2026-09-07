@@ -9,7 +9,7 @@ use crate::commands::Cmd;
 use crate::messages::ProblemsMsg;
 use crate::model::{diagnostic_mark, AppModel, Mark};
 use crate::update::navigation;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// One addressable row of the Problems panel's flat list.
 #[derive(Debug, Clone, PartialEq)]
@@ -55,38 +55,17 @@ pub fn problems_rows(model: &AppModel) -> Vec<ProblemsRow> {
     rows
 }
 
-/// Mirror keys are canonicalized (they decode from server URIs) while a
-/// focused document's path may not be byte-identical (macOS `/tmp` vs
-/// `/private/tmp`) — byte-compare first, then a file-name-gated
-/// `canonicalize` fallback, the same pattern `find_document_by_uri`
-/// documents (the gate keeps syscalls to the normally-0-or-1 plausible
-/// matches).
-fn is_same_file(path: &Path, focused: Option<&Path>) -> bool {
-    let Some(focused) = focused else { return false };
-    if path == focused {
-        return true;
-    }
-    if path.file_name() != focused.file_name() {
-        return false;
-    }
-    match (std::fs::canonicalize(path), std::fs::canonicalize(focused)) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => false,
-    }
-}
-
 /// The shared group traversal behind materialized rows and layout row
 /// counts. Keeping the scope predicate here prevents rendering,
 /// hit-testing, and update-layer capacity from drifting apart.
 fn problem_groups(model: &AppModel) -> Vec<(&PathBuf, &[lsp_types::Diagnostic])> {
-    let focused_path = model.document().file_path.as_deref();
     let (mut focused, rest): (Vec<_>, Vec<_>) = model
         .lsp
         .diagnostics
         .iter()
         .filter(|(_, diagnostics)| !diagnostics.is_empty())
         .map(|(path, diagnostics)| (path, diagnostics.as_slice()))
-        .partition(|(path, _)| is_same_file(path, focused_path));
+        .partition(|(path, _)| model.document().matches_file_path(path));
     if !model.problems_panel.current_file_only {
         focused.extend(rest);
     }

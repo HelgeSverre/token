@@ -1,7 +1,9 @@
 //! Utility modules
 
 pub mod byte_size;
+mod file_identity;
 pub mod file_validation;
+pub use file_identity::FileIdentity;
 pub mod text;
 pub mod tree;
 

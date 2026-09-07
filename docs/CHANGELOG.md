@@ -8,6 +8,13 @@ All notable changes to rust-editor are documented in this file.
 
 ### Changed
 
+- Loaded documents retain their original and resolved file identity. LSP
+  diagnostics and current-file Problems use the same snapshot without repeated
+  filesystem lookup, including differently named symlinks and missing targets.
+  File URI encoding preserves Unix filename bytes, roots and parent components;
+  malformed encodings and NUL paths are rejected. Async open/save integration
+  follows separately.
+
 - The LSP client decodes complete workspace-symbol responses, rejecting unusable
   locations and bounding retained rows. Shared ranking removes duplicate symbols
   independently of server response order. This protocol foundation does not yet

@@ -430,6 +430,24 @@ impl EditorArea {
         None
     }
 
+    /// Pure lookup by original/canonical spelling. Unknown aliases are resolved
+    /// by the file worker, never from rendering, navigation or diagnostic scope.
+    pub fn find_document_by_path(&self, path: &std::path::Path) -> Option<DocumentId> {
+        self.focused_document_id()
+            .filter(|id| {
+                self.documents
+                    .get(id)
+                    .is_some_and(|doc| doc.matches_file_path(path))
+            })
+            .or_else(|| {
+                self.documents
+                    .iter()
+                    .filter(|(_, doc)| doc.matches_file_path(path))
+                    .map(|(id, _)| *id)
+                    .min_by_key(|id| id.0)
+            })
+    }
+
     /// Check if a file is already open (quick check without returning details)
     pub fn is_file_open(&self, path: &std::path::Path) -> bool {
         self.find_open_file(path).is_some()

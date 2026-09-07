@@ -1060,52 +1060,11 @@ fn open_location_list_popup(
     Some(Cmd::Redraw)
 }
 
-/// Finds the open document whose file path canonicalizes to `uri`, per
-/// `lsp::path_to_uri` (the "raw `PathBuf`s are never compared" rule from
-/// the design doc's URIs and Paths section).
-///
-/// `path_to_uri` canonicalizes (an `fs::canonicalize` syscall), so calling
-/// it for every open document on every publish is wasteful — a
-/// workspace-wide publish burst over many distinct URIs costs O(open
-/// docs) syscalls per publish. `uri_to_path` is a pure string decode (no
-/// syscall); filtering on file name first shrinks the canonicalize calls
-/// to the (normally 0-or-1) documents that could plausibly match.
+/// Diagnostics and workspace edits share the document's boundary-resolved identity.
 pub(crate) fn find_document_by_uri(model: &AppModel, uri: &lsp_types::Uri) -> Option<DocumentId> {
-    let target_name = crate::lsp::uri_to_path(uri)?.file_name()?.to_owned();
-    let fast_path = model
+    model
         .editor_area
-        .documents
-        .iter()
-        .filter(|(_, doc)| {
-            doc.file_path
-                .as_deref()
-                .and_then(std::path::Path::file_name)
-                .is_some_and(|name| name == target_name)
-        })
-        .find(|(_, doc)| {
-            doc.file_path
-                .as_deref()
-                .is_some_and(|path| &crate::lsp::path_to_uri(path) == uri)
-        })
-        .map(|(id, _)| *id);
-    // The file-name prefilter above is a fast-path optimization only — it
-    // assumes the open document's raw basename matches the canonical
-    // publish URI's, which a symlink to a differently-named target
-    // (bazel/node_modules/dotfile layouts) breaks. Fall back to a full
-    // canonicalizing scan rather than silently dropping the publish; still
-    // O(open docs), same as every other document already pays here.
-    fast_path.or_else(|| {
-        model
-            .editor_area
-            .documents
-            .iter()
-            .find(|(_, doc)| {
-                doc.file_path
-                    .as_deref()
-                    .is_some_and(|path| &crate::lsp::path_to_uri(path) == uri)
-            })
-            .map(|(id, _)| *id)
-    })
+        .find_document_by_path(&crate::lsp::uri_to_path(uri)?)
 }
 
 #[cfg(test)]
@@ -1116,6 +1075,33 @@ mod tests {
 
     fn model() -> AppModel {
         AppModel::new(800, 600, 1.0, vec![])
+    }
+
+    #[test]
+    fn file_identity_diagnostics_and_problems_use_the_loaded_snapshot() {
+        let mut model = model();
+        let document_id = model.document().id;
+        let identity = crate::util::FileIdentity::from_resolved(
+            "/fixture/different-name.rs".into(),
+            Path::new("/fixture/real.rs"),
+        );
+        *model.document_mut() =
+            crate::model::Document::from_loaded_text("fn café() {}", identity.clone());
+        model.document_mut().id = document_id;
+        let diagnostic = lsp_types::Diagnostic::new_simple(Default::default(), "snapshot".into());
+        update_lsp(
+            &mut model,
+            LspMsg::DiagnosticsPublished {
+                uri: identity.uri().clone(),
+                version: None,
+                diagnostics: vec![diagnostic.clone()],
+            },
+        );
+        assert_eq!(model.document().diagnostics, vec![diagnostic]);
+        assert_eq!(crate::update::problems::problems_row_count(&model), 2);
+        model.document_mut().file_path = Some("/fixture/other.rs".into());
+        assert!(find_document_by_uri(&model, identity.uri()).is_none());
+        assert_eq!(crate::update::problems::problems_row_count(&model), 0);
     }
 
     #[test]

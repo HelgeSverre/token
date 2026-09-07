@@ -9,6 +9,26 @@ use token::cli::{StartupConfig, StartupMode};
 use token::messages::DocumentMsg;
 use token::outline::{OutlineData, OutlineKind, OutlineNode, OutlineRange};
 
+#[test]
+fn file_identity_runtime_boundary_keeps_snapshot_and_refreshes_a_changed_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let original = dir.path().join("original.rs");
+    let renamed = dir.path().join("renamed.rs");
+    std::fs::write(&original, "buffer").unwrap();
+    let mut document = token::model::Document::from_file(original.clone()).unwrap();
+    let previous_uri = document_uri(&mut document).unwrap();
+    std::fs::rename(&original, &renamed).unwrap();
+    assert_eq!(document_uri(&mut document).unwrap(), previous_uri);
+    document.file_path = Some(renamed.clone());
+    let current_uri = document_uri(&mut document).unwrap();
+    assert_ne!(current_uri, previous_uri);
+    assert_eq!(
+        token::lsp::uri_to_path(&current_uri).unwrap(),
+        std::fs::canonicalize(renamed).unwrap()
+    );
+    assert!(!document.matches_file_path(&original));
+    assert_eq!(document.buffer.to_string(), "buffer");
+}
 fn empty_startup_config() -> StartupConfig {
     StartupConfig {
         mode: StartupMode::Empty,

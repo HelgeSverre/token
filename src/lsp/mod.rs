@@ -16,6 +16,7 @@ pub mod uri;
 pub mod workspace_symbols;
 
 pub use position::{lsp_to_position, position_to_lsp};
+pub(crate) use uri::resolved_path_to_uri;
 pub use uri::{path_to_uri, uri_to_path};
 
 use crate::syntax::LanguageId;
