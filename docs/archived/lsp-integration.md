@@ -2,7 +2,7 @@
 
 Spawn language servers per workspace, keep documents synchronized over JSON-RPC, and unlock diagnostics, go-to-definition, hover documentation, and completion — without breaking the single-threaded Elm loop or replacing any tree-sitter feature that already works.
 
-> **Status:** ✅ Shipped — Phases 1–5 plus signature help, rename, code actions, formatting; "Phase 6+" items live in ROADMAP.md; archived 2026-09-02
+> **Status:** ✅ Shipped — Phases 1–5 plus signature help, rename, code actions, and formatting; archived 2026-09-02
 > **Priority:** P2 (Important)
 > **Effort:** XL (2+ weeks, phased — each phase ships independently)
 > **Created:** 2026-08-11

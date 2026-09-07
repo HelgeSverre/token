@@ -224,7 +224,7 @@ selection merge bugs, all caused by not calling `merge_overlapping_selections()`
 7 consistently. One-off fixes would have been slower and less consistent.
 
 The multi-cursor implementation threads are
-public: [T-d4c75d42](https://ampcode.com/threads/T-d4c75d42-c0c1-4746-a609-593bff88db6d), [T-6c1b5841](https://ampcode.com/threads/T-6c1b5841-b5f3-4936-b875-338fd101a179), [T-e751be48](https://ampcode.com/threads/T-e751be48-ab56-4b90-a196-d5df892d955b).
+public: [T-d4c75d42](../ampcode-threads/T-d4c75d42-c0c1-4746-a609-593bff88db6d.md), [T-6c1b5841](../ampcode-threads/T-6c1b5841-b5f3-4936-b875-338fd101a179.md), [T-e751be48](../ampcode-threads/T-e751be48-ab56-4b90-a196-d5df892d955b.md).
 You can see exactly how the conversations played out.
 
 ---
@@ -304,7 +304,7 @@ plan.
 Only now did I start coding. The implementation sessions referenced the design doc constantly. No architectural
 decisions during implementation—those were already made.
 
-The keymapping research thread: [T-35b11d40](https://ampcode.com/threads/T-35b11d40-96b0-4177-9c75-4c723dfd8f80). The
+The keymapping research thread: [T-35b11d40](../ampcode-threads/T-35b11d40-96b0-4177-9c75-4c723dfd8f80.md). The
 implementation resulted in 74 default keybindings with platform-aware modifiers (Cmd on macOS, Ctrl elsewhere) and
 context conditions.
 
@@ -332,8 +332,8 @@ After: main.rs was 20 lines. Seven focused modules. All 669 tests passing.
 The key to Improve mode: tests are your invariant. "Refactor this, all tests must still pass" is a clear success
 criterion. The AI can be aggressive about restructuring because the tests catch regressions.
 
-Threads for this extraction sprint: [T-ce688bab](https://ampcode.com/threads/T-ce688bab-2373-4b8e-bf65-436948e19853)
-through [T-072af2cb](https://ampcode.com/threads/T-072af2cb-28ed-4086-8bc2-f3b5c5a74ab7).
+Threads for this extraction sprint: [T-ce688bab](../ampcode-threads/T-ce688bab-2373-4b8e-bf65-436948e19853.md)
+through [T-072af2cb](../ampcode-threads/T-072af2cb-28ed-4086-8bc2-f3b5c5a74ab7.md).
 
 ---
 
@@ -361,8 +361,8 @@ problems, not routine features.
 
 ## The 116 Threads
 
-Everything I've described is documented in 116 public conversation threads
-on [my Amp Code profile](https://ampcode.com/@helgesverre).
+Everything I've described is documented in 116 conversation threads preserved
+in the repository-owned [Amp conversation archive](../ampcode-threads/README.md).
 
 This matters because most AI development content is "trust me, this worked." You can't verify it. You can't see the
 actual prompts, the false starts, the corrections.
@@ -403,7 +403,7 @@ If you're starting a complex AI-assisted project:
 ---
 
 Token is MIT licensed and available at [github.com/HelgeSverre/token](https://github.com/HelgeSverre/token). The
-conversation threads are at [ampcode.com/@helgesverre](https://ampcode.com/@helgesverre).
+conversation threads are in the [repository archive](../ampcode-threads/README.md).
 
 The editor is useful. The methodology is the interesting part.
 

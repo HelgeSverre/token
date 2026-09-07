@@ -774,7 +774,6 @@ The closest analog to our integration. Steel is a Scheme dialect embedded in a R
 
 - [Macros design](macros.md) -- command recording/replay, complements scripting
 - [Keymapping](../archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) -- keymap architecture
-- [Roadmap](../ROADMAP.md) -- planned features
 - [Editor UI Reference](../EDITOR_UI_REFERENCE.md) -- UI component inventory
 
 ### External Resources

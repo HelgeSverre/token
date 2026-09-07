@@ -2,10 +2,10 @@
 import SiteLayout from '../layouts/SiteLayout.astro';
 
 const stats = [
-  { value: '173+', label: 'Conversations' },
-  { value: '15k+', label: 'Lines of code' },
-  { value: '700+', label: 'Tests passing' },
-  { value: '20', label: 'Languages' },
+  { value: '171', label: 'Archived threads' },
+  { value: 'Rust', label: 'Application core' },
+  { value: 'MIT', label: 'License' },
+  { value: 'Git', label: 'Durable record' },
 ];
 
 const timeline = [
@@ -135,18 +135,18 @@ const lessons = [
 ];
 ---
 
-<SiteLayout title="Built with AI — Token" description="How Token was built through 173+ conversations with AI coding assistants. The methodology, the threads, and the lessons learned.">
+<SiteLayout title="Built with AI — Token" description="How Token was built with AI coding assistants. The methodology, archived conversations, and lessons learned.">
 
 <!-- Hero -->
 <section class="ai-hero">
-  <p class="ai-tag">Open development / Amp Code / 173+ threads</p>
+  <p class="ai-tag">Open development / Amp Code / 171 archived threads</p>
   <h1>
     <span>Built with AI,</span>
     <span class="accent">in the open</span>
   </h1>
-  <p class="ai-hero-desc">Token is a multi-cursor text editor written in Rust — around 15,000 lines of code built primarily through 173+ conversations with <a href="https://ampcode.com" target="_blank">Amp Code</a>. Every feature, every bug fix, every architectural decision is documented publicly.</p>
+  <p class="ai-hero-desc">Token is a multi-cursor text editor written in Rust and developed primarily through conversations with <a href="https://ampcode.com" target="_blank">Amp Code</a>. The referenced conversations are preserved alongside the source, design documents, and commit history.</p>
   <div class="ai-hero-actions">
-    <a href="https://ampcode.com/@helgesverre" class="btn-primary" target="_blank">View all threads →</a>
+    <a href="https://github.com/HelgeSverre/token/tree/main/docs/ampcode-threads" class="btn-primary" target="_blank">View archived threads →</a>
     <a href="https://github.com/helgesverre/token" class="btn-ghost" target="_blank">View source →</a>
   </div>
 </section>
@@ -215,7 +215,7 @@ const lessons = [
 <!-- Notable Threads -->
 <section class="threads-section">
   <h2 class="section-title">Notable threads</h2>
-  <p class="section-desc">Highlights from 173+ conversations. Each links to the full Amp Code thread.</p>
+  <p class="section-desc">Highlights from the repository archive. Each links to a reviewed transcript snapshot.</p>
 
   <div class="threads-list">
     {threads.map((t) => (
@@ -231,7 +231,7 @@ const lessons = [
           <p class="thread-desc">{t.summary}</p>
           <div class="thread-footer">
             <span class="thread-lesson"><strong>Lesson:</strong> {t.lesson}</span>
-            <a href={`https://ampcode.com/threads/${t.id}`} class="thread-link" target="_blank" rel="noopener noreferrer">View thread →</a>
+            <a href={`https://github.com/HelgeSverre/token/blob/main/docs/ampcode-threads/${t.id}.md`} class="thread-link" target="_blank" rel="noopener noreferrer">View transcript →</a>
           </div>
         </div>
       </details>
@@ -259,8 +259,8 @@ const lessons = [
 <section class="ai-cta">
   <div class="ai-cta-inner">
     <h2>Want to see the conversations?</h2>
-    <p>All 173+ threads are public. See how every feature was planned, implemented, and debugged.</p>
-    <a href="https://ampcode.com/@helgesverre" class="btn-primary" target="_blank">Browse threads on Amp →</a>
+    <p>Browse 171 conversations preserved with the repository, including the prompts, implementation work, and corrections.</p>
+    <a href="https://github.com/HelgeSverre/token/tree/main/docs/ampcode-threads" class="btn-primary" target="_blank">Browse the archive →</a>
   </div>
 </section>
 

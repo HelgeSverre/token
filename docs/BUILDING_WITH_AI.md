@@ -1,6 +1,6 @@
 # AI-Assisted Development: Building Token
 
-Token is a multi-cursor text editor written in Rust—around 15,000 lines of code built primarily through 173+ conversations with [Amp Code](https://ampcode.com/@helgesverre).
+Token is a multi-cursor text editor written in Rust and developed primarily through conversations with AI coding assistants. The 171 Amp conversations referenced by this document are preserved in the repository-owned [conversation archive](ampcode-threads/README.md).
 
 This document describes the methodology that made sustained AI collaboration work on a project that doesn't fit in a single context window. It's not about what AI can do in a demo; it's about what actually works across months of development.
 
@@ -103,7 +103,6 @@ Key: specify your Justfile/scripts so agents use `just test` instead of inventin
 
 | Path                                             | Purpose                                             |
 | ------------------------------------------------ | --------------------------------------------------- |
-| [docs/ROADMAP.md](ROADMAP.md)                    | Planned features with design doc links              |
 | [docs/CHANGELOG.md](CHANGELOG.md)                | Completed work (reference when things break)        |
 | [docs/EDITOR_UI_REFERENCE.md](EDITOR_UI_REFERENCE.md) | Domain reference (geometry, coordinates, scrolling) |
 | `docs/feature/`                                  | Design specs for planned features                   |
@@ -161,7 +160,7 @@ Token's development followed distinct phases, each with focused objectives:
 ## Notable Threads
 
 <details>
-<summary><strong>Oracle: UI Reference Deep Review</strong> | <a href="https://ampcode.com/threads/T-7b92a860-a2f7-4397-985c-73b2fa3e9582">T-7b92a860</a></summary>
+<summary><strong>Oracle: UI Reference Deep Review</strong> | <a href="ampcode-threads/T-7b92a860-a2f7-4397-985c-73b2fa3e9582.md">T-7b92a860</a></summary>
 
 **Date**: 2025-12-03
 
@@ -185,7 +184,7 @@ The Oracle performed a comprehensive technical review of EDITOR_UI_REFERENCE.md 
 </details>
 
 <details>
-<summary><strong>Librarian: Keymap System Design</strong> | <a href="https://ampcode.com/threads/T-35b11d40-96b0-4177-9c75-4c723dfd8f80">T-35b11d40</a></summary>
+<summary><strong>Librarian: Keymap System Design</strong> | <a href="ampcode-threads/T-35b11d40-96b0-4177-9c75-4c723dfd8f80.md">T-35b11d40</a></summary>
 
 **Date**: 2025-12-06
 
@@ -206,7 +205,7 @@ The Oracle performed a comprehensive technical review of EDITOR_UI_REFERENCE.md 
 </details>
 
 <details>
-<summary><strong>Critical Bug: Cmd+Z Was Typing 'z'!</strong> | <a href="https://ampcode.com/threads/T-519a8c9d-b94f-45e5-98e0-5bfc34c77cbf">T-519a8c9d</a></summary>
+<summary><strong>Critical Bug: Cmd+Z Was Typing 'z'!</strong> | <a href="ampcode-threads/T-519a8c9d-b94f-45e5-98e0-5bfc34c77cbf.md">T-519a8c9d</a></summary>
 
 **Date**: 2025-12-06
 
@@ -229,7 +228,7 @@ if (modifiers.control_key() || modifiers.super_key()) && key == "z" { ... }
 </details>
 
 <details>
-<summary><strong>Split View: EditorArea Architecture</strong> | <a href="https://ampcode.com/threads/T-29b1dd08-eee1-44fb-abd5-eb982d6bcd52">T-29b1dd08</a></summary>
+<summary><strong>Split View: EditorArea Architecture</strong> | <a href="ampcode-threads/T-29b1dd08-eee1-44fb-abd5-eb982d6bcd52.md">T-29b1dd08</a></summary>
 
 **Date**: 2025-12-06
 
@@ -256,7 +255,7 @@ impl AppModel {
 </details>
 
 <details>
-<summary><strong>Multi-Cursor: Only Primary Cursor Moved!</strong> | <a href="https://ampcode.com/threads/T-d4c75d42-c0c1-4746-a609-593bff88db6d">T-d4c75d42</a></summary>
+<summary><strong>Multi-Cursor: Only Primary Cursor Moved!</strong> | <a href="ampcode-threads/T-d4c75d42-c0c1-4746-a609-593bff88db6d.md">T-d4c75d42</a></summary>
 
 **Date**: 2025-12-06
 
@@ -290,7 +289,7 @@ fn move_all_cursors_left(&mut self, doc: &Document) {
 </details>
 
 <details>
-<summary><strong>Selection Merging: merge_overlapping_selections()</strong> | <a href="https://ampcode.com/threads/T-e751be48-ab56-4b90-a196-d5df892d955b">T-e751be48</a></summary>
+<summary><strong>Selection Merging: merge_overlapping_selections()</strong> | <a href="ampcode-threads/T-e751be48-ab56-4b90-a196-d5df892d955b.md">T-e751be48</a></summary>
 
 **Date**: 2025-12-06
 
@@ -331,7 +330,7 @@ Systematic extraction from monolithic files:
 </details>
 
 <details>
-<summary><strong>Librarian: Zed GPUI Deep Dive</strong> | <a href="https://ampcode.com/threads/T-c764b2bc-4b0b-4a2a-8c65-c11460405741">T-c764b2bc</a></summary>
+<summary><strong>Librarian: Zed GPUI Deep Dive</strong> | <a href="ampcode-threads/T-c764b2bc-4b0b-4a2a-8c65-c11460405741.md">T-c764b2bc</a></summary>
 
 **Date**: 2025-12-07
 
@@ -353,7 +352,7 @@ Systematic extraction from monolithic files:
 </details>
 
 <details>
-<summary><strong>Keymapping System v0.2.0</strong> | <a href="https://ampcode.com/threads/T-019b217e-cd52-76ce-bdf5-f17b8d46105d">T-019b217e</a></summary>
+<summary><strong>Keymapping System v0.2.0</strong> | <a href="ampcode-threads/T-019b217e-cd52-76ce-bdf5-f17b8d46105d.md">T-019b217e</a></summary>
 
 **Date**: 2025-12-15
 
@@ -386,7 +385,7 @@ Systematic extraction from monolithic files:
 </details>
 
 <details>
-<summary><strong>Syntax Highlighting with Tree-sitter</strong> | <a href="https://ampcode.com/threads/T-019b22cc-7eae-750e-92dc-a62e57a18d8f">T-019b22cc</a></summary>
+<summary><strong>Syntax Highlighting with Tree-sitter</strong> | <a href="ampcode-threads/T-019b22cc-7eae-750e-92dc-a62e57a18d8f.md">T-019b22cc</a></summary>
 
 **Date**: 2025-12-15
 
@@ -412,7 +411,7 @@ Edit → DebouncedSyntaxParse → ParseReady → Worker Thread → ParseComplete
 </details>
 
 <details>
-<summary><strong>CSV Viewer with Cell Editing</strong> | <a href="https://ampcode.com/threads/T-019b2783-7db1-73cf-b7de-2373fcbb61f0">T-019b2783</a></summary>
+<summary><strong>CSV Viewer with Cell Editing</strong> | <a href="ampcode-threads/T-019b2783-7db1-73cf-b7de-2373fcbb61f0.md">T-019b2783</a></summary>
 
 **Date**: 2025-12-16
 
@@ -437,7 +436,7 @@ Edit → DebouncedSyntaxParse → ParseReady → Worker Thread → ParseComplete
 </details>
 
 <details>
-<summary><strong>Workspace Management & File Tree</strong> | <a href="https://ampcode.com/threads/T-019b2b7a-8dd7-763a-9ab7-3132ddcf516a">T-019b2b7a</a></summary>
+<summary><strong>Workspace Management & File Tree</strong> | <a href="ampcode-threads/T-019b2b7a-8dd7-763a-9ab7-3132ddcf516a.md">T-019b2b7a</a></summary>
 
 **Date**: 2025-12-17
 
@@ -467,7 +466,7 @@ struct Workspace {
 </details>
 
 <details>
-<summary><strong>HiDPI Display Scaling Fixes</strong> | <a href="https://ampcode.com/threads/T-019b2476-55a8-7058-9ba9-9360a9280c1b">T-019b2476</a></summary>
+<summary><strong>HiDPI Display Scaling Fixes</strong> | <a href="ampcode-threads/T-019b2476-55a8-7058-9ba9-9360a9280c1b.md">T-019b2476</a></summary>
 
 **Date**: 2025-12-16
 
@@ -498,7 +497,7 @@ pub struct ScaledMetrics {
 </details>
 
 <details>
-<summary><strong>Unified Text Editing System</strong> | <a href="https://ampcode.com/threads/T-019b3643-79af-7573-bb69-18dac832eb94">T-019b3643</a></summary>
+<summary><strong>Unified Text Editing System</strong> | <a href="ampcode-threads/T-019b3643-79af-7573-bb69-18dac832eb94.md">T-019b3643</a></summary>
 
 **Date**: 2025-12-19
 
@@ -541,7 +540,7 @@ pub enum TextEditMsg {
 </details>
 
 <details>
-<summary><strong>Event Loop Spinning: 7 FPS → 60 FPS</strong> | <a href="https://ampcode.com/threads/T-019b3bbd-d4fd-75df-81a0-c94a5e693227">T-019b3bbd</a></summary>
+<summary><strong>Event Loop Spinning: 7 FPS → 60 FPS</strong> | <a href="ampcode-threads/T-019b3bbd-d4fd-75df-81a0-c94a5e693227.md">T-019b3bbd</a></summary>
 
 **Date**: 2025-12-20
 
@@ -573,7 +572,7 @@ ControlFlow::WaitUntil(next_cursor_blink)
 </details>
 
 <details>
-<summary><strong>Markdown Preview & Docked Panels</strong> | <a href="https://ampcode.com/threads/T-019b9893-43cd-72ea-bcb4-9e0e1494e517">T-019b9893</a></summary>
+<summary><strong>Markdown Preview & Docked Panels</strong> | <a href="ampcode-threads/T-019b9893-43cd-72ea-bcb4-9e0e1494e517.md">T-019b9893</a></summary>
 
 **Date**: 2026-01-07
 
@@ -604,7 +603,7 @@ struct Dock {
 </details>
 
 <details>
-<summary><strong>Mouse Event Handling Refactor</strong> | <a href="https://ampcode.com/threads/T-019b9d40-e7f7-760c-81ce-7dcc1796705e">T-019b9d40</a></summary>
+<summary><strong>Mouse Event Handling Refactor</strong> | <a href="ampcode-threads/T-019b9d40-e7f7-760c-81ce-7dcc1796705e.md">T-019b9d40</a></summary>
 
 **Date**: 2026-01-08
 
@@ -632,7 +631,7 @@ enum HitTarget {
 </details>
 
 <details>
-<summary><strong>Bracket Matching & Auto-Surround</strong> | <a href="https://ampcode.com/threads/T-019c7293-f967-73f6-b6b4-e3c2e946dfad">T-019c7293</a></summary>
+<summary><strong>Bracket Matching & Auto-Surround</strong> | <a href="ampcode-threads/T-019c7293-f967-73f6-b6b4-e3c2e946dfad.md">T-019c7293</a></summary>
 
 **Date**: 2026-02-18
 
@@ -650,7 +649,7 @@ Both features are configurable (`auto_surround`, `bracket_matching` in config.ya
 </details>
 
 <details>
-<summary><strong>Scroll Bug: Viewport Thought It Was Half-Size</strong> | <a href="https://ampcode.com/threads/T-019c7311-dbee-7068-b3cc-ecc6f22d04af">T-019c7311</a></summary>
+<summary><strong>Scroll Bug: Viewport Thought It Was Half-Size</strong> | <a href="ampcode-threads/T-019c7311-dbee-7068-b3cc-ecc6f22d04af.md">T-019c7311</a></summary>
 
 **Date**: 2026-02-18
 
@@ -691,7 +690,7 @@ flowchart TD
 </details>
 
 <details>
-<summary><strong>Syntax Perf: Pipeline Rewrite</strong> | <a href="https://ampcode.com/threads/T-019c7326-f328-7330-b888-426528b60efe">T-019c7326</a></summary>
+<summary><strong>Syntax Perf: Pipeline Rewrite</strong> | <a href="ampcode-threads/T-019c7326-f328-7330-b888-426528b60efe.md">T-019c7326</a></summary>
 
 **Date**: 2026-02-19
 
@@ -720,7 +719,7 @@ self.syntax_deadline = Some(Instant::now() + Duration::from_millis(50));
 </details>
 
 <details>
-<summary><strong>Recent Files: Cmd+E Modal</strong> | <a href="https://ampcode.com/threads/T-019c736c-b9dd-7227-a190-de497ef7f2d0">T-019c736c</a></summary>
+<summary><strong>Recent Files: Cmd+E Modal</strong> | <a href="ampcode-threads/T-019c736c-b9dd-7227-a190-de497ef7f2d0.md">T-019c736c</a></summary>
 
 **Date**: 2026-02-19
 
@@ -740,7 +739,7 @@ self.syntax_deadline = Some(Instant::now() + Duration::from_millis(50));
 </details>
 
 <details>
-<summary><strong>Code Outline Panel</strong> | <a href="https://ampcode.com/threads/T-019c736a-5e58-75bc-978d-9f6a6f1ee57a">T-019c736a</a></summary>
+<summary><strong>Code Outline Panel</strong> | <a href="ampcode-threads/T-019c736a-5e58-75bc-978d-9f6a6f1ee57a.md">T-019c736a</a></summary>
 
 **Date**: 2026-02-19
 
@@ -772,183 +771,183 @@ pub struct OutlineNode {
 
 ---
 
-## Full Thread Reference (173+ threads)
+## Full Thread Reference (171 threads)
 
-All conversations are public. Sorted by timestamp (oldest first).
+These reviewed snapshots are stored in the repository and sorted by timestamp (oldest first).
 
 | Date/Time        | Thread                                                                                          | Type     | Summary                                                                                                |
 | ---------------- | ----------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
-| 2025-12-03 21:26 | [UI Reference Review](https://ampcode.com/threads/T-7b92a860-a2f7-4397-985c-73b2fa3e9582)       | Research | Generated [Technical Reference Document](EDITOR_UI_REFERENCE.md) based on research from Librarian |
-| 2025-12-04 09:56 | [Reference Doc Polish](https://ampcode.com/threads/T-750a0e44-2302-4b5e-8cdc-70b14c3f7930)      | Research | Continuing reference doc review and rewrite                                                            |
-| 2025-12-05 23:01 | [Status Bar Separators](https://ampcode.com/threads/T-ce8edd72-f084-4fba-8c86-276df333de96)     | Feature  | Design 1px separator segment for status bar                                                            |
-| 2025-12-06 00:10 | [Selection Arrow Keys](https://ampcode.com/threads/T-de4eaf86-9b34-489a-b6c8-e5c0154f1aff)      | Bugfix   | Fix arrow keys with selection behavior                                                                 |
-| 2025-12-06 01:27 | [Undo/Redo Gaps](https://ampcode.com/threads/T-519a8c9d-b94f-45e5-98e0-5bfc34c77cbf)            | Bugfix   | Fix undo/redo for selection delete, Cmd+Z handling                                                     |
-| 2025-12-06 03:03 | [Undo/Redo Continued](https://ampcode.com/threads/T-60e201bf-322a-4190-8671-3afe9ad7500e)       | Feature  | Split view phases 1-2, undo/redo completion                                                            |
-| 2025-12-06 03:25 | [Codebase Analysis](https://ampcode.com/threads/T-57a3ad00-4185-48a7-b12d-5ffb295c84ab)         | Setup    | Fresh codebase analysis and AGENTS.md update                                                           |
-| 2025-12-06 03:53 | [Perf Tooling Research](https://ampcode.com/threads/T-6ff7dc54-9991-41fe-b168-f328b499a904)     | Research | Performance profiling and benchmarking tooling                                                         |
-| 2025-12-06 04:08 | [Split View Phases 3-7](https://ampcode.com/threads/T-29b1dd08-eee1-44fb-abd5-eb982d6bcd52)     | Feature  | Implement split view AppModel, handlers, rendering                                                     |
-| 2025-12-06 04:17 | [Keymap Design](https://ampcode.com/threads/T-35b11d40-96b0-4177-9c75-4c723dfd8f80)             | Research | Research configurable keyboard mapping systems                                                         |
-| 2025-12-06 04:17 | [Test Infrastructure](https://ampcode.com/threads/T-39bdb354-08b2-4e0a-973d-75aeecab8a89)       | Research | Review test patterns, identify improvements                                                            |
-| 2025-12-06 04:17 | [Rendering Performance](https://ampcode.com/threads/T-4272a15a-a0e8-4a74-9870-d793d36c33a0)     | Research | Analyze fontdue/softbuffer rendering hot paths                                                         |
-| 2025-12-06 04:17 | [DX Improvements](https://ampcode.com/threads/T-88cd73c6-0f23-461e-ae99-48b1d9908c0e)           | Research | Developer experience improvement opportunities                                                         |
-| 2025-12-06 04:17 | [Perf Infrastructure](https://ampcode.com/threads/T-9ff4cbc0-231e-4cbb-8abb-867de74409c4)       | Research | Audit existing PerfStats and monitoring                                                                |
-| 2025-12-06 04:17 | [Text Hot Paths](https://ampcode.com/threads/T-ac8b817c-ee1c-49ea-af20-4fd2766ad531)            | Research | Identify text operations needing benchmarks                                                            |
-| 2025-12-06 04:25 | [Fix update.rs](https://ampcode.com/threads/T-4d426fd5-17f4-48a1-8c5a-6d72f57536c2)             | Refactor | Fix compilation after model accessor change                                                            |
-| 2025-12-06 04:33 | [Fix main.rs](https://ampcode.com/threads/T-34c36886-50c9-4fc3-a97a-304bb6ba6bf4)               | Refactor | Fix compilation after model accessor change                                                            |
-| 2025-12-06 04:40 | [Fix Tests](https://ampcode.com/threads/T-4948f549-c762-4fe3-b1b6-65219754ffb8)                 | Refactor | Fix test files after model accessor change                                                             |
-| 2025-12-06 06:17 | [Feedback Update](https://ampcode.com/threads/T-778bf91f-b35b-4e11-a895-4ccc9a28feed)           | Docs     | Update FEEDBACK.md with current progress                                                               |
-| 2025-12-06 06:18 | [Multi-Group Render](https://ampcode.com/threads/T-f7453e71-4877-49df-b174-d3ec2534f601)        | Feature  | Refactor rendering for split view groups                                                               |
-| 2025-12-06 08:08 | [Split View Polish](https://ampcode.com/threads/T-e982211e-9ad0-465b-b65e-288965968077)         | Feature  | Split view edge cases and layout tests                                                                 |
-| 2025-12-06 10:26 | [GUI Library Review](https://ampcode.com/threads/T-82acac63-89cb-4bb0-bad7-bcc4f76af3cd)        | Research | Review areweguiyet.com, abstraction layer design                                                       |
-| 2025-12-06 11:17 | [Bugfix Session](https://ampcode.com/threads/T-803561f4-2bd4-4545-9e0a-ff08d3e15e04)            | Bugfix   | Selection bugs, delete line, duplicate line                                                            |
-| 2025-12-06 11:27 | [Codebase Reorg](https://ampcode.com/threads/T-5d9034ac-734a-4edd-9060-e28ad9572736)            | Docs     | Roadmap cleanup, changelog, organization plan                                                          |
-| 2025-12-06 12:39 | [Expand/Shrink Select](https://ampcode.com/threads/T-568febc8-2f67-408d-b7ee-32dc212e88f6)      | Feature  | Implement expand/shrink selection with history                                                         |
-| 2025-12-06 15:04 | [Multi-Cursor Movement](https://ampcode.com/threads/T-d4c75d42-c0c1-4746-a609-593bff88db6d)     | Feature  | All cursors move together, deduplicate on collide                                                      |
-| 2025-12-06 16:14 | [Selection Gaps](https://ampcode.com/threads/T-6c1b5841-b5f3-4936-b875-338fd101a179)            | Feature  | SelectWord/Line/All with multi-cursor                                                                  |
-| 2025-12-06 19:23 | [Selection Gaps Final](https://ampcode.com/threads/T-e751be48-ab56-4b90-a196-d5df892d955b)      | Feature  | Merge overlapping selections, final polish                                                             |
-| 2025-12-06 21:39 | [Clean mod.rs](https://ampcode.com/threads/T-ce688bab-2373-4b8e-bf65-436948e19853)              | Refactor | Remove update_layout and helpers from mod.rs                                                           |
-| 2025-12-06 21:43 | [Extract Document Helpers](https://ampcode.com/threads/T-5f9d93ca-4b90-4ca2-ba57-0925802c538c)  | Refactor | Extract update_document and undo/redo helpers                                                          |
-| 2025-12-06 21:48 | [Extract editor.rs](https://ampcode.com/threads/T-0277253e-020d-4640-9edf-792c62d7aed3)         | Refactor | Extract update_editor and helpers to editor.rs                                                         |
-| 2025-12-06 21:53 | [Extract view.rs](https://ampcode.com/threads/T-ed799761-6162-4aba-9890-51be6d4af3d2)           | Refactor | Extract Renderer and rendering code to view.rs                                                         |
-| 2025-12-06 22:02 | [Extract perf.rs](https://ampcode.com/threads/T-ac15e777-123b-4dee-900d-aff8492dad6a)           | Refactor | Extract PerfStats and render_perf_overlay to perf.rs                                                   |
-| 2025-12-06 22:06 | [Extract input.rs](https://ampcode.com/threads/T-0f78844c-deb2-46f5-b35b-f8f55e3122d5)          | Refactor | Extract handle_key to input.rs                                                                         |
-| 2025-12-06 22:09 | [Extract app.rs](https://ampcode.com/threads/T-072af2cb-28ed-4086-8bc2-f3b5c5a74ab7)            | Refactor | Extract App struct and ApplicationHandler to app.rs                                                    |
-| 2025-12-07 03:05 | [Code Analysis](https://ampcode.com/threads/T-1d4cb53e-ed6c-4df6-ae7c-47d1632af2f5)             | Research | Code analysis session                                                                                  |
-| 2025-12-07 05:35 | [Zed Rendering Research](https://ampcode.com/threads/T-c764b2bc-4b0b-4a2a-8c65-c11460405741)    | Research | Research Zed's rendering pipeline and GPUI architecture                                                |
-| 2025-12-07 06:03 | [Debug Tracing Research](https://ampcode.com/threads/T-c312fd74-c321-4e15-bce8-e01a2c1a5813)    | Research | Research debug tracing patterns from Zed/Helix/Lapce                                                   |
-| 2025-12-07 06:10 | [Refactor Planning](https://ampcode.com/threads/T-da41379b-072f-4d46-a1b4-60d13467e7b4)         | Research | EditorState API refactor planning                                                                      |
-| 2025-12-07 06:28 | [OVERVIEW.md Creation](https://ampcode.com/threads/T-aceb9dee-98e5-4caa-a443-8887376fe169)      | Docs     | Created OVERVIEW.md documentation                                                                      |
-| 2025-12-07 06:46 | [Saturating Add Q&A](https://ampcode.com/threads/T-1b5a1a14-682d-4336-892e-136c9655e991)        | Research | Question about saturating_add usage                                                                    |
-| 2025-12-07 07:24 | [Fix document.rs Cursors](https://ampcode.com/threads/T-3fbd1bfd-099a-4fe7-aaee-4d4ba8e0ca01)   | Bugfix   | Fix cursor calls in update/document.rs                                                                 |
-| 2025-12-07 07:24 | [Fix main.rs Cursors](https://ampcode.com/threads/T-56fe4a38-f638-448a-82d3-34fbb36750e5)       | Bugfix   | Fix cursor calls in main.rs                                                                            |
-| 2025-12-07 07:24 | [Fix Model Cursors](https://ampcode.com/threads/T-5f24afb8-5458-4e89-944e-7307ad791b0e)         | Bugfix   | Fix cursor calls in model/, view.rs, app.rs                                                            |
-| 2025-12-07 07:24 | [Fix editor.rs Cursors](https://ampcode.com/threads/T-c46bc701-e073-4bcf-b48e-5a1269e80015)     | Bugfix   | Fix cursor calls in update/editor.rs                                                                   |
-| 2025-12-07 07:24 | [Fix input.rs Cursors](https://ampcode.com/threads/T-e937d255-b14c-4c09-bef2-f791dfdc0b6f)      | Bugfix   | Fix cursor calls in input.rs                                                                           |
-| 2025-12-07 08:34 | [Indent/Unindent Fix](https://ampcode.com/threads/T-9003f81f-0d48-4502-bf3f-a630929eb7d3)       | Bugfix   | Fix indent/unindent operations for multi-cursor                                                        |
-| 2025-12-07 09:01 | [Extract editor_area Tests](https://ampcode.com/threads/T-03d86baf-afcc-45f0-b0d2-9a8b39f3b3d3) | Refactor | Extract editor_area.rs tests                                                                           |
-| 2025-12-07 09:01 | [Analyze main.rs Tests](https://ampcode.com/threads/T-55a92c93-b66b-4adf-9183-6fd138d93028)     | Research | Analyze main.rs tests                                                                                  |
-| 2025-12-07 09:01 | [Extract theme.rs Tests](https://ampcode.com/threads/T-cc1f1709-0fc1-438d-bf17-d6a189fbff5a)    | Refactor | Extract theme.rs tests                                                                                 |
-| 2025-12-07 09:01 | [Extract overlay.rs Tests](https://ampcode.com/threads/T-f37a7ab6-b215-48d4-96a5-b4cde8cec3bf)  | Refactor | Extract overlay.rs tests                                                                               |
-| 2025-12-07 10:00 | [Cross Compilation](https://ampcode.com/threads/T-c07e689b-8ec7-437e-ae97-6837a90e0893)         | Setup    | Setup cross compilation locally                                                                        |
-| 2025-12-07 10:35 | [Duplication Analysis](https://ampcode.com/threads/T-e2bf6523-008d-498a-90b5-e8c0f733c3cf)      | Bugfix   | Multi-line duplication cursor offset analysis                                                          |
-| 2025-12-07 10:42 | [Renderer Benchmark](https://ampcode.com/threads/T-4d6395e5-38be-4dd2-9c68-bb9b0e727c72)        | Research | Create pure renderer for benchmarking view.rs                                                          |
-| 2025-12-07 11:26 | [Unified PerfStats](https://ampcode.com/threads/T-612ca421-647d-4483-b4c6-92e38527d0a1)         | Feature  | Create unified PerfStats (no-op in release)                                                            |
-| 2025-12-07 12:05 | [DeleteBackward Fix](https://ampcode.com/threads/T-7c00a046-9808-407e-b176-807270a6c15e)        | Bugfix   | Fix DeleteBackward multi-cursor newline adjustment                                                     |
-| 2025-12-07 22:41 | [Tracing Instrumentation](https://ampcode.com/threads/T-653bca39-d3a2-4296-a101-8aa3b5557bbe)   | Feature  | Implement tracing/logging instrumentation                                                              |
-| 2025-12-07 23:01 | [One-Pager Website](https://ampcode.com/threads/T-74f6c6a1-4935-4a89-a1c7-2e7df37eef1f)         | Feature  | Create minimal HTML landing page                                                                       |
-| 2025-12-08 10:03 | [Frame Abstraction](https://ampcode.com/threads/T-b63f7909-6744-49cd-a978-0f7f2e9c79f4)         | Refactor | Migrate render code to Frame/TextPainter abstractions                                                  |
-| 2025-12-08 13:36 | [README Rewrite](https://ampcode.com/threads/T-5dacbe13-29ee-4035-a383-bc43630d7f92)            | Docs     | Rewrite README with AI development guide                                                               |
-| 2025-12-09 09:55 | [GUI Phase 2](https://ampcode.com/threads/T-019b025e-956c-766f-b7b1-9b98280e99cd)               | Refactor | Widget extraction and geometry centralization                                                          |
-| 2025-12-09 10:22 | [Modal/Focus System](https://ampcode.com/threads/T-019b02a2-7bee-7428-ac95-c814a48d1182)        | Feature  | Phase 3 GUI cleanup - modal focus system                                                               |
-| 2025-12-09 11:02 | [Modal Keybindings](https://ampcode.com/threads/T-019b02c5-f407-7489-a431-b25e60556bb3)         | Feature  | Modal input handling and keybinding refinements                                                        |
-| 2025-12-09 12:19 | [Keymapping Plan](https://ampcode.com/threads/T-019b0309-e9b1-77dc-a891-243357a55774)           | Feature  | Plan keymapping file system implementation                                                             |
-| 2025-12-09 12:43 | [Keymapping Phases 1-5](https://ampcode.com/threads/T-019b0323-2114-7077-b10c-d1814a7c9fcf)     | Feature  | Implement keymapping system phases 1-5                                                                 |
-| 2025-12-15 08:12 | [Keymap Verification](https://ampcode.com/threads/T-019b2111-88c9-7559-ac60-62e15c4bef76)       | Feature  | Verify keymap system and update documentation                                                          |
-| 2025-12-15 08:34 | [Expand Selection Fix](https://ampcode.com/threads/T-019b2125-7a74-7079-b62c-bb68a4d58788)      | Bugfix   | Fix expand selection behavior, prepare release                                                         |
-| 2025-12-15 10:12 | [Keymapping v0.2.0](https://ampcode.com/threads/T-019b217e-cd52-76ce-bdf5-f17b8d46105d)         | Feature  | Complete keymapping system, release v0.2.0                                                             |
-| 2025-12-15 12:55 | [Theme Loading](https://ampcode.com/threads/T-019b2214-3280-75a2-b06f-2d679f5f087b)             | Feature  | Plan theme loading from user config directory                                                          |
-| 2025-12-15 13:31 | [AGENTS.md Creation](https://ampcode.com/threads/T-019b2235-6273-7522-aa2a-312acf106816)        | Setup    | Create AGENTS.md documentation file                                                                    |
-| 2025-12-15 13:54 | [File I/O Planning](https://ampcode.com/threads/T-019b2247-2375-774c-85ec-d26ecef8e7cc)         | Feature  | Plan file I/O dialogs and workspace management                                                         |
-| 2025-12-15 13:55 | [Damage Tracking Plan](https://ampcode.com/threads/T-019b224a-777f-72dc-bcd0-8acde7ba4234)      | Feature  | Plan damage tracking feature implementation                                                            |
-| 2025-12-15 14:16 | [Multi-Cursor Undo/Redo](https://ampcode.com/threads/T-019b225e-8947-72b8-b1d3-1351de3812ce)    | Bugfix   | Investigate multi-cursor undo/redo test coverage                                                       |
-| 2025-12-15 14:42 | [Config Path Cleanup](https://ampcode.com/threads/T-019b2276-da67-753e-a8cc-9b6dc1c61a1e)       | Refactor | Centralize config paths and consolidate tests                                                          |
-| 2025-12-15 14:54 | [Syntax Highlighting Plan](https://ampcode.com/threads/T-019b2280-72a0-71c8-bb79-c045e147d126)  | Feature  | Syntax highlighting implementation plan for YAML/Markdown                                              |
-| 2025-12-15 15:18 | [CLI Arguments](https://ampcode.com/threads/T-019b2297-3977-721f-bef1-d8734472a45a)             | Feature  | CLI args, duplicate detection, drag-hover feedback                                                     |
-| 2025-12-15 15:39 | [File Ops Release](https://ampcode.com/threads/T-019b22ab-0d03-753a-b68c-5db45442a4c0)          | Feature  | Commit file operations features and tag release                                                        |
-| 2025-12-15 15:49 | [Benchmark Analysis](https://ampcode.com/threads/T-019b22b2-f8f5-77ce-9b3e-d88042e91c9d)        | Research | Investigate benchmarking validity and optimization                                                     |
-| 2025-12-15 15:59 | [Selection Rect Preview](https://ampcode.com/threads/T-019b22bb-bddd-71aa-9118-dc0137f7aeea)    | Bugfix   | Investigate selection rect preview drawing feature                                                     |
-| 2025-12-15 16:09 | [CSV Viewer Design](https://ampcode.com/threads/T-019b22bd-974e-72e4-9c1e-86526b4b55d0)         | Feature  | Design CSV viewer mode with spreadsheet UI                                                             |
-| 2025-12-15 16:16 | [Syntax Highlighting MVP](https://ampcode.com/threads/T-019b22cc-7eae-750e-92dc-a62e57a18d8f)   | Feature  | Complete syntax highlighting MVP, update roadmap                                                       |
-| 2025-12-15 16:56 | [Syntax Highlight Fixes](https://ampcode.com/threads/T-019b22f1-86d3-74a0-a9a8-fd7ab44fba88)    | Bugfix   | Fix syntax highlighting updates after document edits                                                   |
-| 2025-12-15 17:08 | [Benchmark Improvements](https://ampcode.com/threads/T-019b22fb-81c8-704a-ad89-efa242661c0b)    | Feature  | Implement benchmark improvements and text layout                                                       |
-| 2025-12-15 17:21 | [Syntax Debug Runtime](https://ampcode.com/threads/T-019b2307-cd6f-70ba-8ef2-142b0add0f35)      | Bugfix   | Debug syntax highlighting rendering and runtime flow                                                   |
-| 2025-12-15 17:29 | [Syntax Debug Events](https://ampcode.com/threads/T-019b230f-339a-75fd-83ed-72df6fe91f70)       | Bugfix   | Debug syntax highlighting update events                                                                |
-| 2025-12-15 19:44 | [Incremental Parsing](https://ampcode.com/threads/T-019b238a-cfc7-75ed-9b30-d9bfb119e56d)       | Feature  | Syntax highlighting with tree-sitter incremental parsing                                               |
-| 2025-12-15 20:05 | [Language Support 3-5](https://ampcode.com/threads/T-019b239e-0f2f-71ce-b793-63a784c6aa4f)      | Feature  | Implement Phase 3, 4, 5 language support (17 languages)                                                |
-| 2025-12-15 20:36 | [Syntax Sample Testing](https://ampcode.com/threads/T-019b23ba-ed60-74c4-af98-bb3013d8bdad)     | Feature  | Add Justfile recipe for syntax sample testing                                                          |
-| 2025-12-15 23:47 | [UI Code Review](https://ampcode.com/threads/T-019b2469-6390-75e7-bdd0-c31937d9e607)            | Refactor | Identify next 10 actionable review items                                                               |
-| 2025-12-16 00:03 | [HiDPI Scaling](https://ampcode.com/threads/T-019b2476-55a8-7058-9ba9-9360a9280c1b)             | Bugfix   | High DPI display scaling issues investigation                                                          |
-| 2025-12-16 10:53 | [UI Scaling Impl](https://ampcode.com/threads/T-019b26ca-a72d-7188-94e8-76964795edb5)           | Bugfix   | Verify UI scaling claims and implement suggestions                                                     |
-| 2025-12-16 11:22 | [Display Switching](https://ampcode.com/threads/T-019b26e5-8bec-70dd-90d8-0c8a84da7555)         | Bugfix   | HiDPI display switching fixes (v0.3.4)                                                                 |
-| 2025-12-16 12:48 | [CSV Gap Analysis](https://ampcode.com/threads/T-019b2734-d942-72ca-a572-1c3d1ee4036e)          | Feature  | Merge CSV editor gap analysis into design doc                                                          |
-| 2025-12-16 13:12 | [Workspace vs Scaling](https://ampcode.com/threads/T-019b274a-3264-738c-96e0-53f0be6ffa30)      | Feature  | Review workspace management plan against UI scaling                                                    |
-| 2025-12-16 13:18 | [CSV Implementation](https://ampcode.com/threads/T-019b274f-d35e-7014-9c1f-979b1452722a)        | Feature  | CSV editor design consolidation and implementation                                                     |
-| 2025-12-16 13:33 | [CSV Sample Data](https://ampcode.com/threads/T-019b275d-95a8-747c-8296-9ac1df203a6d)           | Feature  | Generate large CSV file and add just target                                                            |
-| 2025-12-16 14:14 | [CSV Phase 2](https://ampcode.com/threads/T-019b2783-7db1-73cf-b7de-2373fcbb61f0)               | Feature  | CSV viewer phase 2 cell editing implementation                                                         |
-| 2025-12-16 14:33 | [CSV v0.3.6 Release](https://ampcode.com/threads/T-019b2794-20a6-703c-b2b4-621b5f1c832f)        | Feature  | Release Phase 2 CSV cell editing feature                                                               |
-| 2025-12-17 08:43 | [Workspace Implementation](https://ampcode.com/threads/T-019b2b7a-8dd7-763a-9ab7-3132ddcf516a)  | Feature  | Workspace management feature implementation                                                            |
-| 2025-12-17 10:05 | [Sidebar Hit Testing](https://ampcode.com/threads/T-019b2bc5-dd85-7066-a46c-2e14bb039078)       | Bugfix   | Sidebar hit test offset and visual alignment fixes                                                     |
-| 2025-12-17 10:42 | [Editor Hit Testing](https://ampcode.com/threads/T-019b2be7-48a3-720c-b0bd-efa4ec347fb3)        | Bugfix   | Editor hit testing not offset by sidebar width                                                         |
-| 2025-12-17 12:19 | [Cursor Icon Cleanup](https://ampcode.com/threads/T-019b2c40-3b31-764a-a3c9-31369108ef99)       | Refactor | Cursor icon handling cleanup for UI consistency                                                        |
-| 2025-12-17 13:40 | [Focus Management](https://ampcode.com/threads/T-019b2c8a-b043-70ee-b7c6-5576369d38f3)          | Feature  | Focus and scrolling in sidebar implementation                                                          |
-| 2025-12-17 14:11 | [Sidebar Navigation](https://ampcode.com/threads/T-019b2ca6-720c-759f-896d-29eb7d047b2e)        | Bugfix   | Sidebar arrow key navigation not working after click                                                   |
-| 2025-12-19 10:59 | [Unified Editing Analysis](https://ampcode.com/threads/T-019b3643-79af-7573-bb69-18dac832eb94)  | Feature  | Analysis of duplicated text editing logic across contexts                                              |
-| 2025-12-19 11:36 | [Unified Editing Phase 1](https://ampcode.com/threads/T-019b3664-f5b5-7006-824b-db413f42a0be)   | Feature  | Implementing unified text editing architecture foundation                                              |
-| 2025-12-19 11:50 | [Unified Editing Phase 2](https://ampcode.com/threads/T-019b3671-fd6b-779e-91ed-1ab285ee4deb)   | Feature  | Unified text editing system phase 2 implementation                                                     |
-| 2025-12-19 12:04 | [Unified Editing Phase 4d](https://ampcode.com/threads/T-019b367e-dad9-730f-b44a-230362166a89)  | Feature  | Phase 4d: wiring text edit handler routing                                                             |
-| 2025-12-19 12:14 | [Unified Editing Milestone 3](https://ampcode.com/threads/T-019b3688-6a6f-70cf-9978-6f6214b6366d) | Feature | Unified text editing system milestone 3 (CSV cell migration)                                           |
-| 2025-12-19 12:21 | [Main Editor Bridge](https://ampcode.com/threads/T-019b368e-76e6-73f0-9bdc-55889e4a801a)        | Feature  | Main editor bridge for unified text editing                                                            |
-| 2025-12-19 12:34 | [Implementation Gaps](https://ampcode.com/threads/T-019b369a-6bd2-76de-9d1c-121e3bd78e2c)       | Feature  | Fix sidebar symbols and identify stubbed methods                                                       |
-| 2025-12-19 12:48 | [Workspace Docs Review](https://ampcode.com/threads/T-019b36a9-87ed-71be-b624-ac38c44c5186)     | Docs     | Review workspace management docs and implementation                                                    |
-| 2025-12-19 13:02 | [Tests & Benchmarks](https://ampcode.com/threads/T-019b36b4-071f-715c-9c40-e838c331c5a3)        | Feature  | Add tests and benchmarks for new features                                                              |
-| 2025-12-19 19:25 | [Documentation Review](https://ampcode.com/threads/T-019b37f4-c1c2-7415-aa0e-e0591b1d09ae)      | Docs     | Review new documentation for codebase accuracy                                                         |
-| 2025-12-19 19:50 | [Blog Post Adaptation](https://ampcode.com/threads/T-019b381d-d35f-7200-92b0-1aa8c548a507)      | Docs     | Adapt blog post to MDX with humanized tone                                                             |
-| 2025-12-19 20:07 | [Release Build Mode](https://ampcode.com/threads/T-019b3837-05a1-7408-91fd-e34c87b02d55)        | Setup    | Go build release mode                                                                                  |
-| 2025-12-20 11:17 | [Macro System Design](https://ampcode.com/threads/T-019b3b6c-b844-7795-946e-9efe7d9023ae)       | Feature  | Sketch macro system feature design doc                                                                 |
-| 2025-12-20 11:45 | [Release Links](https://ampcode.com/threads/T-019b3b86-0660-738e-b71a-768b93a1f404)             | Feature  | Link to latest releases automatically                                                                  |
-| 2025-12-20 11:48 | [Terminal & Indent Design](https://ampcode.com/threads/T-019b3b95-6389-74aa-a273-ddaa5fa57da1)   | Feature  | Feature design for terminal panel and indent visualization                                             |
-| 2025-12-20 12:11 | [Benchmark Gaps](https://ampcode.com/threads/T-019b3bab-48e9-710e-9849-9bf4a2a94d24)            | Research | Investigate benchmark gaps and optimize performance                                                    |
-| 2025-12-20 12:31 | [Perf Degradation](https://ampcode.com/threads/T-019b3bbd-d4fd-75df-81a0-c94a5e693227)          | Bugfix   | Multi-split rendering performance degradation investigation                                            |
-| 2025-12-20 13:40 | [Perf Optimization](https://ampcode.com/threads/T-019b3bd7-8ecb-7506-b600-29c1acfe818d)         | Bugfix   | Multi-split rendering optimization performance analysis                                                |
-| 2025-12-20 14:06 | [Profiling Docs](https://ampcode.com/threads/T-019b3c03-2f5c-774f-9cfb-7e322874dbb7)            | Docs     | Performance optimization pass and profiling workflow documentation                                     |
-| 2025-12-20 16:26 | [Find/Replace Review](https://ampcode.com/threads/T-019b3c4f-763e-765e-a805-52778800fd5a)       | Feature  | Check find implementation with oracle                                                                  |
-| 2026-01-06 21:53 | [Cursor Blink Config](https://ampcode.com/threads/T-019b9547-b9f5-773a-b13a-0e0b381759c4)       | Feature  | Cursor blink interval configuration                                                                    |
-| 2026-01-07 00:29 | [File Dialog Merge](https://ampcode.com/threads/T-019b95c6-b857-75cc-9cb8-d73f77125980)          | Feature  | Combine open file and folder dialogs                                                                   |
-| 2026-01-07 01:43 | [File Dialogs](https://ampcode.com/threads/T-019b95e4-e674-71af-8851-ac2c0f33d83a)              | Feature  | Implement file dialogs feature                                                                         |
-| 2026-01-07 12:39 | [Context Menu Spec](https://ampcode.com/threads/T-019b9869-8a1a-75db-ad80-8aba2e37d6cb)          | Feature  | Context menu abstraction spec and implementation                                                       |
-| 2026-01-07 13:14 | [Dock Panel Design](https://ampcode.com/threads/T-019b9856-c43e-75b8-b946-2a5011617081)          | Feature  | Design docked panels UI abstraction for workspace                                                      |
-| 2026-01-07 13:36 | [Markdown Preview](https://ampcode.com/threads/T-019b9893-43cd-72ea-bcb4-9e0e1494e517)           | Feature  | Implement markdown preview feature                                                                     |
-| 2026-01-07 13:47 | [Website v2 Redesign](https://ampcode.com/threads/T-019b98aa-170b-726b-8380-c3c4b52a21d8)        | Feature  | Redesign website inspired by modern dev tools                                                          |
-| 2026-01-07 13:57 | [MSI Bundle Fix](https://ampcode.com/threads/T-019b9897-f550-7128-b305-40e861733e89)             | Bugfix   | MSI bundle build fails with resource file error                                                        |
-| 2026-01-07 14:20 | [Preview Cont.](https://ampcode.com/threads/T-019b98be-6e9a-745b-bb1d-3285f1ec1460)              | Feature  | Continue markdown preview implementation                                                               |
-| 2026-01-07 15:04 | [Pane Widget](https://ampcode.com/threads/T-019b98dd-95f9-742a-b1e3-654662ebd344)                | Refactor | Extract reusable pane widget from preview                                                              |
-| 2026-01-08 09:42 | [Click Handling Review](https://ampcode.com/threads/T-019b9cbb-c371-7048-b075-b5b202595bfd)      | Refactor | Review markdown preview and propose click handling abstraction                                         |
-| 2026-01-08 13:37 | [Mouse Refactor](https://ampcode.com/threads/T-019b9d40-e7f7-760c-81ce-7dcc1796705e)             | Refactor | Mouse event handling system refactoring complete                                                       |
-| 2026-01-08 18:26 | [Panel Abstraction](https://ampcode.com/threads/T-019b98ae-4cd9-752a-99ac-a07571944a38)           | Feature  | Implement panel UI abstraction with commit review                                                      |
-| 2026-01-08 18:44 | [Preview Keybindings](https://ampcode.com/threads/T-019b9eec-b4b2-7369-a1fb-80c1a2dc4d69)        | Bugfix   | Debug keybindings and refactor markdown preview rendering                                              |
-| 2026-01-08 20:03 | [Dock Toggle Fix](https://ampcode.com/threads/T-019b9efa-2028-711b-9fd0-9739b34832e6)            | Bugfix   | Fix dock toggle, preview z-order, and editor area sizing                                               |
-| 2026-01-08 23:46 | [Dock Scroll Fix](https://ampcode.com/threads/T-019b9f4b-9090-766e-b6f4-d494ada06e87)            | Bugfix   | Fix markdown preview and dock scroll event leaking                                                     |
-| 2026-01-09 03:50 | [Editor Area Sizing](https://ampcode.com/threads/T-019ba01a-cde5-759e-ada6-216faba0e70b)          | Bugfix   | Editor area not shrinking for terminal dock                                                            |
-| 2026-01-09 05:43 | [v0.3.15 Release](https://ampcode.com/threads/T-019ba0ed-dfdb-71cf-8dec-291fcca7a783)             | Setup    | Update docs and tag patch release v0.3.15                                                              |
-| 2026-02-17 18:52 | [Sema Language](https://ampcode.com/threads/T-019c6c9a-ee2a-74cc-81b3-c189a725500e)              | Feature  | Add language support for sema lisp                                                                     |
-| 2026-02-17 18:14 | [Website v4](https://ampcode.com/threads/T-019c6cb5-43bb-7490-8480-0f76d1372a6f)                 | Feature  | Redesign v3 website to v4 with improved styling                                                        |
-| 2026-02-18 10:56 | [Keybindings Viewer Fix](https://ampcode.com/threads/T-019c6cf3-ecb6-72cb-8af0-d69f8d562206)     | Bugfix   | Keybindings viewer broken in Astro v4                                                                  |
-| 2026-02-18 10:57 | [Screenshot Pipeline](https://ampcode.com/threads/T-019c7065-499e-7489-a60e-dc4beea24ac2)         | Feature  | Execute screenshot pipeline and homepage redesign plan                                                 |
-| 2026-02-18 13:17 | [Reveal in Finder](https://ampcode.com/threads/T-019c6fef-7f25-7798-b5b9-ac7bb537f73e)           | Feature  | Reveal file in finder and copy path actions                                                            |
-| 2026-02-18 15:39 | [Screenshot Fixes](https://ampcode.com/threads/T-019c708b-a2bb-70f6-a62b-27f9005c95a8)           | Bugfix   | Fix screenshot syntax highlighting and CSV viewer mode                                                 |
-| 2026-02-18 15:55 | [Hero Layout](https://ampcode.com/threads/T-019c7168-8448-7204-85b1-649d05d97a65)                 | Feature  | Hero section screenshot layout styling                                                                 |
-| 2026-02-18 16:26 | [Astro Syntax Fix](https://ampcode.com/threads/T-019c7178-4034-778a-b7fd-660267f87de8)            | Bugfix   | Fix Astro template curly brace syntax error                                                            |
-| 2026-02-18 16:39 | [WASM Feasibility](https://ampcode.com/threads/T-019c7199-18ea-7381-ba20-66b1a9ae4898)            | Research | Feasibility of compiling token to WASM                                                                 |
-| 2026-02-18 17:25 | [Docs Verification](https://ampcode.com/threads/T-019c7193-e8a5-7462-93e6-95cce054e7a8)           | Docs     | Verify docs accuracy for keybindings and themes                                                        |
-| 2026-02-18 19:07 | [Theme Research](https://ampcode.com/threads/T-019c720c-21c5-703a-8403-d5410ff72006)              | Research | Research editor themes and suggest new ones                                                            |
-| 2026-02-18 19:20 | [OpenGraph Image](https://ampcode.com/threads/T-019c7212-52b0-77cb-bb71-f619c7e6ca43)             | Feature  | Generate opengraph image with website branding                                                         |
-| 2026-02-18 20:10 | [Status Bar Mirror](https://ampcode.com/threads/T-019c7228-2bde-77e1-bef0-ab2b38afb197)           | Feature  | Mirror token editor status bar layout                                                                  |
-| 2026-02-18 20:21 | [Tab Overflow Fix](https://ampcode.com/threads/T-019c7265-e37a-712e-ab03-408801ac7cb9)             | Bugfix   | Fix YAML tab overflow and duplicate scrollbars                                                         |
-| 2026-02-18 20:52 | [Gallery Pages](https://ampcode.com/threads/T-019c726b-c3fd-72c8-be61-06cdc86e123b)               | Feature  | Website pages and screenshots gallery ideas                                                            |
-| 2026-02-18 20:54 | [LinkedIn Blurb](https://ampcode.com/threads/T-019c7286-7786-71d9-8437-6021fb6646fc)              | Docs     | Create LinkedIn blurb for AI building content                                                          |
-| 2026-02-18 21:25 | [Pagination & Nav](https://ampcode.com/threads/T-019c728c-6859-7749-be87-ff6ef98ee8c9)             | Feature  | Remove pagination, add text-pretty, keyboard navigation                                                |
-| 2026-02-18 21:41 | [Website Infrastructure](https://ampcode.com/threads/T-019c7289-a2ff-762d-bbde-80da4e731a2d)       | Feature  | Expanding website and screenshot infrastructure                                                        |
-| 2026-02-18 22:11 | [Bracket Matching](https://ampcode.com/threads/T-019c7293-f967-73f6-b6b4-e3c2e946dfad)            | Feature  | Character wrapping and bracket matching features                                                       |
-| 2026-02-18 22:45 | [Image Optimization](https://ampcode.com/threads/T-019c72ca-af84-70be-a5ad-2471b923288c)           | Feature  | Astro image optimization for screenshot gallery                                                        |
-| 2026-02-18 22:51 | [Thread Audit](https://ampcode.com/threads/T-019c72f2-0c78-756c-ab6c-9e1eead1c641)                | Docs     | Audit and publish project threads securely                                                             |
-| 2026-02-18 23:47 | [Find Modal Fixes](https://ampcode.com/threads/T-019c7304-3f79-72ed-ab9d-22122cd4ad71)             | Bugfix   | Find modal rendering issues and scroll offset fixes                                                    |
-| 2026-02-18 23:47 | [Scroll Into View Bug](https://ampcode.com/threads/T-019c7311-dbee-7068-b3cc-ecc6f22d04af)         | Bugfix   | Viewport thought it was half-size — Mermaid diagram diagnosis                                          |
-| 2026-02-19 00:07 | [Syntax Perf](https://ampcode.com/threads/T-019c7326-f328-7330-b888-426528b60efe)               | Perf     | Rewrite syntax highlighting pipeline with deadline timers and highlight shifting                        |
-| 2026-02-19 00:37 | [Outline Panel Design](https://ampcode.com/threads/T-019c7342-a5df-7201-86ae-198e1c9aebb4)      | Feature  | Review outline panel design against codebase                                                           |
-| 2026-02-19 01:00 | [Release v0.3.18](https://ampcode.com/threads/T-019c7344-1f23-716e-be3f-442b8d29a8a1)           | Setup    | Update changelog and prepare release v0.3.18                                                           |
-| 2026-02-19 01:07 | [Outline Panel](https://ampcode.com/threads/T-019c736a-5e58-75bc-978d-9f6a6f1ee57a)             | Feature  | Code outline panel with tree-sitter symbol extraction                                                  |
-| 2026-02-19 01:17 | [Recent Files](https://ampcode.com/threads/T-019c736c-b9dd-7227-a190-de497ef7f2d0)              | Feature  | Recent files list with Cmd+E modal (Phases 1-5)                                                        |
-| 2026-02-19 01:36 | [Recent Files Tests](https://ampcode.com/threads/T-019c737e-2714-7069-8ed7-071d7b19ffa5)        | Feature  | Test coverage and deduplication for recent files                                                        |
+| 2025-12-03 21:26 | [UI Reference Review](ampcode-threads/T-7b92a860-a2f7-4397-985c-73b2fa3e9582.md)       | Research | Generated [Technical Reference Document](EDITOR_UI_REFERENCE.md) based on research from Librarian |
+| 2025-12-04 09:56 | [Reference Doc Polish](ampcode-threads/T-750a0e44-2302-4b5e-8cdc-70b14c3f7930.md)      | Research | Continuing reference doc review and rewrite                                                            |
+| 2025-12-05 23:01 | [Status Bar Separators](ampcode-threads/T-ce8edd72-f084-4fba-8c86-276df333de96.md)     | Feature  | Design 1px separator segment for status bar                                                            |
+| 2025-12-06 00:10 | [Selection Arrow Keys](ampcode-threads/T-de4eaf86-9b34-489a-b6c8-e5c0154f1aff.md)      | Bugfix   | Fix arrow keys with selection behavior                                                                 |
+| 2025-12-06 01:27 | [Undo/Redo Gaps](ampcode-threads/T-519a8c9d-b94f-45e5-98e0-5bfc34c77cbf.md)            | Bugfix   | Fix undo/redo for selection delete, Cmd+Z handling                                                     |
+| 2025-12-06 03:03 | [Undo/Redo Continued](ampcode-threads/T-60e201bf-322a-4190-8671-3afe9ad7500e.md)       | Feature  | Split view phases 1-2, undo/redo completion                                                            |
+| 2025-12-06 03:25 | [Codebase Analysis](ampcode-threads/T-57a3ad00-4185-48a7-b12d-5ffb295c84ab.md)         | Setup    | Fresh codebase analysis and AGENTS.md update                                                           |
+| 2025-12-06 03:53 | [Perf Tooling Research](ampcode-threads/T-6ff7dc54-9991-41fe-b168-f328b499a904.md)     | Research | Performance profiling and benchmarking tooling                                                         |
+| 2025-12-06 04:08 | [Split View Phases 3-7](ampcode-threads/T-29b1dd08-eee1-44fb-abd5-eb982d6bcd52.md)     | Feature  | Implement split view AppModel, handlers, rendering                                                     |
+| 2025-12-06 04:17 | [Keymap Design](ampcode-threads/T-35b11d40-96b0-4177-9c75-4c723dfd8f80.md)             | Research | Research configurable keyboard mapping systems                                                         |
+| 2025-12-06 04:17 | [Test Infrastructure](ampcode-threads/T-39bdb354-08b2-4e0a-973d-75aeecab8a89.md)       | Research | Review test patterns, identify improvements                                                            |
+| 2025-12-06 04:17 | [Rendering Performance](ampcode-threads/T-4272a15a-a0e8-4a74-9870-d793d36c33a0.md)     | Research | Analyze fontdue/softbuffer rendering hot paths                                                         |
+| 2025-12-06 04:17 | [DX Improvements](ampcode-threads/T-88cd73c6-0f23-461e-ae99-48b1d9908c0e.md)           | Research | Developer experience improvement opportunities                                                         |
+| 2025-12-06 04:17 | [Perf Infrastructure](ampcode-threads/T-9ff4cbc0-231e-4cbb-8abb-867de74409c4.md)       | Research | Audit existing PerfStats and monitoring                                                                |
+| 2025-12-06 04:17 | [Text Hot Paths](ampcode-threads/T-ac8b817c-ee1c-49ea-af20-4fd2766ad531.md)            | Research | Identify text operations needing benchmarks                                                            |
+| 2025-12-06 04:25 | [Fix update.rs](ampcode-threads/T-4d426fd5-17f4-48a1-8c5a-6d72f57536c2.md)             | Refactor | Fix compilation after model accessor change                                                            |
+| 2025-12-06 04:33 | [Fix main.rs](ampcode-threads/T-34c36886-50c9-4fc3-a97a-304bb6ba6bf4.md)               | Refactor | Fix compilation after model accessor change                                                            |
+| 2025-12-06 04:40 | [Fix Tests](ampcode-threads/T-4948f549-c762-4fe3-b1b6-65219754ffb8.md)                 | Refactor | Fix test files after model accessor change                                                             |
+| 2025-12-06 06:17 | [Feedback Update](ampcode-threads/T-778bf91f-b35b-4e11-a895-4ccc9a28feed.md)           | Docs     | Update FEEDBACK.md with current progress                                                               |
+| 2025-12-06 06:18 | [Multi-Group Render](ampcode-threads/T-f7453e71-4877-49df-b174-d3ec2534f601.md)        | Feature  | Refactor rendering for split view groups                                                               |
+| 2025-12-06 08:08 | [Split View Polish](ampcode-threads/T-e982211e-9ad0-465b-b65e-288965968077.md)         | Feature  | Split view edge cases and layout tests                                                                 |
+| 2025-12-06 10:26 | [GUI Library Review](ampcode-threads/T-82acac63-89cb-4bb0-bad7-bcc4f76af3cd.md)        | Research | Review areweguiyet.com, abstraction layer design                                                       |
+| 2025-12-06 11:17 | [Bugfix Session](ampcode-threads/T-803561f4-2bd4-4545-9e0a-ff08d3e15e04.md)            | Bugfix   | Selection bugs, delete line, duplicate line                                                            |
+| 2025-12-06 11:27 | [Codebase Reorg](ampcode-threads/T-5d9034ac-734a-4edd-9060-e28ad9572736.md)            | Docs     | Roadmap cleanup, changelog, organization plan                                                          |
+| 2025-12-06 12:39 | [Expand/Shrink Select](ampcode-threads/T-568febc8-2f67-408d-b7ee-32dc212e88f6.md)      | Feature  | Implement expand/shrink selection with history                                                         |
+| 2025-12-06 15:04 | [Multi-Cursor Movement](ampcode-threads/T-d4c75d42-c0c1-4746-a609-593bff88db6d.md)     | Feature  | All cursors move together, deduplicate on collide                                                      |
+| 2025-12-06 16:14 | [Selection Gaps](ampcode-threads/T-6c1b5841-b5f3-4936-b875-338fd101a179.md)            | Feature  | SelectWord/Line/All with multi-cursor                                                                  |
+| 2025-12-06 19:23 | [Selection Gaps Final](ampcode-threads/T-e751be48-ab56-4b90-a196-d5df892d955b.md)      | Feature  | Merge overlapping selections, final polish                                                             |
+| 2025-12-06 21:39 | [Clean mod.rs](ampcode-threads/T-ce688bab-2373-4b8e-bf65-436948e19853.md)              | Refactor | Remove update_layout and helpers from mod.rs                                                           |
+| 2025-12-06 21:43 | [Extract Document Helpers](ampcode-threads/T-5f9d93ca-4b90-4ca2-ba57-0925802c538c.md)  | Refactor | Extract update_document and undo/redo helpers                                                          |
+| 2025-12-06 21:48 | [Extract editor.rs](ampcode-threads/T-0277253e-020d-4640-9edf-792c62d7aed3.md)         | Refactor | Extract update_editor and helpers to editor.rs                                                         |
+| 2025-12-06 21:53 | [Extract view.rs](ampcode-threads/T-ed799761-6162-4aba-9890-51be6d4af3d2.md)           | Refactor | Extract Renderer and rendering code to view.rs                                                         |
+| 2025-12-06 22:02 | [Extract perf.rs](ampcode-threads/T-ac15e777-123b-4dee-900d-aff8492dad6a.md)           | Refactor | Extract PerfStats and render_perf_overlay to perf.rs                                                   |
+| 2025-12-06 22:06 | [Extract input.rs](ampcode-threads/T-0f78844c-deb2-46f5-b35b-f8f55e3122d5.md)          | Refactor | Extract handle_key to input.rs                                                                         |
+| 2025-12-06 22:09 | [Extract app.rs](ampcode-threads/T-072af2cb-28ed-4086-8bc2-f3b5c5a74ab7.md)            | Refactor | Extract App struct and ApplicationHandler to app.rs                                                    |
+| 2025-12-07 03:05 | [Code Analysis](ampcode-threads/T-1d4cb53e-ed6c-4df6-ae7c-47d1632af2f5.md)             | Research | Code analysis session                                                                                  |
+| 2025-12-07 05:35 | [Zed Rendering Research](ampcode-threads/T-c764b2bc-4b0b-4a2a-8c65-c11460405741.md)    | Research | Research Zed's rendering pipeline and GPUI architecture                                                |
+| 2025-12-07 06:03 | [Debug Tracing Research](ampcode-threads/T-c312fd74-c321-4e15-bce8-e01a2c1a5813.md)    | Research | Research debug tracing patterns from Zed/Helix/Lapce                                                   |
+| 2025-12-07 06:10 | [Refactor Planning](ampcode-threads/T-da41379b-072f-4d46-a1b4-60d13467e7b4.md)         | Research | EditorState API refactor planning                                                                      |
+| 2025-12-07 06:28 | [OVERVIEW.md Creation](ampcode-threads/T-aceb9dee-98e5-4caa-a443-8887376fe169.md)      | Docs     | Created OVERVIEW.md documentation                                                                      |
+| 2025-12-07 06:46 | [Saturating Add Q&A](ampcode-threads/T-1b5a1a14-682d-4336-892e-136c9655e991.md)        | Research | Question about saturating_add usage                                                                    |
+| 2025-12-07 07:24 | [Fix document.rs Cursors](ampcode-threads/T-3fbd1bfd-099a-4fe7-aaee-4d4ba8e0ca01.md)   | Bugfix   | Fix cursor calls in update/document.rs                                                                 |
+| 2025-12-07 07:24 | [Fix main.rs Cursors](ampcode-threads/T-56fe4a38-f638-448a-82d3-34fbb36750e5.md)       | Bugfix   | Fix cursor calls in main.rs                                                                            |
+| 2025-12-07 07:24 | [Fix Model Cursors](ampcode-threads/T-5f24afb8-5458-4e89-944e-7307ad791b0e.md)         | Bugfix   | Fix cursor calls in model/, view.rs, app.rs                                                            |
+| 2025-12-07 07:24 | [Fix editor.rs Cursors](ampcode-threads/T-c46bc701-e073-4bcf-b48e-5a1269e80015.md)     | Bugfix   | Fix cursor calls in update/editor.rs                                                                   |
+| 2025-12-07 07:24 | [Fix input.rs Cursors](ampcode-threads/T-e937d255-b14c-4c09-bef2-f791dfdc0b6f.md)      | Bugfix   | Fix cursor calls in input.rs                                                                           |
+| 2025-12-07 08:34 | [Indent/Unindent Fix](ampcode-threads/T-9003f81f-0d48-4502-bf3f-a630929eb7d3.md)       | Bugfix   | Fix indent/unindent operations for multi-cursor                                                        |
+| 2025-12-07 09:01 | [Extract editor_area Tests](ampcode-threads/T-03d86baf-afcc-45f0-b0d2-9a8b39f3b3d3.md) | Refactor | Extract editor_area.rs tests                                                                           |
+| 2025-12-07 09:01 | [Analyze main.rs Tests](ampcode-threads/T-55a92c93-b66b-4adf-9183-6fd138d93028.md)     | Research | Analyze main.rs tests                                                                                  |
+| 2025-12-07 09:01 | [Extract theme.rs Tests](ampcode-threads/T-cc1f1709-0fc1-438d-bf17-d6a189fbff5a.md)    | Refactor | Extract theme.rs tests                                                                                 |
+| 2025-12-07 09:01 | [Extract overlay.rs Tests](ampcode-threads/T-f37a7ab6-b215-48d4-96a5-b4cde8cec3bf.md)  | Refactor | Extract overlay.rs tests                                                                               |
+| 2025-12-07 10:00 | [Cross Compilation](ampcode-threads/T-c07e689b-8ec7-437e-ae97-6837a90e0893.md)         | Setup    | Setup cross compilation locally                                                                        |
+| 2025-12-07 10:35 | [Duplication Analysis](ampcode-threads/T-e2bf6523-008d-498a-90b5-e8c0f733c3cf.md)      | Bugfix   | Multi-line duplication cursor offset analysis                                                          |
+| 2025-12-07 10:42 | [Renderer Benchmark](ampcode-threads/T-4d6395e5-38be-4dd2-9c68-bb9b0e727c72.md)        | Research | Create pure renderer for benchmarking view.rs                                                          |
+| 2025-12-07 11:26 | [Unified PerfStats](ampcode-threads/T-612ca421-647d-4483-b4c6-92e38527d0a1.md)         | Feature  | Create unified PerfStats (no-op in release)                                                            |
+| 2025-12-07 12:05 | [DeleteBackward Fix](ampcode-threads/T-7c00a046-9808-407e-b176-807270a6c15e.md)        | Bugfix   | Fix DeleteBackward multi-cursor newline adjustment                                                     |
+| 2025-12-07 22:41 | [Tracing Instrumentation](ampcode-threads/T-653bca39-d3a2-4296-a101-8aa3b5557bbe.md)   | Feature  | Implement tracing/logging instrumentation                                                              |
+| 2025-12-07 23:01 | [One-Pager Website](ampcode-threads/T-74f6c6a1-4935-4a89-a1c7-2e7df37eef1f.md)         | Feature  | Create minimal HTML landing page                                                                       |
+| 2025-12-08 10:03 | [Frame Abstraction](ampcode-threads/T-b63f7909-6744-49cd-a978-0f7f2e9c79f4.md)         | Refactor | Migrate render code to Frame/TextPainter abstractions                                                  |
+| 2025-12-08 13:36 | [README Rewrite](ampcode-threads/T-5dacbe13-29ee-4035-a383-bc43630d7f92.md)            | Docs     | Rewrite README with AI development guide                                                               |
+| 2025-12-09 09:55 | [GUI Phase 2](ampcode-threads/T-019b025e-956c-766f-b7b1-9b98280e99cd.md)               | Refactor | Widget extraction and geometry centralization                                                          |
+| 2025-12-09 10:22 | [Modal/Focus System](ampcode-threads/T-019b02a2-7bee-7428-ac95-c814a48d1182.md)        | Feature  | Phase 3 GUI cleanup - modal focus system                                                               |
+| 2025-12-09 11:02 | [Modal Keybindings](ampcode-threads/T-019b02c5-f407-7489-a431-b25e60556bb3.md)         | Feature  | Modal input handling and keybinding refinements                                                        |
+| 2025-12-09 12:19 | [Keymapping Plan](ampcode-threads/T-019b0309-e9b1-77dc-a891-243357a55774.md)           | Feature  | Plan keymapping file system implementation                                                             |
+| 2025-12-09 12:43 | [Keymapping Phases 1-5](ampcode-threads/T-019b0323-2114-7077-b10c-d1814a7c9fcf.md)     | Feature  | Implement keymapping system phases 1-5                                                                 |
+| 2025-12-15 08:12 | [Keymap Verification](ampcode-threads/T-019b2111-88c9-7559-ac60-62e15c4bef76.md)       | Feature  | Verify keymap system and update documentation                                                          |
+| 2025-12-15 08:34 | [Expand Selection Fix](ampcode-threads/T-019b2125-7a74-7079-b62c-bb68a4d58788.md)      | Bugfix   | Fix expand selection behavior, prepare release                                                         |
+| 2025-12-15 10:12 | [Keymapping v0.2.0](ampcode-threads/T-019b217e-cd52-76ce-bdf5-f17b8d46105d.md)         | Feature  | Complete keymapping system, release v0.2.0                                                             |
+| 2025-12-15 12:55 | [Theme Loading](ampcode-threads/T-019b2214-3280-75a2-b06f-2d679f5f087b.md)             | Feature  | Plan theme loading from user config directory                                                          |
+| 2025-12-15 13:31 | [AGENTS.md Creation](ampcode-threads/T-019b2235-6273-7522-aa2a-312acf106816.md)        | Setup    | Create AGENTS.md documentation file                                                                    |
+| 2025-12-15 13:54 | [File I/O Planning](ampcode-threads/T-019b2247-2375-774c-85ec-d26ecef8e7cc.md)         | Feature  | Plan file I/O dialogs and workspace management                                                         |
+| 2025-12-15 13:55 | [Damage Tracking Plan](ampcode-threads/T-019b224a-777f-72dc-bcd0-8acde7ba4234.md)      | Feature  | Plan damage tracking feature implementation                                                            |
+| 2025-12-15 14:16 | [Multi-Cursor Undo/Redo](ampcode-threads/T-019b225e-8947-72b8-b1d3-1351de3812ce.md)    | Bugfix   | Investigate multi-cursor undo/redo test coverage                                                       |
+| 2025-12-15 14:42 | [Config Path Cleanup](ampcode-threads/T-019b2276-da67-753e-a8cc-9b6dc1c61a1e.md)       | Refactor | Centralize config paths and consolidate tests                                                          |
+| 2025-12-15 14:54 | [Syntax Highlighting Plan](ampcode-threads/T-019b2280-72a0-71c8-bb79-c045e147d126.md)  | Feature  | Syntax highlighting implementation plan for YAML/Markdown                                              |
+| 2025-12-15 15:18 | [CLI Arguments](ampcode-threads/T-019b2297-3977-721f-bef1-d8734472a45a.md)             | Feature  | CLI args, duplicate detection, drag-hover feedback                                                     |
+| 2025-12-15 15:39 | [File Ops Release](ampcode-threads/T-019b22ab-0d03-753a-b68c-5db45442a4c0.md)          | Feature  | Commit file operations features and tag release                                                        |
+| 2025-12-15 15:49 | [Benchmark Analysis](ampcode-threads/T-019b22b2-f8f5-77ce-9b3e-d88042e91c9d.md)        | Research | Investigate benchmarking validity and optimization                                                     |
+| 2025-12-15 15:59 | [Selection Rect Preview](ampcode-threads/T-019b22bb-bddd-71aa-9118-dc0137f7aeea.md)    | Bugfix   | Investigate selection rect preview drawing feature                                                     |
+| 2025-12-15 16:09 | [CSV Viewer Design](ampcode-threads/T-019b22bd-974e-72e4-9c1e-86526b4b55d0.md)         | Feature  | Design CSV viewer mode with spreadsheet UI                                                             |
+| 2025-12-15 16:16 | [Syntax Highlighting MVP](ampcode-threads/T-019b22cc-7eae-750e-92dc-a62e57a18d8f.md)   | Feature  | Complete syntax highlighting MVP, update roadmap                                                       |
+| 2025-12-15 16:56 | [Syntax Highlight Fixes](ampcode-threads/T-019b22f1-86d3-74a0-a9a8-fd7ab44fba88.md)    | Bugfix   | Fix syntax highlighting updates after document edits                                                   |
+| 2025-12-15 17:08 | [Benchmark Improvements](ampcode-threads/T-019b22fb-81c8-704a-ad89-efa242661c0b.md)    | Feature  | Implement benchmark improvements and text layout                                                       |
+| 2025-12-15 17:21 | [Syntax Debug Runtime](ampcode-threads/T-019b2307-cd6f-70ba-8ef2-142b0add0f35.md)      | Bugfix   | Debug syntax highlighting rendering and runtime flow                                                   |
+| 2025-12-15 17:29 | [Syntax Debug Events](ampcode-threads/T-019b230f-339a-75fd-83ed-72df6fe91f70.md)       | Bugfix   | Debug syntax highlighting update events                                                                |
+| 2025-12-15 19:44 | [Incremental Parsing](ampcode-threads/T-019b238a-cfc7-75ed-9b30-d9bfb119e56d.md)       | Feature  | Syntax highlighting with tree-sitter incremental parsing                                               |
+| 2025-12-15 20:05 | [Language Support 3-5](ampcode-threads/T-019b239e-0f2f-71ce-b793-63a784c6aa4f.md)      | Feature  | Implement Phase 3, 4, 5 language support (17 languages)                                                |
+| 2025-12-15 20:36 | [Syntax Sample Testing](ampcode-threads/T-019b23ba-ed60-74c4-af98-bb3013d8bdad.md)     | Feature  | Add Justfile recipe for syntax sample testing                                                          |
+| 2025-12-15 23:47 | [UI Code Review](ampcode-threads/T-019b2469-6390-75e7-bdd0-c31937d9e607.md)            | Refactor | Identify next 10 actionable review items                                                               |
+| 2025-12-16 00:03 | [HiDPI Scaling](ampcode-threads/T-019b2476-55a8-7058-9ba9-9360a9280c1b.md)             | Bugfix   | High DPI display scaling issues investigation                                                          |
+| 2025-12-16 10:53 | [UI Scaling Impl](ampcode-threads/T-019b26ca-a72d-7188-94e8-76964795edb5.md)           | Bugfix   | Verify UI scaling claims and implement suggestions                                                     |
+| 2025-12-16 11:22 | [Display Switching](ampcode-threads/T-019b26e5-8bec-70dd-90d8-0c8a84da7555.md)         | Bugfix   | HiDPI display switching fixes (v0.3.4)                                                                 |
+| 2025-12-16 12:48 | [CSV Gap Analysis](ampcode-threads/T-019b2734-d942-72ca-a572-1c3d1ee4036e.md)          | Feature  | Merge CSV editor gap analysis into design doc                                                          |
+| 2025-12-16 13:12 | [Workspace vs Scaling](ampcode-threads/T-019b274a-3264-738c-96e0-53f0be6ffa30.md)      | Feature  | Review workspace management plan against UI scaling                                                    |
+| 2025-12-16 13:18 | [CSV Implementation](ampcode-threads/T-019b274f-d35e-7014-9c1f-979b1452722a.md)        | Feature  | CSV editor design consolidation and implementation                                                     |
+| 2025-12-16 13:33 | [CSV Sample Data](ampcode-threads/T-019b275d-95a8-747c-8296-9ac1df203a6d.md)           | Feature  | Generate large CSV file and add just target                                                            |
+| 2025-12-16 14:14 | [CSV Phase 2](ampcode-threads/T-019b2783-7db1-73cf-b7de-2373fcbb61f0.md)               | Feature  | CSV viewer phase 2 cell editing implementation                                                         |
+| 2025-12-16 14:33 | [CSV v0.3.6 Release](ampcode-threads/T-019b2794-20a6-703c-b2b4-621b5f1c832f.md)        | Feature  | Release Phase 2 CSV cell editing feature                                                               |
+| 2025-12-17 08:43 | [Workspace Implementation](ampcode-threads/T-019b2b7a-8dd7-763a-9ab7-3132ddcf516a.md)  | Feature  | Workspace management feature implementation                                                            |
+| 2025-12-17 10:05 | [Sidebar Hit Testing](ampcode-threads/T-019b2bc5-dd85-7066-a46c-2e14bb039078.md)       | Bugfix   | Sidebar hit test offset and visual alignment fixes                                                     |
+| 2025-12-17 10:42 | [Editor Hit Testing](ampcode-threads/T-019b2be7-48a3-720c-b0bd-efa4ec347fb3.md)        | Bugfix   | Editor hit testing not offset by sidebar width                                                         |
+| 2025-12-17 12:19 | [Cursor Icon Cleanup](ampcode-threads/T-019b2c40-3b31-764a-a3c9-31369108ef99.md)       | Refactor | Cursor icon handling cleanup for UI consistency                                                        |
+| 2025-12-17 13:40 | [Focus Management](ampcode-threads/T-019b2c8a-b043-70ee-b7c6-5576369d38f3.md)          | Feature  | Focus and scrolling in sidebar implementation                                                          |
+| 2025-12-17 14:11 | [Sidebar Navigation](ampcode-threads/T-019b2ca6-720c-759f-896d-29eb7d047b2e.md)        | Bugfix   | Sidebar arrow key navigation not working after click                                                   |
+| 2025-12-19 10:59 | [Unified Editing Analysis](ampcode-threads/T-019b3643-79af-7573-bb69-18dac832eb94.md)  | Feature  | Analysis of duplicated text editing logic across contexts                                              |
+| 2025-12-19 11:36 | [Unified Editing Phase 1](ampcode-threads/T-019b3664-f5b5-7006-824b-db413f42a0be.md)   | Feature  | Implementing unified text editing architecture foundation                                              |
+| 2025-12-19 11:50 | [Unified Editing Phase 2](ampcode-threads/T-019b3671-fd6b-779e-91ed-1ab285ee4deb.md)   | Feature  | Unified text editing system phase 2 implementation                                                     |
+| 2025-12-19 12:04 | [Unified Editing Phase 4d](ampcode-threads/T-019b367e-dad9-730f-b44a-230362166a89.md)  | Feature  | Phase 4d: wiring text edit handler routing                                                             |
+| 2025-12-19 12:14 | [Unified Editing Milestone 3](ampcode-threads/T-019b3688-6a6f-70cf-9978-6f6214b6366d.md) | Feature | Unified text editing system milestone 3 (CSV cell migration)                                           |
+| 2025-12-19 12:21 | [Main Editor Bridge](ampcode-threads/T-019b368e-76e6-73f0-9bdc-55889e4a801a.md)        | Feature  | Main editor bridge for unified text editing                                                            |
+| 2025-12-19 12:34 | [Implementation Gaps](ampcode-threads/T-019b369a-6bd2-76de-9d1c-121e3bd78e2c.md)       | Feature  | Fix sidebar symbols and identify stubbed methods                                                       |
+| 2025-12-19 12:48 | [Workspace Docs Review](ampcode-threads/T-019b36a9-87ed-71be-b624-ac38c44c5186.md)     | Docs     | Review workspace management docs and implementation                                                    |
+| 2025-12-19 13:02 | [Tests & Benchmarks](ampcode-threads/T-019b36b4-071f-715c-9c40-e838c331c5a3.md)        | Feature  | Add tests and benchmarks for new features                                                              |
+| 2025-12-19 19:25 | [Documentation Review](ampcode-threads/T-019b37f4-c1c2-7415-aa0e-e0591b1d09ae.md)      | Docs     | Review new documentation for codebase accuracy                                                         |
+| 2025-12-19 19:50 | [Blog Post Adaptation](ampcode-threads/T-019b381d-d35f-7200-92b0-1aa8c548a507.md)      | Docs     | Adapt blog post to MDX with humanized tone                                                             |
+| 2025-12-19 20:07 | [Release Build Mode](ampcode-threads/T-019b3837-05a1-7408-91fd-e34c87b02d55.md)        | Setup    | Go build release mode                                                                                  |
+| 2025-12-20 11:17 | [Macro System Design](ampcode-threads/T-019b3b6c-b844-7795-946e-9efe7d9023ae.md)       | Feature  | Sketch macro system feature design doc                                                                 |
+| 2025-12-20 11:45 | [Release Links](ampcode-threads/T-019b3b86-0660-738e-b71a-768b93a1f404.md)             | Feature  | Link to latest releases automatically                                                                  |
+| 2025-12-20 11:48 | [Terminal & Indent Design](ampcode-threads/T-019b3b95-6389-74aa-a273-ddaa5fa57da1.md)   | Feature  | Feature design for terminal panel and indent visualization                                             |
+| 2025-12-20 12:11 | [Benchmark Gaps](ampcode-threads/T-019b3bab-48e9-710e-9849-9bf4a2a94d24.md)            | Research | Investigate benchmark gaps and optimize performance                                                    |
+| 2025-12-20 12:31 | [Perf Degradation](ampcode-threads/T-019b3bbd-d4fd-75df-81a0-c94a5e693227.md)          | Bugfix   | Multi-split rendering performance degradation investigation                                            |
+| 2025-12-20 13:40 | [Perf Optimization](ampcode-threads/T-019b3bd7-8ecb-7506-b600-29c1acfe818d.md)         | Bugfix   | Multi-split rendering optimization performance analysis                                                |
+| 2025-12-20 14:06 | [Profiling Docs](ampcode-threads/T-019b3c03-2f5c-774f-9cfb-7e322874dbb7.md)            | Docs     | Performance optimization pass and profiling workflow documentation                                     |
+| 2025-12-20 16:26 | [Find/Replace Review](ampcode-threads/T-019b3c4f-763e-765e-a805-52778800fd5a.md)       | Feature  | Check find implementation with oracle                                                                  |
+| 2026-01-06 21:53 | [Cursor Blink Config](ampcode-threads/T-019b9547-b9f5-773a-b13a-0e0b381759c4.md)       | Feature  | Cursor blink interval configuration                                                                    |
+| 2026-01-07 00:29 | [File Dialog Merge](ampcode-threads/T-019b95c6-b857-75cc-9cb8-d73f77125980.md)          | Feature  | Combine open file and folder dialogs                                                                   |
+| 2026-01-07 01:43 | [File Dialogs](ampcode-threads/T-019b95e4-e674-71af-8851-ac2c0f33d83a.md)              | Feature  | Implement file dialogs feature                                                                         |
+| 2026-01-07 12:39 | [Context Menu Spec](ampcode-threads/T-019b9869-8a1a-75db-ad80-8aba2e37d6cb.md)          | Feature  | Context menu abstraction spec and implementation                                                       |
+| 2026-01-07 13:14 | [Dock Panel Design](ampcode-threads/T-019b9856-c43e-75b8-b946-2a5011617081.md)          | Feature  | Design docked panels UI abstraction for workspace                                                      |
+| 2026-01-07 13:36 | [Markdown Preview](ampcode-threads/T-019b9893-43cd-72ea-bcb4-9e0e1494e517.md)           | Feature  | Implement markdown preview feature                                                                     |
+| 2026-01-07 13:47 | [Website v2 Redesign](ampcode-threads/T-019b98aa-170b-726b-8380-c3c4b52a21d8.md)        | Feature  | Redesign website inspired by modern dev tools                                                          |
+| 2026-01-07 13:57 | [MSI Bundle Fix](ampcode-threads/T-019b9897-f550-7128-b305-40e861733e89.md)             | Bugfix   | MSI bundle build fails with resource file error                                                        |
+| 2026-01-07 14:20 | [Preview Cont.](ampcode-threads/T-019b98be-6e9a-745b-bb1d-3285f1ec1460.md)              | Feature  | Continue markdown preview implementation                                                               |
+| 2026-01-07 15:04 | [Pane Widget](ampcode-threads/T-019b98dd-95f9-742a-b1e3-654662ebd344.md)                | Refactor | Extract reusable pane widget from preview                                                              |
+| 2026-01-08 09:42 | [Click Handling Review](ampcode-threads/T-019b9cbb-c371-7048-b075-b5b202595bfd.md)      | Refactor | Review markdown preview and propose click handling abstraction                                         |
+| 2026-01-08 13:37 | [Mouse Refactor](ampcode-threads/T-019b9d40-e7f7-760c-81ce-7dcc1796705e.md)             | Refactor | Mouse event handling system refactoring complete                                                       |
+| 2026-01-08 18:26 | [Panel Abstraction](ampcode-threads/T-019b98ae-4cd9-752a-99ac-a07571944a38.md)           | Feature  | Implement panel UI abstraction with commit review                                                      |
+| 2026-01-08 18:44 | [Preview Keybindings](ampcode-threads/T-019b9eec-b4b2-7369-a1fb-80c1a2dc4d69.md)        | Bugfix   | Debug keybindings and refactor markdown preview rendering                                              |
+| 2026-01-08 20:03 | [Dock Toggle Fix](ampcode-threads/T-019b9efa-2028-711b-9fd0-9739b34832e6.md)            | Bugfix   | Fix dock toggle, preview z-order, and editor area sizing                                               |
+| 2026-01-08 23:46 | [Dock Scroll Fix](ampcode-threads/T-019b9f4b-9090-766e-b6f4-d494ada06e87.md)            | Bugfix   | Fix markdown preview and dock scroll event leaking                                                     |
+| 2026-01-09 03:50 | [Editor Area Sizing](ampcode-threads/T-019ba01a-cde5-759e-ada6-216faba0e70b.md)          | Bugfix   | Editor area not shrinking for terminal dock                                                            |
+| 2026-01-09 05:43 | [v0.3.15 Release](ampcode-threads/T-019ba0ed-dfdb-71cf-8dec-291fcca7a783.md)             | Setup    | Update docs and tag patch release v0.3.15                                                              |
+| 2026-02-17 18:52 | [Sema Language](ampcode-threads/T-019c6c9a-ee2a-74cc-81b3-c189a725500e.md)              | Feature  | Add language support for sema lisp                                                                     |
+| 2026-02-17 18:14 | [Website v4](ampcode-threads/T-019c6cb5-43bb-7490-8480-0f76d1372a6f.md)                 | Feature  | Redesign v3 website to v4 with improved styling                                                        |
+| 2026-02-18 10:56 | [Keybindings Viewer Fix](ampcode-threads/T-019c6cf3-ecb6-72cb-8af0-d69f8d562206.md)     | Bugfix   | Keybindings viewer broken in Astro v4                                                                  |
+| 2026-02-18 10:57 | [Screenshot Pipeline](ampcode-threads/T-019c7065-499e-7489-a60e-dc4beea24ac2.md)         | Feature  | Execute screenshot pipeline and homepage redesign plan                                                 |
+| 2026-02-18 13:17 | [Reveal in Finder](ampcode-threads/T-019c6fef-7f25-7798-b5b9-ac7bb537f73e.md)           | Feature  | Reveal file in finder and copy path actions                                                            |
+| 2026-02-18 15:39 | [Screenshot Fixes](ampcode-threads/T-019c708b-a2bb-70f6-a62b-27f9005c95a8.md)           | Bugfix   | Fix screenshot syntax highlighting and CSV viewer mode                                                 |
+| 2026-02-18 15:55 | [Hero Layout](ampcode-threads/T-019c7168-8448-7204-85b1-649d05d97a65.md)                 | Feature  | Hero section screenshot layout styling                                                                 |
+| 2026-02-18 16:26 | [Astro Syntax Fix](ampcode-threads/T-019c7178-4034-778a-b7fd-660267f87de8.md)            | Bugfix   | Fix Astro template curly brace syntax error                                                            |
+| 2026-02-18 16:39 | [WASM Feasibility](ampcode-threads/T-019c7199-18ea-7381-ba20-66b1a9ae4898.md)            | Research | Feasibility of compiling token to WASM                                                                 |
+| 2026-02-18 17:25 | [Docs Verification](ampcode-threads/T-019c7193-e8a5-7462-93e6-95cce054e7a8.md)           | Docs     | Verify docs accuracy for keybindings and themes                                                        |
+| 2026-02-18 19:07 | [Theme Research](ampcode-threads/T-019c720c-21c5-703a-8403-d5410ff72006.md)              | Research | Research editor themes and suggest new ones                                                            |
+| 2026-02-18 19:20 | [OpenGraph Image](ampcode-threads/T-019c7212-52b0-77cb-bb71-f619c7e6ca43.md)             | Feature  | Generate opengraph image with website branding                                                         |
+| 2026-02-18 20:10 | [Status Bar Mirror](ampcode-threads/T-019c7228-2bde-77e1-bef0-ab2b38afb197.md)           | Feature  | Mirror token editor status bar layout                                                                  |
+| 2026-02-18 20:21 | [Tab Overflow Fix](ampcode-threads/T-019c7265-e37a-712e-ab03-408801ac7cb9.md)             | Bugfix   | Fix YAML tab overflow and duplicate scrollbars                                                         |
+| 2026-02-18 20:52 | [Gallery Pages](ampcode-threads/T-019c726b-c3fd-72c8-be61-06cdc86e123b.md)               | Feature  | Website pages and screenshots gallery ideas                                                            |
+| 2026-02-18 20:54 | [LinkedIn Blurb](ampcode-threads/T-019c7286-7786-71d9-8437-6021fb6646fc.md)              | Docs     | Create LinkedIn blurb for AI building content                                                          |
+| 2026-02-18 21:25 | [Pagination & Nav](ampcode-threads/T-019c728c-6859-7749-be87-ff6ef98ee8c9.md)             | Feature  | Remove pagination, add text-pretty, keyboard navigation                                                |
+| 2026-02-18 21:41 | [Website Infrastructure](ampcode-threads/T-019c7289-a2ff-762d-bbde-80da4e731a2d.md)       | Feature  | Expanding website and screenshot infrastructure                                                        |
+| 2026-02-18 22:11 | [Bracket Matching](ampcode-threads/T-019c7293-f967-73f6-b6b4-e3c2e946dfad.md)            | Feature  | Character wrapping and bracket matching features                                                       |
+| 2026-02-18 22:45 | [Image Optimization](ampcode-threads/T-019c72ca-af84-70be-a5ad-2471b923288c.md)           | Feature  | Astro image optimization for screenshot gallery                                                        |
+| 2026-02-18 22:51 | [Thread Audit](ampcode-threads/T-019c72f2-0c78-756c-ab6c-9e1eead1c641.md)                | Docs     | Audit and publish project threads securely                                                             |
+| 2026-02-18 23:47 | [Find Modal Fixes](ampcode-threads/T-019c7304-3f79-72ed-ab9d-22122cd4ad71.md)             | Bugfix   | Find modal rendering issues and scroll offset fixes                                                    |
+| 2026-02-18 23:47 | [Scroll Into View Bug](ampcode-threads/T-019c7311-dbee-7068-b3cc-ecc6f22d04af.md)         | Bugfix   | Viewport thought it was half-size — Mermaid diagram diagnosis                                          |
+| 2026-02-19 00:07 | [Syntax Perf](ampcode-threads/T-019c7326-f328-7330-b888-426528b60efe.md)               | Perf     | Rewrite syntax highlighting pipeline with deadline timers and highlight shifting                        |
+| 2026-02-19 00:37 | [Outline Panel Design](ampcode-threads/T-019c7342-a5df-7201-86ae-198e1c9aebb4.md)      | Feature  | Review outline panel design against codebase                                                           |
+| 2026-02-19 01:00 | [Release v0.3.18](ampcode-threads/T-019c7344-1f23-716e-be3f-442b8d29a8a1.md)           | Setup    | Update changelog and prepare release v0.3.18                                                           |
+| 2026-02-19 01:07 | [Outline Panel](ampcode-threads/T-019c736a-5e58-75bc-978d-9f6a6f1ee57a.md)             | Feature  | Code outline panel with tree-sitter symbol extraction                                                  |
+| 2026-02-19 01:17 | [Recent Files](ampcode-threads/T-019c736c-b9dd-7227-a190-de497ef7f2d0.md)              | Feature  | Recent files list with Cmd+E modal (Phases 1-5)                                                        |
+| 2026-02-19 01:36 | [Recent Files Tests](ampcode-threads/T-019c737e-2714-7069-8ed7-071d7b19ffa5.md)        | Feature  | Test coverage and deduplication for recent files                                                        |
 
 ---
 

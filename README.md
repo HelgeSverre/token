@@ -2,11 +2,11 @@
 
 **Multi-cursor, code editor inspired by JetBrains IDEs, Vibe-coded in Rust, using Amp Code.**
 <br>
-Most of the threads, prompts and conversations with the agent is available to view on
-my [Amp profile](https://ampcode.com/@helgesverre).
+The repository includes a reviewed archive of 171 Amp conversations that informed
+the project.
 
 ![Rust](https://img.shields.io/badge/Rust-000000.svg?logo=rust&logoColor=white&style=flat)
-[![Amp](https://img.shields.io/badge/Amp%20Code-191C19.svg?logo=data:image/svg%2bxml;base64,PHN2ZyB3aWR0aD0iMjEiIGhlaWdodD0iMjEiIHZpZXdCb3g9IjAgMCAyMSAyMSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTMuNzY4NzkgMTguMzAxNUw4LjQ5ODM5IDEzLjUwNUwxMC4yMTk2IDIwLjAzOTlMMTIuNzIgMTkuMzU2MUwxMC4yMjg4IDkuODY3NDlMMC44OTA4NzYgNy4zMzg0NEwwLjIyNTk0IDkuODkzMzFMNi42NTEzNCAxMS42Mzg4TDEuOTQxMzggMTYuNDI4MkwzLjc2ODc5IDE4LjMwMTVaIiBmaWxsPSIjRjM0RTNGIi8+CjxwYXRoIGQ9Ik0xNy40MDc0IDEyLjc0MTRMMTkuOTA3OCAxMi4wNTc1TDE3LjQxNjcgMi41Njg5N0w4LjA3ODczIDAuMDM5OTI0Nkw3LjQxMzggMi41OTQ4TDE1LjI5OTIgNC43MzY4NUwxNy40MDc0IDEyLjc0MTRaIiBmaWxsPSIjRjM0RTNGIi8+CjxwYXRoIGQ9Ik0xMy44MTg0IDE2LjM4ODNMMTYuMzE4OCAxNS43MDQ0TDEzLjgyNzYgNi4yMTU4OEw0LjQ4OTcxIDMuNjg2ODNMMy44MjQ3NyA2LjI0MTcxTDExLjcxMDEgOC4zODM3NkwxMy44MTg0IDE2LjM4ODNaIiBmaWxsPSIjRjM0RTNGIi8+Cjwvc3ZnPg==&style=flat)](https://ampcode.com/@helgesverre)
+[![Amp](https://img.shields.io/badge/Amp%20Code-191C19.svg?logo=data:image/svg%2bxml;base64,PHN2ZyB3aWR0aD0iMjEiIGhlaWdodD0iMjEiIHZpZXdCb3g9IjAgMCAyMSAyMSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTMuNzY4NzkgMTguMzAxNUw4LjQ5ODM5IDEzLjUwNUwxMC4yMTk2IDIwLjAzOTlMMTIuNzIgMTkuMzU2MUwxMC4yMjg4IDkuODY3NDlMMC44OTA4NzYgNy4zMzg0NEwwLjIyNTk0IDkuODkzMzFMNi42NTEzNCAxMS42Mzg4TDEuOTQxMzggMTYuNDI4MkwzLjc2ODc5IDE4LjMwMTVaIiBmaWxsPSIjRjM0RTNGIi8+CjxwYXRoIGQ9Ik0xNy40MDc0IDEyLjc0MTRMMTkuOTA3OCAxMi4wNTc1TDE3LjQxNjcgMi41Njg5N0w4LjA3ODczIDAuMDM5OTI0Nkw3LjQxMzggMi41OTQ4TDE1LjI5OTIgNC43MzY4NUwxNy40MDc0IDEyLjc0MTRaIiBmaWxsPSIjRjM0RTNGIi8+CjxwYXRoIGQ9Ik0xMy44MTg0IDE2LjM4ODNMMTYuMzE4OCAxNS43MDQ0TDEzLjgyNzYgNi4yMTU4OEw0LjQ4OTcxIDMuNjg2ODNMMy44MjQ3NyA2LjI0MTcxTDExLjcxMDEgOC4zODM3NkwxMy44MTg0IDE2LjM4ODNaIiBmaWxsPSIjRjM0RTNGIi8+Cjwvc3ZnPg==&style=flat)](docs/ampcode-threads/README.md)
 ![License: MIT](https://img.shields.io/badge/License-MIT-007ACC.svg?style=flat)
 [![token-editor.com](https://img.shields.io/badge/🌐_token--editor.com-007ACC?style=flat)](https://token-editor.com)
 
@@ -162,11 +162,11 @@ architecture, builds the native bundle and versioned archive, and opens
 ## Built with AI
 
 Token was built primarily through conversations with AI coding assistants, demonstrating effective human-AI
-collaboration on complex software projects. The development process, methodology, and all 100+ conversation threads are
-documented publicly.
+collaboration on complex software projects. The methodology and 171 referenced Amp conversations are preserved in this
+repository so the evidence does not depend on a third-party profile remaining public.
 
 - **[Building with AI](docs/BUILDING_WITH_AI.md)** — The framework used to build Token
-- **[Amp Code Profile](https://ampcode.com/@helgesverre)** — View the conversation threads
+- **[Amp conversation archive](docs/ampcode-threads/README.md)** — Browse the reviewed transcripts
 
 ---
 
@@ -178,7 +178,6 @@ documented publicly.
 | [THEMES.md](docs/THEMES.md)                           | Theme customization guide               |
 | [BUILDING_WITH_AI.md](docs/BUILDING_WITH_AI.md)       | AI-assisted development framework       |
 | [EDITOR_UI_REFERENCE.md](docs/EDITOR_UI_REFERENCE.md) | Technical reference for editor geometry |
-| [ROADMAP.md](docs/ROADMAP.md)                         | Planned features                        |
 | [CHANGELOG.md](docs/CHANGELOG.md)                     | Version history                         |
 | [CONTRIBUTING.md](docs/CONTRIBUTING.md)               | Contribution guidelines                 |
 

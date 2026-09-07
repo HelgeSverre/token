@@ -109,8 +109,8 @@ disabled); a usages _panel_ (the popup shipped).
 
 ### Known debt carried forward
 
-From `docs/SPRINT-ROADMAP.md`: eight bundled themes still ride derivation
-fallbacks (only `default-dark` is hand-tuned); no `completion.menu.*` config
+Eight bundled themes still ride derivation fallbacks (only `default-dark` is
+hand-tuned); no `completion.menu.*` config
 block (Phase 1 menu constants are hardcoded in `src/completion/sources.rs`); two
 `#[ignore]`d load-sensitive process-spawn tests (`--include-ignored`).
 
@@ -323,7 +323,7 @@ worker replies. Fake servers bind `127.0.0.1:0` in-process — see
 
 **Docs discipline.** Feature plans in `docs/feature/` are active; move one to
 `docs/archived/` with a dated `> **Status:**` line when it ships, and fix the
-inbound links (`docs/README.md`, `docs/ROADMAP.md`, `docs/SPRINT-ROADMAP.md`).
+inbound links such as `docs/README.md`.
 `0416ed0` is the pattern.
 
 **Release process** is in `AGENTS.md` §Releases. Preparing a release does not

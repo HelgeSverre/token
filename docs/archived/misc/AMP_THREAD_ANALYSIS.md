@@ -343,7 +343,6 @@ Key structures: Rope (ropey), Cursor, EditOperation, GlyphCache
 
 - Rust 2021, use `make fmt` before committing
 - Design docs in docs/feature/\*.md
-- Check docs/ROADMAP.md for planned work
 - Update docs/CHANGELOG.md when features complete
 ```
 

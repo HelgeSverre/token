@@ -8,6 +8,13 @@ All notable changes to rust-editor are documented in this file.
 
 ### Added
 
+- **Durable Amp conversation archive**: the 171 conversations referenced by
+  the AI-assisted development write-up now live in the repository, with an
+  inventory, chronological index, and provenance notes. README and website
+  links now point to the archive instead of the retired Amp profile and thread
+  URLs. Superseded roadmap and refactoring documents have also moved under
+  `docs/archived/`.
+
 - **Inline suggestions (ghost text)** (autocomplete Phase 2): a
   `completion.inline` config block plus a `completion.providers` entry point
   Token at a local llama.cpp server's `/infill` endpoint. Typing at the end

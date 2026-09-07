@@ -11,7 +11,6 @@ Start here to understand, use, and contribute to Token.
 | Visit the website | [token-editor.com](https://token-editor.com) |
 | Learn the keybindings | [User Guide: Keymap](user/config-keymap.md) |
 | Customize themes | [User Guide: Themes](user/config-theme.md) |
-| See what's planned | [ROADMAP.md](ROADMAP.md) |
 | See what's shipped | [CHANGELOG.md](CHANGELOG.md) |
 | Understand the architecture | [Architecture](#architecture) |
 | Contribute a feature | [Contributing](#contributing) |
@@ -148,9 +147,8 @@ src/
 
 ### Before You Start
 
-1. Check [ROADMAP.md](ROADMAP.md) for planned work
-2. Read the relevant feature design doc in `docs/feature/`
-3. Understand the behavior contracts in `docs/dev/`
+1. Read the relevant feature design doc in `docs/feature/`
+2. Understand the behavior contracts in `docs/dev/`
 
 ### Creating a Feature Doc
 
@@ -172,7 +170,6 @@ For each feature:
 
 ## References
 
-- [ROADMAP.md](ROADMAP.md) - Feature roadmap and milestones
 - [CHANGELOG.md](CHANGELOG.md) - Version history
 - [EDITOR_UI_REFERENCE.md](EDITOR_UI_REFERENCE.md) - UI component reference
 - [BENCHMARKING.md](BENCHMARKING.md) - Performance testing guide

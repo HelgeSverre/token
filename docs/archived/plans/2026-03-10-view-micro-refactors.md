@@ -5,7 +5,7 @@
 
 ## Context
 
-Two small, self-contained refactors from `docs/POTENTIAL-REFACTORS.md` that are independent of the larger view layer redesign. Both reduce repetition in the rendering hot path without changing architecture.
+Two small, self-contained refactors that are independent of the larger view layer redesign. Both reduce repetition in the rendering hot path without changing architecture.
 
 ---
 

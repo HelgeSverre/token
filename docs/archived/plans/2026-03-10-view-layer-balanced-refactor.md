@@ -18,7 +18,6 @@ The goal is to land this in small, low-risk slices that also fix known UI incons
 
 ## Existing Docs To Fold In
 
-- [`docs/POTENTIAL-REFACTORS.md`](../../POTENTIAL-REFACTORS.md)
 - [`docs/archived/panel-ui-abstraction.md`](../panel-ui-abstraction.md)
 - [`docs/archived/tree-navigation-abstraction.md`](../tree-navigation-abstraction.md)
 - [`docs/feature/DAMAGE-TRACKING.md`](../../feature/DAMAGE-TRACKING.md)

@@ -1289,7 +1289,6 @@ fn test_dock_size_scaling() {
 - [Workspace implementation](../../src/model/workspace.rs)
 - [Current sidebar rendering](../../src/view/mod.rs#L663-L851)
 - [Config paths](../../src/config_paths.rs)
-- [ROADMAP](../ROADMAP.md)
 
 ### External Resources
 

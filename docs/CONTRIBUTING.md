@@ -83,7 +83,6 @@ Key directories:
 
 For detailed architecture documentation, see:
 - [EDITOR_UI_REFERENCE.md](EDITOR_UI_REFERENCE.md) - Viewport, coordinates, scrolling
-- [ROADMAP.md](ROADMAP.md) - Planned features
 - [CHANGELOG.md](CHANGELOG.md) - Version history
 
 ---

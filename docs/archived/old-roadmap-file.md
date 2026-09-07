@@ -3,7 +3,7 @@
 **Archived:** 2025-12-06
 **Status:** All phases below are complete
 
-This document archives the completed architecture refactoring work. For current roadmap, see [docs/ROADMAP.md](../ROADMAP.md).
+This document archives the completed architecture refactoring work.
 
 ---
 

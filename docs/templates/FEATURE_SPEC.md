@@ -260,7 +260,6 @@ Test scenarios that involve multiple components:
 
 - [Related feature](../feature/related-feature.md)
 - [Behavior contract](../dev/contracts-relevant.md)
-- [ROADMAP](../ROADMAP.md)
 
 ### External Resources
 
