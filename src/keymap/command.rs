@@ -166,6 +166,7 @@ pub enum Command {
     // ========================================================================
     /// Toggle command palette
     ToggleCommandPalette,
+    OpenSettings,
     /// Toggle goto line dialog
     ToggleGotoLine,
     /// Toggle find/replace dialog
@@ -454,6 +455,7 @@ impl Command {
             Quit => vec![Msg::App(AppMsg::Quit)],
 
             // Modals
+            OpenSettings => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::Settings))],
             ToggleCommandPalette => {
                 vec![Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette))]
             }
@@ -599,6 +601,7 @@ impl Command {
         matches!(
             self,
             Command::ToggleCommandPalette
+                | Command::OpenSettings
                 | Command::ToggleGotoLine
                 | Command::ToggleFindReplace
                 | Command::OpenRecentFiles
@@ -685,6 +688,7 @@ impl Command {
             Quit => "Quit",
 
             ToggleCommandPalette => "Command Palette",
+            OpenSettings => "Open Settings",
             ToggleGotoLine => "Go to Line",
             ToggleFindReplace => "Find and Replace",
             OpenRecentFiles => "Open Recent Files",

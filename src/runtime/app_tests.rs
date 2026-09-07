@@ -2480,6 +2480,15 @@ fn next_wake_ignores_an_expired_dwell_deadline() {
 }
 
 #[test]
+fn disabled_cursor_blink_schedules_a_future_maintenance_wake() {
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.cursor_blink_ms = 0;
+    app.last_tick = Instant::now() - Duration::from_secs(10);
+    let now = Instant::now();
+    assert!(app.next_wake(now) > now);
+}
+
+#[test]
 fn check_hover_dwell_does_not_fire_outside_editor_text() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.ui.hover = token::model::HoverRegion::Sidebar;

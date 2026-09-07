@@ -1,0 +1,10 @@
+name: settings-lsp-narrow
+width: 800
+height: 1100
+scale: 2.0
+theme: default-dark
+files:
+  - path: samples/sample_code.rs
+modal:
+  id: settings
+  input: language server

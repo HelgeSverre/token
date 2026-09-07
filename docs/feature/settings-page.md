@@ -2,13 +2,55 @@
 
 A searchable, preset-driven settings modal on the existing `OverlaySurface` — no new rendering surface, no config file editor, no free-text inputs. One static descriptor table drives search, sectioning, and rendering; the YAML file stays the single source of truth and keeps accepting values the UI doesn't offer as presets.
 
-> **Status:** 📋 Planned
+> **Status:** Implemented v1 (2026-09-06); keymap tab remains future
 > **Priority:** P3
 > **Effort:** M
 > **Created:** 2026-08-13
 > **Milestone:** 6 - Productivity
 
 ---
+
+## Implementation Notes
+
+### Visual revision (2026-09-07)
+
+The initial compact palette presentation was replaced at user request with a
+Zed-inspired, window-sized preferences form: category navigation on the left,
+section headings and descriptions beneath setting labels, boolean switches,
+and right-aligned presets. On narrow windows categories wrap above the form
+and controls move below labels. Tab/Shift+Tab cycles categories; search filters
+the current category (All Settings searches everything). This remains an in-app
+modal, not a separate operating-system window.
+
+Short windows also reflow categories into a grid. When only one display row
+fits, navigation shows the setting rather than its section heading. Theme and
+server-command values are separate from optional descriptions and stay visible
+below their labels in compact rows; the selected value also appears in the footer.
+
+`src/view/settings_page.rs` owns the settings presentation within OverlaySurface.
+Its resolved rectangles are used by both painting and hit testing, and its
+viewport capacity is shared with keyboard, wheel, and screenshot navigation.
+The historical design below describes the original compact presentation;
+this revision supersedes its width, row layout, and navigation decisions.
+
+- `src/settings/descriptors.rs` declares the editor, appearance, status bar,
+  completion, and LSP master presets. Theme metadata lives in the same table and
+  opens the existing Theme Picker.
+- `resolve_settings_rows` produces the row identities cached by `SettingsState`.
+  Rendering, navigation, and chip commits use that same order. Per-server rows
+  come from the compile-time server registry.
+- Update handlers mutate `EditorConfig` and return `Cmd::SaveConfiguration`;
+  the runtime saves each snapshot immediately in click order. Existing invalid
+  files are left untouched. The merge compares the old typed configuration to
+  avoid restoring deliberately removed known options or map entries.
+- Control geometry is shared by rendering and hit testing. Narrow windows move
+  controls below labels before shrinking slots and truncating labels. The footer shows the selected row's description
+  or the command override's YAML key.
+- Server lifecycle rows read the live model and request a full modal redraw on
+  status changes. Settings does not add server restart/management actions.
+- Regression tests live in `src/settings/tests.rs`, `src/config.rs`, and the
+  runtime/overlay test modules. Screenshot scenarios cover the default modal,
+  LSP search, and narrow windows under `screenshots/scenarios/settings*.yaml`.
 
 ## Overview
 
@@ -18,7 +60,7 @@ A searchable, preset-driven settings modal on the existing `OverlaySurface` — 
 
 A Settings context on `OverlaySurface` gives every discrete-choice setting a UI for the cost of one table row, reusing infrastructure (fuzzy search, sectioned lists, accessory chips) that already exists for the palette and pickers.
 
-### Current State
+### Baseline Before Implementation
 
 - `EditorConfig` (`src/config.rs`) is the single struct persisted to `~/.config/token-editor/config.yaml`. Fields use `#[serde(default = "...")]` so missing keys fall back cleanly on load. `LspConfig` nests `enabled: bool` and `servers: HashMap<String, LspServerOverride>` (keyed by `LspServerDef::id`, overriding `command`/`enabled` per server).
 - `EditorConfig::save()` (`src/config.rs:190`) is `serde_yaml::to_string(self)` followed by a plain file write — it serializes *only* what the struct knows about. Any key a user hand-added, or that a newer build wrote and this build doesn't have a field for, is silently dropped on the next save. This is fine today because saves are rare (theme picker only); it becomes a data-loss bug the moment settings UI writes on every click.
@@ -165,28 +207,28 @@ pub enum SettingValue {
 
 **Effort:** S
 
-- [ ] `EditorConfig::save()`: serialize `self` to a `serde_yaml::Value`, read + parse the existing on-disk file (if any) to a second `Value`, recursively copy keys present in the old value but absent in the new one into the new value, write the merged value.
-- [ ] Unit test: a config file with an unknown top-level key and an unknown nested key under `lsp.servers.<id>` survives a `save()` round-trip unchanged.
-- [ ] No UI changes in this phase; existing callers of `save()` (theme picker) are unaffected.
+- [x] `EditorConfig::save()`: serialize known settings and preserve unknown keys from the existing YAML. Comparing against the old typed configuration prevents restoring removed known options, server entries, and arbitrary LSP settings keys. Invalid/unreadable files fail before writing; comments and formatting are not retained.
+- [x] Tests cover unknown top-level/nested keys, known-value changes, removed known options/map entries, malformed/unreadable files, and missing/empty files.
+- [x] No UI changes in this phase; existing callers of `save()` (theme picker) are unaffected.
 
 ### Phase 2: Settings context on OverlaySurface
 
 **Effort:** M
 
-- [ ] `SettingDescriptor` table covering the existing `EditorConfig` fields (theme, cursor_blink_ms, auto_surround, bracket_matching, show_scrollbar, status_bar_font_size) with 2-5 choices each.
-- [ ] Segmented-chip `Accessory` rendering + Left/Right cycle and click-to-select input handling (new `ModalMsg` arms alongside the existing chip/row patterns).
-- [ ] `resolve_settings_rows` ordering authority; fuzzy search wired the same way as every other list context; sections hide when empty under a query.
-- [ ] Off-preset value handling: no chip lit when the config's current value doesn't match any choice.
-- [ ] Immediate-write-on-change wired to the now-safe `EditorConfig::save()`.
-- [ ] `Cmd+,` keybinding + "Open Settings" palette command.
+- [x] `SettingDescriptor` table covering the existing `EditorConfig` fields (theme, cursor_blink_ms, auto_surround, bracket_matching, show_scrollbar, status_bar_font_size) with 2-5 presets per editable row; theme opens the existing picker.
+- [x] Segmented-chip `Accessory` rendering + Left/Right cycle and click-to-select input handling (new `ModalMsg` arms alongside the existing chip/row patterns).
+- [x] `resolve_settings_rows` ordering authority; fuzzy search wired the same way as every other list context; sections hide when empty under a query.
+- [x] Off-preset value handling: no chip lit when the config's current value doesn't match any choice.
+- [x] Immediate-write-on-change wired to the now-safe `EditorConfig::save()`.
+- [x] `Cmd+,` keybinding + "Open Settings" palette command.
 
 ### Phase 3: LSP section
 
 **Effort:** S
 
-- [ ] `lsp.enabled` master toggle row and per-server enabled chip rows.
-- [ ] Read-only command-override rows (value + YAML key name).
-- [ ] Read-only live status rows sourced from `LspUiState.servers`.
+- [x] `lsp.enabled` master toggle row and per-server enabled chip rows.
+- [x] Read-only command-override rows (value + YAML key name).
+- [x] Read-only live status rows sourced from `LspUiState.servers`.
 
 ### Phase 4 (Future): Keymap tab
 
@@ -214,12 +256,12 @@ pub enum SettingValue {
 
 ## Acceptance Criteria
 
-- [ ] Opening Settings (`Cmd+,` or palette) shows all sections; typing filters across name/description/keywords with no dead sections shown.
-- [ ] Changing a chip writes `EditorConfig::save()` immediately; no save button exists.
-- [ ] A config value written by hand that isn't one of a setting's presets shows no active chip and is never overwritten by opening Settings.
-- [ ] A config file with keys this build's `EditorConfig` doesn't know about is unchanged by any settings-page save.
-- [ ] LSP section shows `lsp.enabled`, per-server enabled state, command-override values (read-only), and live status per server.
-- [ ] No text input, numeric input, or validation/error UI exists anywhere in the Settings context.
+- [x] Opening Settings (`Cmd+,` or palette) shows all sections; typing filters across name/description/keywords with no dead sections shown.
+- [x] Changing a chip writes `EditorConfig::save()` immediately; no save button exists.
+- [x] A config value written by hand that isn't one of a setting's presets shows no active chip and is never overwritten by opening Settings.
+- [x] Unknown YAML keys and their values survive settings-page saves. Comments and formatting are not retained.
+- [x] LSP section shows `lsp.enabled`, per-server enabled state, command-override values (read-only), and live status per server.
+- [x] No setting-value text input, numeric input, or validation UI exists; the header input is only for search.
 
 ---
 
@@ -241,9 +283,9 @@ pub enum SettingValue {
 
 ## Open Questions
 
-- Exact chip layout when a setting has more choices than comfortably fits a row width at narrow window sizes — does it wrap, scroll horizontally, or fall back to a dropdown-like disclosure? Unresolved; likely follows `overlay-surface.md`'s narrow-window degradation precedent (something drops) rather than inventing a new pattern.
+- Narrow-window layout is resolved for v1: chip slots shrink and labels truncate; chips remain individually clickable.
 - Should "Open Settings" support a query-string entry point (`Cmd+,` then jump straight to a section, e.g. from a status-bar click on the LSP status segment) — deferred to whenever the LSP status segment itself needs a destination.
-- Where does the theme setting's chip set stop and the full Theme Picker start — inline chips for a handful of "favorite" themes plus an "open full picker" row, or always defer to the picker? Deferred to Phase 2 implementation.
+- Theme is resolved for v1: display the current theme and open the existing Theme Picker from its row.
 
 ---
 

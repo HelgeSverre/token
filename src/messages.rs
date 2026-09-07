@@ -228,6 +228,10 @@ pub enum ModalMsg {
     Confirm,
     /// Set selection to a specific row and confirm in one step (row click).
     ActivateRow(usize),
+    /// Move through the selected setting's presets.
+    CycleSetting(isize),
+    /// Pick a rendered preset chip by row and choice index.
+    SelectSettingChoice { row: usize, choice: usize },
     /// Toggle the pinned flag on the selected row (Recent Files, Commands
     /// tab: `⌘.`).
     TogglePin,

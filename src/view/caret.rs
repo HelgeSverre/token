@@ -134,6 +134,13 @@ fn modal_caret_rect(
                 TextFieldOptions::for_text_box(&state.editable, &rect, line_height, char_width),
             )
         }
+        ModalState::Settings(state) => {
+            let rect = header(model)?;
+            (
+                &state.editable,
+                TextFieldOptions::for_text_box(&state.editable, &rect, line_height, char_width),
+            )
+        }
         ModalState::GotoLine(GotoLineState { editable, .. })
         | ModalState::RenameSymbol(RenameSymbolState { editable, .. }) => {
             let rect = super::modal::modal_field_input_rect(model, width, height, scale_factor, 0)?;

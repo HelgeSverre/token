@@ -95,21 +95,33 @@ pub enum HitTarget {
     /// somewhere that isn't a selectable row (header, footer, panel
     /// padding). `inside` indicates whether the click was inside or outside
     /// the modal bounds — outside dismisses.
-    Modal { inside: bool },
+    Modal {
+        inside: bool,
+    },
 
     /// A selectable row within a `Body::List` modal — row click sets
     /// selection and activates in one step (overlay-surface.md Pointer).
-    ModalRow { flat_index: usize },
+    ModalRow {
+        flat_index: usize,
+    },
+    ModalChoice {
+        flat_index: usize,
+        choice: usize,
+    },
 
     /// A tab in the Search Everywhere tab bar — click switches tabs
     /// (overlay-surface.md Pointer: "Tab click switches tabs").
-    ModalTab { index: usize },
+    ModalTab {
+        index: usize,
+    },
 
     /// Inside a cursor-anchored popup (completion/hover) — non-blocking, per
     /// overlay-surface.md Phase 5: the click lands in the popup instead of
     /// falling through to the editor, and doesn't move the text cursor.
     /// `flat_index` is `Some` when a selectable row (`Body::List`) was hit.
-    CursorOverlay { flat_index: Option<usize> },
+    CursorOverlay {
+        flat_index: Option<usize>,
+    },
 
     /// Status bar at the bottom of the window
     StatusBar,
@@ -135,10 +147,14 @@ pub enum HitTarget {
     },
 
     /// Header area of a preview pane (can be middle-clicked to close)
-    PreviewHeader { preview_id: PreviewId },
+    PreviewHeader {
+        preview_id: PreviewId,
+    },
 
     /// Content area of a preview pane (webview or native rendering)
-    PreviewContent { preview_id: PreviewId },
+    PreviewContent {
+        preview_id: PreviewId,
+    },
 
     /// A specific tab in a group's tab bar
     GroupTab {
@@ -148,7 +164,9 @@ pub enum HitTarget {
     },
 
     /// Empty area of a group's tab bar (no specific tab)
-    GroupTabBarEmpty { group_id: GroupId },
+    GroupTabBarEmpty {
+        group_id: GroupId,
+    },
 
     /// Editor gutter (line numbers, and once shipped: marks/fold/diff lanes)
     EditorGutter {
@@ -200,7 +218,9 @@ pub enum HitTarget {
     },
 
     /// "Open with Default Application" button on binary placeholder tab
-    BinaryPlaceholderButton { group_id: GroupId },
+    BinaryPlaceholderButton {
+        group_id: GroupId,
+    },
 
     /// Image content area (pan/zoom viewer)
     ImageContent {
@@ -285,9 +305,10 @@ impl HitTarget {
         use crate::model::HoverRegion;
 
         match self {
-            HitTarget::Modal { .. } | HitTarget::ModalRow { .. } | HitTarget::ModalTab { .. } => {
-                HoverRegion::Modal
-            }
+            HitTarget::Modal { .. }
+            | HitTarget::ModalRow { .. }
+            | HitTarget::ModalTab { .. }
+            | HitTarget::ModalChoice { .. } => HoverRegion::Modal,
             HitTarget::CursorOverlay { .. } => HoverRegion::CursorOverlay,
             HitTarget::StatusBar => HoverRegion::StatusBar,
             HitTarget::SidebarResize => HoverRegion::SidebarResize,
@@ -401,6 +422,10 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
     // test the point against it.
     super::modal::with_modal_overlay_layout(model, ww, wh, sf, |spec, layout| {
         match super::overlay_surface::hit_test(spec, layout, x, y) {
+            super::overlay_surface::OverlayHit::Choice { row, choice } => HitTarget::ModalChoice {
+                flat_index: row.0,
+                choice,
+            },
             super::overlay_surface::OverlayHit::Outside => HitTarget::Modal { inside: false },
             super::overlay_surface::OverlayHit::Row(flat_index) => HitTarget::ModalRow {
                 flat_index: flat_index.0,
@@ -439,6 +464,7 @@ pub fn hit_test_cursor_overlay(
                 flat_index: Some(flat_index.0),
             }),
             super::overlay_surface::OverlayHit::Inside
+            | super::overlay_surface::OverlayHit::Choice { .. }
             | super::overlay_surface::OverlayHit::Tab(_) => {
                 Some(HitTarget::CursorOverlay { flat_index: None })
             }

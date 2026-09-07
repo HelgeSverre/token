@@ -1,0 +1,9 @@
+name: settings-wide
+width: 1920
+height: 1440
+scale: 1.5
+theme: default-dark
+files:
+  - path: samples/sample_code.rs
+modal:
+  id: settings
