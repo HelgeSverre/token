@@ -208,6 +208,15 @@ fn value_rect(rect: &WidgetRect, sf: f64) -> WidgetRect {
     }
 }
 
+fn action_rect(rect: &WidgetRect, sf: f64) -> WidgetRect {
+    WidgetRect {
+        x: rect.x + rect.w.saturating_sub(scaled(112.0, sf)),
+        y: rect.y + scaled(10.0, sf),
+        w: scaled(112.0, sf).min(rect.w),
+        h: scaled(24.0, sf).min(rect.h),
+    }
+}
+
 fn preset_rects(rect: &WidgetRect, labels: &[&str], sf: f64) -> Vec<WidgetRect> {
     let control = controls(rect, sf);
     let budget = if rect.w < scaled(400.0, sf) {
@@ -267,6 +276,19 @@ pub(super) fn hit_test(
                 continue;
             }
             if let Some(DisplayRow::Row(row, index)) = rows.get(start + slot) {
+                if matches!(
+                    row.accessory,
+                    Accessory::SettingValue {
+                        action: Some(_),
+                        ..
+                    }
+                ) && contains(&action_rect(rect, layout.scale_factor), x, y)
+                {
+                    return OverlayHit::Choice {
+                        row: *index,
+                        choice: 0,
+                    };
+                }
                 if let Accessory::Choices { labels, active } = &row.accessory {
                     if *labels == ["Off", "On"] {
                         if contains(&switch_rect(rect, layout.scale_factor), x, y) {
@@ -459,6 +481,9 @@ pub(super) fn render(
                                 .map(|r| rect.x + rect.w - r.x + scaled(16.0, sf))
                                 .unwrap_or(0),
                             Accessory::DimText(_) => scaled(120.0, sf),
+                            Accessory::Keycaps(steps) => {
+                                keycaps_width(painter, steps, sf) + scaled(16.0, sf)
+                            }
                             _ => 0,
                         }
                     };
@@ -508,12 +533,7 @@ pub(super) fn render(
                                 colors.text_dim,
                             );
                             if let Some(action) = action {
-                                let r = WidgetRect {
-                                    x: rect.x + rect.w.saturating_sub(scaled(112.0, sf)),
-                                    y: rect.y + scaled(10.0, sf),
-                                    w: scaled(112.0, sf).min(rect.w),
-                                    h: rect.h,
-                                };
+                                let r = action_rect(rect, sf);
                                 text(
                                     frame,
                                     painter,
@@ -592,6 +612,40 @@ pub(super) fn render(
                                 );
                             }
                         }
+                        Accessory::Keycaps(steps) => {
+                            let width = keycaps_width(painter, steps, sf).min(control.w);
+                            let mut x = control.x + control.w - width;
+                            let y = control.y + scaled(8.0, sf);
+                            frame.push_clip(Rect::new(
+                                control.x as f32,
+                                control.y as f32,
+                                control.w as f32,
+                                control.h as f32,
+                            ));
+                            for (i, step) in steps.iter().enumerate() {
+                                if i > 0 {
+                                    x += scaled(dims::CHIP_STEP_GAP, sf);
+                                }
+                                for (j, chip) in step.iter().enumerate() {
+                                    if j > 0 {
+                                        x += scaled(dims::CHIP_GAP, sf);
+                                    }
+                                    x += super::super::frame::draw_keycap(
+                                        frame,
+                                        painter,
+                                        masks,
+                                        x,
+                                        y,
+                                        &chip.label,
+                                        colors.keycap_bg,
+                                        colors.keycap_border,
+                                        colors.keycap_fg,
+                                        sf,
+                                    );
+                                }
+                            }
+                            frame.pop_clip();
+                        }
                         Accessory::DimText(value) => {
                             let r = WidgetRect {
                                 x: control.x + control.w.saturating_sub(scaled(112.0, sf)),
@@ -652,6 +706,72 @@ mod tests {
     use super::*;
 
     #[test]
+    fn settings_page_keeps_spacious_categories_and_shared_control_hits() {
+        for (width, height, scale) in [
+            (1100, 720, 1.0),
+            (400, 750, 1.0),
+            (800, 300, 1.0),
+            (1600, 1100, 2.0),
+        ] {
+            let model = crate::model::AppModel::new(width, height, scale, vec![]);
+            let state = crate::model::ui::SettingsState::default();
+            crate::view::modal::with_settings_spec(&model, &state, |spec| {
+                assert!(matches!(spec.anchor, Anchor::Settings { .. }));
+                let geometry = super::super::layout(spec, width as usize, height as usize, scale);
+                assert!(geometry.panel.h > height as usize * 4 / 5);
+                assert_eq!(geometry.row_height, scaled(ROW, scale));
+                let tabs = spec.tabs.as_ref().unwrap();
+                assert_eq!(tabs.tabs[0].0, "All Settings");
+                assert!(tabs.tabs.iter().any(|(label, _)| *label == "Appearance"));
+                for (index, rect) in geometry.tab_rects.iter().enumerate() {
+                    assert_eq!(
+                        hit_test(spec, &geometry, rect.x + rect.w / 2, rect.y + rect.h / 2),
+                        OverlayHit::Tab(index)
+                    );
+                }
+                if width == 1100 {
+                    assert!(geometry.tab_rects[0].x < geometry.rows[0].x);
+                    assert!(geometry.tab_rects[1].y > geometry.tab_rects[0].y);
+                }
+            });
+            for query in ["Theme", "scrollbar"] {
+                let mut state = crate::model::ui::SettingsState::default();
+                state.editable.set_content(query);
+                state.refilter();
+                crate::view::modal::with_settings_spec(&model, &state, |spec| {
+                    let geometry =
+                        super::super::layout(spec, width as usize, height as usize, scale);
+                    let row = geometry
+                        .rows
+                        .iter()
+                        .find(|row| {
+                            hit_test(spec, &geometry, row.x + 1, row.y + 1)
+                                == OverlayHit::Row(FlatIndex(0))
+                        })
+                        .unwrap();
+                    let control = if query == "Theme" {
+                        action_rect(row, scale)
+                    } else {
+                        switch_rect(row, scale)
+                    };
+                    assert!(matches!(
+                        hit_test(
+                            spec,
+                            &geometry,
+                            control.x + control.w / 2,
+                            control.y + control.h / 2
+                        ),
+                        OverlayHit::Choice {
+                            row: FlatIndex(0),
+                            ..
+                        }
+                    ));
+                });
+            }
+        }
+    }
+
+    #[test]
     fn compact_settings_rows_paint_values_beneath_the_label() {
         let font = fontdue::Font::from_bytes(
             include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
@@ -678,6 +798,7 @@ mod tests {
             let mut painter = TextPainter::new(&font, &mut glyph_cache, 14.0, 11.0, 8.0, 18);
             let mut buffer = vec![0; 400 * 750];
             let mut frame = Frame::new(&mut buffer, 400, 750);
+            frame.push_clip(Rect::new(0.0, 0.0, 400.0, 750.0));
             let colors = Palette::from_theme(&OverlayTheme::default_dark());
             crate::view::modal::with_settings_spec(&model, &state, |spec| {
                 let Body::List { sections, .. } = &spec.body else {
@@ -705,6 +826,8 @@ mod tests {
                     1.0,
                     true,
                 );
+                // The page and shared header must leave their enclosing clip intact.
+                frame.pop_clip();
                 let mut ink = 0;
                 for y in value.y..value.y + value.h {
                     for x in value.x..value.x + value.w {

@@ -51,6 +51,9 @@ feature docs can describe intent but may lag implementation.
 
 ## Rendering and Performance
 
+- Keep Settings as its separate preferences page with category navigation and
+  form controls. Sharing metadata or layout helpers does not authorize replacing
+  this design with a command-palette UI.
 - Keep `Renderer` as the top-level orchestrator. Extract domain-specific code
   only when it creates a shared source of truth or a clear feature home.
 - Reuse layout, viewport, and traversal helpers across rendering, hit testing,

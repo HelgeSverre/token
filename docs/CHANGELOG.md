@@ -6,6 +6,13 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Settings design correction
+
+- Preserve the dedicated Settings page with category navigation, spacious form
+  rows and responsive controls. Regression tests protect the page layout and
+  control hit targets; the Theme picker action now shares its painted button
+  geometry with pointer handling. Settings must not be replaced by a palette UI.
+
 ### Performance
 
 - Usages previews are prepared off the event loop with replaceable work and
