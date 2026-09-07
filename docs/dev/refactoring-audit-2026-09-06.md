@@ -1,5 +1,81 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Keymap registries and contextual chord eligibility — 2026-09-07
+
+Commit `e017bd6` removes two competing registries ahead of the Settings keymap
+work. Bindable commands and their case-sensitive YAML names now come from the
+same enum declaration. The independent snapshot has 126 variants; comparing its
+old parser found two omissions, `ToggleUsages` and `RestartLanguageServer`.
+The new regression failed on `ToggleUsages` before the fix (run
+`3fa666fb-8ebf-4485-adf5-bc2ff2fcd007`). A macro-generated test exercises both
+`FromStr` and YAML parsing for every variant, including future additions;
+unknown names still produce `InvalidCommand`.
+
+Default construction and runtime loading now share the embedded YAML, parsed
+once with independent cloned snapshots for overrides. The large hardcoded
+default list is removed; only Save/Open/Quit remain as deliberate emergency
+controls if embedded YAML is invalid. User-keymap load/merge behavior stays the
+same. Regressions cover equality with parsed embedded defaults, independent
+snapshots, exact/contextual replacements, chord overrides, unconditional
+sequence-wide `Unbound` removal and the minimal emergency controls. This does
+not add presets, change override precedence or implement hot reload.
+
+The registry-only group passed **2,156 tests**, seven skipped, and **two doctests**,
+six ignored, plus strict lint and formatting. Run
+`14a21f1f-e01b-4a59-9357-6b9af7115b3f`. It contains five explicit files, with
+177 inserted and 406 deleted lines including tests, changelog and usage notes.
+The broader command metadata, shortcut hints, new completion actions and chord
+YAML/runtime routing remain separate source groups.
+
+### Chord context correction
+
+Commit `4a00fa5` fixes a concrete context mismatch: completed bindings checked
+conditions, but starting or extending a chord only checked its key sequence.
+An inactive conditional branch could therefore consume input or prolong pending
+state. Two new regressions failed against the old engine with `AwaitMore` instead
+of `NoMatch` (run `1148cc5a-42a0-4b61-981e-a8b97db9b27d`).
+
+One keymap-private binding-eligibility helper now governs conditional single
+bindings, complete chords and every partial prefix. Conditional bindings require
+a context, all predicates must match, and eligibility is reevaluated on each
+stroke. Eligible alternative branches remain usable; context changes or missing
+context cannot keep an ineligible branch pending. Existing single-stroke and
+complete-chord precedence is unchanged. The documented `sidebar_focused`
+condition and its case-insensitive aliases now parse instead of rejecting the
+entire user keymap.
+
+Four new regressions cover the shared predicate, missing/changed contexts,
+initial and intermediate prefixes, eligible alternatives, successful completion,
+pending-state reset and sidebar-condition parsing. The independent check keeps
+the committed single-keystroke input API; the working tree's multi-interpretation
+routing uses the same predicate without pulling that migration into this commit.
+
+The context-correction group passed **2,160 tests**, seven skipped; **two
+doctests passed**, six ignored, with strict lint and formatting. Run
+`edafa848-0d58-4573-a3d7-c7146e0c3fbd`.
+
+Final full working-tree integration passed **2,538 tests**, seven skipped; **two
+doctests passed**, six ignored, plus strict lint, formatting and diff checks.
+Run `1a87a6bd-9596-4f05-bc52-e2f0b0dff8b5`. The final suites reported no exit
+warnings; earlier startup/process warning debt remains unresolved.
+
+### Review and remaining scope
+
+Scoped self-review: **Approve**; no unresolved critical/high findings. Each
+staged source group matched its independently checked patch byte-for-byte and
+preserved the affected working-file hashes. Changelog and user guide changes
+are grouped with their code; this audit and the future Settings plan are separate.
+The temporary verification checkout was removed only after matching the committed
+source.
+
+These are verified foundations, not completion of the Settings keymap tab.
+Merged/searchable rows, conflict analysis, chord capture with explicit save/cancel,
+override persistence, base presets and native/platform verification remain open.
+No new benchmark or native keyboard/pointer run was performed; existing performance
+reports retain their snapshot boundaries. No additional whole plan is ready to
+archive, the temporary handoff remains necessary, and nothing was pushed or
+published.
+
 ## Persistent grouped usages panel — 2026-09-07
 
 Commit `7c1d55a` separates Find Usages from Show Usages: Find opens persistent

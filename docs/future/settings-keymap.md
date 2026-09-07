@@ -7,6 +7,12 @@
 Settings v1 provides searchable preset controls and LSP state. Archiving that
 completed scope does not complete the separate keybinding editor described here.
 
+The keymap foundations were consolidated on 2026-09-07: `e017bd6` gives bindable
+names and defaults one source of truth; `4a00fa5` shares binding eligibility across
+single strokes, complete chords and prefixes, and accepts the documented sidebar
+condition. Reuse these implementations and existing merge semantics. These
+commits do not implement any of the Settings-tab UI or persistence scope below.
+
 ## Scope
 
 - [ ] Add a Keymap tab with the merged embedded and user `keymap.yaml` bindings,
