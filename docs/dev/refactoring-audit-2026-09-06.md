@@ -1,5 +1,53 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Shared file identity prerequisite — 2026-09-07
+
+Commit `3c4ca44` gives loaded documents one immutable original/resolved-path
+snapshot. LSP document opening and diagnostic clearing capture or reuse it at the
+runtime boundary; diagnostics and current-file Problems share pure document
+lookup. The duplicated filename-gated canonicalization scans are removed. Path
+changes invalidate old aliases instead of silently reusing the previous identity.
+The tab-opening lookup and async save/reload integration remain in later groups.
+
+Review found that lossy filename-to-URI conversion could merge distinct Unix
+native filenames. Encoding now preserves native bytes, decoding preserves them on
+Unix, and prepared identities retain their supplied resolved path directly.
+Root and parent components survive conversion; Unix paths resembling Windows
+drive paths are not rewritten, and NUL/malformed percent encodings are rejected.
+The working-tree file worker also compares resolved native paths and has a
+regression proving that a raw-byte filename cannot reuse the distinct Unicode
+replacement-character filename. That worker change remains with the async-I/O
+group, outside this commit.
+
+This is a Unix-local filename convention, not a claim of portable non-UTF-8
+language-server interoperability. [RFC 8089 §4](https://www.rfc-editor.org/rfc/rfc8089.html#section-4)
+distinguishes filesystem encodings and leaves non-UTF-8 choices outside its
+general encoding recommendation. Windows/platform execution and hard-link/
+watcher identity questions remain open.
+
+### Verification and review
+
+The independent group passed **2,122 tests**, seven skipped, and **two doctests**,
+six ignored; strict lint and formatting passed. Nextest run
+`d8a74de8-4133-46ce-a6c0-98182919295a`. Seven identity regressions cover snapshot
+invalidation, parent/root/drive-like paths, native bytes, malformed encoding,
+diagnostic/Problems agreement, and runtime identity refresh. Two existing
+working-tree tests moved into their owning modules without dropping coverage.
+
+Final main verification: **2,504 tests passed**, seven skipped; **two doctests
+passed**, six ignored, plus strict lint, formatting and diff checks. Nextest run
+`5f004685-3318-4c0b-9897-242d415374a9`. Earlier targeted identity run:
+13 passed (`a53c676e-8189-4011-9a76-d534a1b201ee`), before the final runtime and
+worker regressions were added. No exit-warning output appeared in these final
+runs; older load-sensitive startup/process warnings are not thereby resolved.
+
+Review verdict: **Approve**, no unresolved critical/high findings in this group.
+Selective staging matched the independent patch and preserved working-file hashes.
+The temporary checkout was removed after checking its patch and extra-file list;
+Git retains the committed source. No new performance measurement or native visual
+claim, no additional whole-plan archive, and no push/publication. Continue the
+remaining file-I/O/startup/UI prerequisite commits and the full handoff scope.
+
 ## Workspace symbols: protocol foundation and Search Everywhere — 2026-09-07
 
 Workspace-symbol search is implemented in the working tree: existing capable
