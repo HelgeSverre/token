@@ -1,5 +1,73 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Startup preparation and pure model construction — 2026-09-07
+
+Startup now uses the normal runtime file-preparation and message-based tab
+installation path. The separate model-side loader and its first-file/additional-
+file branches are removed. CLI files retain their input order, with the first
+successful document focused; duplicate paths and symlink aliases reuse one tab.
+Images use image tabs and initial pane-fit geometry, binaries use placeholders,
+and missing paths remain unsaved documents without creating files. Failed paths
+are counted in the status message without discarding successful tabs; an entirely
+failed startup retains the empty document.
+
+`AppModel::new(width, height, scale)` now creates an empty in-memory model.
+`with_document` accepts prepared text and preserves its identity/unsaved state
+without opening the path. Configuration, theme and history loading moved to
+runtime preparation. Workspace setup precedes file installation so recent-file
+entries carry their workspace. CLI positions clamp against the first successful
+document's logical line and character column, including Unicode.
+
+Review found an additional boundary violation: recent-file insertion
+canonicalized paths from update handlers. It now uses the document's captured
+identity; the recording helper is crate-private and takes a document ID.
+`RecentFiles::add` accepts a boundary-resolved path without I/O. Other recent-file
+operations and workspace/legacy I/O helpers are not claimed to be pure.
+Constructor consumers were migrated, with file-backed tests explicitly preparing
+their documents. One cursor fixture no longer leaks its temporary directory:
+the prepared document survives its removal. The overview and changelog describe
+the changed Rust API and startup behavior.
+
+Startup still completes on the preparation thread (with the existing synchronous
+fallback if that thread fails). Before installing the model into the runtime,
+preparation consumes file-open effects and installs replies; the final startup
+pass dispatches syntax/LSP work for the completed session. Startup does not replay
+redraw/notification/history-save commands. No new server, dependency, download,
+native-window action or history-persistence policy was introduced.
+
+Six new regressions cover special tabs/order/identity/recent entries, partial and
+total failures, aliases, Unicode position clamping, workspace association and
+pure prepared-model construction. Existing multi-file startup coverage now also
+asserts the first file stays selected. Initial fixture assertions incorrectly
+equated macOS display and canonical paths; those were corrected to distinguish
+`/var` from `/private/var`, without weakening tab or identity assertions.
+
+Final main suite: **2,479 tests passed**, 7 skipped; **2 doctests passed**, 6
+ignored, nextest run `bdc8d49d-5db0-4cea-bb29-69deb813c7a6`. No leak warning
+in that full run. Strict all-target/all-feature lint, formatting and diff checks
+passed. Scoped implementation review: **Approve**, no outstanding critical/high
+findings. No new performance measurement or native/platform verification claim.
+
+Cleanup verification remains open. The targeted run
+`fe8933d0-69cc-4420-8661-14ea0095b29e` passed six startup tests but marked
+`startup_files_report_failures_without_discarding_successful_tabs` leaky.
+A bounded 20-iteration stress run passed all **120 test executions** plus both
+doctests (`7354d843-8c4f-4251-a8ec-5449c7e4e741`), with two exit warnings:
+`multiple_startup_files_open_as_distinct_tabs` in iteration 1 and
+`startup_workspace_files_record_the_workspace_and_keep_an_empty_workspace_usable`
+in iteration 7. Nextest 0.9.118 was used without changing timeouts or suppressing
+warnings. Its [leak detection](https://nexte.st/docs/features/leaky-tests/) concerns
+output handles remaining open after a test exits, not a heap-leak measurement.
+No matching test process remained afterward; the underlying cause is not
+attributed or fixed, and clean reruns do not close that debt.
+
+This source group depends on the still-uncommitted file-open/identity and runtime
+foundations. Keep its API migration and consumers together when staging those
+prerequisites; do not claim the current HEAD alone contains this implementation.
+The audit checkpoint is committed separately. All remaining autocomplete, LSP,
+Settings/keymap, Find, profiling, theme and platform requirements stay active.
+No additional whole plan is ready to archive; retain the temporary handoff.
+
 ## Update-handler API commit — 2026-09-07
 
 Commit `80e5538` keeps message handlers behind `update(model, Msg)`, narrowing
