@@ -1,5 +1,43 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Isolated hover commit and process checks — 2026-09-07
+
+Commit `e08ecb4` isolates popup hover from the broader dirty tree: popup-owned
+pointer state replaces the completion-only field, shared row hit indices feed
+the existing hover painter, and row transitions/window exit request repaint.
+It includes state-transition and rendered-pixel regressions, its changelog entry
+and the archived context-menu plan's follow-up. Completion filtering, documentation
+scrolling, keymap, settings and edit-transaction changes are deliberately excluded.
+
+Verification used a temporary detached checkout at `2bdd393` with exactly that
+patch, sharing only the build cache with the main checkout. The isolated full
+suite passed **2,132 tests**, 7 skipped (nextest run
+`fadc609f-5306-4d68-89f9-294254c73917`). Its doctest target succeeded with all six
+examples ignored; it does not contain the dirty tree's two compile-fail doctests.
+Strict all-target/all-feature lint and formatting checks passed. The targeted
+popup-hover test also passed independently. File hashes confirmed staging left
+the working files unchanged. The temporary patch matched the committed diff
+byte-for-byte before its checkout was removed; the commit preserves all of it.
+
+Scoped code review: **Approve**, no outstanding findings. Checks covered hover
+versus keyboard selection, separators, stable-row no-op, window-exit repaint,
+popup lifetime and shared rendering indices. This proves the commit does not
+depend on unrelated uncommitted source, not native pointer/IME acceptance.
+
+The two carried ignored process-spawn tests were then explicitly run against
+the **current main working tree**, serially, after the isolated build completed:
+
+```sh
+CARGO_BUILD_JOBS=1 just test-one "--run-ignored only --test-threads 1 -E 'test(spawn_server_completes_the_handshake_against_a_real_child) | test(process_exited_is_sent_after_shell_quits)'"
+```
+
+Both passed on macOS (run `83ab2760-a560-4246-9448-e6e85205ef50`), covering the
+real-child LSP handshake and PTY shell-exit notification. This is a focused run,
+not a fresh full working-tree suite or cross-platform/load-stability proof.
+Their default ignore annotations remain: one serial pass does not establish
+that the previously load-sensitive fixtures are safe for ordinary parallel CI.
+No performance measurement, native window input or publication occurred.
+
 ## Completion documentation viewport — 2026-09-07
 
 Completion documentation now uses an independently scrollable viewport instead
