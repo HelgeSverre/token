@@ -253,185 +253,6 @@ impl std::fmt::Display for KeymapError {
 
 impl std::error::Error for KeymapError {}
 
-// Implement FromStr for Command to parse from YAML
-impl FromStr for Command {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            // Cursor movement
-            "MoveCursorUp" => Ok(Command::MoveCursorUp),
-            "MoveCursorDown" => Ok(Command::MoveCursorDown),
-            "MoveCursorLeft" => Ok(Command::MoveCursorLeft),
-            "MoveCursorRight" => Ok(Command::MoveCursorRight),
-            "MoveCursorLineStart" => Ok(Command::MoveCursorLineStart),
-            "MoveCursorLineEnd" => Ok(Command::MoveCursorLineEnd),
-            "MoveCursorDocumentStart" => Ok(Command::MoveCursorDocumentStart),
-            "MoveCursorDocumentEnd" => Ok(Command::MoveCursorDocumentEnd),
-            "MoveCursorWordLeft" => Ok(Command::MoveCursorWordLeft),
-            "MoveCursorWordRight" => Ok(Command::MoveCursorWordRight),
-            "PageUp" => Ok(Command::PageUp),
-            "PageDown" => Ok(Command::PageDown),
-
-            // Selection movement
-            "MoveCursorUpWithSelection" => Ok(Command::MoveCursorUpWithSelection),
-            "MoveCursorDownWithSelection" => Ok(Command::MoveCursorDownWithSelection),
-            "MoveCursorLeftWithSelection" => Ok(Command::MoveCursorLeftWithSelection),
-            "MoveCursorRightWithSelection" => Ok(Command::MoveCursorRightWithSelection),
-            "MoveCursorLineStartWithSelection" => Ok(Command::MoveCursorLineStartWithSelection),
-            "MoveCursorLineEndWithSelection" => Ok(Command::MoveCursorLineEndWithSelection),
-            "MoveCursorDocumentStartWithSelection" => {
-                Ok(Command::MoveCursorDocumentStartWithSelection)
-            }
-            "MoveCursorDocumentEndWithSelection" => Ok(Command::MoveCursorDocumentEndWithSelection),
-            "MoveCursorWordLeftWithSelection" => Ok(Command::MoveCursorWordLeftWithSelection),
-            "MoveCursorWordRightWithSelection" => Ok(Command::MoveCursorWordRightWithSelection),
-            "PageUpWithSelection" => Ok(Command::PageUpWithSelection),
-            "PageDownWithSelection" => Ok(Command::PageDownWithSelection),
-
-            // Selection commands
-            "SelectAll" => Ok(Command::SelectAll),
-            "SelectWord" => Ok(Command::SelectWord),
-            "SelectLine" => Ok(Command::SelectLine),
-            "ClearSelection" => Ok(Command::ClearSelection),
-            "ExpandSelection" => Ok(Command::ExpandSelection),
-            "ShrinkSelection" => Ok(Command::ShrinkSelection),
-
-            // Multi-cursor
-            "AddCursorAbove" => Ok(Command::AddCursorAbove),
-            "AddCursorBelow" => Ok(Command::AddCursorBelow),
-            "CollapseToSingleCursor" => Ok(Command::CollapseToSingleCursor),
-            "SelectNextOccurrence" => Ok(Command::SelectNextOccurrence),
-            "UnselectOccurrence" => Ok(Command::UnselectOccurrence),
-
-            // Text editing
-            "InsertNewline" => Ok(Command::InsertNewline),
-            "DeleteBackward" => Ok(Command::DeleteBackward),
-            "DeleteForward" => Ok(Command::DeleteForward),
-            "DeleteWordBackward" => Ok(Command::DeleteWordBackward),
-            "DeleteWordForward" => Ok(Command::DeleteWordForward),
-            "DeleteLine" => Ok(Command::DeleteLine),
-            "Duplicate" => Ok(Command::Duplicate),
-            "IndentLines" => Ok(Command::IndentLines),
-            "UnindentLines" => Ok(Command::UnindentLines),
-            "InsertTab" => Ok(Command::InsertTab),
-
-            // Clipboard
-            "Copy" => Ok(Command::Copy),
-            "Cut" => Ok(Command::Cut),
-            "Paste" => Ok(Command::Paste),
-
-            // Undo/Redo
-            "Undo" => Ok(Command::Undo),
-            "Redo" => Ok(Command::Redo),
-
-            // File operations
-            "SaveFile" => Ok(Command::SaveFile),
-            "SaveFileAs" => Ok(Command::SaveFileAs),
-            "OpenFile" => Ok(Command::OpenFile),
-            "FuzzyFileFinder" => Ok(Command::FuzzyFileFinder),
-            "NewFile" => Ok(Command::NewFile),
-            "Quit" => Ok(Command::Quit),
-
-            // Modals
-            "ToggleCommandPalette" => Ok(Command::ToggleCommandPalette),
-            "OpenSettings" => Ok(Command::OpenSettings),
-            "ToggleGotoLine" => Ok(Command::ToggleGotoLine),
-            "ToggleFindReplace" => Ok(Command::ToggleFindReplace),
-            "OpenRecentFiles" => Ok(Command::OpenRecentFiles),
-
-            // Layout
-            "NewTab" => Ok(Command::NewTab),
-            "CloseTab" => Ok(Command::CloseTab),
-            "NextTab" => Ok(Command::NextTab),
-            "PrevTab" => Ok(Command::PrevTab),
-            "SplitHorizontal" => Ok(Command::SplitHorizontal),
-            "SplitVertical" => Ok(Command::SplitVertical),
-            "FocusNextGroup" => Ok(Command::FocusNextGroup),
-            "FocusPrevGroup" => Ok(Command::FocusPrevGroup),
-            "FocusGroup1" => Ok(Command::FocusGroup1),
-            "FocusGroup2" => Ok(Command::FocusGroup2),
-            "FocusGroup3" => Ok(Command::FocusGroup3),
-            "FocusGroup4" => Ok(Command::FocusGroup4),
-
-            // Workspace
-            "RevealInSidebar" => Ok(Command::RevealInSidebar),
-            "FileTreeSelectPrevious" => Ok(Command::FileTreeSelectPrevious),
-            "FileTreeSelectNext" => Ok(Command::FileTreeSelectNext),
-            "FileTreeOpenOrToggle" => Ok(Command::FileTreeOpenOrToggle),
-            "FileTreeRefresh" => Ok(Command::FileTreeRefresh),
-
-            // Panels/Docks
-            "ToggleFileExplorer" => Ok(Command::ToggleFileExplorer),
-            "ToggleTerminal" => Ok(Command::ToggleTerminal),
-            "ToggleOutline" => Ok(Command::ToggleOutline),
-            "ToggleProblems" => Ok(Command::ToggleProblems),
-            "CloseFocusedDock" => Ok(Command::CloseFocusedDock),
-
-            // CSV mode
-            "CsvToggle" => Ok(Command::CsvToggle),
-            "CsvMoveUp" => Ok(Command::CsvMoveUp),
-            "CsvMoveDown" => Ok(Command::CsvMoveDown),
-            "CsvMoveLeft" => Ok(Command::CsvMoveLeft),
-            "CsvMoveRight" => Ok(Command::CsvMoveRight),
-            "CsvNextCell" => Ok(Command::CsvNextCell),
-            "CsvPrevCell" => Ok(Command::CsvPrevCell),
-            "CsvFirstCell" => Ok(Command::CsvFirstCell),
-            "CsvLastCell" => Ok(Command::CsvLastCell),
-            "CsvRowStart" => Ok(Command::CsvRowStart),
-            "CsvRowEnd" => Ok(Command::CsvRowEnd),
-            "CsvPageUp" => Ok(Command::CsvPageUp),
-            "CsvPageDown" => Ok(Command::CsvPageDown),
-            "CsvExit" => Ok(Command::CsvExit),
-
-            // Markdown preview
-            "MarkdownTogglePreview" => Ok(Command::MarkdownTogglePreview),
-            "MarkdownOpenPreviewToSide" => Ok(Command::MarkdownOpenPreviewToSide),
-
-            // Completion
-            "TriggerCompletionMenu" => Ok(Command::TriggerCompletionMenu),
-            "TriggerInlineSuggestion" => Ok(Command::TriggerInlineSuggestion),
-            "AcceptInlineSuggestion" => Ok(Command::AcceptInlineSuggestion),
-            "DismissInlineSuggestion" => Ok(Command::DismissInlineSuggestion),
-
-            // Go to Definition + Jump History (lsp-integration.md Phase 3)
-            "GotoDefinition" => Ok(Command::GotoDefinition),
-            "NextDiagnostic" => Ok(Command::NextDiagnostic),
-            "PrevDiagnostic" => Ok(Command::PrevDiagnostic),
-            "NavigateBack" => Ok(Command::NavigateBack),
-            "NavigateForward" => Ok(Command::NavigateForward),
-
-            // Hover (lsp-integration.md Phase 4)
-            "ShowHover" => Ok(Command::ShowHover),
-            "ShowSignatureHelp" => Ok(Command::ShowSignatureHelp),
-            "RenameSymbol" => Ok(Command::RenameSymbol),
-            "ShowCodeActions" => Ok(Command::ShowCodeActions),
-            "FormatDocument" => Ok(Command::FormatDocument),
-            "FormatSelection" => Ok(Command::FormatSelection),
-
-            // Show Usages / Find Usages (lsp-integration.md, references)
-            "FindUsages" => Ok(Command::FindUsages),
-            "ShowUsages" => Ok(Command::ShowUsages),
-
-            // Context menu (context-menu.md)
-            "ShowContextMenu" => Ok(Command::ShowContextMenu),
-
-            // Image viewer
-            "ImageZoomIn" => Ok(Command::ImageZoomIn),
-            "ImageZoomOut" => Ok(Command::ImageZoomOut),
-            "ImageFitToWindow" => Ok(Command::ImageFitToWindow),
-            "ImageActualSize" => Ok(Command::ImageActualSize),
-
-            // Special
-            "EscapeSmartClear" => Ok(Command::EscapeSmartClear),
-            "Unbound" => Ok(Command::Unbound),
-            "OpenLogFile" => Ok(Command::OpenLogFile),
-
-            _ => Err(()),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -485,6 +306,25 @@ mod tests {
         assert_eq!(Command::from_str("MoveCursorUp"), Ok(Command::MoveCursorUp));
         assert_eq!(Command::from_str("CsvNextCell"), Ok(Command::CsvNextCell));
         assert_eq!(Command::from_str("OpenLogFile"), Ok(Command::OpenLogFile));
+    }
+
+    #[test]
+    fn bindable_command_registry_includes_panel_and_server_actions() {
+        for (name, expected) in [
+            ("ToggleUsages", Command::ToggleUsages),
+            ("RestartLanguageServer", Command::RestartLanguageServer),
+        ] {
+            assert_eq!(Command::from_str(name), Ok(expected));
+            let yaml = format!("bindings:\n  - key: ctrl+k\n    command: {name}\n");
+            assert_eq!(parse_keymap_yaml(&yaml).unwrap()[0].command, expected);
+        }
+        for name in ["", "toggleusages", " ToggleUsages", "UnknownCommand"] {
+            let yaml = format!("bindings:\n  - key: ctrl+k\n    command: '{name}'\n");
+            assert!(matches!(
+                parse_keymap_yaml(&yaml),
+                Err(KeymapError::InvalidCommand(_))
+            ));
+        }
     }
 
     #[test]

@@ -11,6 +11,39 @@ use crate::model::editor_area::SplitDirection;
 use crate::model::ModalId;
 use crate::panel::PanelId;
 
+// Keep bindable identities and their YAML spelling in one declaration.
+macro_rules! define_commands {
+    ($(#[$meta:meta])* pub enum Command { $($(#[$variant_meta:meta])* $variant:ident,)* }) => {
+        $(#[$meta])*
+        pub enum Command { $($(#[$variant_meta])* $variant,)* }
+
+        impl std::str::FromStr for Command {
+            type Err = ();
+            fn from_str(name: &str) -> Result<Self, Self::Err> {
+                match name {
+                    $(stringify!($variant) => Ok(Self::$variant),)*
+                    _ => Err(()),
+                }
+            }
+        }
+
+        #[cfg(test)]
+        #[test]
+        fn bindable_command_names_cover_every_variant() {
+            $({
+                let name = stringify!($variant);
+                assert_eq!(name.parse::<Command>(), Ok(Command::$variant));
+                let yaml = format!("bindings:\n  - key: ctrl+k\n    command: {name}\n");
+                let bindings = super::config::parse_keymap_yaml(&yaml).unwrap();
+                assert_eq!(bindings.len(), 1);
+                assert_eq!(bindings[0].command, Command::$variant);
+            })*
+        }
+    };
+}
+
+define_commands! {
+
 /// All executable editor commands that can be bound to keys
 ///
 /// This enum covers every action that can be triggered via keyboard.
@@ -339,6 +372,7 @@ pub enum Command {
     ImageFitToWindow,
     /// Show image at actual size (1:1)
     ImageActualSize,
+}
 }
 
 impl Command {

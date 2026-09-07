@@ -18,6 +18,20 @@ Create this file to add or override keybindings.
 
 ---
 
+## Default Bindings
+
+The embedded `keymap.yaml` is the single full default keymap. User entries are
+merged into an independent copy: an identical keystroke sequence and condition
+list replaces the matching default; otherwise the entry is added. `Unbound`
+removes every binding with that exact sequence, regardless of its conditions.
+User overrides do not mutate the cached defaults.
+
+Command names are case-sensitive and match their bindable action names, including
+`ToggleUsages` and `RestartLanguageServer`. Unknown names remain errors. An
+invalid user keymap is logged and leaves embedded defaults active. If the
+embedded YAML itself cannot be parsed, emergency Save/Open/Quit shortcuts remain
+available; this is not a second full set of defaults.
+
 ## File Format
 
 ```yaml

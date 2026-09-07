@@ -16,6 +16,12 @@ All notable changes to rust-editor are documented in this file.
 
 ### Changed
 
+- Bindable command names now derive from the command enum, so new actions such
+  as ToggleUsages and RestartLanguageServer cannot be omitted from YAML parsing.
+  Default keymaps share the embedded YAML registry and return independent
+  snapshots for user overrides; the duplicate hardcoded keymap is removed.
+  Save/Open/Quit remain as minimal emergency bindings for invalid embedded YAML.
+
 - Loaded documents retain their original and resolved file identity. LSP
   diagnostics and current-file Problems use the same snapshot without repeated
   filesystem lookup, including differently named symlinks and missing targets.

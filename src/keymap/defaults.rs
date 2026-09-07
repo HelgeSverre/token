@@ -1,7 +1,7 @@
 //! Default keybindings for the editor
 //!
 //! These are the standard keybindings that ship with the editor.
-//! Can be loaded from keymap.yaml at project root, or falls back to hardcoded defaults.
+//! The embedded keymap YAML is the sole full default registry.
 
 use super::binding::Keybinding;
 use super::command::Command;
@@ -24,21 +24,7 @@ pub fn get_default_keymap_yaml() -> &'static str {
 ///
 /// User bindings with `command: Unbound` will remove matching default bindings.
 pub fn load_default_keymap() -> Vec<Keybinding> {
-    // Load base defaults from embedded YAML
-    let mut bindings = match super::config::parse_keymap_yaml(DEFAULT_KEYMAP_YAML) {
-        Ok(b) => {
-            tracing::info!("Loaded embedded default keymap ({} bindings)", b.len());
-            b
-        }
-        Err(e) => {
-            tracing::warn!(
-                "Failed to parse embedded keymap: {}, using hardcoded defaults",
-                e
-            );
-            default_bindings()
-        }
-    };
-
+    let mut bindings = default_bindings();
     // Try loading user config
     if let Some(user_path) = crate::config_paths::keymap_file() {
         if user_path.exists() {
@@ -101,224 +87,115 @@ pub fn merge_bindings(base: Vec<Keybinding>, user: Vec<Keybinding>) -> Vec<Keybi
     result
 }
 
-/// Generate default keybindings for the current platform
-///
-/// Uses Cmd on macOS, Ctrl on Windows/Linux for the "command" modifier.
+/// The embedded YAML is the single full default registry. Parsing is pure;
+/// filesystem/user overrides belong to `load_default_keymap` in the runtime.
 pub fn default_bindings() -> Vec<Keybinding> {
-    let cmd = Modifiers::cmd();
-    let cmd_shift = cmd | Modifiers::SHIFT;
-    let cmd_alt = cmd | Modifiers::ALT;
-    let cmd_shift_alt = cmd | Modifiers::SHIFT | Modifiers::ALT;
-    let shift = Modifiers::SHIFT;
-    let alt = Modifiers::ALT;
-    let alt_shift = Modifiers::ALT | Modifiers::SHIFT;
-    let ctrl = Modifiers::CTRL;
-    let ctrl_shift = Modifiers::CTRL | Modifiers::SHIFT;
-    let none = Modifiers::NONE;
-
-    let mut bindings = vec![
-        // ====================================================================
-        // File Operations
-        // ====================================================================
-        bind(KeyCode::Char('s'), cmd, Command::SaveFile),
-        bind(KeyCode::Char('s'), cmd_shift, Command::SaveFileAs),
-        bind(KeyCode::Char('o'), cmd, Command::OpenFile),
-        // TODO: Remove OpenFolder command - merge with OpenFile using auto-detection
-        // Shift+Cmd+O will be used for Quick Open (file search)
-        // See docs/feature/workspace-management.md for design
-        bind(KeyCode::Char('o'), cmd_shift, Command::FuzzyFileFinder),
-        bind(KeyCode::Char('n'), cmd_shift, Command::NewTab), // Shift+Cmd+N
-        bind(KeyCode::Char('w'), cmd, Command::CloseTab),
-        bind(KeyCode::Char('e'), cmd, Command::OpenRecentFiles), // Cmd+E
-        // ====================================================================
-        // Undo/Redo
-        // ====================================================================
-        bind(KeyCode::Char('z'), cmd, Command::Undo),
-        bind(KeyCode::Char('z'), cmd_shift, Command::Redo),
-        bind(KeyCode::Char('y'), cmd, Command::Redo), // Alternative
-        // ====================================================================
-        // Clipboard
-        // ====================================================================
-        bind(KeyCode::Char('c'), cmd, Command::Copy),
-        bind(KeyCode::Char('x'), cmd, Command::Cut),
-        bind(KeyCode::Char('v'), cmd, Command::Paste),
-        // ====================================================================
-        // Selection
-        // ====================================================================
-        bind(KeyCode::Char('a'), cmd, Command::SelectAll),
-        bind(KeyCode::Char('d'), cmd, Command::Duplicate),
-        bind(KeyCode::Char('j'), cmd, Command::SelectNextOccurrence),
-        bind(KeyCode::Char('j'), cmd_shift, Command::UnselectOccurrence),
-        // ====================================================================
-        // Modals/Dialogs
-        // ====================================================================
-        bind(KeyCode::Char('a'), cmd_shift, Command::ToggleCommandPalette),
-        bind(KeyCode::Char('l'), cmd, Command::ToggleGotoLine),
-        bind(KeyCode::Char('f'), cmd, Command::ToggleFindReplace),
-        // ====================================================================
-        // Layout: Splits
-        // ====================================================================
-        bind(KeyCode::Char('h'), cmd_shift_alt, Command::SplitHorizontal),
-        bind(KeyCode::Char('v'), cmd_shift_alt, Command::SplitVertical),
-        // ====================================================================
-        // Layout: Tabs
-        // ====================================================================
-        bind(KeyCode::Right, cmd_alt, Command::NextTab),
-        bind(KeyCode::Left, cmd_alt, Command::PrevTab),
-        // ====================================================================
-        // Layout: Focus Groups
-        // ====================================================================
-        bind(KeyCode::Tab, ctrl, Command::FocusNextGroup),
-        bind(KeyCode::Tab, ctrl_shift, Command::FocusPrevGroup),
-        bind(KeyCode::Char('1'), cmd_shift, Command::FocusGroup1),
-        bind(KeyCode::Char('2'), cmd_shift, Command::FocusGroup2),
-        bind(KeyCode::Char('3'), cmd_shift, Command::FocusGroup3),
-        bind(KeyCode::Char('4'), cmd_shift, Command::FocusGroup4),
-        // Numpad group focus (no modifiers needed)
-        bind(KeyCode::Numpad1, none, Command::FocusGroup1),
-        bind(KeyCode::Numpad2, none, Command::FocusGroup2),
-        bind(KeyCode::Numpad3, none, Command::FocusGroup3),
-        bind(KeyCode::Numpad4, none, Command::FocusGroup4),
-        bind(KeyCode::NumpadAdd, none, Command::SplitVertical),
-        bind(KeyCode::NumpadSubtract, none, Command::SplitHorizontal),
-        // ====================================================================
-        // Panels/Docks (IntelliJ-style Cmd+1/2/7)
-        // ====================================================================
-        bind(KeyCode::Char('1'), cmd, Command::ToggleFileExplorer),
-        bind(KeyCode::Char('2'), cmd, Command::ToggleTerminal),
-        bind(KeyCode::Char('4'), cmd, Command::ToggleProblems),
-        bind(KeyCode::Char('7'), cmd, Command::ToggleOutline),
-        // ====================================================================
-        // Basic Navigation (no selection)
-        // ====================================================================
-        bind(KeyCode::Up, none, Command::MoveCursorUp),
-        bind(KeyCode::Down, none, Command::MoveCursorDown),
-        bind(KeyCode::Left, none, Command::MoveCursorLeft),
-        bind(KeyCode::Right, none, Command::MoveCursorRight),
-        bind(KeyCode::Home, none, Command::MoveCursorLineStart),
-        bind(KeyCode::End, none, Command::MoveCursorLineEnd),
-        bind(KeyCode::PageUp, none, Command::PageUp),
-        bind(KeyCode::PageDown, none, Command::PageDown),
-        // Word navigation (Alt+Arrow)
-        bind(KeyCode::Left, alt, Command::MoveCursorWordLeft),
-        bind(KeyCode::Right, alt, Command::MoveCursorWordRight),
-        // ====================================================================
-        // Selection Navigation (Shift+key)
-        // ====================================================================
-        bind(KeyCode::Up, shift, Command::MoveCursorUpWithSelection),
-        bind(KeyCode::Down, shift, Command::MoveCursorDownWithSelection),
-        bind(KeyCode::Left, shift, Command::MoveCursorLeftWithSelection),
-        bind(KeyCode::Right, shift, Command::MoveCursorRightWithSelection),
-        bind(
-            KeyCode::Home,
-            shift,
-            Command::MoveCursorLineStartWithSelection,
-        ),
-        bind(KeyCode::End, shift, Command::MoveCursorLineEndWithSelection),
-        bind(KeyCode::PageUp, shift, Command::PageUpWithSelection),
-        bind(KeyCode::PageDown, shift, Command::PageDownWithSelection),
-        // Word navigation with selection (Alt+Shift+Arrow)
-        bind(
-            KeyCode::Left,
-            alt_shift,
-            Command::MoveCursorWordLeftWithSelection,
-        ),
-        bind(
-            KeyCode::Right,
-            alt_shift,
-            Command::MoveCursorWordRightWithSelection,
-        ),
-        // ====================================================================
-        // Editing
-        // ====================================================================
-        bind(KeyCode::Enter, none, Command::InsertNewline),
-        bind(KeyCode::Backspace, none, Command::DeleteBackward),
-        bind(KeyCode::Delete, none, Command::DeleteForward),
-        bind(KeyCode::Backspace, alt, Command::DeleteWordBackward),
-        bind(KeyCode::Backspace, cmd, Command::DeleteLine),
-        bind(KeyCode::Space, none, Command::InsertTab), // Will need context: InsertChar(' ') normally
-        // Tab handling - these will need context conditions
-        // Tab with selection -> IndentLines
-        // Tab without selection -> InsertTab
-        // For now, default to InsertTab, context system will refine this
-        bind(KeyCode::Tab, none, Command::InsertTab),
-        bind(KeyCode::Tab, shift, Command::UnindentLines),
-        // ====================================================================
-        // Expand/Shrink Selection (Option+Up/Down)
-        // ====================================================================
-        bind(KeyCode::Up, alt, Command::ExpandSelection),
-        bind(KeyCode::Down, alt, Command::ShrinkSelection),
-        // ====================================================================
-        // Escape (smart clear)
-        // ====================================================================
-        bind(KeyCode::Escape, none, Command::EscapeSmartClear),
-        // ====================================================================
-        // Completion + LSP navigation
-        //
-        // The fallback mirrors only the *essentials* of the embedded
-        // keymap.yaml (which stays the source of truth); these are here so
-        // a YAML parse failure degrades to an editor that can still reach
-        // autocomplete and jump history, not just raw text editing.
-        // ====================================================================
-        bind(KeyCode::Space, ctrl, Command::TriggerCompletionMenu),
-        bind(KeyCode::Char('b'), cmd, Command::GotoDefinition),
-        bind(KeyCode::Char('['), cmd, Command::NavigateBack),
-        bind(KeyCode::Char(']'), cmd, Command::NavigateForward),
-    ];
-
-    // Platform-specific additions
-    #[cfg(target_os = "macos")]
-    {
-        // macOS: Cmd+Arrow for line start/end
-        bindings.push(bind(KeyCode::Left, cmd, Command::MoveCursorLineStart));
-        bindings.push(bind(KeyCode::Right, cmd, Command::MoveCursorLineEnd));
-        bindings.push(bind(
-            KeyCode::Left,
-            cmd_shift,
-            Command::MoveCursorLineStartWithSelection,
-        ));
-        bindings.push(bind(
-            KeyCode::Right,
-            cmd_shift,
-            Command::MoveCursorLineEndWithSelection,
-        ));
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        // Windows/Linux: Ctrl+Home/End for document start/end
-        bindings.push(bind(KeyCode::Home, ctrl, Command::MoveCursorDocumentStart));
-        bindings.push(bind(KeyCode::End, ctrl, Command::MoveCursorDocumentEnd));
-        bindings.push(bind(
-            KeyCode::Home,
-            ctrl_shift,
-            Command::MoveCursorDocumentStartWithSelection,
-        ));
-        bindings.push(bind(
-            KeyCode::End,
-            ctrl_shift,
-            Command::MoveCursorDocumentEndWithSelection,
-        ));
-    }
-
-    // Document start/end with Ctrl on all platforms (works on macOS too)
-    bindings.push(bind(KeyCode::Home, ctrl, Command::MoveCursorDocumentStart));
-    bindings.push(bind(KeyCode::End, ctrl, Command::MoveCursorDocumentEnd));
-    bindings.push(bind(
-        KeyCode::Home,
-        ctrl_shift,
-        Command::MoveCursorDocumentStartWithSelection,
-    ));
-    bindings.push(bind(
-        KeyCode::End,
-        ctrl_shift,
-        Command::MoveCursorDocumentEndWithSelection,
-    ));
-
-    bindings
+    static DEFAULTS: std::sync::OnceLock<Vec<Keybinding>> = std::sync::OnceLock::new();
+    DEFAULTS
+        .get_or_init(|| {
+            super::config::parse_keymap_yaml(DEFAULT_KEYMAP_YAML).unwrap_or_else(|error| {
+                tracing::error!("Invalid embedded keymap: {error}; using emergency bindings");
+                emergency_bindings()
+            })
+        })
+        .clone()
 }
 
-/// Helper to create a keybinding
-fn bind(key: KeyCode, mods: Modifiers, command: Command) -> Keybinding {
-    Keybinding::new(Keystroke::new(key, mods), command)
+/// Deliberately minimal recovery controls, not a second default registry.
+fn emergency_bindings() -> Vec<Keybinding> {
+    [
+        ('s', Command::SaveFile),
+        ('o', Command::OpenFile),
+        ('q', Command::Quit),
+    ]
+    .into_iter()
+    .map(|(key, command)| {
+        Keybinding::new(
+            Keystroke::new(KeyCode::Char(key), Modifiers::cmd()),
+            command,
+        )
+    })
+    .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embedded_yaml_is_valid_and_is_the_full_default_registry() {
+        let parsed = super::super::parse_keymap_yaml(get_default_keymap_yaml()).unwrap();
+        assert_eq!(default_bindings(), parsed);
+    }
+
+    #[test]
+    fn default_registry_returns_independent_snapshots() {
+        let expected = default_bindings();
+        let mut changed = default_bindings();
+        changed.clear();
+        assert_eq!(default_bindings(), expected);
+        assert!(!expected.is_empty());
+    }
+
+    #[test]
+    fn default_registry_merges_overrides_conditions_chords_and_unbinding() {
+        use super::super::context::Condition;
+
+        let defaults = default_bindings();
+        let save = defaults
+            .iter()
+            .find(|binding| binding.command == Command::SaveFile && binding.when.is_none())
+            .unwrap()
+            .clone();
+        let mut replacement = save.clone();
+        replacement.command = Command::Copy;
+        let mut conditional = save.clone().when_single(Condition::HasSelection);
+        conditional.command = Command::Cut;
+        let chord = Keybinding::chord(
+            vec![
+                Keystroke::new(KeyCode::Char('k'), Modifiers::CTRL),
+                Keystroke::new(KeyCode::Char('c'), Modifiers::CTRL),
+            ],
+            Command::Copy,
+        );
+        let merged = merge_bindings(
+            defaults.clone(),
+            vec![replacement.clone(), conditional.clone(), chord.clone()],
+        );
+        assert!(merged.contains(&replacement));
+        assert!(merged.contains(&conditional));
+        assert!(merged.contains(&chord));
+        assert!(!merged.contains(&save));
+        for untouched in defaults.iter().filter(|binding| **binding != save) {
+            assert!(merged.contains(untouched));
+        }
+
+        let mut updated_chord = chord.clone();
+        updated_chord.command = Command::Paste;
+        let merged = merge_bindings(merged, vec![updated_chord.clone()]);
+        assert!(merged.contains(&updated_chord));
+        assert!(!merged.contains(&chord));
+        let mut unbound = conditional;
+        unbound.command = Command::Unbound;
+        let merged = merge_bindings(merged, vec![unbound]);
+        // Existing Unbound semantics remove every context for the exact
+        // sequence, but leave unrelated sequences (including chords) intact.
+        assert!(!merged
+            .iter()
+            .any(|binding| binding.keystrokes == save.keystrokes));
+        assert!(merged.contains(&updated_chord));
+        assert_eq!(default_bindings(), defaults);
+    }
+
+    #[test]
+    fn emergency_keymap_is_deliberately_minimal() {
+        let bindings = emergency_bindings();
+        assert_eq!(
+            bindings
+                .iter()
+                .map(|binding| binding.command)
+                .collect::<Vec<_>>(),
+            vec![Command::SaveFile, Command::OpenFile, Command::Quit]
+        );
+    }
 }
