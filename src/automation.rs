@@ -621,7 +621,14 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
         token::model::ModalState::Settings(state) => Some(OverlaySnapshot {
             context: "settings".to_owned(),
             query: state.editable.text(),
-            active_tab: None,
+            active_tab: Some(
+                token::settings::categories()
+                    .get(state.category)
+                    .copied()
+                    .flatten()
+                    .unwrap_or("All Settings")
+                    .to_owned(),
+            ),
             rows: state
                 .rows
                 .iter()

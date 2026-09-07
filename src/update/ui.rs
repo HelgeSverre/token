@@ -712,7 +712,17 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::PrevTab => cycle_search_tab(model, false),
 
-        ModalMsg::ActivateTab(index) => activate_search_tab(model, index),
+        ModalMsg::ActivateTab(index) => {
+            if let Some(ModalState::Settings(state)) = model.ui.active_modal.as_mut() {
+                if index < crate::settings::categories().len() {
+                    state.category = index;
+                    state.refilter();
+                }
+                Some(Cmd::Redraw)
+            } else {
+                activate_search_tab(model, index)
+            }
+        }
 
         ModalMsg::Confirm => confirm_active_modal(model),
 
@@ -824,8 +834,18 @@ fn search_tab_for_prefix(ch: char) -> Option<SearchTab> {
 
 /// `ModalMsg::NextTab`/`PrevTab` (⇥/⇧⇥): cycle Search Everywhere's tabs,
 /// skipping `Unavailable` ones (Symbols always; Files with no workspace).
-/// A no-op for every other modal.
+/// Settings uses the same messages to cycle its category navigation.
 fn cycle_search_tab(model: &mut AppModel, forward: bool) -> Option<Cmd> {
+    if let Some(ModalState::Settings(state)) = model.ui.active_modal.as_mut() {
+        let count = crate::settings::categories().len();
+        state.category = if forward {
+            (state.category + 1) % count
+        } else {
+            (state.category + count - 1) % count
+        };
+        state.refilter();
+        return Some(Cmd::Redraw);
+    }
     // Computed up front (owned data, not borrowed from `model`) so it can
     // still be used after `state` takes a mutable borrow of
     // `model.ui.active_modal` below.
@@ -1424,17 +1444,33 @@ fn change_setting(model: &mut AppModel, choice: Option<usize>, delta: isize) -> 
     ]))
 }
 
+fn settings_capacity(model: &AppModel) -> usize {
+    crate::view::overlay_surface::settings_visible_count(
+        model.window_size.0 as usize,
+        model.window_size.1 as usize,
+        model.metrics.scale_factor,
+    )
+}
+
 /// Move list selection; the theme picker previews its new selection.
 fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
+    let capacity = settings_capacity(model);
     let modal = model.ui.active_modal.as_mut()?;
     let preview_theme_id = match modal {
         ModalState::Settings(state) => {
             let shapes = settings_shapes(state);
+            let previous_scroll = state.scroll_offset;
             move_list_selection(
                 &mut state.selected_index,
                 &mut state.scroll_offset,
                 &shapes,
                 delta,
+            );
+            state.scroll_offset = resolve_scroll_for_selection(
+                &shapes,
+                state.selected_index,
+                capacity,
+                previous_scroll,
             );
             None
         }
@@ -1505,15 +1541,21 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
 /// `ModalMsg::PageUp`/`PageDown`: page selection by a full visible page in
 /// whichever list-body modal is active.
 fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
+    let capacity = settings_capacity(model);
     let modal = model.ui.active_modal.as_mut()?;
     match modal {
         ModalState::Settings(state) => {
             let shapes = settings_shapes(state);
-            page_list_selection(
-                &mut state.selected_index,
-                &mut state.scroll_offset,
+            state.selected_index = if forward {
+                (state.selected_index + capacity).min(state.rows.len().saturating_sub(1))
+            } else {
+                state.selected_index.saturating_sub(capacity)
+            };
+            state.scroll_offset = resolve_scroll_for_selection(
                 &shapes,
-                forward,
+                state.selected_index,
+                capacity,
+                state.scroll_offset,
             );
         }
         ModalState::CommandPalette(state) => match state.active_tab {
@@ -1607,6 +1649,11 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
 /// `ModalMsg::Scroll`: move the visible window by `delta` rows without
 /// moving selection (mouse wheel over a list-body modal).
 fn modal_scroll(model: &mut AppModel, delta: isize) -> Option<Cmd> {
+    let capacity = if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) {
+        settings_capacity(model)
+    } else {
+        COMMAND_PALETTE_MAX_VISIBLE
+    };
     let modal = model.ui.active_modal.as_mut()?;
     let (scroll, shapes): (&mut usize, Vec<SectionShape>) = match modal {
         ModalState::Settings(state) => {
@@ -1650,8 +1697,7 @@ fn modal_scroll(model: &mut AppModel, delta: isize) -> Option<Cmd> {
     if total == 0 {
         return None;
     }
-    let max_scroll =
-        resolve_scroll_for_selection(&shapes, total - 1, COMMAND_PALETTE_MAX_VISIBLE, 0) as isize;
+    let max_scroll = resolve_scroll_for_selection(&shapes, total - 1, capacity, 0) as isize;
     let new_scroll = (*scroll as isize + delta).clamp(0, max_scroll.max(0)) as usize;
     if new_scroll == *scroll {
         return None;

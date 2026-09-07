@@ -12,6 +12,27 @@ A searchable, preset-driven settings modal on the existing `OverlaySurface` — 
 
 ## Implementation Notes
 
+### Visual revision (2026-09-07)
+
+The initial compact palette presentation was replaced at user request with a
+Zed-inspired, window-sized preferences form: category navigation on the left,
+section headings and descriptions beneath setting labels, boolean switches,
+and right-aligned presets. On narrow windows categories wrap above the form
+and controls move below labels. Tab/Shift+Tab cycles categories; search filters
+the current category (All Settings searches everything). This remains an in-app
+modal, not a separate operating-system window.
+
+Short windows also reflow categories into a grid. When only one display row
+fits, navigation shows the setting rather than its section heading. Theme and
+server-command values are separate from optional descriptions and stay visible
+below their labels in compact rows; the selected value also appears in the footer.
+
+`src/view/settings_page.rs` owns the settings presentation within OverlaySurface.
+Its resolved rectangles are used by both painting and hit testing, and its
+viewport capacity is shared with keyboard, wheel, and screenshot navigation.
+The historical design below describes the original compact presentation;
+this revision supersedes its width, row layout, and navigation decisions.
+
 - `src/settings/descriptors.rs` declares the editor, appearance, status bar,
   completion, and LSP master presets. Theme metadata lives in the same table and
   opens the existing Theme Picker.
@@ -22,8 +43,8 @@ A searchable, preset-driven settings modal on the existing `OverlaySurface` — 
   the runtime saves each snapshot immediately in click order. Existing invalid
   files are left untouched. The merge compares the old typed configuration to
   avoid restoring deliberately removed known options or map entries.
-- Chip geometry is shared by rendering and hit testing. Narrow windows shrink
-  chip slots and truncate labels. The footer shows the selected row's description
+- Control geometry is shared by rendering and hit testing. Narrow windows move
+  controls below labels before shrinking slots and truncating labels. The footer shows the selected row's description
   or the command override's YAML key.
 - Server lifecycle rows read the live model and request a full modal redraw on
   status changes. Settings does not add server restart/management actions.

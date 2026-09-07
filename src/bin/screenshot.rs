@@ -558,7 +558,11 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
                 state.scroll_offset = token::view::overlay_surface::resolve_scroll_for_selection(
                     &sections,
                     state.selected_index,
-                    token::model::COMMAND_PALETTE_MAX_VISIBLE,
+                    token::view::overlay_surface::settings_visible_count(
+                        model.window_size.0 as usize,
+                        model.window_size.1 as usize,
+                        model.metrics.scale_factor,
+                    ),
                     0,
                 );
             }

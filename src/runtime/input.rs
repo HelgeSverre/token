@@ -800,7 +800,10 @@ fn handle_modal_key(
         // otherwise (a no-op elsewhere, same guard
         // `ModalMsg::ToggleFindReplaceField`'s handler already has).
         Key::Named(NamedKey::Tab) if !shift => {
-            if matches!(model.ui.active_modal, Some(ModalState::CommandPalette(_))) {
+            if matches!(
+                model.ui.active_modal,
+                Some(ModalState::CommandPalette(_) | ModalState::Settings(_))
+            ) {
                 update(model, Msg::Ui(UiMsg::Modal(ModalMsg::NextTab)))
             } else {
                 update(
@@ -810,7 +813,10 @@ fn handle_modal_key(
             }
         }
         Key::Named(NamedKey::Tab) if shift => {
-            if matches!(model.ui.active_modal, Some(ModalState::CommandPalette(_))) {
+            if matches!(
+                model.ui.active_modal,
+                Some(ModalState::CommandPalette(_) | ModalState::Settings(_))
+            ) {
                 update(model, Msg::Ui(UiMsg::Modal(ModalMsg::PrevTab)))
             } else {
                 Some(Cmd::Redraw)

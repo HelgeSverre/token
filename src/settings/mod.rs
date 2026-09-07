@@ -5,6 +5,18 @@ use crate::lsp::{all_server_defs, LspServerDef};
 use descriptors::DESCRIPTORS;
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 
+/// Categories derived from the same metadata as the form, preceded by All Settings.
+pub fn categories() -> Vec<Option<&'static str>> {
+    let mut categories = vec![None];
+    for row in resolve_settings_rows("") {
+        let category = Some(row.section());
+        if !categories.contains(&category) {
+            categories.push(category);
+        }
+    }
+    categories
+}
+
 /// Stable row identity shared by rendering and input handling.
 #[derive(Debug, Clone, Copy)]
 pub enum SettingsRow {

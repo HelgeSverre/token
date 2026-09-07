@@ -8,6 +8,10 @@ All notable changes to rust-editor are documented in this file.
 
 ### Added
 
+- Settings now uses a spacious, Zed-inspired preferences form with category
+  navigation, descriptions beneath labels, right-aligned controls, and boolean
+  switches. Tab/Shift+Tab cycles categories; small windows use compact categories.
+
 - Searchable Settings modal (`Cmd+,` / `Ctrl+,` or “Open Settings” in the
   command palette), with preset chips for appearance, editing, status bar,
   completion, and language servers. Left/Right or a chip click applies and
@@ -40,6 +44,9 @@ All notable changes to rust-editor are documented in this file.
   screenshot scenarios accept `whole_word` and `use_regex`.
 
 ### Fixed
+
+- Keep the selected setting visible in short windows, reflow categories before
+  they overlap the footer, and retain theme and command values in compact rows.
 
 - Configuration saves preserve unknown YAML keys without restoring removed known
   settings. Invalid or unreadable existing files remain untouched; YAML comments

@@ -9,6 +9,10 @@
 //! `layout()` is the single source of truth shared by rendering and
 //! hit-testing.
 
+#[path = "settings_page.rs"]
+mod settings_page;
+pub use settings_page::visible_count as settings_visible_count;
+
 use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry::WidgetRect;
 use crate::layout::{
@@ -180,6 +184,8 @@ pub fn header_pad_x(scale_factor: f64) -> usize {
 pub use crate::layout::anchor::WidthRule;
 
 pub enum Anchor {
+    /// Spacious preferences form with category navigation.
+    Settings { width: WidthRule },
     /// Centered X; Y follows the Chrome table's `min(h/4, Y)` class. Dims
     /// the backdrop at `dim_alpha`.
     Centered { width: WidthRule, dim_alpha: u8 },
@@ -201,7 +207,9 @@ pub enum Anchor {
 impl Anchor {
     fn width(&self) -> &WidthRule {
         match self {
-            Anchor::Centered { width, .. } | Anchor::Cursor { width, .. } => width,
+            Anchor::Centered { width, .. }
+            | Anchor::Cursor { width, .. }
+            | Anchor::Settings { width } => width,
         }
     }
 }
@@ -301,6 +309,11 @@ impl CompletionKind {
 }
 
 pub enum Accessory<'a> {
+    /// A configuration value that remains visible in compact forms.
+    SettingValue {
+        text: &'a str,
+        action: Option<&'a str>,
+    },
     /// Adjacent selectable preset chips. Geometry is shared with hit testing.
     Choices {
         labels: &'a [&'a str],
@@ -565,7 +578,8 @@ fn resolve_visible_window(
     max_visible: usize,
 ) -> (usize, usize) {
     let visible = display_rows.len().min(max_visible);
-    let scroll_display = if scroll == 0 {
+    // With one slot, show the setting itself instead of its section heading.
+    let scroll_display = if scroll == 0 && max_visible != 1 {
         0
     } else {
         display_rows
@@ -621,6 +635,9 @@ pub fn resolve_scroll_for_selection(
     let selected = selected.min(last_flat);
     let selected_display = flat_to_display[selected];
 
+    if max_visible == 1 {
+        return selected;
+    }
     if selected == 0 {
         return 0;
     }
@@ -799,7 +816,7 @@ pub struct OverlayLayout {
 fn float_decl(anchor: &Anchor) -> FloatDecl {
     let width = *anchor.width();
     let float_anchor = match anchor {
-        Anchor::Centered { .. } => FloatAnchor::WindowCentered,
+        Anchor::Centered { .. } | Anchor::Settings { .. } => FloatAnchor::WindowCentered,
         Anchor::Cursor {
             x,
             y,
@@ -1233,7 +1250,7 @@ pub fn layout_measured(
         })
     });
 
-    OverlayLayout {
+    let mut result = OverlayLayout {
         scale_factor,
         snapshot,
         panel,
@@ -1254,7 +1271,11 @@ pub fn layout_measured(
         zone_plan,
         docs_plan,
         docs_code_plan,
+    };
+    if matches!(spec.anchor, Anchor::Settings { .. }) {
+        settings_page::layout(spec, &mut result, window_width, window_height, scale_factor);
     }
+    result
 }
 
 /// Where a point landed within a rendered `OverlaySpec`/`OverlayLayout` —
@@ -1282,6 +1303,9 @@ pub enum OverlayHit {
 
 /// Hit-test a point (physical px) against a laid-out `OverlaySpec`.
 pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) -> OverlayHit {
+    if matches!(spec.anchor, Anchor::Settings { .. }) {
+        return settings_page::hit_test(spec, layout, x, y);
+    }
     match layout.snapshot.hit(x as f32, y as f32) {
         Some(UiKey::OverlayTab(index)) => {
             let available = spec
@@ -1515,8 +1539,21 @@ pub fn render(
         )
     };
     let colors = Palette::from_theme(theme);
+    if matches!(spec.anchor, Anchor::Settings { .. }) {
+        settings_page::render(
+            frame,
+            painter,
+            mask_cache,
+            &colors,
+            spec,
+            &layout,
+            scale_factor,
+            cursor_visible,
+        );
+        return;
+    }
     let radius = match &spec.anchor {
-        Anchor::Centered { .. } => scaled(dims::RADIUS, scale_factor),
+        Anchor::Centered { .. } | Anchor::Settings { .. } => scaled(dims::RADIUS, scale_factor),
         Anchor::Cursor { .. } => scaled(dims::RADIUS_CURSOR, scale_factor),
     };
 
@@ -1826,7 +1863,7 @@ fn render_header(
         })
         .unwrap_or(0);
     let content_w = (r.x + r.w).saturating_sub(x + scope_w + pad_x / 2);
-    frame.set_clip(crate::model::editor_area::Rect {
+    frame.push_clip(crate::model::editor_area::Rect {
         x: x as f32,
         y: r.y as f32,
         width: content_w as f32,
@@ -1877,7 +1914,7 @@ fn render_header(
         }
     }
 
-    frame.clear_clip();
+    frame.pop_clip();
 
     if let Some(scope) = header.scope {
         let scope_size = size_px(SIZE_META, scale_factor);
@@ -2212,7 +2249,7 @@ fn render_list(
                                 );
                             }
                         }
-                        Accessory::DimText(text) => {
+                        Accessory::DimText(text) | Accessory::SettingValue { text, .. } => {
                             painter.draw_sized(
                                 frame,
                                 acc_x,
@@ -2334,12 +2371,22 @@ fn choice_width(label: &str, scale_factor: f64) -> usize {
 /// Fixed preset slots keep paint and pointer geometry identical without a glyph
 /// cache in hit testing. Narrow windows shrink slots; labels truncate inside.
 fn choice_rects(row: &WidgetRect, labels: &[&str], scale_factor: f64) -> Vec<WidgetRect> {
+    let margin = scaled(dims::ROW_INSET + dims::ROW_TEXT_PAD_X, scale_factor);
+    let budget = row.w.saturating_sub(margin * 2).saturating_mul(2) / 3;
+    choice_rects_with_budget(row, labels, scale_factor, margin, budget)
+}
+
+fn choice_rects_with_budget(
+    row: &WidgetRect,
+    labels: &[&str],
+    scale_factor: f64,
+    margin: usize,
+    budget: usize,
+) -> Vec<WidgetRect> {
     if labels.is_empty() {
         return Vec::new();
     }
     let gap = scaled(dims::CHIP_GAP, scale_factor);
-    let margin = scaled(dims::ROW_INSET + dims::ROW_TEXT_PAD_X, scale_factor);
-    let budget = row.w.saturating_sub(margin * 2).saturating_mul(2) / 3;
     let max_width = budget.saturating_sub(gap * labels.len().saturating_sub(1)) / labels.len();
     let widths: Vec<_> = labels
         .iter()
@@ -2378,7 +2425,9 @@ fn accessory_width(
                 + labels.len().saturating_sub(1) * scaled(dims::CHIP_GAP, scale_factor)
         }
         Accessory::None => 0,
-        Accessory::DimText(text) => painter.measure_sized(text, meta_size, 0.0).ceil() as usize,
+        Accessory::DimText(text) | Accessory::SettingValue { text, .. } => {
+            painter.measure_sized(text, meta_size, 0.0).ceil() as usize
+        }
         Accessory::Check => painter.measure_sized("\u{2713}", meta_size, 0.0).ceil() as usize,
         Accessory::Keycaps(steps) => keycaps_width(painter, steps, scale_factor),
         Accessory::Swatches { colors, active } => {
@@ -3136,6 +3185,40 @@ mod tests {
         glyph_cache: &'a mut super::super::GlyphCache,
     ) -> TextPainter<'a> {
         TextPainter::new(font, glyph_cache, 14.0, 11.0, 8.0, 18)
+    }
+
+    #[test]
+    fn settings_form_render_preserves_nested_clipping() {
+        let font = Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .unwrap();
+        let mut glyph_cache = super::super::GlyphCache::default();
+        for (w, h, scale) in [(1000, 800, 1.0), (1600, 1100, 2.0), (400, 750, 1.0)] {
+            let model = crate::model::AppModel::new(w, h, scale, vec![]);
+            let state = crate::model::ui::SettingsState::default();
+            let mut buffer = vec![0u32; w as usize * h as usize];
+            let mut frame = Frame::new(&mut buffer, w as usize, h as usize);
+            frame.push_clip(Rect::new(0.0, 0.0, w as f32, h as f32));
+            let mut painter = test_painter(&font, &mut glyph_cache);
+            crate::view::modal::with_settings_spec(&model, &state, |spec| {
+                render(
+                    &mut frame,
+                    &mut painter,
+                    &mut RoundedRectMaskCache::new(),
+                    &OverlayTheme::default_dark(),
+                    spec,
+                    w as usize,
+                    h as usize,
+                    scale,
+                    true,
+                );
+            });
+            // The settings panel and its search header must each restore their
+            // enclosing clip; popping here catches an unbalanced render stack.
+            frame.pop_clip();
+        }
     }
 
     /// Regression: the tab bar and footer used to `fill_rect_px` a plain

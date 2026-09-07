@@ -1261,7 +1261,12 @@ pub(crate) fn with_settings_spec<R>(
             icon: RowIcon::None,
             label: &labels[index],
             match_indices: &[],
-            detail: if matches!(row, SettingsRow::ServerStatus(_)) {
+            detail: if matches!(
+                row,
+                SettingsRow::ServerStatus(_)
+                    | SettingsRow::ServerCommand(_)
+                    | SettingsRow::Theme(_)
+            ) {
                 None
             } else {
                 Some(&descriptions[index])
@@ -1285,8 +1290,14 @@ pub(crate) fn with_settings_spec<R>(
                     )),
                 },
                 SettingsRow::ServerStatus(_) => Accessory::DimText(&statuses[index]),
-                SettingsRow::Theme(_) => Accessory::DimText("Open Picker"),
-                SettingsRow::ServerCommand(_) => Accessory::None,
+                SettingsRow::Theme(_) => Accessory::SettingValue {
+                    text: &descriptions[index],
+                    action: Some("Open Picker"),
+                },
+                SettingsRow::ServerCommand(_) => Accessory::SettingValue {
+                    text: &descriptions[index],
+                    action: None,
+                },
             },
         })
         .collect();
@@ -1298,22 +1309,40 @@ pub(crate) fn with_settings_spec<R>(
             rows: &rows[range.clone()],
         })
         .collect();
+    let categories: Vec<_> = crate::settings::categories()
+        .into_iter()
+        .map(|name| {
+            (
+                name.unwrap_or("All Settings"),
+                overlay_surface::TabCount::Hidden,
+            )
+        })
+        .collect();
     let input = state.editable.text();
     let detail = state
         .rows
         .get(state.selected_index)
-        .map(|row| row.description())
+        .map(|row| match row {
+            SettingsRow::Theme(_) | SettingsRow::ServerCommand(_) => format!(
+                "{} · {}",
+                descriptions[state.selected_index],
+                row.description()
+            ),
+            _ => row.description(),
+        })
         .unwrap_or_else(|| "No matching settings".into());
     let spec = OverlaySpec {
-        tabs: None,
-        anchor: Anchor::Centered {
+        tabs: Some(TabBar {
+            tabs: &categories,
+            active: state.category,
+        }),
+        anchor: Anchor::Settings {
             width: width_rule(PICKER_WIDTH),
-            dim_alpha: MODAL_DIM_ALPHA,
         },
         header: Some(Header {
             glyph: None,
             text: &input,
-            placeholder: "Search Settings",
+            placeholder: "Search settings…",
             caret: Some(state.editable.cursor().column),
             selection: editable_selection(&state.editable),
             scope: None,
@@ -1322,7 +1351,11 @@ pub(crate) fn with_settings_spec<R>(
             sections: &sections,
             selected: FlatIndex(state.selected_index),
             scroll: state.scroll_offset,
-            max_visible: COMMAND_PALETTE_MAX_VISIBLE,
+            max_visible: overlay_surface::settings_visible_count(
+                model.window_size.0 as usize,
+                model.window_size.1 as usize,
+                model.metrics.scale_factor,
+            ),
         },
         footer: Some(Footer {
             leading: &detail,

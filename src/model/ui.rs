@@ -765,6 +765,7 @@ impl RecentFilesState {
 /// Search input and navigation only; setting values live in EditorConfig.
 #[derive(Debug, Clone)]
 pub struct SettingsState {
+    pub category: usize,
     pub editable: EditableState<StringBuffer>,
     pub selected_index: usize,
     pub scroll_offset: usize,
@@ -778,6 +779,7 @@ impl Default for SettingsState {
             selected_index: 0,
             scroll_offset: 0,
             rows: crate::settings::resolve_settings_rows(""),
+            category: 0,
         }
     }
 }
@@ -785,6 +787,9 @@ impl Default for SettingsState {
 impl SettingsState {
     pub fn refilter(&mut self) {
         self.rows = crate::settings::resolve_settings_rows(&self.editable.text());
+        if let Some(Some(category)) = crate::settings::categories().get(self.category) {
+            self.rows.retain(|row| row.section() == *category);
+        }
         self.selected_index = 0;
         self.scroll_offset = 0;
     }

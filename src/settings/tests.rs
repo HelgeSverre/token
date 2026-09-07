@@ -13,6 +13,147 @@ fn model() -> AppModel {
     model
 }
 
+#[test]
+fn category_navigation_filters_the_form_without_writing_configuration() {
+    let mut model = model();
+    let index = crate::settings::categories()
+        .iter()
+        .position(|category| *category == Some("Editor"))
+        .unwrap();
+    let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+        panic!()
+    };
+    crate::view::modal::with_settings_spec(&model, state, |spec| {
+        let layout = overlay_surface::layout(spec, 1000, 800, 1.0);
+        let category = layout.tab_rects[index];
+        assert_eq!(
+            overlay_surface::hit_test(
+                spec,
+                &layout,
+                category.x + category.w / 2,
+                category.y + category.h / 2
+            ),
+            OverlayHit::Tab(index)
+        );
+        assert!(category.x < layout.rows[0].x);
+    });
+    let cmd = update(
+        &mut model,
+        Msg::Ui(UiMsg::Modal(ModalMsg::ActivateTab(index))),
+    )
+    .unwrap();
+    assert!(saved_config(&cmd).is_none());
+    let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+        panic!()
+    };
+    assert!(!state.rows.is_empty());
+    assert!(state.rows.iter().all(|row| row.section() == "Editor"));
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::NextTab)));
+    let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+        panic!()
+    };
+    assert_eq!(state.category, index + 1);
+}
+
+#[test]
+fn keyboard_navigation_keeps_settings_visible_at_each_window_size() {
+    for (width, height, scale) in [
+        (1000, 800, 1.0),
+        (1600, 1100, 2.0),
+        (400, 750, 1.0),
+        (1600, 600, 2.0),
+        (800, 600, 2.0),
+        (400, 300, 1.0),
+    ] {
+        let mut model = model();
+        model.window_size = (width, height);
+        model.metrics.scale_factor = scale;
+        for action in [
+            ModalMsg::ActivateTab(0),
+            ModalMsg::SelectPrevious,
+            ModalMsg::SelectNext,
+            ModalMsg::PageDown,
+            ModalMsg::PageUp,
+        ]
+        .into_iter()
+        .chain(std::iter::repeat_with(|| ModalMsg::SelectNext).take(80))
+        {
+            update(&mut model, Msg::Ui(UiMsg::Modal(action)));
+            let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+                panic!()
+            };
+            crate::view::modal::with_settings_spec(&model, state, |spec| {
+                let layout = overlay_surface::layout(spec, width as usize, height as usize, scale);
+                for (index, tab) in layout.tab_rects.iter().enumerate() {
+                    assert!(tab.y + tab.h <= layout.footer.unwrap().y);
+                    assert_eq!(
+                        overlay_surface::hit_test(
+                            spec,
+                            &layout,
+                            tab.x + tab.w / 2,
+                            tab.y + tab.h / 2
+                        ),
+                        OverlayHit::Tab(index)
+                    );
+                }
+                assert!(layout
+                    .rows
+                    .iter()
+                    .all(|r| r.y + r.h <= layout.footer.unwrap().y));
+                assert!(
+                    layout.rows.iter().any(|r| overlay_surface::hit_test(
+                        spec,
+                        &layout,
+                        r.x + 1,
+                        r.y + 1
+                    ) == OverlayHit::Row(overlay_surface::FlatIndex(
+                        state.selected_index
+                    ))),
+                    "selected row {} is not visible",
+                    state.selected_index
+                );
+            });
+        }
+    }
+}
+
+#[test]
+fn boolean_switch_hit_commits_the_opposite_value() {
+    let mut model = model();
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("Auto Surround".into()))),
+    );
+    let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+        panic!()
+    };
+    let hit = crate::view::modal::with_settings_spec(&model, state, |spec| {
+        let layout = overlay_surface::layout(spec, 1000, 800, 1.0);
+        layout
+            .rows
+            .iter()
+            .find_map(|r| {
+                let hit = overlay_surface::hit_test(spec, &layout, r.x + r.w - 17, r.y + 20);
+                matches!(hit, OverlayHit::Choice { .. }).then_some(hit)
+            })
+            .expect("painted switch has a click target")
+    });
+    let OverlayHit::Choice { row, choice } = hit else {
+        panic!()
+    };
+    let previous = model.config.auto_surround;
+    let cmd = update(
+        &mut model,
+        Msg::Ui(UiMsg::Modal(ModalMsg::SelectSettingChoice {
+            row: row.0,
+            choice,
+        })),
+    )
+    .unwrap();
+    assert_eq!(model.config.auto_surround, !previous);
+    assert_eq!(saved_config(&cmd).unwrap().auto_surround, !previous);
+}
+
 fn saved_config(cmd: &Cmd) -> Option<&EditorConfig> {
     match cmd {
         Cmd::SaveConfiguration { config } => Some(config),
@@ -106,6 +247,7 @@ fn visible_chips_are_clickable_at_multiple_scales_and_widths() {
     for (width, scale) in [(1000, 1.0), (1600, 2.0), (360, 1.0)] {
         let mut model = model();
         model.window_size = (width, 800);
+        model.metrics.scale_factor = scale;
         update(
             &mut model,
             Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("blink".into()))),
@@ -117,12 +259,14 @@ fn visible_chips_are_clickable_at_multiple_scales_and_widths() {
             let layout = overlay_surface::layout(spec, width as usize, 800, scale);
             let mut found = std::collections::BTreeSet::new();
             for row in &layout.rows {
-                for x in row.x..row.x + row.w {
-                    if let OverlayHit::Choice { row, choice } =
-                        overlay_surface::hit_test(spec, &layout, x, row.y + row.h / 2)
-                    {
-                        if row.0 == 0 {
-                            found.insert(choice);
+                for y in (row.y..row.y + row.h).step_by(4) {
+                    for x in (row.x..row.x + row.w).step_by(2) {
+                        if let OverlayHit::Choice { row, choice } =
+                            overlay_surface::hit_test(spec, &layout, x, y)
+                        {
+                            if row.0 == 0 {
+                                found.insert(choice);
+                            }
                         }
                     }
                 }
