@@ -9,6 +9,7 @@
 pub mod app;
 pub mod inline_worker;
 pub mod input;
+mod latest_worker;
 mod lsp_slot;
 #[cfg(target_os = "macos")]
 mod macos_menu;

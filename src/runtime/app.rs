@@ -42,6 +42,8 @@ use super::input::{
     is_terminal_dock_focused, KeyModifiers, OptionKeyGesture,
 };
 use super::lsp_slot::{FeatureSlot, PendingRequest, RequestKey};
+#[path = "references.rs"]
+mod references;
 use super::mouse::{
     end_tab_drag, handle_mouse_press, handle_mouse_wheel, make_mouse_event, update_hover_target,
     update_tab_drag, ClickTracker, DragState,
@@ -262,6 +264,7 @@ pub struct App {
     automation_syntax_profile: Option<AutomationSyntaxProfile>,
     latest_syntax_performance: Option<crate::automation::SyntaxPerfSnapshot>,
     lsp: LspManager,
+    reference_previews: references::ReferencePreviews,
     /// Wakes the event loop from an LSP worker thread; `None` in tests
     /// that construct `App` without a real event loop (matches
     /// `automation_proxy`'s optionality).
@@ -366,8 +369,7 @@ const RESOLVE_DEBOUNCE: Duration = Duration::from_millis(150);
 /// server sees current text when it fires.
 const COMPLETION_DEBOUNCE: Duration = Duration::from_millis(120);
 
-/// Show Usages caps the popup at this many locations — a status transient
-/// reports the overflow count rather than rendering an unbounded list.
+/// Show Usages caps preparation and popup rows at this many unique locations.
 const MAX_REFERENCE_LOCATIONS: usize = 200;
 
 /// Pointer movement (px) past which mouse-dwell hover tracking (`hover_dwell`)
@@ -597,6 +599,7 @@ struct PendingReferences {
     document_id: token::model::editor_area::DocumentId,
     revision: u64,
     cursor: token::model::editor::Position,
+    generation: std::sync::Arc<()>,
 }
 
 impl PendingRequest for PendingReferences {
@@ -1117,6 +1120,7 @@ impl App {
             automation_syntax_profile: None,
             latest_syntax_performance: None,
             lsp: LspManager::new(),
+            reference_previews: references::ReferencePreviews::default(),
             lsp_wake,
             lsp_change_deadlines: lsp::sync::DidChangeDeadlines::new(),
         };
@@ -3102,6 +3106,12 @@ impl App {
                 });
             }
         }
+        // Process queued user intents first: a fresh references request may
+        // invalidate a preview that was already waiting on its private channel.
+        if let Some(msg) = self.reference_previews.poll() {
+            self.process_automation_msg(msg);
+            needs_redraw = true;
+        }
         needs_redraw
     }
 
@@ -3365,11 +3375,8 @@ impl App {
             .collect()
     }
 
-    // Same interception for `textDocument/references` replies. Unlike
-    // definition/hover, this one does real work: previews may require
-    // reading unopened files off disk (`build_reference_items`), which
-    // `update()` must never do — so it happens here, before the
-    // message reaches it.
+    // Resolve paths without filesystem work, then prepare optional previews on
+    // the replaceable worker. Neither update nor the event loop reads files.
     fn intercept_references_replies(&mut self, messages: Vec<Msg>) -> Vec<Msg> {
         messages
             .into_iter()
@@ -3397,13 +3404,21 @@ impl App {
                 } else {
                     ReferencesOutcome::NoResult
                 };
-                Some(Msg::Lsp(LspMsg::ReferencesResolved {
-                    document_id: pending.document_id,
-                    revision: pending.revision,
-                    cursor: pending.cursor,
+                let buffers = items
+                    .iter()
+                    .filter_map(|item| {
+                        let id = self.model.editor_area.find_document_by_path(&item.path)?;
+                        let document = self.model.editor_area.documents.get(&id)?;
+                        Some((item.path.clone(), document.buffer.clone()))
+                    })
+                    .collect();
+                self.reference_previews.prepare(
+                    pending,
                     items,
+                    buffers,
                     outcome,
-                }))
+                    self.lsp_wake.clone(),
+                )
             })
             .collect()
     }
@@ -4405,54 +4420,28 @@ impl App {
         }
     }
 
-    /// Builds `LocationItem` previews for a `textDocument/references`
-    /// reply — called from the interception pass (not `update()`) because
-    /// a location in a file that isn't currently open needs a disk read
-    /// to preview. Sorted by `(path, line)` and capped at
-    /// `MAX_REFERENCE_LOCATIONS` before the (possibly expensive) preview
-    /// reads, so the cap bounds I/O too, not just the popup's row count.
+    /// Resolve, order and deduplicate navigation targets without filesystem I/O.
+    /// Only the first `MAX_REFERENCE_LOCATIONS` unique targets are retained;
+    /// unopened-file previews are filled by the worker afterward.
     fn build_reference_items(
         &self,
         locations: Vec<lsp_types::Location>,
         server_id: &LspServerId,
         root: &std::path::Path,
     ) -> Vec<token::update::navigation::LocationItem> {
-        let mut resolved: Vec<(std::path::PathBuf, lsp_types::Position)> = locations
-            .iter()
-            .filter_map(|location| {
-                let path = lsp::uri_to_path(&location.uri)?;
-                Some((path, location.range.start))
-            })
-            .collect();
-        resolved.sort_by(|a, b| (&a.0, a.1.line).cmp(&(&b.0, b.1.line)));
-        resolved.truncate(MAX_REFERENCE_LOCATIONS);
-
-        // ponytail: one `read_to_string` per distinct unopened file,
-        // cached only for this batch (bounded by `MAX_REFERENCE_LOCATIONS`
-        // distinct files at worst) — fine for a single references reply;
-        // revisit with a real cache if a future caller does this more
-        // than once per user action.
-        let mut file_cache: HashMap<std::path::PathBuf, Vec<String>> = HashMap::new();
+        let mut resolved = std::collections::BTreeSet::new();
+        for location in locations {
+            if let Some(path) = lsp::uri_to_path(&location.uri) {
+                let position = location.range.start;
+                resolved.insert((path, position.line, position.character));
+                if resolved.len() > MAX_REFERENCE_LOCATIONS {
+                    resolved.pop_last();
+                }
+            }
+        }
         resolved
             .into_iter()
-            .map(|(path, position)| {
-                let line = position.line as usize;
-                let preview = self
-                    .model
-                    .editor_area
-                    .find_open_file(&path)
-                    .and_then(|(doc_id, _, _)| self.model.editor_area.documents.get(&doc_id))
-                    .and_then(|doc| doc.get_line_cow(line).map(|c| c.into_owned()))
-                    .or_else(|| {
-                        let lines = file_cache.entry(path.clone()).or_insert_with(|| {
-                            std::fs::read_to_string(&path)
-                                .map(|s| s.lines().map(str::to_owned).collect())
-                                .unwrap_or_default()
-                        });
-                        lines.get(line).cloned()
-                    })
-                    .map(|s| s.trim().to_owned())
-                    .unwrap_or_default();
+            .map(|(path, line, character)| {
                 // Same route-hint rule as `DefinitionResolved`'s
                 // out-of-workspace branch: only set when this location
                 // isn't under any workspace root, so an in-workspace jump
@@ -4466,8 +4455,8 @@ impl App {
                     outside_every_root.then(|| (server_id.clone(), root.to_path_buf()));
                 token::update::navigation::LocationItem {
                     path,
-                    position,
-                    preview,
+                    position: lsp_types::Position::new(line, character),
+                    preview: String::new(),
                     route_hint,
                 }
             })
@@ -4485,6 +4474,7 @@ impl App {
         cursor: token::model::editor::Position,
         revision: u64,
     ) {
+        let generation = self.reference_previews.begin();
         self.gated_lsp_request::<PendingReferences>(
             document_id,
             Some(position),
@@ -4493,6 +4483,7 @@ impl App {
                 document_id,
                 revision,
                 cursor,
+                generation,
             },
         );
     }
@@ -5207,6 +5198,9 @@ impl App {
         } else {
             self.last_tick + Duration::from_millis(self.model.config.cursor_blink_ms)
         };
+        if let Some(deadline) = self.reference_previews.deadline() {
+            next_wake = next_wake.min(deadline);
+        }
         if let Some(earliest_deadline) = self.syntax_deadlines.values().map(|(d, _)| *d).min() {
             next_wake = next_wake.min(earliest_deadline);
         }

@@ -6,6 +6,14 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Performance
+
+- Usages previews are prepared off the event loop with replaceable work and
+  bounded file reads (1 MiB per file, 4 MiB per response). Slow or unreadable
+  previews fall back to navigable file/line entries after 250 ms. Results retain
+  unsaved-buffer previews, deduplicate identical locations before the 200-row
+  limit, and discard previews from superseded queries.
+
 ### Changed
 
 - Loaded documents retain their original and resolved file identity. LSP
