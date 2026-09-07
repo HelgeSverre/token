@@ -1,5 +1,50 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Completion documentation viewport — 2026-09-07
+
+Completion documentation now uses an independently scrollable viewport instead
+of discarding prose after twelve wrapped rows or allowing unbounded code height.
+Code and prose share one row range, with a separator when both are present. The
+collapsed card shows up to twelve rows; expansion uses the available window
+height. The footer reports the visible range and accepts a click or F1 to toggle
+expansion. Alt+PageUp/PageDown pages by the measured visible row count; ordinary
+PageUp/PageDown still navigates completion items.
+
+Painting, pointer hits and keyboard paging consume the shared measured overlay
+layout. Wrapping uses the solver's anchor helpers to fit the larger side of the
+menu without covering it. Cards disappear when no usable text area remains and
+return after resizing. This changes completion side cards only, not standalone
+hover or signature popups. No dependency, transport or configuration was added.
+
+Wheel input rechecks current hit geometry so an unmoved pointer cannot scroll a
+stale target after resizing or a new reply. Card interaction leaves buffer,
+carets and list selection unchanged. Selecting another item resets the card;
+no-op navigation and a late path result retaining the same server item preserve
+its position. Focus/modal transitions dismiss the session through the existing
+update lifecycle; delayed documentation actions cannot reopen it.
+
+Ten regressions cover row reachability, long code followed by styled prose,
+resize/DPI bounds, narrow-window separation, footer hits, scrolled text pixels,
+keyboard routing, fresh wheel targets, selection/focus lifecycle and late path
+arrival. The pixel test compares actual font-rendered buffers and checks that
+all changed pixels stay inside the documentation card. It is not a native input
+or screenshot acceptance test.
+
+Final verification: **2,454 tests passed**, 7 skipped; **2 doctests passed**,
+6 ignored. Nextest run `c56440ca-f578-4541-b91f-b03582ee29a9` used
+`CARGO_BUILD_JOBS=1 just test '--no-fail-fast --status-level fail --final-status-level fail'`.
+Strict all-target/all-feature `just lint`, `just fmt-check` and `git diff --check`
+passed. The earlier targeted run passed all ten viewport tests; the full run
+also includes the final stronger modal-dismissal assertions.
+
+Scoped review: **Approve**, with no outstanding critical/high code findings.
+Native keyboard, pointer and IME acceptance remain open; command-routing tests
+do not establish end-to-end window input behavior. No new performance result is
+claimed. This source remains coupled to the uncommitted completion/overlay
+foundation and must be staged in dependency order, not swept into a broad commit.
+The active autocomplete checklist records menu documentation richness complete,
+but full snippets and other handoff requirements keep the whole plan active.
+
 ## Shared documentation Markdown — 2026-09-07
 
 Completion, hover and signature cards now reduce Markdown through the existing
