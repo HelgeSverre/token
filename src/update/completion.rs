@@ -81,7 +81,6 @@ pub(crate) fn dismiss(model: &mut AppModel) -> bool {
         model.ui.completion_menu = None;
         was_open = true;
     }
-    model.ui.completion_hover_row = None;
     if matches!(
         model.ui.cursor_overlay,
         Some(CursorOverlayState {

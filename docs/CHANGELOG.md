@@ -73,6 +73,11 @@ All notable changes to rust-editor are documented in this file.
 
 ### Fixed
 
+- Context menus now highlight the row under the pointer and repaint immediately
+  when it changes or the pointer leaves. Completion, code-action and reference
+  popups share this hover state without changing keyboard selection. Separators
+  remain unselectable.
+
 - Keep the selected setting visible in short windows, reflow categories before
   they overlap the footer, and retain theme and command values in compact rows.
 

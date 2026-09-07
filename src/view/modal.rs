@@ -2096,7 +2096,7 @@ pub fn with_cursor_overlay_spec<R>(
                 max_visible: overlay_surface::MAX_VISIBLE_COMPLETION,
             },
             footer: None,
-            hover_row: model.ui.completion_hover_row.map(FlatIndex),
+            hover_row: state.hover_row.map(FlatIndex),
             docs,
         };
         return Some(f(&spec));
@@ -2138,7 +2138,7 @@ pub fn with_cursor_overlay_spec<R>(
                 max_visible: usize::MAX,
             },
             footer: None,
-            hover_row: None,
+            hover_row: state.hover_row.map(FlatIndex),
             docs: None,
         };
         return Some(f(&spec));
@@ -2195,7 +2195,7 @@ pub fn with_cursor_overlay_spec<R>(
                     max_visible: overlay_surface::MAX_VISIBLE_COMPLETION,
                 },
                 footer: None,
-                hover_row: None,
+                hover_row: state.hover_row.map(FlatIndex),
                 docs: None,
             };
             Some(f(&spec))
@@ -2339,7 +2339,7 @@ pub fn with_cursor_overlay_spec<R>(
                     max_visible: overlay_surface::MAX_VISIBLE_COMPLETION,
                 },
                 footer: None,
-                hover_row: None,
+                hover_row: state.hover_row.map(FlatIndex),
                 docs: None,
             };
             Some(f(&spec))
@@ -2389,7 +2389,7 @@ pub fn with_cursor_overlay_spec<R>(
                     max_visible: overlay_surface::MAX_VISIBLE_COMPLETION,
                 },
                 footer: None,
-                hover_row: None,
+                hover_row: state.hover_row.map(FlatIndex),
                 docs: None,
             };
             Some(f(&spec))
@@ -2973,8 +2973,10 @@ mod tests {
             anchor: (399, 299, 0),
             region: ContextMenuRegion::Editor,
         });
+        model.ui.cursor_overlay.as_mut().unwrap().hover_row = Some(1);
 
         with_cursor_overlay_spec(&model, |spec| {
+            assert_eq!(spec.hover_row, Some(FlatIndex(1)));
             let layout = &overlay_surface::layout(spec, 400, 300, 1.0);
             assert!(layout.panel.x + layout.panel.w <= 400);
             assert!(layout.panel.y + layout.panel.h <= 300);
@@ -2994,6 +2996,49 @@ mod tests {
             );
         })
         .expect("context menu should produce a layout");
+
+        let font = fontdue::Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .expect("test font should load");
+        let mut glyph_cache = crate::view::GlyphCache::default();
+        let mut sample_rows = |hover_row| {
+            model.ui.cursor_overlay.as_mut().unwrap().hover_row = hover_row;
+            with_cursor_overlay_spec(&model, |spec| {
+                let mut buffer = vec![0; 400 * 300];
+                let mut frame = Frame::new(&mut buffer, 400, 300);
+                let mut painter = TextPainter::new(&font, &mut glyph_cache, 14.0, 11.0, 8.0, 18);
+                let mut mask_cache = RoundedRectMaskCache::new();
+                overlay_surface::render(
+                    &mut frame,
+                    &mut painter,
+                    &mut mask_cache,
+                    &model.theme.overlay,
+                    spec,
+                    400,
+                    300,
+                    1.0,
+                    false,
+                );
+                let layout = overlay_surface::layout(spec, 400, 300, 1.0);
+                layout
+                    .rows
+                    .iter()
+                    .map(|rect| frame.get_pixel(rect.x + rect.w - 20, rect.y + rect.h / 2))
+                    .collect::<Vec<_>>()
+            })
+            .expect("context menu should render")
+        };
+        let plain = sample_rows(None);
+        let hovered = sample_rows(Some(1));
+        assert_eq!(plain[0], hovered[0], "keyboard selection stays highlighted");
+        assert_eq!(plain[1], hovered[1], "separator is never highlighted");
+        assert_ne!(
+            plain[2], hovered[2],
+            "pointer row receives a visible hover wash"
+        );
+        assert_eq!(plain, sample_rows(None), "leaving clears the hover wash");
     }
 
     #[test]

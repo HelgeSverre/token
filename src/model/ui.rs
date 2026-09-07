@@ -891,6 +891,8 @@ pub struct CursorOverlayState {
     pub kind: CursorOverlayKind,
     pub selected: usize,
     pub scroll: usize,
+    /// Pointer hover is independent of keyboard selection and shares this popup's lifetime.
+    pub hover_row: Option<usize>,
 }
 
 impl CursorOverlayState {
@@ -899,6 +901,7 @@ impl CursorOverlayState {
             kind,
             selected: 0,
             scroll: 0,
+            hover_row: None,
         }
     }
 }
@@ -1261,11 +1264,6 @@ pub struct UiState {
     /// Consecutive backend failures; auto-trigger pauses at the cap.
     pub inline_failures: u32,
     pub inline_next_request_id: u64,
-    /// `FlatIndex` of the completion row currently under the mouse, if any
-    /// — the popup's hover wash (overlay-surface.md Pointer), mirroring
-    /// `modal_hover_row` for the cursor-anchored surface. Cleared whenever
-    /// the mouse isn't over a row and when the menu closes.
-    pub completion_hover_row: Option<usize>,
     /// Hover-card content (lsp-integration.md Phase 4), set alongside
     /// `cursor_overlay` being `Some(CursorOverlayKind::Hover)`. `None`
     /// whenever the hover card is closed.
@@ -1328,7 +1326,6 @@ impl UiState {
             inline_in_flight: false,
             inline_failures: 0,
             inline_next_request_id: 0,
-            completion_hover_row: None,
             hover_card: None,
             reference_list: None,
             code_action_list: None,

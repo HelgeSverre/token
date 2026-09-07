@@ -43,8 +43,8 @@ use super::input::{
 };
 use super::lsp_slot::{FeatureSlot, PendingRequest, RequestKey};
 use super::mouse::{
-    end_tab_drag, handle_mouse_press, handle_mouse_wheel, make_mouse_event, update_tab_drag,
-    ClickTracker, DragState,
+    end_tab_drag, handle_mouse_press, handle_mouse_wheel, make_mouse_event, update_hover_target,
+    update_tab_drag, ClickTracker, DragState,
 };
 use super::webview::WebviewManager;
 use token::view::{Renderer, RendererPreparation};
@@ -1268,20 +1268,22 @@ impl App {
     /// Update both hover region tracking and cursor icon based on mouse position.
     /// Delegates to `hit_test_ui()` for unified hit-testing, then maps the result
     /// to the appropriate cursor icon and hover region.
-    fn update_cursor_icon(&mut self, x: f64, y: f64) {
+    fn update_cursor_icon(&mut self, x: f64, y: f64) -> bool {
         use token::model::HoverRegion;
         use token::view::hit_test::{hit_test_ui, Point};
 
-        let Some(window) = &self.window else { return };
+        let Some(window) = &self.window else {
+            return false;
+        };
         let Some(renderer) = &mut self.renderer else {
-            return;
+            return false;
         };
 
         // In-progress sidebar resize overrides all hit-testing
         if self.model.ui.sidebar_resize.is_some() {
             self.model.ui.hover = HoverRegion::SidebarResize;
             window.set_cursor(CursorIcon::ColResize);
-            return;
+            return false;
         }
 
         // In-progress dock resize overrides hit-testing
@@ -1292,7 +1294,7 @@ impl App {
                 token::model::ui::DockResizeAxis::Vertical => CursorIcon::RowResize,
             };
             window.set_cursor(icon);
-            return;
+            return false;
         }
 
         let pt = Point::new(x, y);
@@ -1302,40 +1304,12 @@ impl App {
             let mut measure = token::layout::PainterMeasure::new(&mut painter);
             hit_test_ui(&self.model, pt, char_width, &mut measure)
         };
-        if let Some(target) = target {
-            window.set_cursor(target.cursor_icon());
-            self.model.ui.hover = target.hover_region();
-            self.model.ui.modal_hover_row =
-                if let token::view::hit_test::HitTarget::ModalRow { flat_index }
-                | token::view::hit_test::HitTarget::ModalChoice { flat_index, .. } = target
-                {
-                    Some(flat_index)
-                } else {
-                    None
-                };
-            // The completion popup's hover wash mirrors the modal one —
-            // only meaningful while the overlay is the Completion kind.
-            self.model.ui.completion_hover_row = match target {
-                token::view::hit_test::HitTarget::CursorOverlay {
-                    flat_index: Some(row),
-                } if matches!(
-                    self.model.ui.cursor_overlay,
-                    Some(token::model::CursorOverlayState {
-                        kind: token::model::CursorOverlayKind::Completion,
-                        ..
-                    })
-                ) =>
-                {
-                    Some(row)
-                }
-                _ => None,
-            };
-        } else {
-            self.model.ui.hover = HoverRegion::None;
-            self.model.ui.modal_hover_row = None;
-            self.model.ui.completion_hover_row = None;
-            window.set_cursor(CursorIcon::Default);
-        }
+        window.set_cursor(
+            target
+                .as_ref()
+                .map_or(CursorIcon::Default, |target| target.cursor_icon()),
+        );
+        update_hover_target(&mut self.model, target.as_ref())
     }
 
     /// Mouse-dwell hover bookkeeping for `CursorMoved` — call after
@@ -1622,8 +1596,7 @@ impl App {
             WindowEvent::CursorMoved { position, .. } => {
                 let prev_mouse_position = self.mouse_position;
                 self.mouse_position = Some((position.x, position.y));
-                let prev_modal_hover_row = self.model.ui.modal_hover_row;
-                self.update_cursor_icon(position.x, position.y);
+                let hover_changed = self.update_cursor_icon(position.x, position.y);
                 self.update_hover_dwell(prev_mouse_position, position.x, position.y);
 
                 // A modal being open doesn't rule out a drag that started
@@ -1637,8 +1610,7 @@ impl App {
                     && self.model.ui.sidebar_resize.is_none()
                     && self.model.ui.dock_resize.is_none()
                 {
-                    return (self.model.ui.modal_hover_row != prev_modal_hover_row)
-                        .then_some(Cmd::Redraw);
+                    return hover_changed.then_some(Cmd::Redraw);
                 }
 
                 // Handle splitter drag first (highest priority)
@@ -1760,7 +1732,11 @@ impl App {
                         }
                     }
                 }
-                None
+                hover_changed.then_some(Cmd::Redraw)
+            }
+            WindowEvent::CursorLeft { .. } => {
+                self.hover_dwell = None;
+                update_hover_target(&mut self.model, None).then_some(Cmd::Redraw)
             }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,

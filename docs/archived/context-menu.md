@@ -9,6 +9,11 @@ A context-sensitive popup menu triggered by right-click, rendered as an `Overlay
 > **Updated:** 2026-08-13 (revised against the shipped `OverlaySurface`/cursor-overlay system — bespoke rendering plan deleted, V1 scope and key/mouse routing finalized)
 > **Milestone:** 3 - Workspace Features
 
+> 2026-09-07 follow-up: cursor-overlay lists share popup-owned pointer hover
+> state and repaint on row changes/window exit. Context menus now use the
+> existing hover wash without changing keyboard selection; separators remain
+> unselectable. Runtime transition and rendered-pixel regressions cover this fix.
+
 ---
 
 ## Table of Contents

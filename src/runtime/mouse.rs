@@ -26,6 +26,35 @@ use token::model::editor_area::GroupId;
 use token::view::hit_test::{hit_test_ui, EventResult, HitTarget, MouseEvent};
 use token::view::Renderer;
 
+/// Track pointer rows using the same flat indices as painting and activation.
+/// Returns whether row highlights changed, so idle popup hover requests repaint.
+pub(super) fn update_hover_target(model: &mut AppModel, target: Option<&HitTarget>) -> bool {
+    let previous_modal = model.ui.modal_hover_row;
+    let previous_popup = model
+        .ui
+        .cursor_overlay
+        .and_then(|overlay| overlay.hover_row);
+    model.ui.hover = target.map_or(token::model::HoverRegion::None, HitTarget::hover_region);
+    model.ui.modal_hover_row = match target {
+        Some(HitTarget::ModalRow { flat_index } | HitTarget::ModalChoice { flat_index, .. }) => {
+            Some(*flat_index)
+        }
+        _ => None,
+    };
+    if let Some(overlay) = &mut model.ui.cursor_overlay {
+        overlay.hover_row = match target {
+            Some(HitTarget::CursorOverlay { flat_index }) => *flat_index,
+            _ => None,
+        };
+    }
+    previous_modal != model.ui.modal_hover_row
+        || previous_popup
+            != model
+                .ui
+                .cursor_overlay
+                .and_then(|overlay| overlay.hover_row)
+}
+
 /// Identifies what was clicked, so rapid clicks on unrelated targets
 /// (e.g. a sidebar row then an editor line) never count as double-clicks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,6 +104,35 @@ impl Default for ClickTracker {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn popup_hover_requests_repaint_only_on_row_changes_and_preserves_selection() {
+        use token::model::{CursorOverlayKind, CursorOverlayState};
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        for kind in [
+            CursorOverlayKind::Completion,
+            CursorOverlayKind::ContextMenu,
+            CursorOverlayKind::DebugCompletion,
+            CursorOverlayKind::CodeActions,
+            CursorOverlayKind::References,
+        ] {
+            model.ui.cursor_overlay = Some(CursorOverlayState::new(kind));
+            let row = HitTarget::CursorOverlay {
+                flat_index: Some(1),
+            };
+            assert!(update_hover_target(&mut model, Some(&row)));
+            assert_eq!(model.ui.cursor_overlay.unwrap().hover_row, Some(1));
+            assert_eq!(model.ui.cursor_overlay.unwrap().selected, 0);
+            assert!(!update_hover_target(&mut model, Some(&row)));
+            let separator = HitTarget::CursorOverlay { flat_index: None };
+            assert!(update_hover_target(&mut model, Some(&separator)));
+            assert_eq!(model.ui.cursor_overlay.unwrap().hover_row, None);
+            assert!(update_hover_target(&mut model, Some(&row)));
+            assert!(update_hover_target(&mut model, None));
+            assert_eq!(model.ui.cursor_overlay.unwrap().hover_row, None);
+            assert!(!update_hover_target(&mut model, None));
+        }
+    }
+
     use std::sync::mpsc;
 
     use super::*;
