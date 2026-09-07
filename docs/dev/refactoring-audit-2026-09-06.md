@@ -1,5 +1,51 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## TabbyML transport — 2026-09-07
+
+The missing TabbyML adapter now uses `transport: tabby` through the existing
+`FimProvider`. The [official API](https://tabby.tabbyml.com/api/completion/) and
+[connection example](https://tabby.tabbyml.com/docs/extensions/troubleshooting/)
+were checked before implementation, with Context7 used to locate primary docs.
+Native prefix/suffix segments and optional language IDs are serialized without
+OpenAI prompt/model parameters. Gateway prefixes and trailing `/v1` handling
+share the existing route logic; response texts share the bounded choices parser.
+The server selects its model and generation length. Raw prompt formats and
+requesting more than one alternative remain capability errors for this transport.
+
+Credentials use the existing explicit environment reference, sensitive header,
+HTTPS/non-loopback rule and redirect refusal. No ambient key discovery, clipboard,
+Git URL, user identifier, acceptance telemetry or absolute current-file path is
+added. Optional workspace-relative path/declaration attachment remains retrieval
+work; the current provider-neutral request does not carry a workspace root.
+Opt-in recent-buffer context keeps the same validated commented-prefix fallback
+as other non-llama.cpp transports, including unsupported-language errors.
+
+Review identified that an empty Tabby choices array must not trigger backend
+failure/backoff. The shared parser now accepts empty lists for Tabby while keeping
+the existing hosted transports' validation. A full worker/update regression
+checks the no-suggestion result clears in-flight state without incrementing
+failures or editing the document. Other new coverage includes Unicode segments,
+gateway paths, credentials, language IDs, configuration round trips, alternative
+bounds, deadlines, chunked body limits, socket cancellation and partial acceptance
+with Undo. Existing recency and error tables also exercise Tabby. Shared test
+helpers avoid duplicating the worker acceptance and cancellation fixtures.
+
+The adapter does not start a server or download a model. No live Tabby model,
+native input or new performance measurement is claimed. Server supervision,
+structured retrieval and the rest of the autocomplete plan remain open.
+
+Final verification: **2,472 tests passed**, 7 skipped; **2 doctests passed**,
+6 ignored. Nextest run `2921ce4a-f9e9-4c95-b5ec-96527c7692e1` includes all eight
+new Tabby regressions and the expanded shared tables. Strict all-target/all-feature
+lint, formatting and diff checks passed. Scoped self-review: **Approve**, with the
+empty-result issue fixed and no outstanding findings. No dependency was added.
+
+Changelog, provider guide and active checklist were updated. This source remains
+uncommitted with its HTTP/provider/editor prerequisites; the verification report
+does not imply an independently buildable Tabby source commit. Continue staging
+those prerequisites in logical groups. No whole feature plan is newly complete,
+so the temporary handoff remains and no additional plan was archived.
+
 ## Shared editor primitives commit — 2026-09-07
 
 Commit `7552b7e` removes the document editor's duplicate cursor, position and
