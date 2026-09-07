@@ -58,6 +58,7 @@ pub enum PanelId {
     AiChat,
     TodoList,
     Problems,
+    Usages,
 }
 
 impl PanelId {
@@ -79,6 +80,7 @@ impl PanelId {
             PanelId::AiChat => "Chat",
             PanelId::TodoList => "TODOs",
             PanelId::Problems => "Problems",
+            PanelId::Usages => "Usages",
         }
     }
 
@@ -87,9 +89,11 @@ impl PanelId {
         match self {
             PanelId::FileExplorer => DockPosition::Left,
             PanelId::Outline => DockPosition::Right,
-            PanelId::Terminal | PanelId::TaskRunner | PanelId::TodoList | PanelId::Problems => {
-                DockPosition::Bottom
-            }
+            PanelId::Terminal
+            | PanelId::TaskRunner
+            | PanelId::TodoList
+            | PanelId::Problems
+            | PanelId::Usages => DockPosition::Bottom,
             PanelId::AiChat => DockPosition::Right,
         }
     }
@@ -237,6 +241,7 @@ impl Default for DockLayout {
         layout.right.register_panel(PanelId::OUTLINE);
         layout.bottom.register_panel(PanelId::TERMINAL);
         layout.bottom.register_panel(PanelId::PROBLEMS);
+        layout.bottom.register_panel(PanelId::Usages);
 
         // Left dock (file explorer) is open by default
         layout.left.is_open = true;

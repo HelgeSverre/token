@@ -90,6 +90,7 @@ pub enum CommandId {
     ToggleTerminal,
     ToggleOutline,
     ToggleProblems,
+    ToggleUsages,
     ToggleProblemsScope,
     CloseFocusedDock,
 
@@ -459,6 +460,12 @@ pub static COMMANDS: &[CommandDef] = &[
         keybinding: None,
     },
     CommandDef {
+        id: CommandId::ToggleUsages,
+        keybinding: None,
+        category: CommandCategory::Panel,
+        label: "View: Toggle Usages",
+    },
+    CommandDef {
         id: CommandId::CloseFocusedDock,
         category: CommandCategory::Panel,
         label: "View: Close Panel",
@@ -638,6 +645,7 @@ impl CommandId {
             CommandId::ToggleTerminal => Some(KeymapCommand::ToggleTerminal),
             CommandId::ToggleOutline => Some(KeymapCommand::ToggleOutline),
             CommandId::ToggleProblems => Some(KeymapCommand::ToggleProblems),
+            CommandId::ToggleUsages => Some(KeymapCommand::ToggleUsages),
             CommandId::ToggleProblemsScope => None,
             CommandId::CloseFocusedDock => Some(KeymapCommand::CloseFocusedDock),
             CommandId::RevealInFinder => None,
@@ -1109,6 +1117,7 @@ pub enum Cmd {
     /// time — mirrors `LspRequestHover`. `context.includeDeclaration` is
     /// always sent `true`.
     LspRequestReferences {
+        target: crate::model::usages::ReferencesTarget,
         document_id: DocumentId,
         position: lsp_types::Position,
         cursor: crate::model::editor::Position,

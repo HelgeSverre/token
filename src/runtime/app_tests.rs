@@ -2668,6 +2668,15 @@ fn a_stale_hover_response_after_a_revision_bump_is_dropped() {
 /// with rows built from the real response, not a hand-set model.
 #[test]
 fn references_resolved_opens_the_popup_with_two_locations() {
+    references_resolved_populates_destination(false);
+}
+
+#[test]
+fn usages_panel_real_server_response_populates_persistent_results() {
+    references_resolved_populates_destination(true);
+}
+
+fn references_resolved_populates_destination(panel: bool) {
     let dir = tempfile::tempdir().expect("temp dir should be created");
     let file_path = dir.path().join("main.rs");
     std::fs::write(&file_path, "fn main() {\n    foo();\n    foo();\n}\n")
@@ -2716,27 +2725,47 @@ fn references_resolved_opens_the_popup_with_two_locations() {
     );
 
     app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_loading));
     let server_id = LspServerId::from("rust-analyzer");
     assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
         app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready)
     }));
 
-    app.process_automation_msg(Msg::Lsp(LspMsg::FindReferences));
-
-    assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
-        app.model.ui.cursor_overlay.is_some()
+    app.process_automation_msg(Msg::Lsp(if panel {
+        LspMsg::FindUsagesInPanel
+    } else {
+        LspMsg::FindReferences
     }));
 
-    assert_eq!(
-        app.model.ui.cursor_overlay.map(|o| o.kind),
-        Some(token::model::CursorOverlayKind::References)
-    );
-    let items = app
-        .model
-        .ui
-        .reference_list
-        .as_ref()
-        .expect("popup rows stored");
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+        if panel {
+            !app.model.usages_panel.is_loading()
+        } else {
+            app.model.ui.cursor_overlay.is_some()
+        }
+    }));
+
+    let items = if panel {
+        assert!(app.model.ui.cursor_overlay.is_none());
+        assert_eq!(
+            app.model.ui.focus,
+            token::model::FocusTarget::Dock(token::panel::DockPosition::Bottom)
+        );
+        &app.model.usages_panel.items
+    } else {
+        assert_eq!(
+            app.model.ui.cursor_overlay.map(|o| o.kind),
+            Some(token::model::CursorOverlayKind::References)
+        );
+        app.model
+            .ui
+            .reference_list
+            .as_ref()
+            .expect("popup rows stored")
+    };
     assert_eq!(items.len(), 2);
     assert_eq!(items[0].position.line, 1);
     assert_eq!(items[1].position.line, 2);
@@ -2814,6 +2843,7 @@ fn stale_references_response_after_a_revision_bump_is_dropped() {
         },
         cursor,
         revision,
+        token::model::usages::ReferencesTarget::Popup,
     );
     app.model.document_mut().buffer.insert(0, "x");
     app.model.document_mut().revision += 1;

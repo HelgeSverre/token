@@ -16,6 +16,28 @@ General editor settings for Token.
 
 ## Settings
 
+### Usages
+
+Run **Find Usages** at a symbol in a named text file to open a persistent Usages
+dock panel. It uses the file's language server and groups results by file; it
+does not scan the workspace itself. **Show Usages** keeps the transient popup
+behavior. Starting either action supersedes the pending references search.
+
+In the panel, use Up/Down or Page Up/Page Down to select rows, Left/Right to
+collapse/expand a file, and Enter to toggle a file or open a location. A single
+click selects, a double click opens, and a file's chevron toggles its group.
+The mouse wheel scrolls; Escape returns focus to the editor. Results remain
+available after navigation or closing the dock; **View: Toggle Usages** reopens
+it without rerunning the search.
+
+Results are a snapshot, not a live index. Run Find Usages again after edits.
+Changing or closing the source while a search is pending cancels that search;
+moving the caret, changing focus or closing the panel does not. Late responses
+never reopen the panel or steal focus. Loading, empty results, unavailable
+servers, timeouts and the 200-location result limit are shown in the panel.
+Previews use unsaved open buffers when available; bounded background reads may
+leave other previews blank without preventing navigation.
+
 ### `theme`
 
 The active theme ID.

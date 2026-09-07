@@ -12,6 +12,7 @@ enum DockContentKind {
     Outline,
     Terminal,
     Problems,
+    Usages,
     Placeholder { message: &'static str },
 }
 
@@ -90,6 +91,7 @@ impl DockPaneScene {
             crate::panel::PanelId::Outline => DockContentKind::Outline,
             crate::panel::PanelId::Terminal => DockContentKind::Terminal,
             crate::panel::PanelId::Problems => DockContentKind::Problems,
+            crate::panel::PanelId::Usages => DockContentKind::Usages,
             _ => {
                 let placeholder = crate::panels::PlaceholderPanel::new(active_panel);
                 DockContentKind::Placeholder {
@@ -158,6 +160,12 @@ impl DockPaneScene {
             }
             DockContentKind::Placeholder { message } => {
                 self.render_placeholder_content(frame, painter, message);
+            }
+            DockContentKind::Usages => {
+                if let Some(rows) = chrome.row_list(UiKey::PanelRows(crate::panel::PanelId::Usages))
+                {
+                    render_usages_panel(frame, painter, model, rows);
+                }
             }
         }
         frame.pop_clip();
@@ -544,6 +552,114 @@ pub fn dock_tab_title(model: &AppModel, panel_id: crate::panel::PanelId) -> Stri
     match panel_id {
         crate::panel::PanelId::Problems => crate::update::problems::problems_panel_title(model),
         other => other.display_name().to_owned(),
+    }
+}
+
+fn render_usages_panel(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    view: RowListView,
+) {
+    use crate::model::usages::UsagesRow;
+    let rows = model.usages_panel.rows();
+    let theme = &model.theme.sidebar;
+    let tree = TreeRowLayout::outline_from_metrics(&model.metrics);
+    let char_width = painter.char_width().ceil() as usize;
+    for index in view.drawn_range() {
+        let (Some(&row), Some(rect)) = (rows.get(index), view.row_rect(index)) else {
+            continue;
+        };
+        let selected = model.usages_panel.selected_index == Some(index);
+        if selected {
+            frame.fill_rect_blended(rect, theme.selection_background.to_argb_u32());
+        }
+        let color = if selected {
+            theme.selection_foreground.to_argb_u32()
+        } else if matches!(row, UsagesRow::Summary) {
+            model.theme.overlay.text_dim.to_argb_u32()
+        } else {
+            theme.foreground.to_argb_u32()
+        };
+        let depth = usize::from(matches!(row, UsagesRow::Location(_)));
+        let pos = tree.node_position(depth, rect.y as usize);
+        if let UsagesRow::File { collapsed, .. } = row {
+            painter.draw(
+                frame,
+                rect.x as usize + pos.icon_x,
+                pos.text_y,
+                if collapsed { "▸" } else { "▾" },
+                color,
+            );
+        }
+        let x = rect.x as usize + pos.text_x;
+        let available = tree.available_text_width((rect.x + rect.width) as usize, x);
+        let text = crate::update::usages::row_label(model, row);
+        let text = truncate_with_ellipsis(&text, available.checked_div(char_width).unwrap_or(0));
+        painter.draw(frame, x, pos.text_y, &text, color);
+    }
+}
+
+#[cfg(test)]
+mod usages_tests {
+    use super::*;
+
+    #[test]
+    fn usages_panel_renders_selected_partial_row_within_shared_clip() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.usages_panel.items = (0..30)
+            .map(|line| crate::update::navigation::LocationItem {
+                path: "/source.rs".into(),
+                position: lsp_types::Position::new(line, 3),
+                preview: "usage".into(),
+                route_hint: None,
+            })
+            .collect();
+        model.dock_layout.bottom.size_logical = 137.5;
+        model
+            .dock_layout
+            .bottom
+            .activate(crate::panel::PanelId::Usages);
+        model.resize(800, 600);
+        let view = crate::layout::chrome::chrome(&model)
+            .row_list(UiKey::PanelRows(crate::panel::PanelId::Usages))
+            .unwrap();
+        let last = view.drawn_range().last().unwrap();
+        model.usages_panel.selected_index = Some(last);
+        let rect = view.rect();
+        let row = view.row_rect(last).unwrap();
+        let font = fontdue::Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .unwrap();
+        let mut cache = crate::view::GlyphCache::default();
+        let mut painter = TextPainter::new(&font, &mut cache, 14.0, 11.0, 8.0, 18);
+        let sentinel = 0xff010203;
+        let mut pixels = vec![sentinel; 800 * 600];
+        {
+            let mut frame = Frame::new(&mut pixels, 800, 600);
+            frame.push_clip(rect);
+            render_usages_panel(&mut frame, &mut painter, &model, view);
+            frame.pop_clip();
+        }
+        assert_ne!(
+            pixels[row.y as usize * 800 + (row.x + row.width - 2.0) as usize],
+            sentinel
+        );
+        for (index, pixel) in pixels.into_iter().enumerate() {
+            let (x, y) = (index % 800, index / 800);
+            if x < rect.x as usize
+                || x >= (rect.x + rect.width) as usize
+                || y < rect.y as usize
+                || y >= (rect.y + rect.height) as usize
+            {
+                assert_eq!(
+                    pixel, sentinel,
+                    "paint escaped the solved panel clip at {x},{y}"
+                );
+            }
+        }
     }
 }
 

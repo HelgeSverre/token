@@ -823,7 +823,9 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             let status = match outcome {
                 ReferencesOutcome::StillIndexing => "Language server still indexing…",
                 ReferencesOutcome::NotSupported => "Code actions not supported by this server",
-                ReferencesOutcome::NoResult => "Code actions: server did not answer",
+                ReferencesOutcome::NoResult | ReferencesOutcome::TimedOut => {
+                    "Code actions: server did not answer"
+                }
                 ReferencesOutcome::Found if actions.is_empty() => "No code actions",
                 ReferencesOutcome::Found => {
                     // Stable sort: preferred first, server order within.
@@ -873,30 +875,20 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             Some(Cmd::Batch(cmds))
         }
 
-        LspMsg::FindReferences => {
-            let doc = model.try_document()?;
-            let document_id = doc.id?;
-            let revision = doc.revision;
-            // Untitled documents are never LSP-synced — nothing to
-            // request against (same rule as `ShowHover`/`GotoDefinition`).
-            doc.file_path.as_ref()?;
-            let cursor = model.editor().active_cursor().to_position();
-            let position = crate::lsp::position_to_lsp(doc, cursor);
-            Some(Cmd::LspRequestReferences {
-                document_id,
-                position,
-                cursor,
-                revision,
-            })
-        }
+        LspMsg::FindReferences => super::usages::request(model, false),
+        LspMsg::FindUsagesInPanel => super::usages::request(model, true),
 
         LspMsg::ReferencesResolved {
+            target,
             document_id,
             revision,
             cursor,
             items,
             outcome,
         } => {
+            if let crate::model::usages::ReferencesTarget::Panel(token) = target {
+                return super::usages::resolve(model, token, document_id, revision, items, outcome);
+            }
             // Revision + focus guards (see `stale_feature_response`),
             // plus the caret guard verbatim from `HoverResolved` (minus
             // the mouse-dwell branch — references has no mouse trigger).
@@ -921,6 +913,10 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                     model.ui.set_status("No usages found");
                     Some(Cmd::redraw_status_bar())
                 }
+                ReferencesOutcome::TimedOut => {
+                    model.ui.set_status("Usages request timed out; try again");
+                    Some(Cmd::redraw_status_bar())
+                }
                 ReferencesOutcome::Found => open_location_list_popup(model, items),
             }
         }
@@ -941,8 +937,7 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             let Some(item) = item else {
                 return Some(Cmd::Redraw);
             };
-            apply_route_hint(model, &item);
-            navigation::jump_to_location(model, None, &item.path, item.position)
+            navigation::activate_location(model, &item)
         }
 
         // ==== Completion (lsp-integration.md Phase 5) ====
@@ -1020,19 +1015,6 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
     }
 }
 
-/// A stored `LocationItem` resolves its own open path when activated — set
-/// `model.lsp.route_hint` from the item's own resolving server/root
-/// (`None` inside the workspace) before jumping, so an out-of-workspace
-/// target still reuses the server that resolved it instead of letting
-/// `open_lsp_document`'s generic path derive (and possibly spawn) its own
-/// root (lsp-integration.md "never spawn a new server rooted in a
-/// toolchain directory").
-fn apply_route_hint(model: &mut AppModel, item: &navigation::LocationItem) {
-    if let Some((server_id, root)) = &item.route_hint {
-        model.lsp.route_hint = Some((item.path.clone(), server_id.clone(), root.clone()));
-    }
-}
-
 /// Shared activation for a resolved `LocationItem` list with more than one
 /// entry — the Show Usages popup, and the multi-def upgrade to
 /// `DefinitionResolved`. Exactly one entry jumps directly (`jump_to_location`,
@@ -1051,9 +1033,7 @@ fn open_location_list_popup(
     // `Vec`, never re-deriving it.
     items.sort_by(|a, b| (&a.path, a.position.line).cmp(&(&b.path, b.position.line)));
     if let [only] = items.as_slice() {
-        apply_route_hint(model, only);
-        let (path, position) = (only.path.clone(), only.position);
-        return navigation::jump_to_location(model, None, &path, position);
+        return navigation::activate_location(model, only);
     }
     model.ui.reference_list = Some(items);
     model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::References));
@@ -1764,6 +1744,7 @@ mod tests {
             &mut model,
             LspMsg::ReferencesResolved {
                 document_id: doc_id,
+                target: crate::model::usages::ReferencesTarget::Popup,
                 revision: stale_revision,
                 cursor,
                 items: vec![loc(&path, 0, 0, "fn main() {}")],
@@ -1790,6 +1771,7 @@ mod tests {
             &mut model,
             LspMsg::ReferencesResolved {
                 document_id: doc_id,
+                target: crate::model::usages::ReferencesTarget::Popup,
                 revision,
                 cursor,
                 items: vec![loc(&path, 0, 3, "fn main() {}")],
@@ -1817,6 +1799,7 @@ mod tests {
             &mut model,
             LspMsg::ReferencesResolved {
                 document_id: doc_id,
+                target: crate::model::usages::ReferencesTarget::Popup,
                 revision,
                 cursor,
                 // Deliberately out of (path, line) order, to assert the

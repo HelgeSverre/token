@@ -114,6 +114,10 @@ pub fn handle_key(
         return Some(Cmd::Redraw);
     }
 
+    if is_usages_dock_focused(model) {
+        return handle_usages_dock_key(model, &key).or(Some(Cmd::Redraw));
+    }
+
     // Focus capture: route keys to CSV cell editor when editing
     if model.is_csv_editing() {
         return handle_csv_edit_key(model, key, modifiers);
@@ -1045,6 +1049,41 @@ pub(crate) fn is_problems_dock_focused(model: &AppModel) -> bool {
     is_panel_dock_focused(model, PanelId::PROBLEMS)
 }
 
+pub(crate) fn is_usages_dock_focused(model: &AppModel) -> bool {
+    is_panel_dock_focused(model, PanelId::Usages)
+}
+
+fn handle_usages_dock_key(model: &mut AppModel, key: &Key) -> Option<Cmd> {
+    use token::messages::UsagesMsg;
+    let message = match key {
+        Key::Named(NamedKey::ArrowUp) => UsagesMsg::Select {
+            delta: -1,
+            page: false,
+        },
+        Key::Named(NamedKey::ArrowDown) => UsagesMsg::Select {
+            delta: 1,
+            page: false,
+        },
+        Key::Named(NamedKey::PageUp) => UsagesMsg::Select {
+            delta: -1,
+            page: true,
+        },
+        Key::Named(NamedKey::PageDown) => UsagesMsg::Select {
+            delta: 1,
+            page: true,
+        },
+        Key::Named(NamedKey::ArrowLeft) => UsagesMsg::SetExpanded(false),
+        Key::Named(NamedKey::ArrowRight) => UsagesMsg::SetExpanded(true),
+        Key::Named(NamedKey::Enter) => UsagesMsg::OpenSelected,
+        Key::Named(NamedKey::Escape) => {
+            model.ui.focus_editor();
+            return Some(Cmd::Redraw);
+        }
+        _ => return None,
+    };
+    update(model, Msg::Usages(message))
+}
+
 /// Handle keyboard input when the problems panel is focused. Left/Right/
 /// Enter on a `File` row toggle its group; Enter on a `Diagnostic` row
 /// jumps to it (outline's collapsible-node key pattern, flattened).
@@ -1305,6 +1344,59 @@ mod tests {
             DockPosition::Right,
         );
         assert!(is_problems_dock_focused(&problems_model));
+    }
+
+    #[test]
+    fn usages_panel_keyboard_navigation_captures_text_and_follows_left_dock() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        model.document_mut().buffer = "unchanged".into();
+        model.usages_panel.items = vec![token::update::navigation::LocationItem {
+            path: "/source.rs".into(),
+            position: lsp_types::Position::new(0, 0),
+            preview: "usage".into(),
+            route_hint: None,
+        }];
+        model.usages_panel.selected_index = Some(1);
+        move_panel(
+            &mut model,
+            PanelId::Usages,
+            DockPosition::Bottom,
+            DockPosition::Left,
+        );
+        let physical = winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::KeyA);
+        handle_key(
+            &mut model,
+            Key::Character("x".into()),
+            physical,
+            KeyModifiers::default(),
+            false,
+        );
+        assert_eq!(model.document().buffer.to_string(), "unchanged");
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::ArrowDown),
+            physical,
+            KeyModifiers::default(),
+            false,
+        );
+        assert_eq!(model.usages_panel.selected_index, Some(2));
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::ArrowLeft),
+            physical,
+            KeyModifiers::default(),
+            false,
+        );
+        assert_eq!(model.usages_panel.selected_index, Some(1));
+        assert_eq!(model.usages_panel.rows().len(), 2);
+        handle_key(
+            &mut model,
+            Key::Named(NamedKey::Escape),
+            physical,
+            KeyModifiers::default(),
+            false,
+        );
+        assert_eq!(model.ui.focus, token::model::FocusTarget::Editor);
     }
 
     #[test]

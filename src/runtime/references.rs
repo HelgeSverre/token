@@ -37,6 +37,7 @@ impl PreviewJob {
         PreviewReply {
             generation: Arc::clone(&self.pending.generation),
             message: Msg::Lsp(LspMsg::ReferencesResolved {
+                target: self.pending.target.clone(),
                 document_id: self.pending.document_id,
                 revision: self.pending.revision,
                 cursor: self.pending.cursor,
@@ -236,6 +237,7 @@ mod tests {
     fn job(generation: Arc<()>, items: Vec<LocationItem>) -> PreviewJob {
         PreviewJob {
             pending: PendingReferences {
+                target: token::model::usages::ReferencesTarget::Popup,
                 document_id: token::model::editor_area::DocumentId(1),
                 revision: 7,
                 cursor: token::model::editor::Position::new(2, 3),
@@ -489,5 +491,54 @@ mod tests {
                 Some((server.clone(), PathBuf::from("/workspace")))
             );
         }
+    }
+
+    #[test]
+    fn usages_panel_server_cleanup_settles_pending_search_and_preserves_other_roots() {
+        let mut app = App::new(
+            800,
+            600,
+            StartupConfig {
+                mode: StartupMode::Empty,
+                initial_position: None,
+                wait_mode: false,
+            },
+            None,
+            None,
+            None,
+        );
+        app.model.document_mut().file_path = Some("/source.rs".into());
+        fn target(cmd: token::Cmd) -> Option<token::model::usages::ReferencesTarget> {
+            match cmd {
+                token::Cmd::LspRequestReferences { target, .. } => Some(target),
+                token::Cmd::Batch(commands) => commands.into_iter().find_map(target),
+                _ => None,
+            }
+        }
+        let destination = target(
+            token::update::update(&mut app.model, Msg::Lsp(LspMsg::FindUsagesInPanel)).unwrap(),
+        )
+        .unwrap();
+        let doc = app.model.document();
+        let id = doc.id.unwrap();
+        let pending = PendingReferences {
+            target: destination,
+            document_id: id,
+            revision: doc.revision,
+            cursor: app.model.editor().active_cursor().to_position(),
+            generation: Arc::new(()),
+        };
+        let server = token::lsp::LspServerId::from("fixture");
+        let key = (server.clone(), PathBuf::from("/first"), 1);
+        app.lsp.references.insert(key.clone(), id, pending);
+        app.lsp.references.arm_deadline(key.clone());
+        app.clear_pending_requests_for_roots(&server, &[PathBuf::from("/other")]);
+        assert!(app.model.usages_panel.is_loading());
+        assert!(app.lsp.references.requests.contains_key(&key));
+        app.clear_pending_requests_for_roots(&server, &[PathBuf::from("/first")]);
+        assert!(!app.model.usages_panel.is_loading());
+        assert!(app.model.usages_panel.status.contains("unavailable"));
+        assert!(app.lsp.references.requests.is_empty());
+        assert!(app.lsp.references.deadlines.is_empty());
     }
 }

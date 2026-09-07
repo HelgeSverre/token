@@ -59,6 +59,7 @@ pub fn test_model(text: &str, line: usize, column: usize) -> AppModel {
         terminal: token::terminal::TerminalState::default(),
         outline_panel: token::model::OutlinePanelState::default(),
         problems_panel: token::model::ProblemsPanelState::default(),
+        usages_panel: Default::default(),
         recent_files: token::recent_files::RecentFiles::default(),
         command_history: token::command_history::CommandHistory::default(),
         #[cfg(debug_assertions)]
@@ -132,6 +133,7 @@ pub fn test_model_with_selection(
         terminal: token::terminal::TerminalState::default(),
         outline_panel: token::model::OutlinePanelState::default(),
         problems_panel: token::model::ProblemsPanelState::default(),
+        usages_panel: Default::default(),
         recent_files: token::recent_files::RecentFiles::default(),
         command_history: token::command_history::CommandHistory::default(),
         #[cfg(debug_assertions)]
@@ -202,6 +204,7 @@ pub fn test_model_multi_cursor(text: &str, positions: &[(usize, usize)]) -> AppM
         terminal: token::terminal::TerminalState::default(),
         outline_panel: token::model::OutlinePanelState::default(),
         problems_panel: token::model::ProblemsPanelState::default(),
+        usages_panel: Default::default(),
         recent_files: token::recent_files::RecentFiles::default(),
         command_history: token::command_history::CommandHistory::default(),
         #[cfg(debug_assertions)]

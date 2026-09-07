@@ -73,6 +73,9 @@ pub enum ClickRegion {
     Problems {
         row: usize,
     },
+    Usages {
+        row: usize,
+    },
     BinaryPlaceholder {
         group: token::model::editor_area::GroupId,
     },
@@ -1526,6 +1529,38 @@ fn handle_left_click(
                 return EventResult::consumed_with_focus(FocusTarget::Dock(*position));
             }
 
+            if *active_panel_id == token::panel::PanelId::Usages {
+                let chrome = token::layout::chrome::chrome(model);
+                if let Some(view) = chrome.row_list(token::layout::UiKey::PanelRows(
+                    token::panel::PanelId::Usages,
+                )) {
+                    if let Some(index) = view.row_at_y(event.pos.y as f32) {
+                        let rows = model.usages_panel.rows();
+                        let tree = token::view::geometry::TreeRowLayout::outline_from_metrics(
+                            &model.metrics,
+                        );
+                        let on_chevron =
+                            matches!(
+                                rows.get(index),
+                                Some(token::model::usages::UsagesRow::File { .. })
+                            ) && tree.is_on_chevron(view.rect().x, 0, event.pos.x as f32);
+                        let click_count =
+                            click_tracker.track_click(ClickRegion::Usages { row: index });
+                        model.ui.focus = FocusTarget::Dock(*position);
+                        let cmd = update(
+                            model,
+                            Msg::Usages(token::messages::UsagesMsg::ClickRow {
+                                index,
+                                click_count,
+                                on_chevron,
+                            }),
+                        );
+                        return EventResult::consumed_with_cmd(cmd, model.ui.focus);
+                    }
+                }
+                return EventResult::consumed_with_focus(FocusTarget::Dock(*position));
+            }
+
             // The left dock hosts the file explorer; other dock content handled
             // above has already returned with its dock focus.
             match position {
@@ -1944,6 +1979,11 @@ pub fn handle_mouse_wheel(
                     TerminalMsg::ScrollDown(lines)
                 };
                 update(model, Msg::Terminal(msg))
+            } else if active_panel == Some(token::panel::PanelId::Usages) && v_delta != 0 {
+                update(
+                    model,
+                    Msg::Usages(token::messages::UsagesMsg::Scroll { lines: v_delta }),
+                )
             } else {
                 None
             }

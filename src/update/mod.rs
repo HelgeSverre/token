@@ -33,6 +33,7 @@ mod syntax;
 mod terminal;
 pub(crate) mod text_edits;
 mod ui;
+pub mod usages;
 mod workspace;
 
 use crate::commands::Cmd;
@@ -65,13 +66,10 @@ pub use ui::{resolve_palette_rows, search_everywhere_sections, ALL_TAB_GROUP_CAP
 #[inline]
 pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     #[cfg(debug_assertions)]
-    {
-        update_traced(model, msg)
-    }
+    let result = update_traced(model, msg);
     #[cfg(not(debug_assertions))]
-    {
-        update_inner(model, msg)
-    }
+    let result = update_inner(model, msg);
+    merge_cmds(result, usages::reconcile(model))
 }
 
 /// Inner update logic (no tracing)
@@ -191,6 +189,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::Dock(m) => dock::update_dock(model, m),
         Msg::Outline(m) => outline::update_outline(model, m),
         Msg::Problems(m) => problems::update_problems(model, m),
+        Msg::Usages(m) => usages::update_usages(model, m),
         Msg::Terminal(m) => terminal::update_terminal(model, m),
         Msg::Completion(m) => completion::update_completion(model, m),
         Msg::Lsp(m) => lsp::update_lsp(model, m),
@@ -376,6 +375,7 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Dock(m) => format!("Dock::{:?}", m),
         Msg::Outline(m) => format!("Outline::{:?}", m),
         Msg::Problems(m) => format!("Problems::{:?}", m),
+        Msg::Usages(m) => format!("Usages::{:?}", m),
         Msg::Terminal(m) => format!("Terminal::{:?}", m),
         Msg::Completion(m) => format!("Completion::{:?}", m),
         Msg::Lsp(m) => format!("Lsp::{:?}", m),

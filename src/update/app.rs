@@ -575,6 +575,9 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             model,
             crate::messages::WorkspaceMsg::RevealActiveFile,
         ),
+        CommandId::ToggleUsages => {
+            super::dock::update_dock(model, DockMsg::TogglePanel(PanelId::Usages))
+        }
         CommandId::RevealInFinder => {
             if let Some(path) = model.document().file_path.clone() {
                 Some(Cmd::Batch(vec![

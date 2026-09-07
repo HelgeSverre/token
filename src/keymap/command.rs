@@ -224,6 +224,8 @@ pub enum Command {
     ToggleOutline,
     /// Toggle problems panel (bottom dock)
     ToggleProblems,
+    /// Reopen persistent usages without issuing another search.
+    ToggleUsages,
     /// Close the currently focused dock
     CloseFocusedDock,
 
@@ -313,11 +315,9 @@ pub enum Command {
     // Show Usages / Find Usages (lsp-integration.md, references)
     // ========================================================================
     /// Alt+F7: `textDocument/references` for the symbol under the cursor,
-    /// opened in the cursor-anchored popup.
+    /// opened as persistent grouped results in the Usages dock panel.
     FindUsages,
-    /// Alt+Cmd+F7: same request/popup as `FindUsages` — a second binding
-    /// so IDE muscle memory for either shortcut works; the docked usages
-    /// panel variant is a later feature.
+    /// Alt+Cmd+F7: references in a transient cursor-anchored popup.
     ShowUsages,
 
     // ========================================================================
@@ -499,6 +499,7 @@ impl Command {
             ToggleTerminal => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::TERMINAL))],
             ToggleOutline => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::OUTLINE))],
             ToggleProblems => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::PROBLEMS))],
+            ToggleUsages => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::Usages))],
             CloseFocusedDock => vec![Msg::Dock(DockMsg::CloseFocusedDock)],
 
             // Special - these need context-aware handling
@@ -561,7 +562,8 @@ impl Command {
             FormatSelection => vec![Msg::Lsp(LspMsg::FormatDocument {
                 selection_only: true,
             })],
-            FindUsages | ShowUsages => vec![Msg::Lsp(LspMsg::FindReferences)],
+            FindUsages => vec![Msg::Lsp(LspMsg::FindUsagesInPanel)],
+            ShowUsages => vec![Msg::Lsp(LspMsg::FindReferences)],
 
             // Handled specially in `App::dispatch_command` (needs the
             // caret's pixel rect + a clipboard read, both runtime-only —
@@ -610,6 +612,7 @@ impl Command {
                 | Command::ToggleTerminal
                 | Command::ToggleOutline
                 | Command::ToggleProblems
+                | Command::ToggleUsages
                 | Command::CloseFocusedDock
                 | Command::Quit
                 | Command::SaveFile
@@ -716,6 +719,7 @@ impl Command {
             ToggleTerminal => "View: Toggle Terminal",
             ToggleOutline => "View: Toggle Outline",
             ToggleProblems => "View: Toggle Problems",
+            ToggleUsages => "View: Toggle Usages",
             CloseFocusedDock => "View: Close Panel",
 
             EscapeSmartClear => "Escape",

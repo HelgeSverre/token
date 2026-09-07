@@ -55,6 +55,14 @@ All notable changes to rust-editor are documented in this file.
 
 ### Added
 
+- Find Usages opens persistent, file-grouped results in the Usages dock panel.
+  Results stay available while navigating; Show Usages retains the transient
+  popup. The panel supports mouse and keyboard navigation, collapse/expand,
+  paging and scrolling, and can be reopened with View: Toggle Usages. Loading,
+  cancellation, unavailable servers, timeouts, empty results and the 200-result
+  limit are shown explicitly. Late responses do not steal focus or reopen a
+  closed panel.
+
 - Markdown preview renders fenced `mermaid` diagrams, using the preview theme
   and a pinned, on-demand Mermaid renderer. Loading requires a connection to
   jsDelivr; offline/loading failures and invalid syntax keep the source visible

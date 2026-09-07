@@ -204,6 +204,15 @@ impl LocationItem {
     }
 }
 
+/// Location-list activation shares route hints, history and deferred UTF-16
+/// placement between popup and persistent usages results.
+pub(crate) fn activate_location(model: &mut AppModel, item: &LocationItem) -> Option<Cmd> {
+    if let Some((server_id, root)) = &item.route_hint {
+        model.lsp.route_hint = Some((item.path.clone(), server_id.clone(), root.clone()));
+    }
+    jump_to_location(model, None, &item.path, item.position)
+}
+
 /// The shared activate handler: push jump history, open-or-focus the
 /// tab, place the cursor iff the focused tab really shows `path` (the
 /// "no stale result ever moves a cursor" guard, verbatim from

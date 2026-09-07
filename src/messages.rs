@@ -717,6 +717,26 @@ pub enum ProblemsMsg {
     },
 }
 
+/// Interaction with persistent usages results. Selection deltas are row counts;
+/// pages derive their capacity from the same solved layout as rendering.
+#[derive(Debug, Clone)]
+pub enum UsagesMsg {
+    Select {
+        delta: i32,
+        page: bool,
+    },
+    SetExpanded(bool),
+    OpenSelected,
+    Scroll {
+        lines: i32,
+    },
+    ClickRow {
+        index: usize,
+        click_count: u8,
+        on_chevron: bool,
+    },
+}
+
 /// Context menu messages (context-menu.md). Navigation (Up/Down/Escape)
 /// reuses the `cursor_overlay`-key routing every other popup uses
 /// (`runtime/input.rs::handle_cursor_overlay_key`) — no dedicated message
@@ -966,6 +986,7 @@ pub enum Msg {
     Outline(OutlineMsg),
     /// Problems panel messages
     Problems(ProblemsMsg),
+    Usages(UsagesMsg),
     /// Terminal panel messages
     Terminal(TerminalMsg),
     /// Menu completion messages (autocomplete.md Phase 1)
@@ -1265,6 +1286,8 @@ pub enum LspMsg {
     /// `(document_id, revision, position)` into `Cmd::LspRequestReferences`,
     /// mirroring `ShowHover`'s message flow.
     FindReferences,
+    /// Persistent grouped results, distinct from the Show Usages popup.
+    FindUsagesInPanel,
     /// Enter on a popup row / a row click — jumps to
     /// `ui.reference_list[index]` and dismisses the popup. Routed through
     /// `update()` (rather than called directly) because the popup's
@@ -1281,6 +1304,7 @@ pub enum LspMsg {
     /// `update()` must not do I/O) and is empty unless `outcome` is
     /// `Found`.
     ReferencesResolved {
+        target: crate::model::usages::ReferencesTarget,
         document_id: crate::model::editor_area::DocumentId,
         revision: u64,
         cursor: crate::model::editor::Position,
@@ -1384,6 +1408,7 @@ pub enum ReferencesOutcome {
     StillIndexing,
     NotSupported,
     NoResult,
+    TimedOut,
 }
 
 /// The result of a `textDocument/hover` request, distinguishing the two

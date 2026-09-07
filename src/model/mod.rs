@@ -9,6 +9,7 @@ pub mod editor_area;
 pub mod status_bar;
 pub mod styled_text;
 pub mod ui;
+pub mod usages;
 pub mod workspace;
 
 pub use decorations::{best_mark, collect_line_marks, diagnostic_mark, LineMarks, Mark};
@@ -518,6 +519,7 @@ pub struct AppModel {
     pub outline_panel: crate::model::ui::OutlinePanelState,
     /// Problems panel UI state (selection, scroll, collapsed file groups)
     pub problems_panel: crate::model::ui::ProblemsPanelState,
+    pub usages_panel: usages::UsagesPanelState,
     /// Recent files list (persistent across sessions)
     pub recent_files: RecentFiles,
     /// Command palette usage/pin history (persistent across sessions) —
@@ -595,6 +597,7 @@ impl AppModel {
             terminal: crate::terminal::TerminalState::default(),
             outline_panel: crate::model::ui::OutlinePanelState::default(),
             problems_panel: crate::model::ui::ProblemsPanelState::default(),
+            usages_panel: usages::UsagesPanelState::default(),
             recent_files,
             command_history,
             #[cfg(debug_assertions)]

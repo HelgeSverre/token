@@ -31,6 +31,7 @@ impl PlaceholderPanel {
             PanelId::TodoList => "TODO list coming soon...",
             PanelId::FileExplorer => "File explorer",
             PanelId::Problems => "No problems",
+            PanelId::Usages => "Run Find Usages at a symbol to search",
         }
     }
 }

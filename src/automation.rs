@@ -162,6 +162,8 @@ pub(crate) struct EditorSnapshot {
     /// The Problems panel, if open — `None` when the bottom dock isn't
     /// showing it.
     pub problems: Option<ProblemsSnapshot>,
+    /// Persistent usages in any visible dock, distinct from the popup.
+    pub usages: Option<UsagesSnapshot>,
     /// The Show Usages / multi-def popup, if open — `None` when
     /// `ui.cursor_overlay`'s kind isn't `References`.
     pub references: Option<ReferencesSnapshot>,
@@ -319,6 +321,31 @@ fn problems_snapshot(model: &AppModel) -> Option<ProblemsSnapshot> {
         warnings,
         rows,
         selected: model.problems_panel.selected_index,
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct UsagesSnapshot {
+    pub loading: bool,
+    pub rows: Vec<String>,
+    pub selected: Option<usize>,
+    pub scroll_offset: usize,
+}
+
+fn usages_snapshot(model: &AppModel) -> Option<UsagesSnapshot> {
+    model
+        .dock_layout
+        .active_panel_position(token::panel::PanelId::Usages)?;
+    Some(UsagesSnapshot {
+        loading: model.usages_panel.is_loading(),
+        rows: model
+            .usages_panel
+            .rows()
+            .into_iter()
+            .map(|row| token::update::usages::row_label(model, row))
+            .collect(),
+        selected: model.usages_panel.selected_index,
+        scroll_offset: model.usages_panel.scroll_offset,
     })
 }
 
@@ -755,6 +782,7 @@ impl EditorSnapshot {
             diagnostics: diagnostics_snapshot(document),
             hover: hover_snapshot(model),
             problems: problems_snapshot(model),
+            usages: usages_snapshot(model),
             references: references_snapshot(model),
             context_menu: context_menu_snapshot(model),
         }
@@ -1453,6 +1481,45 @@ mod tests {
         let model = AppModel::new(800, 600, 1.0, vec![]);
         let snapshot = EditorSnapshot::from_model(&model);
         assert!(snapshot.problems.is_none());
+    }
+
+    #[test]
+    fn usages_snapshot_uses_shared_rows_and_follows_the_active_dock() {
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        assert!(EditorSnapshot::from_model(&model).usages.is_none());
+        model.usages_panel.items = vec![token::update::navigation::LocationItem {
+            path: "/source.rs".into(),
+            position: lsp_types::Position::new(1, 3),
+            preview: "symbol()".into(),
+            route_hint: None,
+        }];
+        model
+            .dock_layout
+            .bottom
+            .panel_ids
+            .retain(|panel| *panel != token::panel::PanelId::Usages);
+        model
+            .dock_layout
+            .right
+            .register_panel(token::panel::PanelId::Usages);
+        model
+            .dock_layout
+            .right
+            .activate(token::panel::PanelId::Usages);
+        let snapshot = EditorSnapshot::from_model(&model).usages.unwrap();
+        assert_eq!(
+            snapshot.rows,
+            model
+                .usages_panel
+                .rows()
+                .into_iter()
+                .map(|row| token::update::usages::row_label(&model, row))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(snapshot.rows[2], "2:4  symbol()");
+        assert!(!snapshot.loading);
+        model.dock_layout.right.close();
+        assert!(EditorSnapshot::from_model(&model).usages.is_none());
     }
 
     #[test]

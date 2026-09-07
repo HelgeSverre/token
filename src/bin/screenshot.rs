@@ -302,6 +302,7 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         terminal: token::terminal::TerminalState::default(),
         outline_panel: token::model::OutlinePanelState::default(),
         problems_panel: token::model::ProblemsPanelState::default(),
+        usages_panel: Default::default(),
         recent_files: token::recent_files::RecentFiles::default(),
         command_history: token::command_history::CommandHistory::default(),
         #[cfg(debug_assertions)]

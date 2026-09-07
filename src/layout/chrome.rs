@@ -252,6 +252,11 @@ fn declare_dock(
             },
             |t| {
                 let rows = match active {
+                    PanelId::Usages => Some(RowListDecl {
+                        row_height: metrics.file_tree_row_height as f32,
+                        count: model.usages_panel.rows().len(),
+                        scroll_offset: model.usages_panel.scroll_offset,
+                    }),
                     PanelId::Problems => Some(RowListDecl {
                         row_height: metrics.file_tree_row_height as f32,
                         count: crate::update::problems::problems_row_count(model),

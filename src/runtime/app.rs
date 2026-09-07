@@ -39,7 +39,7 @@ use token::update::update;
 
 use super::input::{
     handle_cursor_overlay_key, handle_key, is_outline_dock_focused, is_problems_dock_focused,
-    is_terminal_dock_focused, KeyModifiers, OptionKeyGesture,
+    is_terminal_dock_focused, is_usages_dock_focused, KeyModifiers, OptionKeyGesture,
 };
 use super::lsp_slot::{FeatureSlot, PendingRequest, RequestKey};
 #[path = "references.rs"]
@@ -90,6 +90,7 @@ fn should_skip_non_global_keymap(
         || sidebar_focused
         || is_outline_dock_focused(model)
         || is_problems_dock_focused(model)
+        || is_usages_dock_focused(model)
         || is_terminal_dock_focused(model)
         || model.is_csv_editing()
 }
@@ -370,7 +371,7 @@ const RESOLVE_DEBOUNCE: Duration = Duration::from_millis(150);
 const COMPLETION_DEBOUNCE: Duration = Duration::from_millis(120);
 
 /// Show Usages caps preparation and popup rows at this many unique locations.
-const MAX_REFERENCE_LOCATIONS: usize = 200;
+use token::model::usages::MAX_REFERENCE_LOCATIONS;
 
 /// Pointer movement (px) past which mouse-dwell hover tracking (`hover_dwell`)
 /// resets — small jitter within this radius doesn't restart the delay.
@@ -596,6 +597,7 @@ impl PendingFormatting {
 /// What `LspManager` needs to turn a `textDocument/references` response
 /// into `LspMsg::ReferencesResolved` — same shape as `PendingHover`.
 struct PendingReferences {
+    target: token::model::usages::ReferencesTarget,
     document_id: token::model::editor_area::DocumentId,
     revision: u64,
     cursor: token::model::editor::Position,
@@ -938,6 +940,7 @@ impl LspOutcomePolicy for PendingReferences {
             FeatureGateError::NotReady => ReferencesOutcome::StillIndexing,
         };
         Some(Msg::Lsp(LspMsg::ReferencesResolved {
+            target: self.target,
             document_id: self.document_id,
             revision: self.revision,
             cursor: self.cursor,
@@ -948,11 +951,12 @@ impl LspOutcomePolicy for PendingReferences {
 
     fn on_timeout(self) -> Option<Msg> {
         Some(Msg::Lsp(LspMsg::ReferencesResolved {
+            target: self.target,
             document_id: self.document_id,
             revision: self.revision,
             cursor: self.cursor,
             items: Vec::new(),
-            outcome: ReferencesOutcome::NoResult,
+            outcome: ReferencesOutcome::TimedOut,
         }))
     }
 }
@@ -2725,12 +2729,13 @@ impl App {
                 self.request_lsp_formatting(document_id, revision, range, options, then_save);
             }
             Cmd::LspRequestReferences {
+                target,
                 document_id,
                 position,
                 cursor,
                 revision,
             } => {
-                self.request_lsp_references(document_id, position, cursor, revision);
+                self.request_lsp_references(document_id, position, cursor, revision, target);
             }
             Cmd::LspRequestCodeActions {
                 document_id,
@@ -3661,6 +3666,21 @@ impl App {
     /// and cause `check_lsp_definition_deadlines`/hover's deadline sweep
     /// to abandon a live request that happens to reuse the old id).
     fn clear_pending_requests_for_roots(&mut self, server_id: &LspServerId, roots: &[PathBuf]) {
+        // Persistent usages need a terminal outcome when shutdown/restart
+        // removes the request and its deadline before a response can arrive.
+        let reference_keys: Vec<_> = self
+            .lsp
+            .references
+            .by_doc
+            .values()
+            .filter(|(id, root, _)| id == server_id && roots.contains(root))
+            .cloned()
+            .collect();
+        let reference_outcomes: Vec<_> = reference_keys
+            .iter()
+            .filter_map(|key| self.lsp.references.take_response(key))
+            .filter_map(|pending| pending.on_gate_error(FeatureGateError::NoServer))
+            .collect();
         self.lsp.definition.clear_for_roots(server_id, roots);
         self.lsp.hover.clear_for_roots(server_id, roots);
         self.lsp.references.clear_for_roots(server_id, roots);
@@ -3671,6 +3691,9 @@ impl App {
         self.lsp.rename.clear_for_roots(server_id, roots);
         self.lsp.formatting.clear_for_roots(server_id, roots);
         self.lsp.resolve.clear_for_roots(server_id, roots);
+        for message in reference_outcomes {
+            self.emit_lsp_msg(message);
+        }
     }
 
     /// Advisory `$/cancelRequest` + local abandonment for a superseded or
@@ -4473,6 +4496,7 @@ impl App {
         position: lsp_types::Position,
         cursor: token::model::editor::Position,
         revision: u64,
+        target: token::model::usages::ReferencesTarget,
     ) {
         let generation = self.reference_previews.begin();
         self.gated_lsp_request::<PendingReferences>(
@@ -4480,6 +4504,7 @@ impl App {
             Some(position),
             Some(serde_json::json!({ "context": { "includeDeclaration": true } })),
             |_| PendingReferences {
+                target,
                 document_id,
                 revision,
                 cursor,
