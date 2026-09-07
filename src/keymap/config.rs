@@ -210,6 +210,7 @@ fn parse_condition(cond: &str) -> Result<Condition, KeymapError> {
         "modal_active" | "modalactive" | "modal" => Ok(Condition::ModalActive),
         "modal_inactive" | "modalinactive" | "no_modal" | "nomodal" => Ok(Condition::ModalInactive),
         "editor_focused" | "editorfocused" | "editor" => Ok(Condition::EditorFocused),
+        "sidebar_focused" | "sidebarfocused" | "sidebar" => Ok(Condition::SidebarFocused),
         "overlay_routes_keys" | "overlayrouteskeys" | "overlay" => Ok(Condition::OverlayRoutesKeys),
         "inline_suggestion_visible" | "inlinesuggestionvisible" | "inline_suggestion" => {
             Ok(Condition::InlineSuggestionVisible)
@@ -324,6 +325,23 @@ mod tests {
                 parse_keymap_yaml(&yaml),
                 Err(KeymapError::InvalidCommand(_))
             ));
+        }
+    }
+
+    #[test]
+    fn sidebar_condition_names_match_the_documented_keymap_context() {
+        for name in [
+            "sidebar_focused",
+            "sidebarfocused",
+            "sidebar",
+            "SIDEBAR_FOCUSED",
+        ] {
+            let yaml =
+                format!("bindings:\n  - key: ctrl+k\n    command: Copy\n    when: ['{name}']\n");
+            assert_eq!(
+                parse_keymap_yaml(&yaml).unwrap()[0].when,
+                Some(vec![Condition::SidebarFocused])
+            );
         }
     }
 

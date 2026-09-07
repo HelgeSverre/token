@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use super::binding::Keybinding;
 use super::command::Command;
-use super::context::{Condition, KeyContext};
+use super::context::KeyContext;
 use super::types::Keystroke;
 
 /// Result of handling a keystroke
@@ -86,7 +86,7 @@ impl Keymap {
     /// Handle a keystroke and return the action to take
     ///
     /// This handles both single-keystroke bindings and chord sequences.
-    /// Pass `None` for context to skip condition checking (matches any binding).
+    /// Without a context, only unconditional bindings are eligible.
     pub fn handle_keystroke(&mut self, keystroke: Keystroke) -> KeyAction {
         self.handle_keystroke_with_context(keystroke, None)
     }
@@ -114,7 +114,11 @@ impl Keymap {
         }
 
         // Check if this starts a chord
-        if self.chord_prefixes.contains_key(&keystroke) {
+        if self.chord_prefixes.get(&keystroke).is_some_and(|indices| {
+            indices
+                .iter()
+                .any(|&idx| self.bindings[idx].is_active(context))
+        }) {
             self.pending_chord.push(keystroke);
             return KeyAction::AwaitMore;
         }
@@ -131,13 +135,8 @@ impl Keymap {
         // First pass: find bindings with conditions that match
         for &idx in indices {
             let binding = &self.bindings[idx];
-            if let Some(ref conditions) = binding.when {
-                if let Some(ctx) = context {
-                    if Condition::evaluate_all(conditions, ctx) {
-                        return Some(binding.command);
-                    }
-                }
-                // If no context provided but binding has conditions, skip it
+            if binding.when.is_some() && binding.is_active(context) {
+                return Some(binding.command);
             }
         }
 
@@ -165,20 +164,7 @@ impl Keymap {
         // Check for exact match (conditional bindings first)
         for &idx in indices {
             let binding = &self.bindings[idx];
-            if binding.keystrokes == self.pending_chord {
-                // Check conditions if present
-                if let Some(ref conditions) = binding.when {
-                    if let Some(ctx) = context {
-                        if Condition::evaluate_all(conditions, ctx) {
-                            let command = binding.command;
-                            self.reset();
-                            return KeyAction::Execute(command);
-                        }
-                    }
-                    // Has conditions but no context or doesn't match - continue
-                    continue;
-                }
-                // No conditions - match
+            if binding.keystrokes == self.pending_chord && binding.is_active(context) {
                 let command = binding.command;
                 self.reset();
                 return KeyAction::Execute(command);
@@ -190,6 +176,7 @@ impl Keymap {
             let binding = &self.bindings[idx];
             binding.keystrokes.len() > self.pending_chord.len()
                 && binding.keystrokes[..self.pending_chord.len()] == self.pending_chord
+                && binding.is_active(context)
         });
 
         if could_match {
@@ -263,7 +250,91 @@ impl Default for Keymap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keymap::context::Condition;
     use crate::keymap::types::{KeyCode, Modifiers};
+
+    fn chord_context_step(
+        keymap: &mut Keymap,
+        stroke: Keystroke,
+        context: &KeyContext,
+    ) -> KeyAction {
+        keymap.handle_keystroke_with_context(stroke, Some(context))
+    }
+
+    #[test]
+    fn chord_context_inactive_prefix_does_not_capture_input() {
+        let mut keymap = Keymap::with_bindings(vec![Keybinding::chord(
+            vec![ctrl_k(), ctrl_c()],
+            Command::Copy,
+        )
+        .when_single(Condition::HasSelection)]);
+        let mut context = KeyContext::editor_default();
+        assert_eq!(
+            chord_context_step(&mut keymap, ctrl_k(), &context),
+            KeyAction::NoMatch
+        );
+        assert!(!keymap.has_pending_chord());
+        assert_eq!(keymap.handle_keystroke(ctrl_k()), KeyAction::NoMatch);
+        context.has_selection = true;
+        assert_eq!(
+            chord_context_step(&mut keymap, ctrl_k(), &context),
+            KeyAction::AwaitMore
+        );
+        assert_eq!(
+            chord_context_step(&mut keymap, ctrl_c(), &context),
+            KeyAction::Execute(Command::Copy)
+        );
+        assert!(!keymap.has_pending_chord());
+    }
+
+    #[test]
+    fn chord_context_rechecks_each_prefix_and_preserves_eligible_branches() {
+        let mut keymap = Keymap::with_bindings(vec![
+            Keybinding::chord(vec![ctrl_k(), ctrl_c(), ctrl_s()], Command::Copy)
+                .when_single(Condition::HasSelection),
+            Keybinding::chord(vec![ctrl_k(), ctrl_s()], Command::SaveFile),
+        ]);
+        let mut context = KeyContext::editor_default();
+        assert_eq!(
+            chord_context_step(&mut keymap, ctrl_k(), &context),
+            KeyAction::AwaitMore
+        );
+        assert_eq!(
+            chord_context_step(&mut keymap, ctrl_c(), &context),
+            KeyAction::NoMatch
+        );
+        assert!(!keymap.has_pending_chord());
+        assert_eq!(
+            chord_context_step(&mut keymap, ctrl_k(), &context),
+            KeyAction::AwaitMore
+        );
+        assert_eq!(
+            chord_context_step(&mut keymap, ctrl_s(), &context),
+            KeyAction::Execute(Command::SaveFile)
+        );
+        context.has_selection = true;
+        assert_eq!(
+            chord_context_step(&mut keymap, ctrl_k(), &context),
+            KeyAction::AwaitMore
+        );
+        context.has_selection = false;
+        assert_eq!(
+            chord_context_step(&mut keymap, ctrl_c(), &context),
+            KeyAction::NoMatch
+        );
+        assert!(!keymap.has_pending_chord());
+        context.has_selection = true;
+        assert_eq!(
+            chord_context_step(&mut keymap, ctrl_k(), &context),
+            KeyAction::AwaitMore
+        );
+        assert_eq!(
+            chord_context_step(&mut keymap, ctrl_c(), &context),
+            KeyAction::AwaitMore
+        );
+        assert_eq!(keymap.handle_keystroke(ctrl_s()), KeyAction::NoMatch);
+        assert!(!keymap.has_pending_chord());
+    }
 
     fn ctrl_s() -> Keystroke {
         Keystroke::new(KeyCode::Char('s'), Modifiers::CTRL)

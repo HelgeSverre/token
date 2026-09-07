@@ -1,7 +1,7 @@
 //! Keybinding struct representing a mapping from keystroke(s) to command
 
 use super::command::Command;
-use super::context::Condition;
+use super::context::{Condition, KeyContext};
 use super::types::Keystroke;
 
 /// A single keybinding mapping one or more keystrokes to a command
@@ -46,6 +46,14 @@ impl Keybinding {
         self
     }
 
+    /// Conditional bindings require a context, including while a chord is only
+    /// partially entered. Unconditional bindings remain eligible without one.
+    pub(super) fn is_active(&self, context: Option<&KeyContext>) -> bool {
+        self.when.as_ref().is_none_or(|conditions| {
+            context.is_some_and(|context| Condition::evaluate_all(conditions, context))
+        })
+    }
+
     /// Check if this binding matches a single keystroke (not a chord)
     pub fn matches_single(&self, keystroke: &Keystroke) -> bool {
         self.keystrokes.len() == 1 && self.keystrokes[0] == *keystroke
@@ -83,6 +91,21 @@ mod tests {
 
         assert!(!binding.is_chord());
         assert!(binding.matches_single(&stroke));
+    }
+
+    #[test]
+    fn chord_binding_eligibility_requires_all_conditions_and_a_context() {
+        let binding = Keybinding::new(Keystroke::key(KeyCode::Tab), Command::Copy);
+        assert!(binding.is_active(None));
+        assert!(binding.is_active(Some(&KeyContext::default())));
+        let binding = binding.when(vec![Condition::HasSelection, Condition::EditorFocused]);
+        assert!(!binding.is_active(None));
+        let mut context = KeyContext::editor_default();
+        assert!(!binding.is_active(Some(&context)));
+        context.has_selection = true;
+        assert!(binding.is_active(Some(&context)));
+        context.editor_focused = false;
+        assert!(!binding.is_active(Some(&context)));
     }
 
     #[test]

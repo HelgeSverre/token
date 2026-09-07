@@ -121,6 +121,12 @@ Bindings can be conditional using the `when` field:
 | `editor_focused` | Focus is in the editor pane |
 | `sidebar_focused` | Focus is in the sidebar file tree |
 
+Conditions on one binding are ANDed together. Chord prefixes use the same
+eligibility rules as completed bindings: an inactive branch cannot start or
+prolong a pending sequence. Conditions are checked again on each stroke, so
+changing selection or focus can make a pending branch ineligible. Other eligible
+branches remain available, and existing single-stroke/chord precedence is unchanged.
+
 ### Example: Context-Aware Tab
 
 ```yaml

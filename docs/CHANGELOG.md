@@ -119,6 +119,11 @@ All notable changes to rust-editor are documented in this file.
 
 ### Fixed
 
+- Conditional chord prefixes now check the same context rules as completed
+  bindings. Inactive branches no longer capture keys or keep a pending sequence
+  alive; eligible alternatives and existing precedence are preserved. The
+  documented `sidebar_focused` keymap condition is now accepted by YAML parsing.
+
 - Context menus now highlight the row under the pointer and repaint immediately
   when it changes or the pointer leaves. Completion, code-action and reference
   popups share this hover state without changing keyboard selection. Separators
