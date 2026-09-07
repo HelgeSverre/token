@@ -108,6 +108,33 @@ impl Default for ClickTracker {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn modal_pointer_row_preserves_palette_command_effect() {
+        use token::model::ModalId;
+        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)),
+        );
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("Quit".into()))),
+        );
+        let EventResult::Consumed {
+            cmd: Some(Cmd::Batch(commands)),
+            focus: None,
+            ..
+        } = modal_press(&mut model, ModalMsg::ActivateRow(0))
+        else {
+            panic!("palette action effect lost")
+        };
+        assert!(commands.iter().any(|command| matches!(command, Cmd::Quit)));
+        assert!(commands
+            .iter()
+            .any(|command| matches!(command, Cmd::SaveCommandHistory { .. })));
+        assert!(model.ui.active_modal.is_none());
+    }
+
+    #[test]
     fn popup_hover_requests_repaint_only_on_row_changes_and_preserves_selection() {
         use token::model::{CursorOverlayKind, CursorOverlayState};
         let mut model = AppModel::new(800, 600, 1.0, vec![]);
@@ -1029,6 +1056,16 @@ fn handle_cursor_overlay_click(model: &mut AppModel, flat_index: Option<usize>) 
     }
 }
 
+/// Modal pointer actions must carry effects back to the runtime, not only
+/// mutate state. Dropping these commands can leave a save/loading state pending.
+fn modal_press(model: &mut AppModel, message: ModalMsg) -> EventResult {
+    EventResult::Consumed {
+        redraw: true,
+        focus: None,
+        cmd: update(model, Msg::Ui(UiMsg::Modal(message))),
+    }
+}
+
 /// Handle left mouse button clicks
 fn handle_left_click(
     model: &mut AppModel,
@@ -1048,38 +1085,26 @@ fn handle_left_click(
                 EventResult::consumed_redraw()
             } else {
                 // Click outside modal - close it
-                update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Close)));
-                EventResult::consumed_redraw()
+                modal_press(model, ModalMsg::Close)
             }
         }
 
         // Row click: select and activate in one step (overlay-surface.md
         // Pointer: "a click sets selection and activates in one step").
         HitTarget::ModalRow { flat_index } => {
-            update(
-                model,
-                Msg::Ui(UiMsg::Modal(ModalMsg::ActivateRow(*flat_index))),
-            );
-            EventResult::consumed_redraw()
+            modal_press(model, ModalMsg::ActivateRow(*flat_index))
         }
-        HitTarget::ModalChoice { flat_index, choice } => EventResult::Consumed {
-            redraw: true,
-            focus: None,
-            cmd: update(
-                model,
-                Msg::Ui(UiMsg::Modal(ModalMsg::SelectSettingChoice {
-                    row: *flat_index,
-                    choice: *choice,
-                })),
-            ),
-        },
+        HitTarget::ModalChoice { flat_index, choice } => modal_press(
+            model,
+            ModalMsg::SelectSettingChoice {
+                row: *flat_index,
+                choice: *choice,
+            },
+        ),
 
         // Tab click: switch the Search Everywhere tab (overlay-surface.md
         // Pointer: "Tab click switches tabs").
-        HitTarget::ModalTab { index } => {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::ActivateTab(*index))));
-            EventResult::consumed_redraw()
-        }
+        HitTarget::ModalTab { index } => modal_press(model, ModalMsg::ActivateTab(*index)),
 
         // Cursor-anchored popup: consume the click without dismissing the
         // popup or moving the text cursor (overlay-surface.md Phase 5). Row

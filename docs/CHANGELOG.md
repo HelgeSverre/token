@@ -127,6 +127,10 @@ All notable changes to rust-editor are documented in this file.
 
 ### Fixed
 
+- Modal pointer actions now preserve their returned runtime commands. Choice
+  saves, tab loads, row activation and outside-click theme restoration use one
+  path instead of silently replacing effects with a redraw.
+
 - Conditional chord prefixes now check the same context rules as completed
   bindings. Inactive branches no longer capture keys or keep a pending sequence
   alive; eligible alternatives and existing precedence are preserved. The
