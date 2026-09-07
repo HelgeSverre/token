@@ -365,7 +365,9 @@ Binary not found on `PATH` (after `PATHEXT` resolution on Windows) → `ServerSt
 - [ ] Incremental `didChange` from `EditOperation` deltas (prerequisite for large files).
 - [ ] `workspace/didChangeWatchedFiles` from fs_watcher (then advertise its dynamicRegistration).
 - [ ] Pull diagnostics (`textDocument/diagnostic`) replacing push.
-- [x] Find references + multi-location picker (`FindUsages` / `ShowUsages`, cursor-anchored list capped at 200).
+- [x] Find references: `FindUsages` opens the persistent, file-grouped Usages
+  dock panel; `ShowUsages` retains the cursor-anchored popup. Both cap results at
+  200 locations. See the [usage guide](../user/config-editor.md#usages).
 - [x] Problems panel (`PanelId::Problems`; reads the manager's authoritative store, which already retains unopened-file diagnostics).
 - [x] Forward jump stack; mouse-dwell hover (`hover_on_mouse`, `hover_delay_ms`); scrollbar overview marks for diagnostics.
 - [x] Rename (⇧F6, `prepareRename` when advertised); code actions (⌥↩); formatting (⌥⌘L, range formatting) with `format_on_save` (request-then-save with a 2 s fallback rather than `willSaveWaitUntil`); server-initiated `workspace/applyEdit` applied through one shared `WorkspaceEdit` applier.

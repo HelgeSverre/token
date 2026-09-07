@@ -1,5 +1,71 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Persistent grouped usages panel — 2026-09-07
+
+Commit `7c1d55a` separates Find Usages from Show Usages: Find opens persistent
+results in the bottom Usages dock; Show retains the transient cursor popup.
+Results are sorted by native path, line and UTF-16 column, deduplicated and
+grouped by file. The panel reports its source position, loading, cancellation,
+unavailable/indexing servers, empty results, timeouts and the 200-location cap.
+Closing the dock or navigating away retains completed results; reopening it
+does not issue a new query. Results are snapshots, not a live-updating index.
+
+The existing LSP references request and bounded preview worker remain the only
+effect pipeline. A captured popup/panel destination follows the request through
+gating, timeout, preview preparation and reply. Allocation-identity query tokens
+reject old and duplicate panel replies, including repeated requests from the
+same cursor. Source document/revision checks invalidate pending searches on edit
+or close; moving the caret or changing focus does not. Show Usages cancels a
+pending panel search explicitly. Server/root cleanup now emits a terminal outcome
+before discarding request deadlines, preventing an indefinitely loading panel.
+Receiving results neither changes focus nor reopens a closed dock.
+
+A single row projection and the shared `RowListView` drive labels, layout,
+rendering, hit testing, scroll limits and paging. Selection and file chevrons use
+the existing tree geometry. Left/Right collapse/expand; Enter toggles a group or
+navigates, single clicks select and double clicks navigate. Mouse activation
+preserves the returned navigation command. Panel keyboard focus captures text
+input before CSV/sidebar dispatch; Escape returns to the editor. Popup and panel
+activation share one route-hint/history/UTF-16 navigation helper. Automation uses
+the same row labels and reports loading, selection and scroll state.
+
+### Verification and limits
+
+Seventeen new regressions cover grouping/order/deduplication, the cap, distinct
+request destinations, supersession, duplicate/foreign tokens, source changes and
+closure, closed-panel/focus behavior, terminal outcomes, keyboard/mouse actions,
+collapse/expand, paging, extreme scroll deltas, automation and clipped selection
+painting. A real-stdio fake-server test exercises the panel request and preview
+pipeline alongside the existing popup test; a runtime test covers server/root
+cleanup. Geometry tests cover the existing bottom/right generic dock layouts.
+The left-dock focus-routing test is not a claim of generic left-dock rendering.
+
+The independent feature group passed **2,150 tests**, seven skipped; **two
+doctests passed**, six ignored, plus strict lint and formatting. Run
+`4ae7be60-393c-4f19-83f6-58c6e71e37a6`. Isolation exposed a navigation fixture
+that used a nonexistent path accepted by the pending file-opening refactor;
+a real temporary file now tests both committed and working-tree navigation.
+The isolated group keeps the committed constructor and command-registry shapes,
+leaving their unrelated migrations in the working tree.
+
+Final working-tree integration passed **2,530 tests**, seven skipped; **two
+doctests passed**, six ignored, with strict lint and formatting clean. Run
+`a373ab62-2f4d-4f67-8eef-64cfd9c2ae51`. Neither final suite reported exit
+warnings; the older startup/process warning debt is not thereby resolved.
+
+Scoped self-review verdict: **Approve**, with no unresolved critical/high findings.
+The staged and committed source patch matched the independently checked patch
+byte-for-byte; all 29 working-file hashes were preserved by staging. The temporary
+verification checkout was removed after this comparison. Changelog and user guide
+are included with the feature; this audit and the archived LSP checklist are a
+separate documentation group.
+
+No native panel screenshot, live rust-analyzer quality run or new benchmark was
+performed for this group. Existing performance reports retain their explicit
+snapshot boundaries. No additional whole plan is complete: remaining source
+groups, full completion/Settings/Find scope and platform verification still keep
+the temporary handoff open. Nothing was pushed or published.
+
 ## Bounded usages-preview prerequisite — 2026-09-07
 
 Commit `50f3a68` removes unopened-file preview reads from the event loop before
