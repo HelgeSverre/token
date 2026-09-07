@@ -1,7 +1,7 @@
-//! Unified text editing system for the Token editor.
+//! Shared editing primitives and small-field editing state for the Token editor.
 //!
-//! This module provides a unified abstraction for text editing across all contexts:
-//! - Main document editor (multi-line, multi-cursor)
+//! Cursor, position and selection types are shared with document editors. The
+//! editable state and buffer abstractions serve small text fields:
 //! - Command palette input (single-line)
 //! - Go-to-line dialog (single-line, numeric only)
 //! - Find/Replace inputs (single-line)
@@ -13,11 +13,8 @@
 //!
 //! - [`TextBuffer`] / [`TextBufferMut`]: Traits abstracting over buffer implementations
 //! - [`StringBuffer`]: Buffer for single-line inputs (backed by `String`)
-//! - [`RopeBuffer`]: Buffer for multi-line documents (backed by `ropey::Rope`)
 //! - [`EditableState`]: Main state container with cursor, selection, and history
 //! - [`EditConstraints`]: Context-specific restrictions
-//! - [`EditContext`]: Identifies which editing context a message is for
-//! - [`TextEditMsg`]: Unified message type for all editing operations
 //!
 //! # Example
 //!
@@ -39,7 +36,6 @@
 
 mod buffer;
 mod constraints;
-mod context;
 mod cursor;
 mod history;
 mod messages;
@@ -47,11 +43,10 @@ mod selection;
 mod state;
 
 // Re-export main types
-pub use buffer::{RopeBuffer, StringBuffer, TextBuffer, TextBufferMut};
+pub use buffer::{StringBuffer, TextBuffer, TextBufferMut};
 pub use constraints::{CharFilter, EditConstraints};
-pub use context::EditContext;
 pub use cursor::{Cursor, Position};
 pub use history::{EditHistory, EditOperation};
-pub use messages::{MoveTarget, TextEditMsg};
+pub use messages::MoveTarget;
 pub use selection::Selection;
 pub use state::EditableState;

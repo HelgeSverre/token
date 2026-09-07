@@ -8,6 +8,10 @@ All notable changes to rust-editor are documented in this file.
 
 ### Changed
 
+- Removed the unused `TextEditMsg`/`EditContext` routing API and `RopeBuffer`
+  wrapper. Document, modal and CSV input continue through their existing message
+  handlers, sharing editing primitives without a second dispatch surface.
+
 - Editor documents and small text fields now share cursor, position and selection
   types. Duplicate definitions were removed while preserving selection direction,
   half-open ranges, Unicode text extraction and desired-column behavior.

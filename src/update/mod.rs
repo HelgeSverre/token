@@ -19,7 +19,6 @@ mod preview;
 pub mod problems;
 mod syntax;
 mod terminal;
-mod text_edit;
 pub(crate) mod text_edits;
 mod ui;
 mod workspace;
@@ -50,7 +49,6 @@ pub use outline::update_outline;
 pub use preview::update_preview;
 pub use syntax::{schedule_syntax_parse, update_syntax, SYNTAX_DEBOUNCE_MS};
 pub use terminal::update_terminal;
-pub use text_edit::{apply_text_edit_msg, update_text_edit};
 pub use ui::{resolve_palette_rows, search_everywhere_sections, update_ui, ALL_TAB_GROUP_CAP};
 pub use workspace::update_workspace;
 
@@ -187,7 +185,6 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::Dock(m) => dock::update_dock(model, m),
         Msg::Outline(m) => outline::update_outline(model, m),
         Msg::Problems(m) => problems::update_problems(model, m),
-        Msg::TextEdit(context, m) => text_edit::update_text_edit(model, context, m),
         Msg::Terminal(m) => terminal::update_terminal(model, m),
         Msg::Completion(m) => completion::update_completion(model, m),
         Msg::Lsp(m) => lsp::update_lsp(model, m),
@@ -373,7 +370,6 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Dock(m) => format!("Dock::{:?}", m),
         Msg::Outline(m) => format!("Outline::{:?}", m),
         Msg::Problems(m) => format!("Problems::{:?}", m),
-        Msg::TextEdit(ctx, m) => format!("TextEdit::{:?}::{:?}", ctx, m),
         Msg::Terminal(m) => format!("Terminal::{:?}", m),
         Msg::Completion(m) => format!("Completion::{:?}", m),
         Msg::Lsp(m) => format!("Lsp::{:?}", m),

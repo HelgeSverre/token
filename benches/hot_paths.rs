@@ -3,7 +3,7 @@
 //! These benchmarks target the specific hot paths identified in performance analysis:
 //! - word_start_before / word_end_after (document.rs)
 //! - move_word_left / move_word_right (editable/state.rs)
-//! - RopeBuffer::line() double allocation
+//! - historical rope-line extraction algorithms (not the current editor path)
 //! - last_non_whitespace_column / first_non_whitespace_column
 //!
 //! Run with: cargo bench hot_paths
@@ -230,7 +230,8 @@ fn word_navigation_sequence_optimized() {
 }
 
 // ============================================================================
-// CURRENT IMPLEMENTATION: RopeBuffer::line() (double allocation)
+// HISTORICAL BASELINE: rope-line extraction (double allocation)
+// Synthetic comparison only; the editor no longer has a RopeBuffer wrapper.
 // ============================================================================
 
 fn rope_buffer_line_current(rope: &Rope, line: usize) -> Option<Cow<'_, str>> {
@@ -244,7 +245,7 @@ fn rope_buffer_line_current(rope: &Rope, line: usize) -> Option<Cow<'_, str>> {
 }
 
 // ============================================================================
-// OPTIMIZED IMPLEMENTATION: RopeBuffer::line() (single allocation with check)
+// HISTORICAL ALTERNATIVE: rope-line extraction (single allocation with check)
 // ============================================================================
 
 fn rope_buffer_line_optimized(rope: &Rope, line: usize) -> Option<Cow<'_, str>> {
@@ -273,7 +274,7 @@ fn rope_buffer_line_optimized(rope: &Rope, line: usize) -> Option<Cow<'_, str>> 
 }
 
 // ============================================================================
-// Benchmarks: RopeBuffer::line()
+// Benchmarks: historical rope-line extraction (names retained for report continuity)
 // ============================================================================
 
 #[divan::bench(args = [100, 1000, 10000])]

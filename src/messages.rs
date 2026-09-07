@@ -4,7 +4,6 @@
 
 use std::path::PathBuf;
 
-use crate::editable::{EditContext, TextEditMsg};
 use crate::lsp::{LspServerId, ServerState};
 
 /// Direction for cursor movement
@@ -967,8 +966,6 @@ pub enum Msg {
     Outline(OutlineMsg),
     /// Problems panel messages
     Problems(ProblemsMsg),
-    /// Unified text editing messages.
-    TextEdit(EditContext, TextEditMsg),
     /// Terminal panel messages
     Terminal(TerminalMsg),
     /// Menu completion messages (autocomplete.md Phase 1)

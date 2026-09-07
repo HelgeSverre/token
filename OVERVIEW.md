@@ -159,9 +159,11 @@ src/
 │   ├── mod.rs           CsvState, grid operations
 │   └── parser.rs        CSV parsing utilities
 │
-├── editable/            Unified text editing system
-│   ├── mod.rs           EditContext, TextEditMsg
-│   └── handlers.rs      Text editing operations
+├── editable/            Shared primitives and small-field editing
+│   ├── cursor.rs        Cursor and Position (also used by document editors)
+│   ├── selection.rs     Shared Selection behavior
+│   ├── buffer.rs        Small-field buffer traits and StringBuffer
+│   └── state.rs         EditableState operations and history
 │
 └── util/                Utilities
     ├── mod.rs           char_type, word boundary helpers
@@ -475,9 +477,9 @@ ModalState (enum)
 
 ### Editable System (`src/editable/`)
 
-- **Purpose**: Unified text editing across contexts (editor, modals, CSV cells)
-- **Messages**: `TextEdit(EditContext, TextEditMsg)`
-- **Goal**: Phase 2 refactoring to consolidate all text operations
+- **Purpose**: Shared cursor/position/selection primitives, plus editing state for modal inputs and CSV cells
+- **Routing**: Existing document, modal and CSV messages; no parallel text-edit dispatcher
+- **Storage**: Small fields use `EditableState<StringBuffer>`; documents retain their rope and document-level history
 
 ### Workspace (`src/workspace/`)
 
