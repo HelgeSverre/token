@@ -11,6 +11,9 @@ All notable changes to rust-editor are documented in this file.
 - Plain Find queries can use a non-overlapping literal matcher when both query
   and document are ASCII. Unicode, regex and whole-word queries retain the
   existing engine and character-offset semantics.
+  [Profiling](benchmark/2026-09-08-find-literals.md) measured dense 100,000-line
+  cold scans at 3.4–3.5 ms, down from about 7.1 ms, with a small matcher-allocation
+  tradeoff and no document-sized case-folding copy.
 - Find overview markers reuse Rope chunk coordinates instead of constructing a
   Rope slice for every matched line. Newline semantics and snapshot-bound,
   lazy overview caching remain unchanged.

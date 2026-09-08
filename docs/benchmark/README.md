@@ -4,6 +4,8 @@ This document describes how to run benchmarks and profile the Token editor.
 
 ## Reports
 
+- [2026-09-08: ASCII literal Find](2026-09-08-find-literals.md) — gated literal
+  matching, before/after CPU timings and constructor allocation tradeoff.
 - [2026-09-08: Find overview projection](2026-09-08-find-overview.md) — incremental
   Rope chunk traversal, before/after results and a rejected slower prototype.
 - [2026-09-08: cold Find](2026-09-08-cold-find.md) — dense/sparse/absent scans,
@@ -32,6 +34,7 @@ do not overwrite historical measurements or put new baseline files in `docs/`.
 just --list
 just bench
 just bench-search
+just bench-search find_ascii_literal_vs_regex
 just bench-syntax
 just bench-loop
 

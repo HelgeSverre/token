@@ -1,5 +1,25 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## ASCII literal Find — 2026-09-08
+
+Commit `780b13e` uses the existing Aho-Corasick dependency directly for valid
+ASCII-only literal queries on ASCII-only text. Regex remains the validation and
+Unicode/whole-word engine; construction failure falls back to it. Editor
+occurrence selection retains its intentionally different overlapping contract.
+No public API, worker, cache or new transitive package was introduced.
+
+Dense 100,000-line cold medians changed from ~7.1 ms to 3.4–3.5 ms; worker
+computation from 10.2–10.3 ms to 6.5–6.7 ms. The added matcher costs about 3 KB
+in reported peak tracked allocation in the paired engine probe, not an extra
+document copy. Existing tests were extended without new test functions; all
+2,581 tests/two doctests, strict lint and formatting passed. No exit warnings
+occurred in this run, but their historical cause remains open.
+
+Scoped review: **Approve**, no outstanding findings. See the
+[full report and raw measurements](../benchmark/2026-09-08-find-literals.md).
+The measured cold Find target is addressed; recency/multi-cursor profiling and
+native/live gates remain in `HANDOFF.md`. No additional plan became archive-eligible.
+
 ## Find overview projection — 2026-09-08
 
 Commit `6974ba1` replaces per-line Rope slice traversal with an advancing chunk

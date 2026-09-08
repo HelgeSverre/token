@@ -5,6 +5,9 @@ Overview construction now advances through borrowed Rope chunks instead of
 constructing a Rope slice for each matched line. Dense worker medians improved
 modestly; the underlying match scan is unchanged.
 
+The subsequent [literal-matching follow-up](2026-09-08-find-literals.md)
+addresses the measured ASCII scan cost; this report retains the earlier state.
+
 ## Change and verification
 
 Nearby matches reuse the remaining chunk suffix. Each step advances character

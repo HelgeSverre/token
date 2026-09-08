@@ -11,13 +11,14 @@ Completed implementation history and detailed evidence are in the
 [benchmark reports](docs/benchmark/README.md), with earlier handoff entries
 preserved in Git history.
 
-Latest implementation: `6974ba1` advances Find overview coordinates through
-Rope chunks. The [overview report](docs/benchmark/2026-09-08-find-overview.md)
-records a modest dense-worker improvement, full-suite/lint verification and an
-unresolved process-exit warning. Earlier completion response ownership work
+Latest implementation: `780b13e` adds gated ASCII literal Find matching after
+the overview improvement (`6974ba1`). The
+[literal report](docs/benchmark/2026-09-08-find-literals.md) records before/after
+CPU and allocation measurements, full-suite/lint verification and preserved
+Unicode/regex semantics. Earlier completion response ownership work
 (`68cf62a`) reduced fresh allocation by roughly 81% at 1,000 items; see its
-[report](docs/benchmark/2026-09-08-completion-responses.md). Neither closes the
-remaining profiling targets below.
+[report](docs/benchmark/2026-09-08-completion-responses.md). The measured cold Find
+and completion-response investigations are addressed; other targets remain below.
 
 Preserve the separate opaque Settings page, category navigation and form
 controls. Settings scrolls continuously in physical pixels with clipped partial
@@ -33,12 +34,9 @@ The default `target/` previously disappeared outside this task.
   targets). The plan names candidate providers but no selected backend contract;
   a backend/model preference has been requested. See
   [autocomplete](docs/feature/autocomplete.md).
-- Address measured performance targets as warranted: cold explicit Find scans,
-  larger recency refreshes and forward multi-cursor edits. Existing measurements are in
+- Address measured performance targets as warranted: larger recency refreshes
+  and forward multi-cursor edits. Existing measurements are in
   [the September report](docs/benchmark/2026-09-07-current.md).
-  [Cold Find sampling](docs/benchmark/2026-09-08-cold-find.md) now identifies dense
-  regex matching as the remaining Find target. Overview chunk traversal is now
-  implemented and measured; the report retains both gains and limitations.
 
 ## Remaining verification
 

@@ -1,0 +1,49 @@
+CARGO_TARGET_DIR=/tmp/token-managed-server-check.5prvI4 CARGO_BUILD_JOBS=1 just bench-search find_ascii_literal_vs_regex
+cargo bench --bench search -- find_ascii_literal_vs_regex
+warning: unused variable: `revision`
+   --> src/update/syntax.rs:196:17
+    |
+196 |             let revision = doc.revision;
+    |                 ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_revision`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `token` (lib) generated 1 warning (run `cargo fix --lib -p token` to apply 1 suggestion)
+warning: `token` (lib) generated 1 warning (1 duplicate)
+    Finished `bench` profile [optimized] target(s) in 0.28s
+     Running benches/search.rs (/tmp/token-managed-server-check.5prvI4/release/deps/search-12167b32d26af7f9)
+Timer precision: 41 ns
+search                          fastest       │ slowest       │ median        │ mean          │ samples │ iters
+╰─ find_ascii_literal_vs_regex                │               │               │               │         │
+   ├─ false                     2.779 ms      │ 3.227 ms      │ 2.908 ms      │ 2.925 ms      │ 100     │ 100
+   │                            max alloc:    │               │               │               │         │
+   │                              301         │ 301           │ 301           │ 301           │         │
+   │                              2.12 MB     │ 2.12 MB       │ 2.12 MB       │ 2.12 MB       │         │
+   │                            alloc:        │               │               │               │         │
+   │                              809         │ 809           │ 809           │ 809           │         │
+   │                              60.05 KB    │ 60.05 KB      │ 60.05 KB      │ 60.05 KB      │         │
+   │                            dealloc:      │               │               │               │         │
+   │                              808         │ 808           │ 808           │ 808           │         │
+   │                              96.89 KB    │ 96.89 KB      │ 96.89 KB      │ 96.89 KB      │         │
+   │                            grow:         │               │               │               │         │
+   │                              143         │ 143           │ 143           │ 143           │         │
+   │                              2.141 MB    │ 2.141 MB      │ 2.141 MB      │ 2.141 MB      │         │
+   │                            shrink:       │               │               │               │         │
+   │                              20          │ 20            │ 20            │ 20            │         │
+   │                              7.844 KB    │ 7.844 KB      │ 7.844 KB      │ 7.844 KB      │         │
+   ╰─ true                      6.272 ms      │ 6.884 ms      │ 6.556 ms      │ 6.571 ms      │ 100     │ 100
+                                max alloc:    │               │               │               │         │
+                                  301         │ 301           │ 301           │ 301           │         │
+                                  2.117 MB    │ 2.117 MB      │ 2.117 MB      │ 2.117 MB      │         │
+                                alloc:        │               │               │               │         │
+                                  792         │ 792           │ 792           │ 792           │         │
+                                  57.13 KB    │ 57.13 KB      │ 57.13 KB      │ 57.13 KB      │         │
+                                dealloc:      │               │               │               │         │
+                                  791         │ 791           │ 791           │ 791           │         │
+                                  86.3 KB     │ 86.3 KB       │ 86.3 KB       │ 86.3 KB       │         │
+                                grow:         │               │               │               │         │
+                                  129         │ 129           │ 129           │ 129           │         │
+                                  2.131 MB    │ 2.131 MB      │ 2.131 MB      │ 2.131 MB      │         │
+                                shrink:       │               │               │               │         │
+                                  15          │ 15            │ 15            │ 15            │         │
+                                  5.215 KB    │ 5.215 KB      │ 5.215 KB      │ 5.215 KB      │         │
