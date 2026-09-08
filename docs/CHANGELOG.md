@@ -6,6 +6,13 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Development
+
+- PTY smoke tests use a known shell without personal startup files and check
+  actual command output; shell-exit coverage runs by default again. Removed the
+  ignored shell-script LSP handshake duplicate in favor of the existing
+  real-process integration scenario.
+
 ### Theme polish
 
 - Hand-tuned the full overlay palettes for Fleet Dark, GitHub Dark/Light,

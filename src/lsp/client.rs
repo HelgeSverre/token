@@ -2158,66 +2158,6 @@ mod tests {
         );
     }
 
-    // ---- integration: a real child process speaking the handshake ----
-
-    /// A tiny in-process "fake server": reads one framed `initialize`
-    /// request off stdin and writes back a minimal, well-formed
-    /// response with the same id — proves `spawn_server`'s three
-    /// threads (writer/reader/stderr) actually wire together against a
-    /// real child process and drive the handshake to `Ready`, without
-    /// needing a scripted fake LSP server binary on `PATH`.
-    #[cfg(unix)]
-    #[test]
-    #[ignore = "spawns a real shell/child; reliably passes on an idle machine \
-                but flakes under parallel-build load — run with --include-ignored"]
-    fn spawn_server_completes_the_handshake_against_a_real_child() {
-        // `sh -c` running a small reader/writer pipeline: read headers
-        // until the blank line (to find Content-Length), read the body,
-        // then reply with a fixed response reusing whatever id was sent
-        // — good enough since Phase 1 only ever sends `initialize` first.
-        let script = r#"
-IFS= read -r cl
-cl=$(echo "$cl" | tr -d '\r' | sed 's/Content-Length: //')
-IFS= read -r blank
-body=$(dd bs=1 count="$cl" 2>/dev/null)
-id=$(echo "$body" | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*')
-resp='{"jsonrpc":"2.0","id":'"$id"',"result":{"capabilities":{}}}'
-len=${#resp}
-printf 'Content-Length: %d\r\n\r\n%s' "$len" "$resp"
-"#;
-        let (msg_tx, msg_rx) = std::sync::mpsc::channel();
-        let dir = std::env::temp_dir();
-        let mut handle = spawn_server(
-            "sh",
-            &["-c".to_owned(), script.to_owned()],
-            &dir,
-            LspServerId::from("fake-server"),
-            msg_tx,
-            None,
-            Value::Null,
-            Value::Null,
-        )
-        .expect("failed to spawn fake server");
-
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        let mut saw_ready = false;
-        while std::time::Instant::now() < deadline {
-            match msg_rx.recv_timeout(Duration::from_millis(200)) {
-                Ok(Msg::Lsp(LspMsg::ServerStateChanged {
-                    state: ServerState::Ready,
-                    ..
-                })) => {
-                    saw_ready = true;
-                    break;
-                }
-                Ok(_) => {}
-                Err(_) => {}
-            }
-        }
-        assert!(saw_ready, "expected ServerStateChanged(Ready) within 5s");
-        handle.kill();
-    }
-
     /// `graceful_shutdown`'s two phases (shutdown-ack wait, exit wait) are
     /// each capped by `timeout`, but must also respect `shared_deadline`
     /// — the caller's *total* teardown budget across every server being

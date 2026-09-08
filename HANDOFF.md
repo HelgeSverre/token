@@ -31,6 +31,12 @@ explicit palettes, contrast checks and inspected command-palette/compact Setting
 renders. Details are in the refactoring audit; later built-ins and custom-theme
 fallbacks are unchanged.
 
+The load-sensitive spawn-test cleanup is complete: PTY tests use a controlled
+shell, assert actual output and run shell-exit coverage by default. The ignored
+shell-script LSP handshake duplicate was removed; the existing real-process
+integration scenario retains that coverage. Twenty repeated runs and the full
+suite passed on macOS (2,575 tests, five skipped). See the refactoring audit.
+
 ## Settings scrolling correction
 
 Preserve the separate Settings page, category navigation and form controls.
@@ -81,10 +87,10 @@ measurements, not native presentation checks.
   workspace-symbol/Usages live-server interaction. Fixture coverage is not live
   service verification.
 - Native context-menu pointer acceptance; automated runtime/pixel checks already pass.
-- Resolve intermittent nextest process-exit warnings and the two ignored
-  load-sensitive spawn tests. The September 8 theme suite passed all 2,574 tests
-  but flagged `settings_page_keeps_spacious_categories_and_shared_control_hits`
-  as leaky. Do not suppress or call that resolved.
+- Resolve intermittent nextest process-exit warnings. The September 8 theme
+  suite flagged `settings_page_keeps_spacious_categories_and_shared_control_hits`
+  as leaky. The subsequent spawn-test cleanup suite passed all 2,575 tests without
+  warnings, but did not establish their cause. Do not suppress or call that resolved.
 
 ## Archival and closeout
 

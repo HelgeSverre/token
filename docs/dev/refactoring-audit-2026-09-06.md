@@ -1,5 +1,36 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Spawn-test cleanup — 2026-09-08
+
+Removed the ignored shell-script LSP handshake test: the existing
+`full_lifecycle_including_workspace_configuration_mid_init` integration test
+already exercises the real child, framing, initialization and Ready notification,
+including the more demanding configuration request during initialization.
+
+The two existing PTY tests now select a known shell without personal startup
+files (`/bin/sh` with `ENV` removed; `cmd.exe /D /Q` on Windows). One private
+command-taking helper keeps them on the production PTY worker path; the public
+API and normal shell selection are unchanged. The echo assertion requires a
+complete output line instead of accepting the terminal's echo of typed input.
+Both tests explicitly terminate the child before their final assertion, and
+the shell-exit test is no longer ignored. No new test or dependency was added.
+
+Verification on macOS:
+
+- Twenty repetitions of both PTY tests plus the existing LSP lifecycle test:
+  **60 executions passed**, no warnings (`c61b2a06-0d37-408f-9e06-6bae834bc2b2`).
+- Full suite: **2,575 tests passed**, five skipped; **two doctests passed**, six
+  ignored (`d15ead82-6a6a-4f24-b278-43eeb3cfeb94`). No process-exit warnings.
+- Strict lint, formatting and diff checks passed. Scoped self-review:
+  **Approve**; no outstanding findings. Windows/Linux execution remains unverified.
+
+This closes the two ignored spawn-test entries, not the intermittent nextest
+warning investigation. The earlier Settings/startup warnings are still
+unattributed; no runner timeout was increased or warning suppressed. Nextest's
+[output-handle detection](https://nexte.st/docs/features/leaky-tests/) does not
+measure heap leaks, and clean reruns alone do not establish a fix. No performance
+or native UI claim is made by this test cleanup.
+
 ## Bundled overlay theme tuning — 2026-09-08
 
 Commit `48a29fa` closed the original eight-theme follow-up: Fleet Dark, GitHub Dark/Light,

@@ -161,6 +161,18 @@ pub fn spawn_pty(
     msg_tx: Sender<Msg>,
     session_id: usize,
 ) -> std::io::Result<PtyHandle> {
+    let mut cmd = CommandBuilder::new(default_shell());
+    cmd.cwd(cwd);
+    spawn_pty_command(cmd, rows, cols, msg_tx, session_id)
+}
+
+fn spawn_pty_command(
+    cmd: CommandBuilder,
+    rows: u16,
+    cols: u16,
+    msg_tx: Sender<Msg>,
+    session_id: usize,
+) -> std::io::Result<PtyHandle> {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -170,9 +182,6 @@ pub fn spawn_pty(
             pixel_height: 0,
         })
         .map_err(std::io::Error::other)?;
-
-    let mut cmd = CommandBuilder::new(default_shell());
-    cmd.cwd(cwd);
 
     let mut child = pair
         .slave
@@ -291,6 +300,22 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
 
+    fn spawn_test_pty(msg_tx: Sender<Msg>, session_id: usize) -> PtyHandle {
+        // Exercise the real PTY workers without personal shell startup files.
+        let mut cmd = if cfg!(windows) {
+            let mut cmd = CommandBuilder::new("cmd.exe");
+            cmd.args(["/D", "/Q"]);
+            cmd
+        } else {
+            let mut cmd = CommandBuilder::new("/bin/sh");
+            cmd.arg("-s");
+            cmd.env_remove("ENV");
+            cmd
+        };
+        cmd.cwd(std::env::temp_dir());
+        spawn_pty_command(cmd, 24, 80, msg_tx, session_id).expect("failed to spawn PTY")
+    }
+
     /// Poll `msg_rx` until a `PtyOutput` chunk is received whose bytes
     /// contain `needle`, or the timeout elapses.
     fn recv_output_containing(
@@ -319,30 +344,28 @@ mod tests {
     #[test]
     fn spawns_shell_and_echoes_output() {
         let (msg_tx, msg_rx) = mpsc::channel();
-        let cwd = std::env::temp_dir();
-        let pty = spawn_pty(&cwd, 24, 80, msg_tx, 0).expect("failed to spawn PTY");
+        let mut pty = spawn_test_pty(msg_tx, 0);
 
         pty.write(b"echo hello-from-pty\n".to_vec());
 
+        // A complete output line excludes the terminal's echo of the command.
+        let saw_output =
+            recv_output_containing(&msg_rx, "\r\nhello-from-pty\r\n", Duration::from_secs(5));
+        pty.kill();
         assert!(
-            recv_output_containing(&msg_rx, "hello-from-pty", Duration::from_secs(5)),
+            saw_output,
             "expected PTY output to contain the echoed string within 5s"
         );
     }
 
     #[test]
-    #[ignore = "spawns a real shell/child; reliably passes on an idle machine \
-                but flakes under parallel-build load — run with --include-ignored"]
     fn process_exited_is_sent_after_shell_quits() {
         let (msg_tx, msg_rx) = mpsc::channel();
-        let cwd = std::env::temp_dir();
-        let pty = spawn_pty(&cwd, 24, 80, msg_tx, 7).expect("failed to spawn PTY");
+        let mut pty = spawn_test_pty(msg_tx, 7);
 
         pty.write(b"exit\n".to_vec());
 
-        // Generous deadline: shell spawn + prompt init inside a real pty
-        // takes ~0.5s idle but several seconds on a loaded machine (parallel
-        // cargo builds), and a tight deadline makes this test flake.
+        // Keep scheduling headroom for ordinary parallel CI execution.
         let deadline = Instant::now() + Duration::from_secs(20);
         let mut saw_exit = false;
         while Instant::now() < deadline {
@@ -356,6 +379,7 @@ mod tests {
                 Err(_) => {}
             }
         }
+        pty.kill();
         assert!(saw_exit, "expected ProcessExited within 20s of shell exit");
     }
 }
