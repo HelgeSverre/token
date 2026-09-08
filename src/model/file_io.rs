@@ -185,7 +185,24 @@ pub struct FileRequest {
     pub revision: u64,
     /// Original path used to reject a dialog/read for a replaced document.
     pub source_path: Option<PathBuf>,
+    /// Cached aliases captured before a Save As destination is resolved.
+    pub source_identity: Option<crate::util::FileIdentity>,
+    /// Disk precondition for writes; unused by reads and dialogs.
+    pub write_guard: FileWriteGuard,
     pub(crate) sequence: u64,
+}
+
+/// Content precondition captured by a save. Native Save As may replace a
+/// different destination, but aliases of the original file retain the guard.
+#[derive(Debug, Clone)]
+pub struct FileWriteGuard {
+    /// None means this document expects a new, nonexistent file.
+    pub saved: Option<ropey::Rope>,
+    /// A preceding save may still be in the ordered worker queue when the
+    /// next request is captured, before its reply updates `saved`.
+    pub queued: Option<ropey::Rope>,
+    /// The user explicitly chose another destination in the native dialog.
+    pub save_as: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -202,6 +219,7 @@ pub(crate) struct FileIoState {
     latest_dialog: u64,
     last_saved: u64,
     pending: BTreeMap<u64, FileRequestKind>,
+    last_queued_write: Option<(PathBuf, ropey::Rope)>,
 }
 
 impl FileIoState {
@@ -226,6 +244,9 @@ impl FileIoState {
         if self.pending.remove(&request.sequence) != Some(kind) {
             return false;
         }
+        if !self.pending(FileRequestKind::Write) {
+            self.last_queued_write = None;
+        }
         match kind {
             FileRequestKind::Read => request.sequence == self.latest_read,
             FileRequestKind::SaveDialog => request.sequence == self.latest_dialog,
@@ -239,6 +260,18 @@ impl FileIoState {
 
     pub fn invalidate(&mut self) {
         self.pending.clear();
+        self.last_queued_write = None;
+    }
+
+    pub fn previous_write(&self, path: &Path) -> Option<ropey::Rope> {
+        self.last_queued_write
+            .as_ref()
+            .filter(|(queued_path, _)| queued_path == path)
+            .map(|(_, content)| content.clone())
+    }
+
+    pub fn queue_write(&mut self, path: PathBuf, content: ropey::Rope) {
+        self.last_queued_write = Some((path, content));
     }
 
     pub fn pending(&self, kind: FileRequestKind) -> bool {

@@ -7,7 +7,8 @@ pub mod document;
 mod file_io;
 pub(crate) use file_io::{FileIoState, FileRequestKind};
 pub use file_io::{
-    FileOpenPolicy, FileOpenRequest, FileOpenSource, FileRequest, KnownFile, PreparedFile,
+    FileOpenPolicy, FileOpenRequest, FileOpenSource, FileRequest, FileWriteGuard, KnownFile,
+    PreparedFile,
 };
 pub(crate) use file_io::{FileOpenState, OpenOrigin, OpenPosition, PendingFileOpen};
 pub(crate) use file_io::{PendingWorkspaceEdit, WorkspaceEditAction};

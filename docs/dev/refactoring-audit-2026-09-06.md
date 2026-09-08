@@ -1,5 +1,50 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## External-file protection: save-time guard — 2026-09-08
+
+First step toward the requested external-file feature; watching, automatic
+reload and resolution UI are not complete. The existing file-operation token
+now carries a cheap snapshot of loaded/saved content and the previous queued
+write. The saved snapshot is tied to its source path. The ordered worker checks
+exact bytes using an 8 KiB scratch buffer before truncating the open handle;
+missing files use exclusive creation only when no earlier file/save is expected.
+This catches same-length modifications, replacement, deletion, newly created
+conflicting files and deletion between queued saves without relying on event
+delivery or modification timestamps.
+
+Save As to another destination remains an explicit replacement operation.
+The worker resolves the destination against the captured source identity so an
+unknown symlink to the original file cannot bypass the guard. Conflicts return
+through the existing targeted failure reply: they do not mark the buffer clean
+or change its path, and the disk remains untouched. The existing queue-drain and
+twenty-ordered-write tests continue to cover multiple in-flight saves.
+
+Verification:
+
+- Focused file-I/O suite: 31 passed.
+- Final `CARGO_BUILD_JOBS=1 just test`: 2,592 passed, five skipped in 24.224 s
+  excluding compilation; two doctests passed, six ignored.
+- Strict `just lint`, `just fmt-check`, and `git diff --check` passed.
+- Three substantive worker tests cover changed/deleted/recreated files,
+  queued-delete timing, long UTF-8/multi-chunk comparisons, successful-save
+  baseline refresh, and Save As through an unknown symlink versus a genuinely
+  different destination. They use real temporary fixture files, not a mock FS.
+  Native Save As dialog interaction itself was not newly exercised.
+
+Diff-based self-review (Rust/code-review skills):
+
+| Severity | Finding | Resolution |
+| --- | --- | --- |
+| High | Save As could bypass the original-file guard through an unknown symlink | Resolve and compare source identity on the worker; regression checked |
+| High | An outstanding first-save reply could permit recreation after external deletion | Require both saved and queued snapshots absent before exclusive creation; regression checked |
+
+Verdict: **Approve** for the save-time foundation after these fixes. This is a
+precondition check, not portable atomic compare-and-swap or crash-safe saving:
+another process can still race an in-place write, and post-truncation I/O errors
+retain the existing write-failure limitations. No watcher/reload/session-restore
+completion or performance claims are implied. The active plan records the next
+steps and remains unarchived.
+
 ## Indent guides and documentation-card polish — 2026-09-08
 
 The first indent-guide slice is implemented in the shared text-decoration pass

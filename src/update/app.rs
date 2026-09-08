@@ -333,8 +333,14 @@ fn begin_save(
         return Some(Cmd::redraw_status_bar());
     }
     let doc = model.editor_area.documents.get_mut(&document_id)?;
-    let target = doc.begin_file_request(FileRequestKind::Write)?;
+    let mut target = doc.begin_file_request(FileRequestKind::Write)?;
+    if !doc.matches_file_path(&path) {
+        // A different destination returned by the native Save As dialog is
+        // explicitly chosen; aliases of this document retain conflict checks.
+        target.write_guard.save_as = true;
+    }
     let content = doc.buffer.clone();
+    doc.file_io.queue_write(path.clone(), content.clone());
     model.ui.is_saving = true;
     model.ui.set_status("Saving...");
     Some(Cmd::SaveFile {

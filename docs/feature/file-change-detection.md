@@ -2,13 +2,36 @@
 
 Detect and respond to external file modifications
 
-> **Status:** Planned
+> **Status:** In progress — save-time content guard implemented; watcher/reload and conflict UI remain (2026-09-08)
 > **Priority:** P2
 > **Effort:** M
 > **Created:** 2025-12-19
 > **Milestone:** 3 - File Lifecycle
 
 ---
+
+## Implementation checkpoint — 2026-09-08
+
+The first implementation step protects ordinary saves in the existing ordered
+file worker. `FileRequest` captures the last loaded/saved Rope and any preceding
+queued write. The worker compares exact bytes, using bounded scratch space,
+before truncating the already-open file. New files use exclusive creation.
+Failures retain the editor buffer and disk contents and report a status error.
+Explicit Save As to a different destination still replaces that destination;
+the worker resolves symlinks so aliases of the original file keep its guard.
+
+This replaces the proposed mtime-only pre-save check; unchanged timestamps or
+same-length edits cannot defeat the byte comparison. It is not an atomic
+compare-and-swap against uncooperative concurrent writers, nor a crash-safe
+atomic-save implementation. In-place writes retain the existing I/O-failure
+limitations after a successful precondition check.
+
+Still required for the requested feature: open-document watching (including
+files outside a workspace and editor-external replacement), clean-buffer reload
+with viewport/caret preservation, dirty/deleted-file resolution actions and
+persistent conflict indication. The compare/merge UI remains outside the initial
+protective slice recommended in the plan reconciliation. Do not archive this
+plan or mark file-change detection complete at this checkpoint.
 
 ## Table of Contents
 
@@ -30,7 +53,8 @@ The editor currently:
 - Uses `notify` crate for workspace file tree watching (`src/fs_watcher.rs`)
 - Refreshes file tree on external changes
 - Does NOT detect changes to open documents
-- Does NOT warn before overwriting externally modified files
+- Rejects ordinary saves when disk bytes differ from the loaded/saved snapshot
+  (save-time protection implemented; resolution UI still pending)
 
 ### Goals
 

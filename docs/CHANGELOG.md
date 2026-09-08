@@ -6,6 +6,16 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### External-file protection
+
+- Ordinary saves now check the file's bytes against the last loaded/saved
+  snapshot before overwriting it. Outside edits, deletion, and another program
+  creating a previously missing file cancel the save without replacing either
+  version. Ordered saves from Token remain supported.
+- Save As can replace a different destination chosen in the native dialog;
+  symlink aliases of the original file retain its conflict check. Automatic
+  reload and the conflict-resolution UI are still being implemented.
+
 ### Documentation cards
 
 - Hover cards have a wider responsive layout and an opaque reading surface;

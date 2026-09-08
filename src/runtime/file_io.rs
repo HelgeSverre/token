@@ -2,7 +2,7 @@
 //! (including Save As) from leaving older bytes on disk after a newer save.
 
 use std::fs::File;
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc};
 
@@ -146,14 +146,8 @@ impl FileJob {
                 path,
                 content,
             } => {
-                let result = (|| {
-                    let mut file = BufWriter::new(File::create(&path)?);
-                    for chunk in content.chunks() {
-                        file.write_all(chunk.as_bytes())?;
-                    }
-                    file.flush()
-                })()
-                .map_err(|error: io::Error| error.to_string());
+                let result =
+                    write_checked(&path, &content, &target).map_err(|error| error.to_string());
                 let identity = result
                     .as_ref()
                     .ok()
@@ -215,6 +209,96 @@ impl FileJob {
                 identity: None,
                 result: Err(error),
             }),
+        }
+    }
+}
+
+/// Check the already-open file before truncating it. Reading and writing the
+/// same handle also avoids following a newly retargeted symlink between those
+/// two operations. Uncooperative concurrent writers cannot be locked out by
+/// portable filesystem APIs; this is a save-time precondition, not a lock.
+fn write_checked(path: &Path, content: &Rope, target: &FileRequest) -> io::Result<()> {
+    let guard = &target.write_guard;
+    if guard.save_as {
+        // Resolve on the worker, never in update. Save As through a previously
+        // unknown symlink must not bypass the original document's guard.
+        let destination = token::util::FileIdentity::resolve(path.to_path_buf());
+        let original = target
+            .source_path
+            .as_deref()
+            .is_some_and(|source| destination.matches_path(source))
+            || target
+                .source_identity
+                .as_ref()
+                .is_some_and(|source| source.path() == destination.path());
+        if !original {
+            return write_content(File::create(path)?, content);
+        }
+    }
+    let saved = &guard.saved;
+    let queued = &guard.queued;
+    let mut file = match File::options().read(true).write(true).open(path) {
+        Ok(file) => file,
+        Err(error)
+            if error.kind() == io::ErrorKind::NotFound && saved.is_none() && queued.is_none() =>
+        {
+            // Exclusive creation closes the absent-file check/create race.
+            return write_content(
+                File::options().write(true).create_new(true).open(path)?,
+                content,
+            );
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Err(io::Error::other(
+                "File was deleted outside Token; buffer preserved. Use Save As to save elsewhere.",
+            ));
+        }
+        Err(error) => return Err(error),
+    };
+    let mut matches = false;
+    for expected in saved.iter().chain(queued) {
+        if file_matches(&mut file, expected)? {
+            matches = true;
+            break;
+        }
+    }
+    if !matches {
+        return Err(io::Error::other(
+            "File changed on disk; save cancelled. Reload or Save As to another path.",
+        ));
+    }
+    file.seek(SeekFrom::Start(0))?;
+    file.set_len(0)?;
+    write_content(file, content)
+}
+
+fn write_content(file: File, content: &Rope) -> io::Result<()> {
+    let mut writer = BufWriter::new(file);
+    for chunk in content.chunks() {
+        writer.write_all(chunk.as_bytes())?;
+    }
+    writer.flush()
+}
+
+/// Exact byte comparison, bounded scratch space, no full-buffer conversion or
+/// reliance on mtime/size fingerprints. Same-length outside edits still differ.
+fn file_matches(file: &mut File, expected: &Rope) -> io::Result<bool> {
+    if file.metadata()?.len() != expected.len_bytes() as u64 {
+        return Ok(false);
+    }
+    file.seek(SeekFrom::Start(0))?;
+    let mut buffer = [0; token::util::ByteSize::kibibytes(8).as_usize()];
+    let mut bytes = expected.bytes();
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            return Ok(bytes.next().is_none());
+        }
+        if buffer[..count]
+            .iter()
+            .any(|&byte| bytes.next() != Some(byte))
+        {
+            return Ok(false);
         }
     }
 }
@@ -666,6 +750,160 @@ mod tests {
             path,
             content,
         }
+    }
+
+    #[test]
+    fn file_io_save_guard_preserves_external_changes_deletion_and_recreation() {
+        for external in [
+            Some(b"bravo".as_slice()),
+            None,
+            Some(b"\0\xffxyz".as_slice()),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("changed.txt");
+            std::fs::write(&path, "alpha").unwrap();
+            let mut model = AppModel::new(800, 600, 1.0);
+            prepare_startup_files(&mut model, vec![path.clone()]);
+            update(
+                &mut model,
+                Msg::Document(token::messages::DocumentMsg::InsertChar('!')),
+            );
+            // Capture the save first: the final guard must run on the worker,
+            // not at command creation or in response to a watcher notification.
+            let job = write_job(&mut model, path.clone(), "local edits");
+            std::fs::remove_file(&path).unwrap();
+            if let Some(bytes) = external {
+                std::fs::write(&path, bytes).unwrap();
+            }
+            let reply = job.run(None);
+            assert!(matches!(
+                &reply,
+                Msg::App(AppMsg::SaveCompleted { result: Err(_), .. })
+            ));
+            update(&mut model, reply);
+            assert!(model.document().is_modified);
+            assert_eq!(model.document().buffer.to_string(), "local edits");
+            assert!(!model.ui.is_saving);
+            match external {
+                Some(bytes) => assert_eq!(std::fs::read(&path).unwrap(), bytes),
+                None => assert!(!path.exists(), "a deleted file must not be recreated"),
+            }
+        }
+
+        // Opening a nonexistent CLI path does not reserve permission to
+        // overwrite a file another program creates before the first save.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("new.txt");
+        let mut model = AppModel::new(800, 600, 1.0);
+        prepare_startup_files(&mut model, vec![path.clone()]);
+        let job = write_job(&mut model, path.clone(), "mine");
+        std::fs::write(&path, "theirs").unwrap();
+        assert!(matches!(
+            job.run(None),
+            Msg::App(AppMsg::SaveCompleted { result: Err(_), .. })
+        ));
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "theirs");
+
+        // Even before its UI reply arrives, a completed first save does not
+        // authorize the next queued save to undo an outside deletion.
+        let path = dir.path().join("queued-new.txt");
+        let mut model = AppModel::new(800, 600, 1.0);
+        prepare_startup_files(&mut model, vec![path.clone()]);
+        assert!(matches!(
+            write_job(&mut model, path.clone(), "first").run(None),
+            Msg::App(AppMsg::SaveCompleted { result: Ok(()), .. })
+        ));
+        let next = write_job(&mut model, path.clone(), "next");
+        std::fs::remove_file(&path).unwrap();
+        assert!(matches!(
+            next.run(None),
+            Msg::App(AppMsg::SaveCompleted { result: Err(_), .. })
+        ));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn file_io_save_guard_checks_chunk_boundaries_and_refreshes_after_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unicode.txt");
+        let original = "café 🦀\n".repeat(3000);
+        std::fs::write(&path, &original).unwrap();
+        let mut model = AppModel::new(800, 600, 1.0);
+        prepare_startup_files(&mut model, vec![path.clone()]);
+        for value in ["first", "second"] {
+            let reply = write_job(&mut model, path.clone(), value).run(None);
+            assert!(matches!(
+                &reply,
+                Msg::App(AppMsg::SaveCompleted { result: Ok(()), .. })
+            ));
+            update(&mut model, reply);
+            assert!(!model.document().is_modified);
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), value);
+        }
+        // A same-length difference near the end of a multi-chunk file is not
+        // missed by metadata-only checks or by comparing only its first chunk.
+        std::fs::write(&path, format!("{}X", &original[..original.len() - 1])).unwrap();
+        let FileJob::Write { mut target, .. } = write_job(&mut model, path.clone(), "replacement")
+        else {
+            panic!("write job")
+        };
+        target.write_guard.saved = Some(original.as_str().into());
+        target.write_guard.queued = None;
+        assert!(write_checked(&path, &Rope::from("replacement"), &target).is_err());
+        assert!(std::fs::read_to_string(path).unwrap().ends_with('X'));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn file_io_save_as_guards_unknown_symlinks_but_allows_a_different_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = dir.path().join("original.txt");
+        let alias = dir.path().join("alias.txt");
+        let other = dir.path().join("other.txt");
+        std::fs::write(&original, "loaded").unwrap();
+        std::fs::write(&other, "replace with explicit Save As").unwrap();
+        std::os::unix::fs::symlink(&original, &alias).unwrap();
+        let mut model = AppModel::new(800, 600, 1.0);
+        prepare_startup_files(&mut model, vec![original.clone()]);
+        model.document_mut().buffer = "local".into();
+        std::fs::write(&original, "outside edit").unwrap();
+        for destination in [&alias, &other] {
+            let Cmd::ShowSaveFileDialog { target, .. } =
+                update(&mut model, Msg::App(AppMsg::SaveFileAs)).unwrap()
+            else {
+                panic!("Save As dialog")
+            };
+            let Cmd::SaveFile {
+                target,
+                path,
+                content,
+            } = update(
+                &mut model,
+                Msg::App(AppMsg::SaveFileAsDialogResult {
+                    target,
+                    path: Some(destination.clone()),
+                }),
+            )
+            .unwrap()
+            else {
+                panic!("Save As write")
+            };
+            let reply = FileJob::Write {
+                target,
+                path,
+                content,
+            }
+            .run(None);
+            assert!(matches!(
+                &reply,
+                Msg::App(AppMsg::SaveCompleted { result, .. }) if result.is_ok() == (destination == &other)
+            ));
+            update(&mut model, reply);
+            assert_eq!(std::fs::read_to_string(&original).unwrap(), "outside edit");
+        }
+        assert_eq!(std::fs::read_to_string(&other).unwrap(), "local");
+        assert_eq!(model.document().file_path.as_ref(), Some(&other));
+        assert!(!model.document().is_modified);
     }
 
     fn config_request(

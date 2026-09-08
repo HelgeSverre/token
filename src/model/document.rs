@@ -92,6 +92,9 @@ pub struct Document {
     /// Cheap immutable snapshot of the bytes last successfully written. History
     /// depth alone is not an identity: undo followed by a new branch can reuse it.
     saved_buffer: Option<Rope>,
+    /// Path to which the saved snapshot belongs. Changing a document's path
+    /// cannot transfer an unrelated file's overwrite permission.
+    saved_path: Option<PathBuf>,
     pub(crate) file_io: super::FileIoState,
 
     // === Syntax Highlighting ===
@@ -135,6 +138,7 @@ impl Document {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             saved_buffer: Some(Rope::new()),
+            saved_path: None,
             file_io: Default::default(),
             language: LanguageId::PlainText,
             language_pinned: false,
@@ -169,6 +173,7 @@ impl Document {
     pub fn from_loaded_text(content: &str, identity: crate::util::FileIdentity) -> Self {
         Self {
             file_path: Some(identity.source().to_path_buf()),
+            saved_path: Some(identity.source().to_path_buf()),
             language: LanguageId::from_path(identity.source()),
             file_identity: Some(identity),
             ..Self::with_text(content)
@@ -220,12 +225,26 @@ impl Document {
             document_id: self.id?,
             revision: self.revision,
             source_path: self.file_path.clone(),
+            source_identity: self.file_identity().cloned(),
+            write_guard: super::FileWriteGuard {
+                saved: self
+                    .saved_buffer
+                    .as_ref()
+                    .filter(|_| self.saved_path.is_some() && self.saved_path == self.file_path)
+                    .cloned(),
+                queued: self
+                    .file_path
+                    .as_deref()
+                    .and_then(|path| self.file_io.previous_write(path)),
+                save_as: false,
+            },
             sequence: self.file_io.begin(kind),
         })
     }
 
     pub(crate) fn record_saved_buffer(&mut self, buffer: Rope) {
         self.saved_buffer = Some(buffer);
+        self.saved_path = self.file_path.clone();
         self.refresh_modified();
     }
 
