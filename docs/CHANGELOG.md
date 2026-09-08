@@ -17,6 +17,8 @@ All notable changes to rust-editor are documented in this file.
   their existing behavior.
 - Saved sessions retain within-row/column positions across display metric
   changes; older session files default to aligned positions.
+- Dismissing a wide inline suggestion clamps horizontal scrolling back to the
+  source text while retaining the vertical pixel offset.
 
 ### Session restore
 

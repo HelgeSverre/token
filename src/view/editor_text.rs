@@ -1915,73 +1915,90 @@ mod tests {
 
     #[test]
     fn pixel_scrolled_text_gutter_hits_and_cursor_redraw_share_geometry() {
-        let mut model = make_text_model();
-        model.document_mut().buffer =
-            Rope::from_str(&"    alpha beta gamma delta epsilon\n".repeat(30));
-        let (_, _, _, char_width, line_height) = load_test_font();
-        model.char_width = char_width;
-        model.line_height = line_height;
-        model.config.show_scrollbar = false;
-        model.ui.cursor_visible = false;
-        model.editor_mut().cursors = vec![Cursor::at(1, 6)];
-        model.editor_mut().clear_selection();
-        model.resize(220, 140);
-        let normal = render_full_editor_group(&model);
-        let id = model.editor_area.focused_editor_id().unwrap();
-        let doc_id = model.editor_area.focused_document_id().unwrap();
-        model
-            .editor_area
-            .editors
-            .get_mut(&id)
-            .unwrap()
-            .set_pixel_scroll(&model.editor_area.documents[&doc_id], 3.0, 7.0);
-        assert_eq!(model.editor().viewport.pixels.x.offset, 3.0);
-        assert_eq!(model.editor().viewport.pixels.y.offset, 7.0);
-        let scrolled = render_full_editor_group(&model);
-        let group = model.editor_area.focused_group().unwrap();
-        let layout = crate::view::geometry::GroupLayout::new(group, &model, char_width);
-        let width = model.window_size.0 as usize;
-        let y0 = layout.content_y();
-        let bottom = (y0 + layout.content_h()).min(model.window_size.1 as usize);
-        // Content and gutter move by the same vertical displacement; the gutter
-        // does not follow horizontal scrolling. Exclude clipped edges.
-        for y in y0..bottom.saturating_sub(7) {
-            for x in layout.rect_x()..layout.gutter_right_x.saturating_sub(1) {
-                assert_eq!(scrolled[y * width + x], normal[(y + 7) * width + x]);
+        for wrapped in [false, true] {
+            let mut model = make_text_model();
+            model.document_mut().buffer =
+                Rope::from_str(&"    alpha\tbeta gamma delta epsilon\n".repeat(30));
+            model.document_mut().diagnostics = vec![lsp_types::Diagnostic {
+                range: lsp_types::Range::new(
+                    lsp_types::Position::new(0, 4),
+                    lsp_types::Position::new(0, 9),
+                ),
+                severity: Some(lsp_types::DiagnosticSeverity::WARNING),
+                message: "partial-row decoration".into(),
+                ..Default::default()
+            }];
+            let (_, _, _, char_width, line_height) = load_test_font();
+            model.char_width = char_width;
+            model.line_height = line_height;
+            model.config.show_scrollbar = false;
+            model.ui.cursor_visible = true;
+            model.editor_mut().soft_wrap = wrapped;
+            model.editor_mut().cursors = vec![Cursor::at(1, 6)];
+            model.editor_mut().clear_selection();
+            model.resize(220, 140);
+            let normal = render_full_editor_group(&model);
+            let id = model.editor_area.focused_editor_id().unwrap();
+            let doc_id = model.editor_area.focused_document_id().unwrap();
+            model
+                .editor_area
+                .editors
+                .get_mut(&id)
+                .unwrap()
+                .set_pixel_scroll(&model.editor_area.documents[&doc_id], 3.0, 7.0);
+            let horizontal = if wrapped { 0 } else { 3 };
+            assert_eq!(model.editor().viewport.pixels.x.offset, horizontal as f64);
+            assert_eq!(model.editor().viewport.pixels.y.offset, 7.0);
+            let scrolled = render_full_editor_group(&model);
+            let group = model.editor_area.focused_group().unwrap();
+            let layout = crate::view::geometry::GroupLayout::new(group, &model, char_width);
+            let width = model.window_size.0 as usize;
+            let y0 = layout.content_y();
+            let bottom = (y0 + layout.content_h()).min(model.window_size.1 as usize);
+            // Content and gutter move by the same vertical displacement; the gutter
+            // does not follow horizontal scrolling. Exclude clipped edges.
+            for y in y0..bottom.saturating_sub(7) {
+                for x in layout.rect_x()..layout.gutter_right_x.saturating_sub(1) {
+                    assert_eq!(scrolled[y * width + x], normal[(y + 7) * width + x]);
+                }
+                for x in layout.text_start_x..width.saturating_sub(horizontal) {
+                    assert_eq!(
+                        scrolled[y * width + x],
+                        normal[(y + 7) * width + x + horizontal]
+                    );
+                }
             }
-            for x in layout.text_start_x..width.saturating_sub(3) {
-                assert_eq!(scrolled[y * width + x], normal[(y + 7) * width + x + 3]);
-            }
+            assert_eq!(
+                &scrolled[..y0 * width],
+                &normal[..y0 * width],
+                "tab bar stays fixed"
+            );
+            let map = model.editor().viewport_map(model.document());
+            assert_eq!(
+                map.doc_line_for_pixel_y(line_height as f64 - 8.0, line_height as f64),
+                0
+            );
+            assert_eq!(
+                map.doc_line_for_pixel_y(line_height as f64 - 7.0, line_height as f64),
+                usize::from(!wrapped)
+            );
+            let mut incremental = scrolled.clone();
+            rerender_cursor_lines(&model, &mut incremental, &[0, 1, 2, 3, 4, 5, 6]);
+            let mismatch = incremental.iter().zip(&scrolled).position(|(a, b)| a != b);
+            assert!(
+                mismatch.is_none(),
+                "cursor-only mismatch {:?}",
+                mismatch.map(|i| (i % width, i / width, incremental[i], scrolled[i]))
+            );
         }
-        assert_eq!(
-            &scrolled[..y0 * width],
-            &normal[..y0 * width],
-            "tab bar stays fixed"
-        );
-        let map = model.editor().viewport_map(model.document());
-        assert_eq!(
-            map.doc_line_for_pixel_y(line_height as f64 - 8.0, line_height as f64),
-            0
-        );
-        assert_eq!(
-            map.doc_line_for_pixel_y(line_height as f64 - 7.0, line_height as f64),
-            1
-        );
-        let mut incremental = scrolled.clone();
-        rerender_cursor_lines(&model, &mut incremental, &[0, 1, 2, 3, 4, 5, 6]);
-        let mismatch = incremental.iter().zip(&scrolled).position(|(a, b)| a != b);
-        assert!(
-            mismatch.is_none(),
-            "cursor-only mismatch {:?}",
-            mismatch.map(|i| (i % width, i / width, incremental[i], scrolled[i]))
-        );
     }
 
     #[test]
     fn ghost_projection_blink_pixels_match_full_render_and_decorations_skip_ghosts() {
         for wrapped in [false, true] {
             let mut model = make_text_model();
-            model.document_mut().buffer = Rope::from_str("ab\tcd\nnext\nlast");
+            model.document_mut().buffer =
+                Rope::from_str(&format!("ab\tcd\nnext\n{}", "last\n".repeat(20)));
             model.document_mut().diagnostics = vec![lsp_types::Diagnostic {
                 range: lsp_types::Range::new(
                     lsp_types::Position::new(0, 0),
@@ -1994,7 +2011,10 @@ mod tests {
             model.editor_mut().cursors = vec![Cursor::at(0, 1)];
             model.editor_mut().selections = vec![Selection::new(Position::new(0, 1))];
             model.editor_mut().soft_wrap = wrapped;
-            model.editor_area.refresh_wrap_caches();
+            let (_, _, _, char_width, line_height) = load_test_font();
+            model.char_width = char_width;
+            model.line_height = line_height;
+            model.resize(220, 140);
             let width = wrapped.then_some(model.editor().viewport.visible_columns);
             let projection = crate::model::GhostProjection::new(
                 model.document(),
@@ -2004,13 +2024,18 @@ mod tests {
             )
             .unwrap();
             model.editor_mut().ghost_text.0 = Some(std::sync::Arc::new(projection));
-            let before = render_full_editor_group(&model);
-            let mut repainted = before.clone();
-            rerender_cursor_lines(&model, &mut repainted, &[0]);
-            assert_eq!(
-                repainted, before,
-                "blink must not duplicate or erase ghost rows, wrapped={wrapped}"
-            );
+            for offset in [0.0, 7.0] {
+                let (doc, editor) = model.editor_area.focused_document_and_editor_mut().unwrap();
+                editor.set_pixel_scroll(doc, 0.0, offset);
+                assert_eq!(editor.viewport.pixels.y.offset, offset);
+                let before = render_full_editor_group(&model);
+                let mut repainted = before.clone();
+                rerender_cursor_lines(&model, &mut repainted, &[0]);
+                assert_eq!(
+                    repainted, before,
+                    "blink must not duplicate or erase ghost rows, wrapped={wrapped}, offset={offset}"
+                );
+            }
 
             let ctx = make_render_context(&model, 8.0);
             let group = model.editor_area.focused_group().unwrap();

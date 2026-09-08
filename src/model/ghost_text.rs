@@ -311,6 +311,19 @@ mod tests {
     }
 
     #[test]
+    fn removing_wide_ghost_clamps_horizontal_pixels_but_keeps_vertical_fraction() {
+        let document = Document::with_text("a\nb\nc");
+        let mut editor = EditorState::with_viewport(2, 10);
+        let projection =
+            GhostProjection::new(&document, Position::new(0, 1), &"x".repeat(40), None).unwrap();
+        editor.set_ghost_text(&document, Some(Arc::new(projection)));
+        editor.set_pixel_scroll(&document, 20.5, 0.25);
+        assert_eq!(editor.pixel_scroll_position(), (20.5, 0.25));
+        editor.set_ghost_text(&document, None);
+        assert_eq!(editor.pixel_scroll_position(), (0.0, 0.25));
+    }
+
+    #[test]
     fn ghost_projection_preserves_source_top_when_removed_and_rejects_replaced_buffers() {
         let mut document = Document::with_text("zero\none\ntail\nthree\nfour\nfive\nsix\nseven");
         let mut editor = EditorState::with_viewport(2, 20);

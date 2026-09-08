@@ -1252,6 +1252,14 @@ impl EditorState {
             .pixels
             .y
             .set_position(&mut self.viewport.top_line, y, rows);
+        // A wide suggestion can be the only horizontally scrollable content.
+        // Removing it must not leave the source document off the left edge.
+        let x = self.viewport.pixels.x.position(self.viewport.left_column);
+        let columns = self.scrollable_columns(document);
+        self.viewport
+            .pixels
+            .x
+            .set_position(&mut self.viewport.left_column, x, columns);
         self.viewport.animation = None;
         self.overview_cache = super::OverviewCache::default();
     }
